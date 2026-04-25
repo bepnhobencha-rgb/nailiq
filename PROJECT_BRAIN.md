@@ -38,6 +38,13 @@ NailIQ is the AI-first operating system for nail salons and beauty businesses: o
 - **Typography:** `h1` = main selling message (largest, boldest in the hero). `h2` = section titles. Body = readable, muted for secondary. Logo line stays **smaller than `h1`** and never competes with it.
 - **Source of truth:** `src/shared/theme/tokens.ts` (`colors` + JSDoc) and `src/app/globals.css` `@theme` / `:root` mirror the same hex values.
 
+## iPhone hero polish (PROMPT #014)
+
+- **Real-device testing:** Mobile landing hero was tuned for Safari on iPhone without changing the overall page design: slightly **smaller mobile H1** (keeps **large desktop** scale), **tighter vertical rhythm** (logo → headline → body → CTA), **wordmark** stays a **subtle anchor** (`text-base`, gold at ~70% opacity, **not** competing with `h1`).
+- **CTA copy:** **Shorter on mobile** (`ctaMobile`: e.g. “Get booked in 2 minutes”); **desktop** keeps the fuller line (`cta`). EN + VI keys in `src/shared/i18n/user/`.
+- **Phone preview:** On small viewports, **PhoneFrame** is **directly under the hero block** (grid order: head → aside → rest) so the **top of the device** can appear in the **first viewport**; `DesktopSplit` uses **explicit grid placement** on `lg+` (head + rest in column one, aside column two, row-span).
+- **Input:** Stays **≥16px** (`text-base`) to avoid iOS focus zoom; **safe area:** `MobileStack` keeps **`pb-safe`** (uses `env(safe-area-inset-bottom)` with section padding). Shell uses slightly **reduced vertical padding** on small screens to free fold space.
+
 ## Design System Rules
 
 - **Aesthetic:** iPhone-like clarity, **premium dark UI**, **gold accent** `#D4AF37` (sparingly—see Brand System).
@@ -45,7 +52,7 @@ NailIQ is the AI-first operating system for nail salons and beauty businesses: o
 - **Feel:** Clean, fast, high contrast where needed, generous spacing, readable type. Premium and calm, not aggressive.
 - **Colors:** No hardcoded colors scattered across the app; use design tokens or shared theme values (locked palette in Brand System).
 - **Layout:** Mobile-first; scale up for tablet and desktop deliberately.
-- **Responsive adaptive UI (PROMPT #007):** Shared layout primitives in `src/components/layout/`: `ResponsiveShell` (viewport-height shell, horizontal clip, theme padding, vertical center on `lg+` with scroll-safe `justify-start` on small screens), `MobileStack` (iPhone-tight `max` width, `pb-safe`, optional `stickyCta` slot with safe-area bottom), `DesktopSplit` (stack below `lg`, two columns at `lg+`, max width `1180` via CSS vars). Foundation home uses `MobileStack` + `DesktopSplit` in one page tree (no separate apps). Breakpoints and layout numbers live in `src/shared/theme/tokens.ts` (`breakpoints`, `layout`) and mirror `--max-nq-*` / `--pad-nq-*` in `globals.css`. `html`/`body` use `overflow-x: hidden` + `pb-safe` utilities for notched devices. Touch: primary CTA `size="lg"` (56px), inputs keep ≥48px. Desktop preview: larger `PhoneFrame` + soft gold wash behind the device; headline scales `lg+`.
+- **Responsive adaptive UI (PROMPT #007 + #014):** Shared layout primitives in `src/components/layout/`: `ResponsiveShell` (viewport-height shell, horizontal clip, theme padding, vertical center on `lg+` with scroll-safe `justify-start` on small screens), `MobileStack` (iPhone-tight `max` width, `pb-safe`, optional `stickyCta` slot with safe-area bottom), `DesktopSplit` (`head` / `aside` / `rest`: on **mobile** stacks **hero → PhoneFrame → CTA & rest**; on **`lg+`** two columns, **head+rest** left, **aside** right). Foundation home uses `MobileStack` + `DesktopSplit` in one page tree (no separate apps). Breakpoints and layout numbers live in `src/shared/theme/tokens.ts` (`breakpoints`, `layout`) and mirror `--max-nq-*` / `--pad-nq-*` in `globals.css`. `html`/`body` use `overflow-x: hidden` + `pb-safe` utilities for notched devices. Touch: primary CTA `size="lg"` (56px), inputs keep ≥48px. Desktop preview: larger `PhoneFrame` + soft gold wash behind the device; headline scales `lg+`. See *iPhone hero polish* for mobile fine-tuning.
 
 ## Current Modules
 
@@ -91,6 +98,12 @@ NailIQ is the AI-first operating system for nail salons and beauty businesses: o
 ## Decisions Log
 
 *(Empty — see [DECISIONS.md](./DECISIONS.md) for structured entries. Summaries or pointers can be mirrored here if useful.)*
+
+## Auto Push System (PROMPT #013)
+
+- **Purpose:** While developing, optionally run `npm run auto-push` to **automatically commit and push** after file saves—without typing git commands on every small edit.
+- **Behavior:** A **chokidar** file watcher (ignores `.next`, `node_modules`, `.git`, `logs`) **debounces 30 seconds** from the last change, then runs `git status` and only **commits and pushes** if there are real changes. **One push at a time**; if changes arrive during a push, a follow-up is scheduled. Commit messages are short heuristics (e.g. styles, landing UI) when they match changed paths, otherwise **`auto update`**.
+- **Deploy:** Pushes to the current branch; **Vercel** (or your host) can **auto-deploy** from the remote so you can test on iPhone (or other devices) shortly after a push.
 
 ## Next Steps
 

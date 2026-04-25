@@ -2,36 +2,58 @@ import { type HTMLAttributes, type ReactNode } from "react";
 import { cn } from "@/shared/lib/cn";
 
 export type DesktopSplitProps = HTMLAttributes<HTMLDivElement> & {
-  /** Primary column: headline, trust, CTA, form (left on `lg+`). */
-  main: ReactNode;
-  /** Secondary: preview, device frame (right on `lg+`). */
+  /** Logo, headline, intro — first on mobile, top of left column on desktop. */
+  head: ReactNode;
+  /** CTA, forms, and rest — after phone on mobile, continues left column on desktop. */
+  rest: ReactNode;
+  /** Phone preview: after hero on mobile, right column on desktop. */
   aside: ReactNode;
 };
 
 /**
- * Two-column layout from `lg`. Below that, stacks `main` then `aside` (preview below form).
- * Max width and gap follow foundation marketing shell.
+ * Two-column layout from `lg`. Below that: `head` → `aside` → `rest` (phone between hero and
+ * CTA) so the device preview can sit in the first viewport. No horizontal scroll.
  */
 export function DesktopSplit({
   className,
-  main,
+  head,
+  rest,
   aside,
   ...props
 }: DesktopSplitProps) {
   return (
     <div
       className={cn(
-        "mx-auto flex w-full min-w-0 max-w-[var(--max-nq-mobile)] flex-col items-stretch gap-10",
-        "lg:max-w-[var(--max-nq-desktop)] lg:flex-row lg:items-center lg:justify-between lg:gap-12 xl:gap-16",
+        "mx-auto grid w-full min-w-0 max-w-[var(--max-nq-mobile)] grid-cols-1",
+        "gap-y-3 sm:gap-y-4",
+        "lg:max-w-[var(--max-nq-desktop)] lg:grid-cols-2 lg:items-center lg:gap-x-12 lg:gap-y-8 xl:gap-x-16",
         className,
       )}
       {...props}
     >
-      <div className="min-w-0 flex-1 lg:min-h-0 lg:max-w-xl lg:shrink lg:basis-1/2 xl:max-w-2xl">
-        {main}
+      <div
+        className={cn(
+          "order-1 min-w-0",
+          "lg:col-start-1 lg:row-start-1 lg:max-w-xl lg:shrink lg:place-self-stretch xl:max-w-2xl",
+        )}
+      >
+        {head}
       </div>
-      <div className="flex min-w-0 flex-col items-center justify-center lg:shrink-0 lg:basis-1/2">
+      <div
+        className={cn(
+          "order-2 flex min-w-0 flex-col items-center justify-center",
+          "lg:col-start-2 lg:row-start-1 lg:row-end-3 lg:shrink-0 lg:justify-center lg:place-self-center",
+        )}
+      >
         {aside}
+      </div>
+      <div
+        className={cn(
+          "order-3 min-w-0",
+          "lg:col-start-1 lg:row-start-2 lg:max-w-xl lg:shrink lg:place-self-stretch xl:max-w-2xl",
+        )}
+      >
+        {rest}
       </div>
     </div>
   );

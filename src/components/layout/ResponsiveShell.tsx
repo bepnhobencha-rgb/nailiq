@@ -37,8 +37,9 @@ export function ResponsiveShell({
       <div
         className={cn(
           "relative z-0 mx-auto flex w-full min-w-0 max-w-[var(--max-nq-desktop)] flex-1 flex-col items-stretch justify-start",
-          "px-[var(--pad-nq-section-mobile)] py-10",
-          "md:px-6 md:py-12",
+          "px-[var(--pad-nq-section-mobile)] py-6",
+          "sm:py-8",
+          "md:px-6 md:py-10",
           "lg:justify-center lg:px-[var(--pad-nq-section-desktop)] lg:py-12 lg:pb-16",
         )}
       >

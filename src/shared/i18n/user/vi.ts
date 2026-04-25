@@ -26,6 +26,7 @@ export const userVi: UserMessages = {
   tagline: "Salon của bạn vẫn nhận lịch — kể cả khi bạn bận rộn",
   setupTime: "Hầu hết salon hoàn tất thiết lập dưới 2 phút.",
   cta: "🚀 Có lịch đầu tiên trong 2 phút",
+  ctaMobile: "🚀 Được đặt lịch trong 2 phút",
   phonePlaceholder: "Nhập số điện thoại",
   phoneHint: "Chúng tôi gửi link đặt lịch qua tin nhắn ngay",
   socialProof: "Hơn 100 salon đang dùng NailIQ",

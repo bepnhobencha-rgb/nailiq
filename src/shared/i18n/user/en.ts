@@ -14,7 +14,10 @@ export type UserMessages = {
   }[];
   tagline: string;
   setupTime: string;
+  /** Desktop CTA (lg+), fuller benefit line */
   cta: string;
+  /** Mobile CTA; shorter, calmer (phones) */
+  ctaMobile: string;
   phonePlaceholder: string;
   phoneHint: string;
   socialProof: string;
@@ -51,6 +54,7 @@ export const userEn: UserMessages = {
   tagline: "Your salon gets booked — even when you're busy",
   setupTime: "Most salons finish setup in under 2 minutes.",
   cta: "🚀 Get your first booking in 2 minutes",
+  ctaMobile: "🚀 Get booked in 2 minutes",
   phonePlaceholder: "Enter your phone number",
   phoneHint: "We'll text you your booking link instantly",
   socialProof: "100+ salons already using NailIQ",
