@@ -16,6 +16,11 @@ export type UserMessages = {
   benefits: readonly {
     title: string;
     body: string;
+    /**
+     * When set, the landing hero iPhone cross-fades to this scene when the
+     * benefit is in view.
+     */
+    phoneScene?: "booking" | "ai";
   }[];
   tagline: string;
   setupTime: string;
@@ -42,6 +47,29 @@ export type UserMessages = {
   ctaTrustLine: string;
   /** In-phone “live” notification rows (rotates in PhoneFrame) */
   phoneActivity: readonly { label: string; line: string }[];
+  /** Time row in the phone mock (3 slots) */
+  phoneTimeSlots: readonly [string, string, string];
+  /** In-phone: booking flow app bar title */
+  phoneBookingSceneTitle: string;
+  phoneBookingStepService: string;
+  phoneBookingStepTime: string;
+  phoneBookingStepComplete: string;
+  phoneBookingContinue: string;
+  phoneBookingBack: string;
+  phoneBookingDoneTitle: string;
+  phoneBookingDoneSubtitle: string;
+  phoneBookingDateLine: string;
+  phoneBookingBookAnother: string;
+  /** In-phone: AI menu scan scene label */
+  phoneAiSceneLabel: string;
+  /** In-phone: “live” line under AI menu placeholder */
+  phoneAiSceneHint: string;
+  /** Placeholder in demo service list (not tenant data; UI sample) */
+  phoneMenuDemoRows: readonly {
+    category: string;
+    name: string;
+    price: string;
+  }[];
 };
 
 export const userEn: UserMessages = {
@@ -55,10 +83,12 @@ export const userEn: UserMessages = {
     {
       title: "Bookings that run themselves",
       body: "Clients pick services and times that match your rules, so your calendar stays full while you stay focused on the chair.",
+      phoneScene: "booking",
     },
     {
-      title: "A front desk that never goes dark",
-      body: "AI-assisted booking and reminders reduce no-shows and last-minute gaps, even when the phone is blowing up.",
+      title: "AI Genesis: your menu, organized",
+      body: "Scan a paper menu or price list—NailIQ turns it into a clean, bookable service list in seconds.",
+      phoneScene: "ai",
     },
     {
       title: "One system for growth",
@@ -80,14 +110,34 @@ export const userEn: UserMessages = {
     "A single glass surface for booking, your menu, and the little details that make your studio feel expensive—before a guest even walks in.",
   phoneScreenBody:
     "Your link, your brand, your rules—served in one iPhone-tight experience clients actually use.",
-  serviceStrip: ["Pedicure", "Gel", "Manicure"],
+  serviceStrip: ["Pedicure", "Manicure", "Gel"],
   urgencyLine: "⚡ You may miss 3–7 bookings today",
   liveProof: [
     "Anna just got booked • 2 min ago",
     "Jenny filled 5 slots today",
   ] as const,
   phoneActivity: [
-    { label: "New booking", line: "3:00 PM — Pedicure • $45" },
-    { label: "New booking", line: "2:15 PM — Gel • $38" },
+    { label: "Anna booked", line: "3:00 PM — Pedicure • $45" },
+    { label: "Jenny booked", line: "2:15 PM — Gel • $38" },
+  ] as const,
+  phoneTimeSlots: ["3:00 PM", "3:30 PM", "4:00 PM"] as const,
+  phoneBookingSceneTitle: "Book",
+  phoneBookingStepService: "Service",
+  phoneBookingStepTime: "Time",
+  phoneBookingStepComplete: "Done",
+  phoneBookingContinue: "Continue",
+  phoneBookingBack: "Back",
+  phoneBookingDoneTitle: "You're booked",
+  phoneBookingDoneSubtitle:
+    "We'll send a confirmation with the time you picked.",
+  phoneBookingDateLine: "Today · Sat, Apr 25",
+  phoneBookingBookAnother: "Book again",
+  phoneAiSceneLabel: "Menu scan",
+  phoneAiSceneHint: "Point at your menu",
+  phoneMenuDemoRows: [
+    { category: "Manicure", name: "Classic Manicure", price: "$45" },
+    { category: "Manicure", name: "Gel Rebalance", price: "$55" },
+    { category: "Pedicure", name: "Spa Pedicure", price: "$60" },
+    { category: "Pedicure", name: "Express Pedicure", price: "$48" },
   ] as const,
 };

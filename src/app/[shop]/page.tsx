@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
+import { BookingFlow } from "@/components/booking/BookingFlow";
 import { bookingEn } from "@/shared/i18n/booking/en";
 import { BookingDocumentEn } from "./BookingDocumentEn";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 
 type ShopPageProps = {
   params: Promise<{ shop: string }>;
@@ -31,14 +30,9 @@ export default async function ShopBookingPage({ params }: ShopPageProps) {
           {t.pageTitle}
         </h1>
         <p className="mt-1 text-sm text-nq-muted sm:text-base">
-          {t.pageSubtitle} ({shop})
+          {t.pageSubtitle}—{shop}
         </p>
-        <Card className="mt-8">
-          <p className="text-sm text-nq-muted sm:text-base">{t.note}</p>
-          <Button type="button" className="mt-6 w-full" size="lg">
-            {t.placeCta}
-          </Button>
-        </Card>
+        <BookingFlow t={t} shopSlug={shop} />
       </main>
     </>
   );

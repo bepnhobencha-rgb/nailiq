@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { PhoneFrame } from "@/components/ui/PhoneFrame";
+import { MarketingPhoneAside } from "@/components/user/MarketingPhoneAside";
 import { DesktopSplit } from "@/components/layout/DesktopSplit";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
@@ -235,7 +235,12 @@ export function MarketingHome() {
                   <ul className="space-y-3 text-left sm:space-y-4">
                     {t.benefits.map((item) => (
                       <li key={item.title}>
-                        <article className="rounded-2xl border border-white/10 bg-nq-surface/40 px-4 py-4 sm:px-5">
+                        <article
+                          {...(item.phoneScene
+                            ? { "data-nq-benefit-scene": item.phoneScene }
+                            : {})}
+                          className="scroll-mt-6 rounded-2xl border border-white/10 bg-nq-surface/40 px-4 py-4 sm:px-5"
+                        >
                           <h3 className="text-base font-medium text-nq-foreground">
                             {item.title}
                           </h3>
@@ -254,30 +259,12 @@ export function MarketingHome() {
               </div>
             }
             aside={
-              <div
-                className="relative z-0 w-full min-w-0 max-w-[16rem] will-change-transform sm:max-w-[17rem] lg:mx-auto lg:max-w-[21rem] xl:max-w-[22.5rem]"
-                style={{
-                  transform: `translate3d(0, ${parallaxY}px, 0)`,
-                }}
-              >
-                <div
-                  className="pointer-events-none absolute top-1/2 left-1/2 -z-10 h-[min(22rem,50vh)] w-[min(20rem,88vw)] max-w-full -translate-x-1/2 -translate-y-1/2 sm:h-[min(26rem,60vh)] sm:w-[min(26rem,90vw)]"
-                  aria-hidden
-                >
-                  <div className="h-full w-full rounded-full bg-nq-primary/18 blur-[72px] opacity-90 sm:blur-[90px] lg:blur-[100px]" />
-                </div>
-                <div className="relative z-0 w-full">
-                  <PhoneFrame
-                    className="max-w-full py-0 sm:max-w-full lg:max-w-none"
-                    statusLabel="9:41"
-                    activityFeed={t.phoneActivity}
-                  >
-                    <p className="p-0.5 text-center text-[10px] leading-relaxed text-nq-primary-soft/90 sm:text-xs">
-                      {t.phoneScreenBody}
-                    </p>
-                  </PhoneFrame>
-                </div>
-              </div>
+              <MarketingPhoneAside
+                t={t}
+                language={language}
+                parallaxY={parallaxY}
+                className="will-change-transform"
+              />
             }
           />
         </div>

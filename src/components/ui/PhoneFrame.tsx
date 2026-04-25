@@ -1,167 +1,168 @@
 "use client";
 
-import { type HTMLAttributes, type ReactNode, useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { type HTMLAttributes, useEffect, useState } from "react";
+import { PhoneAiFileDemo, PhoneAiIdleScan, PhoneSceneStack } from "@/components/ui/phone/PhoneAiScanViews";
+import { PhoneBookingView } from "@/components/ui/phone/PhoneBookingView";
+import { PhoneHeroScreen } from "@/components/ui/phone/PhoneHeroScreen";
+import { IphoneStatusBar } from "@/components/ui/phone/IphoneStatusBar";
+import type {
+  PhoneActivityItem,
+  PhoneAiDemoState,
+  PhoneBookingCopy,
+  PhoneFrameScene,
+} from "@/components/ui/phone/phoneFrameTypes";
 import { cn } from "@/shared/lib/cn";
 
-const DEFAULT_SERVICE_STRIP = ["Pedicure", "Gel", "Manicure"] as const;
+const DEFAULT_SERVICE_STRIP = ["Pedicure", "Manicure", "Gel"] as const;
+const DEFAULT_TIME_SLOTS = ["3:00 PM", "3:30 PM", "4:00 PM"] as const;
+const AI_SCAN_S = 1.5;
 
-export type PhoneActivityItem = { label: string; line: string };
+export type {
+  PhoneActivityItem,
+  PhoneFrameScene,
+  PhoneAiDemoState,
+  PhoneBookingCopy,
+} from "@/components/ui/phone/phoneFrameTypes";
 
 export type PhoneFrameProps = HTMLAttributes<HTMLDivElement> & {
-  children: ReactNode;
-  /** "Preview" text shown in the status area when no child banner */
+  children: React.ReactNode;
+  /** “9:41” or similar when live clock is off */
   statusLabel?: string;
-  /** Rotating one-line service labels; booking UI defaults to English */
   serviceStrip?: readonly [string, string, string];
-  /** In-screen “live” product rows; when set, replaces the top service strip */
+  timeSlots?: readonly [string, string, string];
   activityFeed?: ReadonlyArray<PhoneActivityItem>;
+  displayScene: PhoneFrameScene;
+  aiDemo: PhoneAiDemoState;
+  phoneBookingCopy: PhoneBookingCopy;
+  phoneAiLabel: string;
+  phoneAiHint: string;
+  menuDemoRows: ReadonlyArray<{
+    category: string;
+    name: string;
+    price: string;
+  }>;
 };
 
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const read = () => setReduced(mq.matches);
+    read();
+    mq.addEventListener("change", read);
+    return () => mq.removeEventListener("change", read);
+  }, []);
+  return reduced;
+}
+
 /**
- * iPhone-style device chrome for marketing or feature previews. Optional
- * `activityFeed` shows rotating in-device booking cards (fade/slide). When
- * absent, the service strip keeps the prior 3-up rotation. Ambient glows and
- * motion respect `prefers-reduced-motion`.
+ * iPhone-style device with scroll-linked in-screen scenes, optional AI menu demo,
+ * and an iOS-like status bar. Respects `prefers-reduced-motion`.
  */
 export function PhoneFrame({
   className,
   children,
   statusLabel = "9:41",
   serviceStrip = DEFAULT_SERVICE_STRIP,
+  timeSlots = DEFAULT_TIME_SLOTS,
   activityFeed,
+  displayScene,
+  aiDemo,
+  phoneBookingCopy,
+  phoneAiLabel,
+  phoneAiHint,
+  menuDemoRows,
   ...props
 }: PhoneFrameProps) {
-  const [index, setIndex] = useState(0);
-  const [activityIndex, setActivityIndex] = useState(0);
-  const strip = serviceStrip;
-  const hasActivity = Boolean(activityFeed?.length);
-
-  useEffect(() => {
-    if (hasActivity) return;
-    const preferReduced = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    );
-    if (preferReduced.matches) return;
-
-    const id = window.setInterval(() => {
-      setIndex((i) => (i + 1) % strip.length);
-    }, 2400);
-    return () => clearInterval(id);
-  }, [hasActivity, strip.length]);
-
-  useEffect(() => {
-    if (!hasActivity) return;
-    const preferReduced = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    );
-    if (preferReduced.matches) return;
-
-    const n = activityFeed?.length ?? 0;
-    if (n < 2) return;
-
-    const id = window.setInterval(() => {
-      setActivityIndex((i) => (i + 1) % n);
-    }, 2800);
-    return () => clearInterval(id);
-  }, [hasActivity, activityFeed?.length]);
-
-  const act = hasActivity
-    ? activityFeed?.[activityIndex % (activityFeed?.length || 1)]
-    : null;
+  const reduced = usePrefersReducedMotion();
 
   return (
     <div
-      className={cn("relative z-0 mx-auto w-full max-w-[17.5rem] py-2", className)}
+      className={cn(
+        "relative z-0 mx-auto w-full max-w-[min(16rem,88vw)] py-1.5",
+        "sm:max-w-[17rem] sm:py-2",
+        "lg:max-w-[20.5rem] xl:max-w-[21.5rem]",
+        "origin-center [transform:translateZ(0)]",
+        className,
+      )}
       {...props}
     >
-      <div
-        className="pointer-events-none absolute top-1/2 left-1/2 -z-10 h-56 w-56 -translate-x-1/2 -translate-y-1/2"
-        aria-hidden
-      >
-        <div
-          className="h-full w-full rounded-full bg-nq-primary/25 blur-[48px] animate-nq-orb"
-        />
+      <div className="pointer-events-none absolute top-1/2 left-1/2 -z-10 h-56 w-56 -translate-x-1/2 -translate-y-1/2 sm:h-64 sm:w-64" aria-hidden>
+        <div className="h-full w-full rounded-full bg-nq-primary/22 blur-[48px] animate-nq-orb sm:blur-[56px]" />
       </div>
-      <div
-        className="pointer-events-none absolute top-1/2 left-1/2 -z-20 h-72 w-72 -translate-x-1/2 -translate-y-1/2"
-        aria-hidden
-      >
-        <div
-          className="h-full w-full rounded-full bg-nq-primary/10 blur-[80px] opacity-90"
-        />
+      <div className="pointer-events-none absolute top-1/2 left-1/2 -z-20 h-72 w-72 -translate-x-1/2 -translate-y-1/2" aria-hidden>
+        <div className="h-full w-full rounded-full bg-nq-primary/10 blur-[80px] opacity-90" />
       </div>
-      <div
+
+      <motion.div
         className={cn(
           "relative z-10 aspect-[9/19.5] w-full touch-manipulation select-none",
-          "rounded-[2.4rem] border border-nq-border/80 p-1.5",
-          "bg-gradient-to-b from-nq-surface to-nq-bg shadow-nq-card",
-          "origin-center transition-transform duration-300 will-change-transform",
-          "active:scale-[0.99]",
+          "rounded-[2.35rem] border border-nq-border/50 p-1.5",
+          "bg-nq-bg shadow-nq-card-luxury",
+          "ring-1 ring-nq-primary/12",
+          "origin-center will-change-transform",
         )}
+        whileTap={reduced ? undefined : { scale: 0.99 }}
+        transition={{ type: "spring", stiffness: 500, damping: 35 }}
       >
         <div
-          className="relative h-full w-full overflow-hidden rounded-[1.85rem] border border-nq-border/50 bg-nq-bg"
+          className={cn(
+            "relative flex h-full w-full min-h-0 flex-col overflow-hidden",
+            "rounded-[1.82rem] border border-nq-primary/10 bg-nq-bg",
+            "ring-1 ring-inset ring-nq-border/30",
+          )}
         >
-          <div className="absolute top-0 right-0 left-0 z-10 flex h-7 items-end justify-center pb-0.5">
-            <div
-              className="h-4 w-24 rounded-b-xl bg-nq-surface/95 ring-1 ring-nq-border/50"
-            />
-          </div>
-          <div className="px-2 pt-8 pb-2 text-center text-[10px] font-medium tabular-nums tracking-wide text-nq-muted">
-            {statusLabel}
-          </div>
-          <div className="h-[calc(100%-3.4rem)] min-h-0 overflow-hidden px-1.5 pb-2 sm:px-2">
-            <div
-              className="h-full min-h-0 overflow-hidden rounded-2xl border border-nq-border/30 bg-nq-surface/40 p-2"
-            >
-              {hasActivity && act != null ? (
-                <div className="flex h-full min-h-0 flex-col">
-                  <div className="flex min-h-0 flex-1 flex-col justify-center">
-                    <div
-                      key={activityIndex}
-                      className="animate-nq-activity rounded-xl border border-nq-border/30 bg-nq-bg/90 px-2.5 py-2.5 shadow-sm ring-1 ring-nq-primary/8 transition-shadow duration-500"
+          <IphoneStatusBar
+            mode={reduced ? "static" : "live"}
+            staticLabel={statusLabel}
+          />
+          <div className="min-h-0 flex-1 overflow-hidden px-1.5 pb-2 sm:px-2">
+            <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-nq-border/25 bg-nq-surface/35 p-1.5 ring-1 ring-inset ring-nq-primary/6">
+              <div className="h-full min-h-0 max-h-full">
+                <PhoneSceneStack
+                  displayScene={displayScene}
+                  reduced={reduced}
+                  aiDemo={aiDemo}
+                  childrenHero={
+                    <PhoneHeroScreen
+                      strip={serviceStrip}
+                      times={timeSlots}
+                      activityFeed={activityFeed ?? []}
+                      reduced={reduced}
                     >
-                      <p className="text-[9px] font-medium tracking-wider text-nq-primary/90">
-                        {act.label}
-                      </p>
-                      <p className="mt-1.5 text-balance break-words text-center text-xs leading-snug text-nq-foreground/95">
-                        {act.line}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="animate-nq-content-pulse mt-1.5 min-h-0 shrink text-center">
-                    {children}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex h-full min-h-0 flex-col">
-                  <div
-                    className="relative mt-0.5 h-5 shrink-0 overflow-hidden text-center"
-                    aria-hidden
-                  >
-                    <div
-                      key={`hi-${index}`}
-                      className="fade-in pointer-events-none absolute inset-0 -mx-0.5 -my-px rounded-md bg-nq-primary/[0.08] ring-1 ring-nq-primary/10"
-                      aria-hidden
+                      {children}
+                    </PhoneHeroScreen>
+                  }
+                  booking={
+                    <PhoneBookingView
+                      copy={phoneBookingCopy}
+                      services={serviceStrip}
+                      times={timeSlots}
+                      reduced={reduced}
                     />
-                    <p
-                      key={index}
-                      className="fade-in relative z-10 flex h-5 items-center justify-center text-[11px] font-semibold tracking-wide text-nq-primary"
-                    >
-                      {strip[index]}
-                    </p>
-                  </div>
-                  <div
-                    className="animate-nq-content-pulse min-h-0 flex-1 pt-2.5 will-change-[opacity]"
-                  >
-                    {children}
-                  </div>
-                </div>
-              )}
+                  }
+                  aiIdle={
+                    <PhoneAiIdleScan
+                      label={phoneAiLabel}
+                      hint={phoneAiHint}
+                      reduced={reduced}
+                    />
+                  }
+                  aiFileDemo={
+                    <PhoneAiFileDemo
+                      demo={aiDemo}
+                      scanDuration={AI_SCAN_S}
+                      menuRows={menuDemoRows}
+                      reduced={reduced}
+                    />
+                  }
+                />
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

@@ -14,10 +14,12 @@ export const userVi: UserMessages = {
     {
       title: "Lịch hẹn gần như tự chạy",
       body: "Khách chọn dịch vụ và giờ phù hợp quy tắc của bạn, lịch đầy hơn trong khi bạn tập trung phục vụ.",
+      phoneScene: "booking",
     },
     {
-      title: "Lễ tân không 'tắt đèn'",
-      body: "Đặt lịch hỗ trợ bởi AI và nhắc lịch giúp giảm vắng mặt và khoảng trống phút chót, kể cả khi điện thoại reo liên tục.",
+      title: "AI Genesis: thực đơn, đã sẵn sàng",
+      body: "Quét menu giấy hoặc bảng giá—NailIQ gom thành danh sách dịch vụ gọn, book được trong vài giây.",
+      phoneScene: "ai",
     },
     {
       title: "Một hệ thống cho tăng trưởng",
@@ -39,7 +41,7 @@ export const userVi: UserMessages = {
     "Một lớp kính cho đặt lịch, thực đơn và những chi tiết khiến tiệm bạn thật sự 'xịn'—trước khi khách bước vào.",
   phoneScreenBody:
     "Link của bạn, thương hiệu của bạn, quy tắc của bạn—trải nghiệm gọn trên iPhone mà khách thực sự dùng.",
-  serviceStrip: ["Chăm sóc chân", "Gel", "Làm móng tay"] as readonly [
+  serviceStrip: ["Chăm sóc chân", "Làm móng tay", "Gel"] as readonly [
     string,
     string,
     string,
@@ -50,7 +52,26 @@ export const userVi: UserMessages = {
     "Jenny lấp đủ 5 suốt hôm nay",
   ] as const,
   phoneActivity: [
-    { label: "Lịch mới", line: "3:00 PM — Pedicure • 450.000₫" },
-    { label: "Lịch mới", line: "2:15 PM — Gel • 350.000₫" },
+    { label: "Anna vừa book", line: "3:00 PM — Pedicure • 450.000₫" },
+    { label: "Jenny vừa book", line: "2:15 PM — Gel • 350.000₫" },
+  ] as const,
+  phoneTimeSlots: ["3:00 PM", "3:30 PM", "4:00 PM"] as const,
+  phoneBookingSceneTitle: "Đặt lịch",
+  phoneBookingStepService: "Dịch vụ",
+  phoneBookingStepTime: "Giờ",
+  phoneBookingStepComplete: "Xong",
+  phoneBookingContinue: "Tiếp tục",
+  phoneBookingBack: "Quay lại",
+  phoneBookingDoneTitle: "Đã giữ chỗ",
+  phoneBookingDoneSubtitle: "Chúng tôi sẽ gửi xác nhận kèm giờ bạn chọn.",
+  phoneBookingDateLine: "Hôm nay · T7, 25 thg 4",
+  phoneBookingBookAnother: "Đặt thêm",
+  phoneAiSceneLabel: "Quét thực đơn",
+  phoneAiSceneHint: "Hướng vào menu của bạn",
+  phoneMenuDemoRows: [
+    { category: "Manicure", name: "Manicure cổ điển", price: "450.000₫" },
+    { category: "Manicure", name: "Gel dặm móng", price: "550.000₫" },
+    { category: "Pedicure", name: "Pedicure spa", price: "600.000₫" },
+    { category: "Pedicure", name: "Pedicure nhanh", price: "480.000₫" },
   ] as const,
 };
