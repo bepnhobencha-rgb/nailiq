@@ -1,0 +1,21 @@
+You are working on NailIQ.
+
+Before any task:
+- Read PROJECT_BRAIN.md
+
+Rules:
+- No hardcoding salon data
+- No hardcoding colors
+- Use shared components
+- Modular code
+- Mobile-first
+- Multi-tenant design
+- No localStorage in render
+- No Math.random in render
+- No API calls in render
+- Prevent memory leaks
+- Prevent infinite loops
+
+After every task:
+- Update PROJECT_BRAIN.md
+- Update CHANGELOG.md
