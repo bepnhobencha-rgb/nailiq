@@ -32,18 +32,19 @@ NailIQ is the AI-first operating system for nail salons and beauty businesses: o
 ## Brand System (locked — PROMPT #012)
 
 - **Role:** The **NailIQ** wordmark is a **brand anchor only**—not the hero, not the main attention. The **hero headline (`h1`)** is always the visual and semantic focus. **CTA** is second in priority: strong contrast and visibility. Brand is **distributed** (header wordmark, small card badge, optional footer “Powered by”, subtle copy) so users feel the brand without an oversized logo.
+- **Apple minimalism (PROMPT #015) — hero:** **Product-first:** show **one headline** and **one short subline** in the visible hero. **Phone** (`PhoneFrame`) is **centered in its column** and must be **see without scrolling** on typical phones (tight padding, `head` → `aside` before `rest`). **Less text, more product, more calm emotion.** The long **SEO** paragraph stays **screen-reader–only** (`sr-only`); below-the-fold sections still carry full detail. Primary CTA line is a single string (e.g. EN: “🚀 Get booked in 2 minutes”); no separate short/long mobile CTA.
 - **Logo type (landing):** Mobile `text-base`–`text-lg`, desktop `text-lg`–`text-xl`, `font-medium` or `font-semibold`, subtle gold or white. Do **not** use `text-2xl` or larger for the wordmark, do not center it as a hero, do not add heavy glow. Keep **≥ 16px** vertical separation from the headline (`space-y-4` or equivalent).
 - **Color:** **Primary (gold) `#D4AF37`** — use **sparingly** for CTA, highlight, and focus. **Background `#0B0C10`**, **surface `#111214`**, **text `#FFFFFF`**, **muted `#A1A1AA`**. Maintain contrast; do not flood surfaces with gold.
 - **Feel:** **Calm, premium, confident**—Apple-like clarity, not loud, not salesy. Avoid gratuitous neon, flashy all-over gradients, and excessive motion. `text-shimmer` and glass utilities are for **optional accents** (e.g. a single keyword), not for the wordmark as a competing hero.
 - **Typography:** `h1` = main selling message (largest, boldest in the hero). `h2` = section titles. Body = readable, muted for secondary. Logo line stays **smaller than `h1`** and never competes with it.
 - **Source of truth:** `src/shared/theme/tokens.ts` (`colors` + JSDoc) and `src/app/globals.css` `@theme` / `:root` mirror the same hex values.
 
-## iPhone hero polish (PROMPT #014)
+## iPhone hero polish (PROMPT #014) + product-first (PROMPT #015)
 
-- **Real-device testing:** Mobile landing hero was tuned for Safari on iPhone without changing the overall page design: slightly **smaller mobile H1** (keeps **large desktop** scale), **tighter vertical rhythm** (logo → headline → body → CTA), **wordmark** stays a **subtle anchor** (`text-base`, gold at ~70% opacity, **not** competing with `h1`).
-- **CTA copy:** **Shorter on mobile** (`ctaMobile`: e.g. “Get booked in 2 minutes”); **desktop** keeps the fuller line (`cta`). EN + VI keys in `src/shared/i18n/user/`.
-- **Phone preview:** On small viewports, **PhoneFrame** is **directly under the hero block** (grid order: head → aside → rest) so the **top of the device** can appear in the **first viewport**; `DesktopSplit` uses **explicit grid placement** on `lg+` (head + rest in column one, aside column two, row-span).
-- **Input:** Stays **≥16px** (`text-base`) to avoid iOS focus zoom; **safe area:** `MobileStack` keeps **`pb-safe`** (uses `env(safe-area-inset-bottom)` with section padding). Shell uses slightly **reduced vertical padding** on small screens to free fold space.
+- **Real-device testing:** Mobile landing hero was tuned for Safari on iPhone: **smaller mobile H1** than desktop, **tighter vertical rhythm**, **wordmark** as a **subtle anchor** (`text-sm`–`text-base`, gold at ~70% opacity, **not** competing with `h1`). **#015:** Hero is **not** a paragraph stack—**headline + one subline** only, then **phone**, then CTA and input.
+- **CTA copy:** Single primary line in **en.ts** / **vi.ts** as **`cta`** (e.g. “🚀 Get booked in 2 minutes” / VI equivalent). No separate `ctaMobile` (removed in #015).
+- **Phone preview:** **PhoneFrame** sits **immediately after** the minimal hero copy (`head` → `aside` → `rest`) with **subtle gold glow** on all viewports, **`fade-in`** on the hero, and **mild parallax** on the phone (off when `prefers-reduced-motion`). **#015:** Slightly more compact `PhoneFrame` max width on the smallest viewports to keep the device in the first viewport. `lg+`: **head + rest** in column one, **aside** column two, row-span; phone **centered** in the aside column.
+- **Input:** Placeholder only in the field (no pre-filled value); no secondary hint line in the **hero** block. Stays **≥16px** (`text-base`) to avoid iOS focus zoom. **safe area:** `MobileStack` **`pb-safe`**. `ResponsiveShell` uses **tighter** vertical padding on the smallest screens to protect above-the-fold **phone** visibility.
 
 ## Design System Rules
 

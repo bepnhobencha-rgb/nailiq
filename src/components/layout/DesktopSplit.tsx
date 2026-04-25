@@ -11,8 +11,9 @@ export type DesktopSplitProps = HTMLAttributes<HTMLDivElement> & {
 };
 
 /**
- * Two-column layout from `lg`. Below that: `head` → `aside` → `rest` (phone between hero and
- * CTA) so the device preview can sit in the first viewport. No horizontal scroll.
+ * Two-column layout from `lg`. Mobile order: `head` (logo + h1 + sub) → `aside` (phone) →
+ * `rest` (CTA, input, …) so the device stays **above the fold** without scrolling. `lg+`: copy
+ * + rest in column one, **centered** phone in column two. No horizontal scroll.
  */
 export function DesktopSplit({
   className,

@@ -6,14 +6,14 @@ const landingDescription =
   "NailIQ helps nail salons get booked automatically with AI-powered booking, website, automation, and customer growth tools.";
 
 export const metadata: Metadata = {
-  title: "Stop Losing Clients When You're Busy",
+  title: "Stop losing clients | NailIQ",
   description: landingDescription,
   openGraph: {
-    title: "Stop Losing Clients When You're Busy | NailIQ",
+    title: "Stop losing clients | NailIQ",
     description: landingDescription,
   },
   twitter: {
-    title: "Stop Losing Clients When You're Busy | NailIQ",
+    title: "Stop losing clients | NailIQ",
     description: landingDescription,
   },
 };
