@@ -5,7 +5,7 @@ import type { UserMessages } from "./en";
  */
 export const userVi: UserMessages = {
   brandName: "NailIQ",
-  heroHeadline: "Đừng để mất khách",
+  heroHeadline: "Đừng để mất\nkhách",
   heroSubline: "Vẫn nhận lịch — kể cả khi bạn bận",
   seoIntro:
     "NailIQ là hệ thống đặt lịch, tự động hóa và tăng trưởng dùng AI cho tiệm nail. Giúp bạn nhận lịch online, giảm cuộc gọi nhỡ và vận hành lễ tân êm hơn—mà không phải thêm cả đống công cụ rời rạc.",
@@ -42,4 +42,10 @@ export const userVi: UserMessages = {
     string,
     string,
   ],
+  urgencyLine: "⚡ Bạn có thể lỡ 3–7 lịch hẹn hôm nay",
+  liveProof: [
+    "Anna vừa nhận lịch",
+    "Lisa lấp đủ 3 suốt hôm nay",
+    "Jenny vừa book chăm chân, 2 phút trước",
+  ] as const,
 };

@@ -75,6 +75,17 @@
   }
 }
 
+/** Soft opacity pulse for FOMO / urgency one-liners (marketing, PROMPT #017) */
+@keyframes nq-urgency-breathe {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
 /* Liquid glass + hero motion (Tailwind + CSS only; no animation libs) */
 @keyframes shimmer {
   to {
@@ -164,12 +175,21 @@
   .animate-nq-content-pulse {
     animation: nq-content-pulse 3.2s ease-in-out infinite;
   }
+
+  .animate-nq-urgency-breathe {
+    animation: nq-urgency-breathe 3.2s ease-in-out infinite;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-nq-orb,
   .animate-nq-content-pulse {
     animation: none;
+  }
+
+  .animate-nq-urgency-breathe {
+    animation: none;
+    opacity: 0.8;
   }
 
   .text-shimmer {

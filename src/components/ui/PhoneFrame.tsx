@@ -37,7 +37,7 @@ export function PhoneFrame({
 
     const id = window.setInterval(() => {
       setIndex((i) => (i + 1) % strip.length);
-    }, 2500);
+    }, 2400);
     return () => clearInterval(id);
   }, [strip]);
 
@@ -64,9 +64,11 @@ export function PhoneFrame({
       </div>
       <div
         className={cn(
-          "relative aspect-[9/19.5] w-full select-none",
+          "relative aspect-[9/19.5] w-full touch-manipulation select-none",
           "rounded-[2.4rem] border border-nq-border/80 p-1.5",
           "bg-gradient-to-b from-nq-surface to-nq-bg shadow-nq-card",
+          "origin-center transition-transform duration-300 will-change-transform",
+          "active:scale-[0.99]",
         )}
       >
         <div
@@ -86,12 +88,17 @@ export function PhoneFrame({
             >
               <div className="flex h-full min-h-0 flex-col">
                 <div
-                  className="mt-0.5 h-5 shrink-0 overflow-hidden text-center"
+                  className="relative mt-0.5 h-5 shrink-0 overflow-hidden text-center"
                   aria-hidden
                 >
+                  <div
+                    key={`hi-${index}`}
+                    className="fade-in pointer-events-none absolute inset-0 -mx-0.5 -my-px rounded-md bg-nq-primary/[0.08] ring-1 ring-nq-primary/10"
+                    aria-hidden
+                  />
                   <p
                     key={index}
-                    className="fade-in flex h-5 items-center justify-center text-[11px] font-semibold tracking-wide text-nq-primary"
+                    className="fade-in relative z-10 flex h-5 items-center justify-center text-[11px] font-semibold tracking-wide text-nq-primary"
                   >
                     {strip[index]}
                   </p>

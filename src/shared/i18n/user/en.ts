@@ -3,7 +3,10 @@
  */
 export type UserMessages = {
   brandName: string;
-  /** Primary page heading for SEO and accessibility */
+  /**
+   * Primary h1. Use `\n` (optional) for a two-line first paint on small screens;
+   * still reads as one sentence to assistive tech.
+   */
   heroHeadline: string;
   /** One short line under the headline (hero only) */
   heroSubline: string;
@@ -29,11 +32,15 @@ export type UserMessages = {
   phoneScreenBody: string;
   /** Rotating labels in the phone preview (3 items) */
   serviceStrip: readonly [string, string, string];
+  /** FOMO line below primary CTA */
+  urgencyLine: string;
+  /** Rotating one-line “live” proof below phone input (3 items) */
+  liveProof: readonly [string, string, string];
 };
 
 export const userEn: UserMessages = {
   brandName: "NailIQ",
-  heroHeadline: "Stop losing clients",
+  heroHeadline: "Stop losing\nclients",
   heroSubline: "Get booked — even when you're busy",
   seoIntro:
     "NailIQ is an AI-powered booking, automation, and growth system for nail salons. It helps you take appointments online, cut missed calls, and run a calmer front desk—without adding more tools to juggle.",
@@ -66,4 +73,10 @@ export const userEn: UserMessages = {
   phoneScreenBody:
     "Your link, your brand, your rules—served in one iPhone-tight experience clients actually use.",
   serviceStrip: ["Pedicure", "Gel", "Manicure"],
+  urgencyLine: "⚡ You may miss 3–7 bookings today",
+  liveProof: [
+    "Anna just got booked",
+    "Lisa filled 3 slots today",
+    "Jenny booked a pedicure 2 min ago",
+  ] as const,
 };

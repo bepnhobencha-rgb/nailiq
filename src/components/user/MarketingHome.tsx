@@ -51,10 +51,47 @@ function usePhoneParallaxPx() {
   return Math.min(32, y * 0.09);
 }
 
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const read = () => setReduced(mq.matches);
+    read();
+    mq.addEventListener("change", read);
+    return () => mq.removeEventListener("change", read);
+  }, []);
+  return reduced;
+}
+
+function useRotatingIndex(
+  len: number,
+  intervalMs: number,
+  reduced: boolean,
+) {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (reduced || len < 2) return;
+    const id = window.setInterval(() => {
+      setI((j) => (j + 1) % len);
+    }, intervalMs);
+    return () => clearInterval(id);
+  }, [len, intervalMs, reduced]);
+  return reduced ? 0 : i;
+}
+
 export function MarketingHome() {
   const { language, setLanguage } = useUserLanguage();
   const t = getUserMessages(language);
   const parallaxY = usePhoneParallaxPx();
+  const reducedMotion = usePrefersReducedMotion();
+  const liveProofIndex = useRotatingIndex(
+    t.liveProof.length,
+    2600,
+    reducedMotion,
+  );
+
+  const [headlineLine1, ...headlineRest] = t.heroHeadline.split("\n");
+  const headlineLine2 = headlineRest.join("\n").trim();
 
   return (
     <ResponsiveShell>
@@ -75,8 +112,17 @@ export function MarketingHome() {
                 <p className="text-sm font-medium tracking-wide text-nq-primary/70 sm:text-base">
                   {t.brandName}
                 </p>
-                <h1 className="text-2xl font-semibold leading-[1.1] tracking-tight sm:text-4xl sm:leading-tight sm:tracking-tight lg:text-6xl lg:leading-[1.08] lg:tracking-tight xl:text-7xl">
-                  {t.heroHeadline}
+                <h1 className="text-balance text-2xl font-bold leading-[1.04] tracking-[-0.012em] text-nq-foreground sm:text-4xl sm:leading-tight sm:tracking-tight lg:text-6xl lg:leading-[1.08] lg:tracking-tight xl:text-7xl">
+                  <span className="text-nq-foreground/86">{headlineLine1}</span>
+                  {headlineLine2 ? (
+                    <>
+                      <br className="sm:hidden" />
+                      <span className="hidden sm:inline" aria-hidden>
+                        {" "}
+                      </span>
+                      <span className="text-nq-foreground">{headlineLine2}</span>
+                    </>
+                  ) : null}
                 </h1>
                 <p className="line-clamp-2 text-pretty text-sm leading-snug text-nq-foreground/88 sm:text-base sm:leading-normal">
                   {t.heroSubline}
@@ -93,6 +139,11 @@ export function MarketingHome() {
                   >
                     {t.cta}
                   </Button>
+                  <p
+                    className="text-center text-xs text-nq-muted animate-nq-urgency-breathe"
+                  >
+                    {t.urgencyLine}
+                  </p>
                 </div>
 
                 <div className="flex w-full flex-col gap-2 sm:gap-2">
@@ -103,6 +154,17 @@ export function MarketingHome() {
                     autoComplete="tel"
                     inputMode="tel"
                   />
+                  <p
+                    className="min-h-5 text-center text-xs text-nq-muted"
+                    aria-hidden="true"
+                  >
+                    <span
+                      key={liveProofIndex}
+                      className="fade-in inline-block"
+                    >
+                      {t.liveProof[liveProofIndex]}
+                    </span>
+                  </p>
                 </div>
 
                 <div className="space-y-3 text-center sm:space-y-4 lg:text-left">
