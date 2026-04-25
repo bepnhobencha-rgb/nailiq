@@ -19,3 +19,20 @@ Rules:
 After every task:
 - Update PROJECT_BRAIN.md
 - Update CHANGELOG.md
+
+BRAND RULES (NailIQ — locked, PROMPT #012):
+- The **NailIQ** wordmark is an **anchor**, not the hero. **Never** use `text-2xl` or larger for the landing wordmark; scale is mobile `text-base`–`text-lg`, desktop `text-lg`–`text-xl` (`font-medium` or `font-semibold`, subtle gold or white). Do not add heavy glow to the wordmark.
+- The **hero headline (`h1`)** must **always** be visually and semantically dominant. **Do not** let the wordmark, shimmer, or body copy outrank the headline in size or attention.
+- **CTA** is second priority: strong contrast; **gold** (`#D4AF37`) is for CTA, highlights, and **focus** only—**do not** overuse gold or cover pages in it.
+- Prefer **distributed branding** (header wordmark, small badge, footer “Powered by”, subtle copy) over an **oversized** logo. Do not center the wordmark as a hero.
+- **Palette is fixed** (background `#0B0C10`, surface `#111214`, text `#FFFFFF`, muted `#A1A1AA`); use `src/shared/theme/tokens.ts` and theme utilities—no ad hoc brand colors.
+- **Feel:** premium, **calm**, confident—**not** loud, **not** “salesy.” Avoid excessive gradients, neon, and heavy animation.
+
+SEO / AI Discovery Rules:
+- Every public page must have metadata.
+- Every public page must have one meaningful h1.
+- Important marketing copy must be readable in HTML.
+- Do not put SEO-critical text only inside client-only animation.
+- Add JSON-LD when appropriate.
+- Public booking pages must eventually generate metadata from salon data.
+- Keep content AI-readable and semantically structured.

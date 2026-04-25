@@ -1,0 +1,21 @@
+# NailIQ
+
+NailIQ is an AI-first operating system for nail salons and beauty businesses.
+
+Core capabilities:
+- AI booking system
+- Salon website builder
+- Staff scheduling
+- POS and checkout modules
+- CRM
+- AI menu scanner
+- AI nail try-on
+- AI receptionist
+- Automation engine
+- Analytics and growth dashboard
+- Viral referral system
+
+Primary users:
+- Nail salon owners
+- Beauty business owners
+- Salon staff

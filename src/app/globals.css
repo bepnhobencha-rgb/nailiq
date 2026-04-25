@@ -1,26 +1,187 @@
 @import "tailwindcss";
 
+/* Theme values mirror src/shared/theme/tokens.ts (colors, motion, radii).
+   Brand palette (locked): bg #0B0C10, surface #111214, text #FFF, muted #A1A1AA, gold #D4AF37 (accent only; sparingly). */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0b0c10;
+  --foreground: #ffffff;
+  --nq-border-subtle: rgba(212, 175, 55, 0.18);
+  --duration-nq-fast: 150ms;
+  --duration-nq-base: 200ms;
+  --duration-nq-slow: 280ms;
+  --ease-nq-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --shadow-nq-card: 0 8px 40px -12px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(212, 175, 55, 0.12);
+  --shadow-nq-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-nq-input-focus: 0 0 0 3px rgba(212, 175, 55, 0.32),
+    0 0 28px -4px rgba(212, 175, 55, 0.18);
+  --shadow-nq-input-error: 0 0 0 3px color-mix(in srgb, #ef4444 22%, transparent);
+  --shadow-nq-glow: 0 0 0 1px rgba(212, 175, 55, 0.14),
+    0 0 32px -8px rgba(212, 175, 55, 0.22);
+  /* Layout (mirrors `layout` in src/shared/theme/tokens.ts) */
+  --max-nq-mobile: 420px;
+  --max-nq-desktop: 1180px;
+  --pad-nq-section-mobile: 1rem;
+  --pad-nq-section-desktop: 2rem;
+  /* Card: depth + gold halo in one value for a single `shadow-*` class */
+  --shadow-nq-card-luxury: 0 8px 40px -12px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(212, 175, 55, 0.12), 0 0 0 1px rgba(212, 175, 55, 0.14),
+    0 0 36px -6px rgba(212, 175, 55, 0.2);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-nq-bg: #0b0c10;
+  --color-nq-surface: #111214;
+  --color-nq-primary: #d4af37;
+  --color-nq-primary-soft: #f5e6b8;
+  --color-nq-foreground: #ffffff;
+  --color-nq-muted: #a1a1aa;
+  --color-nq-error: #ef4444;
+  --color-nq-success: #22c55e;
+  --color-nq-border: rgba(212, 175, 55, 0.18);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --radius-nq-2xl: 1rem;
+  --shadow-nq-sm: var(--shadow-nq-sm);
+  --shadow-nq-card: var(--shadow-nq-card);
+  --shadow-nq-input-focus: var(--shadow-nq-input-focus);
+  --shadow-nq-input-error: var(--shadow-nq-input-error);
+  --shadow-nq-glow: var(--shadow-nq-glow);
+  --shadow-nq-card-luxury: var(--shadow-nq-card-luxury);
+  --duration-nq-fast: var(--duration-nq-fast);
+  --duration-nq-base: var(--duration-nq-base);
+  --duration-nq-slow: var(--duration-nq-slow);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@keyframes nq-orb {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(0.94);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.04);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@keyframes nq-content-pulse {
+  0%,
+  100% {
+    opacity: 0.86;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Liquid glass + hero motion (Tailwind + CSS only; no animation libs) */
+@keyframes shimmer {
+  to {
+    background-position: 200% center;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@layer base {
+  html {
+    overflow-x: hidden;
+  }
+
+  body {
+    background: var(--color-nq-bg);
+    color: var(--color-nq-foreground);
+    font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+    overflow-x: hidden;
+    min-height: 100dvh;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+}
+
+@layer components {
+  .glass {
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(212, 175, 55, 0.2);
+  }
+
+  .glass-strong {
+    backdrop-filter: blur(30px) saturate(180%);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(212, 175, 55, 0.3);
+  }
+
+  .glow-gold {
+    box-shadow: 0 0 40px rgba(212, 175, 55, 0.15);
+  }
+
+  .text-shimmer {
+    background: linear-gradient(
+      90deg,
+      #fff 0%,
+      #d4af37 50%,
+      #fff 100%
+    );
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    animation: shimmer 3s linear infinite;
+  }
+
+  .fade-in {
+    animation: fadeIn 0.6s ease forwards;
+  }
+}
+
+@layer utilities {
+  /** Safe area + minimum padding for notched / home-indicator devices */
+  .pb-safe {
+    padding-bottom: max(var(--pad-nq-section-mobile), env(safe-area-inset-bottom, 0px));
+  }
+
+  .pb-safe-cta {
+    padding-bottom: max(5rem, calc(env(safe-area-inset-bottom, 0px) + 3.5rem));
+  }
+
+  .animate-nq-orb {
+    animation: nq-orb 3.5s ease-in-out infinite;
+  }
+
+  .animate-nq-content-pulse {
+    animation: nq-content-pulse 3.2s ease-in-out infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-nq-orb,
+  .animate-nq-content-pulse {
+    animation: none;
+  }
+
+  .text-shimmer {
+    animation: none;
+    -webkit-text-fill-color: var(--color-nq-foreground, #fff);
+    color: var(--color-nq-foreground, #fff);
+    background: none;
+  }
+
+  .fade-in {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
 }
