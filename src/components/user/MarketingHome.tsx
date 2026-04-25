@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -10,6 +11,7 @@ import { DesktopSplit } from "@/components/layout/DesktopSplit";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { getUserMessages } from "@/shared/i18n/user";
+import { setRegisterFlow } from "@/shared/lib/registerFlow";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
 
@@ -94,6 +96,7 @@ function useRotatingIndex(
 }
 
 export function MarketingHome() {
+  const router = useRouter();
   const { language, setLanguage } = useUserLanguage();
   const t = getUserMessages(language);
   const parallaxY = usePhoneParallaxPx();
@@ -106,6 +109,18 @@ export function MarketingHome() {
 
   const [headlineLine1, ...headlineRest] = t.heroHeadline.split("\n");
   const headlineLine2 = headlineRest.join("\n").trim();
+
+  const onCtaStart = () => {
+    const el = document.querySelector<HTMLInputElement>('input[name="phone"]');
+    const phone = el?.value?.trim() ?? "";
+    setRegisterFlow({
+      phone,
+      verified: false,
+      salonName: "",
+      slug: "",
+    });
+    router.push("/register/verify");
+  };
 
   return (
     <ResponsiveShell>
@@ -150,11 +165,15 @@ export function MarketingHome() {
                     type="button"
                     size="lg"
                     className="relative z-20 h-14 min-h-14 w-full self-center sm:max-w-md lg:max-w-md lg:self-start"
+                    onClick={onCtaStart}
                   >
                     {t.cta}
                   </Button>
                   <p className="text-center text-xs leading-snug text-nq-muted/90 sm:text-sm">
                     {t.ctaSubline}
+                  </p>
+                  <p className="text-center text-[11px] leading-snug text-nq-muted/75 sm:text-xs">
+                    {t.ctaTrustLine}
                   </p>
                   <p
                     className="text-center text-xs text-nq-muted animate-nq-urgency-breathe"

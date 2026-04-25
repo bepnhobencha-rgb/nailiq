@@ -38,13 +38,15 @@ export type UserMessages = {
   liveProof: readonly [string, string];
   /** CTA subline, directly under the primary button */
   ctaSubline: string;
+  /** Micro trust under CTA stack (setup speed) */
+  ctaTrustLine: string;
   /** In-phone “live” notification rows (rotates in PhoneFrame) */
   phoneActivity: readonly { label: string; line: string }[];
 };
 
 export const userEn: UserMessages = {
   brandName: "NailIQ",
-  heroHeadline: "Clients book you\neven when you're busy",
+  heroHeadline: "Clients book you\neven when you're fully booked",
   heroSubline: "Get booked — even when you're busy",
   seoIntro:
     "NailIQ is an AI-powered booking, automation, and growth system for nail salons. It helps you take appointments online, cut missed calls, and run a calmer front desk—without adding more tools to juggle.",
@@ -67,6 +69,7 @@ export const userEn: UserMessages = {
   setupTime: "Most salons finish setup in under 2 minutes.",
   cta: "Get your first booking in 2 minutes",
   ctaSubline: "No app. No setup.",
+  ctaTrustLine: "Takes less than 2 minutes to set up",
   phonePlaceholder: "Enter your phone number",
   phoneHint: "We'll text you your booking link instantly",
   socialProof: "100+ salons already using NailIQ",
@@ -84,7 +87,7 @@ export const userEn: UserMessages = {
     "Jenny filled 5 slots today",
   ] as const,
   phoneActivity: [
-    { label: "New booking", line: "3:00 PM — Pedicure" },
-    { label: "New booking", line: "2:15 PM — Gel" },
+    { label: "New booking", line: "3:00 PM — Pedicure • $45" },
+    { label: "New booking", line: "2:15 PM — Gel • $38" },
   ] as const,
 };

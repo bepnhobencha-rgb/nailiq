@@ -5,7 +5,7 @@ import { getLandingJsonLd } from "@/shared/seo/jsonLd";
 const landingDescription =
   "NailIQ helps nail salons get booked automatically with AI-powered booking, website, automation, and customer growth tools.";
 
-const landingTitle = "Clients book you, even when you're busy | NailIQ";
+const landingTitle = "Clients book you, even when you're fully booked | NailIQ";
 
 export const metadata: Metadata = {
   title: landingTitle,

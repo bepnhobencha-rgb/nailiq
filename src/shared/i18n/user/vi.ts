@@ -5,7 +5,7 @@ import type { UserMessages } from "./en";
  */
 export const userVi: UserMessages = {
   brandName: "NailIQ",
-  heroHeadline: "Khách vẫn book bạn\ndù bạn bận",
+  heroHeadline: "Khách vẫn book bạn\ndù lịch đã kín",
   heroSubline: "Vẫn nhận lịch — kể cả khi bạn bận",
   seoIntro:
     "NailIQ là hệ thống đặt lịch, tự động hóa và tăng trưởng dùng AI cho tiệm nail. Giúp bạn nhận lịch online, giảm cuộc gọi nhỡ và vận hành lễ tân êm hơn—mà không phải thêm cả đống công cụ rời rạc.",
@@ -28,6 +28,7 @@ export const userVi: UserMessages = {
   setupTime: "Hầu hết salon hoàn tất thiết lập dưới 2 phút.",
   cta: "Có lịch đầu tiên trong 2 phút",
   ctaSubline: "Không app. Không thiết lập.",
+  ctaTrustLine: "Thiết lập dưới 2 phút",
   phonePlaceholder: "Nhập số điện thoại",
   phoneHint: "Chúng tôi gửi link đặt lịch qua tin nhắn ngay",
   socialProof: "Hơn 100 salon đang dùng NailIQ",
@@ -49,7 +50,7 @@ export const userVi: UserMessages = {
     "Jenny lấp đủ 5 suốt hôm nay",
   ] as const,
   phoneActivity: [
-    { label: "Lịch mới", line: "3:00 PM — Chăm chân" },
-    { label: "Lịch mới", line: "2:15 PM — Gel" },
+    { label: "Lịch mới", line: "3:00 PM — Pedicure • 450.000₫" },
+    { label: "Lịch mới", line: "2:15 PM — Gel • 350.000₫" },
   ] as const,
 };

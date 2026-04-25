@@ -124,7 +124,7 @@ export function PhoneFrame({
                       <p className="text-[9px] font-medium tracking-wider text-nq-primary/90">
                         {act.label}
                       </p>
-                      <p className="mt-1.5 text-center text-xs leading-tight text-nq-foreground/95">
+                      <p className="mt-1.5 text-balance break-words text-center text-xs leading-snug text-nq-foreground/95">
                         {act.line}
                       </p>
                     </div>
