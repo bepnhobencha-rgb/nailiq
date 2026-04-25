@@ -16,8 +16,22 @@ import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
 function usePhoneParallaxPx() {
   const [y, setY] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
+  const [isLg, setIsLg] = useState(false);
 
   useEffect(() => {
+    const mqLg = window.matchMedia("(min-width: 1024px)");
+    const readLg = () => setIsLg(mqLg.matches);
+    readLg();
+    mqLg.addEventListener("change", readLg);
+    return () => mqLg.removeEventListener("change", readLg);
+  }, []);
+
+  useEffect(() => {
+    if (!isLg) {
+      setY(0);
+      return;
+    }
+
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
     const readMotion = () => {
       const next = mq.matches;
@@ -45,9 +59,9 @@ function usePhoneParallaxPx() {
       window.removeEventListener("scroll", onScroll);
       cancelAnimationFrame(raf);
     };
-  }, []);
+  }, [isLg]);
 
-  if (reduceMotion) return 0;
+  if (reduceMotion || !isLg) return 0;
   return Math.min(32, y * 0.09);
 }
 
@@ -106,9 +120,9 @@ export function MarketingHome() {
           <p className="sr-only text-balance">{t.seoIntro}</p>
 
           <DesktopSplit
-            className="gap-y-2 sm:gap-y-3 lg:gap-y-8"
+            className="gap-y-4 sm:gap-y-5 lg:gap-y-8"
             head={
-              <header className="space-y-1.5 text-center sm:space-y-2 lg:space-y-3 lg:text-left">
+              <header className="space-y-1.5 text-center transition-opacity duration-700 sm:space-y-2 lg:space-y-3 lg:text-left">
                 <p className="text-sm font-medium tracking-wide text-nq-primary/70 sm:text-base">
                   {t.brandName}
                 </p>
@@ -131,14 +145,17 @@ export function MarketingHome() {
             }
             rest={
               <div className="flex w-full min-w-0 flex-col space-y-5 sm:space-y-6 lg:space-y-8">
-                <div className="flex w-full flex-col gap-2.5 sm:gap-3">
+                <div className="relative z-20 flex w-full flex-col gap-2.5 sm:gap-3">
                   <Button
                     type="button"
                     size="lg"
-                    className="h-14 min-h-14 w-full self-center sm:max-w-md lg:max-w-md lg:self-start"
+                    className="relative z-20 h-14 min-h-14 w-full self-center sm:max-w-md lg:max-w-md lg:self-start"
                   >
                     {t.cta}
                   </Button>
+                  <p className="text-center text-xs leading-snug text-nq-muted/90 sm:text-sm">
+                    {t.ctaSubline}
+                  </p>
                   <p
                     className="text-center text-xs text-nq-muted animate-nq-urgency-breathe"
                   >
@@ -167,11 +184,11 @@ export function MarketingHome() {
                   </p>
                 </div>
 
-                <div className="space-y-3 text-center sm:space-y-4 lg:text-left">
+                <div className="fade-in-1 space-y-3 text-center sm:space-y-4 lg:text-left">
                   <p className="text-sm text-nq-muted sm:text-[15px] lg:text-base">
                     {t.socialProof}
                   </p>
-                  <Card className="text-left">
+                  <Card className="text-left transition-shadow duration-500 ring-1 ring-nq-border/15 shadow-[0_0_24px_-12px_rgba(212,175,55,0.1)]">
                     <div className="relative z-10">
                       <div className="mb-3 flex min-h-12 items-center justify-between gap-2">
                         <h2 className="text-sm font-medium text-nq-foreground sm:text-base">
@@ -187,7 +204,7 @@ export function MarketingHome() {
                 </div>
 
                 <section
-                  className="space-y-3 text-center sm:space-y-4 lg:text-left"
+                  className="fade-in-2 space-y-3 text-center sm:space-y-4 lg:text-left"
                   aria-labelledby="nq-benefits-heading"
                 >
                   <h2
@@ -219,7 +236,7 @@ export function MarketingHome() {
             }
             aside={
               <div
-                className="relative w-full min-w-0 max-w-[16rem] will-change-transform sm:max-w-[17rem] lg:mx-auto lg:max-w-[21rem] xl:max-w-[22.5rem]"
+                className="relative z-0 w-full min-w-0 max-w-[16rem] will-change-transform sm:max-w-[17rem] lg:mx-auto lg:max-w-[21rem] xl:max-w-[22.5rem]"
                 style={{
                   transform: `translate3d(0, ${parallaxY}px, 0)`,
                 }}
@@ -230,13 +247,13 @@ export function MarketingHome() {
                 >
                   <div className="h-full w-full rounded-full bg-nq-primary/18 blur-[72px] opacity-90 sm:blur-[90px] lg:blur-[100px]" />
                 </div>
-                <div className="relative z-10 w-full">
+                <div className="relative z-0 w-full">
                   <PhoneFrame
                     className="max-w-full py-0 sm:max-w-full lg:max-w-none"
                     statusLabel="9:41"
-                    serviceStrip={t.serviceStrip}
+                    activityFeed={t.phoneActivity}
                   >
-                    <p className="p-1 text-center text-xs leading-relaxed text-nq-primary-soft sm:text-sm">
+                    <p className="p-0.5 text-center text-[10px] leading-relaxed text-nq-primary-soft/90 sm:text-xs">
                       {t.phoneScreenBody}
                     </p>
                   </PhoneFrame>

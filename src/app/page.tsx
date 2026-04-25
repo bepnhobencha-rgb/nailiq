@@ -5,15 +5,17 @@ import { getLandingJsonLd } from "@/shared/seo/jsonLd";
 const landingDescription =
   "NailIQ helps nail salons get booked automatically with AI-powered booking, website, automation, and customer growth tools.";
 
+const landingTitle = "Clients book you, even when you're busy | NailIQ";
+
 export const metadata: Metadata = {
-  title: "Stop losing clients | NailIQ",
+  title: landingTitle,
   description: landingDescription,
   openGraph: {
-    title: "Stop losing clients | NailIQ",
+    title: landingTitle,
     description: landingDescription,
   },
   twitter: {
-    title: "Stop losing clients | NailIQ",
+    title: landingTitle,
     description: landingDescription,
   },
 };

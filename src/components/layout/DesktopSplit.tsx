@@ -25,7 +25,7 @@ export function DesktopSplit({
   return (
     <div
       className={cn(
-        "mx-auto grid w-full min-w-0 max-w-[var(--max-nq-mobile)] grid-cols-1",
+        "isolate mx-auto grid w-full min-w-0 max-w-[var(--max-nq-mobile)] grid-cols-1",
         "gap-y-3 sm:gap-y-4",
         "lg:max-w-[var(--max-nq-desktop)] lg:grid-cols-2 lg:items-center lg:gap-x-12 lg:gap-y-8 xl:gap-x-16",
         className,
@@ -42,7 +42,7 @@ export function DesktopSplit({
       </div>
       <div
         className={cn(
-          "order-2 flex min-w-0 flex-col items-center justify-center",
+          "order-2 z-0 flex min-w-0 flex-col items-center justify-center",
           "lg:col-start-2 lg:row-start-1 lg:row-end-3 lg:shrink-0 lg:justify-center lg:place-self-center",
         )}
       >
@@ -50,7 +50,7 @@ export function DesktopSplit({
       </div>
       <div
         className={cn(
-          "order-3 min-w-0",
+          "relative z-20 order-3 min-w-0",
           "lg:col-start-1 lg:row-start-2 lg:max-w-xl lg:shrink lg:place-self-stretch xl:max-w-2xl",
         )}
       >

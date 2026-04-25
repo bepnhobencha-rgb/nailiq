@@ -86,6 +86,18 @@
   }
 }
 
+/** In-phone “live” booking card swap (PROMPT #020) */
+@keyframes nq-activity {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Liquid glass + hero motion (Tailwind + CSS only; no animation libs) */
 @keyframes shimmer {
   to {
@@ -156,6 +168,14 @@
   .fade-in {
     animation: fadeIn 0.6s ease forwards;
   }
+
+  .fade-in-1 {
+    animation: fadeIn 0.65s ease 0.08s both;
+  }
+
+  .fade-in-2 {
+    animation: fadeIn 0.65s ease 0.16s both;
+  }
 }
 
 @layer utilities {
@@ -179,6 +199,10 @@
   .animate-nq-urgency-breathe {
     animation: nq-urgency-breathe 3.2s ease-in-out infinite;
   }
+
+  .animate-nq-activity {
+    animation: nq-activity 0.45s var(--ease-nq-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -199,7 +223,10 @@
     background: none;
   }
 
-  .fade-in {
+  .fade-in,
+  .fade-in-1,
+  .fade-in-2,
+  .animate-nq-activity {
     animation: none;
     opacity: 1;
     transform: none;

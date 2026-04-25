@@ -34,13 +34,17 @@ export type UserMessages = {
   serviceStrip: readonly [string, string, string];
   /** FOMO line below primary CTA */
   urgencyLine: string;
-  /** Rotating one-line “live” proof below phone input (3 items) */
-  liveProof: readonly [string, string, string];
+  /** Rotating one-line “live” proof below phone input (2+ items) */
+  liveProof: readonly [string, string];
+  /** CTA subline, directly under the primary button */
+  ctaSubline: string;
+  /** In-phone “live” notification rows (rotates in PhoneFrame) */
+  phoneActivity: readonly { label: string; line: string }[];
 };
 
 export const userEn: UserMessages = {
   brandName: "NailIQ",
-  heroHeadline: "Stop losing\nclients",
+  heroHeadline: "Clients book you\neven when you're busy",
   heroSubline: "Get booked — even when you're busy",
   seoIntro:
     "NailIQ is an AI-powered booking, automation, and growth system for nail salons. It helps you take appointments online, cut missed calls, and run a calmer front desk—without adding more tools to juggle.",
@@ -61,7 +65,8 @@ export const userEn: UserMessages = {
   ] as const,
   tagline: "Your salon gets booked — even when you're busy",
   setupTime: "Most salons finish setup in under 2 minutes.",
-  cta: "🚀 Get booked in 2 minutes",
+  cta: "Get your first booking in 2 minutes",
+  ctaSubline: "No app. No setup.",
   phonePlaceholder: "Enter your phone number",
   phoneHint: "We'll text you your booking link instantly",
   socialProof: "100+ salons already using NailIQ",
@@ -75,8 +80,11 @@ export const userEn: UserMessages = {
   serviceStrip: ["Pedicure", "Gel", "Manicure"],
   urgencyLine: "⚡ You may miss 3–7 bookings today",
   liveProof: [
-    "Anna just got booked",
-    "Lisa filled 3 slots today",
-    "Jenny booked a pedicure 2 min ago",
+    "Anna just got booked • 2 min ago",
+    "Jenny filled 5 slots today",
+  ] as const,
+  phoneActivity: [
+    { label: "New booking", line: "3:00 PM — Pedicure" },
+    { label: "New booking", line: "2:15 PM — Gel" },
   ] as const,
 };
