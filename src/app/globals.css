@@ -110,6 +110,58 @@
   }
 }
 
+/** `/aggressive` phone demo: bottom sheet + success mark */
+@keyframes niq-pop {
+  0% {
+    transform: scale(0.9);
+  }
+  60% {
+    transform: scale(1.04);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes niq-check {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@layer components {
+  /** Bottom sheet entrance (existing motion path; no transform clash with `niq-pop`) */
+  .niq-animate-aggr-sheet {
+    animation: nq-activity 0.5s var(--ease-nq-out) 0.3s both;
+  }
+
+  .niq-animate-aggr-check-bubble {
+    animation: niq-pop 0.5s var(--ease-nq-out) 0.5s both;
+  }
+
+  .niq-check-path {
+    fill: none;
+    stroke: #fff;
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+    animation: niq-check 0.7s var(--ease-nq-out) 0.65s both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .niq-animate-aggr-sheet,
+    .niq-animate-aggr-check-bubble {
+      animation: none;
+      opacity: 1;
+      transform: none;
+    }
+
+    .niq-check-path {
+      animation: none;
+      stroke-dashoffset: 0;
+    }
+  }
+}
+
 /* Liquid glass + hero motion (Tailwind + CSS only; no animation libs) */
 @keyframes shimmer {
   to {

@@ -12,6 +12,12 @@ export function getUserMessages(language: UserLanguage): UserMessages {
 }
 
 export { userEn, userVi, type UserMessages };
+export {
+  getAggressiveMessages,
+  aggressiveEn,
+  aggressiveVi,
+  type AggressiveMessages,
+} from "./aggressive";
 export type { UserLanguage } from "./types";
 export {
   USER_LANGUAGES,

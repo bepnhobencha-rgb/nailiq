@@ -28,7 +28,6 @@ export type UserMessages = {
   cta: string;
   phonePlaceholder: string;
   phoneHint: string;
-  socialProof: string;
   valueCardTitle: string;
   valueCardBadge: string;
   valueCardBody: string;
@@ -39,8 +38,13 @@ export type UserMessages = {
   serviceStrip: readonly [string, string, string];
   /** FOMO line below primary CTA */
   urgencyLine: string;
-  /** Rotating one-line “live” proof below phone input (2+ items) */
+  /** Rotating one-line “live” social proof (2+ items) */
   liveProof: readonly [string, string];
+  /** One line under the hero phone booking card (+1 new booking) */
+  phoneHeroMicroLine: string;
+  wowHeading: string;
+  /** Two short lines; use `\n` for line break in the second block */
+  wowBody: string;
   /** CTA subline, directly under the primary button */
   ctaSubline: string;
   /** Micro trust under CTA stack (setup speed) */
@@ -74,8 +78,9 @@ export type UserMessages = {
 
 export const userEn: UserMessages = {
   brandName: "NailIQ",
-  heroHeadline: "Clients book you\neven when you're fully booked",
-  heroSubline: "Get booked — even when you're busy",
+  heroHeadline: "Clients keep booking you\neven when you're fully booked",
+  heroSubline:
+    "Your salon keeps getting bookings — even when you can't answer the phone",
   seoIntro:
     "NailIQ is an AI-powered booking, automation, and growth system for nail salons. It helps you take appointments online, cut missed calls, and run a calmer front desk—without adding more tools to juggle.",
   benefitsHeading: "What you get with NailIQ",
@@ -99,10 +104,12 @@ export const userEn: UserMessages = {
   setupTime: "Most salons finish setup in under 2 minutes.",
   cta: "Get your first booking in 2 minutes",
   ctaSubline: "No app. No setup.",
-  ctaTrustLine: "Takes less than 2 minutes to set up",
-  phonePlaceholder: "Enter your phone number",
+  ctaTrustLine: "Takes less than 2 minutes to start getting bookings.",
+  phonePlaceholder: "Enter your phone number to get your booking link",
   phoneHint: "We'll text you your booking link instantly",
-  socialProof: "100+ salons already using NailIQ",
+  phoneHeroMicroLine: "+1 new booking",
+  wowHeading: "Your salon can run on autopilot",
+  wowBody: "Bookings. Reminders. Growth.\nAll handled automatically.",
   valueCardTitle: "The calm, confident front door",
   valueCardBadge: "NailIQ",
   footerPoweredBy: "Powered by NailIQ",
@@ -111,10 +118,10 @@ export const userEn: UserMessages = {
   phoneScreenBody:
     "Your link, your brand, your rules—served in one iPhone-tight experience clients actually use.",
   serviceStrip: ["Pedicure", "Manicure", "Gel"],
-  urgencyLine: "⚡ You may miss 3–7 bookings today",
+  urgencyLine: "⚡ Most salons lose 3–7 bookings daily from missed calls",
   liveProof: [
-    "Anna just got booked • 2 min ago",
-    "Jenny filled 5 slots today",
+    "Anna got booked 2 minutes ago",
+    "Lisa filled 3 slots today",
   ] as const,
   phoneActivity: [
     { label: "Anna booked", line: "3:00 PM — Pedicure • $45" },

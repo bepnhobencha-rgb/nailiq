@@ -17,6 +17,8 @@ type PhoneHeroScreenProps = {
   strip: readonly [string, string, string];
   times: readonly [string, string, string];
   activityFeed: ReadonlyArray<PhoneActivityItem>;
+  /** Shown under the live booking card; fades when activity updates */
+  microLine?: string;
   reduced: boolean;
   children: ReactNode;
 };
@@ -28,6 +30,7 @@ export function PhoneHeroScreen({
   strip,
   times,
   activityFeed,
+  microLine,
   reduced,
   children,
 }: PhoneHeroScreenProps) {
@@ -113,6 +116,14 @@ export function PhoneHeroScreen({
                 {act.line}
               </p>
             </div>
+            {microLine ? (
+              <p
+                key={`ml-${activityIndex}`}
+                className="mt-0.5 text-center text-[7px] font-medium leading-tight text-nq-primary/80 fade-in"
+              >
+                {microLine}
+              </p>
+            ) : null}
             <div className="animate-nq-content-pulse min-h-0 shrink text-center">
               {children}
             </div>

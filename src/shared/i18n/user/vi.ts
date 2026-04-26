@@ -6,7 +6,8 @@ import type { UserMessages } from "./en";
 export const userVi: UserMessages = {
   brandName: "NailIQ",
   heroHeadline: "Khách vẫn book bạn\ndù lịch đã kín",
-  heroSubline: "Vẫn nhận lịch — kể cả khi bạn bận",
+  heroSubline:
+    "Tiệm của bạn vẫn nhận khách — ngay cả khi bạn không kịp nghe điện thoại",
   seoIntro:
     "NailIQ là hệ thống đặt lịch, tự động hóa và tăng trưởng dùng AI cho tiệm nail. Giúp bạn nhận lịch online, giảm cuộc gọi nhỡ và vận hành lễ tân êm hơn—mà không phải thêm cả đống công cụ rời rạc.",
   benefitsHeading: "Bạn nhận được gì với NailIQ",
@@ -29,11 +30,13 @@ export const userVi: UserMessages = {
   tagline: "Salon của bạn vẫn nhận lịch — kể cả khi bạn bận rộn",
   setupTime: "Hầu hết salon hoàn tất thiết lập dưới 2 phút.",
   cta: "Có lịch đầu tiên trong 2 phút",
-  ctaSubline: "Không app. Không thiết lập.",
-  ctaTrustLine: "Thiết lập dưới 2 phút",
-  phonePlaceholder: "Nhập số điện thoại",
+  ctaSubline: "Không cần app. Không cần cài đặt.",
+  ctaTrustLine: "Thiết lập dưới 2 phút là có khách.",
+  phonePlaceholder: "Nhập số điện thoại để nhận link đặt lịch",
   phoneHint: "Chúng tôi gửi link đặt lịch qua tin nhắn ngay",
-  socialProof: "Hơn 100 salon đang dùng NailIQ",
+  phoneHeroMicroLine: "+1 lịch mới",
+  wowHeading: "Tiệm của bạn có thể tự vận hành",
+  wowBody: "Đặt lịch. Nhắc lịch. Tăng trưởng.\nTất cả đều tự động.",
   valueCardTitle: "Lối vào tự tin, điềm tĩnh",
   valueCardBadge: "NailIQ",
   footerPoweredBy: "Cung cấp bởi NailIQ",
@@ -46,10 +49,10 @@ export const userVi: UserMessages = {
     string,
     string,
   ],
-  urgencyLine: "⚡ Bạn có thể lỡ 3–7 lịch hẹn hôm nay",
+  urgencyLine: "⚡ Hầu hết tiệm mất 3–7 khách mỗi ngày vì lỡ cuộc gọi",
   liveProof: [
-    "Anna vừa được book • 2 phút trước",
-    "Jenny lấp đủ 5 suốt hôm nay",
+    "Anna vừa có khách 2 phút trước",
+    "Lisa đã lấp đầy 3 lịch hôm nay",
   ] as const,
   phoneActivity: [
     { label: "Anna vừa book", line: "3:00 PM — Pedicure • 450.000₫" },

@@ -66,6 +66,7 @@ export function MarketingPhoneAside({
           phoneAiLabel={t.phoneAiSceneLabel}
           phoneAiHint={t.phoneAiSceneHint}
           menuDemoRows={t.phoneMenuDemoRows}
+          heroMicroLine={t.phoneHeroMicroLine}
         >
           <p className="p-0.5 text-center text-[10px] leading-relaxed text-nq-primary-soft/90 sm:text-xs">
             {t.phoneScreenBody}

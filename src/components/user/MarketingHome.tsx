@@ -190,22 +190,16 @@ export function MarketingHome() {
                     autoComplete="tel"
                     inputMode="tel"
                   />
-                  <p
-                    className="min-h-5 text-center text-xs text-nq-muted"
-                    aria-hidden="true"
-                  >
+                </div>
+
+                <div className="fade-in-1 space-y-3 text-center sm:space-y-4 lg:text-left">
+                  <p className="text-sm text-nq-muted sm:text-[15px] lg:text-base">
                     <span
                       key={liveProofIndex}
                       className="fade-in inline-block"
                     >
                       {t.liveProof[liveProofIndex]}
                     </span>
-                  </p>
-                </div>
-
-                <div className="fade-in-1 space-y-3 text-center sm:space-y-4 lg:text-left">
-                  <p className="text-sm text-nq-muted sm:text-[15px] lg:text-base">
-                    {t.socialProof}
                   </p>
                   <Card className="text-left transition-shadow duration-500 ring-1 ring-nq-border/15 shadow-[0_0_24px_-12px_rgba(212,175,55,0.1)]">
                     <div className="relative z-10">
@@ -251,6 +245,21 @@ export function MarketingHome() {
                       </li>
                     ))}
                   </ul>
+                </section>
+
+                <section
+                  className="fade-in-2 space-y-3 text-center sm:space-y-4 lg:text-left"
+                  aria-labelledby="nq-wow-heading"
+                >
+                  <h2
+                    id="nq-wow-heading"
+                    className="text-lg font-semibold tracking-tight text-nq-foreground sm:text-xl"
+                  >
+                    {t.wowHeading}
+                  </h2>
+                  <p className="whitespace-pre-line text-sm leading-relaxed text-nq-muted sm:text-[15px]">
+                    {t.wowBody}
+                  </p>
                 </section>
 
                 <footer className="text-center text-xs text-nq-muted/90 lg:text-left">

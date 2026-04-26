@@ -42,6 +42,8 @@ export type PhoneFrameProps = HTMLAttributes<HTMLDivElement> & {
     name: string;
     price: string;
   }>;
+  /** Shown under hero booking card (hero scene) */
+  heroMicroLine?: string;
 };
 
 function usePrefersReducedMotion() {
@@ -73,6 +75,7 @@ export function PhoneFrame({
   phoneAiLabel,
   phoneAiHint,
   menuDemoRows,
+  heroMicroLine,
   ...props
 }: PhoneFrameProps) {
   const reduced = usePrefersReducedMotion();
@@ -129,6 +132,7 @@ export function PhoneFrame({
                       strip={serviceStrip}
                       times={timeSlots}
                       activityFeed={activityFeed ?? []}
+                      microLine={heroMicroLine}
                       reduced={reduced}
                     >
                       {children}

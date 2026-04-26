@@ -4,6 +4,12 @@ All notable changes to NailIQ (project and documentation) are recorded here.
 
 ## 2026-04-25
 
+- **`/aggressive` two-column phone mock:** `PhoneDemo` in `src/app/aggressive/page.tsx` now shows an **app bar** (`phoneAppBar` + 💅), **service cards** (icon + name + **duration/price** from new i18n fields), a **horizontally scrollable** time-pill row (**four** slots including **4:30 PM**), and a **light bottom sheet** (drag handle, **success ring** with `niq-pop` + **SVG check** `niq-check` stroke draw, **+1 booking** line, **View schedule** button). New CSS in `globals.css` (`@keyframes niq-pop`, `niq-check`, `.niq-animate-aggr-*`, `.niq-check-path`). `AggressivePhoneDemo` still passes the first **three** time slots to the shared `PhoneFrame` hero. **PROJECT_BRAIN.md** updated.
+
+- **High-urgency marketing page (`/aggressive`):** New single-column, mobile-first landing (separate from the Apple-style home): shock hero + FOMO line, **animated money loss counter** ($135 → $180 → $220, 2s), problem/solution lists, **PhoneFrame** hero demo (Pedicure / Gel / Manicure, Anna booking, **+1 new booking**), large three-line benefits, **rotating social proof**, no-barrier close, final CTA. **EN + VI** in `src/shared/i18n/user/aggressive.ts`; building blocks: `AggrSection`, `MoneyLossCounter`, `AggressivePhoneDemo`, `AggressiveLanding`. Sitemap + metadata. **PROJECT_BRAIN.md**.
+
+- **Landing copy (conversion, no layout change):** Hero headline/subline, CTA sublines + **missed-call urgency**, input placeholder, and **rotating social proof** (Anna/Lisa lines) in **en** / **vi**; new **“autopilot”** block copy below the benefits list; in-phone **+1 new booking** micro line under the hero activity card (`PhoneHeroScreen` + i18n `phoneHeroMicroLine`). **Removed** static “100+ salons” string (`socialProof` key). Files: `src/shared/i18n/user/en.ts`, `vi.ts`, `MarketingHome.tsx`, `PhoneFrame.tsx`, `PhoneHeroScreen.tsx`, `MarketingPhoneAside.tsx`, **PROJECT_BRAIN.md**.
+
 - **Public booking (`/[shop]`):** **Functional 3-step flow** — pick service, pick time, confirm; stub **`submitPublicBooking`**; demo catalog in **`getBookingCatalog`** (`src/shared/booking/`). **`BookingFlow`** client component; copy in `src/shared/i18n/booking/en.ts`. **PROJECT_BRAIN.md** updated. No landing changes.
 
 - **Marketing phone aside:** Removed the **Upload your menu** CTA, file input, and success toast; `aiDemo` stays inactive. Dropped i18n keys `phoneUploadMenu` and `phoneAiMenuSuccess`. **PROJECT_BRAIN.md** updated.
