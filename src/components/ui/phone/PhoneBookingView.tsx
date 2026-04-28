@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion } from "@/shared/lib/motionClient";
 import { useCallback, useState } from "react";
 import { IphoneHomeIndicator } from "@/components/ui/phone/IphoneHomeIndicator";
 import type { PhoneBookingCopy } from "@/components/ui/phone/phoneFrameTypes";

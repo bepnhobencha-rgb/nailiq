@@ -1,7 +1,11 @@
 "use client";
 
 import confetti from "canvas-confetti";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import {
+  AnimatePresence,
+  motion,
+  useReducedMotion,
+} from "@/shared/lib/motionClient";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { getServiceById, type BookingServiceItem } from "@/shared/booking/catalog";

@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion } from "@/shared/lib/motionClient";
 import { type HTMLAttributes, useEffect, useState } from "react";
 import { PhoneAiFileDemo, PhoneAiIdleScan, PhoneSceneStack } from "@/components/ui/phone/PhoneAiScanViews";
 import { PhoneBookingView } from "@/components/ui/phone/PhoneBookingView";

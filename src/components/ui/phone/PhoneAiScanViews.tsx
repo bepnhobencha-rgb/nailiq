@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion } from "@/shared/lib/motionClient";
 import { useMemo, type ReactNode } from "react";
 import type { PhoneAiDemoState } from "./phoneFrameTypes";
 
