@@ -1,13 +1,15 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
+import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { establishDemoPhoneSession } from "@/shared/register/demoAuthBridge";
 import {
   canonicalSixDigitOtp,
   generateSixDigitCode,
 } from "@/shared/register/otpHelpers";
 import {
+  digitsToE164Phone,
   isRegisterPhoneDigitsValid,
   normalizeRegisterPhone,
 } from "@/shared/register/phone";
@@ -16,83 +18,126 @@ const INVALID_PHONE_MSG =
   "Enter 8–15 digits including country code (e.g. Vietnam: 84912345678).";
 
 export type SendRegisterOtpResult =
-  | { success: true; demoCode: string }
-  | { success: false; error: string };
+  | { success: false; error: string }
+  | { success: true; mode: "demo"; code: string }
+  | { success: true; mode: "sms" };
 
-/** Demo mode only: stores OTP in `otps` and returns code for on-screen display. */
 export async function sendRegisterOtp(
   phoneRaw: string,
 ): Promise<SendRegisterOtpResult> {
-  console.log("DEMO_OTP env:", process.env.NEXT_PUBLIC_DEMO_OTP);
-  console.log("isDemo:", process.env.NEXT_PUBLIC_DEMO_OTP === "true");
-  console.log(
-    "[sendRegisterOtp] DEMO_OTP (runtime):",
-    process.env.DEMO_OTP,
-    "effective:",
-    isDemoOtpRuntime(),
-  );
-
-  if (!isDemoOtpRuntime()) {
-    return { success: false, error: "Use SMS send on the client in production." };
-  }
-
+  const isDemo = isDemoOtpRuntime();
   const phone = normalizeRegisterPhone(phoneRaw);
   if (!isRegisterPhoneDigitsValid(phone)) {
     return { success: false, error: INVALID_PHONE_MSG };
   }
 
-  try {
-    const supabase = createServiceRoleClient();
-    const code = generateSixDigitCode();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  if (isDemo) {
+    try {
+      const supabase = createServiceRoleClient();
+      const code = generateSixDigitCode();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-    const { error: deleteError } = await supabase
-      .from("otps")
-      .delete()
-      .eq("phone", phone);
+      const { error: deleteError } = await supabase
+        .from("otps")
+        .delete()
+        .eq("phone", phone);
 
-    if (deleteError) {
-      console.error("[sendRegisterOtp] delete prior OTP rows", deleteError);
+      if (deleteError) {
+        console.error("[sendRegisterOtp] delete prior OTP rows", deleteError);
+        return { success: false, error: "Could not send code. Try again." };
+      }
+
+      const { error: insertError } = await supabase.from("otps").insert({
+        phone,
+        code,
+        expires_at: expiresAt,
+      });
+
+      if (insertError) {
+        console.error("[sendRegisterOtp] insert", insertError);
+        return { success: false, error: "Could not send code. Try again." };
+      }
+
+      return { success: true, mode: "demo", code };
+    } catch (error) {
+      console.error("[sendRegisterOtp]", error);
       return { success: false, error: "Could not send code. Try again." };
     }
+  }
 
-    const { error: insertError } = await supabase.from("otps").insert({
-      phone,
-      code,
-      expires_at: expiresAt,
+  const e164 = digitsToE164Phone(phone);
+  if (!e164) {
+    return { success: false, error: INVALID_PHONE_MSG };
+  }
+
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.signInWithOtp({
+      phone: e164,
+      options: { shouldCreateUser: true },
     });
 
-    if (insertError) {
-      console.error("[sendRegisterOtp] insert", insertError);
-      return { success: false, error: "Could not send code. Try again." };
+    if (error) {
+      console.error("[sendRegisterOtp] signInWithOtp", error);
+      return {
+        success: false,
+        error:
+          error.message ||
+          "Could not send SMS. Enable Phone auth in Supabase or try again.",
+      };
     }
 
-    console.log(`[sendRegisterOtp] DEMO OTP for ${phone}: ${code}`);
-
-    return { success: true, demoCode: code };
+    return { success: true, mode: "sms" };
   } catch (error) {
     console.error("[sendRegisterOtp]", error);
-    return { success: false, error: "Could not send code. Try again." };
+    return { success: false, error: "Could not send SMS. Try again." };
   }
 }
 
-export type VerifyDemoRegisterOtpResult =
-  | { ok: true }
+export type VerifyRegisterOtpResult =
+  | { ok: true; completionToken?: string }
   | { ok: false; reason: "invalid" | "expired" | "server_error" };
 
-export async function verifyDemoRegisterOtp(
+export async function verifyRegisterOtp(
   phoneRaw: string,
   codeRaw: string,
-): Promise<VerifyDemoRegisterOtpResult> {
-  if (!isDemoOtpRuntime()) {
-    return { ok: false, reason: "server_error" };
-  }
-
+): Promise<VerifyRegisterOtpResult> {
+  const isDemo = isDemoOtpRuntime();
   const phone = normalizeRegisterPhone(phoneRaw);
   const code = codeRaw.replace(/\D/g, "").slice(0, 6);
 
   if (!isRegisterPhoneDigitsValid(phone) || code.length !== 6) {
     return { ok: false, reason: "invalid" };
+  }
+
+  if (!isDemo) {
+    const e164 = digitsToE164Phone(phone);
+    if (!e164) {
+      return { ok: false, reason: "invalid" };
+    }
+
+    try {
+      const supabase = await createClient();
+      const { error } = await supabase.auth.verifyOtp({
+        phone: e164,
+        token: code,
+        type: "sms",
+      });
+
+      if (error) {
+        console.error("[verifyRegisterOtp] verifyOtp", error);
+        const msg = error.message?.toLowerCase() ?? "";
+        if (msg.includes("expired")) {
+          return { ok: false, reason: "expired" };
+        }
+        return { ok: false, reason: "invalid" };
+      }
+
+      return { ok: true };
+    } catch (error) {
+      console.error("[verifyRegisterOtp]", error);
+      return { ok: false, reason: "server_error" };
+    }
   }
 
   let supabase;
@@ -126,10 +171,24 @@ export async function verifyDemoRegisterOtp(
 
   await supabase.from("otps").delete().eq("id", latest.id);
 
-  const session = await establishDemoPhoneSession(phone);
-  if (!session.ok) {
+  const completionToken = randomUUID();
+  const tokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+  const { error: tokErr } = await supabase
+    .from("register_completion_tokens")
+    .insert({
+      phone,
+      token: completionToken,
+      expires_at: tokenExpiresAt,
+    });
+
+  if (tokErr) {
+    console.error(
+      "[verifyRegisterOtp] register_completion_tokens insert",
+      tokErr,
+    );
     return { ok: false, reason: "server_error" };
   }
 
-  return { ok: true };
+  return { ok: true, completionToken };
 }

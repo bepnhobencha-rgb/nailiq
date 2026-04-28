@@ -1,8 +1,17 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/server";
+import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import RegisterSetupInner from "./RegisterSetupInner";
 
+export const dynamic = "force-dynamic";
+
 export default async function RegisterSetupPage() {
+  const demo = isDemoOtpRuntime();
+
+  if (demo) {
+    return <RegisterSetupInner demoMode />;
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -39,5 +48,5 @@ export default async function RegisterSetupPage() {
     }
   }
 
-  return <RegisterSetupInner />;
+  return <RegisterSetupInner demoMode={false} />;
 }

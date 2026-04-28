@@ -1,18 +1,35 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
+import { REG_COMPLETION_TOKEN_KEY } from "@/shared/lib/registerSessionKeys";
 import { slugifySalonName } from "@/shared/lib/slugifySalonName";
 import { completeSalonRegistration } from "@/shared/register/completeSalonRegistrationAction";
 
-export default function RegisterSetupInner() {
+type Props = { demoMode: boolean };
+
+export default function RegisterSetupInner({ demoMode }: Props) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (!demoMode || typeof window === "undefined") return;
+    const token = window.sessionStorage.getItem(REG_COMPLETION_TOKEN_KEY);
+    if (!token?.trim()) {
+      router.replace("/register");
+    }
+  }, [demoMode, router]);
 
   const previewSlug = useMemo(() => {
     const base = slugifySalonName(name.trim());
@@ -26,22 +43,42 @@ export default function RegisterSetupInner() {
       if (!trimmed) return;
       setFormError(null);
       startTransition(async () => {
-        const result = await completeSalonRegistration(trimmed);
+        const completionToken =
+          demoMode && typeof window !== "undefined"
+            ? window.sessionStorage.getItem(REG_COMPLETION_TOKEN_KEY)
+            : null;
+
+        const result = await completeSalonRegistration(
+          trimmed,
+          demoMode ? completionToken : undefined,
+        );
+
         if (!result.ok) {
           if (result.error === "unauthorized") {
             router.replace("/register");
             return;
           }
+          if (result.error === "invalid_completion_token") {
+            setFormError(
+              "Your verification expired — start again from phone entry.",
+            );
+            return;
+          }
           setFormError("Could not create your salon. Try again.");
           return;
         }
+
+        if (demoMode && typeof window !== "undefined") {
+          window.sessionStorage.removeItem(REG_COMPLETION_TOKEN_KEY);
+        }
+
         const adj = result.slugAdjusted ? "1" : "0";
         router.replace(
           `/register/success?slug=${encodeURIComponent(result.slug)}&adjusted=${adj}`,
         );
       });
     },
-    [name, router],
+    [demoMode, name, router],
   );
 
   return (

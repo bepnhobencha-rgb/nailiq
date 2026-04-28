@@ -8,10 +8,8 @@ import { Input } from "@/components/ui/Input";
 import { DemoOtpModal } from "@/components/register/DemoOtpModal";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
 import { REG_SESSION_PHONE_DIGITS_KEY } from "@/shared/lib/registerSessionKeys";
-import { createClient as createBrowserSupabase } from "@/shared/lib/supabase/client";
 import { sendRegisterOtp } from "@/shared/register/actions";
 import {
-  digitsToE164Phone,
   isRegisterPhoneDigitsValid,
   normalizeRegisterPhone,
 } from "@/shared/register/phone";
@@ -41,42 +39,21 @@ export function RegisterPageClient({ demoMode }: Props) {
           window.sessionStorage.setItem(REG_SESSION_PHONE_DIGITS_KEY, normalized);
         }
 
-        if (demoMode) {
-          const result = await sendRegisterOtp(normalized);
-          if (!result.success) {
-            setError(result.error);
-            return;
-          }
-          setDemoCode(result.demoCode);
+        const result = await sendRegisterOtp(normalized);
+        if (!result.success) {
+          setError(result.error);
           return;
         }
 
-        const e164 = digitsToE164Phone(normalized);
-        if (!e164) {
-          setError(
-            "Enter 8–15 digits including country code (e.g. Vietnam: 84912345678).",
-          );
-          return;
-        }
-
-        const supabase = createBrowserSupabase();
-        const { error: otpError } = await supabase.auth.signInWithOtp({
-          phone: e164,
-          options: { shouldCreateUser: true },
-        });
-
-        if (otpError) {
-          setError(
-            otpError.message ||
-              "Could not send SMS. Enable Phone auth in Supabase or use demo mode.",
-          );
+        if (result.mode === "demo") {
+          setDemoCode(result.code);
           return;
         }
 
         router.push("/register/verify");
       });
     },
-    [demoMode, phoneRaw, router],
+    [phoneRaw, router],
   );
 
   return (

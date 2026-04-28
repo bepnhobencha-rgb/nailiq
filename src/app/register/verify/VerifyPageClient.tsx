@@ -12,13 +12,12 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
 import { cn } from "@/shared/lib/cn";
-import { REG_SESSION_PHONE_DIGITS_KEY } from "@/shared/lib/registerSessionKeys";
-import { createClient as createBrowserSupabase } from "@/shared/lib/supabase/client";
-import { verifyDemoRegisterOtp } from "@/shared/register/actions";
 import {
-  digitsToE164Phone,
-  isRegisterPhoneDigitsValid,
-} from "@/shared/register/phone";
+  REG_COMPLETION_TOKEN_KEY,
+  REG_SESSION_PHONE_DIGITS_KEY,
+} from "@/shared/lib/registerSessionKeys";
+import { verifyRegisterOtp } from "@/shared/register/actions";
+import { isRegisterPhoneDigitsValid } from "@/shared/register/phone";
 
 const OTP_LEN = 6;
 
@@ -111,40 +110,33 @@ export function VerifyPageClient({ demoMode }: Props) {
       if (codeJoined.length !== OTP_LEN || !phoneDigits) return;
       setError(null);
       startTransition(async () => {
+        const result = await verifyRegisterOtp(phoneDigits, codeJoined);
+
+        if (!result.ok) {
+          if (result.reason === "expired") {
+            setError("Code expired — request a new one.");
+          } else if (result.reason === "server_error") {
+            setError(
+              demoMode
+                ? "We could not verify your code. Check SUPABASE_SERVICE_ROLE_KEY and migrations."
+                : "We could not verify your code. Try again.",
+            );
+          } else {
+            setError("Invalid code.");
+          }
+          return;
+        }
+
         if (demoMode) {
-          const result = await verifyDemoRegisterOtp(phoneDigits, codeJoined);
-          if (!result.ok) {
-            if (result.reason === "expired") {
-              setError("Code expired — request a new one.");
-            } else if (result.reason === "server_error") {
-              setError(
-                "We could not open your session. Check SUPABASE_SERVICE_ROLE_KEY and migrations.",
-              );
-            } else {
-              setError("Invalid code.");
-            }
+          const ct = result.completionToken;
+          if (!ct) {
+            setError("Missing completion token. Try again.");
             return;
           }
+          if (typeof window !== "undefined") {
+            window.sessionStorage.setItem(REG_COMPLETION_TOKEN_KEY, ct);
+          }
           router.push("/register/setup");
-          return;
-        }
-
-        const e164 = digitsToE164Phone(phoneDigits);
-        if (!e164) {
-          setError("Invalid phone session. Start again.");
-          router.replace("/register");
-          return;
-        }
-
-        const supabase = createBrowserSupabase();
-        const { error: vErr } = await supabase.auth.verifyOtp({
-          phone: e164,
-          token: codeJoined,
-          type: "sms",
-        });
-
-        if (vErr) {
-          setError(vErr.message || "Invalid or expired code.");
           return;
         }
 
