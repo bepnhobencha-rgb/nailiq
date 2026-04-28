@@ -25,7 +25,18 @@ export type SendRegisterOtpResult =
 export async function sendRegisterOtp(
   phoneRaw: string,
 ): Promise<SendRegisterOtpResult> {
+  console.log(
+    "SERVICE_ROLE_KEY exists:",
+    !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+  );
+  console.log(
+    "SERVICE_ROLE_KEY length:",
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.length,
+  );
+  console.log("DEMO_OTP:", process.env.DEMO_OTP);
   const isDemo = isDemoOtpRuntime();
+  console.log("isDemo:", isDemo);
+
   const phone = normalizeRegisterPhone(phoneRaw);
   if (!isRegisterPhoneDigitsValid(phone)) {
     return { success: false, error: INVALID_PHONE_MSG };
