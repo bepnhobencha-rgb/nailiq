@@ -4,6 +4,9 @@ import { createClient } from "@/shared/lib/supabase/server";
 /**
  * Loads bookable services for a public salon URL slug.
  * Returns `null` if the salon does not exist.
+ *
+ * Uses `createClient()` from `@/shared/lib/supabase/server` — anon publishable key + cookies
+ * (not the service role). Public catalog reads rely on RLS policies for anonymous access.
  */
 export async function loadBookingServicesForSalonSlug(
   shopSlug: string,
@@ -16,7 +19,11 @@ export async function loadBookingServicesForSalonSlug(
     .eq("slug", shopSlug)
     .maybeSingle();
 
-  if (salonErr || !salon) {
+  if (salonErr) {
+    console.error("loadBookingServices error:", salonErr);
+    return null;
+  }
+  if (!salon) {
     return null;
   }
 
@@ -27,6 +34,7 @@ export async function loadBookingServicesForSalonSlug(
     .order("name", { ascending: true });
 
   if (servicesErr) {
+    console.error("loadBookingServices error:", servicesErr);
     return [];
   }
 
