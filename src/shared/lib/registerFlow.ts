@@ -3,6 +3,8 @@ const STORAGE_KEY = "nailiq-register-flow";
 export type RegisterFlowData = {
   phone: string;
   verified: boolean;
+  /** Issued server-side after OTP; required to create the salon */
+  completionToken: string;
   salonName: string;
   slug: string;
 };
@@ -10,6 +12,7 @@ export type RegisterFlowData = {
 const empty: RegisterFlowData = {
   phone: "",
   verified: false,
+  completionToken: "",
   salonName: "",
   slug: "",
 };
@@ -23,6 +26,8 @@ function read(): RegisterFlowData {
     return {
       phone: typeof p.phone === "string" ? p.phone : "",
       verified: Boolean(p.verified),
+      completionToken:
+        typeof p.completionToken === "string" ? p.completionToken : "",
       salonName: typeof p.salonName === "string" ? p.salonName : "",
       slug: typeof p.slug === "string" ? p.slug : "",
     };

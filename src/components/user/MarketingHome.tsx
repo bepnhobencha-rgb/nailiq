@@ -12,6 +12,7 @@ import { MobileStack } from "@/components/layout/MobileStack";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { getUserMessages } from "@/shared/i18n/user";
 import { setRegisterFlow } from "@/shared/lib/registerFlow";
+import { normalizeRegisterPhone } from "@/shared/register/phone";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
 
@@ -112,14 +113,15 @@ export function MarketingHome() {
 
   const onCtaStart = () => {
     const el = document.querySelector<HTMLInputElement>('input[name="phone"]');
-    const phone = el?.value?.trim() ?? "";
+    const phone = normalizeRegisterPhone(el?.value ?? "");
     setRegisterFlow({
       phone,
       verified: false,
+      completionToken: "",
       salonName: "",
       slug: "",
     });
-    router.push("/register/verify");
+    router.push("/register");
   };
 
   return (
