@@ -94,30 +94,27 @@ export async function submitPublicBooking(
     (Number(service.buffer_minutes) || 0);
   const endLocal = new Date(startLocal.getTime() + durationMin * 60_000);
 
-  const { data: booking, error: insertErr } = await supabase.rpc(
-    "create_public_booking",
-    {
-      p_salon_id: salon.id,
-      p_service_id: service.id,
-      p_staff_id: staffMember.id,
-      p_client_name: clientName,
-      p_client_phone: clientPhone,
-      p_start_time_utc: startLocal.toISOString(),
-      p_end_time_utc: endLocal.toISOString(),
-      p_status: "pending",
-    },
-  );
+  const bookingId = crypto.randomUUID();
+
+  const { error: insertErr } = await supabase.from("bookings").insert({
+    id: bookingId,
+    salon_id: salon.id,
+    service_id: service.id,
+    staff_id: staffMember.id,
+    client_name: clientName,
+    client_phone: clientPhone,
+    start_time_utc: startLocal.toISOString(),
+    end_time_utc: endLocal.toISOString(),
+    status: "pending",
+  });
 
   if (insertErr) {
     if (insertErr.code === "23505") throw new BookingConflictError();
     throw new Error(insertErr.message);
   }
 
-  const row = Array.isArray(booking) ? booking[0] : booking;
-  if (!row?.id) throw new Error("booking_insert_failed");
-
   return {
-    bookingId: row.id as string,
+    bookingId,
     serviceName: service.name,
     startTimeUtc: startLocal.toISOString(),
     status: "pending",
