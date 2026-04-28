@@ -4,7 +4,10 @@ import { randomInt } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { slugifySalonName } from "@/shared/lib/registerFlow";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { normalizeRegisterPhone } from "@/shared/register/phone";
+import {
+  isRegisterPhoneDigitsValid,
+  normalizeRegisterPhone,
+} from "@/shared/register/phone";
 
 function generateSixDigitCode(): string {
   return String(randomInt(0, 1_000_000)).padStart(6, "0");
@@ -41,45 +44,57 @@ async function pickAvailableSalonSlug(
 }
 
 export type SendRegisterOtpResult =
-  | { ok: true }
-  | { ok: false; error: "invalid_phone" | "server_error" };
+  | { success: true }
+  | { success: false; error: string };
+
+const INVALID_PHONE_MSG =
+  "Enter 8–15 digits including country code (e.g. Vietnam: 84912345678).";
 
 export async function sendRegisterOtp(
   phoneRaw: string,
 ): Promise<SendRegisterOtpResult> {
   const phone = normalizeRegisterPhone(phoneRaw);
-  if (phone.length < 8 || phone.length > 16) {
-    return { ok: false, error: "invalid_phone" };
+  if (!isRegisterPhoneDigitsValid(phone)) {
+    return { success: false, error: INVALID_PHONE_MSG };
   }
 
-  let supabase;
   try {
-    supabase = createServiceRoleClient();
-  } catch {
-    return { ok: false, error: "server_error" };
-  }
+    const supabase = createServiceRoleClient();
+    const code = generateSixDigitCode();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-  const code = generateSixDigitCode();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const { error: deleteError } = await supabase
+      .from("otps")
+      .delete()
+      .eq("phone", phone);
 
-  await supabase.from("otps").delete().eq("phone", phone);
+    if (deleteError) {
+      console.error("[sendRegisterOtp] delete prior OTP rows", deleteError);
+      return { success: false, error: deleteError.message };
+    }
 
-  const { error } = await supabase.from("otps").insert({
-    phone,
-    code,
-    expires_at: expiresAt,
-  });
+    const { error: insertError } = await supabase.from("otps").insert({
+      phone,
+      code,
+      expires_at: expiresAt,
+    });
 
-  if (error) {
+    if (insertError) {
+      console.error("[sendRegisterOtp] insert", insertError);
+      return { success: false, error: insertError.message };
+    }
+
+    if (process.env.NODE_ENV === "development") {
+      console.log(`[NailIQ DEMO MODE] OTP for ${phone}: ${code}`);
+    }
+
+    return { success: true };
+  } catch (error) {
     console.error("[sendRegisterOtp]", error);
-    return { ok: false, error: "server_error" };
+    const message =
+      error instanceof Error ? error.message : String(error);
+    return { success: false, error: message };
   }
-
-  if (process.env.NODE_ENV === "development") {
-    console.log(`[NailIQ DEMO MODE] OTP for ${phone}: ${code}`);
-  }
-
-  return { ok: true };
 }
 
 export type VerifyRegisterOtpResult =
@@ -93,7 +108,7 @@ export async function verifyRegisterOtp(
   const phone = normalizeRegisterPhone(phoneRaw);
   const code = codeRaw.replace(/\D/g, "").slice(0, 6);
 
-  if (phone.length < 8 || code.length !== 6) {
+  if (!isRegisterPhoneDigitsValid(phone) || code.length !== 6) {
     return { ok: false, reason: "invalid" };
   }
 

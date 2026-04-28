@@ -8,7 +8,10 @@ import { Input } from "@/components/ui/Input";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
 import { getRegisterFlow, setRegisterFlow } from "@/shared/lib/registerFlow";
 import { sendRegisterOtp } from "@/shared/register/actions";
-import { normalizeRegisterPhone } from "@/shared/register/phone";
+import {
+  isRegisterPhoneDigitsValid,
+  normalizeRegisterPhone,
+} from "@/shared/register/phone";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -22,19 +25,17 @@ export default function RegisterPage() {
     (e: React.FormEvent) => {
       e.preventDefault();
       const normalized = normalizeRegisterPhone(phoneRaw);
-      if (normalized.length < 8 || normalized.length > 18) {
-        setError("Enter a valid mobile number.");
+      if (!isRegisterPhoneDigitsValid(normalized)) {
+        setError(
+          "Enter 8–15 digits including country code (e.g. Vietnam: 84912345678).",
+        );
         return;
       }
       setError(null);
       startTransition(async () => {
         const result = await sendRegisterOtp(phoneRaw);
-        if (!result.ok) {
-          if (result.error === "invalid_phone") {
-            setError("Enter a valid mobile number.");
-          } else {
-            setError("Something went wrong. Try again.");
-          }
+        if (!result.success) {
+          setError(result.error);
           return;
         }
         setRegisterFlow({
