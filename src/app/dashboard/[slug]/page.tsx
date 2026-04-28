@@ -27,9 +27,6 @@ export default async function SalonDashboardPage({ params }: Props) {
   const { slug } = await params;
   const initial = await loadSalonOwnerDashboard(slug);
   if (!initial.ok) {
-    if (initial.error === "unauthorized") {
-      redirect("/register/setup");
-    }
     redirect("/register");
   }
   return <SalonOwnerDashboard slug={slug} initial={initial} />;

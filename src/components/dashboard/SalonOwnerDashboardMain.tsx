@@ -14,6 +14,7 @@ type InitialPayload = Extract<LoadSalonDashboardResult, { ok: true }>;
 
 export function SalonOwnerDashboardMain({
   slug,
+  demoMode,
   data,
   language,
   onLanguageChange,
@@ -27,6 +28,7 @@ export function SalonOwnerDashboardMain({
   isLoading,
 }: {
   slug: string;
+  demoMode: boolean;
   data: InitialPayload;
   language: "en" | "vi";
   onLanguageChange: (lang: "en" | "vi") => void;
@@ -49,6 +51,21 @@ export function SalonOwnerDashboardMain({
       className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pt-2"
       aria-busy={isLoading}
     >
+      {demoMode ? (
+        <div
+          role="status"
+          className="mb-4 rounded-2xl border border-nq-primary/35 bg-nq-primary/12 px-4 py-3 text-center text-sm leading-snug text-nq-foreground"
+        >
+          <span className="font-semibold uppercase tracking-wide text-nq-primary">
+            Demo mode
+          </span>
+          <span className="block mt-1 text-[13px] text-nq-muted">
+            {language === "vi"
+              ? "Quyền truy cập qua cookie demo (24 giờ). Không dùng cho salon thật."
+              : "Access via demo cookie (24h). Not for production salons."}
+          </span>
+        </div>
+      ) : null}
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-wide text-nq-muted/80">

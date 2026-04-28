@@ -1,6 +1,12 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { createClient } from "@/shared/lib/supabase/server";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import {
+  NAILQ_DEMO_SLUG_COOKIE,
+} from "@/shared/lib/demoDashboardCookie";
+import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import type {
   BookingStatus,
   SalonDashboardBooking,
@@ -21,6 +27,41 @@ function utcDayBounds(
 }
 
 type SalonRow = { id: string; name: string; slug: string; phone: string };
+
+async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
+  if (!isDemoOtpRuntime()) return null;
+  const cookieStore = await cookies();
+  const demoSlug = cookieStore.get(NAILQ_DEMO_SLUG_COOKIE)?.value;
+  if (!demoSlug || demoSlug !== slug) return null;
+
+  let admin;
+  try {
+    admin = createServiceRoleClient();
+  } catch {
+    return null;
+  }
+
+  const { data: salon, error } = await admin
+    .from("salons")
+    .select("id, name, slug, phone")
+    .eq("slug", slug)
+    .maybeSingle();
+
+  if (error || !salon) return null;
+  return salon as SalonRow;
+}
+
+async function resolveSalonForDashboard(
+  slug: string,
+): Promise<{ salon: SalonRow; kind: "member" | "demo_cookie" } | null> {
+  const memberSalon = await getSalonIfMember(slug);
+  if (memberSalon) return { salon: memberSalon, kind: "member" };
+
+  const demoSalon = await getSalonViaDemoCookie(slug);
+  if (demoSalon) return { salon: demoSalon, kind: "demo_cookie" };
+
+  return null;
+}
 
 async function getSalonIfMember(slug: string): Promise<SalonRow | null> {
   const supabase = await createClient();
@@ -90,6 +131,7 @@ export type LoadSalonDashboardResult =
   | {
       ok: true;
       salon: { id: string; name: string; slug: string; phone: string };
+      demoMode: boolean;
       today: SalonDashboardBooking[];
       upcoming: SalonDashboardBooking[];
       stats: {
@@ -105,12 +147,18 @@ export type LoadSalonDashboardResult =
 export async function loadSalonOwnerDashboard(
   slug: string,
 ): Promise<LoadSalonDashboardResult> {
-  const salon = await getSalonIfMember(slug);
-  if (!salon) {
+  const resolved = await resolveSalonForDashboard(slug);
+  if (!resolved) {
     return { ok: false, error: "unauthorized" };
   }
 
-  const supabase = await createClient();
+  const { salon, kind } = resolved;
+  const demoMode = kind === "demo_cookie";
+
+  const supabase =
+    kind === "demo_cookie"
+      ? createServiceRoleClient()
+      : await createClient();
   const { dayStartIso, nextDayStartIso } = utcDayBounds(new Date());
   const upcomingEnd = new Date(nextDayStartIso);
   upcomingEnd.setUTCDate(upcomingEnd.getUTCDate() + 7);
@@ -166,6 +214,7 @@ export async function loadSalonOwnerDashboard(
       slug: salon.slug,
       phone: salon.phone,
     },
+    demoMode,
     today,
     upcoming,
     stats: {
@@ -190,12 +239,16 @@ export async function updateBookingStatus(
   nextStatus: BookingStatus,
   slug: string,
 ): Promise<UpdateBookingStatusResult> {
-  const salon = await getSalonIfMember(slug);
-  if (!salon) {
+  const resolved = await resolveSalonForDashboard(slug);
+  if (!resolved) {
     return { ok: false, error: "unauthorized" };
   }
 
-  const supabase = await createClient();
+  const { salon, kind } = resolved;
+  const supabase =
+    kind === "demo_cookie"
+      ? createServiceRoleClient()
+      : await createClient();
 
   const { data: row, error: fetchErr } = await supabase
     .from("bookings")

@@ -1,5 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { NAILQ_DEMO_SLUG_COOKIE } from "@/shared/lib/demoDashboardCookie";
+import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -29,7 +31,18 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user && request.nextUrl.pathname.startsWith("/dashboard")) {
+  const pathname = request.nextUrl.pathname;
+  const dashMatch = /^\/dashboard\/([^/]+)\/?$/.exec(pathname);
+
+  if (!user && dashMatch && isDemoOtpRuntime()) {
+    const pathSlug = decodeURIComponent(dashMatch[1]);
+    const demoSlug = request.cookies.get(NAILQ_DEMO_SLUG_COOKIE)?.value;
+    if (demoSlug && demoSlug === pathSlug) {
+      return supabaseResponse;
+    }
+  }
+
+  if (!user && pathname.startsWith("/dashboard")) {
     return NextResponse.redirect(new URL("/register", request.url));
   }
 

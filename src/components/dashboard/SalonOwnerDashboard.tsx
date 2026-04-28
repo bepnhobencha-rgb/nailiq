@@ -49,7 +49,7 @@ export function SalonOwnerDashboard({
     setIsLoading(false);
     if (!res.ok) {
       if (res.error === "unauthorized") {
-        router.replace("/register/setup");
+        router.replace("/register");
         return;
       }
       setLoadError(true);
@@ -140,6 +140,7 @@ export function SalonOwnerDashboard({
     <ResponsiveShell>
       <SalonOwnerDashboardMain
         slug={slug}
+        demoMode={data.demoMode}
         data={data}
         language={language}
         onLanguageChange={setLanguage}

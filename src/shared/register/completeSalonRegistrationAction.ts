@@ -1,7 +1,12 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import {
+  NAILQ_DEMO_SLUG_COOKIE,
+  NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
+} from "@/shared/lib/demoDashboardCookie";
 import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import { slugifySalonName } from "@/shared/lib/slugifySalonName";
 import { getOrCreateDemoSalonOwnerUserId } from "@/shared/register/demoSalonOwner";
@@ -141,6 +146,15 @@ export async function completeSalonRegistration(
     }
 
     await admin.from("register_completion_tokens").delete().eq("id", proof.id);
+
+    const cookieStore = await cookies();
+    cookieStore.set(NAILQ_DEMO_SLUG_COOKIE, slug, {
+      path: "/",
+      maxAge: NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    });
 
     return { ok: true, slug, slugAdjusted };
   }
