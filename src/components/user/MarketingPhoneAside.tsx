@@ -36,9 +36,9 @@ export function MarketingPhoneAside({
         transform: `translate3d(0, ${parallaxY}px, 0)`,
       }}
     >
-      <div className="relative z-0 w-full max-w-[min(18rem,92vw)] shrink-0 sm:max-w-[19rem] lg:max-w-[22rem]">
+      <div className="relative z-0 w-full max-w-[min(17.5rem,90vw)] shrink-0 sm:max-w-[18.5rem] lg:max-w-[23rem] xl:max-w-[24rem]">
         <div
-          className="pointer-events-none absolute top-1/2 left-1/2 -z-10 h-[min(22rem,50vh)] w-[min(20rem,88vw)] max-w-full -translate-x-1/2 -translate-y-1/2 sm:h-[min(26rem,60vh)] sm:w-[min(26rem,90vw)]"
+          className="pointer-events-none absolute top-1/2 left-1/2 -z-10 h-[min(24rem,52vh)] w-[min(21rem,88vw)] max-w-full -translate-x-1/2 -translate-y-1/2 sm:h-[min(28rem,58vh)] sm:w-[min(27rem,90vw)] lg:h-[min(30rem,62vh)] lg:w-[min(30rem,92vw)]"
           aria-hidden
         >
           <div className="h-full w-full rounded-full bg-nq-primary/18 blur-[72px] opacity-90 sm:blur-[90px] lg:blur-[100px]" />

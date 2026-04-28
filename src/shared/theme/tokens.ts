@@ -17,6 +17,8 @@ export const colors = {
   muted: "#A1A1AA",
   error: "#EF4444",
   success: "#22C55E",
+  /** Confirmed / info (dashboard status, not a second brand primary) */
+  info: "#3B82F6",
   /** Subtle gold edge for glass surfaces (CSS may use this with alpha) */
   borderSubtle: "rgba(212, 175, 55, 0.18)",
 } as const;

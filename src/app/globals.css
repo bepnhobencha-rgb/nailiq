@@ -50,6 +50,7 @@
   --color-nq-muted: #a1a1aa;
   --color-nq-error: #ef4444;
   --color-nq-success: #22c55e;
+  --color-nq-info: #3b82f6;
   --color-nq-border: rgba(212, 175, 55, 0.18);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);

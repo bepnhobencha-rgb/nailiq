@@ -26,7 +26,7 @@ export function DesktopSplit({
     <div
       className={cn(
         "isolate mx-auto grid w-full min-w-0 max-w-[var(--max-nq-mobile)] grid-cols-1",
-        "gap-y-3 sm:gap-y-4",
+        "gap-y-4 sm:gap-y-5",
         "lg:max-w-[var(--max-nq-desktop)] lg:grid-cols-2 lg:items-center lg:gap-x-12 lg:gap-y-8 xl:gap-x-16",
         className,
       )}

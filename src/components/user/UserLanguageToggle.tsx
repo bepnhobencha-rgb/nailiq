@@ -21,7 +21,7 @@ export function UserLanguageToggle({
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-0 rounded-lg border border-nq-border/60 bg-nq-surface/60 p-0.5 text-xs font-semibold",
+        "inline-flex items-center gap-0 rounded-full border border-white/[0.08] bg-nq-bg/45 p-1 text-[11px] font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl backdrop-saturate-150",
         className,
       )}
       role="group"
@@ -35,9 +35,9 @@ export function UserLanguageToggle({
             type="button"
             onClick={() => onLanguageChange(code)}
             className={cn(
-              "min-h-9 min-w-10 rounded-md px-2.5 transition-colors",
+              "min-h-8 min-w-9 rounded-full px-3 transition-[color,background-color,box-shadow] duration-200 ease-out",
               active
-                ? "bg-nq-primary/20 text-nq-foreground"
+                ? "bg-white/[0.12] text-nq-foreground shadow-[0_1px_2px_rgba(0,0,0,0.35)]"
                 : "text-nq-muted hover:text-nq-primary-soft",
             )}
           >
