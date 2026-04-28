@@ -9,8 +9,8 @@ export type ResponsiveShellProps = HTMLAttributes<HTMLDivElement> & {
 
 /**
  * App-wide responsive container: min viewport height, horizontal clip, section padding
- * from theme vars, vertical centering for marketing hero. Mobile-first; pairs with
- * `MobileStack` + `DesktopSplit` on the home foundation preview.
+ * from theme vars, vertical centering when appropriate. Mobile-first; pairs with
+ * `MobileStack` on simple pages.
  */
 export function ResponsiveShell({
   className,

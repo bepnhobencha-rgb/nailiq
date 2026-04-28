@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { MarketingHome } from "@/components/user/MarketingHome";
+import { HomeLanding } from "@/components/user/HomeLanding";
 import { getLandingJsonLd } from "@/shared/seo/jsonLd";
 
 const landingDescription =
-  "NailIQ helps nail salons get booked automatically with AI-powered booking, website, automation, and customer growth tools.";
+  "NailIQ helps nail salons get booked automatically with AI-powered booking, operations, and growth tools.";
 
-const landingTitle = "Clients book you, even when you're fully booked | NailIQ";
+const landingTitle = "NailIQ — Salon booking & operations";
 
 export const metadata: Metadata = {
   title: landingTitle,
@@ -29,7 +29,7 @@ export default function Home() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
       />
-      <MarketingHome />
+      <HomeLanding />
     </>
   );
 }

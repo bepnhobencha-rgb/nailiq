@@ -15,7 +15,7 @@ export type MobileStackProps = HTMLAttributes<HTMLDivElement> & {
 
 /**
  * Single column, iPhone-tight max width, safe-area bottom, no horizontal overflow.
- * On `lg+`, `max-w` lifts so content can sit in a `DesktopSplit` main column.
+ * On `lg+`, mobile max width lifts slightly for readability on larger phones.
  */
 export function MobileStack({
   className,

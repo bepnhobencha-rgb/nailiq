@@ -69,115 +69,6 @@
   --duration-nq-slow: var(--duration-nq-slow);
 }
 
-@keyframes nq-orb {
-  0%,
-  100% {
-    opacity: 0.5;
-    transform: scale(0.94);
-  }
-  50% {
-    opacity: 0.85;
-    transform: scale(1.04);
-  }
-}
-
-@keyframes nq-content-pulse {
-  0%,
-  100% {
-    opacity: 0.86;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-/** Soft opacity pulse for FOMO / urgency one-liners (marketing, PROMPT #017) */
-@keyframes nq-urgency-breathe {
-  0%,
-  100% {
-    opacity: 0.4;
-  }
-  50% {
-    opacity: 0.85;
-  }
-}
-
-/** In-phone “live” booking card swap (PROMPT #020 + #025 scale) */
-@keyframes nq-activity {
-  from {
-    opacity: 0;
-    transform: translateY(5px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-/** Service / time row tick — fade + ≤5px nudge (PROMPT #024) */
-@keyframes nq-phone-tick {
-  from {
-    opacity: 0.72;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/** `/aggressive` phone demo: bottom sheet + success mark */
-@keyframes niq-pop {
-  0% {
-    transform: scale(0.9);
-  }
-  60% {
-    transform: scale(1.04);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-@keyframes niq-check {
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-@layer components {
-  /** Bottom sheet entrance (existing motion path; no transform clash with `niq-pop`) */
-  .niq-animate-aggr-sheet {
-    animation: nq-activity 0.5s var(--ease-nq-out) 0.3s both;
-  }
-
-  .niq-animate-aggr-check-bubble {
-    animation: niq-pop 0.5s var(--ease-nq-out) 0.5s both;
-  }
-
-  .niq-check-path {
-    fill: none;
-    stroke: #fff;
-    stroke-dasharray: 100;
-    stroke-dashoffset: 100;
-    animation: niq-check 0.7s var(--ease-nq-out) 0.65s both;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .niq-animate-aggr-sheet,
-    .niq-animate-aggr-check-bubble {
-      animation: none;
-      opacity: 1;
-      transform: none;
-    }
-
-    .niq-check-path {
-      animation: none;
-      stroke-dashoffset: 0;
-    }
-  }
-}
-
 /* Liquid glass + hero motion (Tailwind + CSS only; no animation libs) */
 @keyframes shimmer {
   to {
@@ -437,43 +328,13 @@
   .pb-safe-cta {
     padding-bottom: max(5rem, calc(env(safe-area-inset-bottom, 0px) + 3.5rem));
   }
-
-  .animate-nq-orb {
-    animation: nq-orb 3.5s ease-in-out infinite;
-  }
-
-  .animate-nq-content-pulse {
-    animation: nq-content-pulse 3.2s ease-in-out infinite;
-  }
-
-  .animate-nq-urgency-breathe {
-    animation: nq-urgency-breathe 3.2s ease-in-out infinite;
-  }
-
-  .animate-nq-activity {
-    animation: nq-activity 0.5s var(--ease-nq-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
-  }
-
-  .animate-nq-phone-tick {
-    animation: nq-phone-tick 0.42s var(--ease-nq-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-nq-orb,
-  .animate-nq-content-pulse {
-    animation: none;
-  }
-
   .nq-booking-confirm-btn:not(:disabled)::before,
   .nq-booking-luxury-cta:not(:disabled)::before {
     animation: none;
     opacity: 0;
-  }
-
-  .animate-nq-urgency-breathe {
-    animation: none;
-    opacity: 0.8;
   }
 
   .text-shimmer {
@@ -485,9 +346,7 @@
 
   .fade-in,
   .fade-in-1,
-  .fade-in-2,
-  .animate-nq-activity,
-  .animate-nq-phone-tick {
+  .fade-in-2 {
     animation: none;
     opacity: 1;
     transform: none;

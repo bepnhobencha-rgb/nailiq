@@ -1,82 +1,16 @@
 import type { UserMessages } from "./en";
 
-/**
- * User-facing copy (owner / dashboard / marketing): Vietnamese.
- */
 export const userVi: UserMessages = {
   brandName: "NailIQ",
-  heroHeadline: "Khách vẫn book bạn\ndù lịch đã kín",
-  heroSubline:
-    "Tiệm của bạn vẫn nhận khách — ngay cả khi bạn không kịp nghe điện thoại",
   seoIntro:
-    "NailIQ là hệ thống đặt lịch, tự động hóa và tăng trưởng dùng AI cho tiệm nail. Giúp bạn nhận lịch online, giảm cuộc gọi nhỡ và vận hành lễ tân êm hơn—mà không phải thêm cả đống công cụ rời rạc.",
-  benefitsHeading: "Bạn nhận được gì với NailIQ",
-  benefits: [
-    {
-      title: "Lịch hẹn gần như tự chạy",
-      body: "Khách chọn dịch vụ và giờ phù hợp quy tắc của bạn, lịch đầy hơn trong khi bạn tập trung phục vụ.",
-      phoneScene: "booking",
-    },
-    {
-      title: "AI Genesis: thực đơn, đã sẵn sàng",
-      body: "Quét menu giấy hoặc bảng giá—NailIQ gom thành danh sách dịch vụ gọn, book được trong vài giây.",
-      phoneScene: "ai",
-    },
-    {
-      title: "Một hệ thống cho tăng trưởng",
-      body: "Website, lịch và tự động hóa nằm chung một nơi để marketing, vận hành và trải nghiệm khách đồng nhất.",
-    },
-  ] as const,
-  tagline: "Salon của bạn vẫn nhận lịch — kể cả khi bạn bận rộn",
-  setupTime: "Hầu hết salon hoàn tất thiết lập dưới 2 phút.",
-  cta: "Có lịch đầu tiên trong 2 phút",
-  ctaSubline: "Không cần app. Không cần cài đặt.",
-  ctaTrustLine: "Thiết lập dưới 2 phút là có khách.",
-  phonePlaceholder: "Nhập số điện thoại để nhận link đặt lịch",
-  phoneHint: "Chúng tôi gửi link đặt lịch qua tin nhắn ngay",
-  phoneHeroMicroLine: "+1 lịch mới",
-  wowHeading: "Tiệm của bạn có thể tự vận hành",
-  wowBody: "Đặt lịch. Nhắc lịch. Tăng trưởng.\nTất cả đều tự động.",
-  valueCardTitle: "Lối vào tự tin, điềm tĩnh",
-  valueCardBadge: "NailIQ",
-  footerPoweredBy: "Cung cấp bởi NailIQ",
-  valueCardBody:
-    "Một lớp kính cho đặt lịch, thực đơn và những chi tiết khiến tiệm bạn thật sự 'xịn'—trước khi khách bước vào.",
-  phoneScreenBody:
-    "Link của bạn, thương hiệu của bạn, quy tắc của bạn—trải nghiệm gọn trên iPhone mà khách thực sự dùng.",
-  serviceStrip: ["Chăm sóc chân", "Làm móng tay", "Gel"] as readonly [
-    string,
-    string,
-    string,
-  ],
-  urgencyLine: "⚡ Hầu hết tiệm mất 3–7 khách mỗi ngày vì lỡ cuộc gọi",
-  liveProof: [
-    "Anna vừa có khách 2 phút trước",
-    "Lisa đã lấp đầy 3 lịch hôm nay",
-  ] as const,
-  phoneActivity: [
-    { label: "Anna vừa book", line: "3:00 PM — Pedicure • 450.000₫" },
-    { label: "Jenny vừa book", line: "2:15 PM — Gel • 350.000₫" },
-  ] as const,
-  phoneTimeSlots: ["3:00 PM", "3:30 PM", "4:00 PM"] as const,
-  phoneBookingSceneTitle: "Đặt lịch",
-  phoneBookingStepService: "Dịch vụ",
-  phoneBookingStepTime: "Giờ",
-  phoneBookingStepComplete: "Xong",
-  phoneBookingContinue: "Tiếp tục",
-  phoneBookingBack: "Quay lại",
-  phoneBookingDoneTitle: "Đã giữ chỗ",
-  phoneBookingDoneSubtitle: "Chúng tôi sẽ gửi xác nhận kèm giờ bạn chọn.",
-  phoneBookingDateLine: "Hôm nay · T7, 25 thg 4",
-  phoneBookingBookAnother: "Đặt thêm",
-  phoneAiSceneLabel: "Quét thực đơn",
-  phoneAiSceneHint: "Hướng vào menu của bạn",
-  phoneMenuDemoRows: [
-    { category: "Manicure", name: "Manicure cổ điển", price: "450.000₫" },
-    { category: "Manicure", name: "Gel dặm móng", price: "550.000₫" },
-    { category: "Pedicure", name: "Pedicure spa", price: "600.000₫" },
-    { category: "Pedicure", name: "Pedicure nhanh", price: "480.000₫" },
-  ] as const,
+    "NailIQ là hệ thống đặt lịch và vận hành dùng AI cho tiệm nail.",
+  home: {
+    headline: "Vận hành tiệm với NailIQ",
+    subline:
+      "Tạo link đặt lịch công khai, quản lý lịch hôm nay và phát triển trong một nơi.",
+    ctaRegister: "Bắt đầu",
+    footerNote: "Lần đầu? Tạo tiệm chỉ trong vài phút.",
+  },
   salonDashboard: {
     title: "Bảng điều khiển tiệm",
     slugLabel: "URL",
