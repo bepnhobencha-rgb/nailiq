@@ -66,7 +66,7 @@ NailIQ is the AI-first operating system for nail salons and beauty businesses: o
 
 ## Current Modules
 
-- **Design foundation** — `src/shared/theme/tokens.ts`, `src/app/globals.css`, UI in `src/components/ui/`, layout `ResponsiveShell` / `MobileStack`. **Marketing home** — `src/components/user/HomeLanding.tsx` at `/` (EN/VI via `useUserLanguage`); nav includes **Owner Login** → `/register` and a compact **Get started** CTA; secondary sign-in line under the phone field. **SEO** — `src/shared/seo/`, `robots.ts`, `sitemap.ts`, `public/ai.txt`, `public/llms.txt`. **i18n** — `src/shared/i18n/user/` + `src/shared/i18n/booking/en.ts` (booking English-only). See **Authentication** for owners.
+- **Design foundation** — `src/shared/theme/tokens.ts`, `src/app/globals.css`, UI in `src/components/ui/`, layout `ResponsiveShell` / `MobileStack`. **Marketing home** — `src/components/user/HomeLanding.tsx` at `/` (EN/VI via `useUserLanguage`). **SEO** — `src/shared/seo/`, `robots.ts`, `sitemap.ts`, `public/ai.txt`, `public/llms.txt`. **i18n** — `src/shared/i18n/user/` + `src/shared/i18n/booking/en.ts` (booking English-only). See **Authentication** for owners.
 - **Registration** — `/register` → `/register/verify` → `/register/setup` (server-gated by session) → `/register/success`. Transient phone digits in **`sessionStorage`** (`registerSessionKeys.ts`), not dashboard-gating `localStorage`.
 - **Owner dashboard** — `/dashboard/[slug]` via `salonOwnerActions` (session + RLS). Phone masked in UI; booking reference uses `formatNailiqBookingRef`.
 - **Public booking** — `src/app/[shop]/page.tsx`, `BookingFlow` + `submitPublicBooking` in `src/shared/booking/`.
