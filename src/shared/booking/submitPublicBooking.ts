@@ -94,10 +94,7 @@ export async function submitPublicBooking(
     (Number(service.buffer_minutes) || 0);
   const endLocal = new Date(startLocal.getTime() + durationMin * 60_000);
 
-  const bookingId = crypto.randomUUID();
-
-  const { error: insertErr } = await supabase.from("bookings").insert({
-    id: bookingId,
+  const insertPayload = {
     salon_id: salon.id,
     service_id: service.id,
     staff_id: staffMember.id,
@@ -105,12 +102,55 @@ export async function submitPublicBooking(
     client_phone: clientPhone,
     start_time_utc: startLocal.toISOString(),
     end_time_utc: endLocal.toISOString(),
-    status: "pending",
-  });
+    status: "pending" as const,
+  };
 
-  if (insertErr) {
-    if (insertErr.code === "23505") throw new BookingConflictError();
-    throw new Error(insertErr.message);
+  /** Prefer RPC (SECURITY DEFINER); falls back to INSERT when RPC not deployed (PGRST202). */
+  const { data: rpcRows, error: rpcErr } = await supabase.rpc(
+    "create_public_booking",
+    {
+      p_salon_id: insertPayload.salon_id,
+      p_service_id: insertPayload.service_id,
+      p_staff_id: insertPayload.staff_id,
+      p_client_name: insertPayload.client_name,
+      p_client_phone: insertPayload.client_phone,
+      p_start_time_utc: insertPayload.start_time_utc,
+      p_end_time_utc: insertPayload.end_time_utc,
+      p_status: insertPayload.status,
+    },
+  );
+
+  let bookingId = "";
+
+  if (!rpcErr && rpcRows != null) {
+    const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+    if (row && typeof row === "object" && "id" in row && row.id) {
+      bookingId = String(row.id);
+    }
+  }
+
+  const rpcMissing =
+    rpcErr &&
+    (rpcErr.code === "PGRST202" ||
+      String(rpcErr.message ?? "").includes("Could not find the function"));
+
+  if (!bookingId && rpcMissing) {
+    bookingId = crypto.randomUUID();
+    const { error: insertErr } = await supabase.from("bookings").insert({
+      id: bookingId,
+      ...insertPayload,
+    });
+
+    if (insertErr) {
+      if (insertErr.code === "23505") throw new BookingConflictError();
+      throw new Error(insertErr.message);
+    }
+  } else if (!bookingId) {
+    if (rpcErr) {
+      if (rpcErr.code === "23505") throw new BookingConflictError();
+      throw new Error(rpcErr.message);
+    }
+    throw new Error("booking_rpc_empty");
   }
 
   return {

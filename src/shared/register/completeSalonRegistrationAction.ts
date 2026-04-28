@@ -28,17 +28,27 @@ export async function completeSalonRegistration(
   let supabase;
   try {
     supabase = await createClient();
-  } catch {
+  } catch (e) {
+    console.error("FAILED step 1", e);
     return { ok: false, error: "unauthorized" };
   }
 
   const {
     data: { user },
+    error: getUserErr,
   } = await supabase.auth.getUser();
 
-  if (!user) {
+  if (getUserErr) {
+    console.error("FAILED step 1", getUserErr);
     return { ok: false, error: "unauthorized" };
   }
+
+  if (!user) {
+    console.error("FAILED step 1", new Error("no user"));
+    return { ok: false, error: "unauthorized" };
+  }
+
+  console.log("Step 1: getUser", { userId: user.id });
 
   const { data: existingMember } = await supabase
     .from("salon_members")
@@ -66,7 +76,8 @@ export async function completeSalonRegistration(
   let admin;
   try {
     admin = createServiceRoleClient();
-  } catch {
+  } catch (e) {
+    console.error("FAILED before step 2 (service role client)", e);
     return { ok: false, error: "server_error" };
   }
 
@@ -80,9 +91,11 @@ export async function completeSalonRegistration(
     slug = picked.slug;
     slugAdjusted = picked.slugAdjusted;
   } catch (e) {
-    console.error("[completeSalonRegistration] slug pick", e);
+    console.error("FAILED before step 2 (slug pick)", e);
     return { ok: false, error: "server_error" };
   }
+
+  console.log("Step 2: insert salon", { slug, name, phone });
 
   const { data: salonRow, error: salonErr } = await admin
     .from("salons")
@@ -95,23 +108,13 @@ export async function completeSalonRegistration(
     .single();
 
   if (salonErr || !salonRow?.id) {
-    console.error("[completeSalonRegistration] salon insert", salonErr);
+    console.error("FAILED step 2", salonErr ?? new Error("no salon id"));
     return { ok: false, error: "server_error" };
   }
 
   const salonId = salonRow.id as string;
 
-  const { error: memErr } = await admin.from("salon_members").insert({
-    salon_id: salonId,
-    user_id: user.id,
-    role: "owner",
-  });
-
-  if (memErr) {
-    console.error("[completeSalonRegistration] salon_members insert", memErr);
-    await admin.from("salons").delete().eq("id", salonId);
-    return { ok: false, error: "server_error" };
-  }
+  console.log("Step 3: insert services");
 
   const { error: svcErr } = await admin.from("services").insert({
     salon_id: salonId,
@@ -122,11 +125,12 @@ export async function completeSalonRegistration(
   });
 
   if (svcErr) {
-    console.error("[completeSalonRegistration] services insert", svcErr);
-    await admin.from("salon_members").delete().eq("salon_id", salonId);
+    console.error("FAILED step 3", svcErr);
     await admin.from("salons").delete().eq("id", salonId);
     return { ok: false, error: "server_error" };
   }
+
+  console.log("Step 4: insert staff");
 
   const { error: staffErr } = await admin.from("staff").insert({
     salon_id: salonId,
@@ -134,9 +138,27 @@ export async function completeSalonRegistration(
   });
 
   if (staffErr) {
-    console.error("[completeSalonRegistration] staff insert", staffErr);
+    console.error("FAILED step 4", staffErr);
     await admin.from("services").delete().eq("salon_id", salonId);
-    await admin.from("salon_members").delete().eq("salon_id", salonId);
+    await admin.from("salons").delete().eq("id", salonId);
+    return { ok: false, error: "server_error" };
+  }
+
+  console.log("Step 5: insert salon_members", {
+    salon_id: salonId,
+    user_id: user.id,
+  });
+
+  const { error: memErr } = await admin.from("salon_members").insert({
+    salon_id: salonId,
+    user_id: user.id,
+    role: "owner",
+  });
+
+  if (memErr) {
+    console.error("FAILED step 5", memErr);
+    await admin.from("staff").delete().eq("salon_id", salonId);
+    await admin.from("services").delete().eq("salon_id", salonId);
     await admin.from("salons").delete().eq("id", salonId);
     return { ok: false, error: "server_error" };
   }

@@ -1,6 +1,6 @@
 "use server";
 
-import { isPublicDemoOtpMode } from "@/shared/lib/demoOtpMode";
+import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { establishDemoPhoneSession } from "@/shared/register/demoAuthBridge";
 import {
@@ -23,7 +23,16 @@ export type SendRegisterOtpResult =
 export async function sendRegisterOtp(
   phoneRaw: string,
 ): Promise<SendRegisterOtpResult> {
-  if (!isPublicDemoOtpMode()) {
+  console.log("DEMO_OTP env:", process.env.NEXT_PUBLIC_DEMO_OTP);
+  console.log("isDemo:", process.env.NEXT_PUBLIC_DEMO_OTP === "true");
+  console.log(
+    "[sendRegisterOtp] DEMO_OTP (runtime):",
+    process.env.DEMO_OTP,
+    "effective:",
+    isDemoOtpRuntime(),
+  );
+
+  if (!isDemoOtpRuntime()) {
     return { success: false, error: "Use SMS send on the client in production." };
   }
 
@@ -75,7 +84,7 @@ export async function verifyDemoRegisterOtp(
   phoneRaw: string,
   codeRaw: string,
 ): Promise<VerifyDemoRegisterOtpResult> {
-  if (!isPublicDemoOtpMode()) {
+  if (!isDemoOtpRuntime()) {
     return { ok: false, reason: "server_error" };
   }
 

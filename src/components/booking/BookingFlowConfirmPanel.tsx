@@ -59,7 +59,7 @@ export function BookingFlowConfirmPanel({
     >
       <section
         aria-labelledby="conf-heading"
-        className="flex min-h-0 flex-1 flex-col"
+        className="flex min-h-0 flex-col"
       >
         <h2
           id="conf-heading"
@@ -77,7 +77,7 @@ export function BookingFlowConfirmPanel({
           />
         </div>
 
-        <div className="mt-8 min-h-0 flex-1 space-y-6">
+        <div className="mt-8 space-y-6">
           <div>
             <label
               htmlFor="booking-client-name"
@@ -121,10 +121,8 @@ export function BookingFlowConfirmPanel({
             {error}
           </p>
         ) : null}
-      </section>
 
-      <div className="sticky bottom-0 z-10 shrink-0 border-t border-transparent bg-gradient-to-t from-nq-bg from-75% via-nq-bg/92 to-transparent pb-[max(env(safe-area-inset-bottom),0px)] pt-5">
-        <div className="flex flex-col gap-3 bg-nq-bg/80 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:bg-nq-bg/60">
+        <div className="mt-5 flex flex-col gap-3 border-t border-nq-border/25 pt-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <Button
             type="button"
             variant="secondary"
@@ -142,7 +140,11 @@ export function BookingFlowConfirmPanel({
             <span>{submitting ? t.submitting : t.confirmBooking}</span>
           </LuxuryBookingCta>
         </div>
-      </div>
+        <div
+          className="pb-[max(env(safe-area-inset-bottom),0px)] pt-1"
+          aria-hidden="true"
+        />
+      </section>
     </motion.div>
   );
 }
