@@ -7,33 +7,73 @@ import { Input } from "@/components/ui/Input";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
 import {
   clearRegisterFlow,
+  getRegisterCompletionTokenClient,
   getRegisterFlow,
+  setRegisterFlow,
   slugifySalonName,
 } from "@/shared/lib/registerFlow";
-import { completeSalonRegistration } from "@/shared/register/actions";
+import {
+  completeSalonRegistration,
+  validateRegisterCompletionToken,
+} from "@/shared/register/actions";
 
 export default function RegisterSetupInner() {
   const router = useRouter();
-  const snap = useMemo(() => getRegisterFlow(), []);
-
-  useEffect(() => {
-    if (!snap.phone) {
-      router.replace("/register");
-      return;
-    }
-    if (!snap.verified || !snap.completionToken) {
-      router.replace("/register/verify");
-      return;
-    }
-  }, [snap.phone, snap.verified, snap.completionToken, router]);
-
-  const allowed = Boolean(snap.phone && snap.verified && snap.completionToken);
-
-  const [name, setName] = useState(() =>
-    allowed ? snap.salonName ?? "" : "",
+  const [bootstrap, setBootstrap] = useState<"checking" | "ready" | "unauthorized">(
+    "checking",
   );
+  const [name, setName] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    let cancelled = false;
+    async function init() {
+      const flowPhone = getRegisterFlow().phone;
+      if (!flowPhone) {
+        if (!cancelled) {
+          setBootstrap("unauthorized");
+          router.replace("/register");
+        }
+        return;
+      }
+
+      const token = getRegisterCompletionTokenClient();
+      if (!token) {
+        if (!cancelled) {
+          setBootstrap("unauthorized");
+          router.replace("/register");
+        }
+        return;
+      }
+
+      const fromStorage = getRegisterFlow().completionToken;
+      if (!fromStorage && token) {
+        setRegisterFlow({
+          verified: true,
+          completionToken: token,
+        });
+      }
+
+      const { valid } = await validateRegisterCompletionToken(token);
+      if (cancelled) return;
+      if (!valid) {
+        clearRegisterFlow();
+        setBootstrap("unauthorized");
+        router.replace("/register");
+        return;
+      }
+
+      const flow = getRegisterFlow();
+      setName(flow.salonName ?? "");
+      setBootstrap("ready");
+    }
+
+    void init();
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   const previewSlug = useMemo(() => {
     const base = slugifySalonName(name.trim());
@@ -45,17 +85,19 @@ export default function RegisterSetupInner() {
       e.preventDefault();
       const trimmed = name.trim();
       if (!trimmed) return;
-      const token = getRegisterFlow().completionToken;
+      const token = getRegisterCompletionTokenClient();
       if (!token) {
-        router.replace("/register/verify");
+        clearRegisterFlow();
+        router.replace("/register");
         return;
       }
       setFormError(null);
       startTransition(async () => {
         const result = await completeSalonRegistration(token, trimmed);
         if (!result.ok) {
-          if (result.error === "session_expired") {
-            router.replace("/register/verify");
+          if (result.error === "session_expired" || result.error === "missing_token") {
+            clearRegisterFlow();
+            router.replace("/register");
             return;
           }
           setFormError("Could not create your salon. Try again.");
@@ -71,7 +113,15 @@ export default function RegisterSetupInner() {
     [name, router],
   );
 
-  if (!allowed) {
+  if (bootstrap === "checking") {
+    return (
+      <RegisterStepShell title="What’s your salon name?">
+        <div className="h-32 rounded-2xl bg-nq-surface/50" />
+      </RegisterStepShell>
+    );
+  }
+
+  if (bootstrap === "unauthorized") {
     return (
       <RegisterStepShell title="What’s your salon name?">
         <div className="h-32 rounded-2xl bg-nq-surface/50" />

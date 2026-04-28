@@ -1,6 +1,6 @@
 "use server";
 
-import { randomInt } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { slugifySalonName } from "@/shared/lib/registerFlow";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -152,24 +152,55 @@ export async function verifyRegisterOtp(
   }
 
   const completionExpires = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+  const completionToken = randomUUID();
 
   const { data: tok, error } = await supabase
     .from("register_completion_tokens")
     .insert({
       phone,
+      token: completionToken,
       expires_at: completionExpires,
     })
-    .select("id")
+    .select("token")
     .single();
 
-  if (error || !tok?.id) {
+  if (error || !tok?.token) {
     console.error("[verifyRegisterOtp] token insert", error);
     return { ok: false, reason: "server_error" };
   }
 
   await supabase.from("otps").delete().eq("id", latest.id);
 
-  return { ok: true, completionToken: tok.id as string };
+  return { ok: true, completionToken: String(tok.token) };
+}
+
+export async function validateRegisterCompletionToken(
+  rawToken: string | undefined,
+): Promise<{ valid: boolean }> {
+  const token = rawToken?.trim();
+  if (!token) return { valid: false };
+
+  try {
+    const supabase = createServiceRoleClient();
+    const { data } = await supabase
+      .from("register_completion_tokens")
+      .select("expires_at")
+      .eq("token", token)
+      .maybeSingle();
+
+    if (!data) return { valid: false };
+
+    const tokenExpiry = new Date(String(data.expires_at));
+    if (tokenExpiry.getTime() <= Date.now()) {
+      await supabase.from("register_completion_tokens").delete().eq("token", token);
+      return { valid: false };
+    }
+
+    return { valid: true };
+  } catch (e) {
+    console.error("[validateRegisterCompletionToken]", e);
+    return { valid: false };
+  }
 }
 
 export type CompleteSalonRegistrationResult =
@@ -206,7 +237,7 @@ export async function completeSalonRegistration(
   const { data: tokenRow } = await supabase
     .from("register_completion_tokens")
     .select("phone, expires_at")
-    .eq("id", completionToken.trim())
+    .eq("token", completionToken.trim())
     .maybeSingle();
 
   if (!tokenRow) {
@@ -218,7 +249,7 @@ export async function completeSalonRegistration(
     await supabase
       .from("register_completion_tokens")
       .delete()
-      .eq("id", completionToken.trim());
+      .eq("token", completionToken.trim());
     return { ok: false, error: "session_expired" };
   }
 
@@ -284,7 +315,7 @@ export async function completeSalonRegistration(
   await supabase
     .from("register_completion_tokens")
     .delete()
-    .eq("id", completionToken.trim());
+    .eq("token", completionToken.trim());
 
   return { ok: true, slug, slugAdjusted };
 }

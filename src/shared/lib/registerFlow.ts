@@ -1,4 +1,5 @@
 const STORAGE_KEY = "nailiq-register-flow";
+const COMPLETION_COOKIE = "nq_register_completion";
 
 export type RegisterFlowData = {
   phone: string;
@@ -45,6 +46,43 @@ function write(data: RegisterFlowData) {
   }
 }
 
+/** Cookie fallback if localStorage is blocked or cleared between steps. */
+export function readRegisterCompletionTokenFromCookie(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const m = document.cookie.match(/(?:^|; )nq_register_completion=([^;]*)/);
+    return m?.[1] ? decodeURIComponent(m[1]) : "";
+  } catch {
+    return "";
+  }
+}
+
+export function setRegisterCompletionCookie(token: string) {
+  if (typeof window === "undefined" || !token) return;
+  try {
+    const maxAge = 30 * 60;
+    document.cookie = `${COMPLETION_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
+  } catch {
+    // ignore
+  }
+}
+
+export function clearRegisterCompletionCookie() {
+  if (typeof window === "undefined") return;
+  try {
+    document.cookie = `${COMPLETION_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
+  } catch {
+    // ignore
+  }
+}
+
+/** Prefer localStorage; fall back to completion cookie. */
+export function getRegisterCompletionTokenClient(): string {
+  const fromStorage = read().completionToken;
+  if (fromStorage) return fromStorage;
+  return readRegisterCompletionTokenFromCookie();
+}
+
 export function getRegisterFlow(): RegisterFlowData {
   return read();
 }
@@ -62,6 +100,7 @@ export function clearRegisterFlow() {
   } catch {
     // ignore
   }
+  clearRegisterCompletionCookie();
 }
 
 /**

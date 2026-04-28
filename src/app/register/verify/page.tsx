@@ -12,7 +12,11 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
 import { cn } from "@/shared/lib/cn";
-import { getRegisterFlow, setRegisterFlow } from "@/shared/lib/registerFlow";
+import {
+  getRegisterFlow,
+  setRegisterCompletionCookie,
+  setRegisterFlow,
+} from "@/shared/lib/registerFlow";
 import { verifyRegisterOtp } from "@/shared/register/actions";
 
 const OTP_LEN = 6;
@@ -108,7 +112,7 @@ export default function RegisterVerifyPage() {
             setError("Code expired — request a new one.");
           } else if (result.reason === "server_error") {
             setError(
-              "Verification worked, but the session could not be saved. Apply Supabase migrations (register_completion_tokens) and check the server log.",
+              "We could not save your registration session. Run the Supabase migration (register_completion_tokens) and ensure SUPABASE_SERVICE_ROLE_KEY is set on the server.",
             );
           } else {
             setError("Invalid code.");
@@ -119,6 +123,7 @@ export default function RegisterVerifyPage() {
           verified: true,
           completionToken: result.completionToken,
         });
+        setRegisterCompletionCookie(result.completionToken);
         router.push("/register/setup");
       });
     },
