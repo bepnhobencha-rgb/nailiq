@@ -8,8 +8,16 @@ export const userVi: UserMessages = {
     headline: "Vận hành tiệm với NailIQ",
     subline:
       "Tạo link đặt lịch công khai, quản lý lịch hôm nay và phát triển trong một nơi.",
-    ctaRegister: "Bắt đầu",
+    ctaRegister: "Bắt đầu miễn phí",
     footerNote: "Lần đầu? Tạo tiệm chỉ trong vài phút.",
+    navOwnerLogin: "Chủ tiệm đăng nhập",
+    navOwnerLoginShort: "Đăng nhập",
+    alreadySalonPrefix: "Đã có tiệm? ",
+    signInLink: "Đăng nhập →",
+  },
+  register: {
+    returningOwnerHint:
+      "Đã là chủ tiệm? Nhập số điện thoại để đăng nhập lại.",
   },
   salonDashboard: {
     title: "Bảng điều khiển tiệm",

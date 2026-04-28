@@ -4,6 +4,8 @@ All notable changes to NailIQ (project and documentation) are recorded here.
 
 ## 2026-04-28
 
+- **Landing — owner sign-in path (PROMPT #015):** Top nav on `/` adds wordmark, centered **Owner Login** (short **Login** on small screens) linking to `/register`, and a compact primary **Get started free** CTA; hero stack unchanged. Below the phone field, muted **Already have a salon? Sign in →** links to `/register`. Register phone step shows hint *Returning owner? Enter your number to sign back in.* (EN/VI in `en.ts` / `vi.ts`). Files: `HomeLanding.tsx`, `RegisterPageClient.tsx`, `src/shared/i18n/user/en.ts`, `vi.ts`.
+
 - **Dashboard — progressive recovery email:** `salons` gains optional `email` and `email_verified` columns; authenticated owners may update their own salon row (RLS migration `20260428140000_salons_email_owner_update_policy.sql`). Non-blocking gold banner (`AddEmailBanner`) at `/dashboard/[slug]` when email is absent: inline validation, server action `addSalonEmail` (demo slug cookie vs `salon_members` + user session); dismiss persists in localStorage (`nailiq-email-banner-dismissed`) for 7 days; success toast then auto-hide. Helpers: `src/shared/lib/emailFormat.ts`; `resolveSalonForDashboard` exported for reuse.
 
 ## 2026-04-27

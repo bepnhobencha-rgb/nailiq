@@ -1,13 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { DemoOtpModal } from "@/components/register/DemoOtpModal";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
+import { getUserMessages } from "@/shared/i18n/user";
 import { REG_SESSION_PHONE_DIGITS_KEY } from "@/shared/lib/registerSessionKeys";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { sendRegisterOtp } from "@/shared/register/actions";
 import {
   isRegisterPhoneDigitsValid,
@@ -18,6 +20,8 @@ type Props = { demoMode: boolean };
 
 export function RegisterPageClient({ demoMode }: Props) {
   const router = useRouter();
+  const { language } = useUserLanguage();
+  const t = useMemo(() => getUserMessages(language), [language]);
   const [phoneRaw, setPhoneRaw] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -85,6 +89,10 @@ export function RegisterPageClient({ demoMode }: Props) {
           router.push("/register/verify");
         }}
       />
+
+      <p className="mb-2 text-sm text-nq-muted sm:mb-4">
+        {t.register.returningOwnerHint}
+      </p>
 
       <form onSubmit={onSubmit} className="flex flex-col gap-6">
         <div>

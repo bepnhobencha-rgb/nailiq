@@ -10,6 +10,13 @@ export type UserMessages = {
     subline: string;
     ctaRegister: string;
     footerNote: string;
+    navOwnerLogin: string;
+    navOwnerLoginShort: string;
+    alreadySalonPrefix: string;
+    signInLink: string;
+  };
+  register: {
+    returningOwnerHint: string;
   };
   salonDashboard: {
     title: string;
@@ -48,8 +55,16 @@ export const userEn: UserMessages = {
     headline: "Run your salon with NailIQ",
     subline:
       "Set up your public booking link, manage today’s appointments, and grow from one place.",
-    ctaRegister: "Get started",
+    ctaRegister: "Get started free",
     footerNote: "New here? Create your salon in a few minutes.",
+    navOwnerLogin: "Owner Login",
+    navOwnerLoginShort: "Login",
+    alreadySalonPrefix: "Already have a salon? ",
+    signInLink: "Sign in →",
+  },
+  register: {
+    returningOwnerHint:
+      "Returning owner? Enter your number to sign back in.",
   },
   salonDashboard: {
     title: "Salon dashboard",
