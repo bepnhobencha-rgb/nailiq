@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
-import { createClient } from "@/shared/lib/supabase/server";
+import { redirect } from "next/navigation";
 import { SalonOwnerDashboard } from "@/components/dashboard/SalonOwnerDashboard";
+import { createClient } from "@/shared/lib/supabase/server";
+import { loadSalonOwnerDashboard } from "@/shared/dashboard/salonOwnerActions";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -23,5 +25,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function SalonDashboardPage({ params }: Props) {
   const { slug } = await params;
-  return <SalonOwnerDashboard slug={slug} />;
+  const initial = await loadSalonOwnerDashboard(slug);
+  if (!initial.ok) {
+    if (initial.error === "unauthorized") {
+      redirect("/register/setup");
+    }
+    redirect("/register");
+  }
+  return <SalonOwnerDashboard slug={slug} initial={initial} />;
 }

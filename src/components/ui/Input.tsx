@@ -23,7 +23,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           "focus:border-nq-primary focus:ring-2 focus:ring-nq-primary/50 focus:ring-offset-0 focus:shadow-[0_0_0_3px_rgba(212,175,55,0.32),0_0_28px_-4px_rgba(212,175,55,0.18),0_0_20px_rgba(212,175,55,0.25)]",
         error &&
           "border-nq-error focus:border-nq-error focus:ring-0 focus:shadow-nq-input-error",
-        "disabled:cursor-not-allowed disabled:opacity-50",
+        "disabled:cursor-not-allowed disabled:opacity-40",
         className,
       )}
       {...props}

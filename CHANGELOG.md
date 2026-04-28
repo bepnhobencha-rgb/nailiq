@@ -2,6 +2,11 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-04-27
+
+- **Supabase Auth & owner security:** Phone OTP via client `signInWithOtp` / `verifyOtp` when not in demo mode; `salon_members` table + authenticated RLS on `bookings` (select/update for member salons). Middleware (`src/middleware.ts`) refreshes session cookies and guards `/dashboard/*`. Registration completion uses `completeSalonRegistration` with a real `auth.getUser()` session; removed `registerFlow` `localStorage` dashboard gate. Demo path: `NEXT_PUBLIC_DEMO_OTP` + `DemoOtpModal`, `demoAuthBridge` session after custom `otps` verification.
+- **Dashboard & booking UX:** Owner dashboard splits (`SalonOwnerDashboardMain`, stats, today list); masked phones and `#NQ-` booking references; `BookingFlow` split subcomponents + dynamic `canvas-confetti` import; step motion ~180ms. Shared types in `src/shared/types/index.ts`. Removed unused `AuthSheet`. New migration `20260428120000_salon_members_owner_rls.sql`. **PROJECT_BRAIN.md** documents auth and current modules.
+
 ## 2026-04-25
 
 - **`/aggressive` two-column phone mock:** `PhoneDemo` in `src/app/aggressive/page.tsx` now shows an **app bar** (`phoneAppBar` + 💅), **service cards** (icon + name + **duration/price** from new i18n fields), a **horizontally scrollable** time-pill row (**four** slots including **4:30 PM**), and a **light bottom sheet** (drag handle, **success ring** with `niq-pop` + **SVG check** `niq-check` stroke draw, **+1 booking** line, **View schedule** button). New CSS in `globals.css` (`@keyframes niq-pop`, `niq-check`, `.niq-animate-aggr-*`, `.niq-check-path`). `AggressivePhoneDemo` still passes the first **three** time slots to the shared `PhoneFrame` hero. **PROJECT_BRAIN.md** updated.

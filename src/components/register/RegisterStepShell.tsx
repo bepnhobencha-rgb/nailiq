@@ -28,11 +28,11 @@ export function RegisterStepShell({
           >
             ← Home
           </Link>
-          <h1 className="mt-8 text-balance text-2xl font-bold tracking-[-0.02em] text-nq-foreground sm:mt-10 sm:text-3xl">
+          <h1 className="mt-8 text-balance text-2xl font-semibold tracking-tight text-nq-foreground sm:mt-10 lg:text-3xl">
             {title}
           </h1>
           {subtext ? (
-            <p className="mt-2 text-pretty text-sm text-nq-muted sm:text-base">
+            <p className="mt-2 text-pretty text-base text-nq-muted">
               {subtext}
             </p>
           ) : null}

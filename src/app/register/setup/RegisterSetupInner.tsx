@@ -1,80 +1,18 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
-import {
-  clearRegisterFlow,
-  clearRegisterCompletionCookie,
-  getRegisterCompletionTokenClient,
-  getRegisterFlow,
-  setRegisterFlow,
-  slugifySalonName,
-} from "@/shared/lib/registerFlow";
-import {
-  completeSalonRegistration,
-  validateRegisterCompletionToken,
-} from "@/shared/register/actions";
+import { slugifySalonName } from "@/shared/lib/slugifySalonName";
+import { completeSalonRegistration } from "@/shared/register/completeSalonRegistrationAction";
 
 export default function RegisterSetupInner() {
   const router = useRouter();
-  const [bootstrap, setBootstrap] = useState<"checking" | "ready" | "unauthorized">(
-    "checking",
-  );
   const [name, setName] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-
-  useEffect(() => {
-    let cancelled = false;
-    async function init() {
-      const flowPhone = getRegisterFlow().phone;
-      if (!flowPhone) {
-        if (!cancelled) {
-          setBootstrap("unauthorized");
-          router.replace("/register");
-        }
-        return;
-      }
-
-      const token = getRegisterCompletionTokenClient();
-      if (!token) {
-        if (!cancelled) {
-          setBootstrap("unauthorized");
-          router.replace("/register");
-        }
-        return;
-      }
-
-      const fromStorage = getRegisterFlow().completionToken;
-      if (!fromStorage && token) {
-        setRegisterFlow({
-          verified: true,
-          completionToken: token,
-        });
-      }
-
-      const { valid } = await validateRegisterCompletionToken(token);
-      if (cancelled) return;
-      if (!valid) {
-        clearRegisterFlow();
-        setBootstrap("unauthorized");
-        router.replace("/register");
-        return;
-      }
-
-      const flow = getRegisterFlow();
-      setName(flow.salonName ?? "");
-      setBootstrap("ready");
-    }
-
-    void init();
-    return () => {
-      cancelled = true;
-    };
-  }, [router]);
 
   const previewSlug = useMemo(() => {
     const base = slugifySalonName(name.trim());
@@ -86,33 +24,17 @@ export default function RegisterSetupInner() {
       e.preventDefault();
       const trimmed = name.trim();
       if (!trimmed) return;
-      const token = getRegisterCompletionTokenClient();
-      if (!token) {
-        clearRegisterFlow();
-        router.replace("/register");
-        return;
-      }
       setFormError(null);
       startTransition(async () => {
-        const result = await completeSalonRegistration(token, trimmed);
+        const result = await completeSalonRegistration(trimmed);
         if (!result.ok) {
-          if (result.error === "session_expired" || result.error === "missing_token") {
-            clearRegisterFlow();
+          if (result.error === "unauthorized") {
             router.replace("/register");
             return;
           }
           setFormError("Could not create your salon. Try again.");
           return;
         }
-        // Keep phone + verified in localStorage so /dashboard/[slug] can recognize the owner.
-        // Only drop the one-time completion token + cookie (server already consumed the token).
-        clearRegisterCompletionCookie();
-        setRegisterFlow({
-          verified: true,
-          completionToken: "",
-          salonName: trimmed,
-          slug: result.slug,
-        });
         const adj = result.slugAdjusted ? "1" : "0";
         router.replace(
           `/register/success?slug=${encodeURIComponent(result.slug)}&adjusted=${adj}`,
@@ -121,22 +43,6 @@ export default function RegisterSetupInner() {
     },
     [name, router],
   );
-
-  if (bootstrap === "checking") {
-    return (
-      <RegisterStepShell title="What’s your salon name?">
-        <div className="h-32 rounded-2xl bg-nq-surface/50" />
-      </RegisterStepShell>
-    );
-  }
-
-  if (bootstrap === "unauthorized") {
-    return (
-      <RegisterStepShell title="What’s your salon name?">
-        <div className="h-32 rounded-2xl bg-nq-surface/50" />
-      </RegisterStepShell>
-    );
-  }
 
   return (
     <RegisterStepShell
@@ -148,6 +54,7 @@ export default function RegisterSetupInner() {
           <Input
             name="salonName"
             placeholder="e.g. A Nails"
+            className="text-base"
             value={name}
             onChange={(e) => {
               setName(e.target.value);
@@ -172,7 +79,12 @@ export default function RegisterSetupInner() {
             </p>
           ) : null}
         </div>
-        <Button type="submit" size="lg" className="w-full" disabled={!name.trim() || pending}>
+        <Button
+          type="submit"
+          size="lg"
+          className="w-full min-h-11"
+          disabled={!name.trim() || pending}
+        >
           {pending ? "Creating…" : "Create your booking page"}
         </Button>
       </form>

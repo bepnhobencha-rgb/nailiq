@@ -1,17 +1,34 @@
-"use client";
+import { redirect } from "next/navigation";
+import { createClient } from "@/shared/lib/supabase/server";
+import RegisterSetupInner from "./RegisterSetupInner";
 
-import dynamic from "next/dynamic";
-import { RegisterStepShell } from "@/components/register/RegisterStepShell";
+export default async function RegisterSetupPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    redirect("/register");
+  }
 
-const RegisterSetupInner = dynamic(() => import("./RegisterSetupInner"), {
-  ssr: false,
-  loading: () => (
-    <RegisterStepShell title="What’s your salon name?">
-      <div className="h-32 rounded-2xl bg-nq-surface/50" />
-    </RegisterStepShell>
-  ),
-});
+  const { data: member } = await supabase
+    .from("salon_members")
+    .select("salon_id, salons!inner(slug)")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
 
-export default function RegisterSetupPage() {
+  const slug =
+    member &&
+    member.salons &&
+    typeof member.salons === "object" &&
+    "slug" in member.salons
+      ? String((member.salons as { slug: string }).slug)
+      : "";
+
+  if (slug) {
+    redirect(`/dashboard/${encodeURIComponent(slug)}`);
+  }
+
   return <RegisterSetupInner />;
 }

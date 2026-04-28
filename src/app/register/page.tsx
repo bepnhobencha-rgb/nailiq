@@ -5,21 +5,25 @@ import { useCallback, useState, useTransition } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { DemoOtpModal } from "@/components/register/DemoOtpModal";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
-import { getRegisterFlow, setRegisterFlow } from "@/shared/lib/registerFlow";
+import { isPublicDemoOtpMode } from "@/shared/lib/demoOtpMode";
+import { REG_SESSION_PHONE_DIGITS_KEY } from "@/shared/lib/registerSessionKeys";
+import { createClient as createBrowserSupabase } from "@/shared/lib/supabase/client";
 import { sendRegisterOtp } from "@/shared/register/actions";
 import {
+  digitsToE164Phone,
   isRegisterPhoneDigitsValid,
   normalizeRegisterPhone,
 } from "@/shared/register/phone";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [phoneRaw, setPhoneRaw] = useState(() =>
-    typeof window !== "undefined" ? getRegisterFlow().phone : "",
-  );
+  const [phoneRaw, setPhoneRaw] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [demoCode, setDemoCode] = useState<string | null>(null);
+  const demoMode = isPublicDemoOtpMode();
 
   const onSubmit = useCallback(
     (e: React.FormEvent) => {
@@ -33,37 +37,77 @@ export default function RegisterPage() {
       }
       setError(null);
       startTransition(async () => {
-        const result = await sendRegisterOtp(phoneRaw);
-        if (!result.success) {
-          setError(result.error);
+        if (typeof window !== "undefined") {
+          window.sessionStorage.setItem(REG_SESSION_PHONE_DIGITS_KEY, normalized);
+        }
+
+        if (demoMode) {
+          const result = await sendRegisterOtp(phoneRaw);
+          if (!result.success) {
+            setError(result.error);
+            return;
+          }
+          setDemoCode(result.demoCode);
           return;
         }
-        setRegisterFlow({
-          phone: normalized,
-          verified: false,
-          completionToken: "",
-          salonName: "",
-          slug: "",
+
+        const e164 = digitsToE164Phone(normalized);
+        if (!e164) {
+          setError(
+            "Enter 8–15 digits including country code (e.g. Vietnam: 84912345678).",
+          );
+          return;
+        }
+
+        const supabase = createBrowserSupabase();
+        const { error: otpError } = await supabase.auth.signInWithOtp({
+          phone: e164,
+          options: { shouldCreateUser: true },
         });
+
+        if (otpError) {
+          setError(
+            otpError.message ||
+              "Could not send SMS. Enable Phone auth in Supabase or use demo mode.",
+          );
+          return;
+        }
+
         router.push("/register/verify");
       });
     },
-    [phoneRaw, router],
+    [demoMode, phoneRaw, router],
   );
 
   return (
     <RegisterStepShell
       title="Verify your number"
-      subtext="We’ll text you a one-time code to confirm it’s you. SMS isn’t wired yet—this build logs the code in the server console for demo."
+      subtext={
+        demoMode
+          ? "Demo mode shows the OTP on screen. Production uses SMS from Supabase."
+          : "We’ll text you a one-time code. Enable Phone Auth in Supabase (Auth → Providers → Phone)."
+      }
     >
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <Badge variant="default" className="uppercase tracking-[0.14em]">
-          DEMO MODE
-        </Badge>
-        <span className="text-xs leading-snug text-nq-muted">
-          Codes appear in your dev terminal only—not sent by SMS yet.
-        </span>
-      </div>
+      {demoMode ? (
+        <div className="mb-6 flex flex-wrap items-center gap-3">
+          <Badge variant="default" className="uppercase tracking-[0.14em]">
+            DEMO MODE
+          </Badge>
+          <span className="text-xs leading-snug text-nq-muted">
+            OTP appears in a secure modal after you send the code.
+          </span>
+        </div>
+      ) : null}
+
+      <DemoOtpModal
+        code={demoCode ?? ""}
+        open={Boolean(demoCode)}
+        onDismiss={() => setDemoCode(null)}
+        onContinue={() => {
+          setDemoCode(null);
+          router.push("/register/verify");
+        }}
+      />
 
       <form onSubmit={onSubmit} className="flex flex-col gap-6">
         <div>
@@ -72,8 +116,9 @@ export default function RegisterPage() {
             name="phone"
             type="tel"
             inputMode="tel"
-            autoComplete="tel-national"
+            autoComplete="tel"
             placeholder="Mobile number"
+            className="text-base"
             value={phoneRaw}
             onChange={(ev) => {
               setPhoneRaw(ev.target.value);
@@ -89,7 +134,12 @@ export default function RegisterPage() {
             </p>
           ) : null}
         </div>
-        <Button type="submit" size="lg" className="w-full" disabled={pending}>
+        <Button
+          type="submit"
+          size="lg"
+          className="w-full min-h-11"
+          disabled={pending}
+        >
           {pending ? "Sending…" : "Send code"}
         </Button>
       </form>

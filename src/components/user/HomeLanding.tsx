@@ -9,9 +9,12 @@ import { MobileStack } from "@/components/layout/MobileStack";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
 import { getUserMessages } from "@/shared/i18n/user";
-import { setRegisterFlow } from "@/shared/lib/registerFlow";
+import { REG_SESSION_PHONE_DIGITS_KEY } from "@/shared/lib/registerSessionKeys";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
-import { normalizeRegisterPhone } from "@/shared/register/phone";
+import {
+  isRegisterPhoneDigitsValid,
+  normalizeRegisterPhone,
+} from "@/shared/register/phone";
 
 export function HomeLanding() {
   const router = useRouter();
@@ -50,13 +53,9 @@ export function HomeLanding() {
             onClick={() => {
               const el = document.querySelector<HTMLInputElement>('input[name="phone"]');
               const phone = normalizeRegisterPhone(el?.value ?? "");
-              setRegisterFlow({
-                phone,
-                verified: false,
-                completionToken: "",
-                salonName: "",
-                slug: "",
-              });
+              if (typeof window !== "undefined" && isRegisterPhoneDigitsValid(phone)) {
+                window.sessionStorage.setItem(REG_SESSION_PHONE_DIGITS_KEY, phone);
+              }
               router.push("/register");
             }}
           >

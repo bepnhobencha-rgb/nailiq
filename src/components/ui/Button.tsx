@@ -84,7 +84,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           "transition-all duration-150 ease-out motion-reduce:transition-transform motion-reduce:duration-200",
           "hover:scale-[1.02] active:scale-[0.98] motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
           clickFlash && "opacity-90",
-          "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100 disabled:active:scale-100 sm:w-auto",
+          "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 disabled:active:scale-100 sm:w-auto",
           variantClasses[variant],
           sizeClasses[size],
           className,

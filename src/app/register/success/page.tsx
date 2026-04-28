@@ -116,7 +116,7 @@ function RegisterSuccessInner() {
             Open dashboard
           </Button>
           <p className="mt-2 text-[11px] leading-snug text-nq-muted">
-            Today’s bookings and status — same browser you used to verify your number.
+            Today’s bookings use your signed-in session — same browser you used to verify.
           </p>
         </div>
 

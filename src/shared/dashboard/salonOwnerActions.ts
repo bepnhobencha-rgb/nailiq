@@ -1,23 +1,10 @@
 "use server";
 
 import { createClient } from "@/shared/lib/supabase/server";
-import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import {
-  isRegisterPhoneDigitsValid,
-  normalizeRegisterPhone,
-} from "@/shared/register/phone";
-
-export type BookingStatus = "pending" | "confirmed" | "completed";
-
-export type SalonDashboardBooking = {
-  id: string;
-  client_name: string;
-  client_phone: string;
-  start_time_utc: string;
-  status: BookingStatus;
-  service_name: string;
-  price_cents: number;
-};
+import type {
+  BookingStatus,
+  SalonDashboardBooking,
+} from "@/shared/types";
 
 function utcDayBounds(
   d: Date,
@@ -35,25 +22,35 @@ function utcDayBounds(
 
 type SalonRow = { id: string; name: string; slug: string; phone: string };
 
-async function getSalonIfOwner(
-  slug: string,
-  ownerPhoneRaw: string,
-): Promise<SalonRow | null> {
-  const ownerPhone = normalizeRegisterPhone(ownerPhoneRaw);
-  if (!isRegisterPhoneDigitsValid(ownerPhone)) return null;
-
+async function getSalonIfMember(slug: string): Promise<SalonRow | null> {
   const supabase = await createClient();
-  const { data: salon, error } = await supabase
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data: members, error: memErr } = await supabase
+    .from("salon_members")
+    .select("salon_id")
+    .eq("user_id", user.id);
+
+  if (memErr || !members?.length) return null;
+
+  const salonIds = members.map((m) => String(m.salon_id));
+
+  const { data: salon, error: salErr } = await supabase
     .from("salons")
     .select("id, name, slug, phone")
     .eq("slug", slug)
+    .in("id", salonIds)
     .maybeSingle();
 
-  if (error || !salon) return null;
-  if (normalizeRegisterPhone(String(salon.phone)) !== ownerPhone) return null;
+  if (salErr || !salon) return null;
 
   return salon as SalonRow;
 }
+
+type ServiceJoinRow = { name: string; price_cents: number };
 
 type BookingRowDb = {
   id: string;
@@ -61,8 +58,15 @@ type BookingRowDb = {
   client_phone: string;
   start_time_utc: string;
   status: string;
-  services: { name: string; price_cents: number } | null;
+  services: ServiceJoinRow | ServiceJoinRow[] | null;
 };
+
+function serviceFromJoin(
+  raw: ServiceJoinRow | ServiceJoinRow[] | null,
+): ServiceJoinRow | null {
+  if (!raw) return null;
+  return Array.isArray(raw) ? (raw[0] ?? null) : raw;
+}
 
 function mapBookingRow(row: BookingRowDb): SalonDashboardBooking {
   const status = row.status as BookingStatus;
@@ -70,21 +74,22 @@ function mapBookingRow(row: BookingRowDb): SalonDashboardBooking {
     status === "pending" || status === "confirmed" || status === "completed"
       ? status
       : "pending";
+  const svc = serviceFromJoin(row.services);
   return {
     id: row.id,
     client_name: row.client_name,
     client_phone: row.client_phone,
     start_time_utc: row.start_time_utc,
     status: safeStatus,
-    service_name: row.services?.name ?? "—",
-    price_cents: Number(row.services?.price_cents ?? 0),
+    service_name: svc?.name ?? "—",
+    price_cents: Number(svc?.price_cents ?? 0),
   };
 }
 
 export type LoadSalonDashboardResult =
   | {
       ok: true;
-      salon: { id: string; name: string; slug: string };
+      salon: { id: string; name: string; slug: string; phone: string };
       today: SalonDashboardBooking[];
       upcoming: SalonDashboardBooking[];
       stats: {
@@ -97,26 +102,15 @@ export type LoadSalonDashboardResult =
     }
   | { ok: false; error: "unauthorized" | "server_error" };
 
-/**
- * Owner gate: `createClient()` verifies salon slug + phone (public `salons` select).
- * Booking rows are read with the service role because RLS denies anon SELECT on `bookings`.
- */
 export async function loadSalonOwnerDashboard(
   slug: string,
-  ownerPhone: string,
 ): Promise<LoadSalonDashboardResult> {
-  const salon = await getSalonIfOwner(slug, ownerPhone);
+  const salon = await getSalonIfMember(slug);
   if (!salon) {
     return { ok: false, error: "unauthorized" };
   }
 
-  let sb;
-  try {
-    sb = createServiceRoleClient();
-  } catch {
-    return { ok: false, error: "server_error" };
-  }
-
+  const supabase = await createClient();
   const { dayStartIso, nextDayStartIso } = utcDayBounds(new Date());
   const upcomingEnd = new Date(nextDayStartIso);
   upcomingEnd.setUTCDate(upcomingEnd.getUTCDate() + 7);
@@ -125,7 +119,7 @@ export async function loadSalonOwnerDashboard(
   const selectCols =
     "id, client_name, client_phone, start_time_utc, status, services ( name, price_cents )";
 
-  const { data: todayRows, error: todayErr } = await sb
+  const { data: todayRows, error: todayErr } = await supabase
     .from("bookings")
     .select(selectCols)
     .eq("salon_id", salon.id)
@@ -138,7 +132,7 @@ export async function loadSalonOwnerDashboard(
     return { ok: false, error: "server_error" };
   }
 
-  const { data: upcomingRows, error: upErr } = await sb
+  const { data: upcomingRows, error: upErr } = await supabase
     .from("bookings")
     .select(selectCols)
     .eq("salon_id", salon.id)
@@ -166,7 +160,12 @@ export async function loadSalonOwnerDashboard(
 
   return {
     ok: true,
-    salon: { id: salon.id, name: salon.name, slug: salon.slug },
+    salon: {
+      id: salon.id,
+      name: salon.name,
+      slug: salon.slug,
+      phone: salon.phone,
+    },
     today,
     upcoming,
     stats: {
@@ -181,27 +180,24 @@ export async function loadSalonOwnerDashboard(
 
 export type UpdateBookingStatusResult =
   | { ok: true }
-  | { ok: false; error: "unauthorized" | "not_found" | "invalid_transition" | "server_error" };
+  | {
+      ok: false;
+      error: "unauthorized" | "not_found" | "invalid_transition" | "server_error";
+    };
 
 export async function updateBookingStatus(
   bookingId: string,
   nextStatus: BookingStatus,
   slug: string,
-  ownerPhone: string,
 ): Promise<UpdateBookingStatusResult> {
-  const salon = await getSalonIfOwner(slug, ownerPhone);
+  const salon = await getSalonIfMember(slug);
   if (!salon) {
     return { ok: false, error: "unauthorized" };
   }
 
-  let sb;
-  try {
-    sb = createServiceRoleClient();
-  } catch {
-    return { ok: false, error: "server_error" };
-  }
+  const supabase = await createClient();
 
-  const { data: row, error: fetchErr } = await sb
+  const { data: row, error: fetchErr } = await supabase
     .from("bookings")
     .select("id, status, salon_id")
     .eq("id", bookingId)
@@ -220,7 +216,7 @@ export async function updateBookingStatus(
     return { ok: false, error: "invalid_transition" };
   }
 
-  const { error: upErr } = await sb
+  const { error: upErr } = await supabase
     .from("bookings")
     .update({ status: nextStatus })
     .eq("id", bookingId)
@@ -233,3 +229,5 @@ export async function updateBookingStatus(
 
   return { ok: true };
 }
+
+export type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
