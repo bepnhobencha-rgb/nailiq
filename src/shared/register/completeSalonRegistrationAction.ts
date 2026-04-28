@@ -11,6 +11,7 @@ import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import { slugifySalonName } from "@/shared/lib/slugifySalonName";
 import { getOrCreateDemoSalonOwnerUserId } from "@/shared/register/demoSalonOwner";
 import { phoneDigitsFromAuthUser } from "@/shared/register/authUserPhone";
+import { normalizeRegisterPhone } from "@/shared/register/phone";
 import { pickAvailableSalonSlug } from "@/shared/register/salonSlugPicker";
 
 export type CompleteSalonRegistrationResult =
@@ -205,7 +206,10 @@ export async function completeSalonRegistration(
     }
   }
 
-  const phone = phoneDigitsFromAuthUser(user);
+  const completionTok = completionTokenRaw?.trim();
+  if (!completionTok) {
+    return { ok: false, error: "invalid_completion_token" };
+  }
 
   let admin;
   try {
@@ -214,6 +218,32 @@ export async function completeSalonRegistration(
     console.error("FAILED before step 2 (service role client)", e);
     return { ok: false, error: "server_error" };
   }
+
+  const { data: proof, error: proofErr } = await admin
+    .from("register_completion_tokens")
+    .select("id, phone, expires_at")
+    .eq("token", completionTok)
+    .maybeSingle();
+
+  if (proofErr || !proof?.phone) {
+    console.error("[completeSalonRegistration] completion token lookup", proofErr);
+    return { ok: false, error: "invalid_completion_token" };
+  }
+
+  const proofExp = new Date(String(proof.expires_at));
+  if (proofExp.getTime() <= Date.now()) {
+    await admin.from("register_completion_tokens").delete().eq("id", proof.id);
+    return { ok: false, error: "invalid_completion_token" };
+  }
+
+  const authDigits = phoneDigitsFromAuthUser(user);
+  const proofDigits = normalizeRegisterPhone(String(proof.phone));
+  const authNorm = normalizeRegisterPhone(authDigits);
+  if (!authNorm || proofDigits !== authNorm) {
+    return { ok: false, error: "invalid_completion_token" };
+  }
+
+  const phone = authDigits;
 
   let slug: string;
   let slugAdjusted: boolean;
@@ -296,6 +326,8 @@ export async function completeSalonRegistration(
     await admin.from("salons").delete().eq("id", salonId);
     return { ok: false, error: "server_error" };
   }
+
+  await admin.from("register_completion_tokens").delete().eq("id", proof.id);
 
   return { ok: true, slug, slugAdjusted };
 }

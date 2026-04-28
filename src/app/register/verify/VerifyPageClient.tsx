@@ -127,23 +127,18 @@ export function VerifyPageClient({ demoMode }: Props) {
           return;
         }
 
-        if (demoMode) {
-          const ct = result.completionToken;
-          if (!ct) {
-            setError("Missing completion token. Try again.");
-            return;
-          }
-          if (typeof window !== "undefined") {
-            window.sessionStorage.setItem(REG_COMPLETION_TOKEN_KEY, ct);
-          }
-          router.push("/register/setup");
+        const ct = result.completionToken;
+        if (!ct) {
+          setError("Missing completion token. Try again.");
           return;
         }
-
+        if (typeof window !== "undefined") {
+          window.sessionStorage.setItem(REG_COMPLETION_TOKEN_KEY, ct);
+        }
         router.push("/register/setup");
       });
     },
-    [codeJoined, demoMode, phoneDigits, router],
+    [codeJoined, phoneDigits, router],
   );
 
   return (

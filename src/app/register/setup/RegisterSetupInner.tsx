@@ -15,21 +15,19 @@ import { REG_COMPLETION_TOKEN_KEY } from "@/shared/lib/registerSessionKeys";
 import { slugifySalonName } from "@/shared/lib/slugifySalonName";
 import { completeSalonRegistration } from "@/shared/register/completeSalonRegistrationAction";
 
-type Props = { demoMode: boolean };
-
-export default function RegisterSetupInner({ demoMode }: Props) {
+export default function RegisterSetupInner() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
-    if (!demoMode || typeof window === "undefined") return;
+    if (typeof window === "undefined") return;
     const token = window.sessionStorage.getItem(REG_COMPLETION_TOKEN_KEY);
     if (!token?.trim()) {
       router.replace("/register");
     }
-  }, [demoMode, router]);
+  }, [router]);
 
   const previewSlug = useMemo(() => {
     const base = slugifySalonName(name.trim());
@@ -44,14 +42,11 @@ export default function RegisterSetupInner({ demoMode }: Props) {
       setFormError(null);
       startTransition(async () => {
         const completionToken =
-          demoMode && typeof window !== "undefined"
+          typeof window !== "undefined"
             ? window.sessionStorage.getItem(REG_COMPLETION_TOKEN_KEY)
             : null;
 
-        const result = await completeSalonRegistration(
-          trimmed,
-          demoMode ? completionToken : undefined,
-        );
+        const result = await completeSalonRegistration(trimmed, completionToken);
 
         if (!result.ok) {
           if (result.error === "unauthorized") {
@@ -68,7 +63,7 @@ export default function RegisterSetupInner({ demoMode }: Props) {
           return;
         }
 
-        if (demoMode && typeof window !== "undefined") {
+        if (typeof window !== "undefined") {
           window.sessionStorage.removeItem(REG_COMPLETION_TOKEN_KEY);
         }
 
@@ -78,7 +73,7 @@ export default function RegisterSetupInner({ demoMode }: Props) {
         );
       });
     },
-    [demoMode, name, router],
+    [name, router],
   );
 
   return (

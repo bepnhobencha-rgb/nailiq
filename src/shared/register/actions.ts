@@ -25,18 +25,7 @@ export type SendRegisterOtpResult =
 export async function sendRegisterOtp(
   phoneRaw: string,
 ): Promise<SendRegisterOtpResult> {
-  console.log(
-    "SERVICE_ROLE_KEY exists:",
-    !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-  );
-  console.log(
-    "SERVICE_ROLE_KEY length:",
-    process.env.SUPABASE_SERVICE_ROLE_KEY?.length,
-  );
-  console.log("DEMO_OTP:", process.env.DEMO_OTP);
   const isDemo = isDemoOtpRuntime();
-  console.log("isDemo:", isDemo);
-
   const phone = normalizeRegisterPhone(phoneRaw);
   if (!isRegisterPhoneDigitsValid(phone)) {
     return { success: false, error: INVALID_PHONE_MSG };
@@ -106,7 +95,7 @@ export async function sendRegisterOtp(
 }
 
 export type VerifyRegisterOtpResult =
-  | { ok: true; completionToken?: string }
+  | { ok: true; completionToken: string }
   | { ok: false; reason: "invalid" | "expired" | "server_error" };
 
 export async function verifyRegisterOtp(
@@ -144,7 +133,33 @@ export async function verifyRegisterOtp(
         return { ok: false, reason: "invalid" };
       }
 
-      return { ok: true };
+      const completionToken = randomUUID();
+      const tokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+      let adminInsert;
+      try {
+        adminInsert = createServiceRoleClient();
+      } catch {
+        return { ok: false, reason: "server_error" };
+      }
+
+      const { error: tokErr } = await adminInsert
+        .from("register_completion_tokens")
+        .insert({
+          phone,
+          token: completionToken,
+          expires_at: tokenExpiresAt,
+        });
+
+      if (tokErr) {
+        console.error(
+          "[verifyRegisterOtp] register_completion_tokens insert",
+          tokErr,
+        );
+        return { ok: false, reason: "server_error" };
+      }
+
+      return { ok: true, completionToken };
     } catch (error) {
       console.error("[verifyRegisterOtp]", error);
       return { ok: false, reason: "server_error" };
