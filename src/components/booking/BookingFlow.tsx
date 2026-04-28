@@ -3,11 +3,11 @@
 import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { getServiceById, type BookingServiceItem } from "@/shared/booking/catalog";
 import {
-  getBookingCatalog,
-  getServiceById,
-} from "@/shared/booking/catalog";
-import { submitPublicBooking } from "@/shared/booking/submitPublicBooking";
+  BookingConflictError,
+  submitPublicBooking,
+} from "@/shared/booking/submitPublicBooking";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 
 type Step = "service" | "time" | "confirm" | "done";
@@ -15,6 +15,8 @@ type Step = "service" | "time" | "confirm" | "done";
 type BookingFlowProps = {
   t: BookingMessages;
   shopSlug: string;
+  services: readonly BookingServiceItem[];
+  timeSlots: readonly string[];
 };
 
 function decodeShop(shop: string) {
@@ -25,16 +27,19 @@ function decodeShop(shop: string) {
   }
 }
 
-export function BookingFlow({ t, shopSlug }: BookingFlowProps) {
+export function BookingFlow({
+  t,
+  shopSlug,
+  services,
+  timeSlots,
+}: BookingFlowProps) {
   const shopLabel = useMemo(() => decodeShop(shopSlug), [shopSlug]);
-  const { services, timeSlots } = useMemo(
-    () => getBookingCatalog(shopSlug),
-    [shopSlug],
-  );
 
   const [step, setStep] = useState<Step>("service");
   const [serviceId, setServiceId] = useState<string | null>(null);
   const [timeSlot, setTimeSlot] = useState<string | null>(null);
+  const [clientName, setClientName] = useState("");
+  const [clientPhone, setClientPhone] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,16 +66,37 @@ export function BookingFlow({ t, shopSlug }: BookingFlowProps) {
       return;
     }
     setError(null);
+    const name = clientName.trim();
+    const phone = clientPhone.trim();
+    if (!name || !phone) {
+      setError(t.submitError);
+      return;
+    }
+
     setSubmitting(true);
     try {
-      await submitPublicBooking({ shopSlug, serviceId, timeSlot });
+      await submitPublicBooking({
+        shopSlug,
+        serviceId,
+        timeSlot,
+        clientName: name,
+        clientPhone: phone,
+      });
       setStep("done");
-    } catch {
-      setError(t.submitError);
+    } catch (err) {
+      setError(err instanceof BookingConflictError ? t.slotTakenError : t.submitError);
     } finally {
       setSubmitting(false);
     }
-  }, [serviceId, timeSlot, shopSlug, t.submitError]);
+  }, [
+    clientName,
+    clientPhone,
+    serviceId,
+    timeSlot,
+    shopSlug,
+    t.slotTakenError,
+    t.submitError,
+  ]);
 
   if (step === "done") {
     return (
@@ -217,6 +243,34 @@ export function BookingFlow({ t, shopSlug }: BookingFlowProps) {
               <dd className="text-right text-nq-foreground">{timeSlot}</dd>
             </div>
           </dl>
+          <div className="mt-4 space-y-3">
+            <label className="block text-sm font-medium text-nq-foreground">
+              {t.clientNameLabel}
+              <input
+                type="text"
+                name="clientName"
+                autoComplete="name"
+                value={clientName}
+                onChange={(e) => {
+                  setClientName(e.target.value);
+                }}
+                className="mt-1 block w-full rounded-lg border border-nq-border bg-transparent px-3 py-2 text-nq-foreground"
+              />
+            </label>
+            <label className="block text-sm font-medium text-nq-foreground">
+              {t.clientPhoneLabel}
+              <input
+                type="tel"
+                name="clientPhone"
+                autoComplete="tel"
+                value={clientPhone}
+                onChange={(e) => {
+                  setClientPhone(e.target.value);
+                }}
+                className="mt-1 block w-full rounded-lg border border-nq-border bg-transparent px-3 py-2 text-nq-foreground"
+              />
+            </label>
+          </div>
           {error ? (
             <p className="mt-2 text-sm text-nq-error" role="alert">
               {error}
@@ -239,7 +293,11 @@ export function BookingFlow({ t, shopSlug }: BookingFlowProps) {
               type="button"
               className="w-full"
               size="lg"
-              disabled={submitting}
+              disabled={
+                submitting ||
+                !clientName.trim() ||
+                !clientPhone.trim()
+              }
               onClick={onConfirm}
             >
               {submitting ? t.submitting : t.confirmBooking}

@@ -17,6 +17,10 @@ export const bookingEn = {
   summaryShop: "Salon",
   summaryService: "Service",
   summaryTime: "Time",
+  clientNameLabel: "Your name",
+  clientPhoneLabel: "Phone number",
+  slotTakenError:
+    "That time was just booked. Please pick another slot and try again.",
 } as const;
 
 export type BookingMessages = typeof bookingEn;

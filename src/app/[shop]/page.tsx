@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { BookingFlow } from "@/components/booking/BookingFlow";
+import { loadBookingServicesForSalonSlug } from "@/shared/booking/loadBookingServices";
+import { PUBLIC_BOOKING_TIME_SLOTS } from "@/shared/booking/timeSlots";
 import { bookingEn } from "@/shared/i18n/booking/en";
 import { BookingDocumentEn } from "./BookingDocumentEn";
 
@@ -22,6 +25,11 @@ export default async function ShopBookingPage({ params }: ShopPageProps) {
   const { shop } = await params;
   const t = bookingEn;
 
+  const services = await loadBookingServicesForSalonSlug(shop);
+  if (services === null) {
+    notFound();
+  }
+
   return (
     <>
       <BookingDocumentEn />
@@ -32,7 +40,12 @@ export default async function ShopBookingPage({ params }: ShopPageProps) {
         <p className="mt-1 text-sm text-nq-muted sm:text-base">
           {t.pageSubtitle}—{shop}
         </p>
-        <BookingFlow t={t} shopSlug={shop} />
+        <BookingFlow
+          t={t}
+          shopSlug={shop}
+          services={services}
+          timeSlots={PUBLIC_BOOKING_TIME_SLOTS}
+        />
       </main>
     </>
   );
