@@ -5,6 +5,10 @@
 export type BookingServiceItem = {
   id: string;
   name: string;
+  /** Total length in minutes (service duration + buffer), for tiles. */
+  totalMinutes: number;
+  /** When the backend exposes pricing, surfaced here; otherwise null. */
+  priceDisplay: string | null;
 };
 
 export function getServiceById(

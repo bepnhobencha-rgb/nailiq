@@ -22,7 +22,7 @@ export async function loadBookingServicesForSalonSlug(
 
   const { data: rows, error: servicesErr } = await supabase
     .from("services")
-    .select("id, name")
+    .select("id, name, duration_minutes, buffer_minutes")
     .eq("salon_id", salon.id)
     .order("name", { ascending: true });
 
@@ -30,8 +30,17 @@ export async function loadBookingServicesForSalonSlug(
     return [];
   }
 
-  return (rows ?? []).map((r) => ({
-    id: r.id as string,
-    name: r.name as string,
-  }));
+  return (rows ?? []).map((r) => {
+    const duration = Number(r.duration_minutes) || 0;
+    const buffer = Number(r.buffer_minutes) || 0;
+    const totalMinutes = duration + buffer;
+
+    return {
+      id: r.id as string,
+      name: r.name as string,
+      totalMinutes,
+      /** Wire `price_cents` (or similar) in select + map when the column exists. */
+      priceDisplay: null as string | null,
+    };
+  });
 }

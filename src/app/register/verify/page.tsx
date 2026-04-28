@@ -106,6 +106,10 @@ export default function RegisterVerifyPage() {
         if (!result.ok) {
           if (result.reason === "expired") {
             setError("Code expired — request a new one.");
+          } else if (result.reason === "server_error") {
+            setError(
+              "Verification worked, but the session could not be saved. Apply Supabase migrations (register_completion_tokens) and check the server log.",
+            );
           } else {
             setError("Invalid code.");
           }
@@ -163,8 +167,7 @@ export default function RegisterVerifyPage() {
 
         {flowPhone ? (
           <p className="text-center text-xs text-nq-muted">
-            Sending to ····
-            {flowPhone.slice(-4)}
+            Number ending in ····{flowPhone.slice(-4)} — enter all 6 digits of the code.
           </p>
         ) : null}
 

@@ -27,6 +27,18 @@
   --shadow-nq-card-luxury: 0 8px 40px -12px rgba(0, 0, 0, 0.55),
     0 0 0 1px rgba(212, 175, 55, 0.12), 0 0 0 1px rgba(212, 175, 55, 0.14),
     0 0 36px -6px rgba(212, 175, 55, 0.2);
+
+  /** Deep navy glass (public booking surfaces) — Apple-like depth */
+  --color-nq-navy-deep: #0f172a;
+  --color-nq-navy-glass: rgba(15, 23, 42, 0.58);
+  --shadow-nq-tile-selected: 0 0 0 1px rgba(212, 175, 55, 0.95),
+    0 18px 50px -20px rgba(0, 0, 0, 0.55),
+    0 0 40px -8px rgba(212, 175, 55, 0.35);
+
+  /** Luxury CTAs (pill + gold gradient sweep) */
+  --nq-luxury-cta-from: #f3eacb;
+  --nq-luxury-cta-mid: #d4af37;
+  --nq-luxury-cta-to: #8a7318;
 }
 
 @theme inline {
@@ -48,6 +60,9 @@
   --shadow-nq-input-error: var(--shadow-nq-input-error);
   --shadow-nq-glow: var(--shadow-nq-glow);
   --shadow-nq-card-luxury: var(--shadow-nq-card-luxury);
+  --color-nq-navy-deep: var(--color-nq-navy-deep);
+  --color-nq-navy-glass: var(--color-nq-navy-glass);
+  --shadow-nq-tile-selected: var(--shadow-nq-tile-selected);
   --duration-nq-fast: var(--duration-nq-fast);
   --duration-nq-base: var(--duration-nq-base);
   --duration-nq-slow: var(--duration-nq-slow);
@@ -179,6 +194,16 @@
   }
 }
 
+/** Wider horizontal sweep for luxury pill CTAs */
+@keyframes nq-luxury-sheen {
+  0% {
+    transform: translateX(-130%) skewX(-12deg);
+  }
+  100% {
+    transform: translateX(130%) skewX(-12deg);
+  }
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -289,6 +314,117 @@
     background-color: var(--color-nq-primary) !important;
     color: var(--color-nq-bg) !important;
   }
+
+  /** Glass card — deep navy + blur(10px) per booking spec */
+  .nq-booking-glass {
+    background: var(--color-nq-navy-glass);
+    backdrop-filter: blur(10px) saturate(160%);
+    -webkit-backdrop-filter: blur(10px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 12px 40px -16px rgba(0, 0, 0, 0.45);
+  }
+
+  /** Stronger glass for desktop salon identity card (`BookingSalonHero`) */
+  .nq-booking-glass-strong-panel {
+    background: rgba(15, 23, 42, 0.62);
+    backdrop-filter: blur(20px) saturate(165%);
+    -webkit-backdrop-filter: blur(20px) saturate(165%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      0 12px 40px -16px rgba(0, 0, 0, 0.45);
+  }
+
+  /** Service / time tiles — desktop hover lift + gold glow (paired with motion-safe / motion-reduce in markup) */
+  .nq-booking-tile-interactive {
+    transition-property: transform, box-shadow, border-color;
+    transition-duration: var(--duration-nq-slow, 280ms);
+    transition-timing-function: var(--ease-nq-out, cubic-bezier(0.22, 1, 0.36, 1));
+  }
+
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    .nq-booking-tile-interactive[aria-pressed="false"]:hover:not(:disabled) {
+      transform: translateY(-4px);
+      box-shadow: 0 0 0 1px rgba(212, 175, 55, 0.22),
+        0 16px 48px -18px rgba(0, 0, 0, 0.55),
+        0 0 44px -10px rgba(212, 175, 55, 0.28);
+      border-color: rgba(212, 175, 55, 0.28);
+    }
+  }
+
+  /** Form fields — rounded 16px, navy fill, gold focus ring */
+  .nq-booking-field {
+    min-height: 52px;
+    width: 100%;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: color-mix(in srgb, var(--color-nq-navy-deep) 78%, transparent);
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    color: var(--color-nq-foreground);
+    outline: none;
+    transition: border-color 0.2s var(--ease-nq-out, ease),
+      box-shadow 0.2s var(--ease-nq-out, ease);
+  }
+
+  .nq-booking-field::placeholder {
+    color: rgba(161, 161, 170, 0.55);
+  }
+
+  .nq-booking-field:focus {
+    border-color: rgba(212, 175, 55, 0.75);
+    box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.22),
+      0 0 24px -6px rgba(212, 175, 55, 0.25);
+  }
+
+  /** Continue / Confirm — gold gradient pill + sheen */
+  .nq-booking-luxury-cta {
+    position: relative;
+    overflow: hidden;
+    border-radius: 9999px;
+    border: 1px solid rgba(212, 175, 55, 0.35);
+    background: linear-gradient(
+      125deg,
+      var(--nq-luxury-cta-from) 0%,
+      var(--nq-luxury-cta-mid) 42%,
+      var(--nq-luxury-cta-to) 100%
+    );
+    color: var(--color-nq-bg);
+    font-weight: 600;
+    box-shadow: 0 2px 12px rgba(212, 175, 55, 0.22),
+      0 8px 28px -10px rgba(0, 0, 0, 0.6);
+  }
+
+  .nq-booking-luxury-cta:not(:disabled)::before {
+    content: "";
+    position: absolute;
+    inset-block: -20%;
+    left: 0;
+    width: 48%;
+    background: linear-gradient(
+      95deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.55) 50%,
+      transparent 100%
+    );
+    animation: nq-luxury-sheen 2.6s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  .nq-booking-luxury-cta > span {
+    position: relative;
+    z-index: 1;
+  }
+
+  .nq-booking-luxury-cta:disabled {
+    opacity: 0.45;
+    box-shadow: none;
+    cursor: not-allowed;
+  }
+
+  .nq-booking-luxury-cta:disabled::before {
+    animation: none;
+    opacity: 0;
+  }
 }
 
 @layer utilities {
@@ -328,7 +464,8 @@
     animation: none;
   }
 
-  .nq-booking-confirm-btn:not(:disabled)::before {
+  .nq-booking-confirm-btn:not(:disabled)::before,
+  .nq-booking-luxury-cta:not(:disabled)::before {
     animation: none;
     opacity: 0;
   }

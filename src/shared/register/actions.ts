@@ -13,6 +13,16 @@ function generateSixDigitCode(): string {
   return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
+/** Compare stored OTP with user input (DB may use int / numeric and drop leading zeros). */
+function canonicalSixDigitOtp(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(Math.trunc(value)).padStart(6, "0");
+  }
+  const digits = String(value ?? "").replace(/\D/g, "");
+  if (digits.length >= 6) return digits.slice(-6);
+  return digits.padStart(6, "0");
+}
+
 async function salonSlugTaken(
   supabase: SupabaseClient,
   slug: string,
@@ -99,7 +109,7 @@ export async function sendRegisterOtp(
 
 export type VerifyRegisterOtpResult =
   | { ok: true; completionToken: string }
-  | { ok: false; reason: "invalid" | "expired" };
+  | { ok: false; reason: "invalid" | "expired" | "server_error" };
 
 export async function verifyRegisterOtp(
   phoneRaw: string,
@@ -137,11 +147,9 @@ export async function verifyRegisterOtp(
     return { ok: false, reason: "expired" };
   }
 
-  if (String(latest.code) !== code) {
+  if (canonicalSixDigitOtp(latest.code) !== canonicalSixDigitOtp(code)) {
     return { ok: false, reason: "invalid" };
   }
-
-  await supabase.from("otps").delete().eq("id", latest.id);
 
   const completionExpires = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
@@ -156,8 +164,10 @@ export async function verifyRegisterOtp(
 
   if (error || !tok?.id) {
     console.error("[verifyRegisterOtp] token insert", error);
-    return { ok: false, reason: "invalid" };
+    return { ok: false, reason: "server_error" };
   }
+
+  await supabase.from("otps").delete().eq("id", latest.id);
 
   return { ok: true, completionToken: tok.id as string };
 }
