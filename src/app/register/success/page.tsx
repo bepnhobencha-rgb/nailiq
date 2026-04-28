@@ -102,6 +102,24 @@ function RegisterSuccessInner() {
           </Button>
         </div>
 
+        <div className="rounded-2xl border border-nq-primary/25 bg-nq-primary/8 px-4 py-3 text-center">
+          <p className="text-xs font-medium uppercase tracking-wide text-nq-muted">
+            Salon owner
+          </p>
+          <Button
+            type="button"
+            size="lg"
+            variant="secondary"
+            className="mt-3 w-full"
+            onClick={() => router.push(`/dashboard/${encodeURIComponent(slug)}`)}
+          >
+            Open dashboard
+          </Button>
+          <p className="mt-2 text-[11px] leading-snug text-nq-muted">
+            Today’s bookings and status — same browser you used to verify your number.
+          </p>
+        </div>
+
         <p className="pt-1 text-center text-sm leading-relaxed text-nq-muted">
           Home later? Bookmark{" "}
           <Link

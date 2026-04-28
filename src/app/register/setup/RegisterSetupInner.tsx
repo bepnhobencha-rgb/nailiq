@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
 import {
   clearRegisterFlow,
+  clearRegisterCompletionCookie,
   getRegisterCompletionTokenClient,
   getRegisterFlow,
   setRegisterFlow,
@@ -103,7 +104,15 @@ export default function RegisterSetupInner() {
           setFormError("Could not create your salon. Try again.");
           return;
         }
-        clearRegisterFlow();
+        // Keep phone + verified in localStorage so /dashboard/[slug] can recognize the owner.
+        // Only drop the one-time completion token + cookie (server already consumed the token).
+        clearRegisterCompletionCookie();
+        setRegisterFlow({
+          verified: true,
+          completionToken: "",
+          salonName: trimmed,
+          slug: result.slug,
+        });
         const adj = result.slugAdjusted ? "1" : "0";
         router.replace(
           `/register/success?slug=${encodeURIComponent(result.slug)}&adjusted=${adj}`,
