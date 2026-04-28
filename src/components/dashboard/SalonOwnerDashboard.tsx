@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
+import { AddEmailBanner } from "@/components/dashboard/AddEmailBanner";
 import { SalonOwnerDashboardMain } from "@/components/dashboard/SalonOwnerDashboardMain";
 import { nextBookingStatus } from "@/components/dashboard/salonDashboardFormat";
 import {
@@ -35,6 +36,8 @@ export function SalonOwnerDashboard({
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  const showRecoveryEmailBanner = !data.salon.email?.trim();
 
   const bookingPath = `/${encodeURIComponent(slug)}`;
   const bookingAbsoluteUrl = useMemo(() => {
@@ -139,6 +142,25 @@ export function SalonOwnerDashboard({
   return (
     <ResponsiveShell>
       <SalonOwnerDashboardMain
+        topSlot={
+          showRecoveryEmailBanner ? (
+            <AddEmailBanner
+              salonSlug={slug}
+              onDismiss={() => {
+                /* dismiss handled in banner localStorage + hidden state */
+              }}
+              onEmailAdded={(added) => {
+                setData((prev) => ({
+                  ...prev,
+                  salon: {
+                    ...prev.salon,
+                    email: added,
+                  },
+                }));
+              }}
+            />
+          ) : null
+        }
         slug={slug}
         demoMode={data.demoMode}
         data={data}

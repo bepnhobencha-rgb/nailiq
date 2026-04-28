@@ -39,6 +39,7 @@
   --nq-luxury-cta-from: #f3eacb;
   --nq-luxury-cta-mid: #d4af37;
   --nq-luxury-cta-to: #8a7318;
+  --nq-border-gold-banner: rgba(212, 175, 55, 0.35);
 }
 
 @theme inline {
@@ -105,6 +106,21 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+@keyframes nq-email-banner-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.nq-email-banner-enter {
+  animation: nq-email-banner-in var(--duration-nq-base) var(--ease-nq-out) forwards;
 }
 
 @layer base {

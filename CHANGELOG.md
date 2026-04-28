@@ -2,6 +2,10 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-04-28
+
+- **Dashboard — progressive recovery email:** `salons` gains optional `email` and `email_verified` columns; authenticated owners may update their own salon row (RLS migration `20260428140000_salons_email_owner_update_policy.sql`). Non-blocking gold banner (`AddEmailBanner`) at `/dashboard/[slug]` when email is absent: inline validation, server action `addSalonEmail` (demo slug cookie vs `salon_members` + user session); dismiss persists in localStorage (`nailiq-email-banner-dismissed`) for 7 days; success toast then auto-hide. Helpers: `src/shared/lib/emailFormat.ts`; `resolveSalonForDashboard` exported for reuse.
+
 ## 2026-04-27
 
 - **Supabase Auth & owner security:** Phone OTP via client `signInWithOtp` / `verifyOtp` when not in demo mode; `salon_members` table + authenticated RLS on `bookings` (select/update for member salons). Middleware (`src/middleware.ts`) refreshes session cookies and guards `/dashboard/*`. Registration completion uses `completeSalonRegistration` with a real `auth.getUser()` session; removed `registerFlow` `localStorage` dashboard gate. Demo path: `NEXT_PUBLIC_DEMO_OTP` + `DemoOtpModal`, `demoAuthBridge` session after custom `otps` verification.

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
 import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
 import { MobileStack } from "@/components/layout/MobileStack";
@@ -13,6 +14,7 @@ import type { SalonDashboardBooking } from "@/shared/types";
 type InitialPayload = Extract<LoadSalonDashboardResult, { ok: true }>;
 
 export function SalonOwnerDashboardMain({
+  topSlot,
   slug,
   demoMode,
   data,
@@ -27,6 +29,7 @@ export function SalonOwnerDashboardMain({
   upcomingByDay,
   isLoading,
 }: {
+  topSlot?: ReactNode;
   slug: string;
   demoMode: boolean;
   data: InitialPayload;
@@ -51,6 +54,7 @@ export function SalonOwnerDashboardMain({
       className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pt-2"
       aria-busy={isLoading}
     >
+      {topSlot}
       {demoMode ? (
         <div
           role="status"

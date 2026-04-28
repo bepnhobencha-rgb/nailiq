@@ -26,7 +26,13 @@ function utcDayBounds(
   };
 }
 
-type SalonRow = { id: string; name: string; slug: string; phone: string };
+type SalonRow = {
+  id: string;
+  name: string;
+  slug: string;
+  phone: string;
+  email: string | null;
+};
 
 async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
   if (!isDemoOtpRuntime()) return null;
@@ -43,15 +49,23 @@ async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
 
   const { data: salon, error } = await admin
     .from("salons")
-    .select("id, name, slug, phone")
+    .select("id, name, slug, phone, email")
     .eq("slug", slug)
     .maybeSingle();
 
   if (error || !salon) return null;
-  return salon as SalonRow;
+  const row = salon as SalonRow & { email?: unknown };
+  return {
+    ...row,
+    email:
+      row.email === undefined || row.email === null
+        ? null
+        : String(row.email).trim() || null,
+  };
 }
 
-async function resolveSalonForDashboard(
+/** Authorized dashboard viewer (logged-in salon member or demo cookie slug match). */
+export async function resolveSalonForDashboard(
   slug: string,
 ): Promise<{ salon: SalonRow; kind: "member" | "demo_cookie" } | null> {
   const memberSalon = await getSalonIfMember(slug);
@@ -81,14 +95,24 @@ async function getSalonIfMember(slug: string): Promise<SalonRow | null> {
 
   const { data: salon, error: salErr } = await supabase
     .from("salons")
-    .select("id, name, slug, phone")
+    .select("id, name, slug, phone, email")
     .eq("slug", slug)
     .in("id", salonIds)
     .maybeSingle();
 
   if (salErr || !salon) return null;
 
-  return salon as SalonRow;
+  const row = salon as SalonRow & { email?: unknown };
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    phone: row.phone,
+    email:
+      row.email === undefined || row.email === null
+        ? null
+        : String(row.email).trim() || null,
+  };
 }
 
 type ServiceJoinRow = { name: string; price_cents: number };
@@ -130,7 +154,13 @@ function mapBookingRow(row: BookingRowDb): SalonDashboardBooking {
 export type LoadSalonDashboardResult =
   | {
       ok: true;
-      salon: { id: string; name: string; slug: string; phone: string };
+      salon: {
+        id: string;
+        name: string;
+        slug: string;
+        phone: string;
+        email: string | null;
+      };
       demoMode: boolean;
       today: SalonDashboardBooking[];
       upcoming: SalonDashboardBooking[];
@@ -213,6 +243,10 @@ export async function loadSalonOwnerDashboard(
       name: salon.name,
       slug: salon.slug,
       phone: salon.phone,
+      email:
+        salon.email === undefined || salon.email === null
+          ? null
+          : String(salon.email).trim() || null,
     },
     demoMode,
     today,
