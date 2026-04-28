@@ -11,23 +11,32 @@ export default async function RegisterSetupPage() {
     redirect("/register");
   }
 
-  const { data: member } = await supabase
+  const { data: member, error: memberErr } = await supabase
     .from("salon_members")
-    .select("salon_id, salons!inner(slug)")
+    .select("salon_id")
     .eq("user_id", user.id)
     .limit(1)
     .maybeSingle();
 
-  const slug =
-    member &&
-    member.salons &&
-    typeof member.salons === "object" &&
-    "slug" in member.salons
-      ? String((member.salons as { slug: string }).slug)
-      : "";
+  if (memberErr) {
+    console.error("[RegisterSetupPage] salon_members", memberErr);
+  }
 
-  if (slug) {
-    redirect(`/dashboard/${encodeURIComponent(slug)}`);
+  if (member?.salon_id) {
+    const { data: salon, error: salonErr } = await supabase
+      .from("salons")
+      .select("slug")
+      .eq("id", member.salon_id)
+      .maybeSingle();
+
+    if (salonErr) {
+      console.error("[RegisterSetupPage] salons by id", salonErr);
+    }
+
+    const slug = salon?.slug?.trim();
+    if (slug) {
+      redirect(`/dashboard/${encodeURIComponent(slug)}`);
+    }
   }
 
   return <RegisterSetupInner />;

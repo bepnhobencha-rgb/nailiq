@@ -42,7 +42,7 @@ export default function RegisterPage() {
         }
 
         if (demoMode) {
-          const result = await sendRegisterOtp(phoneRaw);
+          const result = await sendRegisterOtp(normalized);
           if (!result.success) {
             setError(result.error);
             return;
