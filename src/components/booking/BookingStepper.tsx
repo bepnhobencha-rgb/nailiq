@@ -6,6 +6,7 @@ export type BookingWizardStep =
   | "staff"
   | "date"
   | "time"
+  | "info"
   | "confirm";
 
 const STEP_ORDER: BookingWizardStep[] = [
@@ -13,6 +14,7 @@ const STEP_ORDER: BookingWizardStep[] = [
   "staff",
   "date",
   "time",
+  "info",
   "confirm",
 ];
 
@@ -28,6 +30,7 @@ export function BookingStepper({
     staff: t.breadcrumbStaff,
     date: t.breadcrumbDate,
     time: t.breadcrumbTime,
+    info: t.breadcrumbYourDetails,
     confirm: t.breadcrumbConfirm,
   };
 

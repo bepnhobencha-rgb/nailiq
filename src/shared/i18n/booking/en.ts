@@ -1,5 +1,5 @@
 /**
- * Public booking UI (`/[shop]`) copy: English only.
+ * Public booking UI (`/[slug]`) copy: English only.
  * Do not import user locale or `useUserLanguage` here.
  */
 export const bookingEn = {

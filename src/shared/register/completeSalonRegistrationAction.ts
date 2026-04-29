@@ -11,7 +11,10 @@ import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import { slugifySalonName } from "@/shared/lib/slugifySalonName";
 import { getOrCreateDemoSalonOwnerUserId } from "@/shared/register/demoSalonOwner";
 import { phoneDigitsFromAuthUser } from "@/shared/register/authUserPhone";
-import { normalizeRegisterPhone } from "@/shared/register/phone";
+import {
+  isRegisterPhoneDigitsValid,
+  normalizeRegisterPhone,
+} from "@/shared/register/phone";
 import { pickAvailableSalonSlug } from "@/shared/register/salonSlugPicker";
 
 export type CompleteSalonRegistrationResult =
@@ -24,7 +27,16 @@ export type CompleteSalonRegistrationResult =
         | "unauthorized"
         | "server_error"
         | "already_complete";
+      /** Postgres or internal message when useful for debugging */
+      message?: string;
     };
+
+function registerCompletionDebugEnabled(): boolean {
+  return (
+    process.env.NODE_ENV === "development" ||
+    process.env.DEBUG_REGISTER_FLOW === "1"
+  );
+}
 
 export async function completeSalonRegistration(
   salonNameRaw: string,
@@ -48,7 +60,12 @@ export async function completeSalonRegistration(
       admin = createServiceRoleClient();
     } catch (e) {
       console.error("[completeSalonRegistration] demo admin client", e);
-      return { ok: false, error: "server_error" };
+      return {
+        ok: false,
+        error: "server_error",
+        message:
+          e instanceof Error ? e.message : "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY",
+      };
     }
 
     const { data: proof, error: proofErr } = await admin
@@ -68,7 +85,15 @@ export async function completeSalonRegistration(
       return { ok: false, error: "invalid_completion_token" };
     }
 
-    const phone = String(proof.phone);
+    const phone = normalizeRegisterPhone(String(proof.phone));
+    if (!isRegisterPhoneDigitsValid(phone)) {
+      console.error("[completeSalonRegistration] demo invalid phone on token");
+      return { ok: false, error: "invalid_completion_token" };
+    }
+
+    if (registerCompletionDebugEnabled()) {
+      console.log("Inserting salon with phone:", phone);
+    }
 
     const ownerUserId = await getOrCreateDemoSalonOwnerUserId();
     if (!ownerUserId) {
@@ -99,7 +124,11 @@ export async function completeSalonRegistration(
 
     if (salonErr || !salonRow?.id || salonRow.slug == null) {
       console.error("[completeSalonRegistration] demo insert salon", salonErr);
-      return { ok: false, error: "server_error" };
+      return {
+        ok: false,
+        error: "server_error",
+        message: salonErr?.message,
+      };
     }
 
     const salonId = salonRow.id as string;
@@ -117,7 +146,11 @@ export async function completeSalonRegistration(
     if (svcErr) {
       console.error("[completeSalonRegistration] demo services", svcErr);
       await admin.from("salons").delete().eq("id", salonId);
-      return { ok: false, error: "server_error" };
+      return {
+        ok: false,
+        error: "server_error",
+        message: svcErr.message,
+      };
     }
 
     const { error: staffErr } = await admin.from("staff").insert({
@@ -130,7 +163,11 @@ export async function completeSalonRegistration(
       console.error("[completeSalonRegistration] demo staff", staffErr);
       await admin.from("services").delete().eq("salon_id", salonId);
       await admin.from("salons").delete().eq("id", salonId);
-      return { ok: false, error: "server_error" };
+      return {
+        ok: false,
+        error: "server_error",
+        message: staffErr.message,
+      };
     }
 
     const { error: memErr } = await admin.from("salon_members").insert({
@@ -144,7 +181,11 @@ export async function completeSalonRegistration(
       await admin.from("staff").delete().eq("salon_id", salonId);
       await admin.from("services").delete().eq("salon_id", salonId);
       await admin.from("salons").delete().eq("id", salonId);
-      return { ok: false, error: "server_error" };
+      return {
+        ok: false,
+        error: "server_error",
+        message: memErr.message,
+      };
     }
 
     await admin.from("register_completion_tokens").delete().eq("id", proof.id);
@@ -217,7 +258,12 @@ export async function completeSalonRegistration(
     admin = createServiceRoleClient();
   } catch (e) {
     console.error("FAILED before step 2 (service role client)", e);
-    return { ok: false, error: "server_error" };
+    return {
+      ok: false,
+      error: "server_error",
+      message:
+        e instanceof Error ? e.message : "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY",
+    };
   }
 
   const { data: proof, error: proofErr } = await admin
@@ -240,11 +286,13 @@ export async function completeSalonRegistration(
   const authDigits = phoneDigitsFromAuthUser(user);
   const proofDigits = normalizeRegisterPhone(String(proof.phone));
   const authNorm = normalizeRegisterPhone(authDigits);
-  if (!authNorm || proofDigits !== authNorm) {
+  if (!proofDigits || !authNorm || proofDigits !== authNorm) {
     return { ok: false, error: "invalid_completion_token" };
   }
 
-  const phone = authDigits;
+  if (registerCompletionDebugEnabled()) {
+    console.log("Inserting salon with phone:", proofDigits);
+  }
 
   let slug: string;
   try {
@@ -258,21 +306,25 @@ export async function completeSalonRegistration(
     return { ok: false, error: "server_error" };
   }
 
-  console.log("Step 2: insert salon", { slug, name, phone });
+  console.log("Step 2: insert salon", { slug, name, phone: proofDigits });
 
   const { data: salonRow, error: salonErr } = await admin
     .from("salons")
     .insert({
       slug,
       name,
-      phone: phone || "",
+      phone: proofDigits,
     })
     .select("id, slug")
     .single();
 
   if (salonErr || !salonRow?.id || salonRow.slug == null) {
     console.error("FAILED step 2", salonErr ?? new Error("no salon id"));
-    return { ok: false, error: "server_error" };
+    return {
+      ok: false,
+      error: "server_error",
+      message: salonErr?.message,
+    };
   }
 
   const salonId = salonRow.id as string;
@@ -292,7 +344,11 @@ export async function completeSalonRegistration(
   if (svcErr) {
     console.error("FAILED step 3", svcErr);
     await admin.from("salons").delete().eq("id", salonId);
-    return { ok: false, error: "server_error" };
+    return {
+      ok: false,
+      error: "server_error",
+      message: svcErr.message,
+    };
   }
 
   console.log("Step 4: insert staff");
@@ -307,7 +363,11 @@ export async function completeSalonRegistration(
     console.error("FAILED step 4", staffErr);
     await admin.from("services").delete().eq("salon_id", salonId);
     await admin.from("salons").delete().eq("id", salonId);
-    return { ok: false, error: "server_error" };
+    return {
+      ok: false,
+      error: "server_error",
+      message: staffErr.message,
+    };
   }
 
   console.log("Step 5: insert salon_members", {
@@ -326,7 +386,11 @@ export async function completeSalonRegistration(
     await admin.from("staff").delete().eq("salon_id", salonId);
     await admin.from("services").delete().eq("salon_id", salonId);
     await admin.from("salons").delete().eq("id", salonId);
-    return { ok: false, error: "server_error" };
+    return {
+      ok: false,
+      error: "server_error",
+      message: memErr.message,
+    };
   }
 
   await admin.from("register_completion_tokens").delete().eq("id", proof.id);

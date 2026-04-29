@@ -15,14 +15,11 @@ import {
 
 type SalonBookingNotFoundProps = {
   requestedSlug: string;
-  /** Dev-only: sample slugs from DB for debugging */
-  sampleSlugs?: string[];
   suggestedSlugs?: string[];
 };
 
 export function SalonBookingNotFound({
   requestedSlug,
-  sampleSlugs,
   suggestedSlugs,
 }: SalonBookingNotFoundProps) {
   const router = useRouter();
@@ -120,21 +117,6 @@ export function SalonBookingNotFound({
                 {requestedSlug || "(empty)"}
               </code>
             </p>
-            {sampleSlugs?.length ? (
-              <p className="mt-2 break-words">
-                Sample slugs in DB:{" "}
-                {sampleSlugs.map((s) => (
-                  <code
-                    key={s}
-                    className="mr-1 inline rounded bg-nq-surface px-1 py-0.5 text-[13px] text-nq-muted last:mr-0"
-                  >
-                    {s}
-                  </code>
-                ))}
-              </p>
-            ) : (
-              <p className="mt-2 text-nq-muted">No salons found in DB.</p>
-            )}
           </div>
         ) : null}
       </div>

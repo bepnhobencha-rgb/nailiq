@@ -10,6 +10,9 @@ import {
   type OpeningHoursWeek,
 } from "@/shared/dashboard/openingHoursDefaults";
 import {
+  normalizeBookingClosedDateList,
+} from "@/shared/booking/parseBookingClosedDates";
+import {
   buildSalonAddressString,
   isAllowedCountry,
   isValidPhone,
@@ -354,6 +357,7 @@ export async function deleteStaff(
 export async function updateOpeningHours(
   slug: string,
   openingHours: OpeningHoursWeek,
+  closedDatesYmd: string[] = [],
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
@@ -365,11 +369,14 @@ export async function updateOpeningHours(
     return fail("invalid_hours");
   }
 
+  const closedJson = normalizeBookingClosedDateList(closedDatesYmd);
+
   const supabase = await writableSupabase(r.kind);
   const { error } = await supabase
     .from("salons")
     .update({
       opening_hours: JSON.parse(serialized) as Record<string, unknown>,
+      booking_closed_dates: closedJson,
     })
     .eq("id", r.salon.id)
     .eq("slug", slug);
@@ -446,6 +453,7 @@ export async function getDashboardWriteClient(slug: string): Promise<
         salon_phone: string | null;
         opening_hours: unknown | null;
         profile_complete: boolean;
+        booking_closed_dates: unknown | null;
       };
       kind: "member" | "demo_cookie";
       supabase: GenericSupabase;

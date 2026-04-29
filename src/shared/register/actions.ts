@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import {
   NAILQ_DEMO_SLUG_COOKIE,
   NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
@@ -22,8 +23,20 @@ import {
 const INVALID_PHONE_MSG =
   "Enter 8–15 digits including country code (e.g. Vietnam: 84912345678).";
 
+function registerFlowDebugEnabled(): boolean {
+  return (
+    process.env.NODE_ENV === "development" ||
+    process.env.DEBUG_REGISTER_FLOW === "1"
+  );
+}
+
+function logRegisterFlow(label: string, payload: Record<string, unknown>): void {
+  if (!registerFlowDebugEnabled()) return;
+  console.log(`[register:${label}]`, payload);
+}
+
 /**
- * `salons.phone` stores normalized digits (matches registration). Salon must have ≥1 salon_members row.
+ * `salons.phone` stores normalized digits (matches registration).
  */
 async function lookupSalonSlugForOwnerPhone(
   normalizedDigits: string,
@@ -37,10 +50,16 @@ async function lookupSalonSlugForOwnerPhone(
 
   const { data: salon, error: salErr } = await admin
     .from("salons")
-    .select("slug, salon_members!inner(user_id)")
+    .select("slug")
     .eq("phone", normalizedDigits)
     .limit(1)
     .maybeSingle();
+
+  logRegisterFlow("existingSalonCheck", {
+    normalizedPhone: normalizedDigits,
+    existingSalon: salon ?? null,
+    error: salErr?.message ?? null,
+  });
 
   if (salErr) {
     console.error("[lookupSalonSlugForOwnerPhone] salons", salErr);
@@ -49,6 +68,166 @@ async function lookupSalonSlugForOwnerPhone(
 
   const slug = salon?.slug != null ? String(salon.slug).trim() : "";
   return slug || null;
+}
+
+/**
+ * After OTP proves `normalizedDigits`, ensure the authenticated user has a
+ * `salon_members` row for the salon whose `salons.phone` matches (dashboard RLS).
+ */
+async function ensureOwnerMembershipForVerifiedPhone(
+  admin: ReturnType<typeof createServiceRoleClient>,
+  sessionUserId: string,
+  normalizedDigits: string,
+  salonSlug: string,
+): Promise<boolean> {
+  const slug = salonSlug.trim();
+  const { data: salon, error: salErr } = await admin
+    .from("salons")
+    .select("id, phone")
+    .eq("slug", slug)
+    .maybeSingle();
+
+  if (salErr || !salon?.id) {
+    console.error("[ensureOwnerMembershipForVerifiedPhone] salon", salErr);
+    return false;
+  }
+
+  const phoneOnRow = normalizeRegisterPhone(String(salon.phone ?? ""));
+  if (phoneOnRow !== normalizedDigits) {
+    return false;
+  }
+
+  const { data: existing, error: exErr } = await admin
+    .from("salon_members")
+    .select("id")
+    .eq("salon_id", salon.id)
+    .eq("user_id", sessionUserId)
+    .maybeSingle();
+
+  if (exErr) {
+    console.error("[ensureOwnerMembershipForVerifiedPhone] members read", exErr);
+    return false;
+  }
+
+  if (existing) return true;
+
+  const { error: insErr } = await admin.from("salon_members").insert({
+    salon_id: salon.id,
+    user_id: sessionUserId,
+    role: "owner",
+  });
+
+  if (insErr) {
+    console.error("[ensureOwnerMembershipForVerifiedPhone] insert", insErr);
+    return false;
+  }
+
+  return true;
+}
+
+export type FinalizeRegisterSessionAfterPhoneOtpResult =
+  | { ok: true; kind: "dashboard"; slug: string }
+  | { ok: true; kind: "setup"; completionToken: string }
+  | { ok: false; reason: "unauthorized" | "server_error" };
+
+/**
+ * Run after Supabase phone OTP succeeds **in the browser** (`verifyOtp` on client).
+ * Server reads the session from cookies — avoids broken cookie writes from Server Actions.
+ */
+export async function finalizeRegisterSessionAfterPhoneOtp(
+  phoneRaw: string,
+): Promise<FinalizeRegisterSessionAfterPhoneOtpResult> {
+  const phone = normalizeRegisterPhone(phoneRaw);
+  if (!isRegisterPhoneDigitsValid(phone)) {
+    return { ok: false, reason: "server_error" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user: sessionUser },
+  } = await supabase.auth.getUser();
+
+  if (!sessionUser) {
+    return { ok: false, reason: "unauthorized" };
+  }
+
+  const slugForRegisteredPhone = await lookupSalonSlugForOwnerPhone(phone);
+  if (slugForRegisteredPhone) {
+    let adminSr;
+    try {
+      adminSr = createServiceRoleClient();
+    } catch {
+      adminSr = undefined;
+    }
+    if (adminSr) {
+      const linked = await ensureOwnerMembershipForVerifiedPhone(
+        adminSr,
+        sessionUser.id,
+        phone,
+        slugForRegisteredPhone,
+      );
+      if (linked) {
+        return { ok: true, kind: "dashboard", slug: slugForRegisteredPhone };
+      }
+    }
+  }
+
+  const { data: memRow, error: memErr } = await supabase
+    .from("salon_members")
+    .select("salon_id")
+    .eq("user_id", sessionUser.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (memErr) {
+    console.error(
+      "[finalizeRegisterSessionAfterPhoneOtp] salon_members",
+      memErr,
+    );
+  } else if (memRow?.salon_id) {
+    const { data: salRow, error: salErr } = await supabase
+      .from("salons")
+      .select("slug")
+      .eq("id", memRow.salon_id)
+      .maybeSingle();
+
+    if (salErr) {
+      console.error("[finalizeRegisterSessionAfterPhoneOtp] salons slug", salErr);
+    } else {
+      const slug = salRow?.slug?.trim();
+      if (slug) {
+        return { ok: true, kind: "dashboard", slug: String(slug) };
+      }
+    }
+  }
+
+  const completionToken = randomUUID();
+  const tokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+  let adminInsert;
+  try {
+    adminInsert = createServiceRoleClient();
+  } catch {
+    return { ok: false, reason: "server_error" };
+  }
+
+  const { error: tokErr } = await adminInsert
+    .from("register_completion_tokens")
+    .insert({
+      phone,
+      token: completionToken,
+      expires_at: tokenExpiresAt,
+    });
+
+  if (tokErr) {
+    console.error(
+      "[finalizeRegisterSessionAfterPhoneOtp] register_completion_tokens insert",
+      tokErr,
+    );
+    return { ok: false, reason: "server_error" };
+  }
+
+  return { ok: true, kind: "setup", completionToken };
 }
 
 /**
@@ -68,6 +247,14 @@ export async function sendRegisterOtp(
   phoneRaw: string,
 ): Promise<SendRegisterOtpResult> {
   const isDemo = isDemoOtpRuntime();
+  logRegisterFlow("sendOtp.env", {
+    isDemo,
+    DEMO_OTP: process.env.DEMO_OTP ?? "(unset)",
+    NEXT_PUBLIC_DEMO_OTP: process.env.NEXT_PUBLIC_DEMO_OTP ?? "(unset)",
+    serviceRoleKeyExists: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    serviceRoleKeyLength: process.env.SUPABASE_SERVICE_ROLE_KEY?.length ?? 0,
+  });
+
   const phone = normalizeRegisterPhone(phoneRaw);
   if (!isRegisterPhoneDigitsValid(phone)) {
     return { success: false, error: INVALID_PHONE_MSG };
@@ -76,10 +263,30 @@ export async function sendRegisterOtp(
   const isReturningOwner = Boolean(await lookupSalonSlugForOwnerPhone(phone));
 
   if (isDemo) {
+    let supabase;
     try {
-      const supabase = createServiceRoleClient();
+      supabase = createServiceRoleClient();
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Missing Supabase service configuration.";
+      console.error("[sendRegisterOtp] service role client", err);
+      return {
+        success: false,
+        error:
+          registerFlowDebugEnabled() || msg.includes("SUPABASE_SERVICE_ROLE_KEY")
+            ? `${msg} Add SUPABASE_SERVICE_ROLE_KEY and NEXT_PUBLIC_SUPABASE_URL to .env.local.`
+            : "Could not send code. Server configuration error.",
+      };
+    }
+
+    try {
       const code = generateSixDigitCode();
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+      logRegisterFlow("sendOtp.demo.insert", {
+        normalizedPhone: phone,
+        insertingOtp: true,
+      });
 
       const { error: deleteError } = await supabase
         .from("otps")
@@ -88,7 +295,10 @@ export async function sendRegisterOtp(
 
       if (deleteError) {
         console.error("[sendRegisterOtp] delete prior OTP rows", deleteError);
-        return { success: false, error: "Could not send code. Try again." };
+        return {
+          success: false,
+          error: deleteError.message || "Could not send code. Try again.",
+        };
       }
 
       const { error: insertError } = await supabase.from("otps").insert({
@@ -98,8 +308,13 @@ export async function sendRegisterOtp(
       });
 
       if (insertError) {
-        console.error("[sendRegisterOtp] insert", insertError);
-        return { success: false, error: "Could not send code. Try again." };
+        console.error("[sendRegisterOtp] OTP insert error:", insertError);
+        return {
+          success: false,
+          error:
+            insertError.message ||
+            "Could not send code. Check otps table and service role permissions.",
+        };
       }
 
       if (isReturningOwner) {
@@ -109,7 +324,9 @@ export async function sendRegisterOtp(
       return { success: true, mode: "demo", code };
     } catch (error) {
       console.error("[sendRegisterOtp]", error);
-      return { success: false, error: "Could not send code. Try again." };
+      const fallback =
+        error instanceof Error ? error.message : "Could not send code. Try again.";
+      return { success: false, error: fallback };
     }
   }
 
@@ -160,7 +377,6 @@ export async function verifyRegisterOtp(
   phoneRaw: string,
   codeRaw: string,
 ): Promise<VerifyRegisterOtpResult> {
-  const isDemo = isDemoOtpRuntime();
   const phone = normalizeRegisterPhone(phoneRaw);
   const code = codeRaw.replace(/\D/g, "").slice(0, 6);
 
@@ -168,96 +384,8 @@ export async function verifyRegisterOtp(
     return { ok: false, reason: "invalid" };
   }
 
-  if (!isDemo) {
-    const e164 = digitsToE164Phone(phone);
-    if (!e164) {
-      return { ok: false, reason: "invalid" };
-    }
-
-    try {
-      const supabase = await createClient();
-      const { error } = await supabase.auth.verifyOtp({
-        phone: e164,
-        token: code,
-        type: "sms",
-      });
-
-      if (error) {
-        console.error("[verifyRegisterOtp] verifyOtp", error);
-        const msg = error.message?.toLowerCase() ?? "";
-        if (msg.includes("expired")) {
-          return { ok: false, reason: "expired" };
-        }
-        return { ok: false, reason: "invalid" };
-      }
-
-      const {
-        data: { user: sessionUser },
-      } = await supabase.auth.getUser();
-
-      if (sessionUser) {
-        const { data: memRow, error: memErr } = await supabase
-          .from("salon_members")
-          .select("salon_id")
-          .eq("user_id", sessionUser.id)
-          .limit(1)
-          .maybeSingle();
-
-        if (memErr) {
-          console.error("[verifyRegisterOtp] salon_members", memErr);
-        } else if (memRow?.salon_id) {
-          const { data: salRow, error: salErr } = await supabase
-            .from("salons")
-            .select("slug")
-            .eq("id", memRow.salon_id)
-            .maybeSingle();
-
-          if (salErr) {
-            console.error("[verifyRegisterOtp] salons slug", salErr);
-          } else {
-            const slug = salRow?.slug?.trim();
-            if (slug) {
-              return {
-                ok: true,
-                completionToken: "",
-                returningOwnerSlug: String(slug),
-              };
-            }
-          }
-        }
-      }
-
-      const completionToken = randomUUID();
-      const tokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-
-      let adminInsert;
-      try {
-        adminInsert = createServiceRoleClient();
-      } catch {
-        return { ok: false, reason: "server_error" };
-      }
-
-      const { error: tokErr } = await adminInsert
-        .from("register_completion_tokens")
-        .insert({
-          phone,
-          token: completionToken,
-          expires_at: tokenExpiresAt,
-        });
-
-      if (tokErr) {
-        console.error(
-          "[verifyRegisterOtp] register_completion_tokens insert",
-          tokErr,
-        );
-        return { ok: false, reason: "server_error" };
-      }
-
-      return { ok: true, completionToken };
-    } catch (error) {
-      console.error("[verifyRegisterOtp]", error);
-      return { ok: false, reason: "server_error" };
-    }
+  if (!isDemoOtpRuntime()) {
+    return { ok: false, reason: "invalid" };
   }
 
   let supabase;
@@ -301,11 +429,7 @@ export async function verifyRegisterOtp(
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
     });
-    return {
-      ok: true,
-      completionToken: "",
-      returningOwnerSlug: returningSlug,
-    };
+    redirect(`/dashboard/${encodeURIComponent(returningSlug)}`);
   }
 
   const completionToken = randomUUID();

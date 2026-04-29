@@ -1,0 +1,6 @@
+-- DEPRECATED: this file previously defined public.create_public_booking (JSON overlap path).
+--
+-- SINGLE SOURCE OF TRUTH: 20260430250000_create_public_booking_business_rules.sql
+-- Do not redefine public.create_public_booking here or in later migrations.
+--
+-- (No SQL — the RPC is created/updated only in 30250000 and earlier chain until then.)

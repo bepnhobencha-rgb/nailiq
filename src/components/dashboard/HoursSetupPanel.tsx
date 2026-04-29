@@ -11,6 +11,7 @@ import {
   type DayKey,
   type OpeningHoursWeek,
 } from "@/shared/dashboard/openingHoursDefaults";
+import { normalizeBookingClosedDateList } from "@/shared/booking/parseBookingClosedDates";
 import { updateOpeningHours } from "@/shared/dashboard/setupActions";
 
 const DAY_ORDER: { key: DayKey; label: string }[] = [
@@ -33,16 +34,29 @@ function toTimeInput(hhmm: string): string {
   return `${h}:${mi}`;
 }
 
+function closedDatesInitialText(raw: unknown): string {
+  if (!Array.isArray(raw)) return "";
+  const lines = raw
+    .map((x) => (typeof x === "string" ? x.trim() : ""))
+    .filter(Boolean);
+  return normalizeBookingClosedDateList(lines).join("\n");
+}
+
 export function HoursSetupPanel({
   slug,
   initialRaw,
+  initialClosedDatesRaw,
 }: {
   slug: string;
   initialRaw: unknown;
+  initialClosedDatesRaw: unknown;
 }) {
   const router = useRouter();
   const [hours, setHours] = useState<OpeningHoursWeek>(() =>
     parseOpeningHours(initialRaw) ?? defaultOpeningHoursWeek(),
+  );
+  const [closedDatesText, setClosedDatesText] = useState(() =>
+    closedDatesInitialText(initialClosedDatesRaw),
   );
   const [saveStatus, setSaveStatus] = useState<SaveButtonStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -66,8 +80,9 @@ export function HoursSetupPanel({
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- props → local editor state */
     setHours(parseOpeningHours(initialRaw) ?? defaultOpeningHoursWeek());
+    setClosedDatesText(closedDatesInitialText(initialClosedDatesRaw));
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [initialRaw]);
+  }, [initialClosedDatesRaw, initialRaw]);
 
   const preview = useMemo(() => compactOpeningHoursLabel(hours), [hours]);
 
@@ -75,10 +90,16 @@ export function HoursSetupPanel({
     setError(null);
     clearStatusTimer();
     setSaveStatus("saving");
-    const res = await updateOpeningHours(slug, hours);
+    const closedYmd = normalizeBookingClosedDateList(
+      closedDatesText
+        .split(/\n/)
+        .map((l) => l.trim())
+        .filter(Boolean),
+    );
+    const res = await updateOpeningHours(slug, hours, closedYmd);
     if (!res.ok) {
       setSaveStatus("error");
-      setError("Could not save opening hours. Try again.");
+    setError("Could not save. Check dates (YYYY-MM-DD) and try again.");
       setToast({ variant: "error", message: TOAST_ERR });
       statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 3000);
       return;
@@ -87,14 +108,16 @@ export function HoursSetupPanel({
     setToast({ variant: "success", message: "✓ Hours saved" });
     statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
     router.refresh();
-  }, [clearStatusTimer, hours, router, slug]);
+  }, [clearStatusTimer, closedDatesText, hours, router, slug]);
 
   return (
     <div className="flex flex-col gap-6">
       <SetupToast toast={toast} onDismiss={() => setToast(null)} />
 
       <p className="text-sm leading-snug text-nq-muted">
-        Set when clients can book. Closed days won&apos;t show slots.
+        Set when clients can book. Weekly closed days won&apos;t show slots. Add
+        extra closed dates (holidays) one per line as{" "}
+        <span className="font-mono text-nq-foreground/90">YYYY-MM-DD</span>.
       </p>
       {error ? (
         <p className="rounded-xl border border-nq-error/40 bg-nq-error/10 px-4 py-3 text-sm text-nq-error">
@@ -168,6 +191,21 @@ export function HoursSetupPanel({
             );
           })}
         </ul>
+      </section>
+
+      <section className="rounded-2xl border border-nq-border/40 bg-nq-surface/40 p-4">
+        <label className="block text-sm font-medium text-nq-muted">
+          Extra closed dates (optional)
+          <textarea
+            className="mt-2 min-h-[120px] w-full resize-y rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 font-mono text-sm tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
+            placeholder={"2026-01-01\n2026-12-25"}
+            value={closedDatesText}
+            disabled={saveStatus === "saving"}
+            onChange={(e) => setClosedDatesText(e.target.value)}
+            spellCheck={false}
+            autoComplete="off"
+          />
+        </label>
       </section>
 
       <div className="rounded-2xl border border-nq-border/35 bg-nq-bg/80 px-4 py-3">

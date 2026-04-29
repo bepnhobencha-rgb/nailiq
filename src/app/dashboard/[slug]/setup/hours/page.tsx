@@ -29,7 +29,11 @@ export default async function SetupHoursPage({ params }: Props) {
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 sm:pt-6">
         <SetupBackNav slug={slug} title="Opening hours" />
-        <HoursSetupPanel slug={slug} initialRaw={rawHours} />
+        <HoursSetupPanel
+          slug={slug}
+          initialRaw={rawHours}
+          initialClosedDatesRaw={ctx.salon.booking_closed_dates}
+        />
       </MobileStack>
     </ResponsiveShell>
   );

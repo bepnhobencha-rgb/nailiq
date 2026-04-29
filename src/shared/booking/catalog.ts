@@ -5,9 +5,12 @@
 export type BookingServiceItem = {
   id: string;
   name: string;
-  /** Total length in minutes (service duration + buffer), for tiles. */
+  durationMinutes: number;
+  bufferMinutes: number;
+  /** Total length in minutes (service duration + buffer), for tiles + blocking. */
   totalMinutes: number;
-  /** When the backend exposes pricing, surfaced here; otherwise null. */
+  /** Snapshot from `services.price_cents`; optional display string. */
+  priceCents: number | null;
   priceDisplay: string | null;
 };
 

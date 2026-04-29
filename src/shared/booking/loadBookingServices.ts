@@ -1,7 +1,7 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
 import { formatGuestPriceUsd } from "@/shared/booking/formatBookingPrice";
 import { getSalonBySlug } from "@/shared/booking/getSalonBySlug";
-import { normalizePublicBookingSlug } from "@/shared/booking/normalizePublicBookingSlug";
 import { createClient } from "@/shared/lib/supabase/server";
 
 export type BookingStaffItem = {
@@ -23,7 +23,7 @@ export type BookingSalonMeta = {
 };
 
 export type BookingLoadData = {
-  /** Exact `salons.slug` from DB — pass to BookingFlow/submit lookups (URLs may fuzzy-match). */
+  /** Exact `salons.slug` from DB — pass to BookingFlow/submit lookups. */
   canonicalSlug: string;
   services: BookingServiceItem[];
   staff: BookingStaffItem[];
@@ -31,19 +31,23 @@ export type BookingLoadData = {
 };
 
 /**
- * Loads bookable services + staff + salon meta for a public salon URL slug.
- * Returns `null` if the salon does not exist.
+ * Booking flowchart step 4 — load booking data for the salon.
+ * Caller must pass a slug already normalized + validated (`resolvePublicBookingPage`).
  *
- * Uses `createClient()` from `@/shared/lib/supabase/server` — anon publishable key + cookies
- * (not the service role). Public catalog reads rely on RLS policies for anonymous access.
+ * When `supabase` is omitted, uses `createClient()` from `@/shared/lib/supabase/server` (cookies).
+ * Pass a `@supabase/supabase-js` client for scripts outside the Next.js request scope.
+ * Public catalog reads rely on RLS policies for anonymous access.
  */
 export async function loadBookingServicesForSalonSlug(
-  shopSlug: string,
+  normalizedSlug: string,
+  supabase?: SupabaseClient,
 ): Promise<BookingLoadData | null> {
-  const normalized = normalizePublicBookingSlug(shopSlug);
-  const supabase = await createClient();
+  const client = supabase ?? (await createClient());
 
-  const { salon, error: salonErr } = await getSalonBySlug(supabase, normalized);
+  const { salon, error: salonErr } = await getSalonBySlug(
+    client,
+    normalizedSlug,
+  );
 
   if (salonErr) {
     console.error("[PUBLIC_BOOKING] loadBookingServices salon error:", salonErr);
@@ -61,7 +65,7 @@ export async function loadBookingServicesForSalonSlug(
   const salonId = String(salon.id ?? "");
   if (!salonId) return null;
 
-  const { data: rows, error: servicesErr } = await supabase
+  const { data: rows, error: servicesErr } = await client
     .from("services")
     .select("id, name, duration_minutes, buffer_minutes, price_cents")
     .eq("salon_id", salonId)
@@ -71,7 +75,7 @@ export async function loadBookingServicesForSalonSlug(
     console.error("loadBookingServices error:", servicesErr);
   }
 
-  const { data: staffList, error: staffErr } = await supabase
+  const { data: staffList, error: staffErr } = await client
     .from("staff")
     .select("id, name, job_role")
     .eq("salon_id", salonId)

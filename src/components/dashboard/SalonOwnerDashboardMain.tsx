@@ -273,6 +273,12 @@ export function SalonOwnerDashboardMain({
                               </>
                             ) : null}
                           </span>
+                          {b.client_notes ? (
+                            <p className="mt-1 w-full basis-full text-sm text-nq-muted">
+                              <span className="font-medium">{t.clientNotes}: </span>
+                              {b.client_notes}
+                            </p>
+                          ) : null}
                         </li>
                       ))}
                     </ul>

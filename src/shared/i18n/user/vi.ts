@@ -47,6 +47,7 @@ export const userVi: UserMessages = {
     service: "Dịch vụ",
     salonStaffLabel: "Thợ",
     phone: "Điện thoại",
+    clientNotes: "Ghi chú khách",
     loading: "Đang tải…",
     refresh: "Làm mới",
     lastUpdatedJustNow: "Cập nhật: vừa xong",

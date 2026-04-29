@@ -85,6 +85,12 @@ export function SalonOwnerTodayBookings({
                   {t.salonStaffLabel}: {b.staff_name}
                 </p>
               ) : null}
+              {b.client_notes ? (
+                <p className="mt-2 rounded-xl border border-nq-border/25 bg-nq-bg/40 px-3 py-2 text-sm leading-snug text-nq-foreground/95">
+                  <span className="font-medium text-nq-muted">{t.clientNotes}: </span>
+                  {b.client_notes}
+                </p>
+              ) : null}
               {nextBookingStatus(b.status) ? (
                 <Button
                   type="button"

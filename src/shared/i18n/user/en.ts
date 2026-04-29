@@ -46,6 +46,8 @@ export type UserMessages = {
     service: string;
     salonStaffLabel: string;
     phone: string;
+    /** Guest notes from the booking form (owner-visible). */
+    clientNotes: string;
     loading: string;
     /** Manual dashboard refresh */
     refresh: string;
@@ -109,6 +111,7 @@ export const userEn: UserMessages = {
     service: "Service",
     salonStaffLabel: "Staff",
     phone: "Phone",
+    clientNotes: "Guest notes",
     loading: "Loading…",
     refresh: "Refresh",
     lastUpdatedJustNow: "Last updated: just now",

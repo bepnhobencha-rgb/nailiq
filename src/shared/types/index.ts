@@ -4,6 +4,8 @@ export type SalonDashboardBooking = {
   id: string;
   client_name: string;
   client_phone: string;
+  /** Guest notes from public booking when provided. */
+  client_notes: string | null;
   start_time_utc: string;
   status: BookingStatus;
   service_name: string;

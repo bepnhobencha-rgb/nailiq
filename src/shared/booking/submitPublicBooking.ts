@@ -29,7 +29,7 @@ export type BookingResult = {
   serviceName: string;
   startTimeUtc: string;
   endTimeUtc: string;
-  status: "pending";
+  status: "confirmed";
   price_cents: number;
   staffName: string;
   addonServiceName: string | null;
@@ -294,14 +294,14 @@ export async function submitPublicBooking(
     client_notes: notesTrim.length > 0 ? notesTrim : null,
     start_time_utc: startLocal.toISOString(),
     end_time_utc: endLocal.toISOString(),
-    status: "pending" as const,
+    status: "confirmed" as const,
     price_cents: priceSnapshot,
     addon_service_id: 
       addonRow ? addonRow.id : null,
     addon_price_cents: addonRow ? addonPriceSnapshot : null,
   };
 
-  const { data: rpcRows, error: rpcErr } = await supabase.rpc(
+  const { data: rpcData, error: rpcErr } = await supabase.rpc(
     "create_public_booking",
     {
       p_salon_id: insertPayload.salon_id,
@@ -321,10 +321,31 @@ export async function submitPublicBooking(
 
   let bookingId = "";
 
-  if (!rpcErr && rpcRows != null) {
-    const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
-    if (row && typeof row === "object" && "id" in row && row.id) {
-      bookingId = String(row.id);
+  if (!rpcErr && rpcData != null) {
+    const raw = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+    if (raw && typeof raw === "object") {
+      const o = raw as Record<string, unknown>;
+      if (o.success === false) {
+        const code = typeof o.code === "string" ? o.code : "";
+        if (code === "slot_conflict" || code === "duplicate_booking") {
+          throw new BookingConflictError();
+        }
+        throw new Error(code ? `booking_rpc_${code}` : "booking_rpc_failed");
+      }
+      if (
+        o.success === true &&
+        typeof o.booking_id === "string" &&
+        o.booking_id.length > 0
+      ) {
+        bookingId = o.booking_id;
+      } else if (
+        !("success" in o) &&
+        typeof (o as { id?: unknown }).id === "string" &&
+        (o as { id: string }).id.length > 0
+      ) {
+        /* Older create_public_booking returning (id, status); remove once migration is universal. */
+        bookingId = (o as { id: string }).id;
+      }
     }
   }
 
@@ -411,7 +432,7 @@ export async function submitPublicBooking(
     serviceName: service.name as string,
     startTimeUtc: startLocal.toISOString(),
     endTimeUtc: endLocal.toISOString(),
-    status: "pending",
+    status: "confirmed",
     price_cents: totalPriceCents,
     staffName: resolvedStaffName,
     addonServiceName: addonRow?.name ?? null,

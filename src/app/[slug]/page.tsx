@@ -8,11 +8,8 @@ import { BookingReturningGreeting } from "@/components/booking/BookingReturningG
 import { BookingUrgency } from "@/components/booking/BookingUrgency";
 import { BookingSalonHero } from "@/components/booking/BookingSalonHero";
 import { SalonBookingSkeleton } from "@/components/booking/SalonBookingSkeleton";
-import { fetchSampleSalonSlugs } from "@/shared/booking/getSalonBySlug";
-import { normalizePublicBookingSlug } from "@/shared/booking/normalizePublicBookingSlug";
 import { resolvePublicBookingPage } from "@/shared/booking/resolvePublicBookingPage";
 import { bookingEn } from "@/shared/i18n/booking/en";
-import { createClient } from "@/shared/lib/supabase/server";
 import { BookingDocumentEn } from "./BookingDocumentEn";
 
 /** Avoid stale static segments for salons created after deploy. */
@@ -42,6 +39,9 @@ export async function generateMetadata({
   if (resolved.status === "reserved") {
     return { title: "Not found | NailIQ" };
   }
+  if (resolved.status === "redirect") {
+    redirect(resolved.to);
+  }
   if (resolved.status === "not_found") {
     return {
       title: "Create your booking link | NailIQ",
@@ -69,28 +69,20 @@ async function PublicBookingRouteBody({
     notFound();
   }
 
+  if (resolved.status === "redirect") {
+    redirect(resolved.to);
+  }
+
   if (resolved.status === "not_found") {
-    let sampleSlugs: string[] | undefined;
-    if (process.env.NODE_ENV === "development") {
-      const supabase = await createClient();
-      sampleSlugs = await fetchSampleSalonSlugs(supabase, 5);
-    }
     return (
       <SalonBookingNotFound
         requestedSlug={resolved.normalizedSlug}
-        sampleSlugs={sampleSlugs}
         suggestedSlugs={resolved.suggestedSlugs}
       />
     );
   }
 
   const { load, normalizedSlug } = resolved;
-  const canon = load.canonicalSlug;
-  const nReq = normalizePublicBookingSlug(slug);
-  const nCanon = normalizePublicBookingSlug(canon);
-  if (nReq !== nCanon || slug !== canon) {
-    redirect(`/${encodeURIComponent(canon)}`);
-  }
 
   const shopLabel = decodeSlugSegment(slug);
 

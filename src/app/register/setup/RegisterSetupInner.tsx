@@ -59,6 +59,14 @@ export default function RegisterSetupInner() {
             );
             return;
           }
+          if (result.error === "invalid_name") {
+            setFormError("Enter a salon name (max 120 characters).");
+            return;
+          }
+          if (result.message?.trim()) {
+            setFormError(result.message.trim());
+            return;
+          }
           setFormError("Could not create your salon. Try again.");
           return;
         }

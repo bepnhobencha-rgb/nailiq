@@ -18,6 +18,16 @@ export function BookingFlowTimePanel({
   stepDir,
   reducedMotion,
   stepTransition,
+  clientName,
+  clientPhone,
+  waitlistSubmitting,
+  waitlistSlotJoined,
+  waitlistContactInvalid,
+  scarcityHint,
+  error,
+  onClientNameChange,
+  onClientPhoneChange,
+  onWaitlistSubmit,
   onSelectSlot,
   onBack,
   onNext,
@@ -29,6 +39,16 @@ export function BookingFlowTimePanel({
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
   stepTransition: { duration: number; ease: [number, number, number, number] };
+  clientName: string;
+  clientPhone: string;
+  waitlistSubmitting: boolean;
+  waitlistSlotJoined: boolean;
+  waitlistContactInvalid: boolean;
+  scarcityHint: string | null;
+  error: string | null;
+  onClientNameChange: (v: string) => void;
+  onClientPhoneChange: (v: string) => void;
+  onWaitlistSubmit: () => void;
   onSelectSlot: (slot: string) => void;
   onBack: () => void;
   onNext: () => void;
@@ -53,11 +73,83 @@ export function BookingFlowTimePanel({
         {t.stepTimeHeading}
       </h2>
 
+      {scarcityHint ? (
+        <p className="mt-3 text-sm font-medium text-nq-primary/95 lg:mt-4 lg:text-[15px]">
+          {scarcityHint}
+        </p>
+      ) : null}
+
       <div className="mt-6 min-h-[8rem] lg:mt-8">
         {slotsLoading ? (
           <p className="py-6 text-center text-sm text-nq-muted">{t.slotLoading}</p>
         ) : timeSlots.length === 0 ? (
-          <p className="py-6 text-center text-sm text-nq-muted">{t.noSlotsAvailable}</p>
+          <div className="space-y-6 py-2">
+            <p className="text-center text-sm text-nq-muted">{t.noSlotsAvailable}</p>
+            {waitlistSlotJoined ? (
+              <p className="rounded-2xl border border-nq-success/35 bg-nq-success/12 px-4 py-3 text-center text-sm font-medium text-nq-success">
+                {t.waitlistJoined}
+              </p>
+            ) : (
+              <>
+                <div className="space-y-4">
+                  <div>
+                    <label
+                      htmlFor="booking-waitlist-name"
+                      className="mb-2 block text-sm font-medium text-nq-foreground"
+                    >
+                      {t.clientNameLabel}
+                    </label>
+                    <input
+                      id="booking-waitlist-name"
+                      type="text"
+                      name="waitlistClientName"
+                      autoComplete="name"
+                      value={clientName}
+                      inputMode="text"
+                      autoCorrect="off"
+                      onChange={(e) => onClientNameChange(e.target.value)}
+                      className="nq-booking-field"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="booking-waitlist-phone"
+                      className="mb-2 block text-sm font-medium text-nq-foreground"
+                    >
+                      {t.clientPhoneLabel}
+                    </label>
+                    <input
+                      id="booking-waitlist-phone"
+                      type="tel"
+                      name="waitlistClientPhone"
+                      autoComplete="tel"
+                      inputMode="tel"
+                      value={clientPhone}
+                      onChange={(e) => onClientPhoneChange(e.target.value)}
+                      className="nq-booking-field"
+                    />
+                  </div>
+                </div>
+                {error ? (
+                  <p className="text-sm text-nq-error" role="alert">
+                    {error}
+                  </p>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="nq-booking-glass h-12 min-h-11 w-full border border-white/[0.08] text-nq-primary shadow-none hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={
+                    waitlistSubmitting ||
+                    waitlistContactInvalid
+                  }
+                  onClick={onWaitlistSubmit}
+                >
+                  {waitlistSubmitting ? t.waitlistSubmitting : t.waitlistNotifyCta}
+                </Button>
+              </>
+            )}
+          </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-3 lg:gap-5">
             {timeSlots.map((slot) => {

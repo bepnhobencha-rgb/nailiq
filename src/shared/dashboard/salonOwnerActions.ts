@@ -13,7 +13,7 @@ import type {
 } from "@/shared/types";
 
 const SALON_DASHBOARD_SELECT =
-  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete";
+  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete, booking_closed_dates";
 
 type SalonRow = {
   id: string;
@@ -25,6 +25,7 @@ type SalonRow = {
   salon_phone: string | null;
   opening_hours: unknown | null;
   profile_complete: boolean;
+  booking_closed_dates: unknown | null;
 };
 
 async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
@@ -65,6 +66,8 @@ async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
         ? null
         : String(row.email).trim() || null,
     profile_complete: !!row.profile_complete,
+    booking_closed_dates:
+      (row as { booking_closed_dates?: unknown }).booking_closed_dates ?? null,
   };
 }
 
@@ -124,6 +127,8 @@ async function getSalonIfMember(slug: string): Promise<SalonRow | null> {
         ? null
         : String(row.salon_phone).trim() || null,
     opening_hours: row.opening_hours ?? null,
+    booking_closed_dates:
+      (row as { booking_closed_dates?: unknown }).booking_closed_dates ?? null,
     email:
       row.email === undefined || row.email === null
         ? null
@@ -140,6 +145,7 @@ type BookingRowDb = {
   id: string;
   client_name: string;
   client_phone: string;
+  client_notes?: string | null;
   start_time_utc: string;
   status: string;
   price_cents: number | null;
@@ -175,6 +181,12 @@ function mapBookingRow(row: BookingRowDb): SalonDashboardBooking {
     id: row.id,
     client_name: row.client_name,
     client_phone: row.client_phone,
+    client_notes: (() => {
+      const n = row.client_notes;
+      if (n == null) return null;
+      const s = String(n).trim();
+      return s.length > 0 ? s : null;
+    })(),
     start_time_utc: row.start_time_utc,
     status: safeStatus,
     service_name: svc?.name ?? "—",
@@ -232,7 +244,7 @@ export async function loadSalonOwnerDashboard(
   to.setHours(23, 59, 59, 999);
 
   const selectCols =
-    "id, client_name, client_phone, start_time_utc, status, price_cents, services ( name, price_cents ), staff ( name )";
+    "id, client_name, client_phone, client_notes, start_time_utc, status, price_cents, services ( name, price_cents ), staff ( name )";
 
   const { data: bookingRows, error: bookingsErr } = await supabase
     .from("bookings")

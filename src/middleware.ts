@@ -13,7 +13,7 @@ export async function middleware(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet, responseHeaders) {
           cookiesToSet.forEach(({ name, value }) => {
             request.cookies.set(name, value);
           });
@@ -21,6 +21,11 @@ export async function middleware(request: NextRequest) {
           cookiesToSet.forEach(({ name, value, options }) => {
             supabaseResponse.cookies.set(name, value, options);
           });
+          if (responseHeaders) {
+            Object.entries(responseHeaders).forEach(([key, value]) => {
+              supabaseResponse.headers.set(key, value);
+            });
+          }
         },
       },
     },

@@ -78,14 +78,18 @@ export function SalonOwnerDashboard({
 
   useEffect(() => {
     const id = window.setInterval(() => {
-      router.refresh();
+      void refresh();
     }, 30_000);
     return () => window.clearInterval(id);
-  }, [router]);
+  }, [refresh]);
 
   useEffect(() => {
     const salonId = data.salon.id;
     const supabase = createClient();
+    const filter = `salon_id=eq.${salonId}`;
+    const onBookingChange = () => {
+      void refresh();
+    };
     const channel = supabase
       .channel(`dashboard-bookings-${salonId}`)
       .on(
@@ -94,18 +98,26 @@ export function SalonOwnerDashboard({
           event: "INSERT",
           schema: "public",
           table: "bookings",
-          filter: `salon_id=eq.${salonId}`,
+          filter,
         },
-        () => {
-          router.refresh();
+        onBookingChange,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "bookings",
+          filter,
         },
+        onBookingChange,
       )
       .subscribe();
 
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [data.salon.id, router]);
+  }, [data.salon.id, refresh]);
 
   const viewData: SalonOwnerDashboardViewPayload = useMemo(() => {
     const split = splitSalonDashboardBookings(data.allBookings);

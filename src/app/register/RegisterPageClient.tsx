@@ -51,6 +51,12 @@ export function RegisterPageClient({ demoMode }: Props) {
       }
       setError(null);
       startTransition(async () => {
+        if (
+          process.env.NODE_ENV === "development" ||
+          process.env.NEXT_PUBLIC_DEBUG_REGISTER_FLOW === "1"
+        ) {
+          console.log("Form submitted with phone:", normalized);
+        }
         const result = await sendRegisterOtp(normalized);
         if (!result.success) {
           setError(result.error);
