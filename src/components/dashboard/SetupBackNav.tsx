@@ -1,8 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 
-export function SetupBackNav({ slug, title }: { slug: string; title: string }) {
+export function SetupBackNav({
+  slug,
+  title,
+  titleAccessory,
+}: {
+  slug: string;
+  title: string;
+  /** Icon or badge shown before the title (e.g. settings gear). */
+  titleAccessory?: ReactNode;
+}) {
   return (
     <header className="mb-6">
       <Link
@@ -11,8 +21,13 @@ export function SetupBackNav({ slug, title }: { slug: string; title: string }) {
       >
         ← Dashboard
       </Link>
-      <h1 className="mt-3 text-xl font-semibold tracking-tight text-nq-foreground sm:text-2xl">
-        {title}
+      <h1 className="mt-3 flex min-w-0 items-center gap-2 text-xl font-semibold tracking-tight text-nq-foreground sm:text-2xl">
+        {titleAccessory ? (
+          <span className="inline-flex shrink-0 text-nq-primary" aria-hidden>
+            {titleAccessory}
+          </span>
+        ) : null}
+        <span className="min-w-0">{title}</span>
       </h1>
     </header>
   );

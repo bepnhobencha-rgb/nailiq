@@ -24,7 +24,41 @@ const DAY_ORDER: { key: DayKey; label: string }[] = [
   { key: "sun", label: "Sunday" },
 ];
 
-const TOAST_ERR = "✗ Could not save. Check your connection.";
+const TOAST_GENERIC = "✗ Could not save.";
+
+function openingHoursToastMessage(code: string): string {
+  switch (code) {
+    case "permission_denied":
+      return "✗ Permission denied.";
+    case "schema_mismatch":
+      return "✗ Database mismatch.";
+    case "invalid_hours":
+      return "✗ Invalid hour format.";
+    case "unauthorized":
+      return "✗ Session expired.";
+    case "server_error":
+      return "✗ Could not save. Check logs or connection.";
+    default:
+      return TOAST_GENERIC;
+  }
+}
+
+function openingHoursFailMessage(code: string): string {
+  switch (code) {
+    case "invalid_hours":
+      return "Could not save. Check each day uses times like 09:00–18:00.";
+    case "unauthorized":
+      return "Session expired — sign in again from /register with your phone number, then retry.";
+    case "permission_denied":
+      return "Could not save: this account isn’t allowed to update this salon in the database (RLS). Sign out and sign in again, or check that Salon members includes your account.";
+    case "schema_mismatch":
+      return "Could not save: database is missing a column (often booking_closed_dates). Apply the latest Supabase migrations to your project, then try again.";
+    case "server_error":
+      return "Could not save. If you’re offline, reconnect; otherwise ask an admin to check server logs for [updateOpeningHours].";
+    default:
+      return "Could not save. If you edited extra closed dates, use only YYYY-MM-DD (one per line). Otherwise try again.";
+  }
+}
 
 function toTimeInput(hhmm: string): string {
   const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
@@ -99,8 +133,8 @@ export function HoursSetupPanel({
     const res = await updateOpeningHours(slug, hours, closedYmd);
     if (!res.ok) {
       setSaveStatus("error");
-    setError("Could not save. Check dates (YYYY-MM-DD) and try again.");
-      setToast({ variant: "error", message: TOAST_ERR });
+      setError(openingHoursFailMessage(res.error));
+      setToast({ variant: "error", message: openingHoursToastMessage(res.error) });
       statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 3000);
       return;
     }

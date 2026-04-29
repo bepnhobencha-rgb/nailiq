@@ -1,11 +1,14 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { NAILQ_DEMO_SLUG_COOKIE } from "@/shared/lib/demoDashboardCookie";
 import {
   resolveSalonForDashboard,
 } from "@/shared/dashboard/salonOwnerActions";
 import {
+  mergeOpeningHoursFromClient,
   stableOpeningHoursJson,
   type OpeningHoursWeek,
 } from "@/shared/dashboard/openingHoursDefaults";
@@ -79,6 +82,48 @@ type Ok = { ok: true };
 
 function fail(msg: string): Fail {
   return { ok: false, error: msg };
+}
+
+/** Map Supabase PostgREST / Postgres errors → stable codes for owner-facing copy */
+function classifySalonHourSaveError(error: {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+}): string {
+  const code = error.code ?? "";
+  const blob = `${error.message ?? ""}\n${error.details ?? ""}\n${error.hint ?? ""}`
+    .toLowerCase();
+
+  if (
+    code === "42501" ||
+    blob.includes("permission denied") ||
+    blob.includes("row-level security") ||
+    blob.includes("violates row-level security policy")
+  ) {
+    return "permission_denied";
+  }
+
+  if (
+    code === "42703" ||
+    (blob.includes("column") &&
+      (blob.includes("does not exist") ||
+        blob.includes("undefined column") ||
+        blob.includes("could not identify column")))
+  ) {
+    return "schema_mismatch";
+  }
+
+  if (
+    blob.includes("jwt") &&
+    (blob.includes("expired") ||
+      blob.includes("invalid signature") ||
+      blob.includes("invalid claim"))
+  ) {
+    return "unauthorized";
+  }
+
+  return "server_error";
 }
 
 export async function addService(
@@ -362,31 +407,67 @@ export async function updateOpeningHours(
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
 
+  if (r.kind === "demo_cookie") {
+    const cookieStore = await cookies();
+    const demoSlug = cookieStore.get(NAILQ_DEMO_SLUG_COOKIE)?.value;
+    if (!demoSlug || demoSlug !== slug) {
+      return fail("unauthorized");
+    }
+  }
+
+  console.log("[updateOpeningHours] slug:", slug);
+  console.log("[updateOpeningHours] data:", openingHours);
+  console.log("openingHours payload:", JSON.stringify(openingHours));
+
+  const merged = mergeOpeningHoursFromClient(openingHours);
+
   let serialized: string;
   try {
-    serialized = stableOpeningHoursJson(openingHours);
+    serialized = stableOpeningHoursJson(merged);
   } catch {
     return fail("invalid_hours");
   }
 
-  const closedJson = normalizeBookingClosedDateList(closedDatesYmd);
+  console.log("[updateOpeningHours] merged opening_hours JSONB:", serialized);
+
+  const datesForClosed =
+    Array.isArray(closedDatesYmd)
+      ? closedDatesYmd.filter((x): x is string => typeof x === "string")
+      : [];
+  const closedJson = normalizeBookingClosedDateList(datesForClosed);
 
   const supabase = await writableSupabase(r.kind);
-  const { error } = await supabase
+  const openingHoursParsed = JSON.parse(serialized) as Record<string, unknown>;
+  const { data: updatedRow, error } = await supabase
     .from("salons")
     .update({
-      opening_hours: JSON.parse(serialized) as Record<string, unknown>,
+      opening_hours: openingHoursParsed,
       booking_closed_dates: closedJson,
     })
     .eq("id", r.salon.id)
-    .eq("slug", slug);
+    .eq("slug", slug)
+    .select("id")
+    .maybeSingle();
 
   if (error) {
-    console.error("[updateOpeningHours]", error);
-    return fail("server_error");
+    console.error("[updateOpeningHours] error:", error);
+    return fail(classifySalonHourSaveError(error));
   }
 
-  await refreshSalonProfileComplete(supabase, r.salon.id);
+  if (!updatedRow?.id) {
+    console.error("[updateOpeningHours] no row updated", {
+      salonId: r.salon.id,
+      slug,
+      kind: r.kind,
+    });
+    return fail("permission_denied");
+  }
+
+  try {
+    await refreshSalonProfileComplete(supabase, r.salon.id);
+  } catch (e) {
+    console.error("[updateOpeningHours] refreshSalonProfileComplete", e);
+  }
   return { ok: true };
 }
 

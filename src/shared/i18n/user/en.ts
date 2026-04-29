@@ -51,6 +51,8 @@ export type UserMessages = {
     loading: string;
     /** Manual dashboard refresh */
     refresh: string;
+    /** Dashboard → /settings hub (gear button) */
+    navSettings: string;
     lastUpdatedJustNow: string;
     lastUpdatedOneMinuteAgo: string;
     /** `{count}` = minutes */
@@ -61,6 +63,16 @@ export type UserMessages = {
     statusPending: string;
     statusConfirmed: string;
     statusCompleted: string;
+  };
+  /** /dashboard/[slug]/settings hub */
+  salonSettings: {
+    pageTitle: string;
+    pageIntro: string;
+    sectionServices: string;
+    sectionStaff: string;
+    sectionHours: string;
+    sectionAddress: string;
+    hintRecoveryEmail: string;
   };
 };
 
@@ -114,6 +126,7 @@ export const userEn: UserMessages = {
     clientNotes: "Guest notes",
     loading: "Loading…",
     refresh: "Refresh",
+    navSettings: "Settings",
     lastUpdatedJustNow: "Last updated: just now",
     lastUpdatedOneMinuteAgo: "Last updated: 1 minute ago",
     lastUpdatedMinutesAgo: "Last updated: {count} minutes ago",
@@ -123,5 +136,16 @@ export const userEn: UserMessages = {
     statusPending: "Pending",
     statusConfirmed: "Confirmed",
     statusCompleted: "Completed",
+  },
+  salonSettings: {
+    pageTitle: "Settings",
+    pageIntro:
+      "Manage your services, team, opening hours, and salon address—all in one place.",
+    sectionServices: "Services & pricing",
+    sectionStaff: "Staff",
+    sectionHours: "Opening hours",
+    sectionAddress: "Salon address",
+    hintRecoveryEmail:
+      "To add or change recovery email for your account, use the banner on your dashboard.",
   },
 };

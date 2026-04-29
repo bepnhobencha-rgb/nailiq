@@ -43,6 +43,42 @@ export class BookingConflictError extends Error {
   }
 }
 
+type RpcErrorShape = {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+};
+
+/** Reports Postgres RPC / PostgREST failures so Sentry sees them even when the UI swallows the thrown Error client-side. */
+function captureCreatePublicBookingFailure(params: {
+  reason: string;
+  rpcError?: RpcErrorShape | null;
+  rpcJsonBody?: unknown;
+}) {
+  const base =
+    params.rpcError?.message?.trim() ||
+    `create_public_booking (${params.reason})`;
+  const err = new Error(base);
+  err.name = "CreatePublicBookingRpcError";
+  Sentry.captureException(err, {
+    tags: {
+      "booking.rpc": "create_public_booking",
+      "booking.rpc.failure": params.reason,
+    },
+    contexts: {
+      nailiq_rpc: {
+        reason: params.reason,
+        supabase: params.rpcError ?? null,
+        rpc_json_preview:
+          params.rpcJsonBody !== undefined
+            ? JSON.stringify(params.rpcJsonBody).slice(0, 2000)
+            : undefined,
+      },
+    },
+  });
+}
+
 function localDateYmd(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -342,6 +378,10 @@ export async function submitPublicBooking(
         if (code === "slot_conflict" || code === "duplicate_booking") {
           throw new BookingConflictError();
         }
+        captureCreatePublicBookingFailure({
+          reason: code ? `json_error_${code}` : "json_success_false",
+          rpcJsonBody: raw,
+        });
         throw new Error(code ? `booking_rpc_${code}` : "booking_rpc_failed");
       }
       if (
@@ -388,6 +428,10 @@ export async function submitPublicBooking(
       if (insertErr.code === "23505") throw new BookingConflictError();
       // exclusion_violation / overlap (btree_gist EXCLUDE)
       if (insertErr.code === "23P01") throw new BookingConflictError();
+      captureCreatePublicBookingFailure({
+        reason: "rpc_missing_fallback_insert",
+        rpcError: insertErr,
+      });
       throw new Error(insertErr.message);
     }
   } else if (!bookingId) {
@@ -395,10 +439,19 @@ export async function submitPublicBooking(
       if (rpcErr.code === "23505") throw new BookingConflictError();
       if (rpcErr.code === "23P01") throw new BookingConflictError(); // overlap / exclusion
       if (rpcErr.message?.includes("invalid_addon_service")) {
+        captureCreatePublicBookingFailure({
+          reason: "invalid_addon_service",
+          rpcError: rpcErr,
+        });
         throw new Error("invalid_addon");
       }
+      captureCreatePublicBookingFailure({
+        reason: "supabase_rpc_error",
+        rpcError: rpcErr,
+      });
       throw new Error(rpcErr.message);
     }
+    captureCreatePublicBookingFailure({ reason: "booking_rpc_empty" });
     throw new Error("booking_rpc_empty");
   }
 
@@ -433,7 +486,15 @@ export async function submitPublicBooking(
       );
 
     if (profileUpsertErr) {
-      console.warn("client_profiles upsert:", profileUpsertErr.message);
+      const err = new Error(profileUpsertErr.message);
+      err.name = "ClientProfilesUpsertError";
+      Sentry.captureException(err, {
+        tags: {
+          "booking.rpc": "client_profiles",
+          "booking.rpc.failure": "upsert_best_effort",
+        },
+        extra: { message: profileUpsertErr.message },
+      });
     }
   } catch {
     /* booking succeeded; profile update is best-effort */

@@ -15,10 +15,12 @@ export function parseBookingClosedDateSet(raw: unknown): Set<string> {
   return out;
 }
 
-export function normalizeBookingClosedDateList(dates: readonly string[]): string[] {
+export function normalizeBookingClosedDateList(dates: unknown): string[] {
+  if (!Array.isArray(dates)) return [];
   const seen = new Set<string>();
   const out: string[] = [];
   for (const d of dates) {
+    if (typeof d !== "string") continue;
     const ymd = d.trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) continue;
     if (seen.has(ymd)) continue;

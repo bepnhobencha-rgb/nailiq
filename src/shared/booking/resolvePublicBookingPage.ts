@@ -58,19 +58,8 @@ export const resolvePublicBookingPage = cache(
     // 4. load booking data
     const load = await loadBookingServicesForSalonSlug(normalizedSlug, supabase);
 
-    // 5. tracking booking_page_view
-    console.log("[TRACK]", {
-      event: "booking_page_view",
-      slug: normalizedSlug,
-    });
-
-    // 6. if NOT FOUND → tracking booking_not_found → fetch suggestions → return not_found
+    // 5. if NOT FOUND → fetch suggestions → return not_found
     if (!load) {
-      console.log("[TRACK]", {
-        event: "booking_not_found",
-        slug: normalizedSlug,
-      });
-
       const client = supabase ?? (await createClient());
       const rawSuggestions = await fetchSimilarSalonSlugs(
         client,

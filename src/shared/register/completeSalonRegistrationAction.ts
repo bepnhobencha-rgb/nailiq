@@ -225,7 +225,9 @@ export async function completeSalonRegistration(
     return { ok: false, error: "unauthorized" };
   }
 
-  console.log("Step 1: getUser", { userId: user.id });
+  if (registerCompletionDebugEnabled()) {
+    console.log("Step 1: getUser", { userId: user.id });
+  }
 
   const { data: existingMember } = await supabase
     .from("salon_members")
@@ -306,7 +308,9 @@ export async function completeSalonRegistration(
     return { ok: false, error: "server_error" };
   }
 
-  console.log("Step 2: insert salon", { slug, name, phone: proofDigits });
+  if (registerCompletionDebugEnabled()) {
+    console.log("Step 2: insert salon", { slug, name, phone: proofDigits });
+  }
 
   const { data: salonRow, error: salonErr } = await admin
     .from("salons")
@@ -331,7 +335,9 @@ export async function completeSalonRegistration(
   const actualSlug = String(salonRow.slug);
   const resolvedSlugAdjusted = actualSlug !== slugifySalonName(name.trim());
 
-  console.log("Step 3: insert services");
+  if (registerCompletionDebugEnabled()) {
+    console.log("Step 3: insert services");
+  }
 
   const { error: svcErr } = await admin.from("services").insert({
     salon_id: salonId,
@@ -351,7 +357,9 @@ export async function completeSalonRegistration(
     };
   }
 
-  console.log("Step 4: insert staff");
+  if (registerCompletionDebugEnabled()) {
+    console.log("Step 4: insert staff");
+  }
 
   const { error: staffErr } = await admin.from("staff").insert({
     salon_id: salonId,
@@ -370,10 +378,12 @@ export async function completeSalonRegistration(
     };
   }
 
-  console.log("Step 5: insert salon_members", {
-    salon_id: salonId,
-    user_id: user.id,
-  });
+  if (registerCompletionDebugEnabled()) {
+    console.log("Step 5: insert salon_members", {
+      salon_id: salonId,
+      user_id: user.id,
+    });
+  }
 
   const { error: memErr } = await admin.from("salon_members").insert({
     salon_id: salonId,

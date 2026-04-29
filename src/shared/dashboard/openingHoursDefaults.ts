@@ -48,6 +48,49 @@ export function stableOpeningHoursJson(h: OpeningHoursWeek): string {
   return JSON.stringify(o);
 }
 
+const HM_RE = /^(\d{1,2}):(\d{2})$/;
+
+/** Normalize HH:MM for storage against a fallback when client sends incomplete day rows. */
+export function normalizeHmString(raw: unknown, fallback: string): string {
+  if (typeof raw !== "string") return fallback;
+  const m = HM_RE.exec(raw.trim());
+  if (!m) return fallback;
+  let h = Number(m[1]);
+  let min = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(min)) return fallback;
+  h = Math.min(23, Math.max(0, Math.floor(h)));
+  min = Math.min(59, Math.max(0, Math.floor(min)));
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+function coerceWeekDayHours(v: unknown, defaults: DayHours): DayHours {
+  if (!v || typeof v !== "object") return defaults;
+  const o = v as Record<string, unknown>;
+  const closed =
+    typeof o.closed === "boolean" ? o.closed : defaults.closed;
+  const openSrc = typeof o.open === "string" ? o.open : defaults.open;
+  const closeSrc = typeof o.close === "string" ? o.close : defaults.close;
+  return {
+    closed,
+    open: normalizeHmString(openSrc, defaults.open),
+    close: normalizeHmString(closeSrc, defaults.close),
+  };
+}
+
+/**
+ * Merge server-actions / client payloads into a complete week so partial JSON
+ * (e.g. a single edited day after serialization) cannot throw or omit keys.
+ */
+export function mergeOpeningHoursFromClient(input: unknown): OpeningHoursWeek {
+  const base = defaultOpeningHoursWeek();
+  if (!input || typeof input !== "object") return base;
+  const o = input as Record<string, unknown>;
+  for (const k of DAY_KEYS) {
+    base[k] = coerceWeekDayHours(o[k], base[k]);
+  }
+  return base;
+}
+
 /** True when saved JSON differs from platform default template (normalized). */
 export function isOpeningHoursCustomized(raw: unknown): boolean {
   const parsed = parseOpeningHours(raw);

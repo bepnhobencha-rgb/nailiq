@@ -10,6 +10,7 @@ import { SalonOwnerStatsSection } from "@/components/dashboard/SalonOwnerStatsSe
 import { SalonOwnerTodayBookings } from "@/components/dashboard/SalonOwnerTodayBookings";
 import { SalonOwnerDashboardSkeleton } from "@/components/dashboard/SalonOwnerDashboardSkeleton";
 import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
+import { GearIcon } from "@/components/ui/icons/GearIcon";
 import type { SalonOwnerDashboardViewPayload } from "@/components/dashboard/salonDashboardFormat";
 import { getUserMessages } from "@/shared/i18n/user";
 import { maskPhoneDigits } from "@/shared/lib/maskPhone";
@@ -174,14 +175,13 @@ export function SalonOwnerDashboardMain({
               {t.refresh}
             </button>
           </div>
-          {!profileComplete ? (
-            <Link
-              href={`/dashboard/${encodeURIComponent(slug)}/setup/services`}
-              className="inline-flex min-h-11 touch-manipulation items-center justify-center rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-4 text-base font-semibold text-nq-primary transition-colors hover:bg-nq-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/50"
-            >
-              Setup
-            </Link>
-          ) : null}
+          <Link
+            href={`/dashboard/${encodeURIComponent(slug)}/settings`}
+            className="inline-flex min-h-11 touch-manipulation items-center justify-center gap-2 rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-4 text-base font-semibold text-nq-primary transition-colors hover:bg-nq-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/50"
+          >
+            <GearIcon className="h-5 w-5 shrink-0" aria-hidden />
+            {t.navSettings}
+          </Link>
           <UserLanguageToggle
             language={language}
             onLanguageChange={onLanguageChange}

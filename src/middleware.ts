@@ -3,6 +3,21 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { NAILQ_DEMO_SLUG_COOKIE } from "@/shared/lib/demoDashboardCookie";
 
+/** Copy cookies from the Supabase session response (refresh via getUser/setAll) onto another response. */
+function applyCookiesFrom(
+  target: NextResponse,
+  source: NextResponse,
+): NextResponse {
+  const secure = process.env.NODE_ENV === "production";
+  for (const cookie of source.cookies.getAll()) {
+    target.cookies.set({
+      ...cookie,
+      secure,
+    });
+  }
+  return target;
+}
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -49,12 +64,6 @@ export async function middleware(request: NextRequest) {
     Sentry.getCurrentScope().setTag("surface", "dashboard");
     const demoSlug = request.cookies.get(NAILQ_DEMO_SLUG_COOKIE)?.value;
     isDemoAccess = Boolean(demoSlug && demoSlug === pathSlug);
-    if (process.env.NODE_ENV === "development") {
-      console.log("[middleware] demoSlug:", demoSlug);
-      console.log("[middleware] pathSlug:", pathSlug);
-      console.log("[middleware] isDemoAccess:", isDemoAccess);
-      console.log("[middleware] user:", Boolean(user));
-    }
   }
 
   if (!user && isDemoAccess) {
@@ -62,7 +71,8 @@ export async function middleware(request: NextRequest) {
   }
 
   if (!user && pathname.startsWith("/dashboard")) {
-    return NextResponse.redirect(new URL("/register", request.url));
+    const redirect = NextResponse.redirect(new URL("/register", request.url));
+    return applyCookiesFrom(redirect, supabaseResponse);
   }
 
   return supabaseResponse;

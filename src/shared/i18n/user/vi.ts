@@ -50,6 +50,7 @@ export const userVi: UserMessages = {
     clientNotes: "Ghi chú khách",
     loading: "Đang tải…",
     refresh: "Làm mới",
+    navSettings: "Cài đặt",
     lastUpdatedJustNow: "Cập nhật: vừa xong",
     lastUpdatedOneMinuteAgo: "Cập nhật: 1 phút trước",
     lastUpdatedMinutesAgo: "Cập nhật: {count} phút trước",
@@ -59,5 +60,16 @@ export const userVi: UserMessages = {
     statusPending: "Chờ",
     statusConfirmed: "Đã xác nhận",
     statusCompleted: "Hoàn thành",
+  },
+  salonSettings: {
+    pageTitle: "Cài đặt",
+    pageIntro:
+      "Chỉnh dịch vụ, nhân viên, giờ mở cửa và địa chỉ tiệm—tất cả tại một nơi.",
+    sectionServices: "Dịch vụ & giá",
+    sectionStaff: "Nhân viên",
+    sectionHours: "Giờ mở cửa",
+    sectionAddress: "Địa chỉ tiệm",
+    hintRecoveryEmail:
+      "Để thêm hoặc đổi email khôi phục cho tài khoản, dùng thanh nhắc trên bảng điều khiển.",
   },
 };
