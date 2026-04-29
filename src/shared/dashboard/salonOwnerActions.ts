@@ -6,7 +6,6 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
   NAILQ_DEMO_SLUG_COOKIE,
 } from "@/shared/lib/demoDashboardCookie";
-import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import { isOpeningHoursCustomized } from "@/shared/dashboard/openingHoursDefaults";
 import type {
   BookingStatus,
@@ -43,7 +42,6 @@ type SalonRow = {
 };
 
 async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
-  if (!isDemoOtpRuntime()) return null;
   const cookieStore = await cookies();
   const demoSlug = cookieStore.get(NAILQ_DEMO_SLUG_COOKIE)?.value;
   if (!demoSlug || demoSlug !== slug) return null;

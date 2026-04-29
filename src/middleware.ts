@@ -31,13 +31,14 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
-  const dashMatch = /^\/dashboard\/([^/]+)\/?$/.exec(pathname);
+  // Any path under /dashboard/[slug]/… (home, setup/services, setup/staff, etc.)
+  const dashSlugMatch = /^\/dashboard\/([^/]+)/.exec(pathname);
 
   // Demo OTP registration sets an httpOnly slug cookie (no Supabase session). Allow
   // dashboard for that slug regardless of build-time NEXT_PUBLIC_DEMO_OTP inlining.
   let isDemoAccess = false;
-  if (dashMatch) {
-    const pathSlug = decodeURIComponent(dashMatch[1]);
+  if (dashSlugMatch) {
+    const pathSlug = decodeURIComponent(dashSlugMatch[1]);
     const demoSlug = request.cookies.get(NAILQ_DEMO_SLUG_COOKIE)?.value;
     isDemoAccess = Boolean(demoSlug && demoSlug === pathSlug);
   }
