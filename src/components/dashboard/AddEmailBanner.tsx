@@ -126,6 +126,7 @@ export function AddEmailBanner({ salonSlug, onDismiss, onEmailAdded }: Props) {
 
   return (
     <div
+      id="email"
       className="nq-email-banner-enter mb-4 w-full rounded-2xl border bg-nq-primary/12 px-4 py-3"
       style={{ borderColor: "var(--nq-border-gold-banner)" }}
     >

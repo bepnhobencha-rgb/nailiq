@@ -62,6 +62,7 @@ export function SalonOwnerDashboard({
   }, [router, slug]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- server `initial` from RSC refresh / navigation
     setData(initial);
   }, [initial]);
 

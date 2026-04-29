@@ -123,6 +123,7 @@ export async function completeSalonRegistration(
     const { error: staffErr } = await admin.from("staff").insert({
       salon_id: salonId,
       name: "Staff 1",
+      job_role: "owner",
     });
 
     if (staffErr) {
@@ -299,6 +300,7 @@ export async function completeSalonRegistration(
   const { error: staffErr } = await admin.from("staff").insert({
     salon_id: salonId,
     name: "Staff 1",
+    job_role: "owner",
   });
 
   if (staffErr) {

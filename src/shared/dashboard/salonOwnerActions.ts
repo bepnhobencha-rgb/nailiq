@@ -7,10 +7,14 @@ import {
   NAILQ_DEMO_SLUG_COOKIE,
 } from "@/shared/lib/demoDashboardCookie";
 import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
+import { isOpeningHoursCustomized } from "@/shared/dashboard/openingHoursDefaults";
 import type {
   BookingStatus,
   SalonDashboardBooking,
 } from "@/shared/types";
+
+const SALON_DASHBOARD_SELECT =
+  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete";
 
 function utcDayBounds(
   d: Date,
@@ -32,6 +36,10 @@ type SalonRow = {
   slug: string;
   phone: string;
   email: string | null;
+  address: string | null;
+  salon_phone: string | null;
+  opening_hours: unknown | null;
+  profile_complete: boolean;
 };
 
 async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
@@ -49,18 +57,30 @@ async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
 
   const { data: salon, error } = await admin
     .from("salons")
-    .select("id, name, slug, phone, email")
+    .select(SALON_DASHBOARD_SELECT)
     .eq("slug", slug)
     .maybeSingle();
 
   if (error || !salon) return null;
-  const row = salon as SalonRow & { email?: unknown };
+  const row = salon as SalonRow & {
+    email?: unknown;
+    profile_complete?: unknown;
+  };
   return {
     ...row,
+    address:
+      row.address === undefined || row.address === null
+        ? null
+        : String(row.address).trim() || null,
+    salon_phone:
+      row.salon_phone === undefined || row.salon_phone === null
+        ? null
+        : String(row.salon_phone).trim() || null,
     email:
       row.email === undefined || row.email === null
         ? null
         : String(row.email).trim() || null,
+    profile_complete: !!row.profile_complete,
   };
 }
 
@@ -95,23 +115,36 @@ async function getSalonIfMember(slug: string): Promise<SalonRow | null> {
 
   const { data: salon, error: salErr } = await supabase
     .from("salons")
-    .select("id, name, slug, phone, email")
+    .select(SALON_DASHBOARD_SELECT)
     .eq("slug", slug)
     .in("id", salonIds)
     .maybeSingle();
 
   if (salErr || !salon) return null;
 
-  const row = salon as SalonRow & { email?: unknown };
+  const row = salon as SalonRow & {
+    email?: unknown;
+    profile_complete?: unknown;
+  };
   return {
     id: row.id,
     name: row.name,
     slug: row.slug,
     phone: row.phone,
+    address:
+      row.address === undefined || row.address === null
+        ? null
+        : String(row.address).trim() || null,
+    salon_phone:
+      row.salon_phone === undefined || row.salon_phone === null
+        ? null
+        : String(row.salon_phone).trim() || null,
+    opening_hours: row.opening_hours ?? null,
     email:
       row.email === undefined || row.email === null
         ? null
         : String(row.email).trim() || null,
+    profile_complete: !!row.profile_complete,
   };
 }
 
@@ -160,6 +193,15 @@ export type LoadSalonDashboardResult =
         slug: string;
         phone: string;
         email: string | null;
+        address: string | null;
+        salon_phone: string | null;
+        opening_hours: unknown | null;
+        profile_complete: boolean;
+      };
+      setup: {
+        services_count: number;
+        staff_count: number;
+        opening_hours_customized: boolean;
       };
       demoMode: boolean;
       today: SalonDashboardBooking[];
@@ -236,6 +278,25 @@ export async function loadSalonOwnerDashboard(
   const completed = today.filter((b) => b.status === "completed").length;
   const revenueCents = today.reduce((sum, b) => sum + b.price_cents, 0);
 
+  const { count: servicesCount, error: scErr } = await supabase
+    .from("services")
+    .select("*", { count: "exact", head: true })
+    .eq("salon_id", salon.id);
+
+  const { count: staffCount, error: stErr } = await supabase
+    .from("staff")
+    .select("*", { count: "exact", head: true })
+    .eq("salon_id", salon.id);
+
+  if (scErr || stErr) {
+    console.error("[loadSalonOwnerDashboard] counts", scErr ?? stErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  const openingHoursCustomized = isOpeningHoursCustomized(
+    salon.opening_hours,
+  );
+
   return {
     ok: true,
     salon: {
@@ -247,6 +308,15 @@ export async function loadSalonOwnerDashboard(
         salon.email === undefined || salon.email === null
           ? null
           : String(salon.email).trim() || null,
+      address: salon.address ?? null,
+      salon_phone: salon.salon_phone ?? null,
+      opening_hours: salon.opening_hours ?? null,
+      profile_complete: !!salon.profile_complete,
+    },
+    setup: {
+      services_count: servicesCount ?? 0,
+      staff_count: staffCount ?? 0,
+      opening_hours_customized: openingHoursCustomized,
     },
     demoMode,
     today,

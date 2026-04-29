@@ -1,11 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SalonOwnerStatsSection } from "@/components/dashboard/SalonOwnerStatsSection";
 import { SalonOwnerTodayBookings } from "@/components/dashboard/SalonOwnerTodayBookings";
+import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
 import type { LoadSalonDashboardResult } from "@/shared/dashboard/salonOwnerActions";
 import { getUserMessages } from "@/shared/i18n/user";
 import { maskPhoneDigits } from "@/shared/lib/maskPhone";
@@ -45,6 +47,7 @@ export function SalonOwnerDashboardMain({
   isLoading: boolean;
 }) {
   const t = getUserMessages(language).salonDashboard;
+  const profileComplete = data.salon.profile_complete;
   const salonPhoneMasked = maskPhoneDigits(
     String(data.salon.phone ?? "").replace(/\D/g, ""),
   );
@@ -70,6 +73,26 @@ export function SalonOwnerDashboardMain({
           </span>
         </div>
       ) : null}
+      {!profileComplete ? (
+        <div
+          role="status"
+          className="mb-4 rounded-2xl border border-nq-primary/30 bg-nq-primary/10 px-4 py-3 text-center text-sm leading-snug text-nq-foreground"
+        >
+          Complete your salon profile to start taking real bookings
+        </div>
+      ) : null}
+      {!profileComplete ? (
+        <SetupChecklist
+          slug={slug}
+          salon={{
+            services_count: data.setup.services_count,
+            staff_count: data.setup.staff_count,
+            address: data.salon.address,
+            opening_hours: data.salon.opening_hours,
+            email: data.salon.email,
+          }}
+        />
+      ) : null}
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-wide text-nq-muted/80">
@@ -86,11 +109,26 @@ export function SalonOwnerDashboardMain({
             {t.phone}:{" "}
             <span className="tabular-nums text-nq-muted">{salonPhoneMasked}</span>
           </p>
+          {profileComplete ? (
+            <p className="mt-3 rounded-xl border border-nq-success/35 bg-nq-success/12 px-3 py-2 text-sm font-medium text-nq-success">
+              ✓ Profile complete — ready for bookings
+            </p>
+          ) : null}
         </div>
-        <UserLanguageToggle
-          language={language}
-          onLanguageChange={onLanguageChange}
-        />
+        <div className="flex shrink-0 flex-col items-end gap-2 pt-1">
+          {!profileComplete ? (
+            <Link
+              href={`/dashboard/${encodeURIComponent(slug)}/setup/services`}
+              className="inline-flex min-h-11 touch-manipulation items-center justify-center rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-4 text-base font-semibold text-nq-primary transition-colors hover:bg-nq-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/50"
+            >
+              Setup
+            </Link>
+          ) : null}
+          <UserLanguageToggle
+            language={language}
+            onLanguageChange={onLanguageChange}
+          />
+        </div>
       </div>
 
       <div className="rounded-2xl border border-nq-border/40 bg-nq-surface/45 p-4 ring-1 ring-inset ring-nq-primary/15">
