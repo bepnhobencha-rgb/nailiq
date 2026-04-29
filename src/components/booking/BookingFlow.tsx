@@ -191,21 +191,14 @@ export function BookingFlow({
             clientNotes={flow.clientNotes}
             upsellCandidates={flow.upsellCandidates}
             selectedAddonId={flow.selectedAddonId}
-            guestContactInvalid={flow.guestContactInvalid}
             error={flow.error}
             submitting={flow.submitting}
-            waitlistSubmitting={flow.waitlistSubmitting}
-            bookingConflictWaitlist={flow.bookingConflictWaitlist}
-            waitlistConflictJoined={flow.waitlistConflictJoined}
             stepDir={flow.stepDir}
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}
             onSelectAddonId={flow.setSelectedAddonId}
             onBack={flow.backToInfo}
             onConfirm={() => void flow.onConfirm()}
-            onWaitlistAfterConflict={() =>
-              void flow.submitWaitlistAfterConflict()
-            }
           />
         ) : null}
       </AnimatePresence>

@@ -27,19 +27,14 @@ export function BookingFlowConfirmPanel({
   clientNotes,
   upsellCandidates,
   selectedAddonId,
-  guestContactInvalid,
   error,
   submitting,
-  waitlistSubmitting,
-  bookingConflictWaitlist,
-  waitlistConflictJoined,
   stepDir,
   reducedMotion,
   stepTransition,
   onSelectAddonId,
   onBack,
   onConfirm,
-  onWaitlistAfterConflict,
 }: {
   t: BookingMessages;
   shopLabel: string;
@@ -51,20 +46,14 @@ export function BookingFlowConfirmPanel({
   clientNotes: string;
   upsellCandidates: readonly BookingServiceItem[];
   selectedAddonId: string | null;
-  /** True when name/phone from step 5 are not acceptable (e.g. waitlist-after-conflict path). */
-  guestContactInvalid: boolean;
   error: string | null;
   submitting: boolean;
-  waitlistSubmitting: boolean;
-  bookingConflictWaitlist: boolean;
-  waitlistConflictJoined: boolean;
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
   stepTransition: { duration: number; ease: [number, number, number, number] };
   onSelectAddonId: (id: string | null) => void;
   onBack: () => void;
   onConfirm: () => void | Promise<void>;
-  onWaitlistAfterConflict: () => void | Promise<void>;
 }) {
   const customerRows = [
     { label: t.summaryClientName, value: clientName.trim() || "—" },
@@ -185,28 +174,6 @@ export function BookingFlowConfirmPanel({
           <p className="mt-6 shrink-0 text-sm text-nq-error" role="alert">
             {error}
           </p>
-        ) : null}
-
-        {waitlistConflictJoined ? (
-          <p className="mt-4 rounded-2xl border border-nq-success/35 bg-nq-success/12 px-4 py-3 text-sm font-medium text-nq-success">
-            {t.waitlistJoined}
-          </p>
-        ) : null}
-
-        {bookingConflictWaitlist && !waitlistConflictJoined ? (
-          <div className="mt-4">
-            <Button
-              type="button"
-              variant="secondary"
-              className="nq-booking-glass h-12 min-h-11 w-full border border-white/[0.08] text-nq-primary shadow-none hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
-              disabled={
-                waitlistSubmitting || submitting || guestContactInvalid
-              }
-              onClick={() => void onWaitlistAfterConflict()}
-            >
-              {waitlistSubmitting ? t.waitlistSubmitting : t.waitlistNotifyCta}
-            </Button>
-          </div>
         ) : null}
 
         <div className="mt-5 flex flex-col gap-3 border-t border-nq-border/25 pt-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">

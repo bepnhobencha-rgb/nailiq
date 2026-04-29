@@ -92,8 +92,6 @@ export function useBookingFlowState(
   const [submitting, setSubmitting] = useState(false);
   const [waitlistSubmitting, setWaitlistSubmitting] = useState(false);
   const [waitlistSlotJoined, setWaitlistSlotJoined] = useState(false);
-  const [waitlistConflictJoined, setWaitlistConflictJoined] = useState(false);
-  const [bookingConflictWaitlist, setBookingConflictWaitlist] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bookingResult, setBookingResult] = useState<{
     bookingId: string;
@@ -368,8 +366,6 @@ export function useBookingFlowState(
     setTimeSlots([]);
     setError(null);
     setWaitlistSlotJoined(false);
-    setWaitlistConflictJoined(false);
-    setBookingConflictWaitlist(false);
   }, []);
 
   const handleAddToCalendar = useCallback(() => {
@@ -414,8 +410,6 @@ export function useBookingFlowState(
   const onConfirm = useCallback(async () => {
     if (!serviceId || !timeSlot || !staffId) return;
     setError(null);
-    setBookingConflictWaitlist(false);
-    setWaitlistConflictJoined(false);
     const name = clientName.trim();
     const phone = clientPhone.trim();
     if (!name || !validateGuestPhone(phone).ok) {
@@ -457,8 +451,6 @@ export function useBookingFlowState(
       setStep("done");
     } catch (err) {
       if (err instanceof BookingConflictError) {
-        setBookingConflictWaitlist(false);
-        setWaitlistConflictJoined(false);
         setStepDir(-1);
         setStep("time");
         setError(t.slotTakenError);
@@ -566,53 +558,6 @@ export function useBookingFlowState(
     t.waitlistError,
   ]);
 
-  const submitWaitlistAfterConflict = useCallback(async () => {
-    if (!serviceId || !timeSlot || !staffId) return;
-    const name = clientName.trim();
-    const phone = clientPhone.trim();
-    if (!name || !validateGuestPhone(phone).ok) {
-      setError(
-        !name ? t.contactRequiredError : t.invalidPhoneError,
-      );
-      return;
-    }
-    setWaitlistSubmitting(true);
-    try {
-      await submitPublicWaitlistEntry({
-        shopSlug,
-        serviceId,
-        staffId,
-        bookingDateYmd: bookingDateYmdFromLocalDate(selectedDate),
-        preferredSlotLabel: timeSlot,
-        clientName: name,
-        clientPhone: phone,
-        source: "booking_conflict",
-      });
-      setWaitlistConflictJoined(true);
-      setBookingConflictWaitlist(false);
-      setError(null);
-    } catch (e) {
-      setError(
-        e instanceof Error && e.message === "invalid_phone"
-          ? t.invalidPhoneError
-          : t.waitlistError,
-      );
-    } finally {
-      setWaitlistSubmitting(false);
-    }
-  }, [
-    clientName,
-    clientPhone,
-    selectedDate,
-    serviceId,
-    shopSlug,
-    staffId,
-    timeSlot,
-    t.contactRequiredError,
-    t.invalidPhoneError,
-    t.waitlistError,
-  ]);
-
   const backToService = useCallback(() => {
     setStepDir(-1);
     setStep("service");
@@ -633,16 +578,12 @@ export function useBookingFlowState(
     setStepDir(-1);
     setStep("time");
     setError(null);
-    setBookingConflictWaitlist(false);
-    setWaitlistConflictJoined(false);
   }, []);
 
   const backToInfo = useCallback(() => {
     setStepDir(-1);
     setStep("info");
     setError(null);
-    setBookingConflictWaitlist(false);
-    setWaitlistConflictJoined(false);
   }, []);
 
   return {
@@ -663,8 +604,6 @@ export function useBookingFlowState(
     submitting,
     waitlistSubmitting,
     waitlistSlotJoined,
-    waitlistConflictJoined,
-    bookingConflictWaitlist,
     error,
     bookingResult,
     service,
@@ -689,7 +628,6 @@ export function useBookingFlowState(
     handleAddToCalendar,
     onConfirm,
     submitWaitlistSlotUnavailable,
-    submitWaitlistAfterConflict,
     backToService,
     backToStaff,
     backToDate,
