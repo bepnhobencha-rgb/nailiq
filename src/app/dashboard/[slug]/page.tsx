@@ -25,6 +25,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function SalonDashboardPage({ params }: Props) {
   const { slug } = await params;
+  /** Loads stats, `setup` (counts, hours) and `profile_complete` for checklist + badge. */
   const initial = await loadSalonOwnerDashboard(slug);
   if (!initial.ok) {
     redirect("/register");

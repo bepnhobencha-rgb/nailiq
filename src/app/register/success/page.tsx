@@ -74,6 +74,32 @@ function RegisterSuccessInner() {
           then drop the link in Instagram or SMS.
         </p>
 
+        <div className="rounded-2xl border border-nq-primary/35 bg-nq-primary/[0.08] px-4 py-4 text-center">
+          <p className="text-xs font-medium uppercase tracking-wide text-nq-muted">
+            Salon owner
+          </p>
+          <Button
+            type="button"
+            size="lg"
+            variant="primary"
+            className="mt-3 w-full min-h-[48px]"
+            onClick={() =>
+              router.push(`/dashboard/${encodeURIComponent(slug)}`)
+            }
+          >
+            Go to Dashboard
+          </Button>
+          <p className="mt-3 text-[12px] leading-snug text-nq-muted">
+            If your profile isn&apos;t complete yet, the dashboard shows a setup
+            checklist (services, staff, hours, address) before real bookings are
+            recommended.
+          </p>
+          <p className="mt-2 text-[11px] leading-snug text-nq-muted/90">
+            Production: same browser as OTP signup keeps your session. Demo OTP uses a
+            short-lived cookie instead of signing in.
+          </p>
+        </div>
+
         <div>
           <p className="mb-2 text-center text-xs text-nq-muted sm:text-sm">
             Public booking link
@@ -102,25 +128,6 @@ function RegisterSuccessInner() {
           >
             Test booking now
           </Button>
-        </div>
-
-        <div className="rounded-2xl border border-nq-primary/25 bg-nq-primary/8 px-4 py-3 text-center">
-          <p className="text-xs font-medium uppercase tracking-wide text-nq-muted">
-            Salon owner
-          </p>
-          <Button
-            type="button"
-            size="lg"
-            variant="secondary"
-            className="mt-3 w-full"
-            onClick={() => router.push(`/dashboard/${encodeURIComponent(slug)}`)}
-          >
-            Open dashboard
-          </Button>
-          <p className="mt-2 text-[11px] leading-snug text-nq-muted">
-            Production? Same browser as OTP signup keeps your session. Demo OTP uses a
-            short-lived cookie instead of signing in.
-          </p>
         </div>
 
         <p className="pt-1 text-center text-sm leading-relaxed text-nq-muted">

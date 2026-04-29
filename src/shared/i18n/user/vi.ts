@@ -18,6 +18,12 @@ export const userVi: UserMessages = {
   register: {
     returningOwnerHint:
       "Đã là chủ tiệm? Nhập số điện thoại để đăng nhập lại.",
+    welcomeBackAfterSend:
+      "Chào mừng trở lại! Nhập OTP để vào bảng điều khiển tiệm.",
+    welcomeBackVerifySubtext:
+      "Đã gửi mã 6 số — nhập để hoàn tất đăng nhập vào bảng điều khiển.",
+    newDemoOtpBadgeNote:
+      "DEMO · Mã OTP hiển thị bên dưới.",
   },
   salonDashboard: {
     title: "Bảng điều khiển tiệm",

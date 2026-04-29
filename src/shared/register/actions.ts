@@ -17,8 +17,55 @@ import {
 const INVALID_PHONE_MSG =
   "Enter 8–15 digits including country code (e.g. Vietnam: 84912345678).";
 
+/**
+ * `salons.phone` stores normalized digits (matches registration). Salon must have ≥1 salon_members row.
+ */
+async function lookupSalonSlugForOwnerPhone(
+  normalizedDigits: string,
+): Promise<string | null> {
+  let admin;
+  try {
+    admin = createServiceRoleClient();
+  } catch {
+    return null;
+  }
+
+  const { data: salon, error: salErr } = await admin
+    .from("salons")
+    .select("id, slug")
+    .eq("phone", normalizedDigits)
+    .maybeSingle();
+
+  if (salErr) {
+    console.error("[lookupSalonSlugForOwnerPhone] salons", salErr);
+    return null;
+  }
+  if (!salon?.id) return null;
+
+  const { count, error: mErr } = await admin
+    .from("salon_members")
+    .select("*", { count: "exact", head: true })
+    .eq("salon_id", salon.id);
+
+  if (mErr) {
+    console.error("[lookupSalonSlugForOwnerPhone] salon_members", mErr);
+    return null;
+  }
+  if ((count ?? 0) < 1) return null;
+
+  const slug = salon.slug?.trim();
+  return slug ? String(slug) : null;
+}
+
 export type SendRegisterOtpResult =
   | { success: false; error: string }
+  | {
+      success: true;
+      mode: "returning";
+      slug: string;
+      /** Present in demo OTP path only */
+      demoCode?: string;
+    }
   | { success: true; mode: "demo"; code: string }
   | { success: true; mode: "sms" };
 
@@ -30,6 +77,8 @@ export async function sendRegisterOtp(
   if (!isRegisterPhoneDigitsValid(phone)) {
     return { success: false, error: INVALID_PHONE_MSG };
   }
+
+  const existingSlug = await lookupSalonSlugForOwnerPhone(phone);
 
   if (isDemo) {
     try {
@@ -56,6 +105,15 @@ export async function sendRegisterOtp(
       if (insertError) {
         console.error("[sendRegisterOtp] insert", insertError);
         return { success: false, error: "Could not send code. Try again." };
+      }
+
+      if (existingSlug) {
+        return {
+          success: true,
+          mode: "returning",
+          slug: existingSlug,
+          demoCode: code,
+        };
       }
 
       return { success: true, mode: "demo", code };
@@ -85,6 +143,10 @@ export async function sendRegisterOtp(
           error.message ||
           "Could not send SMS. Enable Phone auth in Supabase or try again.",
       };
+    }
+
+    if (existingSlug) {
+      return { success: true, mode: "returning", slug: existingSlug };
     }
 
     return { success: true, mode: "sms" };

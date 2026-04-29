@@ -17,6 +17,12 @@ export type UserMessages = {
   };
   register: {
     returningOwnerHint: string;
+    /** Shown after “Send code” when this phone is already tied to a salon (before verify). */
+    welcomeBackAfterSend: string;
+    /** Enter-code screen when continuing as returning owner */
+    welcomeBackVerifySubtext: string;
+    /** Demo path (new signup) — short line beside DEMO MODE badge */
+    newDemoOtpBadgeNote: string;
   };
   salonDashboard: {
     title: string;
@@ -65,6 +71,12 @@ export const userEn: UserMessages = {
   register: {
     returningOwnerHint:
       "Returning owner? Enter your number to sign back in.",
+    welcomeBackAfterSend:
+      "Welcome back! Enter OTP to access your dashboard.",
+    welcomeBackVerifySubtext:
+      "We sent a 6-digit code — enter it to finish signing in to your salon dashboard.",
+    newDemoOtpBadgeNote:
+      "DEMO MODE · OTP appears below.",
   },
   salonDashboard: {
     title: "Salon dashboard",

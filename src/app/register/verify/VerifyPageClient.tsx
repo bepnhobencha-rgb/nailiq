@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useTransition,
@@ -14,9 +15,12 @@ import { RegisterStepShell } from "@/components/register/RegisterStepShell";
 import { cn } from "@/shared/lib/cn";
 import {
   REG_COMPLETION_TOKEN_KEY,
+  REG_FLOW_OWNER_RETURNING,
   REG_SESSION_PHONE_DIGITS_KEY,
 } from "@/shared/lib/registerSessionKeys";
 import { verifyRegisterOtp } from "@/shared/register/actions";
+import { getUserMessages } from "@/shared/i18n/user";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { isRegisterPhoneDigitsValid } from "@/shared/register/phone";
 
 const OTP_LEN = 6;
@@ -29,14 +33,30 @@ type Props = { demoMode: boolean };
 
 export function VerifyPageClient({ demoMode }: Props) {
   const router = useRouter();
+  const { language } = useUserLanguage();
+  const t = useMemo(() => getUserMessages(language), [language]);
   const [digits, setDigits] = useState(emptyDigits);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [phoneDigits, setPhoneDigits] = useState<string | null>(null);
+  const [isReturningFlow, setIsReturningFlow] = useState(false);
   const refs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const verifySubtext = useMemo(
+    () =>
+      isReturningFlow
+        ? t.register.welcomeBackVerifySubtext
+        : "We sent a 6-digit code to your number.",
+    [isReturningFlow, t.register.welcomeBackVerifySubtext],
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
+    const returning =
+      sessionStorage.getItem(REG_FLOW_OWNER_RETURNING) === "1";
+    queueMicrotask(() => setIsReturningFlow(returning));
+
     const fromSession = window.sessionStorage.getItem(
       REG_SESSION_PHONE_DIGITS_KEY,
     );
@@ -129,6 +149,10 @@ export function VerifyPageClient({ demoMode }: Props) {
 
         const ct = result.completionToken?.trim();
 
+        if (typeof window !== "undefined") {
+          window.sessionStorage.removeItem(REG_FLOW_OWNER_RETURNING);
+        }
+
         if (result.returningOwnerSlug) {
           window.location.assign(
             `/dashboard/${encodeURIComponent(result.returningOwnerSlug)}`,
@@ -144,25 +168,23 @@ export function VerifyPageClient({ demoMode }: Props) {
           window.sessionStorage.setItem(REG_COMPLETION_TOKEN_KEY, ct);
         }
 
-        /* Full page navigation so SSR on `/register/setup` sees the new session cookie. */
         window.location.assign("/register/setup");
       });
     },
-    [codeJoined, phoneDigits, router],
+    [codeJoined, demoMode, phoneDigits],
   );
 
   return (
-    <RegisterStepShell
-      title="Enter code"
-      subtext="We sent a 6-digit code to your number."
-    >
+    <RegisterStepShell title="Enter code" subtext={verifySubtext}>
       {demoMode ? (
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <Badge variant="muted" className="uppercase tracking-[0.14em]">
-            DEMO MODE
+            {isReturningFlow ? "Returning" : "Demo mode"}
           </Badge>
           <span className="text-xs text-nq-muted">
-            Use the code from the demo modal or server log.
+            {isReturningFlow
+              ? t.register.welcomeBackAfterSend
+              : "Use the code from the demo modal or server log."}
           </span>
         </div>
       ) : null}
