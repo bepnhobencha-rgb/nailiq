@@ -11,6 +11,10 @@ import {
 } from "@/components/booking/bookingMotion";
 import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
 import { dayKeyFromLocalDate } from "@/shared/booking/dayKeyFromDate";
+import { bookingDateYmdFromLocalDate } from "@/shared/booking/bookingConfirmLabels";
+import { getAvailableTimeSlotsCount } from "@/shared/booking/getAvailableTimeSlots";
+import type { BookingStaffItem } from "@/shared/booking/loadBookingServices";
+import { useEffect, useMemo, useState } from "react";
 
 const WEEK_HDR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 
@@ -34,7 +38,12 @@ function calendarDayAbbrev(d: Date): string {
 
 export function BookingFlowDatePanel({
   t,
+  salonId,
   openingHoursRaw,
+  closedDateYmdSet,
+  staff,
+  staffId,
+  serviceTotalMinutes,
   selectedDate,
   stepDir,
   reducedMotion,
@@ -44,7 +53,13 @@ export function BookingFlowDatePanel({
   onNext,
 }: {
   t: BookingMessages;
+  salonId: string;
   openingHoursRaw: unknown | null;
+  closedDateYmdSet: ReadonlySet<string>;
+  staff: readonly BookingStaffItem[];
+  staffId: string;
+  /** Primary service total minutes for slot hints (same model as time step). */
+  serviceTotalMinutes: number;
   selectedDate: Date;
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
@@ -53,24 +68,86 @@ export function BookingFlowDatePanel({
   onBack: () => void;
   onNext: () => void;
 }) {
-  const todayStart = startOfLocalDay(new Date());
-
-  const daysForward: Date[] = [];
-  for (let i = 0; i < 14; i++) {
-    const x = new Date(todayStart);
-    x.setDate(todayStart.getDate() + i);
-    x.setHours(12, 0, 0, 0);
-    daysForward.push(x);
-  }
+  const { todayStart, daysForward } = useMemo(() => {
+    const ts = startOfLocalDay(new Date());
+    const out: Date[] = [];
+    for (let i = 0; i < 14; i++) {
+      const x = new Date(ts);
+      x.setDate(ts.getDate() + i);
+      x.setHours(12, 0, 0, 0);
+      out.push(x);
+    }
+    return { todayStart: ts, daysForward: out };
+  }, []);
 
   const week = parseOpeningHours(openingHoursRaw);
 
-  function dayClosed(d: Date): boolean {
+  function weekdayClosed(d: Date): boolean {
     if (!week) return true;
     const k = dayKeyFromLocalDate(d);
     const cfg = week[k];
     return !cfg || cfg.closed;
   }
+
+  function isExceptionClosed(d: Date): boolean {
+    return closedDateYmdSet.has(bookingDateYmdFromLocalDate(d));
+  }
+
+  function dayClosed(d: Date): boolean {
+    return weekdayClosed(d) || isExceptionClosed(d);
+  }
+
+  const [slotHintByYmd, setSlotHintByYmd] = useState<
+    Record<string, boolean>
+  >({});
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!salonId || serviceTotalMinutes <= 0 || staff.length === 0) {
+      setSlotHintByYmd({});
+      return;
+    }
+
+    void (async () => {
+      const results = await Promise.all(
+        daysForward.map(async (date) => {
+          const ymd = bookingDateYmdFromLocalDate(date);
+          if (dayClosed(date)) {
+            return { ymd, hasSlots: false };
+          }
+          const n = await getAvailableTimeSlotsCount({
+            salonId,
+            openingHoursRaw,
+            selectedDate: date,
+            staffId,
+            staffList: staff,
+            serviceDurationMinutes: serviceTotalMinutes,
+            closedDateYmdSet,
+          });
+          return { ymd, hasSlots: n > 0 };
+        }),
+      );
+
+      if (cancelled) return;
+      const next: Record<string, boolean> = {};
+      for (const r of results) {
+        next[r.ymd] = r.hasSlots;
+      }
+      setSlotHintByYmd(next);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    salonId,
+    openingHoursRaw,
+    closedDateYmdSet,
+    staff,
+    staffId,
+    serviceTotalMinutes,
+    daysForward,
+  ]);
 
   const first = daysForward[0]!;
   const leadPad = (first.getDay() + 6) % 7;
@@ -81,6 +158,7 @@ export function BookingFlowDatePanel({
         kind: "day";
         date: Date;
         closed: boolean;
+        exceptionClosed: boolean;
         past: boolean;
         isToday: boolean;
       };
@@ -91,10 +169,14 @@ export function BookingFlowDatePanel({
   }
   for (const date of daysForward) {
     const past = startOfLocalDay(date).getTime() < todayStart.getTime();
+    const exception = isExceptionClosed(date);
+    const weekly = weekdayClosed(date);
+    const closed = weekly || exception;
     cells.push({
       kind: "day",
       date,
-      closed: dayClosed(date),
+      closed,
+      exceptionClosed: exception,
       past,
       isToday: sameLocalCalendarDay(date, new Date()),
     });
@@ -144,11 +226,14 @@ export function BookingFlowDatePanel({
               );
             }
 
-            const { date, closed, past, isToday } = cell;
+            const { date, closed, exceptionClosed, past, isToday } = cell;
             const selected = sameLocalCalendarDay(date, selectedDate);
             const disabled = past || closed;
             const labelDay = String(date.getDate());
             const abbrev = calendarDayAbbrev(date);
+            const ymd = bookingDateYmdFromLocalDate(date);
+            const hasSlotsHint =
+              !past && !closed && slotHintByYmd[ymd] === true;
 
             return (
               <button
@@ -156,7 +241,13 @@ export function BookingFlowDatePanel({
                 type="button"
                 disabled={disabled}
                 aria-pressed={selected}
-                aria-label={`${labelDay} ${abbrev}${closed ? ` ${t.dateClosedLabel}` : ""}`}
+                aria-label={`${labelDay} ${abbrev}${
+                  closed
+                    ? exceptionClosed && !past
+                      ? ` ${t.dateHolidayLabel}`
+                      : ` ${t.dateClosedLabel}`
+                    : ""
+                }`}
                 onClick={() => onSelectDate(date)}
                 className={cn(
                   "flex min-h-11 flex-col items-center justify-center rounded-xl border px-0.5 py-2 text-center transition-colors sm:min-h-[3rem]",
@@ -190,8 +281,20 @@ export function BookingFlowDatePanel({
                     selected ? "text-nq-bg/90" : "text-nq-muted",
                   )}
                 >
-                  {closed && !past ? t.dateClosedShort : abbrev}
+                  {closed && !past
+                    ? exceptionClosed
+                      ? t.dateHolidayShort
+                      : t.dateClosedShort
+                    : abbrev}
                 </span>
+                {hasSlotsHint ? (
+                  <div
+                    className="mt-1 h-1 w-1 shrink-0 rounded-full bg-nq-primary mx-auto"
+                    aria-hidden
+                  />
+                ) : (
+                  <span className="mt-1 block h-1 w-1 shrink-0 opacity-0" aria-hidden />
+                )}
               </button>
             );
           })}

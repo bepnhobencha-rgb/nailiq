@@ -5,13 +5,14 @@
 export const bookingEn = {
   pageTitle: "Book this salon",
   pageSubtitle:
-    "Choose a service, then staff, date, and time — confirm when ready.",
+    "Choose service, staff, date, and time — then your details and review.",
   /** Desktop stepper labels */
   breadcrumbServices: "Services",
   breadcrumbStaff: "Staff",
   breadcrumbDate: "Date",
   breadcrumbTime: "Time",
-  breadcrumbConfirm: "Confirm",
+  breadcrumbYourDetails: "Your details",
+  breadcrumbConfirm: "Review",
   /** Left column (`lg:`) hero */
   salonHeroEyebrow: "Reserve with",
   salonHeroTagline:
@@ -21,12 +22,24 @@ export const bookingEn = {
   stepStaffHeading: "Who would you like?",
   stepDateHeading: "Select a date",
   stepTimeHeading: "Choose a time",
-  stepConfirmHeading: "Confirm booking",
+  stepInfoHeading: "Your information",
+  stepConfirmHeading: "Review & confirm",
   anyStaffOptionTitle: "Any available staff",
   anyStaffOptionSubtitle: "Any",
   anyStaffSummary: "Any available staff",
   dateClosedLabel: "Closed",
   dateClosedShort: "Closed",
+  dateHolidayLabel: "Salon closed",
+  dateHolidayShort: "Off",
+  /** `{name}` = first word of saved guest name from device. */
+  returningGreeting: "Hi, {name} — welcome back.",
+  /** Rotating social-proof line under the greeting (VN microcopy for conversion). */
+  urgencySalon24h:
+    "🔥 Hot: 5 khách đã đặt lịch tại tiệm trong 24h qua.",
+  urgencyPlatformLive:
+    "🔴 LIVE: 842 tiệm Nail đang dùng NailIQ để quản lý lịch hẹn.",
+  /** `{n}` = number of open slot buttons for that day. */
+  scarcityFewSlots: "Only {n} open times left — this day is filling up.",
   slotLoading: "Loading times…",
   noSlotsAvailable: "No open slots that day. Try another date.",
   next: "Continue",
@@ -38,19 +51,49 @@ export const bookingEn = {
   successStaffLine: "with {name}",
   successSeeYouSoonBefore: "See you soon at ",
   bookingReferenceLabel: "Booking reference",
-  addToCalendar: "Add to Calendar",
-  doneCta: "Done",
+  addToCalendar: "Add to calendar",
+  shareBooking: "Share",
+  /** Native share sheet title (short). */
+  shareBookingSheetTitle: "NailIQ booking",
+  shareBookingCopied: "Booking details copied — paste into Messages or Zalo.",
+  manageBookingCall: "Call to reschedule",
+  doneCta: "Book another",
   submitError: "Could not complete booking. Please try again.",
   summaryShop: "Salon",
   summaryService: "Service",
   summaryStaff: "Staff",
   summaryTime: "Time",
+  summaryClientName: "Your name",
+  summaryClientPhone: "Phone",
+  summaryClientNotes: "Notes",
+  summaryAddOn: "Add-on",
+  summaryServicePrice: "Service price",
+  summaryAddonPrice: "Add-on price",
+  summaryTotal: "Total",
   clientNameLabel: "Your name",
   clientPhoneLabel: "Phone number",
+  clientNotesLabel: "Special notes",
+  clientNotesOptionalHint: "Optional — allergies, design ideas, parking, etc.",
   slotTakenError:
-    "That time was just booked. Please pick another slot and try again.",
+    "This slot was just taken. Please choose another time.",
+  waitlistNotifyCta: "Notify me if a slot opens",
+  waitlistSubmitting: "Saving…",
+  waitlistJoined:
+    "You're on the list. We'll text you if something opens.",
+  waitlistError: "Couldn't save your request. Try again.",
+  contactRequiredError: "Please enter your name and phone.",
+  invalidPhoneError:
+    "Enter a valid phone number (8–15 digits, country code if applicable).",
   pastTimeError:
     "This time has already passed. Please select a future time.",
+  outsideHoursError: "That time is outside salon hours. Please pick another slot.",
+  salonClosedError: "The salon is closed that day. Please pick another date.",
+  salonNotLiveHeading: "Booking is paused",
+  salonNotLiveBody:
+    "{shop} is finishing setup and isn’t taking online bookings yet. Please check back soon.",
+  upsellHeading: "You have extra time — add a service?",
+  upsellNoThanks: "No thanks",
+  upsellToggleHint: "Tap to include before you confirm.",
   /** Right column when `totalMinutes` from DB is 0 */
   serviceDurationFlexible: "Flexible",
   /** Minute suffix on service tiles, e.g. "45 min" */

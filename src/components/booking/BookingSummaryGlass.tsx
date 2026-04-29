@@ -7,12 +7,18 @@ export function BookingSummaryGlass({
   serviceName,
   staffSummary,
   timeLabel,
+  pricingLines,
+  customerRows,
 }: {
   t: BookingMessages;
   shopLabel: string;
   serviceName: string;
   staffSummary?: string | null;
   timeLabel: string;
+  /** Optional price breakdown (confirm step). */
+  pricingLines?: readonly { label: string; value: string; valueGold?: boolean }[];
+  /** Flowchart step 6 — guest details in the review summary. */
+  customerRows?: readonly { label: string; value: string }[];
 }) {
   const rows: {
     label: string;
@@ -25,6 +31,16 @@ export function BookingSummaryGlass({
       ? [{ label: t.summaryStaff, value: staffSummary, valueGold: false }]
       : []),
     { label: t.summaryTime, value: timeLabel, valueGold: true },
+    ...(pricingLines ?? []).map((line) => ({
+      label: line.label,
+      value: line.value,
+      valueGold: Boolean(line.valueGold),
+    })),
+    ...(customerRows ?? []).map((r) => ({
+      label: r.label,
+      value: r.value,
+      valueGold: false,
+    })),
   ];
 
   return (

@@ -1,11 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getServiceById, type BookingServiceItem } from "@/shared/booking/catalog";
+import {
+  getServiceById,
+  type BookingServiceItem,
+} from "@/shared/booking/catalog";
 import {
   BookingConflictError,
   submitPublicBooking,
 } from "@/shared/booking/submitPublicBooking";
+import { submitPublicWaitlistEntry } from "@/shared/booking/submitPublicWaitlist";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import {
   bookingDateYmdFromLocalDate,
@@ -18,14 +22,31 @@ import type {
   BookingStaffItem,
 } from "@/shared/booking/loadBookingServices";
 import { formatNailiqBookingRef } from "@/shared/lib/formatNailiqBookingRef";
-import { decodeShopSlug, generateBookingCalendarIcs } from "@/components/booking/bookingCalendar";
+import {
+  decodeShopSlug,
+  generateBookingCalendarIcs,
+} from "@/components/booking/bookingCalendar";
 import { fireBookingConfetti } from "@/components/booking/bookingConfetti";
+import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
+import { parseTimeSlotOnDate } from "@/shared/booking/parseBookingTimeSlot";
+import { localDayBoundsFromLocalDate } from "@/shared/booking/localDayBounds";
+import { fetchBookingOccupancyForRange } from "@/shared/booking/fetchBookingOccupancy";
+import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
+import { pickBestStaffAmongFree } from "@/shared/booking/pickBestStaffAmongFree";
+import { computeStaffFloatGapMinutes } from "@/shared/booking/computeStaffFloatGapMinutes";
+import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import {
+  loadSavedBookingGuestProfile,
+  saveBookingGuestProfile,
+} from "@/shared/booking/bookingClientProfile";
+import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 
 export type BookingFlowStep =
   | "service"
   | "staff"
   | "date"
   | "time"
+  | "info"
   | "confirm"
   | "done";
 
@@ -44,6 +65,11 @@ export function useBookingFlowState(
 ) {
   const shopLabel = useMemo(() => decodeShopSlug(shopSlug), [shopSlug]);
 
+  const closedDateYmdSet = useMemo(
+    () => parseBookingClosedDateSet(salon.booking_closed_dates),
+    [salon.booking_closed_dates],
+  );
+
   const [step, setStep] = useState<BookingFlowStep>("service");
   const [stepDir, setStepDir] = useState<1 | -1>(1);
   const [serviceId, setServiceId] = useState<string | null>(null);
@@ -57,17 +83,46 @@ export function useBookingFlowState(
 
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
+  const [clientNotes, setClientNotes] = useState("");
+  const [selectedAddonId, setSelectedAddonId] = useState<string | null>(null);
+  const [upsellCandidates, setUpsellCandidates] = useState<
+    BookingServiceItem[]
+  >([]);
+
   const [submitting, setSubmitting] = useState(false);
+  const [waitlistSubmitting, setWaitlistSubmitting] = useState(false);
+  const [waitlistSlotJoined, setWaitlistSlotJoined] = useState(false);
+  const [waitlistConflictJoined, setWaitlistConflictJoined] = useState(false);
+  const [bookingConflictWaitlist, setBookingConflictWaitlist] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bookingResult, setBookingResult] = useState<{
     bookingId: string;
     startTimeUtc: string;
+    endTimeUtc: string;
     staffName: string;
+    addonServiceName: string | null;
+    price_cents: number;
   } | null>(null);
 
   const confettiFiredRef = useRef(false);
+  const profileLoadedRef = useRef(false);
 
   const service = serviceId ? getServiceById(services, serviceId) : undefined;
+
+  useEffect(() => {
+    if (profileLoadedRef.current) return;
+    profileLoadedRef.current = true;
+    const p = loadSavedBookingGuestProfile();
+    if (p) {
+      setClientName(p.name);
+      setClientPhone(p.phone);
+    }
+  }, []);
+
+  const guestContactInvalid = useMemo(() => {
+    if (!clientName.trim()) return true;
+    return !validateGuestPhone(clientPhone).ok;
+  }, [clientName, clientPhone]);
 
   useEffect(() => {
     if (step !== "done") {
@@ -92,6 +147,7 @@ export function useBookingFlowState(
       staffId: staffId ?? BOOKING_ANY_STAFF_ID,
       staffList: staff,
       serviceDurationMinutes: service.totalMinutes,
+      closedDateYmdSet,
     }).then((slots) => {
       if (cancelled) return;
       setTimeSlots(slots);
@@ -105,6 +161,7 @@ export function useBookingFlowState(
     step,
     salon.id,
     salon.opening_hours,
+    closedDateYmdSet,
     selectedDate,
     staffId,
     staff,
@@ -113,11 +170,138 @@ export function useBookingFlowState(
   ]);
 
   useEffect(() => {
+    setWaitlistSlotJoined(false);
+  }, [selectedDate, staffId, serviceId, salon.id]);
+
+  useEffect(() => {
     if (!timeSlot) return;
     if (timeSlots.length > 0 && !timeSlots.includes(timeSlot)) {
       setTimeSlot(null);
     }
   }, [timeSlots, timeSlot]);
+
+  useEffect(() => {
+    setSelectedAddonId(null);
+  }, [serviceId, timeSlot, staffId, selectedDate]);
+
+  useEffect(() => {
+    if (
+      step !== "confirm" ||
+      !serviceId ||
+      !service ||
+      !timeSlot ||
+      !staffId
+    ) {
+      setUpsellCandidates([]);
+      return;
+    }
+
+    const week = parseOpeningHours(salon.opening_hours);
+    if (!week) {
+      setUpsellCandidates([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      const ymd = bookingDateYmdFromLocalDate(selectedDate);
+      const { start: dayStart, end: dayEnd } =
+        localDayBoundsFromLocalDate(selectedDate);
+      const occ = await fetchBookingOccupancyForRange(
+        salon.id,
+        dayStart.toISOString(),
+        dayEnd.toISOString(),
+      );
+      if (cancelled) return;
+
+      let startLocal: Date;
+      try {
+        startLocal = parseTimeSlotOnDate(timeSlot, ymd);
+      } catch {
+        setUpsellCandidates([]);
+        return;
+      }
+
+      const slotStartMs = startLocal.getTime();
+      const mainEndMs = slotStartMs + service.totalMinutes * 60_000;
+
+      function isStaffFreeForRange(
+        staffUuid: string,
+        a: number,
+        b: number,
+      ): boolean {
+        for (const o of occ) {
+          if (o.staffId !== staffUuid) continue;
+          if (intervalsOverlapMs(a, b, o.startMs, o.endMs)) return false;
+        }
+        return true;
+      }
+
+      const dayStartMs = dayStart.getTime();
+      const dayEndMs = dayEnd.getTime();
+      const orderedStaff = staff.map((s) => ({
+        id: s.id,
+        name: s.name,
+      }));
+
+      let staffForGap: string;
+      if (staffId === BOOKING_ANY_STAFF_ID) {
+        const freeIds = staff
+          .map((s) => s.id)
+          .filter((id) => isStaffFreeForRange(id, slotStartMs, mainEndMs));
+        if (freeIds.length === 0) {
+          setUpsellCandidates([]);
+          return;
+        }
+        staffForGap = pickBestStaffAmongFree(
+          freeIds,
+          orderedStaff,
+          occ,
+          dayStartMs,
+          dayEndMs,
+          slotStartMs,
+        );
+      } else {
+        if (!isStaffFreeForRange(staffId, slotStartMs, mainEndMs)) {
+          setUpsellCandidates([]);
+          return;
+        }
+        staffForGap = staffId;
+      }
+
+      const gapMin = computeStaffFloatGapMinutes({
+        occIntervals: occ,
+        staffId: staffForGap,
+        slotEndMs: mainEndMs,
+        selectedDate,
+        week,
+      });
+
+      const candidates = services.filter(
+        (s) =>
+          s.id !== serviceId &&
+          s.totalMinutes > 0 &&
+          s.totalMinutes <= gapMin,
+      );
+      if (!cancelled) setUpsellCandidates(candidates);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    step,
+    serviceId,
+    service,
+    timeSlot,
+    staffId,
+    selectedDate,
+    salon.id,
+    salon.opening_hours,
+    staff,
+    services,
+  ]);
 
   const staffSummaryLabel = useMemo(() => {
     if (!staffId || staffId === BOOKING_ANY_STAFF_ID) return t.anyStaffSummary;
@@ -151,8 +335,23 @@ export function useBookingFlowState(
   const goTimeNext = useCallback(() => {
     if (!timeSlot) return;
     setStepDir(1);
-    setStep("confirm");
+    setError(null);
+    setStep("info");
   }, [timeSlot]);
+
+  const goInfoNext = useCallback(() => {
+    if (guestContactInvalid) {
+      if (!clientName.trim()) {
+        setError(t.contactRequiredError);
+      } else {
+        setError(t.invalidPhoneError);
+      }
+      return;
+    }
+    setError(null);
+    setStepDir(1);
+    setStep("confirm");
+  }, [guestContactInvalid, clientName, t.contactRequiredError, t.invalidPhoneError]);
 
   const resetAfterDone = useCallback(() => {
     setStepDir(1);
@@ -160,26 +359,36 @@ export function useBookingFlowState(
     setBookingResult(null);
     setClientName("");
     setClientPhone("");
+    setClientNotes("");
+    setSelectedAddonId(null);
     setServiceId(null);
     setStaffId(BOOKING_ANY_STAFF_ID);
     setSelectedDate(normalizeNoon(new Date()));
     setTimeSlot(null);
     setTimeSlots([]);
     setError(null);
+    setWaitlistSlotJoined(false);
+    setWaitlistConflictJoined(false);
+    setBookingConflictWaitlist(false);
   }, []);
 
   const handleAddToCalendar = useCallback(() => {
     if (!bookingResult || !service) return;
     const start = new Date(bookingResult.startTimeUtc);
-    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    const end = new Date(bookingResult.endTimeUtc);
     const ref = formatNailiqBookingRef(bookingResult.bookingId);
     const staffBit =
       bookingResult.staffName.trim().length > 0
         ? `\nProfessional: ${bookingResult.staffName}`
         : "";
+    const addBit =
+      bookingResult.addonServiceName &&
+      bookingResult.addonServiceName.trim().length > 0
+        ? `\nAdd-on: ${bookingResult.addonServiceName.trim()}`
+        : "";
     const icsBody = generateBookingCalendarIcs({
       title: `${service.name} — ${shopLabel}`,
-      description: `Booking reference: ${ref}\nSalon: ${shopLabel}${staffBit}`,
+      description: `Booking reference: ${ref}\nSalon: ${shopLabel}${staffBit}${addBit}`,
       location: shopLabel,
       start,
       end,
@@ -205,12 +414,22 @@ export function useBookingFlowState(
   const onConfirm = useCallback(async () => {
     if (!serviceId || !timeSlot || !staffId) return;
     setError(null);
+    setBookingConflictWaitlist(false);
+    setWaitlistConflictJoined(false);
     const name = clientName.trim();
     const phone = clientPhone.trim();
-    if (!name || !phone) {
-      setError(t.submitError);
+    if (!name || !validateGuestPhone(phone).ok) {
+      setError(
+        !name ? t.contactRequiredError : t.invalidPhoneError,
+      );
       return;
     }
+
+    const notes = clientNotes.trim();
+    const addonId =
+      selectedAddonId && upsellCandidates.some((s) => s.id === selectedAddonId)
+        ? selectedAddonId
+        : null;
 
     setSubmitting(true);
     try {
@@ -222,24 +441,60 @@ export function useBookingFlowState(
         staffId,
         clientName: name,
         clientPhone: phone,
+        clientNotes: notes,
+        addonServiceId: addonId,
       });
+      saveBookingGuestProfile({ name, phone });
       setBookingResult({
         bookingId: result.bookingId,
         startTimeUtc: result.startTimeUtc,
+        endTimeUtc: result.endTimeUtc,
         staffName: result.staffName,
+        addonServiceName: result.addonServiceName,
+        price_cents: result.price_cents,
       });
       setStepDir(1);
       setStep("done");
     } catch (err) {
       if (err instanceof BookingConflictError) {
-        setError(t.slotTakenError);
+        setBookingConflictWaitlist(false);
+        setWaitlistConflictJoined(false);
+        setStepDir(-1);
         setStep("time");
+        setError(t.slotTakenError);
       } else if (
         err instanceof Error &&
         err.message === "cannot_book_past"
       ) {
         setError(t.pastTimeError);
         setStep("time");
+      } else if (
+        err instanceof Error &&
+        (err.message === "outside_opening_hours" ||
+          err.message === "salon_closed_day")
+      ) {
+        setError(
+          err.message === "salon_closed_day"
+            ? t.salonClosedError
+            : t.outsideHoursError,
+        );
+        setStep("time");
+      } else if (
+        err instanceof Error &&
+        err.message === "salon_not_live"
+      ) {
+        setError(t.submitError);
+      } else if (
+        err instanceof Error &&
+        err.message === "invalid_phone"
+      ) {
+        setError(t.invalidPhoneError);
+      } else if (
+        err instanceof Error &&
+        err.message === "invalid_addon"
+      ) {
+        setError(t.submitError);
+        setSelectedAddonId(null);
       } else {
         setError(t.submitError);
       }
@@ -249,17 +504,114 @@ export function useBookingFlowState(
   }, [
     clientName,
     clientPhone,
+    clientNotes,
+    selectedAddonId,
+    upsellCandidates,
     selectedDate,
     serviceId,
     staffId,
     timeSlot,
     shopSlug,
+    t.contactRequiredError,
+    t.invalidPhoneError,
+    t.outsideHoursError,
     t.pastTimeError,
+    t.salonClosedError,
     t.slotTakenError,
     t.submitError,
   ]);
 
-  const confirmInputsInvalid = !clientName.trim() || !clientPhone.trim();
+  const submitWaitlistSlotUnavailable = useCallback(async () => {
+    if (!serviceId || !staffId) return;
+    const name = clientName.trim();
+    const phone = clientPhone.trim();
+    if (!name || !validateGuestPhone(phone).ok) {
+      setError(
+        !name ? t.contactRequiredError : t.invalidPhoneError,
+      );
+      return;
+    }
+    setWaitlistSubmitting(true);
+    setError(null);
+    try {
+      await submitPublicWaitlistEntry({
+        shopSlug,
+        serviceId,
+        staffId,
+        bookingDateYmd: bookingDateYmdFromLocalDate(selectedDate),
+        preferredSlotLabel: null,
+        clientName: name,
+        clientPhone: phone,
+        source: "slot_unavailable",
+      });
+      setWaitlistSlotJoined(true);
+    } catch (e) {
+      setError(
+        e instanceof Error && e.message === "invalid_phone"
+          ? t.invalidPhoneError
+          : t.waitlistError,
+      );
+    } finally {
+      setWaitlistSubmitting(false);
+    }
+  }, [
+    clientName,
+    clientPhone,
+    selectedDate,
+    serviceId,
+    shopSlug,
+    staffId,
+    t.contactRequiredError,
+    t.invalidPhoneError,
+    t.waitlistError,
+  ]);
+
+  const submitWaitlistAfterConflict = useCallback(async () => {
+    if (!serviceId || !timeSlot || !staffId) return;
+    const name = clientName.trim();
+    const phone = clientPhone.trim();
+    if (!name || !validateGuestPhone(phone).ok) {
+      setError(
+        !name ? t.contactRequiredError : t.invalidPhoneError,
+      );
+      return;
+    }
+    setWaitlistSubmitting(true);
+    try {
+      await submitPublicWaitlistEntry({
+        shopSlug,
+        serviceId,
+        staffId,
+        bookingDateYmd: bookingDateYmdFromLocalDate(selectedDate),
+        preferredSlotLabel: timeSlot,
+        clientName: name,
+        clientPhone: phone,
+        source: "booking_conflict",
+      });
+      setWaitlistConflictJoined(true);
+      setBookingConflictWaitlist(false);
+      setError(null);
+    } catch (e) {
+      setError(
+        e instanceof Error && e.message === "invalid_phone"
+          ? t.invalidPhoneError
+          : t.waitlistError,
+      );
+    } finally {
+      setWaitlistSubmitting(false);
+    }
+  }, [
+    clientName,
+    clientPhone,
+    selectedDate,
+    serviceId,
+    shopSlug,
+    staffId,
+    timeSlot,
+    t.contactRequiredError,
+    t.invalidPhoneError,
+    t.waitlistError,
+  ]);
 
   const backToService = useCallback(() => {
     setStepDir(-1);
@@ -281,6 +633,16 @@ export function useBookingFlowState(
     setStepDir(-1);
     setStep("time");
     setError(null);
+    setBookingConflictWaitlist(false);
+    setWaitlistConflictJoined(false);
+  }, []);
+
+  const backToInfo = useCallback(() => {
+    setStepDir(-1);
+    setStep("info");
+    setError(null);
+    setBookingConflictWaitlist(false);
+    setWaitlistConflictJoined(false);
   }, []);
 
   return {
@@ -295,30 +657,43 @@ export function useBookingFlowState(
     slotsLoading,
     clientName,
     clientPhone,
+    clientNotes,
+    selectedAddonId,
+    upsellCandidates,
     submitting,
+    waitlistSubmitting,
+    waitlistSlotJoined,
+    waitlistConflictJoined,
+    bookingConflictWaitlist,
     error,
     bookingResult,
     service,
     staffSummaryLabel,
     confirmTimeLabel,
+    guestContactInvalid,
     setServiceId,
     setStaffId,
     setSelectedDate,
     setTimeSlot,
     setClientName,
     setClientPhone,
+    setClientNotes,
+    setSelectedAddonId,
     setError,
     goServiceNext,
     goStaffNext,
     goDateNext,
     goTimeNext,
+    goInfoNext,
     resetAfterDone,
     handleAddToCalendar,
     onConfirm,
-    confirmInputsInvalid,
+    submitWaitlistSlotUnavailable,
+    submitWaitlistAfterConflict,
     backToService,
     backToStaff,
     backToDate,
     backToTime,
+    backToInfo,
   };
 }

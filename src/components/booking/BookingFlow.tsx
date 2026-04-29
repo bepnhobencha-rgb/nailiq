@@ -12,6 +12,7 @@ import { BOOKING_STEP_EASE } from "@/components/booking/bookingMotion";
 import { BookingFlowConfirmPanel } from "@/components/booking/BookingFlowConfirmPanel";
 import { BookingFlowDatePanel } from "@/components/booking/BookingFlowDatePanel";
 import { BookingFlowDonePanel } from "@/components/booking/BookingFlowDonePanel";
+import { BookingFlowInfoPanel } from "@/components/booking/BookingFlowInfoPanel";
 import { BookingFlowServicePanel } from "@/components/booking/BookingFlowServicePanel";
 import { BookingFlowStaffPanel } from "@/components/booking/BookingFlowStaffPanel";
 import { BookingFlowTimePanel } from "@/components/booking/BookingFlowTimePanel";
@@ -19,6 +20,9 @@ import {
   BookingStepper,
   type BookingWizardStep,
 } from "@/components/booking/BookingStepper";
+import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
+import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
+import { formatGuestPriceUsdReceipt } from "@/shared/booking/formatBookingPrice";
 import { useBookingFlowState } from "@/components/booking/useBookingFlowState";
 
 type BookingFlowProps = {
@@ -39,6 +43,20 @@ export function BookingFlow({
   const reducedMotion = useReducedMotion();
   const flow = useBookingFlowState(t, shopSlug, services, staff, salon);
 
+  const closedDateYmdSet = useMemo(
+    () => parseBookingClosedDateSet(salon.booking_closed_dates),
+    [salon.booking_closed_dates],
+  );
+
+  const scarcityHint = useMemo(() => {
+    if (flow.step !== "time" || flow.slotsLoading || flow.timeSlots.length === 0) {
+      return null;
+    }
+    const n = flow.timeSlots.length;
+    if (n > 4) return null;
+    return t.scarcityFewSlots.replace("{n}", String(n));
+  }, [flow.step, flow.slotsLoading, flow.timeSlots.length, t.scarcityFewSlots]);
+
   const stepTransition = useMemo(
     () => ({
       duration: reducedMotion ? 0 : 0.18,
@@ -57,8 +75,13 @@ export function BookingFlow({
         shopLabel={flow.shopLabel}
         service={flow.service}
         staffName={flow.bookingResult.staffName}
+        addonServiceName={flow.bookingResult.addonServiceName}
         displayStartUtc={flow.bookingResult.startTimeUtc}
         bookingId={flow.bookingResult.bookingId}
+        salonPhone={salon.salonPhone}
+        totalPaidFormatted={formatGuestPriceUsdReceipt(
+          flow.bookingResult.price_cents,
+        )}
         onAddToCalendar={flow.handleAddToCalendar}
         onBookAnother={flow.resetAfterDone}
       />
@@ -96,7 +119,12 @@ export function BookingFlow({
         {flow.step === "date" ? (
           <BookingFlowDatePanel
             t={t}
+            salonId={salon.id}
             openingHoursRaw={salon.opening_hours}
+            closedDateYmdSet={closedDateYmdSet}
+            staff={staff}
+            staffId={flow.staffId ?? BOOKING_ANY_STAFF_ID}
+            serviceTotalMinutes={flow.service?.totalMinutes ?? 0}
             selectedDate={flow.selectedDate}
             stepDir={flow.stepDir}
             reducedMotion={Boolean(reducedMotion)}
@@ -115,9 +143,37 @@ export function BookingFlow({
             stepDir={flow.stepDir}
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}
+            clientName={flow.clientName}
+            clientPhone={flow.clientPhone}
+            waitlistSubmitting={flow.waitlistSubmitting}
+            waitlistSlotJoined={flow.waitlistSlotJoined}
+            waitlistContactInvalid={flow.guestContactInvalid}
+            scarcityHint={scarcityHint}
+            error={flow.error}
+            onClientNameChange={flow.setClientName}
+            onClientPhoneChange={flow.setClientPhone}
+            onWaitlistSubmit={() => void flow.submitWaitlistSlotUnavailable()}
             onSelectSlot={flow.setTimeSlot}
             onBack={flow.backToDate}
             onNext={flow.goTimeNext}
+          />
+        ) : null}
+        {flow.step === "info" ? (
+          <BookingFlowInfoPanel
+            t={t}
+            clientName={flow.clientName}
+            clientPhone={flow.clientPhone}
+            clientNotes={flow.clientNotes}
+            infoNextDisabled={flow.guestContactInvalid}
+            error={flow.error}
+            stepDir={flow.stepDir}
+            reducedMotion={Boolean(reducedMotion)}
+            stepTransition={stepTransition}
+            onClientNameChange={flow.setClientName}
+            onClientPhoneChange={flow.setClientPhone}
+            onClientNotesChange={flow.setClientNotes}
+            onBack={flow.backToTime}
+            onNext={flow.goInfoNext}
           />
         ) : null}
         {flow.step === "confirm" &&
@@ -132,16 +188,24 @@ export function BookingFlow({
             staffSummaryLabel={flow.staffSummaryLabel}
             clientName={flow.clientName}
             clientPhone={flow.clientPhone}
+            clientNotes={flow.clientNotes}
+            upsellCandidates={flow.upsellCandidates}
+            selectedAddonId={flow.selectedAddonId}
+            guestContactInvalid={flow.guestContactInvalid}
             error={flow.error}
             submitting={flow.submitting}
+            waitlistSubmitting={flow.waitlistSubmitting}
+            bookingConflictWaitlist={flow.bookingConflictWaitlist}
+            waitlistConflictJoined={flow.waitlistConflictJoined}
             stepDir={flow.stepDir}
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}
-            confirmInputsInvalid={flow.confirmInputsInvalid}
-            onClientNameChange={flow.setClientName}
-            onClientPhoneChange={flow.setClientPhone}
-            onBack={flow.backToTime}
+            onSelectAddonId={flow.setSelectedAddonId}
+            onBack={flow.backToInfo}
             onConfirm={() => void flow.onConfirm()}
+            onWaitlistAfterConflict={() =>
+              void flow.submitWaitlistAfterConflict()
+            }
           />
         ) : null}
       </AnimatePresence>

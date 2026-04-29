@@ -1,5 +1,11 @@
+import { assertSlotWithinOpeningHours } from "@/shared/booking/assertSlotWithinOpeningHours";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
+import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
+import { parseTimeSlotOnDate } from "@/shared/booking/parseBookingTimeSlot";
+import { pickBestStaffAmongFree } from "@/shared/booking/pickBestStaffAmongFree";
+import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
+import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { createClient } from "@/shared/lib/supabase/client";
 
 export type BookingParams = {
@@ -13,15 +19,20 @@ export type BookingParams = {
   staffId: string;
   clientName: string;
   clientPhone: string;
+  clientNotes?: string;
+  /** Optional add-on booked into the same row (pre-confirm upsell with real float only). */
+  addonServiceId?: string | null;
 };
 
 export type BookingResult = {
   bookingId: string;
   serviceName: string;
   startTimeUtc: string;
+  endTimeUtc: string;
   status: "pending";
   price_cents: number;
   staffName: string;
+  addonServiceName: string | null;
 };
 
 export class BookingConflictError extends Error {
@@ -50,36 +61,10 @@ function localDayBoundsFromYmd(dateYmd: string): { start: Date; end: Date } | nu
   return { start, end };
 }
 
-/**
- * Parses booking UI labels like "9:00 AM" into a Date on the given YYYY-MM-DD (local).
- */
-function parseTimeSlotOnDate(timeSlot: string, dateYmd: string): Date {
-  const trimmed = timeSlot.trim();
-  const match = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(trimmed);
-  if (!match) {
-    throw new Error("invalid_time_slot");
-  }
-  let hour = Number.parseInt(match[1], 10);
-  const minute = Number.parseInt(match[2], 10);
-  const meridiem = match[3].toUpperCase();
-  if (meridiem === "PM" && hour !== 12) {
-    hour += 12;
-  } else if (meridiem === "AM" && hour === 12) {
-    hour = 0;
-  }
-  const hh = String(hour).padStart(2, "0");
-  const mm = String(minute).padStart(2, "0");
-  const parsed = new Date(`${dateYmd}T${hh}:${mm}:00`);
-  if (Number.isNaN(parsed.getTime())) {
-    throw new Error("invalid_time_slot");
-  }
-  return parsed;
-}
-
-type OccRow = {
-  staff_id: string;
-  start_time_utc: string;
-  end_time_utc: string;
+type OccInterval = {
+  staffId: string;
+  startMs: number;
+  endMs: number;
 };
 
 export async function submitPublicBooking(
@@ -93,17 +78,35 @@ export async function submitPublicBooking(
     staffId: requestedStaffId,
     clientName,
     clientPhone,
+    clientNotes = "",
+    addonServiceId = null,
   } = params;
+
+  const phoneOk = validateGuestPhone(clientPhone);
+  if (!phoneOk.ok) {
+    throw new Error("invalid_phone");
+  }
 
   const supabase = createClient();
 
   const { data: salon, error: salonErr } = await supabase
     .from("salons")
-    .select("id")
+    .select("id, profile_complete, opening_hours, booking_closed_dates")
     .eq("slug", shopSlug)
     .single();
 
   if (salonErr || !salon) throw new Error("salon_not_found");
+  if (!salon.profile_complete) throw new Error("salon_not_live");
+
+  const closedYmdSet = parseBookingClosedDateSet(
+    (salon as { booking_closed_dates?: unknown }).booking_closed_dates,
+  );
+  if (closedYmdSet.has(bookingDateYmd.trim())) {
+    throw new Error("salon_closed_day");
+  }
+
+  const week = parseOpeningHours((salon as { opening_hours?: unknown }).opening_hours);
+  if (!week) throw new Error("salon_hours_invalid");
 
   const { data: service, error: serviceErr } = await supabase
     .from("services")
@@ -130,18 +133,73 @@ export async function submitPublicBooking(
   }
 
   const now = new Date();
-  const bufferMs = 15 * 60 * 1000;
-  if (startLocal.getTime() < now.getTime() + bufferMs) {
+  const leadBufferMs = 15 * 60 * 1000;
+  if (startLocal.getTime() < now.getTime() + leadBufferMs) {
     throw new Error("cannot_book_past");
   }
 
-  const durationMin =
+  const mainBlockMin =
     (Number(service.duration_minutes) || 0) +
     (Number(service.buffer_minutes) || 0);
-  const endLocal = new Date(startLocal.getTime() + durationMin * 60_000);
+
+  let addonBlockMin = 0;
+  let addonRow: {
+    id: string;
+    name: string;
+    price_cents: number | null;
+  } | null = null;
+
+  if (addonServiceId) {
+    if (String(addonServiceId) === String(service.id)) {
+      throw new Error("invalid_addon");
+    }
+    const { data: addSvc, error: addErr } = await supabase
+      .from("services")
+      .select("id, name, duration_minutes, buffer_minutes, price_cents")
+      .eq("id", addonServiceId)
+      .eq("salon_id", salon.id)
+      .maybeSingle();
+
+    if (addErr || !addSvc) throw new Error("addon_not_found");
+    addonBlockMin =
+      (Number(addSvc.duration_minutes) || 0) +
+      (Number(addSvc.buffer_minutes) || 0);
+    if (addonBlockMin <= 0) throw new Error("invalid_addon");
+    addonRow = {
+      id: String(addSvc.id),
+      name: String(addSvc.name ?? ""),
+      price_cents:
+        addSvc.price_cents != null ? Number(addSvc.price_cents) : null,
+    };
+  }
+
+  const totalBlockMin = mainBlockMin + addonBlockMin;
+  const endLocal = new Date(startLocal.getTime() + totalBlockMin * 60_000);
+
+  try {
+    const anchor = new Date(
+      startLocal.getFullYear(),
+      startLocal.getMonth(),
+      startLocal.getDate(),
+      12,
+      0,
+      0,
+      0,
+    );
+    assertSlotWithinOpeningHours(week, anchor, startLocal, endLocal);
+  } catch (e) {
+    if (e instanceof Error) {
+      if (e.message === "salon_closed_day") throw new Error("salon_closed_day");
+      if (e.message === "outside_opening_hours")
+        throw new Error("outside_opening_hours");
+    }
+    throw new Error("outside_opening_hours");
+  }
 
   const priceSnapshot =
     service.price_cents != null ? Number(service.price_cents) : null;
+  const addonPriceSnapshot =
+    addonRow?.price_cents != null ? addonRow.price_cents : null;
 
   const { data: staffRows, error: staffListErr } = await supabase
     .from("staff")
@@ -162,24 +220,28 @@ export async function submitPublicBooking(
     },
   );
 
-  let occupancy: OccRow[] = [];
+  let occupancy: OccInterval[] = [];
   if (!occErr && Array.isArray(occRaw)) {
-    occupancy = occRaw as OccRow[];
+    occupancy = (occRaw as { staff_id: string; start_time_utc: string; end_time_utc: string }[]).map(
+      (row) => ({
+        staffId: String(row.staff_id),
+        startMs: new Date(row.start_time_utc).getTime(),
+        endMs: new Date(row.end_time_utc).getTime(),
+      }),
+    );
   }
-
-  const occIntervals = occupancy.map((row) => ({
-    staffId: String(row.staff_id),
-    startMs: new Date(row.start_time_utc).getTime(),
-    endMs: new Date(row.end_time_utc).getTime(),
-  }));
 
   const slotStartMs = startLocal.getTime();
   const slotEndMs = endLocal.getTime();
 
-  function isStaffFree(staffUuid: string): boolean {
-    for (const o of occIntervals) {
+  function isStaffFreeForRange(
+    staffUuid: string,
+    rangeStartMs: number,
+    rangeEndMs: number,
+  ): boolean {
+    for (const o of occupancy) {
       if (o.staffId !== staffUuid) continue;
-      if (intervalsOverlapMs(slotStartMs, slotEndMs, o.startMs, o.endMs)) {
+      if (intervalsOverlapMs(rangeStartMs, rangeEndMs, o.startMs, o.endMs)) {
         return false;
       }
     }
@@ -189,42 +251,56 @@ export async function submitPublicBooking(
   let resolvedStaffId: string | null = null;
   let resolvedStaffName = "";
 
+  const dayStartMs = dayBounds.start.getTime();
+  const dayEndMs = dayBounds.end.getTime();
+
   if (requestedStaffId === BOOKING_ANY_STAFF_ID) {
-    for (const row of orderedStaff) {
-      const id = String(row.id);
-      if (isStaffFree(id)) {
-        resolvedStaffId = id;
-        resolvedStaffName = String(row.name ?? "");
-        break;
-      }
-    }
-    if (!resolvedStaffId) throw new BookingConflictError();
+    const freeIds = orderedStaff
+      .map((r) => String(r.id))
+      .filter((id) => isStaffFreeForRange(id, slotStartMs, slotEndMs));
+    if (freeIds.length === 0) throw new BookingConflictError();
+    resolvedStaffId = pickBestStaffAmongFree(
+      freeIds,
+      orderedStaff.map((r) => ({ id: String(r.id), name: String(r.name ?? "") })),
+      occupancy,
+      dayStartMs,
+      dayEndMs,
+      slotStartMs,
+    );
+    const chosen = orderedStaff.find((r) => String(r.id) === resolvedStaffId);
+    resolvedStaffName = String(chosen?.name ?? "");
   } else {
     const allowed = orderedStaff.some(
       (r) => String(r.id) === requestedStaffId,
     );
     if (!allowed) throw new Error("invalid_staff");
 
-    if (!isStaffFree(requestedStaffId)) throw new BookingConflictError();
+    if (!isStaffFreeForRange(requestedStaffId, slotStartMs, slotEndMs)) {
+      throw new BookingConflictError();
+    }
 
     resolvedStaffId = requestedStaffId;
     const chosen = orderedStaff.find((r) => String(r.id) === requestedStaffId);
     resolvedStaffName = String(chosen?.name ?? "");
   }
 
+  const notesTrim = clientNotes.trim();
   const insertPayload = {
-    salon_id: salon.id,
-    service_id: service.id,
+    salon_id: salon.id as string,
+    service_id: service.id as string,
     staff_id: resolvedStaffId,
     client_name: clientName.trim(),
-    client_phone: clientPhone.trim(),
+    client_phone: phoneOk.digits,
+    client_notes: notesTrim.length > 0 ? notesTrim : null,
     start_time_utc: startLocal.toISOString(),
     end_time_utc: endLocal.toISOString(),
     status: "pending" as const,
     price_cents: priceSnapshot,
+    addon_service_id: 
+      addonRow ? addonRow.id : null,
+    addon_price_cents: addonRow ? addonPriceSnapshot : null,
   };
 
-  /** Prefer RPC (SECURITY DEFINER); falls back to INSERT when RPC not deployed (PGRST202). */
   const { data: rpcRows, error: rpcErr } = await supabase.rpc(
     "create_public_booking",
     {
@@ -237,6 +313,9 @@ export async function submitPublicBooking(
       p_end_time_utc: insertPayload.end_time_utc,
       p_status: insertPayload.status,
       p_price_cents: insertPayload.price_cents,
+      p_client_notes: insertPayload.client_notes,
+      p_addon_service_id: insertPayload.addon_service_id,
+      p_addon_price_cents: insertPayload.addon_price_cents,
     },
   );
 
@@ -263,32 +342,78 @@ export async function submitPublicBooking(
       staff_id: insertPayload.staff_id,
       client_name: insertPayload.client_name,
       client_phone: insertPayload.client_phone,
+      client_notes: insertPayload.client_notes,
       start_time_utc: insertPayload.start_time_utc,
       end_time_utc: insertPayload.end_time_utc,
       status: insertPayload.status,
       price_cents: insertPayload.price_cents,
+      addon_service_id: insertPayload.addon_service_id,
+      addon_price_cents: insertPayload.addon_price_cents,
     });
 
     if (insertErr) {
       if (insertErr.code === "23505") throw new BookingConflictError();
+      // exclusion_violation / overlap (btree_gist EXCLUDE)
       if (insertErr.code === "23P01") throw new BookingConflictError();
       throw new Error(insertErr.message);
     }
   } else if (!bookingId) {
     if (rpcErr) {
       if (rpcErr.code === "23505") throw new BookingConflictError();
-      if (rpcErr.code === "23P01") throw new BookingConflictError();
+      if (rpcErr.code === "23P01") throw new BookingConflictError(); // overlap / exclusion
+      if (rpcErr.message?.includes("invalid_addon_service")) {
+        throw new Error("invalid_addon");
+      }
       throw new Error(rpcErr.message);
     }
     throw new Error("booking_rpc_empty");
+  }
+
+  const totalPriceCents =
+    (priceSnapshot ?? 0) + (addonPriceSnapshot ?? 0);
+
+  // TODO Phase 2 WOW:
+  // - Check client_profiles when guest enters phone
+  // - Auto-fill name if already known
+  // - Suggest preferred_staff_id (favorite tech)
+  // - Show "Welcome back [name]!"
+  try {
+    const { data: existingProfile } = await supabase
+      .from("client_profiles")
+      .select("visit_count")
+      .eq("phone", phoneOk.digits)
+      .maybeSingle();
+
+    const nextVisits = (existingProfile?.visit_count ?? 0) + 1;
+
+    const { error: profileUpsertErr } = await supabase
+      .from("client_profiles")
+      .upsert(
+        {
+          phone: phoneOk.digits,
+          name: clientName.trim(),
+          preferred_staff_id: resolvedStaffId,
+          last_service_date: new Date().toISOString(),
+          visit_count: nextVisits,
+        },
+        { onConflict: "phone" },
+      );
+
+    if (profileUpsertErr) {
+      console.warn("client_profiles upsert:", profileUpsertErr.message);
+    }
+  } catch {
+    /* booking succeeded; profile update is best-effort */
   }
 
   return {
     bookingId,
     serviceName: service.name as string,
     startTimeUtc: startLocal.toISOString(),
+    endTimeUtc: endLocal.toISOString(),
     status: "pending",
-    price_cents: priceSnapshot ?? 0,
+    price_cents: totalPriceCents,
     staffName: resolvedStaffName,
+    addonServiceName: addonRow?.name ?? null,
   };
 }

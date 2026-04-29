@@ -4,17 +4,11 @@ import type { BookingStaffItem } from "@/shared/booking/loadBookingServices";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import { dayKeyFromLocalDate } from "@/shared/booking/dayKeyFromDate";
+import { hmToMinutes } from "@/shared/booking/hmToMinutes";
+import { bookingDateYmdFromLocalDate } from "@/shared/booking/bookingConfirmLabels";
 
 const SLOT_STEP_MINUTES = 30;
 const BOOKING_BUFFER_MS = 15 * 60 * 1000;
-
-function hmToMinutes(hm: string): number {
-  const [a, b] = hm.split(":");
-  const h = Number.parseInt(a ?? "0", 10);
-  const m = Number.parseInt(b ?? "0", 10);
-  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
-  return h * 60 + m;
-}
 
 function localDayBounds(d: Date): { start: Date; end: Date } {
   const start = new Date(d);
@@ -45,6 +39,8 @@ export type GetAvailableTimeSlotsParams = {
   staffId: string;
   staffList: readonly BookingStaffItem[];
   serviceDurationMinutes: number;
+  /** Salon-specific YYYY-MM-DD closures (holidays). */
+  closedDateYmdSet?: ReadonlySet<string>;
 };
 
 export async function getAvailableTimeSlots(
@@ -57,6 +53,7 @@ export async function getAvailableTimeSlots(
     staffId,
     staffList,
     serviceDurationMinutes,
+    closedDateYmdSet,
   } = params;
 
   const durationMin = Math.max(1, Math.round(Number(serviceDurationMinutes) || 1));
@@ -64,6 +61,9 @@ export async function getAvailableTimeSlots(
 
   const week = parseOpeningHours(openingHoursRaw);
   if (!week) return [];
+
+  const ymd = bookingDateYmdFromLocalDate(selectedDate);
+  if (closedDateYmdSet?.has(ymd)) return [];
 
   const dayKey = dayKeyFromLocalDate(selectedDate);
   const dayCfg = week[dayKey];
@@ -157,4 +157,12 @@ export async function getAvailableTimeSlots(
   }
 
   return slots;
+}
+
+/** Slot count for calendar hints (parallel-safe when called per date). */
+export async function getAvailableTimeSlotsCount(
+  params: GetAvailableTimeSlotsParams,
+): Promise<number> {
+  const slots = await getAvailableTimeSlots(params);
+  return slots.length;
 }

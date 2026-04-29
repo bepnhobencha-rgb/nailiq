@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
@@ -11,8 +12,11 @@ export function BookingFlowDonePanel({
   shopLabel,
   service,
   staffName,
+  addonServiceName,
   displayStartUtc,
   bookingId,
+  salonPhone,
+  totalPaidFormatted,
   onAddToCalendar,
   onBookAnother,
 }: {
@@ -20,12 +24,17 @@ export function BookingFlowDonePanel({
   shopLabel: string;
   service: BookingServiceItem | undefined;
   staffName: string;
+  addonServiceName: string | null;
   displayStartUtc: string;
   bookingId: string;
+  salonPhone: string | null;
+  /** Receipt-style total from `bookingResult.price_cents`. */
+  totalPaidFormatted: string;
   onAddToCalendar: () => void;
   onBookAnother: () => void;
 }) {
   const refLabel = formatNailiqBookingRef(bookingId);
+  const [shareHint, setShareHint] = useState<string | null>(null);
 
   const start = new Date(displayStartUtc);
   const whenLabel = Number.isNaN(start.getTime())
@@ -42,6 +51,59 @@ export function BookingFlowDonePanel({
     staffName.trim().length > 0
       ? t.successStaffLine.replace("{name}", staffName.trim())
       : "";
+
+  const manageTel =
+    salonPhone && salonPhone.replace(/\D/g, "").length >= 8
+      ? `tel:${salonPhone.replace(/\D/g, "")}`
+      : null;
+
+  const handleShare = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    const url = window.location.href.split("#")[0];
+    if (!url) return;
+
+    const detailLines = [
+      `${refLabel} — ${shopLabel}`,
+      whenLabel !== "—" ? whenLabel : null,
+      service?.name?.trim() ? service.name.trim() : null,
+    ].filter((x): x is string => typeof x === "string" && x.length > 0);
+    const textBody = [...detailLines, url].join("\n");
+    const title = `${t.shareBookingSheetTitle} · ${shopLabel}`;
+
+    const copyDetails = async (): Promise<boolean> => {
+      if (!navigator.clipboard?.writeText) return false;
+      try {
+        await navigator.clipboard.writeText(textBody);
+        setShareHint(t.shareBookingCopied);
+        window.setTimeout(() => setShareHint(null), 2800);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    try {
+      if (typeof navigator.share === "function") {
+        await navigator.share({
+          title,
+          text: textBody,
+          url,
+        });
+        return;
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+    }
+
+    await copyDetails();
+  }, [
+    refLabel,
+    service?.name,
+    shopLabel,
+    t.shareBookingCopied,
+    t.shareBookingSheetTitle,
+    whenLabel,
+  ]);
 
   return (
     <div className="fade-in mt-10 w-full space-y-8">
@@ -101,6 +163,16 @@ export function BookingFlowDonePanel({
               </span>
             </div>
           ) : null}
+          {addonServiceName && addonServiceName.trim().length > 0 ? (
+            <div className="flex items-baseline justify-between gap-4 border-b border-white/[0.06] pb-3.5 text-[15px] sm:text-base">
+              <span className="font-semibold text-nq-muted">
+                {t.summaryAddOn}
+              </span>
+              <span className="min-w-0 shrink text-right font-semibold text-nq-foreground">
+                {addonServiceName.trim()}
+              </span>
+            </div>
+          ) : null}
           {staffName.trim().length > 0 ? (
             <div className="flex items-baseline justify-between gap-4 border-b border-white/[0.06] pb-3.5 text-[15px] sm:text-base">
               <span className="font-semibold text-nq-muted">{t.summaryStaff}</span>
@@ -115,6 +187,12 @@ export function BookingFlowDonePanel({
               {whenLabel}
             </span>
           </div>
+          <div className="flex items-baseline justify-between gap-4 border-t border-white/[0.06] pt-3.5 text-[15px] sm:text-base">
+            <span className="font-semibold text-nq-muted">{t.summaryTotal}</span>
+            <span className="min-w-0 shrink text-right font-semibold tabular-nums text-nq-primary">
+              {totalPaidFormatted}
+            </span>
+          </div>
         </div>
         <p className="mt-5 border-t border-white/[0.08] pt-4 text-sm text-nq-muted">
           <span className="text-nq-muted">{t.bookingReferenceLabel}: </span>
@@ -122,7 +200,11 @@ export function BookingFlowDonePanel({
         </p>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:justify-center lg:justify-end lg:gap-4">
+      {shareHint ? (
+        <p className="text-center text-sm text-nq-success">{shareHint}</p>
+      ) : null}
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-center lg:justify-end lg:gap-4">
         <Button
           type="button"
           variant="secondary"
@@ -132,10 +214,30 @@ export function BookingFlowDonePanel({
         >
           {t.addToCalendar}
         </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="lg"
+          className="nq-booking-glass min-h-11 w-full shrink-0 border border-nq-primary/35 bg-transparent text-nq-primary shadow-none hover:bg-white/[0.04] hover:opacity-100 sm:min-w-[11rem] lg:w-auto"
+          onClick={() => void handleShare()}
+        >
+          {t.shareBooking}
+        </Button>
         <LuxuryBookingCta className="lg:min-w-[11rem]" onClick={onBookAnother}>
           {t.doneCta}
         </LuxuryBookingCta>
       </div>
+
+      {manageTel ? (
+        <div className="flex justify-center lg:justify-end">
+          <a
+            href={manageTel}
+            className="nq-booking-glass inline-flex h-14 min-h-11 w-full max-w-md items-center justify-center rounded-2xl border border-white/[0.12] px-6 text-base font-medium text-nq-foreground shadow-none hover:bg-white/[0.04] sm:w-auto"
+          >
+            {t.manageBookingCall}
+          </a>
+        </div>
+      ) : null}
     </div>
   );
 }
