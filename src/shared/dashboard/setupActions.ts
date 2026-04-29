@@ -24,21 +24,55 @@ import {
   validateProvince,
   validateStreet,
 } from "@/shared/dashboard/addressSetupValidation";
+import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 
 export type StaffJobRole = "owner" | "senior" | "nail_tech";
 
+type WritableSupabase =
+  | Awaited<ReturnType<typeof createClient>>
+  | ReturnType<typeof createServiceRoleClient>;
+
+/**
+ * Demo OTP / cookie dashboard: no real JWT for RLS — use service role when the request
+ * is demo-scoped (cookie slug match or resolveSalonForDashboard demo_cookie).
+ * Otherwise authenticated salon members use the user-scoped client + RLS.
+ */
 async function writableSupabase(
+  slug: string,
   kind: "member" | "demo_cookie",
-): Promise<
-  Awaited<ReturnType<typeof createClient>> | ReturnType<typeof createServiceRoleClient>
-> {
+): Promise<WritableSupabase> {
+  const demoSlug =
+    (await cookies()).get(NAILQ_DEMO_SLUG_COOKIE)?.value ?? null;
+
   if (kind === "demo_cookie") {
     return createServiceRoleClient();
   }
+
+  if (isDemoOtpRuntime() && demoSlug === slug) {
+    return createServiceRoleClient();
+  }
+
   return createClient();
 }
 
-type GenericSupabase = Awaited<ReturnType<typeof createClient>>;
+/** Demo OTP runtime + non-member path requires cookie salon to match slug. Members use JWT + RLS. */
+async function verifyDemoSetupSlug(
+  slug: string,
+  kind: "member" | "demo_cookie",
+): Promise<Fail | null> {
+  const isDemo = isDemoOtpRuntime();
+  if (!isDemo) return null;
+
+  const demoSlug =
+    (await cookies()).get(NAILQ_DEMO_SLUG_COOKIE)?.value ?? null;
+
+  if (demoSlug !== slug && kind !== "member") {
+    return fail("unauthorized");
+  }
+  return null;
+}
+
+type GenericSupabase = WritableSupabase;
 
 async function refreshSalonProfileComplete(
   supabase: GenericSupabase,
@@ -138,6 +172,9 @@ export async function addService(
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
 
+  const demoGate = await verifyDemoSetupSlug(slug, r.kind);
+  if (demoGate) return demoGate;
+
   const name = input.name.trim();
   if (!name || name.length > 160) return fail("invalid_name");
 
@@ -149,7 +186,7 @@ export async function addService(
     return fail("invalid_duration");
   if (!Number.isFinite(buffer) || buffer < 0) return fail("invalid_buffer");
 
-  const supabase = await writableSupabase(r.kind);
+  const supabase = await writableSupabase(slug, r.kind);
   const { error } = await supabase.from("services").insert({
     salon_id: r.salon.id,
     name,
@@ -180,6 +217,9 @@ export async function updateService(
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
 
+  const demoGate = await verifyDemoSetupSlug(slug, r.kind);
+  if (demoGate) return demoGate;
+
   const patch: Record<string, unknown> = {};
   if (data.name !== undefined) {
     const n = String(data.name).trim();
@@ -204,7 +244,7 @@ export async function updateService(
 
   if (Object.keys(patch).length === 0) return fail("empty_update");
 
-  const supabase = await writableSupabase(r.kind);
+  const supabase = await writableSupabase(slug, r.kind);
   const { data: mine, error: fetchErr } = await supabase
     .from("services")
     .select("id")
@@ -238,7 +278,10 @@ export async function deleteService(
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
 
-  const supabase = await writableSupabase(r.kind);
+  const demoGate = await verifyDemoSetupSlug(slug, r.kind);
+  if (demoGate) return demoGate;
+
+  const supabase = await writableSupabase(slug, r.kind);
   const { count, error: cErr } = await supabase
     .from("services")
     .select("*", { count: "exact", head: true })
@@ -285,12 +328,15 @@ export async function addStaff(
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
 
+  const demoGate = await verifyDemoSetupSlug(slug, r.kind);
+  if (demoGate) return demoGate;
+
   const name = input.name.trim();
   if (!name || name.length > 160) return fail("invalid_name");
   const roles: StaffJobRole[] = ["owner", "senior", "nail_tech"];
   if (!roles.includes(input.role)) return fail("invalid_role");
 
-  const supabase = await writableSupabase(r.kind);
+  const supabase = await writableSupabase(slug, r.kind);
   const { error } = await supabase.from("staff").insert({
     salon_id: r.salon.id,
     name,
@@ -314,6 +360,9 @@ export async function updateStaff(
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
 
+  const demoGate = await verifyDemoSetupSlug(slug, r.kind);
+  if (demoGate) return demoGate;
+
   const patch: Record<string, unknown> = {};
   if (data.name !== undefined) {
     const n = String(data.name).trim();
@@ -327,7 +376,7 @@ export async function updateStaff(
   }
   if (Object.keys(patch).length === 0) return fail("empty_update");
 
-  const supabase = await writableSupabase(r.kind);
+  const supabase = await writableSupabase(slug, r.kind);
   const { data: mine } = await supabase
     .from("staff")
     .select("id")
@@ -359,7 +408,10 @@ export async function deleteStaff(
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
 
-  const supabase = await writableSupabase(r.kind);
+  const demoGate = await verifyDemoSetupSlug(slug, r.kind);
+  if (demoGate) return demoGate;
+
+  const supabase = await writableSupabase(slug, r.kind);
   const { count } = await supabase
     .from("staff")
     .select("*", { count: "exact", head: true })
@@ -407,14 +459,11 @@ export async function updateOpeningHours(
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
 
-  if (r.kind === "demo_cookie") {
-    const cookieStore = await cookies();
-    const demoSlug = cookieStore.get(NAILQ_DEMO_SLUG_COOKIE)?.value;
-    if (!demoSlug || demoSlug !== slug) {
-      return fail("unauthorized");
-    }
-  }
+  const demoGate = await verifyDemoSetupSlug(slug, r.kind);
+  if (demoGate) return demoGate;
 
+  const isDemo = isDemoOtpRuntime();
+  console.log("[updateOpeningHours] isDemo:", isDemo);
   console.log("[updateOpeningHours] slug:", slug);
   console.log("[updateOpeningHours] data:", openingHours);
   console.log("openingHours payload:", JSON.stringify(openingHours));
@@ -436,7 +485,7 @@ export async function updateOpeningHours(
       : [];
   const closedJson = normalizeBookingClosedDateList(datesForClosed);
 
-  const supabase = await writableSupabase(r.kind);
+  const supabase = await writableSupabase(slug, r.kind);
   const openingHoursParsed = JSON.parse(serialized) as Record<string, unknown>;
   const { data: updatedRow, error } = await supabase
     .from("salons")
@@ -448,6 +497,8 @@ export async function updateOpeningHours(
     .eq("slug", slug)
     .select("id")
     .maybeSingle();
+
+  console.log("[updateOpeningHours] updateResult:", error ?? { ok: true, id: updatedRow?.id });
 
   if (error) {
     console.error("[updateOpeningHours] error:", error);
@@ -485,6 +536,9 @@ export async function updateAddress(
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
 
+  const demoGate = await verifyDemoSetupSlug(slug, r.kind);
+  if (demoGate) return demoGate;
+
   const salonPhone = input.salon_phone.trim();
   if (!isValidPhone(salonPhone)) return fail("invalid_phone");
   if (salonPhone.length > 40) return fail("invalid_phone");
@@ -505,7 +559,7 @@ export async function updateAddress(
   });
   if (!address || address.length > 400) return fail("invalid_address");
 
-  const supabase = await writableSupabase(r.kind);
+  const supabase = await writableSupabase(slug, r.kind);
   const { error } = await supabase
     .from("salons")
     .update({ address, salon_phone: salonPhone })
@@ -542,7 +596,11 @@ export async function getDashboardWriteClient(slug: string): Promise<
 > {
   const r = await resolveSalonForDashboard(slug);
   if (!r) return null;
-  const supabase = await writableSupabase(r.kind);
+
+  const demoGate = await verifyDemoSetupSlug(slug, r.kind);
+  if (demoGate) return null;
+
+  const supabase = await writableSupabase(slug, r.kind);
   return {
     salon: r.salon,
     kind: r.kind,
