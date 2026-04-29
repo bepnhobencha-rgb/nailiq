@@ -1,7 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { NAILQ_DEMO_SLUG_COOKIE } from "@/shared/lib/demoDashboardCookie";
-import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -34,12 +33,17 @@ export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const dashMatch = /^\/dashboard\/([^/]+)\/?$/.exec(pathname);
 
-  if (!user && dashMatch && isDemoOtpRuntime()) {
+  // Demo OTP registration sets an httpOnly slug cookie (no Supabase session). Allow
+  // dashboard for that slug regardless of build-time NEXT_PUBLIC_DEMO_OTP inlining.
+  let isDemoAccess = false;
+  if (dashMatch) {
     const pathSlug = decodeURIComponent(dashMatch[1]);
     const demoSlug = request.cookies.get(NAILQ_DEMO_SLUG_COOKIE)?.value;
-    if (demoSlug && demoSlug === pathSlug) {
-      return supabaseResponse;
-    }
+    isDemoAccess = Boolean(demoSlug && demoSlug === pathSlug);
+  }
+
+  if (!user && isDemoAccess) {
+    return supabaseResponse;
   }
 
   if (!user && pathname.startsWith("/dashboard")) {
