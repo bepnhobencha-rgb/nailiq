@@ -98,3 +98,6 @@ export function SetupToast({
     </div>
   );
 }
+
+/** Alias for imports preferring a shorter name. */
+export { SetupToast as Toast };

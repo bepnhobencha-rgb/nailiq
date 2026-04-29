@@ -9,6 +9,15 @@ import {
   stableOpeningHoursJson,
   type OpeningHoursWeek,
 } from "@/shared/dashboard/openingHoursDefaults";
+import {
+  buildSalonAddressString,
+  isAllowedCountry,
+  isValidPhone,
+  isValidPostalCode,
+  validateCity,
+  validateProvince,
+  validateStreet,
+} from "@/shared/dashboard/addressSetupValidation";
 
 export type StaffJobRole = "owner" | "senior" | "nail_tech";
 
@@ -376,15 +385,37 @@ export async function updateOpeningHours(
 
 export async function updateAddress(
   slug: string,
-  input: { address: string; salon_phone: string },
+  input: {
+    street: string;
+    city: string;
+    province: string;
+    postal: string;
+    country: string;
+    salon_phone: string;
+  },
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
 
-  const address = input.address.trim();
   const salonPhone = input.salon_phone.trim();
+  if (!isValidPhone(salonPhone)) return fail("invalid_phone");
+  if (salonPhone.length > 40) return fail("invalid_phone");
+
+  if (!validateStreet(input.street)) return fail("invalid_street");
+  if (!validateCity(input.city)) return fail("invalid_city");
+  if (!validateProvince(input.province)) return fail("invalid_province");
+  if (!isValidPostalCode(input.postal)) return fail("invalid_postal");
+  const country = input.country.trim();
+  if (!country || !isAllowedCountry(country)) return fail("invalid_country");
+
+  const address = buildSalonAddressString({
+    street: input.street,
+    city: input.city,
+    province: input.province,
+    postal: input.postal,
+    country,
+  });
   if (!address || address.length > 400) return fail("invalid_address");
-  if (!salonPhone || salonPhone.length > 40) return fail("invalid_phone");
 
   const supabase = await writableSupabase(r.kind);
   const { error } = await supabase
