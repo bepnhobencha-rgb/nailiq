@@ -8,7 +8,11 @@ import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { AddEmailBanner } from "@/components/dashboard/AddEmailBanner";
 import { SalonOwnerDashboardMain } from "@/components/dashboard/SalonOwnerDashboardMain";
-import { nextBookingStatus } from "@/components/dashboard/salonDashboardFormat";
+import {
+  nextBookingStatus,
+  splitSalonDashboardBookings,
+  type SalonOwnerDashboardViewPayload,
+} from "@/components/dashboard/salonDashboardFormat";
 import {
   loadSalonOwnerDashboard,
   updateBookingStatus,
@@ -103,14 +107,19 @@ export function SalonOwnerDashboard({
     };
   }, [data.salon.id, router]);
 
+  const viewData: SalonOwnerDashboardViewPayload = useMemo(() => {
+    const split = splitSalonDashboardBookings(data.allBookings);
+    return { ...data, ...split };
+  }, [data]);
+
   const upcomingByDay = useMemo(() => {
-    if (!data.upcoming.length) return [];
+    if (!viewData.upcoming.length) return [];
     const locale = language === "vi" ? "vi-VN" : "en-US";
     const map = new Map<
       string,
       { label: string; items: SalonDashboardBooking[] }
     >();
-    for (const b of data.upcoming) {
+    for (const b of viewData.upcoming) {
       const d = new Date(b.start_time_utc);
       const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
       const label = d.toLocaleDateString(locale, {
@@ -132,7 +141,7 @@ export function SalonOwnerDashboard({
           new Date(b[1].items[0].start_time_utc).getTime(),
       )
       .map(([, v]) => v);
-  }, [data.upcoming, language]);
+  }, [viewData.upcoming, language]);
 
   const onCopy = useCallback(async () => {
     try {
@@ -201,7 +210,7 @@ export function SalonOwnerDashboard({
         }
         slug={slug}
         demoMode={data.demoMode}
-        data={data}
+        data={viewData}
         language={language}
         onLanguageChange={setLanguage}
         bookingAbsoluteUrl={bookingAbsoluteUrl}

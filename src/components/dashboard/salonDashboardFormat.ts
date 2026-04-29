@@ -1,5 +1,24 @@
 import { getUserMessages } from "@/shared/i18n/user";
-import type { BookingStatus } from "@/shared/types";
+import type { LoadSalonDashboardResult } from "@/shared/dashboard/salonOwnerActions";
+import type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
+
+export type SalonDashboardStatsSlice = {
+  totalToday: number;
+  pending: number;
+  confirmed: number;
+  completed: number;
+  revenueCents: number;
+};
+
+/** Server `allBookings` plus client-local day split (today / upcoming / stats). */
+export type SalonOwnerDashboardViewPayload = Extract<
+  LoadSalonDashboardResult,
+  { ok: true }
+> & {
+  today: SalonDashboardBooking[];
+  upcoming: SalonDashboardBooking[];
+  stats: SalonDashboardStatsSlice;
+};
 
 export function nextBookingStatus(
   current: BookingStatus,
@@ -35,4 +54,46 @@ export function formatSalonMoney(cents: number, lang: "en" | "vi"): string {
     currency: "USD",
     maximumFractionDigits: 2,
   }).format(amount);
+}
+
+/** Split fetched bookings using the viewer's local calendar day (browser timezone). */
+export function splitSalonDashboardBookings(
+  allBookings: SalonDashboardBooking[],
+): {
+  today: SalonDashboardBooking[];
+  upcoming: SalonDashboardBooking[];
+  stats: SalonDashboardStatsSlice;
+} {
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(now);
+  todayEnd.setHours(23, 59, 59, 999);
+
+  const today = allBookings.filter((b) => {
+    const t = new Date(b.start_time_utc);
+    return t >= todayStart && t <= todayEnd;
+  });
+
+  const upcoming = allBookings.filter((b) => {
+    const t = new Date(b.start_time_utc);
+    return t > todayEnd && b.status === "confirmed";
+  });
+
+  const pending = today.filter((b) => b.status === "pending").length;
+  const confirmed = today.filter((b) => b.status === "confirmed").length;
+  const completed = today.filter((b) => b.status === "completed").length;
+  const revenueCents = today.reduce((sum, b) => sum + b.price_cents, 0);
+
+  return {
+    today,
+    upcoming,
+    stats: {
+      totalToday: today.length,
+      pending,
+      confirmed,
+      completed,
+      revenueCents,
+    },
+  };
 }

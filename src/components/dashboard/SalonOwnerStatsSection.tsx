@@ -1,17 +1,17 @@
 "use client";
 
 import { SalonOwnerStatPill } from "@/components/dashboard/SalonOwnerStatPill";
-import { formatSalonMoney } from "@/components/dashboard/salonDashboardFormat";
+import {
+  formatSalonMoney,
+  type SalonOwnerDashboardViewPayload,
+} from "@/components/dashboard/salonDashboardFormat";
 import { getUserMessages } from "@/shared/i18n/user";
-import type { LoadSalonDashboardResult } from "@/shared/dashboard/salonOwnerActions";
-
-type InitialPayload = Extract<LoadSalonDashboardResult, { ok: true }>;
 
 export function SalonOwnerStatsSection({
   data,
   language,
 }: {
-  data: InitialPayload;
+  data: SalonOwnerDashboardViewPayload;
   language: "en" | "vi";
 }) {
   const t = getUserMessages(language).salonDashboard;

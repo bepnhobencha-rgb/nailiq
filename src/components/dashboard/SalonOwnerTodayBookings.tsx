@@ -59,10 +59,10 @@ export function SalonOwnerTodayBookings({
             >
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <p className="text-sm font-semibold tabular-nums text-nq-foreground">
-                  {new Date(b.start_time_utc).toLocaleTimeString(
-                    language === "vi" ? "vi-VN" : "en-US",
-                    { hour: "numeric", minute: "2-digit" },
-                  )}
+                  {new Date(b.start_time_utc).toLocaleTimeString(undefined, {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
                 </p>
                 <span className="rounded-full border border-current/30 px-2 py-0.5 text-[11px] font-medium">
                   {salonBookingStatusLabel(b.status, t)}

@@ -15,22 +15,6 @@ import type {
 const SALON_DASHBOARD_SELECT =
   "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete";
 
-/** Calendar day in the runtime timezone (server local), expressed as UTC ISO bounds for `start_time_utc`. */
-function localCalendarDayBounds(reference: Date): {
-  startIso: string;
-  endIso: string;
-} {
-  const today = new Date(reference);
-  const startOfDay = new Date(today);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(today);
-  endOfDay.setHours(23, 59, 59, 999);
-  return {
-    startIso: startOfDay.toISOString(),
-    endIso: endOfDay.toISOString(),
-  };
-}
-
 type SalonRow = {
   id: string;
   name: string;
@@ -204,15 +188,8 @@ export type LoadSalonDashboardResult =
         opening_hours_customized: boolean;
       };
       demoMode: boolean;
-      today: SalonDashboardBooking[];
-      upcoming: SalonDashboardBooking[];
-      stats: {
-        totalToday: number;
-        pending: number;
-        confirmed: number;
-        completed: number;
-        revenueCents: number;
-      };
+      /** Bookings in a wide UTC window; client splits "today" / "upcoming" in local timezone */
+      allBookings: SalonDashboardBooking[];
     }
   | { ok: false; error: "unauthorized" | "server_error" };
 
@@ -231,57 +208,33 @@ export async function loadSalonOwnerDashboard(
     kind === "demo_cookie"
       ? createServiceRoleClient()
       : await createClient();
-  const { startIso: todayStartIso, endIso: todayEndIso } =
-    localCalendarDayBounds(new Date());
 
-  const upcomingWindowEnd = new Date(todayEndIso);
-  upcomingWindowEnd.setDate(upcomingWindowEnd.getDate() + 7);
-  upcomingWindowEnd.setHours(23, 59, 59, 999);
-  const upcomingEndIso = upcomingWindowEnd.toISOString();
+  const from = new Date();
+  from.setDate(from.getDate() - 3);
+  from.setHours(0, 0, 0, 0);
+  const to = new Date();
+  to.setDate(to.getDate() + 7);
+  to.setHours(23, 59, 59, 999);
 
   const selectCols =
     "id, client_name, client_phone, start_time_utc, status, services ( name, price_cents )";
 
-  const { data: todayRows, error: todayErr } = await supabase
+  const { data: bookingRows, error: bookingsErr } = await supabase
     .from("bookings")
     .select(selectCols)
     .eq("salon_id", salon.id)
-    .gte("start_time_utc", todayStartIso)
-    .lte("start_time_utc", todayEndIso)
+    .gte("start_time_utc", from.toISOString())
+    .lte("start_time_utc", to.toISOString())
     .order("start_time_utc", { ascending: true });
 
-  if (todayErr) {
-    console.error("[loadSalonOwnerDashboard] today", todayErr);
+  if (bookingsErr) {
+    console.error("[loadSalonOwnerDashboard] bookings", bookingsErr);
     return { ok: false, error: "server_error" };
   }
 
-  const { data: upcomingRows, error: upErr } = await supabase
-    .from("bookings")
-    .select(selectCols)
-    .eq("salon_id", salon.id)
-    .eq("status", "confirmed")
-    .gt("start_time_utc", todayEndIso)
-    .lte("start_time_utc", upcomingEndIso)
-    .order("start_time_utc", { ascending: true });
-
-  if (upErr) {
-    console.error("[loadSalonOwnerDashboard] upcoming", upErr);
-    return { ok: false, error: "server_error" };
-  }
-
-  const today = (todayRows ?? []).map((r) =>
+  const allBookings = (bookingRows ?? []).map((r) =>
     mapBookingRow(r as unknown as BookingRowDb),
   );
-  const upcoming = (upcomingRows ?? []).map((r) =>
-    mapBookingRow(r as unknown as BookingRowDb),
-  );
-
-  console.log("bookings count:", today.length);
-
-  const pending = today.filter((b) => b.status === "pending").length;
-  const confirmed = today.filter((b) => b.status === "confirmed").length;
-  const completed = today.filter((b) => b.status === "completed").length;
-  const revenueCents = today.reduce((sum, b) => sum + b.price_cents, 0);
 
   const { count: servicesCount, error: scErr } = await supabase
     .from("services")
@@ -324,15 +277,7 @@ export async function loadSalonOwnerDashboard(
       opening_hours_customized: openingHoursCustomized,
     },
     demoMode,
-    today,
-    upcoming,
-    stats: {
-      totalToday: today.length,
-      pending,
-      confirmed,
-      completed,
-      revenueCents,
-    },
+    allBookings,
   };
 }
 

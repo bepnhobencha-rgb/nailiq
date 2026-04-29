@@ -10,13 +10,11 @@ import { SalonOwnerStatsSection } from "@/components/dashboard/SalonOwnerStatsSe
 import { SalonOwnerTodayBookings } from "@/components/dashboard/SalonOwnerTodayBookings";
 import { SalonOwnerDashboardSkeleton } from "@/components/dashboard/SalonOwnerDashboardSkeleton";
 import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
-import type { LoadSalonDashboardResult } from "@/shared/dashboard/salonOwnerActions";
+import type { SalonOwnerDashboardViewPayload } from "@/components/dashboard/salonDashboardFormat";
 import { getUserMessages } from "@/shared/i18n/user";
 import { maskPhoneDigits } from "@/shared/lib/maskPhone";
 import { cn } from "@/shared/lib/cn";
 import type { SalonDashboardBooking } from "@/shared/types";
-
-type InitialPayload = Extract<LoadSalonDashboardResult, { ok: true }>;
 
 export function SalonOwnerDashboardMain({
   topSlot,
@@ -41,7 +39,7 @@ export function SalonOwnerDashboardMain({
   topSlot?: ReactNode;
   slug: string;
   demoMode: boolean;
-  data: InitialPayload;
+  data: SalonOwnerDashboardViewPayload;
   language: "en" | "vi";
   onLanguageChange: (lang: "en" | "vi") => void;
   bookingAbsoluteUrl: string;
@@ -260,8 +258,8 @@ export function SalonOwnerDashboardMain({
                         >
                           <span className="text-sm font-medium tabular-nums text-nq-foreground">
                             {new Date(b.start_time_utc).toLocaleTimeString(
-                              language === "vi" ? "vi-VN" : "en-US",
-                              { hour: "numeric", minute: "2-digit" },
+                              undefined,
+                              { hour: "2-digit", minute: "2-digit" },
                             )}
                           </span>
                           <span className="min-w-0 flex-1 text-right text-base text-nq-foreground/95">
