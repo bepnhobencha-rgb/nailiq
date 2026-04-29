@@ -93,42 +93,39 @@ export function HomeLanding() {
           </p>
         </header>
 
-        <div className="mt-10 flex w-full flex-col gap-4">
+        <div className="mt-10 flex w-full flex-col">
+          <Input
+            name="phone"
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            placeholder={
+              language === "vi"
+                ? "Số điện thoại (tùy chọn, điền trước khi bấm Bắt đầu)"
+                : "Phone (optional — enter before Get started)"
+            }
+            aria-label={language === "vi" ? "Số điện thoại" : "Phone number"}
+          />
           <Button
             type="button"
             size="lg"
             variant="primary"
-            className="w-full"
+            className="mt-4 w-full"
             onClick={onStartRegister}
           >
             {t.home.ctaRegister}
           </Button>
+          <p className="mt-3 text-center text-xs text-nq-muted/60 sm:text-[12px]">
+            {t.home.alreadySalonPrefix}
+            <Link
+              href="/register"
+              className="text-nq-muted/60 transition-colors duration-150 hover:text-nq-primary"
+            >
+              {t.home.signInLink}
+            </Link>
+          </p>
 
-          <div className="flex flex-col">
-            <Input
-              name="phone"
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel"
-              placeholder={
-                language === "vi"
-                  ? "Số điện thoại (tùy chọn, điền trước khi bấm Bắt đầu)"
-                  : "Phone (optional — enter before Get started)"
-              }
-              aria-label={language === "vi" ? "Số điện thoại" : "Phone number"}
-            />
-            <p className="mt-3 text-center text-xs text-nq-muted/60 sm:text-[12px]">
-              {t.home.alreadySalonPrefix}
-              <Link
-                href="/register"
-                className="text-nq-muted/60 transition-colors duration-150 hover:text-nq-primary"
-              >
-                {t.home.signInLink}
-              </Link>
-            </p>
-          </div>
-
-          <p className="text-center text-xs text-nq-muted sm:text-sm">
+          <p className="mt-4 text-center text-xs text-nq-muted sm:text-sm">
             {t.home.footerNote}{" "}
             <Link
               href="/register"
