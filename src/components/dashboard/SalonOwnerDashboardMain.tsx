@@ -1,16 +1,19 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SalonOwnerStatsSection } from "@/components/dashboard/SalonOwnerStatsSection";
 import { SalonOwnerTodayBookings } from "@/components/dashboard/SalonOwnerTodayBookings";
+import { SalonOwnerDashboardSkeleton } from "@/components/dashboard/SalonOwnerDashboardSkeleton";
 import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
 import type { LoadSalonDashboardResult } from "@/shared/dashboard/salonOwnerActions";
 import { getUserMessages } from "@/shared/i18n/user";
 import { maskPhoneDigits } from "@/shared/lib/maskPhone";
+import { cn } from "@/shared/lib/cn";
 import type { SalonDashboardBooking } from "@/shared/types";
 
 type InitialPayload = Extract<LoadSalonDashboardResult, { ok: true }>;
@@ -30,6 +33,10 @@ export function SalonOwnerDashboardMain({
   onAdvanceStatus,
   upcomingByDay,
   isLoading,
+  lastUpdatedAt,
+  onManualRefresh,
+  manualRefreshing,
+  showDataSkeleton,
 }: {
   topSlot?: ReactNode;
   slug: string;
@@ -45,17 +52,45 @@ export function SalonOwnerDashboardMain({
   onAdvanceStatus: (b: SalonDashboardBooking) => void;
   upcomingByDay: { label: string; items: SalonDashboardBooking[] }[];
   isLoading: boolean;
+  lastUpdatedAt: number;
+  onManualRefresh: () => void;
+  manualRefreshing: boolean;
+  showDataSkeleton: boolean;
 }) {
   const t = getUserMessages(language).salonDashboard;
+  const [elapsedMinutes, setElapsedMinutes] = useState(0);
+
+  useEffect(() => {
+    const update = () => {
+      setElapsedMinutes(
+        Math.floor((Date.now() - lastUpdatedAt) / 60_000),
+      );
+    };
+    update();
+    const id = window.setInterval(update, 30_000);
+    return () => window.clearInterval(id);
+  }, [lastUpdatedAt]);
+
+  const lastUpdatedLabel = useMemo(() => {
+    const td = getUserMessages(language).salonDashboard;
+    const mins = elapsedMinutes;
+    if (mins < 1) return td.lastUpdatedJustNow;
+    if (mins === 1) return td.lastUpdatedOneMinuteAgo;
+    return td.lastUpdatedMinutesAgo.replace("{count}", String(mins));
+  }, [language, elapsedMinutes]);
+
   const profileComplete = data.salon.profile_complete;
   const salonPhoneMasked = maskPhoneDigits(
     String(data.salon.phone ?? "").replace(/\D/g, ""),
   );
+  const bookingHref = `/${encodeURIComponent(slug)}`;
+
+  const busy = isLoading || manualRefreshing || showDataSkeleton;
 
   return (
     <MobileStack
       className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pt-2"
-      aria-busy={isLoading}
+      aria-busy={busy}
     >
       {topSlot}
       {demoMode ? (
@@ -116,6 +151,31 @@ export function SalonOwnerDashboardMain({
           ) : null}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2 pt-1">
+          <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+            <p className="max-w-[14rem] text-right text-[11px] tabular-nums leading-snug text-nq-muted sm:max-w-none sm:text-xs">
+              {lastUpdatedLabel}
+            </p>
+            <button
+              type="button"
+              onClick={onManualRefresh}
+              disabled={manualRefreshing}
+              className={cn(
+                "inline-flex min-h-9 touch-manipulation items-center gap-1 rounded-lg border border-nq-border/45 bg-nq-surface/45 px-2.5 py-1 text-xs font-semibold text-nq-foreground transition-colors hover:bg-nq-surface/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45 disabled:opacity-55",
+              )}
+              aria-busy={manualRefreshing}
+            >
+              <span
+                className={cn(
+                  "inline-block text-base leading-none",
+                  manualRefreshing && "animate-spin",
+                )}
+                aria-hidden
+              >
+                ↻
+              </span>
+              {t.refresh}
+            </button>
+          </div>
           {!profileComplete ? (
             <Link
               href={`/dashboard/${encodeURIComponent(slug)}/setup/services`}
@@ -160,56 +220,65 @@ export function SalonOwnerDashboardMain({
         </div>
       </div>
 
-      <SalonOwnerStatsSection data={data} language={language} />
+      {showDataSkeleton ? (
+        <SalonOwnerDashboardSkeleton />
+      ) : (
+        <>
+          <SalonOwnerStatsSection data={data} language={language} />
 
-      <SalonOwnerTodayBookings
-        items={data.today}
-        language={language}
-        isSaving={isSaving}
-        onAdvanceStatus={onAdvanceStatus}
-      />
+          <SalonOwnerTodayBookings
+            items={data.today}
+            language={language}
+            bookingHref={bookingHref}
+            isSaving={isSaving}
+            onAdvanceStatus={onAdvanceStatus}
+          />
 
-      <section
-        className="mt-8 pb-[max(env(safe-area-inset-bottom),1rem)]"
-        aria-label={t.upcomingConfirmed}
-      >
-        <h2 className="text-lg font-semibold text-nq-foreground">{t.upcomingConfirmed}</h2>
-        {upcomingByDay.length === 0 ? (
-          <p className="mt-3 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-6 text-center text-base text-nq-muted">
-            {t.noUpcoming}
-          </p>
-        ) : (
-          <div className="mt-3 flex flex-col gap-4">
-            {upcomingByDay.map((group) => (
-              <div key={group.items[0]?.id ?? group.label}>
-                <p className="text-xs font-semibold uppercase tracking-wide text-nq-primary/90">
-                  {group.label}
-                </p>
-                <ul className="mt-2 flex flex-col gap-1.5">
-                  {group.items.map((b) => (
-                    <li
-                      key={b.id}
-                      className="flex flex-wrap items-baseline justify-between gap-2 rounded-xl border border-nq-border/25 bg-nq-surface/35 px-3 py-2"
-                    >
-                      <span className="text-sm font-medium tabular-nums text-nq-foreground">
-                        {new Date(b.start_time_utc).toLocaleTimeString(
-                          language === "vi" ? "vi-VN" : "en-US",
-                          { hour: "numeric", minute: "2-digit" },
-                        )}
-                      </span>
-                      <span className="min-w-0 flex-1 text-right text-base text-nq-foreground/95">
-                        {b.client_name}
-                        <span className="text-nq-muted"> · </span>
-                        <span className="text-nq-muted">{b.service_name}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+          <section
+            className="mt-8 pb-[max(env(safe-area-inset-bottom),1rem)]"
+            aria-label={t.upcomingConfirmed}
+          >
+            <h2 className="text-lg font-semibold text-nq-foreground">
+              {t.upcomingConfirmed}
+            </h2>
+            {upcomingByDay.length === 0 ? (
+              <p className="mt-3 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-6 text-center text-base text-nq-muted">
+                {t.noUpcoming}
+              </p>
+            ) : (
+              <div className="mt-3 flex flex-col gap-4">
+                {upcomingByDay.map((group) => (
+                  <div key={group.items[0]?.id ?? group.label}>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-nq-primary/90">
+                      {group.label}
+                    </p>
+                    <ul className="mt-2 flex flex-col gap-1.5">
+                      {group.items.map((b) => (
+                        <li
+                          key={b.id}
+                          className="flex flex-wrap items-baseline justify-between gap-2 rounded-xl border border-nq-border/25 bg-nq-surface/35 px-3 py-2"
+                        >
+                          <span className="text-sm font-medium tabular-nums text-nq-foreground">
+                            {new Date(b.start_time_utc).toLocaleTimeString(
+                              language === "vi" ? "vi-VN" : "en-US",
+                              { hour: "numeric", minute: "2-digit" },
+                            )}
+                          </span>
+                          <span className="min-w-0 flex-1 text-right text-base text-nq-foreground/95">
+                            {b.client_name}
+                            <span className="text-nq-muted"> · </span>
+                            <span className="text-nq-muted">{b.service_name}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-      </section>
+            )}
+          </section>
+        </>
+      )}
     </MobileStack>
   );
 }

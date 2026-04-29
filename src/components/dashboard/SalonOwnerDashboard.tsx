@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createClient } from "@/shared/lib/supabase/client";
 import { Button } from "@/components/ui/Button";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
@@ -36,6 +37,8 @@ export function SalonOwnerDashboard({
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState(() => Date.now());
+  const [manualRefreshing, setManualRefreshing] = useState(false);
 
   const showRecoveryEmailBanner = !data.salon.email?.trim();
 
@@ -59,12 +62,46 @@ export function SalonOwnerDashboard({
       return;
     }
     setData(res);
+    setLastUpdatedAt(Date.now());
   }, [router, slug]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- server `initial` from RSC refresh / navigation
     setData(initial);
+    setLastUpdatedAt(Date.now());
+    setManualRefreshing(false);
   }, [initial]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      router.refresh();
+    }, 30_000);
+    return () => window.clearInterval(id);
+  }, [router]);
+
+  useEffect(() => {
+    const salonId = data.salon.id;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`dashboard-bookings-${salonId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "bookings",
+          filter: `salon_id=eq.${salonId}`,
+        },
+        () => {
+          router.refresh();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [data.salon.id, router]);
 
   const upcomingByDay = useMemo(() => {
     if (!data.upcoming.length) return [];
@@ -179,6 +216,13 @@ export function SalonOwnerDashboard({
         onAdvanceStatus={onAdvanceStatus}
         upcomingByDay={upcomingByDay}
         isLoading={isLoading}
+        lastUpdatedAt={lastUpdatedAt}
+        onManualRefresh={() => {
+          setManualRefreshing(true);
+          router.refresh();
+        }}
+        manualRefreshing={manualRefreshing}
+        showDataSkeleton={isLoading || manualRefreshing}
       />
     </ResponsiveShell>
   );

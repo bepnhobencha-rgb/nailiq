@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import {
   nextBookingStatus,
@@ -15,11 +16,14 @@ import { cn } from "@/shared/lib/cn";
 export function SalonOwnerTodayBookings({
   items,
   language,
+  bookingHref,
   isSaving,
   onAdvanceStatus,
 }: {
   items: SalonDashboardBooking[];
   language: "en" | "vi";
+  /** Public booking page path, e.g. `/my-salon` */
+  bookingHref: string;
   isSaving: boolean;
   onAdvanceStatus: (b: SalonDashboardBooking) => void;
 }) {
@@ -30,8 +34,19 @@ export function SalonOwnerTodayBookings({
       <h2 className="text-lg font-semibold text-nq-foreground">{t.todayAppointments}</h2>
       <ul className="mt-3 flex flex-col gap-2">
         {items.length === 0 ? (
-          <li className="rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-6 text-center text-base text-nq-muted">
-            {t.noBookingsToday}
+          <li className="rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-6 text-center">
+            <p className="text-base font-medium text-nq-foreground">
+              {t.emptyTodayTitle}
+            </p>
+            <p className="mt-2 text-sm leading-snug text-nq-muted">
+              {t.emptyTodayHint}
+            </p>
+            <Link
+              href={bookingHref}
+              className="mt-4 inline-flex min-h-11 items-center justify-center rounded-xl border border-nq-primary/45 bg-nq-primary/10 px-4 text-base font-semibold text-nq-primary transition-colors hover:bg-nq-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/50"
+            >
+              {t.viewBookingPage}
+            </Link>
           </li>
         ) : (
           items.map((b) => (

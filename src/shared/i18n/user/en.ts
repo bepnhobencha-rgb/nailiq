@@ -46,6 +46,14 @@ export type UserMessages = {
     service: string;
     phone: string;
     loading: string;
+    /** Manual dashboard refresh */
+    refresh: string;
+    lastUpdatedJustNow: string;
+    lastUpdatedOneMinuteAgo: string;
+    /** `{count}` = minutes */
+    lastUpdatedMinutesAgo: string;
+    emptyTodayTitle: string;
+    emptyTodayHint: string;
     loadError: string;
     statusPending: string;
     statusConfirmed: string;
@@ -100,6 +108,12 @@ export const userEn: UserMessages = {
     service: "Service",
     phone: "Phone",
     loading: "Loading…",
+    refresh: "Refresh",
+    lastUpdatedJustNow: "Last updated: just now",
+    lastUpdatedOneMinuteAgo: "Last updated: 1 minute ago",
+    lastUpdatedMinutesAgo: "Last updated: {count} minutes ago",
+    emptyTodayTitle: "No bookings today yet.",
+    emptyTodayHint: "Share your booking link to get started.",
     loadError: "Could not load dashboard.",
     statusPending: "Pending",
     statusConfirmed: "Confirmed",

@@ -15,17 +15,19 @@ import type {
 const SALON_DASHBOARD_SELECT =
   "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete";
 
-function utcDayBounds(
-  d: Date,
-): { dayStartIso: string; nextDayStartIso: string } {
-  const y = d.getUTCFullYear();
-  const m = d.getUTCMonth();
-  const day = d.getUTCDate();
-  const dayStart = new Date(Date.UTC(y, m, day, 0, 0, 0, 0));
-  const nextDayStart = new Date(Date.UTC(y, m, day + 1, 0, 0, 0, 0));
+/** Calendar day in the runtime timezone (server local), expressed as UTC ISO bounds for `start_time_utc`. */
+function localCalendarDayBounds(reference: Date): {
+  startIso: string;
+  endIso: string;
+} {
+  const today = new Date(reference);
+  const startOfDay = new Date(today);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(today);
+  endOfDay.setHours(23, 59, 59, 999);
   return {
-    dayStartIso: dayStart.toISOString(),
-    nextDayStartIso: nextDayStart.toISOString(),
+    startIso: startOfDay.toISOString(),
+    endIso: endOfDay.toISOString(),
   };
 }
 
@@ -229,10 +231,13 @@ export async function loadSalonOwnerDashboard(
     kind === "demo_cookie"
       ? createServiceRoleClient()
       : await createClient();
-  const { dayStartIso, nextDayStartIso } = utcDayBounds(new Date());
-  const upcomingEnd = new Date(nextDayStartIso);
-  upcomingEnd.setUTCDate(upcomingEnd.getUTCDate() + 7);
-  const upcomingEndIso = upcomingEnd.toISOString();
+  const { startIso: todayStartIso, endIso: todayEndIso } =
+    localCalendarDayBounds(new Date());
+
+  const upcomingWindowEnd = new Date(todayEndIso);
+  upcomingWindowEnd.setDate(upcomingWindowEnd.getDate() + 7);
+  upcomingWindowEnd.setHours(23, 59, 59, 999);
+  const upcomingEndIso = upcomingWindowEnd.toISOString();
 
   const selectCols =
     "id, client_name, client_phone, start_time_utc, status, services ( name, price_cents )";
@@ -241,8 +246,8 @@ export async function loadSalonOwnerDashboard(
     .from("bookings")
     .select(selectCols)
     .eq("salon_id", salon.id)
-    .gte("start_time_utc", dayStartIso)
-    .lt("start_time_utc", nextDayStartIso)
+    .gte("start_time_utc", todayStartIso)
+    .lte("start_time_utc", todayEndIso)
     .order("start_time_utc", { ascending: true });
 
   if (todayErr) {
@@ -255,8 +260,8 @@ export async function loadSalonOwnerDashboard(
     .select(selectCols)
     .eq("salon_id", salon.id)
     .eq("status", "confirmed")
-    .gte("start_time_utc", nextDayStartIso)
-    .lt("start_time_utc", upcomingEndIso)
+    .gt("start_time_utc", todayEndIso)
+    .lte("start_time_utc", upcomingEndIso)
     .order("start_time_utc", { ascending: true });
 
   if (upErr) {
@@ -270,6 +275,8 @@ export async function loadSalonOwnerDashboard(
   const upcoming = (upcomingRows ?? []).map((r) =>
     mapBookingRow(r as unknown as BookingRowDb),
   );
+
+  console.log("bookings count:", today.length);
 
   const pending = today.filter((b) => b.status === "pending").length;
   const confirmed = today.filter((b) => b.status === "confirmed").length;
