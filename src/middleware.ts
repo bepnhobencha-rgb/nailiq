@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { NAILQ_DEMO_SLUG_COOKIE } from "@/shared/lib/demoDashboardCookie";
@@ -44,6 +45,8 @@ export async function middleware(request: NextRequest) {
   let isDemoAccess = false;
   if (dashSlugMatch) {
     const pathSlug = decodeURIComponent(dashSlugMatch[1]);
+    Sentry.getCurrentScope().setTag("salon.slug", pathSlug);
+    Sentry.getCurrentScope().setTag("surface", "dashboard");
     const demoSlug = request.cookies.get(NAILQ_DEMO_SLUG_COOKIE)?.value;
     isDemoAccess = Boolean(demoSlug && demoSlug === pathSlug);
     if (process.env.NODE_ENV === "development") {

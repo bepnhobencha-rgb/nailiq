@@ -8,6 +8,7 @@ import { BookingReturningGreeting } from "@/components/booking/BookingReturningG
 import { BookingUrgency } from "@/components/booking/BookingUrgency";
 import { BookingSalonHero } from "@/components/booking/BookingSalonHero";
 import { SalonBookingSkeleton } from "@/components/booking/SalonBookingSkeleton";
+import { BookingFlowErrorBoundary } from "@/components/booking/BookingFlowErrorBoundary";
 import { resolvePublicBookingPage } from "@/shared/booking/resolvePublicBookingPage";
 import { bookingEn } from "@/shared/i18n/booking/en";
 import { BookingDocumentEn } from "./BookingDocumentEn";
@@ -130,13 +131,18 @@ async function PublicBookingRouteBody({
             </p>
             <BookingReturningGreeting t={t} />
             <BookingUrgency t={t} />
-            <BookingFlow
-              t={t}
+            <BookingFlowErrorBoundary
               shopSlug={normalizedSlug}
-              services={load.services}
-              staff={load.staff}
               salon={load.salon}
-            />
+            >
+              <BookingFlow
+                t={t}
+                shopSlug={normalizedSlug}
+                services={load.services}
+                staff={load.staff}
+                salon={load.salon}
+              />
+            </BookingFlowErrorBoundary>
           </div>
         </main>
       </div>

@@ -244,7 +244,7 @@ export async function loadSalonOwnerDashboard(
   to.setHours(23, 59, 59, 999);
 
   const selectCols =
-    "id, client_name, client_phone, client_notes, start_time_utc, status, price_cents, services ( name, price_cents ), staff ( name )";
+    "id, client_name, client_phone, client_notes, start_time_utc, status, price_cents, services!bookings_service_id_fkey ( name, price_cents ), staff ( name )";
 
   const { data: bookingRows, error: bookingsErr } = await supabase
     .from("bookings")

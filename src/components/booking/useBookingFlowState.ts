@@ -40,6 +40,7 @@ import {
   saveBookingGuestProfile,
 } from "@/shared/booking/bookingClientProfile";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
+import * as Sentry from "@sentry/nextjs";
 
 export type BookingFlowStep =
   | "service"
@@ -488,6 +489,16 @@ export function useBookingFlowState(
         setError(t.submitError);
         setSelectedAddonId(null);
       } else {
+        Sentry.captureException(
+          err instanceof Error ? err : new Error(String(err)),
+          {
+            tags: {
+              "salon.slug": shopSlug,
+              "salon.id": salon.id,
+              "booking.flow": "confirm_submit",
+            },
+          },
+        );
         setError(t.submitError);
       }
     } finally {
@@ -504,6 +515,7 @@ export function useBookingFlowState(
     staffId,
     timeSlot,
     shopSlug,
+    salon.id,
     t.contactRequiredError,
     t.invalidPhoneError,
     t.outsideHoursError,

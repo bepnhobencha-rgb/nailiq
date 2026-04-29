@@ -28,24 +28,28 @@ type InitialPayload = Extract<LoadSalonDashboardResult, { ok: true }>;
 
 export function SalonOwnerDashboard({
   slug,
-  initial,
+  initialResult,
 }: {
   slug: string;
-  initial: InitialPayload;
+  initialResult: LoadSalonDashboardResult;
 }) {
   const router = useRouter();
   const { language, setLanguage } = useUserLanguage();
   const t = useMemo(() => getUserMessages(language).salonDashboard, [language]);
 
-  const [data, setData] = useState<InitialPayload>(initial);
-  const [loadError, setLoadError] = useState(false);
+  const [data, setData] = useState<InitialPayload | null>(() =>
+    initialResult.ok ? initialResult : null,
+  );
+  const [loadError, setLoadError] = useState(
+    () => !initialResult.ok && initialResult.error === "server_error",
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(() => Date.now());
   const [manualRefreshing, setManualRefreshing] = useState(false);
 
-  const showRecoveryEmailBanner = !data.salon.email?.trim();
+  const showRecoveryEmailBanner = !data?.salon.email?.trim();
 
   const bookingPath = `/${encodeURIComponent(slug)}`;
   const bookingAbsoluteUrl = useMemo(() => {
@@ -54,7 +58,6 @@ export function SalonOwnerDashboard({
   }, [bookingPath]);
 
   const refresh = useCallback(async () => {
-    setLoadError(false);
     setIsLoading(true);
     const res = await loadSalonOwnerDashboard(slug);
     setIsLoading(false);
@@ -66,30 +69,40 @@ export function SalonOwnerDashboard({
       setLoadError(true);
       return;
     }
+    setLoadError(false);
     setData(res);
     setLastUpdatedAt(Date.now());
   }, [router, slug]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- server `initial` from RSC refresh / navigation
-    setData(initial);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- server `initialResult` from RSC refresh / navigation
+    if (initialResult.ok) {
+      setData(initialResult);
+      setLoadError(false);
+    } else if (initialResult.error === "server_error") {
+      setData(null);
+      setLoadError(true);
+    }
     setLastUpdatedAt(Date.now());
     setManualRefreshing(false);
-  }, [initial]);
+  }, [initialResult]);
 
   useEffect(() => {
-    if (!initial.demoMode || typeof window === "undefined") return;
+    if (!initialResult.ok || !initialResult.demoMode || typeof window === "undefined")
+      return;
     window.sessionStorage.removeItem(REG_FLOW_OWNER_RETURNING);
-  }, [initial.demoMode]);
+  }, [initialResult]);
 
   useEffect(() => {
+    if (!data) return;
     const id = window.setInterval(() => {
       void refresh();
     }, 30_000);
     return () => window.clearInterval(id);
-  }, [refresh]);
+  }, [data, refresh]);
 
   useEffect(() => {
+    if (!data) return;
     const salonId = data.salon.id;
     const supabase = createClient();
     const filter = `salon_id=eq.${salonId}`;
@@ -123,15 +136,16 @@ export function SalonOwnerDashboard({
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [data.salon.id, refresh]);
+  }, [data, refresh]);
 
-  const viewData: SalonOwnerDashboardViewPayload = useMemo(() => {
+  const viewData: SalonOwnerDashboardViewPayload | null = useMemo(() => {
+    if (!data) return null;
     const split = splitSalonDashboardBookings(data.allBookings);
     return { ...data, ...split };
   }, [data]);
 
   const upcomingByDay = useMemo(() => {
-    if (!viewData.upcoming.length) return [];
+    if (!viewData || !viewData.upcoming.length) return [];
     const locale = language === "vi" ? "vi-VN" : "en-US";
     const map = new Map<
       string,
@@ -159,7 +173,7 @@ export function SalonOwnerDashboard({
           new Date(b[1].items[0].start_time_utc).getTime(),
       )
       .map(([, v]) => v);
-  }, [viewData.upcoming, language]);
+  }, [viewData, language]);
 
   const onCopy = useCallback(async () => {
     try {
@@ -184,24 +198,42 @@ export function SalonOwnerDashboard({
     [refresh, slug],
   );
 
-  if (loadError && !isLoading) {
-    return (
-      <ResponsiveShell>
-        <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pt-2">
-          <p className="text-center text-base text-nq-error">{t.loadError}</p>
-          <Button
-            type="button"
-            variant="secondary"
-            className="mt-4 w-full min-h-11"
-            onClick={() => {
-              void refresh();
-            }}
-          >
-            {language === "vi" ? "Thử lại" : "Try again"}
-          </Button>
-        </MobileStack>
-      </ResponsiveShell>
-    );
+  if (loadError) {
+    if (!data && isLoading) {
+      return (
+        <ResponsiveShell>
+          <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] flex items-center justify-center pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pt-2">
+            <p className="text-center text-base text-nq-muted">
+              {language === "vi" ? "Đang tải…" : "Loading…"}
+            </p>
+          </MobileStack>
+        </ResponsiveShell>
+      );
+    }
+    if (!data || !isLoading) {
+      return (
+        <ResponsiveShell>
+          <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pt-2">
+            <p className="text-center text-base text-nq-error">{t.loadError}</p>
+            <Button
+              type="button"
+              variant="secondary"
+              className="mt-4 w-full min-h-11"
+              disabled={isLoading}
+              onClick={() => {
+                void refresh();
+              }}
+            >
+              {language === "vi" ? "Thử lại" : "Try again"}
+            </Button>
+          </MobileStack>
+        </ResponsiveShell>
+      );
+    }
+  }
+
+  if (!data || !viewData) {
+    return null;
   }
 
   return (
@@ -215,13 +247,17 @@ export function SalonOwnerDashboard({
                 /* dismiss handled in banner localStorage + hidden state */
               }}
               onEmailAdded={(added) => {
-                setData((prev) => ({
-                  ...prev,
-                  salon: {
-                    ...prev.salon,
-                    email: added,
-                  },
-                }));
+                setData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        salon: {
+                          ...prev.salon,
+                          email: added,
+                        },
+                      }
+                    : prev,
+                );
               }}
             />
           ) : null

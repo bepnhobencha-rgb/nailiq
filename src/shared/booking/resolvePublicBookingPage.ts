@@ -10,6 +10,7 @@ import {
   validatePublicBookingSlug,
 } from "@/shared/booking/normalizePublicBookingSlug";
 import { createClient } from "@/shared/lib/supabase/server";
+import { setPublicBookingSalonTags } from "@/shared/observability/salonSentry";
 
 /** Paths that must not resolve as salon slugs (overlap static routes or reserved names). */
 export const RESERVED_BOOKING_SLUGS = new Set([
@@ -94,6 +95,12 @@ export const resolvePublicBookingPage = cache(
         to: `/${load.canonicalSlug}`,
       };
     }
+
+    setPublicBookingSalonTags({
+      salonId: load.salon.id,
+      salonSlug: load.canonicalSlug,
+      salonName: load.salon.name,
+    });
 
     // 8. return OK
     return {

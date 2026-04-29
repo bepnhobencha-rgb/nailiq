@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { assertSlotWithinOpeningHours } from "@/shared/booking/assertSlotWithinOpeningHours";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
@@ -82,6 +83,10 @@ export async function submitPublicBooking(
     addonServiceId = null,
   } = params;
 
+  const bookingScope = Sentry.getCurrentScope();
+  bookingScope.setTag("booking.flow", "submit_public_booking");
+  bookingScope.setTag("salon.slug", shopSlug);
+
   const phoneOk = validateGuestPhone(clientPhone);
   if (!phoneOk.ok) {
     throw new Error("invalid_phone");
@@ -96,6 +101,13 @@ export async function submitPublicBooking(
     .single();
 
   if (salonErr || !salon) throw new Error("salon_not_found");
+
+  bookingScope.setTag("salon.id", String(salon.id));
+  bookingScope.setContext("salon", {
+    id: String(salon.id),
+    slug: shopSlug,
+  });
+
   if (!salon.profile_complete) throw new Error("salon_not_live");
 
   const closedYmdSet = parseBookingClosedDateSet(
