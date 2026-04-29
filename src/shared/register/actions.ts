@@ -1,6 +1,11 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { cookies } from "next/headers";
+import {
+  NAILQ_DEMO_SLUG_COOKIE,
+  NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
+} from "@/shared/lib/demoDashboardCookie";
 import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -32,42 +37,32 @@ async function lookupSalonSlugForOwnerPhone(
 
   const { data: salon, error: salErr } = await admin
     .from("salons")
-    .select("id, slug")
+    .select("slug, salon_members!inner(user_id)")
     .eq("phone", normalizedDigits)
+    .limit(1)
     .maybeSingle();
 
   if (salErr) {
     console.error("[lookupSalonSlugForOwnerPhone] salons", salErr);
     return null;
   }
-  if (!salon?.id) return null;
 
-  const { count, error: mErr } = await admin
-    .from("salon_members")
-    .select("*", { count: "exact", head: true })
-    .eq("salon_id", salon.id);
-
-  if (mErr) {
-    console.error("[lookupSalonSlugForOwnerPhone] salon_members", mErr);
-    return null;
-  }
-  if ((count ?? 0) < 1) return null;
-
-  const slug = salon.slug?.trim();
-  return slug ? String(slug) : null;
+  const slug = salon?.slug != null ? String(salon.slug).trim() : "";
+  return slug || null;
 }
 
+/**
+ * Result of requesting a registration / sign-in OTP.
+ * - `returning.code` is only set in demo OTP mode (modal). Never returns slug before verify.
+ */
 export type SendRegisterOtpResult =
   | { success: false; error: string }
-  | {
-      success: true;
-      mode: "returning";
-      slug: string;
-      /** Present in demo OTP path only */
-      demoCode?: string;
-    }
-  | { success: true; mode: "demo"; code: string }
-  | { success: true; mode: "sms" };
+  | { success: true; mode: "new"; code?: string }
+  | { success: true; mode: "returning"; code?: string }
+  | { success: true; mode: "demo"; code: string };
+
+/** @alias SendRegisterOtpResult */
+export type SendOtpResult = SendRegisterOtpResult;
 
 export async function sendRegisterOtp(
   phoneRaw: string,
@@ -78,7 +73,7 @@ export async function sendRegisterOtp(
     return { success: false, error: INVALID_PHONE_MSG };
   }
 
-  const existingSlug = await lookupSalonSlugForOwnerPhone(phone);
+  const isReturningOwner = Boolean(await lookupSalonSlugForOwnerPhone(phone));
 
   if (isDemo) {
     try {
@@ -107,13 +102,8 @@ export async function sendRegisterOtp(
         return { success: false, error: "Could not send code. Try again." };
       }
 
-      if (existingSlug) {
-        return {
-          success: true,
-          mode: "returning",
-          slug: existingSlug,
-          demoCode: code,
-        };
+      if (isReturningOwner) {
+        return { success: true, mode: "returning", code };
       }
 
       return { success: true, mode: "demo", code };
@@ -145,11 +135,11 @@ export async function sendRegisterOtp(
       };
     }
 
-    if (existingSlug) {
-      return { success: true, mode: "returning", slug: existingSlug };
+    if (isReturningOwner) {
+      return { success: true, mode: "returning" };
     }
 
-    return { success: true, mode: "sms" };
+    return { success: true, mode: "new" };
   } catch (error) {
     console.error("[sendRegisterOtp]", error);
     return { success: false, error: "Could not send SMS. Try again." };
@@ -300,6 +290,23 @@ export async function verifyRegisterOtp(
   }
 
   await supabase.from("otps").delete().eq("id", latest.id);
+
+  const returningSlug = await lookupSalonSlugForOwnerPhone(phone);
+  if (returningSlug) {
+    const cookieStore = await cookies();
+    cookieStore.set(NAILQ_DEMO_SLUG_COOKIE, returningSlug, {
+      path: "/",
+      maxAge: NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    });
+    return {
+      ok: true,
+      completionToken: "",
+      returningOwnerSlug: returningSlug,
+    };
+  }
 
   const completionToken = randomUUID();
   const tokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();

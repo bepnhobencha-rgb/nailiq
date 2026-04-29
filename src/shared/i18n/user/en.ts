@@ -72,9 +72,9 @@ export const userEn: UserMessages = {
     returningOwnerHint:
       "Returning owner? Enter your number to sign back in.",
     welcomeBackAfterSend:
-      "Welcome back! Enter OTP to access your dashboard.",
+      "Welcome back! Enter the code to access your dashboard.",
     welcomeBackVerifySubtext:
-      "We sent a 6-digit code — enter it to finish signing in to your salon dashboard.",
+      "Welcome back! Enter the code to access your dashboard.",
     newDemoOtpBadgeNote:
       "DEMO MODE · OTP appears below.",
   },

@@ -19,9 +19,9 @@ export const userVi: UserMessages = {
     returningOwnerHint:
       "Đã là chủ tiệm? Nhập số điện thoại để đăng nhập lại.",
     welcomeBackAfterSend:
-      "Chào mừng trở lại! Nhập OTP để vào bảng điều khiển tiệm.",
+      "Chào mừng trở lại! Nhập mã để vào bảng điều khiển.",
     welcomeBackVerifySubtext:
-      "Đã gửi mã 6 số — nhập để hoàn tất đăng nhập vào bảng điều khiển.",
+      "Chào mừng trở lại! Nhập mã để vào bảng điều khiển.",
     newDemoOtpBadgeNote:
       "DEMO · Mã OTP hiển thị bên dưới.",
   },

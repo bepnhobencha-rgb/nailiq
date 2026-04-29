@@ -73,8 +73,8 @@ export function RegisterPageClient({ demoMode }: Props) {
         setPostSendTone(isReturning ? "returning" : "new");
 
         if (result.mode === "returning") {
-          if (result.demoCode) {
-            setDemoCode(result.demoCode);
+          if (result.code) {
+            setDemoCode(result.code);
             return;
           }
           router.push("/register/verify");
