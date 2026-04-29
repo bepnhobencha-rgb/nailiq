@@ -158,6 +158,7 @@ export function BookingFlowTimePanel({
                 <motion.button
                   key={slot}
                   type="button"
+                  data-testid="time-slot"
                   whileTap={{ scale: 0.99 }}
                   transition={{
                     type: "spring",

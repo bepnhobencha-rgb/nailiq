@@ -106,7 +106,10 @@ export function BookingFlowDonePanel({
   ]);
 
   return (
-    <div className="fade-in mt-10 w-full space-y-8">
+    <div
+      className="fade-in mt-10 w-full space-y-8"
+      data-testid="booking-success"
+    >
       <div className="flex flex-col items-center text-center">
         <div
           className="flex h-[5.25rem] w-[5.25rem] shrink-0 items-center justify-center rounded-full bg-nq-primary text-nq-bg ring-4 ring-nq-primary/25"

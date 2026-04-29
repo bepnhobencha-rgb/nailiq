@@ -72,6 +72,7 @@ export function BookingFlowStaffPanel({
       <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:mt-8 lg:grid-cols-3 lg:gap-6 lg:gap-y-7">
         <motion.button
           type="button"
+          data-testid="any-staff-option"
           role="radio"
           aria-checked={staffId === BOOKING_ANY_STAFF_ID}
           whileTap={{ scale: 0.99 }}
@@ -118,6 +119,7 @@ export function BookingFlowStaffPanel({
             <motion.button
               key={s.id}
               type="button"
+              data-testid="staff-item"
               role="radio"
               aria-checked={selected}
               whileTap={{ scale: 0.99 }}

@@ -13,7 +13,7 @@ import type {
 } from "@/shared/types";
 
 const SALON_DASHBOARD_SELECT =
-  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete, booking_closed_dates";
+  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete";
 
 type SalonRow = {
   id: string;

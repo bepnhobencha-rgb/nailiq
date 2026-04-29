@@ -61,6 +61,7 @@ export function BookingFlowServicePanel({
             <motion.button
               key={s.id}
               type="button"
+              data-testid="service-item"
               whileTap={{ scale: 0.99 }}
               transition={{
                 type: "spring",

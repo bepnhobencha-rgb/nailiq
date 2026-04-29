@@ -91,7 +91,7 @@ export async function submitPublicBooking(
 
   const { data: salon, error: salonErr } = await supabase
     .from("salons")
-    .select("id, profile_complete, opening_hours, booking_closed_dates")
+    .select("id, profile_complete, opening_hours")
     .eq("slug", shopSlug)
     .single();
 

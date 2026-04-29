@@ -2,7 +2,6 @@
 
 import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import {
   NAILQ_DEMO_SLUG_COOKIE,
   NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
@@ -364,7 +363,8 @@ export async function sendRegisterOtp(
 }
 
 export type VerifyRegisterOtpResult =
-  | { ok: true; completionToken: string }
+  | { ok: true; next: "setup"; completionToken: string }
+  | { ok: true; next: "dashboard"; slug: string }
   | { ok: false; reason: "invalid" | "expired" | "server_error" };
 
 export async function verifyRegisterOtp(
@@ -424,11 +424,13 @@ export async function verifyRegisterOtp(
       secure: process.env.NODE_ENV === "production",
     });
     if (registerFlowDebugEnabled()) {
-      console.log("verifyRegisterOtp returning owner → redirect", {
+      console.log("verifyRegisterOtp returning owner → dashboard", {
         returningOwnerSlug: returningSlug,
       });
     }
-    redirect(`/dashboard/${encodeURIComponent(returningSlug)}`);
+    // Return + client navigation so Set-Cookie from this action reliably reaches the browser
+    // before the next document request (redirect-in-action can race the cookie).
+    return { ok: true, next: "dashboard", slug: returningSlug };
   }
 
   const completionToken = randomUUID();
@@ -450,7 +452,7 @@ export async function verifyRegisterOtp(
     return { ok: false, reason: "server_error" };
   }
 
-  const result = { ok: true as const, completionToken };
+  const result = { ok: true as const, next: "setup" as const, completionToken };
   if (registerFlowDebugEnabled()) {
     console.log("verifyRegisterOtp result:", result);
     console.log("returningOwnerSlug:", null);

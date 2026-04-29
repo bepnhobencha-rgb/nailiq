@@ -155,7 +155,12 @@ export function VerifyPageClient({ demoMode }: Props) {
             window.sessionStorage.removeItem(REG_FLOW_OWNER_RETURNING);
           }
 
-          // Returning demo owner: verifyRegisterOtp sets cookie and redirect() — no client nav.
+          if (result.next === "dashboard") {
+            window.location.assign(
+              `/dashboard/${encodeURIComponent(result.slug)}`,
+            );
+            return;
+          }
 
           const ct = result.completionToken.trim();
           if (!ct) {

@@ -239,6 +239,8 @@ export function BookingFlowDatePanel({
               <button
                 key={date.toISOString()}
                 type="button"
+                data-testid={isToday ? "date-today" : "date-day"}
+                data-past={past ? "true" : undefined}
                 disabled={disabled}
                 aria-pressed={selected}
                 aria-label={`${labelDay} ${abbrev}${
