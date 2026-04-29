@@ -76,14 +76,12 @@ export async function completeSalonRegistration(
     }
 
     let slug: string;
-    let slugAdjusted: boolean;
     try {
       const picked = await pickAvailableSalonSlug(
         admin,
         slugifySalonName(name),
       );
       slug = picked.slug;
-      slugAdjusted = picked.slugAdjusted;
     } catch (e) {
       console.error("[completeSalonRegistration] demo slug pick", e);
       return { ok: false, error: "server_error" };
@@ -96,15 +94,17 @@ export async function completeSalonRegistration(
         name,
         phone,
       })
-      .select("id")
+      .select("id, slug")
       .single();
 
-    if (salonErr || !salonRow?.id) {
+    if (salonErr || !salonRow?.id || salonRow.slug == null) {
       console.error("[completeSalonRegistration] demo insert salon", salonErr);
       return { ok: false, error: "server_error" };
     }
 
     const salonId = salonRow.id as string;
+    const actualSlug = String(salonRow.slug);
+    const resolvedSlugAdjusted = actualSlug !== slugifySalonName(name.trim());
 
     const { error: svcErr } = await admin.from("services").insert({
       salon_id: salonId,
@@ -150,7 +150,7 @@ export async function completeSalonRegistration(
     await admin.from("register_completion_tokens").delete().eq("id", proof.id);
 
     const cookieStore = await cookies();
-    cookieStore.set(NAILQ_DEMO_SLUG_COOKIE, slug, {
+    cookieStore.set(NAILQ_DEMO_SLUG_COOKIE, actualSlug, {
       path: "/",
       maxAge: NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
       httpOnly: true,
@@ -158,7 +158,7 @@ export async function completeSalonRegistration(
       secure: process.env.NODE_ENV === "production",
     });
 
-    return { ok: true, slug, slugAdjusted };
+    return { ok: true, slug: actualSlug, slugAdjusted: resolvedSlugAdjusted };
   }
 
   let supabase;
@@ -247,14 +247,12 @@ export async function completeSalonRegistration(
   const phone = authDigits;
 
   let slug: string;
-  let slugAdjusted: boolean;
   try {
     const picked = await pickAvailableSalonSlug(
       admin,
       slugifySalonName(name),
     );
     slug = picked.slug;
-    slugAdjusted = picked.slugAdjusted;
   } catch (e) {
     console.error("FAILED before step 2 (slug pick)", e);
     return { ok: false, error: "server_error" };
@@ -269,15 +267,17 @@ export async function completeSalonRegistration(
       name,
       phone: phone || "",
     })
-    .select("id")
+    .select("id, slug")
     .single();
 
-  if (salonErr || !salonRow?.id) {
+  if (salonErr || !salonRow?.id || salonRow.slug == null) {
     console.error("FAILED step 2", salonErr ?? new Error("no salon id"));
     return { ok: false, error: "server_error" };
   }
 
   const salonId = salonRow.id as string;
+  const actualSlug = String(salonRow.slug);
+  const resolvedSlugAdjusted = actualSlug !== slugifySalonName(name.trim());
 
   console.log("Step 3: insert services");
 
@@ -331,5 +331,9 @@ export async function completeSalonRegistration(
 
   await admin.from("register_completion_tokens").delete().eq("id", proof.id);
 
-  return { ok: true, slug, slugAdjusted };
+  return {
+    ok: true,
+    slug: actualSlug,
+    slugAdjusted: resolvedSlugAdjusted,
+  };
 }
