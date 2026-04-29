@@ -2,7 +2,6 @@
 
 import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import {
   NAILQ_DEMO_SLUG_COOKIE,
   NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
@@ -364,13 +363,8 @@ export async function sendRegisterOtp(
 }
 
 export type VerifyRegisterOtpResult =
-  | {
-      ok: true;
-      /** Present for net-new salon registration (used by `/register/setup`). */
-      completionToken: string;
-      /** When this phone already completed signup, navigate here and skip setup. */
-      returningOwnerSlug?: string;
-    }
+  | { ok: true; completionToken: string }
+  | { ok: true; returningOwnerSlug: string }
   | { ok: false; reason: "invalid" | "expired" | "server_error" };
 
 export async function verifyRegisterOtp(
@@ -429,7 +423,12 @@ export async function verifyRegisterOtp(
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
     });
-    redirect(`/dashboard/${encodeURIComponent(returningSlug)}`);
+    const result = { ok: true as const, returningOwnerSlug: returningSlug };
+    if (registerFlowDebugEnabled()) {
+      console.log("verifyRegisterOtp result:", result);
+      console.log("returningOwnerSlug:", returningSlug);
+    }
+    return result;
   }
 
   const completionToken = randomUUID();
@@ -451,5 +450,10 @@ export async function verifyRegisterOtp(
     return { ok: false, reason: "server_error" };
   }
 
-  return { ok: true, completionToken };
+  const result = { ok: true as const, completionToken };
+  if (registerFlowDebugEnabled()) {
+    console.log("verifyRegisterOtp result:", result);
+    console.log("returningOwnerSlug:", null);
+  }
+  return result;
 }

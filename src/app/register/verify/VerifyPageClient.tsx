@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { isRedirectError } from "next/dist/client/components/redirect-error";
 import {
   useCallback,
   useEffect,
@@ -137,43 +136,42 @@ export function VerifyPageClient({ demoMode }: Props) {
       setError(null);
       startTransition(async () => {
         if (demoMode) {
-          try {
-            const result = await verifyRegisterOtp(phoneDigits, codeJoined);
+          const result = await verifyRegisterOtp(phoneDigits, codeJoined);
 
-            if (!result.ok) {
-              if (result.reason === "expired") {
-                setError("Code expired — request a new one.");
-              } else if (result.reason === "server_error") {
-                setError(
-                  "We could not verify your code. Check SUPABASE_SERVICE_ROLE_KEY and migrations.",
-                );
-              } else {
-                setError("Invalid code.");
-              }
-              return;
+          if (!result.ok) {
+            if (result.reason === "expired") {
+              setError("Code expired — request a new one.");
+            } else if (result.reason === "server_error") {
+              setError(
+                "We could not verify your code. Check SUPABASE_SERVICE_ROLE_KEY and migrations.",
+              );
+            } else {
+              setError("Invalid code.");
             }
-
-            const ct = result.completionToken?.trim();
-
-            if (typeof window !== "undefined") {
-              window.sessionStorage.removeItem(REG_FLOW_OWNER_RETURNING);
-            }
-
-            if (!ct) {
-              setError("Missing completion token. Try again.");
-              return;
-            }
-            if (typeof window !== "undefined") {
-              window.sessionStorage.setItem(REG_COMPLETION_TOKEN_KEY, ct);
-            }
-
-            window.location.assign("/register/setup");
-          } catch (err) {
-            if (isRedirectError(err)) {
-              return;
-            }
-            throw err;
+            return;
           }
+
+          if (typeof window !== "undefined") {
+            window.sessionStorage.removeItem(REG_FLOW_OWNER_RETURNING);
+          }
+
+          if ("returningOwnerSlug" in result) {
+            router.push(
+              `/dashboard/${encodeURIComponent(result.returningOwnerSlug)}`,
+            );
+            return;
+          }
+
+          const ct = result.completionToken.trim();
+          if (!ct) {
+            setError("Missing completion token. Try again.");
+            return;
+          }
+          if (typeof window !== "undefined") {
+            window.sessionStorage.setItem(REG_COMPLETION_TOKEN_KEY, ct);
+          }
+
+          window.location.assign("/register/setup");
           return;
         }
 
