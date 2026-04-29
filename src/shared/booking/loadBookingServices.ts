@@ -1,4 +1,7 @@
 import type { BookingServiceItem } from "@/shared/booking/catalog";
+import { formatGuestPriceUsd } from "@/shared/booking/formatBookingPrice";
+import { getSalonBySlug } from "@/shared/booking/getSalonBySlug";
+import { normalizePublicBookingSlug } from "@/shared/booking/normalizePublicBookingSlug";
 import { createClient } from "@/shared/lib/supabase/server";
 
 export type BookingStaffItem = {
@@ -11,9 +14,17 @@ export type BookingSalonMeta = {
   id: string;
   name: string;
   opening_hours: unknown | null;
+  /** JSONB array of YYYY-MM-DD (holidays / exceptions). */
+  booking_closed_dates: unknown | null;
+  /** Flowchart: salon must be “live” (Phase 2 checklist complete). */
+  acceptingBookings: boolean;
+  /** Public contact for “manage booking” (call to reschedule). */
+  salonPhone: string | null;
 };
 
 export type BookingLoadData = {
+  /** Exact `salons.slug` from DB — pass to BookingFlow/submit lookups (URLs may fuzzy-match). */
+  canonicalSlug: string;
   services: BookingServiceItem[];
   staff: BookingStaffItem[];
   salon: BookingSalonMeta;
@@ -29,27 +40,30 @@ export type BookingLoadData = {
 export async function loadBookingServicesForSalonSlug(
   shopSlug: string,
 ): Promise<BookingLoadData | null> {
+  const normalized = normalizePublicBookingSlug(shopSlug);
   const supabase = await createClient();
 
-  const { data: salon, error: salonErr } = await supabase
-    .from("salons")
-    .select("id, name, opening_hours")
-    .eq("slug", shopSlug)
-    .maybeSingle();
+  const { salon, error: salonErr } = await getSalonBySlug(supabase, normalized);
 
   if (salonErr) {
-    console.error("loadBookingServices error:", salonErr);
+    console.error("[PUBLIC_BOOKING] loadBookingServices salon error:", salonErr);
     return null;
   }
   if (!salon) {
     return null;
   }
 
-  const salonId = salon.id as string;
+  const canonicalSlug = String((salon as { slug?: string }).slug ?? "").trim();
+  if (!canonicalSlug) {
+    return null;
+  }
+
+  const salonId = String(salon.id ?? "");
+  if (!salonId) return null;
 
   const { data: rows, error: servicesErr } = await supabase
     .from("services")
-    .select("id, name, duration_minutes, buffer_minutes")
+    .select("id, name, duration_minutes, buffer_minutes, price_cents")
     .eq("salon_id", salonId)
     .order("name", { ascending: true });
 
@@ -71,13 +85,20 @@ export async function loadBookingServicesForSalonSlug(
     const duration = Number(r.duration_minutes) || 0;
     const buffer = Number(r.buffer_minutes) || 0;
     const totalMinutes = duration + buffer;
+    const priceCentsRaw = r.price_cents;
+    const priceCents =
+      priceCentsRaw != null && Number.isFinite(Number(priceCentsRaw))
+        ? Math.round(Number(priceCentsRaw))
+        : null;
 
     return {
       id: r.id as string,
       name: r.name as string,
+      durationMinutes: duration,
+      bufferMinutes: buffer,
       totalMinutes,
-      /** Wire `price_cents` (or similar) in select + map when surfaced on tiles. */
-      priceDisplay: null as string | null,
+      priceCents,
+      priceDisplay: formatGuestPriceUsd(priceCents),
     };
   });
 
@@ -88,12 +109,23 @@ export async function loadBookingServicesForSalonSlug(
   }));
 
   return {
+    canonicalSlug,
     services,
     staff,
     salon: {
       id: salonId,
       name: String((salon as { name?: string }).name ?? ""),
       opening_hours: (salon as { opening_hours?: unknown }).opening_hours ?? null,
+      booking_closed_dates:
+        (salon as { booking_closed_dates?: unknown }).booking_closed_dates ??
+        null,
+      acceptingBookings: !!(salon as { profile_complete?: unknown })
+        .profile_complete,
+      salonPhone: (() => {
+        const p = (salon as { salon_phone?: unknown }).salon_phone;
+        const s = typeof p === "string" ? p.trim() : "";
+        return s.length > 0 ? s : null;
+      })(),
     },
   };
 }

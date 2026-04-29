@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { BookingFlow } from "@/components/booking/BookingFlow";
+import { SalonBookingPaused } from "@/components/booking/SalonBookingPaused";
+import { BookingReturningGreeting } from "@/components/booking/BookingReturningGreeting";
+import { BookingUrgency } from "@/components/booking/BookingUrgency";
 import { BookingSalonHero } from "@/components/booking/BookingSalonHero";
 import { loadBookingServicesForSalonSlug } from "@/shared/booking/loadBookingServices";
 import { bookingEn } from "@/shared/i18n/booking/en";
-import { BookingDocumentEn } from "./BookingDocumentEn";
+import { BookingDocumentEn } from "@/app/[slug]/BookingDocumentEn";
 
 /** Soft ambient layer behind split layout (`lg:`); matches hero imagery tone. */
 const DESKTOP_BOOKING_AMBIENT_SRC =
@@ -44,6 +47,17 @@ export default async function ShopBookingPage({ params }: ShopPageProps) {
 
   const shopLabel = decodeShopSegment(shop);
 
+  if (!load.salon.acceptingBookings) {
+    return (
+      <>
+        <BookingDocumentEn />
+        <div className="relative min-h-dvh px-4 py-10 pb-safe sm:px-6 lg:px-8">
+          <SalonBookingPaused shopLabel={shopLabel} t={t} />
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <BookingDocumentEn />
@@ -75,9 +89,11 @@ export default async function ShopBookingPage({ params }: ShopPageProps) {
             <p className="mt-2 text-sm text-nq-muted sm:text-base lg:mt-3 lg:text-[17px] lg:leading-relaxed">
               {t.pageSubtitle}—{shopLabel}
             </p>
+            <BookingReturningGreeting t={t} />
+            <BookingUrgency t={t} />
             <BookingFlow
               t={t}
-              shopSlug={shop}
+              shopSlug={load.canonicalSlug}
               services={load.services}
               staff={load.staff}
               salon={load.salon}
