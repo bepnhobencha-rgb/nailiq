@@ -2,9 +2,22 @@
 export const REGISTER_PHONE_MIN_DIGITS = 8;
 export const REGISTER_PHONE_MAX_DIGITS = 15;
 
-/** Digits-only phone for registration OTP (client + server). */
+/**
+ * Canonical digit string for registration, `salons.phone`, OTP keys, tokens.
+ *
+ * - Strips non-digits.
+ * - NANP numbers (often entered as 10 digits without leading country code): prepend `1`
+ *   when the stripped string matches NXX‑NXX‑XXXX (first digit `2–9`).
+ * - Otherwise unchanged (supports country codes such as Vietnam `849…`).
+ *
+ * Matches Supabase Phone auth / Twilio semantics for `user.phone` (~E.164 without `+`).
+ */
 export function normalizeRegisterPhone(raw: string): string {
-  return raw.replace(/\D/g, "");
+  const d = raw.replace(/\D/g, "");
+  if (d.length === 10 && /^[2-9]\d{9}$/.test(d)) {
+    return `1${d}`;
+  }
+  return d;
 }
 
 /** Same rule everywhere so client and server never disagree. */
