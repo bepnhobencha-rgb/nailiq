@@ -126,9 +126,18 @@ export function useBookingFlowState(
       setStepDir(1);
       setStep("done");
     } catch (err) {
-      setError(
-        err instanceof BookingConflictError ? t.slotTakenError : t.submitError,
-      );
+      if (err instanceof BookingConflictError) {
+        setError(t.slotTakenError);
+        setStep("time");
+      } else if (
+        err instanceof Error &&
+        err.message === "cannot_book_past"
+      ) {
+        setError(t.pastTimeError);
+        setStep("time");
+      } else {
+        setError(t.submitError);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -138,6 +147,7 @@ export function useBookingFlowState(
     serviceId,
     timeSlot,
     shopSlug,
+    t.pastTimeError,
     t.slotTakenError,
     t.submitError,
   ]);

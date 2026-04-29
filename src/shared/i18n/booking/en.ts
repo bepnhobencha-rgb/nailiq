@@ -34,6 +34,8 @@ export const bookingEn = {
   clientPhoneLabel: "Phone number",
   slotTakenError:
     "That time was just booked. Please pick another slot and try again.",
+  pastTimeError:
+    "This time has already passed. Please select a future time.",
   /** Right column when `totalMinutes` from DB is 0 */
   serviceDurationFlexible: "Flexible",
   /** Minute suffix on service tiles, e.g. "45 min" */

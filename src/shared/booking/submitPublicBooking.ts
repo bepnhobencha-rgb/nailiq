@@ -13,6 +13,7 @@ export type BookingResult = {
   serviceName: string;
   startTimeUtc: string;
   status: "pending";
+  price_cents: number;
 };
 
 export class BookingConflictError extends Error {
@@ -71,7 +72,9 @@ export async function submitPublicBooking(
 
   const { data: service, error: serviceErr } = await supabase
     .from("services")
-    .select("id, name, duration_minutes, buffer_minutes")
+    .select(
+      "id, name, duration_minutes, buffer_minutes, price_cents",
+    )
     .eq("id", serviceId)
     .eq("salon_id", salon.id)
     .single();
@@ -89,10 +92,20 @@ export async function submitPublicBooking(
 
   const dateYmd = localDateYmd(new Date());
   const startLocal = parseTimeSlotOnDate(timeSlot, dateYmd);
+
+  const now = new Date();
+  const bufferMs = 15 * 60 * 1000;
+  if (startLocal.getTime() < now.getTime() + bufferMs) {
+    throw new Error("cannot_book_past");
+  }
+
   const durationMin =
     (Number(service.duration_minutes) || 0) +
     (Number(service.buffer_minutes) || 0);
   const endLocal = new Date(startLocal.getTime() + durationMin * 60_000);
+
+  const priceSnapshot =
+    service.price_cents != null ? Number(service.price_cents) : null;
 
   const insertPayload = {
     salon_id: salon.id,
@@ -103,6 +116,7 @@ export async function submitPublicBooking(
     start_time_utc: startLocal.toISOString(),
     end_time_utc: endLocal.toISOString(),
     status: "pending" as const,
+    price_cents: priceSnapshot,
   };
 
   /** Prefer RPC (SECURITY DEFINER); falls back to INSERT when RPC not deployed (PGRST202). */
@@ -117,6 +131,7 @@ export async function submitPublicBooking(
       p_start_time_utc: insertPayload.start_time_utc,
       p_end_time_utc: insertPayload.end_time_utc,
       p_status: insertPayload.status,
+      p_price_cents: insertPayload.price_cents,
     },
   );
 
@@ -143,11 +158,13 @@ export async function submitPublicBooking(
 
     if (insertErr) {
       if (insertErr.code === "23505") throw new BookingConflictError();
+      if (insertErr.code === "23P01") throw new BookingConflictError();
       throw new Error(insertErr.message);
     }
   } else if (!bookingId) {
     if (rpcErr) {
       if (rpcErr.code === "23505") throw new BookingConflictError();
+      if (rpcErr.code === "23P01") throw new BookingConflictError();
       throw new Error(rpcErr.message);
     }
     throw new Error("booking_rpc_empty");
@@ -158,5 +175,6 @@ export async function submitPublicBooking(
     serviceName: service.name,
     startTimeUtc: startLocal.toISOString(),
     status: "pending",
+    price_cents: priceSnapshot ?? 0,
   };
 }

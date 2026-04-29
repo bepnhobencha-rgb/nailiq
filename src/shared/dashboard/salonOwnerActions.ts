@@ -140,6 +140,7 @@ type BookingRowDb = {
   client_phone: string;
   start_time_utc: string;
   status: string;
+  price_cents: number | null;
   services: ServiceJoinRow | ServiceJoinRow[] | null;
 };
 
@@ -157,6 +158,8 @@ function mapBookingRow(row: BookingRowDb): SalonDashboardBooking {
       ? status
       : "pending";
   const svc = serviceFromJoin(row.services);
+  const price =
+    row.price_cents ?? svc?.price_cents ?? 0;
   return {
     id: row.id,
     client_name: row.client_name,
@@ -164,7 +167,7 @@ function mapBookingRow(row: BookingRowDb): SalonDashboardBooking {
     start_time_utc: row.start_time_utc,
     status: safeStatus,
     service_name: svc?.name ?? "—",
-    price_cents: Number(svc?.price_cents ?? 0),
+    price_cents: Number(price),
   };
 }
 
@@ -217,7 +220,7 @@ export async function loadSalonOwnerDashboard(
   to.setHours(23, 59, 59, 999);
 
   const selectCols =
-    "id, client_name, client_phone, start_time_utc, status, services ( name, price_cents )";
+    "id, client_name, client_phone, start_time_utc, status, price_cents, services ( name, price_cents )";
 
   const { data: bookingRows, error: bookingsErr } = await supabase
     .from("bookings")
