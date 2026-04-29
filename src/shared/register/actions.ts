@@ -95,7 +95,13 @@ export async function sendRegisterOtp(
 }
 
 export type VerifyRegisterOtpResult =
-  | { ok: true; completionToken: string }
+  | {
+      ok: true;
+      /** Present for net-new salon registration (used by `/register/setup`). */
+      completionToken: string;
+      /** When this phone already completed signup, navigate here and skip setup. */
+      returningOwnerSlug?: string;
+    }
   | { ok: false; reason: "invalid" | "expired" | "server_error" };
 
 export async function verifyRegisterOtp(
@@ -131,6 +137,42 @@ export async function verifyRegisterOtp(
           return { ok: false, reason: "expired" };
         }
         return { ok: false, reason: "invalid" };
+      }
+
+      const {
+        data: { user: sessionUser },
+      } = await supabase.auth.getUser();
+
+      if (sessionUser) {
+        const { data: memRow, error: memErr } = await supabase
+          .from("salon_members")
+          .select("salon_id")
+          .eq("user_id", sessionUser.id)
+          .limit(1)
+          .maybeSingle();
+
+        if (memErr) {
+          console.error("[verifyRegisterOtp] salon_members", memErr);
+        } else if (memRow?.salon_id) {
+          const { data: salRow, error: salErr } = await supabase
+            .from("salons")
+            .select("slug")
+            .eq("id", memRow.salon_id)
+            .maybeSingle();
+
+          if (salErr) {
+            console.error("[verifyRegisterOtp] salons slug", salErr);
+          } else {
+            const slug = salRow?.slug?.trim();
+            if (slug) {
+              return {
+                ok: true,
+                completionToken: "",
+                returningOwnerSlug: String(slug),
+              };
+            }
+          }
+        }
       }
 
       const completionToken = randomUUID();

@@ -127,7 +127,15 @@ export function VerifyPageClient({ demoMode }: Props) {
           return;
         }
 
-        const ct = result.completionToken;
+        const ct = result.completionToken?.trim();
+
+        if (result.returningOwnerSlug) {
+          window.location.assign(
+            `/dashboard/${encodeURIComponent(result.returningOwnerSlug)}`,
+          );
+          return;
+        }
+
         if (!ct) {
           setError("Missing completion token. Try again.");
           return;
@@ -135,7 +143,9 @@ export function VerifyPageClient({ demoMode }: Props) {
         if (typeof window !== "undefined") {
           window.sessionStorage.setItem(REG_COMPLETION_TOKEN_KEY, ct);
         }
-        router.push("/register/setup");
+
+        /* Full page navigation so SSR on `/register/setup` sees the new session cookie. */
+        window.location.assign("/register/setup");
       });
     },
     [codeJoined, phoneDigits, router],
