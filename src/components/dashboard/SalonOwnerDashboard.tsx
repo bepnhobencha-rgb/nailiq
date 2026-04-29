@@ -20,6 +20,7 @@ import {
   type SalonDashboardBooking,
 } from "@/shared/dashboard/salonOwnerActions";
 import { getUserMessages } from "@/shared/i18n/user";
+import { REG_FLOW_OWNER_RETURNING } from "@/shared/lib/registerSessionKeys";
 import { getSiteUrlForClient } from "@/shared/lib/siteUrlClient";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
@@ -75,6 +76,11 @@ export function SalonOwnerDashboard({
     setLastUpdatedAt(Date.now());
     setManualRefreshing(false);
   }, [initial]);
+
+  useEffect(() => {
+    if (!initial.demoMode || typeof window === "undefined") return;
+    window.sessionStorage.removeItem(REG_FLOW_OWNER_RETURNING);
+  }, [initial.demoMode]);
 
   useEffect(() => {
     const id = window.setInterval(() => {

@@ -155,12 +155,7 @@ export function VerifyPageClient({ demoMode }: Props) {
             window.sessionStorage.removeItem(REG_FLOW_OWNER_RETURNING);
           }
 
-          if ("returningOwnerSlug" in result) {
-            router.push(
-              `/dashboard/${encodeURIComponent(result.returningOwnerSlug)}`,
-            );
-            return;
-          }
+          // Returning demo owner: verifyRegisterOtp sets cookie and redirect() — no client nav.
 
           const ct = result.completionToken.trim();
           if (!ct) {

@@ -46,6 +46,12 @@ export async function middleware(request: NextRequest) {
     const pathSlug = decodeURIComponent(dashSlugMatch[1]);
     const demoSlug = request.cookies.get(NAILQ_DEMO_SLUG_COOKIE)?.value;
     isDemoAccess = Boolean(demoSlug && demoSlug === pathSlug);
+    if (process.env.NODE_ENV === "development") {
+      console.log("[middleware] demoSlug:", demoSlug);
+      console.log("[middleware] pathSlug:", pathSlug);
+      console.log("[middleware] isDemoAccess:", isDemoAccess);
+      console.log("[middleware] user:", Boolean(user));
+    }
   }
 
   if (!user && isDemoAccess) {

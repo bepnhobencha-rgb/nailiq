@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import {
   NAILQ_DEMO_SLUG_COOKIE,
   NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
@@ -364,7 +365,6 @@ export async function sendRegisterOtp(
 
 export type VerifyRegisterOtpResult =
   | { ok: true; completionToken: string }
-  | { ok: true; returningOwnerSlug: string }
   | { ok: false; reason: "invalid" | "expired" | "server_error" };
 
 export async function verifyRegisterOtp(
@@ -423,12 +423,12 @@ export async function verifyRegisterOtp(
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
     });
-    const result = { ok: true as const, returningOwnerSlug: returningSlug };
     if (registerFlowDebugEnabled()) {
-      console.log("verifyRegisterOtp result:", result);
-      console.log("returningOwnerSlug:", returningSlug);
+      console.log("verifyRegisterOtp returning owner → redirect", {
+        returningOwnerSlug: returningSlug,
+      });
     }
-    return result;
+    redirect(`/dashboard/${encodeURIComponent(returningSlug)}`);
   }
 
   const completionToken = randomUUID();
