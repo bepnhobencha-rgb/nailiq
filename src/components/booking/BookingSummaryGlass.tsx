@@ -5,16 +5,25 @@ export function BookingSummaryGlass({
   t,
   shopLabel,
   serviceName,
+  staffSummary,
   timeLabel,
 }: {
   t: BookingMessages;
   shopLabel: string;
   serviceName: string;
+  staffSummary?: string | null;
   timeLabel: string;
 }) {
-  const rows = [
+  const rows: {
+    label: string;
+    value: string;
+    valueGold: boolean;
+  }[] = [
     { label: t.summaryShop, value: shopLabel, valueGold: false },
     { label: t.summaryService, value: serviceName, valueGold: false },
+    ...(staffSummary != null && staffSummary !== ""
+      ? [{ label: t.summaryStaff, value: staffSummary, valueGold: false }]
+      : []),
     { label: t.summaryTime, value: timeLabel, valueGold: true },
   ];
 

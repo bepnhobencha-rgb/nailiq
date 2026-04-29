@@ -44,6 +44,7 @@ export type UserMessages = {
     advanceStatus: string;
     client: string;
     service: string;
+    salonStaffLabel: string;
     phone: string;
     loading: string;
     /** Manual dashboard refresh */
@@ -106,6 +107,7 @@ export const userEn: UserMessages = {
     advanceStatus: "Update status",
     client: "Guest",
     service: "Service",
+    salonStaffLabel: "Staff",
     phone: "Phone",
     loading: "Loading…",
     refresh: "Refresh",

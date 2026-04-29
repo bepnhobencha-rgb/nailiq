@@ -10,7 +10,8 @@ export function BookingFlowDonePanel({
   t,
   shopLabel,
   service,
-  timeSlot,
+  staffName,
+  displayStartUtc,
   bookingId,
   onAddToCalendar,
   onBookAnother,
@@ -18,12 +19,29 @@ export function BookingFlowDonePanel({
   t: BookingMessages;
   shopLabel: string;
   service: BookingServiceItem | undefined;
-  timeSlot: string | null;
+  staffName: string;
+  displayStartUtc: string;
   bookingId: string;
   onAddToCalendar: () => void;
   onBookAnother: () => void;
 }) {
   const refLabel = formatNailiqBookingRef(bookingId);
+
+  const start = new Date(displayStartUtc);
+  const whenLabel = Number.isNaN(start.getTime())
+    ? "—"
+    : start.toLocaleString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+
+  const staffLine =
+    staffName.trim().length > 0
+      ? t.successStaffLine.replace("{name}", staffName.trim())
+      : "";
 
   return (
     <div className="fade-in mt-10 w-full space-y-8">
@@ -47,6 +65,11 @@ export function BookingFlowDonePanel({
         <h2 className="mt-5 text-2xl font-semibold tracking-tight text-nq-foreground sm:text-3xl lg:text-[2.0625rem]">
           {t.successHeading}
         </h2>
+        {staffLine ? (
+          <p className="mt-3 text-lg font-medium tracking-tight text-nq-primary">
+            {staffLine}
+          </p>
+        ) : null}
         <p className="mt-2 max-w-md text-base leading-relaxed text-nq-muted">
           {t.successSeeYouSoonBefore}
           <span className="font-medium text-nq-foreground">{shopLabel}</span>
@@ -78,14 +101,20 @@ export function BookingFlowDonePanel({
               </span>
             </div>
           ) : null}
-          {timeSlot ? (
-            <div className="flex items-baseline justify-between gap-4 text-[15px] sm:text-base">
-              <span className="font-semibold text-nq-muted">{t.summaryTime}</span>
-              <span className="min-w-0 shrink text-right font-semibold text-nq-primary">
-                {timeSlot}
+          {staffName.trim().length > 0 ? (
+            <div className="flex items-baseline justify-between gap-4 border-b border-white/[0.06] pb-3.5 text-[15px] sm:text-base">
+              <span className="font-semibold text-nq-muted">{t.summaryStaff}</span>
+              <span className="min-w-0 shrink text-right font-semibold text-nq-foreground">
+                {staffName.trim()}
               </span>
             </div>
           ) : null}
+          <div className="flex items-baseline justify-between gap-4 text-[15px] sm:text-base">
+            <span className="font-semibold text-nq-muted">{t.summaryTime}</span>
+            <span className="min-w-0 shrink text-right font-semibold text-nq-primary">
+              {whenLabel}
+            </span>
+          </div>
         </div>
         <p className="mt-5 border-t border-white/[0.08] pt-4 text-sm text-nq-muted">
           <span className="text-nq-muted">{t.bookingReferenceLabel}: </span>

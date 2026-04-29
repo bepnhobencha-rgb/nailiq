@@ -80,6 +80,11 @@ export function SalonOwnerTodayBookings({
               <p className="mt-1 text-base text-nq-muted">
                 {t.service}: {b.service_name}
               </p>
+              {b.staff_name ? (
+                <p className="mt-1 text-base text-nq-muted">
+                  {t.salonStaffLabel}: {b.staff_name}
+                </p>
+              ) : null}
               {nextBookingStatus(b.status) ? (
                 <Button
                   type="button"

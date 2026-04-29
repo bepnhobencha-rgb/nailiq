@@ -15,7 +15,8 @@ export function BookingFlowConfirmPanel({
   t,
   shopLabel,
   service,
-  timeSlot,
+  confirmTimeLabel,
+  staffSummaryLabel,
   clientName,
   clientPhone,
   error,
@@ -32,7 +33,8 @@ export function BookingFlowConfirmPanel({
   t: BookingMessages;
   shopLabel: string;
   service: BookingServiceItem;
-  timeSlot: string;
+  confirmTimeLabel: string;
+  staffSummaryLabel: string;
   clientName: string;
   clientPhone: string;
   error: string | null;
@@ -73,7 +75,8 @@ export function BookingFlowConfirmPanel({
             t={t}
             shopLabel={shopLabel}
             serviceName={service.name}
-            timeLabel={timeSlot}
+            staffSummary={staffSummaryLabel}
+            timeLabel={confirmTimeLabel}
           />
         </div>
 

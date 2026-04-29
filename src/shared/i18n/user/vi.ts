@@ -45,6 +45,7 @@ export const userVi: UserMessages = {
     advanceStatus: "Đổi trạng thái",
     client: "Khách",
     service: "Dịch vụ",
+    salonStaffLabel: "Thợ",
     phone: "Điện thoại",
     loading: "Đang tải…",
     refresh: "Làm mới",

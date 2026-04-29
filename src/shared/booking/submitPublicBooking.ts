@@ -1,9 +1,16 @@
+import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
+import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import { createClient } from "@/shared/lib/supabase/client";
 
 export type BookingParams = {
   shopSlug: string;
   serviceId: string;
+  /** Same localized labels produced by `getAvailableTimeSlots` (e.g. `"9:00 AM"`). */
   timeSlot: string;
+  /** Local calendar day `YYYY-MM-DD` for the appointment (guest timezone). */
+  bookingDateYmd: string;
+  /** `"any"` or the salon staff UUID. */
+  staffId: string;
   clientName: string;
   clientPhone: string;
 };
@@ -14,6 +21,7 @@ export type BookingResult = {
   startTimeUtc: string;
   status: "pending";
   price_cents: number;
+  staffName: string;
 };
 
 export class BookingConflictError extends Error {
@@ -28,6 +36,18 @@ function localDateYmd(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function localDayBoundsFromYmd(dateYmd: string): { start: Date; end: Date } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateYmd.trim());
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const start = new Date(y, mo - 1, d, 0, 0, 0, 0);
+  const end = new Date(y, mo - 1, d, 23, 59, 59, 999);
+  if (Number.isNaN(start.getTime())) return null;
+  return { start, end };
 }
 
 /**
@@ -56,10 +76,25 @@ function parseTimeSlotOnDate(timeSlot: string, dateYmd: string): Date {
   return parsed;
 }
 
+type OccRow = {
+  staff_id: string;
+  start_time_utc: string;
+  end_time_utc: string;
+};
+
 export async function submitPublicBooking(
   params: BookingParams,
 ): Promise<BookingResult> {
-  const { shopSlug, serviceId, timeSlot, clientName, clientPhone } = params;
+  const {
+    shopSlug,
+    serviceId,
+    timeSlot,
+    bookingDateYmd,
+    staffId: requestedStaffId,
+    clientName,
+    clientPhone,
+  } = params;
+
   const supabase = createClient();
 
   const { data: salon, error: salonErr } = await supabase
@@ -72,26 +107,27 @@ export async function submitPublicBooking(
 
   const { data: service, error: serviceErr } = await supabase
     .from("services")
-    .select(
-      "id, name, duration_minutes, buffer_minutes, price_cents",
-    )
+    .select("id, name, duration_minutes, buffer_minutes, price_cents")
     .eq("id", serviceId)
     .eq("salon_id", salon.id)
     .single();
 
   if (serviceErr || !service) throw new Error("service_not_found");
 
-  const { data: staffMember, error: staffErr } = await supabase
-    .from("staff")
-    .select("id")
-    .eq("salon_id", salon.id)
-    .limit(1)
-    .single();
+  const dayBounds = localDayBoundsFromYmd(bookingDateYmd);
+  if (!dayBounds) throw new Error("invalid_booking_date");
 
-  if (staffErr || !staffMember) throw new Error("no_staff_available");
+  const todayYmd = localDateYmd(new Date());
+  if (bookingDateYmd < todayYmd) {
+    throw new Error("cannot_book_past");
+  }
 
-  const dateYmd = localDateYmd(new Date());
-  const startLocal = parseTimeSlotOnDate(timeSlot, dateYmd);
+  let startLocal: Date;
+  try {
+    startLocal = parseTimeSlotOnDate(timeSlot, bookingDateYmd);
+  } catch {
+    throw new Error("invalid_time_slot");
+  }
 
   const now = new Date();
   const bufferMs = 15 * 60 * 1000;
@@ -107,12 +143,81 @@ export async function submitPublicBooking(
   const priceSnapshot =
     service.price_cents != null ? Number(service.price_cents) : null;
 
+  const { data: staffRows, error: staffListErr } = await supabase
+    .from("staff")
+    .select("id, name")
+    .eq("salon_id", salon.id)
+    .order("name", { ascending: true });
+
+  if (staffListErr) throw new Error("staff_load_failed");
+  const orderedStaff = staffRows ?? [];
+  if (orderedStaff.length === 0) throw new Error("no_staff_available");
+
+  const { data: occRaw, error: occErr } = await supabase.rpc(
+    "public_booking_occupancy_for_range",
+    {
+      p_salon_id: salon.id,
+      p_start: dayBounds.start.toISOString(),
+      p_end: dayBounds.end.toISOString(),
+    },
+  );
+
+  let occupancy: OccRow[] = [];
+  if (!occErr && Array.isArray(occRaw)) {
+    occupancy = occRaw as OccRow[];
+  }
+
+  const occIntervals = occupancy.map((row) => ({
+    staffId: String(row.staff_id),
+    startMs: new Date(row.start_time_utc).getTime(),
+    endMs: new Date(row.end_time_utc).getTime(),
+  }));
+
+  const slotStartMs = startLocal.getTime();
+  const slotEndMs = endLocal.getTime();
+
+  function isStaffFree(staffUuid: string): boolean {
+    for (const o of occIntervals) {
+      if (o.staffId !== staffUuid) continue;
+      if (intervalsOverlapMs(slotStartMs, slotEndMs, o.startMs, o.endMs)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  let resolvedStaffId: string | null = null;
+  let resolvedStaffName = "";
+
+  if (requestedStaffId === BOOKING_ANY_STAFF_ID) {
+    for (const row of orderedStaff) {
+      const id = String(row.id);
+      if (isStaffFree(id)) {
+        resolvedStaffId = id;
+        resolvedStaffName = String(row.name ?? "");
+        break;
+      }
+    }
+    if (!resolvedStaffId) throw new BookingConflictError();
+  } else {
+    const allowed = orderedStaff.some(
+      (r) => String(r.id) === requestedStaffId,
+    );
+    if (!allowed) throw new Error("invalid_staff");
+
+    if (!isStaffFree(requestedStaffId)) throw new BookingConflictError();
+
+    resolvedStaffId = requestedStaffId;
+    const chosen = orderedStaff.find((r) => String(r.id) === requestedStaffId);
+    resolvedStaffName = String(chosen?.name ?? "");
+  }
+
   const insertPayload = {
     salon_id: salon.id,
     service_id: service.id,
-    staff_id: staffMember.id,
-    client_name: clientName,
-    client_phone: clientPhone,
+    staff_id: resolvedStaffId,
+    client_name: clientName.trim(),
+    client_phone: clientPhone.trim(),
     start_time_utc: startLocal.toISOString(),
     end_time_utc: endLocal.toISOString(),
     status: "pending" as const,
@@ -153,7 +258,15 @@ export async function submitPublicBooking(
     bookingId = crypto.randomUUID();
     const { error: insertErr } = await supabase.from("bookings").insert({
       id: bookingId,
-      ...insertPayload,
+      salon_id: insertPayload.salon_id,
+      service_id: insertPayload.service_id,
+      staff_id: insertPayload.staff_id,
+      client_name: insertPayload.client_name,
+      client_phone: insertPayload.client_phone,
+      start_time_utc: insertPayload.start_time_utc,
+      end_time_utc: insertPayload.end_time_utc,
+      status: insertPayload.status,
+      price_cents: insertPayload.price_cents,
     });
 
     if (insertErr) {
@@ -172,9 +285,10 @@ export async function submitPublicBooking(
 
   return {
     bookingId,
-    serviceName: service.name,
+    serviceName: service.name as string,
     startTimeUtc: startLocal.toISOString(),
     status: "pending",
     price_cents: priceSnapshot ?? 0,
+    staffName: resolvedStaffName,
   };
 }

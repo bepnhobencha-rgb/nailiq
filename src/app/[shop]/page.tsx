@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import { BookingFlow } from "@/components/booking/BookingFlow";
 import { BookingSalonHero } from "@/components/booking/BookingSalonHero";
 import { loadBookingServicesForSalonSlug } from "@/shared/booking/loadBookingServices";
-import { PUBLIC_BOOKING_TIME_SLOTS } from "@/shared/booking/timeSlots";
 import { bookingEn } from "@/shared/i18n/booking/en";
 import { BookingDocumentEn } from "./BookingDocumentEn";
 
@@ -38,8 +37,8 @@ export default async function ShopBookingPage({ params }: ShopPageProps) {
   const { shop } = await params;
   const t = bookingEn;
 
-  const services = await loadBookingServicesForSalonSlug(shop);
-  if (services === null) {
+  const load = await loadBookingServicesForSalonSlug(shop);
+  if (load === null) {
     notFound();
   }
 
@@ -79,8 +78,9 @@ export default async function ShopBookingPage({ params }: ShopPageProps) {
             <BookingFlow
               t={t}
               shopSlug={shop}
-              services={services}
-              timeSlots={PUBLIC_BOOKING_TIME_SLOTS}
+              services={load.services}
+              staff={load.staff}
+              salon={load.salon}
             />
           </div>
         </main>

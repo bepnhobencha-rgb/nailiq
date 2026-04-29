@@ -14,6 +14,7 @@ export function BookingFlowTimePanel({
   t,
   timeSlots,
   timeSlot,
+  slotsLoading,
   stepDir,
   reducedMotion,
   stepTransition,
@@ -24,6 +25,7 @@ export function BookingFlowTimePanel({
   t: BookingMessages;
   timeSlots: readonly string[];
   timeSlot: string | null;
+  slotsLoading: boolean;
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
   stepTransition: { duration: number; ease: [number, number, number, number] };
@@ -51,34 +53,42 @@ export function BookingFlowTimePanel({
         {t.stepTimeHeading}
       </h2>
 
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:mt-8 lg:grid-cols-3 lg:gap-5">
-        {timeSlots.map((slot) => {
-          const selected = timeSlot === slot;
-          return (
-            <motion.button
-              key={slot}
-              type="button"
-              whileTap={{ scale: 0.99 }}
-              transition={{
-                type: "spring",
-                stiffness: 420,
-                damping: 28,
-              }}
-              aria-pressed={selected}
-              onClick={() => onSelectSlot(slot)}
-              className={cn(
-                "nq-booking-glass min-h-[3.25rem] rounded-2xl px-3 py-3 text-center text-sm font-medium tracking-tight text-nq-foreground sm:min-h-[3.5rem] sm:text-[15px]",
-                !selected && "nq-booking-tile-interactive",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
-                selected
-                  ? "border border-[#D4AF37] shadow-[var(--shadow-nq-tile-selected)]"
-                  : "border border-white/[0.06] hover:border-white/[0.12]",
-              )}
-            >
-              {slot}
-            </motion.button>
-          );
-        })}
+      <div className="mt-6 min-h-[8rem] lg:mt-8">
+        {slotsLoading ? (
+          <p className="py-6 text-center text-sm text-nq-muted">{t.slotLoading}</p>
+        ) : timeSlots.length === 0 ? (
+          <p className="py-6 text-center text-sm text-nq-muted">{t.noSlotsAvailable}</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-3 lg:gap-5">
+            {timeSlots.map((slot) => {
+              const selected = timeSlot === slot;
+              return (
+                <motion.button
+                  key={slot}
+                  type="button"
+                  whileTap={{ scale: 0.99 }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 420,
+                    damping: 28,
+                  }}
+                  aria-pressed={selected}
+                  onClick={() => onSelectSlot(slot)}
+                  className={cn(
+                    "nq-booking-glass min-h-11 rounded-2xl px-3 py-3 text-center text-sm font-medium tracking-tight text-nq-foreground sm:min-h-[3rem] sm:text-[15px]",
+                    !selected && "nq-booking-tile-interactive",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
+                    selected
+                      ? "border border-[#D4AF37] shadow-[var(--shadow-nq-tile-selected)]"
+                      : "border border-white/[0.06] hover:border-white/[0.12]",
+                  )}
+                >
+                  {slot}
+                </motion.button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:gap-4 lg:mt-12 lg:items-center lg:justify-between">
@@ -91,7 +101,7 @@ export function BookingFlowTimePanel({
           {t.back}
         </Button>
         <div className="flex w-full justify-end sm:flex-1">
-          <LuxuryBookingCta disabled={!timeSlot} onClick={onNext}>
+          <LuxuryBookingCta disabled={slotsLoading || !timeSlot} onClick={onNext}>
             {t.next}
           </LuxuryBookingCta>
         </div>

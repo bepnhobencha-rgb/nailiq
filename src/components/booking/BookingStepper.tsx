@@ -1,7 +1,20 @@
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { cn } from "@/shared/lib/cn";
 
-export type BookingWizardStep = "service" | "time" | "confirm";
+export type BookingWizardStep =
+  | "service"
+  | "staff"
+  | "date"
+  | "time"
+  | "confirm";
+
+const STEP_ORDER: BookingWizardStep[] = [
+  "service",
+  "staff",
+  "date",
+  "time",
+  "confirm",
+];
 
 export function BookingStepper({
   activeStep,
@@ -10,76 +23,53 @@ export function BookingStepper({
   activeStep: BookingWizardStep;
   t: BookingMessages;
 }) {
-  const steps: { id: BookingWizardStep; label: string }[] = [
-    { id: "service", label: t.breadcrumbServices },
-    { id: "time", label: t.breadcrumbTime },
-    { id: "confirm", label: t.breadcrumbConfirm },
-  ];
-  const activeIdx = steps.findIndex((s) => s.id === activeStep);
+  const labels: Record<BookingWizardStep, string> = {
+    service: t.breadcrumbServices,
+    staff: t.breadcrumbStaff,
+    date: t.breadcrumbDate,
+    time: t.breadcrumbTime,
+    confirm: t.breadcrumbConfirm,
+  };
+
+  const activeIdx = STEP_ORDER.indexOf(activeStep);
 
   return (
     <nav aria-label="Booking steps" className="mb-8 lg:mb-10">
-      <ol className="flex flex-wrap items-center gap-y-3 text-[13px] font-medium sm:text-sm lg:text-[15px]">
-        {steps.map((s, i) => {
+      <ol className="flex w-full items-start gap-0">
+        {STEP_ORDER.map((id, i) => {
           const state =
-            i < activeIdx ? "complete" : i === activeIdx ? "current" : "upcoming";
+            i < activeIdx ? "done" : i === activeIdx ? "current" : "upcoming";
 
           return (
-            <li key={s.id} className="flex items-center">
+            <li key={id} className="flex min-w-0 flex-1 items-start">
               {i > 0 ? (
-                <span
-                  className="mx-3 inline text-nq-muted/35 select-none lg:mx-5"
+                <div
+                  className="mt-[0.42rem] h-px min-w-[6px] flex-1 bg-white/[0.12] sm:mt-[0.48rem]"
                   aria-hidden
-                >
-                  /
-                </span>
+                />
               ) : null}
-              <span
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-full border px-3 py-2 lg:gap-2.5 lg:px-5 lg:py-2.5",
-                  state === "current" &&
-                    "border-nq-primary/40 bg-nq-primary/[0.09] text-nq-primary shadow-[0_0_28px_-10px_rgba(212,175,55,0.45)]",
-                  state === "complete" &&
-                    "border-white/[0.08] text-nq-foreground",
-                  state === "upcoming" && "border-transparent text-nq-muted/50",
-                )}
-              >
+              <div className="flex min-w-0 flex-1 flex-col items-center gap-1 text-center">
                 <span
                   className={cn(
-                    "flex h-7 min-w-[1.75rem] items-center justify-center rounded-full text-[11px] font-semibold tabular-nums lg:h-8 lg:min-w-[2rem] lg:text-xs",
-                    state === "current" && "bg-nq-primary text-nq-bg",
-                    state === "complete" &&
-                      "border border-white/[0.1] bg-white/[0.06] text-nq-primary",
-                    state === "upcoming" && "bg-white/[0.04] text-nq-muted",
+                    "flex h-2.5 w-2.5 shrink-0 rounded-full border border-transparent sm:h-3 sm:w-3",
+                    state === "done" && "bg-nq-muted/85",
+                    state === "current" &&
+                      "border-nq-primary bg-nq-primary shadow-[0_0_18px_-4px_rgba(212,175,55,0.55)]",
+                    state === "upcoming" &&
+                      "border-white/[0.22] bg-transparent",
                   )}
                   aria-hidden
-                >
-                  {state === "complete" ? (
-                    <svg
-                      className="h-3.5 w-3.5"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={2.5}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden
-                    >
-                      <path d="M5 13l4 4L19 7" />
-                    </svg>
-                  ) : (
-                    i + 1
-                  )}
-                </span>
+                />
                 <span
                   className={cn(
+                    "line-clamp-2 w-full text-[10px] leading-tight tracking-tight sm:text-[11px] lg:text-xs",
                     state === "current" && "font-semibold text-nq-foreground",
-                    state !== "current" && "text-nq-muted",
+                    state !== "current" && "text-nq-muted/75",
                   )}
                 >
-                  {s.label}
+                  {labels[id]}
                 </span>
-              </span>
+              </div>
             </li>
           );
         })}

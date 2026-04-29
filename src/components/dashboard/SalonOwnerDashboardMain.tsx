@@ -266,6 +266,12 @@ export function SalonOwnerDashboardMain({
                             {b.client_name}
                             <span className="text-nq-muted"> · </span>
                             <span className="text-nq-muted">{b.service_name}</span>
+                            {b.staff_name ? (
+                              <>
+                                <span className="text-nq-muted"> · </span>
+                                <span className="text-nq-muted">{b.staff_name}</span>
+                              </>
+                            ) : null}
                           </span>
                         </li>
                       ))}

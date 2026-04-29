@@ -134,6 +134,8 @@ async function getSalonIfMember(slug: string): Promise<SalonRow | null> {
 
 type ServiceJoinRow = { name: string; price_cents: number };
 
+type StaffJoinRow = { name: string };
+
 type BookingRowDb = {
   id: string;
   client_name: string;
@@ -142,11 +144,19 @@ type BookingRowDb = {
   status: string;
   price_cents: number | null;
   services: ServiceJoinRow | ServiceJoinRow[] | null;
+  staff: StaffJoinRow | StaffJoinRow[] | null;
 };
 
 function serviceFromJoin(
   raw: ServiceJoinRow | ServiceJoinRow[] | null,
 ): ServiceJoinRow | null {
+  if (!raw) return null;
+  return Array.isArray(raw) ? (raw[0] ?? null) : raw;
+}
+
+function staffFromJoin(
+  raw: StaffJoinRow | StaffJoinRow[] | null,
+): StaffJoinRow | null {
   if (!raw) return null;
   return Array.isArray(raw) ? (raw[0] ?? null) : raw;
 }
@@ -158,6 +168,7 @@ function mapBookingRow(row: BookingRowDb): SalonDashboardBooking {
       ? status
       : "pending";
   const svc = serviceFromJoin(row.services);
+  const st = staffFromJoin(row.staff);
   const price =
     row.price_cents ?? svc?.price_cents ?? 0;
   return {
@@ -167,6 +178,7 @@ function mapBookingRow(row: BookingRowDb): SalonDashboardBooking {
     start_time_utc: row.start_time_utc,
     status: safeStatus,
     service_name: svc?.name ?? "—",
+    staff_name: st?.name?.trim() ? String(st.name).trim() : null,
     price_cents: Number(price),
   };
 }
@@ -220,7 +232,7 @@ export async function loadSalonOwnerDashboard(
   to.setHours(23, 59, 59, 999);
 
   const selectCols =
-    "id, client_name, client_phone, start_time_utc, status, price_cents, services ( name, price_cents )";
+    "id, client_name, client_phone, start_time_utc, status, price_cents, services ( name, price_cents ), staff ( name )";
 
   const { data: bookingRows, error: bookingsErr } = await supabase
     .from("bookings")
