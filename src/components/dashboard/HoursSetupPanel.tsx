@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/Button";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SaveButton, type SaveButtonStatus } from "@/components/ui/SaveButton";
+import { SetupToast, type SetupToastPayload } from "@/components/ui/Toast";
 import {
   compactOpeningHoursLabel,
   defaultOpeningHoursWeek,
@@ -21,6 +22,8 @@ const DAY_ORDER: { key: DayKey; label: string }[] = [
   { key: "sat", label: "Saturday" },
   { key: "sun", label: "Sunday" },
 ];
+
+const TOAST_ERR = "✗ Could not save. Check your connection.";
 
 function toTimeInput(hhmm: string): string {
   const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
@@ -41,8 +44,24 @@ export function HoursSetupPanel({
   const [hours, setHours] = useState<OpeningHoursWeek>(() =>
     parseOpeningHours(initialRaw) ?? defaultOpeningHoursWeek(),
   );
-  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveButtonStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<SetupToastPayload | null>(null);
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearStatusTimer = useCallback(() => {
+    if (statusTimerRef.current !== null) {
+      clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(
+    () => () => {
+      clearStatusTimer();
+    },
+    [clearStatusTimer],
+  );
 
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- props → local editor state */
@@ -54,18 +73,26 @@ export function HoursSetupPanel({
 
   const onSaveAll = useCallback(async () => {
     setError(null);
-    setSaving(true);
+    clearStatusTimer();
+    setSaveStatus("saving");
     const res = await updateOpeningHours(slug, hours);
-    setSaving(false);
     if (!res.ok) {
+      setSaveStatus("error");
       setError("Could not save opening hours. Try again.");
+      setToast({ variant: "error", message: TOAST_ERR });
+      statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 3000);
       return;
     }
+    setSaveStatus("saved");
+    setToast({ variant: "success", message: "✓ Hours saved" });
+    statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
     router.refresh();
-  }, [hours, router, slug]);
+  }, [clearStatusTimer, hours, router, slug]);
 
   return (
     <div className="flex flex-col gap-6">
+      <SetupToast toast={toast} onDismiss={() => setToast(null)} />
+
       <p className="text-sm leading-snug text-nq-muted">
         Set when clients can book. Closed days won&apos;t show slots.
       </p>
@@ -89,6 +116,7 @@ export function HoursSetupPanel({
                       type="checkbox"
                       className="h-5 w-5 rounded border-nq-border/60 text-nq-primary focus:ring-nq-primary"
                       checked={day.closed}
+                      disabled={saveStatus === "saving"}
                       onChange={(e) => {
                         const closed = e.target.checked;
                         setHours((prev) => ({
@@ -108,7 +136,7 @@ export function HoursSetupPanel({
                         type="time"
                         className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
                         value={toTimeInput(day.open)}
-                        disabled={day.closed}
+                        disabled={day.closed || saveStatus === "saving"}
                         onChange={(e) => {
                           const open = hmFromDateInput(e.target.value);
                           setHours((prev) => ({
@@ -124,7 +152,7 @@ export function HoursSetupPanel({
                         type="time"
                         className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
                         value={toTimeInput(day.close)}
-                        disabled={day.closed}
+                        disabled={day.closed || saveStatus === "saving"}
                         onChange={(e) => {
                           const close = hmFromDateInput(e.target.value);
                           setHours((prev) => ({
@@ -151,18 +179,14 @@ export function HoursSetupPanel({
         </p>
       </div>
 
-      <Button
-        type="button"
-        variant="primary"
-        size="lg"
-        className="min-h-[48px] w-full touch-manipulation"
-        disabled={saving}
-        onClick={() => {
+      <SaveButton
+        status={saveStatus}
+        onSave={() => {
           void onSaveAll();
         }}
-      >
-        {saving ? "Saving…" : "Save all"}
-      </Button>
+        idleLabel="Save all"
+        className="min-h-[48px] w-full sm:w-full"
+      />
     </div>
   );
 }

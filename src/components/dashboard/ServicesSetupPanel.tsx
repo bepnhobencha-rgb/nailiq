@@ -1,8 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { SaveButton, type SaveButtonStatus } from "@/components/ui/SaveButton";
+import { SetupToast, type SetupToastPayload } from "@/components/ui/Toast";
+import { SetupDeleteConfirm } from "@/components/dashboard/SetupDeleteConfirm";
 import {
   addService,
   deleteService,
@@ -28,6 +31,8 @@ function dollarsFromCents(cents: number): string {
   return (Math.round(cents) / 100).toFixed(2);
 }
 
+const TOAST_ERR = "✗ Could not save. Check your connection.";
+
 export function ServicesSetupPanel({
   slug,
   initialRows,
@@ -40,12 +45,29 @@ export function ServicesSetupPanel({
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [addSaveStatus, setAddSaveStatus] = useState<SaveButtonStatus>("idle");
+  const [toast, setToast] = useState<SetupToastPayload | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const addStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [draftName, setDraftName] = useState("");
   const [draftPrice, setDraftPrice] = useState("");
   const [draftDur, setDraftDur] = useState("45");
   const [draftBuf, setDraftBuf] = useState("10");
+
+  const clearAddStatusTimer = useCallback(() => {
+    if (addStatusTimerRef.current !== null) {
+      clearTimeout(addStatusTimerRef.current);
+      addStatusTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(
+    () => () => {
+      clearAddStatusTimer();
+    },
+    [clearAddStatusTimer],
+  );
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- server list after refresh
@@ -57,7 +79,12 @@ export function ServicesSetupPanel({
   const handleUpdate = useCallback(
     async (
       serviceId: string,
-      patch: Partial<Pick<SetupServiceRow, "name" | "price_cents" | "duration_minutes" | "buffer_minutes">>,
+      patch: Partial<
+        Pick<
+          SetupServiceRow,
+          "name" | "price_cents" | "duration_minutes" | "buffer_minutes"
+        >
+      >,
     ) => {
       setFormError(null);
       setPendingId(serviceId);
@@ -65,6 +92,7 @@ export function ServicesSetupPanel({
       setPendingId(null);
       if (!res.ok) {
         setFormError(mapUpdateError(res.error));
+        setToast({ variant: "error", message: TOAST_ERR });
         return;
       }
       setRows((prev) =>
@@ -86,6 +114,7 @@ export function ServicesSetupPanel({
             : r,
         ),
       );
+      setToast({ variant: "success", message: "✓ Service saved" });
       refresh();
     },
     [refresh, slug],
@@ -93,22 +122,18 @@ export function ServicesSetupPanel({
 
   const handleDelete = useCallback(
     async (serviceId: string) => {
-      if (
-        !window.confirm(
-          "Delete this service? Bookings referencing it may be blocked.",
-        )
-      ) {
-        return;
-      }
       setFormError(null);
+      setConfirmDeleteId(null);
       setPendingId(serviceId);
       const res = await deleteService(slug, serviceId);
       setPendingId(null);
       if (!res.ok) {
         setFormError(mapDeleteError(res.error));
+        setToast({ variant: "error", message: TOAST_ERR });
         return;
       }
       setRows((prev) => prev.filter((r) => r.id !== serviceId));
+      setToast({ variant: "success", message: "✓ Service removed" });
       refresh();
     },
     [refresh, slug],
@@ -136,27 +161,42 @@ export function ServicesSetupPanel({
       return;
     }
 
-    setAdding(true);
+    clearAddStatusTimer();
+    setAddSaveStatus("saving");
     const res = await addService(slug, {
       name: draftName.trim(),
       price_cents: cents,
       duration_minutes: dm,
       buffer_minutes: bm,
     });
-    setAdding(false);
     if (!res.ok) {
-      setAddError("Could not add service. Try again.");
+      setAddSaveStatus("error");
+      setToast({ variant: "error", message: TOAST_ERR });
+      addStatusTimerRef.current = setTimeout(() => setAddSaveStatus("idle"), 3000);
       return;
     }
+    setAddSaveStatus("saved");
+    setToast({ variant: "success", message: "✓ Service saved" });
+    addStatusTimerRef.current = setTimeout(() => setAddSaveStatus("idle"), 2000);
     setDraftName("");
     setDraftPrice("");
     setDraftDur("45");
     setDraftBuf("10");
     refresh();
-  }, [draftBuf, draftDur, draftName, draftPrice, refresh, slug]);
+  }, [
+    clearAddStatusTimer,
+    draftBuf,
+    draftDur,
+    draftName,
+    draftPrice,
+    refresh,
+    slug,
+  ]);
 
   return (
     <div className="flex flex-col gap-4">
+      <SetupToast toast={toast} onDismiss={() => setToast(null)} />
+
       {formError ? (
         <p className="rounded-xl border border-nq-error/40 bg-nq-error/10 px-4 py-3 text-sm text-nq-error">
           {formError}
@@ -171,11 +211,18 @@ export function ServicesSetupPanel({
             <ServiceRowFields
               row={row}
               disabled={pendingId === row.id}
+              confirmingDelete={confirmDeleteId === row.id}
+              onBeginDelete={() => {
+                setConfirmDeleteId(row.id);
+              }}
+              onCancelDelete={() => {
+                setConfirmDeleteId(null);
+              }}
+              onConfirmDelete={() => {
+                void handleDelete(row.id);
+              }}
               onBlurSave={(partial) => {
                 void handleUpdate(row.id, partial);
-              }}
-              onDelete={() => {
-                void handleDelete(row.id);
               }}
               canDelete={rows.length > 1}
             />
@@ -201,7 +248,7 @@ export function ServicesSetupPanel({
             <input
               className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
               value={draftName}
-              disabled={adding}
+              disabled={addSaveStatus === "saving"}
               onChange={(e) => {
                 setDraftName(e.target.value);
               }}
@@ -215,7 +262,7 @@ export function ServicesSetupPanel({
                 inputMode="decimal"
                 className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
                 value={draftPrice}
-                disabled={adding}
+                disabled={addSaveStatus === "saving"}
                 onChange={(e) => {
                   setDraftPrice(e.target.value);
                 }}
@@ -228,7 +275,7 @@ export function ServicesSetupPanel({
                 inputMode="numeric"
                 className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
                 value={draftDur}
-                disabled={adding}
+                disabled={addSaveStatus === "saving"}
                 onChange={(e) => {
                   setDraftDur(e.target.value);
                 }}
@@ -240,29 +287,27 @@ export function ServicesSetupPanel({
                 inputMode="numeric"
                 className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
                 value={draftBuf}
-                disabled={adding}
+                disabled={addSaveStatus === "saving"}
                 onChange={(e) => {
                   setDraftBuf(e.target.value);
                 }}
               />
             </label>
           </div>
-          <Button
-            type="button"
-            variant="primary"
-            size="lg"
-            className="min-h-11 w-full touch-manipulation"
+          <SaveButton
+            status={addSaveStatus}
+            onSave={() => {
+              void onAdd();
+            }}
+            idleLabel="Add service"
+            savedLabel="✓ Saved"
             disabled={
-              adding ||
+              addSaveStatus === "saving" ||
               !draftName.trim() ||
               centsFromDollarsString(draftPrice) === null
             }
-            onClick={() => {
-              void onAdd();
-            }}
-          >
-            {adding ? "Saving…" : "Add service"}
-          </Button>
+            className="min-h-11 w-full"
+          />
         </div>
       </section>
     </div>
@@ -272,12 +317,19 @@ export function ServicesSetupPanel({
 function ServiceRowFields({
   row,
   disabled,
+  confirmingDelete,
+  onBeginDelete,
+  onCancelDelete,
+  onConfirmDelete,
   onBlurSave,
-  onDelete,
   canDelete,
 }: {
   row: SetupServiceRow;
   disabled: boolean;
+  confirmingDelete: boolean;
+  onBeginDelete: () => void;
+  onCancelDelete: () => void;
+  onConfirmDelete: () => void;
   onBlurSave: (
     patch: Partial<
       Pick<
@@ -286,7 +338,6 @@ function ServiceRowFields({
       >
     >,
   ) => void;
-  onDelete: () => void;
   canDelete: boolean;
 }) {
   const [name, setName] = useState(row.name);
@@ -301,6 +352,17 @@ function ServiceRowFields({
     setDur(String(row.duration_minutes));
     setBuf(String(row.buffer_minutes));
   }, [row]);
+
+  if (confirmingDelete) {
+    return (
+      <SetupDeleteConfirm
+        title={`Delete ${row.name}?`}
+        onCancel={onCancelDelete}
+        onConfirm={onConfirmDelete}
+        busy={disabled}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -380,7 +442,7 @@ function ServiceRowFields({
         variant="secondary"
         className="min-h-11 w-full touch-manipulation sm:w-auto sm:self-start"
         disabled={disabled || !canDelete}
-        onClick={onDelete}
+        onClick={onBeginDelete}
       >
         Delete service
       </Button>
@@ -397,6 +459,7 @@ function mapUpdateError(code: string): string {
 function mapDeleteError(code: string): string {
   if (code === "minimum_services")
     return "You need more than one service before you can delete.";
-  if (code === "in_use") return "This service is linked to bookings and can’t be removed yet.";
+  if (code === "in_use")
+    return "This service is linked to bookings and can’t be removed yet.";
   return "Could not delete. Try again.";
 }

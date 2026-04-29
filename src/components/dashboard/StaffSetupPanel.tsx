@@ -1,8 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { SaveButton, type SaveButtonStatus } from "@/components/ui/SaveButton";
+import { SetupToast, type SetupToastPayload } from "@/components/ui/Toast";
+import { SetupDeleteConfirm } from "@/components/dashboard/SetupDeleteConfirm";
 import {
   addStaff,
   deleteStaff,
@@ -22,6 +25,8 @@ const ROLE_OPTIONS: { value: StaffJobRole; label: string }[] = [
   { value: "nail_tech", label: "Nail Tech" },
 ];
 
+const TOAST_ERR = "✗ Could not save. Check your connection.";
+
 export function StaffSetupPanel({
   slug,
   initialRows,
@@ -36,8 +41,25 @@ export function StaffSetupPanel({
 
   const [draftName, setDraftName] = useState("");
   const [draftRole, setDraftRole] = useState<StaffJobRole>("nail_tech");
-  const [adding, setAdding] = useState(false);
+  const [addSaveStatus, setAddSaveStatus] = useState<SaveButtonStatus>("idle");
   const [addError, setAddError] = useState<string | null>(null);
+  const [toast, setToast] = useState<SetupToastPayload | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const addStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearAddStatusTimer = useCallback(() => {
+    if (addStatusTimerRef.current !== null) {
+      clearTimeout(addStatusTimerRef.current);
+      addStatusTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(
+    () => () => {
+      clearAddStatusTimer();
+    },
+    [clearAddStatusTimer],
+  );
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- server list after refresh
@@ -60,6 +82,7 @@ export function StaffSetupPanel({
       setPendingId(null);
       if (!res.ok) {
         setFormError("Could not save changes. Try again.");
+        setToast({ variant: "error", message: TOAST_ERR });
         return;
       }
       setRows((prev) =>
@@ -67,6 +90,7 @@ export function StaffSetupPanel({
           r.id === staffId ? { ...r, ...patch } : r,
         ),
       );
+      setToast({ variant: "success", message: "✓ Staff member saved" });
       refresh();
     },
     [refresh, slug],
@@ -74,24 +98,28 @@ export function StaffSetupPanel({
 
   const handleDelete = useCallback(
     async (staffId: string) => {
-      if (!window.confirm("Remove this staff member from the list?")) {
-        return;
-      }
       setFormError(null);
+      setConfirmDeleteId(null);
       setPendingId(staffId);
       const res = await deleteStaff(slug, staffId);
       setPendingId(null);
       if (!res.ok) {
         if (res.error === "minimum_staff") {
-          setFormError("You need more than one staff member before you can remove someone.");
+          setFormError(
+            "You need more than one staff member before you can remove someone.",
+          );
         } else if (res.error === "in_use") {
-          setFormError("This staff member is linked to bookings and can’t be removed yet.");
+          setFormError(
+            "This staff member is linked to bookings and can’t be removed yet.",
+          );
         } else {
           setFormError("Could not remove. Try again.");
         }
+        setToast({ variant: "error", message: TOAST_ERR });
         return;
       }
       setRows((prev) => prev.filter((r) => r.id !== staffId));
+      setToast({ variant: "success", message: "✓ Staff member removed" });
       refresh();
     },
     [refresh, slug],
@@ -103,23 +131,30 @@ export function StaffSetupPanel({
       setAddError("Enter a name.");
       return;
     }
-    setAdding(true);
+    clearAddStatusTimer();
+    setAddSaveStatus("saving");
     const res = await addStaff(slug, {
       name: draftName.trim(),
       role: draftRole,
     });
-    setAdding(false);
     if (!res.ok) {
-      setAddError("Could not add staff. Try again.");
+      setAddSaveStatus("error");
+      setToast({ variant: "error", message: TOAST_ERR });
+      addStatusTimerRef.current = setTimeout(() => setAddSaveStatus("idle"), 3000);
       return;
     }
+    setAddSaveStatus("saved");
+    setToast({ variant: "success", message: "✓ Staff member saved" });
+    addStatusTimerRef.current = setTimeout(() => setAddSaveStatus("idle"), 2000);
     setDraftName("");
     setDraftRole("nail_tech");
     refresh();
-  }, [draftName, draftRole, refresh, slug]);
+  }, [clearAddStatusTimer, draftName, draftRole, refresh, slug]);
 
   return (
     <div className="flex flex-col gap-4">
+      <SetupToast toast={toast} onDismiss={() => setToast(null)} />
+
       {formError ? (
         <p className="rounded-xl border border-nq-error/40 bg-nq-error/10 px-4 py-3 text-sm text-nq-error">
           {formError}
@@ -134,11 +169,18 @@ export function StaffSetupPanel({
             <StaffRowFields
               row={row}
               disabled={pendingId === row.id}
+              confirmingDelete={confirmDeleteId === row.id}
+              onBeginDelete={() => {
+                setConfirmDeleteId(row.id);
+              }}
+              onCancelDelete={() => {
+                setConfirmDeleteId(null);
+              }}
+              onConfirmDelete={() => {
+                void handleDelete(row.id);
+              }}
               onBlurSave={(partial) => {
                 void handleUpdate(row.id, partial);
-              }}
-              onDelete={() => {
-                void handleDelete(row.id);
               }}
               canDelete={rows.length > 1}
             />
@@ -162,7 +204,7 @@ export function StaffSetupPanel({
             <input
               className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
               value={draftName}
-              disabled={adding}
+              disabled={addSaveStatus === "saving"}
               onChange={(e) => {
                 setDraftName(e.target.value);
               }}
@@ -173,7 +215,7 @@ export function StaffSetupPanel({
             <select
               className="mt-1.5 flex min-h-[44px] w-full appearance-none rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
               value={draftRole}
-              disabled={adding}
+              disabled={addSaveStatus === "saving"}
               onChange={(e) => {
                 setDraftRole(e.target.value as StaffJobRole);
               }}
@@ -185,18 +227,16 @@ export function StaffSetupPanel({
               ))}
             </select>
           </label>
-          <Button
-            type="button"
-            variant="primary"
-            size="lg"
-            className="min-h-11 w-full touch-manipulation"
-            disabled={adding || !draftName.trim()}
-            onClick={() => {
+          <SaveButton
+            status={addSaveStatus}
+            onSave={() => {
               void onAdd();
             }}
-          >
-            {adding ? "Saving…" : "Add staff"}
-          </Button>
+            idleLabel="Add staff"
+            savedLabel="✓ Saved"
+            disabled={addSaveStatus === "saving" || !draftName.trim()}
+            className="min-h-11 w-full"
+          />
         </div>
       </section>
     </div>
@@ -206,16 +246,22 @@ export function StaffSetupPanel({
 function StaffRowFields({
   row,
   disabled,
+  confirmingDelete,
+  onBeginDelete,
+  onCancelDelete,
+  onConfirmDelete,
   onBlurSave,
-  onDelete,
   canDelete,
 }: {
   row: SetupStaffRow;
   disabled: boolean;
+  confirmingDelete: boolean;
+  onBeginDelete: () => void;
+  onCancelDelete: () => void;
+  onConfirmDelete: () => void;
   onBlurSave: (
     patch: Partial<Pick<SetupStaffRow, "name" | "job_role">>,
   ) => void;
-  onDelete: () => void;
   canDelete: boolean;
 }) {
   const [name, setName] = useState(row.name);
@@ -226,6 +272,17 @@ function StaffRowFields({
     setName(row.name);
     setRole(row.job_role);
   }, [row]);
+
+  if (confirmingDelete) {
+    return (
+      <SetupDeleteConfirm
+        title={`Delete ${row.name}?`}
+        onCancel={onCancelDelete}
+        onConfirm={onConfirmDelete}
+        busy={disabled}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -270,7 +327,7 @@ function StaffRowFields({
         variant="secondary"
         className="min-h-11 w-full touch-manipulation sm:w-auto sm:self-start"
         disabled={disabled || !canDelete}
-        onClick={onDelete}
+        onClick={onBeginDelete}
       >
         Remove staff
       </Button>
