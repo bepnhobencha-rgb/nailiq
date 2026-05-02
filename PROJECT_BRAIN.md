@@ -33,6 +33,7 @@ NailIQ is the AI-first operating system for nail salons and beauty businesses: o
 
 - **Supabase Auth** with **phone OTP** on the client (`signInWithOtp` / `verifyOtp`) when **Phone** is enabled in the Supabase project; session cookies via **`@supabase/ssr`** (`src/shared/lib/supabase/server.ts`, `src/shared/lib/supabase/client.ts`).
 - **`src/middleware.ts`** refreshes the session on each matched request and **redirects unauthenticated users** away from `/dashboard/*` to `/register`.
+- **Generated DB types:** `src/lib/database.types.ts` is produced from the Supabase project schema (`npx supabase gen types typescript --project-id fshmobzyjhmtvndobwsy > src/lib/database.types.ts`). Regenerate after migrations or dashboard schema changes.
 - **Tenant link:** `public.salon_members` maps `auth.users` → `salons` (migration `supabase/migrations/20260428120000_salon_members_owner_rls.sql`). Owners complete registration in **`completeSalonRegistration`** (`src/shared/register/completeSalonRegistrationAction.ts`), which inserts the salon, seed row, and membership using the **service role** where needed.
 - **RLS:** Authenticated users read/update **their salon’s bookings** through policies that consult `salon_members`; anonymous public booking insert path unchanged.
 - **Demo OTP:** When **`NEXT_PUBLIC_DEMO_OTP=true`** (local only — do **not** set on Vercel production), `sendRegisterOtp` / `verifyDemoRegisterOtp` use the `otps` table plus an admin **password bridge** to open a real session (`src/shared/register/demoAuthBridge.ts`) and **`DemoOtpModal`** shows the code on screen.
@@ -66,9 +67,9 @@ NailIQ is the AI-first operating system for nail salons and beauty businesses: o
 
 ## Current Modules
 
-- **Design foundation** — `src/shared/theme/tokens.ts`, `src/app/globals.css`, UI in `src/components/ui/`, layout `ResponsiveShell` / `MobileStack`. **Marketing home** — `src/components/user/HomeLanding.tsx` at `/` (EN/VI via `useUserLanguage`). **SEO** — `src/shared/seo/`, `robots.ts`, `sitemap.ts`, `public/ai.txt`, `public/llms.txt`. **i18n** — `src/shared/i18n/user/` + `src/shared/i18n/booking/en.ts` (booking English-only). See **Authentication** for owners.
+- **Design foundation** — `src/shared/theme/tokens.ts`, `src/app/globals.css`, UI in `src/components/ui/`, layout `ResponsiveShell` / `MobileStack`. **Marketing home** — `HomeLanding` at `/`: **Landing.html**-style full-bleed page (Inter + Playfair Display via `page.tsx`); copy under `home.landing*` in `en.ts` / `vi.ts`. **SEO** — `src/shared/seo/`, `robots.ts`, `sitemap.ts`, `public/ai.txt`, `public/llms.txt`. **i18n** — `src/shared/i18n/user/` + `src/shared/i18n/booking/en.ts` (booking English-only). See **Authentication** for owners.
 - **Registration** — `/register` → `/register/verify` → `/register/setup` (server-gated by session) → `/register/success`. Transient phone digits in **`sessionStorage`** (`registerSessionKeys.ts`), not dashboard-gating `localStorage`.
-- **Owner dashboard** — `/dashboard/[slug]` via `salonOwnerActions` (session + RLS). Phone masked in UI; booking reference uses `formatNailiqBookingRef`.
+- **Owner dashboard** — `/dashboard/[slug]` via `salonOwnerActions` (session + RLS). Phone masked in UI; booking reference uses `formatNailiqBookingRef`. **Live bookings:** `postgres_changes` on `bookings` only works when the browser has a **Supabase Auth session** (RLS allows member `SELECT`); **demo dashboard** (slug cookie only, `demoMode`) relies on **polling** (faster interval in `SalonOwnerDashboard`), not Realtime.
 - **Setup (Phase 2)** — Owners complete catalog and salon profile **in-app**: **`SetupChecklist`** + gold banner until `salons.profile_complete` (counts + address); **`/dashboard/[slug]/setup/{services,staff,hours,address}`** for CRUD and hours/address saves. Server **`setupActions`** (demo **`nailiq-demo-slug`** + service role vs **`salon_members`** + user client); opening-hour defaults in **`openingHoursDefaults.ts`**; **`staff.job_role`** for display (**Owner/Senior/Nail Tech**) separate from **`salon_members.role`**. Relevant migration: `20260430160000_phase2_salon_setup_and_catalog_write_rls.sql`.
 - **Public booking** — `src/app/[shop]/page.tsx`, `BookingFlow` + `submitPublicBooking` in `src/shared/booking/`.
 
@@ -100,7 +101,7 @@ NailIQ is the AI-first operating system for nail salons and beauty businesses: o
 - **Metadata for public pages:** Home (`/`), high-urgency marketing (`/aggressive`), register stub (`/register`), and public booking stub (`/[shop]`) export metadata; future salon pages should use **dynamic metadata from salon data**.
 - **Structured data:** Shared JSON-LD (`SoftwareApplication`, `Organization`, `WebSite`) injected on the landing page via `application/ld+json`.
 - **Discovery files:** `public/ai.txt` and `public/llms.txt` describe NailIQ for AI crawlers and tools; `src/app/robots.ts` and `src/app/sitemap.ts` expose crawl rules and URL list (`/`, `/register` for now).
-- **Canonical URL:** Set `NEXT_PUBLIC_SITE_URL` in deployed environments so `metadataBase`, sitemap, and JSON-LD `@id` values match production.
+- **Canonical URL:** Set `NEXT_PUBLIC_SITE_URL` in deployed environments so `metadataBase`, sitemap, JSON-LD `@id`, and **owner-facing booking links** (`bookingAbsoluteUrl` on the dashboard and register success) match on server and client—do not branch on `window.location.origin` for those strings (avoids hydration mismatch when env points at production while dev runs on localhost). For **local dev**, `.env.local` should use **`http://localhost:3000`**; production overrides on Vercel are unaffected.
 
 ## Known Risks
 
@@ -110,7 +111,9 @@ NailIQ is the AI-first operating system for nail salons and beauty businesses: o
 
 ## Decisions Log
 
-*(Empty — see [DECISIONS.md](./DECISIONS.md) for structured entries. Summaries or pointers can be mirrored here if useful.)*
+- **Running log:** [decisions-log.md](./decisions-log.md) (newest first under `# Entries`).
+- **Current focus / bugs / lint debt:** [current-focus.md](./current-focus.md).
+- **Entry template:** [DECISIONS.md](./DECISIONS.md).
 
 ## Auto Push System (PROMPT #013)
 

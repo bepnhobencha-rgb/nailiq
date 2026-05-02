@@ -2,6 +2,22 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-05-02
+
+- **Docs — lint debt & decisions:** Added [current-focus.md](./current-focus.md) (active bugs, P3 ESLint inventory: 18 errors deferred post-launch) and [decisions-log.md](./decisions-log.md) entry recording deferral rationale; no application code changes.
+
+- **Local dev canonical URL:** Use `NEXT_PUBLIC_SITE_URL=http://localhost:3000` in root `.env.local` while developing locally (Vercel production keeps its own env). Aligns inlined public site URL with the browser origin so dashboard booking links avoid SSR/client hydration mismatch.
+
+- **Dashboard / register — booking URL hydration:** `getSiteUrlForClient` no longer uses `window.location.origin` on localhost; it always defers to `getSiteUrl()` / `NEXT_PUBLIC_SITE_URL` so SSR and the client match (`SalonOwnerDashboard` → `bookingAbsoluteUrl`). Register success copy-link uses the same `getSiteUrl()` path. Added committed `.env.example`, documented `NEXT_PUBLIC_SITE_URL` in `.env.test.local.example`, and `.gitignore` exceptions so those templates are not swallowed by `.env*`.
+
+- **Supabase types:** Regenerated `src/lib/database.types.ts` from the linked Supabase project (`npx supabase gen types typescript --project-id fshmobzyjhmtvndobwsy`).
+
+## 2026-04-29
+
+- **Marketing home (`/`):** Rebuilt `HomeLanding` to match static reference `Landing.html`: deep navy `#050a15`, Playfair Display italic gold wordmark/headline accent + Inter body, glass cards, gradient CTA shimmer, live-style booking feed (client prepend loop), rotating social proof, three problem cards + closing CTA. Fonts via `next/font` on `page.tsx` (`--font-landing-inter`, `--font-landing-playfair`); scoped utilities in `globals.css` (`.landing-html-*`). Copy in `en.ts` / `vi.ts` under new `home.landing*` keys; phone + CTAs still route to `/register` with optional `sessionStorage` phone. Full-bleed layout without `ResponsiveShell`/`MobileStack` on home.
+
+- **Dashboard — bookings Realtime vs demo:** Supabase `postgres_changes` on `bookings` respects RLS: **anonymous** clients cannot `SELECT` bookings (`bookings_select_anon` is `false`), so **demo cookie dashboard** (`demoMode`, no JWT) never receives live inserts — only **authenticated** salon members do. `SalonOwnerDashboard` now calls `getSession` + `realtime.setAuth` before subscribing and refreshes the Realtime JWT on `onAuthStateChange`; demo dashboards use **8s** poll instead of 30s. Dev: `console.warn` on subscribe `CHANNEL_ERROR` / `TIMED_OUT`.
+
 ## 2026-04-28
 
 - **Dashboard — onboarding (Phase 2):** Extended `salons` with `address`, `salon_phone`, `opening_hours` (defaults Mon–Sat 09:00–18:00, Sun closed), and `profile_complete`; `staff.job_role` (`owner` \| `senior` \| `nail_tech`). Authenticated salon members gain INSERT/UPDATE/DELETE policies on catalog `services` and `staff`. Server actions in `setupActions.ts` verify access via demo cookie (`nailiq-demo-slug`) or `salon_members` + Supabase session; **`profile_complete`** = more than one service, more than one staff, and non-null address. **`SetupChecklist`**, setup nav link (**Setup** → services), gold banner while incomplete, and green readiness badge added to `SalonOwnerDashboardMain`. Routes: `/dashboard/[slug]/setup/{services,staff,hours,address}`. Migration: `20260430160000_phase2_salon_setup_and_catalog_write_rls.sql`.
