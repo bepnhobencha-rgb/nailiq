@@ -16,19 +16,21 @@ export const userVi: UserMessages = {
     signInLink: "Đăng nhập →",
     landingUrgency:
       "⚠️ Hầu hết tiệm mất $50–$200 mỗi ngày từ cuộc gọi nhỡ",
-    landingH1Line1: "Bạn đang mất tiền mỗi ngày.",
-    landingH1Gold: "Không phải chỉ mất lịch.",
+    landingH1Line1:
+      "$29/tháng.|Booking + walk-in queue,",
+    landingH1Gold: "dành riêng cho tiệm nail.",
     landingBody1:
-      "Bạn đang bận làm khách. Điện thoại reo. Bạn không bắt máy.",
+      "Rẻ hơn Booksy 3-5 lần. Tiếng Việt. Walk-in queue tích hợp sẵn.",
     landingBody2: "Khách đó đặt tiệm khác.",
     landingBody3: "Bạn không bao giờ biết mình đã mất họ.",
-    landingPhonePlaceholder: "Nhập số điện thoại của tiệm...",
-    landingCta: "Có lịch đầu tiên trong 2 phút",
-    landingMicrotrust: "No app. Không setup. Không cần thẻ.",
+    landingCta: "Dùng thử 14 ngày miễn phí",
+    landingMicrotrust: "14 ngày miễn phí. Không cần thẻ tín dụng.",
     landingZap:
       "⚡ Nếu không fix hôm nay, bạn vẫn sẽ mất khách ngày mai",
+    autoLine: "Hoạt động 24/7 — kể cả khi bạn đang bận làm khách.",
+    ctaSpeed: "Đăng ký trong 2 phút.",
     landingEarnedTitle: "+$113 earned today",
-    landingEarnedSub: "từ những cuộc gọi bạn không bắt máy",
+    landingEarnedSub: "BOOKING BẠN SẼ KHÔNG BỎ LỠ",
     landingFeedNewBooking: "Lịch mới",
     landingSectionEyebrow:
       "Bạn không thấy những gì bạn đang mất. Nhưng nó xảy ra mỗi ngày.",

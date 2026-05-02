@@ -14,6 +14,23 @@ function parseStored(value: string | null): UserLanguage | null {
     : null;
 }
 
+/** SSR-safe snapshot: only call with `window` present. */
+function getInitialLanguage(): UserLanguage {
+  if (typeof window === "undefined") return "en";
+
+  try {
+    const saved = window.localStorage.getItem(USER_LANGUAGE_STORAGE_KEY);
+    const fromStored = parseStored(saved);
+    if (fromStored) return fromStored;
+  } catch {
+    /* quota / blocked */
+  }
+
+  const browserLang = navigator.language.toLowerCase();
+  if (browserLang.startsWith("vi")) return "vi";
+  return "en";
+}
+
 /**
  * User (owner / dashboard / marketing) language: English or Vietnamese.
  * Persists in `localStorage`, falls back to English, syncs `document.documentElement.lang` on the client.
@@ -22,14 +39,9 @@ export function useUserLanguage() {
   const [language, setLanguageState] = useState<UserLanguage>("en");
 
   useEffect(() => {
-    const fromStorage = parseStored(
-      window.localStorage.getItem(USER_LANGUAGE_STORAGE_KEY),
-    );
-    if (fromStorage) {
-      // Re-sync persisted preference after mount; avoids hydration mismatch with SSR.
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage is unavailable on server; one-time rehydration
-      setLanguageState(fromStorage);
-    }
+    const next = getInitialLanguage();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage/navigator unavailable on server; aligns after mount without hydration mismatch
+    setLanguageState(next);
   }, []);
 
   useEffect(() => {

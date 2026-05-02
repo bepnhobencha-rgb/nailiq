@@ -12,13 +12,8 @@ import {
 } from "react";
 import { getUserMessages } from "@/shared/i18n/user";
 import type { UserLanguage } from "@/shared/i18n/user/types";
-import { REG_SESSION_PHONE_DIGITS_KEY } from "@/shared/lib/registerSessionKeys";
 import { cn } from "@/shared/lib/cn";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
-import {
-  isRegisterPhoneDigitsValid,
-  normalizeRegisterPhone,
-} from "@/shared/register/phone";
 
 type FeedCard = {
   id: string;
@@ -97,24 +92,6 @@ function LandingBookingFeed({
   );
 }
 
-/** Nav wordmark: “Nail” + “IQ” với gradient khác nhau; fallback nếu brandName không kết thúc bằng IQ */
-function LandingBrandMark({ name }: { name: string }) {
-  const parts = /^([\s\S]*?)(IQ)$/i.exec(name);
-  if (!parts) {
-    return (
-      <span className="landing-html-wordmark-fallback" aria-label={name}>
-        {name}
-      </span>
-    );
-  }
-  return (
-    <span className="landing-html-wordmark" aria-label={name}>
-      <span className="landing-html-wordmark-nail">{parts[1]}</span>
-      <span className="landing-html-wordmark-iq">{parts[2]}</span>
-    </span>
-  );
-}
-
 function LandingSocialProof({
   lines,
   proofVisible,
@@ -170,6 +147,11 @@ export function HomeLanding() {
     setProofVisible(true);
   }, [language]);
 
+  const headlineParts = useMemo(() => {
+    const [first = "", second = ""] = t.home.landingH1Line1.split("|");
+    return [first.trim(), second.trim()] as const;
+  }, [t.home.landingH1Line1]);
+
   const socialLines = useMemo(
     () => [
       t.home.landingSocialProof1,
@@ -180,12 +162,7 @@ export function HomeLanding() {
     [t],
   );
 
-  const onStartRegister = useCallback(() => {
-    const el = document.querySelector<HTMLInputElement>('input[name="phone"]');
-    const phone = normalizeRegisterPhone(el?.value ?? "");
-    if (typeof window !== "undefined" && isRegisterPhoneDigitsValid(phone)) {
-      window.sessionStorage.setItem(REG_SESSION_PHONE_DIGITS_KEY, phone);
-    }
+  const goRegister = useCallback(() => {
     router.push("/register");
   }, [router]);
 
@@ -198,9 +175,12 @@ export function HomeLanding() {
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8 md:px-12">
         <Link
           href="/"
-          className="landing-html-wordmark-wrap text-3xl tracking-tighter md:text-[2.35rem]"
+          className={cn(
+            "landing-html-wordmark-wrap text-base font-semibold tracking-tight text-white md:text-lg not-italic",
+            "font-[family-name:var(--font-landing-inter),system-ui,sans-serif]",
+          )}
         >
-          <LandingBrandMark name={t.brandName} />
+          <span aria-label={t.brandName}>{t.brandName}</span>
         </Link>
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-1 text-xs font-black tracking-widest uppercase opacity-50">
@@ -239,7 +219,9 @@ export function HomeLanding() {
             </p>
 
             <h1 className="text-5xl leading-[1.05] font-black tracking-tight text-white md:text-8xl">
-              {t.home.landingH1Line1}
+              {headlineParts[0]}
+              <br />
+              {headlineParts[1]}
               <br />
               <span className="landing-html-title-gold italic">
                 {t.home.landingH1Gold}
@@ -248,26 +230,17 @@ export function HomeLanding() {
 
             <div className="space-y-3 text-lg font-medium text-gray-400 md:text-2xl leading-relaxed">
               <p>{t.home.landingBody1}</p>
-              <p className="font-extrabold text-white underline decoration-yellow-500 underline-offset-8">
-                {t.home.landingBody2}
-              </p>
-              <p>{t.home.landingBody3}</p>
             </div>
+
+            <p className="text-base text-gray-400/80 md:text-lg">
+              {t.home.autoLine}
+            </p>
 
             <div className="space-y-6">
               <div className="flex max-w-md flex-col gap-4">
-                <input
-                  name="phone"
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="tel"
-                  placeholder={t.home.landingPhonePlaceholder}
-                  aria-label={t.home.landingPhonePlaceholder}
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 p-6 text-base text-white outline-none transition-all focus:border-yellow-500 md:text-lg"
-                />
                 <button
                   type="button"
-                  onClick={onStartRegister}
+                  onClick={goRegister}
                   className="landing-html-cta w-full rounded-2xl py-6 text-xl font-extrabold text-black shadow-2xl"
                 >
                   {t.home.landingCta}
@@ -276,8 +249,8 @@ export function HomeLanding() {
               <p className="text-center text-xs font-medium text-gray-500 md:text-left">
                 {t.home.landingMicrotrust}
               </p>
-              <p className="text-sm font-black tracking-tight text-yellow-500 italic">
-                {t.home.landingZap}
+              <p className="text-center text-[13px] font-medium text-gray-500/90 md:text-left">
+                {t.home.ctaSpeed}
               </p>
               <LandingSocialProof
                 key={language}
@@ -348,7 +321,7 @@ export function HomeLanding() {
           <div className="mx-auto max-w-md pt-6">
             <button
               type="button"
-              onClick={onStartRegister}
+              onClick={goRegister}
               className="landing-html-cta w-full rounded-2xl py-6 text-2xl font-black tracking-tight text-black italic"
             >
               {t.home.landingClosingCta}

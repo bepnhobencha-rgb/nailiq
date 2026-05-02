@@ -21,10 +21,13 @@ export type UserMessages = {
     landingBody1: string;
     landingBody2: string;
     landingBody3: string;
-    landingPhonePlaceholder: string;
     landingCta: string;
     landingMicrotrust: string;
     landingZap: string;
+    /** Hero: one line under sub-headline */
+    autoLine: string;
+    /** Hero: muted line under CTA subtext */
+    ctaSpeed: string;
     landingEarnedTitle: string;
     landingEarnedSub: string;
     landingFeedNewBooking: string;
@@ -120,19 +123,21 @@ export const userEn: UserMessages = {
     signInLink: "Sign in →",
     landingUrgency:
       "⚠️ Most salons lose $50–$200 every day from missed calls",
-    landingH1Line1: "You’re losing money every day.",
-    landingH1Gold: "Not just empty chairs.",
+    landingH1Line1:
+      "$29/month.|Booking + walk-in queue,",
+    landingH1Gold: "built for nail salons.",
     landingBody1:
-      "You’re busy with a client. The phone rings. You don’t pick up.",
+      "3-5x cheaper than Booksy. Vietnamese-first. Walk-in queue included.",
     landingBody2: "That guest books somewhere else.",
     landingBody3: "You never know you lost them.",
-    landingPhonePlaceholder: "Enter your salon phone…",
-    landingCta: "Get your first booking in 2 minutes",
-    landingMicrotrust: "No app. No setup. No card required.",
+    landingCta: "Try free for 14 days",
+    landingMicrotrust: "14-day free trial. No credit card.",
     landingZap:
       "⚡ If you don’t fix this today, you’ll keep losing guests tomorrow",
+    autoLine: "Works 24/7 — even when you're with clients.",
+    ctaSpeed: "Sign up in 2 minutes.",
     landingEarnedTitle: "+$113 earned today",
-    landingEarnedSub: "from calls you didn't answer",
+    landingEarnedSub: "BOOKINGS YOU WON'T MISS",
     landingFeedNewBooking: "New Booking",
     landingSectionEyebrow:
       "You don’t see what you’re losing. But it happens every day.",
