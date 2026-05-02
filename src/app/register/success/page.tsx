@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
+import { getSiteUrl } from "@/shared/seo/site";
 
 function RegisterSuccessInner() {
   const router = useRouter();
@@ -24,11 +25,8 @@ function RegisterSuccessInner() {
 
   const bookingAbsoluteUrl = useMemo(() => {
     if (!slug) return "";
-    const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-    const siteUrl =
-      raw?.replace(/\/$/, "") ??
-      (typeof window !== "undefined" ? window.location.origin : "");
-    return `${siteUrl}/${encodeURIComponent(slug)}`;
+    const base = getSiteUrl().replace(/\/$/, "");
+    return `${base}/${encodeURIComponent(slug)}`;
   }, [slug]);
 
   const copy = useCallback(async () => {
