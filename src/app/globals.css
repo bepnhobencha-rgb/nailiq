@@ -123,6 +123,190 @@
   animation: nq-email-banner-in var(--duration-nq-base) var(--ease-nq-out) forwards;
 }
 
+/* Dashboard: new booking — inset glow so ancestors (e.g. ResponsiveShell overflow-x-clip) don’t crop outlines */
+@keyframes nq-new-booking-blink {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: inset 0 0 0 3px
+      color-mix(in srgb, var(--color-nq-primary) 65%, transparent);
+  }
+}
+
+.nq-new-booking-highlight {
+  pointer-events: none;
+  animation: nq-new-booking-blink 0.85s ease-in-out 3;
+}
+
+/* --- Home landing (Downloads/Landing.html parity) --- */
+.landing-html {
+  --landing-gold: #d4af37;
+  --landing-gold-light: #f2d388;
+  --landing-deep-navy: #050a15;
+  background-color: var(--landing-deep-navy);
+  font-family: var(--font-landing-inter), system-ui, -apple-system, sans-serif;
+}
+
+/* Refined gold type (nav wordmark uses split Nail / IQ) */
+.landing-html-title-gold {
+  font-family: var(--font-landing-playfair), ui-serif, Georgia, serif;
+  font-style: italic;
+  font-weight: 700;
+  background: linear-gradient(
+    165deg,
+    #fffef8 0%,
+    #f5e8bc 30%,
+    #e0c258 58%,
+    #b8922a 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 16px rgba(212, 175, 55, 0.28));
+}
+
+.landing-html-wordmark-wrap {
+  text-decoration: none;
+  outline: none;
+  border-radius: 4px;
+  transition:
+    transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+    filter 0.35s ease;
+}
+
+.landing-html-wordmark-wrap:hover {
+  transform: scale(1.03) translateY(-1px);
+  filter: brightness(1.06);
+}
+
+.landing-html-wordmark-wrap:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-nq-primary) 65%, transparent);
+  outline-offset: 4px;
+}
+
+.landing-html-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  font-family: var(--font-landing-playfair), ui-serif, Georgia, serif;
+  font-style: italic;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.landing-html-wordmark-nail {
+  font-weight: 600;
+  background: linear-gradient(
+    168deg,
+    #fffcf0 0%,
+    #f8edc4 32%,
+    #e4c86a 62%,
+    #bb9330 92%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 14px rgba(212, 175, 55, 0.32));
+}
+
+.landing-html-wordmark-iq {
+  margin-left: 0.06em;
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: 0.02em;
+  background: linear-gradient(
+    168deg,
+    #ffffff 0%,
+    #fff6d4 28%,
+    #f0d46a 55%,
+    #c9a227 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 22px rgba(212, 175, 55, 0.4));
+}
+
+.landing-html-wordmark-fallback {
+  font-family: var(--font-landing-playfair), ui-serif, Georgia, serif;
+  font-style: italic;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  background: linear-gradient(
+    168deg,
+    #fffef8 0%,
+    #f5e8bc 35%,
+    #d4af37 75%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 16px rgba(212, 175, 55, 0.3));
+}
+
+.landing-html-glass-card {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(212, 175, 55, 0.1);
+  border-radius: 20px;
+}
+
+.landing-html-cta {
+  background: linear-gradient(90deg, #d4af37, #f2d388, #d4af37);
+  background-size: 200% auto;
+  animation: landing-html-shimmer 4s linear infinite;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.landing-html-cta:hover {
+  transform: scale(1.02);
+  box-shadow: 0 0 30px rgba(212, 175, 55, 0.3);
+}
+
+@keyframes landing-html-shimmer {
+  0% {
+    background-position: 0% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+@keyframes landing-html-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.landing-html-booking-feed {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 12px;
+  height: 420px;
+  overflow: hidden;
+  position: relative;
+  padding-top: 5px;
+}
+
+.landing-html-booking-card {
+  flex-shrink: 0;
+  width: 100%;
+  animation: landing-html-slide-in 0.5s ease-out forwards;
+  z-index: 10;
+}
+
+.landing-html-urgency-glow {
+  text-shadow: 0 0 15px rgba(212, 175, 55, 0.4);
+}
+
 @layer base {
   html {
     overflow-x: hidden;

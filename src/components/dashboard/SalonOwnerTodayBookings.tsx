@@ -11,6 +11,7 @@ import { getUserMessages } from "@/shared/i18n/user";
 import { formatNailiqBookingRef } from "@/shared/lib/formatNailiqBookingRef";
 import { maskPhoneDigits } from "@/shared/lib/maskPhone";
 import type { SalonDashboardBooking } from "@/shared/types";
+import { bookingIdsEqual } from "@/shared/lib/bookingIdsEqual";
 import { cn } from "@/shared/lib/cn";
 
 export function SalonOwnerTodayBookings({
@@ -19,6 +20,7 @@ export function SalonOwnerTodayBookings({
   bookingHref,
   isSaving,
   onAdvanceStatus,
+  highlightBookingId,
 }: {
   items: SalonDashboardBooking[];
   language: "en" | "vi";
@@ -26,13 +28,14 @@ export function SalonOwnerTodayBookings({
   bookingHref: string;
   isSaving: boolean;
   onAdvanceStatus: (b: SalonDashboardBooking) => void;
+  highlightBookingId?: string | null;
 }) {
   const t = getUserMessages(language).salonDashboard;
 
   return (
-    <section className="mt-8" aria-label={t.todayAppointments}>
+    <section className="mt-8 overflow-visible" aria-label={t.todayAppointments}>
       <h2 className="text-lg font-semibold text-nq-foreground">{t.todayAppointments}</h2>
-      <ul className="mt-3 flex flex-col gap-2">
+      <ul className="mt-3 flex flex-col gap-2 overflow-visible">
         {items.length === 0 ? (
           <li className="rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-6 text-center">
             <p className="text-base font-medium text-nq-foreground">
@@ -49,14 +52,23 @@ export function SalonOwnerTodayBookings({
             </Link>
           </li>
         ) : (
-          items.map((b) => (
+          items.map((b) => {
+            const showHighlight = bookingIdsEqual(b.id, highlightBookingId);
+            return (
             <li
               key={b.id}
               className={cn(
-                "rounded-2xl border px-4 py-3",
+                "relative overflow-visible rounded-2xl border px-4 py-3",
                 salonBookingStatusClass(b.status),
               )}
             >
+              {showHighlight ? (
+                <span
+                  className="nq-new-booking-highlight absolute inset-0 z-0 rounded-2xl"
+                  aria-hidden
+                />
+              ) : null}
+              <div className="relative z-[1] w-full min-w-0">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <p className="text-sm font-semibold tabular-nums text-nq-foreground">
                   {new Date(b.start_time_utc).toLocaleTimeString(undefined, {
@@ -103,8 +115,10 @@ export function SalonOwnerTodayBookings({
                   {t.advanceStatus}
                 </Button>
               ) : null}
+              </div>
             </li>
-          ))
+            );
+          })
         )}
       </ul>
     </section>

@@ -1,8 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/shared/lib/supabase/client";
+import { SetupToast, type SetupToastPayload } from "@/components/ui/Toast";
+import {
+  DASHBOARD_BOOKING_SELECT,
+  mapDashboardBookingRow,
+  type BookingRowDb,
+} from "@/shared/dashboard/dashboardBookingMap";
 import { Button } from "@/components/ui/Button";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
@@ -20,6 +26,7 @@ import {
   type SalonDashboardBooking,
 } from "@/shared/dashboard/salonOwnerActions";
 import { getUserMessages } from "@/shared/i18n/user";
+import { bookingIdsEqual } from "@/shared/lib/bookingIdsEqual";
 import { REG_FLOW_OWNER_RETURNING } from "@/shared/lib/registerSessionKeys";
 import { getSiteUrlForClient } from "@/shared/lib/siteUrlClient";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -48,6 +55,14 @@ export function SalonOwnerDashboard({
   const [copied, setCopied] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(() => Date.now());
   const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [newBookingToast, setNewBookingToast] =
+    useState<SetupToastPayload | null>(null);
+  const [highlightBookingId, setHighlightBookingId] = useState<string | null>(
+    null,
+  );
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const salonIdForRealtime = data?.salon.id ?? null;
 
   const showRecoveryEmailBanner = !data?.salon.email?.trim();
 
@@ -95,48 +110,150 @@ export function SalonOwnerDashboard({
 
   useEffect(() => {
     if (!data) return;
+    /** Demo cookie dashboard has no Supabase JWT; RLS denies anon SELECT on bookings, so postgres_changes never arrives — poll faster instead. */
+    const ms = data.demoMode ? 8_000 : 30_000;
     const id = window.setInterval(() => {
       void refresh();
-    }, 30_000);
+    }, ms);
     return () => window.clearInterval(id);
-  }, [data, refresh]);
+  }, [data, data?.demoMode, refresh]);
 
   useEffect(() => {
-    if (!data) return;
-    const salonId = data.salon.id;
+    if (!salonIdForRealtime || !data || data.demoMode) return;
+
+    const salonId = salonIdForRealtime;
     const supabase = createClient();
     const filter = `salon_id=eq.${salonId}`;
-    const onBookingChange = () => {
-      void refresh();
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    const scheduleHighlight = (bookingId: string) => {
+      const idNorm = String(bookingId).trim().toLowerCase();
+      if (!idNorm) return;
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current);
+      }
+      setHighlightBookingId(idNorm);
+      highlightTimerRef.current = setTimeout(() => {
+        setHighlightBookingId((cur) =>
+          cur != null && bookingIdsEqual(cur, idNorm) ? null : cur,
+        );
+        highlightTimerRef.current = null;
+      }, 4500);
     };
-    const channel = supabase
-      .channel(`dashboard-bookings-${salonId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "bookings",
-          filter,
-        },
-        onBookingChange,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "bookings",
-          filter,
-        },
-        onBookingChange,
-      )
-      .subscribe();
+
+    const onInsert = async (payload: { new: Record<string, unknown> }) => {
+      const record = payload.new as { id?: string; salon_id?: string };
+      if (
+        !record.id ||
+        !bookingIdsEqual(
+          record.salon_id != null ? String(record.salon_id) : null,
+          String(salonId),
+        )
+      ) {
+        return;
+      }
+
+      const { data: row, error } = await supabase
+        .from("bookings")
+        .select(DASHBOARD_BOOKING_SELECT)
+        .eq("id", record.id)
+        .maybeSingle();
+
+      if (error || !row) {
+        scheduleHighlight(record.id);
+        void refresh();
+        return;
+      }
+
+      const mapped = mapDashboardBookingRow(row as unknown as BookingRowDb);
+
+      setData((prev) => {
+        if (!prev) return prev;
+        if (prev.allBookings.some((b) => bookingIdsEqual(b.id, mapped.id))) {
+          return prev;
+        }
+        return {
+          ...prev,
+          allBookings: [mapped, ...prev.allBookings],
+        };
+      });
+      setLastUpdatedAt(Date.now());
+      setNewBookingToast({
+        variant: "success",
+        message: "Bạn có lịch hẹn mới từ khách hàng!",
+      });
+      scheduleHighlight(mapped.id);
+    };
+
+    const {
+      data: { subscription: authSubscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      supabase.realtime.setAuth(session?.access_token ?? null);
+    });
+
+    void (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (cancelled) return;
+      supabase.realtime.setAuth(session?.access_token ?? null);
+      if (cancelled) return;
+
+      const ch = supabase
+        .channel(`dashboard-bookings-${salonId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "bookings",
+            filter,
+          },
+          (payload) => {
+            void onInsert(payload);
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "bookings",
+            filter,
+          },
+          () => {
+            void refresh();
+          },
+        )
+        .subscribe((status, err) => {
+          if (
+            process.env.NODE_ENV === "development" &&
+            (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || err)
+          ) {
+            console.warn("[SalonOwnerDashboard] bookings realtime:", status, err);
+          }
+        });
+
+      if (cancelled) {
+        void supabase.removeChannel(ch);
+        return;
+      }
+      channel = ch;
+    })();
 
     return () => {
-      void supabase.removeChannel(channel);
+      cancelled = true;
+      authSubscription.unsubscribe();
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current);
+        highlightTimerRef.current = null;
+      }
+      if (channel) {
+        void supabase.removeChannel(channel);
+      }
     };
-  }, [data, refresh]);
+  }, [salonIdForRealtime, refresh, data?.demoMode]);
 
   const viewData: SalonOwnerDashboardViewPayload | null = useMemo(() => {
     if (!data) return null;
@@ -238,6 +355,10 @@ export function SalonOwnerDashboard({
 
   return (
     <ResponsiveShell>
+      <SetupToast
+        toast={newBookingToast}
+        onDismiss={() => setNewBookingToast(null)}
+      />
       <SalonOwnerDashboardMain
         topSlot={
           showRecoveryEmailBanner ? (
@@ -286,6 +407,7 @@ export function SalonOwnerDashboard({
         }}
         manualRefreshing={manualRefreshing}
         showDataSkeleton={isLoading || manualRefreshing}
+        highlightBookingId={highlightBookingId}
       />
     </ResponsiveShell>
   );

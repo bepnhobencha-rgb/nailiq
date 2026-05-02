@@ -14,6 +14,44 @@ export const userVi: UserMessages = {
     navOwnerLoginShort: "Đăng nhập",
     alreadySalonPrefix: "Đã có tiệm? ",
     signInLink: "Đăng nhập →",
+    landingUrgency:
+      "⚠️ Hầu hết tiệm mất $50–$200 mỗi ngày từ cuộc gọi nhỡ",
+    landingH1Line1: "Bạn đang mất tiền mỗi ngày.",
+    landingH1Gold: "Không phải chỉ mất lịch.",
+    landingBody1:
+      "Bạn đang bận làm khách. Điện thoại reo. Bạn không bắt máy.",
+    landingBody2: "Khách đó đặt tiệm khác.",
+    landingBody3: "Bạn không bao giờ biết mình đã mất họ.",
+    landingPhonePlaceholder: "Nhập số điện thoại của tiệm...",
+    landingCta: "Có lịch đầu tiên trong 2 phút",
+    landingMicrotrust: "No app. Không setup. Không cần thẻ.",
+    landingZap:
+      "⚡ Nếu không fix hôm nay, bạn vẫn sẽ mất khách ngày mai",
+    landingEarnedTitle: "+$113 earned today",
+    landingEarnedSub: "từ những cuộc gọi bạn không bắt máy",
+    landingFeedNewBooking: "Lịch mới",
+    landingSectionEyebrow:
+      "Bạn không thấy những gì bạn đang mất. Nhưng nó xảy ra mỗi ngày.",
+    landingSectionTitle: "Tiệm đang mất tiền từ những khoảnh khắc nhỏ",
+    landingProblem1: "LỠ CUỘC GỌI KHI ĐANG LÀM KHÁCH",
+    landingProblem2: "GIỜ TRỐNG KHÔNG ĐƯỢC LẤP",
+    landingProblem3: "KHÁCH ĐẶT TIỆM KHÁC",
+    landingClosingLine1: "Bạn đang mất khách",
+    landingClosingLine2: "mỗi ngày.",
+    landingClosingSub:
+      "Nếu không bắt đầu hôm nay, bạn sẽ tiếp tục mất họ.",
+    landingClosingCta: "Bắt đầu lấy lại khách ngay",
+    landingSocialProof1: "🔴 LIVE • Anna vừa có lịch 2 phút trước",
+    landingSocialProof2: "Lisa đã lấp 3 giờ trống hôm nay",
+    landingSocialProof3: "Jenny vừa thêm $113 từ cuộc gọi nhỡ",
+    landingSocialProof4: "842 tiệm nhận booking trong 24h qua",
+    landingFeedServices: [
+      "Pedicure",
+      "Gel Manicure",
+      "Full Set",
+      "Classic Set",
+      "Hybrid Volume",
+    ],
   },
   register: {
     returningOwnerHint:

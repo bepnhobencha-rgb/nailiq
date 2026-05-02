@@ -14,6 +14,7 @@ import { GearIcon } from "@/components/ui/icons/GearIcon";
 import type { SalonOwnerDashboardViewPayload } from "@/components/dashboard/salonDashboardFormat";
 import { getUserMessages } from "@/shared/i18n/user";
 import { maskPhoneDigits } from "@/shared/lib/maskPhone";
+import { bookingIdsEqual } from "@/shared/lib/bookingIdsEqual";
 import { cn } from "@/shared/lib/cn";
 import type { SalonDashboardBooking } from "@/shared/types";
 
@@ -36,6 +37,7 @@ export function SalonOwnerDashboardMain({
   onManualRefresh,
   manualRefreshing,
   showDataSkeleton,
+  highlightBookingId,
 }: {
   topSlot?: ReactNode;
   slug: string;
@@ -55,6 +57,7 @@ export function SalonOwnerDashboardMain({
   onManualRefresh: () => void;
   manualRefreshing: boolean;
   showDataSkeleton: boolean;
+  highlightBookingId?: string | null;
 }) {
   const t = getUserMessages(language).salonDashboard;
   const [elapsedMinutes, setElapsedMinutes] = useState(0);
@@ -88,7 +91,7 @@ export function SalonOwnerDashboardMain({
 
   return (
     <MobileStack
-      className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pt-2"
+      className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] overflow-visible pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pt-2"
       aria-busy={busy}
     >
       {topSlot}
@@ -230,10 +233,11 @@ export function SalonOwnerDashboardMain({
             bookingHref={bookingHref}
             isSaving={isSaving}
             onAdvanceStatus={onAdvanceStatus}
+            highlightBookingId={highlightBookingId}
           />
 
           <section
-            className="mt-8 pb-[max(env(safe-area-inset-bottom),1rem)]"
+            className="mt-8 overflow-visible pb-[max(env(safe-area-inset-bottom),1rem)]"
             aria-label={t.upcomingConfirmed}
           >
             <h2 className="text-lg font-semibold text-nq-foreground">
@@ -250,12 +254,24 @@ export function SalonOwnerDashboardMain({
                     <p className="text-xs font-semibold uppercase tracking-wide text-nq-primary/90">
                       {group.label}
                     </p>
-                    <ul className="mt-2 flex flex-col gap-1.5">
-                      {group.items.map((b) => (
+                    <ul className="mt-2 flex flex-col gap-1.5 overflow-visible">
+                      {group.items.map((b) => {
+                        const showHighlight = bookingIdsEqual(
+                          b.id,
+                          highlightBookingId,
+                        );
+                        return (
                         <li
                           key={b.id}
-                          className="flex flex-wrap items-baseline justify-between gap-2 rounded-xl border border-nq-border/25 bg-nq-surface/35 px-3 py-2"
+                          className="relative overflow-visible rounded-xl border border-nq-border/25 bg-nq-surface/35 px-3 py-2"
                         >
+                          {showHighlight ? (
+                            <span
+                              className="nq-new-booking-highlight absolute inset-0 z-0 rounded-xl"
+                              aria-hidden
+                            />
+                          ) : null}
+                          <div className="relative z-[1] flex w-full min-w-0 flex-wrap items-baseline justify-between gap-2">
                           <span className="text-sm font-medium tabular-nums text-nq-foreground">
                             {new Date(b.start_time_utc).toLocaleTimeString(
                               undefined,
@@ -279,8 +295,10 @@ export function SalonOwnerDashboardMain({
                               {b.client_notes}
                             </p>
                           ) : null}
+                          </div>
                         </li>
-                      ))}
+                        );
+                      })}
                     </ul>
                   </div>
                 ))}

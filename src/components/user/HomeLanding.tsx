@@ -2,13 +2,16 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo } from "react";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { MobileStack } from "@/components/layout/MobileStack";
-import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
-import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { getUserMessages } from "@/shared/i18n/user";
+import type { UserLanguage } from "@/shared/i18n/user/types";
 import { REG_SESSION_PHONE_DIGITS_KEY } from "@/shared/lib/registerSessionKeys";
 import { cn } from "@/shared/lib/cn";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -17,10 +20,165 @@ import {
   normalizeRegisterPhone,
 } from "@/shared/register/phone";
 
+type FeedCard = {
+  id: string;
+  service: string;
+  price: number;
+  hour: number;
+};
+
+function LandingBookingFeed({
+  services,
+  newBookingLabel,
+}: {
+  services: readonly string[];
+  newBookingLabel: string;
+}) {
+  const [cards, setCards] = useState<FeedCard[]>([]);
+
+  useEffect(() => {
+    if (services.length === 0) return;
+    let cancelled = false;
+    let timeoutId: number | null = null;
+
+    const addCard = () => {
+      if (cancelled) return;
+      const service = services[Math.floor(Math.random() * services.length)]!;
+      const price = Math.floor(Math.random() * 21) + 30;
+      const hour = Math.floor(Math.random() * 10) + 9;
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      setCards((prev) => [{ id, service, price, hour }, ...prev].slice(0, 4));
+    };
+
+    const loop = () => {
+      if (cancelled) return;
+      const delay = Math.floor(Math.random() * 3000) + 3000;
+      timeoutId = window.setTimeout(() => {
+        addCard();
+        loop();
+      }, delay);
+    };
+
+    const startId = window.setTimeout(() => {
+      if (cancelled) return;
+      addCard();
+      window.setTimeout(() => {
+        if (!cancelled) addCard();
+      }, 1000);
+      loop();
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(startId);
+      if (timeoutId != null) window.clearTimeout(timeoutId);
+    };
+  }, [services]);
+
+  return (
+    <div className="landing-html-booking-feed" aria-hidden>
+      {cards.map((c) => (
+        <div
+          key={c.id}
+          className="landing-html-booking-card landing-html-glass-card flex items-center gap-4 p-5 shadow-xl"
+        >
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-yellow-500/20 text-xl font-black text-yellow-500">
+            ＋
+          </div>
+          <div>
+            <div className="text-sm font-black text-white">{newBookingLabel}</div>
+            <div className="text-[11px] font-bold tracking-wide text-gray-400 uppercase">
+              {c.hour}:00 PM — {c.service} • ${c.price}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Nav wordmark: “Nail” + “IQ” với gradient khác nhau; fallback nếu brandName không kết thúc bằng IQ */
+function LandingBrandMark({ name }: { name: string }) {
+  const parts = /^([\s\S]*?)(IQ)$/i.exec(name);
+  if (!parts) {
+    return (
+      <span className="landing-html-wordmark-fallback" aria-label={name}>
+        {name}
+      </span>
+    );
+  }
+  return (
+    <span className="landing-html-wordmark" aria-label={name}>
+      <span className="landing-html-wordmark-nail">{parts[1]}</span>
+      <span className="landing-html-wordmark-iq">{parts[2]}</span>
+    </span>
+  );
+}
+
+function LandingSocialProof({
+  lines,
+  proofVisible,
+  setProofVisible,
+}: {
+  lines: readonly string[];
+  proofVisible: boolean;
+  setProofVisible: Dispatch<SetStateAction<boolean>>;
+}) {
+  const [proofIndex, setProofIndex] = useState(0);
+
+  useEffect(() => {
+    if (lines.length === 0) return;
+
+    let fadeTimeoutId: number | null = null;
+    const intervalId = window.setInterval(() => {
+      if (fadeTimeoutId != null) {
+        window.clearTimeout(fadeTimeoutId);
+        fadeTimeoutId = null;
+      }
+      setProofVisible(false);
+      fadeTimeoutId = window.setTimeout(() => {
+        fadeTimeoutId = null;
+        setProofIndex((i) => (i + 1) % lines.length);
+        setProofVisible(true);
+      }, 500);
+    }, 4000);
+
+    return () => {
+      window.clearInterval(intervalId);
+      if (fadeTimeoutId != null) window.clearTimeout(fadeTimeoutId);
+    };
+  }, [lines.length, setProofVisible]);
+
+  return (
+    <div
+      className="flex h-6 items-center gap-2 text-sm font-bold text-gray-400 transition-opacity duration-500"
+      style={{ opacity: proofVisible ? 1 : 0 }}
+    >
+      <span className="h-2 w-2 animate-pulse rounded-full bg-red-600" />
+      <span>{lines[proofIndex]}</span>
+    </div>
+  );
+}
+
 export function HomeLanding() {
   const router = useRouter();
   const { language, setLanguage } = useUserLanguage();
   const t = useMemo(() => getUserMessages(language), [language]);
+  const [proofVisible, setProofVisible] = useState(true);
+
+  useEffect(() => {
+    setProofVisible(true);
+  }, [language]);
+
+  const socialLines = useMemo(
+    () => [
+      t.home.landingSocialProof1,
+      t.home.landingSocialProof2,
+      t.home.landingSocialProof3,
+      t.home.landingSocialProof4,
+    ],
+    [t],
+  );
 
   const onStartRegister = useCallback(() => {
     const el = document.querySelector<HTMLInputElement>('input[name="phone"]');
@@ -31,111 +189,173 @@ export function HomeLanding() {
     router.push("/register");
   }, [router]);
 
-  return (
-    <ResponsiveShell showAmbient={false}>
-      <div
-        className="absolute top-[max(0.75rem,env(safe-area-inset-top))] right-[max(0.75rem,env(safe-area-inset-right))] z-20 sm:top-4 sm:right-4"
-      >
-        <UserLanguageToggle language={language} onLanguageChange={setLanguage} />
-      </div>
+  const setLang = (next: UserLanguage) => setLanguage(next);
 
-      <MobileStack className="flex min-h-[70vh] flex-col justify-center pb-safe pt-10 sm:pt-14">
-        <nav
-          className="mb-6 flex w-full max-w-full items-center gap-2 sm:mb-8 sm:gap-3"
-          aria-label="Site"
+  return (
+    <div className="landing-html min-h-dvh overflow-x-hidden pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <p className="sr-only">{t.seoIntro}</p>
+
+      <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8 md:px-12">
+        <Link
+          href="/"
+          className="landing-html-wordmark-wrap text-3xl tracking-tighter md:text-[2.35rem]"
         >
-          <Link
-            href="/"
-            className="shrink-0 text-sm font-semibold tracking-tight text-nq-foreground/92"
-          >
-            {t.brandName}
-          </Link>
-          <div className="flex min-w-0 flex-1 justify-center px-0.5">
-            <Link
-              href="/register"
+          <LandingBrandMark name={t.brandName} />
+        </Link>
+        <div className="flex items-center gap-4">
+          <span className="flex items-center gap-1 text-xs font-black tracking-widest uppercase opacity-50">
+            <button
+              type="button"
+              onClick={() => setLang("en")}
               className={cn(
-                "inline-flex items-center gap-0.5 text-sm text-nq-muted/80",
-                "transition-colors duration-150 hover:text-nq-primary",
+                "cursor-pointer transition hover:opacity-100",
+                language === "en" ? "opacity-100" : "opacity-50",
               )}
             >
-              <span className="sm:hidden">
-                {t.home.navOwnerLoginShort}{" "}
-                <span aria-hidden>↗</span>
-              </span>
-              <span className="hidden sm:inline">
-                {t.home.navOwnerLogin}{" "}
-                <span aria-hidden>↗</span>
-              </span>
-            </Link>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="primary"
-            className="h-9 min-h-9 shrink-0 rounded-full px-3 text-xs font-semibold sm:h-10 sm:min-h-10 sm:px-4 sm:text-sm"
-            onClick={onStartRegister}
-          >
-            {t.home.ctaRegister}
-          </Button>
-        </nav>
-
-        <p className="sr-only text-balance">{t.seoIntro}</p>
-
-        <header className="space-y-4 text-center sm:space-y-5">
-          <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-nq-muted sm:text-[11px]">
-            {t.brandName}
-          </p>
-          <h1 className="mx-auto max-w-[20ch] text-balance text-2xl font-semibold tracking-tight text-nq-foreground sm:max-w-xl sm:text-4xl">
-            {t.home.headline}
-          </h1>
-          <p className="mx-auto max-w-md text-pretty text-[15px] leading-relaxed text-nq-muted sm:text-lg">
-            {t.home.subline}
-          </p>
-        </header>
-
-        <div className="mt-10 flex w-full flex-col">
-          <Input
-            name="phone"
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-            placeholder={
-              language === "vi"
-                ? "Số điện thoại (tùy chọn, điền trước khi bấm Bắt đầu)"
-                : "Phone (optional — enter before Get started)"
-            }
-            aria-label={language === "vi" ? "Số điện thoại" : "Phone number"}
-          />
-          <Button
-            type="button"
-            size="lg"
-            variant="primary"
-            className="mt-4 w-full"
-            onClick={onStartRegister}
-          >
-            {t.home.ctaRegister}
-          </Button>
-          <p className="mt-3 text-center text-xs text-nq-muted/60 sm:text-[12px]">
-            {t.home.alreadySalonPrefix}
-            <Link
-              href="/register"
-              className="text-nq-muted/60 transition-colors duration-150 hover:text-nq-primary"
+              EN
+            </button>
+            <span className="opacity-40" aria-hidden>
+              |
+            </span>
+            <button
+              type="button"
+              onClick={() => setLang("vi")}
+              className={cn(
+                "cursor-pointer transition hover:opacity-100",
+                language === "vi" ? "opacity-100" : "opacity-50",
+              )}
             >
-              {t.home.signInLink}
-            </Link>
-          </p>
-
-          <p className="mt-4 text-center text-xs text-nq-muted sm:text-sm">
-            {t.home.footerNote}{" "}
-            <Link
-              href="/register"
-              className="text-nq-primary-soft underline decoration-nq-primary/30 underline-offset-2"
-            >
-              {language === "vi" ? "Đăng ký" : "Register"}
-            </Link>
-          </p>
+              VI
+            </button>
+          </span>
         </div>
-      </MobileStack>
-    </ResponsiveShell>
+      </nav>
+
+      <section className="mx-auto max-w-7xl px-6 pt-8 pb-24 md:px-12 md:pt-16">
+        <div className="grid grid-cols-1 items-center gap-12 md:grid-cols-2 md:gap-20">
+          <div className="space-y-10">
+            <p className="landing-html-urgency-glow text-sm font-black tracking-widest text-yellow-500 uppercase">
+              {t.home.landingUrgency}
+            </p>
+
+            <h1 className="text-5xl leading-[1.05] font-black tracking-tight text-white md:text-8xl">
+              {t.home.landingH1Line1}
+              <br />
+              <span className="landing-html-title-gold italic">
+                {t.home.landingH1Gold}
+              </span>
+            </h1>
+
+            <div className="space-y-3 text-lg font-medium text-gray-400 md:text-2xl leading-relaxed">
+              <p>{t.home.landingBody1}</p>
+              <p className="font-extrabold text-white underline decoration-yellow-500 underline-offset-8">
+                {t.home.landingBody2}
+              </p>
+              <p>{t.home.landingBody3}</p>
+            </div>
+
+            <div className="space-y-6">
+              <div className="flex max-w-md flex-col gap-4">
+                <input
+                  name="phone"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder={t.home.landingPhonePlaceholder}
+                  aria-label={t.home.landingPhonePlaceholder}
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 p-6 text-base text-white outline-none transition-all focus:border-yellow-500 md:text-lg"
+                />
+                <button
+                  type="button"
+                  onClick={onStartRegister}
+                  className="landing-html-cta w-full rounded-2xl py-6 text-xl font-extrabold text-black shadow-2xl"
+                >
+                  {t.home.landingCta}
+                </button>
+              </div>
+              <p className="text-center text-xs font-medium text-gray-500 md:text-left">
+                {t.home.landingMicrotrust}
+              </p>
+              <p className="text-sm font-black tracking-tight text-yellow-500 italic">
+                {t.home.landingZap}
+              </p>
+              <LandingSocialProof
+                key={language}
+                lines={socialLines}
+                proofVisible={proofVisible}
+                setProofVisible={setProofVisible}
+              />
+            </div>
+          </div>
+
+          <div className="relative flex justify-center">
+            <div className="absolute inset-0 -z-10 rounded-full bg-yellow-500/10 blur-[150px]" />
+            <div className="w-full max-w-sm space-y-6">
+              <div className="landing-html-glass-card relative z-20 border-yellow-500/40 bg-white/5 p-8 shadow-2xl">
+                <div className="landing-html-urgency-glow text-4xl font-black text-white">
+                  {t.home.landingEarnedTitle}
+                </div>
+                <div className="mt-2 text-[11px] font-black tracking-widest text-gray-500 uppercase">
+                  {t.home.landingEarnedSub}
+                </div>
+              </div>
+              <LandingBookingFeed
+                services={t.home.landingFeedServices}
+                newBookingLabel={t.home.landingFeedNewBooking}
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-y border-white/5 bg-white/[0.02] py-24">
+        <div className="mx-auto max-w-7xl px-6">
+          <p className="mb-3 text-center text-xs font-black tracking-widest text-yellow-500 uppercase">
+            {t.home.landingSectionEyebrow}
+          </p>
+          <h2 className="mb-16 text-center text-4xl font-black text-white md:text-5xl">
+            {t.home.landingSectionTitle}
+          </h2>
+          <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
+            {[
+              { emoji: "📞", title: t.home.landingProblem1 },
+              { emoji: "⏰", title: t.home.landingProblem2 },
+              { emoji: "💔", title: t.home.landingProblem3 },
+            ].map((card) => (
+              <div
+                key={card.title}
+                className="landing-html-glass-card space-y-5 p-12 text-center transition hover:bg-white/5"
+              >
+                <div className="text-2xl" aria-hidden>
+                  {card.emoji}
+                </div>
+                <h3 className="text-xl leading-tight font-black">{card.title}</h3>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="px-6 py-40 text-center">
+        <div className="mx-auto max-w-4xl space-y-10">
+          <h2 className="text-6xl font-black tracking-tighter text-white md:text-8xl">
+            {t.home.landingClosingLine1} <br />
+            {t.home.landingClosingLine2}
+          </h2>
+          <p className="mx-auto max-w-2xl text-2xl font-bold text-gray-400">
+            {t.home.landingClosingSub}
+          </p>
+          <div className="mx-auto max-w-md pt-6">
+            <button
+              type="button"
+              onClick={onStartRegister}
+              className="landing-html-cta w-full rounded-2xl py-6 text-2xl font-black tracking-tight text-black italic"
+            >
+              {t.home.landingClosingCta}
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }

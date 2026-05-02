@@ -1,11 +1,26 @@
 import type { Metadata } from "next";
+import { Inter, Playfair_Display } from "next/font/google";
 import { HomeLanding } from "@/components/user/HomeLanding";
 import { getLandingJsonLd } from "@/shared/seo/jsonLd";
 
-const landingDescription =
-  "NailIQ helps nail salons get booked automatically with AI-powered booking, operations, and growth tools.";
+const landingInter = Inter({
+  subsets: ["latin"],
+  variable: "--font-landing-inter",
+  display: "swap",
+});
 
-const landingTitle = "NailIQ — Salon booking & operations";
+const landingPlayfair = Playfair_Display({
+  weight: "700",
+  style: ["italic"],
+  subsets: ["latin"],
+  variable: "--font-landing-playfair",
+  display: "swap",
+});
+
+const landingDescription =
+  "NailIQ helps nail salons stop losing money from missed calls—get bookings in minutes without another app.";
+
+const landingTitle = "NailIQ — Stop losing money from missed calls";
 
 export const metadata: Metadata = {
   title: landingTitle,
@@ -29,7 +44,11 @@ export default function Home() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
       />
-      <HomeLanding />
+      <div
+        className={`${landingInter.variable} ${landingPlayfair.variable}`}
+      >
+        <HomeLanding />
+      </div>
     </>
   );
 }

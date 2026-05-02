@@ -1,5 +1,6 @@
 "use server";
 
+import * as Sentry from "@sentry/nextjs";
 import { cookies } from "next/headers";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -9,6 +10,7 @@ import {
 } from "@/shared/dashboard/salonOwnerActions";
 import {
   mergeOpeningHoursFromClient,
+  parseOpeningHours,
   stableOpeningHoursJson,
   type OpeningHoursWeek,
 } from "@/shared/dashboard/openingHoursDefaults";
@@ -140,6 +142,10 @@ function classifySalonHourSaveError(error: {
 
   if (
     code === "42703" ||
+    code === "PGRST204" ||
+    (blob.includes("could not find") &&
+      blob.includes("column") &&
+      blob.includes("schema cache")) ||
     (blob.includes("column") &&
       (blob.includes("does not exist") ||
         blob.includes("undefined column") ||
@@ -158,6 +164,47 @@ function classifySalonHourSaveError(error: {
   }
 
   return "server_error";
+}
+
+type SupabaseErrShape = {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+};
+
+function captureOpeningHoursSupabaseFailure(
+  err: SupabaseErrShape,
+  meta: { slug: string; salonId: string; stage: string },
+) {
+  const wrapped = new Error(
+    err.message?.trim() || "updateOpeningHours Supabase error",
+  );
+  wrapped.name = "UpdateOpeningHoursSupabaseError";
+  Sentry.captureException(wrapped, {
+    tags: {
+      "salon.action": "update_opening_hours",
+      "supabase.code": err.code ?? "unknown",
+      "salon.slug": meta.slug,
+    },
+    contexts: {
+      nailiq_opening_hours: {
+        stage: meta.stage,
+        salon_id: meta.salonId,
+        supabase: err,
+      },
+    },
+  });
+}
+
+function captureOpeningHoursUnexpected(err: unknown, meta: { slug: string }) {
+  Sentry.captureException(err, {
+    tags: {
+      "salon.action": "update_opening_hours",
+      "salon.slug": meta.slug,
+    },
+    extra: { slug: meta.slug },
+  });
 }
 
 export async function addService(
@@ -456,70 +503,126 @@ export async function updateOpeningHours(
   openingHours: OpeningHoursWeek,
   closedDatesYmd: string[] = [],
 ): Promise<Ok | Fail> {
-  const r = await resolveSalonForDashboard(slug);
+  const slugTrimmed = typeof slug === "string" ? slug.trim() : "";
+  if (!slugTrimmed) {
+    return fail("unauthorized");
+  }
+
+  const r = await resolveSalonForDashboard(slugTrimmed);
   if (!r) return fail("unauthorized");
 
-  const demoGate = await verifyDemoSetupSlug(slug, r.kind);
+  const salonId = String(r.salon.id ?? "").trim();
+  if (!salonId) {
+    captureOpeningHoursUnexpected(new Error("resolveSalonForDashboard missing id"), {
+      slug: slugTrimmed,
+    });
+    return fail("server_error");
+  }
+
+  const demoGate = await verifyDemoSetupSlug(slugTrimmed, r.kind);
   if (demoGate) return demoGate;
 
-  const isDemo = isDemoOtpRuntime();
-  console.log("[updateOpeningHours] isDemo:", isDemo);
-  console.log("[updateOpeningHours] slug:", slug);
-  console.log("[updateOpeningHours] data:", openingHours);
-  console.log("openingHours payload:", JSON.stringify(openingHours));
-
-  const merged = mergeOpeningHoursFromClient(openingHours);
+  const hoursInput: unknown =
+    openingHours && typeof openingHours === "object" ? openingHours : null;
+  const merged = mergeOpeningHoursFromClient(hoursInput);
+  const revalidated = parseOpeningHours(JSON.parse(stableOpeningHoursJson(merged)));
+  if (!revalidated) {
+    return fail("invalid_hours");
+  }
 
   let serialized: string;
   try {
-    serialized = stableOpeningHoursJson(merged);
+    serialized = stableOpeningHoursJson(revalidated);
   } catch {
     return fail("invalid_hours");
   }
 
-  console.log("[updateOpeningHours] merged opening_hours JSONB:", serialized);
-
-  const datesForClosed =
-    Array.isArray(closedDatesYmd)
-      ? closedDatesYmd.filter((x): x is string => typeof x === "string")
-      : [];
+  const datesForClosed = Array.isArray(closedDatesYmd)
+    ? closedDatesYmd.filter((x): x is string => typeof x === "string")
+    : [];
   const closedJson = normalizeBookingClosedDateList(datesForClosed);
 
-  const supabase = await writableSupabase(slug, r.kind);
-  const openingHoursParsed = JSON.parse(serialized) as Record<string, unknown>;
-  const { data: updatedRow, error } = await supabase
-    .from("salons")
-    .update({
-      opening_hours: openingHoursParsed,
-      booking_closed_dates: closedJson,
-    })
-    .eq("id", r.salon.id)
-    .eq("slug", slug)
-    .select("id")
-    .maybeSingle();
-
-  console.log("[updateOpeningHours] updateResult:", error ?? { ok: true, id: updatedRow?.id });
-
-  if (error) {
-    console.error("[updateOpeningHours] error:", error);
-    return fail(classifySalonHourSaveError(error));
-  }
-
-  if (!updatedRow?.id) {
-    console.error("[updateOpeningHours] no row updated", {
-      salonId: r.salon.id,
-      slug,
-      kind: r.kind,
-    });
-    return fail("permission_denied");
+  let openingHoursParsed: Record<string, unknown>;
+  try {
+    openingHoursParsed = JSON.parse(serialized) as Record<string, unknown>;
+  } catch {
+    return fail("invalid_hours");
   }
 
   try {
-    await refreshSalonProfileComplete(supabase, r.salon.id);
+    const supabase = await writableSupabase(slugTrimmed, r.kind);
+
+    const patchFull = {
+      opening_hours: openingHoursParsed,
+      booking_closed_dates: closedJson,
+    };
+
+    let { data: updatedRow, error } = await supabase
+      .from("salons")
+      .update(patchFull)
+      .eq("id", salonId)
+      .eq("slug", slugTrimmed)
+      .select("id")
+      .maybeSingle();
+
+    const missingBookingClosedColumn =
+      error?.code === "PGRST204" &&
+      typeof error.message === "string" &&
+      error.message.includes("booking_closed_dates");
+
+    if (missingBookingClosedColumn) {
+      console.warn(
+        "[updateOpeningHours] booking_closed_dates not in PostgREST schema; applied opening_hours only. Run supabase migration 20260430210000_salons_booking_closed_dates (or reload schema).",
+      );
+      ({ data: updatedRow, error } = await supabase
+        .from("salons")
+        .update({ opening_hours: openingHoursParsed })
+        .eq("id", salonId)
+        .eq("slug", slugTrimmed)
+        .select("id")
+        .maybeSingle());
+    }
+
+    if (error) {
+      console.error("[updateOpeningHours] error:", error);
+      captureOpeningHoursSupabaseFailure(error, {
+        slug: slugTrimmed,
+        salonId,
+        stage: missingBookingClosedColumn
+          ? "after_hours_only_retry"
+          : "full_patch",
+      });
+      return fail(classifySalonHourSaveError(error));
+    }
+
+    if (!updatedRow?.id) {
+      console.error("[updateOpeningHours] no row updated", {
+        salonId,
+        slug: slugTrimmed,
+        kind: r.kind,
+      });
+      Sentry.captureMessage("updateOpeningHours: zero rows updated", {
+        level: "warning",
+        tags: {
+          "salon.action": "update_opening_hours",
+          "salon.slug": slugTrimmed,
+        },
+        extra: { salonId, kind: r.kind },
+      });
+      return fail("permission_denied");
+    }
+
+    try {
+      await refreshSalonProfileComplete(supabase, salonId);
+    } catch (e) {
+      console.error("[updateOpeningHours] refreshSalonProfileComplete", e);
+      captureOpeningHoursUnexpected(e, { slug: slugTrimmed });
+    }
+    return { ok: true };
   } catch (e) {
-    console.error("[updateOpeningHours] refreshSalonProfileComplete", e);
+    captureOpeningHoursUnexpected(e, { slug: slugTrimmed });
+    return fail("server_error");
   }
-  return { ok: true };
 }
 
 export async function updateAddress(

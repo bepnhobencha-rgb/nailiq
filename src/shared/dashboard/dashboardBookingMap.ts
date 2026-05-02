@@ -1,0 +1,62 @@
+import type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
+
+/** Matches `loadSalonOwnerDashboard` / client hydrate fetch. */
+export const DASHBOARD_BOOKING_SELECT =
+  "id, client_name, client_phone, client_notes, start_time_utc, status, price_cents, services!bookings_service_id_fkey ( name, price_cents ), staff ( name )";
+
+type ServiceJoinRow = { name: string; price_cents: number };
+
+type StaffJoinRow = { name: string };
+
+export type BookingRowDb = {
+  id: string;
+  client_name: string;
+  client_phone: string;
+  client_notes?: string | null;
+  start_time_utc: string;
+  status: string;
+  price_cents: number | null;
+  services: ServiceJoinRow | ServiceJoinRow[] | null;
+  staff: StaffJoinRow | StaffJoinRow[] | null;
+};
+
+function serviceFromJoin(
+  raw: ServiceJoinRow | ServiceJoinRow[] | null,
+): ServiceJoinRow | null {
+  if (!raw) return null;
+  return Array.isArray(raw) ? (raw[0] ?? null) : raw;
+}
+
+function staffFromJoin(
+  raw: StaffJoinRow | StaffJoinRow[] | null,
+): StaffJoinRow | null {
+  if (!raw) return null;
+  return Array.isArray(raw) ? (raw[0] ?? null) : raw;
+}
+
+export function mapDashboardBookingRow(row: BookingRowDb): SalonDashboardBooking {
+  const status = row.status as BookingStatus;
+  const safeStatus: BookingStatus =
+    status === "pending" || status === "confirmed" || status === "completed"
+      ? status
+      : "pending";
+  const svc = serviceFromJoin(row.services);
+  const st = staffFromJoin(row.staff);
+  const price = row.price_cents ?? svc?.price_cents ?? 0;
+  return {
+    id: row.id,
+    client_name: row.client_name,
+    client_phone: row.client_phone,
+    client_notes: (() => {
+      const n = row.client_notes;
+      if (n == null) return null;
+      const s = String(n).trim();
+      return s.length > 0 ? s : null;
+    })(),
+    start_time_utc: row.start_time_utc,
+    status: safeStatus,
+    service_name: svc?.name ?? "—",
+    staff_name: st?.name?.trim() ? String(st.name).trim() : null,
+    price_cents: Number(price),
+  };
+}

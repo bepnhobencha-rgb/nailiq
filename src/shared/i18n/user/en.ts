@@ -14,6 +14,34 @@ export type UserMessages = {
     navOwnerLoginShort: string;
     alreadySalonPrefix: string;
     signInLink: string;
+    /** Static landing (Landing.html parity) */
+    landingUrgency: string;
+    landingH1Line1: string;
+    landingH1Gold: string;
+    landingBody1: string;
+    landingBody2: string;
+    landingBody3: string;
+    landingPhonePlaceholder: string;
+    landingCta: string;
+    landingMicrotrust: string;
+    landingZap: string;
+    landingEarnedTitle: string;
+    landingEarnedSub: string;
+    landingFeedNewBooking: string;
+    landingSectionEyebrow: string;
+    landingSectionTitle: string;
+    landingProblem1: string;
+    landingProblem2: string;
+    landingProblem3: string;
+    landingClosingLine1: string;
+    landingClosingLine2: string;
+    landingClosingSub: string;
+    landingClosingCta: string;
+    landingSocialProof1: string;
+    landingSocialProof2: string;
+    landingSocialProof3: string;
+    landingSocialProof4: string;
+    landingFeedServices: readonly string[];
   };
   register: {
     returningOwnerHint: string;
@@ -90,6 +118,44 @@ export const userEn: UserMessages = {
     navOwnerLoginShort: "Login",
     alreadySalonPrefix: "Already have a salon? ",
     signInLink: "Sign in →",
+    landingUrgency:
+      "⚠️ Most salons lose $50–$200 every day from missed calls",
+    landingH1Line1: "You’re losing money every day.",
+    landingH1Gold: "Not just empty chairs.",
+    landingBody1:
+      "You’re busy with a client. The phone rings. You don’t pick up.",
+    landingBody2: "That guest books somewhere else.",
+    landingBody3: "You never know you lost them.",
+    landingPhonePlaceholder: "Enter your salon phone…",
+    landingCta: "Get your first booking in 2 minutes",
+    landingMicrotrust: "No app. No setup. No card required.",
+    landingZap:
+      "⚡ If you don’t fix this today, you’ll keep losing guests tomorrow",
+    landingEarnedTitle: "+$113 earned today",
+    landingEarnedSub: "from calls you didn't answer",
+    landingFeedNewBooking: "New Booking",
+    landingSectionEyebrow:
+      "You don’t see what you’re losing. But it happens every day.",
+    landingSectionTitle: "Salons lose money in small moments",
+    landingProblem1: "MISSED CALLS WHILE WITH A CLIENT",
+    landingProblem2: "EMPTY SLOTS STAY EMPTY",
+    landingProblem3: "GUESTS BOOK A DIFFERENT SALON",
+    landingClosingLine1: "You’re losing guests",
+    landingClosingLine2: "every day.",
+    landingClosingSub:
+      "If you don’t start today, you’ll keep losing them.",
+    landingClosingCta: "Start winning them back now",
+    landingSocialProof1: "🔴 LIVE • Anna just got a booking 2 minutes ago",
+    landingSocialProof2: "Lisa filled 3 empty slots today",
+    landingSocialProof3: "Jenny added $113 from a missed call",
+    landingSocialProof4: "842 salons got bookings in the last 24 hours",
+    landingFeedServices: [
+      "Pedicure",
+      "Gel Manicure",
+      "Full Set",
+      "Classic Set",
+      "Hybrid Volume",
+    ],
   },
   register: {
     returningOwnerHint:
