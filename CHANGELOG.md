@@ -4,6 +4,8 @@ All notable changes to NailIQ (project and documentation) are recorded here.
 
 ## 2026-05-02
 
+- **Landing hero (`/`):** `HomeLanding` refreshed copy (pricing headline via `landingH1Line1` + `landingH1Gold`, subline `landingBody1`, `autoLine`, `ctaSpeed`, updated CTA + microtrust), right-card label (`landingEarnedSub` **BOOKINGS YOU WON'T MISS** / VI equivalent); hero phone input removed (no landing `sessionStorage` phone prefetch). Nav wordmark: Inter, white semibold, not italic (`landingPhonePlaceholder` removed from user i18n). **`useUserLanguage`:** after mount, resolves `localStorage` `nailiq-user-lang` first, otherwise `navigator.language` `vi` prefix → Vietnamese (SSR-first English for hydration stability).
+
 - **Docs — lint debt & decisions:** Added [current-focus.md](./current-focus.md) (active bugs, P3 ESLint inventory: 18 errors deferred post-launch) and [decisions-log.md](./decisions-log.md) entry recording deferral rationale; no application code changes.
 
 - **Local dev canonical URL:** Use `NEXT_PUBLIC_SITE_URL=http://localhost:3000` in root `.env.local` while developing locally (Vercel production keeps its own env). Aligns inlined public site URL with the browser origin so dashboard booking links avoid SSR/client hydration mismatch.

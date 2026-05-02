@@ -122,6 +122,39 @@
 
 ---
 
+## 2026-05-02: Single-product focus — NAILIQ OS only, defer consulting + restaurant OS + marketplace
+
+**Context**: Founder cân nhắc mở consulting agency + restaurant OS + marketplace song song với NAILIQ OS. Đang ở pre-launch, solo dev, 4 tuần đến V1, 0 paying customers. Vision rộng (Vietnamese SMB automation toàn cầu) khác hẳn execution NAILIQ OS V1 (Vietnamese nail salon US/Canada).
+
+**Decision**: Trong 12 tháng tới chỉ làm NAILIQ OS. KHÔNG build trang công ty mẹ, KHÔNG bắt đầu consulting service line, KHÔNG touch restaurant vertical. 1 domain (nailiq), 1 product, 1 customer segment.
+
+**Rationale**:
+- Solo dev không thể split attention 3 product lines + 1 service line
+- Customer NAILIQ (salon owner Việt) không care vision lớn — care $29 vs Booksy + workflow fit
+- Trang công ty mẹ = signal "nhiều thứ đang làm dở" khi chưa shipped cái nào
+- Niche Vietnamese nail US/Canada đủ lớn để nuôi business 5 năm
+- Track record: founders làm nhiều thứ cùng lúc thường thất bại do attention split, không phải idea sai
+- Pattern test "cho $50k làm gì": founder chọn customer outreach over website building → đúng founder mindset
+
+**Alternatives rejected**:
+- Build trang công ty mẹ với 3 sản phẩm: scope creep ở level identity, hút 2-3 ngày khỏi launch tasks
+- Marketplace vertical từ đầu: multi-sided platform = N năm dev, sai stage
+- Consulting song song: B2B services khác B2B SaaS, customer khác, sales cycle khác → không synergy thật ở stage này
+
+**Trade-offs accepted**:
+- Vision lớn phải đợi 12+ tháng
+- Có thể bỏ lỡ "first mover" trên restaurant vertical — chấp nhận, niche đủ lâu để revisit
+- Brand "nailiq" specific, khó pivot sang restaurant nếu sau này muốn — chấp nhận, bridge that bridge later
+
+**Revisit when**:
+- NAILIQ đạt $5k MRR + 20 paying salons → consider restaurant OS planning (Phase 2)
+- NAILIQ đạt $50k MRR → consider company holding structure + consulting service line
+- Hoặc khi customer NAILIQ ask: "Anh có làm cho nhà hàng không?" 5+ lần với willingness to pay
+
+**Cost to reverse**: Low (~1 ngày: domain redirect, marketing copy update) — vision không bị xóa, chỉ defer.
+
+---
+
 ## [Add new entries above this line]
 
 <!--
