@@ -648,6 +648,14 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
 
   const rcMessages = messages.receptionist;
 
+  const isSetupIncomplete =
+    data.services.length === 0 || data.staff.length === 0;
+
+  const setupCtaPath =
+    data.services.length === 0
+      ? `/dashboard/${encodeURIComponent(slug)}/setup/services`
+      : `/dashboard/${encodeURIComponent(slug)}/setup/staff`;
+
   const drawerPrimaryAction =
     openDrawerBooking?.status === "pending" ||
     openDrawerBooking?.status === "confirmed"
@@ -726,6 +734,28 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
           </div>
         </header>
 
+        {isSetupIncomplete ? (
+          <div
+            data-testid="setup-incomplete-banner"
+            className="border-l-4 border-nq-warning bg-nq-warning/10 px-[var(--pad-nq-section-mobile)] py-4 md:px-6"
+          >
+            <div className="mx-auto w-full max-w-[var(--max-nq-desktop)]">
+              <p className="font-semibold text-nq-foreground">
+                {rcMessages.setupIncompleteBanner.title}
+              </p>
+              <p className="mt-1 text-sm text-nq-muted">
+                {rcMessages.setupIncompleteBanner.message}
+              </p>
+              <Link
+                href={setupCtaPath}
+                className="mt-3 inline-block text-sm font-medium text-nq-primary hover:text-nq-primary/85"
+              >
+                {rcMessages.setupIncompleteBanner.cta}
+              </Link>
+            </div>
+          </div>
+        ) : null}
+
         <div className="mx-auto flex h-full min-h-[min(100dvh-8rem,48rem)] w-full max-w-[var(--max-nq-desktop)] flex-1 flex-col gap-0 md:flex-row">
           <section className="order-2 flex min-h-[min(50dvh,28rem)] min-w-0 flex-1 flex-col border-t border-nq-muted/20 md:order-1 md:border-t-0 md:border-r">
             <StaffTimelineGrid
@@ -760,6 +790,7 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
               onCancelWalkin={onCancelWalkin}
               onStartAssign={(id) => setAssigningWalkinId(id)}
               onCancelAssign={() => setAssigningWalkinId(null)}
+              addFormDisabled={isSetupIncomplete}
               labels={{
                 title: rcMessages.queue.title,
                 emptyMessage: rcMessages.queue.emptyMessage,

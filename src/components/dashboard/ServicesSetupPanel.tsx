@@ -11,6 +11,8 @@ import {
   deleteService,
   updateService,
 } from "@/shared/dashboard/setupActions";
+import { getUserMessages } from "@/shared/i18n/user";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 export type SetupServiceRow = {
   id: string;
@@ -40,6 +42,8 @@ export function ServicesSetupPanel({
   slug: string;
   initialRows: SetupServiceRow[];
 }) {
+  const { language } = useUserLanguage();
+  const setupErrors = getUserMessages(language).setupErrors;
   const router = useRouter();
   const [rows, setRows] = useState<SetupServiceRow[]>(initialRows);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -128,7 +132,7 @@ export function ServicesSetupPanel({
       const res = await deleteService(slug, serviceId);
       setPendingId(null);
       if (!res.ok) {
-        setFormError(mapDeleteError(res.error));
+        setFormError(mapDeleteError(res.error, setupErrors));
         setToast({ variant: "error", message: TOAST_ERR });
         return;
       }
@@ -136,7 +140,7 @@ export function ServicesSetupPanel({
       setToast({ variant: "success", message: "✓ Service removed" });
       refresh();
     },
-    [refresh, slug],
+    [refresh, setupErrors, slug],
   );
 
   const onAdd = useCallback(async () => {
@@ -456,10 +460,13 @@ function mapUpdateError(code: string): string {
   return "Could not save. Try again.";
 }
 
-function mapDeleteError(code: string): string {
+function mapDeleteError(
+  code: string,
+  setupErrors: { serviceInUse: string },
+): string {
   if (code === "minimum_services")
     return "You need more than one service before you can delete.";
-  if (code === "in_use")
-    return "This service is linked to bookings and can’t be removed yet.";
+  if (code === "service_in_use" || code === "in_use")
+    return setupErrors.serviceInUse;
   return "Could not delete. Try again.";
 }

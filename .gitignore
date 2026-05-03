@@ -12,7 +12,9 @@
 
 # testing
 /coverage
+# Playwright (HTML report, failure traces/videos, merge-reports)
 /playwright-report/
+/blob-report/
 /test-results/
 
 

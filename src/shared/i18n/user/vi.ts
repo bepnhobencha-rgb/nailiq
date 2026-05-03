@@ -116,6 +116,12 @@ export const userVi: UserMessages = {
     hintRecoveryEmail:
       "Để thêm hoặc đổi email khôi phục cho tài khoản, dùng thanh nhắc trên bảng điều khiển.",
   },
+  setupErrors: {
+    serviceInUse:
+      "Dịch vụ đang được dùng trong booking. Hủy/hoàn thành các booking trước khi xóa.",
+    staffHasBookings:
+      "Nhân viên đang có booking sắp tới. Reassign hoặc hủy trước khi xóa.",
+  },
   receptionist: {
     title: "Lễ tân",
     loadingDay: "Đang tải ngày…",
@@ -134,6 +140,11 @@ export const userVi: UserMessages = {
     statusPill: {
       waitingLabel: "CHỜ",
       inProgressLabel: "ĐANG PHỤC VỤ",
+    },
+    setupIncompleteBanner: {
+      title: "Chưa hoàn tất setup",
+      message: "Cần thêm dịch vụ và nhân viên trước khi nhận khách.",
+      cta: "Đi đến Setup →",
     },
     queue: {
       title: "Hàng walk-in",

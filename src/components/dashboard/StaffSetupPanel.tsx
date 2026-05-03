@@ -12,6 +12,8 @@ import {
   updateStaff,
   type StaffJobRole,
 } from "@/shared/dashboard/setupActions";
+import { getUserMessages } from "@/shared/i18n/user";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 export type SetupStaffRow = {
   id: string;
@@ -34,6 +36,8 @@ export function StaffSetupPanel({
   slug: string;
   initialRows: SetupStaffRow[];
 }) {
+  const { language } = useUserLanguage();
+  const setupErrors = getUserMessages(language).setupErrors;
   const router = useRouter();
   const [rows, setRows] = useState(initialRows);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -104,17 +108,7 @@ export function StaffSetupPanel({
       const res = await deleteStaff(slug, staffId);
       setPendingId(null);
       if (!res.ok) {
-        if (res.error === "minimum_staff") {
-          setFormError(
-            "You need more than one staff member before you can remove someone.",
-          );
-        } else if (res.error === "in_use") {
-          setFormError(
-            "This staff member is linked to bookings and can’t be removed yet.",
-          );
-        } else {
-          setFormError("Could not remove. Try again.");
-        }
+        setFormError(mapDeleteStaffError(res.error, setupErrors));
         setToast({ variant: "error", message: TOAST_ERR });
         return;
       }
@@ -122,7 +116,7 @@ export function StaffSetupPanel({
       setToast({ variant: "success", message: "✓ Staff member removed" });
       refresh();
     },
-    [refresh, slug],
+    [refresh, setupErrors, slug],
   );
 
   const onAdd = useCallback(async () => {
@@ -241,6 +235,22 @@ export function StaffSetupPanel({
       </section>
     </div>
   );
+}
+
+function mapDeleteStaffError(
+  code: string,
+  setupErrors: { staffHasBookings: string },
+): string {
+  if (code === "minimum_staff") {
+    return "You need more than one staff member before you can remove someone.";
+  }
+  if (
+    code === "staff_has_bookings" ||
+    code === "in_use"
+  ) {
+    return setupErrors.staffHasBookings;
+  }
+  return "Could not remove. Try again.";
 }
 
 function StaffRowFields({

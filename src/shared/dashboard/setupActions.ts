@@ -347,6 +347,21 @@ export async function deleteService(
 
   if (!mine?.id) return fail("not_found");
 
+  const { count: activeBookingCount, error: bookingCountErr } = await supabase
+    .from("bookings")
+    .select("id", { count: "exact", head: true })
+    .eq("salon_id", r.salon.id)
+    .eq("service_id", serviceId)
+    .neq("status", "cancelled");
+
+  if (bookingCountErr) {
+    console.error("[deleteService] active booking count", bookingCountErr);
+    return fail("server_error");
+  }
+  if ((activeBookingCount ?? 0) > 0) {
+    return fail("service_in_use");
+  }
+
   const { error } = await supabase
     .from("services")
     .delete()
@@ -359,7 +374,7 @@ export async function deleteService(
       typeof error.code === "string" &&
       error.code === "23503"
     ) {
-      return fail("in_use");
+      return fail("service_in_use");
     }
     return fail("server_error");
   }
@@ -477,6 +492,44 @@ export async function deleteStaff(
 
   if (!mine?.id) return fail("not_found");
 
+  const { count: activeBookingCount, error: bookingCountErr } = await supabase
+    .from("bookings")
+    .select("id", { count: "exact", head: true })
+    .eq("salon_id", r.salon.id)
+    .eq("staff_id", staffId)
+    .in("status", ["pending", "confirmed", "in_progress", "waiting"]);
+
+  if (bookingCountErr) {
+    console.error("[deleteStaff] active booking count", bookingCountErr);
+    return fail("server_error");
+  }
+  if ((activeBookingCount ?? 0) > 0) {
+    return fail("staff_has_bookings");
+  }
+
+  // See decisions-log.md 2026-05-02: Staff delete detaches terminal bookings
+  const { error: detachErr } = await supabase
+    .from("bookings")
+    .update({ staff_id: null })
+    .eq("salon_id", r.salon.id)
+    .eq("staff_id", staffId)
+    .in("status", ["cancelled", "completed"]);
+
+  if (detachErr) {
+    console.error("[deleteStaff] detach terminal bookings", detachErr);
+    return fail("server_error");
+  }
+
+  const { error: prefErr } = await supabase
+    .from("client_profiles")
+    .update({ preferred_staff_id: null })
+    .eq("preferred_staff_id", staffId);
+
+  if (prefErr) {
+    console.error("[deleteStaff] clear preferred_staff_id", prefErr);
+    return fail("server_error");
+  }
+
   const { error } = await supabase
     .from("staff")
     .delete()
@@ -489,7 +542,7 @@ export async function deleteStaff(
       typeof error.code === "string" &&
       error.code === "23503"
     ) {
-      return fail("in_use");
+      return fail("staff_has_bookings");
     }
     return fail("server_error");
   }

@@ -18,6 +18,8 @@ export interface WalkinAddFormProps {
     duration_minutes: number;
     price_cents: number;
   }>;
+  /** Salon setup incomplete — block walk-in intake until catalog is ready */
+  disabled?: boolean;
   /** Localized strings */
   labels: {
     namePlaceholder: string;
@@ -43,7 +45,12 @@ function formatServicePrice(priceCents: number): string {
 
 const TOP_SERVICE_COUNT = 6;
 
-export function WalkinAddForm({ services, labels, onSubmit }: WalkinAddFormProps) {
+export function WalkinAddForm({
+  services,
+  labels,
+  onSubmit,
+  disabled = false,
+}: WalkinAddFormProps) {
   const nameId = useId();
   const phoneId = useId();
   const noteId = useId();
@@ -57,6 +64,8 @@ export function WalkinAddForm({ services, labels, onSubmit }: WalkinAddFormProps
   const [showMoreServices, setShowMoreServices] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const formLocked = disabled || submitting;
 
   const topServices = useMemo(() => services.slice(0, TOP_SERVICE_COUNT), [services]);
   const extraServices = useMemo(() => services.slice(TOP_SERVICE_COUNT), [services]);
@@ -72,6 +81,7 @@ export function WalkinAddForm({ services, labels, onSubmit }: WalkinAddFormProps
   }, []);
 
   const runSubmit = useCallback(async () => {
+    if (disabled) return;
     const name = clientName.trim();
     if (!name) {
       setErrorMessage(labels.errorRequired);
@@ -106,11 +116,12 @@ export function WalkinAddForm({ services, labels, onSubmit }: WalkinAddFormProps
     resetAfterSuccess,
     selectedServiceId,
     staffRequestNote,
+    disabled,
   ]);
 
   useEffect(() => {
-    nameRef.current?.focus();
-  }, []);
+    if (!disabled) nameRef.current?.focus();
+  }, [disabled]);
 
   const onNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
@@ -149,7 +160,10 @@ export function WalkinAddForm({ services, labels, onSubmit }: WalkinAddFormProps
   return (
     <form
       data-testid="walkin-add-form"
-      className="space-y-3 border-b border-nq-muted/20 pb-4"
+      className={cn(
+        "space-y-3 border-b border-nq-muted/20 pb-4",
+        disabled && "opacity-55",
+      )}
       onSubmit={(e) => {
         e.preventDefault();
         void runSubmit();
@@ -165,14 +179,14 @@ export function WalkinAddForm({ services, labels, onSubmit }: WalkinAddFormProps
           ref={nameRef}
           type="text"
           autoComplete="name"
-          disabled={submitting}
+          disabled={formLocked}
           placeholder={labels.namePlaceholder}
           value={clientName}
           onChange={(e) => setClientName(e.target.value)}
           onKeyDown={onNameKeyDown}
           className={cn(
             "h-11 w-full rounded-lg border border-nq-muted/35 bg-nq-bg px-3 text-base text-nq-foreground placeholder:text-nq-muted focus:border-nq-primary focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
-            submitting && "opacity-60",
+            formLocked && "opacity-60",
           )}
         />
         <label htmlFor={phoneId} className="sr-only">
@@ -183,14 +197,14 @@ export function WalkinAddForm({ services, labels, onSubmit }: WalkinAddFormProps
           ref={phoneRef}
           type="tel"
           autoComplete="tel"
-          disabled={submitting}
+          disabled={formLocked}
           placeholder={labels.phonePlaceholder}
           value={clientPhone}
           onChange={(e) => setClientPhone(e.target.value)}
           onKeyDown={onPhoneKeyDown}
           className={cn(
             "h-11 w-full rounded-lg border border-nq-muted/35 bg-nq-bg px-3 text-base text-nq-foreground placeholder:text-nq-muted focus:border-nq-primary focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
-            submitting && "opacity-60",
+            formLocked && "opacity-60",
           )}
         />
       </div>
@@ -204,14 +218,14 @@ export function WalkinAddForm({ services, labels, onSubmit }: WalkinAddFormProps
                 key={s.id}
                 id={`walkin-service-${s.id}`}
                 type="button"
-                disabled={submitting}
+                disabled={formLocked}
                 onClick={() => setSelectedServiceId(s.id)}
                 className={cn(
                   "flex min-h-16 flex-col items-start justify-center rounded-lg border px-2.5 py-2 text-left text-sm transition-[border-color,background-color] duration-[var(--duration-nq-fast,150ms)]",
                   selected
                     ? "border-nq-primary bg-nq-primary/12 text-nq-foreground"
                     : "border-nq-muted/35 bg-nq-surface text-nq-foreground hover:border-nq-muted",
-                  submitting && "opacity-60",
+                  formLocked && "opacity-60",
                 )}
               >
                 <span className="line-clamp-2 font-semibold leading-snug">{s.name}</span>
@@ -226,11 +240,11 @@ export function WalkinAddForm({ services, labels, onSubmit }: WalkinAddFormProps
           <>
             <button
               type="button"
-              disabled={submitting}
+              disabled={formLocked}
               onClick={() => setShowMoreServices((v) => !v)}
               className={cn(
                 "text-sm font-medium text-nq-primary hover:text-nq-primary/90",
-                submitting && "pointer-events-none opacity-60",
+                formLocked && "pointer-events-none opacity-60",
               )}
             >
               {labels.moreServices}
@@ -246,7 +260,7 @@ export function WalkinAddForm({ services, labels, onSubmit }: WalkinAddFormProps
                     <li key={s.id} role="none">
                       <button
                         type="button"
-                        disabled={submitting}
+                        disabled={formLocked}
                         onClick={() => setSelectedServiceId(s.id)}
                         className={cn(
                           "flex w-full flex-col items-start rounded-md px-2 py-2 text-left text-sm",
@@ -275,7 +289,7 @@ export function WalkinAddForm({ services, labels, onSubmit }: WalkinAddFormProps
         </label>
         <textarea
           id={noteId}
-          disabled={submitting}
+          disabled={formLocked}
           placeholder={labels.notePlaceholder}
           value={staffRequestNote}
           onChange={(e) => setStaffRequestNote(e.target.value)}
@@ -283,7 +297,7 @@ export function WalkinAddForm({ services, labels, onSubmit }: WalkinAddFormProps
           rows={2}
           className={cn(
             "w-full resize-none rounded-lg border border-nq-muted/35 bg-nq-bg px-3 py-2 text-base text-nq-foreground placeholder:text-nq-muted focus:border-nq-primary focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
-            submitting && "opacity-60",
+            formLocked && "opacity-60",
           )}
         />
       </div>
@@ -296,10 +310,10 @@ export function WalkinAddForm({ services, labels, onSubmit }: WalkinAddFormProps
 
       <button
         type="submit"
-        disabled={submitting}
+        disabled={formLocked}
         className={cn(
           "flex min-h-11 w-full items-center justify-center rounded-lg bg-nq-primary px-4 text-sm font-semibold text-nq-navy-deep transition-opacity",
-          submitting ? "opacity-80" : "hover:opacity-95",
+          formLocked ? "cursor-not-allowed opacity-60" : "hover:opacity-95",
         )}
       >
         {submitting ? labels.submitting : labels.addButton}

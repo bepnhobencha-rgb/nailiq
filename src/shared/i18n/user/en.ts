@@ -110,6 +110,11 @@ export type UserMessages = {
     sectionAddress: string;
     hintRecoveryEmail: string;
   };
+  /** Setup CRUD error strings (services, etc.) */
+  setupErrors: {
+    serviceInUse: string;
+    staffHasBookings: string;
+  };
   /** `/dashboard/[slug]/center` — operational receptionist workspace */
   receptionist: {
     title: string;
@@ -129,6 +134,11 @@ export type UserMessages = {
     statusPill: {
       waitingLabel: string;
       inProgressLabel: string;
+    };
+    setupIncompleteBanner: {
+      title: string;
+      message: string;
+      cta: string;
     };
     queue: {
       title: string;
@@ -317,6 +327,12 @@ export const userEn: UserMessages = {
     hintRecoveryEmail:
       "To add or change recovery email for your account, use the banner on your dashboard.",
   },
+  setupErrors: {
+    serviceInUse:
+      "Service is used in active bookings. Cancel or complete those bookings before deleting.",
+    staffHasBookings:
+      "Staff has upcoming bookings. Reassign or cancel before deleting.",
+  },
   receptionist: {
     title: "Front desk",
     loadingDay: "Loading day…",
@@ -335,6 +351,11 @@ export const userEn: UserMessages = {
     statusPill: {
       waitingLabel: "WAIT",
       inProgressLabel: "ACTIVE",
+    },
+    setupIncompleteBanner: {
+      title: "Setup incomplete",
+      message: "Add services and staff before accepting customers.",
+      cta: "Go to Setup →",
     },
     queue: {
       title: "Walk-in queue",

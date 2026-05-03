@@ -60,6 +60,37 @@
 
 ---
 
+## 2026-05-02 (afternoon): Staff delete detaches terminal bookings (NULL staff_id)
+
+**Context**: Task 4 of pre-launch blockers. Owner needs to delete inactive staff. FK RESTRICT on bookings.staff_id blocks delete if any booking (including completed/cancelled) references the staff. Test st-2 surfaced this: even with no future bookings, DELETE staff fails because of completed history.
+
+**Decision**: Before DELETE staff, application-level UPDATE bookings SET staff_id=NULL WHERE status IN ('cancelled','completed'). Also clear client_profiles.preferred_staff_id. Active bookings (pending/confirmed/in_progress/waiting) BLOCK delete with staff_has_bookings error.
+
+**Rationale**:
+- Allow owners to clean up inactive staff list (essential UX)
+- Preserve booking rows (revenue history intact, just no staff attribution for old rows)
+- Block delete when active bookings exist (receptionist can't operate on null-staff active rows)
+- Application-level UPDATE > DB ON DELETE SET NULL: explicit in code, easier to audit, doesn't change schema constraints
+
+**Alternatives rejected**:
+- Block delete if ANY booking references staff (including completed): owner stuck with old staff names cluttering list, bad UX
+- ON DELETE CASCADE on bookings: deletes booking history, loses revenue + audit data
+- ON DELETE SET NULL via FK: silent, harder to audit, doesn't allow custom logic later (e.g. notify other staff of reassignment)
+- Keep staff_id on completed but mark "archived" via flag: schema bloat, doesn't solve the "can't delete" problem
+
+**Trade-offs accepted**:
+- Completed bookings older than staff deletion show "Staff: Unknown" or null in reports
+- Owner audit trail loses staff attribution for old data
+- client_profiles.preferred_staff_id cleared = customer's preferred-staff memory wiped if staff deleted
+
+**Revisit when**:
+- If owner reports complain about losing staff attribution in reports → consider archive flag pattern
+- If we add commission tracking: archive history before allowing detach
+
+**Cost to reverse**: Medium (~2-3 hours: change cascade approach + migrate existing data + update reports)
+
+---
+
 ## 2026-05-02 (afternoon): Cancelled in_progress booking keeps started_at
 
 **Context**: Step 6c-1 drawer cancel action allows cancelling in_progress bookings. Current implementation only updates status, does not clear started_at.

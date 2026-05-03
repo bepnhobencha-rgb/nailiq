@@ -107,7 +107,7 @@ None known.
 - Migration drift giữa local `supabase/migrations/` và linked DB `schema_migrations`. `supabase db push --linked` fail với "Remote migration versions not found in local migrations directory". Symptoms: trùng timestamps `20260430180000` / `20260430240000`, lệch version `20260428`, remote chỉ tới `20260430200000`. Receptionist migration `20260502120000_receptionist_center_schema.sql` apply qua `db query --linked -f` (không qua schema_migrations log). Resolve trước V1 launch (30/5) để có repeatable deployment. Likely fix: rebase local migrations theo remote state, hoặc `supabase migration repair`.
 
 ### P3 (lint debt — defer post-launch)
-Tổng 18 ESLint errors, 0 functional impact. Build pass, typecheck pass, e2e 16/16 pass. Xem decision 2026-05-02 trong decisions-log.md.
+Tổng 18 ESLint errors, 0 functional impact. Build pass, typecheck pass, Playwright e2e 63 passed / 1 skipped. Xem decision 2026-05-02 trong decisions-log.md.
 
 - **Next.js 16 deprecation (middleware → proxy):** `next build` warns: the `middleware` file convention is deprecated; rename/migrate to **`proxy`** per Next.js 16 docs before Next 17. Currently non-functional — warning only. Tracked so it is not lost in logs.
 - 12 lỗi `react-hooks/set-state-in-effect` (React 19 rule): `BookingFlowDatePanel`, `BookingReturningGreeting`, `useBookingFlowState` (5 chỗ), `SalonOwnerDashboard`, `Toast`, `HomeLanding`
@@ -119,7 +119,7 @@ Tổng 18 ESLint errors, 0 functional impact. Build pass, typecheck pass, e2e 16
 - Receptionist Center Case 7 manual iPad test deferred — no device available 2026-05-02. Test on first beta salon iPad install (target: week of 19-25/5).
 
 ### Receptionist Center V1 — final manual QA (14 cases)
-**Status:** **Shipped 2026-05-02.** Automated (2026-05-02): `tsc`, `next build`, Playwright **47/47** (1 mobile skip: fine-pointer hover), shared lib smokes + `receptionistActions` smoke — PASS. Manual iPhone on `/dashboard/{slug}/center`: PASS (**tel:** opens Phone app). **Case 7 iPad layout** deferred — no device; target first beta salon iPad (week of 19–25/5, see P3). Residual linked-dev cases (dual-tab realtime spot-checks, screenshots) optional for beta trail.
+**Status:** **Shipped 2026-05-02.** Automated (2026-05-02 evening): `tsc`, `next build`, Playwright **63 passed / 1 skipped** (mobile ghost hover), dashboard smokes (`loadReceptionistCenterData`, `receptionistActions`, `publicBookingConflict`) — PASS. **Task 5 (empty salon):** setup-incomplete banner + disabled walk-in form; **`e2e/receptionist-center/empty-salon.spec.ts`**. Manual iPhone on `/dashboard/{slug}/center`: PASS (**tel:** opens Phone app). **Case 7 iPad layout** deferred — no device; target first beta salon iPad (week of 19–25/5, see P3). Residual linked-dev cases (dual-tab realtime spot-checks, screenshots) optional for beta trail.
 
 ## Decisions cần làm tuần này
 - [x] Free trial length: 7 ngày hay 14 ngày? → **14 ngày** (decision 2026-05-02)

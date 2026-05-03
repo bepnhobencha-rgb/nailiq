@@ -42,6 +42,8 @@ export interface WalkinQueueSidebarProps {
   onCancelAssign: () => void;
   /** Current time for urgency calc — passed by parent so it can re-render every 60s */
   nowIso: string;
+  /** Block add form when salon has no services or no staff */
+  addFormDisabled?: boolean;
 }
 
 export function WalkinQueueSidebar({
@@ -54,6 +56,7 @@ export function WalkinQueueSidebar({
   onStartAssign,
   onCancelAssign,
   nowIso,
+  addFormDisabled = false,
 }: WalkinQueueSidebarProps) {
   const onAssignClick = (itemId: string) => {
     if (assigningId !== null && assigningId !== itemId) {
@@ -74,7 +77,12 @@ export function WalkinQueueSidebar({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-3">
-        <WalkinAddForm services={services} labels={labels.addForm} onSubmit={onAddWalkin} />
+        <WalkinAddForm
+          services={services}
+          labels={labels.addForm}
+          onSubmit={onAddWalkin}
+          disabled={addFormDisabled}
+        />
 
         {items.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-sm text-nq-muted">

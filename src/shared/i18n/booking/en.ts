@@ -70,12 +70,15 @@ export const bookingEn = {
   summaryServicePrice: "Service price",
   summaryAddonPrice: "Add-on price",
   summaryTotal: "Total",
+  /** Structured booking error copy for confirm step / retries. Public booking stays English-only. */
+  bookingErrors: {
+    slotJustTaken:
+      "This slot was just booked. Please pick another time.",
+  },
   clientNameLabel: "Your name",
   clientPhoneLabel: "Phone number",
   clientNotesLabel: "Special notes",
   clientNotesOptionalHint: "Optional — allergies, design ideas, parking, etc.",
-  slotTakenError:
-    "This slot was just taken. Please choose another time.",
   waitlistNotifyCta: "Notify me if a slot opens",
   waitlistSubmitting: "Saving…",
   waitlistJoined:

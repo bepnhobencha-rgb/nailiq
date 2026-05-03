@@ -454,7 +454,22 @@ export function useBookingFlowState(
       if (err instanceof BookingConflictError) {
         setStepDir(-1);
         setStep("time");
-        setError(t.slotTakenError);
+        setError(t.bookingErrors.slotJustTaken);
+        if (serviceId && service) {
+          setSlotsLoading(true);
+          void getAvailableTimeSlots({
+            salonId: salon.id,
+            openingHoursRaw: salon.opening_hours,
+            selectedDate,
+            staffId: staffId ?? BOOKING_ANY_STAFF_ID,
+            staffList: staff,
+            serviceDurationMinutes: service.totalMinutes,
+            closedDateYmdSet,
+          }).then((slots) => {
+            setTimeSlots(slots);
+            setSlotsLoading(false);
+          });
+        }
       } else if (
         err instanceof Error &&
         err.message === "cannot_book_past"
@@ -516,12 +531,17 @@ export function useBookingFlowState(
     timeSlot,
     shopSlug,
     salon.id,
+    salon.opening_hours,
+    closedDateYmdSet,
+    serviceId,
+    service,
+    staff,
     t.contactRequiredError,
     t.invalidPhoneError,
     t.outsideHoursError,
     t.pastTimeError,
     t.salonClosedError,
-    t.slotTakenError,
+    t.bookingErrors.slotJustTaken,
     t.submitError,
   ]);
 
