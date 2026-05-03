@@ -4,6 +4,8 @@ All notable changes to NailIQ (project and documentation) are recorded here.
 
 ## 2026-05-02 (pre-launch — Task 5 empty salon + ADR)
 
+- **Docs:** `current-focus.md` — failure-mode pre-launch blockers (see `637fd37`) marked DONE (service/staff delete guards, public booking RPC race, empty salon banner); timezone onboarding + demo cookie expiration deferred post-launch; next sprint stub **5/5–11/5/2026** (placeholders A/B/C).
+
 - **Chore:** `.gitignore` — Playwright outputs grouped with comments; add **`blob-report/`** (merge-reports); **`playwright-report/`** and **`test-results/`** already ignored.
 
 - **Receptionist Center — empty catalog UX (Task 5):** When the loaded salon has **no services** and/or **no staff**, **`ReceptionistCenter`** shows a **`nq-warning`** banner (title/message/**smart CTA**: **`setup/services`** when `services.length === 0`, else **`setup/staff`**) and passes **`addFormDisabled`** through **`WalkinQueueSidebar`** to **`WalkinAddForm`** (`disabled`: grayed fields, **`Add to queue`** disabled, submit short-circuited). i18n: **`receptionist.setupIncompleteBanner`** in **`src/shared/i18n/user`** EN/VI. Playwright: **`e2e/receptionist-center/empty-salon.spec.ts`** — **es-1** tenant `e2e-empty-salon-center` (0 services, 0 staff): banner + disabled submit + CTA → **`/setup/services`**; **es-2** `e2e-empty-salon-no-staff` (services, 0 staff): banner + CTA → **`/setup/staff`**. Run: `npx playwright test e2e/receptionist-center/empty-salon.spec.ts` (4 runs: chromium + mobile). Full suite: **`npm run test:e2e`** — **63 passed**, **1 skipped**; **`npm run typecheck`** + **`npm run build`**; smokes: `loadReceptionistCenterData`, `receptionistActions`, `publicBookingConflict` — PASS.

@@ -60,6 +60,28 @@ Sub-tasks:
 
 Estimate: 2-3h spread trong tuần. Conversion typical 10-20%, nên 20 DMs → ~3-5 yes.
 
+## Next sprint (5/5 — 11/5/2026)
+
+- **Task A:** Stripe + Twilio external services setup.
+- **Task B:** Beta user pipeline outreach.
+- **Task C:** Address remaining failure modes if time permits (timezone selector, demo cookie expiration).
+
+Detailed sub-tasks TBD Monday morning when fresh.
+
+## Failure modes — pre-launch checklist
+
+Identified 2026-05-02 in failure mode review. Pre-launch BLOCKERS shipped in commit 637fd37.
+
+**DONE:**
+- **1.1 Service delete with active references** ✅ 2026-05-02 — Proactive booking count check before delete; `service_in_use` error mapped via i18n; `ServicesSetupPanel` localized; e2e `service-delete.spec.ts` 4/4 PASS.
+- **1.2 Staff delete with active bookings** ✅ 2026-05-02 — Proactive active booking count check; terminal bookings (cancelled/completed) detached via UPDATE staff_id=NULL before delete; client_profiles.preferred_staff_id cleared; ADR logged in decisions-log.md; e2e `staff-delete.spec.ts` 4/4 PASS.
+- **2.3 Public booking RPC race with walk-in** ✅ 2026-05-02 — `create_public_booking` v2.3 (migration 20260502130000) tightened blocking statuses to NOT IN ('cancelled','waiting'); raises `slot_conflict` errcode 23P01; BookingFlow handles via i18n `slotJustTaken`; e2e `public-booking-race.spec.ts` 4/4 PASS + smoke 3/3.
+- **6.3 Empty salon banner** ✅ 2026-05-02 — Setup-incomplete banner with smart CTA (services empty → /setup/services, staff empty → /setup/staff); WalkinAddForm disabled when isSetupIncomplete; e2e `empty-salon.spec.ts` 4/4 PASS.
+
+**Deferred to post-launch:**
+- **1.3 Timezone selector in onboarding** — Default 'America/Los_Angeles' acceptable for ~60% target salons (West Coast Vietnamese community hub). Onboarding UI for timezone select can ship V1.1.
+- **3.3 Demo cookie 24h expiration** — Security audit task; demo cookie currently no explicit expiry. Separate from feature shipping; address in security pass post-launch.
+
 ## In progress (carried over)
 
 ### MVP build status

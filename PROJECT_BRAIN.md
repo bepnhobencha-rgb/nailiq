@@ -112,7 +112,7 @@ NailIQ is the AI-first operating system for nail salons and beauty businesses: o
 ## Decisions Log
 
 - **Running log:** [decisions-log.md](./decisions-log.md) (newest first under `# Entries`).
-- **Current focus / bugs / lint debt:** [current-focus.md](./current-focus.md).
+- **Current focus / bugs / lint debt:** [current-focus.md](./current-focus.md) (2026-05-02: pre-launch failure-mode blockers marked DONE in that doc; post-launch deferrals noted).
 - **Entry template:** [DECISIONS.md](./DECISIONS.md).
 - **Receptionist Center V1 (reference only):** [receptionist-center-mockup.html](./receptionist-center-mockup.html) (standalone HTML mockup), [preflight-v2-cherry-picks.md](./preflight-v2-cherry-picks.md) (preflight cherry-pick spec). Same folder as planning docs at repo root (`product.md` is referenced in other docs but not present in-tree). **DB:** migration `supabase/migrations/20260502120000_receptionist_center_schema.sql` (timezone, walk-in columns + nullable slot/staff/phone, `source` check, membership-scoped authenticated INSERT, `bookings_status_check` including `waiting` / `in_progress`; overlap handled in app layer for V1, not this migration). If `supabase db push --linked` fails on migration history drift, apply SQL via `db query --linked -f` until drift is repaired (P2 in `current-focus.md`).
 
