@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 
+import { Button } from "@/components/ui/Button";
 import { cn } from "@/shared/lib/cn";
 
 /** Precomputed presentation values built by `ReceptionistCenter` so this leaf stays dumb. */
@@ -199,31 +200,27 @@ export function BookingDetailDrawer({
             {primaryAction !== undefined || cancelAction !== undefined ? (
               <div className="sticky bottom-0 mt-auto space-y-2 border-t border-nq-muted/20 bg-nq-surface pb-2 pt-3">
                 {primaryAction !== undefined ? (
-                  <button
+                  <Button
                     type="button"
-                    disabled={primaryAction.busy}
+                    variant="primary"
+                    loading={primaryAction.busy}
+                    className="w-full sm:w-full"
                     onClick={() => void primaryAction.onPress()}
-                    className={cn(
-                      "flex min-h-11 w-full items-center justify-center rounded-lg bg-nq-primary px-4 text-sm font-semibold text-nq-navy-deep",
-                      primaryAction.busy ? "opacity-75" : "hover:opacity-95",
-                    )}
                   >
                     {primaryAction.label}
-                  </button>
+                  </Button>
                 ) : null}
                 {cancelAction !== undefined ? (
-                  <button
+                  <Button
                     type="button"
+                    variant="danger"
+                    loading={cancelAction.busy}
                     data-testid="drawer-cancel-booking"
-                    disabled={cancelAction.busy}
+                    className="w-full sm:w-full"
                     onClick={() => void cancelAction.onPress()}
-                    className={cn(
-                      "flex min-h-11 w-full items-center justify-center rounded-lg border border-nq-error/55 bg-transparent px-4 text-sm font-semibold text-nq-error",
-                      cancelAction.busy ? "opacity-75" : "hover:bg-nq-error/10",
-                    )}
                   >
                     {cancelAction.label}
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             ) : null}

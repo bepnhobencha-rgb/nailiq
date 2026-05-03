@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 
+import { Button } from "@/components/ui/Button";
 import { cn } from "@/shared/lib/cn";
 
 export interface WalkinAddFormProps {
@@ -308,16 +309,15 @@ export function WalkinAddForm({
         </p>
       ) : null}
 
-      <button
+      <Button
         type="submit"
-        disabled={formLocked}
-        className={cn(
-          "flex min-h-11 w-full items-center justify-center rounded-lg bg-nq-primary px-4 text-sm font-semibold text-nq-navy-deep transition-opacity",
-          formLocked ? "cursor-not-allowed opacity-60" : "hover:opacity-95",
-        )}
+        variant="primary"
+        loading={submitting}
+        disabled={disabled}
+        className="w-full sm:w-full"
       >
         {submitting ? labels.submitting : labels.addButton}
-      </button>
+      </Button>
     </form>
   );
 }

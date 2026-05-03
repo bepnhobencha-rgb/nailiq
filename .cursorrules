@@ -36,3 +36,67 @@ SEO / AI Discovery Rules:
 - Add JSON-LD when appropriate.
 - Public booking pages must eventually generate metadata from salon data.
 - Keep content AI-readable and semantically structured.
+
+## FORM BUTTONS — Locked pattern
+
+Goal: Consistent buttons across all forms, dialogs, and action surfaces.
+
+### Rules
+
+1. **Always use shared `<Button>` component** from `src/components/ui/Button.tsx` (or current location). Find via grep: `from "@/components/ui/Button"` or similar.
+
+2. **Variants** (use existing — DO NOT add new without asking):
+   - `primary` — main CTA (Save, Submit, Confirm) — gold bg
+   - `secondary` — alternative action — muted bg
+   - `ghost` — Cancel, dismiss — transparent
+   - `danger` — Delete, Cancel booking, destructive — red
+
+3. **States** (use props, DO NOT hardcode):
+   - Loading: `loading={submitting}` prop — shows spinner, disables button
+   - Disabled: `disabled={!canSubmit}` prop — gray out, prevent click
+   - Both can apply simultaneously
+
+4. **Form action layout**:
+   - Use 2-button pattern: Cancel (left, ghost) + Primary (right, primary/danger)
+   - Gap: `gap-3` between buttons
+   - Container: `flex justify-end` for desktop, full-width stacked on mobile
+   - Min touch target: 44px height (existing Button enforces)
+
+5. **NEVER**:
+   - Hardcode Tailwind button classes (`bg-nq-primary px-4 py-2...`) — use Button component
+   - Build custom spinners — use Button loading state
+   - Skip disabled state during async operation — always disable while submitting
+   - Mix Cancel left/right placement across forms — keep consistent (Cancel left)
+
+### When to ask user before deviating
+
+If you need pattern NOT covered:
+- New variant needed → ask before adding
+- Custom layout (not 2-button) → ask before implementing
+- Inline submit without modal → propose pattern, ask
+
+### Reference forms
+
+These forms follow the locked pattern (use as templates):
+- WalkinAddForm (Receptionist Center) — **submit** row uses shared `<Button>` (`primary` + `loading`); service pills / toggles remain native controls by design
+- BookingDetailDrawer (drawer actions) — **primary / cancel** footer uses shared `<Button>`; scrim + **✕** close remain native / icon-only header controls
+- ServicesSetupPanel delete dialog
+- StaffSetupPanel delete dialog
+
+### Known gaps (defer cleanup — refactor when next touching each file)
+
+These files still use raw `<button>` mixed with `Button` component or different patterns. Do NOT refactor as standalone work — fix only when modifying the file for an unrelated task:
+
+- BookingFlowConfirmPanel.tsx
+- BookingFlowDatePanel.tsx
+- VerifyPageClient.tsx
+- SalonOwnerDashboardMain.tsx
+- HomeLanding.tsx (marketing — different design context)
+- DemoOtpModal.tsx
+- StaffTimelineGrid.tsx (slot buttons — pattern differs by design intent)
+- WalkinAddForm.tsx service pills (toggle list pattern, not form action)
+- BookingDetailDrawer.tsx close X (icon-only header control)
+
+`SaveButton.tsx` is the allowed exception for setup save controls. Eventually consolidate to `Button`, but not now.
+
+If you find an existing form NOT following this pattern, flag it — don't silently fix during unrelated work. Report and ask for refactor approval.

@@ -1,5 +1,5 @@
 # Current Focus
-> Last updated: 2026-05-02
+> Last updated: 2026-05-03
 > ⚠️ Update mỗi Monday morning. Sửa file local → re-upload Project.
 
 ---
@@ -139,6 +139,8 @@ Tổng 18 ESLint errors, 0 functional impact. Build pass, typecheck pass, Playwr
 - 3 lỗi require() imports trong `scripts/auto-push.js` (dev script, không production)
 - **Receptionist Center — manual QA cosmetic (defer):** conflict/error toast uses state name `shakeMessage` but **no shake animation** in CSS; spec called for “red shake”. Optional polish post-launch.
 - Receptionist Center Case 7 manual iPad test deferred — no device available 2026-05-02. Test on first beta salon iPad install (target: week of 19-25/5).
+- **Form buttons — migrate to shared `Button` (foundation):** **Status:** Foundation done **2026-05-03** — `Button.loading` prop added; **`WalkinAddForm`** submit + **`BookingDetailDrawer`** primary/cancel migrated to shared `Button`. **Remaining:** **9** backlog surfaces listed under `.cursorrules` → **FORM BUTTONS** → **Known gaps** (plus `SaveButton.tsx` exception — consolidate later). **Trigger:** refactor when next touching each file (no standalone sprint). **Visual changes accepted:** submit + primary buttons **`rounded-full`** pill; danger uses **solid red** bg; cancel/dismiss styling per **`text-nq-bg`** where applied.
+- **`SalonOwnerTodayBookings` hydration mismatch (time display):** Observed **2026-05-03** during e2e runs. Pre-existing, not caused by recent button work. Investigate and fix when touching that component or before V1 launch QA.
 
 ### Receptionist Center V1 — final manual QA (14 cases)
 **Status:** **Shipped 2026-05-02.** Automated (2026-05-02 evening): `tsc`, `next build`, Playwright **63 passed / 1 skipped** (mobile ghost hover), dashboard smokes (`loadReceptionistCenterData`, `receptionistActions`, `publicBookingConflict`) — PASS. **Task 5 (empty salon):** setup-incomplete banner + disabled walk-in form; **`e2e/receptionist-center/empty-salon.spec.ts`**. Manual iPhone on `/dashboard/{slug}/center`: PASS (**tel:** opens Phone app). **Case 7 iPad layout** deferred — no device; target first beta salon iPad (week of 19–25/5, see P3). Residual linked-dev cases (dual-tab realtime spot-checks, screenshots) optional for beta trail.

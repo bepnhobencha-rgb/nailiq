@@ -32,6 +32,8 @@ const sizeClasses: Record<ButtonSize, string> = {
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  /** When true, shows a spinner, disables the control, and sets `aria-busy`. */
+  loading?: boolean;
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -42,11 +44,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       variant = "primary",
       size = "md",
       disabled,
+      loading = false,
       onClick,
+      children,
       ...props
     },
     ref,
   ) {
+    const isDisabled = Boolean(disabled || loading);
     const [clickFlash, setClickFlash] = useState(false);
     const clickFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
       null,
@@ -65,10 +70,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         ref={ref}
         type={type}
-        disabled={disabled}
+        disabled={isDisabled}
+        aria-busy={loading || undefined}
         onClick={(e) => {
           onClick?.(e);
-          if (disabled) return;
+          if (isDisabled) return;
           if (clickFlashTimerRef.current !== null) {
             clearTimeout(clickFlashTimerRef.current);
           }
@@ -79,18 +85,32 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           }, 100);
         }}
         className={cn(
-          "inline-flex w-full min-w-0 max-w-full cursor-pointer items-center justify-center rounded-full border border-transparent",
+          "inline-flex w-full min-w-0 max-w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-transparent",
           "shadow-[0_0_30px_rgba(212,175,55,0.2)]",
           "transition-all duration-150 ease-out motion-reduce:transition-transform motion-reduce:duration-200",
           "hover:scale-[1.02] active:scale-[0.98] motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
           clickFlash && "opacity-90",
-          "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 disabled:active:scale-100 sm:w-auto",
+          "disabled:cursor-not-allowed disabled:hover:scale-100 disabled:active:scale-100 sm:w-auto",
+          loading && "disabled:!opacity-70",
+          !loading && "disabled:opacity-40",
           variantClasses[variant],
           sizeClasses[size],
           className,
         )}
         {...props}
-      />
+      >
+        {loading ? (
+          <>
+            <span
+              className="inline-block size-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none"
+              aria-hidden
+            />
+            <span className="min-w-0">{children}</span>
+          </>
+        ) : (
+          children
+        )}
+      </button>
     );
   },
 );
