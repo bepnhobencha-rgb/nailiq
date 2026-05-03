@@ -1,13 +1,38 @@
-export type BookingStatus = "pending" | "confirmed" | "completed";
+export type BookingStatus =
+  | "pending"
+  | "confirmed"
+  | "completed"
+  | "waiting"
+  | "in_progress"
+  | "cancelled";
+
+export type BookingSource = "appointment" | "walkin";
+
+/** Statuses shown in the owner “today” list (excludes queue-only, finished, cancelled). */
+export const OWNER_TODAY_LIST_STATUSES: BookingStatus[] = [
+  "pending",
+  "confirmed",
+  "in_progress",
+];
+
+/** Statuses loaded for the owner dashboard grid, stats, and upcoming (excludes walk-in queue + cancelled). */
+export const ACTIVE_GRID_STATUSES: BookingStatus[] = [
+  "pending",
+  "confirmed",
+  "in_progress",
+  "completed",
+];
 
 export type SalonDashboardBooking = {
   id: string;
   client_name: string;
-  client_phone: string;
+  client_phone: string | null;
   /** Guest notes from public booking when provided. */
   client_notes: string | null;
-  start_time_utc: string;
+  /** Null for walk-in rows before a slot exists. */
+  start_time_utc: string | null;
   status: BookingStatus;
+  source: BookingSource;
   service_name: string;
   /** Assigned staff display name when present. */
   staff_name: string | null;

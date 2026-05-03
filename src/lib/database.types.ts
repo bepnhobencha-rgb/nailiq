@@ -81,15 +81,19 @@ export type Database = {
           addon_service_id: string | null
           client_name: string
           client_notes: string | null
-          client_phone: string
+          client_phone: string | null
           created_at: string | null
-          end_time_utc: string
+          end_time_utc: string | null
           id: string
+          joined_queue_at: string | null
           price_cents: number | null
           salon_id: string
           service_id: string
-          staff_id: string
-          start_time_utc: string
+          source: string
+          staff_id: string | null
+          staff_request_note: string | null
+          start_time_utc: string | null
+          started_at: string | null
           status: string
         }
         Insert: {
@@ -97,15 +101,19 @@ export type Database = {
           addon_service_id?: string | null
           client_name: string
           client_notes?: string | null
-          client_phone: string
+          client_phone?: string | null
           created_at?: string | null
-          end_time_utc: string
+          end_time_utc?: string | null
           id?: string
+          joined_queue_at?: string | null
           price_cents?: number | null
           salon_id: string
           service_id: string
-          staff_id: string
-          start_time_utc: string
+          source?: string
+          staff_id?: string | null
+          staff_request_note?: string | null
+          start_time_utc?: string | null
+          started_at?: string | null
           status?: string
         }
         Update: {
@@ -113,15 +121,19 @@ export type Database = {
           addon_service_id?: string | null
           client_name?: string
           client_notes?: string | null
-          client_phone?: string
+          client_phone?: string | null
           created_at?: string | null
-          end_time_utc?: string
+          end_time_utc?: string | null
           id?: string
+          joined_queue_at?: string | null
           price_cents?: number | null
           salon_id?: string
           service_id?: string
-          staff_id?: string
-          start_time_utc?: string
+          source?: string
+          staff_id?: string | null
+          staff_request_note?: string | null
+          start_time_utc?: string | null
+          started_at?: string | null
           status?: string
         }
         Relationships: [
@@ -367,6 +379,7 @@ export type Database = {
           profile_complete: boolean | null
           salon_phone: string | null
           slug: string
+          timezone: string
         }
         Insert: {
           address?: string | null
@@ -381,6 +394,7 @@ export type Database = {
           profile_complete?: boolean | null
           salon_phone?: string | null
           slug: string
+          timezone?: string
         }
         Update: {
           address?: string | null
@@ -395,6 +409,7 @@ export type Database = {
           profile_complete?: boolean | null
           salon_phone?: string | null
           slug?: string
+          timezone?: string
         }
         Relationships: []
       }
