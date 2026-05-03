@@ -113,12 +113,32 @@ function serviceSlotMinutes(
   serviceId: string,
   services: ReceptionistCenterData["services"],
 ): number | null {
-  const s = services.find((row) => row.id === serviceId);
+  const sid = String(serviceId ?? "").trim().toLowerCase();
+  const s = services.find((row) => String(row.id ?? "").trim().toLowerCase() === sid);
   if (!s) return null;
-  const d = Number(s.duration_minutes);
-  const buf = Number(s.buffer_minutes);
+  const dRaw = Number(s.duration_minutes);
+  const bRaw = Number(s.buffer_minutes);
+  const d = Number.isFinite(dRaw) ? Math.round(dRaw) : 0;
+  const buf = Number.isFinite(bRaw) ? Math.round(bRaw) : 0;
   const total = d + buf;
   return Number.isFinite(total) && total > 0 ? total : null;
+}
+
+/** Catalog duration (+ buffer); falls back to queue row join when FK row is missing/stale client-side. */
+function walkinEffectiveSpanMinutes(
+  qi: QueueItem,
+  services: ReceptionistCenterData["services"],
+): number | null {
+  const catalog = serviceSlotMinutes(qi.service_id, services);
+  if (catalog !== null && catalog >= 1) return catalog;
+
+  const rowDur = qi.service_duration_minutes;
+  if (Number.isFinite(rowDur)) {
+    const rounded = Math.round(rowDur);
+    if (rounded >= 1) return rounded;
+  }
+
+  return null;
 }
 
 type UndoToastState = {
@@ -286,7 +306,7 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
     assigningWalkinId !== null
       ? (() => {
           const qi = queueItems.find((x) => x.id === assigningWalkinId);
-          const span = qi ? serviceSlotMinutes(qi.service_id, data.services) : null;
+          const span = qi ? walkinEffectiveSpanMinutes(qi, data.services) : null;
           return qi !== undefined && span !== null && qi.client_name.trim().length
             ? {
                 queueItemId: qi.id,
@@ -313,7 +333,7 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
     const assignBookingId = assigningWalkinId;
     if (!assignBookingId || assignedSlot === null) return;
     const qi = queueItems.find((x) => x.id === assignBookingId);
-    const spanMinutes = qi ? serviceSlotMinutes(qi.service_id, data.services) : null;
+    const spanMinutes = qi ? walkinEffectiveSpanMinutes(qi, data.services) : null;
     if (!qi || spanMinutes === null || spanMinutes < 1) {
       setShakeMessage(messages.receptionist.actionErrorFallback);
       return;
@@ -546,14 +566,14 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
 
   const onAddWalkin = async (input: {
     clientName: string;
-    clientPhone: string | null;
+    clientPhone: string;
     serviceId: string;
     staffRequestNote: string | null;
   }) => {
     const r = await addWalkinToQueue(slug, {
       salonId: data.salon.id,
       clientName: input.clientName,
-      clientPhone: input.clientPhone ?? undefined,
+      clientPhone: input.clientPhone,
       serviceId: input.serviceId,
       staffRequestNote: input.staffRequestNote ?? undefined,
     });
@@ -799,7 +819,12 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
                 urgentBadge: rcMessages.queue.urgentBadge,
                 waitingHint: rcMessages.queue.waitingHint,
                 minutesAgo: rcMessages.queue.minutesAgo,
-                addForm: rcMessages.queue.addForm,
+                addForm: {
+                  ...rcMessages.queue.addForm,
+                  invalidPhone: rcMessages.walkin.invalidPhone,
+                  phoneRequired: rcMessages.walkin.phoneRequired,
+                  invalidName: rcMessages.walkin.invalidName,
+                },
               }}
             />
           </div>

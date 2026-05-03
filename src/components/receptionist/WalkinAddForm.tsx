@@ -10,6 +10,8 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/Button";
+import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
+import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { cn } from "@/shared/lib/cn";
 
 export interface WalkinAddFormProps {
@@ -30,11 +32,14 @@ export interface WalkinAddFormProps {
     moreServices: string;
     submitting: string;
     errorRequired: string;
+    invalidPhone: string;
+    phoneRequired: string;
+    invalidName: string;
   };
   /** Async callback — parent calls server action */
   onSubmit: (input: {
     clientName: string;
-    clientPhone: string | null;
+    clientPhone: string;
     serviceId: string;
     staffRequestNote: string | null;
   }) => Promise<{ ok: boolean; error?: string }>;
@@ -65,6 +70,8 @@ export function WalkinAddForm({
   const [showMoreServices, setShowMoreServices] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
 
   const formLocked = disabled || submitting;
 
@@ -78,14 +85,25 @@ export function WalkinAddForm({
     setStaffRequestNote("");
     setShowMoreServices(false);
     setErrorMessage(null);
+    setNameError(null);
+    setPhoneError(null);
     queueMicrotask(() => nameRef.current?.focus());
   }, []);
 
   const runSubmit = useCallback(async () => {
     if (disabled) return;
-    const name = clientName.trim();
-    if (!name) {
-      setErrorMessage(labels.errorRequired);
+    const trimmedName = clientName.trim();
+    if (trimmedName.length === 0 || trimmedName.length > BOOKING_GUEST_NAME_MAX) {
+      setNameError(labels.invalidName);
+      return;
+    }
+    const trimmedPhone = clientPhone.trim();
+    if (trimmedPhone.length === 0) {
+      setPhoneError(labels.phoneRequired);
+      return;
+    }
+    if (!validateGuestPhone(trimmedPhone).ok) {
+      setPhoneError(labels.invalidPhone);
       return;
     }
     if (selectedServiceId === null) {
@@ -93,26 +111,34 @@ export function WalkinAddForm({
       return;
     }
 
-    setSubmitting(true);
     setErrorMessage(null);
-    const phoneTrim = clientPhone.trim();
-    const result = await onSubmit({
-      clientName: name,
-      clientPhone: phoneTrim.length ? clientPhone : null,
-      serviceId: selectedServiceId,
-      staffRequestNote: staffRequestNote.trim().length ? staffRequestNote : null,
-    });
-    setSubmitting(false);
+    setNameError(null);
+    setPhoneError(null);
 
-    if (result.ok) {
-      resetAfterSuccess();
-    } else {
-      setErrorMessage(result.error ?? labels.errorRequired);
+    setSubmitting(true);
+    try {
+      const result = await onSubmit({
+        clientName: trimmedName,
+        clientPhone: trimmedPhone,
+        serviceId: selectedServiceId,
+        staffRequestNote: staffRequestNote.trim().length ? staffRequestNote.trim() : null,
+      });
+
+      if (result.ok) {
+        resetAfterSuccess();
+      } else {
+        setErrorMessage(result.error ?? labels.errorRequired);
+      }
+    } finally {
+      setSubmitting(false);
     }
   }, [
     clientName,
     clientPhone,
     labels.errorRequired,
+    labels.invalidName,
+    labels.invalidPhone,
+    labels.phoneRequired,
     onSubmit,
     resetAfterSuccess,
     selectedServiceId,
@@ -149,12 +175,16 @@ export function WalkinAddForm({
     }
     if (e.key === "Escape") {
       setErrorMessage(null);
+      setNameError(null);
+      setPhoneError(null);
     }
   };
 
   const onFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
     if (e.key === "Escape") {
       setErrorMessage(null);
+      setNameError(null);
+      setPhoneError(null);
     }
   };
 
@@ -179,17 +209,38 @@ export function WalkinAddForm({
           id={nameId}
           ref={nameRef}
           type="text"
+          data-testid="walkin-name"
           autoComplete="name"
           disabled={formLocked}
           placeholder={labels.namePlaceholder}
           value={clientName}
-          onChange={(e) => setClientName(e.target.value)}
+          maxLength={BOOKING_GUEST_NAME_MAX}
+          onChange={(e) => {
+            setClientName(e.target.value);
+            setNameError(null);
+          }}
+          onBlur={() => {
+            const t = clientName.trim();
+            setClientName(t);
+            if (t.length === 0 || t.length > BOOKING_GUEST_NAME_MAX) {
+              setNameError(labels.invalidName);
+            } else {
+              setNameError(null);
+            }
+          }}
           onKeyDown={onNameKeyDown}
+          aria-invalid={Boolean(nameError)}
           className={cn(
-            "h-11 w-full rounded-lg border border-nq-muted/35 bg-nq-bg px-3 text-base text-nq-foreground placeholder:text-nq-muted focus:border-nq-primary focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
+            "h-11 w-full rounded-lg border bg-nq-bg px-3 text-base text-nq-foreground placeholder:text-nq-muted focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
+            nameError ? "border-nq-error/50 focus:border-nq-error/60" : "border-nq-muted/35 focus:border-nq-primary",
             formLocked && "opacity-60",
           )}
         />
+        {nameError ? (
+          <p className="text-xs text-nq-error" role="alert" data-testid="walkin-name-error">
+            {nameError}
+          </p>
+        ) : null}
         <label htmlFor={phoneId} className="sr-only">
           {labels.phonePlaceholder}
         </label>
@@ -201,13 +252,34 @@ export function WalkinAddForm({
           disabled={formLocked}
           placeholder={labels.phonePlaceholder}
           value={clientPhone}
-          onChange={(e) => setClientPhone(e.target.value)}
+          maxLength={24}
+          onChange={(e) => {
+            setClientPhone(e.target.value);
+            setPhoneError(null);
+          }}
+          onBlur={() => {
+            const p = clientPhone.trim();
+            setClientPhone(p);
+            if (p.length === 0) {
+              setPhoneError(null);
+              return;
+            }
+            setPhoneError(validateGuestPhone(p).ok ? null : labels.invalidPhone);
+          }}
           onKeyDown={onPhoneKeyDown}
+          aria-invalid={Boolean(phoneError)}
+          data-testid="walkin-phone"
           className={cn(
-            "h-11 w-full rounded-lg border border-nq-muted/35 bg-nq-bg px-3 text-base text-nq-foreground placeholder:text-nq-muted focus:border-nq-primary focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
+            "h-11 w-full rounded-lg border bg-nq-bg px-3 text-base text-nq-foreground placeholder:text-nq-muted focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
+            phoneError ? "border-nq-error/50 focus:border-nq-error/60" : "border-nq-muted/35 focus:border-nq-primary",
             formLocked && "opacity-60",
           )}
         />
+        {phoneError ? (
+          <p className="text-xs text-nq-error" role="alert" data-testid="walkin-phone-error">
+            {phoneError}
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-2">

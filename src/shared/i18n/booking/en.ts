@@ -74,6 +74,11 @@ export const bookingEn = {
   bookingErrors: {
     slotJustTaken:
       "This slot was just booked. Please pick another time.",
+    invalidPhone:
+      "Phone format invalid. Example: 555-123-4567",
+    phoneRequired: "Enter your phone number.",
+    invalidName:
+      "Name required (max 100 characters)",
   },
   clientNameLabel: "Your name",
   clientPhoneLabel: "Phone number",
@@ -84,9 +89,8 @@ export const bookingEn = {
   waitlistJoined:
     "You're on the list. We'll text you if something opens.",
   waitlistError: "Couldn't save your request. Try again.",
+  /** Legacy banner copy when both fields are empty on Continue (prefer field-level bookingErrors.*). */
   contactRequiredError: "Please enter your name and phone.",
-  invalidPhoneError:
-    "Enter a valid phone number (8–15 digits, country code if applicable).",
   pastTimeError:
     "This time has already passed. Please select a future time.",
   outsideHoursError: "That time is outside salon hours. Please pick another slot.",

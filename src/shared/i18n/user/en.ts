@@ -158,6 +158,11 @@ export type UserMessages = {
         errorRequired: string;
       };
     };
+    walkin: {
+      invalidPhone: string;
+      phoneRequired: string;
+      invalidName: string;
+    };
     grid: {
       conflictWith: (clientName: string) => string;
       overflowMessage: string;
@@ -231,6 +236,7 @@ export type UserMessages = {
       invalid_transition: string;
       invalid_state: string;
       already_started: string;
+      invalid_phone: string;
     };
   };
 };
@@ -391,13 +397,20 @@ export const userEn: UserMessages = {
       minutesAgo: (n: number) => (n < 1 ? "just now" : `${n} min`),
       addForm: {
         namePlaceholder: "Guest name",
-        phonePlaceholder: "Phone (optional)",
+        phonePlaceholder: "Phone",
         notePlaceholder: "Note for staff — e.g. polish color, prefers window seat",
         addButton: "Add to queue",
         moreServices: "More services",
         submitting: "Adding…",
-        errorRequired: "Name and service are required.",
+        errorRequired: "Pick a service to continue.",
       },
+    },
+    walkin: {
+      invalidPhone:
+        "Phone format invalid. Example: 555-123-4567",
+      phoneRequired: "Enter the guest phone number.",
+      invalidName:
+        "Name required (max 100 characters)",
     },
     grid: {
       conflictWith: (clientName: string) =>
@@ -470,6 +483,7 @@ export const userEn: UserMessages = {
       invalid_transition: "That status change is not allowed right now.",
       invalid_state: "That booking is no longer in the right status.",
       already_started: "Service already started — cannot undo.",
+      invalid_phone: "Enter a valid guest phone number.",
     },
   },
 };

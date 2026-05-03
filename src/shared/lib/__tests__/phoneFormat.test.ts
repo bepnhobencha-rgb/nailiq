@@ -1,4 +1,9 @@
-import { cleanPhone, formatPhone } from "../phoneFormat";
+import {
+  cleanPhone,
+  formatPhone,
+  isValidPhoneE164,
+  normalizedPhoneDigits,
+} from "../phoneFormat";
 
 let pass = 0,
   fail = 0;
@@ -35,6 +40,31 @@ test("formatPhone returns invalid input as-is", () => {
   assertEqual(formatPhone("123"), "123");
   assertEqual(formatPhone(""), "");
   assertEqual(formatPhone(null), "");
+});
+
+test("normalizedPhoneDigits matches cleaned body", () => {
+  assertEqual(normalizedPhoneDigits("555-123-4567"), "5551234567");
+  assertEqual(normalizedPhoneDigits("+1 555 123 4567"), "15551234567");
+  assertEqual(normalizedPhoneDigits("+84 909 123 456"), "84909123456");
+});
+
+test("isValidPhoneE164 accepts common formats", () => {
+  assertEqual(isValidPhoneE164("5551234567"), true);
+  assertEqual(isValidPhoneE164("555-123-4567"), true);
+  assertEqual(isValidPhoneE164("(555) 123-4567"), true);
+  assertEqual(isValidPhoneE164("+1 555 123 4567"), true);
+  assertEqual(isValidPhoneE164("+84 909 123 456"), true);
+});
+
+test("isValidPhoneE164 rejects garbage and short numbers", () => {
+  assertEqual(isValidPhoneE164("abc"), false);
+  assertEqual(isValidPhoneE164("1"), false);
+  assertEqual(isValidPhoneE164(""), false);
+  assertEqual(isValidPhoneE164("+++"), false);
+});
+
+test("isValidPhoneE164 rejects too many digits (>15)", () => {
+  assertEqual(isValidPhoneE164("1".repeat(16)), false);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -111,6 +111,7 @@ export function WalkinQueueSidebar({
                 >
                   {assigningThis ? (
                     <p
+                      data-testid="walkin-assign-active-hint"
                       className={cn(
                         "mb-1 rounded-md border border-nq-primary/40 bg-nq-primary/10 px-2 py-1 text-center text-[11px] font-semibold uppercase tracking-wide text-nq-primary",
                       )}

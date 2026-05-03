@@ -435,8 +435,35 @@ export async function gotoReceptionistCenter(
   await page.getByTestId("walkin-add-form").waitFor({ state: "visible" });
 }
 
+/** 10-digit test phone satisfying `validateGuestPhone` / public booking rules. */
+export const E2E_WALKIN_VALID_PHONE = "5555551234";
+
+/** Fill guest name + phone on the walk-in add form (both required since V1 validation). */
+export async function fillWalkinGuestContact(
+  page: Page,
+  name: string,
+  phone = E2E_WALKIN_VALID_PHONE,
+): Promise<void> {
+  const form = page.getByTestId("walkin-add-form");
+  await form.getByTestId("walkin-name").fill(name);
+  await form.getByTestId("walkin-phone").fill(phone);
+}
+
 /**
- * Timeline slot `<button>`s sit under booking blocks (`z-[2]`). Synthetic click reaches React reliably.
+ * Receptionist sidebar "Assign" for a walk-in queue row. Prefer over `locator.click()`: Playwright synthetic clicks
+ * can miss the React `onClick` when the sidebar stacks under fixed chrome — observed in dual-browser parallel assign runs.
+ */
+export async function clickWalkinQueueAssign(page: Page, bookingId: string): Promise<void> {
+  const loc = page.getByTestId(`queue-assign-${bookingId}`);
+  await loc.waitFor({ state: "attached", timeout: 15_000 });
+  await loc.scrollIntoViewIfNeeded();
+  await loc.evaluate((el: HTMLElement) => {
+    el.click();
+  });
+}
+
+/**
+ * Receptionist timeline slot `<button>`s sit under booking blocks (`z-[2]`). Synthetic click reaches React reliably.
  */
 export async function clickAssignSlot(
   page: Page,

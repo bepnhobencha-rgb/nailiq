@@ -35,12 +35,14 @@ import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import { pickBestStaffAmongFree } from "@/shared/booking/pickBestStaffAmongFree";
 import { computeStaffFloatGapMinutes } from "@/shared/booking/computeStaffFloatGapMinutes";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+
 import {
   loadSavedBookingGuestProfile,
   saveBookingGuestProfile,
 } from "@/shared/booking/bookingClientProfile";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import * as Sentry from "@sentry/nextjs";
+import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 
 export type BookingFlowStep =
   | "service"
@@ -94,6 +96,8 @@ export function useBookingFlowState(
   const [waitlistSubmitting, setWaitlistSubmitting] = useState(false);
   const [waitlistSlotJoined, setWaitlistSlotJoined] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [infoNameError, setInfoNameError] = useState<string | null>(null);
+  const [infoPhoneError, setInfoPhoneError] = useState<string | null>(null);
   const [bookingResult, setBookingResult] = useState<{
     bookingId: string;
     startTimeUtc: string;
@@ -119,9 +123,43 @@ export function useBookingFlowState(
   }, []);
 
   const guestContactInvalid = useMemo(() => {
-    if (!clientName.trim()) return true;
+    const nameT = clientName.trim();
+    if (nameT.length === 0 || nameT.length > BOOKING_GUEST_NAME_MAX)
+      return true;
     return !validateGuestPhone(clientPhone).ok;
   }, [clientName, clientPhone]);
+
+  const setBookingClientName = useCallback((v: string) => {
+    setClientName(v);
+    setInfoNameError(null);
+  }, []);
+
+  const setBookingClientPhone = useCallback((v: string) => {
+    setClientPhone(v);
+    setInfoPhoneError(null);
+  }, []);
+
+  const handleInfoNameBlur = useCallback(() => {
+    const trimmed = clientName.trim();
+    setClientName(trimmed);
+    if (trimmed.length === 0 || trimmed.length > BOOKING_GUEST_NAME_MAX) {
+      setInfoNameError(t.bookingErrors.invalidName);
+    } else {
+      setInfoNameError(null);
+    }
+  }, [clientName, t.bookingErrors.invalidName]);
+
+  const handleInfoPhoneBlur = useCallback(() => {
+    const pTrim = clientPhone.trim();
+    setClientPhone(pTrim);
+    if (pTrim.length === 0) {
+      setInfoPhoneError(null);
+      return;
+    }
+    setInfoPhoneError(
+      validateGuestPhone(pTrim).ok ? null : t.bookingErrors.invalidPhone,
+    );
+  }, [clientPhone, t.bookingErrors.invalidPhone]);
 
   useEffect(() => {
     if (step !== "done") {
@@ -335,22 +373,45 @@ export function useBookingFlowState(
     if (!timeSlot) return;
     setStepDir(1);
     setError(null);
+    setInfoNameError(null);
+    setInfoPhoneError(null);
     setStep("info");
   }, [timeSlot]);
 
   const goInfoNext = useCallback(() => {
-    if (guestContactInvalid) {
-      if (!clientName.trim()) {
-        setError(t.contactRequiredError);
-      } else {
-        setError(t.invalidPhoneError);
-      }
+    const nameTrim = clientName.trim();
+    const phoneTrim = clientPhone.trim();
+
+    const nameErr =
+      nameTrim.length === 0 || nameTrim.length > BOOKING_GUEST_NAME_MAX
+        ? t.bookingErrors.invalidName
+        : null;
+
+    let phoneErr: string | null = null;
+    if (phoneTrim.length === 0) {
+      phoneErr = t.bookingErrors.phoneRequired;
+    } else if (!validateGuestPhone(phoneTrim).ok) {
+      phoneErr = t.bookingErrors.invalidPhone;
+    }
+
+    setInfoNameError(nameErr);
+    setInfoPhoneError(phoneErr);
+
+    if (nameErr !== null || phoneErr !== null) {
+      setError(null);
       return;
     }
+
     setError(null);
     setStepDir(1);
     setStep("confirm");
-  }, [guestContactInvalid, clientName, t.contactRequiredError, t.invalidPhoneError]);
+  }, [
+    clientName,
+    clientPhone,
+    t.bookingErrors.invalidName,
+    t.bookingErrors.invalidPhone,
+    t.bookingErrors.phoneRequired,
+  ]);
 
   const resetAfterDone = useCallback(() => {
     setStepDir(1);
@@ -367,6 +428,8 @@ export function useBookingFlowState(
     setTimeSlots([]);
     setError(null);
     setWaitlistSlotJoined(false);
+    setInfoNameError(null);
+    setInfoPhoneError(null);
   }, []);
 
   const handleAddToCalendar = useCallback(() => {
@@ -413,9 +476,15 @@ export function useBookingFlowState(
     setError(null);
     const name = clientName.trim();
     const phone = clientPhone.trim();
-    if (!name || !validateGuestPhone(phone).ok) {
+    const nameBad =
+      name.length === 0 || name.length > BOOKING_GUEST_NAME_MAX;
+    if (nameBad || !validateGuestPhone(phone).ok) {
       setError(
-        !name ? t.contactRequiredError : t.invalidPhoneError,
+        nameBad
+          ? t.bookingErrors.invalidName
+          : phone.length === 0
+            ? t.bookingErrors.phoneRequired
+            : t.bookingErrors.invalidPhone,
       );
       return;
     }
@@ -496,7 +565,7 @@ export function useBookingFlowState(
         err instanceof Error &&
         err.message === "invalid_phone"
       ) {
-        setError(t.invalidPhoneError);
+        setError(t.bookingErrors.invalidPhone);
       } else if (
         err instanceof Error &&
         err.message === "invalid_addon"
@@ -536,8 +605,9 @@ export function useBookingFlowState(
     serviceId,
     service,
     staff,
-    t.contactRequiredError,
-    t.invalidPhoneError,
+    t.bookingErrors.invalidName,
+    t.bookingErrors.invalidPhone,
+    t.bookingErrors.phoneRequired,
     t.outsideHoursError,
     t.pastTimeError,
     t.salonClosedError,
@@ -549,9 +619,15 @@ export function useBookingFlowState(
     if (!serviceId || !staffId) return;
     const name = clientName.trim();
     const phone = clientPhone.trim();
-    if (!name || !validateGuestPhone(phone).ok) {
+    const nameBad =
+      name.length === 0 || name.length > BOOKING_GUEST_NAME_MAX;
+    if (nameBad || !validateGuestPhone(phone).ok) {
       setError(
-        !name ? t.contactRequiredError : t.invalidPhoneError,
+        nameBad
+          ? t.bookingErrors.invalidName
+          : phone.length === 0
+            ? t.bookingErrors.phoneRequired
+            : t.bookingErrors.invalidPhone,
       );
       return;
     }
@@ -572,7 +648,7 @@ export function useBookingFlowState(
     } catch (e) {
       setError(
         e instanceof Error && e.message === "invalid_phone"
-          ? t.invalidPhoneError
+          ? t.bookingErrors.invalidPhone
           : t.waitlistError,
       );
     } finally {
@@ -585,8 +661,9 @@ export function useBookingFlowState(
     serviceId,
     shopSlug,
     staffId,
-    t.contactRequiredError,
-    t.invalidPhoneError,
+    t.bookingErrors.invalidName,
+    t.bookingErrors.invalidPhone,
+    t.bookingErrors.phoneRequired,
     t.waitlistError,
   ]);
 
@@ -610,12 +687,16 @@ export function useBookingFlowState(
     setStepDir(-1);
     setStep("time");
     setError(null);
+    setInfoNameError(null);
+    setInfoPhoneError(null);
   }, []);
 
   const backToInfo = useCallback(() => {
     setStepDir(-1);
     setStep("info");
     setError(null);
+    setInfoNameError(null);
+    setInfoPhoneError(null);
   }, []);
 
   return {
@@ -638,6 +719,8 @@ export function useBookingFlowState(
     waitlistSlotJoined,
     error,
     bookingResult,
+    infoNameError,
+    infoPhoneError,
     service,
     staffSummaryLabel,
     confirmTimeLabel,
@@ -646,8 +729,10 @@ export function useBookingFlowState(
     setStaffId,
     setSelectedDate,
     setTimeSlot,
-    setClientName,
-    setClientPhone,
+    setClientName: setBookingClientName,
+    setClientPhone: setBookingClientPhone,
+    handleInfoNameBlur,
+    handleInfoPhoneBlur,
     setClientNotes,
     setSelectedAddonId,
     setError,

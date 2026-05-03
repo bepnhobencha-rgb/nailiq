@@ -8,8 +8,8 @@ import {
   type BookingMotionDir,
 } from "@/components/booking/bookingMotion";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
+import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { cn } from "@/shared/lib/cn";
-import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 
 export function BookingFlowInfoPanel({
   t,
@@ -18,12 +18,16 @@ export function BookingFlowInfoPanel({
   clientNotes,
   infoNextDisabled,
   error,
+  nameError,
+  phoneError,
   stepDir,
   reducedMotion,
   stepTransition,
   onClientNameChange,
   onClientPhoneChange,
   onClientNotesChange,
+  onClientNameBlur,
+  onClientPhoneBlur,
   onBack,
   onNext,
 }: {
@@ -33,18 +37,19 @@ export function BookingFlowInfoPanel({
   clientNotes: string;
   infoNextDisabled: boolean;
   error: string | null;
+  nameError: string | null;
+  phoneError: string | null;
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
   stepTransition: { duration: number; ease: [number, number, number, number] };
   onClientNameChange: (v: string) => void;
   onClientPhoneChange: (v: string) => void;
   onClientNotesChange: (v: string) => void;
+  onClientNameBlur: () => void;
+  onClientPhoneBlur: () => void;
   onBack: () => void;
   onNext: () => void;
 }) {
-  const phoneBad =
-    clientPhone.trim().length > 0 && !validateGuestPhone(clientPhone).ok;
-
   return (
     <motion.section
       key="info"
@@ -81,10 +86,27 @@ export function BookingFlowInfoPanel({
             value={clientName}
             inputMode="text"
             autoCorrect="off"
-            maxLength={120}
+            maxLength={BOOKING_GUEST_NAME_MAX}
             onChange={(e) => onClientNameChange(e.target.value)}
-            className="nq-booking-field"
+            onBlur={() => {
+              void onClientNameBlur();
+            }}
+            aria-invalid={Boolean(nameError)}
+            className={cn(
+              "nq-booking-field",
+              nameError && "border-nq-error/50",
+            )}
+            data-testid="booking-info-name"
           />
+          {nameError ? (
+            <p
+              className="mt-1 text-xs text-nq-error"
+              data-testid="booking-info-name-error"
+              role="alert"
+            >
+              {nameError}
+            </p>
+          ) : null}
         </div>
         <div>
           <label
@@ -102,12 +124,25 @@ export function BookingFlowInfoPanel({
             value={clientPhone}
             maxLength={24}
             onChange={(e) => onClientPhoneChange(e.target.value)}
+            onBlur={() => {
+              void onClientPhoneBlur();
+            }}
             className={cn(
               "nq-booking-field",
-              phoneBad && "border-nq-error/50",
+              phoneError && "border-nq-error/50",
             )}
-            aria-invalid={phoneBad}
+            aria-invalid={Boolean(phoneError)}
+            data-testid="booking-info-phone"
           />
+          {phoneError ? (
+            <p
+              className="mt-1 text-xs text-nq-error"
+              data-testid="booking-info-phone-error"
+              role="alert"
+            >
+              {phoneError}
+            </p>
+          ) : null}
         </div>
         <div>
           <label

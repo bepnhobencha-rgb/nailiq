@@ -66,6 +66,7 @@ export type LoadReceptionistCenterResult =
 type ServiceJoinMinimal = {
   name: string;
   duration_minutes: number;
+  buffer_minutes: number;
 };
 
 /** Same pattern as `dashboardBookingMap.serviceFromJoin`. */
@@ -186,7 +187,7 @@ export async function loadReceptionistCenterData(
       service_id,
       staff_request_note,
       joined_queue_at,
-      services!bookings_service_id_fkey ( name, duration_minutes )
+      services!bookings_service_id_fkey ( name, duration_minutes, buffer_minutes )
     `,
       )
       .eq("salon_id", ctx.salon.id)
@@ -280,13 +281,19 @@ export async function loadReceptionistCenterData(
   for (const row of queueRows ?? []) {
     const svc = serviceFromJoin(row.services);
     if (!row.joined_queue_at?.trim()) continue;
+    const dRaw = Number(svc?.duration_minutes ?? 0);
+    const bRaw = Number(svc?.buffer_minutes ?? 0);
+    const d = Number.isFinite(dRaw) ? Math.round(dRaw) : 0;
+    const buf = Number.isFinite(bRaw) ? Math.round(bRaw) : 0;
+    const spanMin = Number.isFinite(d + buf) && d + buf > 0 ? d + buf : 0;
     walkinQueue.push({
       id: row.id,
       client_name: row.client_name,
       client_phone: row.client_phone ?? null,
       service_id: row.service_id,
       service_name: svc?.name ?? "—",
-      service_duration_minutes: Number(svc?.duration_minutes ?? 0),
+      /** Total slot span (duration + buffer) aligned with catalog + desk assign/conflict logic. */
+      service_duration_minutes: spanMin,
       staff_request_note: row.staff_request_note ?? null,
       joined_queue_at: row.joined_queue_at,
     });

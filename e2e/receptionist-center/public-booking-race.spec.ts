@@ -13,6 +13,7 @@ import {
   clickAssignSlot,
   countBookingsForClient,
   getBookingRow,
+  fillWalkinGuestContact,
   gotoReceptionistCenter,
   RECEPTIONIST_E2E_SLUG,
   seedDeskBooking,
@@ -235,7 +236,7 @@ test.describe("race-2: appointment blocks walk-in assign same slot", () => {
 
     const walkinName = testClientNameMarker();
 
-    await page.getByTestId("walkin-add-form").locator('input[type="text"]').first().fill(walkinName);
+    await fillWalkinGuestContact(page, walkinName);
     await page.locator(`#walkin-service-${fx.serviceIds[0]}`).click();
     await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
 

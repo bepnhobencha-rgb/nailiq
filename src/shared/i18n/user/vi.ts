@@ -156,13 +156,20 @@ export const userVi: UserMessages = {
       minutesAgo: (n: number) => (n < 1 ? "vừa xong" : `${n} phút`),
       addForm: {
         namePlaceholder: "Tên khách",
-        phonePlaceholder: "Điện thoại (không bắt buộc)",
+        phonePlaceholder: "Điện thoại",
         notePlaceholder: "Ghi chú nhân viên — ví dụ màu sơn…",
         addButton: "Thêm vào hàng chờ",
         moreServices: "Thêm dịch vụ",
         submitting: "Đang thêm…",
-        errorRequired: "Cần tên và một dịch vụ.",
+        errorRequired: "Chọn một dịch vụ để tiếp tục.",
       },
+    },
+    walkin: {
+      invalidPhone:
+        "Định dạng điện thoại không hợp lệ. Ví dụ: 555-123-4567",
+      phoneRequired: "Nhập số điện thoại của khách.",
+      invalidName:
+        "Cần họ tên (tối đa 100 ký tự)",
     },
     grid: {
       conflictWith: (clientName: string) =>
@@ -233,6 +240,7 @@ export const userVi: UserMessages = {
       invalid_transition: "Không thể đổi trạng thái lúc này.",
       invalid_state: "Trạng thái lịch đã đổi.",
       already_started: "Đã bắt đầu phục vụ — không hoàn tác được.",
+      invalid_phone: "Nhập số điện thoại hợp lệ của khách.",
     },
   },
 };

@@ -9,6 +9,7 @@ import {
   bookingStepVariants,
   type BookingMotionDir,
 } from "@/components/booking/bookingMotion";
+import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 
 export function BookingFlowTimePanel({
   t,
@@ -107,6 +108,7 @@ export function BookingFlowTimePanel({
                       value={clientName}
                       inputMode="text"
                       autoCorrect="off"
+                      maxLength={BOOKING_GUEST_NAME_MAX}
                       onChange={(e) => onClientNameChange(e.target.value)}
                       className="nq-booking-field"
                     />

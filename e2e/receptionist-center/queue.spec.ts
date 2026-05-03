@@ -4,7 +4,9 @@ import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   clickAssignSlot,
+  clickWalkinQueueAssign,
   countBookingsForClient,
+  fillWalkinGuestContact,
   getBookingRow,
   gotoReceptionistCenter,
   RECEPTIONIST_E2E_SLUG,
@@ -35,7 +37,7 @@ test.describe("Receptionist queue + assign", () => {
     await gotoReceptionistCenter(page, fx.slug);
     const marker = testClientNameMarker();
 
-    await page.getByTestId("walkin-add-form").locator('input[type="text"]').first().fill(marker);
+    await fillWalkinGuestContact(page, marker);
     await page.locator(`#walkin-service-${fx.serviceIds[0]}`).click();
     await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
 
@@ -49,13 +51,14 @@ test.describe("Receptionist queue + assign", () => {
     await expect(page.getByTestId("walkin-add-form").locator('input[type="text"]').first()).toHaveValue(
       "",
     );
+    await expect(page.getByTestId("walkin-phone")).toHaveValue("");
   });
 
   test("case 2: assign walk-in — grid block + queue cleared + undo toast", async ({ page }) => {
     await gotoReceptionistCenter(page, fx.slug);
     const marker = testClientNameMarker();
 
-    await page.getByTestId("walkin-add-form").locator('input[type="text"]').first().fill(marker);
+    await fillWalkinGuestContact(page, marker);
     await page.locator(`#walkin-service-${fx.serviceIds[0]}`).click();
     await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
 
@@ -120,20 +123,26 @@ test.describe("Receptionist queue + assign", () => {
       await expect(p1.getByTestId(`queue-item-${bookingId}`)).toBeVisible({ timeout: 15_000 });
       await expect(p2.getByTestId(`queue-item-${bookingId}`)).toBeVisible({ timeout: 15_000 });
 
-      await p1.getByTestId(`queue-assign-${bookingId}`).click();
-      await p2.getByTestId(`queue-assign-${bookingId}`).click();
+      await clickWalkinQueueAssign(p1, bookingId);
+      await clickWalkinQueueAssign(p2, bookingId);
+
+      await expect(p1.getByTestId("walkin-assign-active-hint")).toBeVisible({ timeout: 15_000 });
+      await expect(p2.getByTestId("walkin-assign-active-hint")).toBeVisible({ timeout: 15_000 });
+      await expect(p1.getByTestId("staff-timeline-grid")).toHaveClass(/cursor-copy/, { timeout: 15_000 });
+      await expect(p2.getByTestId("staff-timeline-grid")).toHaveClass(/cursor-copy/, { timeout: 15_000 });
 
       const slotClick = async (p: import("@playwright/test").Page) => {
         await clickAssignSlot(p, fx.freeStaffId, fx.noonSlotIndex);
       };
-      await Promise.all([slotClick(p1), (async () => { await p2.waitForTimeout(40); await slotClick(p2); })()]);
+      /** Stagger so both contexts hit assign close together without identical millisecond timestamps. */
+      await Promise.all([slotClick(p1), (async () => { await p2.waitForTimeout(120); await slotClick(p2); })()]);
 
       await expect
         .poll(async () => countBookingsForClient(fx.salonId, marker))
         .toBe(1);
 
       await expect
-        .poll(async () => (await getBookingRow(fx.salonId, bookingId))?.status)
+        .poll(async () => (await getBookingRow(fx.salonId, bookingId))?.status, { timeout: 15_000 })
         .toBe("confirmed");
     } finally {
       await ctx1.close();

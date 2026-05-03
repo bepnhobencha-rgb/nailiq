@@ -39,3 +39,25 @@ export function formatPhone(raw: string | null | undefined): string {
 
   return raw.trim();
 }
+
+/** Digits-only body used for validation / storage parity with `cleanPhone`. */
+export function normalizedPhoneDigits(input: string): string {
+  const c = cleanPhone(input.trim());
+  return c.startsWith("+") ? c.slice(1) : c;
+}
+
+const E164_MIN_DIGITS = 10;
+const E164_MAX_DIGITS = 15;
+
+/**
+ * Loose E.164-style check: normalized digit count after `cleanPhone` (10–15).
+ * Accepts local or +country prefixes; trims formatting characters.
+ */
+export function isValidPhoneE164(input: string): boolean {
+  const digits = normalizedPhoneDigits(input);
+  return (
+    digits.length >= E164_MIN_DIGITS &&
+    digits.length <= E164_MAX_DIGITS &&
+    /^\d+$/.test(digits)
+  );
+}

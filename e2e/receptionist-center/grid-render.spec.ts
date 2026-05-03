@@ -3,6 +3,7 @@ import { test, expect } from "@playwright/test";
 import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
+  fillWalkinGuestContact,
   getBookingRow,
   gotoReceptionistCenter,
   moveMouseToAssignSlot,
@@ -82,7 +83,7 @@ test.describe("Receptionist grid render + ghost", () => {
     await gotoReceptionistCenter(page, fx.slug);
     const marker = testClientNameMarker();
 
-    await page.getByTestId("walkin-add-form").locator('input[type="text"]').first().fill(marker);
+    await fillWalkinGuestContact(page, marker);
     await page.locator(`#walkin-service-${fx.longServiceId}`).click();
     await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
 

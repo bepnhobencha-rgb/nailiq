@@ -6,7 +6,8 @@ import {
   ConflictCheckBooking,
   checkBookingConflict,
 } from "@/shared/lib/conflictCheck";
-import { cleanPhone } from "@/shared/lib/phoneFormat";
+import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
+import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import {
   type EditBookingInput,
@@ -52,19 +53,18 @@ export async function addWalkinToQueue(
 
   const clientName = String(input.clientName ?? "").trim();
   if (!clientName) return fail("invalid_name");
+  if (clientName.length > BOOKING_GUEST_NAME_MAX) return fail("invalid_name");
 
   const serviceId = String(input.serviceId ?? "").trim();
   if (!serviceId || !isUuidLike(serviceId)) return fail("invalid_service");
 
-  let clientPhoneClean: string | null = null;
-  if (
-    input.clientPhone !== undefined &&
-    input.clientPhone !== null &&
-    String(input.clientPhone).trim() !== ""
-  ) {
-    const p = cleanPhone(String(input.clientPhone));
-    clientPhoneClean = p.length > 0 ? p : null;
-  }
+  const phoneRaw = String(input.clientPhone ?? "").trim();
+  if (!phoneRaw) return fail("invalid_phone");
+
+  const phoneOk = validateGuestPhone(phoneRaw);
+  if (!phoneOk.ok) return fail("invalid_phone");
+
+  const clientPhoneClean: string | null = phoneOk.digits;
 
   let note: string | null = null;
   if (
