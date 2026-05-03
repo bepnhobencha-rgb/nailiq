@@ -71,10 +71,12 @@ export function SalonOwnerTodayBookings({
               <div className="relative z-[1] w-full min-w-0">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <p className="text-sm font-semibold tabular-nums text-nq-foreground">
-                  {new Date(b.start_time_utc).toLocaleTimeString(undefined, {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                  {b.start_time_utc
+                    ? new Date(b.start_time_utc).toLocaleTimeString(undefined, {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "—"}
                 </p>
                 <span className="rounded-full border border-current/30 px-2 py-0.5 text-[11px] font-medium">
                   {salonBookingStatusLabel(b.status, t)}
@@ -87,7 +89,10 @@ export function SalonOwnerTodayBookings({
                 {b.client_name}
               </p>
               <p className="text-base text-nq-muted">
-                {t.phone}: {maskPhoneDigits(b.client_phone.replace(/\D/g, ""))}
+                {t.phone}:{" "}
+                {b.client_phone
+                  ? maskPhoneDigits(b.client_phone.replace(/\D/g, ""))
+                  : "—"}
               </p>
               <p className="mt-1 text-base text-nq-muted">
                 {t.service}: {b.service_name}

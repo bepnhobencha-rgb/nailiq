@@ -13,6 +13,7 @@ import {
   type BookingRowDb,
 } from "@/shared/dashboard/dashboardBookingMap";
 import type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
+import { ACTIVE_GRID_STATUSES } from "@/shared/types";
 
 const SALON_DASHBOARD_SELECT =
   "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete";
@@ -191,6 +192,8 @@ export async function loadSalonOwnerDashboard(
     .from("bookings")
     .select(DASHBOARD_BOOKING_SELECT)
     .eq("salon_id", salon.id)
+    /** Excludes `waiting` (walk-in queue) and `cancelled`; keeps `completed` for today stats. */
+    .in("status", ACTIVE_GRID_STATUSES)
     .gte("start_time_utc", from.toISOString())
     .lte("start_time_utc", to.toISOString())
     .order("start_time_utc", { ascending: true });
@@ -283,23 +286,41 @@ export async function updateBookingStatus(
   }
 
   const cur = String(row.status) as BookingStatus;
+  const toInProgress =
+    nextStatus === "in_progress" &&
+    (cur === "pending" || cur === "confirmed");
+
   const allowed =
     (cur === "pending" && nextStatus === "confirmed") ||
-    (cur === "confirmed" && nextStatus === "completed");
+    (cur === "confirmed" && nextStatus === "completed") ||
+    (cur === "in_progress" && nextStatus === "completed") ||
+    toInProgress;
 
   if (!allowed) {
     return { ok: false, error: "invalid_transition" };
   }
 
-  const { error: upErr } = await supabase
+  const startedAt = new Date().toISOString();
+  const patch: { status: BookingStatus; started_at?: string } = toInProgress
+    ? { status: "in_progress", started_at: startedAt }
+    : { status: nextStatus };
+
+  const { data: updated, error: upErr } = await supabase
     .from("bookings")
-    .update({ status: nextStatus })
+    .update(patch)
     .eq("id", bookingId)
-    .eq("salon_id", salon.id);
+    .eq("salon_id", salon.id)
+    .eq("status", cur)
+    .select("id")
+    .maybeSingle();
 
   if (upErr) {
     console.error("[updateBookingStatus]", upErr);
     return { ok: false, error: "server_error" };
+  }
+
+  if (!updated?.id) {
+    return { ok: false, error: "invalid_transition" };
   }
 
   return { ok: true };

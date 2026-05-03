@@ -269,6 +269,7 @@ export function SalonOwnerDashboard({
       { label: string; items: SalonDashboardBooking[] }
     >();
     for (const b of viewData.upcoming) {
+      if (b.start_time_utc == null) continue;
       const d = new Date(b.start_time_utc);
       const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
       const label = d.toLocaleDateString(locale, {
@@ -284,11 +285,12 @@ export function SalonOwnerDashboard({
       }
     }
     return [...map.entries()]
-      .sort(
-        (a, b) =>
-          new Date(a[1].items[0].start_time_utc).getTime() -
-          new Date(b[1].items[0].start_time_utc).getTime(),
-      )
+      .sort((a, b) => {
+        const a0 = a[1].items[0]?.start_time_utc;
+        const b0 = b[1].items[0]?.start_time_utc;
+        if (!a0 || !b0) return 0;
+        return new Date(a0).getTime() - new Date(b0).getTime();
+      })
       .map(([, v]) => v);
   }, [viewData, language]);
 
