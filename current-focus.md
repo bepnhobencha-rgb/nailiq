@@ -1,5 +1,5 @@
 # Current Focus
-> Last updated: 2026-05-03
+> Last updated: 2026-05-03 (afternoon)
 > ⚠️ Update mỗi Monday morning. Sửa file local → re-upload Project.
 
 ---
@@ -111,6 +111,9 @@ None.
 
 | Item | Trigger to revisit |
 |------|---------------------|
+| **Desk: add service (multi-service)** — N:N or service array vs V1 replace-one | **5+** beta salons explicit ask → schema work (~2–3d); ADR: `decisions-log.md` 2026-05-03 afternoon |
+| **Smart conflict suggestions** (“Mai 3pm busy; try Trang 3pm / Mai 4pm”) | **3+** beta complain conflict UX; skip if owners adapt to flat error (~2–3d engine) |
+| **Custom price override** on booking (toggle off auto-price) | **2+** beta ask (~1–2h) |
 | Multi-location dashboard | 30+ active salons + 10+ paying + 1 customer ask |
 | POS / Payment processing native | After $5k MRR + customer ask |
 | Native mobile app | After web validates demand + $10k MRR |

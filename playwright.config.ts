@@ -35,8 +35,8 @@ export default defineConfig({
   workers: 1,
   reporter: "html",
   use: {
-    /** Aligns slot labels with `create_public_booking` (UTC wall-clock opening_hours). */
-    timezoneId: "UTC",
+    /** Match default `salons.timezone` (see seed + migrations); RPC v2.4 validates hours in salon TZ. */
+    timezoneId: "America/Los_Angeles",
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000",
     headless: true,
     screenshot: "only-on-failure",

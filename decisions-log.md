@@ -1,5 +1,5 @@
 # Decisions Log
-> Last updated: 2026-05-03
+> Last updated: 2026-05-03 (afternoon)
 > Format: ADR-lite. Mỗi decision = 1 entry. Reverse chronological (newest first).
 
 ---
@@ -57,6 +57,34 @@
 ---
 
 # Entries
+
+---
+
+## 2026-05-03 (afternoon): V1.1 backlog from Q1 ship review — defer add-service, smart conflicts, price override
+
+**Context**: Q1 founder review surfaced three Receptionist / booking ideas for after V1: (1) **add service** to an existing booking (real nail workflow: booked Manicure, client adds Pedicure) vs today’s **replace**-one-service model — implies schema move from 1:1 service + addon toward **N:N or service array** (~2–3 days); (2) **smart conflict suggestions** instead of flat “slot taken” — e.g. “Mai busy 3pm. Try Trang 3pm or Mai 4pm” via cross-staff + same-staff alt slots (~2–3 days); (3) **custom price override** with toggle off default auto-price (~1–2h). Stage is **0 paying customers**; outreach is the bottleneck, not feature depth.
+
+**Decision**: Defer all three to **V1.1**. **Q1 V1** ships **as-is**: desk edit remains **time + staff + service replace** only (locked spec 2026-05-03). Do not build the three items pre-launch.
+
+**Rationale**:
+- Building now ≈ **5–7 days** delay → risks missing launch window and still yields **zero beta signal** on which idea matters.
+- Correct V1.1 priorities should follow **V1 → beta install → real usage** data, not pre-revenue speculation.
+- Smallest ask (#3) stays cheap to add when **2+ beta** explicitly request it; #1 waits for **5+ beta** explicit asks (schema cost); #2 for **3+ beta** conflict-UX complaints (or skip if owners adapt).
+
+**Alternatives rejected**:
+- Ship “add service” or smart suggestions in V1: scope + schedule risk with no validating customers yet.
+- Build price override alone “because it’s fast”: still distracts from outreach and launch closure.
+
+**Activation triggers (revisit post-beta)**:
+- **#1 Add service / multi-service booking:** **5+** beta salons explicitly ask → allow schema redesign (N:N / array).
+- **#2 Smart conflict suggestions:** **3+** beta complain about conflict UX → prioritize engine; else defer if owners tolerate current error pattern.
+- **#3 Custom price override:** **2+** beta ask → quick add.
+
+**Trade-offs accepted**: V1 desk stays “replace service” not “add service”; conflicts stay message-based without alternates; no manual price line on booking edit in V1.
+
+**Revisit when**: After beta installs — tally explicit asks / complaints against triggers above; re-read this entry before scoping V1.1.
+
+**Cost to reverse**: **Low** — no V1 code paths committed to multi-service or suggestion engine; re-read `decisions-log.md` this entry post-beta.
 
 ---
 

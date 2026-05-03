@@ -1,8 +1,14 @@
 /**
- * Manual smoke — `create_public_booking` conflict path vs seeded appointment row (same staff/time).
+ * Manual smoke — `create_public_booking` conflict path + salon-local opening hours (timezone-aware RPC).
  *
  * Loads `.env.local` (NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY + optional NAILIQ_SMOKE_*).
- * Mirrors ID resolution pattern from `receptionistActions.smoke.ts`.
+ * Temporarily merges Sunday hours (10:00–17:00, open) on the resolved salon for deterministic Sunday cases;
+ * restores original `opening_hours` in `finally`.
+ *
+ * **Prerequisite:** Supabase must run **`create_public_booking` RPC v2.4** (migration
+ * `supabase/migrations/20260503140000_create_public_booking_salon_timezone_hours.sql`).
+ * Older RPCs interpret opening_hours as UTC wall-clock; this smoke picks salon-local slots and will see
+ * `{ success: false, code: "outside_hours" }` on overlap/non-overlap steps until that migration is applied.
  *
  * Run: `npx tsx src/shared/dashboard/__tests__/publicBookingConflict.smoke.ts`
  */
@@ -12,18 +18,16 @@ import { config as loadDotenv } from "dotenv";
 loadDotenv({ path: resolve(process.cwd(), ".env.local") });
 
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
-import { parseOpeningHours, type DayKey } from "@/shared/dashboard/openingHoursDefaults";
+import {
+  parseOpeningHours,
+  type DayKey,
+  type OpeningHoursWeek,
+} from "@/shared/dashboard/openingHoursDefaults";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-
-const KEY_FROM_SUN0: readonly DayKey[] = [
-  "sun",
-  "mon",
-  "tue",
-  "wed",
-  "thu",
-  "fri",
-  "sat",
-] as const;
+import {
+  salonDateOffset,
+  salonWallTimeToUtcIso,
+} from "@/shared/lib/salonTime";
 
 const HARDCODED_DEV_SALON_ID = "";
 const HARDCODED_DEV_SERVICE_ID = "";
@@ -37,20 +41,6 @@ const UUID_RE =
 
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
-}
-
-function utcYmd(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-function utcAt(
-  y: number,
-  mo: number,
-  day: number,
-  hh: number,
-  mm: number,
-): Date {
-  return new Date(Date.UTC(y, mo - 1, day, hh, mm, 0, 0));
 }
 
 function slotConflictOutcome(
@@ -77,6 +67,15 @@ function slotConflictOutcome(
   return false;
 }
 
+function outsideHoursOutcome(data: unknown): boolean {
+  return (
+    data != null &&
+    typeof data === "object" &&
+    (data as { success?: boolean; code?: string }).success === false &&
+    String((data as { code?: string }).code ?? "") === "outside_hours"
+  );
+}
+
 function timeHmToMinuteOfDay(open: string): { hh: number; mm: number } {
   const m = /^(\d{1,2}):(\d{2})$/.exec(open.trim());
   assert(m != null, "open HH:MM");
@@ -86,67 +85,102 @@ function timeHmToMinuteOfDay(open: string): { hh: number; mm: number } {
   return { hh, mm };
 }
 
-/** Next UTC calendar day with a trial start (~2h after open) satisfying RPC lead time + salon hours (UTC wall clock). */
-function pickOpenDayStartUtc(openingHoursRaw: unknown, closedRaw: unknown): Date {
-  const week = parseOpeningHours(openingHoursRaw);
-  assert(week != null, "salon opening_hours invalid");
-  const closed = parseBookingClosedDateSet(closedRaw);
+/** Weekday short label in `timezone` at local noon on `ymd` (salon calendar day). */
+function dayKeyFromSalonYmd(ymd: string, timezone: string): DayKey {
+  const utcIso = salonWallTimeToUtcIso(ymd, 12 * 60, timezone);
+  const w = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    weekday: "short",
+  }).format(new Date(utcIso));
+  const map: Record<string, DayKey> = {
+    Sun: "sun",
+    Mon: "mon",
+    Tue: "tue",
+    Wed: "wed",
+    Thu: "thu",
+    Fri: "fri",
+    Sat: "sat",
+  };
+  const k = map[w];
+  assert(k != null, `unexpected weekday label "${w}"`);
+  return k;
+}
 
-  const minStart = Date.now() + 3 * 60 * 1000;
-  const baseUtc = new Date();
-  const y = baseUtc.getUTCFullYear();
-  const mo = baseUtc.getUTCMonth();
-  const day = baseUtc.getUTCDate();
+/** Next salon-local day (offset ≥ 1 from today) with an open window and slot ≥ minLeadMs ahead of now. */
+function pickFutureOpenSlotSalonTz(opts: {
+  timezone: string;
+  week: OpeningHoursWeek;
+  closed: ReadonlySet<string>;
+  totalMinutes: number;
+  minLeadMs: number;
+  /** Minutes after local midnight for trial slot (default ~2h after open). */
+  afterOpenMinutes?: number;
+}): Date {
+  const {
+    timezone,
+    week,
+    closed,
+    totalMinutes,
+    minLeadMs,
+    afterOpenMinutes,
+  } = opts;
+
+  const minStart = Date.now() + minLeadMs;
 
   for (let off = 1; off <= 56; off++) {
-    const probe = new Date(Date.UTC(y, mo, day + off, 0, 0, 0, 0));
-    const key = KEY_FROM_SUN0[probe.getUTCDay()];
+    const ymd = salonDateOffset(timezone, off);
+    const key = dayKeyFromSalonYmd(ymd, timezone);
     const cfg = week[key];
     if (!cfg || cfg.closed) continue;
-    const ymdProbe = utcYmd(probe);
-    if (closed.has(ymdProbe)) continue;
+    if (closed.has(ymd)) continue;
 
     const oh = timeHmToMinuteOfDay(cfg.open);
     const ch = timeHmToMinuteOfDay(cfg.close);
-    const openMo = oh.hh * 60 + oh.mm + 120; // UTC wall-clock: start ~2h after open
+    const openMo = oh.hh * 60 + oh.mm;
     const closeMo = ch.hh * 60 + ch.mm;
-    if (openMo >= closeMo) continue;
+    if (closeMo <= openMo) continue;
 
-    const slot = utcAt(
-      probe.getUTCFullYear(),
-      probe.getUTCMonth() + 1,
-      probe.getUTCDate(),
-      Math.floor(openMo / 60),
-      openMo % 60,
-    );
+    const trialMo =
+      afterOpenMinutes != null ? openMo + afterOpenMinutes : openMo + 120;
+    if (trialMo >= closeMo) continue;
 
-    const openDt = utcAt(
-      probe.getUTCFullYear(),
-      probe.getUTCMonth() + 1,
-      probe.getUTCDate(),
-      oh.hh,
-      oh.mm,
-    );
-    const closeDt = utcAt(
-      probe.getUTCFullYear(),
-      probe.getUTCMonth() + 1,
-      probe.getUTCDate(),
-      ch.hh,
-      ch.mm,
-    );
+    const iso = salonWallTimeToUtcIso(ymd, trialMo, timezone);
+    const slot = new Date(iso);
+    const slotEnd = slot.getTime() + totalMinutes * 60_000;
+    const closeBoundary = new Date(
+      salonWallTimeToUtcIso(ymd, closeMo, timezone),
+    ).getTime();
 
-    const t = slot.getTime();
     if (
-      t < Math.max(openDt.getTime(), minStart) ||
-      t >= closeDt.getTime()
+      slot.getTime() >= minStart &&
+      slotEnd <= closeBoundary &&
+      slotEnd > slot.getTime()
     ) {
-      continue;
+      return slot;
     }
-    return slot;
   }
   throw new Error(
-    "could not find an open UTC day for slot picker — fix salon opening_hours/holidays",
+    "could not find an open salon-local day — widen hours or booking_closed_dates",
   );
+}
+
+/** Next Sunday `YYYY-MM-DD` in `timezone` where `localMinutesFromMidnight` is still ≥ now + lead. */
+function nextFutureSundayYmd(opts: {
+  timezone: string;
+  localMinutesFromMidnight: number;
+  leadMs: number;
+}): string {
+  const { timezone, localMinutesFromMidnight, leadMs } = opts;
+  const need = Date.now() + leadMs;
+  for (let off = 0; off <= 400; off++) {
+    const ymd = salonDateOffset(timezone, off);
+    if (dayKeyFromSalonYmd(ymd, timezone) !== "sun") continue;
+    const startMs = new Date(
+      salonWallTimeToUtcIso(ymd, localMinutesFromMidnight, timezone),
+    ).getTime();
+    if (startMs >= need) return ymd;
+  }
+  throw new Error("could not find a future Sunday for smoke");
 }
 
 function addUtcMinutes(d: Date, min: number): Date {
@@ -239,11 +273,35 @@ async function main() {
 
   const { data: salonRow } = await supabase
     .from("salons")
-    .select("opening_hours, booking_closed_dates")
+    .select("opening_hours, booking_closed_dates, timezone")
     .eq("id", salonId)
     .single();
 
   assert(salonRow, "salon meta");
+
+  const timezone =
+    String((salonRow as { timezone?: string }).timezone ?? "").trim() ||
+    "America/Los_Angeles";
+
+  const origHours = salonRow.opening_hours;
+  const origBookingClosedDates = salonRow.booking_closed_dates;
+  const baseWeek = parseOpeningHours(origHours);
+  assert(baseWeek != null, "salon opening_hours invalid");
+
+  const mergedWeek: OpeningHoursWeek = {
+    ...baseWeek,
+    sun: { open: "10:00", close: "17:00", closed: false },
+  };
+
+  const { error: patchErr } = await supabase
+    .from("salons")
+    .update({ opening_hours: mergedWeek })
+    .eq("id", salonId);
+  assert(!patchErr, `patch sunday hours: ${patchErr?.message ?? "?"}`);
+
+  const closed = parseBookingClosedDateSet(
+    (salonRow as { booking_closed_dates?: unknown }).booking_closed_dates,
+  );
 
   const { data: svcRow } = await supabase
     .from("services")
@@ -256,50 +314,56 @@ async function main() {
   const totalMin = durMin + bufMin;
   assert(totalMin >= 1, "service total minutes");
 
-  const slotBase = pickOpenDayStartUtc(
-    salonRow.opening_hours,
-    (salonRow as { booking_closed_dates?: unknown }).booking_closed_dates,
-  );
+  const slotBase = pickFutureOpenSlotSalonTz({
+    timezone,
+    week: mergedWeek,
+    closed,
+    totalMinutes: totalMin,
+    minLeadMs: 3 * 60 * 1000,
+  });
   const blockStartIso = slotBase.toISOString();
   const blockEndIso = addUtcMinutes(slotBase, totalMin).toISOString();
 
   const blockerName = `TEST_PUBLIC_CONFLICT_${Date.now()}`;
-  const { data: inserted, error: insErr } = await supabase
-    .from("bookings")
-    .insert({
-      salon_id: salonId,
-      service_id: serviceId,
-      staff_id: staffId,
-      client_name: blockerName,
-      client_phone: "15551234567",
-      start_time_utc: blockStartIso,
-      end_time_utc: blockEndIso,
-      status: "confirmed",
-      source: "appointment",
-      price_cents: svcRow?.duration_minutes != null ? 100 : null,
-    })
-    .select("id")
-    .maybeSingle();
-
-  assert(!insErr && inserted?.id, `seed booking: ${insErr?.message ?? "no row"}`);
-  const blockerId = String(inserted!.id);
-
-  const rpcPayload = {
-    p_salon_id: salonId,
-    p_service_id: serviceId,
-    p_staff_id: staffId,
-    p_client_name: "Smoke Guest",
-    p_client_phone: "15559876543",
-    p_start_time_utc: blockStartIso,
-    p_end_time_utc: blockEndIso,
-    p_status: "pending",
-    p_price_cents: 100,
-    p_client_notes: null,
-    p_addon_service_id: null,
-    p_addon_price_cents: null,
-  };
+  const bookingIdsToDelete: string[] = [];
+  let blockerId: string | null = null;
 
   try {
+    const { data: inserted, error: insErr } = await supabase
+      .from("bookings")
+      .insert({
+        salon_id: salonId,
+        service_id: serviceId,
+        staff_id: staffId,
+        client_name: blockerName,
+        client_phone: "15551234567",
+        start_time_utc: blockStartIso,
+        end_time_utc: blockEndIso,
+        status: "confirmed",
+        source: "appointment",
+        price_cents: svcRow?.duration_minutes != null ? 100 : null,
+      })
+      .select("id")
+      .maybeSingle();
+
+    assert(!insErr && inserted?.id, `seed booking: ${insErr?.message ?? "no row"}`);
+    blockerId = String(inserted!.id);
+
+    const rpcPayload = {
+      p_salon_id: salonId,
+      p_service_id: serviceId,
+      p_staff_id: staffId,
+      p_client_name: "Smoke Guest",
+      p_client_phone: "15559876543",
+      p_start_time_utc: blockStartIso,
+      p_end_time_utc: blockEndIso,
+      p_status: "pending",
+      p_price_cents: 100,
+      p_client_notes: null,
+      p_addon_service_id: null,
+      p_addon_price_cents: null,
+    };
+
     PASS("seed — blocking appointment inserted for overlap window");
 
     const { data, error } = await supabase.rpc("create_public_booking", rpcPayload);
@@ -336,14 +400,209 @@ async function main() {
         `free slot: bad JSON ${JSON.stringify(r2.data)}`,
       );
       const okId = (r2.data as { booking_id: string }).booking_id;
-      await supabase.from("bookings").delete().eq("id", okId);
+      bookingIdsToDelete.push(okId);
     }
     PASS("non-overlap — RPC succeeds");
 
-    assert(pass === 3, `expected 3 PASS lines, got ${pass}`);
-  } finally {
     await supabase.from("bookings").delete().eq("id", blockerId);
-    console.log("Cleanup: blocker booking deleted");
+    blockerId = null;
+
+    // --- Sunday + edge cases (salon-local wall clock via salons.timezone) ---
+    const sunOpenMo = 10 * 60;
+    const sunCloseMo = 17 * 60;
+    assert(
+      sunCloseMo - sunOpenMo >= totalMin,
+      `smoke: service block ${totalMin}m longer than Sunday 10–17 window`,
+    );
+
+    const leadMs = 3 * 60 * 1000;
+    const sunYmd = nextFutureSundayYmd({
+      timezone,
+      localMinutesFromMidnight: 15 * 60,
+      leadMs,
+    });
+
+    assert(
+      15 * 60 + totalMin <= sunCloseMo,
+      "smoke: 15:00 Sunday start + service exceeds merged Sunday close",
+    );
+
+    const sundayStart15 = new Date(
+      salonWallTimeToUtcIso(sunYmd, 15 * 60, timezone),
+    );
+    const sundayEnd15 = addUtcMinutes(sundayStart15, totalMin);
+    {
+      const r = await supabase.rpc("create_public_booking", {
+        ...rpcPayload,
+        p_start_time_utc: sundayStart15.toISOString(),
+        p_end_time_utc: sundayEnd15.toISOString(),
+        p_client_phone: "15551110001",
+      });
+      assert(!r.error, `Sunday 3pm: ${r.error?.message}`);
+      assert(
+        r.data &&
+          typeof r.data === "object" &&
+          (r.data as { success?: boolean }).success === true,
+        JSON.stringify(r.data),
+      );
+      bookingIdsToDelete.push((r.data as { booking_id: string }).booking_id);
+    }
+    PASS("Sunday 15:00 local — success");
+
+    assert(
+      16 * 60 + totalMin <= sunCloseMo,
+      "smoke: 16:00 Sunday start + service exceeds merged Sunday close",
+    );
+
+    const sundayStart16 = new Date(
+      salonWallTimeToUtcIso(sunYmd, 16 * 60, timezone),
+    );
+    const sundayEnd16 = addUtcMinutes(sundayStart16, totalMin);
+    {
+      const r = await supabase.rpc("create_public_booking", {
+        ...rpcPayload,
+        p_start_time_utc: sundayStart16.toISOString(),
+        p_end_time_utc: sundayEnd16.toISOString(),
+        p_client_phone: "15551110002",
+      });
+      assert(!r.error, `Sunday 4pm: ${r.error?.message}`);
+      assert(
+        r.data &&
+          typeof r.data === "object" &&
+          (r.data as { success?: boolean }).success === true,
+        JSON.stringify(r.data),
+      );
+      bookingIdsToDelete.push((r.data as { booking_id: string }).booking_id);
+    }
+    PASS("Sunday 16:00 local — success");
+
+    const sunday1630 = new Date(
+      salonWallTimeToUtcIso(sunYmd, 16 * 60 + 30, timezone),
+    );
+    const sunday1630End = addUtcMinutes(sunday1630, 60);
+    {
+      const r = await supabase.rpc("create_public_booking", {
+        ...rpcPayload,
+        p_start_time_utc: sunday1630.toISOString(),
+        p_end_time_utc: sunday1630End.toISOString(),
+        p_client_phone: "15551110003",
+      });
+      assert(!r.error, `Sunday overrun should return JSON: ${r.error?.message}`);
+      assert(outsideHoursOutcome(r.data), JSON.stringify(r.data));
+    }
+    PASS("Sunday 16:30 + 60m — outside_hours");
+
+    const sunOpenYmd = nextFutureSundayYmd({
+      timezone,
+      localMinutesFromMidnight: 10 * 60,
+      leadMs,
+    });
+    const exactOpenStart = new Date(
+      salonWallTimeToUtcIso(sunOpenYmd, 10 * 60, timezone),
+    );
+    const exactOpenEnd = addUtcMinutes(exactOpenStart, Math.min(30, totalMin));
+    {
+      const r = await supabase.rpc("create_public_booking", {
+        ...rpcPayload,
+        p_start_time_utc: exactOpenStart.toISOString(),
+        p_end_time_utc: exactOpenEnd.toISOString(),
+        p_client_phone: "15551110004",
+      });
+      assert(!r.error, `exact open: ${r.error?.message}`);
+      assert(
+        r.data &&
+          typeof r.data === "object" &&
+          (r.data as { success?: boolean }).success === true,
+        JSON.stringify(r.data),
+      );
+      bookingIdsToDelete.push((r.data as { booking_id: string }).booking_id);
+    }
+    PASS("Sunday exact local open — success");
+
+    const sunCloseYmd = nextFutureSundayYmd({
+      timezone,
+      localMinutesFromMidnight: 12 * 60,
+      leadMs,
+    });
+    const exactCloseStartMinute = sunCloseMo - totalMin;
+    assert(
+      exactCloseStartMinute >= sunOpenMo,
+      "smoke: cannot place block ending exactly at Sunday close with this service length",
+    );
+    const exactCloseStart = new Date(
+      salonWallTimeToUtcIso(sunCloseYmd, exactCloseStartMinute, timezone),
+    );
+    const exactCloseEnd = addUtcMinutes(exactCloseStart, totalMin);
+    {
+      const r = await supabase.rpc("create_public_booking", {
+        ...rpcPayload,
+        p_start_time_utc: exactCloseStart.toISOString(),
+        p_end_time_utc: exactCloseEnd.toISOString(),
+        p_client_phone: "15551110005",
+      });
+      assert(!r.error, `exact close end: ${r.error?.message}`);
+      assert(
+        r.data &&
+          typeof r.data === "object" &&
+          (r.data as { success?: boolean }).success === true,
+        JSON.stringify(r.data),
+      );
+      bookingIdsToDelete.push((r.data as { booking_id: string }).booking_id);
+    }
+    PASS("Sunday block ending exactly at local close — success");
+
+    // Salon-local closed_dates: same calendar day in timezone must reject (v2.4).
+    const closedSunYmd = nextFutureSundayYmd({
+      timezone,
+      localMinutesFromMidnight: 12 * 60,
+      leadMs,
+    });
+    const prevClosed: unknown[] = Array.isArray(origBookingClosedDates)
+      ? [...origBookingClosedDates]
+      : [];
+    if (!prevClosed.includes(closedSunYmd)) prevClosed.push(closedSunYmd);
+    const { error: closedPatchErr } = await supabase
+      .from("salons")
+      .update({ booking_closed_dates: prevClosed })
+      .eq("id", salonId);
+    assert(!closedPatchErr, `patch closed dates: ${closedPatchErr?.message ?? "?"}`);
+
+    const sundayStart12 = new Date(
+      salonWallTimeToUtcIso(closedSunYmd, 12 * 60, timezone),
+    );
+    const sundayEnd12 = addUtcMinutes(sundayStart12, totalMin);
+    assert(
+      12 * 60 + totalMin <= sunCloseMo,
+      "smoke: 12:00 Sunday start + service exceeds merged Sunday close",
+    );
+    {
+      const r = await supabase.rpc("create_public_booking", {
+        ...rpcPayload,
+        p_start_time_utc: sundayStart12.toISOString(),
+        p_end_time_utc: sundayEnd12.toISOString(),
+        p_client_phone: "15551110006",
+      });
+      assert(!r.error, `closed date: ${r.error?.message}`);
+      assert(outsideHoursOutcome(r.data), JSON.stringify(r.data));
+    }
+    PASS("Sunday salon-local closed date — outside_hours");
+
+    assert(pass === 9, `expected 9 PASS lines, got ${pass}`);
+  } finally {
+    if (blockerId) {
+      await supabase.from("bookings").delete().eq("id", blockerId);
+    }
+    await supabase
+      .from("salons")
+      .update({
+        opening_hours: origHours,
+        booking_closed_dates: origBookingClosedDates,
+      })
+      .eq("id", salonId);
+    if (bookingIdsToDelete.length > 0) {
+      await supabase.from("bookings").delete().in("id", bookingIdsToDelete);
+    }
+    console.log("Cleanup: salon hours restored; smoke bookings deleted");
   }
 }
 
