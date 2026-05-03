@@ -84,6 +84,8 @@ export type UserMessages = {
     refresh: string;
     /** Dashboard → /settings hub (gear button) */
     navSettings: string;
+    /** Dashboard → Receptionist Center (`/center`) */
+    navReceptionistCenter: string;
     lastUpdatedJustNow: string;
     lastUpdatedOneMinuteAgo: string;
     /** `{count}` = minutes */
@@ -94,6 +96,9 @@ export type UserMessages = {
     statusPending: string;
     statusConfirmed: string;
     statusCompleted: string;
+    statusInProgress: string;
+    statusWaiting: string;
+    statusCancelled: string;
   };
   /** /dashboard/[slug]/settings hub */
   salonSettings: {
@@ -104,6 +109,95 @@ export type UserMessages = {
     sectionHours: string;
     sectionAddress: string;
     hintRecoveryEmail: string;
+  };
+  /** `/dashboard/[slug]/center` — operational receptionist workspace */
+  receptionist: {
+    title: string;
+    loadingDay: string;
+    navOwnerDashboard: string;
+    loadError: {
+      unauthorized: string;
+      salon_not_found: string;
+      invalid_date: string;
+      server_error: string;
+    };
+    dateSwitcher: {
+      yesterday: string;
+      today: string;
+      tomorrow: string;
+    };
+    statusPill: {
+      waitingLabel: string;
+      inProgressLabel: string;
+    };
+    queue: {
+      title: string;
+      emptyMessage: string;
+      cancelButton: string;
+      assignButton: string;
+      urgentBadge: string;
+      waitingHint: string;
+      minutesAgo: (n: number) => string;
+      addForm: {
+        namePlaceholder: string;
+        phonePlaceholder: string;
+        notePlaceholder: string;
+        addButton: string;
+        moreServices: string;
+        submitting: string;
+        errorRequired: string;
+      };
+    };
+    grid: {
+      conflictWith: (clientName: string) => string;
+      overflowMessage: string;
+      conflictShake: string;
+    };
+    undo: {
+      undo: string;
+      undoFailed: string;
+      assignedPrefix: string;
+      assignedMiddle: string;
+    };
+    drawer: {
+      title: string;
+      closeAria: string;
+      durationMinutes: string;
+      sourceWalkin: string;
+      sourceAppointment: string;
+      callGuest: (formattedDisplay: string) => string;
+      startService: string;
+      markComplete: string;
+      cancelBooking: string;
+      cancelConfirm: (clientName: string) => string;
+      none: string;
+      scheduleSection: string;
+      statusSection: string;
+      priceSection: string;
+      noNotesHint: string;
+    };
+    actionErrorFallback: string;
+    actionErrors: {
+      unauthorized: string;
+      salon_mismatch: string;
+      server_error: string;
+      invalid_name: string;
+      invalid_service: string;
+      service_not_found: string;
+      note_too_long: string;
+      invalid_booking: string;
+      not_found: string;
+      invalid_staff: string;
+      invalid_time: string;
+      staff_not_found: string;
+      invalid_duration: string;
+      invalid_buffer: string;
+      slot_conflict: string;
+      lost_race: string;
+      invalid_transition: string;
+      invalid_state: string;
+      already_started: string;
+    };
   };
 };
 
@@ -198,6 +292,7 @@ export const userEn: UserMessages = {
     loading: "Loading…",
     refresh: "Refresh",
     navSettings: "Settings",
+    navReceptionistCenter: "Front Desk",
     lastUpdatedJustNow: "Last updated: just now",
     lastUpdatedOneMinuteAgo: "Last updated: 1 minute ago",
     lastUpdatedMinutesAgo: "Last updated: {count} minutes ago",
@@ -207,6 +302,9 @@ export const userEn: UserMessages = {
     statusPending: "Pending",
     statusConfirmed: "Confirmed",
     statusCompleted: "Completed",
+    statusInProgress: "In progress",
+    statusWaiting: "Waiting",
+    statusCancelled: "Cancelled",
   },
   salonSettings: {
     pageTitle: "Settings",
@@ -218,5 +316,96 @@ export const userEn: UserMessages = {
     sectionAddress: "Salon address",
     hintRecoveryEmail:
       "To add or change recovery email for your account, use the banner on your dashboard.",
+  },
+  receptionist: {
+    title: "Front desk",
+    loadingDay: "Loading day…",
+    navOwnerDashboard: "Dashboard",
+    loadError: {
+      unauthorized: "Sign in is required.",
+      salon_not_found: "Salon not found or not ready.",
+      invalid_date: "That date does not resolve in the salon timezone.",
+      server_error: "Something went wrong. Try again shortly.",
+    },
+    dateSwitcher: {
+      yesterday: "Yesterday",
+      today: "Today",
+      tomorrow: "Tomorrow",
+    },
+    statusPill: {
+      waitingLabel: "WAIT",
+      inProgressLabel: "ACTIVE",
+    },
+    queue: {
+      title: "Walk-in queue",
+      emptyMessage: "No walk-ins queued. Use the form above to add.",
+      cancelButton: "Remove",
+      assignButton: "Assign",
+      urgentBadge: "URGENT",
+      waitingHint: "Tap a slot on the timeline to seat this guest",
+      minutesAgo: (n: number) => (n < 1 ? "just now" : `${n} min`),
+      addForm: {
+        namePlaceholder: "Guest name",
+        phonePlaceholder: "Phone (optional)",
+        notePlaceholder: "Note for staff — e.g. polish color, prefers window seat",
+        addButton: "Add to queue",
+        moreServices: "More services",
+        submitting: "Adding…",
+        errorRequired: "Name and service are required.",
+      },
+    },
+    grid: {
+      conflictWith: (clientName: string) =>
+        `${clientName.trim() ? `⚠ Busy — ${clientName}` : "⚠ Slot conflict"}`,
+      overflowMessage: "⚠ Past closing hours",
+      conflictShake:
+        "That slot overlaps another booking. Choose another slot or time.",
+    },
+    undo: {
+      undo: "Undo",
+      undoFailed: "Service already started — undo is unavailable.",
+      assignedPrefix: "Assigned:",
+      assignedMiddle: "→",
+    },
+    drawer: {
+      title: "Booking",
+      closeAria: "Close details",
+      durationMinutes: "{n} minutes",
+      sourceWalkin: "Walk-in",
+      sourceAppointment: "Appointment",
+      callGuest: (formattedDisplay: string) => `📞 Call ${formattedDisplay}`,
+      startService: "Start service",
+      markComplete: "Mark complete",
+      cancelBooking: "Cancel booking",
+      cancelConfirm: (clientName: string) =>
+        `Cancel booking for ${clientName.trim() ? clientName.trim() : "this guest"}?`,
+      none: "—",
+      scheduleSection: "Schedule",
+      statusSection: "Status",
+      priceSection: "Price",
+      noNotesHint: "No notes",
+    },
+    actionErrorFallback: "Could not complete that action. Try again.",
+    actionErrors: {
+      unauthorized: "Sign in is required.",
+      salon_mismatch: "Salon did not match your session.",
+      server_error: "Something went wrong. Try again shortly.",
+      invalid_name: "Enter a guest name.",
+      invalid_service: "Pick a valid service.",
+      service_not_found: "That service could not be found.",
+      note_too_long: "Staff note is too long.",
+      invalid_booking: "Booking not found.",
+      not_found: "That booking could not be found.",
+      invalid_staff: "Staff not valid.",
+      invalid_time: "Time is invalid.",
+      staff_not_found: "Staff not found.",
+      invalid_duration: "Service duration looks wrong.",
+      invalid_buffer: "Service buffer looks wrong.",
+      slot_conflict: "That slot overlaps another booking.",
+      lost_race: "Someone else acted first. Reload and try again.",
+      invalid_transition: "That status change is not allowed right now.",
+      invalid_state: "That booking is no longer in the right status.",
+      already_started: "Service already started — cannot undo.",
+    },
   },
 };

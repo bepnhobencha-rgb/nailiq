@@ -1,0 +1,56 @@
+"use client";
+
+import { cn } from "@/shared/lib/cn";
+
+export interface DateSwitcherProps {
+  /** Current selected offset from today: -1, 0, 1 */
+  selectedOffset: -1 | 0 | 1;
+  /** Localized labels */
+  labels: {
+    yesterday: string;
+    today: string;
+    tomorrow: string;
+  };
+  onChange: (offset: -1 | 0 | 1) => void;
+}
+
+const OFFSETS = [-1, 0, 1] as const;
+
+export function DateSwitcher({ selectedOffset, labels, onChange }: DateSwitcherProps) {
+  const labelMap: Record<-1 | 0 | 1, string> = {
+    [-1]: labels.yesterday,
+    [0]: labels.today,
+    [1]: labels.tomorrow,
+  };
+
+  return (
+    <div
+      className={cn(
+        "inline-flex rounded-full border border-nq-muted/35 bg-nq-surface p-0.5",
+      )}
+      role="tablist"
+      aria-label="Day"
+    >
+      {OFFSETS.map((offset) => {
+        const active = selectedOffset === offset;
+        return (
+          <button
+            key={offset}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            className={cn(
+              "min-h-8 min-w-[4.5rem] shrink-0 rounded-full px-3 py-1.5 text-sm font-medium transition-[color,background-color,transform] duration-[var(--duration-nq-fast,150ms)] ease-out active:scale-[0.98] motion-reduce:active:scale-100",
+              active
+                ? "bg-nq-primary/18 text-nq-primary shadow-none"
+                : "bg-transparent text-nq-muted hover:text-nq-foreground",
+            )}
+            onClick={() => onChange(offset)}
+          >
+            {labelMap[offset]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

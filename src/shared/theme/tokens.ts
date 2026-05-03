@@ -19,6 +19,8 @@ export const colors = {
   success: "#22C55E",
   /** Confirmed / info (dashboard status, not a second brand primary) */
   info: "#3B82F6",
+  /** Warm amber — ops busy / queue pressure (not CTA gold) */
+  warning: "#D97706",
   /** Subtle gold edge for glass surfaces (CSS may use this with alpha) */
   borderSubtle: "rgba(212, 175, 55, 0.18)",
 } as const;

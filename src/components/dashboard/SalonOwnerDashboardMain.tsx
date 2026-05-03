@@ -179,6 +179,12 @@ export function SalonOwnerDashboardMain({
             </button>
           </div>
           <Link
+            href={`/dashboard/${encodeURIComponent(slug)}/center`}
+            className="inline-flex min-h-11 touch-manipulation items-center justify-center gap-2 rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-4 text-base font-semibold text-nq-primary transition-colors hover:bg-nq-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/50"
+          >
+            {t.navReceptionistCenter}
+          </Link>
+          <Link
             href={`/dashboard/${encodeURIComponent(slug)}/settings`}
             className="inline-flex min-h-11 touch-manipulation items-center justify-center gap-2 rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-4 text-base font-semibold text-nq-primary transition-colors hover:bg-nq-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/50"
           >
@@ -273,10 +279,12 @@ export function SalonOwnerDashboardMain({
                           ) : null}
                           <div className="relative z-[1] flex w-full min-w-0 flex-wrap items-baseline justify-between gap-2">
                           <span className="text-sm font-medium tabular-nums text-nq-foreground">
-                            {new Date(b.start_time_utc).toLocaleTimeString(
-                              undefined,
-                              { hour: "2-digit", minute: "2-digit" },
-                            )}
+                            {b.start_time_utc
+                              ? new Date(b.start_time_utc).toLocaleTimeString(
+                                  undefined,
+                                  { hour: "2-digit", minute: "2-digit" },
+                                )
+                              : "—"}
                           </span>
                           <span className="min-w-0 flex-1 text-right text-base text-nq-foreground/95">
                             {b.client_name}

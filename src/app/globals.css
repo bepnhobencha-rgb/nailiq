@@ -28,6 +28,8 @@
     0 0 0 1px rgba(212, 175, 55, 0.12), 0 0 0 1px rgba(212, 175, 55, 0.14),
     0 0 36px -6px rgba(212, 175, 55, 0.2);
 
+  /** Ops busy indicator (warm amber — receptionist status pill; not accent gold) */
+  --color-nq-warning: #d97706;
   /** Deep navy glass (public booking surfaces) — Apple-like depth */
   --color-nq-navy-deep: #0f172a;
   --color-nq-navy-glass: rgba(15, 23, 42, 0.58);
@@ -52,6 +54,7 @@
   --color-nq-error: #ef4444;
   --color-nq-success: #22c55e;
   --color-nq-info: #3b82f6;
+  --color-nq-warning: #d97706;
   --color-nq-border: rgba(212, 175, 55, 0.18);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -94,6 +97,17 @@
   }
   100% {
     transform: translateX(130%) skewX(-12deg);
+  }
+}
+
+/** Receptionist timeline — staff avatar busy ring (subtle gold pulse) */
+@keyframes nq-staff-busy-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-nq-primary) 38%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-nq-primary) 14%, transparent);
   }
 }
 
@@ -433,6 +447,10 @@
     transition-timing-function: var(--ease-nq-out, cubic-bezier(0.22, 1, 0.36, 1));
   }
 
+  .nq-receptionist-busy-ring {
+    animation: nq-staff-busy-pulse 2.2s ease-in-out infinite;
+  }
+
   @media (hover: hover) and (prefers-reduced-motion: no-preference) {
     .nq-booking-tile-interactive[aria-pressed="false"]:hover:not(:disabled) {
       transform: translateY(-4px);
@@ -531,6 +549,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .nq-receptionist-busy-ring {
+    animation: none;
+  }
+
   .nq-booking-confirm-btn:not(:disabled)::before,
   .nq-booking-luxury-cta:not(:disabled)::before {
     animation: none;
