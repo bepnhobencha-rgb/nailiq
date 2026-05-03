@@ -1,0 +1,1673 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>NailIQ — Receptionist Center (Mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* NailIQ brand tokens */
+    --nq-bg:        #0A1224;
+    --nq-bg-2:      #0F1A30;
+    --nq-surface:   #15233E;
+    --nq-surface-2: #1B2C4D;
+    --nq-border:    rgba(212, 175, 55, 0.12);
+    --nq-border-strong: rgba(212, 175, 55, 0.28);
+    --nq-text:      #F4F1EA;
+    --nq-text-dim:  #9BA8C2;
+    --nq-text-mute: #5A6A85;
+    --nq-gold:      #D4AF37;
+    --nq-gold-soft: #F4C430;
+    --nq-gold-glow: rgba(212, 175, 55, 0.35);
+
+    /* Status colors — high contrast, readable under neon */
+    --status-pending-bg:    #B89020;
+    --status-pending-fg:    #FFFEF7;
+    --status-confirmed-bg:  #2E5BBA;
+    --status-confirmed-fg:  #FFFFFF;
+    --status-progress-bg:   #0E8A5F;
+    --status-progress-fg:   #FFFFFF;
+    --status-completed-bg:  #4B5872;
+    --status-completed-fg:  #C9D1E0;
+
+    /* Grid dimensions */
+    --staff-col-width: 140px;
+    --slot-width: 64px;
+    --row-height: 76px;
+    --header-height: 64px;
+    --time-header-height: 44px;
+    --sidebar-width: 320px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--nq-bg);
+    color: var(--nq-text);
+    font-family: 'Geist', system-ui, sans-serif;
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    display: grid;
+    grid-template-rows: var(--header-height) 1fr;
+  }
+
+  /* ============ HEADER ============ */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    background: var(--nq-bg-2);
+    border-bottom: 1px solid var(--nq-border);
+    z-index: 20;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+
+  .salon-mark {
+    font-family: 'Instrument Serif', serif;
+    font-size: 22px;
+    letter-spacing: 0.2px;
+    color: var(--nq-text);
+  }
+  .salon-mark em {
+    color: var(--nq-gold);
+    font-style: italic;
+  }
+
+  .header-divider {
+    width: 1px;
+    height: 24px;
+    background: var(--nq-border);
+  }
+
+  .breadcrumb {
+    font-size: 13px;
+    color: var(--nq-text-dim);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .breadcrumb-current {
+    color: var(--nq-text);
+    font-weight: 500;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .date-switcher {
+    display: flex;
+    background: var(--nq-surface);
+    border: 1px solid var(--nq-border);
+    border-radius: 10px;
+    padding: 3px;
+  }
+  .date-btn {
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--nq-text-dim);
+    padding: 6px 14px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: all 150ms ease;
+    min-height: 32px;
+  }
+  .date-btn:hover { color: var(--nq-text); }
+  .date-btn.active {
+    background: var(--nq-surface-2);
+    color: var(--nq-gold);
+    box-shadow: 0 0 0 1px var(--nq-border-strong);
+  }
+
+  .header-meta {
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    color: var(--nq-text-mute);
+    letter-spacing: 0.4px;
+  }
+
+  /* ============ MAIN LAYOUT ============ */
+  .layout {
+    display: grid;
+    grid-template-columns: var(--sidebar-width) 1fr;
+    overflow: hidden;
+    height: 100%;
+  }
+
+  /* ============ SIDEBAR (WALK-IN QUEUE) ============ */
+  .sidebar {
+    background: var(--nq-bg-2);
+    border-right: 1px solid var(--nq-border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sidebar-header {
+    padding: 18px 18px 14px;
+    border-bottom: 1px solid var(--nq-border);
+  }
+  .sidebar-title {
+    font-family: 'Instrument Serif', serif;
+    font-size: 18px;
+    color: var(--nq-text);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .queue-badge {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    background: var(--nq-gold);
+    color: #0A1224;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+
+  /* Walk-in add form */
+  .walkin-form {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--nq-border);
+    background: var(--nq-bg);
+  }
+  .walkin-form input[type="text"],
+  .walkin-form input[type="tel"] {
+    width: 100%;
+    background: var(--nq-surface);
+    border: 1px solid var(--nq-border);
+    color: var(--nq-text);
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 14px;
+    margin-bottom: 8px;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+  .walkin-form input:focus {
+    outline: none;
+    border-color: var(--nq-gold);
+    box-shadow: 0 0 0 3px var(--nq-gold-glow);
+  }
+  .walkin-form input::placeholder { color: var(--nq-text-mute); }
+
+  .service-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 4px;
+    margin-bottom: 8px;
+  }
+  .service-pill {
+    background: var(--nq-surface);
+    border: 1px solid var(--nq-border);
+    color: var(--nq-text-dim);
+    padding: 10px 8px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+    min-height: 56px;
+    text-align: left;
+    line-height: 1.3;
+  }
+  .service-pill:hover {
+    border-color: var(--nq-border-strong);
+    color: var(--nq-text);
+  }
+  .service-pill.selected {
+    background: var(--nq-surface-2);
+    border-color: var(--nq-gold);
+    color: var(--nq-gold);
+  }
+  .service-pill .svc-meta {
+    display: block;
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    color: var(--nq-text-mute);
+    margin-top: 3px;
+  }
+  .service-pill.selected .svc-meta { color: var(--nq-gold-soft); opacity: 0.8; }
+
+  .more-services {
+    background: transparent;
+    border: none;
+    color: var(--nq-text-mute);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 4px 0;
+    cursor: pointer;
+    width: 100%;
+    text-align: center;
+  }
+  .more-services:hover { color: var(--nq-text-dim); }
+
+  .add-walkin-btn {
+    width: 100%;
+    background: var(--nq-gold);
+    color: #0A1224;
+    border: none;
+    padding: 12px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 6px;
+    transition: all 150ms ease;
+    min-height: 44px;
+  }
+  .add-walkin-btn:hover {
+    background: var(--nq-gold-soft);
+    transform: translateY(-1px);
+  }
+  .add-walkin-btn:active { transform: translateY(0); }
+
+  /* Queue list */
+  .queue-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+  }
+  .queue-list::-webkit-scrollbar { width: 6px; }
+  .queue-list::-webkit-scrollbar-thumb { background: var(--nq-surface-2); border-radius: 3px; }
+
+  .queue-item {
+    background: var(--nq-surface);
+    border: 1px solid var(--nq-border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 150ms ease;
+    position: relative;
+  }
+  .queue-item:hover {
+    border-color: var(--nq-border-strong);
+    background: var(--nq-surface-2);
+  }
+  .queue-item.assigning {
+    border-color: var(--nq-gold);
+    background: var(--nq-surface-2);
+    box-shadow: 0 0 0 2px var(--nq-gold-glow), 0 8px 24px rgba(0,0,0,0.3);
+  }
+  .queue-item.assigning::before {
+    content: 'CHỌN Ô TRỐNG TRÊN LƯỚI →';
+    position: absolute;
+    top: -10px; left: 12px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 9px;
+    background: var(--nq-gold);
+    color: #0A1224;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+  }
+
+  .queue-item-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .queue-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--nq-text);
+  }
+  .queue-time-ago {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    color: var(--nq-text-mute);
+  }
+  .queue-service {
+    font-size: 12px;
+    color: var(--nq-text-dim);
+    margin-bottom: 4px;
+  }
+  .queue-note {
+    font-size: 11px;
+    color: var(--nq-gold);
+    font-style: italic;
+    margin-top: 6px;
+    padding-left: 10px;
+    border-left: 2px solid var(--nq-gold);
+    line-height: 1.4;
+  }
+  .queue-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .queue-btn {
+    flex: 1;
+    background: var(--nq-bg);
+    border: 1px solid var(--nq-border);
+    color: var(--nq-text-dim);
+    padding: 8px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+    min-height: 36px;
+  }
+  .queue-btn.primary {
+    background: var(--nq-gold);
+    color: #0A1224;
+    border-color: var(--nq-gold);
+    font-weight: 600;
+  }
+  .queue-btn.primary:hover { background: var(--nq-gold-soft); }
+  .queue-btn:hover { color: var(--nq-text); }
+
+  .empty-queue {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--nq-text-mute);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  /* ============ TIMELINE GRID ============ */
+  .grid-wrap {
+    overflow: auto;
+    background: var(--nq-bg);
+    position: relative;
+  }
+  .grid-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
+  .grid-wrap::-webkit-scrollbar-thumb {
+    background: var(--nq-surface-2);
+    border-radius: 4px;
+  }
+  .grid-wrap::-webkit-scrollbar-corner { background: var(--nq-bg); }
+
+  .grid {
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--staff-col-width) 1fr;
+    grid-template-rows: var(--time-header-height) 1fr;
+  }
+
+  /* Empty top-left corner */
+  .grid-corner {
+    position: sticky;
+    top: 0; left: 0;
+    z-index: 15;
+    background: var(--nq-bg-2);
+    border-right: 1px solid var(--nq-border);
+    border-bottom: 1px solid var(--nq-border);
+  }
+
+  /* Time header row (sticky top) */
+  .time-header {
+    position: sticky;
+    top: 0;
+    z-index: 12;
+    background: var(--nq-bg-2);
+    border-bottom: 1px solid var(--nq-border);
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: var(--slot-width);
+  }
+  .time-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    color: var(--nq-text-dim);
+    border-right: 1px solid var(--nq-border);
+    letter-spacing: 0.3px;
+  }
+  .time-cell.hour-mark {
+    color: var(--nq-text);
+    font-weight: 600;
+    border-right-color: var(--nq-border-strong);
+  }
+
+  /* Staff column (sticky left) */
+  .staff-col {
+    position: sticky;
+    left: 0;
+    z-index: 11;
+    background: var(--nq-bg-2);
+    border-right: 1px solid var(--nq-border);
+    display: grid;
+    grid-auto-rows: var(--row-height);
+  }
+  .staff-cell {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--nq-border);
+    cursor: pointer;
+    transition: background 150ms ease;
+  }
+  .staff-cell:hover { background: var(--nq-surface); }
+  .staff-avatar {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--nq-surface-2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Instrument Serif', serif;
+    font-size: 16px;
+    color: var(--nq-gold);
+    flex-shrink: 0;
+    border: 1px solid var(--nq-border);
+    position: relative;
+  }
+  .staff-cell.busy .staff-avatar {
+    border: 2px solid var(--nq-gold);
+    box-shadow: 0 0 0 1px var(--nq-bg-2), 0 0 12px var(--nq-gold-glow);
+    animation: pulse-ring 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse-ring {
+    0%, 100% { box-shadow: 0 0 0 1px var(--nq-bg-2), 0 0 12px var(--nq-gold-glow); }
+    50%      { box-shadow: 0 0 0 1px var(--nq-bg-2), 0 0 22px var(--nq-gold-glow); }
+  }
+  .staff-info { display: flex; flex-direction: column; min-width: 0; }
+  .staff-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--nq-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .staff-role {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    color: var(--nq-text-mute);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+
+  /* Grid body — slot cells */
+  .grid-body {
+    position: relative;
+    display: grid;
+    grid-auto-rows: var(--row-height);
+    grid-auto-flow: row;
+  }
+  .row {
+    position: relative;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: var(--slot-width);
+    border-bottom: 1px solid var(--nq-border);
+    background:
+      repeating-linear-gradient(
+        to right,
+        transparent 0,
+        transparent calc(var(--slot-width) - 1px),
+        rgba(212, 175, 55, 0.05) calc(var(--slot-width) - 1px),
+        rgba(212, 175, 55, 0.05) var(--slot-width)
+      );
+  }
+  /* Hour boundary stronger */
+  .row::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      repeating-linear-gradient(
+        to right,
+        transparent 0,
+        transparent calc(var(--slot-width) * 2 - 1px),
+        rgba(212, 175, 55, 0.12) calc(var(--slot-width) * 2 - 1px),
+        rgba(212, 175, 55, 0.12) calc(var(--slot-width) * 2)
+      );
+  }
+  .slot-cell {
+    border: none;
+    background: transparent;
+    cursor: cell;
+  }
+  .slot-cell:hover {
+    background: rgba(212, 175, 55, 0.05);
+  }
+  .grid-body.assign-mode .slot-cell:hover {
+    background: rgba(212, 175, 55, 0.18);
+    box-shadow: inset 0 0 0 1px var(--nq-gold);
+  }
+  .grid-body.assign-mode { cursor: copy; }
+
+  /* Booking blocks */
+  .booking-block {
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    border-radius: 8px;
+    padding: 6px 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 120ms ease, box-shadow 120ms ease;
+    z-index: 2;
+    min-height: 44px;
+  }
+  .booking-block:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+    z-index: 3;
+  }
+  .booking-block.walkin {
+    border-left: 3px solid var(--nq-gold);
+    padding-left: 8px;
+  }
+  .booking-block.status-pending {
+    background: var(--status-pending-bg);
+    color: var(--status-pending-fg);
+  }
+  .booking-block.status-confirmed {
+    background: var(--status-confirmed-bg);
+    color: var(--status-confirmed-fg);
+  }
+  .booking-block.status-progress {
+    background: var(--status-progress-bg);
+    color: var(--status-progress-fg);
+  }
+  .booking-block.status-completed {
+    background: var(--status-completed-bg);
+    color: var(--status-completed-fg);
+    opacity: 0.7;
+  }
+  .booking-name {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .booking-meta {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    opacity: 0.85;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+  }
+
+  /* Now line */
+  .now-line {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 2px;
+    background: #FF3B30;
+    z-index: 8;
+    box-shadow: 0 0 8px rgba(255, 59, 48, 0.6);
+    pointer-events: none;
+  }
+  .now-line::before {
+    content: '';
+    position: absolute;
+    top: -6px;
+    left: -5px;
+    width: 12px;
+    height: 12px;
+    background: #FF3B30;
+    border-radius: 50%;
+    box-shadow: 0 0 10px rgba(255, 59, 48, 0.8);
+  }
+  .now-line::after {
+    content: attr(data-now);
+    position: absolute;
+    top: -22px;
+    left: 8px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    color: #FF3B30;
+    background: var(--nq-bg-2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid #FF3B30;
+    white-space: nowrap;
+  }
+
+  /* ============ STATUS LEGEND (footer) ============ */
+  .legend {
+    position: fixed;
+    bottom: 12px;
+    right: 16px;
+    display: flex;
+    gap: 14px;
+    background: var(--nq-bg-2);
+    border: 1px solid var(--nq-border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    color: var(--nq-text-dim);
+    z-index: 30;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  }
+  .legend-dot {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 2px; display: inline-block;
+  }
+
+  /* ============ DETAIL DRAWER ============ */
+  .drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 18, 36, 0.5);
+    backdrop-filter: blur(2px);
+    z-index: 40;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease;
+  }
+  .drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+  .drawer {
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    width: 380px;
+    background: var(--nq-bg-2);
+    border-left: 1px solid var(--nq-border-strong);
+    z-index: 50;
+    transform: translateX(100%);
+    transition: transform 240ms cubic-bezier(.2,.8,.2,1);
+    display: flex;
+    flex-direction: column;
+    box-shadow: -20px 0 40px rgba(0,0,0,0.5);
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer-header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--nq-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .drawer-title {
+    font-family: 'Instrument Serif', serif;
+    font-size: 22px;
+    color: var(--nq-text);
+  }
+  .drawer-close {
+    background: transparent;
+    border: 1px solid var(--nq-border);
+    color: var(--nq-text-dim);
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+  }
+  .drawer-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
+  .drawer-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--nq-border);
+    font-size: 13px;
+  }
+  .drawer-row .label { color: var(--nq-text-mute); }
+  .drawer-row .val { color: var(--nq-text); font-weight: 500; }
+  .drawer-row .val.mono { font-family: 'Geist Mono', monospace; }
+  .drawer-actions {
+    padding: 16px 24px;
+    border-top: 1px solid var(--nq-border);
+    display: grid;
+    gap: 8px;
+  }
+  .drawer-btn {
+    padding: 12px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--nq-border);
+    background: var(--nq-surface);
+    color: var(--nq-text);
+    min-height: 44px;
+    transition: all 150ms ease;
+  }
+  .drawer-btn.primary {
+    background: var(--nq-gold);
+    color: #0A1224;
+    border-color: var(--nq-gold);
+  }
+  .drawer-btn.danger {
+    color: #FF6B6B;
+    border-color: rgba(255, 107, 107, 0.3);
+  }
+  .drawer-btn:hover { transform: translateY(-1px); }
+
+  /* ============ STATUS PILL (header) ============ */
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--nq-surface);
+    border: 1px solid var(--nq-border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    color: var(--nq-text-dim);
+    letter-spacing: 0.4px;
+  }
+  .status-pill.busy {
+    border-color: rgba(255, 149, 0, 0.4);
+    background: rgba(255, 149, 0, 0.08);
+    color: #FFB84D;
+  }
+  .status-pill.calm {
+    border-color: rgba(14, 138, 95, 0.35);
+    color: #4EBE94;
+  }
+  .status-pill .sp-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: sp-blink 1.8s ease-in-out infinite;
+  }
+  @keyframes sp-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .status-pill .sp-sep { color: var(--nq-text-mute); margin: 0 2px; }
+
+  /* ============ URGENT QUEUE ITEM ============ */
+  .queue-item.urgent {
+    border-color: rgba(255, 107, 107, 0.4);
+    background: linear-gradient(180deg, rgba(255, 107, 107, 0.06) 0%, var(--nq-surface) 100%);
+  }
+  .queue-item.urgent .urgency-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 9px;
+    font-weight: 700;
+    color: #FF6B6B;
+    background: rgba(255, 107, 107, 0.12);
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+    margin-left: 8px;
+    text-transform: uppercase;
+  }
+  .urgency-flag { display: none; }
+
+  /* ============ GHOST PREVIEW + CONFLICT (assign mode) ============ */
+  .ghost-block {
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    border-radius: 8px;
+    background: rgba(212, 175, 55, 0.18);
+    border: 2px dashed var(--nq-gold);
+    pointer-events: none;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--nq-gold);
+    letter-spacing: 0.3px;
+    transition: left 80ms ease, width 80ms ease;
+  }
+  .ghost-block.conflict {
+    background: rgba(255, 59, 48, 0.18);
+    border-color: #FF3B30;
+    color: #FFB3AF;
+  }
+  .ghost-block .ghost-warn {
+    background: #FF3B30;
+    color: white;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    text-transform: uppercase;
+  }
+
+  /* ============ UNDO TOAST ============ */
+  .undo-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--nq-surface-2);
+    border: 1px solid var(--nq-border-strong);
+    color: var(--nq-text);
+    padding: 14px 20px 14px 18px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 13px;
+    z-index: 90;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: all 240ms cubic-bezier(.2,.8,.2,1);
+    min-width: 360px;
+  }
+  .undo-toast.show {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+  }
+  .undo-toast-msg {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .undo-toast-icon {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--status-progress-bg);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .undo-toast-detail {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    color: var(--nq-text-dim);
+    margin-top: 2px;
+  }
+  .undo-toast-btn {
+    background: transparent;
+    border: 1px solid var(--nq-gold);
+    color: var(--nq-gold);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 120ms ease;
+  }
+  .undo-toast-btn:hover {
+    background: var(--nq-gold);
+    color: #0A1224;
+  }
+  .undo-toast-countdown {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    color: var(--nq-text-mute);
+    margin-left: -8px;
+  }
+
+  /* ============ CALL BUTTON IN DRAWER ============ */
+  .drawer-btn.call {
+    background: var(--nq-surface);
+    color: var(--nq-gold);
+    border-color: var(--nq-border-strong);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-decoration: none;
+  }
+  .drawer-btn.call:hover {
+    background: var(--nq-surface-2);
+    border-color: var(--nq-gold);
+  }
+
+  /* ============ MOBILE FALLBACK ============ */
+  @media (max-width: 768px) {
+    .layout {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto 1fr;
+    }
+    .sidebar {
+      max-height: 50vh;
+      border-right: none;
+      border-bottom: 1px solid var(--nq-border);
+    }
+    :root { --staff-col-width: 100px; --slot-width: 56px; }
+    .header { padding: 0 12px; }
+    .salon-mark { font-size: 16px; }
+    .breadcrumb { display: none; }
+    .drawer { width: 100%; }
+  }
+
+  /* ============ MOCKUP BANNER ============ */
+  .mockup-banner {
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(212, 175, 55, 0.12);
+    border: 1px solid var(--nq-gold);
+    color: var(--nq-gold);
+    padding: 6px 16px;
+    border-radius: 999px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.8px;
+    z-index: 35;
+    text-transform: uppercase;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ HEADER ============ -->
+<header class="header">
+  <div class="header-left">
+    <div class="salon-mark">Nail<em>IQ</em></div>
+    <div class="header-divider"></div>
+    <div class="breadcrumb">
+      <span>Liam Nails Salon · Langley, BC</span>
+      <span style="color: var(--nq-text-mute)">·</span>
+      <span class="breadcrumb-current">Tiếp Tân</span>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="status-pill" id="status-pill">
+      <span class="sp-dot"></span>
+      <span id="sp-text">— · —</span>
+    </div>
+    <div class="header-meta" id="clock">--:-- · Pacific</div>
+    <div class="date-switcher">
+      <button class="date-btn">Hôm qua</button>
+      <button class="date-btn active">Hôm nay</button>
+      <button class="date-btn">Ngày mai</button>
+    </div>
+  </div>
+</header>
+
+<div class="mockup-banner">Mockup · Static demo · Not connected to DB</div>
+
+<!-- ============ MAIN LAYOUT ============ -->
+<div class="layout">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-title">
+        Khách Walk-in
+        <span class="queue-badge" id="queue-count">3</span>
+      </div>
+    </div>
+
+    <div class="walkin-form">
+      <input type="text" placeholder="Tên khách *" id="wf-name">
+      <input type="tel" placeholder="SĐT (tùy chọn)">
+      <div class="service-grid">
+        <button class="service-pill selected">
+          Pedicure
+          <span class="svc-meta">45m · $45</span>
+        </button>
+        <button class="service-pill">
+          Manicure
+          <span class="svc-meta">30m · $25</span>
+        </button>
+        <button class="service-pill">
+          Gel Polish
+          <span class="svc-meta">45m · $38</span>
+        </button>
+        <button class="service-pill">
+          Full Set
+          <span class="svc-meta">60m · $55</span>
+        </button>
+        <button class="service-pill">
+          Fill
+          <span class="svc-meta">45m · $35</span>
+        </button>
+        <button class="service-pill">
+          Dip Powder
+          <span class="svc-meta">60m · $50</span>
+        </button>
+      </div>
+      <button class="more-services">More services ▾</button>
+      <input type="text" placeholder="Yêu cầu thợ riêng (vd: 'Mai')" style="margin-top: 8px;">
+      <button class="add-walkin-btn">+ Thêm vào Queue</button>
+    </div>
+
+    <div class="queue-list" id="queue-list">
+      <!-- queue items injected by JS -->
+    </div>
+  </aside>
+
+  <!-- ============ TIMELINE GRID ============ -->
+  <div class="grid-wrap" id="grid-wrap">
+    <div class="grid" id="grid">
+
+      <!-- Top-left corner -->
+      <div class="grid-corner"></div>
+
+      <!-- Time header (top, sticky) -->
+      <div class="time-header" id="time-header">
+        <!-- time cells injected -->
+      </div>
+
+      <!-- Staff column (left, sticky) -->
+      <div class="staff-col" id="staff-col">
+        <!-- staff cells injected -->
+      </div>
+
+      <!-- Grid body (rows × slots, with bookings absolute-positioned) -->
+      <div class="grid-body" id="grid-body">
+        <!-- rows + bookings injected -->
+        <div class="now-line" id="now-line"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============ LEGEND ============ -->
+<div class="legend">
+  <span class="legend-dot"><span class="dot" style="background: var(--status-pending-bg)"></span> Chờ xác nhận</span>
+  <span class="legend-dot"><span class="dot" style="background: var(--status-confirmed-bg)"></span> Đã xác nhận</span>
+  <span class="legend-dot"><span class="dot" style="background: var(--status-progress-bg)"></span> Đang phục vụ</span>
+  <span class="legend-dot"><span class="dot" style="background: var(--status-completed-bg)"></span> Hoàn tất</span>
+  <span class="legend-dot"><span class="dot" style="background: var(--nq-gold)"></span> Walk-in</span>
+</div>
+
+<!-- ============ DETAIL DRAWER ============ -->
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-header">
+    <div class="drawer-title" id="d-title">—</div>
+    <button class="drawer-close" id="d-close">×</button>
+  </div>
+  <div class="drawer-body" id="d-body"></div>
+  <div class="drawer-actions" id="d-actions"></div>
+</aside>
+
+<script>
+// ============ CONFIG ============
+const HOUR_START = 8;        // 8:00 AM
+const HOUR_END   = 20;       // 8:00 PM
+const SLOT_MIN   = 30;
+const SLOT_PX    = 64;       // matches --slot-width
+const ROW_PX     = 76;       // matches --row-height
+const TOTAL_SLOTS = (HOUR_END - HOUR_START) * (60 / SLOT_MIN); // 24
+
+// ============ MOCK DATA ============
+const STAFF = [
+  { id: 's1', name: 'Mai',   role: 'Senior',    busy: true  },
+  { id: 's2', name: 'Linh',  role: 'Senior',    busy: true  },
+  { id: 's3', name: 'Trang', role: 'Nail Tech', busy: false },
+  { id: 's4', name: 'Hoa',   role: 'Nail Tech', busy: true  },
+  { id: 's5', name: 'Vy',    role: 'Nail Tech', busy: false },
+];
+
+// Times as minutes from HOUR_START * 60. e.g. 9:30 = 90.
+function tm(h, m=0) { return (h - HOUR_START) * 60 + m; }
+
+const BOOKINGS = [
+  // Mai (s1)
+  { id:'b1',  staffId:'s1', start: tm(9,0),   end: tm(9,45),  client:'Anna Pham',   phone:'604-555-0142', service:'Pedicure',     status:'completed', source:'appointment', price:45 },
+  { id:'b2',  staffId:'s1', start: tm(10,0),  end: tm(11,0),  client:'Linda Vo',    phone:'604-555-0218', service:'Full Set',     status:'completed', source:'appointment', price:55 },
+  { id:'b3',  staffId:'s1', start: tm(13,30), end: tm(14,30), client:'Sarah Kim',   phone:'778-555-0331', service:'Gel + Pedi',   status:'progress',  source:'appointment', price:65 },
+  { id:'b4',  staffId:'s1', start: tm(15,0),  end: tm(15,30), client:'Jenny Lê',    phone:'604-555-0489', service:'Manicure',     status:'confirmed', source:'appointment', price:25 },
+  { id:'b5',  staffId:'s1', start: tm(16,0),  end: tm(16,45), client:'Thuy Nguyen', phone:'778-555-0512', service:'Gel Polish',   status:'pending',   source:'appointment', price:38 },
+
+  // Linh (s2)
+  { id:'b6',  staffId:'s2', start: tm(9,30),  end: tm(10,30), client:'Hannah T.',   phone:'604-555-0623', service:'Full Set',     status:'completed', source:'appointment', price:55 },
+  { id:'b7',  staffId:'s2', start: tm(11,0),  end: tm(11,45), client:'Mia (walk-in)', phone:null, service:'Pedicure',   status:'completed', source:'walkin',       price:45 },
+  { id:'b8',  staffId:'s2', start: tm(13,0),  end: tm(14,0),  client:'Cindy Park',  phone:'778-555-0734', service:'Dip Powder',   status:'progress',  source:'appointment', price:50 },
+  { id:'b9',  staffId:'s2', start: tm(14,30), end: tm(15,15), client:'Bella W.',    phone:'604-555-0856', service:'Fill',         status:'confirmed', source:'appointment', price:35 },
+  { id:'b10', staffId:'s2', start: tm(17,0),  end: tm(17,45), client:'Karen H.',    phone:'778-555-0967', service:'Gel Polish',   status:'pending',   source:'appointment', price:38 },
+
+  // Trang (s3) — slow afternoon
+  { id:'b11', staffId:'s3', start: tm(10,0),  end: tm(10,45), client:'Tina Đỗ',     phone:'604-555-1078', service:'Pedicure',     status:'completed', source:'appointment', price:45 },
+  { id:'b12', staffId:'s3', start: tm(12,0),  end: tm(12,30), client:'Quỳnh',       phone:null,           service:'Manicure',     status:'completed', source:'walkin',       price:25 },
+  { id:'b13', staffId:'s3', start: tm(16,30), end: tm(17,30), client:'Olivia C.',   phone:'778-555-1189', service:'Full Set',     status:'confirmed', source:'appointment', price:55 },
+
+  // Hoa (s4)
+  { id:'b14', staffId:'s4', start: tm(9,0),   end: tm(10,0),  client:'Phương Anh',  phone:'604-555-1234', service:'Full Set',     status:'completed', source:'appointment', price:55 },
+  { id:'b15', staffId:'s4', start: tm(11,30), end: tm(12,15), client:'Walk-in #2',  phone:null,           service:'Gel Polish',   status:'completed', source:'walkin',       price:38 },
+  { id:'b16', staffId:'s4', start: tm(14,0),  end: tm(15,0),  client:'Jasmine L.',  phone:'778-555-1390', service:'Dip Powder',   status:'progress',  source:'appointment', price:50 },
+  { id:'b17', staffId:'s4', start: tm(15,30), end: tm(16,15), client:'Ngọc',        phone:'604-555-1456', service:'Fill',         status:'confirmed', source:'walkin',       price:35 },
+  { id:'b18', staffId:'s4', start: tm(18,0),  end: tm(18,45), client:'Erica B.',    phone:'778-555-1567', service:'Pedicure',     status:'pending',   source:'appointment', price:45 },
+
+  // Vy (s5) — newest, fewer bookings
+  { id:'b19', staffId:'s5', start: tm(11,0),  end: tm(11,30), client:'Nina',        phone:'604-555-1678', service:'Manicure',     status:'completed', source:'appointment', price:25 },
+  { id:'b20', staffId:'s5', start: tm(15,30), end: tm(16,15), client:'Lan',         phone:'778-555-1789', service:'Fill',         status:'confirmed', source:'appointment', price:35 },
+];
+
+const QUEUE = [
+  { id:'q1', name:'Lisa Trần',  phone:'604-555-2001', service:'Gel Polish',  serviceMin:45, joined: minsAgo(8),  note:'Yêu cầu Mai' },
+  { id:'q2', name:'Jenny',      phone:null,           service:'Pedicure',    serviceMin:45, joined: minsAgo(15), note:null },
+  { id:'q3', name:'Walk-in #4', phone:'778-555-2003', service:'Manicure',    serviceMin:30, joined: minsAgo(24), note:'Vội — đi đám cưới 5pm' },
+];
+
+function minsAgo(m) {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - m);
+  return d;
+}
+
+// ============ STATE ============
+let assigningId = null;
+
+// ============ RENDER: TIME HEADER ============
+function renderTimeHeader() {
+  const el = document.getElementById('time-header');
+  el.style.width = (TOTAL_SLOTS * SLOT_PX) + 'px';
+  for (let i = 0; i < TOTAL_SLOTS; i++) {
+    const totalMin = i * SLOT_MIN;
+    const h = HOUR_START + Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    const isHourMark = (m === 0);
+    const cell = document.createElement('div');
+    cell.className = 'time-cell' + (isHourMark ? ' hour-mark' : '');
+    cell.textContent = isHourMark
+      ? `${((h - 1) % 12 + 1)}${h >= 12 ? 'p' : 'a'}`
+      : ':30';
+    el.appendChild(cell);
+  }
+}
+
+// ============ RENDER: STAFF COLUMN ============
+function renderStaffCol() {
+  const el = document.getElementById('staff-col');
+  STAFF.forEach(s => {
+    const cell = document.createElement('div');
+    cell.className = 'staff-cell' + (s.busy ? ' busy' : '');
+    cell.innerHTML = `
+      <div class="staff-avatar">${s.name[0]}</div>
+      <div class="staff-info">
+        <div class="staff-name">${s.name}</div>
+        <div class="staff-role">${s.role}</div>
+      </div>
+    `;
+    el.appendChild(cell);
+  });
+}
+
+// ============ RENDER: GRID BODY ============
+function renderGridBody() {
+  const body = document.getElementById('grid-body');
+  body.style.width = (TOTAL_SLOTS * SLOT_PX) + 'px';
+
+  STAFF.forEach((s, rowIdx) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.dataset.staffId = s.id;
+    row.style.width = (TOTAL_SLOTS * SLOT_PX) + 'px';
+
+    // Empty slot cells (for hover + click-to-assign)
+    for (let i = 0; i < TOTAL_SLOTS; i++) {
+      const c = document.createElement('button');
+      c.className = 'slot-cell';
+      c.dataset.staffId = s.id;
+      c.dataset.slot = i;
+      c.addEventListener('click', () => onSlotClick(s.id, i));
+      c.addEventListener('mouseenter', () => onSlotHover(s.id, i, row));
+      c.addEventListener('mouseleave', () => clearGhost(row));
+      row.appendChild(c);
+    }
+
+    // Bookings for this staff
+    BOOKINGS.filter(b => b.staffId === s.id && b.status !== 'cancelled').forEach(b => {
+      const block = document.createElement('div');
+      const widthSlots = (b.end - b.start) / SLOT_MIN;
+      const leftSlots  = b.start / SLOT_MIN;
+      block.className = `booking-block status-${b.status}` + (b.source === 'walkin' ? ' walkin' : '');
+      block.style.left = (leftSlots * SLOT_PX) + 'px';
+      block.style.width = (widthSlots * SLOT_PX - 4) + 'px';
+      block.innerHTML = `
+        <div class="booking-name">${b.client}</div>
+        <div class="booking-meta">${minutesToLabel(b.start)} · ${b.service} · $${b.price}</div>
+      `;
+      block.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openDrawer(b, s);
+      });
+      row.appendChild(block);
+    });
+
+    body.appendChild(row);
+  });
+
+  // Re-append now-line so it stays on top
+  body.appendChild(document.getElementById('now-line'));
+}
+
+function minutesToLabel(min) {
+  const totalMin = HOUR_START * 60 + min;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = ((h - 1) % 12) + 1;
+  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+// ============ RENDER: QUEUE ============
+function renderQueue() {
+  const el = document.getElementById('queue-list');
+  el.innerHTML = '';
+  document.getElementById('queue-count').textContent = QUEUE.length;
+
+  if (QUEUE.length === 0) {
+    el.innerHTML = `<div class="empty-queue">Chưa có khách walk-in.<br>Thêm khách phía trên ↑</div>`;
+    return;
+  }
+
+  QUEUE.forEach(q => {
+    const waitMin = Math.round((Date.now() - q.joined.getTime()) / 60000);
+    const isUrgent = waitMin >= 20 || (q.note && /vội|urgent|gấp/i.test(q.note));
+    const item = document.createElement('div');
+    item.className = 'queue-item' + (assigningId === q.id ? ' assigning' : '') + (isUrgent ? ' urgent' : '');
+    item.innerHTML = `
+      <div class="queue-item-top">
+        <div class="queue-name">
+          ${q.name}
+          ${isUrgent ? '<span class="urgency-flag" style="display: inline-flex;">⚡ Urgent</span>' : ''}
+        </div>
+        <div class="queue-time-ago">${timeAgo(q.joined)}</div>
+      </div>
+      <div class="queue-service">${q.service} · ${q.serviceMin}m</div>
+      ${q.note ? `<div class="queue-note">${q.note}</div>` : ''}
+      <div class="queue-actions">
+        <button class="queue-btn">Hủy</button>
+        <button class="queue-btn primary" data-id="${q.id}">Assign →</button>
+      </div>
+    `;
+    item.querySelector('.primary').addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleAssignMode(q.id);
+    });
+    el.appendChild(item);
+  });
+}
+
+function timeAgo(date) {
+  const min = Math.round((Date.now() - date.getTime()) / 60000);
+  if (min < 1) return 'vừa xong';
+  if (min < 60) return `${min}p trước`;
+  return `${Math.floor(min/60)}h trước`;
+}
+
+// ============ ASSIGN MODE ============
+function toggleAssignMode(queueId) {
+  assigningId = (assigningId === queueId) ? null : queueId;
+  document.getElementById('grid-body').classList.toggle('assign-mode', !!assigningId);
+  document.querySelectorAll('.row').forEach(clearGhost);
+  renderQueue();
+}
+
+// Returns conflicting booking if slot range overlaps any existing booking on same staff
+function checkConflict(staffId, startSlot, endSlot) {
+  const startMin = startSlot * SLOT_MIN;
+  const endMin = endSlot * SLOT_MIN;
+  return BOOKINGS.find(b =>
+    b.staffId === staffId &&
+    b.status !== 'cancelled' &&
+    b.start < endMin &&
+    b.end > startMin
+  );
+}
+
+function onSlotHover(staffId, slotIdx, rowEl) {
+  if (!assigningId) return;
+  const q = QUEUE.find(x => x.id === assigningId);
+  if (!q) return;
+
+  const widthSlots = Math.ceil(q.serviceMin / SLOT_MIN);
+  const endSlot = slotIdx + widthSlots;
+  const conflict = checkConflict(staffId, slotIdx, endSlot);
+  const overflow = endSlot > TOTAL_SLOTS;
+
+  // Remove previous ghost
+  clearGhost(rowEl);
+
+  const ghost = document.createElement('div');
+  ghost.className = 'ghost-block' + ((conflict || overflow) ? ' conflict' : '');
+  ghost.style.left = (slotIdx * SLOT_PX) + 'px';
+  ghost.style.width = (widthSlots * SLOT_PX - 4) + 'px';
+
+  if (conflict) {
+    ghost.innerHTML = `<span class="ghost-warn">⚠ Trùng ${conflict.client}</span>`;
+  } else if (overflow) {
+    ghost.innerHTML = `<span class="ghost-warn">⚠ Quá giờ đóng</span>`;
+  } else {
+    ghost.textContent = `${q.name} · ${q.serviceMin}m`;
+  }
+
+  rowEl.appendChild(ghost);
+}
+
+function clearGhost(rowEl) {
+  const existing = rowEl.querySelector('.ghost-block');
+  if (existing) existing.remove();
+}
+
+function onSlotClick(staffId, slotIdx) {
+  if (!assigningId) return;
+  const q = QUEUE.find(x => x.id === assigningId);
+  if (!q) return;
+
+  const widthSlots = Math.ceil(q.serviceMin / SLOT_MIN);
+  const endSlot = slotIdx + widthSlots;
+
+  // Block on conflict or overflow
+  const conflict = checkConflict(staffId, slotIdx, endSlot);
+  if (conflict) {
+    shake(`⚠ Slot trùng với ${conflict.client}`);
+    return;
+  }
+  if (endSlot > TOTAL_SLOTS) {
+    shake(`⚠ Service kéo dài quá giờ đóng`);
+    return;
+  }
+
+  // Compute booking
+  const start = slotIdx * SLOT_MIN;
+  const end = start + widthSlots * SLOT_MIN;
+  const staff = STAFF.find(s => s.id === staffId);
+  const newBooking = {
+    id: 'b' + Date.now(),
+    staffId, start, end,
+    client: q.name,
+    phone: q.phone,
+    service: q.service,
+    status: 'confirmed',
+    source: 'walkin',
+    price: 45,
+  };
+
+  // Snapshot for undo
+  const snapshot = {
+    queueItem: { ...q },
+    queueIndex: QUEUE.findIndex(x => x.id === assigningId),
+    bookingId: newBooking.id,
+  };
+
+  // Apply
+  QUEUE.splice(snapshot.queueIndex, 1);
+  BOOKINGS.push(newBooking);
+
+  assigningId = null;
+  document.getElementById('grid-body').classList.remove('assign-mode');
+
+  reRenderGrid();
+  renderQueue();
+  updateStatusPill();
+
+  showUndoToast({
+    msg: `${q.name} → ${staff.name}`,
+    detail: `${minutesToLabel(start)} · ${q.service}`,
+    onUndo: () => {
+      const idx = BOOKINGS.findIndex(b => b.id === snapshot.bookingId);
+      if (idx >= 0) BOOKINGS.splice(idx, 1);
+      QUEUE.splice(snapshot.queueIndex, 0, snapshot.queueItem);
+      reRenderGrid();
+      renderQueue();
+      updateStatusPill();
+    },
+  });
+}
+
+function reRenderGrid() {
+  const body = document.getElementById('grid-body');
+  body.innerHTML = '';
+  renderGridBody();
+  if (!body.querySelector('.now-line')) body.appendChild(createNowLine());
+  updateNowLine();
+}
+
+function shake(msg) {
+  const el = document.createElement('div');
+  el.textContent = msg;
+  el.style.cssText = `
+    position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
+    background: #FF3B30; color: white;
+    padding: 10px 20px; border-radius: 8px;
+    font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 600;
+    z-index: 100; box-shadow: 0 8px 30px rgba(255, 59, 48, 0.4);
+  `;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2000);
+}
+
+function flash(msg) {
+  const el = document.createElement('div');
+  el.textContent = msg;
+  el.style.cssText = `
+    position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
+    background: var(--status-progress-bg); color: white;
+    padding: 10px 20px; border-radius: 8px;
+    font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 600;
+    z-index: 100; box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    animation: flashIn 280ms ease;
+  `;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2400);
+}
+
+// ============ UNDO TOAST ============
+let undoTimer = null;
+function showUndoToast({ msg, detail, onUndo }) {
+  const existing = document.querySelector('.undo-toast');
+  if (existing) existing.remove();
+  if (undoTimer) clearInterval(undoTimer);
+
+  const toast = document.createElement('div');
+  toast.className = 'undo-toast';
+  toast.innerHTML = `
+    <div class="undo-toast-msg">
+      <div class="undo-toast-icon">✓</div>
+      <div>
+        <div>${msg}</div>
+        <div class="undo-toast-detail">${detail}</div>
+      </div>
+    </div>
+    <button class="undo-toast-btn">Hoàn tác</button>
+    <span class="undo-toast-countdown">5s</span>
+  `;
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+
+  let secondsLeft = 5;
+  const countdownEl = toast.querySelector('.undo-toast-countdown');
+  undoTimer = setInterval(() => {
+    secondsLeft -= 1;
+    if (countdownEl) countdownEl.textContent = `${secondsLeft}s`;
+    if (secondsLeft <= 0) {
+      clearInterval(undoTimer);
+      hideUndoToast(toast);
+    }
+  }, 1000);
+
+  toast.querySelector('.undo-toast-btn').addEventListener('click', () => {
+    clearInterval(undoTimer);
+    onUndo();
+    hideUndoToast(toast);
+  });
+}
+function hideUndoToast(toast) {
+  toast.classList.remove('show');
+  setTimeout(() => toast.remove(), 280);
+}
+
+// ============ STATUS PILL ============
+function updateStatusPill() {
+  const waiting = QUEUE.length;
+  const inProgress = BOOKINGS.filter(b => b.status === 'progress').length;
+  const totalActive = waiting + inProgress;
+
+  const pill = document.getElementById('status-pill');
+  const txt = document.getElementById('sp-text');
+
+  pill.classList.remove('busy', 'calm');
+  if (totalActive >= 6 || waiting >= 4) pill.classList.add('busy');
+  else if (totalActive <= 2) pill.classList.add('calm');
+
+  txt.innerHTML = `${waiting} CHỜ <span class="sp-sep">·</span> ${inProgress} ĐANG PHỤC VỤ`;
+}
+
+// ============ NOW LINE ============
+function updateNowLine() {
+  const now = new Date();
+  const h = now.getHours();
+  const m = now.getMinutes();
+  const minFromStart = (h - HOUR_START) * 60 + m;
+
+  const line = document.getElementById('now-line');
+  if (minFromStart < 0 || minFromStart > (HOUR_END - HOUR_START) * 60) {
+    line.style.display = 'none';
+    return;
+  }
+  line.style.display = 'block';
+  const px = (minFromStart / SLOT_MIN) * SLOT_PX;
+  line.style.left = px + 'px';
+  line.dataset.now = `${h12(h)}:${String(m).padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`;
+}
+function h12(h) { return ((h - 1) % 12) + 1; }
+function createNowLine() {
+  const l = document.createElement('div');
+  l.className = 'now-line';
+  l.id = 'now-line';
+  return l;
+}
+
+// ============ CLOCK ============
+function updateClock() {
+  const now = new Date();
+  const t = `${h12(now.getHours())}:${String(now.getMinutes()).padStart(2,'0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
+  document.getElementById('clock').textContent = `${t} · Pacific`;
+}
+
+// ============ DRAWER ============
+function openDrawer(booking, staff) {
+  const d = document.getElementById('drawer');
+  const bg = document.getElementById('drawer-backdrop');
+  document.getElementById('d-title').textContent = booking.client;
+
+  const isWalkin = booking.source === 'walkin';
+  const statusLabel = {
+    pending: 'Chờ xác nhận',
+    confirmed: 'Đã xác nhận',
+    progress: 'Đang phục vụ',
+    completed: 'Hoàn tất',
+  }[booking.status];
+
+  document.getElementById('d-body').innerHTML = `
+    <div class="drawer-row"><span class="label">Loại</span><span class="val">${isWalkin ? 'Walk-in' : 'Appointment'}</span></div>
+    <div class="drawer-row"><span class="label">Trạng thái</span><span class="val">${statusLabel}</span></div>
+    <div class="drawer-row"><span class="label">Dịch vụ</span><span class="val">${booking.service}</span></div>
+    <div class="drawer-row"><span class="label">Thợ</span><span class="val">${staff.name} · ${staff.role}</span></div>
+    <div class="drawer-row"><span class="label">Bắt đầu</span><span class="val mono">${minutesToLabel(booking.start)}</span></div>
+    <div class="drawer-row"><span class="label">Kết thúc</span><span class="val mono">${minutesToLabel(booking.end)}</span></div>
+    <div class="drawer-row"><span class="label">Giá</span><span class="val mono">$${booking.price}.00</span></div>
+  `;
+
+  const actions = document.getElementById('d-actions');
+  actions.innerHTML = '';
+  if (booking.phone) {
+    const cleanPhone = booking.phone.replace(/[^0-9+]/g, '');
+    actions.innerHTML += `<a class="drawer-btn call" href="tel:${cleanPhone}">📞 Gọi ${booking.phone}</a>`;
+  }
+  if (booking.status === 'confirmed' || booking.status === 'pending') {
+    actions.innerHTML += `<button class="drawer-btn primary">Bắt đầu phục vụ</button>`;
+  }
+  if (booking.status === 'progress') {
+    actions.innerHTML += `<button class="drawer-btn primary">Đánh dấu hoàn tất</button>`;
+  }
+  if (booking.status !== 'completed') {
+    actions.innerHTML += `<button class="drawer-btn danger">Hủy booking</button>`;
+  }
+
+  d.classList.add('open');
+  bg.classList.add('open');
+}
+function closeDrawer() {
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('drawer-backdrop').classList.remove('open');
+}
+document.getElementById('d-close').addEventListener('click', closeDrawer);
+document.getElementById('drawer-backdrop').addEventListener('click', closeDrawer);
+
+// ============ SERVICE PILL TOGGLE ============
+document.querySelectorAll('.service-pill').forEach(p => {
+  p.addEventListener('click', () => {
+    document.querySelectorAll('.service-pill').forEach(x => x.classList.remove('selected'));
+    p.classList.add('selected');
+  });
+});
+
+// ============ DATE SWITCHER ============
+document.querySelectorAll('.date-btn').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.date-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+  });
+});
+
+// ============ INIT ============
+function init() {
+  renderTimeHeader();
+  renderStaffCol();
+  renderGridBody();
+  renderQueue();
+  updateClock();
+  updateNowLine();
+  updateStatusPill();
+
+  // Auto-scroll now line into view
+  setTimeout(() => {
+    const wrap = document.getElementById('grid-wrap');
+    const now = new Date();
+    const minFromStart = (now.getHours() - HOUR_START) * 60 + now.getMinutes();
+    if (minFromStart > 0 && minFromStart < (HOUR_END - HOUR_START) * 60) {
+      const px = (minFromStart / SLOT_MIN) * SLOT_PX;
+      wrap.scrollLeft = Math.max(0, px - wrap.clientWidth / 2 + 70 /* staff col */);
+    }
+  }, 100);
+
+  setInterval(updateClock, 30000);
+  setInterval(updateNowLine, 60000);
+}
+init();
+</script>
+
+</body>
+</html>

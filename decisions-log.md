@@ -60,6 +60,132 @@
 
 ---
 
+## 2026-05-02 (afternoon): Cancelled in_progress booking keeps started_at
+
+**Context**: Step 6c-1 drawer cancel action allows cancelling in_progress bookings. Current implementation only updates status, does not clear started_at.
+
+**Decision**: Keep started_at on cancelled bookings (no cleanup).
+
+**Rationale**:
+- started_at is operational record (when service started physically)
+- Cancellation = customer left or service stopped, not erasure of history
+- Future analytics may want "average time in chair before cancel" — needs started_at
+- Cleanup adds complexity for marginal benefit V1
+
+**Alternatives rejected**:
+- Clear started_at on cancel: loses data, rare ops insight
+
+**Trade-offs accepted**:
+- Cancelled rows have non-null started_at — queries filtering "in_progress AND started_at IS NOT NULL" still need explicit status filter
+- Documented here so future dev doesn't treat as bug
+
+**Revisit when**: Real ops feedback indicates need to clear started_at on cancel
+
+**Cost to reverse**: Low (~30min: add UPDATE to set started_at = NULL on cancel transition)
+
+---
+
+## 2026-05-02: Owner today list — wide server load + narrow client filter
+
+**Context**: Step 2 of Receptionist Center build. Owner dashboard "today list" needs to (a) hide walk-in waiting + cancelled from agenda view but (b) include completed rows for today's stats (revenue, completed count). Single filter at server can't do both.
+
+**Decision**: Server `loadSalonOwnerDashboard` filters `status IN ACTIVE_GRID_STATUSES` (pending, confirmed, in_progress, completed). Client `splitSalonDashboardBookings` further filters rendered "today" list to `OWNER_TODAY_LIST_STATUSES` (pending, confirmed, in_progress) while keeping completed for stats derivation.
+
+**Rationale**:
+- Server filter excludes waiting + cancelled = correct (those are walk-in queue noise + terminal state)
+- Server include completed = required for revenue/count math
+- Client narrow filter for display = clean agenda UX (don't show "Anna · 9am · completed" in upcoming list)
+- 2 filter layers documented = explicit, not magic
+
+**Alternatives rejected**:
+- Server filter to OWNER_TODAY_LIST_STATUSES only: zeros out completed stats
+- Server load ALL statuses: pulls cancelled + waiting (walk-in noise) into owner payload, increases data transfer
+- Compute stats server-side via separate query: 2 round-trips, more code, same outcome
+
+**Trade-offs accepted**:
+- Two filter constants (ACTIVE_GRID_STATUSES, OWNER_TODAY_LIST_STATUSES) — must keep both in sync semantically
+- Future dev sees client-side filter and wonders why — entry references this decision
+
+**Revisit when**:
+- If/when bookings table grows so large that loading all 4 statuses becomes slow → consider 2 separate queries
+- If completed bookings need to appear in agenda for some UX reason
+
+**Cost to reverse**: Low (~30min: collapse to single filter, accept stat regression)
+
+---
+
+## 2026-05-02: Parking lot tổng hợp — AI features + Payment + Luxury widgets defer post-PMF
+
+**Context**: Trong 1 ngày nhận 3 rounds feedback (owner dashboard ultra-luxury, "15/10 system", flash metrics + AI insights drawer + AI voice pill) — tất cả push về AI/luxury direction. Reject từng feature riêng lẻ tốn time + dễ re-debate khi feedback round tiếp theo. Cần entry tổng hợp để reference 1 lần, không re-litigate.
+
+**Decision**: Defer toàn bộ feature group dưới đây sang post-PMF với 1 trigger thống nhất. KHÔNG build trong V1, KHÔNG mock UI cho V1, KHÔNG hint trong copy/marketing rằng sắp có.
+
+Features defer cùng group:
+1. AI Smart Suggest — gợi ý assign walk-in cho staff/slot tối ưu
+2. AI Voice Receptionist — agent trả lời điện thoại tự động
+3. AI Upsell Suggestion — gợi ý add-on dịch vụ trong drawer booking
+4. AI ROI Tracker / "AI Revenue Added" metric — số tiền AI mang về
+5. Auto-assign mode (kể cả rule-based marketed dưới brand "AI")
+6. Workload Predictor / load bar (40%/70%/100%) per staff
+7. VIP tag + customer habits + AI insights card trong drawer
+8. Wait time prediction cho khách trong queue
+9. Bulk multi-assign (chọn nhiều walk-in cùng lúc)
+10. Square Terminal / Clover payment integration trực tiếp trong app
+11. Marketing automation — rotating SMS tới khách cũ để fill empty slot
+12. Drag-to-reschedule + resize block trên timeline
+13. "AI System Status" indicators (pulsing pills, AI on/off badges)
+14. Sentry "24/7 protection" badge user-facing
+
+**Rationale**:
+
+Strategic — tại sao defer cùng group:
+- Tất cả violate ít nhất 1 dòng trong product.md "DO NOT BUILD V1" table
+- Stage hiện tại: 0 paying customers, 4 tuần đến launch. Mỗi giờ build mock UI vaporware = 1 giờ KHÔNG build walk-in queue (H3 differentiator thật)
+- Target user (salon owner Việt 35-55 từ paper + Zalo) pay $29/mo vì giá + workflow fit, KHÔNG vì AI/luxury vibe
+- Feature 1-9 không có data foundation: 0 historical bookings ngày 1 → AI suggest = random; client_profiles không có VIP flag, habit aggregation
+- Feature 10 (payment) = PCI scope + 6 tuần dev minimum, Square/Clover đã solve standalone
+- Feature 14 (Sentry badge) = lừa user vì Sentry là dev monitoring không phải user-facing security
+
+Tactical — tại sao KHÔNG mock UI:
+- Mock UI cho feature không tồn tại = lừa user trong onboarding trial
+- Receptionist sẽ hỏi "AI nào? Sao tôi không thấy hoạt động?" → trust gone, churn
+- Marketing demo wow ≠ paying customer (Decision 2026-05-02 single-product focus đã lock không gọi vốn)
+- Production code base nên reflect features thật, không "coming soon" placeholders
+
+**Alternatives rejected**:
+- Build với feature flag default off, ship code: vẫn polluting codebase, vẫn cần maintain UI mock, vẫn risk leak qua dev console
+- Build "lite" rule-based version marketed as AI: vẫn vaporware level marketing, transparent rule-based = tốt hơn nhưng vẫn không đủ ROI vs walk-in queue
+- Build separate "marketing demo" version cho pitch deck: khả thi nhưng KHÔNG cần thiết vì không gọi vốn
+- Reject từng feature một khi feedback đến: tốn time, trigger re-debate
+
+**Trade-offs accepted**:
+- V1 UI sẽ "boring" hơn so với Booksy/Vagaro mockup demo của họ — chấp nhận, function over form cho stage này
+- Có thể mất 1-2 prospect mê AI/luxury vibe — chấp nhận, không phải target user
+- Feedback source push features này sẽ frustrate — chấp nhận, reference entry này thay vì re-litigate
+- Tech debt 0: vì không build thì không có debt
+
+**Revisit when** (TẤT CẢ điều kiện phải đồng thời):
+- $1k MRR (≥ 35 paying salons)
+- Cùng 1 feature trong list trên được customer ask 3+ lần với willingness to pay
+- Post-PMF signal: NPS ≥ 30, churn < 5%/month
+- Founder bandwidth ≥ 50% free từ ops/support
+
+Riêng từng feature có thể có trigger sớm hơn nếu vendor solve được mà không cần dev:
+- Payment: integrate Stripe Connect (đã có Stripe trong roadmap) — earliest revisit khi Stripe subscription stable
+- Wait time prediction: rule-based "sum duration trong queue" có thể ship ở Phase 2 nếu data show useful
+
+**Cost to reverse** (nếu sau này build): High cumulative
+- AI features cần data infrastructure (~2-4 tuần per feature)
+- Payment integration: 6+ tuần PCI scope
+- Voice receptionist: 3-6 tháng (Twilio Voice + LLM + state)
+- Total nếu build sai timing: 6-12 tháng dev tốn cho features không paying customer ask
+
+**Reference cho future feedback**:
+Khi nhận feedback push features trong list này, response template:
+> "Feature này đã defer trong decisions-log entry 2026-05-02 (parking lot tổng hợp). Trigger revisit: $1k MRR + 3 customer ask + post-PMF. Hiện tại Q2 focus là 3 paying salons với walk-in queue + booking flow. Sẽ revisit khi đạt trigger."
+
+---
+
 ## 2026-05-02: Defer 18 lint errors đến post-launch
 
 **Context**: Health check trước khi build walk-in queue. `npm run lint` exit 1 với 18 errors. Build pass, typecheck pass, 16/16 e2e pass. ESLint chưa hooked vào CI.

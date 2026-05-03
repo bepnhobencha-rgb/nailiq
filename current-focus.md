@@ -35,14 +35,16 @@ Estimate: 3-4h tuần này (chủ yếu form filling, đợi async).
 
 ---
 
-### Task 2: Walk-in queue MVP end-to-end
+### Task 2: Walk-in queue MVP end-to-end ✅ DONE
 **Why critical**: H3 differentiator trong product.md. Nếu V1 chỉ có appointment booking như Booksy → no moat.
 
 Sub-tasks:
-- [ ] Add walk-in customer to queue (no appointment needed)
-- [ ] Assign / request specific technician
-- [ ] Estimated wait time calculation
-- [ ] Notify when ready (display first, SMS sau khi Twilio approved)
+- [x] Add walk-in customer to queue (no appointment needed)
+- [x] Assign / request specific technician
+- [x] Estimated wait time calculation
+- [x] Notify when ready (display first, SMS sau khi Twilio approved)
+
+- Completed 2026-05-02. Receptionist Center V1 shipped: route `/dashboard/[slug]/center`, walk-in queue + assign + grid + realtime + drawer. 47/47 e2e pass. Manual iPhone verified.
 
 Estimate: 3-4 ngày code.
 
@@ -66,7 +68,9 @@ Estimate: 2-3h spread trong tuần. Conversion typical 10-20%, nên 20 DMs → ~
 - ✅ i18n setup (Vietnamese + English)
 - ✅ Booking domain models (`dashboardBookingMap.ts`, `bookingIdsEqual.ts`)
 - ✅ Health check passed 2026-05-02 (typecheck + build + e2e 16/16 + manual smoke test public booking + dashboard)
-- ❌ Walk-in queue (Task 2 tuần này)
+- ✅ Receptionist Center V1 `/dashboard/[slug]/center` — shipped 2026-05-02; manual iPhone verified; iPad Case 7 deferred (see P3).
+- ✅ Walk-in queue MVP (queue, assign, grid, drawer, realtime/poll — Receptionist Center V1)
+- ❌ Walk-in **polish** beyond MVP desk (SMS notify, EWT, etc.)
 - ❌ Stripe subscription integration (sau khi account verified)
 - ❌ SMS reminders (sau khi Twilio approved)
 - ❌ Onboarding flow (week 3)
@@ -100,15 +104,22 @@ None known.
 ### P2 (defer post-launch)
 - Hydration mismatch ở `SalonOwnerDashboardMain.tsx:199` — ĐÃ FIX 2026-05-02 (single source of truth qua `getSiteUrl()`, không còn fallback `window.location.origin`)
 - RPC `suggest_salon_slugs_by_similarity` missing trong DB — feature "did you mean?" khi user typo URL không hoạt động. Console log: `Could not find the function public.suggest_salon_slugs_by_similarity(p_input) in the schema cache`. Fix = apply migration hoặc tạo lại function.
+- Migration drift giữa local `supabase/migrations/` và linked DB `schema_migrations`. `supabase db push --linked` fail với "Remote migration versions not found in local migrations directory". Symptoms: trùng timestamps `20260430180000` / `20260430240000`, lệch version `20260428`, remote chỉ tới `20260430200000`. Receptionist migration `20260502120000_receptionist_center_schema.sql` apply qua `db query --linked -f` (không qua schema_migrations log). Resolve trước V1 launch (30/5) để có repeatable deployment. Likely fix: rebase local migrations theo remote state, hoặc `supabase migration repair`.
 
 ### P3 (lint debt — defer post-launch)
 Tổng 18 ESLint errors, 0 functional impact. Build pass, typecheck pass, e2e 16/16 pass. Xem decision 2026-05-02 trong decisions-log.md.
 
+- **Next.js 16 deprecation (middleware → proxy):** `next build` warns: the `middleware` file convention is deprecated; rename/migrate to **`proxy`** per Next.js 16 docs before Next 17. Currently non-functional — warning only. Tracked so it is not lost in logs.
 - 12 lỗi `react-hooks/set-state-in-effect` (React 19 rule): `BookingFlowDatePanel`, `BookingReturningGreeting`, `useBookingFlowState` (5 chỗ), `SalonOwnerDashboard`, `Toast`, `HomeLanding`
 - 2 lỗi `react-hooks/refs` (access ref during render): `SetupDeleteConfirm`, `Toast`
 - 1 lỗi `react-hooks/preserve-manual-memoization`: `BookingFlowDonePanel`
 - 1 lỗi `react/no-unescaped-entities`: `SalonBookingNotFound` (trivial)
 - 3 lỗi require() imports trong `scripts/auto-push.js` (dev script, không production)
+- **Receptionist Center — manual QA cosmetic (defer):** conflict/error toast uses state name `shakeMessage` but **no shake animation** in CSS; spec called for “red shake”. Optional polish post-launch.
+- Receptionist Center Case 7 manual iPad test deferred — no device available 2026-05-02. Test on first beta salon iPad install (target: week of 19-25/5).
+
+### Receptionist Center V1 — final manual QA (14 cases)
+**Status:** **Shipped 2026-05-02.** Automated (2026-05-02): `tsc`, `next build`, Playwright **47/47** (1 mobile skip: fine-pointer hover), shared lib smokes + `receptionistActions` smoke — PASS. Manual iPhone on `/dashboard/{slug}/center`: PASS (**tel:** opens Phone app). **Case 7 iPad layout** deferred — no device; target first beta salon iPad (week of 19–25/5, see P3). Residual linked-dev cases (dual-tab realtime spot-checks, screenshots) optional for beta trail.
 
 ## Decisions cần làm tuần này
 - [x] Free trial length: 7 ngày hay 14 ngày? → **14 ngày** (decision 2026-05-02)
