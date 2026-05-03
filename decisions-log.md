@@ -1,5 +1,5 @@
 # Decisions Log
-> Last updated: 2026-05-02
+> Last updated: 2026-05-03
 > Format: ADR-lite. Mỗi decision = 1 entry. Reverse chronological (newest first).
 
 ---
@@ -57,6 +57,36 @@
 ---
 
 # Entries
+
+---
+
+## 2026-05-03: Q1 desk edit booking — pending/confirmed only, no in_progress
+
+**Context**: Receptionist needs ability to reschedule/adjust bookings (change time, staff, service) without cancel+rebook workflow. Q1 from failure mode review pre-launch.
+
+**Decision**: Edit allowed ONLY for status='pending' or 'confirmed'. Block edit for in_progress (currently being served), completed (history), cancelled (terminal), waiting (use assign flow instead).
+
+**Rationale**:
+- in_progress edit creates data integrity issues: started_at vs new start_time_utc divergence, staff actually doing different service than booking record
+- completed/cancelled are terminal — edit doesn't make sense
+- waiting bookings (walk-ins) have separate assign flow with its own conflict check
+- Pending/confirmed cover 95% of real reschedule cases (customer call ahead)
+
+**Alternatives rejected**:
+- Allow in_progress edit with confirmation modal: too risky for V1, mid-service data corruption
+- Allow all statuses with status-aware logic: scope creep, complex UI states
+- Drag-to-reschedule on grid: deferred to V1.1+ (parking lot)
+- Edit customer name/phone/notes: separate feature, V1.1+
+
+**Trade-offs accepted**:
+- in_progress mistakes (wrong staff/time) require cancel + rebuild — friction acceptable, rare
+- No bulk edit (multi-booking move) — defer
+
+**Revisit when**:
+- 5+ beta users explicit ask "I need to edit booking after starting"
+- Or 3+ beta users complain about cancel+rebuild friction
+
+**Cost to reverse**: Low (~1h: relax status check + add server-side started_at handling)
 
 ---
 

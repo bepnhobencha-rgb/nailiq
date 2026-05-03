@@ -58,7 +58,7 @@ function utcDayBoundsYmd(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function isoAtUtcYmdHourMinute(
+export function isoAtUtcYmdHourMinute(
   ymd: string,
   hour: number,
   minute: number,
@@ -359,6 +359,36 @@ export async function countBookingsForClient(
   return count ?? 0;
 }
 
+export async function fetchBookingDeskSnapshot(
+  salonId: string,
+  bookingId: string,
+): Promise<{
+  start_time_utc: string;
+  end_time_utc: string;
+  staff_id: string | null;
+  service_id: string | null;
+  price_cents: number | null;
+} | null> {
+  const { data, error } = await supabaseAdmin
+    .from("bookings")
+    .select("start_time_utc, end_time_utc, staff_id, service_id, price_cents")
+    .eq("salon_id", salonId)
+    .eq("id", bookingId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data?.start_time_utc || !data?.end_time_utc) return null;
+  return {
+    /* Normalize PostgREST `timestamptz` (`+00:00` vs `Z`) for stable test equality. */
+    start_time_utc: new Date(String(data.start_time_utc)).toISOString(),
+    end_time_utc: new Date(String(data.end_time_utc)).toISOString(),
+    staff_id: data.staff_id != null ? String(data.staff_id) : null,
+    service_id: data.service_id != null ? String(data.service_id) : null,
+    price_cents:
+      data.price_cents != null ? Math.round(Number(data.price_cents)) : null,
+  };
+}
+
 export async function getBookingRow(
   salonId: string,
   bookingId: string,
@@ -426,12 +456,14 @@ export async function moveMouseToAssignSlot(
   staffId: string,
   slotIndex: number,
 ): Promise<void> {
-  const loc = page.getByTestId(`assign-slot-${staffId}-${slotIndex}`);
-  await loc.waitFor({ state: "attached", timeout: 15_000 });
-  await loc.scrollIntoViewIfNeeded();
-  const box = await loc.boundingBox();
-  if (!box) throw new Error("moveMouseToAssignSlot: no bounding box");
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const slot = page.getByTestId(`assign-slot-${staffId}-${slotIndex}`);
+  await slot.waitFor({ state: "attached", timeout: 15_000 });
+  await slot.scrollIntoViewIfNeeded();
+  // `mouse.move`/`.hover()` are flaky crossing staff rows under scroll/auto-layout.
+  // Slot `<button>`s drive the same ghost state via `onFocus` as `onMouseEnter`.
+  await slot.focus();
+  // Small wait for React state to settle hoveredSlot + ghost subtree
+  await page.waitForTimeout(100);
 }
 
 export async function gotoOwnerDashboard(page: Page, slug: string): Promise<void> {

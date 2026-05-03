@@ -1,15 +1,23 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/database.types";
 import {
   ConflictCheckBooking,
   checkBookingConflict,
 } from "@/shared/lib/conflictCheck";
 import { cleanPhone } from "@/shared/lib/phoneFormat";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import {
+  type EditBookingInput,
+  type EditBookingResult,
+  performEditBooking,
+} from "@/shared/dashboard/editBookingCore";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STAFF_NOTE_MAX_LEN = 200;
+const CLIENT_NOTES_MAX_LEN = 2000;
 
 function isUuidLike(value: string): boolean {
   return UUID_RE.test(value.trim());
@@ -418,4 +426,26 @@ export async function cancelDeskBooking(
   }
 
   return { ok: true };
+}
+
+export type {
+  EditBookingError,
+  EditBookingInput,
+  EditBookingResult,
+} from "./editBookingCore";
+
+/** Desk / grid: reschedule/adjust slots for pending | confirmed only (see `performEditBooking`). */
+export async function editBooking(
+  slug: string,
+  input: EditBookingInput,
+): Promise<EditBookingResult> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) {
+    return { ok: false, error: "server_error" };
+  }
+  return performEditBooking(
+    ctx.supabase as SupabaseClient<Database>,
+    ctx.salon.id,
+    input,
+  );
 }

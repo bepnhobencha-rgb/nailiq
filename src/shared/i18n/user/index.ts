@@ -12,5 +12,6 @@ export function getUserMessages(language: UserLanguage): UserMessages {
 }
 
 export { userEn, userVi, type UserMessages };
+export type ReceptionistMessages = UserMessages["receptionist"];
 export type { UserLanguage } from "./types";
 export { USER_LANGUAGES, USER_LANGUAGE_STORAGE_KEY } from "./types";

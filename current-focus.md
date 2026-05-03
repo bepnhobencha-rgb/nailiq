@@ -73,6 +73,7 @@ Detailed sub-tasks TBD Monday morning when fresh.
 Identified 2026-05-02 in failure mode review. Pre-launch BLOCKERS shipped in commit 637fd37.
 
 **DONE:**
+- **Q1 Desk edit booking (pending/confirmed only)** ✅ 2026-05-03 — Receptionist drawer **Edit** → `EditBookingForm` (time/staff/service); server `editBooking` + `performEditBooking` (`editBookingCore.ts`); conflict via `checkBookingConflict` + `excludeBookingId`; status guard blocks `in_progress` / completed / cancelled / waiting; i18n `receptionist.edit.*`; e2e `edit-booking.spec.ts` (5 cases × 2 projects) + smoke `editBooking.smoke.ts` (5); full Playwright suite **73 passed / 1 skipped** after `moveMouseToAssignSlot` focus stabilization. ADR: `decisions-log.md` 2026-05-03.
 - **1.1 Service delete with active references** ✅ 2026-05-02 — Proactive booking count check before delete; `service_in_use` error mapped via i18n; `ServicesSetupPanel` localized; e2e `service-delete.spec.ts` 4/4 PASS.
 - **1.2 Staff delete with active bookings** ✅ 2026-05-02 — Proactive active booking count check; terminal bookings (cancelled/completed) detached via UPDATE staff_id=NULL before delete; client_profiles.preferred_staff_id cleared; ADR logged in decisions-log.md; e2e `staff-delete.spec.ts` 4/4 PASS.
 - **2.3 Public booking RPC race with walk-in** ✅ 2026-05-02 — `create_public_booking` v2.3 (migration 20260502130000) tightened blocking statuses to NOT IN ('cancelled','waiting'); raises `slot_conflict` errcode 23P01; BookingFlow handles via i18n `slotJustTaken`; e2e `public-booking-race.spec.ts` 4/4 PASS + smoke 3/3.
@@ -91,6 +92,7 @@ Identified 2026-05-02 in failure mode review. Pre-launch BLOCKERS shipped in com
 - ✅ Booking domain models (`dashboardBookingMap.ts`, `bookingIdsEqual.ts`)
 - ✅ Health check passed 2026-05-02 (typecheck + build + e2e 16/16 + manual smoke test public booking + dashboard)
 - ✅ Receptionist Center V1 `/dashboard/[slug]/center` — shipped 2026-05-02; manual iPhone verified; iPad Case 7 deferred (see P3).
+- ✅ Q1 desk edit booking — **DONE 2026-05-03** (Edit in drawer for pending/confirmed; see pre-launch checklist + `decisions-log.md`).
 - ✅ Walk-in queue MVP (queue, assign, grid, drawer, realtime/poll — Receptionist Center V1)
 - ❌ Walk-in **polish** beyond MVP desk (SMS notify, EWT, etc.)
 - ❌ Stripe subscription integration (sau khi account verified)
@@ -129,7 +131,7 @@ None known.
 - Migration drift giữa local `supabase/migrations/` và linked DB `schema_migrations`. `supabase db push --linked` fail với "Remote migration versions not found in local migrations directory". Symptoms: trùng timestamps `20260430180000` / `20260430240000`, lệch version `20260428`, remote chỉ tới `20260430200000`. Receptionist migration `20260502120000_receptionist_center_schema.sql` apply qua `db query --linked -f` (không qua schema_migrations log). Resolve trước V1 launch (30/5) để có repeatable deployment. Likely fix: rebase local migrations theo remote state, hoặc `supabase migration repair`.
 
 ### P3 (lint debt — defer post-launch)
-Tổng 18 ESLint errors, 0 functional impact. Build pass, typecheck pass, Playwright e2e 63 passed / 1 skipped. Xem decision 2026-05-02 trong decisions-log.md.
+Tổng 18 ESLint errors, 0 functional impact. Build pass, typecheck pass, Playwright e2e 73 passed / 1 skipped (2026-05-03 baseline). Xem decision 2026-05-02 trong decisions-log.md.
 
 - **Next.js 16 deprecation (middleware → proxy):** `next build` warns: the `middleware` file convention is deprecated; rename/migrate to **`proxy`** per Next.js 16 docs before Next 17. Currently non-functional — warning only. Tracked so it is not lost in logs.
 - 12 lỗi `react-hooks/set-state-in-effect` (React 19 rule): `BookingFlowDatePanel`, `BookingReturningGreeting`, `useBookingFlowState` (5 chỗ), `SalonOwnerDashboard`, `Toast`, `HomeLanding`
@@ -143,7 +145,7 @@ Tổng 18 ESLint errors, 0 functional impact. Build pass, typecheck pass, Playwr
 - **`SalonOwnerTodayBookings` hydration mismatch (time display):** Observed **2026-05-03** during e2e runs. Pre-existing, not caused by recent button work. Investigate and fix when touching that component or before V1 launch QA.
 
 ### Receptionist Center V1 — final manual QA (14 cases)
-**Status:** **Shipped 2026-05-02.** Automated (2026-05-02 evening): `tsc`, `next build`, Playwright **63 passed / 1 skipped** (mobile ghost hover), dashboard smokes (`loadReceptionistCenterData`, `receptionistActions`, `publicBookingConflict`) — PASS. **Task 5 (empty salon):** setup-incomplete banner + disabled walk-in form; **`e2e/receptionist-center/empty-salon.spec.ts`**. Manual iPhone on `/dashboard/{slug}/center`: PASS (**tel:** opens Phone app). **Case 7 iPad layout** deferred — no device; target first beta salon iPad (week of 19–25/5, see P3). Residual linked-dev cases (dual-tab realtime spot-checks, screenshots) optional for beta trail.
+**Status:** **Shipped 2026-05-02.** Automated (2026-05-03): `tsc`, `next build`, Playwright **73 passed / 1 skipped** (mobile ghost hover case 11 skipped; `moveMouseToAssignSlot` uses slot `focus()`), dashboard smokes (`loadReceptionistCenterData`, `receptionistActions`, `publicBookingConflict`) — PASS; desk edit: `edit-booking.spec.ts` + `editBooking.smoke.ts`. **Task 5 (empty salon):** setup-incomplete banner + disabled walk-in form; **`e2e/receptionist-center/empty-salon.spec.ts`**. Manual iPhone on `/dashboard/{slug}/center`: PASS (**tel:** opens Phone app). **Case 7 iPad layout** deferred — no device; target first beta salon iPad (week of 19–25/5, see P3). Residual linked-dev cases (dual-tab realtime spot-checks, screenshots) optional for beta trail.
 
 ## Decisions cần làm tuần này
 - [x] Free trial length: 7 ngày hay 14 ngày? → **14 ngày** (decision 2026-05-02)

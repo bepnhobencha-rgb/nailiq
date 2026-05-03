@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
+import type { UserMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
+import type { SalonDashboardBooking } from "@/shared/types";
+
+import { EditBookingForm, type EditBookingFormBooking } from "./EditBookingForm";
 
 /** Precomputed presentation values built by `ReceptionistCenter` so this leaf stays dumb. */
 export type BookingDetailDrawerModel = {
@@ -53,6 +57,24 @@ export interface BookingDetailDrawerProps {
     busy: boolean;
     onPress: () => void | Promise<void>;
   };
+  /** Inline edit (pending | confirmed); optional so presentational tests can omit. */
+  deskEdit?: {
+    slug: string;
+    salonId: string;
+    booking: EditBookingFormBooking;
+    staff: { id: string; name: string }[];
+    services: {
+      id: string;
+      name: string;
+      price_cents: number;
+      duration_minutes: number;
+      buffer_minutes: number;
+    }[];
+    dayYmd: string;
+    timezone: string;
+    rcMessages: UserMessages["receptionist"];
+    onBookingUpdated: (updated: SalonDashboardBooking) => void | Promise<void>;
+  };
 }
 
 export function BookingDetailDrawer({
@@ -62,15 +84,42 @@ export function BookingDetailDrawer({
   copy,
   primaryAction,
   cancelAction,
+  deskEdit,
 }: BookingDetailDrawerProps) {
+  const [editMode, setEditMode] = useState(false);
+
+  const handleClose = useCallback(() => {
+    setEditMode(false);
+    onClose();
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!open) setEditMode(false);
+  }, [open]);
+
+  useEffect(() => {
+    setEditMode(false);
+  }, [deskEdit?.booking.id]);
+
   useEffect(() => {
     if (!open) return;
     const esc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") handleClose();
     };
     window.addEventListener("keydown", esc);
     return () => window.removeEventListener("keydown", esc);
-  }, [open, onClose]);
+  }, [open, handleClose]);
+
+  const canEditBooking =
+    deskEdit !== undefined &&
+    (deskEdit.booking.status === "pending" ||
+      deskEdit.booking.status === "confirmed");
+
+  const showFooter =
+    (deskEdit !== undefined && editMode) ||
+    primaryAction !== undefined ||
+    cancelAction !== undefined ||
+    (canEditBooking && !editMode);
 
   return (
     <div
@@ -89,7 +138,7 @@ export function BookingDetailDrawer({
           "motion-safe:transition-opacity motion-safe:duration-[var(--duration-nq-fast,180ms)]",
           open ? "opacity-100" : "opacity-0",
         )}
-        onClick={onClose}
+        onClick={handleClose}
       />
 
       <div
@@ -113,7 +162,7 @@ export function BookingDetailDrawer({
           </h2>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className={cn(
               "min-h-10 min-w-10 shrink-0 rounded-lg border border-nq-muted/40 text-sm font-medium text-nq-muted",
               "hover:border-nq-muted hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/40",
@@ -197,31 +246,68 @@ export function BookingDetailDrawer({
               )}
             </section>
 
-            {primaryAction !== undefined || cancelAction !== undefined ? (
+            {showFooter ? (
               <div className="sticky bottom-0 mt-auto space-y-2 border-t border-nq-muted/20 bg-nq-surface pb-2 pt-3">
-                {primaryAction !== undefined ? (
-                  <Button
-                    type="button"
-                    variant="primary"
-                    loading={primaryAction.busy}
-                    className="w-full sm:w-full"
-                    onClick={() => void primaryAction.onPress()}
-                  >
-                    {primaryAction.label}
-                  </Button>
-                ) : null}
-                {cancelAction !== undefined ? (
-                  <Button
-                    type="button"
-                    variant="danger"
-                    loading={cancelAction.busy}
-                    data-testid="drawer-cancel-booking"
-                    className="w-full sm:w-full"
-                    onClick={() => void cancelAction.onPress()}
-                  >
-                    {cancelAction.label}
-                  </Button>
-                ) : null}
+                {editMode && deskEdit ? (
+                  <EditBookingForm
+                    slug={deskEdit.slug}
+                    booking={deskEdit.booking}
+                    bookingId={deskEdit.booking.id}
+                    salonId={deskEdit.salonId}
+                    staff={deskEdit.staff}
+                    services={deskEdit.services}
+                    dayYmd={deskEdit.dayYmd}
+                    timezone={deskEdit.timezone}
+                    rcMessages={deskEdit.rcMessages}
+                    onCancel={() => setEditMode(false)}
+                    onSaved={(updated) => {
+                      setEditMode(false);
+                      void deskEdit.onBookingUpdated(updated);
+                    }}
+                  />
+                ) : (
+                  <>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-3">
+                      {canEditBooking && deskEdit ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          data-testid="edit-booking-button"
+                          className="w-full sm:min-w-0 sm:flex-1"
+                          onClick={() => setEditMode(true)}
+                        >
+                          {deskEdit.rcMessages.drawer.editBooking}
+                        </Button>
+                      ) : null}
+                      {primaryAction !== undefined ? (
+                        <Button
+                          type="button"
+                          variant="primary"
+                          loading={primaryAction.busy}
+                          className={cn(
+                            "w-full sm:min-w-0",
+                            canEditBooking ? "sm:flex-1" : "sm:w-full",
+                          )}
+                          onClick={() => void primaryAction.onPress()}
+                        >
+                          {primaryAction.label}
+                        </Button>
+                      ) : null}
+                    </div>
+                    {cancelAction !== undefined ? (
+                      <Button
+                        type="button"
+                        variant="danger"
+                        loading={cancelAction.busy}
+                        data-testid="drawer-cancel-booking"
+                        className="w-full sm:w-full"
+                        onClick={() => void cancelAction.onPress()}
+                      >
+                        {cancelAction.label}
+                      </Button>
+                    ) : null}
+                  </>
+                )}
               </div>
             ) : null}
           </div>

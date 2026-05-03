@@ -837,6 +837,44 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
         copy={drawerCopy}
         primaryAction={drawerPrimaryAction}
         cancelAction={drawerCancelAction}
+        deskEdit={
+          openDrawerBooking
+            ? {
+                slug,
+                salonId: data.salon.id,
+                booking: {
+                  id: openDrawerBooking.id,
+                  client_name: openDrawerBooking.client_name,
+                  client_phone: openDrawerBooking.client_phone,
+                  client_notes: openDrawerBooking.client_notes,
+                  start_time_utc: openDrawerBooking.start_time_utc,
+                  end_time_utc: openDrawerBooking.end_time_utc,
+                  status: openDrawerBooking.status,
+                  source: openDrawerBooking.source,
+                  service_name: openDrawerBooking.service_name,
+                  staff_name: staffNameById.get(openDrawerBooking.staff_id) ?? null,
+                  price_cents: openDrawerBooking.price_cents ?? 0,
+                  staff_id: openDrawerBooking.staff_id,
+                  service_id: openDrawerBooking.service_id,
+                },
+                staff: data.staff.map((s) => ({ id: s.id, name: s.name })),
+                services: data.services.map((s) => ({
+                  id: s.id,
+                  name: s.name,
+                  price_cents: s.price_cents,
+                  duration_minutes: s.duration_minutes,
+                  buffer_minutes: s.buffer_minutes,
+                })),
+                dayYmd: data.selectedDate,
+                timezone,
+                rcMessages,
+                onBookingUpdated: async () => {
+                  await reloadCurrentDay();
+                  router.refresh();
+                },
+              }
+            : undefined
+        }
       />
     </>
   );

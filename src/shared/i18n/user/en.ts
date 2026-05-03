@@ -179,12 +179,36 @@ export type UserMessages = {
       startService: string;
       markComplete: string;
       cancelBooking: string;
+      /** Pending / confirmed: open inline edit form */
+      editBooking: string;
       cancelConfirm: (clientName: string) => string;
       none: string;
       scheduleSection: string;
       statusSection: string;
       priceSection: string;
       noNotesHint: string;
+    };
+    edit: {
+      /** Section heading when editing from the drawer */
+      modeTitle: string;
+      timeLabel: string;
+      staffLabel: string;
+      serviceLabel: string;
+      endTimePrefix: string;
+      pricePrefix: string;
+      saveButton: string;
+      cancelButton: string;
+      /** Copy shown with spinner during submit */
+      saving: string;
+      /** Brief success (e.g. future toast); not all surfaces use yet */
+      successMessage: string;
+      /** Optional: disabled-save affordance (`title`) */
+      noChangesHint: string;
+      /** Use `{name}` for conflict client name */
+      conflictMessage: string;
+      not_foundMessage: string;
+      invalid_statusMessage: string;
+      serverErrorMessage: string;
     };
     actionErrorFallback: string;
     actionErrors: {
@@ -398,6 +422,7 @@ export const userEn: UserMessages = {
       startService: "Start service",
       markComplete: "Mark complete",
       cancelBooking: "Cancel booking",
+      editBooking: "Edit",
       cancelConfirm: (clientName: string) =>
         `Cancel booking for ${clientName.trim() ? clientName.trim() : "this guest"}?`,
       none: "—",
@@ -405,6 +430,24 @@ export const userEn: UserMessages = {
       statusSection: "Status",
       priceSection: "Price",
       noNotesHint: "No notes",
+    },
+    edit: {
+      modeTitle: "Edit booking",
+      timeLabel: "Time",
+      staffLabel: "Staff",
+      serviceLabel: "Service",
+      endTimePrefix: "Ends at",
+      pricePrefix: "Price",
+      saveButton: "Save changes",
+      cancelButton: "Cancel",
+      saving: "Saving...",
+      successMessage: "Booking updated",
+      noChangesHint: "No changes",
+      /** `{name}` is the other guest name from the server (`replace`, may be empty). */
+      conflictMessage: "Slot taken by {name}. Pick another time.",
+      not_foundMessage: "Booking not found",
+      invalid_statusMessage: "Cannot edit this booking",
+      serverErrorMessage: "Server error. Try again.",
     },
     actionErrorFallback: "Could not complete that action. Try again.",
     actionErrors: {
