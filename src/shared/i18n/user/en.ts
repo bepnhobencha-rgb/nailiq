@@ -28,9 +28,6 @@ export type UserMessages = {
     autoLine: string;
     /** Hero: muted line under CTA subtext */
     ctaSpeed: string;
-    landingEarnedTitle: string;
-    landingEarnedSub: string;
-    landingFeedNewBooking: string;
     landingSectionEyebrow: string;
     landingSectionTitle: string;
     landingProblem1: string;
@@ -40,11 +37,6 @@ export type UserMessages = {
     landingClosingLine2: string;
     landingClosingSub: string;
     landingClosingCta: string;
-    landingSocialProof1: string;
-    landingSocialProof2: string;
-    landingSocialProof3: string;
-    landingSocialProof4: string;
-    landingFeedServices: readonly string[];
   };
   register: {
     returningOwnerHint: string;
@@ -276,9 +268,6 @@ export const userEn: UserMessages = {
       "⚡ If you don’t fix this today, you’ll keep losing guests tomorrow",
     autoLine: "Works 24/7 — even when you're with clients.",
     ctaSpeed: "Sign up in 2 minutes.",
-    landingEarnedTitle: "+$113 earned today",
-    landingEarnedSub: "BOOKINGS YOU WON'T MISS",
-    landingFeedNewBooking: "New Booking",
     landingSectionEyebrow:
       "You don’t see what you’re losing. But it happens every day.",
     landingSectionTitle: "Salons lose money in small moments",
@@ -290,17 +279,6 @@ export const userEn: UserMessages = {
     landingClosingSub:
       "If you don’t start today, you’ll keep losing them.",
     landingClosingCta: "Start winning them back now",
-    landingSocialProof1: "🔴 LIVE • Anna just got a booking 2 minutes ago",
-    landingSocialProof2: "Lisa filled 3 empty slots today",
-    landingSocialProof3: "Jenny added $113 from a missed call",
-    landingSocialProof4: "842 salons got bookings in the last 24 hours",
-    landingFeedServices: [
-      "Pedicure",
-      "Gel Manicure",
-      "Full Set",
-      "Classic Set",
-      "Hybrid Volume",
-    ],
   },
   register: {
     returningOwnerHint:

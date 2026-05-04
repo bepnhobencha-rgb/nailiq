@@ -33,11 +33,6 @@ export const bookingEn = {
   dateHolidayShort: "Off",
   /** `{name}` = first word of saved guest name from device. */
   returningGreeting: "Hi, {name} — welcome back.",
-  /** Rotating social-proof line under the greeting (VN microcopy for conversion). */
-  urgencySalon24h:
-    "🔥 Hot: 5 khách đã đặt lịch tại tiệm trong 24h qua.",
-  urgencyPlatformLive:
-    "🔴 LIVE: 842 tiệm Nail đang dùng NailIQ để quản lý lịch hẹn.",
   /** `{n}` = number of open slot buttons for that day. */
   scarcityFewSlots: "Only {n} open times left — this day is filling up.",
   slotLoading: "Loading times…",

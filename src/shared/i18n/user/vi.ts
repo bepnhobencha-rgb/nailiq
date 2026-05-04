@@ -29,9 +29,6 @@ export const userVi: UserMessages = {
       "⚡ Nếu không fix hôm nay, bạn vẫn sẽ mất khách ngày mai",
     autoLine: "Hoạt động 24/7 — kể cả khi bạn đang bận làm khách.",
     ctaSpeed: "Đăng ký trong 2 phút.",
-    landingEarnedTitle: "+$113 earned today",
-    landingEarnedSub: "BOOKING BẠN SẼ KHÔNG BỎ LỠ",
-    landingFeedNewBooking: "Lịch mới",
     landingSectionEyebrow:
       "Bạn không thấy những gì bạn đang mất. Nhưng nó xảy ra mỗi ngày.",
     landingSectionTitle: "Tiệm đang mất tiền từ những khoảnh khắc nhỏ",
@@ -43,17 +40,6 @@ export const userVi: UserMessages = {
     landingClosingSub:
       "Nếu không bắt đầu hôm nay, bạn sẽ tiếp tục mất họ.",
     landingClosingCta: "Bắt đầu lấy lại khách ngay",
-    landingSocialProof1: "🔴 LIVE • Anna vừa có lịch 2 phút trước",
-    landingSocialProof2: "Lisa đã lấp 3 giờ trống hôm nay",
-    landingSocialProof3: "Jenny vừa thêm $113 từ cuộc gọi nhỡ",
-    landingSocialProof4: "842 tiệm nhận booking trong 24h qua",
-    landingFeedServices: [
-      "Pedicure",
-      "Gel Manicure",
-      "Full Set",
-      "Classic Set",
-      "Hybrid Volume",
-    ],
   },
   register: {
     returningOwnerHint:

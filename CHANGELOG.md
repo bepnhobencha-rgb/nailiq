@@ -2,6 +2,13 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-05-03 (Integrity — remove fake urgency / social proof)
+
+- **`HomeLanding`:** Removed rotating “🔴 LIVE” / **842**-style social proof, the **+$113 earned today** glass card, and the **random “New booking”** feed (`Math.random` tick). Hero is **single-column** (`max-w-3xl`). Dropped **banner-only** CSS: `.landing-html-booking-feed`, `.landing-html-booking-card`, `@keyframes landing-html-slide-in`.
+- **User i18n (`en.ts` / `vi.ts`):** Removed `landingSocialProof1`–`4`, `landingEarnedTitle` / `landingEarnedSub`, `landingFeedNewBooking`, `landingFeedServices` (and matching `UserMessages` fields).
+- **Public booking:** Removed **`BookingUrgency`** component and its use in **`src/app/[slug]/page.tsx`**. **`bookingEn`:** removed `urgencySalon24h` / `urgencyPlatformLive` (**🔥 Hot** / **842 tiệm** copy). File **`BookingUrgency.tsx`** deleted.
+- **Docs:** **`PROJECT_BRAIN.md`** — marketing honesty / no fabricated metrics; **Current modules** note.
+
 ## 2026-05-03 (Security — guest name XSS hardening)
 
 - **Allowlist:** `src/shared/lib/nameFormat.ts` — **`isValidCustomerName`** (Unicode letters/marks + digits + space + **`'`** + **`-`** + **`.`**, length ≤ 100) rejects tags/symbols (e.g. `<script>`). **`sanitizeCustomerName`** trims + caps length. Unit: **`npx tsx src/shared/lib/__tests__/nameFormat.test.ts`**.
