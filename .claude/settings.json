@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+
+  "_comment": "Path C config customized for nailiq — Next.js 16 + Supabase + Playwright + Sentry",
+
+  "permissions": {
+    "defaultMode": "acceptEdits",
+
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(pwd)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(rg:*)",
+      "Bash(echo:*)",
+      "Bash(which:*)",
+
+      "Bash(npm run dev)",
+      "Bash(npm run build)",
+      "Bash(npm run start)",
+      "Bash(npm run lint)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run typecheck)",
+      "Bash(npm run test:e2e)",
+      "Bash(npm run test:e2e:report)",
+
+      "Bash(npx tsc:*)",
+      "Bash(npx eslint:*)",
+      "Bash(npx prettier:*)",
+      "Bash(npx playwright test:*)",
+      "Bash(npx playwright show-report)",
+      "Bash(npx playwright codegen:*)",
+      "Bash(npx next:*)",
+
+      "Bash(git status)",
+      "Bash(git status:*)",
+      "Bash(git diff)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(git fetch:*)",
+      "Bash(git pull)",
+      "Bash(git stash:*)",
+      "Bash(git show:*)",
+
+      "Bash(mkdir:*)",
+      "Bash(touch:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+
+      "Read(*)",
+      "Write(src/**)",
+      "Write(app/**)",
+      "Write(components/**)",
+      "Write(lib/**)",
+      "Write(public/**)",
+      "Write(tests/**)",
+      "Write(e2e/**)",
+      "Write(docs/**)",
+      "Write(scripts/**)",
+      "Write(*.md)",
+      "Write(*.ts)",
+      "Write(*.tsx)",
+      "Write(*.json)",
+      "Write(*.mjs)",
+      "Write(*.css)",
+      "Edit(*)",
+
+      "WebFetch(domain:nextjs.org)",
+      "WebFetch(domain:react.dev)",
+      "WebFetch(domain:supabase.com)",
+      "WebFetch(domain:tailwindcss.com)",
+      "WebFetch(domain:playwright.dev)",
+      "WebFetch(domain:framer.com)",
+      "WebFetch(domain:sentry.io)",
+      "WebFetch(domain:docs.sentry.io)",
+      "WebFetch(domain:vercel.com)",
+      "WebFetch(domain:docs.anthropic.com)"
+    ],
+
+    "ask": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git reset:*)",
+      "Bash(git checkout:*)",
+      "Bash(git merge:*)",
+      "Bash(git rebase:*)",
+      "Bash(git revert:*)",
+
+      "Bash(npm install:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm i:*)",
+      "Bash(npm update:*)",
+      "Bash(npm run auto-push:*)",
+      "Bash(npx playwright install:*)",
+
+      "Bash(vercel:*)",
+      "Bash(npx vercel:*)",
+      "Bash(supabase:*)",
+      "Bash(npx supabase:*)",
+
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(chmod:*)",
+
+      "Write(.env*)",
+      "Write(.claude/**)",
+      "Write(.github/**)",
+      "Write(next.config.*)",
+      "Write(playwright.config.*)",
+      "Write(sentry*.config.*)",
+      "Edit(.env*)",
+      "Edit(.claude/**)"
+    ],
+
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(**/.env)",
+      "Read(**/.env.local)",
+      "Read(**/.env.production)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+
+      "Bash(rm -rf:*)",
+      "Bash(rm -fr:*)",
+      "Bash(sudo:*)",
+
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+
+      "Bash(*--dangerously*)",
+      "Bash(cat .env*)",
+      "Bash(cat **/.env*)"
+    ]
+  },
+
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read",
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/protect-secrets.sh" }
+        ]
+      }
+    ]
+  },
+
+  "showTurnDuration": true,
+  "autoUpdates": true
+}

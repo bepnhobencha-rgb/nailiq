@@ -48,7 +48,11 @@ yarn-error.log*
 next-env.d.ts
 .env*.local
 
-# Cursor / AI assistant scratchpad — never commit
-.claude/
+# Claude Code: track shared hooks + settings, ignore everything else
+.claude/*
+!.claude/hooks/
+!.claude/hooks/**
+!.claude/settings.json
+# Other AI assistant scratchpads — never commit
 .cursor/
 .aider*
