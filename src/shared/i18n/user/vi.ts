@@ -170,6 +170,8 @@ export const userVi: UserMessages = {
       phoneRequired: "Nhập số điện thoại của khách.",
       invalidName:
         "Cần họ tên (tối đa 100 ký tự)",
+      invalidNameChars:
+        "Tên chứa ký tự không hợp lệ",
     },
     grid: {
       conflictWith: (clientName: string) =>
@@ -227,6 +229,7 @@ export const userVi: UserMessages = {
       salon_mismatch: "Tiệm không khớp phiên của bạn.",
       server_error: "Có lỗi. Thử lại sau.",
       invalid_name: "Nhập tên khách.",
+      invalid_name_chars: "Tên chứa ký tự không hợp lệ",
       invalid_service: "Chọn dịch vụ hợp lệ.",
       service_not_found: "Không tìm thấy dịch vụ đó.",
       note_too_long: "Ghi chú quá dài.",

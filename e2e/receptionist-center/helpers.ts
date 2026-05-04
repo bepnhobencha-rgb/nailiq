@@ -18,16 +18,17 @@ export const supabaseAdmin = createClient(supabaseUrl, serviceKey);
 export const RECEPTIONIST_E2E_SLUG = "e2e-receptionist-center";
 
 export function testClientNameMarker(): string {
-  return `TEST_E2E_${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
+  /** Letters + digits only — matches guest `isValidCustomerName` whitelist. */
+  return `Te2eGuest${Date.now()}${Math.floor(Math.random() * 1e9)}`;
 }
 
-/** Deletes walk-ins and desk rows created by tests (client_name prefix `TEST_E2E_`). */
+/** Deletes walk-ins and desk rows created by tests (`client_name` prefix `Te2eGuest`). */
 export async function cleanReceptionistData(salonId: string): Promise<void> {
   const { error } = await supabaseAdmin
     .from("bookings")
     .delete()
     .eq("salon_id", salonId)
-    .like("client_name", "TEST_E2E_%");
+    .like("client_name", "Te2eGuest%");
   if (error) throw new Error(`cleanReceptionistData: ${error.message}`);
 }
 
@@ -82,7 +83,7 @@ async function fetchServicePrice(
   return Number.isFinite(price ?? NaN) ? price : null;
 }
 
-/** Full salon + catalog + baseline desk bookings (non–TEST_E2E names). */
+/** Full salon + catalog + baseline desk bookings (non-marker names). */
 export async function seedReceptionistCenterFixture(): Promise<ReceptionistCenterFixture> {
   const slug = RECEPTIONIST_E2E_SLUG;
   const { cleanupTestSalon } = await import("../helpers/db");

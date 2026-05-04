@@ -19,7 +19,7 @@ export type BookingSalonMeta = {
   booking_closed_dates: unknown | null;
   /** Flowchart: salon must be “live” (Phase 2 checklist complete). */
   acceptingBookings: boolean;
-  /** Public contact for “manage booking” (call to reschedule). */
+  /** Public contact for “manage booking” (call to reschedule). DB: `salons.salon_phone` only — never `salons.phone` (owner). */
   salonPhone: string | null;
 };
 
@@ -136,6 +136,7 @@ export async function loadBookingServicesForSalonSlug(
         null,
       acceptingBookings: !!(salon as { profile_complete?: unknown })
         .profile_complete,
+      /** Only `salon_phone`; do not fall back to `phone` (owner / private). */
       salonPhone: (() => {
         const p = (salon as { salon_phone?: unknown }).salon_phone;
         const s = typeof p === "string" ? p.trim() : "";

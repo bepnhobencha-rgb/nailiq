@@ -8,6 +8,7 @@ import {
 } from "@/shared/lib/conflictCheck";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import {
   type EditBookingInput,
@@ -54,6 +55,7 @@ export async function addWalkinToQueue(
   const clientName = String(input.clientName ?? "").trim();
   if (!clientName) return fail("invalid_name");
   if (clientName.length > BOOKING_GUEST_NAME_MAX) return fail("invalid_name");
+  if (!isValidCustomerName(clientName)) return fail("invalid_name_chars");
 
   const serviceId = String(input.serviceId ?? "").trim();
   if (!serviceId || !isUuidLike(serviceId)) return fail("invalid_service");

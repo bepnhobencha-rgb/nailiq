@@ -63,6 +63,8 @@ export async function seedTestSalon(opts?: {
   phone?: string;
   slug?: string;
   name?: string;
+  /** `salons.salon_phone` — public line for reschedule CTA; omit or null for none. */
+  salon_phone?: string | null;
 }) {
   const phone = opts?.phone ?? "15550001111";
   const slug = opts?.slug ?? "e2e-test-salon";
@@ -77,6 +79,12 @@ export async function seedTestSalon(opts?: {
       name,
       phone,
       profile_complete: true,
+      salon_phone:
+        opts?.salon_phone === undefined
+          ? null
+          : opts.salon_phone === null || opts.salon_phone === ""
+            ? null
+            : String(opts.salon_phone).trim() || null,
     })
     .select("id")
     .single();

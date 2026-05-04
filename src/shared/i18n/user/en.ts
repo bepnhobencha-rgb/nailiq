@@ -162,6 +162,7 @@ export type UserMessages = {
       invalidPhone: string;
       phoneRequired: string;
       invalidName: string;
+      invalidNameChars: string;
     };
     grid: {
       conflictWith: (clientName: string) => string;
@@ -225,6 +226,7 @@ export type UserMessages = {
       salon_mismatch: string;
       server_error: string;
       invalid_name: string;
+      invalid_name_chars: string;
       invalid_service: string;
       service_not_found: string;
       note_too_long: string;
@@ -415,6 +417,8 @@ export const userEn: UserMessages = {
       phoneRequired: "Enter the guest phone number.",
       invalidName:
         "Name required (max 100 characters)",
+      invalidNameChars:
+        "Name contains invalid characters.",
     },
     grid: {
       conflictWith: (clientName: string) =>
@@ -476,6 +480,7 @@ export const userEn: UserMessages = {
       salon_mismatch: "Salon did not match your session.",
       server_error: "Something went wrong. Try again shortly.",
       invalid_name: "Enter a guest name.",
+      invalid_name_chars: "Name contains invalid characters.",
       invalid_service: "Pick a valid service.",
       service_not_found: "That service could not be found.",
       note_too_long: "Staff note is too long.",

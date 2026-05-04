@@ -7,6 +7,7 @@ import { parseTimeSlotOnDate } from "@/shared/booking/parseBookingTimeSlot";
 import { pickBestStaffAmongFree } from "@/shared/booking/pickBestStaffAmongFree";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { createClient } from "@/shared/lib/supabase/client";
 
 export type BookingParams = {
@@ -126,6 +127,11 @@ export async function submitPublicBooking(
   const phoneOk = validateGuestPhone(clientPhone);
   if (!phoneOk.ok) {
     throw new Error("invalid_phone");
+  }
+
+  const nameTrimmed = clientName.trim();
+  if (!isValidCustomerName(nameTrimmed)) {
+    throw new Error("invalid_name_chars");
   }
 
   const supabase = createClient();
@@ -337,7 +343,7 @@ export async function submitPublicBooking(
     salon_id: salon.id as string,
     service_id: service.id as string,
     staff_id: resolvedStaffId,
-    client_name: clientName.trim(),
+    client_name: nameTrimmed,
     client_phone: phoneOk.digits,
     client_notes: notesTrim.length > 0 ? notesTrim : null,
     start_time_utc: startLocal.toISOString(),
@@ -477,7 +483,7 @@ export async function submitPublicBooking(
       .upsert(
         {
           phone: phoneOk.digits,
-          name: clientName.trim(),
+          name: nameTrimmed,
           preferred_staff_id: resolvedStaffId,
           last_service_date: new Date().toISOString(),
           visit_count: nextVisits,

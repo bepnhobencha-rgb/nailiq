@@ -28,7 +28,7 @@ test.describe("Status pill", () => {
   test("case 9: busy state after four waiting walk-ins", async ({ page }) => {
     for (let i = 0; i < 4; i += 1) {
       await seedWalkin(fx.salonId, {
-        clientName: `TEST_E2E_pill_${i}_${Date.now()}`,
+        clientName: `Te2ePill${i}${Date.now()}`,
         serviceId: fx.serviceIds[0]!,
       });
     }

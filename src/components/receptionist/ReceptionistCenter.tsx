@@ -868,6 +868,7 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
                     invalidPhone: rcMessages.walkin.invalidPhone,
                     phoneRequired: rcMessages.walkin.phoneRequired,
                     invalidName: rcMessages.walkin.invalidName,
+                    invalidNameChars: rcMessages.walkin.invalidNameChars,
                   },
                 }}
               />

@@ -196,7 +196,7 @@ test.describe("race-1: walk-in assigned then public RPC same slot", () => {
     const serviceId = String(assigned?.service_id ?? "");
     expect(pStart && pEnd && staffId && serviceId).toBeTruthy();
 
-    const publicName = `TEST_E2E_PUB_${Date.now()}`;
+    const publicName = `Te2ePub${Date.now()}`;
     const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc("create_public_booking", {
       p_salon_id: fx.salonId,
       p_service_id: serviceId,

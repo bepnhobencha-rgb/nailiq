@@ -1,6 +1,7 @@
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import type { BookingWaitlistSource } from "@/shared/booking/waitlistSource";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { createClient } from "@/shared/lib/supabase/client";
 
 export type SubmitPublicWaitlistParams = {
@@ -36,6 +37,11 @@ export async function submitPublicWaitlistEntry(
     throw new Error("invalid_phone");
   }
 
+  const nameTrimmed = clientName.trim();
+  if (!isValidCustomerName(nameTrimmed)) {
+    throw new Error("invalid_name_chars");
+  }
+
   const supabase = createClient();
 
   const { data: salon, error: salonErr } = await supabase
@@ -59,7 +65,7 @@ export async function submitPublicWaitlistEntry(
       p_staff_id: staffUuid,
       p_booking_date: bookingDateYmd,
       p_preferred_slot_label: preferredSlotLabel ?? "",
-      p_client_name: clientName.trim(),
+      p_client_name: nameTrimmed,
       p_client_phone: phoneOk.digits,
       p_source: source,
     },

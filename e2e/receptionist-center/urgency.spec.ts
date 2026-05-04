@@ -26,7 +26,7 @@ test.afterAll(async () => {
 
 test.describe("Walk-in urgency", () => {
   test("case 10: old joined_queue_at shows urgent badge", async ({ page }) => {
-    const marker = `TEST_E2E_urgent_${Date.now()}`;
+    const marker = `Te2eUrgent${Date.now()}`;
     const oldJoined = new Date(Date.now() - 21 * 60_000).toISOString();
 
     await seedWalkin(fx.salonId, {

@@ -5,6 +5,11 @@ import { Button } from "@/components/ui/Button";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { formatNailiqBookingRef } from "@/shared/lib/formatNailiqBookingRef";
+import {
+  cleanPhone,
+  formatPhone,
+  isValidPhoneE164,
+} from "@/shared/lib/phoneFormat";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 
 export function BookingFlowDonePanel({
@@ -27,6 +32,7 @@ export function BookingFlowDonePanel({
   addonServiceName: string | null;
   displayStartUtc: string;
   bookingId: string;
+  /** Public salon line: `salons.salon_phone` only (not owner `phone`, never guest). */
   salonPhone: string | null;
   /** Receipt-style total from `bookingResult.price_cents`. */
   totalPaidFormatted: string;
@@ -52,10 +58,12 @@ export function BookingFlowDonePanel({
       ? t.successStaffLine.replace("{name}", staffName.trim())
       : "";
 
+  const callPhoneRaw = salonPhone?.trim() || null;
   const manageTel =
-    salonPhone && salonPhone.replace(/\D/g, "").length >= 8
-      ? `tel:${salonPhone.replace(/\D/g, "")}`
+    callPhoneRaw && isValidPhoneE164(callPhoneRaw)
+      ? `tel:${cleanPhone(callPhoneRaw)}`
       : null;
+  const callPhoneDisplay = callPhoneRaw ? formatPhone(callPhoneRaw) : "";
 
   const handleShare = useCallback(async () => {
     if (typeof window === "undefined") return;
@@ -234,7 +242,9 @@ export function BookingFlowDonePanel({
       {manageTel ? (
         <div className="flex justify-center lg:justify-end">
           <a
+            data-testid="booking-call-reschedule"
             href={manageTel}
+            aria-label={`${t.manageBookingCall} ${callPhoneDisplay}`}
             className="nq-booking-glass inline-flex h-14 min-h-11 w-full max-w-md items-center justify-center rounded-2xl border border-white/[0.12] px-6 text-base font-medium text-nq-foreground shadow-none hover:bg-white/[0.04] sm:w-auto"
           >
             {t.manageBookingCall}

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/Button";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { cn } from "@/shared/lib/cn";
+import { isValidCustomerName } from "@/shared/lib/nameFormat";
 
 export interface WalkinAddFormProps {
   services: Array<{
@@ -35,6 +36,7 @@ export interface WalkinAddFormProps {
     invalidPhone: string;
     phoneRequired: string;
     invalidName: string;
+    invalidNameChars: string;
   };
   /** Async callback — parent calls server action */
   onSubmit: (input: {
@@ -97,6 +99,10 @@ export function WalkinAddForm({
       setNameError(labels.invalidName);
       return;
     }
+    if (!isValidCustomerName(trimmedName)) {
+      setNameError(labels.invalidNameChars);
+      return;
+    }
     const trimmedPhone = clientPhone.trim();
     if (trimmedPhone.length === 0) {
       setPhoneError(labels.phoneRequired);
@@ -137,6 +143,7 @@ export function WalkinAddForm({
     clientPhone,
     labels.errorRequired,
     labels.invalidName,
+    labels.invalidNameChars,
     labels.invalidPhone,
     labels.phoneRequired,
     onSubmit,
@@ -224,6 +231,8 @@ export function WalkinAddForm({
             setClientName(t);
             if (t.length === 0 || t.length > BOOKING_GUEST_NAME_MAX) {
               setNameError(labels.invalidName);
+            } else if (!isValidCustomerName(t)) {
+              setNameError(labels.invalidNameChars);
             } else {
               setNameError(null);
             }
@@ -385,7 +394,7 @@ export function WalkinAddForm({
         type="submit"
         variant="primary"
         loading={submitting}
-        disabled={disabled}
+        disabled={disabled || submitting || !!nameError || !!phoneError}
         className="w-full sm:w-full"
       >
         {submitting ? labels.submitting : labels.addButton}
