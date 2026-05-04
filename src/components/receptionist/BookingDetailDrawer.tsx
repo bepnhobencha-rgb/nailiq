@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/Button";
 import type { UserMessages } from "@/shared/i18n/user";
@@ -87,6 +88,11 @@ export function BookingDetailDrawer({
   deskEdit,
 }: BookingDetailDrawerProps) {
   const [editMode, setEditMode] = useState(false);
+  const [portalEl, setPortalEl] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setPortalEl(document.body);
+  }, []);
 
   const handleClose = useCallback(() => {
     setEditMode(false);
@@ -121,10 +127,10 @@ export function BookingDetailDrawer({
     cancelAction !== undefined ||
     (canEditBooking && !editMode);
 
-  return (
+  const sheet = (
     <div
       className={cn(
-        "fixed inset-0 z-[60] md:left-auto md:right-0 md:top-0 md:h-full md:w-full md:max-w-md",
+        "fixed inset-0 z-[60] w-full md:inset-y-0 md:left-auto md:right-0 md:h-[100dvh] md:w-[min(480px,90vw)]",
         open ? "pointer-events-auto" : "pointer-events-none",
       )}
       aria-hidden={!open}
@@ -147,10 +153,10 @@ export function BookingDetailDrawer({
         aria-modal="true"
         aria-labelledby="nq-booking-detail-title"
         className={cn(
-          "relative ml-auto flex h-full min-h-[40dvh] w-full flex-col bg-nq-surface shadow-nq-card",
+          "relative ml-auto flex h-full min-h-[40dvh] min-w-0 max-w-full flex-col overflow-hidden bg-nq-surface shadow-nq-card",
           "motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-nq-out,cubic-bezier(0.22,1,0.36,1))]",
           open ? "translate-x-0" : "translate-x-full",
-          "pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.5rem,env(safe-area-inset-top))]",
+          "pt-[max(0.5rem,env(safe-area-inset-top))]",
         )}
       >
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-nq-muted/20 px-4 py-3">
@@ -174,27 +180,28 @@ export function BookingDetailDrawer({
         </header>
 
         {model ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 text-sm">
-            <section className="space-y-1">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
-                {copy.sectionGuest}
-              </p>
-              <p className="text-base font-semibold text-nq-foreground">{model.clientName}</p>
-              <p className="text-nq-muted">
-                <span className="text-nq-muted">{model.sourceLabel}</span>
-              </p>
-              {model.telHref !== null ? (
-                <a
-                  data-testid="booking-call-link"
-                  href={`tel:${model.telHref}`}
-                  className={cn(
-                    "mt-2 inline-flex min-h-11 items-center justify-center rounded-lg border border-nq-primary/45 bg-nq-primary/12 px-4 text-sm font-semibold text-nq-primary",
-                  )}
-                >
-                  {copy.callGuest(model.phoneDisplay ?? "")}
-                </a>
-              ) : null}
-            </section>
+          <>
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden px-4 py-4 text-sm">
+              <section className="space-y-1">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+                  {copy.sectionGuest}
+                </p>
+                <p className="text-base font-semibold text-nq-foreground">{model.clientName}</p>
+                <p className="text-nq-muted">
+                  <span className="text-nq-muted">{model.sourceLabel}</span>
+                </p>
+                {model.telHref !== null ? (
+                  <a
+                    data-testid="booking-call-link"
+                    href={`tel:${model.telHref}`}
+                    className={cn(
+                      "mt-2 inline-flex min-h-11 items-center justify-center rounded-lg border border-nq-primary/45 bg-nq-primary/12 px-4 text-sm font-semibold text-nq-primary",
+                    )}
+                  >
+                    {copy.callGuest(model.phoneDisplay ?? "")}
+                  </a>
+                ) : null}
+              </section>
 
             <section className="space-y-1 border-t border-nq-muted/15 pt-4">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
@@ -240,14 +247,22 @@ export function BookingDetailDrawer({
                 {copy.sectionNotes}
               </p>
               {model.clientNotes?.trim() ? (
-                <p className="whitespace-pre-wrap text-nq-foreground/95">{model.clientNotes}</p>
+                <p className="break-words whitespace-pre-wrap text-nq-foreground/95">
+                  {model.clientNotes}
+                </p>
               ) : (
                 <p className="italic text-nq-muted">{copy.noNotes}</p>
               )}
-            </section>
+              </section>
+            </div>
 
             {showFooter ? (
-              <div className="sticky bottom-0 mt-auto space-y-2 border-t border-nq-muted/20 bg-nq-surface pb-2 pt-3">
+              <div
+                className={cn(
+                  "flex shrink-0 flex-col gap-2 border-t border-nq-muted/20 bg-nq-surface px-4 pt-3",
+                  "pb-[max(1rem,env(safe-area-inset-bottom))]",
+                )}
+              >
                 {editMode && deskEdit ? (
                   <EditBookingForm
                     slug={deskEdit.slug}
@@ -267,7 +282,7 @@ export function BookingDetailDrawer({
                   />
                 ) : (
                   <>
-                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-3">
+                    <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-3">
                       {canEditBooking && deskEdit ? (
                         <Button
                           type="button"
@@ -283,6 +298,7 @@ export function BookingDetailDrawer({
                         <Button
                           type="button"
                           variant="primary"
+                          data-testid="drawer-primary-action"
                           loading={primaryAction.busy}
                           className={cn(
                             "w-full sm:min-w-0",
@@ -310,9 +326,13 @@ export function BookingDetailDrawer({
                 )}
               </div>
             ) : null}
-          </div>
+          </>
         ) : null}
       </div>
     </div>
   );
+
+  if (!portalEl) return null;
+
+  return createPortal(sheet, portalEl);
 }

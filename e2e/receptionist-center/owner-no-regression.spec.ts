@@ -1,15 +1,21 @@
 import { test, expect } from "@playwright/test";
 
+import { salonToday, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+
 import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   gotoOwnerDashboard,
   RECEPTIONIST_E2E_SLUG,
+  seedDeskBooking,
   seedReceptionistCenterFixture,
   seedWalkin,
   testClientNameMarker,
   type ReceptionistCenterFixture,
 } from "./helpers";
+
+/** Must match `timezoneId` in `playwright.config.ts` — owner stats use browser-local calendar day. */
+const PLAYWRIGHT_CALENDAR_TZ = "America/Los_Angeles";
 
 let fx: ReceptionistCenterFixture;
 
@@ -33,6 +39,18 @@ test.describe("Owner dashboard regression", () => {
     await seedWalkin(fx.salonId, {
       clientName: marker,
       serviceId: fx.serviceIds[0]!,
+    });
+
+    const browserYmd = salonToday(PLAYWRIGHT_CALENDAR_TZ);
+    const completedStartIso = salonWallTimeToUtcIso(browserYmd, 9 * 60 + 30, PLAYWRIGHT_CALENDAR_TZ);
+    const completedEndIso = salonWallTimeToUtcIso(browserYmd, 10 * 60 + 25, PLAYWRIGHT_CALENDAR_TZ);
+    await seedDeskBooking(fx.salonId, {
+      clientName: `${marker}_completed_stat`,
+      serviceId: fx.serviceIds[0]!,
+      staffId: fx.freeStaffId,
+      startIso: completedStartIso,
+      endIso: completedEndIso,
+      status: "completed",
     });
 
     await gotoOwnerDashboard(page, fx.slug);

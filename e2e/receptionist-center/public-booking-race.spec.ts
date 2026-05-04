@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-import { salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+import { salonToday, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 import {
   DEFAULT_OPENING_HOURS_JSON,
   type DayKey,
@@ -79,6 +79,24 @@ function pickBookableDateYmd(args: {
   }
 
   throw new Error("public-booking-race: no bookable day in window");
+}
+
+/**
+ * Desk walk-in UI only renders on salon "today". Pick today only if the grid slot is still in the future.
+ */
+function pickBookableDateYmdTodayOnly(args: {
+  timezone: string;
+  slotIndex: number;
+  minStartMs: number;
+}): string | null {
+  if (!defaultWeek) return null;
+  const ymd = salonToday(args.timezone);
+  const minutesFromMidnight = GRID_HOUR_START * 60 + args.slotIndex * SLOT_MINUTES;
+  const cfg = defaultWeek[utcYmdDayKey(ymd)];
+  if (!cfg || cfg.closed) return null;
+  const startIso = salonWallTimeToUtcIso(ymd, minutesFromMidnight, args.timezone);
+  if (Date.parse(startIso) >= args.minStartMs) return ymd;
+  return null;
 }
 
 function slotBoundsForDate(
@@ -205,14 +223,17 @@ test.describe("race-1: walk-in assigned then public RPC same slot", () => {
 });
 
 test.describe("race-2: appointment blocks walk-in assign same slot", () => {
-  test("desk shows conflict toast; walk-in stays waiting; no grid block", async ({ page }) => {
+  test("desk shows conflict toast; walk-in stays waiting; no grid block", async ({ page }, testInfo) => {
     const minStartMs = Date.now() + 3 * 60_000;
-    const dateYmd = pickBookableDateYmd({
-      baseYmd: fx.ymdUtc,
+    const dateYmd = pickBookableDateYmdTodayOnly({
       timezone: fx.timezone,
       slotIndex: fx.noonSlotIndex,
       minStartMs,
     });
+    if (!dateYmd) {
+      testInfo.skip(true, "No future noon slot left on salon today; walk-in sidebar is today-only.");
+      return;
+    }
 
     const apptName = testClientNameMarker();
     const { startIso, endIso } = slotBoundsForDate(

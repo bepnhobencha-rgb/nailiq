@@ -38,6 +38,13 @@ export function DateSwitcher({ selectedOffset, labels, onChange }: DateSwitcherP
             key={offset}
             type="button"
             role="tab"
+            data-testid={
+              offset === -1
+                ? "date-switcher-yesterday"
+                : offset === 0
+                  ? "date-switcher-today"
+                  : "date-switcher-tomorrow"
+            }
             aria-selected={active}
             className={cn(
               "min-h-8 min-w-[4.5rem] shrink-0 rounded-full px-3 py-1.5 text-sm font-medium transition-[color,background-color,transform] duration-[var(--duration-nq-fast,150ms)] ease-out active:scale-[0.98] motion-reduce:active:scale-100",

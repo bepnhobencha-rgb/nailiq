@@ -68,7 +68,10 @@ export function WalkinQueueSidebar({
   };
 
   return (
-    <aside className="flex h-full min-h-0 flex-col bg-nq-surface">
+    <aside
+      data-testid="walkin-queue-sidebar"
+      className="flex h-full min-h-0 flex-col bg-nq-surface"
+    >
       <header className="flex shrink-0 items-center justify-between gap-2 border-b border-nq-muted/20 px-3 py-2">
         <h2 className="text-sm font-semibold text-nq-foreground">{labels.title}</h2>
         <span className="rounded-full bg-nq-primary/20 px-2.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-nq-primary">

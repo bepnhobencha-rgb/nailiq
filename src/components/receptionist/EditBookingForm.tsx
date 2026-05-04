@@ -195,10 +195,7 @@ export function EditBookingForm({
   };
 
   return (
-    <div
-      className="space-y-3 border-t border-nq-muted/20 bg-nq-surface pb-2 pt-3"
-      data-testid="edit-booking-form"
-    >
+    <div className="space-y-3 bg-nq-surface pb-2 pt-1" data-testid="edit-booking-form">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
         {editCopy.modeTitle}
       </p>

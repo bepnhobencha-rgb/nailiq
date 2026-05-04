@@ -407,7 +407,7 @@ export async function getBookingRow(
 export async function gotoReceptionistCenter(
   page: Page,
   slug: string,
-  opts?: { dateYmd?: string },
+  opts?: { dateYmd?: string; expectWalkinQueue?: boolean },
 ): Promise<void> {
   const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
   let hostname = "localhost";
@@ -432,7 +432,13 @@ export async function gotoReceptionistCenter(
     state: "visible",
     timeout: 45_000,
   });
-  await page.getByTestId("walkin-add-form").waitFor({ state: "visible" });
+  await page.getByTestId("staff-timeline-grid").waitFor({
+    state: "visible",
+    timeout: 45_000,
+  });
+  if (opts?.expectWalkinQueue !== false) {
+    await page.getByTestId("walkin-add-form").waitFor({ state: "visible", timeout: 45_000 });
+  }
 }
 
 /** 10-digit test phone satisfying `validateGuestPhone` / public booking rules. */

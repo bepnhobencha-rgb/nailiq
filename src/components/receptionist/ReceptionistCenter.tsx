@@ -34,7 +34,7 @@ import { getUserMessages } from "@/shared/i18n/user";
 import { checkBookingConflict, type ConflictCheckBooking } from "@/shared/lib/conflictCheck";
 import { cn } from "@/shared/lib/cn";
 import { cleanPhone, formatPhone } from "@/shared/lib/phoneFormat";
-import { formatInSalonTz, salonDateOffset } from "@/shared/lib/salonTime";
+import { formatInSalonTz, salonDateOffset, salonToday } from "@/shared/lib/salonTime";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import type { BookingStatus } from "@/shared/types";
 
@@ -318,6 +318,7 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
       : null;
 
   const timezone = data.salon.timezone;
+  const isViewingToday = data.selectedDate === salonToday(timezone, nowIso);
 
   const reloadCurrentDay = useCallback(async () => {
     const ymd = salonDateOffset(timezone, dateOffset, nowIsoRef.current);
@@ -553,6 +554,8 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
     const snapshot = dateOffset;
     setDateOffset(next);
     setDayLoading(true);
+    setAssigningWalkinId(null);
+    setUndoState(null);
     const ymd = salonDateOffset(timezone, next, nowIso);
     const res = await loadReceptionistCenterDataAction(slug, ymd);
     setDayLoading(false);
@@ -727,12 +730,14 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
               <p className="truncate text-xs text-nq-muted md:text-sm">{data.salon.name}</p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <StatusPill
-                waitingCount={queueItems.length}
-                inProgressCount={inProgressToday}
-                labelWaiting={rcMessages.statusPill.waitingLabel}
-                labelInProgress={rcMessages.statusPill.inProgressLabel}
-              />
+              {isViewingToday ? (
+                <StatusPill
+                  waitingCount={queueItems.length}
+                  inProgressCount={inProgressToday}
+                  labelWaiting={rcMessages.statusPill.waitingLabel}
+                  labelInProgress={rcMessages.statusPill.inProgressLabel}
+                />
+              ) : null}
               <UserLanguageToggle language={language} onLanguageChange={setLanguage} />
             </div>
           </div>
@@ -776,8 +781,20 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
           </div>
         ) : null}
 
-        <div className="mx-auto flex h-full min-h-[min(100dvh-8rem,48rem)] w-full max-w-[var(--max-nq-desktop)] flex-1 flex-col gap-0 md:flex-row">
-          <section className="order-2 flex min-h-[min(50dvh,28rem)] min-w-0 flex-1 flex-col border-t border-nq-muted/20 md:order-1 md:border-t-0 md:border-r">
+        <div
+          className={cn(
+            "mx-auto flex h-full min-h-[min(100dvh-8rem,48rem)] w-full max-w-[var(--max-nq-desktop)] flex-1 flex-col gap-0",
+            isViewingToday && "md:flex-row",
+          )}
+        >
+          <section
+            className={cn(
+              "flex min-h-[min(50dvh,28rem)] min-w-0 flex-1 flex-col border-t border-nq-muted/20",
+              isViewingToday
+                ? "order-2 md:order-1 md:border-t-0 md:border-r"
+                : "order-1 w-full",
+            )}
+          >
             <StaffTimelineGrid
               staff={gridStaff}
               bookings={gridBookings}
@@ -795,39 +812,41 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
               }}
             />
           </section>
-          <div className="order-1 h-[min(42dvh,22rem)] min-h-[12rem] w-full shrink-0 md:order-2 md:h-auto md:w-[min(22rem,calc(100vw-2rem))] md:max-w-sm">
-            <WalkinQueueSidebar
-              assigningId={assigningWalkinId}
-              items={queueItems}
-              services={data.services.map((s) => ({
-                id: s.id,
-                name: s.name,
-                duration_minutes: s.duration_minutes,
-                price_cents: s.price_cents,
-              }))}
-              nowIso={nowIso}
-              onAddWalkin={onAddWalkin}
-              onCancelWalkin={onCancelWalkin}
-              onStartAssign={(id) => setAssigningWalkinId(id)}
-              onCancelAssign={() => setAssigningWalkinId(null)}
-              addFormDisabled={isSetupIncomplete}
-              labels={{
-                title: rcMessages.queue.title,
-                emptyMessage: rcMessages.queue.emptyMessage,
-                cancelButton: rcMessages.queue.cancelButton,
-                assignButton: rcMessages.queue.assignButton,
-                urgentBadge: rcMessages.queue.urgentBadge,
-                waitingHint: rcMessages.queue.waitingHint,
-                minutesAgo: rcMessages.queue.minutesAgo,
-                addForm: {
-                  ...rcMessages.queue.addForm,
-                  invalidPhone: rcMessages.walkin.invalidPhone,
-                  phoneRequired: rcMessages.walkin.phoneRequired,
-                  invalidName: rcMessages.walkin.invalidName,
-                },
-              }}
-            />
-          </div>
+          {isViewingToday ? (
+            <div className="order-1 h-[min(42dvh,22rem)] min-h-[12rem] w-full shrink-0 md:order-2 md:h-auto md:w-[min(22rem,calc(100vw-2rem))] md:max-w-sm">
+              <WalkinQueueSidebar
+                assigningId={assigningWalkinId}
+                items={queueItems}
+                services={data.services.map((s) => ({
+                  id: s.id,
+                  name: s.name,
+                  duration_minutes: s.duration_minutes,
+                  price_cents: s.price_cents,
+                }))}
+                nowIso={nowIso}
+                onAddWalkin={onAddWalkin}
+                onCancelWalkin={onCancelWalkin}
+                onStartAssign={(id) => setAssigningWalkinId(id)}
+                onCancelAssign={() => setAssigningWalkinId(null)}
+                addFormDisabled={isSetupIncomplete}
+                labels={{
+                  title: rcMessages.queue.title,
+                  emptyMessage: rcMessages.queue.emptyMessage,
+                  cancelButton: rcMessages.queue.cancelButton,
+                  assignButton: rcMessages.queue.assignButton,
+                  urgentBadge: rcMessages.queue.urgentBadge,
+                  waitingHint: rcMessages.queue.waitingHint,
+                  minutesAgo: rcMessages.queue.minutesAgo,
+                  addForm: {
+                    ...rcMessages.queue.addForm,
+                    invalidPhone: rcMessages.walkin.invalidPhone,
+                    phoneRequired: rcMessages.walkin.phoneRequired,
+                    invalidName: rcMessages.walkin.invalidName,
+                  },
+                }}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
 
