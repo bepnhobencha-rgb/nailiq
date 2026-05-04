@@ -249,6 +249,8 @@ export async function assignWalkinToSlot(
     .maybeSingle();
 
   if (upErr) {
+    // 23P01 = exclusion_violation (bookings_no_overlap GiST EXCLUDE).
+    if (upErr.code === "23P01") return fail("slot_conflict");
     console.error("[assignWalkinToSlot] update", upErr);
     return fail("server_error");
   }

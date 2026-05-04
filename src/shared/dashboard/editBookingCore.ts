@@ -195,6 +195,10 @@ export async function performEditBooking(
     .maybeSingle();
 
   if (upErr) {
+    // 23P01 = exclusion_violation (bookings_no_overlap GiST EXCLUDE).
+    if (upErr.code === "23P01") {
+      return { ok: false, error: "slot_conflict" };
+    }
     console.error("[performEditBooking] update", upErr);
     return { ok: false, error: "server_error" };
   }
