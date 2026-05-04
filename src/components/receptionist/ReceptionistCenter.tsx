@@ -494,8 +494,34 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
 
     const dateStr = formatInSalonTz(b.start_time_utc, timezone, "date");
     const t0 = formatInSalonTz(b.start_time_utc, timezone, "time");
-    const t1 = formatInSalonTz(b.end_time_utc, timezone, "time");
-    const scheduleLine = `${dateStr} · ${t0} → ${t1}`;
+    const timeSep = messages.receptionist.drawer.scheduleTimeRangeSep;
+    const durMin = Math.max(
+      0,
+      Math.round(Number(b.service_duration_minutes ?? 0)),
+    );
+    const bufMin = Math.max(
+      0,
+      Math.round(Number(b.service_buffer_minutes ?? 0)),
+    );
+
+    const startMs = Date.parse(b.start_time_utc);
+    const serviceEndIso =
+      Number.isFinite(startMs) && durMin > 0
+        ? new Date(startMs + durMin * 60_000).toISOString()
+        : b.end_time_utc;
+
+    let scheduleLine: string;
+    if (bufMin > 0 && durMin > 0 && Number.isFinite(startMs)) {
+      const svcEndLabel = formatInSalonTz(serviceEndIso, timezone, "time");
+      const bufferSeg = messages.receptionist.drawer.bufferNote.replace(
+        "{n}",
+        String(bufMin),
+      );
+      scheduleLine = `${dateStr} · ${t0}${timeSep}${svcEndLabel} • ${bufferSeg}`;
+    } else {
+      const t1 = formatInSalonTz(b.end_time_utc, timezone, "time");
+      scheduleLine = `${dateStr} · ${t0}${timeSep}${t1}`;
+    }
 
     const durationLine = messages.receptionist.drawer.durationMinutes.replace(
       "{n}",

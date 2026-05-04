@@ -49,6 +49,8 @@ export interface ReceptionistCenterData {
     service_name: string;
     service_duration_minutes: number;
     price_cents: number | null;
+    /** Cleanup / turnover minutes after service (catalog); used for drawer time copy. */
+    service_buffer_minutes: number;
   }>;
   selectedDate: string;
 }
@@ -209,7 +211,7 @@ export async function loadReceptionistCenterData(
       source,
       service_id,
       price_cents,
-      services!bookings_service_id_fkey ( name, duration_minutes )
+      services!bookings_service_id_fkey ( name, duration_minutes, buffer_minutes )
     `,
       )
       .eq("salon_id", ctx.salon.id)
@@ -324,6 +326,10 @@ export async function loadReceptionistCenterData(
       service_id: row.service_id,
       service_name: svc?.name ?? "—",
       service_duration_minutes: Number(svc?.duration_minutes ?? 0),
+      service_buffer_minutes: Math.max(
+        0,
+        Math.round(Number(svc?.buffer_minutes ?? 0)),
+      ),
       price_cents: row.price_cents,
     };
   });

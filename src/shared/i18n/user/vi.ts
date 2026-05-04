@@ -186,6 +186,8 @@ export const userVi: UserMessages = {
     drawer: {
       title: "Lịch hẹn",
       closeAria: "Đóng chi tiết",
+      scheduleTimeRangeSep: " — ",
+      bufferNote: "+ {n} phút chuyển ca",
       durationMinutes: "{n} phút",
       sourceWalkin: "Walk-in",
       sourceAppointment: "Đặt trước",

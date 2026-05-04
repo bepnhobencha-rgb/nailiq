@@ -177,6 +177,10 @@ export type UserMessages = {
     drawer: {
       title: string;
       closeAria: string;
+      /** Between start and visible service-end time on the Schedule line */
+      scheduleTimeRangeSep: string;
+      /** `+ {n} …` turnover note (interpolate `{n}` = buffer minutes) */
+      bufferNote: string;
       durationMinutes: string;
       sourceWalkin: string;
       sourceAppointment: string;
@@ -428,6 +432,10 @@ export const userEn: UserMessages = {
     drawer: {
       title: "Booking",
       closeAria: "Close details",
+      /** Between two wall times in Schedule line (hour range). */
+      scheduleTimeRangeSep: " → ",
+      /** After `scheduleTimeRangeSep` end time; interpolates `{n}` = buffer minutes. */
+      bufferNote: "+ {n} min buffer",
       durationMinutes: "{n} minutes",
       sourceWalkin: "Walk-in",
       sourceAppointment: "Appointment",

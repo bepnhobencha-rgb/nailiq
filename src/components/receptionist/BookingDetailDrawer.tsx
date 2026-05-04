@@ -235,7 +235,12 @@ export function BookingDetailDrawer({
               <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
                 {copy.sectionWhen}
               </p>
-              <p className="font-medium text-nq-foreground">{model.scheduleLine}</p>
+              <p
+                data-testid="booking-drawer-schedule"
+                className="font-medium text-nq-foreground"
+              >
+                {model.scheduleLine}
+              </p>
               <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
                 {copy.sectionStatus}
               </p>
