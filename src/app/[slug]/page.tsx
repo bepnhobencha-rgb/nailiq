@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { BookingFlow } from "@/components/booking/BookingFlow";
 import { SalonBookingNotFound } from "@/components/booking/SalonBookingNotFound";
 import { SalonBookingPaused } from "@/components/booking/SalonBookingPaused";
+import { BookingMobileHero } from "@/components/booking/BookingMobileHero";
 import { BookingSalonHero } from "@/components/booking/BookingSalonHero";
 import { SalonBookingSkeleton } from "@/components/booking/SalonBookingSkeleton";
 import { BookingFlowErrorBoundary } from "@/components/booking/BookingFlowErrorBoundary";
@@ -117,11 +118,12 @@ async function PublicBookingRouteBody({
           />
 
           <div className="min-w-0 flex-1 lg:max-w-[min(100%,740px)] lg:pt-1">
-            <h1 className="text-2xl font-semibold tracking-tight text-nq-foreground sm:text-3xl lg:text-[2.125rem] lg:leading-[1.15] lg:tracking-[-0.035em]">
+            <BookingMobileHero shopLabel={shopLabel} t={t} />
+            <h1 className="hidden lg:block text-2xl font-semibold tracking-tight text-nq-foreground sm:text-3xl lg:text-[2.125rem] lg:leading-[1.15] lg:tracking-[-0.035em]">
               {t.pageTitle}
             </h1>
-            <p className="mt-2 text-sm text-nq-muted sm:text-base lg:mt-3 lg:text-[17px] lg:leading-relaxed">
-              {t.pageSubtitle}—{shopLabel}
+            <p className="mt-4 text-sm text-nq-muted sm:text-base lg:mt-3 lg:text-[17px] lg:leading-relaxed">
+              {t.pageSubtitle}
             </p>
             <BookingFlowErrorBoundary
               shopSlug={normalizedSlug}
