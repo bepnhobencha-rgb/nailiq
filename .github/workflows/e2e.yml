@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   e2e:
     runs-on: ubuntu-latest
@@ -14,6 +18,11 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      NEXT_PUBLIC_SENTRY_DSN: ""
+      SENTRY_AUTH_TOKEN: ""
+      NEXT_PUBLIC_DEMO_OTP: "true"
+      DEMO_OTP: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,12 +31,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install chromium webkit --with-deps
-      - run: npm run build
       - name: Run E2E Tests
         run: npm run test:e2e
-        env:
-          NEXT_PUBLIC_DEMO_OTP: "true"
-          DEMO_OTP: "true"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
