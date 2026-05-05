@@ -353,9 +353,28 @@ export function useBookingFlowState(
 
   const goDateNext = useCallback(() => {
     setStepDir(1);
-    setTimeSlot(null);
+    // Don't reset timeSlot here — the user may be returning via Back/Next
+    // without changing the date. selectDateIfChanged clears it on real
+    // date changes; the useEffect below also drops it if the new day's
+    // slots no longer contain it.
     setStep("time");
   }, []);
+
+  /** Wrap setSelectedDate so we only drop the picked time on a real change. */
+  const selectDateIfChanged = useCallback(
+    (next: Date) => {
+      setSelectedDate((prev) => {
+        const sameDay =
+          prev.getFullYear() === next.getFullYear() &&
+          prev.getMonth() === next.getMonth() &&
+          prev.getDate() === next.getDate();
+        if (sameDay) return prev;
+        setTimeSlot(null);
+        return next;
+      });
+    },
+    [],
+  );
 
   const goTimeNext = useCallback(() => {
     if (!timeSlot) return;
@@ -738,7 +757,7 @@ export function useBookingFlowState(
     guestContactInvalid,
     setServiceId,
     setStaffId,
-    setSelectedDate,
+    setSelectedDate: selectDateIfChanged,
     setTimeSlot,
     setClientName: setBookingClientName,
     setClientPhone: setBookingClientPhone,
