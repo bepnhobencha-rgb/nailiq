@@ -937,6 +937,7 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
                   duration_minutes: s.duration_minutes,
                   buffer_minutes: s.buffer_minutes,
                 })),
+                capabilityRows: data.capabilityRows,
                 dayYmd: data.selectedDate,
                 timezone,
                 rcMessages,

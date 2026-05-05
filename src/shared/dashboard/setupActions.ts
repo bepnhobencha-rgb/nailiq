@@ -135,6 +135,19 @@ function fail(msg: string): Fail {
   return { ok: false, error: msg };
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function sanitizeServiceIds(ids: readonly string[] | undefined): string[] {
+  if (!Array.isArray(ids)) return [];
+  const out = new Set<string>();
+  for (const v of ids) {
+    const t = typeof v === "string" ? v.trim() : "";
+    if (UUID_RE.test(t)) out.add(t);
+  }
+  return Array.from(out);
+}
+
 /** Map Supabase PostgREST / Postgres errors → stable codes for owner-facing copy */
 function classifySalonHourSaveError(error: {
   code?: string;
@@ -249,17 +262,52 @@ export async function addService(
   if (!Number.isFinite(buffer) || buffer < 0) return fail("invalid_buffer");
 
   const supabase = await writableSupabase(slug, r.kind);
-  const { error } = await supabase.from("services").insert({
-    salon_id: r.salon.id,
-    name,
-    price_cents: price,
-    duration_minutes: duration,
-    buffer_minutes: buffer,
-  });
+  const { data: insertedSvc, error } = await supabase
+    .from("services")
+    .insert({
+      salon_id: r.salon.id,
+      name,
+      price_cents: price,
+      duration_minutes: duration,
+      buffer_minutes: buffer,
+    })
+    .select("id")
+    .single();
 
-  if (error) {
+  if (error || !insertedSvc?.id) {
     console.error("[addService]", error);
     return fail("server_error");
+  }
+
+  /* If this salon has already migrated to the staff_services whitelist, every
+     new service starts attached to all existing staff so a fresh service
+     doesn't silently become "no one can perform it." Salons still in the
+     all-capable fallback (zero rows) stay there. */
+  const { data: hasCap } = await supabase.rpc("salon_has_staff_services", {
+    p_salon_id: r.salon.id,
+  });
+  if (hasCap === true) {
+    const { data: staffRows, error: staffErr } = await supabase
+      .from("staff")
+      .select("id")
+      .eq("salon_id", r.salon.id);
+    if (staffErr) {
+      console.error("[addService] staff load for autoattach", staffErr);
+      return fail("server_error");
+    }
+    const rows = (staffRows ?? []).map((s) => ({
+      staff_id: String(s.id),
+      service_id: String(insertedSvc.id),
+    }));
+    if (rows.length > 0) {
+      const { error: capErr } = await supabase
+        .from("staff_services")
+        .insert(rows);
+      if (capErr) {
+        console.error("[addService] staff_services autoattach", capErr);
+        return fail("server_error");
+      }
+    }
   }
 
   await refreshSalonProfileComplete(supabase, r.salon.id);
@@ -400,7 +448,7 @@ export async function deleteService(
 
 export async function addStaff(
   slug: string,
-  input: { name: string; role: StaffJobRole },
+  input: { name: string; role: StaffJobRole; serviceIds?: string[] },
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
@@ -414,15 +462,35 @@ export async function addStaff(
   if (!roles.includes(input.role)) return fail("invalid_role");
 
   const supabase = await writableSupabase(slug, r.kind);
-  const { error } = await supabase.from("staff").insert({
-    salon_id: r.salon.id,
-    name,
-    job_role: input.role,
-  });
+  const { data: insertedStaff, error } = await supabase
+    .from("staff")
+    .insert({
+      salon_id: r.salon.id,
+      name,
+      job_role: input.role,
+    })
+    .select("id")
+    .single();
 
-  if (error) {
+  if (error || !insertedStaff?.id) {
     console.error("[addStaff]", error);
     return fail("server_error");
+  }
+
+  const serviceIds = sanitizeServiceIds(input.serviceIds);
+  if (serviceIds.length > 0) {
+    const { error: capErr } = await supabase
+      .from("staff_services")
+      .insert(
+        serviceIds.map((sid) => ({
+          staff_id: String(insertedStaff.id),
+          service_id: sid,
+        })),
+      );
+    if (capErr) {
+      console.error("[addStaff] staff_services", capErr);
+      return fail("server_error");
+    }
   }
 
   await refreshSalonProfileComplete(supabase, r.salon.id);
@@ -432,7 +500,7 @@ export async function addStaff(
 export async function updateStaff(
   slug: string,
   staffId: string,
-  data: { name?: string; role?: StaffJobRole },
+  data: { name?: string; role?: StaffJobRole; serviceIds?: string[] },
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
@@ -451,7 +519,13 @@ export async function updateStaff(
     if (!roles.includes(data.role)) return fail("invalid_role");
     patch.job_role = data.role;
   }
-  if (Object.keys(patch).length === 0) return fail("empty_update");
+  /* `serviceIds: undefined` means "don't touch capability"; an empty array
+     means "this staff can perform nothing" — owners go through this path
+     intentionally, so honor it. */
+  const touchServices = data.serviceIds !== undefined;
+  if (Object.keys(patch).length === 0 && !touchServices) {
+    return fail("empty_update");
+  }
 
   const supabase = await writableSupabase(slug, r.kind);
   const { data: mine } = await supabase
@@ -463,15 +537,40 @@ export async function updateStaff(
 
   if (!mine?.id) return fail("not_found");
 
-  const { error } = await supabase
-    .from("staff")
-    .update(patch)
-    .eq("id", staffId)
-    .eq("salon_id", r.salon.id);
+  if (Object.keys(patch).length > 0) {
+    const { error } = await supabase
+      .from("staff")
+      .update(patch)
+      .eq("id", staffId)
+      .eq("salon_id", r.salon.id);
 
-  if (error) {
-    console.error("[updateStaff]", error);
-    return fail("server_error");
+    if (error) {
+      console.error("[updateStaff]", error);
+      return fail("server_error");
+    }
+  }
+
+  if (touchServices) {
+    const serviceIds = sanitizeServiceIds(data.serviceIds);
+    const { error: delErr } = await supabase
+      .from("staff_services")
+      .delete()
+      .eq("staff_id", staffId);
+    if (delErr) {
+      console.error("[updateStaff] staff_services delete", delErr);
+      return fail("server_error");
+    }
+    if (serviceIds.length > 0) {
+      const { error: insErr } = await supabase
+        .from("staff_services")
+        .insert(
+          serviceIds.map((sid) => ({ staff_id: staffId, service_id: sid })),
+        );
+      if (insErr) {
+        console.error("[updateStaff] staff_services insert", insErr);
+        return fail("server_error");
+      }
+    }
   }
 
   await refreshSalonProfileComplete(supabase, r.salon.id);

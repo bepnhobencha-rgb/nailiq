@@ -483,6 +483,39 @@ export type Database = {
           },
         ]
       }
+      staff_services: {
+        Row: {
+          created_at: string
+          service_id: string
+          staff_id: string
+        }
+        Insert: {
+          created_at?: string
+          service_id: string
+          staff_id: string
+        }
+        Update: {
+          created_at?: string
+          service_id?: string
+          staff_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_services_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_services_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -557,6 +590,10 @@ export type Database = {
           staff_id: string
           start_time_utc: string
         }[]
+      }
+      salon_has_staff_services: {
+        Args: { p_salon_id: string }
+        Returns: boolean
       }
       update_queue_entry_status: {
         Args: { p_assigned_staff_id?: string; p_id: string; p_status: string }

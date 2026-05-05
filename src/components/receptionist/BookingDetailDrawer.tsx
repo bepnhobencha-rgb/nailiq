@@ -71,6 +71,8 @@ export interface BookingDetailDrawerProps {
       duration_minutes: number;
       buffer_minutes: number;
     }[];
+    /** Per-staff service whitelist for the salon. `null` = no rows → all-capable fallback. */
+    capabilityRows: { staff_id: string; service_id: string }[] | null;
     dayYmd: string;
     timezone: string;
     rcMessages: UserMessages["receptionist"];
@@ -276,6 +278,7 @@ export function BookingDetailDrawer({
                     salonId={deskEdit.salonId}
                     staff={deskEdit.staff}
                     services={deskEdit.services}
+                    capabilityRows={deskEdit.capabilityRows}
                     dayYmd={deskEdit.dayYmd}
                     timezone={deskEdit.timezone}
                     rcMessages={deskEdit.rcMessages}

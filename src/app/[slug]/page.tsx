@@ -135,6 +135,7 @@ async function PublicBookingRouteBody({
                 services={load.services}
                 staff={load.staff}
                 salon={load.salon}
+                capabilityRows={load.capabilityRows}
               />
             </BookingFlowErrorBoundary>
           </div>

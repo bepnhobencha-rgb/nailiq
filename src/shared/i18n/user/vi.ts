@@ -107,6 +107,14 @@ export const userVi: UserMessages = {
       "Dịch vụ đang được dùng trong booking. Hủy/hoàn thành các booking trước khi xóa.",
     staffHasBookings:
       "Nhân viên đang có booking sắp tới. Reassign hoặc hủy trước khi xóa.",
+    staffCannotPerformService:
+      "Nhân viên này chưa được gán để làm dịch vụ đó.",
+  },
+  setupStaff: {
+    servicesCapableLabel: "Dịch vụ có thể làm",
+    servicesCapableHint:
+      "Cứ chọn hết khi chưa chắc — sau này bạn có thể bỏ chọn bớt.",
+    noServicesAvailable: "Thêm dịch vụ trước khi gán cho nhân viên.",
   },
   receptionist: {
     title: "Lễ tân",
@@ -224,6 +232,8 @@ export const userVi: UserMessages = {
       invalid_staff: "Nhân viên không hợp lệ.",
       invalid_time: "Thời gian không hợp lệ.",
       staff_not_found: "Không tìm thấy nhân viên.",
+      staff_cannot_perform_service:
+        "Nhân viên này chưa được gán để làm dịch vụ đó.",
       invalid_duration: "Thời lượng dịch vụ không ổn.",
       invalid_buffer: "Buffer dịch vụ không ổn.",
       slot_conflict: "Khung giờ trùng lịch khác.",

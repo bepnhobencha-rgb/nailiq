@@ -31,6 +31,7 @@ type BookingFlowProps = {
   services: readonly BookingServiceItem[];
   staff: readonly BookingStaffItem[];
   salon: BookingSalonMeta;
+  capabilityRows: { staff_id: string; service_id: string }[] | null;
 };
 
 export function BookingFlow({
@@ -39,9 +40,17 @@ export function BookingFlow({
   services,
   staff,
   salon,
+  capabilityRows,
 }: BookingFlowProps) {
   const reducedMotion = useReducedMotion();
-  const flow = useBookingFlowState(t, shopSlug, services, staff, salon);
+  const flow = useBookingFlowState(
+    t,
+    shopSlug,
+    services,
+    staff,
+    salon,
+    capabilityRows,
+  );
 
   const closedDateYmdSet = useMemo(
     () => parseBookingClosedDateSet(salon.booking_closed_dates),
@@ -110,7 +119,7 @@ export function BookingFlow({
         {flow.step === "staff" ? (
           <BookingFlowStaffPanel
             t={t}
-            staff={staff}
+            staff={flow.capableStaff}
             staffId={flow.staffId}
             stepDir={flow.stepDir}
             reducedMotion={Boolean(reducedMotion)}
@@ -125,7 +134,7 @@ export function BookingFlow({
             salonId={salon.id}
             openingHoursRaw={salon.opening_hours}
             closedDateYmdSet={closedDateYmdSet}
-            staff={staff}
+            staff={flow.capableStaff}
             staffId={flow.staffId ?? BOOKING_ANY_STAFF_ID}
             serviceTotalMinutes={flow.service?.totalMinutes ?? 0}
             selectedDate={flow.selectedDate}

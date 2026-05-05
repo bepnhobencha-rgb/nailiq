@@ -1,10 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { editBookingAction } from "@/shared/dashboard/editBookingAction";
 import type { ReceptionistMessages } from "@/shared/i18n/user";
+import {
+  buildCapabilityMap,
+  filterStaffCapableForService,
+} from "@/shared/booking/staffCapability";
 import {
   formatInSalonTz,
   salonWallTimeToUtcIso,
@@ -73,6 +77,8 @@ export interface EditBookingFormProps {
     duration_minutes: number;
     buffer_minutes: number;
   }[];
+  /** Per-staff service whitelist for the salon. `null` = no rows → all-capable fallback. */
+  capabilityRows: { staff_id: string; service_id: string }[] | null;
   dayYmd: string;
   timezone: string;
   onSaved: (updated: SalonDashboardBooking) => void;
@@ -87,6 +93,7 @@ export function EditBookingForm({
   salonId,
   staff,
   services,
+  capabilityRows,
   dayYmd,
   timezone,
   onSaved,
@@ -113,6 +120,42 @@ export function EditBookingForm({
     () => services.find((s) => s.id === selectedService),
     [services, selectedService],
   );
+
+  const capability = useMemo(
+    () => buildCapabilityMap(capabilityRows),
+    [capabilityRows],
+  );
+
+  /** Staff who can perform the currently-selected service.
+   *  Always includes the original staff so we never disappear an existing
+   *  assignment from the dropdown — the server backstop will reject the
+   *  save if the owner truly hasn't granted that capability. */
+  const capableStaff = useMemo(() => {
+    const filtered = filterStaffCapableForService(staff, capability, selectedService);
+    if (
+      originalStaff &&
+      filtered.every((s) => s.id !== originalStaff) &&
+      staff.some((s) => s.id === originalStaff)
+    ) {
+      const original = staff.find((s) => s.id === originalStaff);
+      return original ? [original, ...filtered] : filtered;
+    }
+    return filtered;
+  }, [staff, capability, selectedService, originalStaff]);
+
+  /** Snap the selection to a capable staff when the service change makes the
+   *  current pick incapable. Prefer the original assignee, otherwise the
+   *  first capable option. */
+  useEffect(() => {
+    if (capableStaff.some((s) => s.id === selectedStaff)) return;
+    const fallback =
+      (capableStaff.find((s) => s.id === originalStaff)?.id) ??
+      capableStaff[0]?.id ??
+      "";
+    if (fallback && fallback !== selectedStaff) {
+      setSelectedStaff(fallback);
+    }
+  }, [capableStaff, selectedStaff, originalStaff]);
 
   const endTimeDisplay = useMemo(() => {
     if (!selectedSvc) return "—";
@@ -234,7 +277,7 @@ export function EditBookingForm({
             value={selectedStaff}
             onChange={(e) => setSelectedStaff(e.target.value)}
           >
-            {staff.map((s) => (
+            {capableStaff.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
               </option>

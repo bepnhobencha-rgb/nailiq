@@ -190,6 +190,21 @@ export async function assignWalkinToSlot(
     return fail("invalid_state");
   }
 
+  /* Capability gate. Empty staff_services for this salon → all-capable
+     fallback (skip the per-pair check). */
+  const { data: hasCap } = await supabase.rpc("salon_has_staff_services", {
+    p_salon_id: ctx.salon.id,
+  });
+  if (hasCap === true) {
+    const { data: capRow } = await supabase
+      .from("staff_services")
+      .select("staff_id")
+      .eq("staff_id", staffId)
+      .eq("service_id", String(booking.service_id))
+      .maybeSingle();
+    if (!capRow?.staff_id) return fail("staff_cannot_perform_service");
+  }
+
   type SvcDur = {
     duration_minutes?: unknown;
     buffer_minutes?: unknown;

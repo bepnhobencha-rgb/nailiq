@@ -31,6 +31,7 @@ export type EditBookingError =
   | "not_found"
   | "invalid_status"
   | "slot_conflict"
+  | "staff_cannot_perform_service"
   | "server_error";
 
 export type EditBookingResult =
@@ -128,6 +129,23 @@ export async function performEditBooking(
   }
   if (!svc?.id) {
     return { ok: false, error: "server_error" };
+  }
+
+  /* Capability gate. Empty staff_services for this salon → all-capable
+     fallback (skip the per-pair check). */
+  const { data: hasCap } = await supabase.rpc("salon_has_staff_services", {
+    p_salon_id: salonId,
+  });
+  if (hasCap === true) {
+    const { data: capRow } = await supabase
+      .from("staff_services")
+      .select("staff_id")
+      .eq("staff_id", newStaffId)
+      .eq("service_id", newServiceId)
+      .maybeSingle();
+    if (!capRow?.staff_id) {
+      return { ok: false, error: "staff_cannot_perform_service" };
+    }
   }
 
   const duration = Math.round(Number(svc.duration_minutes ?? 0));
