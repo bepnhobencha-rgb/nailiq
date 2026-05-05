@@ -35,6 +35,8 @@ export type BookingResult = {
   price_cents: number;
   staffName: string;
   addonServiceName: string | null;
+  /** Snapshot at booking time so the success/done view can show the add-on alongside its price. */
+  addonPriceCents: number | null;
 };
 
 export class BookingConflictError extends Error {
@@ -515,5 +517,6 @@ export async function submitPublicBooking(
     price_cents: totalPriceCents,
     staffName: resolvedStaffName,
     addonServiceName: addonRow?.name ?? null,
+    addonPriceCents: addonPriceSnapshot,
   };
 }

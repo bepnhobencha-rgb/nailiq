@@ -12,6 +12,7 @@ import {
 } from "@/shared/lib/phoneFormat";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 import { getPublicStaffDisplayName } from "@/shared/booking/publicStaffDisplay";
+import { formatGuestPriceUsd } from "@/shared/booking/formatBookingPrice";
 
 export function BookingFlowDonePanel({
   t,
@@ -19,7 +20,9 @@ export function BookingFlowDonePanel({
   service,
   staffName,
   addonServiceName,
+  addonPriceCents,
   displayStartUtc,
+  displayEndUtc,
   bookingId,
   salonPhone,
   totalPaidFormatted,
@@ -31,7 +34,9 @@ export function BookingFlowDonePanel({
   service: BookingServiceItem | undefined;
   staffName: string;
   addonServiceName: string | null;
+  addonPriceCents: number | null;
   displayStartUtc: string;
+  displayEndUtc: string;
   bookingId: string;
   /** Public salon line: `salons.salon_phone` only (not owner `phone`, never guest). */
   salonPhone: string | null;
@@ -195,7 +200,12 @@ export function BookingFlowDonePanel({
                 {t.summaryAddOn}
               </span>
               <span className="min-w-0 shrink text-right font-semibold text-nq-foreground">
-                {addonServiceName.trim()}
+                {(() => {
+                  const priceLabel = formatGuestPriceUsd(addonPriceCents);
+                  return priceLabel
+                    ? `${addonServiceName.trim()} — ${priceLabel}`
+                    : addonServiceName.trim();
+                })()}
               </span>
             </div>
           ) : null}

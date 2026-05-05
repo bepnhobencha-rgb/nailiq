@@ -104,6 +104,7 @@ export function useBookingFlowState(
     endTimeUtc: string;
     staffName: string;
     addonServiceName: string | null;
+    addonPriceCents: number | null;
     price_cents: number;
   } | null>(null);
 
@@ -565,6 +566,7 @@ export function useBookingFlowState(
         endTimeUtc: result.endTimeUtc,
         staffName: result.staffName,
         addonServiceName: result.addonServiceName,
+        addonPriceCents: result.addonPriceCents,
         price_cents: result.price_cents,
       });
       setStepDir(1);

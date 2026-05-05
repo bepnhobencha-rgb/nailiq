@@ -76,7 +76,9 @@ export function BookingFlow({
         service={flow.service}
         staffName={flow.bookingResult.staffName}
         addonServiceName={flow.bookingResult.addonServiceName}
+        addonPriceCents={flow.bookingResult.addonPriceCents}
         displayStartUtc={flow.bookingResult.startTimeUtc}
+        displayEndUtc={flow.bookingResult.endTimeUtc}
         bookingId={flow.bookingResult.bookingId}
         salonPhone={salon.salonPhone}
         totalPaidFormatted={formatGuestPriceUsdReceipt(

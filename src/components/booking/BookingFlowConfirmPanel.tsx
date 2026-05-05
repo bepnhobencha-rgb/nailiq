@@ -71,6 +71,20 @@ export function BookingFlowConfirmPanel({
   const totalCents =
     (service.priceCents ?? 0) + (selectedAddOn?.priceCents ?? 0);
 
+  const addonRow = selectedAddOn
+    ? (() => {
+        const priceLabel =
+          selectedAddOn.priceDisplay ??
+          formatGuestPriceUsd(selectedAddOn.priceCents);
+        return {
+          label: t.summaryAddOn,
+          value: priceLabel
+            ? `${selectedAddOn.name} — ${priceLabel}`
+            : selectedAddOn.name,
+        };
+      })()
+    : null;
+
   const pricingLines = [
     {
       label: t.summaryServicePrice,
@@ -79,17 +93,7 @@ export function BookingFlowConfirmPanel({
         formatGuestPriceUsd(service.priceCents) ??
         "—",
     },
-    ...(selectedAddOn
-      ? [
-          {
-            label: t.summaryAddonPrice,
-            value:
-              selectedAddOn.priceDisplay ??
-              formatGuestPriceUsd(selectedAddOn.priceCents) ??
-              "—",
-          },
-        ]
-      : []),
+    ...(addonRow ? [addonRow] : []),
     {
       label: t.summaryTotal,
       value: formatGuestPriceUsdReceipt(totalCents),
