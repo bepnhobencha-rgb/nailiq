@@ -9,6 +9,7 @@ import { SalonBookingSkeleton } from "@/components/booking/SalonBookingSkeleton"
 import { BookingFlowErrorBoundary } from "@/components/booking/BookingFlowErrorBoundary";
 import { resolvePublicBookingPage } from "@/shared/booking/resolvePublicBookingPage";
 import { bookingEn } from "@/shared/i18n/booking/en";
+import { formatSalonDisplayName } from "@/shared/lib/salonDisplay";
 import { BookingDocumentEn } from "./BookingDocumentEn";
 
 /** Avoid stale static segments for salons created after deploy. */
@@ -21,14 +22,6 @@ const DESKTOP_BOOKING_AMBIENT_SRC =
 type PublicBookingPageProps = {
   params: Promise<{ slug: string }>;
 };
-
-function decodeSlugSegment(slug: string): string {
-  try {
-    return decodeURIComponent(slug);
-  } catch {
-    return slug;
-  }
-}
 
 export async function generateMetadata({
   params,
@@ -83,7 +76,10 @@ async function PublicBookingRouteBody({
 
   const { load, normalizedSlug } = resolved;
 
-  const shopLabel = decodeSlugSegment(slug);
+  const shopLabel = formatSalonDisplayName({
+    name: load.salon.name,
+    slug: normalizedSlug,
+  });
 
   if (!load.salon.acceptingBookings) {
     return (

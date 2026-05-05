@@ -1,11 +1,3 @@
-export function decodeShopSlug(shop: string): string {
-  try {
-    return decodeURIComponent(shop);
-  } catch {
-    return shop;
-  }
-}
-
 function escapeIcsText(value: string): string {
   return value
     .replace(/\\/g, "\\\\")

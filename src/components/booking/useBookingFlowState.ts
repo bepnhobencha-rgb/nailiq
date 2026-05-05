@@ -22,10 +22,8 @@ import type {
   BookingStaffItem,
 } from "@/shared/booking/loadBookingServices";
 import { formatNailiqBookingRef } from "@/shared/lib/formatNailiqBookingRef";
-import {
-  decodeShopSlug,
-  generateBookingCalendarIcs,
-} from "@/components/booking/bookingCalendar";
+import { generateBookingCalendarIcs } from "@/components/booking/bookingCalendar";
+import { formatSalonDisplayName } from "@/shared/lib/salonDisplay";
 import { fireBookingConfetti } from "@/components/booking/bookingConfetti";
 import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
 import { parseTimeSlotOnDate } from "@/shared/booking/parseBookingTimeSlot";
@@ -63,7 +61,10 @@ export function useBookingFlowState(
   staff: readonly BookingStaffItem[],
   salon: BookingSalonMeta,
 ) {
-  const shopLabel = useMemo(() => decodeShopSlug(shopSlug), [shopSlug]);
+  const shopLabel = useMemo(
+    () => formatSalonDisplayName({ name: salon.name, slug: shopSlug }),
+    [salon.name, shopSlug],
+  );
 
   const closedDateYmdSet = useMemo(
     () => parseBookingClosedDateSet(salon.booking_closed_dates),
