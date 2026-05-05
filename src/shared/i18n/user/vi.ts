@@ -154,8 +154,8 @@ export const userVi: UserMessages = {
       invalidPhone:
         "Định dạng điện thoại không hợp lệ. Ví dụ: 555-123-4567",
       phoneRequired: "Nhập số điện thoại của khách.",
-      invalidName:
-        "Cần họ tên (tối đa 100 ký tự)",
+      nameRequired: "Vui lòng nhập tên khách.",
+      nameTooLong: "Tên không được quá 100 ký tự.",
       invalidNameChars:
         "Tên chứa ký tự không hợp lệ",
     },

@@ -78,8 +78,8 @@ export const bookingEn = {
     invalidPhone:
       "Phone format invalid. Example: 555-123-4567",
     phoneRequired: "Enter your phone number.",
-    invalidName:
-      "Name required (max 100 characters)",
+    nameRequired: "Please enter your name.",
+    nameTooLong: "Name cannot exceed 100 characters.",
     invalidNameChars:
       "Name contains invalid characters.",
     serviceRequired: "Please select a service to continue.",

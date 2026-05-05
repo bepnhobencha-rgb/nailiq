@@ -35,7 +35,8 @@ export interface WalkinAddFormProps {
     errorRequired: string;
     invalidPhone: string;
     phoneRequired: string;
-    invalidName: string;
+    nameRequired: string;
+    nameTooLong: string;
     invalidNameChars: string;
   };
   /** Async callback — parent calls server action */
@@ -95,8 +96,12 @@ export function WalkinAddForm({
   const runSubmit = useCallback(async () => {
     if (disabled) return;
     const trimmedName = clientName.trim();
-    if (trimmedName.length === 0 || trimmedName.length > BOOKING_GUEST_NAME_MAX) {
-      setNameError(labels.invalidName);
+    if (trimmedName.length === 0) {
+      setNameError(labels.nameRequired);
+      return;
+    }
+    if (trimmedName.length > BOOKING_GUEST_NAME_MAX) {
+      setNameError(labels.nameTooLong);
       return;
     }
     if (!isValidCustomerName(trimmedName)) {
@@ -142,7 +147,8 @@ export function WalkinAddForm({
     clientName,
     clientPhone,
     labels.errorRequired,
-    labels.invalidName,
+    labels.nameRequired,
+    labels.nameTooLong,
     labels.invalidNameChars,
     labels.invalidPhone,
     labels.phoneRequired,
@@ -229,8 +235,10 @@ export function WalkinAddForm({
           onBlur={() => {
             const t = clientName.trim();
             setClientName(t);
-            if (t.length === 0 || t.length > BOOKING_GUEST_NAME_MAX) {
-              setNameError(labels.invalidName);
+            if (t.length === 0) {
+              setNameError(labels.nameRequired);
+            } else if (t.length > BOOKING_GUEST_NAME_MAX) {
+              setNameError(labels.nameTooLong);
             } else if (!isValidCustomerName(t)) {
               setNameError(labels.invalidNameChars);
             } else {

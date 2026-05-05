@@ -131,14 +131,21 @@ export function useBookingFlowState(
   const handleInfoNameBlur = useCallback(() => {
     const trimmed = clientName.trim();
     setClientName(trimmed);
-    if (trimmed.length === 0 || trimmed.length > BOOKING_GUEST_NAME_MAX) {
-      setInfoNameError(t.bookingErrors.invalidName);
+    if (trimmed.length === 0) {
+      setInfoNameError(t.bookingErrors.nameRequired);
+    } else if (trimmed.length > BOOKING_GUEST_NAME_MAX) {
+      setInfoNameError(t.bookingErrors.nameTooLong);
     } else if (!isValidCustomerName(trimmed)) {
       setInfoNameError(t.bookingErrors.invalidNameChars);
     } else {
       setInfoNameError(null);
     }
-  }, [clientName, t.bookingErrors.invalidName, t.bookingErrors.invalidNameChars]);
+  }, [
+    clientName,
+    t.bookingErrors.nameRequired,
+    t.bookingErrors.nameTooLong,
+    t.bookingErrors.invalidNameChars,
+  ]);
 
   const handleInfoPhoneBlur = useCallback(() => {
     const pTrim = clientPhone.trim();
@@ -403,11 +410,13 @@ export function useBookingFlowState(
     const phoneTrim = clientPhone.trim();
 
     const nameErr =
-      nameTrim.length === 0 || nameTrim.length > BOOKING_GUEST_NAME_MAX
-        ? t.bookingErrors.invalidName
-        : !isValidCustomerName(nameTrim)
-          ? t.bookingErrors.invalidNameChars
-          : null;
+      nameTrim.length === 0
+        ? t.bookingErrors.nameRequired
+        : nameTrim.length > BOOKING_GUEST_NAME_MAX
+          ? t.bookingErrors.nameTooLong
+          : !isValidCustomerName(nameTrim)
+            ? t.bookingErrors.invalidNameChars
+            : null;
 
     let phoneErr: string | null = null;
     if (phoneTrim.length === 0) {
@@ -430,7 +439,8 @@ export function useBookingFlowState(
   }, [
     clientName,
     clientPhone,
-    t.bookingErrors.invalidName,
+    t.bookingErrors.nameRequired,
+    t.bookingErrors.nameTooLong,
     t.bookingErrors.invalidNameChars,
     t.bookingErrors.invalidPhone,
     t.bookingErrors.phoneRequired,
@@ -499,19 +509,26 @@ export function useBookingFlowState(
     setError(null);
     const name = clientName.trim();
     const phone = clientPhone.trim();
-    const nameTooShortOrLong =
-      name.length === 0 || name.length > BOOKING_GUEST_NAME_MAX;
+    const nameEmpty = name.length === 0;
+    const nameTooLong = name.length > BOOKING_GUEST_NAME_MAX;
     const nameWrongChars =
-      !nameTooShortOrLong && !isValidCustomerName(name);
-    if (nameTooShortOrLong || nameWrongChars || !validateGuestPhone(phone).ok) {
+      !nameEmpty && !nameTooLong && !isValidCustomerName(name);
+    if (
+      nameEmpty ||
+      nameTooLong ||
+      nameWrongChars ||
+      !validateGuestPhone(phone).ok
+    ) {
       setError(
-        nameTooShortOrLong
-          ? t.bookingErrors.invalidName
-          : nameWrongChars
-            ? t.bookingErrors.invalidNameChars
-          : phone.length === 0
-            ? t.bookingErrors.phoneRequired
-            : t.bookingErrors.invalidPhone,
+        nameEmpty
+          ? t.bookingErrors.nameRequired
+          : nameTooLong
+            ? t.bookingErrors.nameTooLong
+            : nameWrongChars
+              ? t.bookingErrors.invalidNameChars
+              : phone.length === 0
+                ? t.bookingErrors.phoneRequired
+                : t.bookingErrors.invalidPhone,
       );
       return;
     }
@@ -636,7 +653,8 @@ export function useBookingFlowState(
     serviceId,
     service,
     staff,
-    t.bookingErrors.invalidName,
+    t.bookingErrors.nameRequired,
+    t.bookingErrors.nameTooLong,
     t.bookingErrors.invalidNameChars,
     t.bookingErrors.invalidPhone,
     t.bookingErrors.phoneRequired,
@@ -651,23 +669,26 @@ export function useBookingFlowState(
     if (!serviceId || !staffId) return;
     const name = clientName.trim();
     const phone = clientPhone.trim();
-    const nameTooShortOrLong =
-      name.length === 0 || name.length > BOOKING_GUEST_NAME_MAX;
+    const nameEmpty = name.length === 0;
+    const nameTooLong = name.length > BOOKING_GUEST_NAME_MAX;
     const nameWrongChars =
-      !nameTooShortOrLong && !isValidCustomerName(name);
+      !nameEmpty && !nameTooLong && !isValidCustomerName(name);
     if (
-      nameTooShortOrLong ||
+      nameEmpty ||
+      nameTooLong ||
       nameWrongChars ||
       !validateGuestPhone(phone).ok
     ) {
       setError(
-        nameTooShortOrLong
-          ? t.bookingErrors.invalidName
-          : nameWrongChars
-            ? t.bookingErrors.invalidNameChars
-          : phone.length === 0
-            ? t.bookingErrors.phoneRequired
-            : t.bookingErrors.invalidPhone,
+        nameEmpty
+          ? t.bookingErrors.nameRequired
+          : nameTooLong
+            ? t.bookingErrors.nameTooLong
+            : nameWrongChars
+              ? t.bookingErrors.invalidNameChars
+              : phone.length === 0
+                ? t.bookingErrors.phoneRequired
+                : t.bookingErrors.invalidPhone,
       );
       return;
     }
@@ -703,7 +724,8 @@ export function useBookingFlowState(
     serviceId,
     shopSlug,
     staffId,
-    t.bookingErrors.invalidName,
+    t.bookingErrors.nameRequired,
+    t.bookingErrors.nameTooLong,
     t.bookingErrors.invalidNameChars,
     t.bookingErrors.invalidPhone,
     t.bookingErrors.phoneRequired,

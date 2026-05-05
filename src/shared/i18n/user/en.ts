@@ -153,7 +153,8 @@ export type UserMessages = {
     walkin: {
       invalidPhone: string;
       phoneRequired: string;
-      invalidName: string;
+      nameRequired: string;
+      nameTooLong: string;
       invalidNameChars: string;
     };
     grid: {
@@ -393,8 +394,8 @@ export const userEn: UserMessages = {
       invalidPhone:
         "Phone format invalid. Example: 555-123-4567",
       phoneRequired: "Enter the guest phone number.",
-      invalidName:
-        "Name required (max 100 characters)",
+      nameRequired: "Please enter the guest name.",
+      nameTooLong: "Name cannot exceed 100 characters.",
       invalidNameChars:
         "Name contains invalid characters.",
     },

@@ -867,7 +867,8 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
                     ...rcMessages.queue.addForm,
                     invalidPhone: rcMessages.walkin.invalidPhone,
                     phoneRequired: rcMessages.walkin.phoneRequired,
-                    invalidName: rcMessages.walkin.invalidName,
+                    nameRequired: rcMessages.walkin.nameRequired,
+                    nameTooLong: rcMessages.walkin.nameTooLong,
                     invalidNameChars: rcMessages.walkin.invalidNameChars,
                   },
                 }}
