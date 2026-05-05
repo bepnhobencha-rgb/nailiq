@@ -46,7 +46,14 @@ async function writableSupabase(
   const demoSlug =
     (await cookies()).get(NAILQ_DEMO_SLUG_COOKIE)?.value ?? null;
 
+  // Demo cookie path returns the service-role client (RLS bypass). Only allow
+  // this when demo OTP mode is on. The resolver in salonOwnerActions already
+  // refuses to produce `kind: demo_cookie` outside demo runtime — this is a
+  // defense-in-depth check in case a future refactor reintroduces the path.
   if (kind === "demo_cookie") {
+    if (!isDemoOtpRuntime()) {
+      return createClient();
+    }
     return createServiceRoleClient();
   }
 

@@ -6,6 +6,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
   NAILQ_DEMO_SLUG_COOKIE,
 } from "@/shared/lib/demoDashboardCookie";
+import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import { isOpeningHoursCustomized } from "@/shared/dashboard/openingHoursDefaults";
 import {
   DASHBOARD_BOOKING_SELECT,
@@ -32,6 +33,11 @@ type SalonRow = {
 };
 
 async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
+  // Demo cookies grant service-role-backed dashboard access. Only honor them
+  // when demo OTP mode is on (dev, or explicit env opt-in). In production
+  // with real SMS the cookie must not be a path to RLS bypass.
+  if (!isDemoOtpRuntime()) return null;
+
   const cookieStore = await cookies();
   const demoSlug = cookieStore.get(NAILQ_DEMO_SLUG_COOKIE)?.value;
   if (!demoSlug || demoSlug !== slug) return null;

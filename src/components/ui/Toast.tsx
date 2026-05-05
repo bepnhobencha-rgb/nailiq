@@ -28,29 +28,44 @@ export function SetupToast({
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onDismissRef = useRef(onDismiss);
-  onDismissRef.current = onDismiss;
 
   useEffect(() => {
-    if (dismissTimerRef.current) {
-      clearTimeout(dismissTimerRef.current);
-      dismissTimerRef.current = null;
-    }
-    if (exitTimerRef.current) {
-      clearTimeout(exitTimerRef.current);
-      exitTimerRef.current = null;
-    }
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
+
+  useEffect(() => {
+    const clearTimers = () => {
+      if (dismissTimerRef.current) {
+        clearTimeout(dismissTimerRef.current);
+        dismissTimerRef.current = null;
+      }
+      if (exitTimerRef.current) {
+        clearTimeout(exitTimerRef.current);
+        exitTimerRef.current = null;
+      }
+    };
+    clearTimers();
 
     if (!toast) {
-      setOpen(false);
+      const rafId = requestAnimationFrame(() => setOpen(false));
       exitTimerRef.current = setTimeout(() => {
         setRendered(null);
         exitTimerRef.current = null;
       }, 220);
-      return;
+      return () => {
+        cancelAnimationFrame(rafId);
+        clearTimers();
+      };
     }
 
-    setRendered(toast);
-    requestAnimationFrame(() => setOpen(true));
+    // Two-phase mount: first commit `rendered` so the element appears at
+    // translate-x-full / opacity-0, then flip `open` on the next frame to
+    // trigger the slide-in transition.
+    let openRafId: number | null = null;
+    const renderRafId = requestAnimationFrame(() => {
+      setRendered(toast);
+      openRafId = requestAnimationFrame(() => setOpen(true));
+    });
 
     if (autoDismissMs > 0) {
       dismissTimerRef.current = setTimeout(() => {
@@ -60,8 +75,9 @@ export function SetupToast({
     }
 
     return () => {
-      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
-      if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
+      cancelAnimationFrame(renderRafId);
+      if (openRafId !== null) cancelAnimationFrame(openRafId);
+      clearTimers();
     };
   }, [toast, autoDismissMs]);
 
