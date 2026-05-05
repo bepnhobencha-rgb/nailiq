@@ -53,6 +53,8 @@ export const bookingEn = {
   successSeeYouSoonBefore: "See you soon at ",
   bookingReferenceLabel: "Booking reference",
   addToCalendar: "Add to calendar",
+  /** Confirmation toast after the .ics file is generated. */
+  addToCalendarDownloaded: "Calendar file ready — open it to add the event.",
   shareBooking: "Share",
   /** Native share sheet title (short). */
   shareBookingSheetTitle: "NailIQ booking",

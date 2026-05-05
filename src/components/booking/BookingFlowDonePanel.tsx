@@ -37,11 +37,20 @@ export function BookingFlowDonePanel({
   salonPhone: string | null;
   /** Receipt-style total from `bookingResult.price_cents`. */
   totalPaidFormatted: string;
-  onAddToCalendar: () => void;
+  /** Fires the .ics download. Returns true if the click was dispatched. */
+  onAddToCalendar: () => boolean;
   onBookAnother: () => void;
 }) {
   const refLabel = formatNailiqBookingRef(bookingId);
   const [shareHint, setShareHint] = useState<string | null>(null);
+  const [calendarHint, setCalendarHint] = useState<string | null>(null);
+
+  const handleAddToCalendarClick = useCallback(() => {
+    const ok = onAddToCalendar();
+    if (!ok) return;
+    setCalendarHint(t.addToCalendarDownloaded);
+    window.setTimeout(() => setCalendarHint(null), 2800);
+  }, [onAddToCalendar, t.addToCalendarDownloaded]);
 
   const start = new Date(displayStartUtc);
   const whenLabel = Number.isNaN(start.getTime())
@@ -217,8 +226,14 @@ export function BookingFlowDonePanel({
         </p>
       </div>
 
-      {shareHint ? (
-        <p className="text-center text-sm text-nq-success">{shareHint}</p>
+      {shareHint || calendarHint ? (
+        <p
+          className="text-center text-sm text-nq-success"
+          role="status"
+          aria-live="polite"
+        >
+          {shareHint ?? calendarHint}
+        </p>
       ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-center lg:justify-end lg:gap-4">
@@ -227,7 +242,7 @@ export function BookingFlowDonePanel({
           variant="secondary"
           size="lg"
           className="nq-booking-glass min-h-11 w-full shrink-0 border border-nq-primary/35 bg-transparent text-nq-primary shadow-none hover:bg-white/[0.04] hover:opacity-100 sm:min-w-[11rem] lg:w-auto"
-          onClick={onAddToCalendar}
+          onClick={handleAddToCalendarClick}
         >
           {t.addToCalendar}
         </Button>

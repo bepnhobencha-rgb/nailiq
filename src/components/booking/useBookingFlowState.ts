@@ -465,8 +465,8 @@ export function useBookingFlowState(
     setInfoPhoneError(null);
   }, []);
 
-  const handleAddToCalendar = useCallback(() => {
-    if (!bookingResult || !service) return;
+  const handleAddToCalendar = useCallback((): boolean => {
+    if (!bookingResult || !service) return false;
     const start = new Date(bookingResult.startTimeUtc);
     const end = new Date(bookingResult.endTimeUtc);
     const ref = formatNailiqBookingRef(bookingResult.bookingId);
@@ -495,12 +495,19 @@ export function useBookingFlowState(
       const a = document.createElement("a");
       a.href = url;
       a.download = `nailiq-booking-${bookingResult.bookingId.replace(/-/g, "").slice(0, 8)}.ics`;
+      // target="_blank" so iOS Safari falls back to opening the .ics for
+      // direct import when the download attribute isn't honored.
+      a.target = "_blank";
       a.rel = "noopener";
       document.body.appendChild(a);
       a.click();
       a.remove();
+      return true;
+    } catch {
+      return false;
     } finally {
-      URL.revokeObjectURL(url);
+      // Defer revoke so Safari has time to read the Blob.
+      window.setTimeout(() => URL.revokeObjectURL(url), 4_000);
     }
   }, [bookingResult, service, shopLabel]);
 
