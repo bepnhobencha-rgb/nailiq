@@ -1,13 +1,16 @@
 import type { Metadata } from "next";
-import { Geist_Mono, Inter } from "next/font/google";
+import { Be_Vietnam_Pro, Geist_Mono } from "next/font/google";
 import { getSiteUrl } from "@/shared/seo/site";
 import "./globals.css";
 
-// Inter (not Geist) for body sans because Geist on Google Fonts does not
-// ship a `vietnamese` subset; Vietnamese diacritics fell back to system fonts.
-const appSans = Inter({
+// Be Vietnam Pro is hand-tuned for Vietnamese diacritics — every stacked
+// tone mark (ấ, ể, ợ, ụ...) is drawn deliberately rather than synthesized
+// at render time, which is what made Inter look "decomposed" at heading sizes.
+const appSans = Be_Vietnam_Pro({
   variable: "--font-app-sans",
   subsets: ["latin", "vietnamese"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
