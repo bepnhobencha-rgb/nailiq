@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
-import { Be_Vietnam_Pro, Geist_Mono } from "next/font/google";
+import { Be_Vietnam_Pro, JetBrains_Mono } from "next/font/google";
 import { getSiteUrl } from "@/shared/seo/site";
 import "./globals.css";
 
-// Be Vietnam Pro is hand-tuned for Vietnamese diacritics — every stacked
-// tone mark (ấ, ể, ợ, ụ...) is drawn deliberately rather than synthesized
-// at render time, which is what made Inter look "decomposed" at heading sizes.
+// Be Vietnam Pro: hand-tuned VN diacritics for body sans.
 const appSans = Be_Vietnam_Pro({
   variable: "--font-app-sans",
   subsets: ["latin", "vietnamese"],
@@ -13,9 +11,15 @@ const appSans = Be_Vietnam_Pro({
   display: "swap",
 });
 
-const geistMono = Geist_Mono({
+// JetBrains Mono (not Geist_Mono) for `font-mono` because Geist's mono
+// has no `vietnamese` subset — receptionist `font-mono` labels with VN
+// service names / status pills (e.g. "CHỜ", "ĐANG PHỤC VỤ") were falling
+// back to system mono and rendering with detached-looking diacritics.
+const appMono = JetBrains_Mono({
   variable: "--font-geist-mono",
-  subsets: ["latin"],
+  subsets: ["latin", "vietnamese"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
 const siteUrl = getSiteUrl();
@@ -67,7 +71,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${appSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${appSans.variable} ${appMono.variable} h-full antialiased`}
     >
       <body className="min-h-dvh min-w-0 flex flex-col overflow-x-hidden">
         {children}
