@@ -56,7 +56,7 @@
   --color-nq-info: #3b82f6;
   --color-nq-warning: #d97706;
   --color-nq-border: rgba(212, 175, 55, 0.18);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-app-sans);
   --font-mono: var(--font-geist-mono);
   --radius-nq-2xl: 1rem;
   --shadow-nq-sm: var(--shadow-nq-sm);

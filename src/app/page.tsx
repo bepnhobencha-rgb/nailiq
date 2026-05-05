@@ -4,7 +4,7 @@ import { HomeLanding } from "@/components/user/HomeLanding";
 import { getLandingJsonLd } from "@/shared/seo/jsonLd";
 
 const landingInter = Inter({
-  subsets: ["latin"],
+  subsets: ["latin", "vietnamese"],
   variable: "--font-landing-inter",
   display: "swap",
 });
@@ -12,7 +12,7 @@ const landingInter = Inter({
 const landingPlayfair = Playfair_Display({
   weight: "700",
   style: ["italic"],
-  subsets: ["latin"],
+  subsets: ["latin", "vietnamese"],
   variable: "--font-landing-playfair",
   display: "swap",
 });

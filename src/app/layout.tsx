@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Inter } from "next/font/google";
 import { getSiteUrl } from "@/shared/seo/site";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+// Inter (not Geist) for body sans because Geist on Google Fonts does not
+// ship a `vietnamese` subset; Vietnamese diacritics fell back to system fonts.
+const appSans = Inter({
+  variable: "--font-app-sans",
+  subsets: ["latin", "vietnamese"],
 });
 
 const geistMono = Geist_Mono({
@@ -62,7 +64,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${appSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-dvh min-w-0 flex flex-col overflow-x-hidden">
         {children}
