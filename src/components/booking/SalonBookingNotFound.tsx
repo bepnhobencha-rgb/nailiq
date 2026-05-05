@@ -45,7 +45,7 @@ export function SalonBookingNotFound({
       <div className="relative min-h-dvh px-4 py-16 pb-safe sm:px-6">
         <div className="mx-auto max-w-lg text-center">
           <h1 className="text-2xl font-semibold tracking-tight text-nq-foreground">
-            This salon doesn't exist yet
+            This salon doesn&rsquo;t exist yet
           </h1>
           <p className="mt-3 text-[15px] leading-relaxed text-nq-muted">
             Create your booking link in 2 minutes and start getting clients

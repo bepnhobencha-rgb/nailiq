@@ -19,7 +19,6 @@ import {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STAFF_NOTE_MAX_LEN = 200;
-const CLIENT_NOTES_MAX_LEN = 2000;
 
 function isUuidLike(value: string): boolean {
   return UUID_RE.test(value.trim());
