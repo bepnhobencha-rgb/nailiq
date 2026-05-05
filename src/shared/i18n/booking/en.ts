@@ -31,6 +31,12 @@ export const bookingEn = {
   dateClosedShort: "Closed",
   dateHolidayLabel: "Salon closed",
   dateHolidayShort: "Off",
+  /** Calendar month navigation (e.g. "Previous month"). */
+  calendarPrevMonthAria: "Previous month",
+  calendarNextMonthAria: "Next month",
+  /** Calendar legend below grid. */
+  calendarLegendAvailable: "Slots available",
+  calendarLegendClosed: "Closed",
   /** `{n}` = number of open slot buttons for that day. */
   scarcityFewSlots: "Only {n} open times left — this day is filling up.",
   slotLoading: "Loading times…",

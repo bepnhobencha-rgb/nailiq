@@ -17,6 +17,8 @@ import type { BookingStaffItem } from "@/shared/booking/loadBookingServices";
 import { useEffect, useMemo, useState } from "react";
 
 const WEEK_HDR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+/** Public booking lead time. */
+const BOOKING_WINDOW_DAYS = 60;
 
 function startOfLocalDay(d: Date): Date {
   const x = new Date(d);
@@ -34,6 +36,22 @@ function sameLocalCalendarDay(a: Date, b: Date): boolean {
 
 function calendarDayAbbrev(d: Date): string {
   return d.toLocaleDateString("en-US", { weekday: "short" });
+}
+
+function startOfMonth(d: Date): Date {
+  const x = new Date(d.getFullYear(), d.getMonth(), 1);
+  x.setHours(12, 0, 0, 0);
+  return x;
+}
+
+function addMonthsClamped(d: Date, delta: number): Date {
+  const x = new Date(d.getFullYear(), d.getMonth() + delta, 1);
+  x.setHours(12, 0, 0, 0);
+  return x;
+}
+
+function monthHeaderLabel(d: Date): string {
+  return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
 
 export function BookingFlowDatePanel({
@@ -68,17 +86,43 @@ export function BookingFlowDatePanel({
   onBack: () => void;
   onNext: () => void;
 }) {
-  const { todayStart, daysForward } = useMemo(() => {
-    const ts = startOfLocalDay(new Date());
+  const todayStart = useMemo(() => startOfLocalDay(new Date()), []);
+  /** Last day the user is allowed to book (inclusive). */
+  const windowEnd = useMemo(() => {
+    const x = new Date(todayStart);
+    x.setDate(todayStart.getDate() + BOOKING_WINDOW_DAYS - 1);
+    return x;
+  }, [todayStart]);
+
+  const minMonth = useMemo(() => startOfMonth(todayStart), [todayStart]);
+  const maxMonth = useMemo(() => startOfMonth(windowEnd), [windowEnd]);
+
+  const [viewMonth, setViewMonth] = useState<Date>(() => startOfMonth(selectedDate));
+
+  // Keep view in sync if the selection ever lands on a different month.
+  useEffect(() => {
+    const candidate = startOfMonth(selectedDate);
+    if (candidate.getTime() !== viewMonth.getTime()) {
+      if (
+        candidate.getTime() >= minMonth.getTime() &&
+        candidate.getTime() <= maxMonth.getTime()
+      ) {
+        setViewMonth(candidate);
+      }
+    }
+  }, [selectedDate, viewMonth, minMonth, maxMonth]);
+
+  const daysInView = useMemo(() => {
     const out: Date[] = [];
-    for (let i = 0; i < 14; i++) {
-      const x = new Date(ts);
-      x.setDate(ts.getDate() + i);
+    const first = startOfMonth(viewMonth);
+    const next = addMonthsClamped(viewMonth, 1);
+    for (let cur = new Date(first); cur < next; cur.setDate(cur.getDate() + 1)) {
+      const x = new Date(cur);
       x.setHours(12, 0, 0, 0);
       out.push(x);
     }
-    return { todayStart: ts, daysForward: out };
-  }, []);
+    return out;
+  }, [viewMonth]);
 
   const week = parseOpeningHours(openingHoursRaw);
 
@@ -110,9 +154,13 @@ export function BookingFlowDatePanel({
 
     void (async () => {
       const results = await Promise.all(
-        daysForward.map(async (date) => {
+        daysInView.map(async (date) => {
           const ymd = bookingDateYmdFromLocalDate(date);
-          if (dayClosed(date)) {
+          const past = startOfLocalDay(date).getTime() < todayStart.getTime();
+          const beyondWindow =
+            startOfLocalDay(date).getTime() >
+            startOfLocalDay(windowEnd).getTime();
+          if (past || beyondWindow || dayClosed(date)) {
             return { ymd, hasSlots: false };
           }
           const n = await getAvailableTimeSlotsCount({
@@ -146,10 +194,12 @@ export function BookingFlowDatePanel({
     staff,
     staffId,
     serviceTotalMinutes,
-    daysForward,
+    daysInView,
+    todayStart,
+    windowEnd,
   ]);
 
-  const first = daysForward[0]!;
+  const first = daysInView[0]!;
   const leadPad = (first.getDay() + 6) % 7;
 
   type Cell =
@@ -160,6 +210,7 @@ export function BookingFlowDatePanel({
         closed: boolean;
         exceptionClosed: boolean;
         past: boolean;
+        beyondWindow: boolean;
         isToday: boolean;
       };
 
@@ -167,8 +218,10 @@ export function BookingFlowDatePanel({
   for (let i = 0; i < leadPad; i++) {
     cells.push({ kind: "empty" });
   }
-  for (const date of daysForward) {
-    const past = startOfLocalDay(date).getTime() < todayStart.getTime();
+  for (const date of daysInView) {
+    const startMs = startOfLocalDay(date).getTime();
+    const past = startMs < todayStart.getTime();
+    const beyondWindow = startMs > startOfLocalDay(windowEnd).getTime();
     const exception = isExceptionClosed(date);
     const weekly = weekdayClosed(date);
     const closed = weekly || exception;
@@ -178,6 +231,7 @@ export function BookingFlowDatePanel({
       closed,
       exceptionClosed: exception,
       past,
+      beyondWindow,
       isToday: sameLocalCalendarDay(date, new Date()),
     });
   }
@@ -187,7 +241,12 @@ export function BookingFlowDatePanel({
 
   const selectionValid =
     !dayClosed(selectedDate) &&
-    startOfLocalDay(selectedDate).getTime() >= todayStart.getTime();
+    startOfLocalDay(selectedDate).getTime() >= todayStart.getTime() &&
+    startOfLocalDay(selectedDate).getTime() <=
+      startOfLocalDay(windowEnd).getTime();
+
+  const canPrev = viewMonth.getTime() > minMonth.getTime();
+  const canNext = viewMonth.getTime() < maxMonth.getTime();
 
   return (
     <motion.section
@@ -210,6 +269,72 @@ export function BookingFlowDatePanel({
       </h2>
 
       <div className="mt-6 lg:mt-8">
+        <div className="mb-3 flex items-center justify-between gap-3 sm:mb-4">
+          <button
+            type="button"
+            data-testid="calendar-prev-month"
+            disabled={!canPrev}
+            onClick={() => {
+              if (canPrev) setViewMonth(addMonthsClamped(viewMonth, -1));
+            }}
+            aria-label={t.calendarPrevMonthAria}
+            className={cn(
+              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.08] text-nq-foreground transition-colors",
+              canPrev
+                ? "hover:border-white/[0.2] hover:bg-white/[0.04]"
+                : "cursor-not-allowed opacity-40",
+            )}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
+          <div
+            className="text-sm font-semibold tracking-tight text-nq-foreground sm:text-base"
+            aria-live="polite"
+            data-testid="calendar-month-label"
+          >
+            {monthHeaderLabel(viewMonth)}
+          </div>
+          <button
+            type="button"
+            data-testid="calendar-next-month"
+            disabled={!canNext}
+            onClick={() => {
+              if (canNext) setViewMonth(addMonthsClamped(viewMonth, 1));
+            }}
+            aria-label={t.calendarNextMonthAria}
+            className={cn(
+              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.08] text-nq-foreground transition-colors",
+              canNext
+                ? "hover:border-white/[0.2] hover:bg-white/[0.04]"
+                : "cursor-not-allowed opacity-40",
+            )}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+          </button>
+        </div>
+
         <div className="grid grid-cols-7 gap-1.5 text-center sm:gap-2">
           {WEEK_HDR.map((h) => (
             <div
@@ -226,14 +351,15 @@ export function BookingFlowDatePanel({
               );
             }
 
-            const { date, closed, exceptionClosed, past, isToday } = cell;
+            const { date, closed, exceptionClosed, past, beyondWindow, isToday } =
+              cell;
             const selected = sameLocalCalendarDay(date, selectedDate);
-            const disabled = past || closed;
+            const disabled = past || beyondWindow || closed;
             const labelDay = String(date.getDate());
             const abbrev = calendarDayAbbrev(date);
             const ymd = bookingDateYmdFromLocalDate(date);
             const hasSlotsHint =
-              !past && !closed && slotHintByYmd[ymd] === true;
+              !past && !beyondWindow && !closed && slotHintByYmd[ymd] === true;
 
             return (
               <button
@@ -255,7 +381,7 @@ export function BookingFlowDatePanel({
                   "flex min-h-11 flex-col items-center justify-center rounded-xl border px-0.5 py-2 text-center transition-colors sm:min-h-[3rem]",
                   disabled && "cursor-not-allowed opacity-35",
                   !disabled && !selected && "nq-booking-tile-interactive border-white/[0.06] hover:border-white/[0.12]",
-                  closed && !past && "opacity-45",
+                  closed && !past && !beyondWindow && "opacity-45",
                   !disabled &&
                     !selected &&
                     !closed &&
