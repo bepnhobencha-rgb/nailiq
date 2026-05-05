@@ -90,6 +90,8 @@ export function useBookingFlowState(
   const [upsellCandidates, setUpsellCandidates] = useState<
     BookingServiceItem[]
   >([]);
+  /** Staff free-gap minutes after the main service; surfaced in the upsell heading copy. */
+  const [upsellGapMinutes, setUpsellGapMinutes] = useState<number>(0);
 
   const [submitting, setSubmitting] = useState(false);
   const [waitlistSubmitting, setWaitlistSubmitting] = useState(false);
@@ -104,6 +106,7 @@ export function useBookingFlowState(
     endTimeUtc: string;
     staffName: string;
     addonServiceName: string | null;
+    addonPriceCents: number | null;
     price_cents: number;
   } | null>(null);
 
@@ -228,12 +231,14 @@ export function useBookingFlowState(
       !staffId
     ) {
       setUpsellCandidates([]);
+      setUpsellGapMinutes(0);
       return;
     }
 
     const week = parseOpeningHours(salon.opening_hours);
     if (!week) {
       setUpsellCandidates([]);
+      setUpsellGapMinutes(0);
       return;
     }
 
@@ -255,6 +260,7 @@ export function useBookingFlowState(
         startLocal = parseTimeSlotOnDate(timeSlot, ymd);
       } catch {
         setUpsellCandidates([]);
+        setUpsellGapMinutes(0);
         return;
       }
 
@@ -287,6 +293,7 @@ export function useBookingFlowState(
           .filter((id) => isStaffFreeForRange(id, slotStartMs, mainEndMs));
         if (freeIds.length === 0) {
           setUpsellCandidates([]);
+          setUpsellGapMinutes(0);
           return;
         }
         staffForGap = pickBestStaffAmongFree(
@@ -300,6 +307,7 @@ export function useBookingFlowState(
       } else {
         if (!isStaffFreeForRange(staffId, slotStartMs, mainEndMs)) {
           setUpsellCandidates([]);
+          setUpsellGapMinutes(0);
           return;
         }
         staffForGap = staffId;
@@ -319,7 +327,10 @@ export function useBookingFlowState(
           s.totalMinutes > 0 &&
           s.totalMinutes <= gapMin,
       );
-      if (!cancelled) setUpsellCandidates(candidates);
+      if (!cancelled) {
+        setUpsellCandidates(candidates);
+        setUpsellGapMinutes(Math.max(0, Math.round(gapMin)));
+      }
     })();
 
     return () => {
@@ -465,8 +476,8 @@ export function useBookingFlowState(
     setInfoPhoneError(null);
   }, []);
 
-  const handleAddToCalendar = useCallback(() => {
-    if (!bookingResult || !service) return;
+  const handleAddToCalendar = useCallback((): boolean => {
+    if (!bookingResult || !service) return false;
     const start = new Date(bookingResult.startTimeUtc);
     const end = new Date(bookingResult.endTimeUtc);
     const ref = formatNailiqBookingRef(bookingResult.bookingId);
@@ -495,12 +506,19 @@ export function useBookingFlowState(
       const a = document.createElement("a");
       a.href = url;
       a.download = `nailiq-booking-${bookingResult.bookingId.replace(/-/g, "").slice(0, 8)}.ics`;
+      // target="_blank" so iOS Safari falls back to opening the .ics for
+      // direct import when the download attribute isn't honored.
+      a.target = "_blank";
       a.rel = "noopener";
       document.body.appendChild(a);
       a.click();
       a.remove();
+      return true;
+    } catch {
+      return false;
     } finally {
-      URL.revokeObjectURL(url);
+      // Defer revoke so Safari has time to read the Blob.
+      window.setTimeout(() => URL.revokeObjectURL(url), 4_000);
     }
   }, [bookingResult, service, shopLabel]);
 
@@ -558,6 +576,7 @@ export function useBookingFlowState(
         endTimeUtc: result.endTimeUtc,
         staffName: result.staffName,
         addonServiceName: result.addonServiceName,
+        addonPriceCents: result.addonPriceCents,
         price_cents: result.price_cents,
       });
       setStepDir(1);
@@ -779,6 +798,7 @@ export function useBookingFlowState(
     clientNotes,
     selectedAddonId,
     upsellCandidates,
+    upsellGapMinutes,
     submitting,
     waitlistSubmitting,
     waitlistSlotJoined,

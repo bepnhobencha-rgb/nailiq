@@ -76,7 +76,9 @@ export function BookingFlow({
         service={flow.service}
         staffName={flow.bookingResult.staffName}
         addonServiceName={flow.bookingResult.addonServiceName}
+        addonPriceCents={flow.bookingResult.addonPriceCents}
         displayStartUtc={flow.bookingResult.startTimeUtc}
+        displayEndUtc={flow.bookingResult.endTimeUtc}
         bookingId={flow.bookingResult.bookingId}
         salonPhone={salon.salonPhone}
         totalPaidFormatted={formatGuestPriceUsdReceipt(
@@ -195,6 +197,7 @@ export function BookingFlow({
             clientPhone={flow.clientPhone}
             clientNotes={flow.clientNotes}
             upsellCandidates={flow.upsellCandidates}
+            upsellGapMinutes={flow.upsellGapMinutes}
             selectedAddonId={flow.selectedAddonId}
             error={flow.error}
             submitting={flow.submitting}

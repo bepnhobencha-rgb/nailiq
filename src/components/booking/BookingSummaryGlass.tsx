@@ -7,6 +7,7 @@ export function BookingSummaryGlass({
   serviceName,
   staffSummary,
   timeLabel,
+  durationLabel,
   pricingLines,
   customerRows,
 }: {
@@ -15,6 +16,8 @@ export function BookingSummaryGlass({
   serviceName: string;
   staffSummary?: string | null;
   timeLabel: string;
+  /** Pre-formatted "{n} min" (or "{n} min (incl. add-on)") for the Duration row. */
+  durationLabel?: string | null;
   /** Optional price breakdown (confirm step). */
   pricingLines?: readonly { label: string; value: string; valueGold?: boolean }[];
   /** Flowchart step 6 — guest details in the review summary. */
@@ -31,6 +34,9 @@ export function BookingSummaryGlass({
       ? [{ label: t.summaryStaff, value: staffSummary, valueGold: false }]
       : []),
     { label: t.summaryTime, value: timeLabel, valueGold: true },
+    ...(durationLabel != null && durationLabel !== ""
+      ? [{ label: t.summaryDuration, value: durationLabel, valueGold: false }]
+      : []),
     ...(pricingLines ?? []).map((line) => ({
       label: line.label,
       value: line.value,

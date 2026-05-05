@@ -53,6 +53,8 @@ export const bookingEn = {
   successSeeYouSoonBefore: "See you soon at ",
   bookingReferenceLabel: "Booking reference",
   addToCalendar: "Add to calendar",
+  /** Confirmation toast after the .ics file is generated. */
+  addToCalendarDownloaded: "Calendar file ready — open it to add the event.",
   shareBooking: "Share",
   /** Native share sheet title (short). */
   shareBookingSheetTitle: "NailIQ booking",
@@ -64,6 +66,11 @@ export const bookingEn = {
   summaryService: "Service",
   summaryStaff: "Staff",
   summaryTime: "Time",
+  summaryDuration: "Duration",
+  /** `{n}` = total minutes (main service + add-on). e.g. "75 min". */
+  summaryDurationMinutes: "{n} min",
+  /** Tag appended to the duration row when an add-on is included, e.g. "75 min (incl. add-on)". */
+  summaryDurationIncludesAddon: "incl. add-on",
   summaryClientName: "Your name",
   summaryClientPhone: "Phone",
   summaryClientNotes: "Notes",
@@ -102,9 +109,10 @@ export const bookingEn = {
   salonNotLiveHeading: "Booking is paused",
   salonNotLiveBody:
     "{shop} is finishing setup and isn’t taking online bookings yet. Please check back soon.",
-  upsellHeading: "You have extra time — add a service?",
+  /** `{n}` = staff free-gap minutes after the chosen service. */
+  upsellHeading: "You have {n} minutes free after your service — add another?",
   upsellNoThanks: "No thanks",
-  upsellToggleHint: "Tap to include before you confirm.",
+  upsellToggleHint: "Pick one before you confirm to bundle it with your booking.",
   /** Right column when `totalMinutes` from DB is 0 */
   serviceDurationFlexible: "Flexible",
   /** Minute suffix on service tiles, e.g. "45 min" */

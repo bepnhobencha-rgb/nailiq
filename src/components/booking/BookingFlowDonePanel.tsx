@@ -12,6 +12,7 @@ import {
 } from "@/shared/lib/phoneFormat";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 import { getPublicStaffDisplayName } from "@/shared/booking/publicStaffDisplay";
+import { formatGuestPriceUsd } from "@/shared/booking/formatBookingPrice";
 
 export function BookingFlowDonePanel({
   t,
@@ -19,7 +20,9 @@ export function BookingFlowDonePanel({
   service,
   staffName,
   addonServiceName,
+  addonPriceCents,
   displayStartUtc,
+  displayEndUtc,
   bookingId,
   salonPhone,
   totalPaidFormatted,
@@ -31,19 +34,31 @@ export function BookingFlowDonePanel({
   service: BookingServiceItem | undefined;
   staffName: string;
   addonServiceName: string | null;
+  addonPriceCents: number | null;
   displayStartUtc: string;
+  displayEndUtc: string;
   bookingId: string;
   /** Public salon line: `salons.salon_phone` only (not owner `phone`, never guest). */
   salonPhone: string | null;
   /** Receipt-style total from `bookingResult.price_cents`. */
   totalPaidFormatted: string;
-  onAddToCalendar: () => void;
+  /** Fires the .ics download. Returns true if the click was dispatched. */
+  onAddToCalendar: () => boolean;
   onBookAnother: () => void;
 }) {
   const refLabel = formatNailiqBookingRef(bookingId);
   const [shareHint, setShareHint] = useState<string | null>(null);
+  const [calendarHint, setCalendarHint] = useState<string | null>(null);
+
+  const handleAddToCalendarClick = useCallback(() => {
+    const ok = onAddToCalendar();
+    if (!ok) return;
+    setCalendarHint(t.addToCalendarDownloaded);
+    window.setTimeout(() => setCalendarHint(null), 2800);
+  }, [onAddToCalendar, t.addToCalendarDownloaded]);
 
   const start = new Date(displayStartUtc);
+  const end = new Date(displayEndUtc);
   const whenLabel = Number.isNaN(start.getTime())
     ? "—"
     : start.toLocaleString("en-US", {
@@ -54,6 +69,21 @@ export function BookingFlowDonePanel({
         hour: "numeric",
         minute: "2-digit",
       });
+  const totalMinutes =
+    Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())
+      ? 0
+      : Math.max(
+          0,
+          Math.round((end.getTime() - start.getTime()) / 60_000),
+        );
+  const hasAddon =
+    !!(addonServiceName && addonServiceName.trim().length > 0);
+  const durationLabel =
+    totalMinutes > 0
+      ? hasAddon
+        ? `${t.summaryDurationMinutes.replace("{n}", String(totalMinutes))} (${t.summaryDurationIncludesAddon})`
+        : t.summaryDurationMinutes.replace("{n}", String(totalMinutes))
+      : null;
 
   const staffDisplayName = getPublicStaffDisplayName(
     staffName,
@@ -186,7 +216,12 @@ export function BookingFlowDonePanel({
                 {t.summaryAddOn}
               </span>
               <span className="min-w-0 shrink text-right font-semibold text-nq-foreground">
-                {addonServiceName.trim()}
+                {(() => {
+                  const priceLabel = formatGuestPriceUsd(addonPriceCents);
+                  return priceLabel
+                    ? `${addonServiceName.trim()} — ${priceLabel}`
+                    : addonServiceName.trim();
+                })()}
               </span>
             </div>
           ) : null}
@@ -204,6 +239,16 @@ export function BookingFlowDonePanel({
               {whenLabel}
             </span>
           </div>
+          {durationLabel ? (
+            <div className="flex items-baseline justify-between gap-4 border-t border-white/[0.06] pt-3.5 text-[15px] sm:text-base">
+              <span className="font-semibold text-nq-muted">
+                {t.summaryDuration}
+              </span>
+              <span className="min-w-0 shrink text-right font-semibold text-nq-foreground">
+                {durationLabel}
+              </span>
+            </div>
+          ) : null}
           <div className="flex items-baseline justify-between gap-4 border-t border-white/[0.06] pt-3.5 text-[15px] sm:text-base">
             <span className="font-semibold text-nq-muted">{t.summaryTotal}</span>
             <span className="min-w-0 shrink text-right font-semibold tabular-nums text-nq-primary">
@@ -217,8 +262,14 @@ export function BookingFlowDonePanel({
         </p>
       </div>
 
-      {shareHint ? (
-        <p className="text-center text-sm text-nq-success">{shareHint}</p>
+      {shareHint || calendarHint ? (
+        <p
+          className="text-center text-sm text-nq-success"
+          role="status"
+          aria-live="polite"
+        >
+          {shareHint ?? calendarHint}
+        </p>
       ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-center lg:justify-end lg:gap-4">
@@ -227,7 +278,7 @@ export function BookingFlowDonePanel({
           variant="secondary"
           size="lg"
           className="nq-booking-glass min-h-11 w-full shrink-0 border border-nq-primary/35 bg-transparent text-nq-primary shadow-none hover:bg-white/[0.04] hover:opacity-100 sm:min-w-[11rem] lg:w-auto"
-          onClick={onAddToCalendar}
+          onClick={handleAddToCalendarClick}
         >
           {t.addToCalendar}
         </Button>

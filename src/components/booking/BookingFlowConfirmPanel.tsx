@@ -26,6 +26,7 @@ export function BookingFlowConfirmPanel({
   clientPhone,
   clientNotes,
   upsellCandidates,
+  upsellGapMinutes,
   selectedAddonId,
   error,
   submitting,
@@ -45,6 +46,7 @@ export function BookingFlowConfirmPanel({
   clientPhone: string;
   clientNotes: string;
   upsellCandidates: readonly BookingServiceItem[];
+  upsellGapMinutes: number;
   selectedAddonId: string | null;
   error: string | null;
   submitting: boolean;
@@ -71,6 +73,29 @@ export function BookingFlowConfirmPanel({
   const totalCents =
     (service.priceCents ?? 0) + (selectedAddOn?.priceCents ?? 0);
 
+  const totalMinutes =
+    (service.totalMinutes || 0) + (selectedAddOn?.totalMinutes ?? 0);
+  const durationLabel =
+    totalMinutes > 0
+      ? selectedAddOn
+        ? `${t.summaryDurationMinutes.replace("{n}", String(totalMinutes))} (${t.summaryDurationIncludesAddon})`
+        : t.summaryDurationMinutes.replace("{n}", String(totalMinutes))
+      : null;
+
+  const addonRow = selectedAddOn
+    ? (() => {
+        const priceLabel =
+          selectedAddOn.priceDisplay ??
+          formatGuestPriceUsd(selectedAddOn.priceCents);
+        return {
+          label: t.summaryAddOn,
+          value: priceLabel
+            ? `${selectedAddOn.name} — ${priceLabel}`
+            : selectedAddOn.name,
+        };
+      })()
+    : null;
+
   const pricingLines = [
     {
       label: t.summaryServicePrice,
@@ -79,17 +104,7 @@ export function BookingFlowConfirmPanel({
         formatGuestPriceUsd(service.priceCents) ??
         "—",
     },
-    ...(selectedAddOn
-      ? [
-          {
-            label: t.summaryAddonPrice,
-            value:
-              selectedAddOn.priceDisplay ??
-              formatGuestPriceUsd(selectedAddOn.priceCents) ??
-              "—",
-          },
-        ]
-      : []),
+    ...(addonRow ? [addonRow] : []),
     {
       label: t.summaryTotal,
       value: formatGuestPriceUsdReceipt(totalCents),
@@ -126,14 +141,20 @@ export function BookingFlowConfirmPanel({
             serviceName={service.name}
             staffSummary={staffSummaryLabel}
             timeLabel={confirmTimeLabel}
+            durationLabel={durationLabel}
             pricingLines={pricingLines}
             customerRows={customerRows}
           />
         </div>
 
-        {upsellCandidates.length > 0 ? (
-          <div className="mt-8" role="group" aria-label={t.upsellHeading}>
-            <p className="text-sm font-medium text-nq-foreground">{t.upsellHeading}</p>
+        {upsellCandidates.length > 0 ? (() => {
+          const heading = t.upsellHeading.replace(
+            "{n}",
+            String(upsellGapMinutes),
+          );
+          return (
+          <div className="mt-8" role="group" aria-label={heading}>
+            <p className="text-sm font-medium text-nq-foreground">{heading}</p>
             <p className="mt-1 text-xs text-nq-muted">{t.upsellToggleHint}</p>
             <div className="mt-4 flex flex-wrap gap-2">
               <button
@@ -168,7 +189,8 @@ export function BookingFlowConfirmPanel({
               })}
             </div>
           </div>
-        ) : null}
+          );
+        })() : null}
 
         {error ? (
           <p className="mt-6 shrink-0 text-sm text-nq-error" role="alert">
