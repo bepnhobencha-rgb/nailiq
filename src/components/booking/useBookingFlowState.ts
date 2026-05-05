@@ -37,10 +37,6 @@ import { computeStaffFloatGapMinutes } from "@/shared/booking/computeStaffFloatG
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 
-import {
-  loadSavedBookingGuestProfile,
-  saveBookingGuestProfile,
-} from "@/shared/booking/bookingClientProfile";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import * as Sentry from "@sentry/nextjs";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
@@ -109,19 +105,8 @@ export function useBookingFlowState(
   } | null>(null);
 
   const confettiFiredRef = useRef(false);
-  const profileLoadedRef = useRef(false);
 
   const service = serviceId ? getServiceById(services, serviceId) : undefined;
-
-  useEffect(() => {
-    if (profileLoadedRef.current) return;
-    profileLoadedRef.current = true;
-    const p = loadSavedBookingGuestProfile();
-    if (p) {
-      setClientName(p.name);
-      setClientPhone(p.phone);
-    }
-  }, []);
 
   const guestContactInvalid = useMemo(() => {
     const nameT = clientName.trim();
@@ -518,7 +503,6 @@ export function useBookingFlowState(
         clientNotes: notes,
         addonServiceId: addonId,
       });
-      saveBookingGuestProfile({ name, phone });
       setBookingResult({
         bookingId: result.bookingId,
         startTimeUtc: result.startTimeUtc,

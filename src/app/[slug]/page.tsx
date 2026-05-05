@@ -4,7 +4,6 @@ import { Suspense } from "react";
 import { BookingFlow } from "@/components/booking/BookingFlow";
 import { SalonBookingNotFound } from "@/components/booking/SalonBookingNotFound";
 import { SalonBookingPaused } from "@/components/booking/SalonBookingPaused";
-import { BookingReturningGreeting } from "@/components/booking/BookingReturningGreeting";
 import { BookingSalonHero } from "@/components/booking/BookingSalonHero";
 import { SalonBookingSkeleton } from "@/components/booking/SalonBookingSkeleton";
 import { BookingFlowErrorBoundary } from "@/components/booking/BookingFlowErrorBoundary";
@@ -128,7 +127,6 @@ async function PublicBookingRouteBody({
             <p className="mt-2 text-sm text-nq-muted sm:text-base lg:mt-3 lg:text-[17px] lg:leading-relaxed">
               {t.pageSubtitle}—{shopLabel}
             </p>
-            <BookingReturningGreeting t={t} />
             <BookingFlowErrorBoundary
               shopSlug={normalizedSlug}
               salon={load.salon}

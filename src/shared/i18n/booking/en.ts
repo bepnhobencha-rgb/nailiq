@@ -31,8 +31,6 @@ export const bookingEn = {
   dateClosedShort: "Closed",
   dateHolidayLabel: "Salon closed",
   dateHolidayShort: "Off",
-  /** `{name}` = first word of saved guest name from device. */
-  returningGreeting: "Hi, {name} — welcome back.",
   /** `{n}` = number of open slot buttons for that day. */
   scarcityFewSlots: "Only {n} open times left — this day is filling up.",
   slotLoading: "Loading times…",
