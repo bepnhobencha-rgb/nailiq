@@ -152,7 +152,7 @@ export const userVi: UserMessages = {
     },
     walkin: {
       invalidPhone:
-        "Định dạng điện thoại không hợp lệ. Ví dụ: 555-123-4567",
+        "Số điện thoại không hợp lệ — VD: 0901 234 567",
       phoneRequired: "Nhập số điện thoại của khách.",
       nameRequired: "Vui lòng nhập tên khách.",
       nameTooLong: "Tên không được quá 100 ký tự.",

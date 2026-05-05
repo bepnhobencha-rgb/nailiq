@@ -53,7 +53,7 @@ test.describe("Booking validation — info step", () => {
     await navigateToBookingInfo(page, testSlug);
     await page.getByTestId("booking-info-name").fill("Ada");
 
-    for (const fmt of ["5551234567", "555-123-4567", "+1 555 123 4567"]) {
+    for (const fmt of ["6041234567", "+1 778 868 0738", "+84901234567"]) {
       await page.getByTestId("booking-info-phone").fill(fmt);
       await page.getByTestId("booking-info-phone").blur();
 
@@ -64,7 +64,7 @@ test.describe("Booking validation — info step", () => {
 
   test("bv-3: empty / whitespace-only name fails; valid name clears error", async ({ page }) => {
     await navigateToBookingInfo(page, testSlug);
-    await page.getByTestId("booking-info-phone").fill("5551234567");
+    await page.getByTestId("booking-info-phone").fill("6041234567");
 
     await page.getByTestId("booking-info-name").focus();
     await page.getByTestId("booking-info-name").blur();
@@ -88,7 +88,7 @@ test.describe("Booking validation — info step", () => {
 
   test("bv-4: name max length boundary", async ({ page }) => {
     await navigateToBookingInfo(page, testSlug);
-    await page.getByTestId("booking-info-phone").fill("5551234567");
+    await page.getByTestId("booking-info-phone").fill("6041234567");
 
     await page.getByTestId("booking-info-name").evaluate((el: HTMLInputElement) => {
       el.removeAttribute("maxLength");

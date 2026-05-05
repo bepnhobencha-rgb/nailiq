@@ -392,7 +392,7 @@ export const userEn: UserMessages = {
     },
     walkin: {
       invalidPhone:
-        "Phone format invalid. Example: 555-123-4567",
+        "Phone number invalid. Example: 604 123 4567",
       phoneRequired: "Enter the guest phone number.",
       nameRequired: "Please enter the guest name.",
       nameTooLong: "Name cannot exceed 100 characters.",

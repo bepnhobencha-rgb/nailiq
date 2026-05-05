@@ -83,7 +83,7 @@ export const bookingEn = {
     slotJustTaken:
       "This slot was just booked. Please pick another time.",
     invalidPhone:
-      "Phone format invalid. Example: 555-123-4567",
+      "Phone number invalid. Example: 604 123 4567 or +84 90 123 4567",
     phoneRequired: "Enter your phone number.",
     nameRequired: "Please enter your name.",
     nameTooLong: "Name cannot exceed 100 characters.",
