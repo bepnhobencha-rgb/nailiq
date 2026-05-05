@@ -335,7 +335,10 @@ export function BookingFlowDatePanel({
           </button>
         </div>
 
-        <div className="grid grid-cols-7 gap-1.5 text-center sm:gap-2">
+        <div
+          className="grid grid-cols-7 gap-1.5 text-center sm:gap-2"
+          data-testid="calendar-grid"
+        >
           {WEEK_HDR.map((h) => (
             <div
               key={h}
@@ -426,6 +429,26 @@ export function BookingFlowDatePanel({
               </button>
             );
           })}
+        </div>
+
+        <div
+          className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-1 text-[11px] text-nq-muted sm:text-xs"
+          data-testid="calendar-legend"
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className="inline-block h-1.5 w-1.5 rounded-full bg-nq-primary"
+              aria-hidden
+            />
+            {t.calendarLegendAvailable}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className="inline-block h-1.5 w-1.5 rounded-full bg-nq-muted/45"
+              aria-hidden
+            />
+            {t.calendarLegendClosed}
+          </span>
         </div>
       </div>
 
