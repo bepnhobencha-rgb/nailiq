@@ -1,6 +1,6 @@
 import {
   isValidCustomerName,
-  sanitizeCustomerName,
+  trimCustomerName,
 } from "../nameFormat";
 
 let pass = 0,
@@ -42,9 +42,9 @@ test("isValidCustomerName rejects empty and too long", () => {
   assertEqual(isValidCustomerName("a".repeat(101)), false);
 });
 
-test("sanitizeCustomerName trims and caps length", () => {
-  assertEqual(sanitizeCustomerName("  Ada  "), "Ada");
-  assertEqual(sanitizeCustomerName("x".repeat(120)).length, 100);
+test("trimCustomerName trims and caps length", () => {
+  assertEqual(trimCustomerName("  Ada  "), "Ada");
+  assertEqual(trimCustomerName("x".repeat(120)).length, 100);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

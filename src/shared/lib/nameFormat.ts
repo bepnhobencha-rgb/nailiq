@@ -13,7 +13,7 @@ export function isValidCustomerName(input: string): boolean {
   return SAFE_NAME_REGEX.test(trimmed);
 }
 
-/** Normalize for safe storage attempts (prefer rejecting invalid via {@link isValidCustomerName}). */
-export function sanitizeCustomerName(input: string): string {
+/** Trim + length-cap only. Does NOT sanitize XSS — use {@link isValidCustomerName} for safety. */
+export function trimCustomerName(input: string): string {
   return input.trim().slice(0, BOOKING_GUEST_NAME_MAX);
 }
