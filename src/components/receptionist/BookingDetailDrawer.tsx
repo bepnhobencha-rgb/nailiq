@@ -93,6 +93,7 @@ export function BookingDetailDrawer({
   const [portalEl, setPortalEl] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- portal target is only available client-side
     setPortalEl(document.body);
   }, []);
 
@@ -102,10 +103,12 @@ export function BookingDetailDrawer({
   }, [onClose]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- exit edit mode when drawer closes
     if (!open) setEditMode(false);
   }, [open]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- exit edit mode when drawer rebinds to a different booking
     setEditMode(false);
   }, [deskEdit?.booking.id]);
 
