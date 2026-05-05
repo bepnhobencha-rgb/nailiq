@@ -362,6 +362,30 @@ export async function sendRegisterOtp(
   }
 }
 
+/**
+ * Login-only OTP send. Rejects phones that don't already match a `salons.phone`
+ * BEFORE issuing an SMS — saves cost in production and gives the user a clear
+ * "Số này chưa đăng ký" up-front instead of mid-verify.
+ */
+export async function sendLoginOtp(
+  phoneRaw: string,
+): Promise<SendRegisterOtpResult> {
+  const phone = normalizeRegisterPhone(phoneRaw);
+  if (!isRegisterPhoneDigitsValid(phone)) {
+    return { success: false, error: INVALID_PHONE_MSG };
+  }
+
+  const slug = await lookupSalonSlugForOwnerPhone(phone);
+  if (!slug) {
+    return { success: false, error: "Số này chưa đăng ký." };
+  }
+
+  // Phone matches an existing salon — delegate to sendRegisterOtp which will
+  // hit the "returning" branch (returns mode: "returning"). No DB-write side
+  // effects beyond the same OTP row that registration would write.
+  return sendRegisterOtp(phoneRaw);
+}
+
 export type VerifyRegisterOtpResult =
   | { ok: true; next: "setup"; completionToken: string }
   | { ok: true; next: "dashboard"; slug: string }
