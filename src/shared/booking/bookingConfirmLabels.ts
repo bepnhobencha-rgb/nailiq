@@ -7,6 +7,7 @@ export function formatBookingSlotDisplay(
     weekday: "short",
     month: "short",
     day: "numeric",
+    year: "numeric",
   });
   return `${datePart} · ${timeSlotLabel}`;
 }
