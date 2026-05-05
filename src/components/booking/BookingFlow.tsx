@@ -97,6 +97,7 @@ export function BookingFlow({
             t={t}
             services={services}
             serviceId={flow.serviceId}
+            error={flow.serviceError}
             stepDir={flow.stepDir}
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}

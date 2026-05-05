@@ -80,6 +80,7 @@ export const bookingEn = {
       "Name required (max 100 characters)",
     invalidNameChars:
       "Name contains invalid characters.",
+    serviceRequired: "Please select a service to continue.",
   },
   clientNameLabel: "Your name",
   clientPhoneLabel: "Phone number",

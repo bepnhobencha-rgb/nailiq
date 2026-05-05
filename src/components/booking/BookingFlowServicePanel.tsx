@@ -14,6 +14,7 @@ export function BookingFlowServicePanel({
   t,
   services,
   serviceId,
+  error,
   stepDir,
   reducedMotion,
   stepTransition,
@@ -23,6 +24,7 @@ export function BookingFlowServicePanel({
   t: BookingMessages;
   services: readonly BookingServiceItem[];
   serviceId: string | null;
+  error: string | null;
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
   stepTransition: { duration: number; ease: [number, number, number, number] };
@@ -97,10 +99,17 @@ export function BookingFlowServicePanel({
         })}
       </div>
 
-      <div className="mt-10 flex justify-end lg:mt-12">
-        <LuxuryBookingCta disabled={!serviceId} onClick={onNext}>
-          {t.next}
-        </LuxuryBookingCta>
+      <div className="mt-10 flex flex-col items-end gap-2 lg:mt-12">
+        {error ? (
+          <p
+            className="self-stretch text-right text-sm text-nq-error"
+            role="alert"
+            data-testid="booking-service-error"
+          >
+            {error}
+          </p>
+        ) : null}
+        <LuxuryBookingCta onClick={onNext}>{t.next}</LuxuryBookingCta>
       </div>
     </motion.section>
   );

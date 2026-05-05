@@ -93,6 +93,7 @@ export function useBookingFlowState(
   const [waitlistSubmitting, setWaitlistSubmitting] = useState(false);
   const [waitlistSlotJoined, setWaitlistSlotJoined] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [serviceError, setServiceError] = useState<string | null>(null);
   const [infoNameError, setInfoNameError] = useState<string | null>(null);
   const [infoPhoneError, setInfoPhoneError] = useState<string | null>(null);
   const [bookingResult, setBookingResult] = useState<{
@@ -340,10 +341,19 @@ export function useBookingFlowState(
   }, [selectedDate, timeSlot]);
 
   const goServiceNext = useCallback(() => {
-    if (!serviceId) return;
+    if (!serviceId) {
+      setServiceError(t.bookingErrors.serviceRequired);
+      return;
+    }
+    setServiceError(null);
     setStepDir(1);
     setStep("staff");
-  }, [serviceId]);
+  }, [serviceId, t.bookingErrors.serviceRequired]);
+
+  const setServiceIdAndClearError = useCallback((id: string) => {
+    setServiceId(id);
+    setServiceError(null);
+  }, []);
 
   const goStaffNext = useCallback(() => {
     if (!staffId) return;
@@ -748,6 +758,7 @@ export function useBookingFlowState(
     waitlistSubmitting,
     waitlistSlotJoined,
     error,
+    serviceError,
     bookingResult,
     infoNameError,
     infoPhoneError,
@@ -755,7 +766,7 @@ export function useBookingFlowState(
     staffSummaryLabel,
     confirmTimeLabel,
     guestContactInvalid,
-    setServiceId,
+    setServiceId: setServiceIdAndClearError,
     setStaffId,
     setSelectedDate: selectDateIfChanged,
     setTimeSlot,
