@@ -107,6 +107,7 @@ export function BookingFlowDatePanel({
         candidate.getTime() >= minMonth.getTime() &&
         candidate.getTime() <= maxMonth.getTime()
       ) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- pull viewMonth back into range when selectedDate jumps
         setViewMonth(candidate);
       }
     }
@@ -148,6 +149,7 @@ export function BookingFlowDatePanel({
   useEffect(() => {
     let cancelled = false;
     if (!salonId || serviceTotalMinutes <= 0 || staff.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale slot hints when inputs become incomplete
       setSlotHintByYmd({});
       return;
     }
