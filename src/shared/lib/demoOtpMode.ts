@@ -1,3 +1,10 @@
+/**
+ * Demo cookies and demo-OTP registrations are restricted to this slug —
+ * never grants access to real-tenant data. In production demo is fully off
+ * (`isDemoOtpRuntime()` returns false) so this constant is inert.
+ */
+export const DEMO_SALON_SLUG = "demo-salon";
+
 /** Trims stray quotes/spaces — Vercel env values sometimes include wrapping quotes */
 export function normalizeDemoOtpEnv(raw: string | undefined): boolean {
   if (raw == null) return false;
