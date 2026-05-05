@@ -32,6 +32,10 @@ import { fetchBookingOccupancyForRange } from "@/shared/booking/fetchBookingOccu
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import { pickBestStaffAmongFree } from "@/shared/booking/pickBestStaffAmongFree";
 import { computeStaffFloatGapMinutes } from "@/shared/booking/computeStaffFloatGapMinutes";
+import {
+  buildCapabilityMap,
+  filterStaffCapableForService,
+} from "@/shared/booking/staffCapability";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { getPublicStaffDisplayName } from "@/shared/booking/publicStaffDisplay";
@@ -61,7 +65,12 @@ export function useBookingFlowState(
   services: readonly BookingServiceItem[],
   staff: readonly BookingStaffItem[],
   salon: BookingSalonMeta,
+  capabilityRows: { staff_id: string; service_id: string }[] | null,
 ) {
+  const capability = useMemo(
+    () => buildCapabilityMap(capabilityRows),
+    [capabilityRows],
+  );
   const shopLabel = useMemo(
     () => formatSalonDisplayName({ name: salon.name, slug: shopSlug }),
     [salon.name, shopSlug],
@@ -113,6 +122,25 @@ export function useBookingFlowState(
   const confettiFiredRef = useRef(false);
 
   const service = serviceId ? getServiceById(services, serviceId) : undefined;
+
+  /** Staff filtered to those capable of the currently selected service.
+   *  When no service is picked yet we show the full list (step 1 hasn't gated anything). */
+  const capableStaff = useMemo(
+    () => filterStaffCapableForService(staff, capability, serviceId),
+    [staff, capability, serviceId],
+  );
+
+  /** If the user changed service after picking a specific staff who can no
+   *  longer perform it, fall back to "any" so step 2 stays valid. */
+  useEffect(() => {
+    if (
+      staffId &&
+      staffId !== BOOKING_ANY_STAFF_ID &&
+      !capableStaff.some((s) => s.id === staffId)
+    ) {
+      setStaffId(BOOKING_ANY_STAFF_ID);
+    }
+  }, [capableStaff, staffId]);
 
   const guestContactInvalid = useMemo(() => {
     const nameT = clientName.trim();
@@ -183,7 +211,7 @@ export function useBookingFlowState(
       openingHoursRaw: salon.opening_hours,
       selectedDate,
       staffId: staffId ?? BOOKING_ANY_STAFF_ID,
-      staffList: staff,
+      staffList: capableStaff,
       serviceDurationMinutes: service.totalMinutes,
       closedDateYmdSet,
     }).then((slots) => {
@@ -202,7 +230,7 @@ export function useBookingFlowState(
     closedDateYmdSet,
     selectedDate,
     staffId,
-    staff,
+    capableStaff,
     serviceId,
     service,
   ]);
@@ -593,7 +621,7 @@ export function useBookingFlowState(
             openingHoursRaw: salon.opening_hours,
             selectedDate,
             staffId: staffId ?? BOOKING_ANY_STAFF_ID,
-            staffList: staff,
+            staffList: capableStaff,
             serviceDurationMinutes: service.totalMinutes,
             closedDateYmdSet,
           }).then((slots) => {
@@ -808,6 +836,7 @@ export function useBookingFlowState(
     infoNameError,
     infoPhoneError,
     service,
+    capableStaff,
     staffSummaryLabel,
     confirmTimeLabel,
     guestContactInvalid,

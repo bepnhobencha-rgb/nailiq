@@ -21,6 +21,11 @@ export type SetupStaffRow = {
   job_role: StaffJobRole;
 };
 
+export type SetupStaffServiceOption = {
+  id: string;
+  name: string;
+};
+
 const ROLE_OPTIONS: { value: StaffJobRole; label: string }[] = [
   { value: "owner", label: "Owner" },
   { value: "senior", label: "Senior" },
@@ -32,12 +37,23 @@ const TOAST_ERR = "✗ Could not save. Check your connection.";
 export function StaffSetupPanel({
   slug,
   initialRows,
+  services,
+  initialServiceIdsByStaff,
+  salonHasCapabilityRows,
 }: {
   slug: string;
   initialRows: SetupStaffRow[];
+  services: SetupStaffServiceOption[];
+  /** staffId → service IDs already attached. */
+  initialServiceIdsByStaff: Record<string, string[]>;
+  /** When false, the salon is in the all-capable fallback; checkboxes are pre-checked
+   *  so the first save does not accidentally narrow capability. */
+  salonHasCapabilityRows: boolean;
 }) {
   const { language } = useUserLanguage();
-  const setupErrors = getUserMessages(language).setupErrors;
+  const messages = getUserMessages(language);
+  const setupErrors = messages.setupErrors;
+  const setupStaffCopy = messages.setupStaff;
   const router = useRouter();
   const [rows, setRows] = useState(initialRows);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -45,6 +61,15 @@ export function StaffSetupPanel({
 
   const [draftName, setDraftName] = useState("");
   const [draftRole, setDraftRole] = useState<StaffJobRole>("nail_tech");
+  /** New-staff capability selection. Default: all checked, so an owner who
+   *  doesn't think about it preserves the all-capable fallback for that staff. */
+  const [draftServiceIds, setDraftServiceIds] = useState<string[]>(
+    () => services.map((s) => s.id),
+  );
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-sync when services list grows/shrinks
+  useEffect(() => {
+    setDraftServiceIds(services.map((s) => s.id));
+  }, [services]);
   const [addSaveStatus, setAddSaveStatus] = useState<SaveButtonStatus>("idle");
   const [addError, setAddError] = useState<string | null>(null);
   const [toast, setToast] = useState<SetupToastPayload | null>(null);
@@ -75,13 +100,16 @@ export function StaffSetupPanel({
   const handleUpdate = useCallback(
     async (
       staffId: string,
-      patch: Partial<Pick<SetupStaffRow, "name" | "job_role">>,
+      patch: Partial<Pick<SetupStaffRow, "name" | "job_role">> & {
+        serviceIds?: string[];
+      },
     ) => {
       setFormError(null);
       setPendingId(staffId);
       const res = await updateStaff(slug, staffId, {
         name: patch.name,
         role: patch.job_role,
+        serviceIds: patch.serviceIds,
       });
       setPendingId(null);
       if (!res.ok) {
@@ -91,7 +119,13 @@ export function StaffSetupPanel({
       }
       setRows((prev) =>
         prev.map((r) =>
-          r.id === staffId ? { ...r, ...patch } : r,
+          r.id === staffId
+            ? {
+                ...r,
+                name: patch.name ?? r.name,
+                job_role: patch.job_role ?? r.job_role,
+              }
+            : r,
         ),
       );
       setToast({ variant: "success", message: "✓ Staff member saved" });
@@ -130,6 +164,7 @@ export function StaffSetupPanel({
     const res = await addStaff(slug, {
       name: draftName.trim(),
       role: draftRole,
+      serviceIds: draftServiceIds,
     });
     if (!res.ok) {
       setAddSaveStatus("error");
@@ -142,8 +177,17 @@ export function StaffSetupPanel({
     addStatusTimerRef.current = setTimeout(() => setAddSaveStatus("idle"), 2000);
     setDraftName("");
     setDraftRole("nail_tech");
+    setDraftServiceIds(services.map((s) => s.id));
     refresh();
-  }, [clearAddStatusTimer, draftName, draftRole, refresh, slug]);
+  }, [
+    clearAddStatusTimer,
+    draftName,
+    draftRole,
+    draftServiceIds,
+    services,
+    refresh,
+    slug,
+  ]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -162,6 +206,18 @@ export function StaffSetupPanel({
           >
             <StaffRowFields
               row={row}
+              services={services}
+              /* Fallback rule: if no row in the salon has any services yet,
+                 every staff is capable of every service. The form mirrors
+                 that by pre-checking everything until the owner saves. */
+              initialServiceIds={
+                salonHasCapabilityRows
+                  ? (initialServiceIdsByStaff[row.id] ?? [])
+                  : services.map((s) => s.id)
+              }
+              capabilityLabel={setupStaffCopy.servicesCapableLabel}
+              capabilityHint={setupStaffCopy.servicesCapableHint}
+              capabilityEmpty={setupStaffCopy.noServicesAvailable}
               disabled={pendingId === row.id}
               confirmingDelete={confirmDeleteId === row.id}
               onBeginDelete={() => {
@@ -221,6 +277,15 @@ export function StaffSetupPanel({
               ))}
             </select>
           </label>
+          <ServicesCheckboxList
+            services={services}
+            selectedIds={draftServiceIds}
+            disabled={addSaveStatus === "saving"}
+            label={setupStaffCopy.servicesCapableLabel}
+            hint={setupStaffCopy.servicesCapableHint}
+            emptyLabel={setupStaffCopy.noServicesAvailable}
+            onChange={setDraftServiceIds}
+          />
           <SaveButton
             status={addSaveStatus}
             onSave={() => {
@@ -255,6 +320,11 @@ function mapDeleteStaffError(
 
 function StaffRowFields({
   row,
+  services,
+  initialServiceIds,
+  capabilityLabel,
+  capabilityHint,
+  capabilityEmpty,
   disabled,
   confirmingDelete,
   onBeginDelete,
@@ -264,24 +334,36 @@ function StaffRowFields({
   canDelete,
 }: {
   row: SetupStaffRow;
+  services: SetupStaffServiceOption[];
+  initialServiceIds: string[];
+  capabilityLabel: string;
+  capabilityHint: string;
+  capabilityEmpty: string;
   disabled: boolean;
   confirmingDelete: boolean;
   onBeginDelete: () => void;
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
   onBlurSave: (
-    patch: Partial<Pick<SetupStaffRow, "name" | "job_role">>,
+    patch: Partial<Pick<SetupStaffRow, "name" | "job_role">> & {
+      serviceIds?: string[];
+    },
   ) => void;
   canDelete: boolean;
 }) {
   const [name, setName] = useState(row.name);
   const [role, setRole] = useState<StaffJobRole>(row.job_role);
+  const [serviceIds, setServiceIds] = useState<string[]>(initialServiceIds);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- row props after save / refresh
     setName(row.name);
     setRole(row.job_role);
-  }, [row]);
+    setServiceIds(initialServiceIds);
+    /* `initialServiceIds` is computed from a fresh prop on every server
+       refresh; identity changes are intentional. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row, initialServiceIds.join("|")]);
 
   if (confirmingDelete) {
     return (
@@ -332,6 +414,21 @@ function StaffRowFields({
           </select>
         </label>
       </div>
+      <ServicesCheckboxList
+        services={services}
+        selectedIds={serviceIds}
+        disabled={disabled}
+        label={capabilityLabel}
+        hint={capabilityHint}
+        emptyLabel={capabilityEmpty}
+        onChange={(next) => {
+          setServiceIds(next);
+          /* Save on every toggle. The row's name/role change paths debounce
+             via blur; capability is a low-frequency, idempotent set so we
+             don't bother batching. */
+          onBlurSave({ serviceIds: next });
+        }}
+      />
       <Button
         type="button"
         variant="secondary"
@@ -342,5 +439,67 @@ function StaffRowFields({
         Remove staff
       </Button>
     </div>
+  );
+}
+
+function ServicesCheckboxList({
+  services,
+  selectedIds,
+  disabled,
+  label,
+  hint,
+  emptyLabel,
+  onChange,
+}: {
+  services: SetupStaffServiceOption[];
+  selectedIds: string[];
+  disabled: boolean;
+  label: string;
+  hint: string;
+  emptyLabel: string;
+  onChange: (next: string[]) => void;
+}) {
+  const selectedSet = new Set(selectedIds);
+
+  if (services.length === 0) {
+    return (
+      <p className="text-sm text-nq-muted" role="note">
+        {emptyLabel}
+      </p>
+    );
+  }
+
+  return (
+    <fieldset className="block">
+      <legend className="text-sm font-medium text-nq-muted">{label}</legend>
+      <p className="mt-1 text-xs text-nq-muted/80">{hint}</p>
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {services.map((s) => {
+          const checked = selectedSet.has(s.id);
+          return (
+            <label
+              key={s.id}
+              className="flex min-h-11 items-center gap-2 rounded-xl border border-nq-border/40 bg-nq-bg/85 px-3 py-2 text-sm text-nq-foreground"
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={disabled}
+                onChange={(e) => {
+                  const next = new Set(selectedIds);
+                  if (e.target.checked) {
+                    next.add(s.id);
+                  } else {
+                    next.delete(s.id);
+                  }
+                  onChange(Array.from(next));
+                }}
+              />
+              <span className="min-w-0 flex-1 truncate">{s.name}</span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }

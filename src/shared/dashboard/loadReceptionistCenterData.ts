@@ -52,6 +52,8 @@ export interface ReceptionistCenterData {
     /** Cleanup / turnover minutes after service (catalog); used for drawer time copy. */
     service_buffer_minutes: number;
   }>;
+  /** Per-staff service whitelist for this salon. `null` = no rows → all-capable fallback. */
+  capabilityRows: { staff_id: string; service_id: string }[] | null;
   selectedDate: string;
 }
 
@@ -338,6 +340,23 @@ export async function loadReceptionistCenterData(
     (x): x is ReceptionistCenterData["bookingsForDay"][0] => x !== null,
   );
 
+  let capabilityRows: { staff_id: string; service_id: string }[] | null = null;
+  if ((staffRows?.length ?? 0) > 0) {
+    const staffIds = (staffRows ?? []).map((s) => String(s.id));
+    const { data: capRows, error: capErr } = await supabase
+      .from("staff_services")
+      .select("staff_id, service_id")
+      .in("staff_id", staffIds);
+    if (capErr) {
+      console.error("[loadReceptionistCenterData] staff_services", capErr);
+    } else if ((capRows?.length ?? 0) > 0) {
+      capabilityRows = (capRows ?? []).map((r) => ({
+        staff_id: String(r.staff_id),
+        service_id: String(r.service_id),
+      }));
+    }
+  }
+
   return {
     ok: true,
     data: {
@@ -354,6 +373,7 @@ export async function loadReceptionistCenterData(
         })) ?? [],
       walkinQueue,
       bookingsForDay,
+      capabilityRows,
       selectedDate: dateYmd,
     },
   };

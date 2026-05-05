@@ -6,6 +6,10 @@ import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
 import { parseTimeSlotOnDate } from "@/shared/booking/parseBookingTimeSlot";
 import { pickBestStaffAmongFree } from "@/shared/booking/pickBestStaffAmongFree";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
+import {
+  buildCapabilityMap,
+  filterStaffCapableForServices,
+} from "@/shared/booking/staffCapability";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { createClient } from "@/shared/lib/supabase/client";
@@ -264,7 +268,30 @@ export async function submitPublicBooking(
     .order("name", { ascending: true });
 
   if (staffListErr) throw new Error("staff_load_failed");
-  const orderedStaff = staffRows ?? [];
+  const allStaff = (staffRows ?? []).map((r) => ({
+    id: String(r.id),
+    name: String(r.name ?? ""),
+  }));
+  if (allStaff.length === 0) throw new Error("no_staff_available");
+
+  const { data: capRows } = await supabase
+    .from("staff_services")
+    .select("staff_id, service_id")
+    .in("staff_id", allStaff.map((s) => s.id));
+  const capability = buildCapabilityMap(
+    (capRows ?? []).map((r) => ({
+      staff_id: String(r.staff_id),
+      service_id: String(r.service_id),
+    })),
+  );
+  const requiredServiceIds = addonRow
+    ? [String(service.id), String(addonRow.id)]
+    : [String(service.id)];
+  const orderedStaff = filterStaffCapableForServices(
+    allStaff,
+    capability,
+    requiredServiceIds,
+  );
   if (orderedStaff.length === 0) throw new Error("no_staff_available");
 
   const { data: occRaw, error: occErr } = await supabase.rpc(

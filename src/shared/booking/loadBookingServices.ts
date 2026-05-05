@@ -28,6 +28,8 @@ export type BookingLoadData = {
   canonicalSlug: string;
   services: BookingServiceItem[];
   staff: BookingStaffItem[];
+  /** Per-staff service whitelist. `null` = salon has no rows → all-capable fallback. */
+  capabilityRows: { staff_id: string; service_id: string }[] | null;
   salon: BookingSalonMeta;
 };
 
@@ -123,10 +125,28 @@ export async function loadBookingServicesForSalonSlug(
     job_role: String(s.job_role ?? ""),
   }));
 
+  let capabilityRows: { staff_id: string; service_id: string }[] | null = null;
+  if (staff.length > 0) {
+    const { data: capRows, error: capErr } = await client
+      .from("staff_services")
+      .select("staff_id, service_id")
+      .in("staff_id", staff.map((s) => s.id));
+
+    if (capErr) {
+      console.error("loadBookingServices staff_services error:", capErr);
+    } else if ((capRows?.length ?? 0) > 0) {
+      capabilityRows = (capRows ?? []).map((r) => ({
+        staff_id: String(r.staff_id),
+        service_id: String(r.service_id),
+      }));
+    }
+  }
+
   return {
     canonicalSlug,
     services,
     staff,
+    capabilityRows,
     salon: {
       id: salonId,
       name: String((salon as { name?: string }).name ?? ""),

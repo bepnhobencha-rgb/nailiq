@@ -106,6 +106,13 @@ export type UserMessages = {
   setupErrors: {
     serviceInUse: string;
     staffHasBookings: string;
+    staffCannotPerformService: string;
+  };
+  /** F8 staff form (setup) */
+  setupStaff: {
+    servicesCapableLabel: string;
+    servicesCapableHint: string;
+    noServicesAvailable: string;
   };
   /** `/dashboard/[slug]/center` — operational receptionist workspace */
   receptionist: {
@@ -228,6 +235,7 @@ export type UserMessages = {
       invalid_staff: string;
       invalid_time: string;
       staff_not_found: string;
+      staff_cannot_perform_service: string;
       invalid_duration: string;
       invalid_buffer: string;
       slot_conflict: string;
@@ -347,6 +355,14 @@ export const userEn: UserMessages = {
       "Service is used in active bookings. Cancel or complete those bookings before deleting.",
     staffHasBookings:
       "Staff has upcoming bookings. Reassign or cancel before deleting.",
+    staffCannotPerformService:
+      "This staff member is not set up to perform that service.",
+  },
+  setupStaff: {
+    servicesCapableLabel: "Services this staff can perform",
+    servicesCapableHint:
+      "Leave all checked when unsure — you can narrow this later.",
+    noServicesAvailable: "Add a service first to assign capabilities.",
   },
   receptionist: {
     title: "Front desk",
@@ -468,6 +484,8 @@ export const userEn: UserMessages = {
       invalid_staff: "Staff not valid.",
       invalid_time: "Time is invalid.",
       staff_not_found: "Staff not found.",
+      staff_cannot_perform_service:
+        "This staff member is not set up to perform that service.",
       invalid_duration: "Service duration looks wrong.",
       invalid_buffer: "Service buffer looks wrong.",
       slot_conflict: "That slot overlaps another booking.",
