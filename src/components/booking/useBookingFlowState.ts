@@ -90,6 +90,8 @@ export function useBookingFlowState(
   const [upsellCandidates, setUpsellCandidates] = useState<
     BookingServiceItem[]
   >([]);
+  /** Staff free-gap minutes after the main service; surfaced in the upsell heading copy. */
+  const [upsellGapMinutes, setUpsellGapMinutes] = useState<number>(0);
 
   const [submitting, setSubmitting] = useState(false);
   const [waitlistSubmitting, setWaitlistSubmitting] = useState(false);
@@ -229,12 +231,14 @@ export function useBookingFlowState(
       !staffId
     ) {
       setUpsellCandidates([]);
+      setUpsellGapMinutes(0);
       return;
     }
 
     const week = parseOpeningHours(salon.opening_hours);
     if (!week) {
       setUpsellCandidates([]);
+      setUpsellGapMinutes(0);
       return;
     }
 
@@ -256,6 +260,7 @@ export function useBookingFlowState(
         startLocal = parseTimeSlotOnDate(timeSlot, ymd);
       } catch {
         setUpsellCandidates([]);
+        setUpsellGapMinutes(0);
         return;
       }
 
@@ -288,6 +293,7 @@ export function useBookingFlowState(
           .filter((id) => isStaffFreeForRange(id, slotStartMs, mainEndMs));
         if (freeIds.length === 0) {
           setUpsellCandidates([]);
+          setUpsellGapMinutes(0);
           return;
         }
         staffForGap = pickBestStaffAmongFree(
@@ -301,6 +307,7 @@ export function useBookingFlowState(
       } else {
         if (!isStaffFreeForRange(staffId, slotStartMs, mainEndMs)) {
           setUpsellCandidates([]);
+          setUpsellGapMinutes(0);
           return;
         }
         staffForGap = staffId;
@@ -320,7 +327,10 @@ export function useBookingFlowState(
           s.totalMinutes > 0 &&
           s.totalMinutes <= gapMin,
       );
-      if (!cancelled) setUpsellCandidates(candidates);
+      if (!cancelled) {
+        setUpsellCandidates(candidates);
+        setUpsellGapMinutes(Math.max(0, Math.round(gapMin)));
+      }
     })();
 
     return () => {
@@ -788,6 +798,7 @@ export function useBookingFlowState(
     clientNotes,
     selectedAddonId,
     upsellCandidates,
+    upsellGapMinutes,
     submitting,
     waitlistSubmitting,
     waitlistSlotJoined,

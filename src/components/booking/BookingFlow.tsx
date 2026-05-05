@@ -197,6 +197,7 @@ export function BookingFlow({
             clientPhone={flow.clientPhone}
             clientNotes={flow.clientNotes}
             upsellCandidates={flow.upsellCandidates}
+            upsellGapMinutes={flow.upsellGapMinutes}
             selectedAddonId={flow.selectedAddonId}
             error={flow.error}
             submitting={flow.submitting}

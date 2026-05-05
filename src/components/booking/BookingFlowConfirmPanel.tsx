@@ -26,6 +26,7 @@ export function BookingFlowConfirmPanel({
   clientPhone,
   clientNotes,
   upsellCandidates,
+  upsellGapMinutes,
   selectedAddonId,
   error,
   submitting,
@@ -45,6 +46,7 @@ export function BookingFlowConfirmPanel({
   clientPhone: string;
   clientNotes: string;
   upsellCandidates: readonly BookingServiceItem[];
+  upsellGapMinutes: number;
   selectedAddonId: string | null;
   error: string | null;
   submitting: boolean;
@@ -145,9 +147,14 @@ export function BookingFlowConfirmPanel({
           />
         </div>
 
-        {upsellCandidates.length > 0 ? (
-          <div className="mt-8" role="group" aria-label={t.upsellHeading}>
-            <p className="text-sm font-medium text-nq-foreground">{t.upsellHeading}</p>
+        {upsellCandidates.length > 0 ? (() => {
+          const heading = t.upsellHeading.replace(
+            "{n}",
+            String(upsellGapMinutes),
+          );
+          return (
+          <div className="mt-8" role="group" aria-label={heading}>
+            <p className="text-sm font-medium text-nq-foreground">{heading}</p>
             <p className="mt-1 text-xs text-nq-muted">{t.upsellToggleHint}</p>
             <div className="mt-4 flex flex-wrap gap-2">
               <button
@@ -182,7 +189,8 @@ export function BookingFlowConfirmPanel({
               })}
             </div>
           </div>
-        ) : null}
+          );
+        })() : null}
 
         {error ? (
           <p className="mt-6 shrink-0 text-sm text-nq-error" role="alert">
