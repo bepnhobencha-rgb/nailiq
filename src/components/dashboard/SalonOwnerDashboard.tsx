@@ -90,7 +90,7 @@ export function SalonOwnerDashboard({
   }, [router, slug]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- server `initialResult` from RSC refresh / navigation
+    /* eslint-disable react-hooks/set-state-in-effect -- sync local state with initialResult prop after server reload */
     if (initialResult.ok) {
       setData(initialResult);
       setLoadError(false);
@@ -100,6 +100,7 @@ export function SalonOwnerDashboard({
     }
     setLastUpdatedAt(Date.now());
     setManualRefreshing(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [initialResult]);
 
   useEffect(() => {
