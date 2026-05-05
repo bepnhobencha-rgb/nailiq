@@ -169,7 +169,11 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
 
   const [nowIso, setNowIso] = useState(() => new Date().toISOString());
   const nowIsoRef = useRef(nowIso);
-  nowIsoRef.current = nowIso;
+  /* Sync ref via effect (not during render) so reloadCurrentDay's callback
+     can read the latest value without including nowIso in its deps. */
+  useEffect(() => {
+    nowIsoRef.current = nowIso;
+  });
 
   useEffect(() => {
     const tick = window.setInterval(() => {
@@ -184,6 +188,7 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
   }));
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync local data when initialOk reloads from server
     setData({ ...initialOk, selectedDate: initialOk.selectedDate });
   }, [initialOk]);
 
@@ -192,6 +197,7 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
   useEffect(() => {
     const tz = data.salon.timezone;
     const today = salonDateOffset(tz, 0, nowIso);
+    /* eslint-disable react-hooks/set-state-in-effect -- reactive reconciliation of dateOffset against (selectedDate, today) */
     if (data.selectedDate === today) {
       setDateOffset(0);
     } else {
@@ -200,6 +206,7 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
       if (data.selectedDate === yesterday) setDateOffset(-1);
       else if (data.selectedDate === tomorrow) setDateOffset(1);
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [data.salon.timezone, data.selectedDate, nowIso]);
 
   const [assigningWalkinId, setAssigningWalkinId] = useState<string | null>(null);
