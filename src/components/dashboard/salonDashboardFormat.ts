@@ -79,7 +79,18 @@ export function formatSalonMoney(cents: number, lang: "en" | "vi"): string {
   }).format(amount);
 }
 
-/** Split fetched bookings using the viewer's local calendar day (browser timezone). */
+/**
+ * Split fetched bookings using UTC calendar-day boundaries.
+ *
+ * Previously this used `Date#setHours(0,0,0,0)`, which interprets the boundary
+ * in the runtime's local timezone — server (TZ=UTC) and browser (TZ=viewer)
+ * produced different start/end timestamps, so SSR and client hydration computed
+ * different stats counts and React threw a hydration mismatch (e.g. server
+ * "Bookings: 4" vs client "Bookings: 1"). Using `Date.UTC(...)` makes the
+ * boundary identical on both sides. Trade-off: "today" is UTC today, not the
+ * viewer's local today; for salons in extreme timezones, prefer threading the
+ * salon timezone through and using `salonDayRangeUtc` instead.
+ */
 export function splitSalonDashboardBookings(
   allBookings: SalonDashboardBooking[],
 ): {
@@ -88,15 +99,19 @@ export function splitSalonDashboardBookings(
   stats: SalonDashboardStatsSlice;
 } {
   const now = new Date();
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(now);
-  todayEnd.setHours(23, 59, 59, 999);
+  const todayStartMs = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+    0, 0, 0, 0,
+  );
+  const todayEndMs = todayStartMs + 24 * 60 * 60 * 1000 - 1;
 
   const todayInWindow = allBookings.filter((b) => {
     if (b.start_time_utc == null) return false;
-    const t = new Date(b.start_time_utc);
-    return t >= todayStart && t <= todayEnd;
+    const t = Date.parse(b.start_time_utc);
+    if (Number.isNaN(t)) return false;
+    return t >= todayStartMs && t <= todayEndMs;
   });
 
   /** Agenda rows only (excludes completed / cancelled / queue-only). Stats still use full `todayInWindow`. */
@@ -104,8 +119,9 @@ export function splitSalonDashboardBookings(
 
   const upcoming = allBookings.filter((b) => {
     if (b.start_time_utc == null) return false;
-    const t = new Date(b.start_time_utc);
-    return t > todayEnd && b.status === "confirmed";
+    const t = Date.parse(b.start_time_utc);
+    if (Number.isNaN(t)) return false;
+    return t > todayEndMs && b.status === "confirmed";
   });
 
   const pending = todayInWindow.filter((b) => b.status === "pending").length;
