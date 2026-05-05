@@ -82,7 +82,21 @@ export function BookingFlowTimePanel({
 
       <div className="mt-6 min-h-[8rem] lg:mt-8">
         {slotsLoading ? (
-          <p className="py-6 text-center text-sm text-nq-muted">{t.slotLoading}</p>
+          <div
+            className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-3 lg:gap-5"
+            aria-busy="true"
+            aria-live="polite"
+            aria-label={t.slotLoading}
+            data-testid="time-slots-skeleton"
+          >
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div
+                key={i}
+                className="nq-booking-glass min-h-11 rounded-2xl border border-white/[0.06] bg-white/[0.03] motion-safe:animate-pulse motion-reduce:opacity-60 sm:min-h-[3rem]"
+                aria-hidden
+              />
+            ))}
+          </div>
         ) : timeSlots.length === 0 ? (
           <div className="space-y-6 py-2">
             <p className="text-center text-sm text-nq-muted">{t.noSlotsAvailable}</p>
