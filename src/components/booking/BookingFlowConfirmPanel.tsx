@@ -71,6 +71,15 @@ export function BookingFlowConfirmPanel({
   const totalCents =
     (service.priceCents ?? 0) + (selectedAddOn?.priceCents ?? 0);
 
+  const totalMinutes =
+    (service.totalMinutes || 0) + (selectedAddOn?.totalMinutes ?? 0);
+  const durationLabel =
+    totalMinutes > 0
+      ? selectedAddOn
+        ? `${t.summaryDurationMinutes.replace("{n}", String(totalMinutes))} (${t.summaryDurationIncludesAddon})`
+        : t.summaryDurationMinutes.replace("{n}", String(totalMinutes))
+      : null;
+
   const addonRow = selectedAddOn
     ? (() => {
         const priceLabel =
@@ -130,6 +139,7 @@ export function BookingFlowConfirmPanel({
             serviceName={service.name}
             staffSummary={staffSummaryLabel}
             timeLabel={confirmTimeLabel}
+            durationLabel={durationLabel}
             pricingLines={pricingLines}
             customerRows={customerRows}
           />

@@ -58,6 +58,7 @@ export function BookingFlowDonePanel({
   }, [onAddToCalendar, t.addToCalendarDownloaded]);
 
   const start = new Date(displayStartUtc);
+  const end = new Date(displayEndUtc);
   const whenLabel = Number.isNaN(start.getTime())
     ? "—"
     : start.toLocaleString("en-US", {
@@ -68,6 +69,21 @@ export function BookingFlowDonePanel({
         hour: "numeric",
         minute: "2-digit",
       });
+  const totalMinutes =
+    Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())
+      ? 0
+      : Math.max(
+          0,
+          Math.round((end.getTime() - start.getTime()) / 60_000),
+        );
+  const hasAddon =
+    !!(addonServiceName && addonServiceName.trim().length > 0);
+  const durationLabel =
+    totalMinutes > 0
+      ? hasAddon
+        ? `${t.summaryDurationMinutes.replace("{n}", String(totalMinutes))} (${t.summaryDurationIncludesAddon})`
+        : t.summaryDurationMinutes.replace("{n}", String(totalMinutes))
+      : null;
 
   const staffDisplayName = getPublicStaffDisplayName(
     staffName,
@@ -223,6 +239,16 @@ export function BookingFlowDonePanel({
               {whenLabel}
             </span>
           </div>
+          {durationLabel ? (
+            <div className="flex items-baseline justify-between gap-4 border-t border-white/[0.06] pt-3.5 text-[15px] sm:text-base">
+              <span className="font-semibold text-nq-muted">
+                {t.summaryDuration}
+              </span>
+              <span className="min-w-0 shrink text-right font-semibold text-nq-foreground">
+                {durationLabel}
+              </span>
+            </div>
+          ) : null}
           <div className="flex items-baseline justify-between gap-4 border-t border-white/[0.06] pt-3.5 text-[15px] sm:text-base">
             <span className="font-semibold text-nq-muted">{t.summaryTotal}</span>
             <span className="min-w-0 shrink text-right font-semibold tabular-nums text-nq-primary">

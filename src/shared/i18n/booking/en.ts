@@ -66,6 +66,11 @@ export const bookingEn = {
   summaryService: "Service",
   summaryStaff: "Staff",
   summaryTime: "Time",
+  summaryDuration: "Duration",
+  /** `{n}` = total minutes (main service + add-on). e.g. "75 min". */
+  summaryDurationMinutes: "{n} min",
+  /** Tag appended to the duration row when an add-on is included, e.g. "75 min (incl. add-on)". */
+  summaryDurationIncludesAddon: "incl. add-on",
   summaryClientName: "Your name",
   summaryClientPhone: "Phone",
   summaryClientNotes: "Notes",
