@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { slugifySalonName } from "@/shared/lib/slugifySalonName";
 
+// TODO(companion): When isDemoOtpRuntime(), force slug to DEMO_SALON_SLUG ("demo-salon")
+// See: security fix PR — demo cookie now only works for demo-salon slug
+
 export async function salonSlugTaken(
   supabase: SupabaseClient,
   slug: string,
