@@ -1,5 +1,23 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+<!--
+YOLO mode (this branch only):
+
+The `yolo-mode` branch ships with a permissive local Claude Code config
+(`.claude/settings.local.json`, gitignored) that auto-approves common dev
+commands — `npm install/uninstall/update`, `npx`, `git add/commit/checkout/merge`,
+and broad `Edit` / `Write` access — so the agent can iterate without prompting
+on every file save. Pushes (`git push`), file deletions (`rm`), and writes to
+`.env*` files still require a confirmation prompt; `rm -rf`, `sudo`,
+force-pushes, and direct pushes to `main` are denied outright. A repo-wide
+`pre-commit` hook (`.git/hooks/pre-commit`, Python) is also enabled here: it
+inspects newly added diff lines for `(api_key|secret|token|password|auth)`
+followed by a 20+ character value and blocks the commit if it matches; bypass
+with `git commit --no-verify` only when you've confirmed the match is a false
+positive. None of this is committed to other branches — it lives in
+gitignored / `.git/`-local files for this experimental sandbox.
+-->
+
 ## Getting Started
 
 First, run the development server:
