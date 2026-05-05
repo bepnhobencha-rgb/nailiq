@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local Claude Code worktrees (per-task isolated checkouts) duplicate
+    // the source tree and were re-scanned, producing dozens of false-positive
+    // errors. They are not part of the active codebase.
+    ".claude/worktrees/**",
   ]),
 ]);
 

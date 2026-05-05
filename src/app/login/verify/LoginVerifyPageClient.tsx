@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
@@ -42,6 +43,7 @@ export function LoginVerifyPageClient({ demoMode }: Props) {
       router.replace("/login");
       return;
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot session-storage hydration
     setPhoneDigits(stored);
   }, [router]);
 
@@ -163,9 +165,9 @@ export function LoginVerifyPageClient({ demoMode }: Props) {
       </form>
 
       <p className="mt-6 text-center text-sm text-nq-muted">
-        <a href="/login" className="text-nq-primary hover:underline">
+        <Link href="/login" className="text-nq-primary hover:underline">
           Đổi số điện thoại
-        </a>
+        </Link>
       </p>
     </RegisterStepShell>
   );

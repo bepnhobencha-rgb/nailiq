@@ -138,6 +138,7 @@ export function useBookingFlowState(
       staffId !== BOOKING_ANY_STAFF_ID &&
       !capableStaff.some((s) => s.id === staffId)
     ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- guard: drop stale staff selection when capability changes
       setStaffId(BOOKING_ANY_STAFF_ID);
     }
   }, [capableStaff, staffId]);
@@ -204,6 +205,7 @@ export function useBookingFlowState(
     if (step !== "time" || !serviceId || !service) return;
 
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- start spinner before async fetch
     setSlotsLoading(true);
 
     void getAvailableTimeSlots({
@@ -236,17 +238,20 @@ export function useBookingFlowState(
   ]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset when key inputs change
     setWaitlistSlotJoined(false);
   }, [selectedDate, staffId, serviceId, salon.id]);
 
   useEffect(() => {
     if (!timeSlot) return;
     if (timeSlots.length > 0 && !timeSlots.includes(timeSlot)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- guard: drop pick that's no longer in the slot list
       setTimeSlot(null);
     }
   }, [timeSlots, timeSlot]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset of upsell selection on key changes
     setSelectedAddonId(null);
   }, [serviceId, timeSlot, staffId, selectedDate]);
 
@@ -258,6 +263,7 @@ export function useBookingFlowState(
       !timeSlot ||
       !staffId
     ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale upsell state when confirm preconditions break
       setUpsellCandidates([]);
       setUpsellGapMinutes(0);
       return;

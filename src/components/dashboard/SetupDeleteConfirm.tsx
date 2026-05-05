@@ -19,7 +19,12 @@ export function SetupDeleteConfirm({
   busy = false,
 }: SetupDeleteConfirmProps) {
   const cancelRef = useRef(onCancel);
-  cancelRef.current = onCancel;
+  /* Mutate the ref inside an effect rather than during render — `cancelRef.current = onCancel`
+     directly in the body trips react-hooks/refs and is a real anti-pattern in React 19
+     concurrent rendering. */
+  useEffect(() => {
+    cancelRef.current = onCancel;
+  });
 
   useEffect(() => {
     const t = window.setTimeout(() => cancelRef.current(), 5000);

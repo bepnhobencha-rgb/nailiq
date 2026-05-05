@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
@@ -122,9 +123,9 @@ export function LoginPageClient({ demoMode }: Props) {
 
       <p className="mt-6 text-center text-sm text-nq-muted">
         Chưa có salon?{" "}
-        <a href="/register" className="font-medium text-nq-primary hover:underline">
+        <Link href="/register" className="font-medium text-nq-primary hover:underline">
           Đăng ký
-        </a>
+        </Link>
       </p>
     </RegisterStepShell>
   );

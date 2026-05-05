@@ -37,6 +37,7 @@ export function SalonOwnerTodayBookings({
   // through hydration, swap to the localized time after mount.
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration-safe mounted flag (TZ-dependent locale time)
     setMounted(true);
   }, []);
 

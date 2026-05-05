@@ -66,8 +66,9 @@ export function StaffSetupPanel({
   const [draftServiceIds, setDraftServiceIds] = useState<string[]>(
     () => services.map((s) => s.id),
   );
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-sync when services list grows/shrinks
+
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-seed add-form draft when services list changes
     setDraftServiceIds(services.map((s) => s.id));
   }, [services]);
   const [addSaveStatus, setAddSaveStatus] = useState<SaveButtonStatus>("idle");

@@ -142,7 +142,7 @@ export function BookingFlowDonePanel({
     await copyDetails();
   }, [
     refLabel,
-    service?.name,
+    service,
     shopLabel,
     t.shareBookingCopied,
     t.shareBookingSheetTitle,
