@@ -27,6 +27,8 @@ export const bookingEn = {
   anyStaffOptionTitle: "Any available staff",
   anyStaffOptionSubtitle: "Any",
   anyStaffSummary: "Any available staff",
+  /** Public surface fallback when the salon hasn't replaced "Staff 1"-style placeholders yet. */
+  staffPlaceholderName: "(Pending)",
   dateClosedLabel: "Closed",
   dateClosedShort: "Closed",
   dateHolidayLabel: "Salon closed",

@@ -11,6 +11,7 @@ import {
   isValidPhoneE164,
 } from "@/shared/lib/phoneFormat";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
+import { getPublicStaffDisplayName } from "@/shared/booking/publicStaffDisplay";
 
 export function BookingFlowDonePanel({
   t,
@@ -53,9 +54,13 @@ export function BookingFlowDonePanel({
         minute: "2-digit",
       });
 
+  const staffDisplayName = getPublicStaffDisplayName(
+    staffName,
+    t.staffPlaceholderName,
+  );
   const staffLine =
     staffName.trim().length > 0
-      ? t.successStaffLine.replace("{name}", staffName.trim())
+      ? t.successStaffLine.replace("{name}", staffDisplayName)
       : "";
 
   const callPhoneRaw = salonPhone?.trim() || null;
@@ -188,7 +193,7 @@ export function BookingFlowDonePanel({
             <div className="flex items-baseline justify-between gap-4 border-b border-white/[0.06] pb-3.5 text-[15px] sm:text-base">
               <span className="font-semibold text-nq-muted">{t.summaryStaff}</span>
               <span className="min-w-0 shrink text-right font-semibold text-nq-foreground">
-                {staffName.trim()}
+                {staffDisplayName}
               </span>
             </div>
           ) : null}

@@ -34,6 +34,7 @@ import { pickBestStaffAmongFree } from "@/shared/booking/pickBestStaffAmongFree"
 import { computeStaffFloatGapMinutes } from "@/shared/booking/computeStaffFloatGapMinutes";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
+import { getPublicStaffDisplayName } from "@/shared/booking/publicStaffDisplay";
 
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import * as Sentry from "@sentry/nextjs";
@@ -333,8 +334,9 @@ export function useBookingFlowState(
   const staffSummaryLabel = useMemo(() => {
     if (!staffId || staffId === BOOKING_ANY_STAFF_ID) return t.anyStaffSummary;
     const row = staff.find((s) => s.id === staffId);
-    return row?.name ?? "—";
-  }, [staffId, staff, t.anyStaffSummary]);
+    if (!row) return "—";
+    return getPublicStaffDisplayName(row.name, t.staffPlaceholderName);
+  }, [staffId, staff, t.anyStaffSummary, t.staffPlaceholderName]);
 
   const confirmTimeLabel = useMemo(() => {
     if (!timeSlot) return "";
