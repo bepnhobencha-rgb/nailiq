@@ -65,9 +65,14 @@ export function BookingStepper({
                 />
                 <span
                   className={cn(
-                    "line-clamp-2 w-full text-[10px] leading-tight tracking-tight sm:text-[11px] lg:text-xs",
-                    state === "current" && "font-semibold text-nq-foreground",
-                    state !== "current" && "text-nq-muted/75",
+                    "w-full text-[10px] leading-tight tracking-tight sm:line-clamp-2 sm:text-[11px] lg:text-xs",
+                    state === "current"
+                      ? "font-semibold text-nq-foreground"
+                      : "text-nq-muted/75",
+                    // Below sm: only render the label for the current step so
+                    // long labels (e.g. "Your details") don't wrap and shove
+                    // the row onto two lines on narrow viewports.
+                    state === "current" ? "block" : "hidden sm:block",
                   )}
                 >
                   {labels[id]}
