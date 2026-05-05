@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import {
@@ -31,6 +32,13 @@ export function SalonOwnerTodayBookings({
   highlightBookingId?: string | null;
 }) {
   const t = getUserMessages(language).salonDashboard;
+  // `toLocaleTimeString` uses the runtime's local timezone — server (UTC) and
+  // browser TZ disagree, which would crash hydration. Render the dash placeholder
+  // through hydration, swap to the localized time after mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   return (
     <section className="mt-8 overflow-visible" aria-label={t.todayAppointments}>
@@ -71,7 +79,7 @@ export function SalonOwnerTodayBookings({
               <div className="relative z-[1] w-full min-w-0">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <p className="text-sm font-semibold tabular-nums text-nq-foreground">
-                  {b.start_time_utc
+                  {b.start_time_utc && mounted
                     ? new Date(b.start_time_utc).toLocaleTimeString(undefined, {
                         hour: "2-digit",
                         minute: "2-digit",
