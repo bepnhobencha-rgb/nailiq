@@ -153,6 +153,7 @@ export function EditBookingForm({
       capableStaff[0]?.id ??
       "";
     if (fallback && fallback !== selectedStaff) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- guard: snap selection back to a capable staff when the service change invalidates the current pick
       setSelectedStaff(fallback);
     }
   }, [capableStaff, selectedStaff, originalStaff]);
