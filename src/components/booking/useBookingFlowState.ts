@@ -41,6 +41,7 @@ import {
 } from "@/shared/booking/staffCapability";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
+import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { getPublicStaffDisplayName } from "@/shared/booking/publicStaffDisplay";
 
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
@@ -97,6 +98,8 @@ export function useBookingFlowState(
 
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
+  /** B-10: optional. Empty stays empty — we never persist locally (privacy fix B-02). */
+  const [clientEmail, setClientEmail] = useState("");
   const [clientNotes, setClientNotes] = useState("");
   const [selectedAddonId, setSelectedAddonId] = useState<string | null>(null);
   const [upsellCandidates, setUpsellCandidates] = useState<
@@ -112,6 +115,7 @@ export function useBookingFlowState(
   const [serviceError, setServiceError] = useState<string | null>(null);
   const [infoNameError, setInfoNameError] = useState<string | null>(null);
   const [infoPhoneError, setInfoPhoneError] = useState<string | null>(null);
+  const [infoEmailError, setInfoEmailError] = useState<string | null>(null);
   const [bookingResult, setBookingResult] = useState<{
     bookingId: string;
     startTimeUtc: string;
@@ -150,8 +154,12 @@ export function useBookingFlowState(
     const nameT = clientName.trim();
     if (nameT.length === 0 || nameT.length > BOOKING_GUEST_NAME_MAX) return true;
     if (!isValidCustomerName(nameT)) return true;
-    return !validateGuestPhone(clientPhone).ok;
-  }, [clientName, clientPhone]);
+    if (!validateGuestPhone(clientPhone).ok) return true;
+    /* Email is optional — empty is fine. Only invalid when provided + malformed. */
+    const emailT = clientEmail.trim();
+    if (emailT.length > 0 && !isValidEmailFormat(emailT)) return true;
+    return false;
+  }, [clientName, clientPhone, clientEmail]);
 
   const setBookingClientName = useCallback((v: string) => {
     setClientName(v);
@@ -161,6 +169,11 @@ export function useBookingFlowState(
   const setBookingClientPhone = useCallback((v: string) => {
     setClientPhone(v);
     setInfoPhoneError(null);
+  }, []);
+
+  const setBookingClientEmail = useCallback((v: string) => {
+    setClientEmail(v);
+    setInfoEmailError(null);
   }, []);
 
   const handleInfoNameBlur = useCallback(() => {
@@ -193,6 +206,18 @@ export function useBookingFlowState(
       validateGuestPhone(pTrim).ok ? null : t.bookingErrors.invalidPhone,
     );
   }, [clientPhone, t.bookingErrors.invalidPhone]);
+
+  const handleInfoEmailBlur = useCallback(() => {
+    const eTrim = clientEmail.trim();
+    setClientEmail(eTrim);
+    if (eTrim.length === 0) {
+      setInfoEmailError(null);
+      return;
+    }
+    setInfoEmailError(
+      isValidEmailFormat(eTrim) ? null : t.bookingErrors.invalidEmail,
+    );
+  }, [clientEmail, t.bookingErrors.invalidEmail]);
 
   useEffect(() => {
     if (step !== "done") {
@@ -460,6 +485,7 @@ export function useBookingFlowState(
   const goInfoNext = useCallback(() => {
     const nameTrim = clientName.trim();
     const phoneTrim = clientPhone.trim();
+    const emailTrim = clientEmail.trim();
 
     const nameErr =
       nameTrim.length === 0
@@ -477,10 +503,17 @@ export function useBookingFlowState(
       phoneErr = t.bookingErrors.invalidPhone;
     }
 
+    /* Email is optional. Only block on provided-but-invalid. */
+    const emailErr =
+      emailTrim.length > 0 && !isValidEmailFormat(emailTrim)
+        ? t.bookingErrors.invalidEmail
+        : null;
+
     setInfoNameError(nameErr);
     setInfoPhoneError(phoneErr);
+    setInfoEmailError(emailErr);
 
-    if (nameErr !== null || phoneErr !== null) {
+    if (nameErr !== null || phoneErr !== null || emailErr !== null) {
       setError(null);
       return;
     }
@@ -491,6 +524,8 @@ export function useBookingFlowState(
   }, [
     clientName,
     clientPhone,
+    clientEmail,
+    t.bookingErrors.invalidEmail,
     t.bookingErrors.nameRequired,
     t.bookingErrors.nameTooLong,
     t.bookingErrors.invalidNameChars,
@@ -504,6 +539,7 @@ export function useBookingFlowState(
     setBookingResult(null);
     setClientName("");
     setClientPhone("");
+    setClientEmail("");
     setClientNotes("");
     setSelectedAddonId(null);
     setServiceId(null);
@@ -515,6 +551,7 @@ export function useBookingFlowState(
     setWaitlistSlotJoined(false);
     setInfoNameError(null);
     setInfoPhoneError(null);
+    setInfoEmailError(null);
   }, []);
 
   const handleAddToCalendar = useCallback((): boolean => {
@@ -568,15 +605,18 @@ export function useBookingFlowState(
     setError(null);
     const name = clientName.trim();
     const phone = clientPhone.trim();
+    const email = clientEmail.trim();
     const nameEmpty = name.length === 0;
     const nameTooLong = name.length > BOOKING_GUEST_NAME_MAX;
     const nameWrongChars =
       !nameEmpty && !nameTooLong && !isValidCustomerName(name);
+    const emailInvalid = email.length > 0 && !isValidEmailFormat(email);
     if (
       nameEmpty ||
       nameTooLong ||
       nameWrongChars ||
-      !validateGuestPhone(phone).ok
+      !validateGuestPhone(phone).ok ||
+      emailInvalid
     ) {
       setError(
         nameEmpty
@@ -585,9 +625,11 @@ export function useBookingFlowState(
             ? t.bookingErrors.nameTooLong
             : nameWrongChars
               ? t.bookingErrors.invalidNameChars
-              : phone.length === 0
-                ? t.bookingErrors.phoneRequired
-                : t.bookingErrors.invalidPhone,
+              : emailInvalid
+                ? t.bookingErrors.invalidEmail
+                : phone.length === 0
+                  ? t.bookingErrors.phoneRequired
+                  : t.bookingErrors.invalidPhone,
       );
       return;
     }
@@ -608,6 +650,7 @@ export function useBookingFlowState(
         staffId,
         clientName: name,
         clientPhone: phone,
+        clientEmail: email.length > 0 ? email : null,
         clientNotes: notes,
         addonServiceId: addonId,
       });
@@ -676,6 +719,11 @@ export function useBookingFlowState(
         setError(t.bookingErrors.invalidPhone);
       } else if (
         err instanceof Error &&
+        err.message === "invalid_email"
+      ) {
+        setError(t.bookingErrors.invalidEmail);
+      } else if (
+        err instanceof Error &&
         err.message === "invalid_addon"
       ) {
         setError(t.submitError);
@@ -699,6 +747,7 @@ export function useBookingFlowState(
   }, [
     clientName,
     clientPhone,
+    clientEmail,
     clientNotes,
     selectedAddonId,
     upsellCandidates,
@@ -718,6 +767,7 @@ export function useBookingFlowState(
     t.bookingErrors.invalidNameChars,
     t.bookingErrors.invalidPhone,
     t.bookingErrors.phoneRequired,
+    t.bookingErrors.invalidEmail,
     t.outsideHoursError,
     t.pastTimeError,
     t.salonClosedError,
@@ -836,6 +886,7 @@ export function useBookingFlowState(
     slotsLoading,
     clientName,
     clientPhone,
+    clientEmail,
     clientNotes,
     selectedAddonId,
     upsellCandidates,
@@ -848,6 +899,7 @@ export function useBookingFlowState(
     bookingResult,
     infoNameError,
     infoPhoneError,
+    infoEmailError,
     service,
     capableStaff,
     staffSummaryLabel,
@@ -859,8 +911,10 @@ export function useBookingFlowState(
     setTimeSlot,
     setClientName: setBookingClientName,
     setClientPhone: setBookingClientPhone,
+    setClientEmail: setBookingClientEmail,
     handleInfoNameBlur,
     handleInfoPhoneBlur,
+    handleInfoEmailBlur,
     setClientNotes,
     setSelectedAddonId,
     setError,

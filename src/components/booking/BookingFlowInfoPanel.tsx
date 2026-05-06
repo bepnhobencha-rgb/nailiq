@@ -15,38 +15,46 @@ export function BookingFlowInfoPanel({
   t,
   clientName,
   clientPhone,
+  clientEmail,
   clientNotes,
   infoNextDisabled,
   error,
   nameError,
   phoneError,
+  emailError,
   stepDir,
   reducedMotion,
   stepTransition,
   onClientNameChange,
   onClientPhoneChange,
+  onClientEmailChange,
   onClientNotesChange,
   onClientNameBlur,
   onClientPhoneBlur,
+  onClientEmailBlur,
   onBack,
   onNext,
 }: {
   t: BookingMessages;
   clientName: string;
   clientPhone: string;
+  clientEmail: string;
   clientNotes: string;
   infoNextDisabled: boolean;
   error: string | null;
   nameError: string | null;
   phoneError: string | null;
+  emailError: string | null;
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
   stepTransition: { duration: number; ease: [number, number, number, number] };
   onClientNameChange: (v: string) => void;
   onClientPhoneChange: (v: string) => void;
+  onClientEmailChange: (v: string) => void;
   onClientNotesChange: (v: string) => void;
   onClientNameBlur: () => void;
   onClientPhoneBlur: () => void;
+  onClientEmailBlur: () => void;
   onBack: () => void;
   onNext: () => void;
 }) {
@@ -141,6 +149,43 @@ export function BookingFlowInfoPanel({
               role="alert"
             >
               {phoneError}
+            </p>
+          ) : null}
+        </div>
+        <div>
+          <label
+            htmlFor="booking-info-email"
+            className="mb-2 block text-sm font-medium text-nq-foreground"
+          >
+            {t.clientEmailLabel}
+          </label>
+          <p className="mb-2 text-xs text-nq-muted">{t.clientEmailHint}</p>
+          <input
+            id="booking-info-email"
+            type="email"
+            name="clientEmail"
+            autoComplete="email"
+            inputMode="email"
+            value={clientEmail}
+            maxLength={254}
+            onChange={(e) => onClientEmailChange(e.target.value)}
+            onBlur={() => {
+              void onClientEmailBlur();
+            }}
+            className={cn(
+              "nq-booking-field",
+              emailError && "border-nq-error/50",
+            )}
+            aria-invalid={Boolean(emailError)}
+            data-testid="booking-info-email"
+          />
+          {emailError ? (
+            <p
+              className="mt-1 text-xs text-nq-error"
+              data-testid="booking-info-email-error"
+              role="alert"
+            >
+              {emailError}
             </p>
           ) : null}
         </div>

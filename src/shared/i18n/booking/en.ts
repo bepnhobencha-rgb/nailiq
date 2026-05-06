@@ -89,10 +89,14 @@ export const bookingEn = {
     nameTooLong: "Name cannot exceed 100 characters.",
     invalidNameChars:
       "Name contains invalid characters.",
+    invalidEmail:
+      "Email format invalid. Example: jane@email.com",
     serviceRequired: "Please select a service to continue.",
   },
   clientNameLabel: "Your name",
   clientPhoneLabel: "Phone number",
+  clientEmailLabel: "Email (optional)",
+  clientEmailHint: "Receive booking confirmation by email.",
   clientNotesLabel: "Special notes",
   clientNotesOptionalHint: "Optional — allergies, design ideas, parking, etc.",
   waitlistNotifyCta: "Notify me if a slot opens",

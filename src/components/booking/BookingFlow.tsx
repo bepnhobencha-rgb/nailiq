@@ -175,19 +175,23 @@ export function BookingFlow({
             t={t}
             clientName={flow.clientName}
             clientPhone={flow.clientPhone}
+            clientEmail={flow.clientEmail}
             clientNotes={flow.clientNotes}
             infoNextDisabled={flow.guestContactInvalid}
             error={flow.error}
             nameError={flow.infoNameError}
             phoneError={flow.infoPhoneError}
+            emailError={flow.infoEmailError}
             stepDir={flow.stepDir}
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}
             onClientNameChange={flow.setClientName}
             onClientPhoneChange={flow.setClientPhone}
+            onClientEmailChange={flow.setClientEmail}
             onClientNotesChange={flow.setClientNotes}
             onClientNameBlur={flow.handleInfoNameBlur}
             onClientPhoneBlur={flow.handleInfoPhoneBlur}
+            onClientEmailBlur={flow.handleInfoEmailBlur}
             onBack={flow.backToTime}
             onNext={flow.goInfoNext}
           />
