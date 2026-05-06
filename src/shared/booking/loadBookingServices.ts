@@ -88,10 +88,13 @@ export async function loadBookingServicesForSalonSlug(
     console.error("loadBookingServices error:", servicesErr);
   }
 
+  // Public booking only sees `active` staff. `pending` and `inactive` rows
+  // remain in the dashboard for the owner but never surface to customers.
   const { data: staffList, error: staffErr } = await client
     .from("staff")
     .select("id, name, job_role")
     .eq("salon_id", salonId)
+    .eq("status", "active")
     .order("name", { ascending: true });
 
   if (staffErr) {

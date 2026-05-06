@@ -458,6 +458,8 @@ export type Database = {
           job_role: string
           name: string
           salon_id: string
+          /** Migration 20260506130000: 'active' | 'pending' | 'inactive'. Public booking + walk-in assign filter on 'active'. */
+          status: string
         }
         Insert: {
           created_at?: string | null
@@ -465,6 +467,7 @@ export type Database = {
           job_role?: string
           name: string
           salon_id: string
+          status?: string
         }
         Update: {
           created_at?: string | null
@@ -472,6 +475,7 @@ export type Database = {
           job_role?: string
           name?: string
           salon_id?: string
+          status?: string
         }
         Relationships: [
           {
