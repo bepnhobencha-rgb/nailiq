@@ -1,6 +1,34 @@
 import { randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/shared/lib/supabase/server";
+import { ensureSupabaseAuthE164 } from "@/shared/register/phone";
+
+/** Structured server logs for Supabase Auth failures (no secrets). */
+function logSupabaseAuthStepFailure(
+  step: "createUser" | "listUsers" | "signInWithPassword" | "updateUser",
+  error: unknown,
+): void {
+  if (error && typeof error === "object") {
+    const e = error as {
+      message?: string;
+      status?: number;
+      code?: string;
+      name?: string;
+    };
+    console.error("[phoneOtpSupabaseSession] step:", step, {
+      supabaseMessage: e.message,
+      supabaseStatus: e.status,
+      supabaseCode: e.code,
+      supabaseName: e.name,
+      fullError: error,
+    });
+  } else {
+    console.error("[phoneOtpSupabaseSession] step:", step, {
+      supabaseMessage: String(error),
+      fullError: error,
+    });
+  }
+}
 
 function samePhoneDigits(a: string, b: string): boolean {
   const da = a.replace(/\D/g, "");
@@ -19,7 +47,7 @@ async function findAuthUserIdByPhone(
       perPage: 100,
     });
     if (error) {
-      console.error("[findAuthUserIdByPhone] listUsers", error);
+      logSupabaseAuthStepFailure("listUsers", error);
       return null;
     }
     const users = data?.users ?? [];
@@ -42,7 +70,7 @@ async function signInWithPhonePassword(
     password,
   });
   if (error) {
-    console.error("[signInWithPhonePassword]", error);
+    logSupabaseAuthStepFailure("signInWithPassword", error);
     throw new Error("auth_signin_failed");
   }
 }
@@ -56,16 +84,25 @@ export async function signInSupabaseWithPhoneAfterExternalOtp(
   admin: SupabaseClient,
   e164Phone: string,
 ): Promise<void> {
+  const phone = ensureSupabaseAuthE164(e164Phone);
+  if (!phone) {
+    console.error(
+      "[signInSupabaseWithPhoneAfterExternalOtp] invalid phone for Supabase Auth (expected E.164 with +)",
+      { inputLength: e164Phone.length },
+    );
+    throw new Error("auth_invalid_phone");
+  }
+
   const password = randomBytes(32).toString("base64url");
 
   const { data: created, error: cErr } = await admin.auth.admin.createUser({
-    phone: e164Phone,
+    phone,
     phone_confirm: true,
     password,
   });
 
   if (!cErr && created.user?.id) {
-    await signInWithPhonePassword(e164Phone, password);
+    await signInWithPhonePassword(phone, password);
     return;
   }
 
@@ -77,11 +114,11 @@ export async function signInSupabaseWithPhoneAfterExternalOtp(
     msg.includes("duplicate");
 
   if (!duplicate) {
-    console.error("[signInSupabaseWithPhoneAfterExternalOtp] createUser", cErr);
+    logSupabaseAuthStepFailure("createUser", cErr);
     throw new Error("auth_create_failed");
   }
 
-  const userId = await findAuthUserIdByPhone(admin, e164Phone);
+  const userId = await findAuthUserIdByPhone(admin, phone);
   if (!userId) {
     console.error(
       "[signInSupabaseWithPhoneAfterExternalOtp] duplicate phone but user not found in listUsers",
@@ -93,9 +130,9 @@ export async function signInSupabaseWithPhoneAfterExternalOtp(
     password,
   });
   if (uErr) {
-    console.error("[signInSupabaseWithPhoneAfterExternalOtp] updateUser", uErr);
+    logSupabaseAuthStepFailure("updateUser", uErr);
     throw new Error("auth_update_failed");
   }
 
-  await signInWithPhonePassword(e164Phone, password);
+  await signInWithPhonePassword(phone, password);
 }

@@ -16,7 +16,7 @@ import {
 } from "@/shared/register/otpHelpers";
 import { signInSupabaseWithPhoneAfterExternalOtp } from "@/shared/register/phoneOtpSupabaseSession";
 import {
-  digitsToE164Phone,
+  ensureSupabaseAuthE164,
   isRegisterPhoneDigitsValid,
   normalizeRegisterPhone,
 } from "@/shared/register/phone";
@@ -333,7 +333,7 @@ export async function sendRegisterOtp(
     }
   }
 
-  const e164 = digitsToE164Phone(phone);
+  const e164 = ensureSupabaseAuthE164(phone);
   if (!e164) {
     return { success: false, error: INVALID_PHONE_MSG };
   }
@@ -472,7 +472,7 @@ export async function verifyRegisterOtp(
     return result;
   }
 
-  const e164 = digitsToE164Phone(phone);
+  const e164 = ensureSupabaseAuthE164(phone);
   if (!e164) {
     return { ok: false, reason: "invalid" };
   }

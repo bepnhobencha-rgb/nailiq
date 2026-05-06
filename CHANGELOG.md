@@ -6,6 +6,9 @@ All notable changes to NailIQ (project and documentation) are recorded here.
 
 - **Production OTP:** `sendRegisterOtp` / login use **Twilio Verify** REST (`fetch`) when demo OTP is off — env **`TWILIO_ACCOUNT_SID`**, **`TWILIO_AUTH_TOKEN`**, **`TWILIO_VERIFY_SERVICE_SID`**. **`verifyRegisterOtp`** / **`verifyLoginOtp`** call **VerificationCheck** then open a Supabase session via **`phoneOtpSupabaseSession`** + **`finalizeRegisterSessionAfterPhoneOtp`**. Register/login verify clients call the server action only (no client **`verifyOtp`**).
 - **No `twilio` npm package** (per fetch-based helper); demo path unchanged.
+- **Observability:** `sendVerification` logs full Twilio error response body (plus HTTP status) to `console.error` when the Verify API returns non-OK.
+- **Observability:** **`phoneOtpSupabaseSession`** logs **`step`** (`createUser` | `listUsers` | `signInWithPassword` | `updateUser`) plus **`supabaseMessage`**, status/code/name, and the full error object on failure.
+- **Phone E.164:** **`ensureSupabaseAuthE164`** (`phone.ts`) — registration + **`phoneOtpSupabaseSession`** always pass **`+`** E.164 to Twilio Verify and Supabase Auth (`createUser` / `signInWithPassword`); **`digitsToE164Phone`** defensively enforces a leading **`+`**.
 
 ## 2026-05-06 (Next.js 16 — middleware → proxy)
 
