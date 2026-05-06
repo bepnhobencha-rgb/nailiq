@@ -11,13 +11,28 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
+import { DEMO_SALON_SLUG } from "@/shared/lib/demoOtpMode";
 import { REG_COMPLETION_TOKEN_KEY } from "@/shared/lib/registerSessionKeys";
 import { slugifySalonName } from "@/shared/lib/slugifySalonName";
 import { completeSalonRegistration } from "@/shared/register/completeSalonRegistrationAction";
 
-export default function RegisterSetupInner() {
+/** Pre-fills the name input in demo mode; slugifies to DEMO_SALON_SLUG. */
+const DEMO_SALON_DISPLAY_NAME = "Demo Salon";
+
+export default function RegisterSetupInner({
+  isDemoMode,
+}: {
+  /**
+   * Server-authoritative demo flag (resolved in `page.tsx` via
+   * `isDemoOtpRuntime()`). Passed in to avoid client/server hydration
+   * mismatches when only `DEMO_OTP` (server-only) is set.
+   */
+  isDemoMode: boolean;
+}) {
   const router = useRouter();
-  const [name, setName] = useState("");
+  const [name, setName] = useState(
+    isDemoMode ? DEMO_SALON_DISPLAY_NAME : "",
+  );
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -30,9 +45,10 @@ export default function RegisterSetupInner() {
   }, [router]);
 
   const previewSlug = useMemo(() => {
+    if (isDemoMode) return DEMO_SALON_SLUG;
     const base = slugifySalonName(name.trim());
     return base || "my-salon";
-  }, [name]);
+  }, [isDemoMode, name]);
 
   const onSubmit = useCallback(
     (e: React.FormEvent) => {
@@ -97,19 +113,35 @@ export default function RegisterSetupInner() {
             className="text-base"
             value={name}
             onChange={(e) => {
+              if (isDemoMode) return;
               setName(e.target.value);
               if (formError) setFormError(null);
             }}
             autoComplete="organization"
-            autoFocus
+            autoFocus={!isDemoMode}
+            readOnly={isDemoMode}
+            aria-readonly={isDemoMode || undefined}
             error={Boolean(formError)}
           />
-          <p className="mt-3 text-pretty text-xs leading-relaxed text-nq-muted">
-            Your booking URL uses a slug from this name (letters and numbers). If
-            it’s already taken, we assign{" "}
-            <span className="text-nq-foreground/90">…-2</span>,{" "}
-            <span className="text-nq-foreground/90">…-3</span>, and so on.
-          </p>
+          {isDemoMode ? (
+            <p
+              className="mt-3 text-pretty text-xs leading-relaxed text-nq-muted"
+              data-testid="demo-mode-hint"
+            >
+              Demo mode uses shared salon:{" "}
+              <span className="font-mono text-nq-foreground/90">
+                {DEMO_SALON_SLUG}
+              </span>
+              . The name and slug aren’t configurable in this build.
+            </p>
+          ) : (
+            <p className="mt-3 text-pretty text-xs leading-relaxed text-nq-muted">
+              Your booking URL uses a slug from this name (letters and numbers).
+              If it’s already taken, we assign{" "}
+              <span className="text-nq-foreground/90">…-2</span>,{" "}
+              <span className="text-nq-foreground/90">…-3</span>, and so on.
+            </p>
+          )}
           <p className="mt-2 font-mono text-xs text-nq-primary-soft/95">
             /{previewSlug}
           </p>
