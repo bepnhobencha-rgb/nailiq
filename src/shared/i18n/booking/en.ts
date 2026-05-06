@@ -59,7 +59,8 @@ export const bookingEn = {
   /** Native share sheet title (short). */
   shareBookingSheetTitle: "NailIQ booking",
   shareBookingCopied: "Booking details copied — paste into Messages or Zalo.",
-  manageBookingCall: "Call to reschedule",
+  /** `{phone}` = the salon's public phone number, formatted via `formatPhone`. */
+  manageBookingCall: "Need to reschedule? Call us: {phone}",
   doneCta: "Book another",
   submitError: "Could not complete booking. Please try again.",
   summaryShop: "Salon",

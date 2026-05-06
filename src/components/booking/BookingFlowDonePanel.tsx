@@ -298,14 +298,22 @@ export function BookingFlowDonePanel({
 
       {manageTel ? (
         <div className="flex justify-center lg:justify-end">
-          <a
-            data-testid="booking-call-reschedule"
-            href={manageTel}
-            aria-label={`${t.manageBookingCall} ${callPhoneDisplay}`}
-            className="nq-booking-glass inline-flex h-14 min-h-11 w-full max-w-md items-center justify-center rounded-2xl border border-white/[0.12] px-6 text-base font-medium text-nq-foreground shadow-none hover:bg-white/[0.04] sm:w-auto"
-          >
-            {t.manageBookingCall}
-          </a>
+          {(() => {
+            const callLabel = t.manageBookingCall.replace(
+              "{phone}",
+              callPhoneDisplay,
+            );
+            return (
+              <a
+                data-testid="booking-call-reschedule"
+                href={manageTel}
+                aria-label={callLabel}
+                className="nq-booking-glass inline-flex min-h-14 w-full max-w-md items-center justify-center rounded-2xl border border-white/[0.12] px-6 py-3 text-center text-base font-medium text-nq-foreground shadow-none hover:bg-white/[0.04] sm:w-auto"
+              >
+                {callLabel}
+              </a>
+            );
+          })()}
         </div>
       ) : null}
     </div>
