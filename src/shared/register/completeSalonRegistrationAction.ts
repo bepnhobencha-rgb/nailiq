@@ -283,9 +283,6 @@ export async function completeSalonRegistration(
   }
 
   const completionTok = completionTokenRaw?.trim();
-  if (!completionTok) {
-    return { ok: false, error: "invalid_completion_token" };
-  }
 
   let admin;
   try {
@@ -300,32 +297,45 @@ export async function completeSalonRegistration(
     };
   }
 
-  const { data: proof, error: proofErr } = await admin
-    .from("register_completion_tokens")
-    .select("id, phone, expires_at")
-    .eq("token", completionTok)
-    .maybeSingle();
+  // OAuth / email magic-link signups land here authenticated but without
+  // an SMS-verified completion token. We allow them through and create
+  // the salon with a blank phone — the owner can fill it in later from
+  // /dashboard/[slug]/settings. Phone-OTP signups continue to enforce
+  // the original token + phone-match contract below.
+  let phoneForSalon = "";
+  let proofIdToDelete: string | null = null;
 
-  if (proofErr || !proof?.phone) {
-    console.error("[completeSalonRegistration] completion token lookup", proofErr);
-    return { ok: false, error: "invalid_completion_token" };
-  }
+  if (completionTok) {
+    const { data: proof, error: proofErr } = await admin
+      .from("register_completion_tokens")
+      .select("id, phone, expires_at")
+      .eq("token", completionTok)
+      .maybeSingle();
 
-  const proofExp = new Date(String(proof.expires_at));
-  if (proofExp.getTime() <= Date.now()) {
-    await admin.from("register_completion_tokens").delete().eq("id", proof.id);
-    return { ok: false, error: "invalid_completion_token" };
-  }
+    if (proofErr || !proof?.phone) {
+      console.error("[completeSalonRegistration] completion token lookup", proofErr);
+      return { ok: false, error: "invalid_completion_token" };
+    }
 
-  const authDigits = phoneDigitsFromAuthUser(user);
-  const proofDigits = normalizeRegisterPhone(String(proof.phone));
-  const authNorm = normalizeRegisterPhone(authDigits);
-  if (!proofDigits || !authNorm || proofDigits !== authNorm) {
-    return { ok: false, error: "invalid_completion_token" };
+    const proofExp = new Date(String(proof.expires_at));
+    if (proofExp.getTime() <= Date.now()) {
+      await admin.from("register_completion_tokens").delete().eq("id", proof.id);
+      return { ok: false, error: "invalid_completion_token" };
+    }
+
+    const authDigits = phoneDigitsFromAuthUser(user);
+    const proofDigits = normalizeRegisterPhone(String(proof.phone));
+    const authNorm = normalizeRegisterPhone(authDigits);
+    if (!proofDigits || !authNorm || proofDigits !== authNorm) {
+      return { ok: false, error: "invalid_completion_token" };
+    }
+
+    phoneForSalon = proofDigits;
+    proofIdToDelete = String(proof.id);
   }
 
   if (registerCompletionDebugEnabled()) {
-    console.log("Inserting salon with phone:", proofDigits);
+    console.log("Inserting salon with phone:", phoneForSalon || "(blank)");
   }
 
   let slug: string;
@@ -341,7 +351,7 @@ export async function completeSalonRegistration(
   }
 
   if (registerCompletionDebugEnabled()) {
-    console.log("Step 2: insert salon", { slug, name, phone: proofDigits });
+    console.log("Step 2: insert salon", { slug, name, phone: phoneForSalon });
   }
 
   const { data: salonRow, error: salonErr } = await admin
@@ -349,7 +359,7 @@ export async function completeSalonRegistration(
     .insert({
       slug,
       name,
-      phone: proofDigits,
+      phone: phoneForSalon,
     })
     .select("id, slug")
     .single();
@@ -435,7 +445,12 @@ export async function completeSalonRegistration(
     };
   }
 
-  await admin.from("register_completion_tokens").delete().eq("id", proof.id);
+  if (proofIdToDelete) {
+    await admin
+      .from("register_completion_tokens")
+      .delete()
+      .eq("id", proofIdToDelete);
+  }
 
   return {
     ok: true,

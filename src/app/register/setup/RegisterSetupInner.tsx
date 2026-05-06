@@ -37,12 +37,18 @@ export default function RegisterSetupInner({
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
+    // In demo mode the page bypasses server-side auth gating, so a missing
+    // token is the only signal that this surface is being accessed without
+    // having gone through /register first. In production the server's
+    // auth.getUser() check already gates the page, and OAuth / email
+    // magic-link signups land here authenticated but token-less.
+    if (!isDemoMode) return;
     if (typeof window === "undefined") return;
     const token = window.sessionStorage.getItem(REG_COMPLETION_TOKEN_KEY);
     if (!token?.trim()) {
       router.replace("/register");
     }
-  }, [router]);
+  }, [isDemoMode, router]);
 
   const previewSlug = useMemo(() => {
     if (isDemoMode) return DEMO_SALON_SLUG;
