@@ -154,11 +154,14 @@ export async function assignWalkinToSlot(
 
   const supabase = ctx.supabase;
 
+  // Walk-in assign target must be active staff. Pending / inactive rows
+  // exist in the dashboard but cannot receive new bookings.
   const { data: staffRow } = await supabase
     .from("staff")
     .select("id")
     .eq("id", staffId)
     .eq("salon_id", ctx.salon.id)
+    .eq("status", "active")
     .maybeSingle();
 
   if (!staffRow?.id) return fail("staff_not_found");

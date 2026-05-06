@@ -26,6 +26,11 @@ function normalizeRole(raw: unknown): StaffJobRole {
   return "nail_tech";
 }
 
+function normalizeStatus(raw: unknown): "active" | "pending" | "inactive" {
+  if (raw === "pending" || raw === "inactive") return raw;
+  return "active";
+}
+
 export default async function SetupStaffPage({ params }: Props) {
   const { slug } = await params;
   const ctx = await getDashboardWriteClient(slug);
@@ -36,7 +41,7 @@ export default async function SetupStaffPage({ params }: Props) {
   const [staffResult, servicesResult] = await Promise.all([
     ctx.supabase
       .from("staff")
-      .select("id, name, job_role")
+      .select("id, name, job_role, status")
       .eq("salon_id", ctx.salon.id)
       .order("name", { ascending: true }),
     ctx.supabase
@@ -93,6 +98,9 @@ export default async function SetupStaffPage({ params }: Props) {
             name: String(r.name ?? ""),
             job_role: normalizeRole(
               "job_role" in r ? (r as { job_role?: unknown }).job_role : undefined,
+            ),
+            status: normalizeStatus(
+              "status" in r ? (r as { status?: unknown }).status : undefined,
             ),
           }))}
           services={services}

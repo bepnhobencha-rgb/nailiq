@@ -113,6 +113,15 @@ export type UserMessages = {
     servicesCapableLabel: string;
     servicesCapableHint: string;
     noServicesAvailable: string;
+    /** Status selector label + per-value labels (B-03) */
+    statusLabel: string;
+    statusActive: string;
+    statusPending: string;
+    statusInactive: string;
+    /** Inline badge shown on non-active rows in the list */
+    pendingBadge: string;
+    inactiveBadge: string;
+    statusHint: string;
   };
   /** `/dashboard/[slug]/center` — operational receptionist workspace */
   receptionist: {
@@ -363,6 +372,14 @@ export const userEn: UserMessages = {
     servicesCapableHint:
       "Leave all checked when unsure — you can narrow this later.",
     noServicesAvailable: "Add a service first to assign capabilities.",
+    statusLabel: "Status",
+    statusActive: "Active",
+    statusPending: "Pending",
+    statusInactive: "Inactive",
+    pendingBadge: "Pending",
+    inactiveBadge: "Inactive",
+    statusHint:
+      "Only active staff appear in the public booking flow and walk-in queue.",
   },
   receptionist: {
     title: "Front desk",

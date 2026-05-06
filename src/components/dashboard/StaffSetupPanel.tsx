@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/Button";
 import { SaveButton, type SaveButtonStatus } from "@/components/ui/SaveButton";
 import { SetupToast, type SetupToastPayload } from "@/components/ui/Toast";
 import { SetupDeleteConfirm } from "@/components/dashboard/SetupDeleteConfirm";
+import { cn } from "@/shared/lib/cn";
 import {
   addStaff,
   deleteStaff,
   updateStaff,
   type StaffJobRole,
+  type StaffStatus,
 } from "@/shared/dashboard/setupActions";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -19,6 +21,8 @@ export type SetupStaffRow = {
   id: string;
   name: string;
   job_role: StaffJobRole;
+  /** B-03: 'active' rows go public; 'pending' / 'inactive' stay dashboard-only. */
+  status: StaffStatus;
 };
 
 export type SetupStaffServiceOption = {
@@ -31,6 +35,12 @@ const ROLE_OPTIONS: { value: StaffJobRole; label: string }[] = [
   { value: "senior", label: "Senior" },
   { value: "nail_tech", label: "Nail Tech" },
 ];
+
+const STATUS_VALUES: readonly StaffStatus[] = [
+  "active",
+  "pending",
+  "inactive",
+] as const;
 
 const TOAST_ERR = "✗ Could not save. Check your connection.";
 
@@ -101,7 +111,7 @@ export function StaffSetupPanel({
   const handleUpdate = useCallback(
     async (
       staffId: string,
-      patch: Partial<Pick<SetupStaffRow, "name" | "job_role">> & {
+      patch: Partial<Pick<SetupStaffRow, "name" | "job_role" | "status">> & {
         serviceIds?: string[];
       },
     ) => {
@@ -110,6 +120,7 @@ export function StaffSetupPanel({
       const res = await updateStaff(slug, staffId, {
         name: patch.name,
         role: patch.job_role,
+        status: patch.status,
         serviceIds: patch.serviceIds,
       });
       setPendingId(null);
@@ -125,6 +136,7 @@ export function StaffSetupPanel({
                 ...r,
                 name: patch.name ?? r.name,
                 job_role: patch.job_role ?? r.job_role,
+                status: patch.status ?? r.status,
               }
             : r,
         ),
@@ -346,25 +358,36 @@ function StaffRowFields({
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
   onBlurSave: (
-    patch: Partial<Pick<SetupStaffRow, "name" | "job_role">> & {
+    patch: Partial<Pick<SetupStaffRow, "name" | "job_role" | "status">> & {
       serviceIds?: string[];
     },
   ) => void;
   canDelete: boolean;
 }) {
+  const { language } = useUserLanguage();
+  const setupStaffCopy = getUserMessages(language).setupStaff;
   const [name, setName] = useState(row.name);
   const [role, setRole] = useState<StaffJobRole>(row.job_role);
+  const [status, setStatus] = useState<StaffStatus>(row.status);
   const [serviceIds, setServiceIds] = useState<string[]>(initialServiceIds);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- row props after save / refresh
     setName(row.name);
     setRole(row.job_role);
+    setStatus(row.status);
     setServiceIds(initialServiceIds);
     /* `initialServiceIds` is computed from a fresh prop on every server
        refresh; identity changes are intentional. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row, initialServiceIds.join("|")]);
+
+  const statusLabelFor = (s: StaffStatus): string =>
+    s === "active"
+      ? setupStaffCopy.statusActive
+      : s === "pending"
+        ? setupStaffCopy.statusPending
+        : setupStaffCopy.statusInactive;
 
   if (confirmingDelete) {
     return (
@@ -379,6 +402,26 @@ function StaffRowFields({
 
   return (
     <div className="flex flex-col gap-3">
+      {status !== "active" ? (
+        <span
+          className={cn(
+            "inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em]",
+            status === "pending"
+              ? "border border-nq-warning/45 bg-nq-warning/12 text-nq-warning"
+              : "border border-nq-muted/40 bg-nq-muted/10 text-nq-muted",
+          )}
+          aria-label={
+            status === "pending"
+              ? setupStaffCopy.pendingBadge
+              : setupStaffCopy.inactiveBadge
+          }
+          data-testid={`staff-status-badge-${status}`}
+        >
+          {status === "pending"
+            ? setupStaffCopy.pendingBadge
+            : setupStaffCopy.inactiveBadge}
+        </span>
+      ) : null}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block text-sm font-medium text-nq-muted">
           Name
@@ -415,6 +458,29 @@ function StaffRowFields({
           </select>
         </label>
       </div>
+      <label className="block text-sm font-medium text-nq-muted">
+        {setupStaffCopy.statusLabel}
+        <select
+          data-testid={`staff-status-select-${row.id}`}
+          className="mt-1.5 flex min-h-[44px] w-full appearance-none rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60 sm:max-w-[16rem]"
+          value={status}
+          disabled={disabled}
+          onChange={(e) => {
+            const v = e.target.value as StaffStatus;
+            setStatus(v);
+            if (v !== row.status) onBlurSave({ status: v });
+          }}
+        >
+          {STATUS_VALUES.map((v) => (
+            <option key={v} value={v}>
+              {statusLabelFor(v)}
+            </option>
+          ))}
+        </select>
+        <span className="mt-1.5 block text-xs text-nq-muted/85">
+          {setupStaffCopy.statusHint}
+        </span>
+      </label>
       <ServicesCheckboxList
         services={services}
         selectedIds={serviceIds}

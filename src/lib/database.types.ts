@@ -458,6 +458,7 @@ export type Database = {
           job_role: string
           name: string
           salon_id: string
+          status: string
         }
         Insert: {
           created_at?: string | null
@@ -465,6 +466,7 @@ export type Database = {
           job_role?: string
           name: string
           salon_id: string
+          status?: string
         }
         Update: {
           created_at?: string | null
@@ -472,6 +474,7 @@ export type Database = {
           job_role?: string
           name?: string
           salon_id?: string
+          status?: string
         }
         Relationships: [
           {

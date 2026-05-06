@@ -460,6 +460,9 @@ export async function addStaff(
       salon_id: r.salon.id,
       name,
       job_role: input.role,
+      // Default new staff to active so the booking flow shows them immediately.
+      // Owner can flip to 'pending' / 'inactive' from StaffSetupPanel later.
+      status: "active",
     })
     .select("id")
     .single();
@@ -489,10 +492,17 @@ export async function addStaff(
   return { ok: true };
 }
 
+export type StaffStatus = "active" | "pending" | "inactive";
+
 export async function updateStaff(
   slug: string,
   staffId: string,
-  data: { name?: string; role?: StaffJobRole; serviceIds?: string[] },
+  data: {
+    name?: string;
+    role?: StaffJobRole;
+    serviceIds?: string[];
+    status?: StaffStatus;
+  },
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
@@ -510,6 +520,11 @@ export async function updateStaff(
     const roles: StaffJobRole[] = ["owner", "senior", "nail_tech"];
     if (!roles.includes(data.role)) return fail("invalid_role");
     patch.job_role = data.role;
+  }
+  if (data.status !== undefined) {
+    const statuses: StaffStatus[] = ["active", "pending", "inactive"];
+    if (!statuses.includes(data.status)) return fail("invalid_status");
+    patch.status = data.status;
   }
   /* `serviceIds: undefined` means "don't touch capability"; an empty array
      means "this staff can perform nothing" — owners go through this path

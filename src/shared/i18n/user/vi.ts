@@ -115,6 +115,14 @@ export const userVi: UserMessages = {
     servicesCapableHint:
       "Cứ chọn hết khi chưa chắc — sau này bạn có thể bỏ chọn bớt.",
     noServicesAvailable: "Thêm dịch vụ trước khi gán cho nhân viên.",
+    statusLabel: "Trạng thái",
+    statusActive: "Đang hoạt động",
+    statusPending: "Chờ xác nhận",
+    statusInactive: "Tạm nghỉ",
+    pendingBadge: "Chờ xác nhận",
+    inactiveBadge: "Tạm nghỉ",
+    statusHint:
+      "Chỉ nhân viên đang hoạt động mới hiển thị trên trang đặt lịch và walk-in.",
   },
   receptionist: {
     title: "Lễ tân",
