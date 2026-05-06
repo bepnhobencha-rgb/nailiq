@@ -208,3 +208,28 @@ export function salonNowMinutes(timezone: string, nowIso?: string): number {
   const ms = nowIso !== undefined ? parseUtcMs(nowIso) : Date.now();
   return salonMinutesFromMidnightAt(ms, timezone);
 }
+
+/**
+ * Short timezone-name token for `timezone` at the given instant
+ * (defaults to "now"). Anchored so DST returns the correct variant —
+ * e.g. "PDT" in summer vs "PST" in winter for `America/Los_Angeles`.
+ *
+ * Falls back to a `GMT±N` form for non-Anglophone zones (e.g.
+ * `Asia/Ho_Chi_Minh` → "GMT+7"). Returns `""` if the runtime can't
+ * resolve a zone label at all (treat empty as "no abbreviation").
+ */
+export function salonTimezoneAbbreviation(
+  timezone: string,
+  atIso?: string,
+): string {
+  try {
+    const ms = atIso !== undefined ? parseUtcMs(atIso) : Date.now();
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      timeZoneName: "short",
+    }).formatToParts(new Date(ms));
+    return parts.find((p) => p.type === "timeZoneName")?.value ?? "";
+  } catch {
+    return "";
+  }
+}

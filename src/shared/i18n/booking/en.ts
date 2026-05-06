@@ -43,6 +43,8 @@ export const bookingEn = {
   scarcityFewSlots: "Only {n} open times left — this day is filling up.",
   slotLoading: "Loading times…",
   noSlotsAvailable: "No open slots that day. Try another date.",
+  /** `{tz}` = short timezone abbreviation, e.g. "PDT", "GMT+7". Hidden if abbreviation unavailable. */
+  slotsTimezoneLabel: "All times in {tz}",
   next: "Continue",
   back: "Back",
   confirmBooking: "Confirm booking",

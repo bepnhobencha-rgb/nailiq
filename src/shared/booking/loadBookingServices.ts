@@ -21,6 +21,8 @@ export type BookingSalonMeta = {
   acceptingBookings: boolean;
   /** Public contact for “manage booking” (call to reschedule). DB: `salons.salon_phone` only — never `salons.phone` (owner). */
   salonPhone: string | null;
+  /** IANA TZ for slot-grid label and confirmation copy (B-16). DB column is NOT NULL DEFAULT 'America/Los_Angeles'; "UTC" is a paranoid fallback. */
+  timezone: string;
 };
 
 export type BookingLoadData = {
@@ -164,6 +166,11 @@ export async function loadBookingServicesForSalonSlug(
         const p = (salon as { salon_phone?: unknown }).salon_phone;
         const s = typeof p === "string" ? p.trim() : "";
         return s.length > 0 ? s : null;
+      })(),
+      timezone: (() => {
+        const tz = (salon as { timezone?: unknown }).timezone;
+        const s = typeof tz === "string" ? tz.trim() : "";
+        return s.length > 0 ? s : "UTC";
       })(),
     },
   };
