@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
+import { SocialAuthButtons } from "@/components/auth/SocialAuthButtons";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { DemoOtpModal } from "@/components/register/DemoOtpModal";
@@ -120,6 +121,8 @@ export function LoginPageClient({ demoMode }: Props) {
           {pending ? "Đang gửi…" : "Gửi mã"}
         </Button>
       </form>
+
+      {demoMode ? null : <SocialAuthButtons mode="login" />}
 
       <p className="mt-6 text-center text-sm text-nq-muted">
         Chưa có salon?{" "}

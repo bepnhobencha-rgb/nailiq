@@ -7,6 +7,7 @@ import {
   useState,
   useTransition,
 } from "react";
+import { SocialAuthButtons } from "@/components/auth/SocialAuthButtons";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -205,6 +206,8 @@ export function RegisterPageClient({ demoMode }: Props) {
           {pending ? "Sending…" : "Send code"}
         </Button>
       </form>
+
+      {demoMode ? null : <SocialAuthButtons mode="register" />}
     </RegisterStepShell>
   );
 }
