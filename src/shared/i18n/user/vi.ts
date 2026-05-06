@@ -209,6 +209,7 @@ export const userVi: UserMessages = {
       statusSection: "Trạng thái",
       priceSection: "Giá",
       noNotesHint: "Không có ghi chú",
+      sectionAddon: "Dịch vụ thêm",
     },
     edit: {
       modeTitle: "Sửa booking",
