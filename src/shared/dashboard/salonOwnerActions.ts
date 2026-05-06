@@ -11,6 +11,10 @@ import {
   isDemoOtpRuntime,
   isDemoSlugPinBypassed,
 } from "@/shared/lib/demoOtpMode";
+import {
+  normalizeSalonMemberRole,
+  type SalonMemberRole,
+} from "@/shared/lib/salonMemberRole";
 import { isOpeningHoursCustomized } from "@/shared/dashboard/openingHoursDefaults";
 import {
   DASHBOARD_BOOKING_SELECT,
@@ -99,17 +103,38 @@ async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
 /** Authorized dashboard viewer (logged-in salon member or demo cookie slug match). */
 export async function resolveSalonForDashboard(
   slug: string,
-): Promise<{ salon: SalonRow; kind: "member" | "demo_cookie" } | null> {
-  const memberSalon = await getSalonIfMember(slug);
-  if (memberSalon) return { salon: memberSalon, kind: "member" };
+): Promise<
+  | {
+      salon: SalonRow;
+      kind: "member" | "demo_cookie";
+      /** `salon_members.role` for this user-salon pair. Demo-cookie path is always `"owner"`. */
+      role: SalonMemberRole;
+    }
+  | null
+> {
+  const memberHit = await getSalonIfMember(slug);
+  if (memberHit) {
+    return {
+      salon: memberHit.salon,
+      kind: "member",
+      role: memberHit.role,
+    };
+  }
 
   const demoSalon = await getSalonViaDemoCookie(slug);
-  if (demoSalon) return { salon: demoSalon, kind: "demo_cookie" };
+  if (demoSalon) {
+    // Demo registration always inserts a `role: "owner"` salon_members row
+    // (see `completeSalonRegistrationAction.ts`), so the demo-cookie path
+    // can hardcode `"owner"` without re-querying.
+    return { salon: demoSalon, kind: "demo_cookie", role: "owner" };
+  }
 
   return null;
 }
 
-async function getSalonIfMember(slug: string): Promise<SalonRow | null> {
+async function getSalonIfMember(
+  slug: string,
+): Promise<{ salon: SalonRow; role: SalonMemberRole } | null> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -118,7 +143,7 @@ async function getSalonIfMember(slug: string): Promise<SalonRow | null> {
 
   const { data: members, error: memErr } = await supabase
     .from("salon_members")
-    .select("salon_id")
+    .select("salon_id, role")
     .eq("user_id", user.id);
 
   if (memErr || !members?.length) return null;
@@ -138,27 +163,40 @@ async function getSalonIfMember(slug: string): Promise<SalonRow | null> {
     email?: unknown;
     profile_complete?: unknown;
   };
+
+  // Multi-salon: pick the membership row whose `salon_id` matches the salon
+  // we just resolved (the URL slug). The earlier `.in("id", salonIds)` already
+  // confines `salon` to one of the user's memberships — so a match always
+  // exists. Default to "owner" defensively if the row is somehow missing.
+  const matched = members.find(
+    (m) => String(m.salon_id) === String(row.id),
+  );
+  const role = normalizeSalonMemberRole(matched?.role);
+
   return {
-    id: row.id,
-    name: row.name,
-    slug: row.slug,
-    phone: row.phone,
-    address:
-      row.address === undefined || row.address === null
-        ? null
-        : String(row.address).trim() || null,
-    salon_phone:
-      row.salon_phone === undefined || row.salon_phone === null
-        ? null
-        : String(row.salon_phone).trim() || null,
-    opening_hours: row.opening_hours ?? null,
-    booking_closed_dates:
-      (row as { booking_closed_dates?: unknown }).booking_closed_dates ?? null,
-    email:
-      row.email === undefined || row.email === null
-        ? null
-        : String(row.email).trim() || null,
-    profile_complete: !!row.profile_complete,
+    salon: {
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      phone: row.phone,
+      address:
+        row.address === undefined || row.address === null
+          ? null
+          : String(row.address).trim() || null,
+      salon_phone:
+        row.salon_phone === undefined || row.salon_phone === null
+          ? null
+          : String(row.salon_phone).trim() || null,
+      opening_hours: row.opening_hours ?? null,
+      booking_closed_dates:
+        (row as { booking_closed_dates?: unknown }).booking_closed_dates ?? null,
+      email:
+        row.email === undefined || row.email === null
+          ? null
+          : String(row.email).trim() || null,
+      profile_complete: !!row.profile_complete,
+    },
+    role,
   };
 }
 
@@ -182,6 +220,12 @@ export type LoadSalonDashboardResult =
         opening_hours_customized: boolean;
       };
       demoMode: boolean;
+      /**
+       * Caller's `salon_members.role` for this salon. Multi-role login uses
+       * this to gate UI (e.g. owner-only sections). Phase 1: exposed to
+       * dashboard UI but not yet consumed for visual gating.
+       */
+      role: SalonMemberRole;
       /** Bookings in a wide UTC window; client splits "today" / "upcoming" in local timezone */
       allBookings: SalonDashboardBooking[];
     }
@@ -195,7 +239,7 @@ export async function loadSalonOwnerDashboard(
     return { ok: false, error: "unauthorized" };
   }
 
-  const { salon, kind } = resolved;
+  const { salon, kind, role } = resolved;
   const demoMode = kind === "demo_cookie";
 
   const supabase =
@@ -270,6 +314,7 @@ export async function loadSalonOwnerDashboard(
       opening_hours_customized: openingHoursCustomized,
     },
     demoMode,
+    role,
     allBookings,
   };
 }
