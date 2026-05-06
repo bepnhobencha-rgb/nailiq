@@ -442,8 +442,9 @@ export async function gotoReceptionistCenter(
   }
 }
 
-/** 10-digit test phone satisfying `validateGuestPhone` / public booking rules. */
-export const E2E_WALKIN_VALID_PHONE = "5555551234";
+/** 10-digit test phone satisfying `validateGuestPhone` / public booking rules.
+ *  Must be a valid NANP number — `555` area code is reserved (libphonenumber rejects). */
+export const E2E_WALKIN_VALID_PHONE = "6045551234";
 
 /** Fill guest name + phone on the walk-in add form (both required since V1 validation). */
 export async function fillWalkinGuestContact(

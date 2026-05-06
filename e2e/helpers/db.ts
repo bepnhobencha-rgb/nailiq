@@ -93,29 +93,59 @@ export async function seedTestSalon(opts?: {
     throw new Error(salonErr?.message ?? "seedTestSalon: failed to insert salon");
   }
 
-  const { error: svcErr } = await supabase.from("services").insert([
-    {
-      salon_id: salon.id,
-      name: "Gel Manicure",
-      price_cents: 4500,
-      duration_minutes: 45,
-      buffer_minutes: 10,
-    },
-  ]);
+  const { data: svcRows, error: svcErr } = await supabase
+    .from("services")
+    .insert([
+      {
+        salon_id: salon.id,
+        name: "Gel Manicure",
+        price_cents: 4500,
+        duration_minutes: 45,
+        buffer_minutes: 10,
+      },
+    ])
+    .select("id");
 
   if (svcErr) {
     await supabase.from("salons").delete().eq("id", salon.id);
     throw new Error(svcErr.message);
   }
 
-  const { error: staffErr } = await supabase.from("staff").insert([
-    { salon_id: salon.id, name: "Jenny", job_role: "nail_tech" },
-  ]);
+  const { data: staffRows, error: staffErr } = await supabase
+    .from("staff")
+    .insert([{ salon_id: salon.id, name: "Jenny", job_role: "nail_tech" }])
+    .select("id");
 
   if (staffErr) {
     await supabase.from("services").delete().eq("salon_id", salon.id);
     await supabase.from("salons").delete().eq("id", salon.id);
     throw new Error(staffErr.message);
+  }
+
+  // PR #7 staff_services: empty whitelist == all-capable fallback, but
+  // seeding the cross-product makes the assign capability gate behave the
+  // same on test salons as on real salons that have completed setup.
+  const serviceIds = (svcRows ?? [])
+    .map((r: { id?: string }) => r.id)
+    .filter((id): id is string => Boolean(id));
+  const staffIds = (staffRows ?? [])
+    .map((r: { id?: string }) => r.id)
+    .filter((id): id is string => Boolean(id));
+
+  const capabilityRows = staffIds.flatMap((staff_id) =>
+    serviceIds.map((service_id) => ({ staff_id, service_id })),
+  );
+
+  if (capabilityRows.length > 0) {
+    const { error: capErr } = await supabase
+      .from("staff_services")
+      .insert(capabilityRows);
+    if (capErr) {
+      await supabase.from("staff").delete().eq("salon_id", salon.id);
+      await supabase.from("services").delete().eq("salon_id", salon.id);
+      await supabase.from("salons").delete().eq("id", salon.id);
+      throw new Error(capErr.message);
+    }
   }
 
   return { salonId: salon.id as string, slug, phone };

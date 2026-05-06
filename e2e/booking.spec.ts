@@ -41,7 +41,7 @@ test.describe("Booking Flow", () => {
     await page.getByRole("button", { name: "Continue" }).click();
 
     await page.fill('input[name="clientName"]', "Test Client");
-    await page.fill('input[name="clientPhone"]', "6041234567");
+    await page.fill('input[name="clientPhone"]', "6045551234");
     await page.getByRole("button", { name: "Continue" }).click();
 
     await page.getByRole("button", { name: "Confirm booking" }).click();
