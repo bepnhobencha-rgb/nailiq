@@ -2,6 +2,11 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-05-06 (feat/twilio-verify — Twilio Verify SMS OTP)
+
+- **Production OTP:** `sendRegisterOtp` / login use **Twilio Verify** REST (`fetch`) when demo OTP is off — env **`TWILIO_ACCOUNT_SID`**, **`TWILIO_AUTH_TOKEN`**, **`TWILIO_VERIFY_SERVICE_SID`**. **`verifyRegisterOtp`** / **`verifyLoginOtp`** call **VerificationCheck** then open a Supabase session via **`phoneOtpSupabaseSession`** + **`finalizeRegisterSessionAfterPhoneOtp`**. Register/login verify clients call the server action only (no client **`verifyOtp`**).
+- **No `twilio` npm package** (per fetch-based helper); demo path unchanged.
+
 ## 2026-05-06 (Next.js 16 — middleware → proxy)
 
 - **`src/middleware.ts` → `src/proxy.ts`:** Renamed per [Middleware to Proxy](https://nextjs.org/docs/messages/middleware-to-proxy). Export **`proxy`** (was **`middleware`**); **`export const config.matcher`** unchanged. Supabase session refresh + `/dashboard/*` gate + demo-cookie / Sentry tags unchanged. Stops **`The middleware file convention is deprecated. Please use proxy instead.`** on dev and E2E.
