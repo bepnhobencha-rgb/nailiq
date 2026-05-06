@@ -17,12 +17,18 @@ import {
 import type { SalonDashboardBooking } from "@/shared/types";
 import { cn } from "@/shared/lib/cn";
 
-/** Desk day row: ids + times required for edit defaults (receptionist `bookingsForDay`). */
+/** Desk day row: ids + times required for edit defaults (receptionist `bookingsForDay`).
+ *  Addon fields ride along for read-only display + correct end-time calc on save. */
 export type EditBookingFormBooking = SalonDashboardBooking & {
   staff_id: string;
   service_id: string;
   start_time_utc: string;
   end_time_utc: string;
+  addon_service_id: string | null;
+  addon_service_name: string | null;
+  addon_duration_minutes: number | null;
+  addon_buffer_minutes: number | null;
+  addon_price_cents: number | null;
 };
 
 const SLOT_START_MIN = 8 * 60;
@@ -158,23 +164,56 @@ export function EditBookingForm({
     }
   }, [capableStaff, selectedStaff, originalStaff]);
 
+  /** Addon, when present, contributes to span + price but is read-only in v1. */
+  const addonSpanMinutes = useMemo(() => {
+    if (!booking.addon_service_id) return 0;
+    const dur = Math.max(0, Math.round(Number(booking.addon_duration_minutes ?? 0)));
+    const buf = Math.max(0, Math.round(Number(booking.addon_buffer_minutes ?? 0)));
+    return dur + buf;
+  }, [
+    booking.addon_service_id,
+    booking.addon_duration_minutes,
+    booking.addon_buffer_minutes,
+  ]);
+
   const endTimeDisplay = useMemo(() => {
     if (!selectedSvc) return "—";
     const startUtc = salonWallTimeToUtcIso(dayYmd, selectedTimeMinutes, timezone);
-    const total =
+    const mainTotal =
       Number(selectedSvc.duration_minutes) + Number(selectedSvc.buffer_minutes);
-    if (!Number.isFinite(total) || total < 1) return "—";
+    if (!Number.isFinite(mainTotal) || mainTotal < 1) return "—";
+    const total = mainTotal + addonSpanMinutes;
     const endMs = Date.parse(startUtc) + total * 60 * 1000;
     if (Number.isNaN(endMs)) return "—";
     return formatInSalonTz(new Date(endMs).toISOString(), timezone, "time");
-  }, [dayYmd, selectedSvc, selectedTimeMinutes, timezone]);
+  }, [dayYmd, selectedSvc, selectedTimeMinutes, timezone, addonSpanMinutes]);
 
   const priceDisplay = useMemo(() => {
     if (!selectedSvc) return "—";
-    const cents = Number(selectedSvc.price_cents);
-    if (!Number.isFinite(cents)) return "—";
-    return `$${(cents / 100).toFixed(2)}`;
-  }, [selectedSvc]);
+    const mainCents = Number(selectedSvc.price_cents);
+    if (!Number.isFinite(mainCents)) return "—";
+    const addonCents = booking.addon_service_id
+      ? Number(booking.addon_price_cents ?? 0)
+      : 0;
+    const total = mainCents + (Number.isFinite(addonCents) ? addonCents : 0);
+    return `$${(total / 100).toFixed(2)}`;
+  }, [selectedSvc, booking.addon_service_id, booking.addon_price_cents]);
+
+  const addonReadonly = useMemo(() => {
+    if (!booking.addon_service_id) return null;
+    const name = booking.addon_service_name?.trim() || "—";
+    const dur = Math.max(0, Math.round(Number(booking.addon_duration_minutes ?? 0)));
+    const cents = Number(booking.addon_price_cents ?? 0);
+    const priceLabel = Number.isFinite(cents)
+      ? `$${(cents / 100).toFixed(2)}`
+      : "—";
+    return { name, dur, priceLabel };
+  }, [
+    booking.addon_service_id,
+    booking.addon_service_name,
+    booking.addon_duration_minutes,
+    booking.addon_price_cents,
+  ]);
 
   const proposedStartUtc = useMemo(
     () => salonWallTimeToUtcIso(dayYmd, selectedTimeMinutes, timezone),
@@ -310,6 +349,20 @@ export function EditBookingForm({
             })}
           </select>
         </label>
+
+        {addonReadonly ? (
+          <div
+            className="block space-y-1"
+            data-testid="edit-addon-readonly"
+          >
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+              {rcMessages.drawer.sectionAddon}
+            </span>
+            <p className="rounded-lg border border-nq-muted/30 bg-nq-bg px-3 py-2 text-sm text-nq-foreground">
+              {`${addonReadonly.name} · ${addonReadonly.dur}m · ${addonReadonly.priceLabel}`}
+            </p>
+          </div>
+        ) : null}
       </div>
 
       <div className="space-y-1 text-sm text-nq-muted">

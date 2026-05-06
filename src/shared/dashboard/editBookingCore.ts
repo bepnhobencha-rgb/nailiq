@@ -88,7 +88,7 @@ export async function performEditBooking(
   const { data: booking, error: bkErr } = await supabase
     .from("bookings")
     .select(
-      "id, salon_id, status, staff_id, start_time_utc, end_time_utc",
+      "id, salon_id, status, staff_id, start_time_utc, end_time_utc, addon_service_id",
     )
     .eq("id", bookingId)
     .eq("salon_id", salonId)
@@ -157,7 +157,40 @@ export async function performEditBooking(
     return { ok: false, error: "server_error" };
   }
 
-  const totalMin = duration + buffer;
+  /* Existing addon contributes to span; preserved verbatim (not editable in v1).
+     Without this, end_time_utc would truncate the addon block on every save —
+     timeline would mis-render and overlap checks would under-protect the addon. */
+  let addonSpanMin = 0;
+  const existingAddonId =
+    booking.addon_service_id != null
+      ? String(booking.addon_service_id).trim()
+      : "";
+  if (existingAddonId) {
+    const { data: addonSvc, error: addonErr } = await supabase
+      .from("services")
+      .select("duration_minutes, buffer_minutes")
+      .eq("id", existingAddonId)
+      .eq("salon_id", salonId)
+      .maybeSingle();
+    if (addonErr) {
+      console.error("[performEditBooking] addon service", addonErr);
+      return { ok: false, error: "server_error" };
+    }
+    if (!addonSvc) {
+      return { ok: false, error: "server_error" };
+    }
+    const aDur = Math.round(Number(addonSvc.duration_minutes ?? 0));
+    const aBuf = Math.round(Number(addonSvc.buffer_minutes ?? 0));
+    if (!Number.isFinite(aDur) || aDur < 1) {
+      return { ok: false, error: "server_error" };
+    }
+    if (!Number.isFinite(aBuf) || aBuf < 0) {
+      return { ok: false, error: "server_error" };
+    }
+    addonSpanMin = aDur + aBuf;
+  }
+
+  const totalMin = duration + buffer + addonSpanMin;
   const endMs = startMs + totalMin * 60 * 1000;
   const slotEndUtc = new Date(endMs).toISOString();
 
