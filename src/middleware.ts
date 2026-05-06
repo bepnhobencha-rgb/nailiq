@@ -2,7 +2,11 @@ import * as Sentry from "@sentry/nextjs";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { NAILQ_DEMO_SLUG_COOKIE } from "@/shared/lib/demoDashboardCookie";
-import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
+import {
+  DEMO_SALON_SLUG,
+  isDemoOtpRuntime,
+  isDemoSlugPinBypassed,
+} from "@/shared/lib/demoOtpMode";
 
 /** Copy cookies from the Supabase session response (refresh via getUser/setAll) onto another response. */
 function applyCookiesFrom(
@@ -58,13 +62,19 @@ export async function middleware(request: NextRequest) {
 
   // Demo cookie only honored when demo OTP runtime is enabled. Production
   // builds (DEMO_OTP=false / unset) ignore the cookie entirely — closes the
-  // prod attack surface from B-01/B-02. The earlier slug-restriction (must
-  // equal `demo-salon`) was rolled back because it broke the demo register
-  // flow for any owner whose existing salon has a non-`demo-salon` slug:
-  // verifyRegisterOtp would set the cookie to that slug, then middleware
-  // bounced the dashboard hop back to /register. The matching server-side
-  // gates (getSalonViaDemoCookie, verifyDemoSetupSlug, writableSupabase)
-  // were also relaxed to keep behavior coherent.
+  // prod attack surface from B-01/B-02.
+  //
+  // Slug pin (re-introduced after PR #16): the demo cookie ONLY grants
+  // access to `DEMO_SALON_SLUG` ("demo-salon"). PR #16 forces every demo
+  // registration to that slug, so a non-`demo-salon` cookie value cannot
+  // arise from the legitimate flow — and pinning prevents the cookie from
+  // being abused to access any tenant's dashboard. The matching server-side
+  // gates (`getSalonViaDemoCookie`, `verifyDemoSetupSlug`, `writableSupabase`)
+  // enforce the same pin.
+  //
+  // Test-only bypass: `NAILIQ_TEST_BYPASS_SLUG_PIN=1` falls back to the
+  // pre-PR #16 cookie===slug match so E2E tests can use non-`demo-salon`
+  // fixture slugs. 🚨 NEVER set this env var on Vercel production.
   let isDemoAccess = false;
   if (dashSlugMatch) {
     const pathSlug = decodeURIComponent(dashSlugMatch[1]);
@@ -72,7 +82,11 @@ export async function middleware(request: NextRequest) {
     Sentry.getCurrentScope().setTag("surface", "dashboard");
     if (isDemoOtpRuntime()) {
       const demoSlug = request.cookies.get(NAILQ_DEMO_SLUG_COOKIE)?.value;
-      isDemoAccess = Boolean(demoSlug && demoSlug === pathSlug);
+      isDemoAccess = isDemoSlugPinBypassed()
+        ? Boolean(demoSlug && demoSlug === pathSlug)
+        : Boolean(
+            demoSlug === DEMO_SALON_SLUG && pathSlug === DEMO_SALON_SLUG,
+          );
     }
   }
 

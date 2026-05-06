@@ -2,6 +2,10 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-05-06 (E2E — status pill cleanup)
+
+- **`e2e/receptionist-center/status-pill.spec.ts`:** Busy-case walk-ins now use **`testClientNameMarker()`** (`Te2eGuest*` prefix) so **`cleanReceptionistData`** removes them before **calm state when queue empty**. Previously **`Te2ePill*`** rows leaked and left **`data-state="busy"`**.
+
 ## 2026-05-03 (Integrity — remove fake urgency / social proof)
 
 - **`HomeLanding`:** Removed rotating “🔴 LIVE” / **842**-style social proof, the **+$113 earned today** glass card, and the **random “New booking”** feed (`Math.random` tick). Hero is **single-column** (`max-w-3xl`). Dropped **banner-only** CSS: `.landing-html-booking-feed`, `.landing-html-booking-card`, `@keyframes landing-html-slide-in`.

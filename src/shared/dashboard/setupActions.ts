@@ -26,7 +26,11 @@ import {
   validateProvince,
   validateStreet,
 } from "@/shared/dashboard/addressSetupValidation";
-import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
+import {
+  DEMO_SALON_SLUG,
+  isDemoOtpRuntime,
+  isDemoSlugPinBypassed,
+} from "@/shared/lib/demoOtpMode";
 
 export type StaffJobRole = "owner" | "senior" | "nail_tech";
 
@@ -57,14 +61,26 @@ async function writableSupabase(
     return createServiceRoleClient();
   }
 
-  if (isDemoOtpRuntime() && demoSlug === slug) {
+  // Slug pin (re-introduced after PR #16): demo cookie can only grant
+  // service-role access for `DEMO_SALON_SLUG`. 🚨 Bypass via
+  // `NAILIQ_TEST_BYPASS_SLUG_PIN=1` is for E2E only — never on prod.
+  const slugMatchesPin = isDemoSlugPinBypassed()
+    ? demoSlug === slug
+    : demoSlug === DEMO_SALON_SLUG && slug === DEMO_SALON_SLUG;
+
+  if (isDemoOtpRuntime() && slugMatchesPin) {
     return createServiceRoleClient();
   }
 
   return createClient();
 }
 
-/** Demo OTP runtime + non-member path requires cookie salon to match slug. Members use JWT + RLS. */
+/**
+ * Demo OTP runtime + non-member path requires the cookie to satisfy the
+ * `DEMO_SALON_SLUG` pin (cookie === slug === "demo-salon"). Members use
+ * JWT + RLS. 🚨 `NAILIQ_TEST_BYPASS_SLUG_PIN=1` falls back to the
+ * pre-PR #16 cookie===slug match for E2E — never on prod.
+ */
 async function verifyDemoSetupSlug(
   slug: string,
   kind: "member" | "demo_cookie",
@@ -75,7 +91,11 @@ async function verifyDemoSetupSlug(
   const demoSlug =
     (await cookies()).get(NAILQ_DEMO_SLUG_COOKIE)?.value ?? null;
 
-  if (demoSlug !== slug && kind !== "member") {
+  const slugMatchesPin = isDemoSlugPinBypassed()
+    ? demoSlug === slug
+    : demoSlug === DEMO_SALON_SLUG && slug === DEMO_SALON_SLUG;
+
+  if (!slugMatchesPin && kind !== "member") {
     return fail("unauthorized");
   }
   return null;
