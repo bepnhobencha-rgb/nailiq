@@ -7,7 +7,7 @@ import {
   NAILQ_DEMO_SLUG_COOKIE,
   NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
 } from "@/shared/lib/demoDashboardCookie";
-import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
+import { DEMO_SALON_SLUG, isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import { slugifySalonName } from "@/shared/lib/slugifySalonName";
 import { getOrCreateDemoSalonOwnerUserId } from "@/shared/register/demoSalonOwner";
 import { phoneDigitsFromAuthUser } from "@/shared/register/authUserPhone";
@@ -98,6 +98,38 @@ export async function completeSalonRegistration(
     const ownerUserId = await getOrCreateDemoSalonOwnerUserId();
     if (!ownerUserId) {
       return { ok: false, error: "server_error" };
+    }
+
+    // Demo mode shares a single salon at DEMO_SALON_SLUG across every
+    // demo registration. If it already exists, skip the salon/services/
+    // staff/salon_members inserts (they were created the first time)
+    // and just consume the completion token + set the cookie.
+    const { data: existingDemoSalon } = await admin
+      .from("salons")
+      .select("id, slug")
+      .eq("slug", DEMO_SALON_SLUG)
+      .maybeSingle();
+
+    if (existingDemoSalon?.slug) {
+      await admin
+        .from("register_completion_tokens")
+        .delete()
+        .eq("id", proof.id);
+
+      const cookieStore = await cookies();
+      cookieStore.set(NAILQ_DEMO_SLUG_COOKIE, String(existingDemoSalon.slug), {
+        path: "/",
+        maxAge: NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+      });
+
+      return {
+        ok: true,
+        slug: String(existingDemoSalon.slug),
+        slugAdjusted: false,
+      };
     }
 
     let slug: string;

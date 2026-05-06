@@ -9,7 +9,7 @@ export default async function RegisterSetupPage() {
   const demo = isDemoOtpRuntime();
 
   if (demo) {
-    return <RegisterSetupInner />;
+    return <RegisterSetupInner isDemoMode={demo} />;
   }
 
   const supabase = await createClient();
@@ -48,5 +48,5 @@ export default async function RegisterSetupPage() {
     }
   }
 
-  return <RegisterSetupInner />;
+  return <RegisterSetupInner isDemoMode={demo} />;
 }
