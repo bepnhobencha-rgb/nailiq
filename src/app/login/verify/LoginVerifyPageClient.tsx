@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/Button";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
 import { cn } from "@/shared/lib/cn";
 import { REG_SESSION_PHONE_DIGITS_KEY } from "@/shared/lib/registerSessionKeys";
+import { dashboardPathForRole } from "@/shared/lib/salonMemberRole";
 import { verifyLoginOtp } from "@/shared/register/actions";
 
 const OTP_LEN = 6;
@@ -73,7 +74,9 @@ export function LoginVerifyPageClient({ demoMode }: Props) {
           return;
         }
         if (res.next === "dashboard") {
-          router.push(`/dashboard/${encodeURIComponent(res.slug)}`);
+          // Phase 1 multi-role login: senior / nail_tech land on /center,
+          // owner stays on the dashboard root.
+          router.push(dashboardPathForRole(res.slug, res.role));
           return;
         }
         // next: "setup" means phone has no salon — login should reject this.

@@ -7,6 +7,10 @@ import {
   NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
 } from "@/shared/lib/demoDashboardCookie";
 import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
+import {
+  normalizeSalonMemberRole,
+  type SalonMemberRole,
+} from "@/shared/lib/salonMemberRole";
 import { sendVerification, checkVerification } from "@/shared/lib/twilioVerify";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -127,7 +131,7 @@ async function ensureOwnerMembershipForVerifiedPhone(
 }
 
 export type FinalizeRegisterSessionAfterPhoneOtpResult =
-  | { ok: true; kind: "dashboard"; slug: string }
+  | { ok: true; kind: "dashboard"; slug: string; role: SalonMemberRole }
   | { ok: true; kind: "setup"; completionToken: string }
   | { ok: false; reason: "unauthorized" | "server_error" };
 
@@ -170,14 +174,23 @@ export async function finalizeRegisterSessionAfterPhoneOtp(
         slugForRegisteredPhone,
       );
       if (linked) {
-        return { ok: true, kind: "dashboard", slug: slugForRegisteredPhone };
+        // `salons.phone` matches the registered phone → user is the owner of
+        // record. `ensureOwnerMembershipForVerifiedPhone` (above) inserts an
+        // owner membership row when missing. Hardcoding `"owner"` here is
+        // correct and avoids an extra round-trip.
+        return {
+          ok: true,
+          kind: "dashboard",
+          slug: slugForRegisteredPhone,
+          role: "owner",
+        };
       }
     }
   }
 
   const { data: memRow, error: memErr } = await supabase
     .from("salon_members")
-    .select("salon_id")
+    .select("salon_id, role")
     .eq("user_id", sessionUser.id)
     .limit(1)
     .maybeSingle();
@@ -199,7 +212,15 @@ export async function finalizeRegisterSessionAfterPhoneOtp(
     } else {
       const slug = salRow?.slug?.trim();
       if (slug) {
-        return { ok: true, kind: "dashboard", slug: String(slug) };
+        // Multi-salon users: this is the "fallback to first row" branch. The
+        // dashboard route's own `resolveSalonForDashboard` re-queries by URL
+        // slug, so a non-owner reaching the wrong slug will be 401'd there.
+        return {
+          ok: true,
+          kind: "dashboard",
+          slug: String(slug),
+          role: normalizeSalonMemberRole(memRow.role),
+        };
       }
     }
   }
@@ -379,7 +400,7 @@ export async function sendLoginOtp(
 
 export type VerifyRegisterOtpResult =
   | { ok: true; next: "setup"; completionToken: string }
-  | { ok: true; next: "dashboard"; slug: string }
+  | { ok: true; next: "dashboard"; slug: string; role: SalonMemberRole }
   | { ok: false; reason: "invalid" | "expired" | "server_error" };
 
 export async function verifyRegisterOtp(
@@ -442,7 +463,15 @@ export async function verifyRegisterOtp(
       }
       // Return + client navigation so Set-Cookie from this action reliably reaches the browser
       // before the next document request (redirect-in-action can race the cookie).
-      return { ok: true, next: "dashboard", slug: returningSlug };
+      // Demo path always resolves to the owner of record (matched by
+      // `salons.phone`). Role is hardcoded `"owner"` for the same reason as
+      // in `finalizeRegisterSessionAfterPhoneOtp`'s phone-match branch.
+      return {
+        ok: true,
+        next: "dashboard",
+        slug: returningSlug,
+        role: "owner",
+      };
     }
 
     const completionToken = randomUUID();
@@ -507,7 +536,12 @@ export async function verifyRegisterOtp(
     return { ok: false, reason: "server_error" };
   }
   if (finalized.kind === "dashboard") {
-    return { ok: true, next: "dashboard", slug: finalized.slug };
+    return {
+      ok: true,
+      next: "dashboard",
+      slug: finalized.slug,
+      role: finalized.role,
+    };
   }
   return {
     ok: true,

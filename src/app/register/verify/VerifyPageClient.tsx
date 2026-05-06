@@ -20,6 +20,7 @@ import {
   REG_OTP_RESENT_FLAG,
   REG_SESSION_PHONE_DIGITS_KEY,
 } from "@/shared/lib/registerSessionKeys";
+import { dashboardPathForRole } from "@/shared/lib/salonMemberRole";
 import { verifyRegisterOtp } from "@/shared/register/actions";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -169,8 +170,10 @@ export function VerifyPageClient({ demoMode }: Props) {
         }
 
         if (result.next === "dashboard") {
+          // Phase 1 multi-role login: senior / nail_tech land on /center,
+          // owner stays on the dashboard root.
           window.location.assign(
-            `/dashboard/${encodeURIComponent(result.slug)}`,
+            dashboardPathForRole(result.slug, result.role),
           );
           return;
         }
