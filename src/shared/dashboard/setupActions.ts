@@ -26,7 +26,7 @@ import {
   validateProvince,
   validateStreet,
 } from "@/shared/dashboard/addressSetupValidation";
-import { DEMO_SALON_SLUG, isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
+import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 
 export type StaffJobRole = "owner" | "senior" | "nail_tech";
 
@@ -54,17 +54,10 @@ async function writableSupabase(
     if (!isDemoOtpRuntime()) {
       return createClient();
     }
-    if (slug !== DEMO_SALON_SLUG) {
-      return createClient();
-    }
     return createServiceRoleClient();
   }
 
-  if (
-    isDemoOtpRuntime() &&
-    slug === DEMO_SALON_SLUG &&
-    demoSlug === DEMO_SALON_SLUG
-  ) {
+  if (isDemoOtpRuntime() && demoSlug === slug) {
     return createServiceRoleClient();
   }
 
@@ -82,8 +75,7 @@ async function verifyDemoSetupSlug(
   const demoSlug =
     (await cookies()).get(NAILQ_DEMO_SLUG_COOKIE)?.value ?? null;
 
-  if (kind === "member") return null;
-  if (slug !== DEMO_SALON_SLUG || demoSlug !== DEMO_SALON_SLUG) {
+  if (demoSlug !== slug && kind !== "member") {
     return fail("unauthorized");
   }
   return null;
