@@ -46,7 +46,7 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
     await page.locator('[data-testid="time-slot"]').first().click();
     await page.getByRole("button", { name: "Continue" }).click();
 
-    const guestPhone = "6041234567";
+    const guestPhone = "6045551234";
     await page.fill('input[name="clientName"]', "Security Test Guest");
     await page.fill('input[name="clientPhone"]', guestPhone);
     await page.getByRole("button", { name: "Continue" }).click();
@@ -165,7 +165,7 @@ test.describe("Guest name — XSS / charset guard", () => {
 
     await navigateToBookingInfoStep(page, slug);
     await page.getByTestId("booking-info-name").fill("Nguyễn Thị Mai");
-    await page.getByTestId("booking-info-phone").fill("6041234567");
+    await page.getByTestId("booking-info-phone").fill("6045551234");
     await page.getByRole("button", { name: "Continue" }).click();
 
     await expect(

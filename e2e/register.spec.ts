@@ -37,8 +37,29 @@ test("Register new salon — full flow", async ({ page }) => {
 
   await page.getByRole("button", { name: "Continue" }).click();
 
+  // Demo mode (PR #16): when a previous run left a `demo-salon` row whose
+  // `phone` matches `TEST_PHONE`, OTP verify treats this as a returning
+  // owner and redirects straight to /dashboard/demo-salon (skipping setup).
+  // Otherwise we go through /register/setup → /register/success.
+  await expect(page).toHaveURL(/register\/(setup|success)|dashboard\//, {
+    timeout: 15_000,
+  });
+
+  if (/dashboard\//.test(page.url())) {
+    await expect(page.getByText(/demo mode/i).first()).toBeVisible();
+    return;
+  }
+
   await expect(page).toHaveURL(/register\/setup/);
-  await page.fill('input[name="salonName"]', "E2E New Salon");
+  // Demo mode pre-fills + locks the input to "Demo Salon" → "demo-salon" slug.
+  // Skip fill when readonly so this spec covers both demo and real-tenant paths.
+  const salonNameInput = page.locator('input[name="salonName"]');
+  const salonNameReadonly = await salonNameInput.evaluate(
+    (el: HTMLInputElement) => el.readOnly,
+  );
+  if (!salonNameReadonly) {
+    await salonNameInput.fill("E2E New Salon");
+  }
   await page.click('button:has-text("Create")');
 
   await expect(page).toHaveURL(/register\/success/);
