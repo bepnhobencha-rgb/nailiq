@@ -17,6 +17,7 @@ export function BookingFlowTimePanel({
   timeSlots,
   timeSlot,
   slotsLoading,
+  timezoneAbbr,
   stepDir,
   reducedMotion,
   stepTransition,
@@ -38,6 +39,8 @@ export function BookingFlowTimePanel({
   timeSlots: readonly TimeSlot[];
   timeSlot: string | null;
   slotsLoading: boolean;
+  /** Short tz token, e.g. "PDT" or "GMT+7". Empty string hides the label. */
+  timezoneAbbr: string;
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
   stepTransition: { duration: number; ease: [number, number, number, number] };
@@ -74,6 +77,15 @@ export function BookingFlowTimePanel({
       >
         {t.stepTimeHeading}
       </h2>
+
+      {timezoneAbbr ? (
+        <p
+          className="mt-2 text-sm text-nq-muted lg:text-[15px]"
+          data-testid="slots-timezone-label"
+        >
+          {t.slotsTimezoneLabel.replace("{tz}", timezoneAbbr)}
+        </p>
+      ) : null}
 
       {scarcityHint ? (
         <p className="mt-3 text-sm font-medium text-nq-primary/95 lg:mt-4 lg:text-[15px]">

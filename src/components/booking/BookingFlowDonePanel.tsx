@@ -13,6 +13,10 @@ import {
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 import { getPublicStaffDisplayName } from "@/shared/booking/publicStaffDisplay";
 import { formatGuestPriceUsd } from "@/shared/booking/formatBookingPrice";
+import {
+  formatInSalonTz,
+  salonTimezoneAbbreviation,
+} from "@/shared/lib/salonTime";
 
 export function BookingFlowDonePanel({
   t,
@@ -25,6 +29,7 @@ export function BookingFlowDonePanel({
   displayEndUtc,
   bookingId,
   salonPhone,
+  salonTimezone,
   totalPaidFormatted,
   onAddToCalendar,
   onBookAnother,
@@ -40,6 +45,8 @@ export function BookingFlowDonePanel({
   bookingId: string;
   /** Public salon line: `salons.salon_phone` only (not owner `phone`, never guest). */
   salonPhone: string | null;
+  /** IANA TZ — confirmation displays the booking time in the salon's local zone (B-16). */
+  salonTimezone: string;
   /** Receipt-style total from `bookingResult.price_cents`. */
   totalPaidFormatted: string;
   /** Fires the .ics download. Returns true if the click was dispatched. */
@@ -59,16 +66,19 @@ export function BookingFlowDonePanel({
 
   const start = new Date(displayStartUtc);
   const end = new Date(displayEndUtc);
-  const whenLabel = Number.isNaN(start.getTime())
-    ? "—"
-    : start.toLocaleString("en-US", {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      });
+  // Show the time in the *salon's* timezone, not the customer's browser-local
+  // (B-16). Append the short tz abbreviation when Intl can resolve one so the
+  // customer can disambiguate (e.g. "Sat, Jun 7 · 2:00 PM PDT").
+  const whenLabel = (() => {
+    if (Number.isNaN(start.getTime())) return "—";
+    try {
+      const dt = formatInSalonTz(displayStartUtc, salonTimezone, "datetime");
+      const abbr = salonTimezoneAbbreviation(salonTimezone, displayStartUtc);
+      return abbr ? `${dt} ${abbr}` : dt;
+    } catch {
+      return "—";
+    }
+  })();
   const totalMinutes =
     Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())
       ? 0

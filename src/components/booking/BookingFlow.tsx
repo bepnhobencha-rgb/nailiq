@@ -23,6 +23,7 @@ import {
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import { formatGuestPriceUsdReceipt } from "@/shared/booking/formatBookingPrice";
+import { salonTimezoneAbbreviation } from "@/shared/lib/salonTime";
 import { useBookingFlowState } from "@/components/booking/useBookingFlowState";
 
 type BookingFlowProps = {
@@ -55,6 +56,14 @@ export function BookingFlow({
   const closedDateYmdSet = useMemo(
     () => parseBookingClosedDateSet(salon.booking_closed_dates),
     [salon.booking_closed_dates],
+  );
+
+  // Slot-grid label uses "now" as the DST anchor — fine for a list of
+  // upcoming slots that won't cross a DST boundary mid-render. The
+  // confirmation panel re-anchors against the booking's actual start.
+  const slotsTimezoneAbbr = useMemo(
+    () => salonTimezoneAbbreviation(salon.timezone),
+    [salon.timezone],
   );
 
   const scarcityHint = useMemo(() => {
@@ -90,6 +99,7 @@ export function BookingFlow({
         displayEndUtc={flow.bookingResult.endTimeUtc}
         bookingId={flow.bookingResult.bookingId}
         salonPhone={salon.salonPhone}
+        salonTimezone={salon.timezone}
         totalPaidFormatted={formatGuestPriceUsdReceipt(
           flow.bookingResult.price_cents,
         )}
@@ -152,6 +162,7 @@ export function BookingFlow({
             timeSlots={flow.timeSlots}
             timeSlot={flow.timeSlot}
             slotsLoading={flow.slotsLoading}
+            timezoneAbbr={slotsTimezoneAbbr}
             stepDir={flow.stepDir}
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}
