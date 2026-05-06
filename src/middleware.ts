@@ -2,7 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { NAILQ_DEMO_SLUG_COOKIE } from "@/shared/lib/demoDashboardCookie";
-import { DEMO_SALON_SLUG, isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
+import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 
 /** Copy cookies from the Supabase session response (refresh via getUser/setAll) onto another response. */
 function applyCookiesFrom(
@@ -56,17 +56,23 @@ export async function middleware(request: NextRequest) {
   // Any path under /dashboard/[slug]/… (home, setup/services, setup/staff, etc.)
   const dashSlugMatch = /^\/dashboard\/([^/]+)/.exec(pathname);
 
-  // Demo cookie only honored when demo OTP is enabled (off in prod) AND
-  // restricted to the designated demo slug — never real-tenant slugs.
-  // Forging the cookie with a victim slug therefore can't unlock real data.
+  // Demo cookie only honored when demo OTP runtime is enabled. Production
+  // builds (DEMO_OTP=false / unset) ignore the cookie entirely — closes the
+  // prod attack surface from B-01/B-02. The earlier slug-restriction (must
+  // equal `demo-salon`) was rolled back because it broke the demo register
+  // flow for any owner whose existing salon has a non-`demo-salon` slug:
+  // verifyRegisterOtp would set the cookie to that slug, then middleware
+  // bounced the dashboard hop back to /register. The matching server-side
+  // gates (getSalonViaDemoCookie, verifyDemoSetupSlug, writableSupabase)
+  // were also relaxed to keep behavior coherent.
   let isDemoAccess = false;
   if (dashSlugMatch) {
     const pathSlug = decodeURIComponent(dashSlugMatch[1]);
     Sentry.getCurrentScope().setTag("salon.slug", pathSlug);
     Sentry.getCurrentScope().setTag("surface", "dashboard");
-    if (isDemoOtpRuntime() && pathSlug === DEMO_SALON_SLUG) {
+    if (isDemoOtpRuntime()) {
       const demoSlug = request.cookies.get(NAILQ_DEMO_SLUG_COOKIE)?.value;
-      isDemoAccess = demoSlug === DEMO_SALON_SLUG;
+      isDemoAccess = Boolean(demoSlug && demoSlug === pathSlug);
     }
   }
 

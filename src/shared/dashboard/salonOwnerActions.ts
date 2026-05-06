@@ -6,7 +6,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
   NAILQ_DEMO_SLUG_COOKIE,
 } from "@/shared/lib/demoDashboardCookie";
-import { DEMO_SALON_SLUG, isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
+import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import { isOpeningHoursCustomized } from "@/shared/dashboard/openingHoursDefaults";
 import {
   DASHBOARD_BOOKING_SELECT,
@@ -34,15 +34,16 @@ type SalonRow = {
 
 async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
   // Demo cookies grant service-role-backed dashboard access. Honored ONLY
-  // when (a) demo OTP mode is on, AND (b) both the URL slug and the cookie
-  // value match the designated demo slug. This prevents a forged cookie
-  // from unlocking real-tenant data even in dev/staging where demo is on.
+  // when demo OTP mode is on (dev/test). Production with `DEMO_OTP=false`
+  // returns null here, keeping the prod B-01/B-02 attack surface closed.
+  // The earlier `slug === DEMO_SALON_SLUG` guard was rolled back because
+  // it broke the demo register flow for owners whose salon slug isn't
+  // `demo-salon` — see middleware.ts comment for the full story.
   if (!isDemoOtpRuntime()) return null;
-  if (slug !== DEMO_SALON_SLUG) return null;
 
   const cookieStore = await cookies();
   const demoSlug = cookieStore.get(NAILQ_DEMO_SLUG_COOKIE)?.value;
-  if (demoSlug !== DEMO_SALON_SLUG) return null;
+  if (!demoSlug || demoSlug !== slug) return null;
 
   let admin;
   try {
