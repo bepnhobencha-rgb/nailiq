@@ -24,7 +24,7 @@ export function DemoOtpModal({
       onDismiss();
     }, DISMISS_MS);
     return () => window.clearTimeout(t);
-  }, [open, onDismiss]);
+  }, [open, onDismiss, code]);
 
   const onCopy = useCallback(async () => {
     try {

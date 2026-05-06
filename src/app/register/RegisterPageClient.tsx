@@ -10,11 +10,13 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Toast, type SetupToastPayload } from "@/components/ui/Toast";
 import { DemoOtpModal } from "@/components/register/DemoOtpModal";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
 import { getUserMessages } from "@/shared/i18n/user";
 import {
   REG_FLOW_OWNER_RETURNING,
+  REG_OTP_RESENT_FLAG,
   REG_SESSION_PHONE_DIGITS_KEY,
 } from "@/shared/lib/registerSessionKeys";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -38,6 +40,7 @@ export function RegisterPageClient({ demoMode }: Props) {
   const [pending, startTransition] = useTransition();
   const [demoCode, setDemoCode] = useState<string | null>(null);
   const [postSendTone, setPostSendTone] = useState<PostSendTone>("idle");
+  const [toast, setToast] = useState<SetupToastPayload | null>(null);
 
   const onSubmit = useCallback(
     (e: React.FormEvent) => {
@@ -51,6 +54,12 @@ export function RegisterPageClient({ demoMode }: Props) {
       }
       setError(null);
       startTransition(async () => {
+        // Detect a resend: phone-digits already in sessionStorage means a
+        // prior `sendRegisterOtp` succeeded earlier in this tab.
+        const isResend =
+          typeof window !== "undefined" &&
+          window.sessionStorage.getItem(REG_SESSION_PHONE_DIGITS_KEY) !== null;
+
         if (
           process.env.NODE_ENV === "development" ||
           process.env.NEXT_PUBLIC_DEBUG_REGISTER_FLOW === "1"
@@ -73,6 +82,17 @@ export function RegisterPageClient({ demoMode }: Props) {
           } else {
             window.sessionStorage.removeItem(REG_FLOW_OWNER_RETURNING);
           }
+          if (isResend) {
+            // Picked up by VerifyPageClient on the next mount.
+            window.sessionStorage.setItem(REG_OTP_RESENT_FLAG, "1");
+          }
+        }
+
+        if (isResend) {
+          setToast({
+            variant: "success",
+            message: t.register.otpResentToast,
+          });
         }
 
         const isReturning = result.mode === "returning";
@@ -95,7 +115,7 @@ export function RegisterPageClient({ demoMode }: Props) {
         router.push("/register/verify");
       });
     },
-    [phoneRaw, router],
+    [phoneRaw, router, t.register.otpResentToast],
   );
 
   const demoBadgeLabel =
@@ -144,6 +164,8 @@ export function RegisterPageClient({ demoMode }: Props) {
           router.push("/register/verify");
         }}
       />
+
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
 
       <p className="mb-2 text-sm text-nq-muted sm:mb-4">
         {t.register.returningOwnerHint}

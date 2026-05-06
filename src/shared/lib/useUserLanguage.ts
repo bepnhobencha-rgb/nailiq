@@ -14,7 +14,12 @@ function parseStored(value: string | null): UserLanguage | null {
     : null;
 }
 
-/** SSR-safe snapshot: only call with `window` present. */
+/**
+ * SSR-safe snapshot: only call with `window` present.
+ * Default is always English; Vietnamese is set only when the user has
+ * explicitly toggled VI (persisted in `localStorage`). We do NOT auto-pick
+ * VI from `navigator.language` — the public surfaces are EN-first.
+ */
 function getInitialLanguage(): UserLanguage {
   if (typeof window === "undefined") return "en";
 
@@ -26,8 +31,6 @@ function getInitialLanguage(): UserLanguage {
     /* quota / blocked */
   }
 
-  const browserLang = navigator.language.toLowerCase();
-  if (browserLang.startsWith("vi")) return "vi";
   return "en";
 }
 
