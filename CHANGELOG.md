@@ -2,6 +2,10 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-05-06 (Next.js 16 — middleware → proxy)
+
+- **`src/middleware.ts` → `src/proxy.ts`:** Renamed per [Middleware to Proxy](https://nextjs.org/docs/messages/middleware-to-proxy). Export **`proxy`** (was **`middleware`**); **`export const config.matcher`** unchanged. Supabase session refresh + `/dashboard/*` gate + demo-cookie / Sentry tags unchanged. Stops **`The middleware file convention is deprecated. Please use proxy instead.`** on dev and E2E.
+
 ## 2026-05-06 (E2E — status pill cleanup)
 
 - **`e2e/receptionist-center/status-pill.spec.ts`:** Busy-case walk-ins now use **`testClientNameMarker()`** (`Te2eGuest*` prefix) so **`cleanReceptionistData`** removes them before **calm state when queue empty**. Previously **`Te2ePill*`** rows leaked and left **`data-state="busy"`**.

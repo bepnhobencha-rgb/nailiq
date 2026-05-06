@@ -32,7 +32,7 @@ NailIQ is the AI-first operating system for nail salons and beauty businesses: o
 ## Authentication (production path)
 
 - **Supabase Auth** with **phone OTP** on the client (`signInWithOtp` / `verifyOtp`) when **Phone** is enabled in the Supabase project; session cookies via **`@supabase/ssr`** (`src/shared/lib/supabase/server.ts`, `src/shared/lib/supabase/client.ts`).
-- **`src/middleware.ts`** refreshes the session on each matched request and **redirects unauthenticated users** away from `/dashboard/*` to `/register`.
+- **`src/proxy.ts`** (Next.js 16 **proxy** convention; replaces deprecated `middleware`) refreshes the session on each matched request and **redirects unauthenticated users** away from `/dashboard/*` to `/register`.
 - **Generated DB types:** `src/lib/database.types.ts` is produced from the Supabase project schema (`npx supabase gen types typescript --project-id fshmobzyjhmtvndobwsy > src/lib/database.types.ts`). Regenerate after migrations or dashboard schema changes.
 - **Tenant link:** `public.salon_members` maps `auth.users` → `salons` (migration `supabase/migrations/20260428120000_salon_members_owner_rls.sql`). Owners complete registration in **`completeSalonRegistration`** (`src/shared/register/completeSalonRegistrationAction.ts`), which inserts the salon, seed row, and membership using the **service role** where needed.
 - **RLS:** Authenticated users read/update **their salon’s bookings** through policies that consult `salon_members`; anonymous public booking insert path unchanged.

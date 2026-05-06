@@ -37,7 +37,7 @@ src/
 │   │   └── settings/          # Salon settings (pause bookings, etc.)
 │   ├── debug-sentry/          # Manual Sentry error trigger
 │   ├── layout.tsx, globals.css
-│   └── middleware.ts          # Auth + Sentry tagging (also at src/middleware.ts)
+│   └── proxy.ts               # Auth + Sentry tagging (also at src/proxy.ts)
 ├── components/
 │   ├── booking/               # Public booking UI
 │   ├── receptionist/          # Center grid, drawer, queue, undo toast
@@ -54,7 +54,7 @@ src/
 │   ├── seo/                   # JSON-LD, metadata helpers
 │   └── types/
 ├── instrumentation.ts         # Routes Sentry init by NEXT_RUNTIME (node|edge)
-├── middleware.ts              # Supabase session refresh, demo cookie, Sentry tags
+├── proxy.ts                   # Supabase session refresh, demo cookie, Sentry tags
 └── sentry.{server,edge}.config.ts
 
 e2e/                           # Playwright (~22 spec files)
@@ -83,7 +83,7 @@ sentry.client.config.ts        # Browser Sentry init (root, not under src/)
 5. **Tailwind v4** — CSS-first config (`@theme` blocks in `globals.css`). Do not create `tailwind.config.js`.
 6. **Imports**: `@/` alias is configured. Group: external → internal → types.
 7. **Files**: `kebab-case.tsx` for routes/files; `PascalCase` for components; `camelCase` for functions.
-8. **Sentry tagging**: middleware sets `salon.slug` and `surface` tags — keep these on any new request-handling code path that needs traceability.
+8. **Sentry tagging**: proxy sets `salon.slug` and `surface` tags — keep these on any new request-handling code path that needs traceability.
 
 ## 🗄️ Supabase Tables
 
@@ -163,7 +163,7 @@ Tests hit a real Supabase (test DB) via the service-role client. `e2e/helpers/db
   - `src/shared/dashboard/addEmailAction.ts:36,39` — email verification via Resend not yet wired.
 - **Demo OTP mode**: `NEXT_PUBLIC_DEMO_OTP` + `NAILQ_DEMO_SLUG_COOKIE` allow bypassing real auth in dev/test. Verify it's off in prod.
 - **Conflict checking is application-level**, not enforced by DB constraints — be careful when touching `conflictCheck.ts` or booking insert paths.
-- **Two middleware locations**: `src/middleware.ts` is the active one. Don't add a second one in `src/app/`.
+- **Single proxy entry**: `src/proxy.ts` is the active one. Don't add a second one in `src/app/`.
 
 ## 📚 Related Files
 
