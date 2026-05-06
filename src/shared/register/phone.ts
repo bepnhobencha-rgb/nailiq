@@ -34,9 +34,38 @@ export function digitsToE164Phone(digits: string): string | null {
   const d = normalizeRegisterPhone(digits);
   if (!isRegisterPhoneDigitsValid(d)) return null;
 
+  let e164: string;
   if (d.startsWith("0") && d.length >= 9) {
-    return `+84${d.slice(1)}`;
+    e164 = `+84${d.slice(1)}`;
+  } else {
+    e164 = `+${d}`;
   }
 
-  return `+${d}`;
+  if (!e164.startsWith("+")) {
+    e164 = `+${e164.replace(/\D/g, "")}`;
+  }
+  return e164;
+}
+
+/**
+ * Canonical E.164 with leading "+" for Supabase Auth and Twilio Verify
+ * (`createUser`, `signInWithPassword`, Verification API).
+ * Handles register-normalized digits, values missing "+", or already "+…" strings.
+ */
+export function ensureSupabaseAuthE164(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  if (!trimmed.startsWith("+")) {
+    return digitsToE164Phone(trimmed);
+  }
+
+  const plusBody = trimmed.slice(1).replace(/\D/g, "");
+  if (!isRegisterPhoneDigitsValid(plusBody)) return null;
+
+  if (plusBody.startsWith("0") && plusBody.length >= 9) {
+    return `+84${plusBody.slice(1)}`;
+  }
+
+  return `+${plusBody}`;
 }

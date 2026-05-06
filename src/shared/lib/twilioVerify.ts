@@ -60,12 +60,11 @@ export async function sendVerification(
 
     const text = await res.text();
     if (!res.ok) {
-      const body = parseTwilioJson(text);
-      const msg =
-        (typeof body.message === "string" && body.message) ||
-        text.slice(0, 240) ||
-        `HTTP ${res.status}`;
-      console.error("[sendVerification] Twilio", res.status, msg);
+      console.error("[sendVerification] Twilio API error", {
+        status: res.status,
+        statusText: res.statusText,
+        body: text,
+      });
       return { ok: false, error: "Could not send SMS. Try again." };
     }
 
