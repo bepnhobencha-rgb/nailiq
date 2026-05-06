@@ -7,6 +7,7 @@ import {
   RECEPTIONIST_E2E_SLUG,
   seedReceptionistCenterFixture,
   seedWalkin,
+  testClientNameMarker,
   type ReceptionistCenterFixture,
 } from "./helpers";
 
@@ -28,7 +29,8 @@ test.describe("Status pill", () => {
   test("case 9: busy state after four waiting walk-ins", async ({ page }) => {
     for (let i = 0; i < 4; i += 1) {
       await seedWalkin(fx.salonId, {
-        clientName: `Te2ePill${i}${Date.now()}`,
+        /** Prefix Te2eGuest so cleanReceptionistData clears rows between tests */
+        clientName: `${testClientNameMarker()}pill${i}`,
         serviceId: fx.serviceIds[0]!,
       });
     }
