@@ -51,6 +51,12 @@ export interface ReceptionistCenterData {
     price_cents: number | null;
     /** Cleanup / turnover minutes after service (catalog); used for drawer time copy. */
     service_buffer_minutes: number;
+    /** Optional secondary service. Null when the booking has no add-on. */
+    addon_service_id: string | null;
+    addon_service_name: string | null;
+    addon_duration_minutes: number | null;
+    addon_buffer_minutes: number | null;
+    addon_price_cents: number | null;
   }>;
   /** Per-staff service whitelist for this salon. `null` = no rows → all-capable fallback. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
@@ -213,7 +219,10 @@ export async function loadReceptionistCenterData(
       source,
       service_id,
       price_cents,
-      services!bookings_service_id_fkey ( name, duration_minutes, buffer_minutes )
+      addon_service_id,
+      addon_price_cents,
+      services!bookings_service_id_fkey ( name, duration_minutes, buffer_minutes ),
+      addon:services!bookings_addon_service_id_fkey ( name, duration_minutes, buffer_minutes )
     `,
       )
       .eq("salon_id", ctx.salon.id)
@@ -277,7 +286,10 @@ export async function loadReceptionistCenterData(
     source: string | null;
     service_id: string;
     price_cents: number | null;
+    addon_service_id: string | null;
+    addon_price_cents: number | null;
     services: ServiceJoinMinimal | ServiceJoinMinimal[] | null;
+    addon: ServiceJoinMinimal | ServiceJoinMinimal[] | null;
   }> | null;
 
   const walkinQueue: ReceptionistCenterData["walkinQueue"] = [];
@@ -309,11 +321,22 @@ export async function loadReceptionistCenterData(
     const en = row.end_time_utc != null ? String(row.end_time_utc).trim() : "";
 
     const svc = serviceFromJoin(row.services);
+    const addon = serviceFromJoin(row.addon);
     const source: BookingSource =
       row.source === "walkin" ? "walkin" : "appointment";
     const status = row.status as BookingStatus;
 
     if (!staffId || !st || !en) return null;
+
+    const addonId =
+      row.addon_service_id != null && String(row.addon_service_id).trim().length
+        ? String(row.addon_service_id).trim()
+        : null;
+    // The bare `addon_service_id` column drives presence; the FK row provides
+    // name/duration. If the id is set but the FK row is missing (orphaned or
+    // join failure), still surface "Add-on" so the receptionist isn't silently
+    // misled into seeing a single-service booking.
+    const hasAddon = addonId !== null;
 
     return {
       id: row.id,
@@ -333,6 +356,15 @@ export async function loadReceptionistCenterData(
         Math.round(Number(svc?.buffer_minutes ?? 0)),
       ),
       price_cents: row.price_cents,
+      addon_service_id: addonId,
+      addon_service_name: hasAddon ? addon?.name ?? "—" : null,
+      addon_duration_minutes: hasAddon
+        ? Math.max(0, Math.round(Number(addon?.duration_minutes ?? 0)))
+        : null,
+      addon_buffer_minutes: hasAddon
+        ? Math.max(0, Math.round(Number(addon?.buffer_minutes ?? 0)))
+        : null,
+      addon_price_cents: hasAddon ? row.addon_price_cents ?? null : null,
     };
   });
 

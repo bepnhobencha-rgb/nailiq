@@ -502,14 +502,26 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
     const dateStr = formatInSalonTz(b.start_time_utc, timezone, "date");
     const t0 = formatInSalonTz(b.start_time_utc, timezone, "time");
     const timeSep = messages.receptionist.drawer.scheduleTimeRangeSep;
-    const durMin = Math.max(
+    const mainDurMin = Math.max(
       0,
       Math.round(Number(b.service_duration_minutes ?? 0)),
     );
-    const bufMin = Math.max(
+    const mainBufMin = Math.max(
       0,
       Math.round(Number(b.service_buffer_minutes ?? 0)),
     );
+    const addonDurMin = Math.max(
+      0,
+      Math.round(Number(b.addon_duration_minutes ?? 0)),
+    );
+    const addonBufMin = Math.max(
+      0,
+      Math.round(Number(b.addon_buffer_minutes ?? 0)),
+    );
+    // Total span = main service + main buffer + addon service + addon buffer.
+    // Used for the schedule "ends at" recompute and the duration row.
+    const durMin = mainDurMin + addonDurMin;
+    const bufMin = mainBufMin + addonBufMin;
 
     const startMs = Date.parse(b.start_time_utc);
     const serviceEndIso =
@@ -532,12 +544,35 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
 
     const durationLine = messages.receptionist.drawer.durationMinutes.replace(
       "{n}",
-      String(Number(b.service_duration_minutes ?? 0)),
+      String(durMin),
     );
 
-    const priceLine =
+    // Sum main + addon prices. Use 0 fallbacks so a booking with only an
+    // addon price still renders. Returns null only when both are missing.
+    const mainCents =
       b.price_cents != null && Number.isFinite(b.price_cents)
-        ? `$${(Number(b.price_cents) / 100).toFixed(2)}`
+        ? Number(b.price_cents)
+        : null;
+    const addonCents =
+      b.addon_price_cents != null && Number.isFinite(b.addon_price_cents)
+        ? Number(b.addon_price_cents)
+        : null;
+    const totalCents =
+      mainCents != null || addonCents != null
+        ? (mainCents ?? 0) + (addonCents ?? 0)
+        : null;
+    const priceLine =
+      totalCents != null ? `$${(totalCents / 100).toFixed(2)}` : null;
+
+    const addonServiceName = b.addon_service_name?.trim()
+      ? b.addon_service_name.trim()
+      : null;
+    const addonDurationLine =
+      addonServiceName && addonDurMin > 0
+        ? messages.receptionist.drawer.durationMinutes.replace(
+            "{n}",
+            String(addonDurMin),
+          )
         : null;
 
     const sourceLabel =
@@ -557,6 +592,8 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
       scheduleLine,
       durationLine,
       priceLine,
+      addonServiceName,
+      addonDurationLine,
     };
   }, [drawerBookingId, data.bookingsForDay, staffNameById, messages, timezone]);
 
@@ -576,6 +613,7 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
       sectionStatus: d.statusSection,
       sectionNotes: messages.salonDashboard.clientNotes,
       sectionPrice: d.priceSection,
+      sectionAddon: d.sectionAddon,
       noNotes: d.noNotesHint,
       callGuest: d.callGuest,
       nonePrice: d.none,

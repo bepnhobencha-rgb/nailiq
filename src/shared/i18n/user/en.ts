@@ -208,6 +208,8 @@ export type UserMessages = {
       statusSection: string;
       priceSection: string;
       noNotesHint: string;
+      /** Heading for the optional add-on service row in the booking drawer. */
+      sectionAddon: string;
     };
     edit: {
       /** Section heading when editing from the drawer */
@@ -471,6 +473,7 @@ export const userEn: UserMessages = {
       statusSection: "Status",
       priceSection: "Price",
       noNotesHint: "No notes",
+      sectionAddon: "Add-on",
     },
     edit: {
       modeTitle: "Edit booking",

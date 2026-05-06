@@ -22,10 +22,16 @@ export type BookingDetailDrawerModel = {
   staffName: string;
   statusLabel: string;
   sourceLabel: string;
-  /** One line: localized date + wall-clock range */
+  /** One line: localized date + wall-clock range; reflects total span (main + add-on). */
   scheduleLine: string;
+  /** Combined main + add-on duration, formatted via `durationMinutes` copy. */
   durationLine: string;
+  /** Combined main + add-on price; null only when both prices are missing. */
   priceLine: string | null;
+  /** Add-on service display name; null when the booking has no add-on. */
+  addonServiceName: string | null;
+  /** Add-on duration line (e.g. "30 minutes"); null when no add-on. */
+  addonDurationLine: string | null;
 };
 
 export interface BookingDetailDrawerProps {
@@ -42,6 +48,7 @@ export interface BookingDetailDrawerProps {
     sectionStatus: string;
     sectionNotes: string;
     sectionPrice: string;
+    sectionAddon: string;
     noNotes: string;
     callGuest: (formattedDisplay: string) => string;
     nonePrice: string;
@@ -228,6 +235,23 @@ export function BookingDetailDrawer({
                 </p>
               )}
             </section>
+
+            {model.addonServiceName ? (
+              <section
+                className="space-y-1 border-t border-nq-muted/15 pt-4"
+                data-testid="booking-drawer-addon"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+                  {copy.sectionAddon}
+                </p>
+                <p className="font-medium text-nq-foreground">
+                  {model.addonServiceName}
+                </p>
+                {model.addonDurationLine ? (
+                  <p className="text-nq-muted">{model.addonDurationLine}</p>
+                ) : null}
+              </section>
+            ) : null}
 
             <section className="space-y-1 border-t border-nq-muted/15 pt-4">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
