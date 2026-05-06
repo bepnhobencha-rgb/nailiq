@@ -16,7 +16,10 @@ import {
   formatBookingSlotDisplay,
 } from "@/shared/booking/bookingConfirmLabels";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
-import { getAvailableTimeSlots } from "@/shared/booking/getAvailableTimeSlots";
+import {
+  getAvailableTimeSlots,
+  type TimeSlot,
+} from "@/shared/booking/getAvailableTimeSlots";
 import type {
   BookingSalonMeta,
   BookingStaffItem,
@@ -89,7 +92,7 @@ export function useBookingFlowState(
     normalizeNoon(new Date()),
   );
   const [timeSlot, setTimeSlot] = useState<string | null>(null);
-  const [timeSlots, setTimeSlots] = useState<string[]>([]);
+  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
 
   const [clientName, setClientName] = useState("");
@@ -244,8 +247,12 @@ export function useBookingFlowState(
 
   useEffect(() => {
     if (!timeSlot) return;
-    if (timeSlots.length > 0 && !timeSlots.includes(timeSlot)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- guard: drop pick that's no longer in the slot list
+    if (timeSlots.length === 0) return;
+    const match = timeSlots.find((s) => s.label === timeSlot);
+    // Drop the pick if it's gone from the list OR if it's now disabled
+    // (booked by another customer between fetches).
+    if (!match || !match.available) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- guard: drop pick that's no longer selectable
       setTimeSlot(null);
     }
   }, [timeSlots, timeSlot]);

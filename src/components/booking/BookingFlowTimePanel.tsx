@@ -3,6 +3,7 @@
 import { motion } from "@/shared/lib/motionClient";
 import { Button } from "@/components/ui/Button";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
+import type { TimeSlot } from "@/shared/booking/getAvailableTimeSlots";
 import { cn } from "@/shared/lib/cn";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 import {
@@ -34,7 +35,7 @@ export function BookingFlowTimePanel({
   onNext,
 }: {
   t: BookingMessages;
-  timeSlots: readonly string[];
+  timeSlots: readonly TimeSlot[];
   timeSlot: string | null;
   slotsLoading: boolean;
   stepDir: BookingMotionDir;
@@ -169,30 +170,41 @@ export function BookingFlowTimePanel({
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-3 lg:gap-5">
             {timeSlots.map((slot) => {
-              const selected = timeSlot === slot;
+              const selected = timeSlot === slot.label;
+              const disabled = !slot.available;
               return (
                 <motion.button
-                  key={slot}
+                  key={slot.label}
                   type="button"
                   data-testid="time-slot"
-                  whileTap={{ scale: 0.99 }}
+                  data-available={slot.available}
+                  whileTap={disabled ? undefined : { scale: 0.99 }}
                   transition={{
                     type: "spring",
                     stiffness: 420,
                     damping: 28,
                   }}
                   aria-pressed={selected}
-                  onClick={() => onSelectSlot(slot)}
+                  aria-disabled={disabled}
+                  aria-label={
+                    disabled ? `${slot.label} (not available)` : slot.label
+                  }
+                  disabled={disabled}
+                  onClick={() => {
+                    if (!disabled) onSelectSlot(slot.label);
+                  }}
                   className={cn(
-                    "nq-booking-glass min-h-11 rounded-2xl px-3 py-3 text-center text-sm font-medium tracking-tight text-nq-foreground sm:min-h-[3rem] sm:text-[15px]",
-                    !selected && "nq-booking-tile-interactive",
+                    "nq-booking-glass min-h-11 rounded-2xl px-3 py-3 text-center text-sm font-medium tracking-tight sm:min-h-[3rem] sm:text-[15px]",
+                    !selected && !disabled && "nq-booking-tile-interactive",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
                     selected
-                      ? "border border-[#D4AF37] shadow-[var(--shadow-nq-tile-selected)]"
-                      : "border border-white/[0.06] hover:border-white/[0.12]",
+                      ? "border border-[#D4AF37] text-nq-foreground shadow-[var(--shadow-nq-tile-selected)]"
+                      : disabled
+                        ? "cursor-not-allowed border border-white/[0.04] text-nq-muted/50 line-through opacity-50"
+                        : "border border-white/[0.06] text-nq-foreground hover:border-white/[0.12]",
                   )}
                 >
-                  {slot}
+                  {slot.label}
                 </motion.button>
               );
             })}
