@@ -49,3 +49,23 @@ export function isDemoOtpRuntime(): boolean {
   return process.env.NODE_ENV === "development";
 }
 
+/**
+ * 🚨 DANGER: never set `NAILIQ_TEST_BYPASS_SLUG_PIN=1` on Vercel production
+ * environment.
+ *
+ * This flag exists ONLY for E2E tests (Playwright) so they can use
+ * non-`demo-salon` slugs (e.g. `e2e-receptionist-center`) with the demo
+ * cookie. Production MUST enforce the `DEMO_SALON_SLUG` pin — otherwise
+ * the cookie can be abused to access any tenant's dashboard by setting
+ * `nailiq-demo-slug` to that tenant's slug.
+ *
+ * Allowed environments: local dev, CI/E2E runners, preview deploys whose
+ * sole purpose is exercising the test suite. Never on `production`.
+ *
+ * Callers: `src/middleware.ts`, `getSalonViaDemoCookie` and the demo
+ * branches in `setupActions.ts` (`writableSupabase`, `verifyDemoSetupSlug`).
+ */
+export function isDemoSlugPinBypassed(): boolean {
+  return process.env.NAILIQ_TEST_BYPASS_SLUG_PIN === "1";
+}
+

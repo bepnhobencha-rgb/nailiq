@@ -6,7 +6,11 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
   NAILQ_DEMO_SLUG_COOKIE,
 } from "@/shared/lib/demoDashboardCookie";
-import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
+import {
+  DEMO_SALON_SLUG,
+  isDemoOtpRuntime,
+  isDemoSlugPinBypassed,
+} from "@/shared/lib/demoOtpMode";
 import { isOpeningHoursCustomized } from "@/shared/dashboard/openingHoursDefaults";
 import {
   DASHBOARD_BOOKING_SELECT,
@@ -36,14 +40,23 @@ async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
   // Demo cookies grant service-role-backed dashboard access. Honored ONLY
   // when demo OTP mode is on (dev/test). Production with `DEMO_OTP=false`
   // returns null here, keeping the prod B-01/B-02 attack surface closed.
-  // The earlier `slug === DEMO_SALON_SLUG` guard was rolled back because
-  // it broke the demo register flow for owners whose salon slug isn't
-  // `demo-salon` — see middleware.ts comment for the full story.
+  //
+  // Slug pin (re-introduced after PR #16): the cookie ONLY grants access
+  // to `DEMO_SALON_SLUG`. PR #16 forces every demo registration to that
+  // slug, so a non-`demo-salon` cookie value cannot arise from the
+  // legitimate flow. Pin prevents the cookie from being abused to access
+  // any tenant's dashboard via service-role bypass.
+  //
+  // 🚨 Test-only bypass: `NAILIQ_TEST_BYPASS_SLUG_PIN=1` falls back to the
+  // pre-PR #16 cookie===slug match. NEVER set on Vercel production.
   if (!isDemoOtpRuntime()) return null;
 
   const cookieStore = await cookies();
   const demoSlug = cookieStore.get(NAILQ_DEMO_SLUG_COOKIE)?.value;
-  if (!demoSlug || demoSlug !== slug) return null;
+  const accepted = isDemoSlugPinBypassed()
+    ? Boolean(demoSlug && demoSlug === slug)
+    : demoSlug === DEMO_SALON_SLUG && slug === DEMO_SALON_SLUG;
+  if (!accepted) return null;
 
   let admin;
   try {
