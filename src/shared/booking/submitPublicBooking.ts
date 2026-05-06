@@ -12,6 +12,7 @@ import {
 } from "@/shared/booking/staffCapability";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
+import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { createClient } from "@/shared/lib/supabase/client";
 
 export type BookingParams = {
@@ -25,6 +26,8 @@ export type BookingParams = {
   staffId: string;
   clientName: string;
   clientPhone: string;
+  /** Optional — empty string / undefined skips it. Format-checked when present (B-10). */
+  clientEmail?: string | null;
   clientNotes?: string;
   /** Optional add-on booked into the same row (pre-confirm upsell with real float only). */
   addonServiceId?: string | null;
@@ -139,6 +142,17 @@ export async function submitPublicBooking(
   if (!isValidCustomerName(nameTrimmed)) {
     throw new Error("invalid_name_chars");
   }
+
+  /** B-10: optional. Empty / undefined → null in DB. Provided-but-malformed → throw. */
+  const emailRaw = (params.clientEmail ?? "").trim();
+  const emailToStore: string | null =
+    emailRaw.length === 0
+      ? null
+      : isValidEmailFormat(emailRaw)
+        ? emailRaw
+        : (() => {
+            throw new Error("invalid_email");
+          })();
 
   const supabase = createClient();
 
@@ -374,12 +388,13 @@ export async function submitPublicBooking(
     staff_id: resolvedStaffId,
     client_name: nameTrimmed,
     client_phone: phoneOk.digits,
+    client_email: emailToStore,
     client_notes: notesTrim.length > 0 ? notesTrim : null,
     start_time_utc: startLocal.toISOString(),
     end_time_utc: endLocal.toISOString(),
     status: "confirmed" as const,
     price_cents: priceSnapshot,
-    addon_service_id: 
+    addon_service_id:
       addonRow ? addonRow.id : null,
     addon_price_cents: addonRow ? addonPriceSnapshot : null,
   };
@@ -399,6 +414,7 @@ export async function submitPublicBooking(
       p_client_notes: insertPayload.client_notes,
       p_addon_service_id: insertPayload.addon_service_id,
       p_addon_price_cents: insertPayload.addon_price_cents,
+      p_client_email: insertPayload.client_email,
     },
   );
 
@@ -450,6 +466,7 @@ export async function submitPublicBooking(
       staff_id: insertPayload.staff_id,
       client_name: insertPayload.client_name,
       client_phone: insertPayload.client_phone,
+      client_email: insertPayload.client_email,
       client_notes: insertPayload.client_notes,
       start_time_utc: insertPayload.start_time_utc,
       end_time_utc: insertPayload.end_time_utc,

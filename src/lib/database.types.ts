@@ -79,6 +79,7 @@ export type Database = {
         Row: {
           addon_price_cents: number | null
           addon_service_id: string | null
+          client_email: string | null
           client_name: string
           client_notes: string | null
           client_phone: string | null
@@ -99,6 +100,7 @@ export type Database = {
         Insert: {
           addon_price_cents?: number | null
           addon_service_id?: string | null
+          client_email?: string | null
           client_name: string
           client_notes?: string | null
           client_phone?: string | null
@@ -119,6 +121,7 @@ export type Database = {
         Update: {
           addon_price_cents?: number | null
           addon_service_id?: string | null
+          client_email?: string | null
           client_name?: string
           client_notes?: string | null
           client_phone?: string | null
@@ -537,6 +540,7 @@ export type Database = {
         Args: {
           p_addon_price_cents?: number
           p_addon_service_id?: string
+          p_client_email?: string
           p_client_name: string
           p_client_notes?: string
           p_client_phone: string
