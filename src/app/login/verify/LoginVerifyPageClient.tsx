@@ -14,12 +14,7 @@ import { Button } from "@/components/ui/Button";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
 import { cn } from "@/shared/lib/cn";
 import { REG_SESSION_PHONE_DIGITS_KEY } from "@/shared/lib/registerSessionKeys";
-import {
-  finalizeRegisterSessionAfterPhoneOtp,
-  verifyRegisterOtp,
-} from "@/shared/register/actions";
-import { digitsToE164Phone } from "@/shared/register/phone";
-import { createClient as createBrowserSupabaseClient } from "@/shared/lib/supabase/client";
+import { verifyLoginOtp } from "@/shared/register/actions";
 
 const OTP_LEN = 6;
 const emptyDigits = () => Array.from({ length: OTP_LEN }, () => "");
@@ -66,58 +61,27 @@ export function LoginVerifyPageClient({ demoMode }: Props) {
       setError(null);
 
       startTransition(async () => {
-        if (demoMode) {
-          // Demo: server verifies against `otps` table + sets demo cookie.
-          const res = await verifyRegisterOtp(phoneDigits, code);
-          if (!res.ok) {
-            setError(
-              res.reason === "expired"
-                ? "Mã đã hết hạn."
-                : res.reason === "server_error"
-                  ? "Lỗi server. Vui lòng thử lại."
-                  : "Mã không đúng.",
-            );
-            return;
-          }
-          if (res.next === "dashboard") {
-            router.push(`/dashboard/${encodeURIComponent(res.slug)}`);
-            return;
-          }
-          // next: "setup" means phone has no salon — login should reject this.
-          // LoginPageClient pre-gates via sendLoginOtp; this is defense-in-depth.
-          setError("Số này chưa đăng ký.");
+        const res = await verifyLoginOtp(phoneDigits, code);
+        if (!res.ok) {
+          setError(
+            res.reason === "expired"
+              ? "Mã đã hết hạn."
+              : res.reason === "server_error"
+                ? "Lỗi server. Vui lòng thử lại."
+                : "Mã không đúng.",
+          );
           return;
         }
-
-        // Production path: client-side `verifyOtp` creates the Supabase session,
-        // then `finalize*` on the server reads the session + returns the slug.
-        const e164 = digitsToE164Phone(phoneDigits);
-        if (!e164) {
-          setError("Số điện thoại không hợp lệ.");
+        if (res.next === "dashboard") {
+          router.push(`/dashboard/${encodeURIComponent(res.slug)}`);
           return;
         }
-        const supabase = createBrowserSupabaseClient();
-        const { error: vErr } = await supabase.auth.verifyOtp({
-          phone: e164,
-          token: code,
-          type: "sms",
-        });
-        if (vErr) {
-          setError(vErr.message || "Mã không đúng.");
-          return;
-        }
-
-        const finalized = await finalizeRegisterSessionAfterPhoneOtp(phoneDigits);
-        if (!finalized.ok || finalized.kind !== "dashboard") {
-          // Verified phone but no salon row found — sign out + reject.
-          await supabase.auth.signOut();
-          setError("Số này chưa đăng ký.");
-          return;
-        }
-        router.push(`/dashboard/${encodeURIComponent(finalized.slug)}`);
+        // next: "setup" means phone has no salon — login should reject this.
+        // LoginPageClient pre-gates via sendLoginOtp; this is defense-in-depth.
+        setError("Số này chưa đăng ký.");
       });
     },
-    [phoneDigits, code, demoMode, router],
+    [phoneDigits, code, router],
   );
 
   return (

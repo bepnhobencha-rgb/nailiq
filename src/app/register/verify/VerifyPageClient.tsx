@@ -20,12 +20,7 @@ import {
   REG_OTP_RESENT_FLAG,
   REG_SESSION_PHONE_DIGITS_KEY,
 } from "@/shared/lib/registerSessionKeys";
-import {
-  finalizeRegisterSessionAfterPhoneOtp,
-  verifyRegisterOtp,
-} from "@/shared/register/actions";
-import { digitsToE164Phone } from "@/shared/register/phone";
-import { createClient as createBrowserSupabaseClient } from "@/shared/lib/supabase/client";
+import { verifyRegisterOtp } from "@/shared/register/actions";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { isRegisterPhoneDigitsValid } from "@/shared/register/phone";
@@ -154,83 +149,17 @@ export function VerifyPageClient({ demoMode }: Props) {
       if (codeJoined.length !== OTP_LEN || !phoneDigits) return;
       setError(null);
       startTransition(async () => {
-        if (demoMode) {
-          const result = await verifyRegisterOtp(phoneDigits, codeJoined);
+        const result = await verifyRegisterOtp(phoneDigits, codeJoined);
 
-          if (!result.ok) {
-            if (result.reason === "expired") {
-              setError("Code expired — request a new one.");
-            } else if (result.reason === "server_error") {
-              setError(
-                "We could not verify your code. Check SUPABASE_SERVICE_ROLE_KEY and migrations.",
-              );
-            } else {
-              setError("Invalid code.");
-            }
-            return;
-          }
-
-          if (typeof window !== "undefined") {
-            window.sessionStorage.removeItem(REG_FLOW_OWNER_RETURNING);
-          }
-
-          if (result.next === "dashboard") {
-            window.location.assign(
-              `/dashboard/${encodeURIComponent(result.slug)}`,
-            );
-            return;
-          }
-
-          const ct = result.completionToken.trim();
-          if (!ct) {
-            setError("Missing completion token. Try again.");
-            return;
-          }
-          if (typeof window !== "undefined") {
-            window.sessionStorage.setItem(REG_COMPLETION_TOKEN_KEY, ct);
-          }
-
-          window.location.assign("/register/setup");
-          return;
-        }
-
-        const supabase = createBrowserSupabaseClient();
-        const e164 = digitsToE164Phone(phoneDigits);
-        if (!e164) {
-          setError(
-            "Enter 8–15 digits including country code (e.g. Vietnam: 84912345678).",
-          );
-          return;
-        }
-
-        const { error: otpErr } = await supabase.auth.verifyOtp({
-          phone: e164,
-          token: codeJoined,
-          type: "sms",
-        });
-
-        if (otpErr) {
-          console.error("[VerifyPageClient] verifyOtp", otpErr);
-          const msg = otpErr.message?.toLowerCase() ?? "";
-          if (msg.includes("expired")) {
+        if (!result.ok) {
+          if (result.reason === "expired") {
             setError("Code expired — request a new one.");
+          } else if (result.reason === "server_error") {
+            setError(
+              "We could not verify your code. Check SUPABASE_SERVICE_ROLE_KEY and migrations.",
+            );
           } else {
             setError("Invalid code.");
-          }
-          return;
-        }
-
-        await supabase.auth.getSession();
-
-        const finalize = await finalizeRegisterSessionAfterPhoneOtp(phoneDigits);
-
-        if (!finalize.ok) {
-          if (finalize.reason === "unauthorized") {
-            setError(
-              "Could not establish your session after SMS. Try again or refresh the page.",
-            );
-          } else {
-            setError("We could not complete sign-in. Try again.");
           }
           return;
         }
@@ -239,21 +168,26 @@ export function VerifyPageClient({ demoMode }: Props) {
           window.sessionStorage.removeItem(REG_FLOW_OWNER_RETURNING);
         }
 
-        if (finalize.kind === "dashboard") {
+        if (result.next === "dashboard") {
           window.location.assign(
-            `/dashboard/${encodeURIComponent(finalize.slug)}`,
+            `/dashboard/${encodeURIComponent(result.slug)}`,
           );
           return;
         }
 
-        window.sessionStorage.setItem(
-          REG_COMPLETION_TOKEN_KEY,
-          finalize.completionToken,
-        );
+        const ct = result.completionToken.trim();
+        if (!ct) {
+          setError("Missing completion token. Try again.");
+          return;
+        }
+        if (typeof window !== "undefined") {
+          window.sessionStorage.setItem(REG_COMPLETION_TOKEN_KEY, ct);
+        }
+
         window.location.assign("/register/setup");
       });
     },
-    [codeJoined, demoMode, phoneDigits],
+    [codeJoined, phoneDigits],
   );
 
   return (

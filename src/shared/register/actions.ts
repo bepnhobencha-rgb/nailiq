@@ -7,12 +7,14 @@ import {
   NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
 } from "@/shared/lib/demoDashboardCookie";
 import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
+import { sendVerification, checkVerification } from "@/shared/lib/twilioVerify";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
   canonicalSixDigitOtp,
   generateSixDigitCode,
 } from "@/shared/register/otpHelpers";
+import { signInSupabaseWithPhoneAfterExternalOtp } from "@/shared/register/phoneOtpSupabaseSession";
 import {
   digitsToE164Phone,
   isRegisterPhoneDigitsValid,
@@ -130,8 +132,10 @@ export type FinalizeRegisterSessionAfterPhoneOtpResult =
   | { ok: false; reason: "unauthorized" | "server_error" };
 
 /**
- * Run after Supabase phone OTP succeeds **in the browser** (`verifyOtp` on client).
- * Server reads the session from cookies — avoids broken cookie writes from Server Actions.
+ * Run after phone verification when the browser has a Supabase session
+ * (demo: `verifyRegisterOtp`; production: Twilio Verify + password bridge in
+ * `signInSupabaseWithPhoneAfterExternalOtp`). Server reads the session from
+ * cookies — avoids broken cookie writes from Server Actions.
  */
 export async function finalizeRegisterSessionAfterPhoneOtp(
   phoneRaw: string,
@@ -334,32 +338,19 @@ export async function sendRegisterOtp(
     return { success: false, error: INVALID_PHONE_MSG };
   }
 
-  try {
-    const supabase = await createClient();
-    const { error } = await supabase.auth.signInWithOtp({
-      phone: e164,
-      options: { shouldCreateUser: true },
-    });
-
-    if (error) {
-      console.error("[sendRegisterOtp] signInWithOtp", error);
-      return {
-        success: false,
-        error:
-          error.message ||
-          "Could not send SMS. Enable Phone auth in Supabase or try again.",
-      };
-    }
-
-    if (isReturningOwner) {
-      return { success: true, mode: "returning" };
-    }
-
-    return { success: true, mode: "new" };
-  } catch (error) {
-    console.error("[sendRegisterOtp]", error);
-    return { success: false, error: "Could not send SMS. Try again." };
+  const sent = await sendVerification(e164);
+  if (!sent.ok) {
+    return {
+      success: false,
+      error: sent.error ?? "Could not send SMS. Try again.",
+    };
   }
+
+  if (isReturningOwner) {
+    return { success: true, mode: "returning" };
+  }
+
+  return { success: true, mode: "new" };
 }
 
 /**
@@ -402,84 +393,135 @@ export async function verifyRegisterOtp(
     return { ok: false, reason: "invalid" };
   }
 
-  if (!isDemoOtpRuntime()) {
+  if (isDemoOtpRuntime()) {
+    let supabase;
+    try {
+      supabase = createServiceRoleClient();
+    } catch {
+      return { ok: false, reason: "server_error" };
+    }
+
+    const { data: latest } = await supabase
+      .from("otps")
+      .select("id, code, expires_at")
+      .eq("phone", phone)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!latest) {
+      return { ok: false, reason: "invalid" };
+    }
+
+    const expiresAt = new Date(String(latest.expires_at));
+    if (expiresAt.getTime() <= Date.now()) {
+      await supabase.from("otps").delete().eq("id", latest.id);
+      return { ok: false, reason: "expired" };
+    }
+
+    if (canonicalSixDigitOtp(latest.code) !== canonicalSixDigitOtp(code)) {
+      return { ok: false, reason: "invalid" };
+    }
+
+    await supabase.from("otps").delete().eq("id", latest.id);
+
+    const returningSlug = await lookupSalonSlugForOwnerPhone(phone);
+    if (returningSlug) {
+      const cookieStore = await cookies();
+      cookieStore.set(NAILQ_DEMO_SLUG_COOKIE, returningSlug, {
+        path: "/",
+        maxAge: NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+      });
+      if (registerFlowDebugEnabled()) {
+        console.log("verifyRegisterOtp returning owner → dashboard", {
+          returningOwnerSlug: returningSlug,
+        });
+      }
+      // Return + client navigation so Set-Cookie from this action reliably reaches the browser
+      // before the next document request (redirect-in-action can race the cookie).
+      return { ok: true, next: "dashboard", slug: returningSlug };
+    }
+
+    const completionToken = randomUUID();
+    const tokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+    const { error: tokErr } = await supabase
+      .from("register_completion_tokens")
+      .insert({
+        phone,
+        token: completionToken,
+        expires_at: tokenExpiresAt,
+      });
+
+    if (tokErr) {
+      console.error(
+        "[verifyRegisterOtp] register_completion_tokens insert",
+        tokErr,
+      );
+      return { ok: false, reason: "server_error" };
+    }
+
+    const result = { ok: true as const, next: "setup" as const, completionToken };
+    if (registerFlowDebugEnabled()) {
+      console.log("verifyRegisterOtp result:", result);
+      console.log("returningOwnerSlug:", null);
+    }
+    return result;
+  }
+
+  const e164 = digitsToE164Phone(phone);
+  if (!e164) {
     return { ok: false, reason: "invalid" };
   }
 
-  let supabase;
+  const checked = await checkVerification(e164, code);
+  if (!checked.ok) {
+    if (checked.error === "expired_or_max_attempts") {
+      return { ok: false, reason: "expired" };
+    }
+    if (checked.error === "server_misconfigured") {
+      return { ok: false, reason: "server_error" };
+    }
+    return { ok: false, reason: "invalid" };
+  }
+
+  let admin;
   try {
-    supabase = createServiceRoleClient();
+    admin = createServiceRoleClient();
   } catch {
     return { ok: false, reason: "server_error" };
   }
 
-  const { data: latest } = await supabase
-    .from("otps")
-    .select("id, code, expires_at")
-    .eq("phone", phone)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (!latest) {
-    return { ok: false, reason: "invalid" };
-  }
-
-  const expiresAt = new Date(String(latest.expires_at));
-  if (expiresAt.getTime() <= Date.now()) {
-    await supabase.from("otps").delete().eq("id", latest.id);
-    return { ok: false, reason: "expired" };
-  }
-
-  if (canonicalSixDigitOtp(latest.code) !== canonicalSixDigitOtp(code)) {
-    return { ok: false, reason: "invalid" };
-  }
-
-  await supabase.from("otps").delete().eq("id", latest.id);
-
-  const returningSlug = await lookupSalonSlugForOwnerPhone(phone);
-  if (returningSlug) {
-    const cookieStore = await cookies();
-    cookieStore.set(NAILQ_DEMO_SLUG_COOKIE, returningSlug, {
-      path: "/",
-      maxAge: NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-    });
-    if (registerFlowDebugEnabled()) {
-      console.log("verifyRegisterOtp returning owner → dashboard", {
-        returningOwnerSlug: returningSlug,
-      });
-    }
-    // Return + client navigation so Set-Cookie from this action reliably reaches the browser
-    // before the next document request (redirect-in-action can race the cookie).
-    return { ok: true, next: "dashboard", slug: returningSlug };
-  }
-
-  const completionToken = randomUUID();
-  const tokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-
-  const { error: tokErr } = await supabase
-    .from("register_completion_tokens")
-    .insert({
-      phone,
-      token: completionToken,
-      expires_at: tokenExpiresAt,
-    });
-
-  if (tokErr) {
-    console.error(
-      "[verifyRegisterOtp] register_completion_tokens insert",
-      tokErr,
-    );
+  try {
+    await signInSupabaseWithPhoneAfterExternalOtp(admin, e164);
+  } catch (e) {
+    console.error("[verifyRegisterOtp] Supabase sign-in after Twilio", e);
     return { ok: false, reason: "server_error" };
   }
 
-  const result = { ok: true as const, next: "setup" as const, completionToken };
-  if (registerFlowDebugEnabled()) {
-    console.log("verifyRegisterOtp result:", result);
-    console.log("returningOwnerSlug:", null);
+  const finalized = await finalizeRegisterSessionAfterPhoneOtp(phoneRaw);
+  if (!finalized.ok) {
+    return { ok: false, reason: "server_error" };
   }
-  return result;
+  if (finalized.kind === "dashboard") {
+    return { ok: true, next: "dashboard", slug: finalized.slug };
+  }
+  return {
+    ok: true,
+    next: "setup",
+    completionToken: finalized.completionToken,
+  };
+}
+
+/**
+ * Login verify path (same server logic as registration OTP verify; {@link sendLoginOtp} pre-filters unknown phones).
+ */
+export async function verifyLoginOtp(
+  phoneRaw: string,
+  codeRaw: string,
+): Promise<VerifyRegisterOtpResult> {
+  return verifyRegisterOtp(phoneRaw, codeRaw);
 }
