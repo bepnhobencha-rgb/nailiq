@@ -62,7 +62,7 @@ export function isDemoOtpRuntime(): boolean {
  * Allowed environments: local dev, CI/E2E runners, preview deploys whose
  * sole purpose is exercising the test suite. Never on `production`.
  *
- * Callers: `src/middleware.ts`, `getSalonViaDemoCookie` and the demo
+ * Callers: `src/proxy.ts`, `getSalonViaDemoCookie` and the demo
  * branches in `setupActions.ts` (`writableSupabase`, `verifyDemoSetupSlug`).
  */
 export function isDemoSlugPinBypassed(): boolean {
