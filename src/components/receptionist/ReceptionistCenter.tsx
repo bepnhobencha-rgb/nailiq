@@ -973,6 +973,11 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
                   price_cents: openDrawerBooking.price_cents ?? 0,
                   staff_id: openDrawerBooking.staff_id,
                   service_id: openDrawerBooking.service_id,
+                  addon_service_id: openDrawerBooking.addon_service_id,
+                  addon_service_name: openDrawerBooking.addon_service_name,
+                  addon_duration_minutes: openDrawerBooking.addon_duration_minutes,
+                  addon_buffer_minutes: openDrawerBooking.addon_buffer_minutes,
+                  addon_price_cents: openDrawerBooking.addon_price_cents,
                 },
                 staff: data.staff.map((s) => ({ id: s.id, name: s.name })),
                 services: data.services.map((s) => ({
