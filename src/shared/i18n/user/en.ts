@@ -46,6 +46,8 @@ export type UserMessages = {
     welcomeBackVerifySubtext: string;
     /** Demo path (new signup) — short line beside DEMO MODE badge */
     newDemoOtpBadgeNote: string;
+    /** Toast after "Send code" is clicked a second+ time on /register or after returning from /register/verify. */
+    otpResentToast: string;
   };
   salonDashboard: {
     title: string;
@@ -307,6 +309,8 @@ export const userEn: UserMessages = {
       "Welcome back! Enter the code to access your dashboard.",
     newDemoOtpBadgeNote:
       "DEMO MODE · OTP appears below.",
+    otpResentToast:
+      "New code sent — previous code is no longer valid.",
   },
   salonDashboard: {
     title: "Salon dashboard",

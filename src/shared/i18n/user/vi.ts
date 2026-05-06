@@ -50,6 +50,8 @@ export const userVi: UserMessages = {
       "Chào mừng trở lại! Nhập mã để vào bảng điều khiển.",
     newDemoOtpBadgeNote:
       "DEMO · Mã OTP hiển thị bên dưới.",
+    otpResentToast:
+      "Đã gửi mã mới — mã cũ không còn hiệu lực.",
   },
   salonDashboard: {
     title: "Bảng điều khiển tiệm",

@@ -11,11 +11,13 @@ import {
 } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Toast, type SetupToastPayload } from "@/components/ui/Toast";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
 import { cn } from "@/shared/lib/cn";
 import {
   REG_COMPLETION_TOKEN_KEY,
   REG_FLOW_OWNER_RETURNING,
+  REG_OTP_RESENT_FLAG,
   REG_SESSION_PHONE_DIGITS_KEY,
 } from "@/shared/lib/registerSessionKeys";
 import {
@@ -45,6 +47,7 @@ export function VerifyPageClient({ demoMode }: Props) {
   const [pending, startTransition] = useTransition();
   const [phoneDigits, setPhoneDigits] = useState<string | null>(null);
   const [isReturningFlow, setIsReturningFlow] = useState(false);
+  const [toast, setToast] = useState<SetupToastPayload | null>(null);
   const refs = useRef<(HTMLInputElement | null)[]>([]);
 
   const verifySubtext = useMemo(
@@ -70,7 +73,23 @@ export function VerifyPageClient({ demoMode }: Props) {
       return;
     }
     queueMicrotask(() => setPhoneDigits(fromSession));
-  }, [router]);
+
+    // Resend flag set by RegisterPageClient on a successful re-send.
+    // Surface the toast + clear any leftover digits (defensive — component
+    // remount already empties `digits`, but covers HMR / fast-refresh and
+    // any future caller that doesn't fully unmount).
+    if (window.sessionStorage.getItem(REG_OTP_RESENT_FLAG) === "1") {
+      window.sessionStorage.removeItem(REG_OTP_RESENT_FLAG);
+      queueMicrotask(() => {
+        setDigits(emptyDigits());
+        setError(null);
+        setToast({
+          variant: "success",
+          message: t.register.otpResentToast,
+        });
+      });
+    }
+  }, [router, t.register.otpResentToast]);
 
   const focusAt = useCallback((i: number) => {
     refs.current[i]?.focus();
@@ -308,6 +327,8 @@ export function VerifyPageClient({ demoMode }: Props) {
           Use a different number
         </button>
       </form>
+
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
     </RegisterStepShell>
   );
 }
