@@ -89,6 +89,7 @@ export const bookingEn = {
       "Phone number invalid. Example: 604 123 4567 or +84 90 123 4567",
     phoneRequired: "Enter your phone number.",
     nameRequired: "Please enter your name.",
+    nameTooShort: "Name must be at least 2 characters.",
     nameTooLong: "Name cannot exceed 100 characters.",
     invalidNameChars:
       "Name contains invalid characters.",
@@ -117,7 +118,7 @@ export const bookingEn = {
   salonNotLiveBody:
     "{shop} is finishing setup and isn’t taking online bookings yet. Please check back soon.",
   /** `{n}` = staff free-gap minutes after the chosen service. */
-  upsellHeading: "You have {n} minutes free after your service — add another?",
+  upsellHeading: "Add another service? You have {n} extra minutes available.",
   upsellNoThanks: "No thanks",
   upsellToggleHint: "Pick one before you confirm to bundle it with your booking.",
   /** Right column when `totalMinutes` from DB is 0 */

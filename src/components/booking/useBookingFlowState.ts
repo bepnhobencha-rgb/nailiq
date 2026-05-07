@@ -152,7 +152,7 @@ export function useBookingFlowState(
 
   const guestContactInvalid = useMemo(() => {
     const nameT = clientName.trim();
-    if (nameT.length === 0 || nameT.length > BOOKING_GUEST_NAME_MAX) return true;
+    if (nameT.length < 2 || nameT.length > BOOKING_GUEST_NAME_MAX) return true;
     if (!isValidCustomerName(nameT)) return true;
     if (!validateGuestPhone(clientPhone).ok) return true;
     /* Email is optional — empty is fine. Only invalid when provided + malformed. */
@@ -181,6 +181,8 @@ export function useBookingFlowState(
     setClientName(trimmed);
     if (trimmed.length === 0) {
       setInfoNameError(t.bookingErrors.nameRequired);
+    } else if (trimmed.length === 1) {
+      setInfoNameError(t.bookingErrors.nameTooShort);
     } else if (trimmed.length > BOOKING_GUEST_NAME_MAX) {
       setInfoNameError(t.bookingErrors.nameTooLong);
     } else if (!isValidCustomerName(trimmed)) {
@@ -191,6 +193,7 @@ export function useBookingFlowState(
   }, [
     clientName,
     t.bookingErrors.nameRequired,
+    t.bookingErrors.nameTooShort,
     t.bookingErrors.nameTooLong,
     t.bookingErrors.invalidNameChars,
   ]);
@@ -490,11 +493,13 @@ export function useBookingFlowState(
     const nameErr =
       nameTrim.length === 0
         ? t.bookingErrors.nameRequired
-        : nameTrim.length > BOOKING_GUEST_NAME_MAX
-          ? t.bookingErrors.nameTooLong
-          : !isValidCustomerName(nameTrim)
-            ? t.bookingErrors.invalidNameChars
-            : null;
+        : nameTrim.length === 1
+          ? t.bookingErrors.nameTooShort
+          : nameTrim.length > BOOKING_GUEST_NAME_MAX
+            ? t.bookingErrors.nameTooLong
+            : !isValidCustomerName(nameTrim)
+              ? t.bookingErrors.invalidNameChars
+              : null;
 
     let phoneErr: string | null = null;
     if (phoneTrim.length === 0) {
@@ -527,6 +532,7 @@ export function useBookingFlowState(
     clientEmail,
     t.bookingErrors.invalidEmail,
     t.bookingErrors.nameRequired,
+    t.bookingErrors.nameTooShort,
     t.bookingErrors.nameTooLong,
     t.bookingErrors.invalidNameChars,
     t.bookingErrors.invalidPhone,
@@ -607,12 +613,14 @@ export function useBookingFlowState(
     const phone = clientPhone.trim();
     const email = clientEmail.trim();
     const nameEmpty = name.length === 0;
+    const nameTooShort = !nameEmpty && name.length === 1;
     const nameTooLong = name.length > BOOKING_GUEST_NAME_MAX;
     const nameWrongChars =
-      !nameEmpty && !nameTooLong && !isValidCustomerName(name);
+      !nameEmpty && !nameTooShort && !nameTooLong && !isValidCustomerName(name);
     const emailInvalid = email.length > 0 && !isValidEmailFormat(email);
     if (
       nameEmpty ||
+      nameTooShort ||
       nameTooLong ||
       nameWrongChars ||
       !validateGuestPhone(phone).ok ||
@@ -621,15 +629,17 @@ export function useBookingFlowState(
       setError(
         nameEmpty
           ? t.bookingErrors.nameRequired
-          : nameTooLong
-            ? t.bookingErrors.nameTooLong
-            : nameWrongChars
-              ? t.bookingErrors.invalidNameChars
-              : emailInvalid
-                ? t.bookingErrors.invalidEmail
-                : phone.length === 0
-                  ? t.bookingErrors.phoneRequired
-                  : t.bookingErrors.invalidPhone,
+          : nameTooShort
+            ? t.bookingErrors.nameTooShort
+            : nameTooLong
+              ? t.bookingErrors.nameTooLong
+              : nameWrongChars
+                ? t.bookingErrors.invalidNameChars
+                : emailInvalid
+                  ? t.bookingErrors.invalidEmail
+                  : phone.length === 0
+                    ? t.bookingErrors.phoneRequired
+                    : t.bookingErrors.invalidPhone,
       );
       return;
     }
@@ -763,6 +773,7 @@ export function useBookingFlowState(
     service,
     staff,
     t.bookingErrors.nameRequired,
+    t.bookingErrors.nameTooShort,
     t.bookingErrors.nameTooLong,
     t.bookingErrors.invalidNameChars,
     t.bookingErrors.invalidPhone,
