@@ -200,7 +200,7 @@
   outline-offset: 4px;
 }
 
-/* Clean two-tone wordmark: italic serif "Nail" in gold + bold sans "IQ" in white */
+/* Two-tone wordmark: clean sans-serif — "Nail" white, "IQ" gold. No italic, no serif. */
 .landing-html-wordmark {
   display: inline-flex;
   align-items: baseline;
@@ -209,37 +209,20 @@
 }
 
 .landing-html-wordmark-nail {
-  font-family: var(--font-landing-playfair), ui-serif, Georgia, serif;
-  font-style: italic;
+  font-family: var(--font-landing-inter), system-ui, -apple-system, sans-serif;
+  font-style: normal;
   font-weight: 700;
-  color: #d4af37;
+  color: #ffffff;
   letter-spacing: -0.02em;
 }
 
 .landing-html-wordmark-iq {
-  margin-left: 0.1em;
+  margin-left: 0.02em;
   font-family: var(--font-landing-inter), system-ui, -apple-system, sans-serif;
   font-style: normal;
-  font-weight: 800;
-  color: #ffffff;
-  letter-spacing: -0.01em;
-}
-
-.landing-html-wordmark-fallback {
-  font-family: var(--font-landing-playfair), ui-serif, Georgia, serif;
-  font-style: italic;
   font-weight: 700;
-  letter-spacing: -0.03em;
-  background: linear-gradient(
-    168deg,
-    #fffef8 0%,
-    #f5e8bc 35%,
-    #d4af37 75%
-  );
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 2px 16px rgba(212, 175, 55, 0.3));
+  color: #d4af37;
+  letter-spacing: -0.02em;
 }
 
 .landing-html-glass-card {
