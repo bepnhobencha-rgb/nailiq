@@ -4,7 +4,7 @@ import { useId, useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { getUserMessages } from "@/shared/i18n/user";
-import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { useBrowserLanguage } from "@/shared/lib/useBrowserLanguage";
 import { createClient } from "@/shared/lib/supabase/client";
 
 type Mode = "login" | "register";
@@ -16,7 +16,7 @@ type Props = {
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 
 export function SocialAuthButtons({ mode }: Props) {
-  const { language } = useUserLanguage();
+  const language = useBrowserLanguage();
   const t = useMemo(() => getUserMessages(language).auth, [language]);
   // Email magic-link section starts COLLAPSED. Only the Google button +
   // "Other options" toggle render until the user explicitly opens it.
