@@ -9,6 +9,8 @@ import {
 } from "react";
 import { Button } from "@/components/ui/Button";
 import { addSalonEmail } from "@/shared/dashboard/addEmailAction";
+import { getUserMessages } from "@/shared/i18n/user";
+import type { UserLanguage } from "@/shared/i18n/user/types";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 
 const STORAGE_KEY = "nailiq-email-banner-dismissed";
@@ -47,11 +49,18 @@ function useDismissedWithinWeekHydrated(): boolean {
 
 type Props = {
   salonSlug: string;
+  language: UserLanguage;
   onDismiss: () => void;
   onEmailAdded: (email: string) => void;
 };
 
-export function AddEmailBanner({ salonSlug, onDismiss, onEmailAdded }: Props) {
+export function AddEmailBanner({
+  salonSlug,
+  language,
+  onDismiss,
+  onEmailAdded,
+}: Props) {
+  const t = getUserMessages(language).ownerDashboard.addEmailBanner;
   const formId = useId();
   const dismissedFromStorage = useDismissedWithinWeekHydrated();
   const [sessionDismissed, setSessionDismissed] = useState(false);
@@ -93,7 +102,7 @@ export function AddEmailBanner({ salonSlug, onDismiss, onEmailAdded }: Props) {
     const trimmed = emailInput.trim();
     setSubmitError(null);
     if (!isValidEmailFormat(trimmed)) {
-      setFieldError("Enter a valid email address.");
+      setFieldError(t.emailInvalid);
       return;
     }
     setFieldError(null);
@@ -102,10 +111,10 @@ export function AddEmailBanner({ salonSlug, onDismiss, onEmailAdded }: Props) {
     setPending(false);
     if (!res.ok) {
       if (res.error === "invalid_email") {
-        setFieldError("Enter a valid email address.");
+        setFieldError(t.emailInvalid);
         return;
       }
-      setSubmitError("Could not save email. Try again.");
+      setSubmitError(t.saveFailed);
       return;
     }
     setConfirmedEmail(trimmed);
@@ -172,7 +181,7 @@ export function AddEmailBanner({ salonSlug, onDismiss, onEmailAdded }: Props) {
       {expanded ? (
         <div className="mt-4 flex flex-col gap-2 border-t border-nq-border/30 pt-4">
           <label htmlFor={formId} className="sr-only">
-            Email address
+            {t.emailPlaceholder}
           </label>
           <input
             id={formId}
@@ -180,7 +189,7 @@ export function AddEmailBanner({ salonSlug, onDismiss, onEmailAdded }: Props) {
             type="email"
             inputMode="email"
             autoComplete="email"
-            placeholder="Email address"
+            placeholder={t.emailPlaceholder}
             value={emailInput}
             disabled={pending}
             onChange={(e) => {
@@ -210,7 +219,7 @@ export function AddEmailBanner({ salonSlug, onDismiss, onEmailAdded }: Props) {
               void handleSubmit();
             }}
           >
-            {pending ? "Saving…" : "Save email"}
+            {pending ? t.savingButton : t.saveButton}
           </Button>
         </div>
       ) : null}

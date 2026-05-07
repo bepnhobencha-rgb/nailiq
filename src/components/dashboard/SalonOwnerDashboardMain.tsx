@@ -60,7 +60,9 @@ export function SalonOwnerDashboardMain({
   showDataSkeleton: boolean;
   highlightBookingId?: string | null;
 }) {
-  const t = getUserMessages(language).salonDashboard;
+  const messages = getUserMessages(language);
+  const t = messages.salonDashboard;
+  const td = messages.ownerDashboard;
   const [elapsedMinutes, setElapsedMinutes] = useState(0);
 
   useEffect(() => {
@@ -102,7 +104,7 @@ export function SalonOwnerDashboardMain({
           className="mb-4 rounded-2xl border border-nq-primary/35 bg-nq-primary/12 px-4 py-3 text-center text-sm leading-snug text-nq-foreground"
         >
           <span className="font-semibold uppercase tracking-wide text-nq-primary">
-            Demo mode
+            {td.demoModeBadge}
           </span>
           <span className="block mt-1 text-[13px] text-nq-muted">
             {language === "vi"
@@ -116,12 +118,13 @@ export function SalonOwnerDashboardMain({
           role="status"
           className="mb-4 rounded-2xl border border-nq-primary/30 bg-nq-primary/10 px-4 py-3 text-center text-sm leading-snug text-nq-foreground"
         >
-          Complete your salon profile to start taking real bookings
+          {td.profileIncomplete}
         </div>
       ) : null}
       {!profileComplete ? (
         <SetupChecklist
           slug={slug}
+          language={language}
           salon={{
             services_count: data.setup.services_count,
             staff_count: data.setup.staff_count,
@@ -149,7 +152,7 @@ export function SalonOwnerDashboardMain({
           </p>
           {profileComplete ? (
             <p className="mt-3 rounded-xl border border-nq-success/35 bg-nq-success/12 px-3 py-2 text-sm font-medium text-nq-success">
-              ✓ Profile complete — ready for bookings
+              {td.profileComplete}
             </p>
           ) : null}
         </div>

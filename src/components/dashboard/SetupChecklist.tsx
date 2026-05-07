@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { isOpeningHoursCustomized } from "@/shared/dashboard/openingHoursDefaults";
+import { getUserMessages } from "@/shared/i18n/user";
+import type { UserLanguage } from "@/shared/i18n/user/types";
 
 export type SetupChecklistSalon = {
   services_count: number;
@@ -14,40 +16,43 @@ export type SetupChecklistSalon = {
 export function SetupChecklist({
   salon,
   slug,
+  language,
 }: {
   salon: SetupChecklistSalon;
   slug: string;
+  language: UserLanguage;
 }) {
+  const t = getUserMessages(language).ownerDashboard.setupChecklist;
   const openingHoursCustomized = isOpeningHoursCustomized(salon.opening_hours);
 
   const items = [
     {
       key: "services",
-      label: "Add your services",
+      label: t.addServices,
       done: salon.services_count > 1,
       href: `/dashboard/${slug}/setup/services`,
     },
     {
       key: "staff",
-      label: "Add your staff",
+      label: t.addStaff,
       done: salon.staff_count > 1,
       href: `/dashboard/${slug}/setup/staff`,
     },
     {
       key: "hours",
-      label: "Set opening hours",
+      label: t.setHours,
       done: openingHoursCustomized,
       href: `/dashboard/${slug}/setup/hours`,
     },
     {
       key: "address",
-      label: "Add salon address",
+      label: t.addAddress,
       done: !!salon.address?.trim(),
       href: `/dashboard/${slug}/setup/address`,
     },
     {
       key: "email",
-      label: "Add recovery email",
+      label: t.addEmail,
       done: !!salon.email?.trim(),
       href: "#email",
     },
@@ -63,10 +68,10 @@ export function SetupChecklist({
   return (
     <section
       className="nq-setup-checklist-enter mb-4 w-full rounded-2xl border border-nq-primary/55 bg-nq-primary/[0.06] px-4 py-4 ring-1 ring-inset ring-nq-primary/20"
-      aria-label="Salon setup checklist"
+      aria-label={t.ariaLabel}
     >
       <p className="text-sm font-semibold text-nq-foreground">
-        Setup {percent}% complete
+        {t.title} {t.percentComplete.replace("{n}", String(percent))}
       </p>
       <div className="mt-2 h-[4px] overflow-hidden rounded-[2px] bg-nq-surface">
         <div
