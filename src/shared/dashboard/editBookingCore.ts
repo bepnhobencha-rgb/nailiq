@@ -32,7 +32,13 @@ export type EditBookingError =
   | "invalid_status"
   | "slot_conflict"
   | "staff_cannot_perform_service"
-  | "server_error";
+  | "server_error"
+  /** Caller's `salon_members.role` is not allowed to edit (e.g. `nail_tech`).
+   * Existing `EditBookingForm` switch falls through to the generic server-
+   * error message, which is fine — the UI already hides the form for that
+   * role; this code path only fires if a non-permitted caller hits the
+   * action directly (devtools / replayed request). */
+  | "unauthorized";
 
 export type EditBookingResult =
   | { ok: true; updated: SalonDashboardBooking }

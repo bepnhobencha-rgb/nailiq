@@ -9,6 +9,10 @@ import {
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
+import {
+  canCancelBooking,
+  canEditBooking,
+} from "@/shared/lib/salonMemberRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import {
   type EditBookingInput,
@@ -419,6 +423,13 @@ export async function cancelDeskBooking(
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
 
+  // Defense-in-depth: UI hides the Cancel button for `nail_tech`, but a
+  // direct action call (devtools / replayed request) would otherwise still
+  // succeed. Owners and seniors keep full access.
+  if (!canCancelBooking(ctx.role)) {
+    return fail("unauthorized");
+  }
+
   if (ctx.salon.id !== String(input.salonId).trim()) {
     return fail("salon_mismatch");
   }
@@ -462,7 +473,12 @@ export async function editBooking(
 ): Promise<EditBookingResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) {
-    return { ok: false, error: "server_error" };
+    return { ok: false, error: "unauthorized" };
+  }
+  // Defense-in-depth: UI hides the Edit button for `nail_tech`. Direct
+  // action calls from a non-permitted role get rejected here.
+  if (!canEditBooking(ctx.role)) {
+    return { ok: false, error: "unauthorized" };
   }
   return performEditBooking(
     ctx.supabase as SupabaseClient<Database>,
