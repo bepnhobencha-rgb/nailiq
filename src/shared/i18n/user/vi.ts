@@ -197,6 +197,7 @@ export const userVi: UserMessages = {
       today: "Hôm nay",
       tomorrow: "Ngày mai",
     },
+    jumpToNow: "Hiện tại",
     statusPill: {
       waitingLabel: "CHỜ",
       inProgressLabel: "ĐANG PHỤC VỤ",

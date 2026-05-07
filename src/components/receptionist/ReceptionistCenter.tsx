@@ -266,6 +266,9 @@ function ReceptionistCenterInner({
     return () => window.clearTimeout(t);
   }, [shakeMessage]);
 
+  /** Increments when receptionist taps "Now" — grid smooth-scrolls to current slot. */
+  const [jumpToNowTrigger, setJumpToNowTrigger] = useState(0);
+
   const [drawerBusy, setDrawerBusy] = useState(false);
 
   const staffNameById = useMemo(() => {
@@ -829,18 +832,30 @@ function ReceptionistCenterInner({
           </div>
           <div
             className={cn(
-              "mx-auto mt-3 flex w-full max-w-[var(--max-nq-desktop)] flex-wrap items-center gap-2",
+              "mx-auto mt-3 flex w-full max-w-[var(--max-nq-desktop)] flex-wrap items-center gap-y-2",
               dayLoading && "pointer-events-none opacity-60",
             )}
             aria-busy={dayLoading}
           >
-            <DateSwitcher
-              selectedOffset={dateOffset}
-              onChange={(next) => void onDateSwitchChange(next)}
-              labels={rcMessages.dateSwitcher}
-            />
-            {dayLoading ? (
-              <span className="text-xs font-medium text-nq-muted">{rcMessages.loadingDay}</span>
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <DateSwitcher
+                selectedOffset={dateOffset}
+                onChange={(next) => void onDateSwitchChange(next)}
+                labels={rcMessages.dateSwitcher}
+              />
+              {dayLoading ? (
+                <span className="text-xs font-medium text-nq-muted">{rcMessages.loadingDay}</span>
+              ) : null}
+            </div>
+            {isViewingToday ? (
+              <button
+                type="button"
+                data-testid="jump-to-now"
+                onClick={() => setJumpToNowTrigger((n) => n + 1)}
+                className="shrink-0 rounded-full border border-nq-primary/35 bg-nq-primary/10 px-2.5 py-1 text-xs font-medium text-nq-primary transition hover:bg-nq-primary/[0.16] active:scale-[0.98] motion-reduce:active:scale-100"
+              >
+                {rcMessages.jumpToNow}
+              </button>
             ) : null}
           </div>
         </header>
@@ -888,6 +903,8 @@ function ReceptionistCenterInner({
               selectedDate={data.selectedDate}
               timezone={timezone}
               nowIso={nowIso}
+              isViewingToday={isViewingToday}
+              jumpToNowTrigger={jumpToNowTrigger}
               existingBookings={gridBookings}
               onBookingClick={(id) => setDrawerBookingId(id)}
               onSlotClick={(staffId, utc) => void onWalkinAssignSlot(staffId, utc)}
