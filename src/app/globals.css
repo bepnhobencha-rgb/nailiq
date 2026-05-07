@@ -200,29 +200,26 @@
   outline-offset: 4px;
 }
 
-/* Clean two-tone wordmark: italic serif "Nail" in gold + bold sans "IQ" in white */
+/* Clean two-tone wordmark: bold sans "Nail" in white + bold sans "IQ" in gold */
 .landing-html-wordmark {
   display: inline-flex;
   align-items: baseline;
+  font-family: var(--font-landing-inter), system-ui, -apple-system, sans-serif;
   line-height: 1;
   letter-spacing: -0.02em;
 }
 
 .landing-html-wordmark-nail {
-  font-family: var(--font-landing-playfair), ui-serif, Georgia, serif;
-  font-style: italic;
+  font-style: normal;
   font-weight: 700;
-  color: #d4af37;
-  letter-spacing: -0.02em;
+  color: #ffffff;
 }
 
 .landing-html-wordmark-iq {
-  margin-left: 0.1em;
-  font-family: var(--font-landing-inter), system-ui, -apple-system, sans-serif;
+  margin-left: 0.02em;
   font-style: normal;
-  font-weight: 800;
-  color: #ffffff;
-  letter-spacing: -0.01em;
+  font-weight: 700;
+  color: #d4af37;
 }
 
 .landing-html-wordmark-fallback {
@@ -273,6 +270,137 @@
 
 .landing-html-urgency-glow {
   text-shadow: 0 0 15px rgba(212, 175, 55, 0.4);
+}
+
+/* --- Landing polish (feat/homepage-polish) --- */
+
+/* Hero badge ⚡ pulse */
+@keyframes nq-spark-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(212, 175, 55, 0));
+  }
+  50% {
+    transform: scale(1.18);
+    filter: drop-shadow(0 0 6px rgba(212, 175, 55, 0.7));
+  }
+}
+.nq-spark-pulse {
+  display: inline-block;
+  animation: nq-spark-pulse 2.4s ease-in-out infinite;
+}
+
+/* Hero mockup floating bob */
+@keyframes nq-mockup-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+.nq-mockup-float {
+  animation: nq-mockup-float 5.2s ease-in-out infinite;
+}
+
+/* Feature card gold gradient border on hover */
+.nq-feature-card {
+  position: relative;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(212, 175, 55, 0.12);
+  background: linear-gradient(180deg, rgba(17, 18, 20, 0.55), rgba(17, 18, 20, 0.25));
+  transition:
+    transform var(--duration-nq-slow, 280ms) var(--ease-nq-out, ease),
+    border-color var(--duration-nq-base, 200ms) var(--ease-nq-out, ease),
+    box-shadow var(--duration-nq-base, 200ms) var(--ease-nq-out, ease);
+}
+.nq-feature-card::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(245, 230, 184, 0.7),
+    rgba(212, 175, 55, 0.45) 40%,
+    rgba(138, 115, 24, 0) 70%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  opacity: 0;
+  transition: opacity var(--duration-nq-base, 200ms) var(--ease-nq-out, ease);
+  pointer-events: none;
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .nq-feature-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(212, 175, 55, 0.32);
+    box-shadow:
+      0 18px 48px -22px rgba(0, 0, 0, 0.55),
+      0 0 36px -10px rgba(212, 175, 55, 0.32);
+  }
+  .nq-feature-card:hover::before {
+    opacity: 1;
+  }
+}
+
+/* Testimonial card hover lift + gold border */
+.nq-testimonial-card {
+  position: relative;
+  transition:
+    transform var(--duration-nq-slow, 280ms) var(--ease-nq-out, ease),
+    border-color var(--duration-nq-base, 200ms) var(--ease-nq-out, ease),
+    box-shadow var(--duration-nq-base, 200ms) var(--ease-nq-out, ease);
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .nq-testimonial-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(212, 175, 55, 0.45);
+    box-shadow:
+      0 22px 60px -28px rgba(0, 0, 0, 0.6),
+      0 0 30px -8px rgba(212, 175, 55, 0.25);
+  }
+}
+
+/* Pain stat card — subtle red glow */
+.nq-pain-card {
+  position: relative;
+  transition:
+    transform var(--duration-nq-slow, 280ms) var(--ease-nq-out, ease),
+    box-shadow var(--duration-nq-base, 200ms) var(--ease-nq-out, ease),
+    border-color var(--duration-nq-base, 200ms) var(--ease-nq-out, ease);
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.04), 0 0 32px -16px rgba(239, 68, 68, 0.18);
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .nq-pain-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(239, 68, 68, 0.28);
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.18),
+      0 0 44px -12px rgba(239, 68, 68, 0.32);
+  }
+}
+
+/* "How it works" connector line between steps (desktop) */
+.nq-steps-connector {
+  background: linear-gradient(
+    90deg,
+    rgba(212, 175, 55, 0) 0%,
+    rgba(212, 175, 55, 0.4) 50%,
+    rgba(212, 175, 55, 0) 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nq-spark-pulse,
+  .nq-mockup-float {
+    animation: none;
+  }
 }
 
 @layer base {

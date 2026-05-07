@@ -8,7 +8,7 @@ export function LandingHero() {
   const reduce = useReducedMotion();
 
   return (
-    <section className="relative overflow-hidden pt-32 pb-20 md:pt-40 md:pb-32">
+    <section className="relative overflow-hidden pt-32 pb-16 md:pt-40 md:pb-24">
       <BackgroundGlow />
 
       <div className="mx-auto grid w-full max-w-6xl items-center gap-12 px-5 md:grid-cols-2 md:gap-16 md:px-8 lg:gap-20">
@@ -19,7 +19,7 @@ export function LandingHero() {
           className="relative z-10"
         >
           <span className="inline-flex items-center gap-2 rounded-full border border-nq-primary/40 bg-nq-primary/10 px-3 py-1 text-[11px] font-semibold tracking-[0.18em] text-nq-primary-soft uppercase">
-            <span aria-hidden>⚡</span>
+            <span aria-hidden className="nq-spark-pulse">⚡</span>
             Trusted by salons in Canada &amp; Vietnam
           </span>
 
@@ -33,7 +33,7 @@ export function LandingHero() {
             </span>
           </h1>
 
-          <p className="mt-6 max-w-xl text-lg leading-relaxed text-nq-muted md:text-xl">
+          <p className="mt-6 max-w-xl text-lg leading-relaxed text-nq-muted/80 md:text-xl">
             3–5× cheaper than Booksy. Vietnamese-first. No missed calls.
           </p>
 
@@ -74,7 +74,14 @@ function BackgroundGlow() {
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
       <div className="absolute -top-40 left-1/2 h-[640px] w-[640px] -translate-x-1/2 rounded-full bg-nq-primary/[0.07] blur-3xl" />
-      <div className="absolute right-[-15%] top-1/3 h-[400px] w-[400px] rounded-full bg-nq-primary/[0.04] blur-3xl" />
+      <div className="absolute right-[-15%] top-1/3 h-[420px] w-[420px] rounded-full bg-nq-primary/[0.05] blur-3xl" />
+      <div
+        className="absolute right-[6%] top-[28%] h-[380px] w-[380px] rounded-full opacity-80 blur-2xl"
+        style={{
+          background:
+            "radial-gradient(closest-side, rgba(212,175,55,0.16), rgba(212,175,55,0.05) 55%, rgba(212,175,55,0) 75%)",
+        }}
+      />
     </div>
   );
 }
@@ -87,9 +94,16 @@ function BookingMockup({ reduce }: { reduce: boolean }) {
     <div className="relative">
       <div
         aria-hidden
-        className="absolute -inset-6 rounded-[28px] bg-gradient-to-br from-nq-primary/20 via-transparent to-transparent blur-2xl"
+        className="absolute -inset-10 rounded-[36px] bg-[radial-gradient(closest-side,rgba(212,175,55,0.22),rgba(212,175,55,0.06)_55%,transparent_80%)] blur-2xl"
       />
-      <div className="relative rounded-2xl border border-nq-border/40 bg-nq-surface/60 p-4 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.7),0_0_0_1px_rgba(212,175,55,0.12)] backdrop-blur-md">
+      <div
+        aria-hidden
+        className="absolute -inset-2 rounded-[28px] bg-gradient-to-br from-nq-primary/12 via-transparent to-transparent blur-xl"
+      />
+      <div className={cn(
+        "relative rounded-2xl border border-nq-border/40 bg-nq-surface/60 p-4 shadow-[0_40px_100px_-30px_rgba(0,0,0,0.75),0_8px_28px_-8px_rgba(212,175,55,0.18),0_0_0_1px_rgba(212,175,55,0.14)] backdrop-blur-md",
+        !reduce && "nq-mockup-float",
+      )}>
         <div className="flex items-center gap-2 border-b border-nq-border/30 px-1 pb-3">
           <span className="h-2.5 w-2.5 rounded-full bg-red-400/70" aria-hidden />
           <span className="h-2.5 w-2.5 rounded-full bg-yellow-400/70" aria-hidden />

@@ -7,6 +7,7 @@ import { LandingFeatures } from "@/components/landing/LandingFeatures";
 import { LandingHowItWorks } from "@/components/landing/LandingHowItWorks";
 import { LandingSocialProof } from "@/components/landing/LandingSocialProof";
 import { LandingPricing } from "@/components/landing/LandingPricing";
+import { LandingFinalCta } from "@/components/landing/LandingFinalCta";
 import { LandingFooter } from "@/components/landing/LandingFooter";
 import { getLandingJsonLd } from "@/shared/seo/jsonLd";
 
@@ -62,6 +63,7 @@ export default function Home() {
           <LandingHowItWorks />
           <LandingSocialProof />
           <LandingPricing />
+          <LandingFinalCta />
         </main>
         <LandingFooter />
       </div>

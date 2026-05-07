@@ -15,7 +15,7 @@ export function LandingPricing() {
   const reduce = useReducedMotion();
 
   return (
-    <section className="relative bg-nq-bg py-20 md:py-32">
+    <section className="relative bg-nq-bg py-14 md:py-20">
       <div className="mx-auto w-full max-w-3xl px-5 md:px-8">
         <motion.div
           initial={reduce ? false : { opacity: 0, y: 16 }}
@@ -24,13 +24,13 @@ export function LandingPricing() {
           transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
           className="text-center"
         >
-          <p className="text-xs font-semibold tracking-[0.2em] text-nq-primary uppercase">
+          <p className="text-[11px] font-semibold tracking-[0.24em] text-nq-primary uppercase">
             Pricing
           </p>
-          <h2 className="mt-4 text-3xl font-semibold tracking-tight text-nq-foreground md:text-4xl">
+          <h2 className="mt-4 text-3xl font-semibold tracking-tight text-nq-foreground md:text-5xl">
             One simple plan
           </h2>
-          <p className="mt-3 text-base text-nq-muted md:text-lg">
+          <p className="mt-3 text-base text-nq-muted/80 md:text-lg">
             No hidden fees. Cancel anytime.
           </p>
         </motion.div>
