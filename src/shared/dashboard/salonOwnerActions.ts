@@ -1,6 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
@@ -426,6 +427,24 @@ export async function updateBookingStatus(
   }
 
   return { ok: true };
+}
+
+/**
+ * Sign out the current viewer and redirect to /login.
+ *
+ * Works for every auth method (phone OTP, Google OAuth, email magic link)
+ * because Supabase's `signOut()` clears the cookie-based session regardless
+ * of how it was obtained. Demo-cookie viewers don't have a Supabase session,
+ * so `signOut()` is a no-op for them — but the dashboard hides the button
+ * in demo mode anyway (see `SalonOwnerDashboardMain`).
+ *
+ * `redirect()` throws a Next.js redirect signal; the explicit `return` after
+ * it is unreachable but pleases the type checker.
+ */
+export async function signOutAction(): Promise<never> {
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+  redirect("/login");
 }
 
 export type { BookingStatus, SalonDashboardBooking } from "@/shared/types";

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
 import { MobileStack } from "@/components/layout/MobileStack";
+import { LogoutButton } from "@/components/dashboard/LogoutButton";
 import { SalonOwnerStatsSection } from "@/components/dashboard/SalonOwnerStatsSection";
 import { SalonOwnerTodayBookings } from "@/components/dashboard/SalonOwnerTodayBookings";
 import { SalonOwnerDashboardSkeleton } from "@/components/dashboard/SalonOwnerDashboardSkeleton";
@@ -195,6 +196,7 @@ export function SalonOwnerDashboardMain({
             language={language}
             onLanguageChange={onLanguageChange}
           />
+          {demoMode ? null : <LogoutButton language={language} />}
         </div>
       </div>
 
