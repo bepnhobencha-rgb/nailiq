@@ -57,6 +57,9 @@ export function LandingPricing() {
               </span>
               <span className="text-lg text-nq-muted">/month</span>
             </div>
+            <p className="mt-2 text-xs text-nq-muted">
+              + applicable taxes. CAD pricing.
+            </p>
 
             <ul className="mt-8 space-y-3">
               {features.map((f) => (
