@@ -44,6 +44,10 @@ export function VerifyPageClient({ demoMode }: Props) {
   const [phoneDigits, setPhoneDigits] = useState<string | null>(null);
   const [isReturningFlow, setIsReturningFlow] = useState(false);
   const [toast, setToast] = useState<SetupToastPayload | null>(null);
+  // Default checked: most salon owners register on a personal device and
+  // expect to stay signed in. Phase 1 just threads the value through to
+  // the server action; real session-lifetime gating lands in Phase 2.
+  const [rememberDevice, setRememberDevice] = useState(true);
   const refs = useRef<(HTMLInputElement | null)[]>([]);
 
   const verifySubtext = useMemo(
@@ -150,7 +154,11 @@ export function VerifyPageClient({ demoMode }: Props) {
       if (codeJoined.length !== OTP_LEN || !phoneDigits) return;
       setError(null);
       startTransition(async () => {
-        const result = await verifyRegisterOtp(phoneDigits, codeJoined);
+        const result = await verifyRegisterOtp(
+          phoneDigits,
+          codeJoined,
+          rememberDevice,
+        );
 
         if (!result.ok) {
           if (result.reason === "expired") {
@@ -190,8 +198,17 @@ export function VerifyPageClient({ demoMode }: Props) {
         window.location.assign("/register/setup");
       });
     },
-    [codeJoined, phoneDigits],
+    [codeJoined, phoneDigits, rememberDevice],
   );
+
+  const rememberLabel =
+    language === "vi"
+      ? "Giữ đăng nhập trên thiết bị này (90 ngày)"
+      : "Keep me signed in on this device (90 days)";
+  const rememberSubLabel =
+    language === "vi"
+      ? "Bỏ chọn nếu đây là thiết bị chung"
+      : "Uncheck if this is a shared device";
 
   return (
     <RegisterStepShell title="Enter code" subtext={verifySubtext}>
@@ -246,6 +263,23 @@ export function VerifyPageClient({ demoMode }: Props) {
             {error}
           </p>
         ) : null}
+
+        <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-nq-border/40 bg-nq-surface/35 px-4 py-3 text-left transition-colors hover:bg-nq-surface/55">
+          <input
+            type="checkbox"
+            checked={rememberDevice}
+            onChange={(ev) => setRememberDevice(ev.target.checked)}
+            className="mt-0.5 size-4 shrink-0 cursor-pointer accent-nq-primary"
+          />
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium text-nq-foreground">
+              {rememberLabel}
+            </span>
+            <span className="mt-0.5 block text-xs text-nq-muted">
+              {rememberSubLabel}
+            </span>
+          </span>
+        </label>
 
         <Button
           type="submit"

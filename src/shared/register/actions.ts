@@ -406,6 +406,14 @@ export type VerifyRegisterOtpResult =
 export async function verifyRegisterOtp(
   phoneRaw: string,
   codeRaw: string,
+  /**
+   * "Keep me signed in on this device". Defaults to `true` so callers that
+   * haven't been updated yet behave the same as before. Phase 1: value is
+   * accepted from the client and logged for visibility — the actual session
+   * lifetime adjustment (cookie max-age / non-persistent session) lands in
+   * Phase 2.
+   */
+  rememberDevice: boolean = true,
 ): Promise<VerifyRegisterOtpResult> {
   const phone = normalizeRegisterPhone(phoneRaw);
   const code = codeRaw.replace(/\D/g, "").slice(0, 6);
@@ -413,6 +421,8 @@ export async function verifyRegisterOtp(
   if (!isRegisterPhoneDigitsValid(phone) || code.length !== 6) {
     return { ok: false, reason: "invalid" };
   }
+
+  logRegisterFlow("verifyOtp.rememberDevice", { rememberDevice });
 
   if (isDemoOtpRuntime()) {
     let supabase;
@@ -556,6 +566,7 @@ export async function verifyRegisterOtp(
 export async function verifyLoginOtp(
   phoneRaw: string,
   codeRaw: string,
+  rememberDevice: boolean = true,
 ): Promise<VerifyRegisterOtpResult> {
-  return verifyRegisterOtp(phoneRaw, codeRaw);
+  return verifyRegisterOtp(phoneRaw, codeRaw, rememberDevice);
 }
