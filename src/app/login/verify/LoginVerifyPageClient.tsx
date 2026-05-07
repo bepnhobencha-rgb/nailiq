@@ -15,6 +15,7 @@ import { RegisterStepShell } from "@/components/register/RegisterStepShell";
 import { cn } from "@/shared/lib/cn";
 import { REG_SESSION_PHONE_DIGITS_KEY } from "@/shared/lib/registerSessionKeys";
 import { dashboardPathForRole } from "@/shared/lib/salonMemberRole";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { verifyLoginOtp } from "@/shared/register/actions";
 
 const OTP_LEN = 6;
@@ -24,10 +25,15 @@ type Props = { demoMode: boolean };
 
 export function LoginVerifyPageClient({ demoMode }: Props) {
   const router = useRouter();
+  const { language } = useUserLanguage();
   const [digits, setDigits] = useState(emptyDigits);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [phoneDigits, setPhoneDigits] = useState<string | null>(null);
+  // Default checked: most salon owners log in from a personal device and
+  // expect to stay signed in. Phase 1 just threads the value through to
+  // the server action; real session-lifetime gating lands in Phase 2.
+  const [rememberDevice, setRememberDevice] = useState(true);
   const refs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Restore phone from session (set by /login form). If missing, send the
@@ -62,7 +68,7 @@ export function LoginVerifyPageClient({ demoMode }: Props) {
       setError(null);
 
       startTransition(async () => {
-        const res = await verifyLoginOtp(phoneDigits, code);
+        const res = await verifyLoginOtp(phoneDigits, code, rememberDevice);
         if (!res.ok) {
           setError(
             res.reason === "expired"
@@ -84,8 +90,17 @@ export function LoginVerifyPageClient({ demoMode }: Props) {
         setError("Số này chưa đăng ký.");
       });
     },
-    [phoneDigits, code, router],
+    [phoneDigits, code, rememberDevice, router],
   );
+
+  const rememberLabel =
+    language === "vi"
+      ? "Giữ đăng nhập trên thiết bị này (90 ngày)"
+      : "Keep me signed in on this device (90 days)";
+  const rememberSubLabel =
+    language === "vi"
+      ? "Bỏ chọn nếu đây là thiết bị chung"
+      : "Uncheck if this is a shared device";
 
   return (
     <RegisterStepShell
@@ -121,6 +136,24 @@ export function LoginVerifyPageClient({ demoMode }: Props) {
             {error}
           </p>
         ) : null}
+
+        <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-nq-border/40 bg-nq-surface/35 px-4 py-3 text-left transition-colors hover:bg-nq-surface/55">
+          <input
+            type="checkbox"
+            checked={rememberDevice}
+            onChange={(ev) => setRememberDevice(ev.target.checked)}
+            className="mt-0.5 size-4 shrink-0 cursor-pointer accent-nq-primary"
+          />
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium text-nq-foreground">
+              {rememberLabel}
+            </span>
+            <span className="mt-0.5 block text-xs text-nq-muted">
+              {rememberSubLabel}
+            </span>
+          </span>
+        </label>
+
         <Button
           type="submit"
           size="lg"
