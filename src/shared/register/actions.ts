@@ -132,6 +132,7 @@ async function ensureOwnerMembershipForVerifiedPhone(
 
 export type FinalizeRegisterSessionAfterPhoneOtpResult =
   | { ok: true; kind: "dashboard"; slug: string; role: SalonMemberRole }
+  | { ok: true; kind: "picker" }
   | { ok: true; kind: "setup"; completionToken: string }
   | { ok: false; reason: "unauthorized" | "server_error" };
 
@@ -188,39 +189,42 @@ export async function finalizeRegisterSessionAfterPhoneOtp(
     }
   }
 
-  const { data: memRow, error: memErr } = await supabase
+  const { data: memRows, error: memErr } = await supabase
     .from("salon_members")
     .select("salon_id, role")
-    .eq("user_id", sessionUser.id)
-    .limit(1)
-    .maybeSingle();
+    .eq("user_id", sessionUser.id);
 
   if (memErr) {
     console.error(
       "[finalizeRegisterSessionAfterPhoneOtp] salon_members",
       memErr,
     );
-  } else if (memRow?.salon_id) {
-    const { data: salRow, error: salErr } = await supabase
-      .from("salons")
-      .select("slug")
-      .eq("id", memRow.salon_id)
-      .maybeSingle();
+  } else {
+    const valid = (memRows ?? []).filter((r) => Boolean(r?.salon_id));
+    if (valid.length > 1) {
+      // Multi-salon owner — let `/choose-salon` decide which salon to enter.
+      return { ok: true, kind: "picker" };
+    }
+    if (valid.length === 1) {
+      const only = valid[0];
+      const { data: salRow, error: salErr } = await supabase
+        .from("salons")
+        .select("slug")
+        .eq("id", only.salon_id)
+        .maybeSingle();
 
-    if (salErr) {
-      console.error("[finalizeRegisterSessionAfterPhoneOtp] salons slug", salErr);
-    } else {
-      const slug = salRow?.slug?.trim();
-      if (slug) {
-        // Multi-salon users: this is the "fallback to first row" branch. The
-        // dashboard route's own `resolveSalonForDashboard` re-queries by URL
-        // slug, so a non-owner reaching the wrong slug will be 401'd there.
-        return {
-          ok: true,
-          kind: "dashboard",
-          slug: String(slug),
-          role: normalizeSalonMemberRole(memRow.role),
-        };
+      if (salErr) {
+        console.error("[finalizeRegisterSessionAfterPhoneOtp] salons slug", salErr);
+      } else {
+        const slug = salRow?.slug?.trim();
+        if (slug) {
+          return {
+            ok: true,
+            kind: "dashboard",
+            slug: String(slug),
+            role: normalizeSalonMemberRole(only.role),
+          };
+        }
       }
     }
   }
@@ -401,6 +405,7 @@ export async function sendLoginOtp(
 export type VerifyRegisterOtpResult =
   | { ok: true; next: "setup"; completionToken: string }
   | { ok: true; next: "dashboard"; slug: string; role: SalonMemberRole }
+  | { ok: true; next: "picker" }
   | { ok: false; reason: "invalid" | "expired" | "server_error" };
 
 export async function verifyRegisterOtp(
@@ -552,6 +557,9 @@ export async function verifyRegisterOtp(
       slug: finalized.slug,
       role: finalized.role,
     };
+  }
+  if (finalized.kind === "picker") {
+    return { ok: true, next: "picker" };
   }
   return {
     ok: true,

@@ -76,6 +76,18 @@ export type UserMessages = {
     /** Generic magic-link send failure copy. */
     magicLinkSendFailed: string;
   };
+  /** Multi-salon picker (`/choose-salon`). Shown when an authenticated user
+   * has more than one `salon_members` row. Single-salon users skip it. */
+  chooseSalon: {
+    title: string;
+    subtitle: string;
+    signOut: string;
+    roleBadge: {
+      owner: string;
+      senior: string;
+      nail_tech: string;
+    };
+  };
   salonDashboard: {
     title: string;
     slugLabel: string;
@@ -357,6 +369,16 @@ export const userEn: UserMessages = {
     magicLinkSent: "Magic link sent. Check your email to continue.",
     googleSigninFailed: "Google sign-in failed.",
     magicLinkSendFailed: "Could not send link. Try again.",
+  },
+  chooseSalon: {
+    title: "Choose your salon",
+    subtitle: "Select which salon to manage",
+    signOut: "Sign out",
+    roleBadge: {
+      owner: "Owner",
+      senior: "Senior",
+      nail_tech: "Nail Tech",
+    },
   },
   salonDashboard: {
     title: "Salon dashboard",

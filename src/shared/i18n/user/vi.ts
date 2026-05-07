@@ -70,6 +70,16 @@ export const userVi: UserMessages = {
     googleSigninFailed: "Đăng nhập Google thất bại.",
     magicLinkSendFailed: "Không gửi được link. Thử lại.",
   },
+  chooseSalon: {
+    title: "Chọn tiệm của bạn",
+    subtitle: "Chọn tiệm bạn muốn quản lý",
+    signOut: "Đăng xuất",
+    roleBadge: {
+      owner: "Chủ tiệm",
+      senior: "Thợ cấp cao",
+      nail_tech: "Thợ nail",
+    },
+  },
   salonDashboard: {
     title: "Bảng điều khiển tiệm",
     slugLabel: "URL",

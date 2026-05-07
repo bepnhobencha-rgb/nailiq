@@ -56,14 +56,16 @@ export async function GET(request: NextRequest) {
   }
 
   const resolved = await resolveRoleAndSlugForUser(supabase, user.id);
-  if (resolved) {
-    return NextResponse.redirect(
-      new URL(
-        dashboardPathForRole(resolved.slug, resolved.role),
-        request.url,
-      ),
-    );
+  if (!resolved) {
+    return NextResponse.redirect(new URL("/register/setup", request.url));
   }
-
-  return NextResponse.redirect(new URL("/register/setup", request.url));
+  if (resolved.needsPicker) {
+    return NextResponse.redirect(new URL("/choose-salon", request.url));
+  }
+  return NextResponse.redirect(
+    new URL(
+      dashboardPathForRole(resolved.slug, resolved.role),
+      request.url,
+    ),
+  );
 }
