@@ -49,6 +49,27 @@ export type UserMessages = {
     /** Toast after "Send code" is clicked a second+ time on /register or after returning from /register/verify. */
     otpResentToast: string;
   };
+  /** Shared auth surfaces (login + register social buttons). Public booking is unaffected. */
+  auth: {
+    /** OR divider in social buttons block. */
+    orDivider: string;
+    continueWithGoogle: string;
+    /** Toggle reveals magic-link form. */
+    otherOptions: string;
+    /** Toggle when magic-link form is open. */
+    hideOptions: string;
+    /** Submit button on /login (mode="login"). */
+    sendLoginLink: string;
+    /** Submit button on /register (mode="register"). */
+    sendSignupLink: string;
+    emailPlaceholder: string;
+    emailInvalid: string;
+    magicLinkSent: string;
+    /** Generic Google sign-in failure copy. */
+    googleSigninFailed: string;
+    /** Generic magic-link send failure copy. */
+    magicLinkSendFailed: string;
+  };
   salonDashboard: {
     title: string;
     slugLabel: string;
@@ -313,6 +334,19 @@ export const userEn: UserMessages = {
       "DEMO MODE · OTP appears below.",
     otpResentToast:
       "New code sent — previous code is no longer valid.",
+  },
+  auth: {
+    orDivider: "or",
+    continueWithGoogle: "Continue with Google",
+    otherOptions: "Other options",
+    hideOptions: "Hide options",
+    sendLoginLink: "Send login link",
+    sendSignupLink: "Send sign-up link",
+    emailPlaceholder: "you@example.com",
+    emailInvalid: "Enter a valid email address.",
+    magicLinkSent: "Magic link sent. Check your email to continue.",
+    googleSigninFailed: "Google sign-in failed.",
+    magicLinkSendFailed: "Could not send link. Try again.",
   },
   salonDashboard: {
     title: "Salon dashboard",
