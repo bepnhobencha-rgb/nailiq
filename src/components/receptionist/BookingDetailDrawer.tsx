@@ -6,6 +6,10 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/Button";
 import type { UserMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
+import {
+  canEditBooking as roleAllowsEditBooking,
+  type SalonMemberRole,
+} from "@/shared/lib/salonMemberRole";
 import type { SalonDashboardBooking } from "@/shared/types";
 
 import { EditBookingForm, type EditBookingFormBooking } from "./EditBookingForm";
@@ -53,6 +57,8 @@ export interface BookingDetailDrawerProps {
     callGuest: (formattedDisplay: string) => string;
     nonePrice: string;
   };
+  /** Caller's `salon_members.role` — gates Edit (Cancel is gated upstream). */
+  viewerRole: SalonMemberRole;
   /** Primary footer CTA (start or mark complete), when applicable. */
   primaryAction?: {
     label: string;
@@ -92,6 +98,7 @@ export function BookingDetailDrawer({
   model,
   onClose,
   copy,
+  viewerRole,
   primaryAction,
   cancelAction,
   deskEdit,
@@ -128,8 +135,12 @@ export function BookingDetailDrawer({
     return () => window.removeEventListener("keydown", esc);
   }, [open, handleClose]);
 
+  // Edit visibility = booking is in an editable status AND viewer's role
+  // allows it. `roleAllowsEditBooking` is the role-side gate (owner/senior
+  // yes, nail_tech no); the status check is the booking-state gate.
   const canEditBooking =
     deskEdit !== undefined &&
+    roleAllowsEditBooking(viewerRole) &&
     (deskEdit.booking.status === "pending" ||
       deskEdit.booking.status === "confirmed");
 

@@ -60,5 +60,11 @@ export default async function ReceptionistCenterPage({
     redirect("/register");
   }
 
-  return <ReceptionistCenter slug={slug} initialResult={initialResult} />;
+  return (
+    <ReceptionistCenter
+      slug={slug}
+      initialResult={initialResult}
+      viewerRole={ctx.role}
+    />
+  );
 }

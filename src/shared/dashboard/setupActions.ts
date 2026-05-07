@@ -31,6 +31,7 @@ import {
   isDemoOtpRuntime,
   isDemoSlugPinBypassed,
 } from "@/shared/lib/demoOtpMode";
+import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
 
 export type StaffJobRole = "owner" | "senior" | "nail_tech";
 
@@ -888,6 +889,8 @@ export async function getDashboardWriteClient(slug: string): Promise<
         booking_closed_dates: unknown | null;
       };
       kind: "member" | "demo_cookie";
+      /** `salon_members.role` for this user-salon pair. Demo-cookie path is `"owner"`. */
+      role: SalonMemberRole;
       supabase: GenericSupabase;
     }
 > {
@@ -901,6 +904,7 @@ export async function getDashboardWriteClient(slug: string): Promise<
   return {
     salon: r.salon,
     kind: r.kind,
+    role: r.role,
     supabase,
   };
 }

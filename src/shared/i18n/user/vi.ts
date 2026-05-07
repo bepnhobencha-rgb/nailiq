@@ -310,5 +310,9 @@ export const userVi: UserMessages = {
       already_started: "Đã bắt đầu phục vụ — không hoàn tác được.",
       invalid_phone: "Nhập số điện thoại hợp lệ của khách.",
     },
+    permissions: {
+      noPermissionEdit: "Liên hệ chủ tiệm để chỉnh lịch",
+      noPermissionCancel: "Liên hệ chủ tiệm để hủy lịch",
+    },
   },
 };

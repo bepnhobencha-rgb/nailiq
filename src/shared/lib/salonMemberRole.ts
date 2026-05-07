@@ -42,3 +42,27 @@ export function dashboardPathForRole(
   const enc = encodeURIComponent(slug);
   return role === "owner" ? `/dashboard/${enc}` : `/dashboard/${enc}/center`;
 }
+
+/**
+ * Mutating-action permissions for booking rows in Receptionist Center.
+ *
+ * Phase 1 split: `nail_tech` is a view-only role for bookings — they see the
+ * grid and drawer but can't modify the schedule. Owners and seniors can
+ * still edit, cancel, and undo cancellations.
+ *
+ * The `canUndoCancel` helper currently has no consumer in the UI (there is
+ * no undo-cancel flow yet — `UndoToast` is for walk-in assign). It's
+ * exported here for parity with edit/cancel so a future undo-after-cancel
+ * feature lands in the right gate from day one.
+ */
+export function canEditBooking(role: SalonMemberRole): boolean {
+  return role === "owner" || role === "senior";
+}
+
+export function canCancelBooking(role: SalonMemberRole): boolean {
+  return role === "owner" || role === "senior";
+}
+
+export function canUndoCancel(role: SalonMemberRole): boolean {
+  return role === "owner" || role === "senior";
+}

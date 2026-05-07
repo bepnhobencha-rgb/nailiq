@@ -334,6 +334,13 @@ export type UserMessages = {
       already_started: string;
       invalid_phone: string;
     };
+    /** Permission-gated copy. Currently the UI hides the buttons entirely
+     * for `nail_tech`; these strings are reserved for a future tooltip /
+     * server-error fallback when a non-permitted action is attempted. */
+    permissions: {
+      noPermissionEdit: string;
+      noPermissionCancel: string;
+    };
   };
 };
 
@@ -649,6 +656,10 @@ export const userEn: UserMessages = {
       invalid_state: "That booking is no longer in the right status.",
       already_started: "Service already started — cannot undo.",
       invalid_phone: "Enter a valid guest phone number.",
+    },
+    permissions: {
+      noPermissionEdit: "Contact your owner to edit bookings",
+      noPermissionCancel: "Contact your owner to cancel bookings",
     },
   },
 };
