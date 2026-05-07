@@ -64,7 +64,14 @@ export function SalonOwnerDashboard({
 
   const salonIdForRealtime = data?.salon.id ?? null;
 
-  const showRecoveryEmailBanner = !data?.salon.email?.trim();
+  // Suppress the banner when the viewer already has *any* email tied to
+  // their account — either the per-salon `salons.email` recovery contact OR
+  // the auth user's own email (Google OAuth / Supabase email signup land it
+  // here). Without this second check, OAuth users were nagged to "add email"
+  // even though they already have one — see fix/add-email-banner-oauth.
+  // Phone-only OTP users (no auth email, no salon email) still see the banner.
+  const showRecoveryEmailBanner =
+    !data?.salon.email?.trim() && !data?.viewerEmail?.trim();
 
   const bookingPath = `/${encodeURIComponent(slug)}`;
   const bookingAbsoluteUrl = useMemo(() => {
