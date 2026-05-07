@@ -39,6 +39,12 @@ export type UserMessages = {
     landingClosingCta: string;
   };
   register: {
+    /** Title on the phone-entry screen (`/register` step 1). */
+    phoneEntryTitle: string;
+    /** User-facing subtext on the phone-entry screen (production). */
+    phoneAuthSubtext: string;
+    /** User-facing subtext when SMS phone auth has not yet been configured. */
+    phoneAuthDisabledSubtext: string;
     returningOwnerHint: string;
     /** Shown after “Send code” when this phone is already tied to a salon (before verify). */
     welcomeBackAfterSend: string;
@@ -303,6 +309,10 @@ export const userEn: UserMessages = {
     landingClosingCta: "Start winning them back now",
   },
   register: {
+    phoneEntryTitle: "Enter your phone",
+    phoneAuthSubtext:
+      "We'll send a secure one-time verification code to your phone.",
+    phoneAuthDisabledSubtext: "⚠️ SMS login is not configured yet.",
     returningOwnerHint:
       "Returning owner? Enter your number to sign back in.",
     welcomeBackAfterSend:

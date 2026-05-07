@@ -129,11 +129,16 @@ export function RegisterPageClient({ demoMode }: Props) {
 
   return (
     <RegisterStepShell
-      title="Verify your number"
+      title={t.register.phoneEntryTitle}
       subtext={
         demoMode
           ? "Demo mode shows the OTP on screen. Production uses SMS from Supabase."
-          : "We’ll text you a one-time code. Enable Phone Auth in Supabase (Auth → Providers → Phone)."
+          : t.register.phoneAuthSubtext
+      }
+      helperHint={
+        demoMode
+          ? "Dev: enable Phone Auth in Supabase (Auth → Providers → Phone) before disabling demo."
+          : undefined
       }
     >
       {demoMode ? (
