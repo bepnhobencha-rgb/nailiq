@@ -40,6 +40,12 @@ export function formatPhone(raw: string | null | undefined): string {
   return raw.trim();
 }
 
+/**
+ * NANP-focused UI placeholder example (Canadian area code).
+ * Used on owner auth and booking/contact fields; persisted values stay E.164.
+ */
+export const PHONE_INPUT_PLACEHOLDER_NANP = "+1 (604) 555-1234";
+
 /** Digits-only body used for validation / storage parity with `cleanPhone`. */
 export function normalizedPhoneDigits(input: string): string {
   const c = cleanPhone(input.trim());

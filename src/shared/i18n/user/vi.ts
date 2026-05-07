@@ -1,4 +1,5 @@
 import type { UserMessages } from "./en";
+import { PHONE_INPUT_PLACEHOLDER_NANP } from "@/shared/lib/phoneFormat";
 
 export const userVi: UserMessages = {
   brandName: "NailIQ",
@@ -56,6 +57,9 @@ export const userVi: UserMessages = {
       "DEMO · Mã OTP hiển thị bên dưới.",
     otpResentToast:
       "Đã gửi mã mới — mã cũ không còn hiệu lực.",
+    phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
+    phoneDigitsInvalid:
+      "Nhập 8–15 chữ số kèm mã quốc gia (ví dụ Canada/Hoa Kỳ: +1 6045551234; Việt Nam: +84901234567).",
   },
   auth: {
     orDivider: "hoặc",
@@ -212,7 +216,7 @@ export const userVi: UserMessages = {
       minutesAgo: (n: number) => (n < 1 ? "vừa xong" : `${n} phút`),
       addForm: {
         namePlaceholder: "Tên khách",
-        phonePlaceholder: "Điện thoại",
+        phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
         notePlaceholder: "Ghi chú nhân viên — ví dụ màu sơn…",
         addButton: "Thêm vào hàng chờ",
         moreServices: "Thêm dịch vụ",
@@ -222,7 +226,7 @@ export const userVi: UserMessages = {
     },
     walkin: {
       invalidPhone:
-        "Số điện thoại không hợp lệ — VD: 0901 234 567",
+        "Số không hợp lệ — ví dụ +1 (604) 555-1234 hoặc +84 901234567",
       phoneRequired: "Nhập số điện thoại của khách.",
       nameRequired: "Vui lòng nhập tên khách.",
       nameTooLong: "Tên không được quá 100 ký tự.",

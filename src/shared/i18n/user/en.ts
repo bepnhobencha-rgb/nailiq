@@ -1,6 +1,9 @@
 /**
  * User-facing copy (home shell + owner dashboard): English (default).
  */
+import { PHONE_INPUT_PLACEHOLDER_NANP } from "@/shared/lib/phoneFormat";
+import { REGISTER_INVALID_PHONE_HINT_EN } from "@/shared/register/phone";
+
 export type UserMessages = {
   brandName: string;
   /** sr-only and lightweight metadata-minded blurb */
@@ -54,6 +57,10 @@ export type UserMessages = {
     newDemoOtpBadgeNote: string;
     /** Toast after "Send code" is clicked a second+ time on /register or after returning from /register/verify. */
     otpResentToast: string;
+    /** Owner auth phone field — NANP-focused example (`/register`, `/login`). */
+    phonePlaceholder: string;
+    /** Inline validation before OTP send — Canada/US primary, Vietnam supported. */
+    phoneDigitsInvalid: string;
   };
   /** Shared auth surfaces (login + register social buttons). Public booking is unaffected. */
   auth: {
@@ -386,6 +393,8 @@ export const userEn: UserMessages = {
       "DEMO MODE · OTP appears below.",
     otpResentToast:
       "New code sent — previous code is no longer valid.",
+    phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
+    phoneDigitsInvalid: REGISTER_INVALID_PHONE_HINT_EN,
   },
   auth: {
     orDivider: "or",
@@ -543,7 +552,7 @@ export const userEn: UserMessages = {
       minutesAgo: (n: number) => (n < 1 ? "just now" : `${n} min`),
       addForm: {
         namePlaceholder: "Guest name",
-        phonePlaceholder: "Phone",
+        phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
         notePlaceholder: "Note for staff — e.g. polish color, prefers window seat",
         addButton: "Add to queue",
         moreServices: "More services",
@@ -553,7 +562,7 @@ export const userEn: UserMessages = {
     },
     walkin: {
       invalidPhone:
-        "Phone number invalid. Example: 604 123 4567",
+        "Phone number invalid. Examples: +1 (604) 555-1234 or +84901234567",
       phoneRequired: "Enter the guest phone number.",
       nameRequired: "Please enter the guest name.",
       nameTooLong: "Name cannot exceed 100 characters.",

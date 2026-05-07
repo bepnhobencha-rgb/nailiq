@@ -2,16 +2,18 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import { SocialAuthButtons } from "@/components/auth/SocialAuthButtons";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
 import { DemoOtpModal } from "@/components/register/DemoOtpModal";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { getUserMessages } from "@/shared/i18n/user";
 import {
   REG_FLOW_OWNER_RETURNING,
   REG_SESSION_PHONE_DIGITS_KEY,
 } from "@/shared/lib/registerSessionKeys";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { sendLoginOtp } from "@/shared/register/actions";
 import {
   isRegisterPhoneDigitsValid,
@@ -22,7 +24,9 @@ type Props = { demoMode: boolean };
 
 export function LoginPageClient({ demoMode }: Props) {
   const router = useRouter();
-  const [phoneRaw, setPhoneRaw] = useState("");
+  const { language } = useUserLanguage();
+  const t = useMemo(() => getUserMessages(language), [language]);
+  const [phoneRaw, setPhoneRaw] = useState("+1 ");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [demoCode, setDemoCode] = useState<string | null>(null);
@@ -32,7 +36,7 @@ export function LoginPageClient({ demoMode }: Props) {
       e.preventDefault();
       const normalized = normalizeRegisterPhone(phoneRaw);
       if (!isRegisterPhoneDigitsValid(normalized)) {
-        setError("Nhập 8–15 chữ số có mã quốc gia (vd: 84912345678).");
+        setError(t.register.phoneDigitsInvalid);
         return;
       }
       setError(null);
@@ -61,7 +65,7 @@ export function LoginPageClient({ demoMode }: Props) {
         router.push("/login/verify");
       });
     },
-    [phoneRaw, router],
+    [phoneRaw, router, t.register.phoneDigitsInvalid],
   );
 
   return (
@@ -95,7 +99,7 @@ export function LoginPageClient({ demoMode }: Props) {
             type="tel"
             inputMode="tel"
             autoComplete="tel"
-            placeholder="Mobile number"
+            placeholder={t.register.phonePlaceholder}
             className="text-base"
             value={phoneRaw}
             onChange={(ev) => {

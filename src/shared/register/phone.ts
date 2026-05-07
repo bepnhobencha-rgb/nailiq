@@ -1,3 +1,7 @@
+/** Server + EN client copy — Canada/US first; Vietnam still explicitly supported. */
+export const REGISTER_INVALID_PHONE_HINT_EN =
+  "Enter 8–15 digits including country code (e.g. Canada/US: +1 6045551234; Vietnam: +84901234567).";
+
 /** ITU-T E.164 uses at most 15 digits total (international format). */
 export const REGISTER_PHONE_MIN_DIGITS = 8;
 export const REGISTER_PHONE_MAX_DIGITS = 15;
