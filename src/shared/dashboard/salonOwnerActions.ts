@@ -109,6 +109,14 @@ export async function resolveSalonForDashboard(
       kind: "member" | "demo_cookie";
       /** `salon_members.role` for this user-salon pair. Demo-cookie path is always `"owner"`. */
       role: SalonMemberRole;
+      /**
+       * Email on the resolved auth user (e.g. populated by Google OAuth or by
+       * Supabase email signup). `null` for phone-only OTP users who never
+       * provided one, and for the demo-cookie path (no auth user). Used by
+       * the `AddEmailBanner` to suppress the recovery-email nag when the
+       * viewer already has an email tied to the auth account.
+       */
+      viewerEmail: string | null;
     }
   | null
 > {
@@ -118,6 +126,7 @@ export async function resolveSalonForDashboard(
       salon: memberHit.salon,
       kind: "member",
       role: memberHit.role,
+      viewerEmail: memberHit.viewerEmail,
     };
   }
 
@@ -125,8 +134,13 @@ export async function resolveSalonForDashboard(
   if (demoSalon) {
     // Demo registration always inserts a `role: "owner"` salon_members row
     // (see `completeSalonRegistrationAction.ts`), so the demo-cookie path
-    // can hardcode `"owner"` without re-querying.
-    return { salon: demoSalon, kind: "demo_cookie", role: "owner" };
+    // can hardcode `"owner"` without re-querying. No auth user → no email.
+    return {
+      salon: demoSalon,
+      kind: "demo_cookie",
+      role: "owner",
+      viewerEmail: null,
+    };
   }
 
   return null;
@@ -134,12 +148,23 @@ export async function resolveSalonForDashboard(
 
 async function getSalonIfMember(
   slug: string,
-): Promise<{ salon: SalonRow; role: SalonMemberRole } | null> {
+): Promise<
+  | { salon: SalonRow; role: SalonMemberRole; viewerEmail: string | null }
+  | null
+> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return null;
+
+  // Auth user's email — may come from Google OAuth, Supabase email signup,
+  // or be null/empty for phone-only OTP users. Trim and coerce empty → null
+  // so the consumer can `!!viewerEmail`-check without re-trimming.
+  const rawAuthEmail =
+    typeof user.email === "string" ? user.email.trim() : "";
+  const viewerEmail: string | null =
+    rawAuthEmail.length > 0 ? rawAuthEmail : null;
 
   const { data: members, error: memErr } = await supabase
     .from("salon_members")
@@ -197,6 +222,7 @@ async function getSalonIfMember(
       profile_complete: !!row.profile_complete,
     },
     role,
+    viewerEmail,
   };
 }
 
@@ -226,6 +252,14 @@ export type LoadSalonDashboardResult =
        * dashboard UI but not yet consumed for visual gating.
        */
       role: SalonMemberRole;
+      /**
+       * Email on the resolved auth user (Google OAuth, Supabase email
+       * signup, etc.). `null` for phone-only OTP users and demo-cookie path.
+       * The `AddEmailBanner` suppresses itself when this is non-null even
+       * if `salon.email` is empty — the user already has a recovery email
+       * via their auth provider.
+       */
+      viewerEmail: string | null;
       /** Bookings in a wide UTC window; client splits "today" / "upcoming" in local timezone */
       allBookings: SalonDashboardBooking[];
     }
@@ -239,7 +273,7 @@ export async function loadSalonOwnerDashboard(
     return { ok: false, error: "unauthorized" };
   }
 
-  const { salon, kind, role } = resolved;
+  const { salon, kind, role, viewerEmail } = resolved;
   const demoMode = kind === "demo_cookie";
 
   const supabase =
@@ -315,6 +349,7 @@ export async function loadSalonOwnerDashboard(
     },
     demoMode,
     role,
+    viewerEmail,
     allBookings,
   };
 }
