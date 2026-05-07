@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { motion } from "@/shared/lib/motionClient";
 import { Button } from "@/components/ui/Button";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
@@ -17,7 +18,6 @@ export function BookingFlowInfoPanel({
   clientPhone,
   clientEmail,
   clientNotes,
-  infoNextDisabled,
   error,
   nameError,
   phoneError,
@@ -40,7 +40,6 @@ export function BookingFlowInfoPanel({
   clientPhone: string;
   clientEmail: string;
   clientNotes: string;
-  infoNextDisabled: boolean;
   error: string | null;
   nameError: string | null;
   phoneError: string | null;
@@ -58,6 +57,23 @@ export function BookingFlowInfoPanel({
   onBack: () => void;
   onNext: () => void;
 }) {
+  const nameRef = useRef<HTMLInputElement | null>(null);
+  const phoneRef = useRef<HTMLInputElement | null>(null);
+  const emailRef = useRef<HTMLInputElement | null>(null);
+  // Auto-focus the first invalid field after Continue surfaces an error.
+  useEffect(() => {
+    const target = nameError
+      ? nameRef.current
+      : phoneError
+        ? phoneRef.current
+        : emailError
+          ? emailRef.current
+          : null;
+    if (target) {
+      target.focus({ preventScroll: false });
+      target.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [nameError, phoneError, emailError]);
   return (
     <motion.section
       key="info"
@@ -88,6 +104,7 @@ export function BookingFlowInfoPanel({
           </label>
           <input
             id="booking-info-name"
+            ref={nameRef}
             type="text"
             name="clientName"
             autoComplete="name"
@@ -125,6 +142,7 @@ export function BookingFlowInfoPanel({
           </label>
           <input
             id="booking-info-phone"
+            ref={phoneRef}
             type="tel"
             name="clientPhone"
             autoComplete="tel"
@@ -162,6 +180,7 @@ export function BookingFlowInfoPanel({
           <p className="mb-2 text-xs text-nq-muted">{t.clientEmailHint}</p>
           <input
             id="booking-info-email"
+            ref={emailRef}
             type="email"
             name="clientEmail"
             autoComplete="email"
@@ -224,9 +243,7 @@ export function BookingFlowInfoPanel({
           {t.back}
         </Button>
         <div className="flex w-full justify-end sm:flex-1">
-          <LuxuryBookingCta disabled={infoNextDisabled} onClick={onNext}>
-            {t.next}
-          </LuxuryBookingCta>
+          <LuxuryBookingCta onClick={onNext}>{t.next}</LuxuryBookingCta>
         </div>
       </div>
     </motion.section>

@@ -188,7 +188,6 @@ export function BookingFlow({
             clientPhone={flow.clientPhone}
             clientEmail={flow.clientEmail}
             clientNotes={flow.clientNotes}
-            infoNextDisabled={flow.guestContactInvalid}
             error={flow.error}
             nameError={flow.infoNameError}
             phoneError={flow.infoPhoneError}
@@ -215,7 +214,11 @@ export function BookingFlow({
             t={t}
             shopLabel={flow.shopLabel}
             service={flow.service}
-            confirmTimeLabel={flow.confirmTimeLabel}
+            confirmTimeLabel={
+              slotsTimezoneAbbr
+                ? `${flow.confirmTimeLabel} ${slotsTimezoneAbbr}`
+                : flow.confirmTimeLabel
+            }
             staffSummaryLabel={flow.staffSummaryLabel}
             clientName={flow.clientName}
             clientPhone={flow.clientPhone}
