@@ -42,6 +42,10 @@ export const userVi: UserMessages = {
     landingClosingCta: "Bắt đầu lấy lại khách ngay",
   },
   register: {
+    phoneEntryTitle: "Nhập số điện thoại",
+    phoneAuthSubtext:
+      "Chúng tôi sẽ gửi mã xác thực một lần đến điện thoại của bạn.",
+    phoneAuthDisabledSubtext: "⚠️ Đăng nhập qua SMS chưa được cấu hình.",
     returningOwnerHint:
       "Đã là chủ tiệm? Nhập số điện thoại để đăng nhập lại.",
     welcomeBackAfterSend:

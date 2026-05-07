@@ -8,6 +8,8 @@ type RegisterStepShellProps = {
   children: ReactNode;
   /** Muted one-liner under the title */
   subtext?: string;
+  /** Smaller, dev-only hint rendered under the subtext (gated by caller). */
+  helperHint?: string;
 };
 
 /**
@@ -16,6 +18,7 @@ type RegisterStepShellProps = {
 export function RegisterStepShell({
   title,
   subtext,
+  helperHint,
   children,
 }: RegisterStepShellProps) {
   return (
@@ -34,6 +37,11 @@ export function RegisterStepShell({
           {subtext ? (
             <p className="mt-2 text-pretty text-base text-nq-muted">
               {subtext}
+            </p>
+          ) : null}
+          {helperHint ? (
+            <p className="mt-1.5 text-xs leading-relaxed text-nq-muted/80">
+              {helperHint}
             </p>
           ) : null}
           <div className="mt-8 min-w-0 sm:mt-10">{children}</div>
