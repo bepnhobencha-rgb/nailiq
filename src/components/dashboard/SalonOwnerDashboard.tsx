@@ -42,7 +42,9 @@ export function SalonOwnerDashboard({
 }) {
   const router = useRouter();
   const { language, setLanguage } = useUserLanguage();
-  const t = useMemo(() => getUserMessages(language).salonDashboard, [language]);
+  const messages = useMemo(() => getUserMessages(language), [language]);
+  const t = messages.salonDashboard;
+  const td = messages.ownerDashboard;
 
   const [data, setData] = useState<InitialPayload | null>(() =>
     initialResult.ok ? initialResult : null,
@@ -189,7 +191,7 @@ export function SalonOwnerDashboard({
       setLastUpdatedAt(Date.now());
       setNewBookingToast({
         variant: "success",
-        message: "Bạn có lịch hẹn mới từ khách hàng!",
+        message: td.newBookingToast,
       });
       scheduleHighlight(mapped.id);
     };
@@ -331,7 +333,7 @@ export function SalonOwnerDashboard({
         <ResponsiveShell>
           <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] flex items-center justify-center pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pt-2">
             <p className="text-center text-base text-nq-muted">
-              {language === "vi" ? "Đang tải…" : "Loading…"}
+              {td.loadingText}
             </p>
           </MobileStack>
         </ResponsiveShell>
@@ -351,7 +353,7 @@ export function SalonOwnerDashboard({
                 void refresh();
               }}
             >
-              {language === "vi" ? "Thử lại" : "Try again"}
+              {td.retryText}
             </Button>
           </MobileStack>
         </ResponsiveShell>
@@ -374,6 +376,7 @@ export function SalonOwnerDashboard({
           showRecoveryEmailBanner ? (
             <AddEmailBanner
               salonSlug={slug}
+              language={language}
               onDismiss={() => {
                 /* dismiss handled in banner localStorage + hidden state */
               }}

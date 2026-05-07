@@ -16,12 +16,13 @@ function parseStored(value: string | null): UserLanguage | null {
 
 /**
  * SSR-safe snapshot: only call with `window` present.
- * Default is always English; Vietnamese is set only when the user has
- * explicitly toggled VI (persisted in `localStorage`). We do NOT auto-pick
- * VI from `navigator.language` — the public surfaces are EN-first.
+ * Default is Vietnamese — the primary user base is Vietnamese-speaking nail
+ * salon owners. English speakers still get the EN/VI toggle and we persist
+ * their choice in `localStorage`. We do NOT auto-pick from
+ * `navigator.language` — the toggle is the source of truth.
  */
 function getInitialLanguage(): UserLanguage {
-  if (typeof window === "undefined") return "en";
+  if (typeof window === "undefined") return "vi";
 
   try {
     const saved = window.localStorage.getItem(USER_LANGUAGE_STORAGE_KEY);
@@ -31,15 +32,15 @@ function getInitialLanguage(): UserLanguage {
     /* quota / blocked */
   }
 
-  return "en";
+  return "vi";
 }
 
 /**
  * User (owner / dashboard / marketing) language: English or Vietnamese.
- * Persists in `localStorage`, falls back to English, syncs `document.documentElement.lang` on the client.
+ * Persists in `localStorage`, falls back to Vietnamese, syncs `document.documentElement.lang` on the client.
  */
 export function useUserLanguage() {
-  const [language, setLanguageState] = useState<UserLanguage>("en");
+  const [language, setLanguageState] = useState<UserLanguage>("vi");
 
   useEffect(() => {
     const next = getInitialLanguage();

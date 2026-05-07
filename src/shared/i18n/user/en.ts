@@ -88,6 +88,36 @@ export type UserMessages = {
       nail_tech: string;
     };
   };
+  /** `/dashboard/[slug]` owner home — strings beyond the `salonDashboard`
+   * section (banners, checklist, recovery-email banner, transient toasts).
+   * Kept separate so the established `salonDashboard` keys don't drift. */
+  ownerDashboard: {
+    profileComplete: string;
+    profileIncomplete: string;
+    demoModeBadge: string;
+    loadingText: string;
+    retryText: string;
+    /** Realtime toast when a new booking arrives. */
+    newBookingToast: string;
+    setupChecklist: {
+      title: string;
+      /** `{n}` is the integer percent complete (0-100). */
+      percentComplete: string;
+      addServices: string;
+      addStaff: string;
+      setHours: string;
+      addAddress: string;
+      addEmail: string;
+      ariaLabel: string;
+    };
+    addEmailBanner: {
+      emailPlaceholder: string;
+      emailInvalid: string;
+      saveFailed: string;
+      saveButton: string;
+      savingButton: string;
+    };
+  };
   salonDashboard: {
     title: string;
     slugLabel: string;
@@ -378,6 +408,32 @@ export const userEn: UserMessages = {
       owner: "Owner",
       senior: "Senior",
       nail_tech: "Nail Tech",
+    },
+  },
+  ownerDashboard: {
+    profileComplete: "✓ Profile complete — ready for bookings",
+    profileIncomplete:
+      "Complete your salon profile to start taking real bookings",
+    demoModeBadge: "Demo mode",
+    loadingText: "Loading…",
+    retryText: "Try again",
+    newBookingToast: "You have a new booking from a customer!",
+    setupChecklist: {
+      title: "Setup",
+      percentComplete: "{n}% complete",
+      addServices: "Add your services",
+      addStaff: "Add your staff",
+      setHours: "Set opening hours",
+      addAddress: "Add salon address",
+      addEmail: "Add recovery email",
+      ariaLabel: "Salon setup checklist",
+    },
+    addEmailBanner: {
+      emailPlaceholder: "Email address",
+      emailInvalid: "Enter a valid email address.",
+      saveFailed: "Could not save email. Try again.",
+      saveButton: "Save email",
+      savingButton: "Saving…",
     },
   },
   salonDashboard: {
