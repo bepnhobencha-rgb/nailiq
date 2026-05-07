@@ -10,7 +10,7 @@ export function LandingFooter() {
   const [lang, setLang] = useState<Lang>("en");
 
   return (
-    <footer className="border-t border-nq-border/30 bg-nq-bg py-10">
+    <footer className="border-t border-nq-border/30 bg-nq-bg py-6 md:py-8">
       <div className="mx-auto w-full max-w-6xl px-5 md:px-8">
         <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
@@ -52,7 +52,7 @@ export function LandingFooter() {
           </nav>
         </div>
 
-        <div className="mt-6 flex flex-col gap-4 md:mt-8 md:flex-row md:items-center md:justify-between">
+        <div className="mt-4 flex flex-col gap-3 md:mt-5 md:flex-row md:items-center md:justify-between">
           <div
             role="group"
             aria-label="Language"
