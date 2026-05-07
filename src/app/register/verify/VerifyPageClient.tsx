@@ -186,6 +186,11 @@ export function VerifyPageClient({ demoMode }: Props) {
           return;
         }
 
+        if (result.next === "picker") {
+          window.location.assign("/choose-salon");
+          return;
+        }
+
         const ct = result.completionToken.trim();
         if (!ct) {
           setError("Missing completion token. Try again.");

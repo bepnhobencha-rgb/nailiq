@@ -85,6 +85,10 @@ export function LoginVerifyPageClient({ demoMode }: Props) {
           router.push(dashboardPathForRole(res.slug, res.role));
           return;
         }
+        if (res.next === "picker") {
+          router.push("/choose-salon");
+          return;
+        }
         // next: "setup" means phone has no salon — login should reject this.
         // LoginPageClient pre-gates via sendLoginOtp; this is defense-in-depth.
         setError("Số này chưa đăng ký.");
