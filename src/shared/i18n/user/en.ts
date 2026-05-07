@@ -217,6 +217,8 @@ export type UserMessages = {
       today: string;
       tomorrow: string;
     };
+    /** Scroll timeline to current time (today). */
+    jumpToNow: string;
     statusPill: {
       waitingLabel: string;
       inProgressLabel: string;
@@ -540,6 +542,7 @@ export const userEn: UserMessages = {
       today: "Today",
       tomorrow: "Tomorrow",
     },
+    jumpToNow: "Now",
     statusPill: {
       waitingLabel: "WAIT",
       inProgressLabel: "ACTIVE",

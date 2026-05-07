@@ -7,6 +7,10 @@ export interface NowLineProps {
   nowLabel: string;
 }
 
+/**
+ * Vertical "current time" marker across staff rows (horizontal timeline).
+ * Spans full row stack; color uses brand primary (gold).
+ */
 export function NowLine({ leftPx, nowLabel }: NowLineProps) {
   if (leftPx === null) return null;
 
@@ -18,28 +22,19 @@ export function NowLine({ leftPx, nowLabel }: NowLineProps) {
       style={{ left: leftPx }}
       aria-hidden
     >
-      <div className={cn("relative flex flex-col items-center")}>
-        <span
-          className={cn(
-            "mb-1 rounded-md border border-nq-error bg-nq-bg/95 px-1.5 py-0.5 font-mono text-[10px] font-medium tabular-nums tracking-wide text-nq-error",
-          )}
-        >
-          {nowLabel}
-        </span>
-        <div
-          className="relative h-3 w-3 shrink-0 rounded-full bg-nq-error"
-          style={{
-            boxShadow:
-              "0 0 8px color-mix(in srgb, var(--color-nq-error) 60%, transparent)",
-          }}
-        />
-      </div>
-
+      <span
+        className={cn(
+          "mb-0.5 rounded border border-nq-primary/45 bg-nq-bg/92 px-1 py-0.5 font-mono text-[9px] font-medium tabular-nums text-nq-primary",
+        )}
+      >
+        {nowLabel}
+      </span>
       <div
-        className="min-h-0 w-0.5 flex-1 shrink bg-nq-error"
+        className="min-h-0 w-px flex-1 shrink"
         style={{
+          backgroundColor: "var(--color-nq-primary)",
           boxShadow:
-            "0 0 8px color-mix(in srgb, var(--color-nq-error) 60%, transparent)",
+            "0 0 8px color-mix(in srgb, var(--color-nq-primary) 40%, transparent)",
         }}
       />
     </div>

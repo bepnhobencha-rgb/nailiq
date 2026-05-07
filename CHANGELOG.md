@@ -2,6 +2,10 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-05-07 (feat/jump-to-now — Receptionist Center)
+
+- **`StaffTimelineGrid`:** On salon **today**, auto-scroll horizontally once per selected day to the **nearest 30-minute slot** to “now” (±15 min); **Jump to now** pill (**`receptionist.jumpToNow`**: EN "Now" / VI "Hiện tại") next to **`DateSwitcher`** smooth-scrolls the same target. Timeline **now** marker (**`NowLine`**) uses **`--color-nq-primary`** (gold `w-px` vertical line across staff rows); hidden on yesterday/tomorrow (`isViewingToday`). **`salonNowMinutes`** drives position from `nowIso` (1 min tick in parent — no extra interval in grid).
+
 ## 2026-05-07 (fix/phone-canada-first — owner + guest phone UX)
 
 - **Default +1 for owner auth:** **`/register`** and **`/login`** seed the phone field with **`+1 `** (Canada/US‑first); **`+84`** and other E.164 digits still work after edit. **Storage unchanged:** digits + **`ensureSupabaseAuthE164`** for Supabase/Twilio.

@@ -16,6 +16,7 @@ import { NowLine } from "./NowLine";
 import { checkBookingConflict, type ConflictCheckBooking } from "@/shared/lib/conflictCheck";
 import { cn } from "@/shared/lib/cn";
 import {
+  salonNowMinutes,
   salonWallTimeToUtcIso,
   utcIsoToSalonMinutesFromMidnight,
 } from "@/shared/lib/salonTime";
@@ -59,6 +60,10 @@ export interface StaffTimelineGridProps {
   selectedDate: string;
   timezone: string;
   nowIso: string;
+  /** When false, hide now line and skip jump-to-now scrolling (yesterday/tomorrow). */
+  isViewingToday: boolean;
+  /** Increment (e.g. from parent) to smooth-scroll to the current time column. */
+  jumpToNowTrigger: number;
   existingBookings: GridBooking[];
   onBookingClick: (bookingId: string) => void;
   onSlotClick: (staffId: string, slotStartUtc: string) => void;
@@ -90,7 +95,7 @@ function bookingToPosition(booking: GridBooking, timezone: string) {
 }
 
 function computeNowLineLeftPx(nowIso: string, timezone: string): number | null {
-  const m = utcIsoToSalonMinutesFromMidnight(nowIso, timezone);
+  const m = salonNowMinutes(timezone, nowIso);
   const gridStart = HOUR_START * 60;
   const gridEnd = HOUR_END * 60;
   if (m < gridStart || m >= gridEnd) {
@@ -98,6 +103,20 @@ function computeNowLineLeftPx(nowIso: string, timezone: string): number | null {
   }
   const minutesFrom8 = m - gridStart;
   return (minutesFrom8 / SLOT_MINUTES) * SLOT_PX;
+}
+
+/** Nearest 30-minute slot center for scroll alignment (≈ ±15 min from "now"). */
+function computeNearestSlotCenterLeftPx(nowIso: string, timezone: string): number | null {
+  const m = salonNowMinutes(timezone, nowIso);
+  const gridStart = HOUR_START * 60;
+  const gridEnd = HOUR_END * 60;
+  if (m < gridStart || m >= gridEnd) {
+    return null;
+  }
+  const minutesFrom8 = m - gridStart;
+  const slotIndex = Math.round(minutesFrom8 / SLOT_MINUTES);
+  const clamped = Math.max(0, Math.min(TOTAL_SLOTS - 1, slotIndex));
+  return clamped * SLOT_PX + SLOT_PX / 2;
 }
 
 function toConflictRows(bookings: GridBooking[]): ConflictCheckBooking[] {
@@ -120,6 +139,8 @@ export function StaffTimelineGrid({
   selectedDate,
   timezone,
   nowIso,
+  isViewingToday,
+  jumpToNowTrigger,
   existingBookings,
   onBookingClick,
   onSlotClick,
@@ -127,6 +148,7 @@ export function StaffTimelineGrid({
 }: StaffTimelineGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoScrolledRef = useRef(false);
+  const prevJumpTriggerRef = useRef(0);
 
   const [hoveredSlot, setHoveredSlot] = useState<{
     staffId: string;
@@ -148,10 +170,10 @@ export function StaffTimelineGrid({
     return m;
   }, [bookings]);
 
-  const nowLineLeftPx = useMemo(
-    () => computeNowLineLeftPx(nowIso, timezone),
-    [nowIso, timezone],
-  );
+  const nowLineLeftPx = useMemo(() => {
+    if (!isViewingToday) return null;
+    return computeNowLineLeftPx(nowIso, timezone);
+  }, [isViewingToday, nowIso, timezone]);
 
   const nowLineLabel = useMemo(() => labels.formatTimeLabel(nowIso), [labels, nowIso]);
 
@@ -164,15 +186,33 @@ export function StaffTimelineGrid({
   );
 
   useEffect(() => {
-    if (autoScrolledRef.current) return;
-    autoScrolledRef.current = true;
+    autoScrolledRef.current = false;
+  }, [selectedDate]);
+
+  useEffect(() => {
+    if (!isViewingToday || autoScrolledRef.current) return;
     const el = scrollRef.current;
-    if (!el || nowLineLeftPx === null) return;
+    const snapPx = computeNearestSlotCenterLeftPx(nowIso, timezone);
+    if (snapPx === null || !el) return;
+    autoScrolledRef.current = true;
     const w = el.clientWidth;
     const maxScroll = Math.max(0, el.scrollWidth - w);
-    const target = Math.max(0, Math.min(nowLineLeftPx - w / 2, maxScroll));
+    const target = Math.max(0, Math.min(snapPx - w / 2, maxScroll));
     el.scrollLeft = target;
-  }, [nowLineLeftPx]);
+  }, [isViewingToday, nowIso, timezone, selectedDate]);
+
+  useEffect(() => {
+    if (!isViewingToday) return;
+    if (jumpToNowTrigger <= prevJumpTriggerRef.current) return;
+    prevJumpTriggerRef.current = jumpToNowTrigger;
+    const el = scrollRef.current;
+    const snapPx = computeNearestSlotCenterLeftPx(nowIso, timezone);
+    if (snapPx === null || !el) return;
+    const w = el.clientWidth;
+    const maxScroll = Math.max(0, el.scrollWidth - w);
+    const target = Math.max(0, Math.min(snapPx - w / 2, maxScroll));
+    el.scrollTo({ left: target, behavior: "smooth" });
+  }, [jumpToNowTrigger, isViewingToday, nowIso, timezone]);
 
   const assignMode = assigning !== null;
 
