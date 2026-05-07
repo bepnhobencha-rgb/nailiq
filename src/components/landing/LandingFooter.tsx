@@ -32,19 +32,19 @@ export function LandingFooter() {
             className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-nq-muted"
           >
             <Link
-              href="#"
+              href="/privacy"
               className="transition hover:text-nq-foreground focus-visible:outline-none focus-visible:text-nq-foreground"
             >
               Privacy
             </Link>
             <Link
-              href="#"
+              href="/terms"
               className="transition hover:text-nq-foreground focus-visible:outline-none focus-visible:text-nq-foreground"
             >
               Terms
             </Link>
             <Link
-              href="#"
+              href="/contact"
               className="transition hover:text-nq-foreground focus-visible:outline-none focus-visible:text-nq-foreground"
             >
               Contact
@@ -78,7 +78,7 @@ export function LandingFooter() {
               );
             })}
           </div>
-          <p className="text-xs text-nq-muted">Built in Toronto</p>
+          <p className="text-xs text-nq-muted">Built in Vancouver, BC 🇨🇦</p>
         </div>
       </div>
     </footer>

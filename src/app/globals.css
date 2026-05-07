@@ -200,46 +200,29 @@
   outline-offset: 4px;
 }
 
+/* Clean two-tone wordmark: italic serif "Nail" in gold + bold sans "IQ" in white */
 .landing-html-wordmark {
   display: inline-flex;
   align-items: baseline;
-  font-family: var(--font-landing-playfair), ui-serif, Georgia, serif;
-  font-style: italic;
   line-height: 1;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.02em;
 }
 
 .landing-html-wordmark-nail {
-  font-weight: 600;
-  background: linear-gradient(
-    168deg,
-    #fffcf0 0%,
-    #f8edc4 32%,
-    #e4c86a 62%,
-    #bb9330 92%
-  );
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 2px 14px rgba(212, 175, 55, 0.32));
+  font-family: var(--font-landing-playfair), ui-serif, Georgia, serif;
+  font-style: italic;
+  font-weight: 700;
+  color: #d4af37;
+  letter-spacing: -0.02em;
 }
 
 .landing-html-wordmark-iq {
-  margin-left: 0.06em;
+  margin-left: 0.1em;
+  font-family: var(--font-landing-inter), system-ui, -apple-system, sans-serif;
+  font-style: normal;
   font-weight: 800;
-  font-style: italic;
-  letter-spacing: 0.02em;
-  background: linear-gradient(
-    168deg,
-    #ffffff 0%,
-    #fff6d4 28%,
-    #f0d46a 55%,
-    #c9a227 100%
-  );
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0 22px rgba(212, 175, 55, 0.4));
+  color: #ffffff;
+  letter-spacing: -0.01em;
 }
 
 .landing-html-wordmark-fallback {

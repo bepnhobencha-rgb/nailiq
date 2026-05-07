@@ -42,6 +42,9 @@ export function LandingSocialProof() {
           <h2 className="mt-4 text-3xl font-semibold tracking-tight text-nq-foreground md:text-4xl">
             What salon owners say
           </h2>
+          <p className="mt-3 text-[10px] font-semibold tracking-[0.18em] text-nq-muted uppercase">
+            Early access feedback
+          </p>
         </motion.div>
 
         <div className="mt-12 grid gap-6 sm:grid-cols-2">
