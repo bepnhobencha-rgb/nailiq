@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useId, useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { createClient } from "@/shared/lib/supabase/client";
@@ -14,11 +14,14 @@ type Props = {
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 
 export function SocialAuthButtons({ mode }: Props) {
+  // Email magic-link section starts COLLAPSED. Only the Google button +
+  // "Other options" toggle render until the user explicitly opens it.
   const [showEmail, setShowEmail] = useState(false);
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const emailSectionId = useId();
 
   const onGoogle = () => {
     setError(null);
@@ -84,8 +87,27 @@ export function SocialAuthButtons({ mode }: Props) {
         Continue with Google
       </Button>
 
+      <button
+        type="button"
+        aria-expanded={showEmail}
+        aria-controls={emailSectionId}
+        data-testid="social-auth-other-options-toggle"
+        onClick={() => {
+          setError(null);
+          setInfo(null);
+          setShowEmail((prev) => !prev);
+        }}
+        className="self-center text-sm text-nq-muted underline-offset-4 transition hover:text-nq-foreground hover:underline"
+      >
+        {showEmail ? "Hide options" : "Other options"}
+      </button>
+
       {showEmail ? (
-        <form onSubmit={onEmail} className="flex flex-col gap-3">
+        <form
+          id={emailSectionId}
+          onSubmit={onEmail}
+          className="flex flex-col gap-3"
+        >
           <Input
             type="email"
             inputMode="email"
@@ -110,19 +132,7 @@ export function SocialAuthButtons({ mode }: Props) {
             {emailButtonLabel}
           </Button>
         </form>
-      ) : (
-        <button
-          type="button"
-          onClick={() => {
-            setError(null);
-            setInfo(null);
-            setShowEmail(true);
-          }}
-          className="self-center text-sm text-nq-muted underline-offset-4 transition hover:text-nq-foreground hover:underline"
-        >
-          Other options
-        </button>
-      )}
+      ) : null}
 
       {error ? (
         <p className="text-sm text-nq-error" role="status">
