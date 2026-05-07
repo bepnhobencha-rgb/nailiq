@@ -1,6 +1,13 @@
 import type { Metadata } from "next";
 import { Inter, Playfair_Display } from "next/font/google";
-import { HomeLanding } from "@/components/user/HomeLanding";
+import { LandingNavbar } from "@/components/landing/LandingNavbar";
+import { LandingHero } from "@/components/landing/LandingHero";
+import { LandingPainSection } from "@/components/landing/LandingPainSection";
+import { LandingFeatures } from "@/components/landing/LandingFeatures";
+import { LandingHowItWorks } from "@/components/landing/LandingHowItWorks";
+import { LandingSocialProof } from "@/components/landing/LandingSocialProof";
+import { LandingPricing } from "@/components/landing/LandingPricing";
+import { LandingFooter } from "@/components/landing/LandingFooter";
 import { getLandingJsonLd } from "@/shared/seo/jsonLd";
 
 const landingInter = Inter({
@@ -18,9 +25,9 @@ const landingPlayfair = Playfair_Display({
 });
 
 const landingDescription =
-  "NailIQ helps nail salons stop losing money from missed calls—get bookings in minutes without another app.";
+  "Built for nail salons. $29/month. 3–5× cheaper than Booksy. Vietnamese-first booking, walk-in queue, and live receptionist center.";
 
-const landingTitle = "NailIQ — Stop losing money from missed calls";
+const landingTitle = "NailIQ — Booking + walk-in queue for nail salons";
 
 export const metadata: Metadata = {
   title: landingTitle,
@@ -45,9 +52,18 @@ export default function Home() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
       />
       <div
-        className={`${landingInter.variable} ${landingPlayfair.variable}`}
+        className={`${landingInter.variable} ${landingPlayfair.variable} min-h-screen bg-nq-bg text-nq-foreground antialiased font-[family-name:var(--font-landing-inter),system-ui,-apple-system,sans-serif]`}
       >
-        <HomeLanding />
+        <LandingNavbar />
+        <main>
+          <LandingHero />
+          <LandingPainSection />
+          <LandingFeatures />
+          <LandingHowItWorks />
+          <LandingSocialProof />
+          <LandingPricing />
+        </main>
+        <LandingFooter />
       </div>
     </>
   );
