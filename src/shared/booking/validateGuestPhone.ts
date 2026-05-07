@@ -14,7 +14,9 @@ export type GuestPhoneValidation =
   | { ok: false };
 
 /**
- * Country-aware parse + validate via libphonenumber-js (default region: CA).
+ * Country-aware parse + validate via libphonenumber-js.
+ * Default region **CA** (NANP): bare 10-digit local numbers resolve as Canada/US +1;
+ * explicit `+84…` and other international forms still validate.
  * Accepts:
  *   "6041234567"        → +16041234567   → digits "16041234567"
  *   "+1 778 868 0738"   → +17788680738   → digits "17788680738"

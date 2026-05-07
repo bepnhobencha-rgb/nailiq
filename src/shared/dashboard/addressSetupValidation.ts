@@ -3,9 +3,9 @@
 export const SETUP_COUNTRY_OPTIONS = [
   "Canada",
   "United States",
+  "Vietnam",
   "Australia",
   "United Kingdom",
-  "Vietnam",
   "Other",
 ] as const;
 

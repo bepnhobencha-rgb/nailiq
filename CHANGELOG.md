@@ -2,6 +2,14 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-05-07 (fix/phone-canada-first — owner + guest phone UX)
+
+- **Default +1 for owner auth:** **`/register`** and **`/login`** seed the phone field with **`+1 `** (Canada/US‑first); **`+84`** and other E.164 digits still work after edit. **Storage unchanged:** digits + **`ensureSupabaseAuthE164`** for Supabase/Twilio.
+- **Placeholder shared constant:** **`PHONE_INPUT_PLACEHOLDER_NANP`** (**`"+1 (604) 555-1234"`**) in **`phoneFormat.ts`** — register/login (**`register.phonePlaceholder`** EN/VI), public booking (**`bookingEn.clientPhonePlaceholder`**), receptionist walk-in (**`phonePlaceholder`**).
+- **Copy / validation messaging:** **`REGISTER_INVALID_PHONE_HINT_EN`** (**`phone.ts`**) replaces Vietnam-only OTP examples (**`sendRegisterOtp`** / **`RegisterPageClient`**). Booking + receptionist invalid-phone hints lead with NANP then Vietnam.
+- **Login phone errors:** **`LoginPageClient`** uses **`useUserLanguage`** + **`getUserMessages`** for placeholder + **`phoneDigitsInvalid`** (VN owners see Vietnamese invalid copy when UI is Vietnamese).
+- **Address setup:** **`SETUP_COUNTRY_OPTIONS`** order is **Canada, United States, Vietnam**, then AU/UK/Other (salon mailing country dropdown — not dialing, aligns with 🇨🇦🇺🇸🇻🇳 priority).
+
 ## 2026-05-06 (feat/twilio-verify — Twilio Verify SMS OTP)
 
 - **Production OTP:** `sendRegisterOtp` / login use **Twilio Verify** REST (`fetch`) when demo OTP is off — env **`TWILIO_ACCOUNT_SID`**, **`TWILIO_AUTH_TOKEN`**, **`TWILIO_VERIFY_SERVICE_SID`**. **`verifyRegisterOtp`** / **`verifyLoginOtp`** call **VerificationCheck** then open a Supabase session via **`phoneOtpSupabaseSession`** + **`finalizeRegisterSessionAfterPhoneOtp`**. Register/login verify clients call the server action only (no client **`verifyOtp`**).

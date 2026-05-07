@@ -2,6 +2,8 @@
  * Public booking UI (`/[slug]`) copy: English only.
  * Do not import user locale or `useUserLanguage` here.
  */
+import { PHONE_INPUT_PLACEHOLDER_NANP } from "@/shared/lib/phoneFormat";
+
 export const bookingEn = {
   pageTitle: "Book this salon",
   pageSubtitle:
@@ -86,7 +88,7 @@ export const bookingEn = {
     slotJustTaken:
       "This slot was just booked. Please pick another time.",
     invalidPhone:
-      "Phone number invalid. Example: 604 123 4567 or +84 90 123 4567",
+      "Phone number invalid. Examples: +1 (604) 555-1234 or +84 90 123 4567",
     phoneRequired: "Enter your phone number.",
     nameRequired: "Please enter your name.",
     nameTooShort: "Name must be at least 2 characters.",
@@ -99,6 +101,8 @@ export const bookingEn = {
   },
   clientNameLabel: "Your name",
   clientPhoneLabel: "Phone number",
+  /** Placeholder for contact step — NANP Canadian example; guests may enter any valid E.164. */
+  clientPhonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
   clientEmailLabel: "Email (optional)",
   clientEmailHint: "Receive booking confirmation by email.",
   clientNotesLabel: "Special notes",

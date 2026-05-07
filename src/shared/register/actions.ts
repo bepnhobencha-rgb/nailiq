@@ -23,10 +23,10 @@ import {
   ensureSupabaseAuthE164,
   isRegisterPhoneDigitsValid,
   normalizeRegisterPhone,
+  REGISTER_INVALID_PHONE_HINT_EN,
 } from "@/shared/register/phone";
 
-const INVALID_PHONE_MSG =
-  "Enter 8–15 digits including country code (e.g. Vietnam: 84912345678).";
+const INVALID_PHONE_MSG = REGISTER_INVALID_PHONE_HINT_EN;
 
 function registerFlowDebugEnabled(): boolean {
   return (

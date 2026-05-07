@@ -36,7 +36,7 @@ export function RegisterPageClient({ demoMode }: Props) {
   const router = useRouter();
   const { language } = useUserLanguage();
   const t = useMemo(() => getUserMessages(language), [language]);
-  const [phoneRaw, setPhoneRaw] = useState("");
+  const [phoneRaw, setPhoneRaw] = useState("+1 ");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [demoCode, setDemoCode] = useState<string | null>(null);
@@ -48,9 +48,7 @@ export function RegisterPageClient({ demoMode }: Props) {
       e.preventDefault();
       const normalized = normalizeRegisterPhone(phoneRaw);
       if (!isRegisterPhoneDigitsValid(normalized)) {
-        setError(
-          "Enter 8–15 digits including country code (e.g. Vietnam: 84912345678).",
-        );
+        setError(t.register.phoneDigitsInvalid);
         return;
       }
       setError(null);
@@ -116,7 +114,7 @@ export function RegisterPageClient({ demoMode }: Props) {
         router.push("/register/verify");
       });
     },
-    [phoneRaw, router, t.register.otpResentToast],
+    [phoneRaw, router, t.register.otpResentToast, t.register.phoneDigitsInvalid],
   );
 
   const demoBadgeLabel =
@@ -185,7 +183,7 @@ export function RegisterPageClient({ demoMode }: Props) {
             type="tel"
             inputMode="tel"
             autoComplete="tel"
-            placeholder="Mobile number"
+            placeholder={t.register.phonePlaceholder}
             className="text-base"
             value={phoneRaw}
             onChange={(ev) => {

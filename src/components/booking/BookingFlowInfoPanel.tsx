@@ -149,6 +149,7 @@ export function BookingFlowInfoPanel({
             inputMode="tel"
             value={clientPhone}
             maxLength={24}
+            placeholder={t.clientPhonePlaceholder}
             onChange={(e) => onClientPhoneChange(e.target.value)}
             onBlur={() => {
               void onClientPhoneBlur();
