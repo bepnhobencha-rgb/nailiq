@@ -34,6 +34,10 @@ import { getUserMessages } from "@/shared/i18n/user";
 import { checkBookingConflict, type ConflictCheckBooking } from "@/shared/lib/conflictCheck";
 import { cn } from "@/shared/lib/cn";
 import { cleanPhone, formatPhone } from "@/shared/lib/phoneFormat";
+import {
+  canCancelBooking,
+  type SalonMemberRole,
+} from "@/shared/lib/salonMemberRole";
 import { formatInSalonTz, salonDateOffset, salonToday } from "@/shared/lib/salonTime";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import type { BookingStatus } from "@/shared/types";
@@ -42,6 +46,8 @@ export type ReceptionistCenterProps = {
   slug: string;
   /** Server load result (`ok: false` shows localized shell only). */
   initialResult: LoadReceptionistCenterResult;
+  /** Caller's `salon_members.role` — gates Edit/Cancel in the booking drawer. */
+  viewerRole: SalonMemberRole;
 };
 
 function loadErrorCopy(
@@ -162,7 +168,15 @@ function ReceptionistGateError({ code }: { code: LoadReceptionistCenterError }) 
   );
 }
 
-function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk: ReceptionistCenterData }) {
+function ReceptionistCenterInner({
+  slug,
+  initialOk,
+  viewerRole,
+}: {
+  slug: string;
+  initialOk: ReceptionistCenterData;
+  viewerRole: SalonMemberRole;
+}) {
   const router = useRouter();
   const { language, setLanguage } = useUserLanguage();
   const messages = useMemo(() => getUserMessages(language), [language]);
@@ -768,6 +782,7 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
 
   const drawerCancelAction =
     openDrawerBooking &&
+    canCancelBooking(viewerRole) &&
     (openDrawerBooking.status === "pending" ||
       openDrawerBooking.status === "confirmed" ||
       openDrawerBooking.status === "in_progress")
@@ -952,6 +967,7 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
         model={detailModel}
         onClose={() => setDrawerBookingId(null)}
         copy={drawerCopy}
+        viewerRole={viewerRole}
         primaryAction={drawerPrimaryAction}
         cancelAction={drawerCancelAction}
         deskEdit={
@@ -1003,9 +1019,15 @@ function ReceptionistCenterInner({ slug, initialOk }: { slug: string; initialOk:
   );
 }
 
-export function ReceptionistCenter({ slug, initialResult }: ReceptionistCenterProps) {
+export function ReceptionistCenter({ slug, initialResult, viewerRole }: ReceptionistCenterProps) {
   if (!initialResult.ok) {
     return <ReceptionistGateError code={initialResult.error} />;
   }
-  return <ReceptionistCenterInner slug={slug} initialOk={initialResult.data} />;
+  return (
+    <ReceptionistCenterInner
+      slug={slug}
+      initialOk={initialResult.data}
+      viewerRole={viewerRole}
+    />
+  );
 }
