@@ -57,6 +57,19 @@ export const userVi: UserMessages = {
     otpResentToast:
       "Đã gửi mã mới — mã cũ không còn hiệu lực.",
   },
+  auth: {
+    orDivider: "hoặc",
+    continueWithGoogle: "Tiếp tục với Google",
+    otherOptions: "Tùy chọn khác",
+    hideOptions: "Ẩn",
+    sendLoginLink: "Gửi link đăng nhập",
+    sendSignupLink: "Gửi link đăng ký",
+    emailPlaceholder: "you@example.com",
+    emailInvalid: "Email không hợp lệ.",
+    magicLinkSent: "Đã gửi link. Kiểm tra email để tiếp tục.",
+    googleSigninFailed: "Đăng nhập Google thất bại.",
+    magicLinkSendFailed: "Không gửi được link. Thử lại.",
+  },
   salonDashboard: {
     title: "Bảng điều khiển tiệm",
     slugLabel: "URL",

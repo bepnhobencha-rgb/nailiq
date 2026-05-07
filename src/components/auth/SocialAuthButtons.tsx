@@ -1,8 +1,10 @@
 "use client";
 
-import { useId, useState, useTransition } from "react";
+import { useId, useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { getUserMessages } from "@/shared/i18n/user";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { createClient } from "@/shared/lib/supabase/client";
 
 type Mode = "login" | "register";
@@ -14,6 +16,8 @@ type Props = {
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 
 export function SocialAuthButtons({ mode }: Props) {
+  const { language } = useUserLanguage();
+  const t = useMemo(() => getUserMessages(language).auth, [language]);
   // Email magic-link section starts COLLAPSED. Only the Google button +
   // "Other options" toggle render until the user explicitly opens it.
   const [showEmail, setShowEmail] = useState(false);
@@ -35,7 +39,7 @@ export function SocialAuthButtons({ mode }: Props) {
         },
       });
       if (oauthErr) {
-        setError(oauthErr.message ?? "Google sign-in failed.");
+        setError(oauthErr.message ?? t.googleSigninFailed);
       }
     });
   };
@@ -46,7 +50,7 @@ export function SocialAuthButtons({ mode }: Props) {
     setInfo(null);
     const trimmed = email.trim();
     if (!EMAIL_RE.test(trimmed)) {
-      setError("Enter a valid email address.");
+      setError(t.emailInvalid);
       return;
     }
     startTransition(async () => {
@@ -58,21 +62,21 @@ export function SocialAuthButtons({ mode }: Props) {
         },
       });
       if (otpErr) {
-        setError(otpErr.message ?? "Could not send link. Try again.");
+        setError(otpErr.message ?? t.magicLinkSendFailed);
         return;
       }
-      setInfo("Magic link sent. Check your email to continue.");
+      setInfo(t.magicLinkSent);
     });
   };
 
   const emailButtonLabel =
-    mode === "login" ? "Send login link" : "Send sign-up link";
+    mode === "login" ? t.sendLoginLink : t.sendSignupLink;
 
   return (
     <div className="mt-6 flex flex-col gap-3">
       <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.18em] text-nq-muted">
         <span className="h-px flex-1 bg-nq-border" />
-        <span>or</span>
+        <span>{t.orDivider}</span>
         <span className="h-px flex-1 bg-nq-border" />
       </div>
 
@@ -84,7 +88,7 @@ export function SocialAuthButtons({ mode }: Props) {
         loading={pending}
         onClick={onGoogle}
       >
-        Continue with Google
+        {t.continueWithGoogle}
       </Button>
 
       <button
@@ -99,7 +103,7 @@ export function SocialAuthButtons({ mode }: Props) {
         }}
         className="self-center text-sm text-nq-muted underline-offset-4 transition hover:text-nq-foreground hover:underline"
       >
-        {showEmail ? "Hide options" : "Other options"}
+        {showEmail ? t.hideOptions : t.otherOptions}
       </button>
 
       {showEmail ? (
@@ -112,7 +116,7 @@ export function SocialAuthButtons({ mode }: Props) {
             type="email"
             inputMode="email"
             autoComplete="email"
-            placeholder="you@example.com"
+            placeholder={t.emailPlaceholder}
             value={email}
             onChange={(ev) => {
               setEmail(ev.target.value);
