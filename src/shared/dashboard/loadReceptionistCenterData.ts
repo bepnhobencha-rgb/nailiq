@@ -74,6 +74,11 @@ export interface ReceptionistCenterData {
     price_cents: number | null;
     /** Cleanup / turnover minutes after service (catalog); used for drawer time copy. */
     service_buffer_minutes: number;
+    /**
+     * Walk-in arrival timestamp (only set when `source === "walkin"`); used by
+     * the KPI bar to compute today's average wait (joined → assigned).
+     */
+    joined_queue_at: string | null;
     /** Optional secondary service. Null when the booking has no add-on. */
     addon_service_id: string | null;
     addon_service_name: string | null;
@@ -92,6 +97,46 @@ export interface ReceptionistCenterData {
   dashboardModules: DashboardModulesConfig;
   /** Active workspace preset for this salon. Drives layout + module defaults. */
   dashboardPreset: PresetKey;
+  /**
+   * Receptionist KPI band snapshot for the selected day. Computed server-side
+   * from the same dataset as the timeline + queue so values are coherent on
+   * first paint; values are only operationally meaningful when the day
+   * matches "today" in the salon timezone — the consumer is responsible for
+   * gating the band on `isViewingToday`.
+   *
+   * Note: the `inProgressCount` field maps to the codebase's actual booking
+   * status `in_progress` (see `BOOKING_DAY_STATUSES` and the live
+   * `bookings_status_check` constraint). The product-doc label "in service"
+   * (COLOR_TOKENS) is the user-facing translation of that state.
+   */
+  kpiSnapshot: {
+    /** Walk-ins currently in `waiting` status (== walkinQueue length). */
+    waitingCount: number;
+    /** Bookings currently in `in_progress` status. */
+    inProgressCount: number;
+    /**
+     * Average minutes from walk-in arrival (`joined_queue_at`) to assignment
+     * (`start_time_utc`) across today's walk-ins that have transitioned out
+     * of `waiting`. `null` when no walk-in has been assigned yet today.
+     */
+    avgWaitMinutes: number | null;
+    /** Confirmed/pending bookings starting in (now, now + 30 minutes]. */
+    comingUpCount: number;
+    /** `in_progress` bookings whose `end_time_utc` is in the past. */
+    overdueCount: number;
+    /**
+     * Earliest-free staff member by current `in_progress` end time. Free
+     * **now** is reported as `minutesUntilFree: 0`. `null` when no staff
+     * exists.
+     */
+    nextAvailableStaff: { name: string; minutesUntilFree: number } | null;
+    /**
+     * Sum of `price_cents + addon_price_cents` across `completed` bookings
+     * for the selected day. `null` when `dashboardModules.revenue_today` is
+     * false (the tile must be hidden in that case — value is not "0").
+     */
+    revenueTodayCents: number | null;
+  };
 }
 
 export type LoadReceptionistCenterError =
@@ -262,6 +307,7 @@ export async function loadReceptionistCenterData(
       source,
       service_id,
       price_cents,
+      joined_queue_at,
       addon_service_id,
       addon_price_cents,
       services!bookings_service_id_fkey ( name, duration_minutes, buffer_minutes ),
@@ -333,6 +379,7 @@ export async function loadReceptionistCenterData(
     source: string | null;
     service_id: string;
     price_cents: number | null;
+    joined_queue_at: string | null;
     addon_service_id: string | null;
     addon_price_cents: number | null;
     services: ServiceJoinMinimal | ServiceJoinMinimal[] | null;
@@ -415,6 +462,7 @@ export async function loadReceptionistCenterData(
         Math.round(Number(svc?.buffer_minutes ?? 0)),
       ),
       price_cents: row.price_cents,
+      joined_queue_at: row.joined_queue_at?.trim() ? row.joined_queue_at : null,
       addon_service_id: addonId,
       addon_service_name: hasAddon ? addon?.name ?? "—" : null,
       addon_duration_minutes: hasAddon
@@ -448,6 +496,13 @@ export async function loadReceptionistCenterData(
     }
   }
 
+  const kpiSnapshot = computeKpiSnapshot({
+    walkinQueue,
+    bookingsForDay,
+    staff: staffRows ?? [],
+    revenueModuleEnabled: dashboardModules.revenue_today,
+  });
+
   return {
     ok: true,
     data: {
@@ -468,6 +523,129 @@ export async function loadReceptionistCenterData(
       selectedDate: dateYmd,
       dashboardModules,
       dashboardPreset,
+      kpiSnapshot,
     },
+  };
+}
+
+const COMING_UP_WINDOW_MINUTES = 30;
+
+/**
+ * Pure derivation of the receptionist KPI snapshot from already-loaded
+ * bookings/walk-ins/staff. Kept as a top-level fn so it can be unit-tested
+ * without a Supabase client. Time arithmetic uses `Date.now()` once per call
+ * for snapshot-stability across all tiles.
+ */
+function computeKpiSnapshot(args: {
+  walkinQueue: ReceptionistCenterData["walkinQueue"];
+  bookingsForDay: ReceptionistCenterData["bookingsForDay"];
+  staff: ReceptionistCenterData["staff"];
+  revenueModuleEnabled: boolean;
+}): ReceptionistCenterData["kpiSnapshot"] {
+  const { walkinQueue, bookingsForDay, staff, revenueModuleEnabled } = args;
+  const nowMs = Date.now();
+  const comingUpCutoffMs = nowMs + COMING_UP_WINDOW_MINUTES * 60_000;
+
+  const waitingCount = walkinQueue.length;
+  const inProgressCount = bookingsForDay.filter(
+    (b) => b.status === "in_progress",
+  ).length;
+
+  let comingUpCount = 0;
+  let overdueCount = 0;
+  for (const b of bookingsForDay) {
+    const startMs = Date.parse(b.start_time_utc);
+    const endMs = Date.parse(b.end_time_utc);
+    if (
+      (b.status === "pending" || b.status === "confirmed") &&
+      Number.isFinite(startMs) &&
+      startMs > nowMs &&
+      startMs <= comingUpCutoffMs
+    ) {
+      comingUpCount += 1;
+    }
+    if (
+      b.status === "in_progress" &&
+      Number.isFinite(endMs) &&
+      endMs < nowMs
+    ) {
+      overdueCount += 1;
+    }
+  }
+
+  // Avg wait: walk-ins assigned today (`waiting → in_progress/completed`).
+  let waitSampleCount = 0;
+  let waitTotalMs = 0;
+  for (const b of bookingsForDay) {
+    if (b.source !== "walkin") continue;
+    if (b.status !== "in_progress" && b.status !== "completed") continue;
+    if (!b.joined_queue_at) continue;
+    const joinedMs = Date.parse(b.joined_queue_at);
+    const startMs = Date.parse(b.start_time_utc);
+    if (!Number.isFinite(joinedMs) || !Number.isFinite(startMs)) continue;
+    waitTotalMs += Math.max(0, startMs - joinedMs);
+    waitSampleCount += 1;
+  }
+  const avgWaitMinutes =
+    waitSampleCount > 0
+      ? Math.round(waitTotalMs / waitSampleCount / 60_000)
+      : null;
+
+  // Next available staff: per-staff max(end_time_utc) over `in_progress`,
+  // floored to "now" (a free staff is free **now**, not negative-minutes).
+  let nextAvailableStaff: ReceptionistCenterData["kpiSnapshot"]["nextAvailableStaff"] =
+    null;
+  if (staff.length > 0) {
+    let earliestFreeMs = Number.POSITIVE_INFINITY;
+    let earliestStaffName: string | null = null;
+    for (const s of staff) {
+      let staffMaxEndMs = 0;
+      for (const b of bookingsForDay) {
+        if (b.status !== "in_progress" || b.staff_id !== s.id) continue;
+        const endMs = Date.parse(b.end_time_utc);
+        if (Number.isFinite(endMs) && endMs > staffMaxEndMs) {
+          staffMaxEndMs = endMs;
+        }
+      }
+      const freeMs = Math.max(staffMaxEndMs, nowMs);
+      if (freeMs < earliestFreeMs) {
+        earliestFreeMs = freeMs;
+        earliestStaffName = s.name;
+      }
+    }
+    if (earliestStaffName !== null && Number.isFinite(earliestFreeMs)) {
+      nextAvailableStaff = {
+        name: earliestStaffName,
+        minutesUntilFree: Math.max(
+          0,
+          Math.round((earliestFreeMs - nowMs) / 60_000),
+        ),
+      };
+    }
+  }
+
+  // Revenue: only when the module is on (the tile must be hidden otherwise,
+  // distinct from "$0").
+  let revenueTodayCents: number | null = null;
+  if (revenueModuleEnabled) {
+    let total = 0;
+    for (const b of bookingsForDay) {
+      if (b.status !== "completed") continue;
+      const main = b.price_cents != null ? Number(b.price_cents) : 0;
+      const addon = b.addon_price_cents != null ? Number(b.addon_price_cents) : 0;
+      if (Number.isFinite(main)) total += main;
+      if (Number.isFinite(addon)) total += addon;
+    }
+    revenueTodayCents = total;
+  }
+
+  return {
+    waitingCount,
+    inProgressCount,
+    avgWaitMinutes,
+    comingUpCount,
+    overdueCount,
+    nextAvailableStaff,
+    revenueTodayCents,
   };
 }
