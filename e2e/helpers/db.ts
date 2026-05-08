@@ -57,6 +57,22 @@ export async function cleanupTestSalon(slug: string) {
   await supabase.from("services").delete().eq("salon_id", salonId);
   await supabase.from("staff").delete().eq("salon_id", salonId);
   await supabase.from("salons").delete().eq("id", salonId);
+
+  // Wait for the slug to actually disappear on a fresh PostgREST read.
+  // Without this barrier, an immediately-following INSERT with the same
+  // slug can race the delete's commit visibility — the seed's new salon
+  // succeeds, but a concurrent late-arriving CASCADE from this delete
+  // wipes it out (manifesting as `bookings_salon_id_fkey` violations
+  // from the seed's first booking insert when staff/service rows were
+  // CASCADE-deleted alongside the new salon).
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const { count } = await supabase
+      .from("salons")
+      .select("*", { count: "exact", head: true })
+      .eq("slug", slug);
+    if ((count ?? 0) === 0) return;
+    await new Promise((r) => setTimeout(r, 200));
+  }
 }
 
 export async function seedTestSalon(opts?: {

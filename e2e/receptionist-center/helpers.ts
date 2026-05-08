@@ -68,6 +68,52 @@ export function isoAtUtcYmdHourMinute(
   return new Date(Date.UTC(y, m - 1, d, hour, minute, 0)).toISOString();
 }
 
+/**
+ * INSERT into `bookings` with a small retry budget on PostgREST FK errors
+ * (SQLSTATE 23503). The Supabase pooled connection occasionally serves a
+ * subsequent INSERT on a backend whose snapshot has not yet caught up with
+ * the just-inserted parent row (salon, staff, service), so the FK trigger
+ * misfires even though the parent row IS committed. Retrying with a short
+ * backoff lets the visibility window close. Returns the inserted booking id.
+ */
+async function insertBookingRow(
+  payload: Record<string, unknown>,
+  label: string,
+): Promise<string> {
+  let lastError: { code?: string; message: string } | null = null;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const { data, error } = await supabaseAdmin
+      .from("bookings")
+      .insert(payload)
+      .select("id")
+      .single();
+    if (!error && data?.id) return String(data.id);
+    lastError = error ?? { message: "insert returned no row id" };
+    // 23503 = foreign_key_violation. Anything else is a real failure.
+    if (error && error.code !== "23503") break;
+    await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+  }
+  // Probe DB state at the point of giving up so we can tell whether the
+  // parent rows are truly gone vs only invisible to PostgREST.
+  const salonId = (payload as { salon_id?: string }).salon_id;
+  const staffId = (payload as { staff_id?: string | null }).staff_id;
+  const serviceId = (payload as { service_id?: string }).service_id;
+  const probe = await Promise.all([
+    salonId
+      ? supabaseAdmin.from("salons").select("*", { count: "exact", head: true }).eq("id", salonId)
+      : Promise.resolve({ count: -1 } as { count: number | null }),
+    staffId
+      ? supabaseAdmin.from("staff").select("*", { count: "exact", head: true }).eq("id", staffId)
+      : Promise.resolve({ count: -1 } as { count: number | null }),
+    serviceId
+      ? supabaseAdmin.from("services").select("*", { count: "exact", head: true }).eq("id", serviceId)
+      : Promise.resolve({ count: -1 } as { count: number | null }),
+  ]);
+  throw new Error(
+    `${label}: ${lastError?.message ?? "unknown error"} [code=${lastError?.code ?? "?"} salonHits=${probe[0].count ?? "?"} staffHits=${probe[1].count ?? "?"} svcHits=${probe[2].count ?? "?"}]`,
+  );
+}
+
 async function fetchServicePrice(
   salonId: string,
   serviceId: string,
@@ -175,6 +221,24 @@ export async function seedReceptionistCenterFixture(): Promise<ReceptionistCente
 
   const staffIds = staffRows.map((r) => r.id as string);
 
+  // Block until the salon row is consistently readable on a fresh PostgREST
+  // connection before issuing any FK-dependent INSERTs (bookings reference
+  // salon_id). Empirically the supabase-js / PostgREST round-trip can hand
+  // back a `salons` insert response before subsequent INSERTs on a different
+  // pooled backend can see the row, producing intermittent
+  // `bookings_salon_id_fkey` violations even though the JS client has the
+  // new salonId in hand. A read-back loop (10 tries × 500ms = 5s ceiling)
+  // is cheaper than retry-on-error inside `insertBooking`, and it scopes
+  // the wait to the actual issue (salon visibility, not staff/service ids).
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const { count } = await supabaseAdmin
+      .from("salons")
+      .select("*", { count: "exact", head: true })
+      .eq("id", salonId);
+    if ((count ?? 0) > 0) break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+
   const conflictStaffId = staffIds[0]!;
   const freeStaffId = staffIds[1]!;
   const displayStaffId = staffIds[3]!;
@@ -190,7 +254,7 @@ export async function seedReceptionistCenterFixture(): Promise<ReceptionistCente
     status: "pending" | "confirmed" | "in_progress" | "completed";
   }) => {
     const price = await fetchServicePrice(salonId, args.serviceId);
-    const { error } = await supabaseAdmin.from("bookings").insert({
+    const payload = {
       salon_id: salonId,
       service_id: args.serviceId,
       client_name: args.clientName,
@@ -204,8 +268,8 @@ export async function seedReceptionistCenterFixture(): Promise<ReceptionistCente
       joined_queue_at: null,
       staff_request_note: null,
       price_cents: price,
-    });
-    if (error) throw new Error(`seed baseline booking: ${error.message}`);
+    };
+    return await insertBookingRow(payload, `seed baseline booking (${args.clientName})`);
   };
 
   await insertBooking({
@@ -227,7 +291,7 @@ export async function seedReceptionistCenterFixture(): Promise<ReceptionistCente
   });
 
   const displayApptClientName = "RC Display Appt";
-  await insertBooking({
+  const displayApptBookingId = await insertBooking({
     clientName: displayApptClientName,
     staffId: displayStaffId,
     serviceId: s0,
@@ -244,15 +308,6 @@ export async function seedReceptionistCenterFixture(): Promise<ReceptionistCente
     end: isoAtUtcYmdHourMinute(ymdUtc, 15, 55),
     status: "in_progress",
   });
-
-  const { data: apptRow } = await supabaseAdmin
-    .from("bookings")
-    .select("id")
-    .eq("salon_id", salonId)
-    .eq("client_name", displayApptClientName)
-    .maybeSingle();
-
-  const displayApptBookingId = apptRow?.id ? String(apptRow.id) : "";
 
   if (!displayApptBookingId) {
     throw new Error("seedReceptionistCenterFixture: could not resolve display appt id");
@@ -289,9 +344,8 @@ export async function seedWalkin(
   const price = await fetchServicePrice(salonId, options.serviceId);
   const joined = options.joinedQueueAtIso ?? new Date().toISOString();
 
-  const { data: row, error } = await supabaseAdmin
-    .from("bookings")
-    .insert({
+  return await insertBookingRow(
+    {
       salon_id: salonId,
       service_id: options.serviceId,
       client_name: options.clientName,
@@ -305,12 +359,9 @@ export async function seedWalkin(
       joined_queue_at: joined,
       staff_request_note: options.staffRequestNote ?? null,
       price_cents: price,
-    })
-    .select("id")
-    .single();
-
-  if (error || !row?.id) throw new Error(error?.message ?? "seedWalkin failed");
-  return String(row.id);
+    },
+    "seedWalkin failed",
+  );
 }
 
 export async function seedDeskBooking(
@@ -328,9 +379,8 @@ export async function seedDeskBooking(
 ): Promise<string> {
   const price = await fetchServicePrice(salonId, options.serviceId);
 
-  const { data: row, error } = await supabaseAdmin
-    .from("bookings")
-    .insert({
+  return await insertBookingRow(
+    {
       salon_id: salonId,
       service_id: options.serviceId,
       client_name: options.clientName,
@@ -344,12 +394,9 @@ export async function seedDeskBooking(
       joined_queue_at: null,
       staff_request_note: null,
       price_cents: price,
-    })
-    .select("id")
-    .single();
-
-  if (error || !row?.id) throw new Error(error?.message ?? "seedDeskBooking failed");
-  return String(row.id);
+    },
+    "seedDeskBooking failed",
+  );
 }
 
 export async function countBookingsForClient(
@@ -433,10 +480,39 @@ export async function gotoReceptionistCenter(
     },
   ]);
 
+  // Default the user-language preference to EN before any page script
+  // runs. `useUserLanguage` reads `nailiq-user-lang` from localStorage on
+  // mount; any leftover "vi" value from a prior test or developer browser
+  // would re-render the UI in Vietnamese (e.g. "Chưa hoàn tất setup"
+  // instead of "Setup incomplete") and trip exact-text assertions.
+  //
+  // `setItem` ONLY when no value is already present so locale-specific
+  // specs that opt into "vi" via their own `addInitScript` are not
+  // overridden — `addInitScript` callbacks run in registration order, and
+  // a spec's `presetUserLang("vi")` always runs before this default.
+  await page.addInitScript(() => {
+    try {
+      if (window.localStorage.getItem("nailiq-user-lang") == null) {
+        window.localStorage.setItem("nailiq-user-lang", "en");
+      }
+    } catch {
+      /* private mode / quota — ignore, hydration falls back to "en" */
+    }
+  });
+
   const q = opts?.dateYmd ? `?date=${encodeURIComponent(opts.dateYmd)}` : "";
   await page.goto(`/dashboard/${encodeURIComponent(slug)}/center${q}`);
+  // Next.js streams the receptionist-center-loaded wrapper inside a
+  // `<div hidden id="S:N">` Suspense placeholder until hydration. The
+  // testid is in the DOM throughout SSR streaming but `state: "visible"`
+  // races hydration — for some setups (notably the empty-salon edge case
+  // with zero staff + zero services) the wrapper stayed hidden past the
+  // 45s timeout. Asserting `attached` instead lets Playwright proceed
+  // once SSR has streamed the element; the next two waits below
+  // (`staff-timeline-grid`, `walkin-add-form`) require *visible* state
+  // and provide the real "fully hydrated" gate.
   await page.getByTestId("receptionist-center-loaded").waitFor({
-    state: "visible",
+    state: "attached",
     timeout: 45_000,
   });
   await page.getByTestId("staff-timeline-grid").waitFor({
@@ -524,6 +600,24 @@ export async function gotoOwnerDashboard(page: Page, slug: string): Promise<void
       path: "/",
     },
   ]);
+
+  // Default to EN locale before any page script runs — `useUserLanguage`
+  // hydrates from localStorage `nailiq-user-lang`, and a leftover "vi"
+  // value from a prior session would render the owner dashboard in
+  // Vietnamese (e.g. "Hôm nay" instead of "Today"), breaking exact-match
+  // `getByRole("region", { name: /^Today$/i })` assertions. Mirrors the
+  // conditional default in `gotoReceptionistCenter` — only sets when
+  // localStorage has no value, so locale-specific specs that opt in via
+  // their own `addInitScript` are preserved.
+  await page.addInitScript(() => {
+    try {
+      if (window.localStorage.getItem("nailiq-user-lang") == null) {
+        window.localStorage.setItem("nailiq-user-lang", "en");
+      }
+    } catch {
+      /* private mode / quota — ignore, hydration falls back to "en" */
+    }
+  });
 
   await page.goto(`/dashboard/${encodeURIComponent(slug)}`);
   await page.getByRole("heading", { name: /e2e receptionist center salon/i }).waitFor({
