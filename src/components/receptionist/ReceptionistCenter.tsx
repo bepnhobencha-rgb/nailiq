@@ -199,6 +199,7 @@ function ReceptionistCenterInner({
   const [data, setData] = useState<ReceptionistCenterData>(() => ({
     ...initialOk,
     selectedDate: initialOk.selectedDate,
+    dashboardModules: initialOk.dashboardModules,
   }));
 
   useEffect(() => {
@@ -343,6 +344,7 @@ function ReceptionistCenterInner({
 
   const timezone = data.salon.timezone;
   const isViewingToday = data.selectedDate === salonToday(timezone, nowIso);
+  const modules = data.dashboardModules;
 
   const reloadCurrentDay = useCallback(async () => {
     const ymd = salonDateOffset(timezone, dateOffset, nowIsoRef.current);
@@ -579,7 +581,9 @@ function ReceptionistCenterInner({
         ? (mainCents ?? 0) + (addonCents ?? 0)
         : null;
     const priceLine =
-      totalCents != null ? `$${(totalCents / 100).toFixed(2)}` : null;
+      data.dashboardModules.revenue_today && totalCents != null
+        ? `$${(totalCents / 100).toFixed(2)}`
+        : null;
 
     const addonServiceName = b.addon_service_name?.trim()
       ? b.addon_service_name.trim()
@@ -612,7 +616,14 @@ function ReceptionistCenterInner({
       addonServiceName,
       addonDurationLine,
     };
-  }, [drawerBookingId, data.bookingsForDay, staffNameById, messages, timezone]);
+  }, [
+    drawerBookingId,
+    data.bookingsForDay,
+    data.dashboardModules.revenue_today,
+    staffNameById,
+    messages,
+    timezone,
+  ]);
 
   const openDrawerBooking = drawerBookingId
     ? data.bookingsForDay.find((x) => x.id === drawerBookingId)
@@ -660,6 +671,9 @@ function ReceptionistCenterInner({
     clientPhone: string;
     serviceId: string;
     staffRequestNote: string | null;
+    walkinSource?: import("@/shared/types").QueueSource | null;
+    walkinPriority?: import("@/shared/types").QueuePriority | null;
+    walkinRequestTags?: string[];
   }) => {
     const r = await addWalkinToQueue(slug, {
       salonId: data.salon.id,
@@ -667,6 +681,9 @@ function ReceptionistCenterInner({
       clientPhone: input.clientPhone,
       serviceId: input.serviceId,
       staffRequestNote: input.staffRequestNote ?? undefined,
+      walkinSource: input.walkinSource ?? null,
+      walkinPriority: input.walkinPriority ?? null,
+      walkinRequestTags: input.walkinRequestTags ?? null,
     });
     if (!r.ok) {
       return {
@@ -819,7 +836,7 @@ function ReceptionistCenterInner({
               <p className="truncate text-xs text-nq-muted md:text-sm">{data.salon.name}</p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              {isViewingToday ? (
+              {isViewingToday && modules.kpi_bar ? (
                 <StatusPill
                   waitingCount={queueItems.length}
                   inProgressCount={inProgressToday}
@@ -860,7 +877,7 @@ function ReceptionistCenterInner({
           </div>
         </header>
 
-        {isSetupIncomplete ? (
+        {modules.alerts && isSetupIncomplete ? (
           <div
             data-testid="setup-incomplete-banner"
             className="border-l-4 border-nq-warning bg-nq-warning/10 px-[var(--pad-nq-section-mobile)] py-4 md:px-6"
@@ -885,13 +902,13 @@ function ReceptionistCenterInner({
         <div
           className={cn(
             "mx-auto flex h-full min-h-[min(100dvh-8rem,48rem)] w-full max-w-[var(--max-nq-desktop)] flex-1 flex-col gap-0",
-            isViewingToday && "md:flex-row",
+            isViewingToday && modules.queue_panel && "md:flex-row",
           )}
         >
           <section
             className={cn(
               "flex min-h-[min(50dvh,28rem)] min-w-0 flex-1 flex-col border-t border-nq-muted/20",
-              isViewingToday
+              isViewingToday && modules.queue_panel
                 ? "order-2 md:order-1 md:border-t-0 md:border-r"
                 : "order-1 w-full",
             )}
@@ -913,9 +930,13 @@ function ReceptionistCenterInner({
                 conflictWith: rcMessages.grid.conflictWith,
                 overflowMessage: rcMessages.grid.overflowMessage,
               }}
+              showStaffPerformanceDetail={modules.staff_performance}
+              showTimelineHeatmap={modules.timeline_heatmap}
+              showBookingPrices={modules.revenue_today}
+              showWalkinAccent={modules.vip_indicators}
             />
           </section>
-          {isViewingToday ? (
+          {isViewingToday && modules.queue_panel ? (
             <div className="order-1 h-[min(42dvh,22rem)] min-h-[12rem] w-full shrink-0 md:order-2 md:h-auto md:w-[min(22rem,calc(100vw-2rem))] md:max-w-sm">
               <WalkinQueueSidebar
                 assigningId={assigningWalkinId}
@@ -932,6 +953,9 @@ function ReceptionistCenterInner({
                 onStartAssign={(id) => setAssigningWalkinId(id)}
                 onCancelAssign={() => setAssigningWalkinId(null)}
                 addFormDisabled={isSetupIncomplete}
+                showQuickAdd={modules.quick_add}
+                showWaitTime={modules.wait_time}
+                showVipIndicator={modules.vip_indicators}
                 labels={{
                   title: rcMessages.queue.title,
                   emptyMessage: rcMessages.queue.emptyMessage,
@@ -940,6 +964,14 @@ function ReceptionistCenterInner({
                   urgentBadge: rcMessages.queue.urgentBadge,
                   waitingHint: rcMessages.queue.waitingHint,
                   minutesAgo: rcMessages.queue.minutesAgo,
+                  sortLabel: rcMessages.queue.sortLabel,
+                  sortFifo: rcMessages.queue.sortFifo,
+                  sortLongestWait: rcMessages.queue.sortLongestWait,
+                  priorityHigh: rcMessages.queue.priorityHigh,
+                  priorityMedium: rcMessages.queue.priorityMedium,
+                  priorityLow: rcMessages.queue.priorityLow,
+                  partySizeLabel: rcMessages.queue.partySizeLabel,
+                  sourceFallback: rcMessages.queue.sourceFallback,
                   addForm: {
                     ...rcMessages.queue.addForm,
                     invalidPhone: rcMessages.walkin.invalidPhone,

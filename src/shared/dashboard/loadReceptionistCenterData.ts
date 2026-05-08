@@ -1,7 +1,25 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { salonDayRangeUtc } from "@/shared/lib/salonTime";
-import type { BookingSource, BookingStatus } from "@/shared/types";
+import {
+  isQueuePriority,
+  isQueueSource,
+  parseRequestTags,
+  type QueuePriority,
+  type QueueRequestTag,
+  type QueueSource,
+  type BookingSource,
+  type BookingStatus,
+} from "@/shared/types";
+import {
+  parseDashboardModules,
+  type DashboardModulesConfig,
+} from "@/shared/dashboard/dashboardModules";
+import {
+  applyPreset,
+  parsePresetKey,
+  type PresetKey,
+} from "@/shared/dashboard/dashboardPresets";
 
 type DashboardSupabaseClient = SupabaseClient<Database>;
 
@@ -34,6 +52,11 @@ export interface ReceptionistCenterData {
     service_duration_minutes: number;
     staff_request_note: string | null;
     joined_queue_at: string;
+    /** Optional walk-in queue metadata; nullable until tagged. */
+    walkin_source: QueueSource | null;
+    walkin_priority: QueuePriority | null;
+    walkin_request_tags: QueueRequestTag[];
+    party_size: number | null;
   }>;
   bookingsForDay: Array<{
     id: string;
@@ -61,6 +84,14 @@ export interface ReceptionistCenterData {
   /** Per-staff service whitelist for this salon. `null` = no rows → all-capable fallback. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
   selectedDate: string;
+  /**
+   * Effective desk flags: `applyPreset(dashboardPreset, parsedModules)`.
+   * Components consume this directly — preset and per-flag overrides are
+   * already merged. The raw preset is exposed below for settings UI only.
+   */
+  dashboardModules: DashboardModulesConfig;
+  /** Active workspace preset for this salon. Drives layout + module defaults. */
+  dashboardPreset: PresetKey;
 }
 
 export type LoadReceptionistCenterError =
@@ -140,7 +171,7 @@ export async function loadReceptionistCenterData(
 
   const salonResult = await supabase
     .from("salons")
-    .select("id, name, slug, timezone")
+    .select("id, name, slug, timezone, dashboard_modules, dashboard_preset")
     .eq("id", ctx.salon.id)
     .maybeSingle();
 
@@ -154,6 +185,8 @@ export async function loadReceptionistCenterData(
     name: string;
     slug: string;
     timezone: string;
+    dashboard_modules?: unknown;
+    dashboard_preset?: unknown;
   } | null;
 
   if (!salonData?.id || typeof salonData.timezone !== "string" || salonData.timezone.trim() === "") {
@@ -166,6 +199,12 @@ export async function loadReceptionistCenterData(
     slug: String(salonData.slug ?? ""),
     timezone: salonData.timezone.trim(),
   };
+
+  const rawDashboardModules = parseDashboardModules(
+    salonData.dashboard_modules,
+  );
+  const dashboardPreset = parsePresetKey(salonData.dashboard_preset);
+  const dashboardModules = applyPreset(dashboardPreset, rawDashboardModules);
 
   let startUtc: string;
   let endUtc: string;
@@ -197,6 +236,10 @@ export async function loadReceptionistCenterData(
       service_id,
       staff_request_note,
       joined_queue_at,
+      walkin_source,
+      walkin_priority,
+      walkin_request_tags,
+      party_size,
       services!bookings_service_id_fkey ( name, duration_minutes, buffer_minutes )
     `,
       )
@@ -264,13 +307,17 @@ export async function loadReceptionistCenterData(
     created_at: string | null;
   }> | null;
 
-  const queueRows = queueResult.data as Array<{
+  const queueRows = queueResult.data as unknown as Array<{
     id: string;
     client_name: string;
     client_phone: string | null;
     service_id: string;
     staff_request_note: string | null;
     joined_queue_at: string | null;
+    walkin_source?: unknown;
+    walkin_priority?: unknown;
+    walkin_request_tags?: unknown;
+    party_size?: unknown;
     services: ServiceJoinMinimal | ServiceJoinMinimal[] | null;
   }> | null;
 
@@ -302,6 +349,12 @@ export async function loadReceptionistCenterData(
     const d = Number.isFinite(dRaw) ? Math.round(dRaw) : 0;
     const buf = Number.isFinite(bRaw) ? Math.round(bRaw) : 0;
     const spanMin = Number.isFinite(d + buf) && d + buf > 0 ? d + buf : 0;
+    const partyRaw = Number(row.party_size);
+    const partySize =
+      Number.isFinite(partyRaw) && partyRaw >= 1 && partyRaw <= 50
+        ? Math.round(partyRaw)
+        : null;
+
     walkinQueue.push({
       id: row.id,
       client_name: row.client_name,
@@ -312,6 +365,12 @@ export async function loadReceptionistCenterData(
       service_duration_minutes: spanMin,
       staff_request_note: row.staff_request_note ?? null,
       joined_queue_at: row.joined_queue_at,
+      walkin_source: isQueueSource(row.walkin_source) ? row.walkin_source : null,
+      walkin_priority: isQueuePriority(row.walkin_priority)
+        ? row.walkin_priority
+        : null,
+      walkin_request_tags: parseRequestTags(row.walkin_request_tags),
+      party_size: partySize,
     });
   }
 
@@ -407,6 +466,8 @@ export async function loadReceptionistCenterData(
       bookingsForDay,
       capabilityRows,
       selectedDate: dateYmd,
+      dashboardModules,
+      dashboardPreset,
     },
   };
 }

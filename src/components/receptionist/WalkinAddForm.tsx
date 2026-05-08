@@ -14,6 +14,15 @@ import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimi
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { cn } from "@/shared/lib/cn";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
+import {
+  QUEUE_PRIORITIES,
+  QUEUE_REQUEST_TAG_MAX_LEN,
+  QUEUE_REQUEST_TAGS_MAX_COUNT,
+  QUEUE_SOURCES,
+  type QueuePriority,
+  type QueueRequestTag,
+  type QueueSource,
+} from "@/shared/types";
 
 export interface WalkinAddFormProps {
   services: Array<{
@@ -38,6 +47,14 @@ export interface WalkinAddFormProps {
     nameRequired: string;
     nameTooLong: string;
     invalidNameChars: string;
+    sourceLabel: string;
+    sourceOptions: Record<QueueSource, string>;
+    priorityLabel: string;
+    priorityOptions: Record<QueuePriority, string>;
+    requestTagsLabel: string;
+    requestTagsPlaceholder: string;
+    requestTagAdd: string;
+    requestTagRemove: (label: string) => string;
   };
   /** Async callback — parent calls server action */
   onSubmit: (input: {
@@ -45,6 +62,9 @@ export interface WalkinAddFormProps {
     clientPhone: string;
     serviceId: string;
     staffRequestNote: string | null;
+    walkinSource: QueueSource | null;
+    walkinPriority: QueuePriority | null;
+    walkinRequestTags: QueueRequestTag[];
   }) => Promise<{ ok: boolean; error?: string }>;
 }
 
@@ -63,23 +83,39 @@ export function WalkinAddForm({
   const nameId = useId();
   const phoneId = useId();
   const noteId = useId();
+  const sourceId = useId();
+  const priorityId = useId();
+  const tagInputId = useId();
   const nameRef = useRef<HTMLInputElement>(null);
   const phoneRef = useRef<HTMLInputElement>(null);
+  const submitRef = useRef<HTMLButtonElement>(null);
 
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
-  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(
+    null,
+  );
   const [staffRequestNote, setStaffRequestNote] = useState("");
   const [showMoreServices, setShowMoreServices] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [walkinSource, setWalkinSource] = useState<QueueSource | "">("");
+  const [walkinPriority, setWalkinPriority] = useState<QueuePriority | "">("");
+  const [requestTags, setRequestTags] = useState<QueueRequestTag[]>([]);
+  const [tagDraft, setTagDraft] = useState("");
 
   const formLocked = disabled || submitting;
 
-  const topServices = useMemo(() => services.slice(0, TOP_SERVICE_COUNT), [services]);
-  const extraServices = useMemo(() => services.slice(TOP_SERVICE_COUNT), [services]);
+  const topServices = useMemo(
+    () => services.slice(0, TOP_SERVICE_COUNT),
+    [services],
+  );
+  const extraServices = useMemo(
+    () => services.slice(TOP_SERVICE_COUNT),
+    [services],
+  );
 
   const resetAfterSuccess = useCallback(() => {
     setClientName("");
@@ -90,7 +126,27 @@ export function WalkinAddForm({
     setErrorMessage(null);
     setNameError(null);
     setPhoneError(null);
+    setWalkinSource("");
+    setWalkinPriority("");
+    setRequestTags([]);
+    setTagDraft("");
     queueMicrotask(() => nameRef.current?.focus());
+  }, []);
+
+  const addTag = useCallback(() => {
+    const t = tagDraft.trim();
+    if (t.length === 0) return;
+    if (t.length > QUEUE_REQUEST_TAG_MAX_LEN) return;
+    setRequestTags((prev) => {
+      if (prev.length >= QUEUE_REQUEST_TAGS_MAX_COUNT) return prev;
+      if (prev.includes(t)) return prev;
+      return [...prev, t];
+    });
+    setTagDraft("");
+  }, [tagDraft]);
+
+  const removeTag = useCallback((tag: QueueRequestTag) => {
+    setRequestTags((prev) => prev.filter((t) => t !== tag));
   }, []);
 
   const runSubmit = useCallback(async () => {
@@ -132,7 +188,12 @@ export function WalkinAddForm({
         clientName: trimmedName,
         clientPhone: trimmedPhone,
         serviceId: selectedServiceId,
-        staffRequestNote: staffRequestNote.trim().length ? staffRequestNote.trim() : null,
+        staffRequestNote: staffRequestNote.trim().length
+          ? staffRequestNote.trim()
+          : null,
+        walkinSource: walkinSource === "" ? null : walkinSource,
+        walkinPriority: walkinPriority === "" ? null : walkinPriority,
+        walkinRequestTags: requestTags,
       });
 
       if (result.ok) {
@@ -156,6 +217,9 @@ export function WalkinAddForm({
     resetAfterSuccess,
     selectedServiceId,
     staffRequestNote,
+    walkinSource,
+    walkinPriority,
+    requestTags,
     disabled,
   ]);
 
@@ -167,7 +231,9 @@ export function WalkinAddForm({
     if (e.key === "Enter") {
       e.preventDefault();
       if (clientPhone.trim().length === 0) {
-        document.getElementById(`walkin-service-${topServices[0]?.id ?? ""}`)?.focus();
+        document
+          .getElementById(`walkin-service-${topServices[0]?.id ?? ""}`)
+          ?.focus();
       } else {
         phoneRef.current?.focus();
       }
@@ -177,7 +243,9 @@ export function WalkinAddForm({
   const onPhoneKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      document.getElementById(`walkin-service-${topServices[0]?.id ?? ""}`)?.focus();
+      document
+        .getElementById(`walkin-service-${topServices[0]?.id ?? ""}`)
+        ?.focus();
     }
   };
 
@@ -193,6 +261,21 @@ export function WalkinAddForm({
     }
   };
 
+  const onTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addTag();
+    }
+  };
+
+  const onPriorityKeyDown = (e: React.KeyboardEvent<HTMLSelectElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submitRef.current?.focus();
+      void runSubmit();
+    }
+  };
+
   const onFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
     if (e.key === "Escape") {
       setErrorMessage(null);
@@ -200,6 +283,8 @@ export function WalkinAddForm({
       setPhoneError(null);
     }
   };
+
+  const tagsAtCap = requestTags.length >= QUEUE_REQUEST_TAGS_MAX_COUNT;
 
   return (
     <form
@@ -249,12 +334,18 @@ export function WalkinAddForm({
           aria-invalid={Boolean(nameError)}
           className={cn(
             "h-11 w-full rounded-lg border bg-nq-bg px-3 text-base text-nq-foreground placeholder:text-nq-muted focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
-            nameError ? "border-nq-error/50 focus:border-nq-error/60" : "border-nq-muted/35 focus:border-nq-primary",
+            nameError
+              ? "border-nq-error/50 focus:border-nq-error/60"
+              : "border-nq-muted/35 focus:border-nq-primary",
             formLocked && "opacity-60",
           )}
         />
         {nameError ? (
-          <p className="text-xs text-nq-error" role="alert" data-testid="walkin-name-error">
+          <p
+            className="text-xs text-nq-error"
+            role="alert"
+            data-testid="walkin-name-error"
+          >
             {nameError}
           </p>
         ) : null}
@@ -281,19 +372,27 @@ export function WalkinAddForm({
               setPhoneError(null);
               return;
             }
-            setPhoneError(validateGuestPhone(p).ok ? null : labels.invalidPhone);
+            setPhoneError(
+              validateGuestPhone(p).ok ? null : labels.invalidPhone,
+            );
           }}
           onKeyDown={onPhoneKeyDown}
           aria-invalid={Boolean(phoneError)}
           data-testid="walkin-phone"
           className={cn(
             "h-11 w-full rounded-lg border bg-nq-bg px-3 text-base text-nq-foreground placeholder:text-nq-muted focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
-            phoneError ? "border-nq-error/50 focus:border-nq-error/60" : "border-nq-muted/35 focus:border-nq-primary",
+            phoneError
+              ? "border-nq-error/50 focus:border-nq-error/60"
+              : "border-nq-muted/35 focus:border-nq-primary",
             formLocked && "opacity-60",
           )}
         />
         {phoneError ? (
-          <p className="text-xs text-nq-error" role="alert" data-testid="walkin-phone-error">
+          <p
+            className="text-xs text-nq-error"
+            role="alert"
+            data-testid="walkin-phone-error"
+          >
             {phoneError}
           </p>
         ) : null}
@@ -318,7 +417,9 @@ export function WalkinAddForm({
                   formLocked && "opacity-60",
                 )}
               >
-                <span className="line-clamp-2 font-semibold leading-snug">{s.name}</span>
+                <span className="line-clamp-2 font-semibold leading-snug">
+                  {s.name}
+                </span>
                 <span className="mt-0.5 font-mono text-[11px] text-nq-muted">
                   {s.duration_minutes}m · {formatServicePrice(s.price_cents)}
                 </span>
@@ -361,7 +462,8 @@ export function WalkinAddForm({
                       >
                         <span className="font-medium">{s.name}</span>
                         <span className="font-mono text-[11px] text-nq-muted">
-                          {s.duration_minutes}m · {formatServicePrice(s.price_cents)}
+                          {s.duration_minutes}m ·{" "}
+                          {formatServicePrice(s.price_cents)}
                         </span>
                       </button>
                     </li>
@@ -371,6 +473,128 @@ export function WalkinAddForm({
             )}
           </>
         )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label
+            htmlFor={sourceId}
+            className="mb-1 block text-xs font-medium text-nq-muted"
+          >
+            {labels.sourceLabel}
+          </label>
+          <select
+            id={sourceId}
+            data-testid="walkin-source"
+            disabled={formLocked}
+            value={walkinSource}
+            onChange={(e) =>
+              setWalkinSource((e.target.value || "") as QueueSource | "")
+            }
+            className={cn(
+              "h-10 w-full rounded-lg border border-nq-muted/35 bg-nq-bg px-2 text-sm text-nq-foreground focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
+              formLocked && "opacity-60",
+            )}
+          >
+            <option value="">—</option>
+            {QUEUE_SOURCES.map((src) => (
+              <option key={src} value={src}>
+                {labels.sourceOptions[src]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label
+            htmlFor={priorityId}
+            className="mb-1 block text-xs font-medium text-nq-muted"
+          >
+            {labels.priorityLabel}
+          </label>
+          <select
+            id={priorityId}
+            data-testid="walkin-priority"
+            disabled={formLocked}
+            value={walkinPriority}
+            onChange={(e) =>
+              setWalkinPriority(
+                (e.target.value || "") as QueuePriority | "",
+              )
+            }
+            onKeyDown={onPriorityKeyDown}
+            className={cn(
+              "h-10 w-full rounded-lg border border-nq-muted/35 bg-nq-bg px-2 text-sm text-nq-foreground focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
+              formLocked && "opacity-60",
+            )}
+          >
+            <option value="">—</option>
+            {QUEUE_PRIORITIES.map((p) => (
+              <option key={p} value={p}>
+                {labels.priorityOptions[p]}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label
+          htmlFor={tagInputId}
+          className="mb-1 block text-xs font-medium text-nq-muted"
+        >
+          {labels.requestTagsLabel}
+        </label>
+        <div className="flex gap-2">
+          <input
+            id={tagInputId}
+            data-testid="walkin-request-tag-input"
+            type="text"
+            disabled={formLocked || tagsAtCap}
+            placeholder={labels.requestTagsPlaceholder}
+            value={tagDraft}
+            maxLength={QUEUE_REQUEST_TAG_MAX_LEN}
+            onChange={(e) => setTagDraft(e.target.value)}
+            onKeyDown={onTagInputKeyDown}
+            className={cn(
+              "h-10 flex-1 rounded-lg border border-nq-muted/35 bg-nq-bg px-3 text-sm text-nq-foreground placeholder:text-nq-muted focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
+              (formLocked || tagsAtCap) && "opacity-60",
+            )}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={
+              formLocked || tagsAtCap || tagDraft.trim().length === 0
+            }
+            onClick={addTag}
+          >
+            {labels.requestTagAdd}
+          </Button>
+        </div>
+        {requestTags.length > 0 ? (
+          <ul
+            className="mt-2 flex flex-wrap gap-1.5"
+            data-testid="walkin-request-tags-list"
+            aria-label={labels.requestTagsLabel}
+          >
+            {requestTags.map((tag) => (
+              <li key={tag}>
+                <button
+                  type="button"
+                  data-testid={`walkin-request-tag-remove-${tag}`}
+                  disabled={formLocked}
+                  onClick={() => removeTag(tag)}
+                  aria-label={labels.requestTagRemove(tag)}
+                  className="inline-flex items-center gap-1 rounded-full border border-nq-border bg-nq-surface/60 px-2 py-0.5 text-xs text-nq-foreground hover:border-nq-primary/40"
+                >
+                  <span>{tag}</span>
+                  <span aria-hidden>×</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
 
       <div>
@@ -399,6 +623,7 @@ export function WalkinAddForm({
       ) : null}
 
       <Button
+        ref={submitRef}
         type="submit"
         variant="primary"
         loading={submitting}

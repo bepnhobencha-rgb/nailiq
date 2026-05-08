@@ -72,6 +72,14 @@ export interface StaffTimelineGridProps {
     conflictWith: (clientName: string) => string;
     overflowMessage: string;
   };
+  /** When false, hides per-staff role line and busy ring on avatars (`staff_performance`). */
+  showStaffPerformanceDetail?: boolean;
+  /** When false, softens vertical slot dividers (`timeline_heatmap`). */
+  showTimelineHeatmap?: boolean;
+  /** Passed to each booking block (`revenue_today`). */
+  showBookingPrices?: boolean;
+  /** Passed to each booking block (`vip_indicators`). */
+  showWalkinAccent?: boolean;
 }
 
 function slotIndexToUtc(
@@ -145,6 +153,10 @@ export function StaffTimelineGrid({
   onBookingClick,
   onSlotClick,
   labels,
+  showStaffPerformanceDetail = true,
+  showTimelineHeatmap = true,
+  showBookingPrices = true,
+  showWalkinAccent = true,
 }: StaffTimelineGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoScrolledRef = useRef(false);
@@ -245,13 +257,15 @@ export function StaffTimelineGrid({
               <div
                 className={cn(
                   "flex shrink-0 rounded-full",
-                  s.isBusy && "nq-receptionist-busy-ring",
+                  showStaffPerformanceDetail && s.isBusy && "nq-receptionist-busy-ring",
                 )}
               >
                 <div
                   className={cn(
                     "flex h-10 w-10 items-center justify-center rounded-full bg-nq-muted/20 text-sm font-semibold text-nq-foreground",
-                    s.isBusy && "ring-2 ring-nq-primary ring-offset-2 ring-offset-nq-bg",
+                    showStaffPerformanceDetail &&
+                      s.isBusy &&
+                      "ring-2 ring-nq-primary ring-offset-2 ring-offset-nq-bg",
                   )}
                 >
                   {s.name.trim().charAt(0).toUpperCase() || "·"}
@@ -259,7 +273,9 @@ export function StaffTimelineGrid({
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-nq-foreground">{s.name}</p>
-                <p className="truncate text-[11px] text-nq-muted">{s.job_role}</p>
+                {showStaffPerformanceDetail ? (
+                  <p className="truncate text-[11px] text-nq-muted">{s.job_role}</p>
+                ) : null}
               </div>
             </div>
           ))}
@@ -364,7 +380,13 @@ export function StaffTimelineGrid({
                         key={i}
                         className={cn(
                           "h-full border-l",
-                          i % 2 === 0 ? "border-nq-muted/18" : "border-nq-muted/8",
+                          showTimelineHeatmap
+                            ? i % 2 === 0
+                              ? "border-nq-muted/18"
+                              : "border-nq-muted/8"
+                            : i % 2 === 0
+                              ? "border-nq-muted/10"
+                              : "border-transparent",
                         )}
                         style={{ width: SLOT_PX, flexShrink: 0 }}
                       />
@@ -432,6 +454,8 @@ export function StaffTimelineGrid({
                           leftPx={leftPx}
                           widthPx={widthPx}
                           onClick={() => onBookingClick(b.id)}
+                          showPrice={showBookingPrices}
+                          showWalkinAccent={showWalkinAccent}
                         />
                       );
                     })}

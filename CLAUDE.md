@@ -10,6 +10,33 @@ A salon booking and receptionist management web app for nail salons. Two surface
 
 Primary market is Vietnam (Vietnamese + English UI, phone formats 8–15 digits with country codes). B2C with salons as direct customers.
 
+## 📐 Architecture Constitution
+
+Before writing ANY UI component or server action, read ALL files in docs/.
+Start with docs/ARCHITECTURE_LOCK.md.
+
+Key rules:
+- Reuse src/components/ui/ — never invent new primitives
+- Never create colors outside docs/COLOR_TOKENS.md
+- Never create spacing outside docs/DESIGN_SYSTEM.md
+- Never create animation outside docs/ANIMATION_RULES.md
+- Never bypass docs/STATE_MACHINE.md transitions
+- Never bypass docs/PERMISSION_MATRIX.md checks
+- Never move the 3-zone dashboard layout
+
+When in doubt: stop, re-read docs/, ask PM.
+
+## Foundation Freeze (as of 07/05/2026)
+src/components/ui/ contains 10 locked primitives:
+Button, Card, Badge, Toggle, Drawer, Modal,
+KPIWidget, QueueChip, BookingCard, StaffAvatar.
+
+Rules:
+- NEVER create a new primitive without PM approval
+- NEVER duplicate these components elsewhere
+- ALWAYS import from src/components/ui/
+- ALWAYS extend via props/variants, not new files
+
 ## 🛠️ Tech Stack
 
 - **Framework**: Next.js 16.2 (App Router) + React 19.2

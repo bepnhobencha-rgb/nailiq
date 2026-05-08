@@ -13,6 +13,10 @@ export interface BookingBlockProps {
   leftPx: number;
   widthPx: number;
   onClick?: () => void;
+  /** When false, hides price segment in the meta line (`revenue_today` desk module). */
+  showPrice?: boolean;
+  /** When false, drops walk-in left accent (`vip_indicators` uses walk-in lane styling). */
+  showWalkinAccent?: boolean;
 }
 
 const STATUS_STYLES: Record<
@@ -54,12 +58,16 @@ export function BookingBlock(props: BookingBlockProps) {
     leftPx,
     widthPx,
     onClick,
+    showPrice = true,
+    showWalkinAccent = true,
   } = props;
 
   const styles = STATUS_STYLES[status];
   const pricePart =
     priceCents != null ? `$${formatPrice(priceCents)}` : formatPrice(priceCents);
-  const meta = `${startTimeLabel} · ${serviceName} · ${pricePart}`;
+  const meta = showPrice
+    ? `${startTimeLabel} · ${serviceName} · ${pricePart}`
+    : `${startTimeLabel} · ${serviceName}`;
 
   const isWalkin = source === "walkin";
   const isCompleted = status === "completed";
@@ -67,7 +75,7 @@ export function BookingBlock(props: BookingBlockProps) {
   const commonClass = cn(
     "absolute top-1.5 bottom-1.5 min-h-11 rounded-lg px-2.5 py-1.5 text-left shadow-none transition-[transform,box-shadow] duration-[var(--duration-nq-fast,150ms)] ease-[var(--ease-nq-out,cubic-bezier(0.22,1,0.36,1))] motion-safe:hover:-translate-y-px motion-safe:hover:shadow-nq-card",
     styles.root,
-    isWalkin && "border-l-[3px] border-nq-primary",
+    isWalkin && showWalkinAccent && "border-l-[3px] border-nq-primary",
     isCompleted && "opacity-70",
     onClick && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
   );
