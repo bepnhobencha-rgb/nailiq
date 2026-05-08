@@ -22,6 +22,16 @@ import {
   mapDashboardBookingRow,
   type BookingRowDb,
 } from "@/shared/dashboard/dashboardBookingMap";
+import {
+  finalizeDashboardModules,
+  parseDashboardModules,
+  validateOwnerDashboardModulePatch,
+  type DashboardModulesConfig,
+} from "@/shared/dashboard/dashboardModules";
+import {
+  isPresetKey,
+  type PresetKey,
+} from "@/shared/dashboard/dashboardPresets";
 import type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
 import { ACTIVE_GRID_STATUSES } from "@/shared/types";
 
@@ -448,3 +458,117 @@ export async function signOutAction(): Promise<never> {
 }
 
 export type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
+
+export type UpdateDashboardModulesResult =
+  | { ok: true; modules: DashboardModulesConfig }
+  | {
+      ok: false;
+      error:
+        | "unauthorized"
+        | "forbidden"
+        | "invalid_keys"
+        | "server_error";
+    };
+
+/**
+ * Owner-only: merges validated patch into `salons.dashboard_modules`.
+ * Unknown keys are ignored; `queue_panel` stays enabled.
+ */
+export async function updateDashboardModules(
+  slug: string,
+  patch: unknown,
+): Promise<UpdateDashboardModulesResult> {
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) {
+    return { ok: false, error: "unauthorized" };
+  }
+  if (ctx.role !== "owner") {
+    return { ok: false, error: "forbidden" };
+  }
+
+  const parsed = validateOwnerDashboardModulePatch(patch);
+  if (!parsed.ok) {
+    return { ok: false, error: "invalid_keys" };
+  }
+
+  const { data: row, error: selErr } = await ctx.supabase
+    .from("salons")
+    .select("dashboard_modules")
+    .eq("id", ctx.salon.id)
+    .maybeSingle();
+
+  if (selErr) {
+    console.error("[updateDashboardModules] select", selErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  const current = parseDashboardModules(row?.dashboard_modules);
+  const next = finalizeDashboardModules({ ...current, ...parsed.patch });
+
+  const { error: upErr } = await ctx.supabase
+    .from("salons")
+    .update({ dashboard_modules: next })
+    .eq("id", ctx.salon.id);
+
+  if (upErr) {
+    console.error("[updateDashboardModules] update", upErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true, modules: next };
+}
+
+export type UpdateDashboardPresetResult =
+  | { ok: true; preset: PresetKey }
+  | {
+      ok: false;
+      error:
+        | "unauthorized"
+        | "forbidden"
+        | "invalid_preset"
+        | "server_error";
+    };
+
+/**
+ * Owner-only: writes the workspace preset onto `salons.dashboard_preset`.
+ * Per-flag `dashboard_modules` overrides are preserved verbatim; the loader
+ * merges preset + modules at read time via `applyPreset`.
+ */
+export async function updateDashboardPreset(
+  slug: string,
+  preset: PresetKey,
+): Promise<UpdateDashboardPresetResult> {
+  if (!isPresetKey(preset)) {
+    return { ok: false, error: "invalid_preset" };
+  }
+
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) {
+    return { ok: false, error: "unauthorized" };
+  }
+  if (ctx.role !== "owner") {
+    return { ok: false, error: "forbidden" };
+  }
+
+  // `dashboard_preset` is not yet in the auto-generated Supabase types; cast
+  // the patch object so .update() accepts the new column. Will become a plain
+  // typed call after the next `database.types.ts` regeneration.
+  const { error: upErr } = await ctx.supabase
+    .from("salons")
+    .update({ dashboard_preset: preset } as never)
+    .eq("id", ctx.salon.id);
+
+  if (upErr) {
+    console.error("[updateDashboardPreset]", upErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true, preset };
+}
+

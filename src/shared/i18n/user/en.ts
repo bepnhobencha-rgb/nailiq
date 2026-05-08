@@ -179,6 +179,57 @@ export type UserMessages = {
     sectionHours: string;
     sectionAddress: string;
     hintRecoveryEmail: string;
+    dashboardModules: {
+      sectionTitle: string;
+      sectionIntro: string;
+      lockedHint: string;
+      ownerOnlyHint: string;
+      save: string;
+      reset: string;
+      saveError: string;
+      forbidden: string;
+      invalidKeys: string;
+      coreTimeline: string;
+      coreStaff: string;
+      coreQueue: string;
+      labels: {
+        quickAdd: string;
+        kpiBar: string;
+        aiSuggestions: string;
+        revenueToday: string;
+        waitTime: string;
+        alerts: string;
+        vipIndicators: string;
+        staffPerformance: string;
+        timelineHeatmap: string;
+      };
+    };
+    dashboardPreset: {
+      sectionTitle: string;
+      sectionIntro: string;
+      ownerOnlyHint: string;
+      activeBadge: string;
+      applying: string;
+      saveError: string;
+      forbidden: string;
+      invalid: string;
+      labels: {
+        minimal: string;
+        reception: string;
+        rush_hour: string;
+        owner: string;
+        training: string;
+        tv: string;
+      };
+      descriptions: {
+        minimal: string;
+        reception: string;
+        rush_hour: string;
+        owner: string;
+        training: string;
+        tv: string;
+      };
+    };
   };
   /** Setup CRUD error strings (services, etc.) */
   setupErrors: {
@@ -236,6 +287,14 @@ export type UserMessages = {
       urgentBadge: string;
       waitingHint: string;
       minutesAgo: (n: number) => string;
+      sortLabel: string;
+      sortFifo: string;
+      sortLongestWait: string;
+      priorityHigh: string;
+      priorityMedium: string;
+      priorityLow: string;
+      partySizeLabel: (n: number) => string;
+      sourceFallback: string;
       addForm: {
         namePlaceholder: string;
         phonePlaceholder: string;
@@ -244,6 +303,27 @@ export type UserMessages = {
         moreServices: string;
         submitting: string;
         errorRequired: string;
+        sourceLabel: string;
+        sourceOptions: {
+          online: string;
+          walk_in: string;
+          instagram: string;
+          google: string;
+          phone: string;
+          tiktok: string;
+          repeat: string;
+          vip: string;
+        };
+        priorityLabel: string;
+        priorityOptions: {
+          high: string;
+          medium: string;
+          low: string;
+        };
+        requestTagsLabel: string;
+        requestTagsPlaceholder: string;
+        requestTagAdd: string;
+        requestTagRemove: (label: string) => string;
       };
     };
     walkin: {
@@ -504,6 +584,61 @@ export const userEn: UserMessages = {
     sectionAddress: "Salon address",
     hintRecoveryEmail:
       "To add or change recovery email for your account, use the banner on your dashboard.",
+    dashboardModules: {
+      sectionTitle: "Dashboard modules",
+      sectionIntro:
+        "Choose what appears on the receptionist desk. Core layout stays on; optional modules can be hidden.",
+      lockedHint: "Always on",
+      ownerOnlyHint: "Only the salon owner can change desk modules.",
+      save: "Save",
+      reset: "Reset",
+      saveError: "Could not save. Try again.",
+      forbidden: "You do not have permission to change these settings.",
+      invalidKeys: "Invalid module payload.",
+      coreTimeline: "Timeline grid",
+      coreStaff: "Staff columns",
+      coreQueue: "Walk-in queue",
+      labels: {
+        quickAdd: "Quick add walk-in",
+        kpiBar: "Today status (waiting / in progress)",
+        aiSuggestions: "AI suggestions",
+        revenueToday: "Prices & revenue hints on grid",
+        waitTime: "Queue wait time & urgency",
+        alerts: "Setup warnings on desk",
+        vipIndicators: "Walk-in lane highlight",
+        staffPerformance: "Staff role & busy ring",
+        timelineHeatmap: "Dense timeline grid lines",
+      },
+    },
+    dashboardPreset: {
+      sectionTitle: "Workspace preset",
+      sectionIntro:
+        "Pick the desk shape that matches today. Modules toggle on top of the preset.",
+      ownerOnlyHint: "Only the salon owner can change the workspace preset.",
+      activeBadge: "Active",
+      applying: "Applying…",
+      saveError: "Could not change preset. Try again.",
+      forbidden: "You do not have permission to change the preset.",
+      invalid: "That preset is not recognized.",
+      labels: {
+        minimal: "Minimal",
+        reception: "Reception",
+        rush_hour: "Rush hour",
+        owner: "Owner",
+        training: "Training",
+        tv: "TV mode",
+      },
+      descriptions: {
+        minimal: "Bare desk: queue only. Use on small screens or quiet shifts.",
+        reception:
+          "Default front-desk layout: queue, quick add, wait time, alerts.",
+        rush_hour:
+          "Busy-shift mode: adds today status and walk-in lane highlight.",
+        owner: "Full instrumentation including KPIs, revenue, and AI hints.",
+        training: "Stripped-down view for new staff: queue and quick add.",
+        tv: "Read-only wall display: queue at a glance, no input chrome.",
+      },
+    },
   },
   setupErrors: {
     serviceInUse:
@@ -559,15 +694,46 @@ export const userEn: UserMessages = {
       assignButton: "Assign",
       urgentBadge: "URGENT",
       waitingHint: "Tap a slot on the timeline to seat this guest",
-      minutesAgo: (n: number) => (n < 1 ? "just now" : `${n} min`),
+      minutesAgo: (n: number) =>
+        n < 1 ? "just now" : `${n} min wait`,
+      sortLabel: "Sort",
+      sortFifo: "First in",
+      sortLongestWait: "Longest wait",
+      priorityHigh: "High",
+      priorityMedium: "Medium",
+      priorityLow: "Low",
+      partySizeLabel: (n: number) => `Party of ${n}`,
+      sourceFallback: "Walk-in",
       addForm: {
         namePlaceholder: "Guest name",
         phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
-        notePlaceholder: "Note for staff — e.g. polish color, prefers window seat",
+        notePlaceholder:
+          "Note for staff — e.g. polish color, prefers window seat",
         addButton: "Add to queue",
         moreServices: "More services",
         submitting: "Adding…",
         errorRequired: "Pick a service to continue.",
+        sourceLabel: "Source",
+        sourceOptions: {
+          online: "Online",
+          walk_in: "Walk-in",
+          instagram: "Instagram",
+          google: "Google",
+          phone: "Phone",
+          tiktok: "TikTok",
+          repeat: "Repeat",
+          vip: "VIP",
+        },
+        priorityLabel: "Priority",
+        priorityOptions: {
+          high: "High",
+          medium: "Medium",
+          low: "Low",
+        },
+        requestTagsLabel: "Request tags",
+        requestTagsPlaceholder: "e.g. Wants Tina",
+        requestTagAdd: "Add",
+        requestTagRemove: (label: string) => `Remove ${label}`,
       },
     },
     walkin: {
