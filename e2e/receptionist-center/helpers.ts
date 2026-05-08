@@ -104,6 +104,12 @@ export async function seedReceptionistCenterFixture(): Promise<ReceptionistCente
       timezone: tz,
       address: "123 E2E Receptionist Lane",
       opening_hours: openingParsed,
+      // Opt the fixture into the `rush_hour` preset so the receptionist
+      // center renders the full UI surface tested by these specs (StatusPill
+      // / `kpi_bar` in particular). The product default preset is `reception`
+      // which intentionally hides `kpi_bar` — fine for prod but drops the
+      // status-pill that several tests rely on. See dashboardPresets.ts.
+      dashboard_preset: "rush_hour",
     })
     .select("id")
     .single();
