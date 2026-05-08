@@ -281,21 +281,21 @@ function ReceptionistCenterInner({
     return map;
   }, [data.staff]);
 
-  const busyStaffIds = useMemo(() => {
-    return new Set(
-      data.bookingsForDay.filter((b) => b.status === "in_progress").map((b) => b.staff_id),
-    );
-  }, [data.bookingsForDay]);
-
+  // `data.staff` already carries the derived `status` / `workload` /
+  // `skills` from `loadReceptionistCenterData`'s `enrichStaffRows` — pass
+  // through verbatim. Status dot replaces the prior custom busy-ring, so
+  // the local `busyStaffIds` set is no longer needed here.
   const gridStaff = useMemo(
     () =>
       data.staff.map((s) => ({
         id: s.id,
         name: s.name,
         job_role: s.job_role,
-        isBusy: busyStaffIds.has(s.id),
+        status: s.status,
+        workload: s.workload,
+        skills: s.skills,
       })),
-    [data.staff, busyStaffIds],
+    [data.staff],
   );
 
   const gridBookings: GridBooking[] = useMemo(() => {

@@ -13,6 +13,11 @@ import {
 import { BookingBlock } from "./BookingBlock";
 import { GhostBlock } from "./GhostBlock";
 import { NowLine } from "./NowLine";
+import {
+  StaffAvatar,
+  type StaffSkill,
+  type StaffStatus,
+} from "@/components/ui/StaffAvatar";
 import { checkBookingConflict, type ConflictCheckBooking } from "@/shared/lib/conflictCheck";
 import { cn } from "@/shared/lib/cn";
 import {
@@ -34,7 +39,23 @@ export interface GridStaff {
   id: string;
   name: string;
   job_role: string;
-  isBusy: boolean;
+  /**
+   * Operational availability — drives `StaffAvatar` status dot. Computed
+   * server-side in `loadReceptionistCenterData` from today's bookings +
+   * `staff.status` (inactive/pending → "offline").
+   */
+  status: StaffStatus;
+  /**
+   * Relative workload 0–100 for the day; busiest staff = 100. Rendered as
+   * the bar under the avatar when `staff_performance` module is on.
+   */
+  workload: number;
+  /**
+   * Skill tags (filtered to known `StaffSkill` keys at the data boundary).
+   * Rendered as `Badge` row under the avatar when `staff_performance` is
+   * on.
+   */
+  skills: ReadonlyArray<StaffSkill>;
 }
 
 export interface GridBooking {
@@ -254,23 +275,24 @@ export function StaffTimelineGrid({
               )}
               style={{ width: STAFF_COL_WIDTH, height: ROW_HEIGHT }}
             >
-              <div
-                className={cn(
-                  "flex shrink-0 rounded-full",
-                  showStaffPerformanceDetail && s.isBusy && "nq-receptionist-busy-ring",
-                )}
-              >
-                <div
-                  className={cn(
-                    "flex h-10 w-10 items-center justify-center rounded-full bg-nq-muted/20 text-sm font-semibold text-nq-foreground",
-                    showStaffPerformanceDetail &&
-                      s.isBusy &&
-                      "ring-2 ring-nq-primary ring-offset-2 ring-offset-nq-bg",
-                  )}
-                >
-                  {s.name.trim().charAt(0).toUpperCase() || "·"}
-                </div>
-              </div>
+              {/*
+               * Sanctioned `StaffAvatar` primitive (`src/components/ui/`).
+               * Status dot replaces the previous custom busy-ring; the
+               * `staff_performance` module gate now governs the workload
+               * bar + skill row (and the role text below). The dot itself
+               * stays visible regardless — basic availability signal is
+               * core operational truth, not analytics chrome.
+               */}
+              <StaffAvatar
+                name={s.name}
+                status={s.status}
+                workload={s.workload}
+                showWorkload={showStaffPerformanceDetail}
+                showStatus
+                size="md"
+                skills={s.skills}
+                showSkills={showStaffPerformanceDetail && s.skills.length > 0}
+              />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-nq-foreground">{s.name}</p>
                 {showStaffPerformanceDetail ? (
