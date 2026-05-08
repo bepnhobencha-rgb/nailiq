@@ -2,39 +2,94 @@
 
 import {
   type ButtonHTMLAttributes,
+  type ReactNode,
   forwardRef,
-  useEffect,
-  useRef,
-  useState,
 } from "react";
+
 import { cn } from "@/shared/lib/cn";
+import { motion, useReducedMotion } from "@/shared/lib/motionClient";
+
+const BUTTON_MOTION = {
+  fastSec: 0.1,
+  ease: [0.22, 1, 0.36, 1] as const,
+} as const;
+
+const PRESS_SCALE = 0.97;
+
+const SPINNER_PERIOD_SEC = 0.6;
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md" | "lg";
 
+type NativeButtonProps = Omit<
+  ButtonHTMLAttributes<HTMLButtonElement>,
+  | "onDrag"
+  | "onDragStart"
+  | "onDragEnd"
+  | "onDragEnter"
+  | "onDragLeave"
+  | "onDragOver"
+  | "onDragExit"
+  | "onAnimationStart"
+  | "onAnimationEnd"
+  | "onAnimationIteration"
+  | "onTransitionEnd"
+>;
+
+export type ButtonProps = NativeButtonProps & {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  loading?: boolean;
+  leftIcon?: ReactNode;
+  rightIcon?: ReactNode;
+  fullWidth?: boolean;
+};
+
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    "bg-nq-primary text-nq-bg shadow-nq-sm hover:bg-nq-primary-soft focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
+    "bg-nq-primary text-nq-bg shadow-nq-sm hover:bg-nq-primary-soft focus-visible:ring-nq-primary",
   secondary:
-    "bg-nq-surface text-nq-primary border border-nq-border hover:bg-nq-surface/90 focus-visible:ring-2 focus-visible:ring-nq-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
+    "bg-nq-surface text-nq-foreground border border-nq-border hover:bg-nq-surface/90 focus-visible:ring-nq-primary/60",
   ghost:
-    "text-nq-primary-soft hover:bg-nq-surface/80 focus-visible:ring-2 focus-visible:ring-nq-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
+    "bg-transparent text-nq-foreground hover:bg-nq-surface/80 focus-visible:ring-nq-primary/50",
   danger:
-    "bg-nq-error text-nq-foreground shadow-nq-sm hover:opacity-95 focus-visible:ring-2 focus-visible:ring-nq-error focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
+    "bg-nq-error text-nq-foreground shadow-nq-sm hover:opacity-95 focus-visible:ring-nq-error",
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
-  sm: "h-10 min-h-10 px-4 text-sm",
-  md: "h-11 min-h-11 px-5 text-sm",
-  lg: "h-14 min-h-14 px-6 text-base font-medium",
+  sm: "h-8 px-3 text-sm before:content-[''] before:absolute before:inset-x-0 before:-inset-y-1.5",
+  md: "h-10 px-4 text-sm before:content-[''] before:absolute before:inset-x-0 before:-inset-y-0.5",
+  lg: "h-12 px-6 text-base font-medium",
 };
 
-export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  /** When true, shows a spinner, disables the control, and sets `aria-busy`. */
-  loading?: boolean;
+const spinnerSizeClasses: Record<ButtonSize, string> = {
+  sm: "h-3.5 w-3.5",
+  md: "h-4 w-4",
+  lg: "h-5 w-5",
 };
+
+function ButtonSpinner({ size }: { size: ButtonSize }) {
+  const reduced = useReducedMotion();
+  return (
+    <motion.span
+      aria-hidden
+      className={cn(
+        "inline-block rounded-full border-2 border-current border-t-transparent",
+        spinnerSizeClasses[size],
+      )}
+      animate={reduced ? undefined : { rotate: 360 }}
+      transition={
+        reduced
+          ? undefined
+          : {
+              repeat: Infinity,
+              ease: "linear",
+              duration: SPINNER_PERIOD_SEC,
+            }
+      }
+    />
+  );
+}
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   function Button(
@@ -45,72 +100,73 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       size = "md",
       disabled,
       loading = false,
-      onClick,
+      leftIcon,
+      rightIcon,
+      fullWidth = false,
       children,
-      ...props
+      ...rest
     },
     ref,
   ) {
-    const isDisabled = Boolean(disabled || loading);
-    const [clickFlash, setClickFlash] = useState(false);
-    const clickFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-      null,
-    );
-
-    useEffect(
-      () => () => {
-        if (clickFlashTimerRef.current !== null) {
-          clearTimeout(clickFlashTimerRef.current);
-        }
-      },
-      [],
-    );
+    const reduced = useReducedMotion();
+    const blocked = Boolean(disabled || loading);
 
     return (
-      <button
+      <motion.button
         ref={ref}
         type={type}
-        disabled={isDisabled}
+        disabled={blocked}
+        aria-disabled={blocked || undefined}
         aria-busy={loading || undefined}
-        onClick={(e) => {
-          onClick?.(e);
-          if (isDisabled) return;
-          if (clickFlashTimerRef.current !== null) {
-            clearTimeout(clickFlashTimerRef.current);
-          }
-          setClickFlash(true);
-          clickFlashTimerRef.current = setTimeout(() => {
-            setClickFlash(false);
-            clickFlashTimerRef.current = null;
-          }, 100);
+        whileTap={reduced || blocked ? undefined : { scale: PRESS_SCALE }}
+        transition={{
+          duration: BUTTON_MOTION.fastSec,
+          ease: BUTTON_MOTION.ease,
         }}
         className={cn(
-          "inline-flex w-full min-w-0 max-w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-transparent",
-          "shadow-[0_0_30px_rgba(212,175,55,0.2)]",
-          "transition-all duration-150 ease-out motion-reduce:transition-transform motion-reduce:duration-200",
-          "hover:scale-[1.02] active:scale-[0.98] motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
-          clickFlash && "opacity-90",
-          "disabled:cursor-not-allowed disabled:hover:scale-100 disabled:active:scale-100 sm:w-auto",
-          loading && "disabled:!opacity-70",
-          !loading && "disabled:opacity-40",
+          "relative inline-flex items-center justify-center gap-2 rounded-full",
+          "border border-transparent select-none whitespace-nowrap font-medium",
+          "transition-colors duration-nq-base motion-reduce:transition-none",
+          "outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
+          "disabled:cursor-not-allowed disabled:opacity-50",
           variantClasses[variant],
           sizeClasses[size],
+          fullWidth ? "w-full" : "w-auto",
           className,
         )}
-        {...props}
+        {...rest}
       >
+        <span
+          className={cn(
+            "inline-flex min-w-0 items-center gap-2",
+            loading && "opacity-0",
+          )}
+        >
+          {leftIcon ? (
+            <span className="inline-flex shrink-0" aria-hidden>
+              {leftIcon}
+            </span>
+          ) : null}
+          {children !== undefined ? (
+            <span className="min-w-0 truncate">{children}</span>
+          ) : null}
+          {rightIcon ? (
+            <span className="inline-flex shrink-0" aria-hidden>
+              {rightIcon}
+            </span>
+          ) : null}
+        </span>
+
         {loading ? (
-          <>
-            <span
-              className="inline-block size-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none"
-              aria-hidden
-            />
-            <span className="min-w-0">{children}</span>
-          </>
-        ) : (
-          children
-        )}
-      </button>
+          <span className="pointer-events-none absolute inset-0 inline-flex items-center justify-center">
+            <ButtonSpinner size={size} />
+          </span>
+        ) : null}
+      </motion.button>
     );
   },
 );
+
+Button.displayName = "Button";
+
+export default Button;
