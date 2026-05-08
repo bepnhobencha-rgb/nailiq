@@ -1,21 +1,80 @@
-import { type HTMLAttributes } from "react";
+import {
+  type ComponentPropsWithoutRef,
+  type ElementType,
+  type ReactNode,
+} from "react";
+
 import { cn } from "@/shared/lib/cn";
 
-export type CardProps = HTMLAttributes<HTMLDivElement>;
+export type CardVariant = "default" | "elevated" | "bordered";
+export type CardPadding = "none" | "sm" | "md" | "lg";
+export type CardState = "static" | "interactive" | "selected";
 
-export function Card({ className, ...props }: CardProps) {
+const variantClasses: Record<CardVariant, string> = {
+  default: "bg-nq-surface border border-nq-border",
+  elevated: "bg-nq-surface border border-nq-border shadow-nq-card",
+  bordered: "bg-transparent border border-nq-border",
+};
+
+const paddingClasses: Record<CardPadding, string> = {
+  none: "p-0",
+  sm: "p-3",
+  md: "p-4",
+  lg: "p-6",
+};
+
+const stateClasses: Record<CardState, string> = {
+  static: "",
+  interactive: cn(
+    "cursor-pointer",
+    "hover:bg-nq-surface/90",
+    "transition-colors duration-nq-fast motion-reduce:transition-none",
+    "outline-none",
+    "focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
+  ),
+  selected: cn(
+    "ring-2 ring-nq-primary ring-offset-2 ring-offset-nq-bg",
+    "border-nq-primary/60",
+  ),
+};
+
+type CardOwnProps = {
+  variant?: CardVariant;
+  padding?: CardPadding;
+  state?: CardState;
+  className?: string;
+  children: ReactNode;
+};
+
+export type CardProps<T extends ElementType = "div"> = CardOwnProps & {
+  as?: T;
+} & Omit<ComponentPropsWithoutRef<T>, keyof CardOwnProps | "as">;
+
+export function Card<T extends ElementType = "div">({
+  as,
+  variant = "default",
+  padding = "md",
+  state = "static",
+  className,
+  children,
+  ...rest
+}: CardProps<T>) {
+  const Component = (as ?? "div") as ElementType;
+
   return (
-    <div
+    <Component
       className={cn(
-        "relative z-0 overflow-hidden rounded-3xl p-7 ring-1 ring-inset ring-nq-primary/25 sm:p-8",
-        "glass glow-gold shadow-nq-card-luxury",
-        "before:pointer-events-none before:absolute before:inset-0 before:rounded-3xl before:bg-gradient-to-br before:from-nq-primary/10 before:via-nq-surface/40 before:to-nq-primary/5",
-        "after:pointer-events-none after:absolute after:inset-0 after:z-[1] after:rounded-3xl after:bg-gradient-to-b after:from-white/5 after:to-transparent",
-        "motion-safe:transition motion-safe:duration-200 motion-safe:ease-out motion-safe:hover:-translate-y-0.5",
-        "motion-safe:hover:shadow-[0_12px_48px_-10px_rgba(0,0,0,0.5),0_0_40px_rgba(212,175,55,0.12)]",
+        "rounded-2xl",
+        variantClasses[variant],
+        paddingClasses[padding],
+        stateClasses[state],
         className,
       )}
-      {...props}
-    />
+      {...rest}
+    >
+      {children}
+    </Component>
   );
 }
+
+export default Card;
