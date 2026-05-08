@@ -87,6 +87,7 @@ export type Database = {
           end_time_utc: string | null
           id: string
           joined_queue_at: string | null
+          party_size: number | null
           price_cents: number | null
           salon_id: string
           service_id: string
@@ -96,6 +97,9 @@ export type Database = {
           start_time_utc: string | null
           started_at: string | null
           status: string
+          walkin_priority: string | null
+          walkin_request_tags: Json | null
+          walkin_source: string | null
         }
         Insert: {
           addon_price_cents?: number | null
@@ -108,6 +112,7 @@ export type Database = {
           end_time_utc?: string | null
           id?: string
           joined_queue_at?: string | null
+          party_size?: number | null
           price_cents?: number | null
           salon_id: string
           service_id: string
@@ -117,6 +122,9 @@ export type Database = {
           start_time_utc?: string | null
           started_at?: string | null
           status?: string
+          walkin_priority?: string | null
+          walkin_request_tags?: Json | null
+          walkin_source?: string | null
         }
         Update: {
           addon_price_cents?: number | null
@@ -129,6 +137,7 @@ export type Database = {
           end_time_utc?: string | null
           id?: string
           joined_queue_at?: string | null
+          party_size?: number | null
           price_cents?: number | null
           salon_id?: string
           service_id?: string
@@ -138,6 +147,9 @@ export type Database = {
           start_time_utc?: string | null
           started_at?: string | null
           status?: string
+          walkin_priority?: string | null
+          walkin_request_tags?: Json | null
+          walkin_source?: string | null
         }
         Relationships: [
           {
@@ -372,8 +384,9 @@ export type Database = {
         Row: {
           address: string | null
           booking_closed_dates: Json
-          dashboard_modules: Json
           created_at: string | null
+          dashboard_modules: Json
+          dashboard_preset: string
           email: string | null
           email_verified: boolean | null
           id: string
@@ -388,8 +401,9 @@ export type Database = {
         Insert: {
           address?: string | null
           booking_closed_dates?: Json
-          dashboard_modules?: Json
           created_at?: string | null
+          dashboard_modules?: Json
+          dashboard_preset?: string
           email?: string | null
           email_verified?: boolean | null
           id?: string
@@ -404,8 +418,9 @@ export type Database = {
         Update: {
           address?: string | null
           booking_closed_dates?: Json
-          dashboard_modules?: Json
           created_at?: string | null
+          dashboard_modules?: Json
+          dashboard_preset?: string
           email?: string | null
           email_verified?: boolean | null
           id?: string
@@ -464,6 +479,7 @@ export type Database = {
           job_role: string
           name: string
           salon_id: string
+          skills: string[]
           status: string
         }
         Insert: {
@@ -472,6 +488,7 @@ export type Database = {
           job_role?: string
           name: string
           salon_id: string
+          skills?: string[]
           status?: string
         }
         Update: {
@@ -480,6 +497,7 @@ export type Database = {
           job_role?: string
           name?: string
           salon_id?: string
+          skills?: string[]
           status?: string
         }
         Relationships: [

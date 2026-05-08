@@ -34,6 +34,30 @@ export interface ReceptionistCenterData {
     id: string;
     name: string;
     job_role: string;
+    /**
+     * Operational availability status for the receptionist staff column.
+     * Maps the `StaffAvatar` `StaffStatus` union:
+     *   - `available`  → no `in_progress` booking right now
+     *   - `busy`       → exactly one `in_progress` booking right now
+     *   - `overbooked` → 2+ `in_progress` bookings right now (defended in
+     *     code; cannot occur under the live `bookings_no_overlap` GIST
+     *     EXCLUDE constraint, kept for future schema changes)
+     *   - `offline`    → `staff.status IN ('inactive','pending')` —
+     *     not customer-facing per `staff.status` migration semantics
+     */
+    status: "available" | "busy" | "overbooked" | "offline";
+    /**
+     * Relative load 0–100. Numerator: today's non-cancelled bookings for
+     * this staff. Denominator: max across all staff today (so the busiest
+     * staff is 100). Returns 0 when no staff has any bookings today.
+     */
+    workload: number;
+    /**
+     * Skill tags filtered to the `StaffSkill` enum from
+     * `src/components/ui/StaffAvatar.tsx`. Unknown DB values are dropped
+     * at the boundary so the avatar component receives only valid keys.
+     */
+    skills: ("acrylic" | "design" | "pedicure" | "fast" | "junior")[];
   }>;
   services: Array<{
     id: string;
@@ -155,6 +179,113 @@ type ServiceJoinMinimal = {
   buffer_minutes: number;
 };
 
+/**
+ * Skill values surfaced on `StaffAvatar`. Mirrors the `StaffSkill` enum in
+ * `src/components/ui/StaffAvatar.tsx` — kept as a literal here to avoid a
+ * client→server import (the avatar is "use client"). DB stores raw text[];
+ * unknown values are filtered at the boundary.
+ */
+const KNOWN_STAFF_SKILLS = [
+  "acrylic",
+  "design",
+  "pedicure",
+  "fast",
+  "junior",
+] as const;
+type KnownStaffSkill = (typeof KNOWN_STAFF_SKILLS)[number];
+
+function isKnownStaffSkill(value: unknown): value is KnownStaffSkill {
+  return (
+    typeof value === "string" &&
+    (KNOWN_STAFF_SKILLS as readonly string[]).includes(value)
+  );
+}
+
+function filterKnownSkills(raw: unknown): KnownStaffSkill[] {
+  if (!Array.isArray(raw)) return [];
+  const out: KnownStaffSkill[] = [];
+  for (const v of raw) {
+    if (isKnownStaffSkill(v) && !out.includes(v)) out.push(v);
+  }
+  return out;
+}
+
+/**
+ * Per-staff operational availability for the receptionist staff column.
+ * "now" is captured once at call time so all rows share a snapshot
+ * timestamp.
+ *
+ * Status decision tree (in priority order):
+ *   1. `staff.status IN ('inactive','pending')`        → "offline"
+ *   2. count of in_progress for this staff is `>= 2`   → "overbooked"
+ *   3. count of in_progress for this staff is `== 1`   → "busy"
+ *   4. otherwise                                       → "available"
+ *
+ * Note on "overbooked": the live `bookings_no_overlap` GIST EXCLUDE
+ * constraint forbids overlapping non-cancelled bookings on the same
+ * staff, so under correct DB state the "2+ in_progress" branch can never
+ * fire. Kept for defense if the constraint is ever loosened or a future
+ * state machine permits parallel sessions per staff.
+ *
+ * Workload is the staff's non-cancelled booking count today divided by
+ * the busiest staff's count (×100, rounded to integer). Returns 0 for
+ * everyone when no staff has any booking today (avoid div-by-zero).
+ */
+function enrichStaffRows(
+  rawStaff: ReadonlyArray<{
+    id: string;
+    name: string;
+    job_role: string;
+    status: string | null;
+    skills: string[] | null;
+  }>,
+  bookingsForDay: ReceptionistCenterData["bookingsForDay"],
+): ReceptionistCenterData["staff"] {
+  // Bucket bookings by staff once for both status + workload passes.
+  const inProgressByStaff = new Map<string, number>();
+  const todayCountByStaff = new Map<string, number>();
+  for (const b of bookingsForDay) {
+    todayCountByStaff.set(b.staff_id, (todayCountByStaff.get(b.staff_id) ?? 0) + 1);
+    if (b.status === "in_progress") {
+      inProgressByStaff.set(
+        b.staff_id,
+        (inProgressByStaff.get(b.staff_id) ?? 0) + 1,
+      );
+    }
+  }
+
+  let maxToday = 0;
+  for (const c of todayCountByStaff.values()) {
+    if (c > maxToday) maxToday = c;
+  }
+
+  return rawStaff.map((s) => {
+    const dbStatus = (s.status ?? "active").trim().toLowerCase();
+    let avatarStatus: ReceptionistCenterData["staff"][number]["status"];
+    if (dbStatus === "inactive" || dbStatus === "pending") {
+      avatarStatus = "offline";
+    } else {
+      const inProg = inProgressByStaff.get(s.id) ?? 0;
+      if (inProg >= 2) avatarStatus = "overbooked";
+      else if (inProg === 1) avatarStatus = "busy";
+      else avatarStatus = "available";
+    }
+
+    const myToday = todayCountByStaff.get(s.id) ?? 0;
+    const workload =
+      maxToday > 0 ? Math.round((myToday / maxToday) * 100) : 0;
+
+    return {
+      id: s.id,
+      name: s.name,
+      job_role: s.job_role,
+      status: avatarStatus,
+      workload,
+      skills: filterKnownSkills(s.skills),
+    };
+  });
+}
+
 /** Same pattern as `dashboardBookingMap.serviceFromJoin`. */
 function serviceFromJoin(
   raw: ServiceJoinMinimal | ServiceJoinMinimal[] | null,
@@ -263,7 +394,7 @@ export async function loadReceptionistCenterData(
   const [staffResult, servicesResult, queueResult, bookingsResult] = await Promise.all([
     supabase
       .from("staff")
-      .select("id, name, job_role")
+      .select("id, name, job_role, status, skills")
       .eq("salon_id", ctx.salon.id)
       .order("created_at", { ascending: true }),
     supabase
@@ -342,6 +473,8 @@ export async function loadReceptionistCenterData(
     id: string;
     name: string;
     job_role: string;
+    status: string | null;
+    skills: string[] | null;
   }> | null;
 
   const serviceRows = servicesResult.data as Array<{
@@ -496,10 +629,12 @@ export async function loadReceptionistCenterData(
     }
   }
 
+  const enrichedStaff = enrichStaffRows(staffRows ?? [], bookingsForDay);
+
   const kpiSnapshot = computeKpiSnapshot({
     walkinQueue,
     bookingsForDay,
-    staff: staffRows ?? [],
+    staff: enrichedStaff,
     revenueModuleEnabled: dashboardModules.revenue_today,
   });
 
@@ -507,7 +642,7 @@ export async function loadReceptionistCenterData(
     ok: true,
     data: {
       salon: salonRow,
-      staff: staffRows ?? [],
+      staff: enrichedStaff,
       services:
         serviceRows?.map((s) => ({
           id: s.id,
