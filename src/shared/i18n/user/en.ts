@@ -274,6 +274,26 @@ export type UserMessages = {
       waitingLabel: string;
       inProgressLabel: string;
     };
+    /** Top KPI band (gated by `dashboard_modules.kpi_bar`); revenue tile gated by `revenue_today`. */
+    kpiBar: {
+      waiting: string;
+      avgWait: string;
+      inService: string;
+      comingUp: string;
+      overdue: string;
+      nextAvailable: string;
+      revenueToday: string;
+      /** "{n} min" — short minutes formatter for compact tile values. */
+      minutesShort: (n: number) => string;
+      /** "in {n} min" — appended to next-available staff name. */
+      nextAvailableHint: (n: number) => string;
+      /** "{name} now" when minutesUntilFree === 0. */
+      nextAvailableNow: (name: string) => string;
+      /** "—" placeholder when a tile has no data yet (e.g. no walk-in assigned today). */
+      emptyDash: string;
+      /** sr-only label announced by the skeleton. */
+      loading: string;
+    };
     setupIncompleteBanner: {
       title: string;
       message: string;
@@ -681,6 +701,20 @@ export const userEn: UserMessages = {
     statusPill: {
       waitingLabel: "WAIT",
       inProgressLabel: "ACTIVE",
+    },
+    kpiBar: {
+      waiting: "Waiting",
+      avgWait: "Avg wait",
+      inService: "In service",
+      comingUp: "Coming up (30m)",
+      overdue: "Overdue",
+      nextAvailable: "Next available",
+      revenueToday: "Revenue today",
+      minutesShort: (n: number) => `${n} min`,
+      nextAvailableHint: (n: number) => `in ${n} min`,
+      nextAvailableNow: (name: string) => `${name} now`,
+      emptyDash: "—",
+      loading: "Loading desk metrics",
     },
     setupIncompleteBanner: {
       title: "Setup incomplete",

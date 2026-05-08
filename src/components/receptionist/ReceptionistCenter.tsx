@@ -9,6 +9,7 @@ import { createClient } from "@/shared/lib/supabase/client";
 import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
 import { BookingDetailDrawer, type BookingDetailDrawerModel } from "./BookingDetailDrawer";
 import { DateSwitcher } from "./DateSwitcher";
+import { KPIBar } from "./KPIBar";
 import { StaffTimelineGrid, type GridBooking } from "./StaffTimelineGrid";
 import { StatusPill } from "./StatusPill";
 import { UndoToast } from "./UndoToast";
@@ -876,6 +877,23 @@ function ReceptionistCenterInner({
             ) : null}
           </div>
         </header>
+
+        {/*
+         * KPI band per `docs/DASHBOARD_LAYOUT_RULES.md` §5: top summary
+         * band sits **above** the three-zone row, the grid shrinks
+         * vertically by the band's height, and horizontal three-zone
+         * allocation does not change. Today-only — KPIs reference live
+         * "now" semantics (Coming up 30m, Overdue, Next available) so
+         * historical/future date views must not pretend they are live.
+         */}
+        {isViewingToday && modules.kpi_bar ? (
+          <KPIBar
+            snapshot={data.kpiSnapshot}
+            showRevenue={modules.revenue_today}
+            messages={rcMessages.kpiBar}
+            isLoading={dayLoading}
+          />
+        ) : null}
 
         {modules.alerts && isSetupIncomplete ? (
           <div
