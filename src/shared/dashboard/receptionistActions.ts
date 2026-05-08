@@ -19,6 +19,14 @@ import {
   type EditBookingResult,
   performEditBooking,
 } from "@/shared/dashboard/editBookingCore";
+import {
+  isQueuePriority,
+  isQueueSource,
+  normalizeRequestTag,
+  QUEUE_REQUEST_TAGS_MAX_COUNT,
+  type QueuePriority,
+  type QueueSource,
+} from "@/shared/types";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -46,6 +54,10 @@ export async function addWalkinToQueue(
     clientPhone?: string | null;
     serviceId: string;
     staffRequestNote?: string | null;
+    walkinSource?: QueueSource | null;
+    walkinPriority?: QueuePriority | null;
+    walkinRequestTags?: string[] | null;
+    partySize?: number | null;
   },
 ): Promise<OkBooking | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
@@ -101,23 +113,61 @@ export async function addWalkinToQueue(
   const price =
     svc.price_cents != null ? Math.round(Number(svc.price_cents)) : null;
 
+  const walkinSource: QueueSource | null = isQueueSource(input.walkinSource)
+    ? input.walkinSource
+    : null;
+  const walkinPriority: QueuePriority | null = isQueuePriority(
+    input.walkinPriority,
+  )
+    ? input.walkinPriority
+    : null;
+
+  const tagsIn = Array.isArray(input.walkinRequestTags)
+    ? input.walkinRequestTags
+    : [];
+  const walkinRequestTags: string[] = [];
+  for (const raw of tagsIn) {
+    const t = normalizeRequestTag(raw);
+    if (t !== null) walkinRequestTags.push(t);
+    if (walkinRequestTags.length >= QUEUE_REQUEST_TAGS_MAX_COUNT) break;
+  }
+
+  const partyRaw =
+    typeof input.partySize === "number" ? Math.round(input.partySize) : null;
+  const partySize: number | null =
+    partyRaw !== null &&
+    Number.isFinite(partyRaw) &&
+    partyRaw >= 1 &&
+    partyRaw <= 50
+      ? partyRaw
+      : null;
+
+  // `walkin_*` and `party_size` columns are not yet in the auto-generated
+  // Supabase types; cast the patch object so .insert() accepts the new
+  // columns. Will become a plain typed call after the next regeneration.
+  const insertPatch = {
+    salon_id: ctx.salon.id,
+    service_id: serviceId,
+    client_name: clientName,
+    client_phone: clientPhoneClean,
+    client_notes: null,
+    staff_id: null,
+    start_time_utc: null,
+    end_time_utc: null,
+    status: "waiting",
+    source: "walkin",
+    joined_queue_at: joinedAt,
+    staff_request_note: note,
+    price_cents: Number.isFinite(price ?? NaN) ? price : null,
+    walkin_source: walkinSource,
+    walkin_priority: walkinPriority,
+    walkin_request_tags: walkinRequestTags,
+    party_size: partySize,
+  } as never;
+
   const { data: inserted, error: insErr } = await supabase
     .from("bookings")
-    .insert({
-      salon_id: ctx.salon.id,
-      service_id: serviceId,
-      client_name: clientName,
-      client_phone: clientPhoneClean,
-      client_notes: null,
-      staff_id: null,
-      start_time_utc: null,
-      end_time_utc: null,
-      status: "waiting",
-      source: "walkin",
-      joined_queue_at: joinedAt,
-      staff_request_note: note,
-      price_cents: Number.isFinite(price ?? NaN) ? price : null,
-    })
+    .insert(insertPatch)
     .select("id")
     .maybeSingle();
 

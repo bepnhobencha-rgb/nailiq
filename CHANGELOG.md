@@ -2,6 +2,19 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-05-07 (docs/ux-principles — operational UX contract)
+
+- **`docs/UX_PRINCIPLES.md`:** Core philosophy, **NailIQ Golden Rules** (11 non-negotiable items), anti-patterns, personas (receptionist / owner / nail tech), conflict-resolution framework, accessibility baseline, English-primary + Vietnamese-secondary language rules. **`PROJECT_BRAIN.md`** — pointer under **Operational UX contract**.
+
+## 2026-05-07 (feat/dashboard-modules — per-salon desk toggles)
+
+- **DB:** `salons.dashboard_modules` **jsonb** (defaults for queue, quick add, KPI pill, optional AI/revenue/wait-time/alerts/VIP styling/staff detail/timeline shading). **`queue_panel`** is **forced on** in app code when merging/saving.
+- **Server:** `updateDashboardModules` in **`salonOwnerActions`** — **`getDashboardWriteClient`** (dynamic import avoids circular deps), **owner-only**, **`validateOwnerDashboardModulePatch`** (allowlisted keys, boolean values only).
+- **Loader:** **`loadReceptionistCenterData`** selects **`dashboard_modules`** → **`dashboardModules`** on **`ReceptionistCenterData`** (`parseDashboardModules`).
+- **Settings:** **`/dashboard/[slug]/settings`** loads modules; **`DashboardModulesSettings`** + **`SalonSettingsHub`** — core rows (timeline, staff column, queue) **locked**; owner can toggle optional modules; EN/VI copy under **`salonSettings.dashboardModules`**.
+- **Desk:** **`ReceptionistCenter`** + **`WalkinQueueSidebar`** / **`StaffTimelineGrid`** / **`BookingDetailDrawer`** (via `detailModel`) respect flags — e.g. **`quick_add`**, **`kpi_bar`**, **`wait_time`**, **`alerts`** (setup banner), **`revenue_today`** + **`vip_indicators`**, **`staff_performance`**, **`timeline_heatmap`**.
+- **Types:** **`src/lib/database.types.ts`** — `salons` **`dashboard_modules`**. Shared helpers: **`src/shared/dashboard/dashboardModules.ts`**.
+
 ## 2026-05-07 (feat/jump-to-now — Receptionist Center)
 
 - **`StaffTimelineGrid`:** On salon **today**, auto-scroll horizontally once per selected day to the **nearest 30-minute slot** to “now” (±15 min); **Jump to now** pill (**`receptionist.jumpToNow`**: EN "Now" / VI "Hiện tại") next to **`DateSwitcher`** smooth-scrolls the same target. Timeline **now** marker (**`NowLine`**) uses **`--color-nq-primary`** (gold `w-px` vertical line across staff rows); hidden on yesterday/tomorrow (`isViewingToday`). **`salonNowMinutes`** drives position from `nowIso` (1 min tick in parent — no extra interval in grid).
