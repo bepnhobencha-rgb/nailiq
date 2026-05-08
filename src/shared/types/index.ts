@@ -8,6 +8,22 @@ export type BookingStatus =
 
 export type BookingSource = "appointment" | "walkin";
 
+export {
+  QUEUE_SOURCES,
+  QUEUE_PRIORITIES,
+  QUEUE_REQUEST_TAG_MAX_LEN,
+  QUEUE_REQUEST_TAGS_MAX_COUNT,
+  isQueueSource,
+  isQueuePriority,
+  normalizeRequestTag,
+  parseRequestTags,
+} from "./queue";
+export type {
+  QueueSource,
+  QueuePriority,
+  QueueRequestTag,
+} from "./queue";
+
 /** Statuses shown in the owner “today” list (excludes queue-only, finished, cancelled). */
 export const OWNER_TODAY_LIST_STATUSES: BookingStatus[] = [
   "pending",
