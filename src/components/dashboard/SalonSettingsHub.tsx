@@ -1,15 +1,29 @@
 "use client";
 
 import Link from "next/link";
+import { DashboardModulesSettings } from "@/components/dashboard/DashboardModulesSettings";
+import { DashboardPresetSettings } from "@/components/dashboard/DashboardPresetSettings";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
 import { GearIcon } from "@/components/ui/icons/GearIcon";
+import type { DashboardModulesConfig } from "@/shared/dashboard/dashboardModules";
+import type { PresetKey } from "@/shared/dashboard/dashboardPresets";
 import { getUserMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
-export function SalonSettingsHub({ slug }: { slug: string }) {
+export function SalonSettingsHub({
+  slug,
+  dashboardModules,
+  dashboardPreset,
+  canEditDashboardModules,
+}: {
+  slug: string;
+  dashboardModules: DashboardModulesConfig;
+  dashboardPreset: PresetKey;
+  canEditDashboardModules: boolean;
+}) {
   const { language } = useUserLanguage();
   const t = getUserMessages(language).salonSettings;
   const base = `/dashboard/${encodeURIComponent(slug)}/setup`;
@@ -56,6 +70,18 @@ export function SalonSettingsHub({ slug }: { slug: string }) {
         <p className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-3 text-sm leading-relaxed text-nq-muted">
           {t.hintRecoveryEmail}
         </p>
+
+        <DashboardModulesSettings
+          slug={slug}
+          initialModules={dashboardModules}
+          canEdit={canEditDashboardModules}
+        />
+
+        <DashboardPresetSettings
+          slug={slug}
+          initialPreset={dashboardPreset}
+          canEdit={canEditDashboardModules}
+        />
       </MobileStack>
     </ResponsiveShell>
   );

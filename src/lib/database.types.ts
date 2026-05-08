@@ -372,6 +372,7 @@ export type Database = {
         Row: {
           address: string | null
           booking_closed_dates: Json
+          dashboard_modules: Json
           created_at: string | null
           email: string | null
           email_verified: boolean | null
@@ -387,6 +388,7 @@ export type Database = {
         Insert: {
           address?: string | null
           booking_closed_dates?: Json
+          dashboard_modules?: Json
           created_at?: string | null
           email?: string | null
           email_verified?: boolean | null
@@ -402,6 +404,7 @@ export type Database = {
         Update: {
           address?: string | null
           booking_closed_dates?: Json
+          dashboard_modules?: Json
           created_at?: string | null
           email?: string | null
           email_verified?: boolean | null

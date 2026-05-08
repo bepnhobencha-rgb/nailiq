@@ -159,6 +159,65 @@ export const userVi: UserMessages = {
     sectionAddress: "Địa chỉ tiệm",
     hintRecoveryEmail:
       "Để thêm hoặc đổi email khôi phục cho tài khoản, dùng thanh nhắc trên bảng điều khiển.",
+    dashboardModules: {
+      sectionTitle: "Module bảng lễ tân",
+      sectionIntro:
+        "Chọn phần hiển thị trên màn hình tiếp tân. Khung chính luôn bật; các module khác có thể tắt.",
+      lockedHint: "Luôn bật",
+      ownerOnlyHint: "Chỉ chủ tiệm mới chỉnh được module lễ tân.",
+      save: "Lưu",
+      reset: "Hoàn tác",
+      saveError: "Không lưu được. Thử lại.",
+      forbidden: "Bạn không có quyền chỉnh cài đặt này.",
+      invalidKeys: "Dữ liệu module không hợp lệ.",
+      coreTimeline: "Lưới thời gian (timeline)",
+      coreStaff: "Cột nhân viên",
+      coreQueue: "Hàng chờ walk-in",
+      labels: {
+        quickAdd: "Thêm walk-in nhanh",
+        kpiBar: "Trạng thái hôm nay (đang chờ / đang phục vụ)",
+        aiSuggestions: "Gợi ý AI",
+        revenueToday: "Giá & gợi ý doanh thu trên lưới",
+        waitTime: "Thời gian chờ & mức khẩn",
+        alerts: "Cảnh báo thiết lập trên desk",
+        vipIndicators: "Điểm nhấn làn walk-in",
+        staffPerformance: "Vai trò nhân viên & vòng bận",
+        timelineHeatmap: "Đường lưới timeline dày",
+      },
+    },
+    dashboardPreset: {
+      sectionTitle: "Bố cục bàn lễ tân",
+      sectionIntro:
+        "Chọn bố cục phù hợp với ca làm hôm nay. Các module bên trên có thể bật/tắt thêm.",
+      ownerOnlyHint: "Chỉ chủ tiệm mới đổi được bố cục bàn lễ tân.",
+      activeBadge: "Đang dùng",
+      applying: "Đang áp dụng…",
+      saveError: "Không đổi được bố cục. Thử lại.",
+      forbidden: "Bạn không có quyền đổi bố cục.",
+      invalid: "Bố cục không hợp lệ.",
+      labels: {
+        minimal: "Tối giản",
+        reception: "Lễ tân",
+        rush_hour: "Giờ cao điểm",
+        owner: "Chủ tiệm",
+        training: "Đào tạo",
+        tv: "Chế độ TV",
+      },
+      descriptions: {
+        minimal:
+          "Chỉ còn hàng chờ. Dùng cho màn nhỏ hoặc ca vắng khách.",
+        reception:
+          "Mặc định: hàng chờ, thêm walk-in nhanh, thời gian chờ và cảnh báo.",
+        rush_hour:
+          "Chế độ giờ bận: thêm trạng thái hôm nay và điểm nhấn làn walk-in.",
+        owner:
+          "Đầy đủ chỉ số: KPI, doanh thu hôm nay, gợi ý AI cho chủ tiệm.",
+        training:
+          "Giao diện rút gọn cho nhân viên mới: chỉ hàng chờ và thêm walk-in.",
+        tv:
+          "Hiển thị tường, chỉ đọc: nhìn nhanh hàng chờ, ẩn thao tác nhập.",
+      },
+    },
   },
   setupErrors: {
     serviceInUse:
@@ -214,7 +273,16 @@ export const userVi: UserMessages = {
       assignButton: "Xếp chỗ",
       urgentBadge: "VỘI",
       waitingHint: "Chạm một ô trên lịch để xếp khách",
-      minutesAgo: (n: number) => (n < 1 ? "vừa xong" : `${n} phút`),
+      minutesAgo: (n: number) =>
+        n < 1 ? "vừa xong" : `chờ ${n} phút`,
+      sortLabel: "Sắp xếp",
+      sortFifo: "Vào trước",
+      sortLongestWait: "Chờ lâu nhất",
+      priorityHigh: "Cao",
+      priorityMedium: "Vừa",
+      priorityLow: "Thấp",
+      partySizeLabel: (n: number) => `Nhóm ${n} người`,
+      sourceFallback: "Walk-in",
       addForm: {
         namePlaceholder: "Tên khách",
         phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
@@ -223,6 +291,27 @@ export const userVi: UserMessages = {
         moreServices: "Thêm dịch vụ",
         submitting: "Đang thêm…",
         errorRequired: "Chọn một dịch vụ để tiếp tục.",
+        sourceLabel: "Nguồn",
+        sourceOptions: {
+          online: "Online",
+          walk_in: "Walk-in",
+          instagram: "Instagram",
+          google: "Google",
+          phone: "Điện thoại",
+          tiktok: "TikTok",
+          repeat: "Khách quen",
+          vip: "VIP",
+        },
+        priorityLabel: "Mức ưu tiên",
+        priorityOptions: {
+          high: "Cao",
+          medium: "Vừa",
+          low: "Thấp",
+        },
+        requestTagsLabel: "Thẻ yêu cầu",
+        requestTagsPlaceholder: "ví dụ Muốn gặp Tina",
+        requestTagAdd: "Thêm",
+        requestTagRemove: (label: string) => `Xóa ${label}`,
       },
     },
     walkin: {
