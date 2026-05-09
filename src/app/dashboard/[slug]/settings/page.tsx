@@ -4,6 +4,7 @@ import { SalonSettingsHub } from "@/components/dashboard/SalonSettingsHub";
 import { parseDashboardModules } from "@/shared/dashboard/dashboardModules";
 import { parsePresetKey } from "@/shared/dashboard/dashboardPresets";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -25,7 +26,9 @@ export default async function SalonSettingsPage({ params }: Props) {
 
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
-    .select("dashboard_modules, dashboard_preset, email, email_verified")
+    .select(
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan",
+    )
     .eq("id", ctx.salon.id)
     .maybeSingle();
 
@@ -42,6 +45,7 @@ export default async function SalonSettingsPage({ params }: Props) {
         dashboard_preset?: unknown;
         email?: unknown;
         email_verified?: unknown;
+        subscription_plan?: unknown;
       }
     | null;
 
@@ -54,6 +58,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       ? row.email.trim()
       : null;
   const emailVerified = row?.email_verified === true;
+  const subscriptionPlan = parseSubscriptionPlan(row?.subscription_plan);
 
   return (
     <SalonSettingsHub
@@ -63,6 +68,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       canEditDashboardModules={canEditDashboardModules}
       salonEmail={salonEmail}
       emailVerified={emailVerified}
+      subscriptionPlan={subscriptionPlan}
     />
   );
 }

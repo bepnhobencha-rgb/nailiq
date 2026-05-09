@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { AuditLogViewer } from "@/components/dashboard/AuditLogViewer";
 import { DashboardModulesSettings } from "@/components/dashboard/DashboardModulesSettings";
 import { DashboardPresetSettings } from "@/components/dashboard/DashboardPresetSettings";
+import { PricingPanel } from "@/components/dashboard/PricingPanel";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
@@ -14,6 +15,7 @@ import type { DashboardModulesConfig } from "@/shared/dashboard/dashboardModules
 import type { PresetKey } from "@/shared/dashboard/dashboardPresets";
 import { getUserMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
+import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 export function SalonSettingsHub({
@@ -23,6 +25,7 @@ export function SalonSettingsHub({
   canEditDashboardModules,
   salonEmail,
   emailVerified,
+  subscriptionPlan,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -32,10 +35,14 @@ export function SalonSettingsHub({
   salonEmail: string | null;
   /** `salons.email_verified` — `true` only after the verify link is clicked. */
   emailVerified: boolean;
+  /** `salons.subscription_plan` — drives the Pricing panel and the
+   *  top-bar plan Badge. */
+  subscriptionPlan: SubscriptionPlan;
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
   const verifyError = searchParams?.get("verify_error");
+  const upgraded = searchParams?.get("upgraded") === "1";
   const { language } = useUserLanguage();
   const messages = getUserMessages(language);
   const t = messages.salonSettings;
@@ -56,6 +63,32 @@ export function SalonSettingsHub({
           title={t.pageTitle}
           titleAccessory={<GearIcon className="h-8 w-8 sm:h-9 sm:w-9" />}
         />
+        {/* Plan badge in the top strip — Pro / Premium owners see a
+            VIP-styled chip so the paid status is obvious at a glance.
+            Free plan shows nothing (no decoration for the default). */}
+        {subscriptionPlan !== "free" ? (
+          <div className="mb-3">
+            <Badge
+              data-testid={`settings-plan-badge-${subscriptionPlan}`}
+              variant="vip"
+              state="default"
+              size="sm"
+            >
+              {subscriptionPlan === "pro"
+                ? messages.receptionist.pricing.planBadgePro
+                : messages.receptionist.pricing.planBadgePremium}
+            </Badge>
+          </div>
+        ) : null}
+        {upgraded ? (
+          <p
+            role="status"
+            data-testid="settings-upgraded-toast"
+            className="mb-3 rounded-md border border-nq-success/40 bg-nq-success/10 px-3 py-2 text-sm text-nq-success"
+          >
+            {messages.receptionist.pricing.upgradedToast}
+          </p>
+        ) : null}
         <p className="mb-6 text-pretty text-base leading-relaxed text-nq-muted">
           {t.pageIntro}
         </p>
@@ -163,6 +196,16 @@ export function SalonSettingsHub({
           initialPreset={dashboardPreset}
           canEdit={canEditDashboardModules}
         />
+
+        {/* Pricing — owner-only. The server actions also gate on
+            `role === 'owner'`, so this is defense-in-depth. */}
+        {canEditDashboardModules ? (
+          <PricingPanel
+            slug={slug}
+            currentPlan={subscriptionPlan}
+            messages={messages.receptionist.pricing}
+          />
+        ) : null}
 
         {/* Audit log — owner-only. The viewer's server action also gates
             on `role === 'owner'`, so this is defense-in-depth. */}
