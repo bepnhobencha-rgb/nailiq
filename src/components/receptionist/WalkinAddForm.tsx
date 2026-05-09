@@ -282,6 +282,19 @@ export function WalkinAddForm({
       setNameError(null);
       setPhoneError(null);
     }
+    // Cmd/Ctrl + Enter from any field submits the form. Reception speed
+    // path: the form's other key handlers advance field-by-field; this
+    // shortcut bypasses the chain when the receptionist already knows
+    // every field is filled (the existing per-field validators still
+    // run inside `runSubmit`, so missing required values still surface).
+    if (
+      e.key === "Enter" &&
+      (e.metaKey || e.ctrlKey) &&
+      !formLocked
+    ) {
+      e.preventDefault();
+      void runSubmit();
+    }
   };
 
   const tagsAtCap = requestTags.length >= QUEUE_REQUEST_TAGS_MAX_COUNT;
