@@ -523,6 +523,12 @@ export type UserMessages = {
         addon_added: string;
       };
     };
+    /** Top-level error boundary fallback for the Receptionist Center. */
+    errorBoundary: {
+      title: string;
+      message: string;
+      retryButton: string;
+    };
   };
 };
 
@@ -1018,6 +1024,12 @@ export const userEn: UserMessages = {
         walkin_added: "Added {name} to walk-in queue",
         addon_added: "Added an add-on to {name}'s booking",
       },
+    },
+    errorBoundary: {
+      title: "Something went wrong at the desk",
+      message:
+        "The Receptionist Center hit an unexpected error. Try again, and tell the salon owner if it keeps happening.",
+      retryButton: "Try again",
     },
   },
 };

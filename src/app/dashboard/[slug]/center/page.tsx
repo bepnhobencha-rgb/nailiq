@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ReceptionistCenter } from "@/components/receptionist/ReceptionistCenter";
+import { ReceptionistErrorBoundary } from "@/components/receptionist/ReceptionistErrorBoundary";
 import { loadReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { userEn } from "@/shared/i18n/user";
 import { salonToday } from "@/shared/lib/salonTime";
 
 export const dynamic = "force-dynamic";
@@ -60,11 +62,21 @@ export default async function ReceptionistCenterPage({
     redirect("/register");
   }
 
+  // Error-boundary labels are sourced server-side from English (the
+  // primary product language per UX_PRINCIPLES §7). The boundary
+  // surface is rare; a follow-up can fold a client wrapper that
+  // reads `useUserLanguage` for VI parity if real-world incidents
+  // make that worthwhile.
   return (
-    <ReceptionistCenter
-      slug={slug}
-      initialResult={initialResult}
-      viewerRole={ctx.role}
-    />
+    <ReceptionistErrorBoundary
+      labels={userEn.receptionist.errorBoundary}
+      salonSlug={slug}
+    >
+      <ReceptionistCenter
+        slug={slug}
+        initialResult={initialResult}
+        viewerRole={ctx.role}
+      />
+    </ReceptionistErrorBoundary>
   );
 }
