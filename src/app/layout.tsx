@@ -44,6 +44,14 @@ export const metadata: Metadata = {
   },
   description: defaultDescription,
   keywords,
+  alternates: {
+    canonical: "/",
+    languages: {
+      "x-default": "/",
+      en: "/",
+      vi: "/",
+    },
+  },
   openGraph: {
     type: "website",
     locale: "en_US",
@@ -51,6 +59,8 @@ export const metadata: Metadata = {
     siteName: "NailIQ",
     title: "NailIQ — AI Booking System for Nail Salons",
     description: defaultDescription,
+    // og:image is supplied via src/app/opengraph-image.tsx (file convention) —
+    // Next injects it into both og:image and twitter:image automatically.
   },
   twitter: {
     card: "summary_large_image",

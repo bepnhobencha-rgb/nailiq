@@ -30,14 +30,14 @@ export async function generateMetadata({
   const { slug } = await params;
   const resolved = await resolvePublicBookingPage(slug);
   if (resolved.status === "reserved") {
-    return { title: "Not found | NailIQ" };
+    return { title: { absolute: "Not found | NailIQ" } };
   }
   if (resolved.status === "redirect") {
     redirect(resolved.to);
   }
   if (resolved.status === "not_found") {
     return {
-      title: "Create your booking link | NailIQ",
+      title: { absolute: "Create your booking link | NailIQ" },
       description:
         "This salon page isn't set up yet. Start free and get your own booking link.",
     };

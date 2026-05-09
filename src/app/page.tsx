@@ -31,8 +31,18 @@ const landingDescription =
 const landingTitle = "NailIQ — Booking + walk-in queue for nail salons";
 
 export const metadata: Metadata = {
-  title: landingTitle,
+  // Use absolute so the root template (`%s | NailIQ`) doesn't append a
+  // duplicate "NailIQ" suffix to a title that already starts with "NailIQ".
+  title: { absolute: landingTitle },
   description: landingDescription,
+  alternates: {
+    canonical: "/",
+    languages: {
+      "x-default": "/",
+      en: "/",
+      vi: "/",
+    },
+  },
   openGraph: {
     title: landingTitle,
     description: landingDescription,
