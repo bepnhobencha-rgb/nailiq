@@ -67,6 +67,25 @@ export const userVi: UserMessages = {
     phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
     phoneDigitsInvalid:
       "Nhập 8–15 chữ số kèm mã quốc gia (ví dụ Canada/Hoa Kỳ: +1 6045551234; Việt Nam: +84901234567).",
+    wizardTitle: "Đặt tên cho tiệm",
+    wizardSubtext:
+      "Nhập tên tiệm (tên doanh nghiệp) — đây là tên khách sẽ thấy trên trang đặt lịch. Đừng nhập tên cá nhân.",
+    salonNameLabel: "Tên tiệm",
+    salonNamePlaceholder: "Ví dụ: Tiệm Nail Mai",
+    salonNameHint:
+      "Mẹo: đây là tên TIỆM (không phải tên bạn). Khách sẽ thấy trên trang đặt lịch.",
+    salonNameInvalid: "Nhập tên tiệm (tối đa 120 ký tự).",
+    slugLabel: "Đường dẫn đặt lịch",
+    slugHint: "Chỉ chữ và số. Sửa nếu muốn URL ngắn hơn.",
+    slugAriaLabel: "Đường dẫn slug",
+    timezoneLabel: "Múi giờ",
+    timezoneHint:
+      "Dùng để hiển thị giờ đặt lịch chính xác cho bạn và khách.",
+    submitCreate: "Tạo trang đặt lịch",
+    submitCreating: "Đang tạo…",
+    submitErrorGeneric: "Không tạo được tiệm. Thử lại.",
+    submitErrorExpiredToken:
+      "Mã xác thực đã hết hạn — vui lòng bắt đầu lại từ bước nhập số điện thoại.",
     sendCode: "Gửi mã",
     sendingCode: "Đang gửi…",
     verifyTitle: "Nhập mã",
