@@ -499,5 +499,22 @@ export const userVi: UserMessages = {
         "Quầy gặp lỗi bất ngờ. Bấm thử lại; nếu tiếp tục, báo cho chủ tiệm.",
       retryButton: "Thử lại",
     },
+    viewMode: {
+      day: "Ngày",
+      week: "Tuần",
+      ariaLabel: "Chế độ xem",
+    },
+    weekView: {
+      title: "Tuần",
+      prevWeek: "Trước",
+      thisWeek: "Tuần này",
+      nextWeek: "Sau",
+      loading: "Đang tải…",
+      dayError: "Không tải được ngày này.",
+      emptyDay: "Trống",
+      bookingCount: "{n} lịch",
+      moreCount: "+{n} nữa",
+      openDayAria: "Mở chế độ ngày cho {date}",
+    },
   },
 };
