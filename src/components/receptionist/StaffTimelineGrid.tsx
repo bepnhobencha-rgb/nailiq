@@ -325,6 +325,13 @@ export function StaffTimelineGrid({
           <div
             className={cn(
               "sticky top-0 z-12 flex shrink-0 bg-nq-bg/95 backdrop-blur-sm",
+              // `relative` anchors the floating NOW-time bubble (below)
+              // inside the time-header strip; combined with the strip's
+              // existing `sticky top-0` this keeps the bubble visible
+              // during VERTICAL scroll, while it scrolls horizontally
+              // with the timeline (i.e. tied to the NOW position on
+              // the time axis).
+              "relative",
             )}
             style={{ height: TIME_HEADER_HEIGHT, width: timelineWidthPx }}
           >
@@ -350,6 +357,38 @@ export function StaffTimelineGrid({
                 </div>
               );
             })}
+            {/*
+             * Floating NOW-time bubble. Sits at the top of the timeline
+             * header strip, centered over the NowLine's `leftPx`. The
+             * strip itself is `sticky top-0`, so the bubble stays
+             * vertically visible during vertical scroll. Horizontally
+             * it scrolls with the timeline (correctly tied to "now" on
+             * the time axis — receptionist still has the "Jump to now"
+             * pill in the header to pull it back into view).
+             *
+             * Color matches the NowLine (red `--color-nq-error`); the
+             * pill carries the textual "now" label so the temporal
+             * anchor is conveyed by both color AND text per
+             * `COLOR_TOKENS.md §5` ("never rely on hue alone").
+             *
+             * Hidden when `nowLineLeftPx` is null (off-grid time, e.g.
+             * before 8am or after 8pm) and on non-today views (existing
+             * `isViewingToday` gate already nulls `nowLineLeftPx`).
+             */}
+            {nowLineLeftPx !== null ? (
+              <div
+                data-testid="now-line-bubble"
+                className={cn(
+                  "pointer-events-none absolute top-1 z-[13] -translate-x-1/2",
+                  "rounded-full bg-nq-error px-2 py-0.5",
+                  "text-[10px] font-semibold tabular-nums text-white shadow-nq-card",
+                )}
+                style={{ left: nowLineLeftPx }}
+                aria-label={`Current time ${nowLineLabel}`}
+              >
+                {nowLineLabel}
+              </div>
+            ) : null}
           </div>
 
           <div
@@ -527,7 +566,10 @@ export function StaffTimelineGrid({
               className="pointer-events-none absolute inset-0 z-[8]"
               aria-hidden
             >
-              <NowLine leftPx={nowLineLeftPx} nowLabel={nowLineLabel} />
+              {/* Time bubble is rendered separately in the time-header strip
+                  above so it stays vertically sticky during vertical scroll;
+                  this NowLine renders only the vertical line itself. */}
+              <NowLine leftPx={nowLineLeftPx} />
             </div>
           </div>
         </div>
