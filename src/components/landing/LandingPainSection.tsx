@@ -97,9 +97,10 @@ export function LandingPainSection() {
 function StatNumber({ stat, reduce }: { stat: Stat; reduce: boolean }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [inView, setInView] = useState(false);
-  const [shown, setShown] = useState<number | null>(
-    stat.countTo == null ? null : reduce ? stat.countTo : 0,
-  );
+  // BUG-14: initialize to the FINAL value so the static render (pre-scroll
+  // and during SSR/hydrate) reads "$50–200" instead of "$50–0/day". When
+  // the IntersectionObserver fires we reset to 0 and animate up.
+  const [shown, setShown] = useState<number | null>(stat.countTo);
 
   useEffect(() => {
     if (stat.countTo == null) return;
@@ -129,6 +130,7 @@ function StatNumber({ stat, reduce }: { stat: Stat; reduce: boolean }) {
     const duration = 1100;
     const start = performance.now();
     let raf = 0;
+    setShown(0);
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / duration);
       const eased = 1 - Math.pow(1 - t, 3);

@@ -11,7 +11,7 @@ export function LandingHero() {
     <section className="relative overflow-hidden pt-32 pb-16 md:pt-40 md:pb-24">
       <BackgroundGlow />
 
-      <div className="mx-auto grid w-full max-w-6xl items-center gap-12 px-5 md:grid-cols-2 md:gap-16 md:px-8 lg:gap-20">
+      <div className="mx-auto grid w-full max-w-6xl items-center gap-12 px-5 md:px-8 xl:grid-cols-2 xl:gap-20">
         <motion.div
           initial={reduce ? false : { opacity: 0, y: 16 }}
           animate={reduce ? undefined : { opacity: 1, y: 0 }}
@@ -61,7 +61,7 @@ export function LandingHero() {
           initial={reduce ? false : { opacity: 0, x: 32, scale: 0.97 }}
           animate={reduce ? undefined : { opacity: 1, x: 0, scale: 1 }}
           transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
-          className="relative hidden md:block"
+          className="relative hidden xl:block"
         >
           <BookingMockup reduce={reduce ?? false} />
         </motion.div>
