@@ -176,7 +176,7 @@ These colors map to **booking states** in the product state machine. The machine
 |-------|------|-------------------|-------------------|--------------|
 | `pending` | `#CA8A04` | `rgba(202, 138, 4, 0.14)` | `#FDE68A` | Awaiting confirmation; **cautious optimism**—distinct from operational warning amber |
 | `confirmed` | `#3B82F6` | `rgba(59, 130, 246, 0.12)` | `#FFFFFF` | Committed timehold; **cool/trust** |
-| `arrived` | `#14B8A6` | `rgba(20, 184, 166, 0.14)` | `#CCFBF1` | On-premise presence; **teal** separates from completed green |
+| `arrived` | `#14B8A6` | `rgba(20, 184, 166, 0.14)` | `#CCFBF1` | On-premise presence; **teal** separates from in_progress green |
 | `waiting` | `#EA580C` | `rgba(234, 88, 12, 0.14)` | `#FFEDD5` | Queue pressure; **orange** reads as “needs motion” vs pending yellow |
 | `in_progress` | `#22C55E` | `rgba(34, 197, 94, 0.12)` | `#FFFFFF` | Active chair time; **success green** signals progressive forward motion (chair filled, revenue accruing) |
 | `completed` | `#6B6D76` | `rgba(107, 109, 118, 0.16)` | `#FFFFFF` | Closed-success residue; **neutral muted** — low arousal, distinct from `cancelled` slate by being neutral rather than blue-gray |
@@ -187,8 +187,8 @@ These colors map to **booking states** in the product state machine. The machine
 **Confusion guards:**
 
 - `pending` vs `warning.status`: pending uses **more yellow**; system warning uses **DE amber** (`#D97706`). If both appear adjacent, **enforce text labels**.
-- `confirmed` vs `in_service`: blue vs indigo—if indistinguishable in sunlight, **thicken keyline** or add **icon**.
-- `completed` vs VIP: completed is **green family only**; VIP is **gold only**.
+- `confirmed` vs `in_progress`: blue vs green—if indistinguishable in sunlight, **thicken keyline** or add **icon**.
+- `completed` vs VIP: completed is **neutral muted**; VIP is **gold only** — no confusion risk.
 
 ---
 
