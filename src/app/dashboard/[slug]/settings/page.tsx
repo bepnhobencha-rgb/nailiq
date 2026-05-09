@@ -25,7 +25,7 @@ export default async function SalonSettingsPage({ params }: Props) {
 
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
-    .select("dashboard_modules, dashboard_preset")
+    .select("dashboard_modules, dashboard_preset, email, email_verified")
     .eq("id", ctx.salon.id)
     .maybeSingle();
 
@@ -40,6 +40,8 @@ export default async function SalonSettingsPage({ params }: Props) {
     | {
         dashboard_modules?: unknown;
         dashboard_preset?: unknown;
+        email?: unknown;
+        email_verified?: unknown;
       }
     | null;
 
@@ -47,12 +49,20 @@ export default async function SalonSettingsPage({ params }: Props) {
   const dashboardPreset = parsePresetKey(row?.dashboard_preset);
   const canEditDashboardModules = ctx.role === "owner";
 
+  const salonEmail =
+    typeof row?.email === "string" && row.email.trim().length > 0
+      ? row.email.trim()
+      : null;
+  const emailVerified = row?.email_verified === true;
+
   return (
     <SalonSettingsHub
       slug={slug}
       dashboardModules={dashboardModules}
       dashboardPreset={dashboardPreset}
       canEditDashboardModules={canEditDashboardModules}
+      salonEmail={salonEmail}
+      emailVerified={emailVerified}
     />
   );
 }

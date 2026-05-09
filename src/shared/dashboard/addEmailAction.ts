@@ -3,6 +3,7 @@
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
+import { sendEmailVerification } from "@/shared/dashboard/sendEmailVerification";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 
 export type AddSalonEmailResult =
@@ -47,9 +48,15 @@ export async function addSalonEmail(
       console.error("[addSalonEmail] demo update", error);
       return { ok: false, error: "server_error" };
     }
-    // TODO Phase 2: Send verification email via Resend
-    // await sendVerificationEmail(email, slug)
-    // Will implement when Resend API key is available.
+    // Best-effort verification send. The email is already saved (with
+    // email_verified: false); a Resend miss/throw must not undo the
+    // save — owners can resave to retry. The send helper logs its own
+    // failures.
+    void sendEmailVerification({
+      salonId: salon.id,
+      salonName: String(salon.name ?? slug),
+      email: trimmed,
+    });
     return { ok: true };
   }
 
@@ -65,9 +72,12 @@ export async function addSalonEmail(
     return { ok: false, error: "server_error" };
   }
 
-  // TODO Phase 2: Send verification email via Resend
-  // await sendVerificationEmail(email, slug)
-  // Will implement when Resend API key is available.
+  // Best-effort send (see demo path above for rationale).
+  void sendEmailVerification({
+    salonId: salon.id,
+    salonName: String(salon.name ?? slug),
+    email: trimmed,
+  });
 
   return { ok: true };
 }
