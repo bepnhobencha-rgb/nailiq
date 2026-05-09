@@ -202,6 +202,7 @@ export type UserMessages = {
         vipIndicators: string;
         staffPerformance: string;
         timelineHeatmap: string;
+        soundAlerts: string;
       };
     };
     dashboardPreset: {
@@ -303,6 +304,8 @@ export type UserMessages = {
       /** Inline hint in booking drawer footer when offline (edit/cancel/start blocked). */
       offlineEditDisabled: string;
     };
+    /** Hint shown next to top-bar icon when Web Audio is locked by autoplay policy. */
+    soundUnlockHint: string;
     /** Top KPI band (gated by `dashboard_modules.kpi_bar`); revenue tile gated by `revenue_today`. */
     kpiBar: {
       waiting: string;
@@ -664,6 +667,7 @@ export const userEn: UserMessages = {
         vipIndicators: "Walk-in lane highlight",
         staffPerformance: "Staff role & busy ring",
         timelineHeatmap: "Dense timeline grid lines",
+        soundAlerts: "Sound alerts",
       },
     },
     dashboardPreset: {
@@ -757,6 +761,7 @@ export const userEn: UserMessages = {
       offlineAddDisabled: "Offline — cannot add walk-ins",
       offlineEditDisabled: "Offline — editing unavailable",
     },
+    soundUnlockHint: "Click anywhere to enable sound alerts",
     kpiBar: {
       waiting: "Waiting",
       avgWait: "Avg wait",
