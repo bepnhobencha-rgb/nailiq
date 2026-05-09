@@ -551,6 +551,36 @@ export type UserMessages = {
       /** Aria label template for the day-header button. `{date}` = "Mon 9". */
       openDayAria: string;
     };
+    /** Client profiles panel + page (`/dashboard/[slug]/clients`). */
+    clientProfiles: {
+      pageTitle: string;
+      sectionTitle: string;
+      sectionIntro: string;
+      searchPlaceholder: string;
+      loading: string;
+      empty: string;
+      unknownName: string;
+      vipBadge: string;
+      /** "{visits} visits · last {lastVisit}" — collapsed-row summary. */
+      summaryLine: string;
+      totalSpent: string;
+      email: string;
+      notes: string;
+      noNotes: string;
+      vipLabel: string;
+      vipHint: string;
+      errors: {
+        unauthorized: string;
+        forbidden: string;
+        server_error: string;
+      };
+      vipUpdateErrors: {
+        unauthorized: string;
+        forbidden: string;
+        not_found: string;
+        server_error: string;
+      };
+    };
   };
 };
 
@@ -1069,6 +1099,37 @@ export const userEn: UserMessages = {
       bookingCount: "{n} bookings",
       moreCount: "+{n} more",
       openDayAria: "Open day view for {date}",
+    },
+    clientProfiles: {
+      pageTitle: "Clients",
+      sectionTitle: "Recent clients",
+      sectionIntro:
+        "Last 50 clients sorted by their most recent visit. Search by name or phone.",
+      searchPlaceholder: "Search clients…",
+      loading: "Loading clients…",
+      empty: "No clients yet.",
+      unknownName: "(unnamed)",
+      vipBadge: "VIP",
+      summaryLine: "{visits} visits · last {lastVisit}",
+      totalSpent: "Total spent",
+      email: "Email",
+      notes: "Notes",
+      noNotes: "No notes yet.",
+      vipLabel: "VIP",
+      vipHint:
+        "VIP applies across salons (this client appears as VIP for any tenant).",
+      errors: {
+        unauthorized: "Sign in is required.",
+        forbidden:
+          "Only the salon owner or senior receptionist can view clients.",
+        server_error: "Could not load clients. Try again shortly.",
+      },
+      vipUpdateErrors: {
+        unauthorized: "Sign in is required.",
+        forbidden: "Only the salon owner can change VIP status.",
+        not_found: "Client profile not found.",
+        server_error: "Could not save. Try again shortly.",
+      },
     },
   },
 };
