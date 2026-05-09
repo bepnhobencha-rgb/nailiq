@@ -274,6 +274,19 @@ export type UserMessages = {
       waitingLabel: string;
       inProgressLabel: string;
     };
+    /** Salon-wide density slider — Simple ↔ Balanced ↔ Pro. */
+    density: {
+      label: string;
+      simple: string;
+      balanced: string;
+      pro: string;
+      /** sr-only on the radiogroup wrapper. */
+      ariaLabel: string;
+      /** Toast on successful update; takes the new level label. */
+      updated: (label: string) => string;
+      /** Toast on failure (any error). */
+      updateFailed: string;
+    };
     /** Top KPI band (gated by `dashboard_modules.kpi_bar`); revenue tile gated by `revenue_today`. */
     kpiBar: {
       waiting: string;
@@ -708,6 +721,15 @@ export const userEn: UserMessages = {
     statusPill: {
       waitingLabel: "WAIT",
       inProgressLabel: "ACTIVE",
+    },
+    density: {
+      label: "Density",
+      simple: "Simple",
+      balanced: "Balanced",
+      pro: "Pro",
+      ariaLabel: "Dashboard density — Simple, Balanced, or Pro",
+      updated: (label: string) => `Density set to ${label}`,
+      updateFailed: "Could not change density. Try again shortly.",
     },
     kpiBar: {
       waiting: "Waiting",

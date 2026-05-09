@@ -9,6 +9,7 @@ import { createClient } from "@/shared/lib/supabase/client";
 import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
 import { BookingDetailDrawer, type BookingDetailDrawerModel } from "./BookingDetailDrawer";
 import { DateSwitcher } from "./DateSwitcher";
+import { DensitySlider } from "./DensitySlider";
 import { KPIBar } from "./KPIBar";
 import { StaffTimelineGrid, type GridBooking } from "./StaffTimelineGrid";
 import { StatusPill } from "./StatusPill";
@@ -41,6 +42,10 @@ import {
 } from "@/shared/lib/salonMemberRole";
 import { formatInSalonTz, salonDateOffset, salonToday } from "@/shared/lib/salonTime";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import {
+  densityConfigFor,
+  type DensityLevel,
+} from "@/shared/dashboard/dashboardDensity";
 import type { BookingStatus } from "@/shared/types";
 
 export type ReceptionistCenterProps = {
@@ -349,6 +354,18 @@ function ReceptionistCenterInner({
   const timezone = data.salon.timezone;
   const isViewingToday = data.selectedDate === salonToday(timezone, nowIso);
   const modules = data.dashboardModules;
+  const densityConfig = useMemo(
+    () => densityConfigFor(data.dashboardDensity),
+    [data.dashboardDensity],
+  );
+
+  const onDensityChanged = useCallback((next: DensityLevel) => {
+    // Optimistic — slider has already flipped its local state. Reflect
+    // the new salon-wide density in the loaded data so downstream
+    // components (BookingBlock, StaffTimelineGrid) re-render with the
+    // new visual rhythm.
+    setData((d) => ({ ...d, dashboardDensity: next }));
+  }, []);
 
   const reloadCurrentDay = useCallback(async () => {
     const ymd = salonDateOffset(timezone, dateOffset, nowIsoRef.current);
@@ -848,6 +865,13 @@ function ReceptionistCenterInner({
                   labelInProgress={rcMessages.statusPill.inProgressLabel}
                 />
               ) : null}
+              <DensitySlider
+                slug={slug}
+                value={data.dashboardDensity}
+                labels={rcMessages.density}
+                onChanged={onDensityChanged}
+                onError={(msg) => setShakeMessage(msg)}
+              />
               <UserLanguageToggle language={language} onLanguageChange={setLanguage} />
             </div>
           </div>
@@ -954,8 +978,12 @@ function ReceptionistCenterInner({
               }}
               showStaffPerformanceDetail={modules.staff_performance}
               showTimelineHeatmap={modules.timeline_heatmap}
-              showBookingPrices={modules.revenue_today}
+              showBookingPrices={modules.revenue_today && densityConfig.showPriceInBlock}
               showWalkinAccent={modules.vip_indicators}
+              showBookingMetaLine={densityConfig.showMetaLine}
+              showStaffSkillBadges={densityConfig.showSkillBadges}
+              bookingBlockMinHeightPx={densityConfig.bookingBlockMinHeight}
+              timeSlotMinutesVisualHint={densityConfig.timeSlotMinutes}
             />
           </section>
           {isViewingToday && modules.queue_panel ? (
