@@ -37,7 +37,7 @@ import * as Sentry from "@sentry/nextjs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { Badge } from "@/components/ui/Badge";
 import { createClient } from "@/shared/lib/supabase/client";
@@ -223,6 +223,7 @@ function ReceptionistCenterInner({
   viewerRole: SalonMemberRole;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { language, setLanguage } = useUserLanguage();
   const messages = useMemo(() => getUserMessages(language), [language]);
 
@@ -254,16 +255,34 @@ function ReceptionistCenterInner({
 
   const [dateOffset, setDateOffset] = useState<-1 | 0 | 1>(0);
 
-  // View mode (Day | Week). Persisted in localStorage so the receptionist
-  // doesn't lose their choice on reload. Day is the default — week is a
-  // planning glance, day is the live operational job.
+  // View mode (Day | Week). Resolution order on mount:
+  //   1. `?view=week` / `?view=day` URL param wins (sidebar Calendar tab
+  //      links here with `?view=week` — we honour the deep link verbatim
+  //      AND persist it so a reload from the same URL keeps the choice).
+  //   2. localStorage `nailiq-view-mode` from a prior session.
+  //   3. Default `day` — the live operational job is the day grid; week
+  //      is a planning glance.
+  // SSR-safe: state starts at `day`; the URL/localStorage sync runs in
+  // an effect after mount.
+  const urlViewParam = searchParams?.get("view") ?? null;
   const [viewMode, setViewMode] = useState<"day" | "week">("day");
   useEffect(() => {
     if (typeof window === "undefined") return;
+    /* eslint-disable react-hooks/set-state-in-effect -- one-shot hydration from URL or localStorage */
+    if (urlViewParam === "week") {
+      setViewMode("week");
+      window.localStorage.setItem("nailiq-view-mode", "week");
+      return;
+    }
+    if (urlViewParam === "day") {
+      setViewMode("day");
+      window.localStorage.setItem("nailiq-view-mode", "day");
+      return;
+    }
     const stored = window.localStorage.getItem("nailiq-view-mode");
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate from localStorage on mount only
     if (stored === "week") setViewMode("week");
-  }, []);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [urlViewParam]);
   const onChangeViewMode = useCallback((next: "day" | "week") => {
     setViewMode(next);
     if (typeof window !== "undefined") {
