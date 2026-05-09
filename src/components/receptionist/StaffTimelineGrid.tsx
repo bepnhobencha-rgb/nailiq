@@ -68,6 +68,14 @@ export interface GridBooking {
   start_time_utc: string;
   end_time_utc: string;
   price_cents: number | null;
+  /**
+   * Server-derived booking-block icon flags (see
+   * `loadReceptionistCenterData.ts` for the derivation rules — no new
+   * DB columns).
+   */
+  is_vip: boolean;
+  has_notes: boolean;
+  has_design: boolean;
 }
 
 export interface StaffTimelineGridProps {
@@ -92,6 +100,16 @@ export interface StaffTimelineGridProps {
     formatTimeLabel: (utc: string) => string;
     conflictWith: (clientName: string) => string;
     overflowMessage: string;
+    /**
+     * Localized icon-stack labels for the booking block. Optional —
+     * defaults to English titles in `BookingBlock` when omitted.
+     */
+    bookingIcon?: {
+      vip: string;
+      notes: string;
+      late: string;
+      design: string;
+    };
   };
   /** When false, hides per-staff role line and busy ring on avatars (`staff_performance`). */
   showStaffPerformanceDetail?: boolean;
@@ -463,6 +481,18 @@ export function StaffTimelineGrid({
                   >
                     {rowBookings.map((b) => {
                       const { leftPx, widthPx } = bookingToPosition(b, timezone);
+                      // `late` per `STATE_MACHINE.md` §3+§5 is an overlay
+                      // flag on `in_progress` whose end time has passed —
+                      // not a status replacement. Computed client-side
+                      // against `nowIso` so the indicator hydrates in
+                      // sync with the NowLine + per-minute tick.
+                      const endMs = Date.parse(b.end_time_utc);
+                      const nowMs = Date.parse(nowIso);
+                      const isLate =
+                        b.status === "in_progress" &&
+                        Number.isFinite(endMs) &&
+                        Number.isFinite(nowMs) &&
+                        endMs < nowMs;
                       return (
                         <BookingBlock
                           key={b.id}
@@ -472,12 +502,18 @@ export function StaffTimelineGrid({
                           status={b.status}
                           source={b.source}
                           startTimeLabel={labels.formatTimeLabel(b.start_time_utc)}
+                          endTimeLabel={labels.formatTimeLabel(b.end_time_utc)}
                           priceCents={b.price_cents}
                           leftPx={leftPx}
                           widthPx={widthPx}
                           onClick={() => onBookingClick(b.id)}
                           showPrice={showBookingPrices}
                           showWalkinAccent={showWalkinAccent}
+                          isVip={b.is_vip}
+                          hasNotes={b.has_notes}
+                          hasDesign={b.has_design}
+                          isLate={isLate}
+                          iconLabels={labels.bookingIcon}
                         />
                       );
                     })}

@@ -319,6 +319,9 @@ function ReceptionistCenterInner({
           start_time_utc: b.start_time_utc,
           end_time_utc: b.end_time_utc,
           price_cents: b.price_cents ?? null,
+          is_vip: b.is_vip,
+          has_notes: b.has_notes,
+          has_design: b.has_design,
         },
       ];
     });
@@ -947,6 +950,7 @@ function ReceptionistCenterInner({
                 formatTimeLabel: (utcIso: string) => formatInSalonTz(utcIso, timezone, "shortTime"),
                 conflictWith: rcMessages.grid.conflictWith,
                 overflowMessage: rcMessages.grid.overflowMessage,
+                bookingIcon: rcMessages.grid.bookingIcon,
               }}
               showStaffPerformanceDetail={modules.staff_performance}
               showTimelineHeatmap={modules.timeline_heatmap}

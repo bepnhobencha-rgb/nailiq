@@ -109,6 +109,32 @@ export interface ReceptionistCenterData {
     addon_duration_minutes: number | null;
     addon_buffer_minutes: number | null;
     addon_price_cents: number | null;
+    /**
+     * Receptionist booking-block icon flags. Derived server-side from
+     * existing columns (no new DB schema) so the timeline can render them
+     * synchronously on first paint:
+     *
+     *   - `is_vip`     → `walkin_source === 'vip'` (existing channel
+     *                    enum from the walk-in queue meta migration).
+     *   - `has_notes`  → `client_notes` is a non-empty string after trim.
+     *   - `has_design` → service name (or addon service name) matches
+     *                    `/(nail\s*art|design)/i`. Heuristic — the schema
+     *                    has no first-class "requires design" flag yet,
+     *                    so we match the conventional service-naming the
+     *                    catalog already uses ("Acrylic with Design",
+     *                    "Nail Art", etc.). Documented for PM follow-up
+     *                    if a structured `service.is_design_capable`
+     *                    column is preferred later.
+     *
+     * `is_late` is **not** stored here — it's a live derivation of
+     * `status === 'in_progress' && end_time_utc < now` and is computed
+     * in the client when "now" advances per minute. Per
+     * `STATE_MACHINE.md` §3 + §5 `late` is an overlay flag, not a
+     * status replacement.
+     */
+    is_vip: boolean;
+    has_notes: boolean;
+    has_design: boolean;
   }>;
   /** Per-staff service whitelist for this salon. `null` = no rows → all-capable fallback. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
@@ -439,6 +465,7 @@ export async function loadReceptionistCenterData(
       service_id,
       price_cents,
       joined_queue_at,
+      walkin_source,
       addon_service_id,
       addon_price_cents,
       services!bookings_service_id_fkey ( name, duration_minutes, buffer_minutes ),
@@ -513,6 +540,7 @@ export async function loadReceptionistCenterData(
     service_id: string;
     price_cents: number | null;
     joined_queue_at: string | null;
+    walkin_source: string | null;
     addon_service_id: string | null;
     addon_price_cents: number | null;
     services: ServiceJoinMinimal | ServiceJoinMinimal[] | null;
@@ -577,6 +605,19 @@ export async function loadReceptionistCenterData(
     // misled into seeing a single-service booking.
     const hasAddon = addonId !== null;
 
+    const isVip =
+      typeof row.walkin_source === "string" &&
+      row.walkin_source.trim().toLowerCase() === "vip";
+    const hasNotes =
+      typeof row.client_notes === "string" && row.client_notes.trim().length > 0;
+    // Heuristic: catalog naming convention. Match "nail art" or "design" in
+    // either the primary or addon service name. No structured DB flag exists
+    // yet; documented for PM reconciliation if a `services.is_design_capable`
+    // column is preferred later.
+    const designRe = /(nail\s*art|design)/i;
+    const hasDesign =
+      designRe.test(svc?.name ?? "") || (hasAddon && designRe.test(addon?.name ?? ""));
+
     return {
       id: row.id,
       client_name: row.client_name,
@@ -605,6 +646,9 @@ export async function loadReceptionistCenterData(
         ? Math.max(0, Math.round(Number(addon?.buffer_minutes ?? 0)))
         : null,
       addon_price_cents: hasAddon ? row.addon_price_cents ?? null : null,
+      is_vip: isVip,
+      has_notes: hasNotes,
+      has_design: hasDesign,
     };
   });
 

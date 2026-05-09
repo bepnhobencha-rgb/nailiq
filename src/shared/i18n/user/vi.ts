@@ -342,6 +342,12 @@ export const userVi: UserMessages = {
         clientName.trim() ? `⚠ Trùng — ${clientName}` : "⚠ Ô đã có lịch",
       overflowMessage: "⚠ Quá giờ đóng",
       conflictShake: "Trùng lịch. Chọn giờ hoặc thợ khác.",
+      bookingIcon: {
+        vip: "VIP",
+        notes: "Có ghi chú",
+        late: "Trễ",
+        design: "Vẽ / Nail art",
+      },
     },
     undo: {
       undo: "Hoàn tác",
