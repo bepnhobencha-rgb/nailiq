@@ -239,13 +239,19 @@ export async function finalizeRegisterSessionAfterPhoneOtp(
     return { ok: false, reason: "server_error" };
   }
 
+  // `payload` carries server-side flow state so /register/setup can
+  // recover after a reload (sessionStorage fallback). Today it records
+  // the verified phone digits; extend additively.
+  // Cast: `payload` not yet in the auto-generated DB types until next
+  // regeneration.
   const { error: tokErr } = await adminInsert
     .from("register_completion_tokens")
     .insert({
       phone,
       token: completionToken,
       expires_at: tokenExpiresAt,
-    });
+      payload: { phone_digits: phone },
+    } as never);
 
   if (tokErr) {
     console.error(
