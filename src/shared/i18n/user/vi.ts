@@ -461,5 +461,11 @@ export const userVi: UserMessages = {
       noPermissionEdit: "Liên hệ chủ tiệm để chỉnh lịch",
       noPermissionCancel: "Liên hệ chủ tiệm để hủy lịch",
     },
+    errorBoundary: {
+      title: "Có lỗi tại quầy lễ tân",
+      message:
+        "Quầy gặp lỗi bất ngờ. Bấm thử lại; nếu tiếp tục, báo cho chủ tiệm.",
+      retryButton: "Thử lại",
+    },
   },
 };

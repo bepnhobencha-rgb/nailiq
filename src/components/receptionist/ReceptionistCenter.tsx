@@ -1,5 +1,7 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
+
 /**
  * ReceptionistCenter — performance notes
  * --------------------------------------
@@ -557,6 +559,30 @@ function ReceptionistCenterInner({
             setConnectionState("reconnecting");
           } else if (status === "CLOSED") {
             setConnectionState("offline");
+          }
+          if (
+            status === "CHANNEL_ERROR" ||
+            status === "TIMED_OUT" ||
+            status === "CLOSED"
+          ) {
+            // Production telemetry: realtime subscription health
+            // tells us about Supabase realtime degradations affecting
+            // the desk. Captured as a warning event (not exception)
+            // since the polling fallback / banner already keeps the
+            // user productive.
+            Sentry.captureEvent({
+              message: `realtime subscription ${status.toLowerCase()}`,
+              level: status === "CLOSED" ? "warning" : "info",
+              tags: {
+                "nailiq.event": "realtime_subscription_failure",
+                "nailiq.surface": "receptionist_center",
+                "nailiq.realtime_status": status,
+              },
+              extra: {
+                salonId: data.salon.id,
+                err: err ? String(err) : null,
+              },
+            });
           }
           if (
             process.env.NODE_ENV === "development" &&

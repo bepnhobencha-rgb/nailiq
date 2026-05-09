@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import type { SalonDashboardBooking } from "@/shared/types";
@@ -258,6 +259,22 @@ export async function performEditBooking(
       conflict.client_name != null && String(conflict.client_name).trim() !== ""
         ? String(conflict.client_name).trim()
         : "";
+    Sentry.captureEvent({
+      message: "booking conflict detected (edit)",
+      level: "warning",
+      tags: {
+        "nailiq.event": "booking_conflict",
+        "nailiq.surface": "edit_booking",
+      },
+      extra: {
+        salonId,
+        bookingId,
+        newStaffId,
+        slotStartUtc,
+        slotEndUtc,
+        conflictBookingId: conflict.id,
+      },
+    });
     return {
       ok: false,
       error: "slot_conflict",
@@ -293,9 +310,26 @@ export async function performEditBooking(
   if (upErr) {
     // 23P01 = exclusion_violation (bookings_no_overlap GiST EXCLUDE).
     if (upErr.code === "23P01") {
+      Sentry.captureEvent({
+        message: "DB-level slot conflict on edit (GiST EXCLUDE)",
+        level: "warning",
+        tags: {
+          "nailiq.event": "booking_conflict",
+          "nailiq.surface": "edit_booking",
+          "nailiq.cause": "db_exclusion",
+        },
+        extra: { salonId, bookingId, newStaffId, slotStartUtc, slotEndUtc },
+      });
       return { ok: false, error: "slot_conflict" };
     }
     console.error("[performEditBooking] update", upErr);
+    Sentry.captureException(upErr, {
+      tags: {
+        "nailiq.event": "booking_action_error",
+        "nailiq.surface": "edit_booking",
+      },
+      extra: { salonId, bookingId, where: "update" },
+    });
     return { ok: false, error: "server_error" };
   }
 

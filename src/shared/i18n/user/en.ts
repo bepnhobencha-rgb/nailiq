@@ -501,6 +501,12 @@ export type UserMessages = {
       add: string;
       remove: string;
     };
+    /** Top-level error boundary fallback for the Receptionist Center. */
+    errorBoundary: {
+      title: string;
+      message: string;
+      retryButton: string;
+    };
   };
 };
 
@@ -964,6 +970,12 @@ export const userEn: UserMessages = {
       none: "None",
       add: "Add extra service",
       remove: "Remove add-on",
+    },
+    errorBoundary: {
+      title: "Something went wrong at the desk",
+      message:
+        "The Receptionist Center hit an unexpected error. Try again, and tell the salon owner if it keeps happening.",
+      retryButton: "Try again",
     },
   },
 };

@@ -1,5 +1,6 @@
 "use server";
 
+import * as Sentry from "@sentry/nextjs";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import {
@@ -301,6 +302,22 @@ export async function assignWalkinToSlot(
     existingBookings: (existing ?? []) as ConflictCheckBooking[],
   });
   if (conflict !== null) {
+    Sentry.captureEvent({
+      message: "booking conflict detected (assign walk-in)",
+      level: "warning",
+      tags: {
+        "nailiq.event": "booking_conflict",
+        "nailiq.surface": "assign_walkin",
+      },
+      extra: {
+        salonId: ctx.salon.id,
+        bookingId,
+        staffId,
+        slotStartUtc,
+        slotEndUtc,
+        conflictBookingId: conflict.id,
+      },
+    });
     return fail("slot_conflict");
   }
 
@@ -321,8 +338,27 @@ export async function assignWalkinToSlot(
 
   if (upErr) {
     // 23P01 = exclusion_violation (bookings_no_overlap GiST EXCLUDE).
-    if (upErr.code === "23P01") return fail("slot_conflict");
+    if (upErr.code === "23P01") {
+      Sentry.captureEvent({
+        message: "DB-level slot conflict on assign (GiST EXCLUDE)",
+        level: "warning",
+        tags: {
+          "nailiq.event": "booking_conflict",
+          "nailiq.surface": "assign_walkin",
+          "nailiq.cause": "db_exclusion",
+        },
+        extra: { salonId: ctx.salon.id, bookingId, staffId, slotStartUtc },
+      });
+      return fail("slot_conflict");
+    }
     console.error("[assignWalkinToSlot] update", upErr);
+    Sentry.captureException(upErr, {
+      tags: {
+        "nailiq.event": "booking_action_error",
+        "nailiq.surface": "assign_walkin",
+      },
+      extra: { salonId: ctx.salon.id, bookingId, where: "update" },
+    });
     return fail("server_error");
   }
 
