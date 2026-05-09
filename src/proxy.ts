@@ -1,3 +1,24 @@
+/**
+ * Request proxy (Next.js 16 convention).
+ *
+ * Naming: this file is `src/proxy.ts` exporting `proxy(request)` — Next
+ * 16 renamed the legacy `middleware.ts` / `middleware()` convention to
+ * `proxy.ts` / `proxy()`. The build registers the entry as "Proxy
+ * (Middleware)". Do not rename back to `middleware.ts`; do not add a
+ * second one in `src/app/`.
+ *
+ * Audit (2026-05-09, against Next 16.2.4 + @supabase/ssr 0.10.2):
+ *   - `proxy` export name + `config.matcher` shape match Next 16. ✓
+ *   - `cookies.getAll` + `setAll(cookiesToSet, responseHeaders)` matches
+ *     the `CookieMethodsServer.setAll` signature in @supabase/ssr
+ *     0.10.x (header argument is `Record<string, string>`). ✓
+ *   - `request.cookies.set(name, value)` and
+ *     `response.cookies.set({ ...cookie, secure })` are current
+ *     `next/server` APIs (no deprecation in Next 16). ✓
+ *   - Sentry `salon.slug` / `surface` tags + demo-cookie pin both
+ *     preserved. ✓
+ *   - No deprecation warnings emitted by `npm run build`.
+ */
 import * as Sentry from "@sentry/nextjs";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
