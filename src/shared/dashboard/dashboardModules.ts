@@ -14,6 +14,13 @@ export const DASHBOARD_MODULE_KEYS = [
   "vip_indicators",
   "staff_performance",
   "timeline_heatmap",
+  /**
+   * Optional Web Audio alerts for new walk-ins, overdue bookings, and
+   * VIP arrivals. Default off; opted in via settings. Generated tones
+   * only (no external files); volume capped, durations 200–400ms per
+   * tone — calm-by-default per UX_PRINCIPLES §1.
+   */
+  "sound_alerts",
 ] as const;
 
 export type DashboardModuleKey = (typeof DASHBOARD_MODULE_KEYS)[number];
@@ -31,6 +38,9 @@ export const DEFAULT_DASHBOARD_MODULES: DashboardModulesConfig = {
   vip_indicators: true,
   staff_performance: false,
   timeline_heatmap: false,
+  // Calm-by-default per UX_PRINCIPLES §1: receptionists explicitly
+  // opt in via settings; never on without an owner click.
+  sound_alerts: false,
 };
 
 /** Keys owners can toggle in settings (core queue is always on; see `finalizeDashboardModules`). */

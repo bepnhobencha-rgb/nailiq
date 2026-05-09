@@ -183,6 +183,7 @@ export const userVi: UserMessages = {
         vipIndicators: "Điểm nhấn làn walk-in",
         staffPerformance: "Vai trò nhân viên & vòng bận",
         timelineHeatmap: "Đường lưới timeline dày",
+        soundAlerts: "Âm báo",
       },
     },
     dashboardPreset: {
@@ -280,6 +281,7 @@ export const userVi: UserMessages = {
       offlineAddDisabled: "Mất kết nối — không thêm walk-in được",
       offlineEditDisabled: "Mất kết nối — không sửa được lịch",
     },
+    soundUnlockHint: "Bấm vào trang để bật âm báo",
     kpiBar: {
       waiting: "Đang chờ",
       avgWait: "Chờ trung bình",

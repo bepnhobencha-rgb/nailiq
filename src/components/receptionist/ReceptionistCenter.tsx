@@ -43,6 +43,7 @@ import {
   type SalonMemberRole,
 } from "@/shared/lib/salonMemberRole";
 import { formatInSalonTz, salonDateOffset, salonToday } from "@/shared/lib/salonTime";
+import { useSoundAlerts } from "@/shared/lib/useSoundAlerts";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import {
   densityConfigFor,
@@ -289,6 +290,11 @@ function ReceptionistCenterInner({
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("connected");
   const isOffline = connectionState !== "connected";
+
+  // Sound alerts (Web Audio, generated tones only). Hook is a no-op
+  // when `dashboard_modules.sound_alerts` is off; honors browser
+  // autoplay policy via lazy AudioContext + first-gesture unlock.
+  const { playAlert, isUnlocked: isSoundUnlocked } = useSoundAlerts(data.dashboardModules);
 
   const staffNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -546,6 +552,79 @@ function ReceptionistCenterInner({
       });
     };
   }, [data.salon.id, reloadCurrentDay]);
+
+  /**
+   * Sound-alert change detector. Three triggers:
+   *   - `vip_arrival` — a walk-in row appears whose id we haven't
+   *     seen before AND whose `walkin_source === "vip"`. Takes
+   *     precedence over `new_walkin` (warm chime > generic two-tone)
+   *     so receptionists hear the VIP cue distinctly.
+   *   - `new_walkin` — walkin queue length increases AND no VIP
+   *     arrival fired this tick. Dedupe-by-length avoids re-firing
+   *     when the same walk-ins reload.
+   *   - `overdue_booking` — an `in_progress` booking whose end_time
+   *     is now in the past, fired ONCE per booking id (set-tracked).
+   *
+   * Initial render seeds the seen-sets without firing alerts so the
+   * first paint after a reload doesn't dump every existing late /
+   * VIP entry as a chord. Module gate is checked inside `playAlert`;
+   * effect always runs so the seen-sets stay current even when
+   * audio is off (toggling on later doesn't replay history).
+   */
+  const hasSoundInitedRef = useRef(false);
+  const prevWalkinCountRef = useRef(0);
+  const seenVipIdsRef = useRef<Set<string>>(new Set());
+  const seenLateIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const queueLength = data.walkinQueue.length;
+    const nowMs = Date.parse(nowIso);
+
+    if (!hasSoundInitedRef.current) {
+      // Seed only — no alerts on initial mount / reload.
+      for (const q of data.walkinQueue) {
+        if (q.walkin_source === "vip") seenVipIdsRef.current.add(q.id);
+      }
+      for (const b of data.bookingsForDay) {
+        const endMs = Date.parse(b.end_time_utc);
+        if (
+          b.status === "in_progress" &&
+          Number.isFinite(endMs) &&
+          endMs < nowMs
+        ) {
+          seenLateIdsRef.current.add(b.id);
+        }
+      }
+      prevWalkinCountRef.current = queueLength;
+      hasSoundInitedRef.current = true;
+      return;
+    }
+
+    // VIP arrivals (precedence over plain new_walkin).
+    let firedVip = false;
+    for (const q of data.walkinQueue) {
+      if (q.walkin_source === "vip" && !seenVipIdsRef.current.has(q.id)) {
+        seenVipIdsRef.current.add(q.id);
+        playAlert("vip_arrival");
+        firedVip = true;
+      }
+    }
+
+    // Plain new walk-in (only when no VIP fired this tick).
+    if (!firedVip && queueLength > prevWalkinCountRef.current) {
+      playAlert("new_walkin");
+    }
+    prevWalkinCountRef.current = queueLength;
+
+    // Newly overdue bookings.
+    for (const b of data.bookingsForDay) {
+      if (b.status !== "in_progress") continue;
+      const endMs = Date.parse(b.end_time_utc);
+      if (!Number.isFinite(endMs) || endMs >= nowMs) continue;
+      if (seenLateIdsRef.current.has(b.id)) continue;
+      seenLateIdsRef.current.add(b.id);
+      playAlert("overdue_booking");
+    }
+  }, [data.walkinQueue, data.bookingsForDay, nowIso, playAlert]);
 
   const detailModel = useMemo((): BookingDetailDrawerModel | null => {
     const id = drawerBookingId;
@@ -919,6 +998,28 @@ function ReceptionistCenterInner({
                 >
                   {rcMessages.roleBadge.nailTechView}
                 </Badge>
+              ) : null}
+              {/*
+               * Sound-unlock hint. Only renders when sound_alerts is
+               * on AND the AudioContext hasn't yet been resumed by a
+               * user gesture. Disappears the moment any tap/keystroke
+               * unlocks audio. Static span (no motion) — UX_PRINCIPLES
+               * §1 calm-by-default; the hint is informational, not a
+               * call to action. Title attribute carries the localized
+               * "click anywhere to enable" copy; the icon itself
+               * pairs with `aria-label` so screen readers narrate
+               * the state.
+               */}
+              {modules.sound_alerts && !isSoundUnlocked ? (
+                <span
+                  data-testid="sound-locked-hint"
+                  role="status"
+                  aria-label={rcMessages.soundUnlockHint}
+                  title={rcMessages.soundUnlockHint}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-nq-muted/30 bg-nq-bg text-sm leading-none text-nq-muted"
+                >
+                  🔇
+                </span>
               ) : null}
               {/*
                * Density slider: hidden for nail_tech since the server

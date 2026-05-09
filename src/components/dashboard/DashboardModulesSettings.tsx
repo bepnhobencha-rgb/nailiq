@@ -28,6 +28,7 @@ const OWNER_ROWS: {
   { key: "vip_indicators", label: "vipIndicators" },
   { key: "staff_performance", label: "staffPerformance" },
   { key: "timeline_heatmap", label: "timelineHeatmap" },
+  { key: "sound_alerts", label: "soundAlerts" },
 ];
 
 const toggleInputClass =
