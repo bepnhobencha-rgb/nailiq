@@ -193,6 +193,16 @@ export type UserMessages = {
       saveFailed: string;
       saveButton: string;
       savingButton: string;
+      /** Headline copy on the banner (paired with the lock icon). */
+      headline: string;
+      /** Sub-line social-proof / urgency copy under the headline. */
+      socialProof: string;
+      /** Toggle button that expands the inline email form. */
+      ctaAdd: string;
+      /** Dismiss button (7-day snooze). */
+      ctaLater: string;
+      /** Success bubble shown for 3s after a successful save. */
+      successMessage: string;
     };
   };
   salonDashboard: {
@@ -911,6 +921,13 @@ export const userEn: UserMessages = {
       saveFailed: "Could not save email. Try again.",
       saveButton: "Save email",
       savingButton: "Saving…",
+      headline:
+        "Secure your account — add email to never lose dashboard access",
+      socialProof:
+        "3 salons lost access this week from missing recovery email",
+      ctaAdd: "Add email",
+      ctaLater: "Maybe later",
+      successMessage: "✓ Email saved! You're protected.",
     },
   },
   salonDashboard: {

@@ -166,6 +166,13 @@ export const userVi: UserMessages = {
       saveFailed: "Không lưu được email. Thử lại.",
       saveButton: "Lưu email",
       savingButton: "Đang lưu…",
+      headline:
+        "Bảo mật tài khoản — thêm email để không mất quyền truy cập",
+      socialProof:
+        "3 tiệm mất quyền truy cập tuần này vì thiếu email khôi phục",
+      ctaAdd: "Thêm email",
+      ctaLater: "Để sau",
+      successMessage: "✓ Đã lưu email! Tài khoản đã được bảo vệ.",
     },
   },
   salonDashboard: {
