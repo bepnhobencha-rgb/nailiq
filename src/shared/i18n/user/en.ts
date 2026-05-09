@@ -529,6 +529,28 @@ export type UserMessages = {
       message: string;
       retryButton: string;
     };
+    /** Day/Week view toggle in the top bar. */
+    viewMode: {
+      day: string;
+      week: string;
+      ariaLabel: string;
+    };
+    /** Read-only week-overview grid. */
+    weekView: {
+      title: string;
+      prevWeek: string;
+      thisWeek: string;
+      nextWeek: string;
+      loading: string;
+      dayError: string;
+      emptyDay: string;
+      /** "{n} bookings" — count badge per day. */
+      bookingCount: string;
+      /** "+{n} more" — overflow indicator. */
+      moreCount: string;
+      /** Aria label template for the day-header button. `{date}` = "Mon 9". */
+      openDayAria: string;
+    };
     /** Client profiles panel + page (`/dashboard/[slug]/clients`). */
     clientProfiles: {
       pageTitle: string;
@@ -1060,6 +1082,23 @@ export const userEn: UserMessages = {
       message:
         "The Receptionist Center hit an unexpected error. Try again, and tell the salon owner if it keeps happening.",
       retryButton: "Try again",
+    },
+    viewMode: {
+      day: "Day",
+      week: "Week",
+      ariaLabel: "View mode",
+    },
+    weekView: {
+      title: "Week",
+      prevWeek: "Prev",
+      thisWeek: "This week",
+      nextWeek: "Next",
+      loading: "Loading…",
+      dayError: "Could not load this day.",
+      emptyDay: "No bookings",
+      bookingCount: "{n} bookings",
+      moreCount: "+{n} more",
+      openDayAria: "Open day view for {date}",
     },
     clientProfiles: {
       pageTitle: "Clients",
