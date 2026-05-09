@@ -142,6 +142,13 @@ export interface ReceptionistCenterData {
   }>;
   /** Per-staff service whitelist for this salon. `null` = no rows → all-capable fallback. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
+  /**
+   * Top services by booking frequency on the selected day, ordered by count
+   * (descending). Up to 3 ids. Empty when fewer than 2 bookings exist (the
+   * "popular" signal is meaningless on a near-empty day). Computed from the
+   * already-loaded `bookingsForDay` so no extra query is required.
+   */
+  popularServiceIds: string[];
   selectedDate: string;
   /**
    * Effective desk flags: `applyPreset(dashboardPreset, parsedModules)`.
@@ -689,6 +696,8 @@ export async function loadReceptionistCenterData(
 
   const enrichedStaff = enrichStaffRows(staffRows ?? [], bookingsForDay);
 
+  const popularServiceIds = computePopularServiceIds(bookingsForDay);
+
   const kpiSnapshot = computeKpiSnapshot({
     walkinQueue,
     bookingsForDay,
@@ -713,6 +722,7 @@ export async function loadReceptionistCenterData(
       walkinQueue,
       bookingsForDay,
       capabilityRows,
+      popularServiceIds,
       selectedDate: dateYmd,
       dashboardModules,
       dashboardPreset,
@@ -723,6 +733,36 @@ export async function loadReceptionistCenterData(
 }
 
 const COMING_UP_WINDOW_MINUTES = 30;
+const POPULAR_SERVICE_MAX = 3;
+const POPULAR_SERVICE_MIN_BOOKINGS = 2;
+
+/**
+ * Top-N service ids by booking frequency on the selected day. Used by
+ * Quick Add to surface shortcut chips that auto-select a service. Returns
+ * `[]` when fewer than `POPULAR_SERVICE_MIN_BOOKINGS` bookings exist —
+ * the signal is too noisy on near-empty days.
+ *
+ * Cancelled bookings are still counted: from the receptionist's
+ * perspective, "what people asked for today" is the right popularity
+ * signal regardless of whether the booking ultimately stuck.
+ */
+function computePopularServiceIds(
+  bookingsForDay: ReceptionistCenterData["bookingsForDay"],
+): string[] {
+  if (bookingsForDay.length < POPULAR_SERVICE_MIN_BOOKINGS) return [];
+  const counts = new Map<string, number>();
+  for (const b of bookingsForDay) {
+    const id = String(b.service_id ?? "").trim();
+    if (!id) continue;
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  const ranked = Array.from(counts.entries())
+    .filter(([, n]) => n >= 1)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, POPULAR_SERVICE_MAX)
+    .map(([id]) => id);
+  return ranked;
+}
 
 /**
  * Pure derivation of the receptionist KPI snapshot from already-loaded

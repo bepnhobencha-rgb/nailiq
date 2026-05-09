@@ -81,6 +81,14 @@ export interface WalkinQueueSidebarProps {
   showWaitTime?: boolean;
   /** `vip_indicators` module — hides VIP source chip */
   showVipIndicator?: boolean;
+  /**
+   * Popular service ids derived from today's bookings (server-side, in
+   * `loadReceptionistCenterData`). Rendered as shortcut chips above the
+   * service grid in `WalkinAddForm`. Empty array hides the chip row.
+   */
+  popularServiceIds?: ReadonlyArray<string>;
+  /** Localized label for the popular services chip row ("Popular today"). */
+  popularServicesLabel?: string;
 }
 
 export function WalkinQueueSidebar({
@@ -99,6 +107,8 @@ export function WalkinQueueSidebar({
   showQuickAdd = true,
   showWaitTime = true,
   showVipIndicator = true,
+  popularServiceIds,
+  popularServicesLabel,
 }: WalkinQueueSidebarProps) {
   const [sortMode, setSortMode] = useState<QueueSortMode>("fifo");
 
@@ -147,6 +157,8 @@ export function WalkinQueueSidebar({
             disabled={addFormDisabled}
             isOffline={isOffline}
             offlineDisabledHint={offlineAddDisabledHint}
+            popularServiceIds={popularServiceIds}
+            popularServicesLabel={popularServicesLabel}
           />
         ) : null}
 

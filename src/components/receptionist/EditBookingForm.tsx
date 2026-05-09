@@ -130,6 +130,11 @@ export function EditBookingForm({
   );
   const [selectedStaff, setSelectedStaff] = useState(originalStaff);
   const [selectedService, setSelectedService] = useState(originalService);
+  // `selectedAddon === ""` represents "no add-on" (matches the empty
+  // <option> below). Initial value mirrors whatever the booking already
+  // carries so an unchanged form doesn't accidentally remove the addon.
+  const originalAddon = booking.addon_service_id ?? "";
+  const [selectedAddon, setSelectedAddon] = useState<string>(originalAddon);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -175,17 +180,20 @@ export function EditBookingForm({
     }
   }, [capableStaff, selectedStaff, originalStaff]);
 
-  /** Addon, when present, contributes to span + price but is read-only in v1. */
+  /** Resolved add-on row for the current select value; null when "None". */
+  const selectedAddonSvc = useMemo(() => {
+    if (!selectedAddon) return null;
+    return services.find((s) => s.id === selectedAddon) ?? null;
+  }, [selectedAddon, services]);
+
+  /** Add-on contribution (duration + buffer) — recomputes live as the
+   *  receptionist swaps the select. Returns 0 when no add-on selected. */
   const addonSpanMinutes = useMemo(() => {
-    if (!booking.addon_service_id) return 0;
-    const dur = Math.max(0, Math.round(Number(booking.addon_duration_minutes ?? 0)));
-    const buf = Math.max(0, Math.round(Number(booking.addon_buffer_minutes ?? 0)));
+    if (!selectedAddonSvc) return 0;
+    const dur = Math.max(0, Math.round(Number(selectedAddonSvc.duration_minutes ?? 0)));
+    const buf = Math.max(0, Math.round(Number(selectedAddonSvc.buffer_minutes ?? 0)));
     return dur + buf;
-  }, [
-    booking.addon_service_id,
-    booking.addon_duration_minutes,
-    booking.addon_buffer_minutes,
-  ]);
+  }, [selectedAddonSvc]);
 
   const endTimeDisplay = useMemo(() => {
     if (!selectedSvc) return "—";
@@ -203,28 +211,12 @@ export function EditBookingForm({
     if (!selectedSvc) return "—";
     const mainCents = Number(selectedSvc.price_cents);
     if (!Number.isFinite(mainCents)) return "—";
-    const addonCents = booking.addon_service_id
-      ? Number(booking.addon_price_cents ?? 0)
+    const addonCents = selectedAddonSvc
+      ? Number(selectedAddonSvc.price_cents ?? 0)
       : 0;
     const total = mainCents + (Number.isFinite(addonCents) ? addonCents : 0);
     return `$${(total / 100).toFixed(2)}`;
-  }, [selectedSvc, booking.addon_service_id, booking.addon_price_cents]);
-
-  const addonReadonly = useMemo(() => {
-    if (!booking.addon_service_id) return null;
-    const name = booking.addon_service_name?.trim() || "—";
-    const dur = Math.max(0, Math.round(Number(booking.addon_duration_minutes ?? 0)));
-    const cents = Number(booking.addon_price_cents ?? 0);
-    const priceLabel = Number.isFinite(cents)
-      ? `$${(cents / 100).toFixed(2)}`
-      : "—";
-    return { name, dur, priceLabel };
-  }, [
-    booking.addon_service_id,
-    booking.addon_service_name,
-    booking.addon_duration_minutes,
-    booking.addon_price_cents,
-  ]);
+  }, [selectedSvc, selectedAddonSvc]);
 
   const proposedStartUtc = useMemo(
     () => salonWallTimeToUtcIso(dayYmd, selectedTimeMinutes, timezone),
@@ -234,9 +226,11 @@ export function EditBookingForm({
   const hasChanges =
     !sameUtcInstant(proposedStartUtc, booking.start_time_utc) ||
     selectedStaff !== originalStaff ||
-    selectedService !== originalService;
+    selectedService !== originalService ||
+    selectedAddon !== originalAddon;
 
   const editCopy = rcMessages.edit;
+  const addonCopy = rcMessages.editAddon;
 
   const handleSave = async () => {
     setSaving(true);
@@ -254,6 +248,11 @@ export function EditBookingForm({
       newStartTimeUtc,
       newStaffId: selectedStaff,
       newServiceId: selectedService,
+      // Empty string from the <select> means "no add-on"; map to `null`
+      // so the server treats it as a removal request rather than a
+      // preserve. Always-defined here (controlled select) so the
+      // server takes the new-value branch even when unchanged.
+      newAddonServiceId: selectedAddon === "" ? null : selectedAddon,
     });
 
     setSaving(false);
@@ -361,19 +360,31 @@ export function EditBookingForm({
           </select>
         </label>
 
-        {addonReadonly ? (
-          <div
-            className="block space-y-1"
-            data-testid="edit-addon-readonly"
+        <label className="block space-y-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+            {addonCopy.label}
+          </span>
+          <select
+            data-testid="edit-addon-select"
+            className={cn(
+              "min-h-11 w-full rounded-lg border border-nq-muted/40 bg-nq-bg px-3 text-sm text-nq-foreground",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/40",
+            )}
+            value={selectedAddon}
+            onChange={(e) => setSelectedAddon(e.target.value)}
           >
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
-              {rcMessages.drawer.sectionAddon}
-            </span>
-            <p className="rounded-lg border border-nq-muted/30 bg-nq-bg px-3 py-2 text-sm text-nq-foreground">
-              {`${addonReadonly.name} · ${addonReadonly.dur}m · ${addonReadonly.priceLabel}`}
-            </p>
-          </div>
-        ) : null}
+            <option value="">{addonCopy.none}</option>
+            {services.map((s) => {
+              const dollars = (Number(s.price_cents) / 100).toFixed(2);
+              const dur = Number(s.duration_minutes);
+              return (
+                <option key={s.id} value={s.id}>
+                  {`${s.name} · ${dur}m · $${dollars}`}
+                </option>
+              );
+            })}
+          </select>
+        </label>
       </div>
 
       <div className="space-y-1 text-sm text-nq-muted">

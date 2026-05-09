@@ -18,13 +18,20 @@ function isUuidLike(value: string): boolean {
   return UUID_RE.test(value.trim());
 }
 
-/** Q1 desk edit payload: time + staff + service only. */
+/** Q1 desk edit payload: time + staff + service (+ optional addon). */
 export type EditBookingInput = {
   salonId: string;
   bookingId: string;
   newStartTimeUtc: string;
   newStaffId: string;
   newServiceId: string;
+  /**
+   * Replacement add-on service. `null` removes any existing add-on;
+   * `undefined` preserves the current add-on (back-compat with callers
+   * that don't yet send this field). A non-null id is validated against
+   * the salon's catalog and contributes to span + price recompute.
+   */
+  newAddonServiceId?: string | null;
 };
 
 export type EditBookingError =
@@ -163,19 +170,36 @@ export async function performEditBooking(
     return { ok: false, error: "server_error" };
   }
 
-  /* Existing addon contributes to span; preserved verbatim (not editable in v1).
-     Without this, end_time_utc would truncate the addon block on every save —
-     timeline would mis-render and overlap checks would under-protect the addon. */
+  /* Resolve the effective addon id.
+     - `newAddonServiceId === undefined` → preserve existing (back-compat).
+     - `newAddonServiceId === null`      → remove the addon.
+     - Otherwise                          → replace with the supplied id. */
+  let effectiveAddonId: string | null;
+  if (input.newAddonServiceId === undefined) {
+    const existing =
+      booking.addon_service_id != null
+        ? String(booking.addon_service_id).trim()
+        : "";
+    effectiveAddonId = existing.length > 0 ? existing : null;
+  } else if (input.newAddonServiceId === null) {
+    effectiveAddonId = null;
+  } else {
+    const id = String(input.newAddonServiceId).trim();
+    if (id.length === 0) {
+      effectiveAddonId = null;
+    } else {
+      if (!isUuidLike(id)) return { ok: false, error: "server_error" };
+      effectiveAddonId = id;
+    }
+  }
+
   let addonSpanMin = 0;
-  const existingAddonId =
-    booking.addon_service_id != null
-      ? String(booking.addon_service_id).trim()
-      : "";
-  if (existingAddonId) {
+  let addonPriceCents: number | null = null;
+  if (effectiveAddonId) {
     const { data: addonSvc, error: addonErr } = await supabase
       .from("services")
-      .select("duration_minutes, buffer_minutes")
-      .eq("id", existingAddonId)
+      .select("duration_minutes, buffer_minutes, price_cents")
+      .eq("id", effectiveAddonId)
       .eq("salon_id", salonId)
       .maybeSingle();
     if (addonErr) {
@@ -194,6 +218,11 @@ export async function performEditBooking(
       return { ok: false, error: "server_error" };
     }
     addonSpanMin = aDur + aBuf;
+    const aPrice =
+      addonSvc.price_cents != null
+        ? Math.round(Number(addonSvc.price_cents))
+        : null;
+    addonPriceCents = Number.isFinite(aPrice ?? NaN) ? aPrice : null;
   }
 
   const totalMin = duration + buffer + addonSpanMin;
@@ -236,15 +265,25 @@ export async function performEditBooking(
     };
   }
 
+  // When the caller explicitly threads `newAddonServiceId` (even as
+  // `null`), persist the addon swap atomically with the rest of the
+  // edit. Back-compat callers that omit the field skip the addon
+  // columns entirely so the existing addon survives untouched.
+  const baseUpdate: Record<string, unknown> = {
+    staff_id: newStaffId,
+    start_time_utc: slotStartUtc,
+    end_time_utc: slotEndUtc,
+    service_id: newServiceId,
+    price_cents: priceCents,
+  };
+  if (input.newAddonServiceId !== undefined) {
+    baseUpdate.addon_service_id = effectiveAddonId;
+    baseUpdate.addon_price_cents = addonPriceCents;
+  }
+
   const { data: updated, error: upErr } = await supabase
     .from("bookings")
-    .update({
-      staff_id: newStaffId,
-      start_time_utc: slotStartUtc,
-      end_time_utc: slotEndUtc,
-      service_id: newServiceId,
-      price_cents: priceCents,
-    })
+    .update(baseUpdate as never)
     .eq("id", bookingId)
     .eq("salon_id", salonId)
     .in("status", ["pending", "confirmed"])

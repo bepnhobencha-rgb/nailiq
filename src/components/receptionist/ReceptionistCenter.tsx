@@ -1227,6 +1227,8 @@ function ReceptionistCenterInner({
                 showQuickAdd={modules.quick_add}
                 showWaitTime={modules.wait_time}
                 showVipIndicator={modules.vip_indicators}
+                popularServiceIds={data.popularServiceIds}
+                popularServicesLabel={rcMessages.popularServices.label}
                 labels={{
                   title: rcMessages.queue.title,
                   emptyMessage: rcMessages.queue.emptyMessage,
