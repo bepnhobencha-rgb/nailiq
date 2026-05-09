@@ -52,6 +52,7 @@ import { StatusPill } from "./StatusPill";
 import { TVModeView } from "./TVModeView";
 import { UndoToast } from "./UndoToast";
 import { WalkinQueueSidebar, type QueueItem } from "./WalkinQueueSidebar";
+import { WeekView, mondayYmdOf, shiftWeek } from "./WeekView";
 import type {
   LoadReceptionistCenterError,
   LoadReceptionistCenterResult,
@@ -252,6 +253,31 @@ function ReceptionistCenterInner({
   }, [initialOk]);
 
   const [dateOffset, setDateOffset] = useState<-1 | 0 | 1>(0);
+
+  // View mode (Day | Week). Persisted in localStorage so the receptionist
+  // doesn't lose their choice on reload. Day is the default — week is a
+  // planning glance, day is the live operational job.
+  const [viewMode, setViewMode] = useState<"day" | "week">("day");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem("nailiq-view-mode");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate from localStorage on mount only
+    if (stored === "week") setViewMode("week");
+  }, []);
+  const onChangeViewMode = useCallback((next: "day" | "week") => {
+    setViewMode(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("nailiq-view-mode", next);
+    }
+  }, []);
+
+  // Week-view anchor (Monday of the visible week). Derived initially from
+  // today's salon date so first paint shows the current week.
+  const initialMondayYmd = useMemo(
+    () => mondayYmdOf(salonToday(initialOk.salon.timezone)),
+    [initialOk.salon.timezone],
+  );
+  const [weekMondayYmd, setWeekMondayYmd] = useState(initialMondayYmd);
 
   useEffect(() => {
     const tz = data.salon.timezone;
@@ -1132,6 +1158,40 @@ function ReceptionistCenterInner({
                   onError={(msg) => setShakeMessage(msg)}
                 />
               ) : null}
+              {/* Day / Week view-mode toggle. Day is the live desk job;
+                  Week is a read-only planning glance per
+                  DASHBOARD_LAYOUT_RULES §3. Pair color with text label
+                  per COLOR_TOKENS §5 — selected state uses the gold
+                  family because this is a navigational commitment, not
+                  a status. */}
+              <div
+                role="tablist"
+                aria-label={rcMessages.viewMode.ariaLabel}
+                data-testid="view-mode-toggle"
+                className="inline-flex overflow-hidden rounded-md border border-nq-border bg-nq-surface text-xs font-medium"
+              >
+                {(["day", "week"] as const).map((mode) => {
+                  const active = viewMode === mode;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      data-testid={`view-mode-${mode}`}
+                      onClick={() => onChangeViewMode(mode)}
+                      className={cn(
+                        "px-2.5 py-1 transition-colors",
+                        active
+                          ? "bg-nq-primary/15 text-nq-primary"
+                          : "text-nq-muted hover:text-nq-foreground",
+                      )}
+                    >
+                      {rcMessages.viewMode[mode]}
+                    </button>
+                  );
+                })}
+              </div>
               <UserLanguageToggle language={language} onLanguageChange={setLanguage} />
             </div>
           </div>
@@ -1221,6 +1281,50 @@ function ReceptionistCenterInner({
           </div>
         ) : null}
 
+        {viewMode === "week" ? (
+          <WeekView
+            slug={slug}
+            mondayYmd={weekMondayYmd}
+            timezone={timezone}
+            todayYmd={salonToday(timezone, nowIso)}
+            messages={rcMessages.weekView}
+            onDayClick={(ymd) => {
+              // Tapping a day flips back to Day view and (when the day
+              // is yesterday/today/tomorrow) slots into the existing
+              // dateOffset machinery; out-of-range days fall back to
+              // today since DateSwitcher only models -1/0/+1.
+              onChangeViewMode("day");
+              const tz = timezone;
+              const today = salonToday(tz, nowIso);
+              const yesterday = salonDateOffset(tz, -1, nowIso);
+              const tomorrow = salonDateOffset(tz, 1, nowIso);
+              if (ymd === today) {
+                void onDateSwitchChange(0);
+              } else if (ymd === yesterday) {
+                void onDateSwitchChange(-1);
+              } else if (ymd === tomorrow) {
+                void onDateSwitchChange(1);
+              } else {
+                // Day is outside the ±1 window — load that exact day
+                // by directly calling the loader; dateOffset gets
+                // reconciled by the existing reactive effect on
+                // `data.selectedDate`.
+                void (async () => {
+                  setDayLoading(true);
+                  const res = await loadReceptionistCenterDataAction(slug, ymd);
+                  setDayLoading(false);
+                  if (res.ok) setData(res.data);
+                  else setShakeMessage(loadErrorCopy(rcMessages, res.error));
+                })();
+              }
+            }}
+            onPrevWeek={() => setWeekMondayYmd((m) => shiftWeek(m, -1))}
+            onThisWeek={() =>
+              setWeekMondayYmd(mondayYmdOf(salonToday(timezone, nowIso)))
+            }
+            onNextWeek={() => setWeekMondayYmd((m) => shiftWeek(m, 1))}
+          />
+        ) : (
         <div
           className={cn(
             "mx-auto flex h-full min-h-[min(100dvh-8rem,48rem)] w-full max-w-[var(--max-nq-desktop)] flex-1 flex-col gap-0",
@@ -1316,6 +1420,7 @@ function ReceptionistCenterInner({
             </div>
           ) : null}
         </div>
+        )}
       </div>
 
       {shakeMessage !== null ? (
