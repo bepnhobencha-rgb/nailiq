@@ -1,5 +1,37 @@
 "use client";
 
+/**
+ * ReceptionistCenter — performance notes
+ * --------------------------------------
+ * Memoization
+ *   - `gridStaff`, `gridBookings`, `staffNameById`, `densityConfig`,
+ *     `detailModel`, `drawerCopy` — all `useMemo`'d so that per-minute
+ *     `nowIso` ticks do not rebuild them. `kpiSnapshot` is computed on
+ *     the server (`loadReceptionistCenterData`) so the client does not
+ *     re-derive it.
+ *   - `StaffTimelineGrid` is wrapped in `React.memo` so it skips the
+ *     heavy slot-grid + booking-block render when only unrelated parent
+ *     state changes (drawer open/close, undo countdown, banner toggles).
+ *
+ * Known re-render triggers
+ *   - `nowIso` ticks every 60s (live now-line). The grid props are
+ *     stable so the memo blocks the timeline from re-rendering on the
+ *     tick alone, but `BookingBlock` instances re-receive `nowIso`
+ *     from the grid for the late-overlay flag derivation.
+ *   - Realtime postgres_changes → `reloadCurrentDay()` rebuilds `data`,
+ *     which is the legitimate source of truth update.
+ *   - Drawer/edit/undo state lives in this component; toggling them
+ *     re-renders the shell but the memoized grid skips work.
+ *
+ * Performance budget targets (per UX_PRINCIPLES §2 rule 11)
+ *   - <100 ms perceived response for primary taps and toggles.
+ *   - <1 s to usable content after navigation.
+ *   - 60 fps on timeline horizontal scroll.
+ *   - All Framer Motion uses transform/opacity only — no layout-
+ *     triggering properties (width/height/top/left). See
+ *     ANIMATION_RULES.md §3.
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import Link from "next/link";
