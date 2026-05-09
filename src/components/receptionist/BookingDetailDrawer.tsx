@@ -59,6 +59,16 @@ export interface BookingDetailDrawerProps {
   };
   /** Caller's `salon_members.role` — gates Edit (Cancel is gated upstream). */
   viewerRole: SalonMemberRole;
+  /**
+   * Realtime offline guard — when true, all footer mutation buttons
+   * (Edit, primary, cancel) are disabled and an inline offline hint
+   * is rendered above the row. Mutation guard for `ConnectionBanner`
+   * state — prevents writes against stale data when the realtime
+   * channel is closed/erroring.
+   */
+  isOffline?: boolean;
+  /** Localized "Offline — editing unavailable" hint. */
+  offlineEditDisabledHint?: string;
   /** Primary footer CTA (start or mark complete), when applicable. */
   primaryAction?: {
     label: string;
@@ -99,6 +109,8 @@ export function BookingDetailDrawer({
   onClose,
   copy,
   viewerRole,
+  isOffline = false,
+  offlineEditDisabledHint,
   primaryAction,
   cancelAction,
   deskEdit,
@@ -320,6 +332,8 @@ export function BookingDetailDrawer({
                     dayYmd={deskEdit.dayYmd}
                     timezone={deskEdit.timezone}
                     rcMessages={deskEdit.rcMessages}
+                    isOffline={isOffline}
+                    offlineEditDisabledHint={offlineEditDisabledHint}
                     onCancel={() => setEditMode(false)}
                     onSaved={(updated) => {
                       setEditMode(false);
@@ -328,6 +342,15 @@ export function BookingDetailDrawer({
                   />
                 ) : (
                   <>
+                    {isOffline && offlineEditDisabledHint ? (
+                      <p
+                        className="text-xs font-semibold text-nq-error"
+                        role="status"
+                        data-testid="drawer-offline-hint"
+                      >
+                        {offlineEditDisabledHint}
+                      </p>
+                    ) : null}
                     <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-3">
                       {canEditBooking && deskEdit ? (
                         <Button
@@ -335,6 +358,8 @@ export function BookingDetailDrawer({
                           variant="secondary"
                           data-testid="edit-booking-button"
                           className="w-full sm:min-w-0 sm:flex-1"
+                          disabled={isOffline}
+                          title={isOffline ? offlineEditDisabledHint : undefined}
                           onClick={() => setEditMode(true)}
                         >
                           {deskEdit.rcMessages.drawer.editBooking}
@@ -346,6 +371,8 @@ export function BookingDetailDrawer({
                           variant="primary"
                           data-testid="drawer-primary-action"
                           loading={primaryAction.busy}
+                          disabled={isOffline}
+                          title={isOffline ? offlineEditDisabledHint : undefined}
                           className={cn(
                             "w-full sm:min-w-0",
                             canEditBooking ? "sm:flex-1" : "sm:w-full",
@@ -362,6 +389,8 @@ export function BookingDetailDrawer({
                         variant="danger"
                         loading={cancelAction.busy}
                         data-testid="drawer-cancel-booking"
+                        disabled={isOffline}
+                        title={isOffline ? offlineEditDisabledHint : undefined}
                         className="w-full sm:w-full"
                         onClick={() => void cancelAction.onPress()}
                       >

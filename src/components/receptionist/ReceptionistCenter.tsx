@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/Badge";
 import { createClient } from "@/shared/lib/supabase/client";
 import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
 import { BookingDetailDrawer, type BookingDetailDrawerModel } from "./BookingDetailDrawer";
+import { ConnectionBanner, type ConnectionState } from "./ConnectionBanner";
 import { DateSwitcher } from "./DateSwitcher";
 import { DensitySlider } from "./DensitySlider";
 import { KPIBar } from "./KPIBar";
@@ -279,6 +280,16 @@ function ReceptionistCenterInner({
 
   const [drawerBusy, setDrawerBusy] = useState(false);
 
+  // Realtime connection-state machine. Default 'connected' — assume
+  // online until the Supabase channel subscribe-callback flips us to
+  // 'reconnecting' (CHANNEL_ERROR / TIMED_OUT) or 'offline' (CLOSED).
+  // The polling-fallback path (no session) keeps this 'connected' since
+  // 8s polling is operationally fresh enough to act on; only the
+  // realtime channel actually transitions through these states.
+  const [connectionState, setConnectionState] =
+    useState<ConnectionState>("connected");
+  const isOffline = connectionState !== "connected";
+
   const staffNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const s of data.staff) {
@@ -495,6 +506,19 @@ function ReceptionistCenterInner({
           },
         )
         .subscribe((status, err) => {
+          // Map Supabase realtime status → operational connection state.
+          // SUBSCRIBED is the healthy steady-state; CHANNEL_ERROR /
+          // TIMED_OUT both mean "trying to recover" → reconnecting;
+          // CLOSED is the terminal disconnect → offline. `setState`
+          // from useState is stable so this is closure-safe.
+          if (cancelled) return;
+          if (status === "SUBSCRIBED") {
+            setConnectionState("connected");
+          } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            setConnectionState("reconnecting");
+          } else if (status === "CLOSED") {
+            setConnectionState("offline");
+          }
           if (
             process.env.NODE_ENV === "development" &&
             (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || err)
@@ -949,6 +973,16 @@ function ReceptionistCenterInner({
         </header>
 
         {/*
+         * Connection-state banner — mounted directly below the desk
+         * header so the receptionist sees stale-data warnings before
+         * scanning the timeline. Renders nothing when connected; when
+         * reconnecting/offline, occupies a thin strip above the KPI
+         * band. Layout-stable: AnimatePresence handles enter/exit so
+         * the timeline geometry settles without a hard jump.
+         */}
+        <ConnectionBanner state={connectionState} labels={rcMessages.connection} />
+
+        {/*
          * KPI band per `docs/DASHBOARD_LAYOUT_RULES.md` §5: top summary
          * band sits **above** the three-zone row, the grid shrinks
          * vertically by the band's height, and horizontal three-zone
@@ -1053,6 +1087,8 @@ function ReceptionistCenterInner({
                 onStartAssign={(id) => setAssigningWalkinId(id)}
                 onCancelAssign={() => setAssigningWalkinId(null)}
                 addFormDisabled={isSetupIncomplete}
+                isOffline={isOffline}
+                offlineAddDisabledHint={rcMessages.connection.offlineAddDisabled}
                 showQuickAdd={modules.quick_add}
                 showWaitTime={modules.wait_time}
                 showVipIndicator={modules.vip_indicators}
@@ -1117,6 +1153,8 @@ function ReceptionistCenterInner({
         onClose={() => setDrawerBookingId(null)}
         copy={drawerCopy}
         viewerRole={viewerRole}
+        isOffline={isOffline}
+        offlineEditDisabledHint={rcMessages.connection.offlineEditDisabled}
         primaryAction={drawerPrimaryAction}
         cancelAction={drawerCancelAction}
         deskEdit={

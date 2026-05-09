@@ -292,6 +292,17 @@ export type UserMessages = {
       ownerView: string;
       nailTechView: string;
     };
+    /** Realtime connection state (banner + mutation guards). */
+    connection: {
+      /** Amber banner when realtime channel errors / times out. */
+      reconnecting: string;
+      /** Red banner when realtime channel is closed; data is stale. */
+      offline: string;
+      /** Inline hint above walk-in submit when offline (mutation blocked). */
+      offlineAddDisabled: string;
+      /** Inline hint in booking drawer footer when offline (edit/cancel/start blocked). */
+      offlineEditDisabled: string;
+    };
     /** Top KPI band (gated by `dashboard_modules.kpi_bar`); revenue tile gated by `revenue_today`. */
     kpiBar: {
       waiting: string;
@@ -739,6 +750,12 @@ export const userEn: UserMessages = {
     roleBadge: {
       ownerView: "Owner view",
       nailTechView: "Tech view",
+    },
+    connection: {
+      reconnecting: "Reconnecting to live updates…",
+      offline: "Offline — showing last known data",
+      offlineAddDisabled: "Offline — cannot add walk-ins",
+      offlineEditDisabled: "Offline — editing unavailable",
     },
     kpiBar: {
       waiting: "Waiting",

@@ -274,6 +274,12 @@ export const userVi: UserMessages = {
       ownerView: "Chủ tiệm",
       nailTechView: "Thợ",
     },
+    connection: {
+      reconnecting: "Đang kết nối lại…",
+      offline: "Mất kết nối — đang xem dữ liệu cũ",
+      offlineAddDisabled: "Mất kết nối — không thêm walk-in được",
+      offlineEditDisabled: "Mất kết nối — không sửa được lịch",
+    },
     kpiBar: {
       waiting: "Đang chờ",
       avgWait: "Chờ trung bình",

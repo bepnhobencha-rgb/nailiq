@@ -87,6 +87,15 @@ export interface EditBookingFormProps {
   capabilityRows: { staff_id: string; service_id: string }[] | null;
   dayYmd: string;
   timezone: string;
+  /**
+   * Realtime offline guard — when true, Save is disabled and an
+   * inline offline hint replaces the regular save-disabled tooltip.
+   * Inputs remain interactive so the receptionist's draft state isn't
+   * lost; only the mutation submit is gated.
+   */
+  isOffline?: boolean;
+  /** Localized "Offline — editing unavailable" hint. */
+  offlineEditDisabledHint?: string;
   onSaved: (updated: SalonDashboardBooking) => void;
   onCancel: () => void;
   rcMessages: ReceptionistMessages;
@@ -102,6 +111,8 @@ export function EditBookingForm({
   capabilityRows,
   dayYmd,
   timezone,
+  isOffline = false,
+  offlineEditDisabledHint,
   onSaved,
   onCancel,
   rcMessages,
@@ -390,6 +401,16 @@ export function EditBookingForm({
         </p>
       ) : null}
 
+      {isOffline && offlineEditDisabledHint ? (
+        <p
+          className="text-xs font-semibold text-nq-error"
+          role="status"
+          data-testid="edit-offline-hint"
+        >
+          {offlineEditDisabledHint}
+        </p>
+      ) : null}
+
       <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
         <Button
           type="button"
@@ -406,9 +427,13 @@ export function EditBookingForm({
           data-testid="edit-save-button"
           className="w-full sm:w-auto"
           loading={saving}
-          disabled={!hasChanges || saving}
+          disabled={!hasChanges || saving || isOffline}
           title={
-            !hasChanges && !saving ? editCopy.noChangesHint : undefined
+            isOffline
+              ? offlineEditDisabledHint
+              : !hasChanges && !saving
+                ? editCopy.noChangesHint
+                : undefined
           }
           onClick={() => void handleSave()}
         >
