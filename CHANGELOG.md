@@ -2,6 +2,15 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-05-08 (docs — booking-status §5 stale-prose follow-up to PR #56, PM-approved)
+
+- **PM approval:** explicit chat directive `2026-05-08` as the PR #56 follow-up doc-pass. Three stale references to the prior color regime (caught after PR #56 narrowed scope to the table rows only).
+- **`docs/COLOR_TOKENS.md` §5 (Booking Status Colors):**
+  - `arrived` row prose: "teal separates from completed green" → **"teal separates from `in_progress` green"** (after PR #56, success green now belongs to `in_progress`, not `completed`).
+  - Confusion guard "`confirmed` vs `in_service`: blue vs indigo" → **"`confirmed` vs `in_progress`: blue vs green"** (renamed to match the live state key + reflects the new color pair).
+  - Confusion guard "`completed` vs VIP: completed is **green family only**; VIP is **gold only**." → **"`completed` vs VIP: completed is **neutral muted**; VIP is **gold only** — no confusion risk."** (after PR #56's muted repaint there's no longer a chromatic collision risk).
+- No table rows changed in this entry — PR #56 owned the color flips. This pass is prose-only.
+
 ## 2026-05-08 (docs — booking state name + color reconciliation, PM-approved)
 
 - **PM approval:** explicit chat directive `2026-05-08` to align governance docs with shipped code reality (drift previously flagged in PRs #53 / #54 / #55).
