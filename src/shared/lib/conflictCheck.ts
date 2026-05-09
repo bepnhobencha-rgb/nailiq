@@ -22,6 +22,23 @@ function parseIsoMs(iso: string | null): number | null {
  * Conflict = same staff, overlapping interval, status not cancelled, status not waiting.
  * Standard overlap rule: a.start < b.end AND a.end > b.start.
  * Bookings with null staff_id, null start_time_utc, or null end_time_utc are skipped.
+ *
+ * **DB constraint is now the primary guard.**
+ * `bookings_no_overlap` (GIST EXCLUDE on `salon_id`, `staff_id`,
+ * `tstzrange(start_time_utc, end_time_utc, '[)')` WHERE status !=
+ * 'cancelled', defined in migration `20260430230000_bookings_no_overlap_gist.sql`)
+ * rejects any concurrent INSERT or UPDATE that would create overlapping
+ * non-cancelled bookings on the same staff. App-level check below
+ * remains as **early UX feedback** (synchronous, pre-network) so the
+ * receptionist sees the conflict highlighted on the timeline before
+ * submitting; the DB raises `23P01` (exclusion_violation) on a true
+ * race, which server actions translate to `slot_conflict`.
+ *
+ * Note on `no_show`: not yet present in the live `bookings_status_check`
+ * enum (`STATE_MACHINE.md` lists it; DB does not). When the schema
+ * adds it, the GIST WHERE clause should be widened to also exclude
+ * `no_show` from the overlap check. Tracked as a follow-up to the
+ * state-machine reconciliation.
  */
 export function checkBookingConflict(args: {
   staffId: string;
