@@ -1,4 +1,5 @@
 import { type ReactNode } from "react";
+import { redirect } from "next/navigation";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { loadOwnerSalons } from "@/shared/dashboard/salonOwnerActions";
@@ -32,6 +33,27 @@ export default async function DashboardSlugLayout({
     // No auth / no membership / demo-gate failed — let the child page
     // perform its own redirect (e.g. to /register or /choose-salon).
     return <>{children}</>;
+  }
+
+  // Force-wizard gate (added 2026-05-09): a salon with
+  // setup_wizard_completed_at IS NULL has not been through
+  // /register/setup yet (placeholder name, no timezone confirmation).
+  // Block dashboard access until the owner completes the wizard so
+  // guest-facing screens never render with bad identity data.
+  // Cast: column not yet in auto-generated DB types.
+  const wizardGate = (await ctx.supabase
+    .from("salons")
+    .select("setup_wizard_completed_at" as never)
+    .eq("id", ctx.salon.id)
+    .maybeSingle()) as {
+    data: { setup_wizard_completed_at?: string | null } | null;
+    error: unknown;
+  };
+  if (
+    wizardGate.data &&
+    wizardGate.data.setup_wizard_completed_at == null
+  ) {
+    redirect("/register/setup");
   }
 
   const salonName = (ctx.salon.name ?? "").trim() || slug;

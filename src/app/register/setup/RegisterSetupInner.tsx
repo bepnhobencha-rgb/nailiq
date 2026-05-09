@@ -50,8 +50,22 @@ const TIMEZONE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
 
 const DEFAULT_TIMEZONE = "America/Vancouver";
 
+/**
+ * Server-side prefill payload for users who already own a salon but
+ * haven't finished the wizard (setup_wizard_completed_at IS NULL).
+ * The wizard then runs as an UPDATE rather than INSERT — see
+ * completeSalonRegistration's existing-member rename branch.
+ */
+export type RegisterSetupInitial = {
+  mode: "rename";
+  currentSlug: string;
+  name: string;
+  timezone: string | null;
+};
+
 export default function RegisterSetupInner({
   isDemoMode,
+  initial,
 }: {
   /**
    * Server-authoritative demo flag (resolved in `page.tsx` via
@@ -59,6 +73,10 @@ export default function RegisterSetupInner({
    * mismatches when only `DEMO_OTP` (server-only) is set.
    */
   isDemoMode: boolean;
+  /**
+   * Existing-salon prefill for the rename path. Null = fresh signup.
+   */
+  initial?: RegisterSetupInitial | null;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -66,17 +84,26 @@ export default function RegisterSetupInner({
   const { language } = useUserLanguage();
   const t = useMemo(() => getUserMessages(language).register, [language]);
 
-  const [name, setName] = useState(
-    isDemoMode ? DEMO_SALON_DISPLAY_NAME : "",
-  );
+  const isRenameMode = !isDemoMode && initial?.mode === "rename";
+
+  const [name, setName] = useState(() => {
+    if (isDemoMode) return DEMO_SALON_DISPLAY_NAME;
+    return initial?.name ?? "";
+  });
   // Editable slug. When `slugTouched === false`, the slug auto-tracks the
-  // name. Once the user types in the slug field directly, we stop
-  // auto-syncing so their custom URL isn't clobbered on the next keystroke.
-  const [slug, setSlug] = useState(
-    isDemoMode ? DEMO_SALON_SLUG : "",
-  );
-  const [slugTouched, setSlugTouched] = useState(false);
-  const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
+  // name. Once the user types in the slug field directly (or we prefilled
+  // it from an existing salon), we stop auto-syncing so their custom URL
+  // isn't clobbered on the next keystroke.
+  const [slug, setSlug] = useState(() => {
+    if (isDemoMode) return DEMO_SALON_SLUG;
+    return initial?.currentSlug ?? "";
+  });
+  const [slugTouched, setSlugTouched] = useState(isRenameMode);
+  const [timezone, setTimezone] = useState(() => {
+    const fromInitial = initial?.timezone?.trim();
+    if (fromInitial) return fromInitial;
+    return DEFAULT_TIMEZONE;
+  });
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
