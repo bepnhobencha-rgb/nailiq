@@ -591,6 +591,42 @@ export type UserMessages = {
         server_error: string;
       };
     };
+    /** Subscription pricing panel (`/dashboard/[slug]/settings`). */
+    pricing: {
+      sectionTitle: string;
+      sectionIntro: string;
+      currentBadge: string;
+      perMonth: string;
+      unlimited: string;
+      featureMaxStaff: string;
+      featureMaxServices: string;
+      featureReports: string;
+      featureAuditLog: string;
+      upgrade: string;
+      manageSubscription: string;
+      upgradedToast: string;
+      planBadgePro: string;
+      planBadgePremium: string;
+      planNames: {
+        free: string;
+        pro: string;
+        premium: string;
+      };
+      errors: {
+        unauthorized: string;
+        forbidden: string;
+        invalid_plan: string;
+        no_stripe_client: string;
+        server_error: string;
+      };
+      portalErrors: {
+        unauthorized: string;
+        forbidden: string;
+        no_customer: string;
+        no_stripe_client: string;
+        server_error: string;
+      };
+    };
     /** Reports & analytics page (`/dashboard/[slug]/reports`). */
     reports: {
       pageTitle: string;
@@ -1190,6 +1226,42 @@ export const userEn: UserMessages = {
         forbidden: "Only the salon owner can change VIP status.",
         not_found: "Client profile not found.",
         server_error: "Could not save. Try again shortly.",
+      },
+    },
+    pricing: {
+      sectionTitle: "Subscription",
+      sectionIntro:
+        "Choose the plan that fits your salon. Upgrade or change anytime.",
+      currentBadge: "Current",
+      perMonth: "/ month",
+      unlimited: "Unlimited",
+      featureMaxStaff: "Up to {n} staff",
+      featureMaxServices: "Up to {n} services",
+      featureReports: "Owner reports",
+      featureAuditLog: "Audit log",
+      upgrade: "Upgrade",
+      manageSubscription: "Manage subscription",
+      upgradedToast: "Subscription updated. Welcome aboard!",
+      planBadgePro: "Pro",
+      planBadgePremium: "Premium",
+      planNames: {
+        free: "Free",
+        pro: "Pro",
+        premium: "Premium",
+      },
+      errors: {
+        unauthorized: "Sign in is required.",
+        forbidden: "Only the salon owner can change the subscription.",
+        invalid_plan: "That plan is not available.",
+        no_stripe_client: "Billing is not configured. Contact support.",
+        server_error: "Could not start checkout. Try again shortly.",
+      },
+      portalErrors: {
+        unauthorized: "Sign in is required.",
+        forbidden: "Only the salon owner can manage billing.",
+        no_customer: "No active subscription to manage.",
+        no_stripe_client: "Billing is not configured. Contact support.",
+        server_error: "Could not open the billing portal. Try again shortly.",
       },
     },
     reports: {
