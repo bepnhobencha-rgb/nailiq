@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
@@ -175,7 +176,13 @@ export function ServicesSetupPanel({
     });
     if (!res.ok) {
       setAddSaveStatus("error");
-      setToast({ variant: "error", message: TOAST_ERR });
+      // plan_limit_reached → inline error + Upgrade link below;
+      // other errors fall back to the generic toast.
+      if (res.error === "plan_limit_reached") {
+        setAddError(setupErrors.serviceLimitReached);
+      } else {
+        setToast({ variant: "error", message: TOAST_ERR });
+      }
       addStatusTimerRef.current = setTimeout(() => setAddSaveStatus("idle"), 3000);
       return;
     }
@@ -242,8 +249,24 @@ export function ServicesSetupPanel({
           Add service
         </h2>
         {addError ? (
-          <p className="mt-2 text-sm text-nq-error" role="alert">
+          <p
+            className="mt-2 text-sm text-nq-error"
+            role="alert"
+            data-testid="service-add-error"
+          >
             {addError}
+            {addError === setupErrors.serviceLimitReached ? (
+              <>
+                {" "}
+                <Link
+                  href={`/dashboard/${encodeURIComponent(slug)}/settings`}
+                  className="font-semibold text-nq-primary hover:text-nq-primary/85 underline-offset-2 hover:underline"
+                  data-testid="service-add-upgrade-link"
+                >
+                  {setupErrors.upgradeCta}
+                </Link>
+              </>
+            ) : null}
           </p>
         ) : null}
         <div className="mt-3 flex flex-col gap-3">

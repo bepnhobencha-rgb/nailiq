@@ -238,6 +238,11 @@ export const userVi: UserMessages = {
       "Nhân viên đang có booking sắp tới. Reassign hoặc hủy trước khi xóa.",
     staffCannotPerformService:
       "Nhân viên này chưa được gán để làm dịch vụ đó.",
+    staffLimitReached:
+      "Gói miễn phí cho phép 3 thợ. Nâng cấp lên Pro để có 10.",
+    serviceLimitReached:
+      "Gói miễn phí cho phép 10 dịch vụ. Nâng cấp lên Pro để có 50.",
+    upgradeCta: "Nâng cấp gói",
   },
   setupStaff: {
     servicesCapableLabel: "Dịch vụ có thể làm",

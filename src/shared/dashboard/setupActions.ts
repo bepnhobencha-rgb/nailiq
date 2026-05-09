@@ -9,6 +9,12 @@ import {
   resolveSalonForDashboard,
 } from "@/shared/dashboard/salonOwnerActions";
 import {
+  canAddService,
+  canAddStaff,
+  parseSubscriptionPlan,
+  type SubscriptionPlan,
+} from "@/shared/lib/subscriptionPlans";
+import {
   mergeOpeningHoursFromClient,
   parseOpeningHours,
   stableOpeningHoursJson,
@@ -148,6 +154,47 @@ function fail(msg: string): Fail {
   return { ok: false, error: msg };
 }
 
+/**
+ * Loads the salon's `subscription_plan` and the row count for a given
+ * table, both scoped to the salon. Used by `addStaff` / `addService` to
+ * gate writes against the limits in `subscriptionPlans.ts`.
+ *
+ * Reads via the supplied client (member ctx → user-scoped client +
+ * RLS, demo ctx → service role); both can read the salon's own
+ * subscription_plan and own table rows.
+ *
+ * Returns `null` on any DB error so callers can `fail("server_error")`
+ * — the limit check itself never silently succeeds.
+ */
+async function loadPlanAndCount(
+  supabase: GenericSupabase,
+  salonId: string,
+  table: "staff" | "services",
+): Promise<{ plan: SubscriptionPlan; count: number } | null> {
+  const { data: salonRow, error: salonErr } = await supabase
+    .from("salons")
+    .select("subscription_plan")
+    .eq("id", salonId)
+    .maybeSingle();
+  if (salonErr) {
+    console.error("[loadPlanAndCount] salons", salonErr);
+    return null;
+  }
+  const plan = parseSubscriptionPlan(
+    (salonRow as { subscription_plan?: unknown } | null)?.subscription_plan,
+  );
+
+  const { count, error: countErr } = await supabase
+    .from(table)
+    .select("id", { count: "exact", head: true })
+    .eq("salon_id", salonId);
+  if (countErr) {
+    console.error("[loadPlanAndCount] count", table, countErr);
+    return null;
+  }
+  return { plan, count: typeof count === "number" ? count : 0 };
+}
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -275,6 +322,16 @@ export async function addService(
   if (!Number.isFinite(buffer) || buffer < 0) return fail("invalid_buffer");
 
   const supabase = await writableSupabase(slug, r.kind);
+
+  // Plan-limit gate. Free plan caps services at 10 (see PLAN_LIMITS).
+  // Demo path: r.kind === "demo_cookie" and the salon row carries the
+  // default 'free' plan unless ops upgraded it; this still enforces.
+  const planCheck = await loadPlanAndCount(supabase, r.salon.id, "services");
+  if (!planCheck) return fail("server_error");
+  if (!canAddService({ subscription_plan: planCheck.plan }, planCheck.count)) {
+    return fail("plan_limit_reached");
+  }
+
   const { data: insertedSvc, error } = await supabase
     .from("services")
     .insert({
@@ -475,6 +532,14 @@ export async function addStaff(
   if (!roles.includes(input.role)) return fail("invalid_role");
 
   const supabase = await writableSupabase(slug, r.kind);
+
+  // Plan-limit gate. Free plan caps staff at 3 (see PLAN_LIMITS).
+  const planCheck = await loadPlanAndCount(supabase, r.salon.id, "staff");
+  if (!planCheck) return fail("server_error");
+  if (!canAddStaff({ subscription_plan: planCheck.plan }, planCheck.count)) {
+    return fail("plan_limit_reached");
+  }
+
   const { data: insertedStaff, error } = await supabase
     .from("staff")
     .insert({

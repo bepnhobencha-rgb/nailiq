@@ -247,6 +247,12 @@ export type UserMessages = {
     serviceInUse: string;
     staffHasBookings: string;
     staffCannotPerformService: string;
+    /** Hit when free-plan owner tries to add another staff past the limit. */
+    staffLimitReached: string;
+    /** Hit when free-plan owner tries to add another service past the limit. */
+    serviceLimitReached: string;
+    /** CTA copy on the inline upgrade link. */
+    upgradeCta: string;
   };
   /** F8 staff form (setup) */
   setupStaff: {
@@ -903,6 +909,10 @@ export const userEn: UserMessages = {
       "Staff has upcoming bookings. Reassign or cancel before deleting.",
     staffCannotPerformService:
       "This staff member is not set up to perform that service.",
+    staffLimitReached: "Free plan allows 3 staff. Upgrade to Pro for 10.",
+    serviceLimitReached:
+      "Free plan allows 10 services. Upgrade to Pro for 50.",
+    upgradeCta: "Upgrade your plan",
   },
   setupStaff: {
     servicesCapableLabel: "Services this staff can perform",
