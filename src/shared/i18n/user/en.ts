@@ -287,6 +287,11 @@ export type UserMessages = {
       /** Toast on failure (any error). */
       updateFailed: string;
     };
+    /** Role-adaptive top-bar labels. */
+    roleBadge: {
+      ownerView: string;
+      nailTechView: string;
+    };
     /** Top KPI band (gated by `dashboard_modules.kpi_bar`); revenue tile gated by `revenue_today`. */
     kpiBar: {
       waiting: string;
@@ -730,6 +735,10 @@ export const userEn: UserMessages = {
       ariaLabel: "Dashboard density — Simple, Balanced, or Pro",
       updated: (label: string) => `Density set to ${label}`,
       updateFailed: "Could not change density. Try again shortly.",
+    },
+    roleBadge: {
+      ownerView: "Owner view",
+      nailTechView: "Tech view",
     },
     kpiBar: {
       waiting: "Waiting",

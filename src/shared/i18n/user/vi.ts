@@ -270,6 +270,10 @@ export const userVi: UserMessages = {
       updated: (label: string) => `Đã đổi mật độ sang ${label}`,
       updateFailed: "Không đổi được mật độ. Thử lại sau.",
     },
+    roleBadge: {
+      ownerView: "Chủ tiệm",
+      nailTechView: "Thợ",
+    },
     kpiBar: {
       waiting: "Đang chờ",
       avgWait: "Chờ trung bình",

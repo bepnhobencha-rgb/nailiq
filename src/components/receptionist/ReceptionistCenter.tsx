@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import { Badge } from "@/components/ui/Badge";
 import { createClient } from "@/shared/lib/supabase/client";
 import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
 import { BookingDetailDrawer, type BookingDetailDrawerModel } from "./BookingDetailDrawer";
@@ -865,13 +866,55 @@ function ReceptionistCenterInner({
                   labelInProgress={rcMessages.statusPill.inProgressLabel}
                 />
               ) : null}
-              <DensitySlider
-                slug={slug}
-                value={data.dashboardDensity}
-                labels={rcMessages.density}
-                onChanged={onDensityChanged}
-                onError={(msg) => setShakeMessage(msg)}
-              />
+              {/*
+               * Role-adaptive badge in the top bar. owner sees an
+               * explicit "Owner view" affordance so the receptionist
+               * UI's surfaces (revenue tile, customize chrome) don't
+               * surprise; nail_tech sees a quieter "Tech view" tag so
+               * they understand they're on a read-mostly mode.
+               * `senior` shows nothing — matches PERMISSION_MATRIX §2
+               * "senior runs the desk without alteration" — no
+               * decoration needed. Pairs colored Badge variant with
+               * text label per COLOR_TOKENS §5 (no hue-only encoding).
+               */}
+              {viewerRole === "owner" ? (
+                <Badge
+                  data-testid="role-badge-owner"
+                  variant="info"
+                  state="subtle"
+                  size="sm"
+                >
+                  {rcMessages.roleBadge.ownerView}
+                </Badge>
+              ) : viewerRole === "nail_tech" ? (
+                <Badge
+                  data-testid="role-badge-nail-tech"
+                  variant="neutral"
+                  state="subtle"
+                  size="sm"
+                >
+                  {rcMessages.roleBadge.nailTechView}
+                </Badge>
+              ) : null}
+              {/*
+               * Density slider: hidden for nail_tech since the server
+               * action is owner-only and showing a visibly disabled
+               * control adds chrome a tech doesn't need. Owner +
+               * senior still see it (senior gets the forbidden toast
+               * if they try to change — visible-but-locked path). PM
+               * follow-up: introduce personal-vs-salon-wide split
+               * per PERMISSION_MATRIX §3 to give senior write access
+               * to a personal density.
+               */}
+              {viewerRole !== "nail_tech" ? (
+                <DensitySlider
+                  slug={slug}
+                  value={data.dashboardDensity}
+                  labels={rcMessages.density}
+                  onChanged={onDensityChanged}
+                  onError={(msg) => setShakeMessage(msg)}
+                />
+              ) : null}
               <UserLanguageToggle language={language} onLanguageChange={setLanguage} />
             </div>
           </div>
@@ -916,7 +959,14 @@ function ReceptionistCenterInner({
         {isViewingToday && modules.kpi_bar ? (
           <KPIBar
             snapshot={data.kpiSnapshot}
-            showRevenue={modules.revenue_today}
+            // Revenue tile composes the salon module gate AND a role
+            // gate. PERMISSION_MATRIX §3 lists revenue as Partial for
+            // all roles — module-gated for owner/senior, deny for
+            // nail_tech (the matrix's nail_tech "No" on financial
+            // exports + "Partial — read-only glimpses" on summaries).
+            // Conservative deny on tech surface; owner/senior obey
+            // the salon's existing module toggle.
+            showRevenue={modules.revenue_today && viewerRole !== "nail_tech"}
             messages={rcMessages.kpiBar}
             isLoading={dayLoading}
           />
