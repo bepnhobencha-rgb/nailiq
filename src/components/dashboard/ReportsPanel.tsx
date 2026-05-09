@@ -1,0 +1,316 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+import { Badge } from "@/components/ui/Badge";
+import { Card } from "@/components/ui/Card";
+import { KPIWidget } from "@/components/ui/KPIWidget";
+import {
+  loadSalonReports,
+  type LoadSalonReportsResult,
+  type ReportsDateRange,
+  type ReportsSnapshot,
+} from "@/shared/dashboard/loadSalonReportsAction";
+import type { ReceptionistMessages } from "@/shared/i18n/user";
+import { cn } from "@/shared/lib/cn";
+
+/**
+ * Owner-only reports panel.
+ *
+ * Sections (in order):
+ *   A. Summary KPIs — revenue, appointments, completed, cancelled, no-show
+ *   B. Top services table — name, count, revenue
+ *   C. Top staff table — name, appointments, revenue
+ *   D. Busy hours bar chart — CSS only (no chart library), visible
+ *      hours window (`HOURS_START..HOURS_END`) per UX_PRINCIPLES §1
+ *      "no decorative animation"; pure proportional bars.
+ *
+ * Reuses KPIWidget + Card + Badge from `src/components/ui/` per
+ * ARCHITECTURE_LOCK §2.
+ */
+
+const HOURS_START = 9;
+const HOURS_END = 20;
+
+function dollars(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+export interface ReportsPanelProps {
+  slug: string;
+  messages: ReceptionistMessages["reports"];
+}
+
+export function ReportsPanel({ slug, messages }: ReportsPanelProps) {
+  const [range, setRange] = useState<ReportsDateRange>("today");
+  const [state, setState] = useState<
+    | { kind: "loading" }
+    | { kind: "ok"; data: ReportsSnapshot }
+    | { kind: "error"; error: Extract<LoadSalonReportsResult, { ok: false }>["error"] }
+  >({ kind: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ kind: "loading" });
+    void (async () => {
+      const res = await loadSalonReports(slug, range);
+      if (cancelled) return;
+      if (res.ok) setState({ kind: "ok", data: res.data });
+      else setState({ kind: "error", error: res.error });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, range]);
+
+  const errorCopy = useMemo(() => {
+    if (state.kind !== "error") return null;
+    return messages.errors[state.error] ?? messages.errors.server_error;
+  }, [state, messages]);
+
+  return (
+    <div className="space-y-4">
+      {/* Date-range selector */}
+      <div
+        role="tablist"
+        aria-label={messages.rangeAriaLabel}
+        data-testid="reports-range"
+        className="inline-flex overflow-hidden rounded-md border border-nq-border bg-nq-surface text-xs font-medium"
+      >
+        {(["today", "week", "month"] as const).map((r) => {
+          const active = range === r;
+          return (
+            <button
+              key={r}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              data-testid={`reports-range-${r}`}
+              onClick={() => setRange(r)}
+              className={cn(
+                "px-3 py-1.5 transition-colors",
+                active
+                  ? "bg-nq-primary/15 text-nq-primary"
+                  : "text-nq-muted hover:text-nq-foreground",
+              )}
+            >
+              {messages.range[r]}
+            </button>
+          );
+        })}
+      </div>
+
+      {state.kind === "error" ? (
+        <p
+          role="alert"
+          data-testid="reports-error"
+          className="rounded-md border border-nq-error/40 bg-nq-error/10 px-3 py-2 text-sm text-nq-error"
+        >
+          {errorCopy}
+        </p>
+      ) : null}
+
+      {/* A. Summary KPIs — KPIWidget primitive accepts a loading flag so
+            we don't have to special-case the skeleton. */}
+      <section
+        data-testid="reports-kpis"
+        className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
+      >
+        <KPIWidget
+          label={messages.kpis.totalRevenue}
+          value={
+            state.kind === "ok" ? dollars(state.data.totalRevenueCents) : "—"
+          }
+          isLoading={state.kind === "loading"}
+        />
+        <KPIWidget
+          label={messages.kpis.appointments}
+          value={
+            state.kind === "ok"
+              ? String(state.data.appointmentCount)
+              : "—"
+          }
+          isLoading={state.kind === "loading"}
+        />
+        <KPIWidget
+          label={messages.kpis.completed}
+          value={
+            state.kind === "ok" ? String(state.data.completedCount) : "—"
+          }
+          isLoading={state.kind === "loading"}
+        />
+        <KPIWidget
+          label={messages.kpis.cancelled}
+          value={
+            state.kind === "ok" ? String(state.data.cancelledCount) : "—"
+          }
+          isLoading={state.kind === "loading"}
+        />
+        <KPIWidget
+          label={messages.kpis.noShow}
+          value={state.kind === "ok" ? String(state.data.noShowCount) : "—"}
+          isLoading={state.kind === "loading"}
+        />
+      </section>
+
+      {/* B. Top services table */}
+      <Card variant="default" padding="md">
+        <h2 className="mb-2 text-sm font-semibold text-nq-foreground">
+          {messages.tables.topServices}
+        </h2>
+        {state.kind === "ok" && state.data.topServices.length === 0 ? (
+          <p className="text-sm italic text-nq-muted">
+            {messages.tables.empty}
+          </p>
+        ) : null}
+        {state.kind === "ok" && state.data.topServices.length > 0 ? (
+          <table className="w-full text-sm" data-testid="reports-top-services">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wide text-nq-muted">
+                <th className="py-1.5">{messages.tables.serviceCol}</th>
+                <th className="py-1.5 text-right">
+                  {messages.tables.countCol}
+                </th>
+                <th className="py-1.5 text-right">
+                  {messages.tables.revenueCol}
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-nq-border/50">
+              {state.data.topServices.map((s) => (
+                <tr key={s.name}>
+                  <td className="py-1.5 text-nq-foreground">{s.name}</td>
+                  <td className="py-1.5 text-right tabular-nums">{s.count}</td>
+                  <td className="py-1.5 text-right tabular-nums">
+                    {dollars(s.revenueCents)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : null}
+      </Card>
+
+      {/* C. Top staff table */}
+      <Card variant="default" padding="md">
+        <h2 className="mb-2 text-sm font-semibold text-nq-foreground">
+          {messages.tables.topStaff}
+        </h2>
+        {state.kind === "ok" && state.data.topStaff.length === 0 ? (
+          <p className="text-sm italic text-nq-muted">
+            {messages.tables.empty}
+          </p>
+        ) : null}
+        {state.kind === "ok" && state.data.topStaff.length > 0 ? (
+          <table className="w-full text-sm" data-testid="reports-top-staff">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wide text-nq-muted">
+                <th className="py-1.5">{messages.tables.staffCol}</th>
+                <th className="py-1.5 text-right">
+                  {messages.tables.appointmentsCol}
+                </th>
+                <th className="py-1.5 text-right">
+                  {messages.tables.revenueCol}
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-nq-border/50">
+              {state.data.topStaff.map((s) => (
+                <tr key={s.name}>
+                  <td className="py-1.5 text-nq-foreground">{s.name}</td>
+                  <td className="py-1.5 text-right tabular-nums">
+                    {s.appointmentCount}
+                  </td>
+                  <td className="py-1.5 text-right tabular-nums">
+                    {dollars(s.revenueCents)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : null}
+      </Card>
+
+      {/* D. Busy hours — CSS bars only, no chart library. Bars use
+            transform-free width so layout shifts are bounded by the
+            grid container. */}
+      <Card variant="default" padding="md">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-nq-foreground">
+            {messages.busyHours.title}
+          </h2>
+          {state.kind === "ok" && state.data.appointmentCount > 0 ? (
+            <Badge variant="info" state="subtle" size="sm">
+              {messages.busyHours.totalBookings.replace(
+                "{n}",
+                String(state.data.appointmentCount),
+              )}
+            </Badge>
+          ) : null}
+        </div>
+        {state.kind === "ok" ? (
+          <BusyHoursChart
+            busyHours={state.data.busyHours}
+            emptyLabel={messages.busyHours.empty}
+          />
+        ) : (
+          <p className="text-sm text-nq-muted">{messages.loading}</p>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function BusyHoursChart({
+  busyHours,
+  emptyLabel,
+}: {
+  busyHours: ReportsSnapshot["busyHours"];
+  emptyLabel: string;
+}) {
+  const visible = busyHours.filter(
+    (h) => h.hour >= HOURS_START && h.hour < HOURS_END,
+  );
+  const max = visible.reduce((m, h) => (h.count > m ? h.count : m), 0);
+
+  if (max === 0) {
+    return (
+      <p className="text-sm italic text-nq-muted" data-testid="reports-busy-empty">
+        {emptyLabel}
+      </p>
+    );
+  }
+
+  return (
+    <div
+      data-testid="reports-busy-hours"
+      className="flex h-40 items-end gap-1.5"
+    >
+      {visible.map((h) => {
+        const pct = max > 0 ? Math.round((h.count / max) * 100) : 0;
+        const label = `${h.hour % 12 === 0 ? 12 : h.hour % 12}${
+          h.hour < 12 ? "a" : "p"
+        }`;
+        return (
+          <div
+            key={h.hour}
+            className="flex flex-1 flex-col items-center gap-1"
+            data-testid={`reports-busy-${h.hour}`}
+          >
+            <span className="text-[10px] tabular-nums text-nq-muted">
+              {h.count}
+            </span>
+            <div
+              className="w-full rounded-sm bg-nq-primary/45"
+              style={{ height: `${pct}%`, minHeight: pct > 0 ? 2 : 0 }}
+              aria-label={`${h.count} bookings at ${label}`}
+            />
+            <span className="text-[10px] font-medium text-nq-muted">
+              {label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}

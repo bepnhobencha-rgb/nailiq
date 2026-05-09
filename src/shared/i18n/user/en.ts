@@ -581,6 +581,46 @@ export type UserMessages = {
         server_error: string;
       };
     };
+    /** Reports & analytics page (`/dashboard/[slug]/reports`). */
+    reports: {
+      pageTitle: string;
+      navLinkLabel: string;
+      loading: string;
+      rangeAriaLabel: string;
+      range: {
+        today: string;
+        week: string;
+        month: string;
+      };
+      kpis: {
+        totalRevenue: string;
+        appointments: string;
+        completed: string;
+        cancelled: string;
+        noShow: string;
+      };
+      tables: {
+        topServices: string;
+        topStaff: string;
+        empty: string;
+        serviceCol: string;
+        staffCol: string;
+        countCol: string;
+        appointmentsCol: string;
+        revenueCol: string;
+      };
+      busyHours: {
+        title: string;
+        empty: string;
+        /** "{n} bookings in range" */
+        totalBookings: string;
+      };
+      errors: {
+        unauthorized: string;
+        forbidden: string;
+        server_error: string;
+      };
+    };
   };
 };
 
@@ -1129,6 +1169,44 @@ export const userEn: UserMessages = {
         forbidden: "Only the salon owner can change VIP status.",
         not_found: "Client profile not found.",
         server_error: "Could not save. Try again shortly.",
+      },
+    },
+    reports: {
+      pageTitle: "Reports",
+      navLinkLabel: "Reports",
+      loading: "Loading reports…",
+      rangeAriaLabel: "Date range",
+      range: {
+        today: "Today",
+        week: "This week",
+        month: "This month",
+      },
+      kpis: {
+        totalRevenue: "Total revenue",
+        appointments: "Appointments",
+        completed: "Completed",
+        cancelled: "Cancelled",
+        noShow: "No-show",
+      },
+      tables: {
+        topServices: "Top services",
+        topStaff: "Top staff",
+        empty: "No data in this range yet.",
+        serviceCol: "Service",
+        staffCol: "Staff",
+        countCol: "Count",
+        appointmentsCol: "Appointments",
+        revenueCol: "Revenue",
+      },
+      busyHours: {
+        title: "Busy hours",
+        empty: "No bookings in this range.",
+        totalBookings: "{n} bookings",
+      },
+      errors: {
+        unauthorized: "Sign in is required.",
+        forbidden: "Only the salon owner can view reports.",
+        server_error: "Could not load reports. Try again shortly.",
       },
     },
   },
