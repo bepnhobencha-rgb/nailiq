@@ -501,6 +501,28 @@ export type UserMessages = {
       add: string;
       remove: string;
     };
+    /** Audit / event log viewer (owner-only Settings section). */
+    auditLog: {
+      sectionTitle: string;
+      sectionIntro: string;
+      loading: string;
+      empty: string;
+      unknownGuest: string;
+      errors: {
+        unauthorized: string;
+        forbidden: string;
+        server_error: string;
+      };
+      actorRoles: Partial<Record<string, string>>;
+      summaries: {
+        booking_created: string;
+        booking_edited: string;
+        booking_cancelled: string;
+        booking_status_changed: string;
+        walkin_added: string;
+        addon_added: string;
+      };
+    };
     /** Top-level error boundary fallback for the Receptionist Center. */
     errorBoundary: {
       title: string;
@@ -970,6 +992,38 @@ export const userEn: UserMessages = {
       none: "None",
       add: "Add extra service",
       remove: "Remove add-on",
+    },
+    auditLog: {
+      sectionTitle: "Audit log",
+      sectionIntro: "Last 50 booking changes for this salon. Owner-only.",
+      loading: "Loading recent events…",
+      empty: "No booking events yet.",
+      unknownGuest: "guest",
+      errors: {
+        unauthorized: "Sign in is required.",
+        forbidden: "Only the salon owner can view the audit log.",
+        server_error: "Could not load the audit log. Try again shortly.",
+      },
+      actorRoles: {
+        owner: "Owner",
+        senior: "Senior",
+        nail_tech: "Nail tech",
+        manager: "Manager",
+        trainee: "Trainee",
+        viewer: "Viewer",
+        accounting: "Accounting",
+        public_guest: "Guest",
+        demo_cookie: "Demo",
+        system: "System",
+      },
+      summaries: {
+        booking_created: "Created booking for {name}",
+        booking_edited: "Edited booking for {name}",
+        booking_cancelled: "Cancelled booking for {name}",
+        booking_status_changed: "Status for {name}: {from} → {to}",
+        walkin_added: "Added {name} to walk-in queue",
+        addon_added: "Added an add-on to {name}'s booking",
+      },
     },
     errorBoundary: {
       title: "Something went wrong at the desk",

@@ -14,6 +14,7 @@ import {
   canCancelBooking,
   canEditBooking,
 } from "@/shared/lib/salonMemberRole";
+import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import {
   type EditBookingInput,
@@ -39,6 +40,19 @@ function isUuidLike(value: string): boolean {
 
 function fail(error: string): { ok: false; error: string } {
   return { ok: false, error };
+}
+
+/** Map a `getDashboardWriteClient` ctx to an audit `actorRole`. The
+ * demo-cookie path has no real auth user, so it gets a stable
+ * `"demo_cookie"` actor instead of pretending to be the owner. */
+function ctxActorRole(ctx: {
+  kind: "member" | "demo_cookie";
+  role: string;
+}): ActorRole {
+  if (ctx.kind === "demo_cookie") return "demo_cookie";
+  // member ctx — role is one of the salon_members enum values, all of
+  // which are valid ActorRole keys.
+  return ctx.role as ActorRole;
 }
 
 type OkBooking = { ok: true; bookingId: string };
@@ -178,6 +192,20 @@ export async function addWalkinToQueue(
   }
   const bid = inserted && "id" in inserted ? String(inserted.id) : "";
   if (!bid) return fail("server_error");
+
+  void logBookingEvent({
+    bookingId: bid,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "walkin_added",
+    payload: {
+      serviceId,
+      walkinSource,
+      walkinPriority,
+      partySize,
+    },
+  });
 
   return { ok: true, bookingId: bid };
 }
@@ -366,6 +394,22 @@ export async function assignWalkinToSlot(
     return fail("lost_race");
   }
 
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "booking_status_changed",
+    payload: {
+      from: "waiting",
+      to: "confirmed",
+      reason: "walkin_assigned",
+      staffId,
+      slotStartUtc,
+      slotEndUtc,
+    },
+  });
+
   return { ok: true };
 }
 
@@ -404,6 +448,15 @@ export async function cancelWaitingWalkin(
   if (!updated?.id) {
     return fail("invalid_state");
   }
+
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "booking_cancelled",
+    payload: { from: "waiting", reason: "walkin_removed" },
+  });
 
   return { ok: true };
 }
@@ -452,6 +505,15 @@ export async function undoWalkinAssignment(
     return fail("already_started");
   }
 
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "booking_status_changed",
+    payload: { from: "confirmed", to: "waiting", reason: "undo_assign" },
+  });
+
   return { ok: true };
 }
 
@@ -498,6 +560,15 @@ export async function markWalkinInProgress(
     return fail("invalid_state");
   }
 
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "booking_status_changed",
+    payload: { from: "confirmed", to: "in_progress", startedAt },
+  });
+
   return { ok: true };
 }
 
@@ -543,6 +614,15 @@ export async function cancelDeskBooking(
     return fail("invalid_state");
   }
 
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "booking_cancelled",
+    payload: { reason: "desk_cancel" },
+  });
+
   return { ok: true };
 }
 
@@ -570,5 +650,6 @@ export async function editBooking(
     ctx.supabase as SupabaseClient<Database>,
     ctx.salon.id,
     input,
+    { role: ctxActorRole(ctx), userId: null },
   );
 }

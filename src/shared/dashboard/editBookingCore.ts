@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import type { SalonDashboardBooking } from "@/shared/types";
+import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import {
   type BookingRowDb,
   DASHBOARD_BOOKING_SELECT,
@@ -55,11 +56,16 @@ export type EditBookingResult =
 /**
  * Core edit-booking mutation (desk): pending | confirmed only, slot overlap check,
  * then update staff/start/end/service/price only. Caller supplies authenticated client.
+ *
+ * `actor` is optional and exists only so the audit-log row can attribute the
+ * change. Omitting it logs `actorRole: "system"` and `actorUserId: null` —
+ * still useful for forensics.
  */
 export async function performEditBooking(
   supabase: SupabaseClient<Database>,
   authorizedSalonId: string,
   input: EditBookingInput,
+  actor?: { role: ActorRole; userId: string | null },
 ): Promise<EditBookingResult> {
   const expectedSalon = String(authorizedSalonId ?? "").trim();
   const salonIdFromInput = String(input.salonId ?? "").trim();
@@ -348,6 +354,24 @@ export async function performEditBooking(
     console.error("[performEditBooking] hydrate", rowErr);
     return { ok: false, error: "server_error" };
   }
+
+  // Audit log — fire-and-forget. The mutation already succeeded; logging
+  // failures must not surface to the user or roll back the edit.
+  void logBookingEvent({
+    bookingId,
+    salonId,
+    actorUserId: actor?.userId ?? null,
+    actorRole: actor?.role ?? "system",
+    eventType: "booking_edited",
+    payload: {
+      newStaffId,
+      newServiceId,
+      newStartTimeUtc: slotStartUtc,
+      newEndTimeUtc: slotEndUtc,
+      addonChanged: input.newAddonServiceId !== undefined,
+      newAddonServiceId: effectiveAddonId,
+    },
+  });
 
   return {
     ok: true,
