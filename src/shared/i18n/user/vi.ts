@@ -441,6 +441,22 @@ export const userVi: UserMessages = {
       already_started: "Đã bắt đầu phục vụ — không hoàn tác được.",
       invalid_phone: "Nhập số điện thoại hợp lệ của khách.",
     },
+    tv: {
+      title: "Quầy lễ tân — Màn hình trực tiếp",
+      guestsWaiting: "khách đang chờ",
+      estWait: "Chờ ước tính",
+      exitTvMode: "Thoát chế độ TV",
+      noBookings: "Sẵn sàng",
+    },
+    popularServices: {
+      label: "Phổ biến hôm nay",
+    },
+    editAddon: {
+      label: "Dịch vụ thêm",
+      none: "Không",
+      add: "Thêm dịch vụ phụ",
+      remove: "Bỏ dịch vụ phụ",
+    },
     permissions: {
       noPermissionEdit: "Liên hệ chủ tiệm để chỉnh lịch",
       noPermissionCancel: "Liên hệ chủ tiệm để hủy lịch",

@@ -75,6 +75,15 @@ export interface WalkinAddFormProps {
     walkinPriority: QueuePriority | null;
     walkinRequestTags: QueueRequestTag[];
   }) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Popular service ids derived from today's bookings (server-side).
+   * Rendered as shortcut chips above the service grid; tapping a chip
+   * snaps `selectedServiceId` to that id. Hidden when undefined or
+   * empty.
+   */
+  popularServiceIds?: ReadonlyArray<string>;
+  /** Localized label for the popular chip row. */
+  popularServicesLabel?: string;
 }
 
 function formatServicePrice(priceCents: number): string {
@@ -90,6 +99,8 @@ export function WalkinAddForm({
   disabled = false,
   isOffline = false,
   offlineDisabledHint,
+  popularServiceIds,
+  popularServicesLabel,
 }: WalkinAddFormProps) {
   const nameId = useId();
   const phoneId = useId();
@@ -131,6 +142,20 @@ export function WalkinAddForm({
     () => services.slice(TOP_SERVICE_COUNT),
     [services],
   );
+
+  // Resolve popular ids → catalog rows in the order supplied (which is
+  // the server-side frequency rank). Drops ids that no longer exist in
+  // the catalog (e.g. a service the owner just deleted between loads).
+  const popularServices = useMemo(() => {
+    if (!popularServiceIds || popularServiceIds.length === 0) return [];
+    const byId = new Map(services.map((s) => [s.id, s] as const));
+    const out: typeof services = [];
+    for (const id of popularServiceIds) {
+      const row = byId.get(id);
+      if (row) out.push(row);
+    }
+    return out;
+  }, [popularServiceIds, services]);
 
   const resetAfterSuccess = useCallback(() => {
     setClientName("");
@@ -425,6 +450,43 @@ export function WalkinAddForm({
           </p>
         ) : null}
       </div>
+
+      {popularServices.length > 0 ? (
+        <div
+          data-testid="walkin-popular-services"
+          className="space-y-1"
+        >
+          {popularServicesLabel ? (
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+              {popularServicesLabel}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap gap-1.5">
+            {popularServices.map((s) => {
+              const selected = selectedServiceId === s.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  data-testid={`walkin-popular-${s.id}`}
+                  disabled={formLocked}
+                  onClick={() => setSelectedServiceId(s.id)}
+                  className={cn(
+                    "inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                    selected
+                      ? "border-nq-primary bg-nq-primary/15 text-nq-primary"
+                      : "border-nq-border bg-nq-surface/60 text-nq-foreground hover:border-nq-primary/40",
+                    formLocked && "opacity-60",
+                  )}
+                >
+                  <span aria-hidden>★</span>
+                  <span className="truncate">{s.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       <div className="space-y-2">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  memo,
   useEffect,
   useMemo,
   useRef,
@@ -206,7 +207,7 @@ function toConflictRows(bookings: GridBooking[]): ConflictCheckBooking[] {
 
 const timelineWidthPx = TOTAL_SLOTS * SLOT_PX;
 
-export function StaffTimelineGrid({
+function StaffTimelineGridImpl({
   staff,
   bookings,
   assigning,
@@ -616,3 +617,17 @@ export function StaffTimelineGrid({
     </div>
   );
 }
+
+/**
+ * `React.memo` skip — the parent re-renders every minute as `nowIso`
+ * ticks, but most of those re-renders carry referentially-stable props
+ * because the parent already memoizes `gridStaff`, `gridBookings`, and
+ * the `labels` object. The shallow prop check here lets the timeline
+ * skip the heavy slot-grid + booking-block render whenever the only
+ * change is unrelated parent state (e.g. drawer open/close, undo toast
+ * countdown, sound-unlock hint). Callbacks (`onBookingClick`,
+ * `onSlotClick`) are recreated each render in the parent — that's a
+ * known limitation; wrapping them in `useCallback` is the next
+ * incremental win if profiling shows wasted renders here.
+ */
+export const StaffTimelineGrid = memo(StaffTimelineGridImpl);

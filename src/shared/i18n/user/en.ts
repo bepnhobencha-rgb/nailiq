@@ -482,6 +482,25 @@ export type UserMessages = {
       noPermissionEdit: string;
       noPermissionCancel: string;
     };
+    /** TV mode preset — full-screen read-only display. */
+    tv: {
+      title: string;
+      guestsWaiting: string;
+      estWait: string;
+      exitTvMode: string;
+      noBookings: string;
+    };
+    /** Quick Add: popular service shortcut chips above the service grid. */
+    popularServices: {
+      label: string;
+    };
+    /** Edit Booking: addon select copy. */
+    editAddon: {
+      label: string;
+      none: string;
+      add: string;
+      remove: string;
+    };
   };
 };
 
@@ -929,6 +948,22 @@ export const userEn: UserMessages = {
     permissions: {
       noPermissionEdit: "Contact your owner to edit bookings",
       noPermissionCancel: "Contact your owner to cancel bookings",
+    },
+    tv: {
+      title: "Front Desk — Live View",
+      guestsWaiting: "guests waiting",
+      estWait: "Est. wait",
+      exitTvMode: "Exit TV Mode",
+      noBookings: "Available",
+    },
+    popularServices: {
+      label: "Popular today",
+    },
+    editAddon: {
+      label: "Add-on",
+      none: "None",
+      add: "Add extra service",
+      remove: "Remove add-on",
     },
   },
 };
