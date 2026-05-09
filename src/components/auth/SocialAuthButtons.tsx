@@ -113,6 +113,7 @@ export function SocialAuthButtons({ mode }: Props) {
         <form
           id={emailSectionId}
           onSubmit={onEmail}
+          method="post"
           className="flex flex-col gap-3"
         >
           <Input

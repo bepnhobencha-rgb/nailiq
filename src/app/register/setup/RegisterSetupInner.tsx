@@ -123,7 +123,11 @@ export default function RegisterSetupInner({
       title="What’s your salon name?"
       subtext="This will appear on your public booking page."
     >
-      <form onSubmit={onSubmit} className="flex flex-col gap-6">
+      <form
+        onSubmit={onSubmit}
+        method="post"
+        className="flex flex-col gap-6"
+      >
         <div>
           <Input
             name="salonName"

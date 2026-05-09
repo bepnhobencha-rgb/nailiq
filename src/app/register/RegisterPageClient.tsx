@@ -190,6 +190,14 @@ export function RegisterPageClient({ demoMode }: Props) {
               setPhoneRaw(ev.target.value);
               if (error) setError(null);
             }}
+            onBlur={() => {
+              const trimmed = phoneRaw.trim();
+              if (trimmed.length === 0) return;
+              const normalized = normalizeRegisterPhone(trimmed);
+              if (!isRegisterPhoneDigitsValid(normalized)) {
+                setError(t.register.phoneDigitsInvalid);
+              }
+            }}
             aria-invalid={Boolean(error)}
             error={Boolean(error)}
             autoFocus
