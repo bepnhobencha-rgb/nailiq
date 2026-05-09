@@ -261,6 +261,19 @@ export const userVi: UserMessages = {
       waitingLabel: "CHỜ",
       inProgressLabel: "ĐANG PHỤC VỤ",
     },
+    density: {
+      label: "Mật độ",
+      simple: "Đơn giản",
+      balanced: "Cân bằng",
+      pro: "Chuyên",
+      ariaLabel: "Mật độ dashboard — Đơn giản, Cân bằng, hoặc Chuyên",
+      updated: (label: string) => `Đã đổi mật độ sang ${label}`,
+      updateFailed: "Không đổi được mật độ. Thử lại sau.",
+    },
+    roleBadge: {
+      ownerView: "Chủ tiệm",
+      nailTechView: "Thợ",
+    },
     kpiBar: {
       waiting: "Đang chờ",
       avgWait: "Chờ trung bình",

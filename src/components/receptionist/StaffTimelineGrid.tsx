@@ -119,6 +119,33 @@ export interface StaffTimelineGridProps {
   showBookingPrices?: boolean;
   /** Passed to each booking block (`vip_indicators`). */
   showWalkinAccent?: boolean;
+  /**
+   * Density-derived flag — controls the secondary meta line (service +
+   * price) on booking blocks. Off in `simple` density to keep blocks
+   * calm; on otherwise. Composes with `showBookingPrices` (price segment
+   * still requires both).
+   */
+  showBookingMetaLine?: boolean;
+  /**
+   * Density-derived flag — controls the `StaffAvatar` skills row in the
+   * staff column. Composes with `showStaffPerformanceDetail` (both must
+   * be true).
+   */
+  showStaffSkillBadges?: boolean;
+  /**
+   * Density-derived visual override for booking block minimum height
+   * (px). Visual only — schedule math (slot count + GIST overlap)
+   * remains on the salon's true 30-minute cadence.
+   */
+  bookingBlockMinHeightPx?: number;
+  /**
+   * Density-derived visual hint for slot row height tier (20 / 30 / 40
+   * minutes equivalent). Visual only — does not change `SLOT_PX` or
+   * `TOTAL_SLOTS`. Reserved for future density-driven row-height
+   * adjustments; currently unused but plumbed so the contract stays
+   * stable as density tightens.
+   */
+  timeSlotMinutesVisualHint?: 20 | 30 | 40;
 }
 
 function slotIndexToUtc(
@@ -196,6 +223,12 @@ export function StaffTimelineGrid({
   showTimelineHeatmap = true,
   showBookingPrices = true,
   showWalkinAccent = true,
+  showBookingMetaLine = true,
+  showStaffSkillBadges = true,
+  bookingBlockMinHeightPx,
+  // `timeSlotMinutesVisualHint` is reserved for future row-height
+  // adjustments; currently unused at runtime.
+  timeSlotMinutesVisualHint: _timeSlotMinutesVisualHint,
 }: StaffTimelineGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoScrolledRef = useRef(false);
@@ -309,7 +342,11 @@ export function StaffTimelineGrid({
                 showStatus
                 size="md"
                 skills={s.skills}
-                showSkills={showStaffPerformanceDetail && s.skills.length > 0}
+                showSkills={
+                  showStaffPerformanceDetail &&
+                  showStaffSkillBadges &&
+                  s.skills.length > 0
+                }
               />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-nq-foreground">{s.name}</p>
@@ -547,7 +584,9 @@ export function StaffTimelineGrid({
                           widthPx={widthPx}
                           onClick={() => onBookingClick(b.id)}
                           showPrice={showBookingPrices}
+                          showMetaLine={showBookingMetaLine}
                           showWalkinAccent={showWalkinAccent}
+                          minHeightPx={bookingBlockMinHeightPx}
                           isVip={b.is_vip}
                           hasNotes={b.has_notes}
                           hasDesign={b.has_design}

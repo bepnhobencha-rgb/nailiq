@@ -20,6 +20,10 @@ import {
   parsePresetKey,
   type PresetKey,
 } from "@/shared/dashboard/dashboardPresets";
+import {
+  parseDensityLevel,
+  type DensityLevel,
+} from "@/shared/dashboard/dashboardDensity";
 
 type DashboardSupabaseClient = SupabaseClient<Database>;
 
@@ -147,6 +151,12 @@ export interface ReceptionistCenterData {
   dashboardModules: DashboardModulesConfig;
   /** Active workspace preset for this salon. Drives layout + module defaults. */
   dashboardPreset: PresetKey;
+  /**
+   * Salon-wide UI density (Simple ↔ Balanced ↔ Pro). Orthogonal to
+   * preset + modules; tunes visual rhythm only (block min height,
+   * label visibility, slot height) per `dashboardDensity.ts`.
+   */
+  dashboardDensity: DensityLevel;
   /**
    * Receptionist KPI band snapshot for the selected day. Computed server-side
    * from the same dataset as the timeline + queue so values are coherent on
@@ -373,7 +383,9 @@ export async function loadReceptionistCenterData(
 
   const salonResult = await supabase
     .from("salons")
-    .select("id, name, slug, timezone, dashboard_modules, dashboard_preset")
+    .select(
+      "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density",
+    )
     .eq("id", ctx.salon.id)
     .maybeSingle();
 
@@ -389,6 +401,7 @@ export async function loadReceptionistCenterData(
     timezone: string;
     dashboard_modules?: unknown;
     dashboard_preset?: unknown;
+    dashboard_density?: unknown;
   } | null;
 
   if (!salonData?.id || typeof salonData.timezone !== "string" || salonData.timezone.trim() === "") {
@@ -407,6 +420,7 @@ export async function loadReceptionistCenterData(
   );
   const dashboardPreset = parsePresetKey(salonData.dashboard_preset);
   const dashboardModules = applyPreset(dashboardPreset, rawDashboardModules);
+  const dashboardDensity = parseDensityLevel(salonData.dashboard_density);
 
   let startUtc: string;
   let endUtc: string;
@@ -702,6 +716,7 @@ export async function loadReceptionistCenterData(
       selectedDate: dateYmd,
       dashboardModules,
       dashboardPreset,
+      dashboardDensity,
       kpiSnapshot,
     },
   };

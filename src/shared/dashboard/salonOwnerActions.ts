@@ -32,6 +32,10 @@ import {
   isPresetKey,
   type PresetKey,
 } from "@/shared/dashboard/dashboardPresets";
+import {
+  isDensityLevel,
+  type DensityLevel,
+} from "@/shared/dashboard/dashboardDensity";
 import type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
 import { ACTIVE_GRID_STATUSES } from "@/shared/types";
 
@@ -570,5 +574,56 @@ export async function updateDashboardPreset(
   }
 
   return { ok: true, preset };
+}
+
+export type UpdateDashboardDensityResult =
+  | { ok: true; density: DensityLevel }
+  | {
+      ok: false;
+      error: "unauthorized" | "forbidden" | "invalid_density" | "server_error";
+    };
+
+/**
+ * Salon-wide density preference (Simple ↔ Balanced ↔ Pro).
+ *
+ * Permission: matches the existing `updateDashboardPreset` pattern —
+ * owner-only for salon-wide writes. `PERMISSION_MATRIX.md §3` describes
+ * "personal preset vs salon-wide preset when distinguished" as a
+ * Partial for senior/nail_tech; until product introduces the personal
+ * tier, salon-wide writes stay owner-only (conservative default per
+ * `ARCHITECTURE_LOCK §6`).
+ */
+export async function updateDashboardDensity(
+  slug: string,
+  density: DensityLevel,
+): Promise<UpdateDashboardDensityResult> {
+  if (!isDensityLevel(density)) {
+    return { ok: false, error: "invalid_density" };
+  }
+
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) {
+    return { ok: false, error: "unauthorized" };
+  }
+  if (ctx.role !== "owner") {
+    return { ok: false, error: "forbidden" };
+  }
+
+  // `dashboard_density` may not yet be in the auto-generated Supabase
+  // types until the next regeneration — cast keeps the boundary safe.
+  const { error: upErr } = await ctx.supabase
+    .from("salons")
+    .update({ dashboard_density: density } as never)
+    .eq("id", ctx.salon.id);
+
+  if (upErr) {
+    console.error("[updateDashboardDensity]", upErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true, density };
 }
 
