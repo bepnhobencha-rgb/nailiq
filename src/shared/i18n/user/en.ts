@@ -70,6 +70,28 @@ export type UserMessages = {
     phonePlaceholder: string;
     /** Inline validation before OTP send — Canada/US primary, Vietnam supported. */
     phoneDigitsInvalid: string;
+    /** /register/setup wizard copy — added 2026-05-09 to make the
+     * salon-name field unmistakable (QA report: users were typing
+     * their own name as salon name). */
+    wizardTitle: string;
+    wizardSubtext: string;
+    salonNameLabel: string;
+    salonNamePlaceholder: string;
+    salonNameHint: string;
+    salonNameInvalid: string;
+    slugLabel: string;
+    slugHint: string;
+    /** Aria label on the editable slug input. */
+    slugAriaLabel: string;
+    timezoneLabel: string;
+    timezoneHint: string;
+    submitCreate: string;
+    submitCreating: string;
+    /** Generic fallback when completeSalonRegistration server action
+     * fails without a recognised error code. */
+    submitErrorGeneric: string;
+    /** Shown when the OTP-issued completion token has expired. */
+    submitErrorExpiredToken: string;
     /** Submit button on /register before/while sending OTP. */
     sendCode: string;
     sendingCode: string;
@@ -193,6 +215,16 @@ export type UserMessages = {
       saveFailed: string;
       saveButton: string;
       savingButton: string;
+      /** Headline copy on the banner (paired with the lock icon). */
+      headline: string;
+      /** Sub-line social-proof / urgency copy under the headline. */
+      socialProof: string;
+      /** Toggle button that expands the inline email form. */
+      ctaAdd: string;
+      /** Dismiss button (7-day snooze). */
+      ctaLater: string;
+      /** Success bubble shown for 3s after a successful save. */
+      successMessage: string;
     };
   };
   salonDashboard: {
@@ -811,6 +843,26 @@ export const userEn: UserMessages = {
       "New code sent — previous code is no longer valid.",
     phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
     phoneDigitsInvalid: REGISTER_INVALID_PHONE_HINT_EN,
+    wizardTitle: "Name your salon",
+    wizardSubtext:
+      "Use the salon's business name — what guests will see on your booking page. Don't put your own name here.",
+    salonNameLabel: "Salon name",
+    salonNamePlaceholder: "e.g. Mai Nail Studio",
+    salonNameHint:
+      "Tip: this is the salon's business name (not your personal name). Guests will see this on the booking page.",
+    salonNameInvalid: "Enter a salon name (max 120 characters).",
+    slugLabel: "Booking URL",
+    slugHint:
+      "Letters and numbers only. Edit if you want a shorter URL.",
+    slugAriaLabel: "Booking URL slug",
+    timezoneLabel: "Time zone",
+    timezoneHint:
+      "We use this to show booking times correctly to you and your guests.",
+    submitCreate: "Create your booking page",
+    submitCreating: "Creating…",
+    submitErrorGeneric: "Could not create your salon. Try again.",
+    submitErrorExpiredToken:
+      "Your verification expired — start again from phone entry.",
     sendCode: "Send code",
     sendingCode: "Sending…",
     verifyTitle: "Enter code",
@@ -911,6 +963,13 @@ export const userEn: UserMessages = {
       saveFailed: "Could not save email. Try again.",
       saveButton: "Save email",
       savingButton: "Saving…",
+      headline:
+        "Secure your account — add email to never lose dashboard access",
+      socialProof:
+        "3 salons lost access this week from missing recovery email",
+      ctaAdd: "Add email",
+      ctaLater: "Maybe later",
+      successMessage: "✓ Email saved! You're protected.",
     },
   },
   salonDashboard: {

@@ -38,14 +38,60 @@ function registerCompletionDebugEnabled(): boolean {
   );
 }
 
+/**
+ * Conservative allowlist of timezones the wizard exposes. Defaults to
+ * `America/Vancouver` per QA spec. Anything outside the allowlist is
+ * rejected — prevents arbitrary IANA strings reaching the DB before
+ * the production timezone-list contract is decided.
+ */
+const ALLOWED_WIZARD_TIMEZONES = [
+  "America/Vancouver",
+  "America/Toronto",
+  "America/Edmonton",
+  "America/Los_Angeles",
+  "Asia/Ho_Chi_Minh",
+] as const;
+
+const DEFAULT_WIZARD_TIMEZONE = "America/Vancouver";
+
+function normalizeWizardSlug(raw: string | null | undefined): string {
+  if (!raw) return "";
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function normalizeWizardTimezone(raw: string | null | undefined): string {
+  const candidate = (raw ?? "").trim();
+  if (!candidate) return DEFAULT_WIZARD_TIMEZONE;
+  return (ALLOWED_WIZARD_TIMEZONES as readonly string[]).includes(candidate)
+    ? candidate
+    : DEFAULT_WIZARD_TIMEZONE;
+}
+
+export type CompleteSalonRegistrationInput = {
+  /** Optional URL slug override. Empty/invalid → server picks from name. */
+  slug?: string | null;
+  /** Optional IANA timezone. Empty/invalid → America/Vancouver. */
+  timezone?: string | null;
+};
+
 export async function completeSalonRegistration(
   salonNameRaw: string,
   completionTokenRaw?: string | null,
+  extra?: CompleteSalonRegistrationInput,
 ): Promise<CompleteSalonRegistrationResult> {
   const name = salonNameRaw.trim();
   if (!name || name.length > 120) {
     return { ok: false, error: "invalid_name" };
   }
+
+  const requestedSlug = normalizeWizardSlug(extra?.slug);
+  const wizardTimezone = normalizeWizardTimezone(extra?.timezone);
 
   const isDemo = isDemoOtpRuntime();
 
@@ -134,10 +180,8 @@ export async function completeSalonRegistration(
 
     let slug: string;
     try {
-      const picked = await pickAvailableSalonSlug(
-        admin,
-        slugifySalonName(name),
-      );
+      const slugSeed = requestedSlug || slugifySalonName(name);
+      const picked = await pickAvailableSalonSlug(admin, slugSeed);
       slug = picked.slug;
     } catch (e) {
       console.error("[completeSalonRegistration] demo slug pick", e);
@@ -150,6 +194,7 @@ export async function completeSalonRegistration(
         slug,
         name,
         phone,
+        timezone: wizardTimezone,
       })
       .select("id, slug")
       .single();
@@ -165,7 +210,8 @@ export async function completeSalonRegistration(
 
     const salonId = salonRow.id as string;
     const actualSlug = String(salonRow.slug);
-    const resolvedSlugAdjusted = actualSlug !== slugifySalonName(name.trim());
+    const slugSeedForCompare = requestedSlug || slugifySalonName(name.trim());
+    const resolvedSlugAdjusted = actualSlug !== slugSeedForCompare;
 
     const { error: svcErr } = await admin.from("services").insert({
       salon_id: salonId,
@@ -340,10 +386,8 @@ export async function completeSalonRegistration(
 
   let slug: string;
   try {
-    const picked = await pickAvailableSalonSlug(
-      admin,
-      slugifySalonName(name),
-    );
+    const slugSeed = requestedSlug || slugifySalonName(name);
+    const picked = await pickAvailableSalonSlug(admin, slugSeed);
     slug = picked.slug;
   } catch (e) {
     console.error("FAILED before step 2 (slug pick)", e);
@@ -351,7 +395,12 @@ export async function completeSalonRegistration(
   }
 
   if (registerCompletionDebugEnabled()) {
-    console.log("Step 2: insert salon", { slug, name, phone: phoneForSalon });
+    console.log("Step 2: insert salon", {
+      slug,
+      name,
+      phone: phoneForSalon,
+      timezone: wizardTimezone,
+    });
   }
 
   const { data: salonRow, error: salonErr } = await admin
@@ -360,6 +409,7 @@ export async function completeSalonRegistration(
       slug,
       name,
       phone: phoneForSalon,
+      timezone: wizardTimezone,
     })
     .select("id, slug")
     .single();

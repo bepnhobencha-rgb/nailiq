@@ -125,7 +125,7 @@ export function AddEmailBanner({
     return (
       <div className="nq-email-banner-enter mb-4 w-full rounded-2xl border border-nq-success/35 bg-nq-success/12 px-4 py-3">
         <p className="text-center text-[15px] font-medium leading-snug text-nq-foreground">
-          ✓ Email saved! You&apos;re protected.
+          {t.successMessage}
         </p>
       </div>
     );
@@ -145,12 +145,10 @@ export function AddEmailBanner({
             <span aria-hidden className="shrink-0">
               🔐
             </span>
-            <span>
-              Secure your account — add email to never lose dashboard access
-            </span>
+            <span>{t.headline}</span>
           </p>
           <p className="mt-1.5 pl-7 text-sm leading-snug text-nq-muted">
-            3 salons lost access this week from missing recovery email
+            {t.socialProof}
           </p>
         </div>
         <div className="flex w-full shrink-0 flex-col gap-2 sm:max-w-[min(100%,16rem)] sm:flex-shrink-0 sm:flex-row sm:justify-end">
@@ -163,7 +161,7 @@ export function AddEmailBanner({
               setExpanded((e) => !e);
             }}
           >
-            Add email
+            {t.ctaAdd}
           </Button>
           <Button
             type="button"
@@ -173,7 +171,7 @@ export function AddEmailBanner({
             disabled={pending}
             onClick={handleDismiss}
           >
-            Maybe later
+            {t.ctaLater}
           </Button>
         </div>
       </div>
