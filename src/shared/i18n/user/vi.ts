@@ -499,5 +499,35 @@ export const userVi: UserMessages = {
         "Quầy gặp lỗi bất ngờ. Bấm thử lại; nếu tiếp tục, báo cho chủ tiệm.",
       retryButton: "Thử lại",
     },
+    clientProfiles: {
+      pageTitle: "Khách hàng",
+      sectionTitle: "Khách gần đây",
+      sectionIntro:
+        "50 khách gần nhất sắp theo lần ghé cuối. Tìm theo tên hoặc số điện thoại.",
+      searchPlaceholder: "Tìm khách…",
+      loading: "Đang tải khách…",
+      empty: "Chưa có khách.",
+      unknownName: "(chưa có tên)",
+      vipBadge: "VIP",
+      summaryLine: "{visits} lượt · gần nhất {lastVisit}",
+      totalSpent: "Tổng chi tiêu",
+      email: "Email",
+      notes: "Ghi chú",
+      noNotes: "Chưa có ghi chú.",
+      vipLabel: "VIP",
+      vipHint: "VIP áp dụng cho mọi tiệm (khách này sẽ là VIP ở bất kỳ tiệm nào).",
+      errors: {
+        unauthorized: "Cần đăng nhập.",
+        forbidden:
+          "Chỉ chủ tiệm hoặc lễ tân chính mới xem được khách hàng.",
+        server_error: "Không tải được. Thử lại sau.",
+      },
+      vipUpdateErrors: {
+        unauthorized: "Cần đăng nhập.",
+        forbidden: "Chỉ chủ tiệm mới đổi được VIP.",
+        not_found: "Không tìm thấy hồ sơ khách.",
+        server_error: "Không lưu được. Thử lại sau.",
+      },
+    },
   },
 };
