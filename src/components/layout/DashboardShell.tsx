@@ -1,0 +1,63 @@
+"use client";
+
+import { type ReactNode } from "react";
+import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
+import { useSidebarCollapsed } from "@/shared/lib/useSidebarCollapsed";
+
+type Props = {
+  slug: string;
+  role: string;
+  salonName: string;
+  children: ReactNode;
+  /** Optional badge count for the Walk-in Queue nav row. */
+  walkinQueueCount?: number;
+  /** Optional badge count for the Messages nav row (placeholder). */
+  messagesCount?: number;
+};
+
+/**
+ * App-shell wrapper for `/dashboard/[slug]/*`. Renders the persistent
+ * sidebar (md+) and the mobile bottom-bar (<md), shifting `<main>` so
+ * the inner content does not collide with the sidebar.
+ *
+ * Layout contract:
+ *   - Sidebar lives OUTSIDE the Front Desk three-zone main content area.
+ *     The receptionist center's staff column / timeline / queue are
+ *     unchanged. See DASHBOARD_LAYOUT_RULES §9.
+ *   - Sidebar width is published as `--nq-sidebar-w` (15rem expanded,
+ *     4rem collapsed). Main consumes the same variable for left padding
+ *     so collapse never causes layout shift inside the timeline grid.
+ */
+export function DashboardShell({
+  slug,
+  role,
+  salonName,
+  children,
+  walkinQueueCount,
+  messagesCount,
+}: Props) {
+  const { collapsed } = useSidebarCollapsed();
+  const sidebarWidth = collapsed ? "4rem" : "15rem";
+
+  return (
+    <div
+      className="min-h-dvh bg-nq-bg"
+      style={{ ["--nq-sidebar-w" as string]: sidebarWidth }}
+    >
+      <DashboardSidebar
+        slug={slug}
+        role={role}
+        salonName={salonName}
+        walkinQueueCount={walkinQueueCount}
+        messagesCount={messagesCount}
+      />
+      <main
+        className="min-h-dvh md:pl-[var(--nq-sidebar-w)] pb-16 md:pb-0"
+      >
+        {children}
+      </main>
+      <MobileBottomNav slug={slug} walkinQueueCount={walkinQueueCount} />
+    </div>
+  );
+}
