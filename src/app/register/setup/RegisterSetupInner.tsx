@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -16,6 +16,19 @@ import { REG_COMPLETION_TOKEN_KEY } from "@/shared/lib/registerSessionKeys";
 import { slugifySalonName } from "@/shared/lib/slugifySalonName";
 import { completeSalonRegistration } from "@/shared/register/completeSalonRegistrationAction";
 
+/**
+ * Reads the completion token, preferring the URL `?ct=…` param (survives
+ * reload — written by `/register/verify` after OTP success) and falling
+ * back to sessionStorage for back-compat with in-flight tabs.
+ */
+function readCompletionToken(urlToken: string | null): string | null {
+  const fromUrl = urlToken?.trim();
+  if (fromUrl && fromUrl.length > 0) return fromUrl;
+  if (typeof window === "undefined") return null;
+  const fromSession = window.sessionStorage.getItem(REG_COMPLETION_TOKEN_KEY);
+  return fromSession?.trim() ? fromSession.trim() : null;
+}
+
 /** Pre-fills the name input in demo mode; slugifies to DEMO_SALON_SLUG. */
 const DEMO_SALON_DISPLAY_NAME = "Demo Salon";
 
@@ -30,6 +43,8 @@ export default function RegisterSetupInner({
   isDemoMode: boolean;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlToken = searchParams?.get("ct") ?? null;
   const [name, setName] = useState(
     isDemoMode ? DEMO_SALON_DISPLAY_NAME : "",
   );
@@ -44,11 +59,11 @@ export default function RegisterSetupInner({
     // magic-link signups land here authenticated but token-less.
     if (!isDemoMode) return;
     if (typeof window === "undefined") return;
-    const token = window.sessionStorage.getItem(REG_COMPLETION_TOKEN_KEY);
-    if (!token?.trim()) {
+    const token = readCompletionToken(urlToken);
+    if (!token) {
       router.replace("/register");
     }
-  }, [isDemoMode, router]);
+  }, [isDemoMode, router, urlToken]);
 
   const previewSlug = useMemo(() => {
     if (isDemoMode) return DEMO_SALON_SLUG;
@@ -63,10 +78,7 @@ export default function RegisterSetupInner({
       if (!trimmed) return;
       setFormError(null);
       startTransition(async () => {
-        const completionToken =
-          typeof window !== "undefined"
-            ? window.sessionStorage.getItem(REG_COMPLETION_TOKEN_KEY)
-            : null;
+        const completionToken = readCompletionToken(urlToken);
 
         const result = await completeSalonRegistration(trimmed, completionToken);
 
@@ -103,7 +115,7 @@ export default function RegisterSetupInner({
         );
       });
     },
-    [name, router],
+    [name, router, urlToken],
   );
 
   return (

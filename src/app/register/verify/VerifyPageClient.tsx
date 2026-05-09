@@ -197,10 +197,19 @@ export function VerifyPageClient({ demoMode }: Props) {
           return;
         }
         if (typeof window !== "undefined") {
+          // Back-compat: still write to sessionStorage so an older
+          // /register/setup tab in flight keeps working. New sessions
+          // read the `?ct=…` URL param first (survives reload).
           window.sessionStorage.setItem(REG_COMPLETION_TOKEN_KEY, ct);
         }
 
-        window.location.assign("/register/setup");
+        // Server-side flow state: thread the completion token through
+        // the URL so /register/setup is recoverable on reload (the
+        // payload row stores phone_digits server-side; see
+        // 20260509230000_register_completion_tokens_payload.sql).
+        window.location.assign(
+          `/register/setup?ct=${encodeURIComponent(ct)}`,
+        );
       });
     },
     [codeJoined, phoneDigits, rememberDevice],
