@@ -157,6 +157,15 @@ export async function completeSalonRegistration(
       .maybeSingle();
 
     if (existingDemoSalon?.slug) {
+      // Demo salon already exists — apply the wizard timestamp so the
+      // dashboard gate doesn't re-redirect future demo signins.
+      await admin
+        .from("salons")
+        .update({
+          setup_wizard_completed_at: new Date().toISOString(),
+        } as never)
+        .eq("id", existingDemoSalon.id);
+
       await admin
         .from("register_completion_tokens")
         .delete()
@@ -188,6 +197,10 @@ export async function completeSalonRegistration(
       return { ok: false, error: "server_error" };
     }
 
+    // `setup_wizard_completed_at` is the gate the dashboard checks
+    // before letting users in (see DashboardSlugLayout). Stamping it
+    // here marks the wizard as complete in the same transaction that
+    // creates the salon. Cast: column not yet in auto-generated types.
     const { data: salonRow, error: salonErr } = await admin
       .from("salons")
       .insert({
@@ -195,7 +208,8 @@ export async function completeSalonRegistration(
         name,
         phone,
         timezone: wizardTimezone,
-      })
+        setup_wizard_completed_at: new Date().toISOString(),
+      } as never)
       .select("id, slug")
       .single();
 
@@ -313,19 +327,72 @@ export async function completeSalonRegistration(
     .eq("user_id", user.id)
     .maybeSingle();
 
+  // Existing-member rename branch. The user is already linked to a
+  // salon — apply the wizard inputs as an UPDATE rather than creating
+  // a second row. Closes the loop on the wizard gate: a salon with
+  // setup_wizard_completed_at IS NULL gets stamped here so the
+  // dashboard stops redirecting back.
   if (existingMember?.salon_id) {
-    const { data: salonRow } = await supabase
+    let renameAdmin;
+    try {
+      renameAdmin = createServiceRoleClient();
+    } catch (e) {
+      console.error("[completeSalonRegistration] rename admin client", e);
+      return { ok: false, error: "server_error" };
+    }
+
+    const { data: existingSalon, error: existErr } = await renameAdmin
       .from("salons")
-      .select("slug")
+      .select("id, slug, name")
       .eq("id", existingMember.salon_id)
       .maybeSingle();
-    if (salonRow?.slug) {
+
+    if (existErr || !existingSalon?.id) {
+      console.error(
+        "[completeSalonRegistration] rename existing salon lookup",
+        existErr,
+      );
+      return { ok: false, error: "server_error" };
+    }
+
+    const currentSlug = String(existingSalon.slug ?? "").trim();
+    const targetSlug = requestedSlug || slugifySalonName(name);
+
+    let nextSlug = currentSlug;
+    if (targetSlug && targetSlug !== currentSlug) {
+      try {
+        const picked = await pickAvailableSalonSlug(renameAdmin, targetSlug);
+        nextSlug = picked.slug;
+      } catch (e) {
+        console.error("[completeSalonRegistration] rename slug pick", e);
+        return { ok: false, error: "server_error" };
+      }
+    }
+
+    const { error: upErr } = await renameAdmin
+      .from("salons")
+      .update({
+        name,
+        slug: nextSlug,
+        timezone: wizardTimezone,
+        setup_wizard_completed_at: new Date().toISOString(),
+      } as never)
+      .eq("id", existingSalon.id);
+
+    if (upErr) {
+      console.error("[completeSalonRegistration] rename update", upErr);
       return {
-        ok: true,
-        slug: String(salonRow.slug),
-        slugAdjusted: false,
+        ok: false,
+        error: "server_error",
+        message: upErr.message,
       };
     }
+
+    return {
+      ok: true,
+      slug: nextSlug,
+      slugAdjusted: nextSlug !== targetSlug,
+    };
   }
 
   const completionTok = completionTokenRaw?.trim();
@@ -410,7 +477,8 @@ export async function completeSalonRegistration(
       name,
       phone: phoneForSalon,
       timezone: wizardTimezone,
-    })
+      setup_wizard_completed_at: new Date().toISOString(),
+    } as never)
     .select("id, slug")
     .single();
 
