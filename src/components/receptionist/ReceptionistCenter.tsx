@@ -15,6 +15,7 @@ import { DensitySlider } from "./DensitySlider";
 import { KPIBar } from "./KPIBar";
 import { StaffTimelineGrid, type GridBooking } from "./StaffTimelineGrid";
 import { StatusPill } from "./StatusPill";
+import { TVModeView } from "./TVModeView";
 import { UndoToast } from "./UndoToast";
 import { WalkinQueueSidebar, type QueueItem } from "./WalkinQueueSidebar";
 import type {
@@ -900,6 +901,39 @@ function ReceptionistCenterInner({
   };
 
   const rcMessages = messages.receptionist;
+
+  // TV Mode preset → full-screen read-only display per
+  // `DASHBOARD_LAYOUT_RULES.md` §3. Bypasses the three-zone shell
+  // entirely; receptionists exit via the corner button which writes
+  // `dashboard_preset = 'reception'` and reloads via realtime.
+  if (data.dashboardPreset === "tv") {
+    return (
+      <TVModeView
+        slug={slug}
+        salonName={data.salon.name}
+        staff={data.staff.map((s) => ({
+          id: s.id,
+          name: s.name,
+          status: s.status,
+          skills: s.skills,
+        }))}
+        bookingsForDay={data.bookingsForDay.map((b) => ({
+          id: b.id,
+          staff_id: b.staff_id,
+          client_name: b.client_name,
+          service_name: b.service_name,
+          status: b.status,
+        }))}
+        walkinQueue={data.walkinQueue.map((q) => ({
+          id: q.id,
+          joined_queue_at: q.joined_queue_at,
+        }))}
+        nowIso={nowIso}
+        timezone={timezone}
+        messages={rcMessages}
+      />
+    );
+  }
 
   const isSetupIncomplete =
     data.services.length === 0 || data.staff.length === 0;
