@@ -1,7 +1,7 @@
 import { getSiteUrl } from "./site";
 
 const DESCRIPTION =
-  "AI-powered booking, automation, and growth system for nail salons. Get more bookings, reduce missed calls, and automate your salon.";
+  "Salon management and booking platform for nail salons.";
 
 export function getLandingJsonLd() {
   const siteUrl = getSiteUrl();

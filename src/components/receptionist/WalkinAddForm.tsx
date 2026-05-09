@@ -342,6 +342,7 @@ export function WalkinAddForm({
   return (
     <form
       data-testid="walkin-add-form"
+      method="post"
       className={cn(
         "space-y-3 border-b border-nq-muted/20 pb-4",
         disabled && "opacity-55",

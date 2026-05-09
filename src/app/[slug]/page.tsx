@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 import { BookingFlow } from "@/components/booking/BookingFlow";
-import { SalonBookingNotFound } from "@/components/booking/SalonBookingNotFound";
 import { SalonBookingPaused } from "@/components/booking/SalonBookingPaused";
 import { BookingMobileHero } from "@/components/booking/BookingMobileHero";
 import { BookingSalonHero } from "@/components/booking/BookingSalonHero";
@@ -30,16 +29,16 @@ export async function generateMetadata({
   const { slug } = await params;
   const resolved = await resolvePublicBookingPage(slug);
   if (resolved.status === "reserved") {
-    return { title: "Not found | NailIQ" };
+    return { title: { absolute: "Not found | NailIQ" } };
   }
   if (resolved.status === "redirect") {
     redirect(resolved.to);
   }
   if (resolved.status === "not_found") {
     return {
-      title: "Create your booking link | NailIQ",
-      description:
-        "This salon page isn't set up yet. Start free and get your own booking link.",
+      title: { absolute: "Page not found | NailIQ" },
+      description: "This page does not exist.",
+      robots: { index: false, follow: false },
     };
   }
   const name = resolved.load.salon.name || resolved.normalizedSlug;
@@ -67,12 +66,10 @@ async function PublicBookingRouteBody({
   }
 
   if (resolved.status === "not_found") {
-    return (
-      <SalonBookingNotFound
-        requestedSlug={resolved.normalizedSlug}
-        suggestedSlugs={resolved.suggestedSlugs}
-      />
-    );
+    // BUG-07 (QA 2026-05-09): unknown slugs were returning HTTP 200 with a
+    // salon-claim CTA, which Google indexed as thin/duplicate content.
+    // notFound() makes Next render src/app/not-found.tsx with a 404 status.
+    notFound();
   }
 
   const { load, normalizedSlug } = resolved;

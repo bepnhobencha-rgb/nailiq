@@ -46,6 +46,10 @@ export const userVi: UserMessages = {
     phoneEntryTitle: "Nhập số điện thoại",
     phoneAuthSubtext:
       "Chúng tôi sẽ gửi mã xác thực một lần đến điện thoại của bạn.",
+    phoneAuthDemoSubtext:
+      "Chế độ demo hiển thị mã OTP trên màn hình. Bản chính thức dùng SMS từ Supabase.",
+    phoneAuthDemoHelperHint:
+      "Dev: bật Phone Auth trong Supabase (Auth → Providers → Phone) trước khi tắt demo.",
     phoneAuthDisabledSubtext: "⚠️ Đăng nhập qua SMS chưa được cấu hình.",
     returningOwnerHint:
       "Đã là chủ tiệm? Nhập số điện thoại để đăng nhập lại.",
@@ -55,11 +59,50 @@ export const userVi: UserMessages = {
       "Chào mừng trở lại! Nhập mã để vào bảng điều khiển.",
     newDemoOtpBadgeNote:
       "DEMO · Mã OTP hiển thị bên dưới.",
+    demoBadgeReturning: "Quay lại",
+    demoBadgeNew: "Chế độ demo",
+    demoVerifyCaptionNew: "Lấy mã từ cửa sổ demo hoặc log server.",
     otpResentToast:
       "Đã gửi mã mới — mã cũ không còn hiệu lực.",
     phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
     phoneDigitsInvalid:
       "Nhập 8–15 chữ số kèm mã quốc gia (ví dụ Canada/Hoa Kỳ: +1 6045551234; Việt Nam: +84901234567).",
+    sendCode: "Gửi mã",
+    sendingCode: "Đang gửi…",
+    verifyTitle: "Nhập mã",
+    verifyDefaultSubtext: "Mã 6 số đã được gửi đến điện thoại của bạn.",
+    verifyNumberEnding:
+      "Số đuôi ····{last4} — nhập đủ 6 chữ số của mã.",
+    verifyContinue: "Tiếp tục",
+    verifyChecking: "Đang kiểm tra…",
+    verifyUseDifferentNumber: "Đổi số điện thoại",
+    verifyRememberLabel: "Giữ đăng nhập trên thiết bị này (90 ngày)",
+    verifyRememberSubLabel: "Bỏ chọn nếu đây là thiết bị chung",
+    verifyErrorExpired: "Mã đã hết hạn — yêu cầu mã mới.",
+    verifyErrorServer:
+      "Không thể xác thực mã. Kiểm tra SUPABASE_SERVICE_ROLE_KEY và migrations.",
+    verifyErrorInvalid: "Mã không đúng.",
+    verifyErrorMissingToken: "Thiếu token hoàn tất. Thử lại.",
+  },
+  login: {
+    title: "Đăng nhập",
+    subtextSms: "Bạn sẽ nhận mã OTP qua SMS.",
+    subtextDemo: "Chế độ demo hiển thị mã OTP trên màn hình.",
+    promptEnterPhone: "Nhập số điện thoại đã đăng ký salon.",
+    sendCode: "Gửi mã",
+    sendingCode: "Đang gửi…",
+    noSalonPrefix: "Chưa có salon? ",
+    signupLink: "Đăng ký",
+    verifyTitle: "Nhập mã OTP",
+    verifySubtextSent: "Mã 6 số đã gửi đến số {masked}",
+    verifySubtextLoading: "Đang tải…",
+    verifyConfirm: "Xác nhận",
+    verifyVerifying: "Đang xác thực…",
+    verifyChangePhone: "Đổi số điện thoại",
+    verifyErrorExpired: "Mã đã hết hạn.",
+    verifyErrorServer: "Lỗi server. Vui lòng thử lại.",
+    verifyErrorInvalid: "Mã không đúng.",
+    verifyErrorNoSalon: "Số này chưa đăng ký.",
   },
   auth: {
     orDivider: "hoặc",

@@ -3,13 +3,16 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { cn } from "@/shared/lib/cn";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import type { UserLanguage } from "@/shared/i18n/user/types";
 
-type Lang = "en" | "vi";
+type Lang = UserLanguage;
 
 export function LandingNavbar() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
-  const [lang, setLang] = useState<Lang>("en");
+  // Persisted, shared with /login + /register and the dashboard.
+  const { language: lang, setLanguage: setLang } = useUserLanguage();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 80);

@@ -46,6 +46,10 @@ export type UserMessages = {
     phoneEntryTitle: string;
     /** User-facing subtext on the phone-entry screen (production). */
     phoneAuthSubtext: string;
+    /** Subtext when demo OTP mode is active (replaces phoneAuthSubtext). */
+    phoneAuthDemoSubtext: string;
+    /** Dev-only helper hint shown under demo subtext. */
+    phoneAuthDemoHelperHint: string;
     /** User-facing subtext when SMS phone auth has not yet been configured. */
     phoneAuthDisabledSubtext: string;
     returningOwnerHint: string;
@@ -55,12 +59,58 @@ export type UserMessages = {
     welcomeBackVerifySubtext: string;
     /** Demo path (new signup) — short line beside DEMO MODE badge */
     newDemoOtpBadgeNote: string;
+    /** Demo-mode badge labels for /register and /register/verify. */
+    demoBadgeReturning: string;
+    demoBadgeNew: string;
+    /** /register/verify demo-mode caption when not returning. */
+    demoVerifyCaptionNew: string;
     /** Toast after "Send code" is clicked a second+ time on /register or after returning from /register/verify. */
     otpResentToast: string;
     /** Owner auth phone field — NANP-focused example (`/register`, `/login`). */
     phonePlaceholder: string;
     /** Inline validation before OTP send — Canada/US primary, Vietnam supported. */
     phoneDigitsInvalid: string;
+    /** Submit button on /register before/while sending OTP. */
+    sendCode: string;
+    sendingCode: string;
+    /** /register/verify screen */
+    verifyTitle: string;
+    verifyDefaultSubtext: string;
+    /** "Number ending in ····{last4} — enter all 6 digits of the code." */
+    verifyNumberEnding: string;
+    verifyContinue: string;
+    verifyChecking: string;
+    verifyUseDifferentNumber: string;
+    verifyRememberLabel: string;
+    verifyRememberSubLabel: string;
+    verifyErrorExpired: string;
+    verifyErrorServer: string;
+    verifyErrorInvalid: string;
+    verifyErrorMissingToken: string;
+  };
+  /** Phone-OTP login flow (`/login`, `/login/verify`). Distinct from
+   * `register.*` so the two flows can diverge without cross-talk. */
+  login: {
+    title: string;
+    subtextSms: string;
+    subtextDemo: string;
+    promptEnterPhone: string;
+    sendCode: string;
+    sendingCode: string;
+    noSalonPrefix: string;
+    signupLink: string;
+    /** /login/verify */
+    verifyTitle: string;
+    /** "Code sent to ending ····{last4}" */
+    verifySubtextSent: string;
+    verifySubtextLoading: string;
+    verifyConfirm: string;
+    verifyVerifying: string;
+    verifyChangePhone: string;
+    verifyErrorExpired: string;
+    verifyErrorServer: string;
+    verifyErrorInvalid: string;
+    verifyErrorNoSalon: string;
   };
   /** Shared auth surfaces (login + register social buttons). Public booking is unaffected. */
   auth: {
@@ -721,6 +771,10 @@ export const userEn: UserMessages = {
     phoneEntryTitle: "Enter your phone",
     phoneAuthSubtext:
       "We'll send a secure one-time verification code to your phone.",
+    phoneAuthDemoSubtext:
+      "Demo mode shows the OTP on screen. Production uses SMS from Supabase.",
+    phoneAuthDemoHelperHint:
+      "Dev: enable Phone Auth in Supabase (Auth → Providers → Phone) before disabling demo.",
     phoneAuthDisabledSubtext: "⚠️ SMS login is not configured yet.",
     returningOwnerHint:
       "Returning owner? Enter your number to sign back in.",
@@ -730,10 +784,49 @@ export const userEn: UserMessages = {
       "Welcome back! Enter the code to access your dashboard.",
     newDemoOtpBadgeNote:
       "DEMO MODE · OTP appears below.",
+    demoBadgeReturning: "Returning",
+    demoBadgeNew: "Demo mode",
+    demoVerifyCaptionNew: "Use the code from the demo modal or server log.",
     otpResentToast:
       "New code sent — previous code is no longer valid.",
     phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
     phoneDigitsInvalid: REGISTER_INVALID_PHONE_HINT_EN,
+    sendCode: "Send code",
+    sendingCode: "Sending…",
+    verifyTitle: "Enter code",
+    verifyDefaultSubtext: "We sent a 6-digit code to your number.",
+    verifyNumberEnding:
+      "Number ending in ····{last4} — enter all 6 digits of the code.",
+    verifyContinue: "Continue",
+    verifyChecking: "Checking…",
+    verifyUseDifferentNumber: "Use a different number",
+    verifyRememberLabel: "Keep me signed in on this device (90 days)",
+    verifyRememberSubLabel: "Uncheck if this is a shared device",
+    verifyErrorExpired: "Code expired — request a new one.",
+    verifyErrorServer:
+      "We could not verify your code. Check SUPABASE_SERVICE_ROLE_KEY and migrations.",
+    verifyErrorInvalid: "Invalid code.",
+    verifyErrorMissingToken: "Missing completion token. Try again.",
+  },
+  login: {
+    title: "Sign in",
+    subtextSms: "We'll send you an OTP via SMS.",
+    subtextDemo: "Demo mode shows the OTP on screen.",
+    promptEnterPhone: "Enter the phone number registered to your salon.",
+    sendCode: "Send code",
+    sendingCode: "Sending…",
+    noSalonPrefix: "No salon yet? ",
+    signupLink: "Sign up",
+    verifyTitle: "Enter OTP",
+    verifySubtextSent: "Sent a 6-digit code to {masked}",
+    verifySubtextLoading: "Loading…",
+    verifyConfirm: "Confirm",
+    verifyVerifying: "Verifying…",
+    verifyChangePhone: "Change phone number",
+    verifyErrorExpired: "Code expired.",
+    verifyErrorServer: "Server error. Please try again.",
+    verifyErrorInvalid: "Incorrect code.",
+    verifyErrorNoSalon: "This number is not registered.",
   },
   auth: {
     orDivider: "or",
