@@ -189,6 +189,16 @@ export function SalonOwnerDashboardMain({
             {t.navReceptionistCenter}
           </Link>
           <Link
+            href={`/dashboard/${encodeURIComponent(slug)}/reports`}
+            className="inline-flex min-h-11 touch-manipulation items-center justify-center gap-2 rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-4 text-base font-semibold text-nq-primary transition-colors hover:bg-nq-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/50"
+          >
+            {/* Owner-only page; non-owners get redirected by the
+                page-level role gate. We keep the link visible so the
+                main dashboard nav stays consistent across viewers
+                without threading role through this client component. */}
+            {messages.receptionist.reports.navLinkLabel}
+          </Link>
+          <Link
             href={`/dashboard/${encodeURIComponent(slug)}/settings`}
             className="inline-flex min-h-11 touch-manipulation items-center justify-center gap-2 rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-4 text-base font-semibold text-nq-primary transition-colors hover:bg-nq-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/50"
           >

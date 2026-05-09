@@ -499,5 +499,43 @@ export const userVi: UserMessages = {
         "Quầy gặp lỗi bất ngờ. Bấm thử lại; nếu tiếp tục, báo cho chủ tiệm.",
       retryButton: "Thử lại",
     },
+    reports: {
+      pageTitle: "Báo cáo",
+      navLinkLabel: "Báo cáo",
+      loading: "Đang tải báo cáo…",
+      rangeAriaLabel: "Khoảng thời gian",
+      range: {
+        today: "Hôm nay",
+        week: "Tuần này",
+        month: "Tháng này",
+      },
+      kpis: {
+        totalRevenue: "Tổng doanh thu",
+        appointments: "Lịch hẹn",
+        completed: "Hoàn thành",
+        cancelled: "Đã hủy",
+        noShow: "Không đến",
+      },
+      tables: {
+        topServices: "Dịch vụ phổ biến",
+        topStaff: "Thợ làm nhiều nhất",
+        empty: "Chưa có dữ liệu.",
+        serviceCol: "Dịch vụ",
+        staffCol: "Thợ",
+        countCol: "Số lần",
+        appointmentsCol: "Lịch",
+        revenueCol: "Doanh thu",
+      },
+      busyHours: {
+        title: "Giờ cao điểm",
+        empty: "Chưa có lịch trong khoảng này.",
+        totalBookings: "{n} lịch",
+      },
+      errors: {
+        unauthorized: "Cần đăng nhập.",
+        forbidden: "Chỉ chủ tiệm mới xem được báo cáo.",
+        server_error: "Không tải được. Thử lại sau.",
+      },
+    },
   },
 };
