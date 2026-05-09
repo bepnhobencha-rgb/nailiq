@@ -359,6 +359,22 @@ function ReceptionistCenterInner({
   /** Increments when receptionist taps "Now" — grid smooth-scrolls to current slot. */
   const [jumpToNowTrigger, setJumpToNowTrigger] = useState(0);
 
+  // Sidebar Walk-in Queue tab links to /center#queue. Honour the hash on
+  // mount by smooth-scrolling the queue panel into view. Wrapped in
+  // requestAnimationFrame so layout has settled (the queue is mounted
+  // conditionally on `viewMode === "day" && modules.queue_panel`). Only
+  // runs once on mount; subsequent in-app navigations that change the
+  // hash are user-driven and need no extra handling here.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#queue") return;
+    const raf = window.requestAnimationFrame(() => {
+      const el = document.getElementById("queue");
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, []);
+
   const [drawerBusy, setDrawerBusy] = useState(false);
 
   // Realtime connection-state machine. Default 'connected' — assume
