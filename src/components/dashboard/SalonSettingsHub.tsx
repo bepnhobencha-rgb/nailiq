@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AuditLogViewer } from "@/components/dashboard/AuditLogViewer";
 import { DashboardModulesSettings } from "@/components/dashboard/DashboardModulesSettings";
 import { DashboardPresetSettings } from "@/components/dashboard/DashboardPresetSettings";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
@@ -25,7 +26,8 @@ export function SalonSettingsHub({
   canEditDashboardModules: boolean;
 }) {
   const { language } = useUserLanguage();
-  const t = getUserMessages(language).salonSettings;
+  const messages = getUserMessages(language);
+  const t = messages.salonSettings;
   const base = `/dashboard/${encodeURIComponent(slug)}/setup`;
 
   const rows: { href: string; label: string }[] = [
@@ -82,6 +84,15 @@ export function SalonSettingsHub({
           initialPreset={dashboardPreset}
           canEdit={canEditDashboardModules}
         />
+
+        {/* Audit log — owner-only. The viewer's server action also gates
+            on `role === 'owner'`, so this is defense-in-depth. */}
+        {canEditDashboardModules ? (
+          <AuditLogViewer
+            slug={slug}
+            messages={messages.receptionist.auditLog}
+          />
+        ) : null}
       </MobileStack>
     </ResponsiveShell>
   );
