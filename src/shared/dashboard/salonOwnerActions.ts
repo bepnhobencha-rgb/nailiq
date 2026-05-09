@@ -455,6 +455,80 @@ export async function updateBookingStatus(
   return { ok: true };
 }
 
+export type OwnerSalonSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  role: SalonMemberRole;
+};
+
+/**
+ * Returns every salon the current auth user owns, as `{id, name, slug,
+ * role}`. Used by the dashboard sidebar to render the salon switcher in
+ * the footer when the user has more than one owner-membership.
+ *
+ * Owner-only by design: switcher is currently a power-tool for
+ * multi-salon owners. Other roles (`senior`, `nail_tech`) typically
+ * belong to a single salon — the cleaner cross-tenant flow for them is
+ * `/choose-salon`. The `slug` arg is part of the call signature for
+ * symmetry with other dashboard actions but is not required to scope
+ * the query (membership lookup is auth-bound to the current user).
+ *
+ * Returns `[]` for unauthenticated callers, demo-cookie viewers (no
+ * auth user), and users with no owner memberships.
+ */
+export async function loadOwnerSalons(
+  _slug: string,
+): Promise<OwnerSalonSummary[]> {
+  void _slug;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data: members, error: memErr } = await supabase
+    .from("salon_members")
+    .select("salon_id, role")
+    .eq("user_id", user.id)
+    .eq("role", "owner");
+
+  if (memErr) {
+    console.error("[loadOwnerSalons] members", memErr);
+    return [];
+  }
+  if (!members?.length) return [];
+
+  const salonIds = members.map((m) => String(m.salon_id));
+
+  const { data: salons, error: salErr } = await supabase
+    .from("salons")
+    .select("id, name, slug")
+    .in("id", salonIds);
+
+  if (salErr) {
+    console.error("[loadOwnerSalons] salons", salErr);
+    return [];
+  }
+  if (!salons?.length) return [];
+
+  const roleByid = new Map<string, SalonMemberRole>();
+  for (const m of members) {
+    roleByid.set(String(m.salon_id), normalizeSalonMemberRole(m.role));
+  }
+
+  return salons
+    .map((s) => ({
+      id: String(s.id),
+      name: String(s.name ?? "").trim() || String(s.slug ?? ""),
+      slug: String(s.slug ?? ""),
+      role: roleByid.get(String(s.id)) ?? "owner",
+    }))
+    .filter((s) => s.slug.length > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /**
  * Sign out the current viewer and redirect to /login.
  *

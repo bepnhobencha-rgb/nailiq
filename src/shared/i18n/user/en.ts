@@ -104,6 +104,9 @@ export type UserMessages = {
     expandSidebar: string;
     /** Aria label on the bottom-tab `<nav>`. */
     primaryNav: string;
+    /** Sidebar footer trigger + dropdown header for the salon switcher
+     * (rendered only when the owner has > 1 owner-memberships). */
+    switchSalon: string;
   };
   /** Phone-OTP login flow (`/login`, `/login/verify`). Distinct from
    * `register.*` so the two flows can diverge without cross-talk. */
@@ -839,6 +842,7 @@ export const userEn: UserMessages = {
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
     primaryNav: "Primary navigation",
+    switchSalon: "Switch salon",
   },
   login: {
     title: "Sign in",

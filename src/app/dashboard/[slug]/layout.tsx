@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { loadOwnerSalons } from "@/shared/dashboard/salonOwnerActions";
 
 type Props = {
   children: ReactNode;
@@ -14,6 +15,11 @@ type Props = {
  * has no membership the layout renders bare children and the page's
  * own auth guard performs the redirect (keeps redirect targets per-
  * page rather than centralising them here).
+ *
+ * For owners, also pre-fetches the list of salons the user owns so
+ * the sidebar footer can render a switcher dropdown without an extra
+ * client-side roundtrip. Skipped for non-owners (the switcher is
+ * owner-only — see `loadOwnerSalons` doc).
  */
 export default async function DashboardSlugLayout({
   children,
@@ -30,8 +36,16 @@ export default async function DashboardSlugLayout({
 
   const salonName = (ctx.salon.name ?? "").trim() || slug;
 
+  const salons =
+    ctx.role === "owner" ? await loadOwnerSalons(slug) : [];
+
   return (
-    <DashboardShell slug={slug} role={ctx.role} salonName={salonName}>
+    <DashboardShell
+      slug={slug}
+      role={ctx.role}
+      salonName={salonName}
+      salons={salons}
+    >
       {children}
     </DashboardShell>
   );

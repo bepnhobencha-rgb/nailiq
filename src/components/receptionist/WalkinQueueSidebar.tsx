@@ -138,7 +138,11 @@ export function WalkinQueueSidebar({
 
   return (
     <aside
+      // `id="queue"` is the scroll target for the sidebar
+      // Walk-in Queue tab's `#queue` deep-link.
+      id="queue"
       data-testid="walkin-queue-sidebar"
+      data-walkin-queue-panel="true"
       className="flex h-full min-h-0 flex-col bg-nq-surface"
     >
       <header className="flex shrink-0 items-center justify-between gap-2 border-b border-nq-muted/20 px-3 py-2">
