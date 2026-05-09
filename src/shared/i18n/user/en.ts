@@ -357,6 +357,13 @@ export type UserMessages = {
       conflictWith: (clientName: string) => string;
       overflowMessage: string;
       conflictShake: string;
+      /** Accessible labels for the booking-block icon stack. */
+      bookingIcon: {
+        vip: string;
+        notes: string;
+        late: string;
+        design: string;
+      };
     };
     undo: {
       undo: string;
@@ -785,6 +792,12 @@ export const userEn: UserMessages = {
       overflowMessage: "⚠ Past closing hours",
       conflictShake:
         "That slot overlaps another booking. Choose another slot or time.",
+      bookingIcon: {
+        vip: "VIP",
+        notes: "Has notes",
+        late: "Late",
+        design: "Design / nail art",
+      },
     },
     undo: {
       undo: "Undo",
