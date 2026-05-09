@@ -1,7 +1,10 @@
+"use client";
+
 import { type ReactNode } from "react";
 import Link from "next/link";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
+import { AuthLanguageToggle } from "@/components/auth/AuthLanguageToggle";
 
 type RegisterStepShellProps = {
   title: string;
@@ -25,12 +28,15 @@ export function RegisterStepShell({
     <ResponsiveShell>
       <MobileStack className="w-full max-w-[var(--max-nq-mobile)] sm:pt-2">
         <div className="w-full min-w-0">
-          <Link
-            href="/"
-            className="text-sm text-nq-muted transition-colors duration-200 hover:text-nq-foreground/90"
-          >
-            ← Home
-          </Link>
+          <div className="flex items-center justify-between gap-4">
+            <Link
+              href="/"
+              className="text-sm text-nq-muted transition-colors duration-200 hover:text-nq-foreground/90"
+            >
+              ← Home
+            </Link>
+            <AuthLanguageToggle />
+          </div>
           <h1 className="mt-8 text-balance text-2xl font-semibold tracking-tight text-nq-foreground sm:mt-10 lg:text-3xl">
             {title}
           </h1>

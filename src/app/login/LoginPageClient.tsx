@@ -70,12 +70,8 @@ export function LoginPageClient({ demoMode }: Props) {
 
   return (
     <RegisterStepShell
-      title="Đăng nhập"
-      subtext={
-        demoMode
-          ? "Demo mode hiển thị mã OTP trên màn hình."
-          : "Bạn sẽ nhận mã OTP qua SMS."
-      }
+      title={t.login.title}
+      subtext={demoMode ? t.login.subtextDemo : t.login.subtextSms}
     >
       <DemoOtpModal
         code={demoCode ?? ""}
@@ -88,10 +84,14 @@ export function LoginPageClient({ demoMode }: Props) {
       />
 
       <p className="mb-2 text-sm text-nq-muted sm:mb-4">
-        Nhập số điện thoại đã đăng ký salon.
+        {t.login.promptEnterPhone}
       </p>
 
-      <form onSubmit={onSubmit} className="flex flex-col gap-6">
+      <form
+        onSubmit={onSubmit}
+        method="post"
+        className="flex flex-col gap-6"
+      >
         <div>
           <Input
             suppressHydrationWarning
@@ -122,16 +122,19 @@ export function LoginPageClient({ demoMode }: Props) {
           className="w-full min-h-11"
           disabled={pending}
         >
-          {pending ? "Đang gửi…" : "Gửi mã"}
+          {pending ? t.login.sendingCode : t.login.sendCode}
         </Button>
       </form>
 
       {demoMode ? null : <SocialAuthButtons mode="login" />}
 
       <p className="mt-6 text-center text-sm text-nq-muted">
-        Chưa có salon?{" "}
-        <Link href="/register" className="font-medium text-nq-primary hover:underline">
-          Đăng ký
+        {t.login.noSalonPrefix}
+        <Link
+          href="/register"
+          className="font-medium text-nq-primary hover:underline"
+        >
+          {t.login.signupLink}
         </Link>
       </p>
     </RegisterStepShell>

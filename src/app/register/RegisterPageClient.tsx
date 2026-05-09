@@ -118,7 +118,9 @@ export function RegisterPageClient({ demoMode }: Props) {
   );
 
   const demoBadgeLabel =
-    postSendTone === "returning" ? "Returning" : "Demo mode";
+    postSendTone === "returning"
+      ? t.register.demoBadgeReturning
+      : t.register.demoBadgeNew;
 
   const demoBadgeCaption =
     postSendTone === "returning"
@@ -129,15 +131,9 @@ export function RegisterPageClient({ demoMode }: Props) {
     <RegisterStepShell
       title={t.register.phoneEntryTitle}
       subtext={
-        demoMode
-          ? "Demo mode shows the OTP on screen. Production uses SMS from Supabase."
-          : t.register.phoneAuthSubtext
+        demoMode ? t.register.phoneAuthDemoSubtext : t.register.phoneAuthSubtext
       }
-      helperHint={
-        demoMode
-          ? "Dev: enable Phone Auth in Supabase (Auth → Providers → Phone) before disabling demo."
-          : undefined
-      }
+      helperHint={demoMode ? t.register.phoneAuthDemoHelperHint : undefined}
     >
       {demoMode ? (
         <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -175,7 +171,11 @@ export function RegisterPageClient({ demoMode }: Props) {
         {t.register.returningOwnerHint}
       </p>
 
-      <form onSubmit={onSubmit} className="flex flex-col gap-6">
+      <form
+        onSubmit={onSubmit}
+        method="post"
+        className="flex flex-col gap-6"
+      >
         <div>
           <Input
             suppressHydrationWarning
@@ -206,7 +206,7 @@ export function RegisterPageClient({ demoMode }: Props) {
           className="w-full min-h-11"
           disabled={pending}
         >
-          {pending ? "Sending…" : "Send code"}
+          {pending ? t.register.sendingCode : t.register.sendCode}
         </Button>
       </form>
 

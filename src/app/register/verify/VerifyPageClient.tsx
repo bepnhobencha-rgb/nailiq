@@ -54,8 +54,12 @@ export function VerifyPageClient({ demoMode }: Props) {
     () =>
       isReturningFlow
         ? t.register.welcomeBackVerifySubtext
-        : "We sent a 6-digit code to your number.",
-    [isReturningFlow, t.register.welcomeBackVerifySubtext],
+        : t.register.verifyDefaultSubtext,
+    [
+      isReturningFlow,
+      t.register.welcomeBackVerifySubtext,
+      t.register.verifyDefaultSubtext,
+    ],
   );
 
   useEffect(() => {
@@ -162,13 +166,11 @@ export function VerifyPageClient({ demoMode }: Props) {
 
         if (!result.ok) {
           if (result.reason === "expired") {
-            setError("Code expired — request a new one.");
+            setError(t.register.verifyErrorExpired);
           } else if (result.reason === "server_error") {
-            setError(
-              "We could not verify your code. Check SUPABASE_SERVICE_ROLE_KEY and migrations.",
-            );
+            setError(t.register.verifyErrorServer);
           } else {
-            setError("Invalid code.");
+            setError(t.register.verifyErrorInvalid);
           }
           return;
         }
@@ -193,7 +195,7 @@ export function VerifyPageClient({ demoMode }: Props) {
 
         const ct = result.completionToken.trim();
         if (!ct) {
-          setError("Missing completion token. Try again.");
+          setError(t.register.verifyErrorMissingToken);
           return;
         }
         if (typeof window !== "undefined") {
@@ -212,34 +214,39 @@ export function VerifyPageClient({ demoMode }: Props) {
         );
       });
     },
-    [codeJoined, phoneDigits, rememberDevice],
+    [
+      codeJoined,
+      phoneDigits,
+      rememberDevice,
+      t.register.verifyErrorExpired,
+      t.register.verifyErrorInvalid,
+      t.register.verifyErrorMissingToken,
+      t.register.verifyErrorServer,
+    ],
   );
 
-  const rememberLabel =
-    language === "vi"
-      ? "Giữ đăng nhập trên thiết bị này (90 ngày)"
-      : "Keep me signed in on this device (90 days)";
-  const rememberSubLabel =
-    language === "vi"
-      ? "Bỏ chọn nếu đây là thiết bị chung"
-      : "Uncheck if this is a shared device";
-
   return (
-    <RegisterStepShell title="Enter code" subtext={verifySubtext}>
+    <RegisterStepShell title={t.register.verifyTitle} subtext={verifySubtext}>
       {demoMode ? (
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <Badge variant="muted" className="uppercase tracking-[0.14em]">
-            {isReturningFlow ? "Returning" : "Demo mode"}
+            {isReturningFlow
+              ? t.register.demoBadgeReturning
+              : t.register.demoBadgeNew}
           </Badge>
           <span className="text-xs text-nq-muted">
             {isReturningFlow
               ? t.register.welcomeBackAfterSend
-              : "Use the code from the demo modal or server log."}
+              : t.register.demoVerifyCaptionNew}
           </span>
         </div>
       ) : null}
 
-      <form onSubmit={onSubmit} className="flex flex-col gap-6">
+      <form
+        onSubmit={onSubmit}
+        method="post"
+        className="flex flex-col gap-6"
+      >
         <div className="grid grid-cols-6 gap-2 sm:gap-3">
           {digits.map((digit, i) => (
             <input
@@ -267,8 +274,10 @@ export function VerifyPageClient({ demoMode }: Props) {
 
         {phoneDigits ? (
           <p className="text-center text-xs text-nq-muted">
-            Number ending in ····{phoneDigits.slice(-4)} — enter all 6 digits of
-            the code.
+            {t.register.verifyNumberEnding.replace(
+              "{last4}",
+              phoneDigits.slice(-4),
+            )}
           </p>
         ) : null}
 
@@ -287,10 +296,10 @@ export function VerifyPageClient({ demoMode }: Props) {
           />
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-medium text-nq-foreground">
-              {rememberLabel}
+              {t.register.verifyRememberLabel}
             </span>
             <span className="mt-0.5 block text-xs text-nq-muted">
-              {rememberSubLabel}
+              {t.register.verifyRememberSubLabel}
             </span>
           </span>
         </label>
@@ -301,7 +310,7 @@ export function VerifyPageClient({ demoMode }: Props) {
           className="w-full min-h-11"
           disabled={codeJoined.length !== OTP_LEN || pending || !phoneDigits}
         >
-          {pending ? "Checking…" : "Continue"}
+          {pending ? t.register.verifyChecking : t.register.verifyContinue}
         </Button>
 
         <button
@@ -309,7 +318,7 @@ export function VerifyPageClient({ demoMode }: Props) {
           className="min-h-11 text-center text-sm text-nq-primary-soft underline decoration-nq-primary/35 underline-offset-2 transition-opacity duration-150 hover:opacity-90"
           onClick={() => router.push("/register")}
         >
-          Use a different number
+          {t.register.verifyUseDifferentNumber}
         </button>
       </form>
 

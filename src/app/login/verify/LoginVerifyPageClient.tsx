@@ -16,6 +16,7 @@ import { cn } from "@/shared/lib/cn";
 import { REG_SESSION_PHONE_DIGITS_KEY } from "@/shared/lib/registerSessionKeys";
 import { dashboardPathForRole } from "@/shared/lib/salonMemberRole";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { getUserMessages } from "@/shared/i18n/user";
 import { verifyLoginOtp } from "@/shared/register/actions";
 
 const OTP_LEN = 6;
@@ -23,9 +24,13 @@ const emptyDigits = () => Array.from({ length: OTP_LEN }, () => "");
 
 type Props = { demoMode: boolean };
 
-export function LoginVerifyPageClient({ demoMode }: Props) {
+export function LoginVerifyPageClient({ demoMode: _demoMode }: Props) {
+  // demoMode currently unused on /login/verify; kept on the prop list so
+  // server pages don't need a separate signature for the two verify routes.
+  void _demoMode;
   const router = useRouter();
   const { language } = useUserLanguage();
+  const t = useMemo(() => getUserMessages(language).login, [language]);
   const [digits, setDigits] = useState(emptyDigits);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -35,6 +40,10 @@ export function LoginVerifyPageClient({ demoMode }: Props) {
   // the server action; real session-lifetime gating lands in Phase 2.
   const [rememberDevice, setRememberDevice] = useState(true);
   const refs = useRef<(HTMLInputElement | null)[]>([]);
+  const registerT = useMemo(
+    () => getUserMessages(language).register,
+    [language],
+  );
 
   // Restore phone from session (set by /login form). If missing, send the
   // user back to the phone-entry step.
@@ -72,10 +81,10 @@ export function LoginVerifyPageClient({ demoMode }: Props) {
         if (!res.ok) {
           setError(
             res.reason === "expired"
-              ? "Mã đã hết hạn."
+              ? t.verifyErrorExpired
               : res.reason === "server_error"
-                ? "Lỗi server. Vui lòng thử lại."
-                : "Mã không đúng.",
+                ? t.verifyErrorServer
+                : t.verifyErrorInvalid,
           );
           return;
         }
@@ -91,31 +100,35 @@ export function LoginVerifyPageClient({ demoMode }: Props) {
         }
         // next: "setup" means phone has no salon — login should reject this.
         // LoginPageClient pre-gates via sendLoginOtp; this is defense-in-depth.
-        setError("Số này chưa đăng ký.");
+        setError(t.verifyErrorNoSalon);
       });
     },
-    [phoneDigits, code, rememberDevice, router],
+    [
+      phoneDigits,
+      code,
+      rememberDevice,
+      router,
+      t.verifyErrorExpired,
+      t.verifyErrorInvalid,
+      t.verifyErrorNoSalon,
+      t.verifyErrorServer,
+    ],
   );
 
-  const rememberLabel =
-    language === "vi"
-      ? "Giữ đăng nhập trên thiết bị này (90 ngày)"
-      : "Keep me signed in on this device (90 days)";
-  const rememberSubLabel =
-    language === "vi"
-      ? "Bỏ chọn nếu đây là thiết bị chung"
-      : "Uncheck if this is a shared device";
+  const subtext = phoneDigits
+    ? t.verifySubtextSent.replace(
+        "{masked}",
+        phoneDigits.slice(-4).padStart(phoneDigits.length, "•"),
+      )
+    : t.verifySubtextLoading;
 
   return (
-    <RegisterStepShell
-      title="Nhập mã OTP"
-      subtext={
-        phoneDigits
-          ? `Mã 6 số đã gửi đến số ${phoneDigits.slice(-4).padStart(phoneDigits.length, "•")}`
-          : "Đang tải…"
-      }
-    >
-      <form onSubmit={onSubmit} className="flex flex-col gap-6">
+    <RegisterStepShell title={t.verifyTitle} subtext={subtext}>
+      <form
+        onSubmit={onSubmit}
+        method="post"
+        className="flex flex-col gap-6"
+      >
         <div className="flex justify-center gap-2">
           {digits.map((d, i) => (
             <input
@@ -150,10 +163,10 @@ export function LoginVerifyPageClient({ demoMode }: Props) {
           />
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-medium text-nq-foreground">
-              {rememberLabel}
+              {registerT.verifyRememberLabel}
             </span>
             <span className="mt-0.5 block text-xs text-nq-muted">
-              {rememberSubLabel}
+              {registerT.verifyRememberSubLabel}
             </span>
           </span>
         </label>
@@ -164,13 +177,13 @@ export function LoginVerifyPageClient({ demoMode }: Props) {
           className="w-full min-h-11"
           disabled={pending || code.length !== OTP_LEN}
         >
-          {pending ? "Đang xác thực…" : "Xác nhận"}
+          {pending ? t.verifyVerifying : t.verifyConfirm}
         </Button>
       </form>
 
       <p className="mt-6 text-center text-sm text-nq-muted">
         <Link href="/login" className="text-nq-primary hover:underline">
-          Đổi số điện thoại
+          {t.verifyChangePhone}
         </Link>
       </p>
     </RegisterStepShell>
