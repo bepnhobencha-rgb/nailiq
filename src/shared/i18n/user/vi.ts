@@ -159,6 +159,17 @@ export const userVi: UserMessages = {
     sectionAddress: "Địa chỉ tiệm",
     hintRecoveryEmail:
       "Để thêm hoặc đổi email khôi phục cho tài khoản, dùng thanh nhắc trên bảng điều khiển.",
+    emailVerification: {
+      sectionTitle: "Email khôi phục",
+      noEmailHint:
+        "Chưa có email khôi phục. Thêm từ bảng điều khiển.",
+      verifiedBadge: "Đã xác thực",
+      pendingBadge: "Chờ xác thực",
+      pendingHint:
+        "Đã gửi link xác thực vào hộp thư. Mở link để xác nhận.",
+      verifiedToast: "Đã xác thực email.",
+      verifyErrorPrefix: "Lỗi xác thực: ",
+    },
     dashboardModules: {
       sectionTitle: "Module bảng lễ tân",
       sectionIntro:

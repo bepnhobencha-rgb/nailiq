@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { AuditLogViewer } from "@/components/dashboard/AuditLogViewer";
 import { DashboardModulesSettings } from "@/components/dashboard/DashboardModulesSettings";
 import { DashboardPresetSettings } from "@/components/dashboard/DashboardPresetSettings";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
+import { Badge } from "@/components/ui/Badge";
 import { GearIcon } from "@/components/ui/icons/GearIcon";
 import type { DashboardModulesConfig } from "@/shared/dashboard/dashboardModules";
 import type { PresetKey } from "@/shared/dashboard/dashboardPresets";
@@ -19,12 +21,21 @@ export function SalonSettingsHub({
   dashboardModules,
   dashboardPreset,
   canEditDashboardModules,
+  salonEmail,
+  emailVerified,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
   dashboardPreset: PresetKey;
   canEditDashboardModules: boolean;
+  /** `salons.email` — null when no recovery email is on file. */
+  salonEmail: string | null;
+  /** `salons.email_verified` — `true` only after the verify link is clicked. */
+  emailVerified: boolean;
 }) {
+  const searchParams = useSearchParams();
+  const verified = searchParams?.get("verified") === "1";
+  const verifyError = searchParams?.get("verify_error");
   const { language } = useUserLanguage();
   const messages = getUserMessages(language);
   const t = messages.salonSettings;
@@ -69,7 +80,75 @@ export function SalonSettingsHub({
           ))}
         </ul>
 
-        <p className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-3 text-sm leading-relaxed text-nq-muted">
+        {/* Recovery email + verification status. The salon's email is
+            edited via the dashboard banner (existing flow); this block
+            displays it + the verified/pending Badge so owners can
+            confirm the verification link landed. Pair color with text
+            label per COLOR_TOKENS §5. */}
+        <section
+          data-testid="settings-email-verification"
+          className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-3"
+        >
+          <p className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
+            {t.emailVerification.sectionTitle}
+          </p>
+          {verified ? (
+            <p
+              role="status"
+              data-testid="settings-email-verified-toast"
+              className="mt-2 rounded-md border border-nq-success/40 bg-nq-success/10 px-3 py-2 text-sm text-nq-success"
+            >
+              {t.emailVerification.verifiedToast}
+            </p>
+          ) : null}
+          {verifyError ? (
+            <p
+              role="alert"
+              data-testid="settings-email-verify-error"
+              className="mt-2 rounded-md border border-nq-error/40 bg-nq-error/10 px-3 py-2 text-sm text-nq-error"
+            >
+              {t.emailVerification.verifyErrorPrefix}
+              {verifyError}
+            </p>
+          ) : null}
+          {salonEmail ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="break-all text-sm text-nq-foreground">
+                {salonEmail}
+              </span>
+              {emailVerified ? (
+                <Badge
+                  data-testid="settings-email-verified-badge"
+                  variant="success"
+                  state="default"
+                  size="sm"
+                >
+                  {t.emailVerification.verifiedBadge}
+                </Badge>
+              ) : (
+                <Badge
+                  data-testid="settings-email-pending-badge"
+                  variant="warning"
+                  state="default"
+                  size="sm"
+                >
+                  {t.emailVerification.pendingBadge}
+                </Badge>
+              )}
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-nq-muted">
+              {t.emailVerification.noEmailHint}
+            </p>
+          )}
+          {salonEmail && !emailVerified ? (
+            <p className="mt-1 text-xs text-nq-muted">
+              {t.emailVerification.pendingHint}
+            </p>
+          ) : null}
+        </section>
+
+        <p className="mt-3 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-3 text-sm leading-relaxed text-nq-muted">
           {t.hintRecoveryEmail}
         </p>
 

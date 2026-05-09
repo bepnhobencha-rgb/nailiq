@@ -179,6 +179,16 @@ export type UserMessages = {
     sectionHours: string;
     sectionAddress: string;
     hintRecoveryEmail: string;
+    /** Recovery-email verification status block (Settings hub). */
+    emailVerification: {
+      sectionTitle: string;
+      noEmailHint: string;
+      verifiedBadge: string;
+      pendingBadge: string;
+      pendingHint: string;
+      verifiedToast: string;
+      verifyErrorPrefix: string;
+    };
     dashboardModules: {
       sectionTitle: string;
       sectionIntro: string;
@@ -782,6 +792,17 @@ export const userEn: UserMessages = {
     sectionAddress: "Salon address",
     hintRecoveryEmail:
       "To add or change recovery email for your account, use the banner on your dashboard.",
+    emailVerification: {
+      sectionTitle: "Recovery email",
+      noEmailHint:
+        "No recovery email on file. Add one from your dashboard.",
+      verifiedBadge: "Verified",
+      pendingBadge: "Pending",
+      pendingHint:
+        "We sent a verification link to your inbox. Open it to confirm.",
+      verifiedToast: "Email verified.",
+      verifyErrorPrefix: "Verification failed: ",
+    },
     dashboardModules: {
       sectionTitle: "Dashboard modules",
       sectionIntro:
