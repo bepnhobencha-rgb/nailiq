@@ -287,3 +287,57 @@ Module keys and defaults are product data; layout rules describe **how the shell
 ---
 
 *This document is enforceable for Front Desk layout decisions. Proposals that hide a locked zone by default on intended desk hardware, desynchronize staff–grid scroll, or collapse operational truth into mode switches must be rejected or amended in favor of adjacent, stable three-zone geometry.*
+
+---
+
+## 9. App-shell sidebar navigation
+
+**Scope clarification.** This section governs the **app-shell chrome** that wraps every `/dashboard/[slug]/*` route. It is **not** a fourth zone of the Front Desk three-zone layout in §2 — the sidebar lives **outside** the receptionist center's main content area. Inside that area, the staff column / timeline / queue contract from §2 is unchanged and inviolable.
+
+**Why a sidebar.** The dashboard hosts more than the Front Desk: setup wizards, settings, clients, reports, owner dashboard. A persistent sidebar gives those routes one stable navigation surface and frees the Front Desk header from carrying global navigation responsibilities. Cross-route muscle memory beats per-page nav rows.
+
+### 9.1 Geometry
+
+- **Expanded width:** **240px** (15rem).
+- **Collapsed (icon-only) width:** **64px** (4rem).
+- **Position:** `fixed` to the leading edge of the viewport on `md` and wider; main content shifts right by exactly the active sidebar width (no layout-shift on collapse — width transitions instantly via CSS variable; bookings inside Front Desk do not re-measure).
+- **Z-index:** Below modal scrims, above the page background. Never punches through an active modal/drawer scrim.
+
+### 9.2 Visibility breakpoints
+
+- **`md` (≥ 768px) and wider:** sidebar visible as the persistent left rail. Bottom tab bar hidden.
+- **Below `md`:** sidebar hidden. **Bottom tab bar** (5 primary tabs) takes over for primary navigation. Main content reserves bottom padding for the bar (height + iPhone safe area).
+- **Tablet portrait** uses the sidebar at expanded width by default; the receptionist may collapse it to reclaim grid horizon when running rush-hour preset.
+
+### 9.3 Color, state, and interaction
+
+- **Sidebar background:** `bg-nq-surface` (= `#111214`, per `COLOR_TOKENS.md` §3).
+- **Active item:** `bg-nq-primary/15` + `text-nq-primary` (gold accent on the one item matching `usePathname()`). Pair color with text label so the active state is never hue-only (per `COLOR_TOKENS.md` §7).
+- **Hover (non-active):** `bg-nq-surface/80`.
+- **Focus-visible:** standard `ring-nq-primary/45` per `COLOR_TOKENS.md`.
+- **Disabled (placeholder routes):** `opacity-50`, `cursor-not-allowed`, no anchor — render as a `<span>` so screen readers don't announce a fake link.
+- **Touch target:** every nav row `min-h-11` (44 CSS px) per `UX_PRINCIPLES.md` §2 rule 4.
+
+### 9.4 Collapse persistence
+
+Collapse state persists in `localStorage` under the key **`nailiq-sidebar-collapsed`** (`"1"` = collapsed, anything else = expanded). The hook reads on first mount only; switching tabs does not force re-sync (the user's last choice on this device wins). Mobile (where the bar takes over) does not write this key.
+
+### 9.5 Content vs. shell separation
+
+- The sidebar may carry **labels + icons** for cross-route navigation, queue/messages **count badges**, salon switcher, and viewer identity.
+- The sidebar **must not** host operational mutation actions (cancel booking, advance status, queue triage). Those stay inside the relevant zone of the Front Desk per §2.
+- The sidebar **must not** duplicate the in-page primary CTA. Removing redundant link buttons from `SalonOwnerDashboardMain` after the sidebar lands is required, not optional.
+
+### 9.6 Mobile bottom tab bar
+
+- **Height:** **56px** baseline + iPhone home-indicator safe area (`pb-[env(safe-area-inset-bottom)]`).
+- **Tabs (5, fixed order):** Front Desk, Walk-in Queue, Clients, Reports, Settings.
+- **Background:** `bg-nq-surface` with a hairline top border `border-nq-border`.
+- **Active:** `text-nq-primary`. Inactive: `text-nq-muted`.
+- **One-handed reach:** thumb-priority. Any feature that does not fit the 5-tab cap goes into a sub-page reachable from a tab — no overflow menu.
+
+### 9.7 Out of scope for this section
+
+Sidebar visual specifics not enumerated here (icon weight, divider hairline opacity) inherit from `COLOR_TOKENS.md` and `COMPONENT_RULES.md`. Animation timing for the collapse transition follows `ANIMATION_RULES.md` (no inline ms literals).
+
+---

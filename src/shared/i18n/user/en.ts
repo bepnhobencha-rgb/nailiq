@@ -88,6 +88,23 @@ export type UserMessages = {
     verifyErrorInvalid: string;
     verifyErrorMissingToken: string;
   };
+  /** Dashboard app-shell navigation (sidebar + mobile bottom bar). */
+  nav: {
+    frontDesk: string;
+    calendar: string;
+    clients: string;
+    services: string;
+    staff: string;
+    walkinQueue: string;
+    messages: string;
+    reports: string;
+    marketing: string;
+    settings: string;
+    collapseSidebar: string;
+    expandSidebar: string;
+    /** Aria label on the bottom-tab `<nav>`. */
+    primaryNav: string;
+  };
   /** Phone-OTP login flow (`/login`, `/login/verify`). Distinct from
    * `register.*` so the two flows can diverge without cross-talk. */
   login: {
@@ -807,6 +824,21 @@ export const userEn: UserMessages = {
       "We could not verify your code. Check SUPABASE_SERVICE_ROLE_KEY and migrations.",
     verifyErrorInvalid: "Invalid code.",
     verifyErrorMissingToken: "Missing completion token. Try again.",
+  },
+  nav: {
+    frontDesk: "Front Desk",
+    calendar: "Calendar",
+    clients: "Clients",
+    services: "Services",
+    staff: "Staff",
+    walkinQueue: "Walk-in Queue",
+    messages: "Messages",
+    reports: "Reports",
+    marketing: "Marketing",
+    settings: "Settings",
+    collapseSidebar: "Collapse sidebar",
+    expandSidebar: "Expand sidebar",
+    primaryNav: "Primary navigation",
   },
   login: {
     title: "Sign in",

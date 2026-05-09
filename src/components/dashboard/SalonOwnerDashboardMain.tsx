@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
 import { MobileStack } from "@/components/layout/MobileStack";
@@ -11,7 +10,6 @@ import { SalonOwnerStatsSection } from "@/components/dashboard/SalonOwnerStatsSe
 import { SalonOwnerTodayBookings } from "@/components/dashboard/SalonOwnerTodayBookings";
 import { SalonOwnerDashboardSkeleton } from "@/components/dashboard/SalonOwnerDashboardSkeleton";
 import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
-import { GearIcon } from "@/components/ui/icons/GearIcon";
 import type { SalonOwnerDashboardViewPayload } from "@/components/dashboard/salonDashboardFormat";
 import { getUserMessages } from "@/shared/i18n/user";
 import { maskPhoneDigits } from "@/shared/lib/maskPhone";
@@ -182,29 +180,10 @@ export function SalonOwnerDashboardMain({
               {t.refresh}
             </button>
           </div>
-          <Link
-            href={`/dashboard/${encodeURIComponent(slug)}/center`}
-            className="inline-flex min-h-11 touch-manipulation items-center justify-center gap-2 rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-4 text-base font-semibold text-nq-primary transition-colors hover:bg-nq-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/50"
-          >
-            {t.navReceptionistCenter}
-          </Link>
-          <Link
-            href={`/dashboard/${encodeURIComponent(slug)}/reports`}
-            className="inline-flex min-h-11 touch-manipulation items-center justify-center gap-2 rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-4 text-base font-semibold text-nq-primary transition-colors hover:bg-nq-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/50"
-          >
-            {/* Owner-only page; non-owners get redirected by the
-                page-level role gate. We keep the link visible so the
-                main dashboard nav stays consistent across viewers
-                without threading role through this client component. */}
-            {messages.receptionist.reports.navLinkLabel}
-          </Link>
-          <Link
-            href={`/dashboard/${encodeURIComponent(slug)}/settings`}
-            className="inline-flex min-h-11 touch-manipulation items-center justify-center gap-2 rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-4 text-base font-semibold text-nq-primary transition-colors hover:bg-nq-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/50"
-          >
-            <GearIcon className="h-5 w-5 shrink-0" aria-hidden />
-            {t.navSettings}
-          </Link>
+          {/* Front Desk / Reports / Settings links removed —
+              relocated to the persistent left sidebar app-shell
+              (DashboardSidebar) per DASHBOARD_LAYOUT_RULES §9.5
+              "sidebar must not duplicate the in-page primary CTA". */}
           <UserLanguageToggle
             language={language}
             onLanguageChange={onLanguageChange}

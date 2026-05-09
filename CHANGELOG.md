@@ -2,6 +2,12 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-05-09 (docs — DASHBOARD_LAYOUT_RULES §9 sidebar navigation, PM-approved)
+
+- **PM approval:** explicit chat directive `2026-05-09` instructing the dashboard sidebar refactor (`feat/dashboard-sidebar`) to add a new section governing the app-shell sidebar + mobile bottom-bar pattern.
+- **`docs/DASHBOARD_LAYOUT_RULES.md` §9 (App-shell sidebar navigation):** new section. Documents (a) the sidebar lives **outside** the Front Desk three-zone main content area — §2 stays inviolable; (b) geometry (240px expanded / 64px collapsed), `md`+ visibility with mobile bottom-bar fallback; (c) color/state mappings (`bg-nq-surface`, `bg-nq-primary/15` active, etc.) tracing to `COLOR_TOKENS.md`; (d) `localStorage` key `nailiq-sidebar-collapsed`; (e) content-vs-shell separation rules — sidebar carries cross-route nav and badges only, never operational mutation actions; (f) mobile bottom-bar tab inventory (Front Desk / Walk-in Queue / Clients / Reports / Settings) with iPhone safe-area padding.
+- **No changes to §1–§8.** The three-zone Front Desk contract is unchanged.
+
 ## 2026-05-08 (docs — booking-status §5 stale-prose follow-up to PR #56, PM-approved)
 
 - **PM approval:** explicit chat directive `2026-05-08` as the PR #56 follow-up doc-pass. Three stale references to the prior color regime (caught after PR #56 narrowed scope to the table rows only).
