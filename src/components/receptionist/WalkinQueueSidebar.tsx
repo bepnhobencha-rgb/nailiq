@@ -66,6 +66,15 @@ export interface WalkinQueueSidebarProps {
   nowIso: string;
   /** Block add form when salon has no services or no staff */
   addFormDisabled?: boolean;
+  /**
+   * Realtime offline gate — when true, the walk-in add form shows
+   * an offline-specific hint and the submit button is locked to
+   * prevent stale-data writes (mutation guard for the connection
+   * banner state).
+   */
+  isOffline?: boolean;
+  /** Localized "Offline — cannot add walk-ins" hint shown above submit. */
+  offlineAddDisabledHint?: string;
   /** `quick_add` module — hides the walk-in intake form */
   showQuickAdd?: boolean;
   /** `wait_time` module — hides urgency styling and wait badges */
@@ -85,6 +94,8 @@ export function WalkinQueueSidebar({
   onCancelAssign,
   nowIso,
   addFormDisabled = false,
+  isOffline = false,
+  offlineAddDisabledHint,
   showQuickAdd = true,
   showWaitTime = true,
   showVipIndicator = true,
@@ -134,6 +145,8 @@ export function WalkinQueueSidebar({
             labels={labels.addForm}
             onSubmit={onAddWalkin}
             disabled={addFormDisabled}
+            isOffline={isOffline}
+            offlineDisabledHint={offlineAddDisabledHint}
           />
         ) : null}
 

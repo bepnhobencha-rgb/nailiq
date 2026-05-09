@@ -33,6 +33,15 @@ export interface WalkinAddFormProps {
   }>;
   /** Salon setup incomplete — block walk-in intake until catalog is ready */
   disabled?: boolean;
+  /**
+   * Realtime offline guard. When true, the submit button is locked
+   * and an inline offline-specific hint is rendered above it. Mutation
+   * guard for the `ConnectionBanner` state — prevents writes against
+   * stale data when the realtime channel is erroring/closed.
+   */
+  isOffline?: boolean;
+  /** Localized hint shown when `isOffline` is true. */
+  offlineDisabledHint?: string;
   /** Localized strings */
   labels: {
     namePlaceholder: string;
@@ -79,6 +88,8 @@ export function WalkinAddForm({
   labels,
   onSubmit,
   disabled = false,
+  isOffline = false,
+  offlineDisabledHint,
 }: WalkinAddFormProps) {
   const nameId = useId();
   const phoneId = useId();
@@ -106,7 +117,11 @@ export function WalkinAddForm({
   const [requestTags, setRequestTags] = useState<QueueRequestTag[]>([]);
   const [tagDraft, setTagDraft] = useState("");
 
-  const formLocked = disabled || submitting;
+  // Offline locks every interactive control except read-only fields,
+  // matching the existing `disabled` semantic; the inline hint below
+  // the submit gives the receptionist offline-specific copy so they
+  // know it's a connection issue rather than a setup state.
+  const formLocked = disabled || submitting || isOffline;
 
   const topServices = useMemo(
     () => services.slice(0, TOP_SERVICE_COUNT),
@@ -635,12 +650,29 @@ export function WalkinAddForm({
         </p>
       ) : null}
 
+      {isOffline && offlineDisabledHint ? (
+        <p
+          className="text-xs font-semibold text-nq-error"
+          role="status"
+          data-testid="walkin-offline-hint"
+        >
+          {offlineDisabledHint}
+        </p>
+      ) : null}
+
       <Button
         ref={submitRef}
         type="submit"
         variant="primary"
         loading={submitting}
-        disabled={disabled || submitting || !!nameError || !!phoneError}
+        disabled={
+          disabled ||
+          submitting ||
+          isOffline ||
+          !!nameError ||
+          !!phoneError
+        }
+        title={isOffline ? offlineDisabledHint : undefined}
         className="w-full sm:w-full"
       >
         {submitting ? labels.submitting : labels.addButton}
