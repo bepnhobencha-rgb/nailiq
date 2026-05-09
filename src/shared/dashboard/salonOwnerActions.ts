@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import {
   NAILQ_DEMO_SLUG_COOKIE,
 } from "@/shared/lib/demoDashboardCookie";
@@ -439,6 +440,17 @@ export async function updateBookingStatus(
   if (!updated?.id) {
     return { ok: false, error: "invalid_transition" };
   }
+
+  void logBookingEvent({
+    bookingId,
+    salonId: salon.id,
+    actorUserId: null,
+    actorRole: (kind === "demo_cookie"
+      ? "demo_cookie"
+      : (resolved.role as ActorRole)) satisfies ActorRole,
+    eventType: "booking_status_changed",
+    payload: { from: cur, to: nextStatus },
+  });
 
   return { ok: true };
 }
