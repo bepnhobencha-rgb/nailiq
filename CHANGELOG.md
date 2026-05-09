@@ -2,6 +2,15 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-05-08 (docs — booking state name + color reconciliation, PM-approved)
+
+- **PM approval:** explicit chat directive `2026-05-08` to align governance docs with shipped code reality (drift previously flagged in PRs #53 / #54 / #55).
+- **`docs/STATE_MACHINE.md`:** all occurrences of the state key **`in_service`** replaced with **`in_progress`** to match the live `bookings_status_check` constraint, `BOOKING_DAY_STATUSES` in `loadReceptionistCenterData`, and the `BookingStatus` union throughout the codebase. The user-facing label "In service" (capital I, space) is **unchanged** — it remains the human-readable translation of the state in `BookingCard.tsx`'s `statusLabels`.
+- **`docs/COLOR_TOKENS.md` §5 (Booking Status Colors):**
+  - `in_service` row → **renamed `in_progress`**, color flipped from indigo `#6366F1` to **success green `#22C55E`** (matches `BookingBlock.tsx`'s `bg-nq-success` for in-progress bookings).
+  - `completed` row → color flipped from green `#22C55E` to **neutral muted `#6B6D76`** (matches `BookingBlock.tsx`'s `bg-nq-muted/45` low-arousal historical treatment).
+- **Out of scope, flagged for follow-up:** `docs/COLOR_TOKENS.md` §5 confusion-guards still reference the old `in_service` name and the prior color comparisons (`blue vs indigo`, `green family only`); a separate doc-pass should reconcile them.
+
 ## 2026-05-07 (docs/ux-principles — operational UX contract)
 
 - **`docs/UX_PRINCIPLES.md`:** Core philosophy, **NailIQ Golden Rules** (11 non-negotiable items), anti-patterns, personas (receptionist / owner / nail tech), conflict-resolution framework, accessibility baseline, English-primary + Vietnamese-secondary language rules. **`PROJECT_BRAIN.md`** — pointer under **Operational UX contract**.

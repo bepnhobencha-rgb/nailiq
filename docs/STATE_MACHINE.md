@@ -19,10 +19,10 @@
 
 A booking is the unit of revenue, the unit of time, and the unit of trust at a salon. When booking state is allowed to drift freely, the consequences compound:
 
-- **Data corruption** — a booking marked `completed` then re-opened to `in_service` makes revenue, payroll, and analytics lie.
+- **Data corruption** — a booking marked `completed` then re-opened to `in_progress` makes revenue, payroll, and analytics lie.
 - **Lost revenue** — a `cancelled` booking re-armed from the client without going through cancellation rules can be billed twice or not at all.
 - **Operational confusion** — receptionists see contradictory states across surfaces because two clients raced to set state.
-- **Phantom conflicts** — overlapping states (e.g. two `in_service` rows for the same staff at the same time) silently corrupt the timeline.
+- **Phantom conflicts** — overlapping states (e.g. two `in_progress` rows for the same staff at the same time) silently corrupt the timeline.
 - **Audit failure** — without a defined transition graph, "what happened to this booking?" becomes unanswerable.
 
 ### Why explicit transitions prevent bugs
@@ -72,11 +72,11 @@ Each state below has: a name, its meaning, who can see it, and its visual indica
 - **Who can see it:** Receptionists, seniors, owners; assigned nail tech.
 - **Visual indicator:** `waiting` family — orange, signaling "needs motion." Pair with the label "Waiting" and a wait-time hint where layout allows.
 
-### `in_service`
+### `in_progress`
 
 - **Meaning:** The customer is in the chair. Service is actively being performed.
 - **Who can see it:** Receptionists, seniors, owners; assigned nail tech.
-- **Visual indicator:** `in_service` family — indigo, signaling "in progress" without colliding with informational blue. Pair with the label "In service."
+- **Visual indicator:** `in_progress` family — indigo, signaling "in progress" without colliding with informational blue. Pair with the label "In service."
 
 ### `completed`
 
@@ -125,14 +125,14 @@ The **only** valid transitions are listed here. Any move not in this list is for
 | `confirmed`   | `rescheduled`  | Time/staff is moved before arrival.         |
 | `confirmed`   | `no_show`      | Threshold exceeded without arrival.         |
 | `arrived`     | `waiting`      | Customer queued for staff or chair.         |
-| `arrived`     | `in_service`   | Customer seated directly without queuing.   |
+| `arrived`     | `in_progress`   | Customer seated directly without queuing.   |
 | `arrived`     | `cancelled`    | Customer leaves before service begins.      |
-| `waiting`     | `in_service`   | Staff picks up the customer.                |
+| `waiting`     | `in_progress`   | Staff picks up the customer.                |
 | `waiting`     | `cancelled`    | Customer leaves the queue.                  |
-| `in_service`  | `completed`    | Service ends successfully.                  |
-| `in_service`  | `late`         | **System only** — time threshold exceeded.  |
-| `in_service`  | `cancelled`    | Service aborted mid-way (rare, exceptional).|
-| `late`        | `in_service`   | Late condition resolved; service resumes.   |
+| `in_progress`  | `completed`    | Service ends successfully.                  |
+| `in_progress`  | `late`         | **System only** — time threshold exceeded.  |
+| `in_progress`  | `cancelled`    | Service aborted mid-way (rare, exceptional).|
+| `late`        | `in_progress`   | Late condition resolved; service resumes.   |
 | `late`        | `no_show`      | Late condition escalates to absence.        |
 | `late`        | `cancelled`    | Late condition resolved by cancellation.    |
 | `rescheduled` | `confirmed`    | New slot is locked.                         |
@@ -148,12 +148,12 @@ The **only** valid transitions are listed here. Any move not in this list is for
 3. **`confirmed → cancelled`** — allowed at any time before arrival, subject to the salon's cancellation policy.
 4. **`confirmed → rescheduled`** — when time or staff is changed. The booking exits `rescheduled` only by becoming `confirmed` (new slot locked) or `cancelled` (abandoned).
 5. **`arrived → waiting`** — when the chair or staff is not yet free.
-6. **`arrived → in_service`** — when the customer is seated immediately without queuing.
-7. **`waiting → in_service`** — when staff picks up the customer.
-8. **`in_service → completed`** — the only success-path exit from `in_service`.
-9. **`in_service → late`** — **system only**, applied as an overlay flag when the service exceeds its expected window. The booking remains operationally `in_service`; `late` is a flag layer, not a replacement state, and is cleared on `completed`.
-10. **`in_service → cancelled`** — exceptional. Reserved for service aborted after seating (e.g. customer leaves mid-service). Requires explicit cancellation flow.
-11. **`late → in_service`** — clears the late flag once the underlying condition resolves.
+6. **`arrived → in_progress`** — when the customer is seated immediately without queuing.
+7. **`waiting → in_progress`** — when staff picks up the customer.
+8. **`in_progress → completed`** — the only success-path exit from `in_progress`.
+9. **`in_progress → late`** — **system only**, applied as an overlay flag when the service exceeds its expected window. The booking remains operationally `in_progress`; `late` is a flag layer, not a replacement state, and is cleared on `completed`.
+10. **`in_progress → cancelled`** — exceptional. Reserved for service aborted after seating (e.g. customer leaves mid-service). Requires explicit cancellation flow.
+11. **`late → in_progress`** — clears the late flag once the underlying condition resolves.
 12. **`late → no_show`** — escalation when the late threshold passes without arrival or contact.
 13. **`late → cancelled`** — when the late state is resolved by an explicit cancellation (customer cancels late).
 14. **`rescheduled → confirmed`** — the only constructive exit from `rescheduled`.
@@ -174,19 +174,19 @@ The following moves are **never** permitted. Server actions must reject them; cl
 
 ### Skip violations (must pass through intermediate states)
 
-- **`pending → in_service`** — must pass through `confirmed` and either `arrived` or `arrived → waiting`.
+- **`pending → in_progress`** — must pass through `confirmed` and either `arrived` or `arrived → waiting`.
 - **`pending → arrived`** — must pass through `confirmed` first.
 - **`pending → completed`** — multiple required intermediate states.
-- **`confirmed → completed`** — must pass through `in_service`.
-- **`confirmed → in_service`** — must pass through `arrived` (and optionally `waiting`).
+- **`confirmed → completed`** — must pass through `in_progress`.
+- **`confirmed → in_progress`** — must pass through `arrived` (and optionally `waiting`).
 - **`confirmed → waiting`** — must pass through `arrived`.
-- **`waiting → completed`** — must pass through `in_service`.
-- **`arrived → completed`** — must pass through `in_service`.
+- **`waiting → completed`** — must pass through `in_progress`.
+- **`arrived → completed`** — must pass through `in_progress`.
 
 ### Reverse violations
 
-- **`in_service → waiting`** — bookings do not return to the queue once seated.
-- **`in_service → arrived`** — bookings do not retreat to "checked in but unseated."
+- **`in_progress → waiting`** — bookings do not return to the queue once seated.
+- **`in_progress → arrived`** — bookings do not retreat to "checked in but unseated."
 - **`waiting → arrived`** — arrived is a one-way checkpoint.
 - **`arrived → confirmed`** — check-in cannot be undone by state alone; cancel and rebook if needed.
 - **`confirmed → pending`** — confirmation is not a draft state.
@@ -194,7 +194,7 @@ The following moves are **never** permitted. Server actions must reject them; cl
 ### Cross-graph violations
 
 - Any transition not listed in §3 — denied by default.
-- Any transition that would result in two simultaneous `in_service` rows for the same staff at the same time — denied by the server (conflict check governs).
+- Any transition that would result in two simultaneous `in_progress` rows for the same staff at the same time — denied by the server (conflict check governs).
 - Any transition initiated by a client that bypasses a server action — **prohibited at the architectural level**, regardless of which transition is being attempted.
 
 ### Architectural prohibitions
@@ -209,12 +209,12 @@ The following moves are **never** permitted. Server actions must reject them; cl
 
 Some transitions are not user-initiated. The **system** triggers them based on time, configuration, and policy. Auto-transitions are still server-side; the "system" actor is a server-side scheduler, not the client.
 
-### `in_service + time exceeded → late` (overlay flag)
+### `in_progress + time exceeded → late` (overlay flag)
 
 - **Trigger:** Service duration exceeds the configured expected window for the booked service(s) by the salon's late threshold.
 - **Actor:** System scheduler (server-side, runs against booking records on a recurring cadence).
-- **Effect:** Sets the `late` overlay flag. The underlying state remains `in_service`. Receptionist surfaces show "In service · Late" with the `late` color family overlaid.
-- **Clearing:** Cleared automatically when the booking transitions to `completed` (success), or to `cancelled` (abort), or when the system observes the condition no longer applies and applies `late → in_service`.
+- **Effect:** Sets the `late` overlay flag. The underlying state remains `in_progress`. Receptionist surfaces show "In service · Late" with the `late` color family overlaid.
+- **Clearing:** Cleared automatically when the booking transitions to `completed` (success), or to `cancelled` (abort), or when the system observes the condition no longer applies and applies `late → in_progress`.
 
 ### `confirmed + no arrival by threshold → no_show candidate`
 
@@ -252,14 +252,14 @@ Roles per `CLAUDE.md`: `owner`, `senior`, `nail_tech`, plus the `system` actor f
 | `confirmed → rescheduled`         |   ✓   |   ✓    |     —     |   —    |    ✓²    |
 | `confirmed → no_show`             |   ✓   |   ✓    |     —     |   —    |    —     |
 | `arrived → waiting`               |   ✓   |   ✓    |    ✓³     |   —    |    —     |
-| `arrived → in_service`            |   ✓   |   ✓    |    ✓³     |   —    |    —     |
+| `arrived → in_progress`            |   ✓   |   ✓    |    ✓³     |   —    |    —     |
 | `arrived → cancelled`             |   ✓   |   ✓    |     —     |   —    |    —     |
-| `waiting → in_service`            |   ✓   |   ✓    |    ✓³     |   —    |    —     |
+| `waiting → in_progress`            |   ✓   |   ✓    |    ✓³     |   —    |    —     |
 | `waiting → cancelled`             |   ✓   |   ✓    |     —     |   —    |    —     |
-| `in_service → completed`          |   ✓   |   ✓    |    ✓³     |   —    |    —     |
-| `in_service → late` (flag)        |   —   |   —    |     —     |   ✓    |    —     |
-| `in_service → cancelled`          |   ✓   |   ✓    |     —     |   —    |    —     |
-| `late → in_service` (clear flag)  |   ✓   |   ✓    |    ✓³     |   ✓    |    —     |
+| `in_progress → completed`          |   ✓   |   ✓    |    ✓³     |   —    |    —     |
+| `in_progress → late` (flag)        |   —   |   —    |     —     |   ✓    |    —     |
+| `in_progress → cancelled`          |   ✓   |   ✓    |     —     |   —    |    —     |
+| `late → in_progress` (clear flag)  |   ✓   |   ✓    |    ✓³     |   ✓    |    —     |
 | `late → no_show`                  |   ✓   |   ✓    |     —     |   ✓⁴   |    —     |
 | `late → cancelled`                |   ✓   |   ✓    |     —     |   —    |    —     |
 | `rescheduled → confirmed`         |   ✓   |   ✓    |     —     |   —    |    —     |
@@ -269,7 +269,7 @@ Roles per `CLAUDE.md`: `owner`, `senior`, `nail_tech`, plus the `system` actor f
 
 1. **`system`** confirms `pending → confirmed` only when auto-confirm policy is enabled by the salon; otherwise human approval is required.
 2. **`customer`** can self-cancel or self-reschedule before arrival, subject to the salon's policy window. Customer cancellations route through the same server action as salon-initiated cancellations.
-3. **`nail_tech`** can advance their **own** assigned booking through service-floor transitions (`arrived`, `waiting`, `in_service`, `completed`). They cannot affect other nail techs' bookings.
+3. **`nail_tech`** can advance their **own** assigned booking through service-floor transitions (`arrived`, `waiting`, `in_progress`, `completed`). They cannot affect other nail techs' bookings.
 4. **`system`** marks `late → no_show` as a **candidate** only; the actual transition still requires human confirmation by `owner` or `senior` (see §5).
 
 ### Permission rules
@@ -308,20 +308,20 @@ Visual color mapping is governed by `COLOR_TOKENS.md` §5 — this section descr
 
 - **Block color:** `arrived` family.
 - **Drawer header:** "Arrived" label.
-- **Available actions:** Add to queue (→ `waiting`), Seat now (→ `in_service`), Cancel (→ `cancelled`).
+- **Available actions:** Add to queue (→ `waiting`), Seat now (→ `in_progress`), Cancel (→ `cancelled`).
 - **Disabled actions:** Confirm, Check in (already done), Complete, Mark no-show.
 
 ### `waiting`
 
 - **Block color:** `waiting` family.
 - **Drawer header:** "Waiting" label, with wait-time meta.
-- **Available actions:** Seat (→ `in_service`), Cancel (→ `cancelled`).
+- **Available actions:** Seat (→ `in_progress`), Cancel (→ `cancelled`).
 - **Disabled actions:** Check in (already done), Complete, Mark no-show.
 - **Surfacing:** also rendered as a `QueueChip` in the right zone of the dashboard (per `DASHBOARD_LAYOUT_RULES.md`).
 
-### `in_service`
+### `in_progress`
 
-- **Block color:** `in_service` family.
+- **Block color:** `in_progress` family.
 - **Drawer header:** "In service" label.
 - **Available actions:** Complete (→ `completed`), Cancel (→ `cancelled`, exceptional — confirm dialog with `danger` styling per `COMPONENT_RULES.md`).
 - **Disabled actions:** Check in, Seat, Start service (already in progress).
@@ -329,10 +329,10 @@ Visual color mapping is governed by `COLOR_TOKENS.md` §5 — this section descr
 
 ### `late` (overlay flag, not a standalone block state)
 
-- **Block color:** `late` family overlaid on the underlying state's color (e.g. an `in_service` block gains a `late` keyline or label badge).
+- **Block color:** `late` family overlaid on the underlying state's color (e.g. an `in_progress` block gains a `late` keyline or label badge).
 - **Drawer header:** "<Underlying state> · Late" — never replaces the underlying state label.
 - **Available actions:** All actions valid for the underlying state, **plus** Mark no-show (when applicable per §3 and the late→no_show rule).
-- **Notes:** The `late` flag clears automatically on `completed`/`cancelled` and may be cleared by `late → in_service` when the system confirms the condition is resolved.
+- **Notes:** The `late` flag clears automatically on `completed`/`cancelled` and may be cleared by `late → in_progress` when the system confirms the condition is resolved.
 
 ### `completed`
 

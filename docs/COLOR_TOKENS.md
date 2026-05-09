@@ -178,8 +178,8 @@ These colors map to **booking states** in the product state machine. The machine
 | `confirmed` | `#3B82F6` | `rgba(59, 130, 246, 0.12)` | `#FFFFFF` | Committed timehold; **cool/trust** |
 | `arrived` | `#14B8A6` | `rgba(20, 184, 166, 0.14)` | `#CCFBF1` | On-premise presence; **teal** separates from completed green |
 | `waiting` | `#EA580C` | `rgba(234, 88, 12, 0.14)` | `#FFEDD5` | Queue pressure; **orange** reads as “needs motion” vs pending yellow |
-| `in_service` | `#6366F1` | `rgba(99, 102, 241, 0.14)` | `#E0E7FF` | Active chair time; **indigo** signals “in progress” without doubling info-blue |
-| `completed` | `#22C55E` | `rgba(34, 197, 94, 0.12)` | `#FFFFFF` | Closed-success; **must not use gold** |
+| `in_progress` | `#22C55E` | `rgba(34, 197, 94, 0.12)` | `#FFFFFF` | Active chair time; **success green** signals progressive forward motion (chair filled, revenue accruing) |
+| `completed` | `#6B6D76` | `rgba(107, 109, 118, 0.16)` | `#FFFFFF` | Closed-success residue; **neutral muted** — low arousal, distinct from `cancelled` slate by being neutral rather than blue-gray |
 | `cancelled` | `#64748B` | `rgba(100, 116, 139, 0.14)` | `#E2E8F0` | Terminated/neutralized; **low-arousal slate** |
 | `no_show` | `#DC2626` | `rgba(220, 38, 38, 0.14)` | `#FECACA` | Absence with consequence; **deeper red** than generic danger for scan distinction at a glance |
 | `late` | `#F59E0B` | `rgba(245, 158, 11, 0.16)` | `#0B0C10` on compact filled indicators; `#FEF3C7` on dark surfaces | Time risk; **bright amber** for **clock visibility** in glare; pair with lateness label |
