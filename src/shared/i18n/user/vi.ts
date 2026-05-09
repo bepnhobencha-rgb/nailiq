@@ -98,6 +98,7 @@ export const userVi: UserMessages = {
     collapseSidebar: "Thu gọn",
     expandSidebar: "Mở rộng",
     primaryNav: "Điều hướng chính",
+    switchSalon: "Chuyển tiệm",
   },
   login: {
     title: "Đăng nhập",

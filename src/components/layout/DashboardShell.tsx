@@ -4,6 +4,7 @@ import { type ReactNode } from "react";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { useSidebarCollapsed } from "@/shared/lib/useSidebarCollapsed";
+import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
 
 type Props = {
   slug: string;
@@ -14,6 +15,9 @@ type Props = {
   walkinQueueCount?: number;
   /** Optional badge count for the Messages nav row (placeholder). */
   messagesCount?: number;
+  /** Owner-only: salons this user owns; sidebar renders a switcher
+   * dropdown when there are 2+. Pass `[]` to disable the switcher. */
+  salons?: OwnerSalonSummary[];
 };
 
 /**
@@ -36,6 +40,7 @@ export function DashboardShell({
   children,
   walkinQueueCount,
   messagesCount,
+  salons,
 }: Props) {
   const { collapsed } = useSidebarCollapsed();
   const sidebarWidth = collapsed ? "4rem" : "15rem";
@@ -51,6 +56,7 @@ export function DashboardShell({
         salonName={salonName}
         walkinQueueCount={walkinQueueCount}
         messagesCount={messagesCount}
+        salons={salons}
       />
       <main
         className="min-h-dvh md:pl-[var(--nq-sidebar-w)] pb-16 md:pb-0"

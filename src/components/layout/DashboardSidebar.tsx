@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart2,
   Calendar,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Clock,
   LayoutGrid,
   Megaphone,
@@ -22,6 +23,7 @@ import { cn } from "@/shared/lib/cn";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { useSidebarCollapsed } from "@/shared/lib/useSidebarCollapsed";
+import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
 
 type Props = {
   slug: string;
@@ -29,6 +31,10 @@ type Props = {
   salonName: string;
   walkinQueueCount?: number;
   messagesCount?: number;
+  /** Owner-only: every salon this user owns. The footer renders a
+   * switcher dropdown when this list contains > 1 entry (the current
+   * salon is always one of them; the dropdown lists the others). */
+  salons?: OwnerSalonSummary[];
 };
 
 type NavItem = {
@@ -56,12 +62,50 @@ export function DashboardSidebar({
   salonName,
   walkinQueueCount = 0,
   messagesCount = 0,
+  salons,
 }: Props) {
   const pathname = usePathname() ?? "";
   const { language } = useUserLanguage();
   const messages = useMemo(() => getUserMessages(language), [language]);
   const t = messages.nav;
   const { collapsed, toggle } = useSidebarCollapsed();
+
+  const otherSalons = useMemo(
+    () => (salons ?? []).filter((s) => s.slug !== slug),
+    [salons, slug],
+  );
+  const showSwitcher = otherSalons.length > 0;
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const switcherTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const switcherPopoverRef = useRef<HTMLDivElement | null>(null);
+
+  // Close on outside click and on Escape — basic discoverability for
+  // the simple HTML/React popover (no portal, no animation per task).
+  useEffect(() => {
+    if (!switcherOpen) return;
+    const onDown = (ev: MouseEvent) => {
+      const target = ev.target as Node | null;
+      if (!target) return;
+      if (switcherTriggerRef.current?.contains(target)) return;
+      if (switcherPopoverRef.current?.contains(target)) return;
+      setSwitcherOpen(false);
+    };
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") setSwitcherOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [switcherOpen]);
+
+  // Auto-close when the user collapses the sidebar — the trigger
+  // disappears and the dropdown would become an orphan otherwise.
+  useEffect(() => {
+    if (collapsed && switcherOpen) setSwitcherOpen(false);
+  }, [collapsed, switcherOpen]);
 
   const slugSeg = encodeURIComponent(slug);
   const dashRoot = `/dashboard/${slugSeg}`;
@@ -219,22 +263,24 @@ export function DashboardSidebar({
         </ul>
       </nav>
 
-      <div className="mt-auto border-t border-nq-border/40 px-2 py-3">
-        <div
-          className={cn(
-            "flex items-center gap-3 rounded-lg px-2 py-2",
-            collapsed ? "justify-center" : "",
-          )}
-          title={collapsed ? `${salonName} · ${roleLabel(role)}` : undefined}
-        >
-          <span
-            aria-hidden
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-nq-primary/15 text-xs font-bold tracking-tight text-nq-primary"
+      <div className="relative mt-auto border-t border-nq-border/40 px-2 py-3">
+        {showSwitcher && !collapsed ? (
+          <button
+            ref={switcherTriggerRef}
+            type="button"
+            onClick={() => setSwitcherOpen((prev) => !prev)}
+            aria-haspopup="menu"
+            aria-expanded={switcherOpen}
+            aria-label={t.switchSalon}
+            className={cn(
+              "flex w-full min-h-11 touch-manipulation items-center gap-3 rounded-lg px-2 py-2",
+              "transition-colors hover:bg-nq-surface/80",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45",
+              switcherOpen ? "bg-nq-surface/80" : "",
+            )}
           >
-            {(salonName.trim().charAt(0) || "S").toUpperCase()}
-          </span>
-          {collapsed ? null : (
-            <div className="min-w-0 flex-1">
+            <SalonAvatar salonName={salonName} />
+            <div className="min-w-0 flex-1 text-left">
               <p className="truncate text-sm font-medium text-nq-foreground">
                 {salonName}
               </p>
@@ -242,8 +288,70 @@ export function DashboardSidebar({
                 {roleLabel(role)}
               </p>
             </div>
-          )}
-        </div>
+            <ChevronUp
+              className={cn(
+                "h-4 w-4 shrink-0 text-nq-muted transition-transform",
+                switcherOpen ? "rotate-180" : "",
+              )}
+              aria-hidden
+            />
+          </button>
+        ) : (
+          <div
+            className={cn(
+              "flex items-center gap-3 rounded-lg px-2 py-2",
+              collapsed ? "justify-center" : "",
+            )}
+            title={collapsed ? `${salonName} · ${roleLabel(role)}` : undefined}
+          >
+            <SalonAvatar salonName={salonName} />
+            {collapsed ? null : (
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-nq-foreground">
+                  {salonName}
+                </p>
+                <p className="truncate text-xs text-nq-muted">
+                  {roleLabel(role)}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {showSwitcher && switcherOpen && !collapsed ? (
+          <div
+            ref={switcherPopoverRef}
+            role="menu"
+            aria-label={t.switchSalon}
+            className={cn(
+              "absolute bottom-[calc(100%-0.25rem)] left-2 right-2 z-50",
+              "rounded-lg border border-nq-border/40 bg-nq-surface p-1 shadow-nq-card",
+            )}
+          >
+            <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+              {t.switchSalon}
+            </p>
+            <ul className="flex flex-col gap-0.5">
+              {otherSalons.map((s) => (
+                <li key={s.id}>
+                  <Link
+                    href={`/dashboard/${encodeURIComponent(s.slug)}/center`}
+                    role="menuitem"
+                    onClick={() => setSwitcherOpen(false)}
+                    className={cn(
+                      "flex min-h-11 items-center gap-3 rounded-md px-2 py-2",
+                      "text-sm text-nq-foreground transition-colors hover:bg-nq-surface/80",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45",
+                    )}
+                  >
+                    <SalonAvatar salonName={s.name} />
+                    <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
     </aside>
   );
@@ -326,4 +434,15 @@ function roleLabel(role: string): string {
   if (role === "senior") return "Senior";
   if (role === "nail_tech") return "Nail tech";
   return role || "Staff";
+}
+
+function SalonAvatar({ salonName }: { salonName: string }) {
+  return (
+    <span
+      aria-hidden
+      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-nq-primary/15 text-xs font-bold tracking-tight text-nq-primary"
+    >
+      {(salonName.trim().charAt(0) || "S").toUpperCase()}
+    </span>
+  );
 }
