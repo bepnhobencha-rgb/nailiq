@@ -13,6 +13,10 @@ type Props = {
   children: ReactNode;
   /** Optional badge count for the Walk-in Queue nav row. */
   walkinQueueCount?: number;
+  /** Optional count of `in_progress` bookings whose end time has
+   * passed. Drives the sidebar Walk-in Queue badge color (red when
+   * > 0, regardless of `walkinQueueCount`). */
+  overdueCount?: number;
   /** Optional badge count for the Messages nav row (placeholder). */
   messagesCount?: number;
   /** Owner-only: salons this user owns; sidebar renders a switcher
@@ -39,6 +43,7 @@ export function DashboardShell({
   salonName,
   children,
   walkinQueueCount,
+  overdueCount,
   messagesCount,
   salons,
 }: Props) {
@@ -61,6 +66,7 @@ export function DashboardShell({
         role={role}
         salonName={salonName}
         walkinQueueCount={walkinQueueCount}
+        overdueCount={overdueCount}
         messagesCount={messagesCount}
         salons={salons}
         collapsed={collapsed}

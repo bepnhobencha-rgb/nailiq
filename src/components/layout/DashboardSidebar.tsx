@@ -29,6 +29,9 @@ type Props = {
   role: string;
   salonName: string;
   walkinQueueCount?: number;
+  /** When > 0, the Walk-in Queue badge flips red (regardless of
+   * `walkinQueueCount`). Driven by overdue in-progress bookings. */
+  overdueCount?: number;
   messagesCount?: number;
   /** Owner-only: every salon this user owns. The footer renders a
    * switcher dropdown when this list contains > 1 entry (the current
@@ -80,6 +83,7 @@ export function DashboardSidebar({
   role,
   salonName,
   walkinQueueCount = 0,
+  overdueCount = 0,
   messagesCount = 0,
   salons,
   collapsed,
@@ -156,8 +160,17 @@ export function DashboardSidebar({
             href: `${dashRoot}/center#queue`,
             icon: Clock,
             match: () => false,
-            badge: walkinQueueCount,
-            badgeTone: "gold",
+            // Combined badge: overdue count takes precedence over
+            // waiting count (so the receptionist sees "1 overdue" in
+            // red, not "3 waiting" in gold). When ONLY waiting > 0, we
+            // surface the waiting count in gold.
+            badge:
+              overdueCount > 0
+                ? overdueCount
+                : walkinQueueCount > 0
+                  ? walkinQueueCount
+                  : 0,
+            badgeTone: overdueCount > 0 ? "red" : "gold",
           },
           {
             key: "calendar",
@@ -258,6 +271,7 @@ export function DashboardSidebar({
       t.staff,
       t.walkinQueue,
       walkinQueueCount,
+      overdueCount,
     ],
   );
 
