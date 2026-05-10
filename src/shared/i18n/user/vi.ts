@@ -594,6 +594,7 @@ export const userVi: UserMessages = {
         notes: "Có ghi chú",
         late: "Trễ",
         design: "Vẽ / Nail art",
+        staffRequest: "Yêu cầu thợ",
       },
     },
     undo: {

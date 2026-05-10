@@ -77,6 +77,9 @@ export interface GridBooking {
   is_vip: boolean;
   has_notes: boolean;
   has_design: boolean;
+  /** Booking carries a non-empty `staff_request_note`. Drives the
+   * heart icon in the booking-block icon stack. */
+  has_staff_request: boolean;
 }
 
 export interface StaffTimelineGridProps {
@@ -110,6 +113,9 @@ export interface StaffTimelineGridProps {
       notes: string;
       late: string;
       design: string;
+      /** Aria label for the heart icon shown when the booking has a
+       * non-empty staff request note. */
+      staffRequest: string;
     };
   };
   /** When false, hides per-staff role line and busy ring on avatars (`staff_performance`). */
@@ -519,7 +525,17 @@ function StaffTimelineGridImpl({
                   <div
                     className={cn(
                       "absolute inset-0 flex",
-                      assignMode ? "z-[3]" : "z-[1]",
+                      assignMode
+                        ? "z-[3]"
+                        : // When not in assign mode the slot buttons
+                          // are inert (tabIndex=-1, aria-hidden, opacity-0)
+                          // but they're still real <button> elements —
+                          // belt-and-suspenders pointer-events-none on the
+                          // wrapper guarantees they NEVER swallow a click
+                          // intended for a booking block above. Past-date
+                          // bookings reported as un-clickable in QA traced
+                          // back to a stacking-context edge case here.
+                          "z-[1] pointer-events-none",
                     )}
                   >
                     {Array.from({ length: TOTAL_SLOTS }, (_, slotIndex) => (
@@ -531,7 +547,7 @@ function StaffTimelineGridImpl({
                         aria-hidden={!assignMode}
                         className={cn(
                           "h-full shrink-0 border-0 bg-transparent p-0 opacity-0 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-nq-primary/50",
-                          assignMode && "cursor-copy",
+                          assignMode ? "cursor-copy pointer-events-auto" : "",
                         )}
                         style={{ width: SLOT_PX }}
                         onMouseEnter={() =>
@@ -598,6 +614,7 @@ function StaffTimelineGridImpl({
                           isVip={b.is_vip}
                           hasNotes={b.has_notes}
                           hasDesign={b.has_design}
+                          hasStaffRequest={b.has_staff_request}
                           isLate={isLate}
                           iconLabels={labels.bookingIcon}
                         />
