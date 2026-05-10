@@ -1,6 +1,6 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/server";
-import { isSuperAdmin } from "@/shared/lib/superadmin";
+import { getSuperAdminRole } from "@/shared/lib/superadmin";
 import { loadAllSalons } from "@/shared/superadmin/superadminActions";
 import { SuperAdminPanel } from "@/components/superadmin/SuperAdminPanel";
 
@@ -13,14 +13,15 @@ export default async function SuperAdminPage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect("/superadmin/login");
   }
 
-  if (!(await isSuperAdmin(user.id))) {
-    // Not a superadmin — bounce to login. We don't reveal that the page
-    // exists with a 403 because the route should be invisible to anyone
-    // who isn't on the superadmins table.
-    redirect("/login");
+  const role = await getSuperAdminRole(user.id);
+  if (role === null) {
+    // Not a superadmin — 404 instead of redirecting. Per
+    // docs/PERMISSION_MATRIX.md §8.3 we do not leak that the route
+    // exists to authenticated salon owners.
+    notFound();
   }
 
   const result = await loadAllSalons();

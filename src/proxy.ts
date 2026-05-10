@@ -120,12 +120,20 @@ export async function proxy(request: NextRequest) {
     return applyCookiesFrom(redirect, supabaseResponse);
   }
 
-  // SuperAdmin route: unauthenticated users → /login. The page itself
-  // does the membership check (isSuperAdmin) and bounces non-admin
-  // signed-in users; we keep this layer minimal so the gate logic
-  // stays in one place (the page server component).
-  if (!user && pathname.startsWith("/superadmin")) {
-    const redirect = NextResponse.redirect(new URL("/login", request.url));
+  // SuperAdmin routes: unauthenticated visitors are bounced to
+  // /superadmin/login (the dedicated operator sign-in surface). The
+  // login route itself is excluded from this gate — it MUST stay
+  // reachable while signed out. Per-page membership / role checks
+  // (isSuperAdmin / getSuperAdminRole) still run inside the server
+  // components so we keep the authoritative gate in one place.
+  if (
+    !user &&
+    pathname.startsWith("/superadmin") &&
+    pathname !== "/superadmin/login"
+  ) {
+    const redirect = NextResponse.redirect(
+      new URL("/superadmin/login", request.url),
+    );
     return applyCookiesFrom(redirect, supabaseResponse);
   }
 
