@@ -84,6 +84,7 @@ export async function loadBookingServicesForSalonSlug(
     .from("services")
     .select("id, name, duration_minutes, buffer_minutes, price_cents")
     .eq("salon_id", salonId)
+    .is("deleted_at" as never, null)
     .order("name", { ascending: true });
 
   if (servicesErr) {
@@ -97,6 +98,7 @@ export async function loadBookingServicesForSalonSlug(
     .select("id, name, job_role")
     .eq("salon_id", salonId)
     .eq("status", "active")
+    .is("deleted_at" as never, null)
     .order("name", { ascending: true });
 
   if (staffErr) {

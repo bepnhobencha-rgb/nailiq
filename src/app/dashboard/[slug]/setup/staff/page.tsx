@@ -43,11 +43,13 @@ export default async function SetupStaffPage({ params }: Props) {
       .from("staff")
       .select("id, name, job_role, status")
       .eq("salon_id", ctx.salon.id)
+      .is("deleted_at" as never, null)
       .order("name", { ascending: true }),
     ctx.supabase
       .from("services")
       .select("id, name")
       .eq("salon_id", ctx.salon.id)
+      .is("deleted_at" as never, null)
       .order("name", { ascending: true }),
   ]);
 

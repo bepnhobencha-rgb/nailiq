@@ -99,6 +99,7 @@ export async function performEditBooking(
     .select("id")
     .eq("id", newStaffId)
     .eq("salon_id", salonId)
+    .is("deleted_at" as never, null)
     .maybeSingle();
 
   if (!staffRow?.id) {
@@ -141,6 +142,7 @@ export async function performEditBooking(
     .select("id, duration_minutes, buffer_minutes, price_cents")
     .eq("id", newServiceId)
     .eq("salon_id", salonId)
+    .is("deleted_at" as never, null)
     .maybeSingle();
 
   if (svcErr) {
@@ -208,6 +210,7 @@ export async function performEditBooking(
       .select("duration_minutes, buffer_minutes, price_cents")
       .eq("id", effectiveAddonId)
       .eq("salon_id", salonId)
+      .is("deleted_at" as never, null)
       .maybeSingle();
     if (addonErr) {
       console.error("[performEditBooking] addon service", addonErr);

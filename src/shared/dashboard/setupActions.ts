@@ -120,15 +120,18 @@ async function refreshSalonProfileComplete(
     .eq("id", salonId)
     .maybeSingle();
 
+  // profile_complete refresh — soft-deleted rows don't count.
   const { count: sc } = await supabase
     .from("services")
     .select("*", { count: "exact", head: true })
-    .eq("salon_id", salonId);
+    .eq("salon_id", salonId)
+    .is("deleted_at" as never, null);
 
   const { count: tc } = await supabase
     .from("staff")
     .select("*", { count: "exact", head: true })
-    .eq("salon_id", salonId);
+    .eq("salon_id", salonId)
+    .is("deleted_at" as never, null);
 
   const addr =
     row && typeof row === "object" && "address" in row
@@ -184,10 +187,14 @@ async function loadPlanAndCount(
     (salonRow as { subscription_plan?: unknown } | null)?.subscription_plan,
   );
 
+  // Plan-limit checks count LIVE rows only — soft-deleted rows free
+  // up the slot, otherwise a salon could hit its limit even after
+  // deleting/restoring rows.
   const { count, error: countErr } = await supabase
     .from(table)
     .select("id", { count: "exact", head: true })
-    .eq("salon_id", salonId);
+    .eq("salon_id", salonId)
+    .is("deleted_at" as never, null);
   if (countErr) {
     console.error("[loadPlanAndCount] count", table, countErr);
     return null;
@@ -360,7 +367,8 @@ export async function addService(
     const { data: staffRows, error: staffErr } = await supabase
       .from("staff")
       .select("id")
-      .eq("salon_id", r.salon.id);
+      .eq("salon_id", r.salon.id)
+      .is("deleted_at" as never, null);
     if (staffErr) {
       console.error("[addService] staff load for autoattach", staffErr);
       return fail("server_error");
@@ -430,6 +438,7 @@ export async function updateService(
     .select("id")
     .eq("id", serviceId)
     .eq("salon_id", r.salon.id)
+    .is("deleted_at" as never, null)
     .maybeSingle();
 
   if (fetchErr || !mine?.id) {
@@ -440,7 +449,8 @@ export async function updateService(
     .from("services")
     .update(patch)
     .eq("id", serviceId)
-    .eq("salon_id", r.salon.id);
+    .eq("salon_id", r.salon.id)
+    .is("deleted_at" as never, null);
 
   if (error) {
     console.error("[updateService]", error);
@@ -465,7 +475,8 @@ export async function deleteService(
   const { count, error: cErr } = await supabase
     .from("services")
     .select("*", { count: "exact", head: true })
-    .eq("salon_id", r.salon.id);
+    .eq("salon_id", r.salon.id)
+    .is("deleted_at" as never, null);
 
   if (cErr || (count ?? 0) <= 1) {
     return fail("minimum_services");
@@ -476,6 +487,7 @@ export async function deleteService(
     .select("id")
     .eq("id", serviceId)
     .eq("salon_id", r.salon.id)
+    .is("deleted_at" as never, null)
     .maybeSingle();
 
   if (!mine?.id) return fail("not_found");
@@ -495,20 +507,19 @@ export async function deleteService(
     return fail("service_in_use");
   }
 
+  // Soft delete (2026-05-10): UPDATE deleted_at instead of DELETE so
+  // the row stays auditable + restorable from SuperAdmin. All read
+  // paths filter `deleted_at IS NULL`. Cast: column not yet in the
+  // auto-generated DB types.
   const { error } = await supabase
     .from("services")
-    .delete()
+    .update({ deleted_at: new Date().toISOString() } as never)
     .eq("id", serviceId)
-    .eq("salon_id", r.salon.id);
+    .eq("salon_id", r.salon.id)
+    .is("deleted_at", null);
 
   if (error) {
     console.error("[deleteService]", error);
-    if (
-      typeof error.code === "string" &&
-      error.code === "23503"
-    ) {
-      return fail("service_in_use");
-    }
     return fail("server_error");
   }
 
@@ -626,6 +637,7 @@ export async function updateStaff(
     .select("id")
     .eq("id", staffId)
     .eq("salon_id", r.salon.id)
+    .is("deleted_at" as never, null)
     .maybeSingle();
 
   if (!mine?.id) return fail("not_found");
@@ -635,7 +647,8 @@ export async function updateStaff(
       .from("staff")
       .update(patch)
       .eq("id", staffId)
-      .eq("salon_id", r.salon.id);
+      .eq("salon_id", r.salon.id)
+      .is("deleted_at" as never, null);
 
     if (error) {
       console.error("[updateStaff]", error);
@@ -684,7 +697,8 @@ export async function deleteStaff(
   const { count } = await supabase
     .from("staff")
     .select("*", { count: "exact", head: true })
-    .eq("salon_id", r.salon.id);
+    .eq("salon_id", r.salon.id)
+    .is("deleted_at" as never, null);
 
   if ((count ?? 0) <= 1) {
     return fail("minimum_staff");
@@ -695,6 +709,7 @@ export async function deleteStaff(
     .select("id")
     .eq("id", staffId)
     .eq("salon_id", r.salon.id)
+    .is("deleted_at" as never, null)
     .maybeSingle();
 
   if (!mine?.id) return fail("not_found");
@@ -737,20 +752,19 @@ export async function deleteStaff(
     return fail("server_error");
   }
 
+  // Soft delete (2026-05-10): UPDATE deleted_at instead of DELETE so
+  // historical bookings keep a resolvable staff_id and SuperAdmin can
+  // restore. All read paths filter `deleted_at IS NULL`. Cast: column
+  // not yet in the auto-generated DB types.
   const { error } = await supabase
     .from("staff")
-    .delete()
+    .update({ deleted_at: new Date().toISOString() } as never)
     .eq("id", staffId)
-    .eq("salon_id", r.salon.id);
+    .eq("salon_id", r.salon.id)
+    .is("deleted_at", null);
 
   if (error) {
     console.error("[deleteStaff]", error);
-    if (
-      typeof error.code === "string" &&
-      error.code === "23503"
-    ) {
-      return fail("staff_has_bookings");
-    }
     return fail("server_error");
   }
 
