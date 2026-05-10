@@ -443,11 +443,13 @@ export async function loadReceptionistCenterData(
       .from("staff")
       .select("id, name, job_role, status, skills")
       .eq("salon_id", ctx.salon.id)
+      .is("deleted_at" as never, null)
       .order("created_at", { ascending: true }),
     supabase
       .from("services")
       .select("id, name, duration_minutes, buffer_minutes, price_cents, created_at")
       .eq("salon_id", ctx.salon.id)
+      .is("deleted_at" as never, null)
       .order("created_at", { ascending: true }),
     supabase
       .from("bookings")

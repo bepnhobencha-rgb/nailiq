@@ -96,6 +96,10 @@ export async function loadSalonReports(
 
   // Pull staff names in one go to label topStaff aggregates without
   // forcing a per-row join in the bookings query.
+  //
+  // Intentionally NOT filtering deleted_at here — soft-deleted staff
+  // can still appear in historical aggregates and we want their name
+  // to resolve (better than rendering a blank in the report).
   const { data: staffRows, error: staffErr } = await supabase
     .from("staff")
     .select("id, name")

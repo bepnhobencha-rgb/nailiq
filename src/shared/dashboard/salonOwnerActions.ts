@@ -323,15 +323,19 @@ export async function loadSalonOwnerDashboard(
     mapDashboardBookingRow(r as unknown as BookingRowDb),
   );
 
+  // Setup-checklist counts — soft-deleted services/staff don't count
+  // toward "profile complete".
   const { count: servicesCount, error: scErr } = await supabase
     .from("services")
     .select("*", { count: "exact", head: true })
-    .eq("salon_id", salon.id);
+    .eq("salon_id", salon.id)
+    .is("deleted_at" as never, null);
 
   const { count: staffCount, error: stErr } = await supabase
     .from("staff")
     .select("*", { count: "exact", head: true })
-    .eq("salon_id", salon.id);
+    .eq("salon_id", salon.id)
+    .is("deleted_at" as never, null);
 
   if (scErr || stErr) {
     console.error("[loadSalonOwnerDashboard] counts", scErr ?? stErr);

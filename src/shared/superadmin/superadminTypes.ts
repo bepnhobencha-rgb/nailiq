@@ -77,6 +77,46 @@ export type UpdateSalonFlagsResult =
         | "server_error";
     };
 
+/** Tables exposed to SuperAdmin restore. Bookings + salons are
+ * intentionally excluded for now — bookings have no soft-delete write
+ * path yet, and salon archive needs its own separate flow. */
+export const RESTORABLE_TABLES = [
+  "services",
+  "staff",
+  "client_profiles",
+] as const;
+export type RestorableTable = (typeof RESTORABLE_TABLES)[number];
+
+export type DeletedRecord = {
+  id: string;
+  table: RestorableTable;
+  /** Human-readable label (service name / staff name / client phone). */
+  label: string;
+  deleted_at: string;
+};
+
+export type LoadDeletedRecordsResult =
+  | { ok: true; records: DeletedRecord[] }
+  | { ok: false; error: "unauthorized" | "server_error" };
+
+export type RestoreSalonRecordResult =
+  | { ok: true }
+  | {
+      ok: false;
+      error:
+        | "unauthorized"
+        | "invalid_payload"
+        | "not_found"
+        | "server_error";
+    };
+
+export function isRestorableTable(value: unknown): value is RestorableTable {
+  return (
+    typeof value === "string" &&
+    (RESTORABLE_TABLES as readonly string[]).includes(value)
+  );
+}
+
 export function normalizeFeatureFlags(input: unknown): SuperAdminFeatureFlags {
   if (!input || typeof input !== "object") return {};
   const src = input as Record<string, unknown>;

@@ -116,6 +116,7 @@ export async function addWalkinToQueue(
     .select("id, price_cents")
     .eq("id", serviceId)
     .eq("salon_id", ctx.salon.id)
+    .is("deleted_at" as never, null)
     .maybeSingle();
 
   if (svcErr) {
@@ -245,6 +246,7 @@ export async function assignWalkinToSlot(
     .eq("id", staffId)
     .eq("salon_id", ctx.salon.id)
     .eq("status", "active")
+    .is("deleted_at" as never, null)
     .maybeSingle();
 
   if (!staffRow?.id) return fail("staff_not_found");

@@ -187,6 +187,7 @@ export async function submitPublicBooking(
     .select("id, name, duration_minutes, buffer_minutes, price_cents")
     .eq("id", serviceId)
     .eq("salon_id", salon.id)
+    .is("deleted_at" as never, null)
     .single();
 
   if (serviceErr || !service) throw new Error("service_not_found");
@@ -232,6 +233,7 @@ export async function submitPublicBooking(
       .select("id, name, duration_minutes, buffer_minutes, price_cents")
       .eq("id", addonServiceId)
       .eq("salon_id", salon.id)
+      .is("deleted_at" as never, null)
       .maybeSingle();
 
     if (addErr || !addSvc) throw new Error("addon_not_found");
@@ -279,6 +281,7 @@ export async function submitPublicBooking(
     .from("staff")
     .select("id, name")
     .eq("salon_id", salon.id)
+    .is("deleted_at" as never, null)
     .order("name", { ascending: true });
 
   if (staffListErr) throw new Error("staff_load_failed");
@@ -520,6 +523,7 @@ export async function submitPublicBooking(
       .from("client_profiles")
       .select("visit_count")
       .eq("phone", phoneOk.digits)
+      .is("deleted_at" as never, null)
       .maybeSingle();
 
     const nextVisits = (existingProfile?.visit_count ?? 0) + 1;

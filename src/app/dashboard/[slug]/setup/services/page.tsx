@@ -27,6 +27,7 @@ export default async function SetupServicesPage({ params }: Props) {
     .from("services")
     .select("id, name, price_cents, duration_minutes, buffer_minutes")
     .eq("salon_id", ctx.salon.id)
+    .is("deleted_at" as never, null)
     .order("name", { ascending: true });
 
   if (error) {

@@ -4,9 +4,14 @@ import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { isSuperAdmin } from "@/shared/lib/superadmin";
 import {
+  isRestorableTable,
   normalizeFeatureFlags,
   normalizePlanOverride,
+  type DeletedRecord,
   type LoadAllSalonsResult,
+  type LoadDeletedRecordsResult,
+  type RestorableTable,
+  type RestoreSalonRecordResult,
   type SuperAdminFeatureFlags,
   type SuperAdminSalonRow,
   type UpdateSalonFlagsInput,
@@ -216,6 +221,124 @@ export async function updateSalonFlags(
   if (upErr) {
     console.error("[superadmin/updateSalonFlags] update", upErr);
     return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Soft-deleted records for a salon (services + staff + client_profiles).
+ * Used by the SuperAdmin "Show deleted" expander; pairs with
+ * restoreSalonRecord to flip `deleted_at` back to NULL.
+ */
+export async function loadDeletedRecordsForSalon(
+  salonId: string,
+): Promise<LoadDeletedRecordsResult> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+
+  const id = salonId.trim();
+  if (!id) return { ok: true, records: [] };
+
+  let admin;
+  try {
+    admin = createServiceRoleClient();
+  } catch (e) {
+    console.error("[superadmin/loadDeletedRecords] service role", e);
+    return { ok: false, error: "server_error" };
+  }
+
+  type Row = { id: string; deleted_at: string | null; label: string };
+  const records: DeletedRecord[] = [];
+
+  const services = (await admin
+    .from("services")
+    .select("id, name, deleted_at" as never)
+    .eq("salon_id", id)
+    .not("deleted_at", "is", null)
+    .order("deleted_at", { ascending: false })) as {
+    data: Array<{ id: string; name?: string | null; deleted_at?: string | null }> | null;
+    error: unknown;
+  };
+  if (services.data) {
+    for (const r of services.data) {
+      records.push({
+        id: String(r.id),
+        table: "services",
+        label: String(r.name ?? "(unnamed service)").trim() || "(unnamed service)",
+        deleted_at: r.deleted_at ?? "",
+      });
+    }
+  }
+
+  const staff = (await admin
+    .from("staff")
+    .select("id, name, deleted_at" as never)
+    .eq("salon_id", id)
+    .not("deleted_at", "is", null)
+    .order("deleted_at", { ascending: false })) as {
+    data: Array<{ id: string; name?: string | null; deleted_at?: string | null }> | null;
+    error: unknown;
+  };
+  if (staff.data) {
+    for (const r of staff.data) {
+      records.push({
+        id: String(r.id),
+        table: "staff",
+        label: String(r.name ?? "(unnamed staff)").trim() || "(unnamed staff)",
+        deleted_at: r.deleted_at ?? "",
+      });
+    }
+  }
+
+  // client_profiles is NOT salon-scoped on the row level (phone is the
+  // PK), but typically a salon-scoped query is misleading. We skip per-
+  // salon listing here and surface them via a future global panel.
+  // Reserved: leaving the type union open via RESTORABLE_TABLES.
+  void records;
+
+  return { ok: true, records };
+}
+
+export async function restoreSalonRecord(
+  table: string,
+  recordId: string,
+): Promise<RestoreSalonRecordResult> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+
+  if (!isRestorableTable(table)) {
+    return { ok: false, error: "invalid_payload" };
+  }
+  const id = recordId.trim();
+  if (!id) return { ok: false, error: "invalid_payload" };
+
+  let admin;
+  try {
+    admin = createServiceRoleClient();
+  } catch (e) {
+    console.error("[superadmin/restoreSalonRecord] service role", e);
+    return { ok: false, error: "server_error" };
+  }
+
+  const t: RestorableTable = table;
+  const { data, error } = (await admin
+    .from(t)
+    .update({ deleted_at: null } as never)
+    .eq("id", id)
+    .not("deleted_at", "is", null)
+    .select("id")
+    .maybeSingle()) as {
+    data: { id?: string } | null;
+    error: unknown;
+  };
+
+  if (error) {
+    console.error("[superadmin/restoreSalonRecord] update", error);
+    return { ok: false, error: "server_error" };
+  }
+  if (!data?.id) {
+    return { ok: false, error: "not_found" };
   }
 
   return { ok: true };

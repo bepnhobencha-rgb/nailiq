@@ -120,28 +120,31 @@ export async function loadClientProfiles(
   // types (added by the 20260509210000 migration); cast the select so
   // the projection still typechecks. Becomes a typed call on next type
   // regeneration.
+  type ProfilesQuery = {
+    is: (col: string, val: null) => ProfilesQuery;
+    in: (
+      col: string,
+      vals: string[],
+    ) => Promise<{
+      data:
+        | Array<{
+            id: string;
+            phone: string;
+            name: string | null;
+            email: string | null;
+            notes: string | null;
+            is_vip: boolean | null;
+          }>
+        | null;
+      error: { message: string } | null;
+    }>;
+  };
   const profilesBuilder = supabase.from("client_profiles") as unknown as {
-    select: (cols: string) => {
-      in: (
-        col: string,
-        vals: string[],
-      ) => Promise<{
-        data:
-          | Array<{
-              id: string;
-              phone: string;
-              name: string | null;
-              email: string | null;
-              notes: string | null;
-              is_vip: boolean | null;
-            }>
-          | null;
-        error: { message: string } | null;
-      }>;
-    };
+    select: (cols: string) => ProfilesQuery;
   };
   const { data: profiles, error: profilesErr } = await profilesBuilder
     .select("id, phone, name, email, notes, is_vip")
+    .is("deleted_at", null)
     .in("phone", phones);
 
   if (profilesErr) {
@@ -214,10 +217,12 @@ export async function updateClientProfile(
   }
 
   const supabase = createServiceRoleClient();
+  // Don't update soft-deleted profiles — restore them first if needed.
   const { data, error } = await supabase
     .from("client_profiles")
     .update(patch as never)
     .eq("phone", phone)
+    .is("deleted_at" as never, null)
     .select("phone")
     .maybeSingle();
 
