@@ -1314,8 +1314,27 @@ function ReceptionistCenterInner({
                 onChange={(next) => void onDateSwitchChange(next)}
                 labels={rcMessages.dateSwitcher}
               />
+              {/*
+                * Subtle pulse-dot replaces the prior "Loading day..."
+                * text. QA reported the text "lingered too long" — really
+                * the abrupt show/hide flickered + the bare text gave no
+                * visual continuity with the date-switcher's
+                * `pointer-events-none opacity-60` cue. The dot pulses
+                * via existing motion tokens and `animate-pulse` so it
+                * reads as a calm in-progress signal; full text stays
+                * reachable as the aria-label for screen readers.
+                */}
               {dayLoading ? (
-                <span className="text-xs font-medium text-nq-muted">{rcMessages.loadingDay}</span>
+                <span
+                  role="status"
+                  aria-label={rcMessages.loadingDay}
+                  className="inline-flex items-center gap-1.5 text-xs text-nq-muted"
+                >
+                  <span
+                    aria-hidden
+                    className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-nq-primary/80"
+                  />
+                </span>
               ) : null}
             </div>
             {isViewingToday ? (

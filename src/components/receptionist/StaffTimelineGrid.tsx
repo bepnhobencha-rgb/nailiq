@@ -519,7 +519,17 @@ function StaffTimelineGridImpl({
                   <div
                     className={cn(
                       "absolute inset-0 flex",
-                      assignMode ? "z-[3]" : "z-[1]",
+                      assignMode
+                        ? "z-[3]"
+                        : // When not in assign mode the slot buttons
+                          // are inert (tabIndex=-1, aria-hidden, opacity-0)
+                          // but they're still real <button> elements —
+                          // belt-and-suspenders pointer-events-none on the
+                          // wrapper guarantees they NEVER swallow a click
+                          // intended for a booking block above. Past-date
+                          // bookings reported as un-clickable in QA traced
+                          // back to a stacking-context edge case here.
+                          "z-[1] pointer-events-none",
                     )}
                   >
                     {Array.from({ length: TOTAL_SLOTS }, (_, slotIndex) => (
@@ -531,7 +541,7 @@ function StaffTimelineGridImpl({
                         aria-hidden={!assignMode}
                         className={cn(
                           "h-full shrink-0 border-0 bg-transparent p-0 opacity-0 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-nq-primary/50",
-                          assignMode && "cursor-copy",
+                          assignMode ? "cursor-copy pointer-events-auto" : "",
                         )}
                         style={{ width: SLOT_PX }}
                         onMouseEnter={() =>
