@@ -42,7 +42,13 @@ export function DashboardShell({
   messagesCount,
   salons,
 }: Props) {
-  const { collapsed } = useSidebarCollapsed();
+  // Single hook instance owns the collapse state. We pass both the
+  // value AND the toggle to DashboardSidebar so its toggle button
+  // mutates the same React state that drives the CSS variable below.
+  // Prior bug: each component called useSidebarCollapsed() separately,
+  // so the sidebar's button only flipped its OWN state — the Shell's
+  // CSS variable never updated and the aside width stayed stuck.
+  const { collapsed, toggle } = useSidebarCollapsed();
   const sidebarWidth = collapsed ? "4rem" : "15rem";
 
   return (
@@ -57,6 +63,8 @@ export function DashboardShell({
         walkinQueueCount={walkinQueueCount}
         messagesCount={messagesCount}
         salons={salons}
+        collapsed={collapsed}
+        onToggleCollapsed={toggle}
       />
       <main
         className="min-h-dvh md:pl-[var(--nq-sidebar-w)] pb-16 md:pb-0"
