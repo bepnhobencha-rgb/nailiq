@@ -69,23 +69,80 @@ export function getPlanLimits(plan: string | null | undefined): PlanLimits {
  * Limit-gate helpers. The salon row carries `subscription_plan`; we
  * accept it as a loose shape so callers can pass either the resolved
  * row or a `{ subscription_plan }` projection.
+ *
+ * SuperAdmin overrides (added 2026-05-10):
+ * - `plan_override` short-circuits subscription_plan when non-null.
+ * - `feature_flags.unlimited_staff` lifts maxStaff to Infinity.
+ * - `feature_flags.unlimited_services` lifts maxServices to Infinity.
+ *
+ * Existing callers pass `{ subscription_plan }` only; the new fields
+ * are optional and absent → no change in behaviour.
  */
 export type PlanCheckSalon = {
   subscription_plan?: string | null;
+  plan_override?: string | null;
+  feature_flags?: Record<string, unknown> | null;
 };
+
+/**
+ * The plan that actually applies to a salon, after SuperAdmin
+ * `plan_override` resolution. Falls back to subscription_plan, then
+ * "free" if both are null/invalid.
+ */
+export function getEffectivePlan(salon: PlanCheckSalon): SubscriptionPlan {
+  const override = salon.plan_override;
+  if (typeof override === "string" && isSubscriptionPlan(override)) {
+    return override;
+  }
+  return parseSubscriptionPlan(salon.subscription_plan);
+}
+
+function readBooleanFlag(
+  flags: PlanCheckSalon["feature_flags"],
+  key: string,
+): boolean {
+  if (!flags || typeof flags !== "object") return false;
+  const value = (flags as Record<string, unknown>)[key];
+  return value === true;
+}
+
+/**
+ * Plan limits applied to this salon, after `plan_override` resolution
+ * AND `feature_flags` overrides (`unlimited_staff` /
+ * `unlimited_services` lift their respective caps to Infinity).
+ */
+export function getEffectivePlanLimits(salon: PlanCheckSalon): PlanLimits {
+  const base = PLAN_LIMITS[getEffectivePlan(salon)];
+  const flags = salon.feature_flags ?? null;
+
+  if (
+    !readBooleanFlag(flags, "unlimited_staff") &&
+    !readBooleanFlag(flags, "unlimited_services")
+  ) {
+    return base;
+  }
+
+  return {
+    ...base,
+    maxStaff: readBooleanFlag(flags, "unlimited_staff")
+      ? Number.POSITIVE_INFINITY
+      : base.maxStaff,
+    maxServices: readBooleanFlag(flags, "unlimited_services")
+      ? Number.POSITIVE_INFINITY
+      : base.maxServices,
+  };
+}
 
 export function canAddStaff(
   salon: PlanCheckSalon,
   currentStaffCount: number,
 ): boolean {
-  return currentStaffCount < getPlanLimits(salon.subscription_plan).maxStaff;
+  return currentStaffCount < getEffectivePlanLimits(salon).maxStaff;
 }
 
 export function canAddService(
   salon: PlanCheckSalon,
   currentServiceCount: number,
 ): boolean {
-  return (
-    currentServiceCount < getPlanLimits(salon.subscription_plan).maxServices
-  );
+  return currentServiceCount < getEffectivePlanLimits(salon).maxServices;
 }
