@@ -53,12 +53,20 @@ export interface BookingBlockProps {
   /** When false, hides price segment in the meta line (`revenue_today` desk module). */
   showPrice?: boolean;
   /**
-   * Density-driven flag. When false (Simple density), the secondary
-   * meta line (service name + price) is hidden so blocks read as
-   * client-name-only chips. Default true preserves Balanced/Pro
-   * behavior + back-compat with callers that don't thread density.
+   * Density-driven flag. When false (Simple density), the SERVICE NAME
+   * line is hidden so blocks read as client-name-only chips. Default
+   * true preserves Balanced/Pro behavior + back-compat with callers
+   * that don't thread density.
    */
   showMetaLine?: boolean;
+  /**
+   * Density-driven flag. When false (Simple + Balanced), the time
+   * range + price line is hidden — Balanced shows name + service
+   * only; the timeline axis itself communicates time. Pro flips this
+   * on so receptionists get the in-block time/price stamp. Default
+   * true preserves the prior all-or-nothing behavior.
+   */
+  showTimeRange?: boolean;
   /**
    * Density-driven minimum height (px). Visual override only — schedule
    * math is unchanged. Default `min-h-11` (44px) tailwind class still
@@ -152,6 +160,7 @@ export function BookingBlock(props: BookingBlockProps) {
     onClick,
     showPrice = true,
     showMetaLine = true,
+    showTimeRange = true,
     minHeightPx,
     showWalkinAccent = true,
     isVip = false,
@@ -219,19 +228,19 @@ export function BookingBlock(props: BookingBlockProps) {
             {clientName}
           </p>
           {showMetaLine ? (
-            <>
-              <p className={cn("truncate text-[11px] leading-snug", styles.meta)}>
-                {serviceName}
-              </p>
-              <p
-                className={cn(
-                  "truncate font-mono text-[11px] tabular-nums leading-snug",
-                  styles.meta,
-                )}
-              >
-                {timePriceLine}
-              </p>
-            </>
+            <p className={cn("truncate text-[11px] leading-snug", styles.meta)}>
+              {serviceName}
+            </p>
+          ) : null}
+          {showTimeRange ? (
+            <p
+              className={cn(
+                "truncate font-mono text-[11px] tabular-nums leading-snug",
+                styles.meta,
+              )}
+            >
+              {timePriceLine}
+            </p>
           ) : null}
         </div>
 

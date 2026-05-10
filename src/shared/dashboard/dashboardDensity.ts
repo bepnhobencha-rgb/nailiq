@@ -29,10 +29,22 @@ export interface DensityConfig {
   /** Min height in pixels for a booking block (visual only — schedule math unchanged). */
   bookingBlockMinHeight: number;
   /**
-   * Show the secondary meta line on booking blocks (service name + price).
-   * Off in Simple to keep blocks calm; on otherwise.
+   * Show the SERVICE NAME line on booking blocks. Off in Simple to keep
+   * blocks calm; on in Balanced + Pro.
+   *
+   * Granularity (added 2026-05-10): split out from `showTimeRangeInBlock`
+   * so Balanced can show name+service WITHOUT the noisy time/price line
+   * — that line stays a Pro-only signal. Previously these were one
+   * boolean and Balanced ≡ Pro visually.
    */
   showMetaLine: boolean;
+  /**
+   * Show the time-range + price line on booking blocks (e.g. `12:30p –
+   * 1:35p · $45.00`). Pro-only by default — Balanced suppresses it so
+   * blocks don't get crowded; the receptionist still sees the time via
+   * the timeline axis itself.
+   */
+  showTimeRangeInBlock: boolean;
   /**
    * Render `$price` segment inside booking blocks. Composes with
    * `dashboard_modules.revenue_today` — both must be true for the price
@@ -60,23 +72,31 @@ export interface DensityConfig {
  * by density.
  */
 export const DENSITY_CONFIG: Record<DensityLevel, DensityConfig> = {
+  // Simple: client name only.
   simple: {
     bookingBlockMinHeight: 56,
     showMetaLine: false,
+    showTimeRangeInBlock: false,
     showPriceInBlock: false,
     showSkillBadges: false,
     timeSlotMinutes: 40,
   },
+  // Balanced: client name + service name. Time stays on the timeline
+  // axis; price stays a Pro-only signal.
   balanced: {
     bookingBlockMinHeight: 44,
     showMetaLine: true,
-    showPriceInBlock: true,
+    showTimeRangeInBlock: false,
+    showPriceInBlock: false,
     showSkillBadges: true,
     timeSlotMinutes: 30,
   },
+  // Pro: client name + service + time range (price gated on
+  // `revenue_today` desk module).
   pro: {
     bookingBlockMinHeight: 36,
     showMetaLine: true,
+    showTimeRangeInBlock: true,
     showPriceInBlock: true,
     showSkillBadges: true,
     timeSlotMinutes: 20,
