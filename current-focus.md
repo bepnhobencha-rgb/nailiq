@@ -65,10 +65,36 @@ Estimate: 2-3h spread trong tuần. Conversion typical 10-20%, nên 20 DMs → ~
 
 Massive 5/9 ship day pulled forward most code-side V1 features. Remaining sprint focus:
 
-- **Task A:** Unblock external services — Stripe business docs, Twilio A2P 10DLC application, Resend DNS records, Supabase Auth URL config (Cowork prompt ready).
-- **Task B:** Beta user pipeline outreach — list 20 salons, DM 10, target 5 confirmed.
-- **Task C:** Public marketing site (last code-side V1 item).
-- **Task D:** First beta salon install rehearsal — dogfood end-to-end (register → setup wizard → walk-in → reports).
+### Track A — V1 launch path (highest priority, blocking)
+
+- **Task A1:** Unblock external services — Stripe business docs, Twilio A2P 10DLC application, Resend DNS records, Supabase Auth URL config (Cowork prompt ready).
+- **Task A2:** Beta user pipeline outreach — list 20 salons, DM 10, target 5 confirmed.
+- **Task A3:** Public marketing site (last code-side V1 item).
+- **Task A4:** First beta salon install rehearsal — dogfood end-to-end (register → setup wizard → walk-in → reports).
+- **Task A5:** E2E CI stabilization — PR #85 (diagnostics) merged → identify hung specs → follow-up fix PR.
+
+### Track B — Superadmin Foundation Shell V1 (concurrent, non-blocking)
+
+PM-approved 2026-05-10. ADR in [decisions-log.md](decisions-log.md). Governance amendments: [PERMISSION_MATRIX.md §8](docs/PERMISSION_MATRIX.md), [DASHBOARD_LAYOUT_RULES.md §10](docs/DASHBOARD_LAYOUT_RULES.md).
+
+**Strict guardrail**: Track A always overrides Track B. If V1 launch blockers (auth / queue / E2E / Twilio / Stripe / Resend) regress → pause Track B immediately, resume only when Track A is green.
+
+**Scope (in)**: auth + protected routes + shell layout + sidebar + salon list/detail (read-only) + impersonation foundation (real cookie swap, audit, banner) + audit log structure + feature flags minimal + announcements minimal + disabled module placeholders for Phase 2/3 routes.
+
+**Scope (out, deferred to Phase 2/3)**: AI Ops, rollout engine, advanced analytics, risk engine, churn prediction, live ops, billing infrastructure beyond minimal flags, fake metrics, speculative backend systems.
+
+| Phase | Scope | Est | Status |
+|---|---|---|---|
+| 1A | DB schema + RLS (`superadmins.role`, `superadmin_audit_logs`, `platform_feature_flags`, `platform_announcements`) | 2-3h | Pending governance PR merge |
+| 1B | Auth surface — `/superadmin/login` + role gate | 3-4h | Pending 1A |
+| 1C | Shell + sidebar + ~30 disabled-module routes | 4-5h | Pending 1B |
+| 1D | Salon list + detail (read-only) | 4-5h | Pending 1C |
+| 1E | Impersonation foundation (founder-only) | 4-6h | Pending 1D |
+| 1F | Feature flags + announcements minimal admin | 2-3h | Pending 1E |
+
+**Total estimate**: ~20-25h ≈ 3 days focused, spread across 5-7 calendar days.
+
+**Pre-flight**: 4 governance docs amended (this PR), PR #85 (E2E diagnostics) merged, Queue assign bug reproduced or deferred to V1.1.
 
 Detailed sub-tasks TBD Monday morning (5/11).
 

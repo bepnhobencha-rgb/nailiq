@@ -341,3 +341,68 @@ Collapse state persists in `localStorage` under the key **`nailiq-sidebar-collap
 Sidebar visual specifics not enumerated here (icon weight, divider hairline opacity) inherit from `COLOR_TOKENS.md` and `COMPONENT_RULES.md`. Animation timing for the collapse transition follows `ANIMATION_RULES.md` (no inline ms literals).
 
 ---
+
+## 10. Superadmin app-shell sidebar _(added 2026-05-10)_
+
+**Scope clarification.** This section governs the **Superadmin app-shell** wrapping every `/superadmin/*` route. It is a **separate** sidebar from §9 (dashboard sidebar for salon-facing routes). The two sidebars never coexist in one viewport — `/superadmin/*` is a distinct operational surface for internal NailIQ operators, not a fourth zone of the Front Desk three-zone layout in §2.
+
+**Why a second sidebar.** Superadmin operators run cross-tenant workflows (salons list, incidents, feature flags, billing analysts) that do not fit inside the salon-facing dashboard's mental model. Forcing platform navigation into the receptionist-first sidebar would pollute desk muscle memory and complicate the §2 three-zone guarantee. The Superadmin sidebar lives **above** every `/superadmin/*` page; the dashboard sidebar (§9) is unaware of it.
+
+### 10.1 Geometry
+
+- **Expanded width:** **240px** — identical to §9.1 so operators carrying both contexts keep one spatial expectation.
+- **Collapsed (icon-only) width:** **64px**.
+- **Position:** `fixed` to the leading edge on `md` and wider; main content shifts right by the active width via CSS variable (no layout-shift on collapse).
+- **Z-index:** below modal scrims, above page background. Below the impersonation banner when impersonation is active (see §10.5).
+
+### 10.2 Visibility breakpoints
+
+- **`md` (≥ 768px) and wider:** sidebar visible as the persistent left rail. Bottom tab bar hidden.
+- **Below `md`:** sidebar hidden; **bottom tab bar** with **5 primary tabs** (Dashboard, Salons, Operations, Support, Settings). The remaining sections (Analytics, AI Ops, Billing, Security) are accessible from a "More" entry on the Settings tab page or via deep links — no overflow menu in the bar itself (consistent with §9.6).
+
+### 10.3 Disabled module pattern
+
+The Foundation Shell renders **every planned route** so the roadmap is legible to operators. Routes whose business logic has not landed yet are **disabled, not hidden**. This is architectural placeholder, not silent failure:
+
+- Sidebar item renders as `<span>`, **not** `<a>` — screen readers do not announce a fake link.
+- Visual: `opacity-50`, `cursor-not-allowed`, `aria-disabled="true"`.
+- **Phase label inline or in tooltip.** Use a concrete release marker — `"Coming Q3 2026"`, `"Coming Phase 2"`, `"Coming Phase 3"`. Never vague `"Coming Soon"`: it tells the operator nothing about when to come back.
+- Placeholder route exists at the same path but renders a `ComingSoonPage` shell — title, phase label, brief description of the eventual capability, link back to the dashboard. No fake forms, no fake buttons, no fake metrics. The page must not lie about what is built.
+- `ARCHITECTURE_LOCK.md` §5 forbids "Silent failures — suppressed buttons that still enqueue work." The disabled pattern here is compliant because (a) sidebar items are not buttons, (b) placeholder routes render no interactive controls beyond Back navigation.
+
+### 10.4 Navigation structure
+
+The sidebar carries exactly these sections, in order, for Foundation V1:
+
+| # | Section | Route | Foundation V1 status |
+|---|---|---|---|
+| 1 | Dashboard | `/superadmin/dashboard` | Real (basic KPIs, salon health glance) |
+| 2 | Salons | `/superadmin/salons` | Real (list + detail, read-only) |
+| 3 | Operations | `/superadmin/operations` | Placeholder — Phase 2 |
+| 4 | Support | `/superadmin/support` | Real shell + impersonation entry; sub-pages mostly Phase 2 |
+| 5 | Analytics | `/superadmin/analytics` | Placeholder — Phase 3 |
+| 6 | AI Ops | `/superadmin/ai` | Placeholder — Phase 3 |
+| 7 | Billing | `/superadmin/billing` | Placeholder — Phase 2 |
+| 8 | Security | `/superadmin/security` | Placeholder — Phase 2 |
+| 9 | Settings | `/superadmin/settings` | Real (founder-only superadmin user management, minimal) |
+
+**Role-aware visibility.** Items the current superadmin role lacks reach for are **still rendered**, also as the disabled pattern (§10.3), with a role tooltip: e.g. `"billing_admin only"`. Hiding misleads about platform surface area; disabling teaches the role boundary.
+
+### 10.5 Impersonation banner
+
+When a `founder` is impersonating a salon owner (per `PERMISSION_MATRIX.md` §8.4), the operator is operating **as the salon owner** — they see the salon-facing dashboard (§9 sidebar), **not** the Superadmin sidebar (§10). The transition is explicit:
+
+- **Banner position:** top of viewport, full-width, **sticky**. Sits **above** the §9 sidebar at z-index one above sticky chrome and below modal scrims (per `DESIGN_SYSTEM.md` §5 stacking).
+- **Banner content:** `You are viewing <salon-name> as <role>` plus an explicit **Exit Impersonation** button (per `COMPONENT_RULES.md` Button rules — `danger` variant). Cannot be dismissed without exit.
+- **Color:** `danger` family (per `COLOR_TOKENS.md` §4) — this is a high-risk operational mode and the visual gravity must match. Not gold (gold is VIP/affirmative, not warning).
+- **Exit behavior:** restores the operator's original superadmin session, writes an `impersonate_exit` row to `superadmin_audit_logs`, redirects to `/superadmin/salons/<id>` (back to the detail page they impersonated from).
+- **Time expiry visible.** Banner shows countdown to the 30-minute hard expiry; at expiry the banner flips to "Session expired — re-authenticate to continue."
+
+### 10.6 Out of scope for this section
+
+- Color values, focus-ring specifics, spacing tokens inherit from §9.7 and `COLOR_TOKENS.md`.
+- Animation for collapse transition and banner enter/exit follows `ANIMATION_RULES.md` (no inline ms literals).
+- Server-side enforcement of role gates lives in `PERMISSION_MATRIX.md` §8.3 — this layout document only governs the **visual** sidebar contract.
+- Multi-operator concurrent impersonation (two `founder`s impersonating different salons): out of Foundation V1; if it lands, audit log already captures the parallel sessions.
+
+---

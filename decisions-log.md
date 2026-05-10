@@ -60,6 +60,58 @@
 
 ---
 
+## 2026-05-10: Superadmin Foundation Shell V1 — build architecture, defer scale features
+
+**Context**: PR #82 (2026-05-10) shipped a minimal Huy-only Superadmin panel: `/superadmin` route, `public.superadmins` binary membership table, per-salon `plan_override` + `feature_flags` JSONB columns, route gate via `isSuperAdmin(userId)`. The panel covers plan + flag overrides for beta partners but **does not** include sidebar navigation, multi-role gating, salon list, impersonation (login-as-salon), audit logs, announcements, or platform-level feature flags. Founder direction is to build the **architecture shell** for those capabilities now — before scale features — so the route surface, role model, and audit contract are settled while we still have ≤ 3 paying salons.
+
+**Decision**: Build **Superadmin Foundation Shell V1** on top of PR #82. Scope = auth + protected routes + layout shell + sidebar + salon list/detail (read-only) + impersonation foundation + audit log table + minimal feature flags + announcements + disabled module placeholders for Phase 2/3 routes. Explicitly **defer** AI Ops, rollout engine, advanced analytics, risk engine, churn prediction, live ops, billing infrastructure beyond minimal flags.
+
+**Phasing** (committed):
+
+| Phase | Scope | Estimate |
+|---|---|---|
+| 1A | DB schema + RLS — `superadmins.role` column, `superadmin_audit_logs`, `platform_feature_flags`, `platform_announcements` | 2-3h |
+| 1B | Auth surface — `/superadmin/login` (Supabase Auth, email+password), role gate in server components | 3-4h |
+| 1C | Shell + sidebar + ~30 disabled-module routes per `DASHBOARD_LAYOUT_RULES.md` §10 | 4-5h |
+| 1D | Salon list + detail (read-only) | 4-5h |
+| 1E | Impersonation foundation — cookie swap via service-role, audit log on enter/exit, persistent banner, 30-min expiry, founder-only | 4-6h |
+| 1F | Feature flags admin + announcements admin (minimal) | 2-3h |
+
+**Total**: ~20-25h ≈ 3 days of focused work, spread across 5-7 calendar days non-blocking with V1 launch.
+
+**Guardrail (non-negotiable)**: V1 launch blockers **always** override Superadmin work. If auth breaks, queue breaks, E2E fails critically, or Twilio/Stripe/Resend issues appear → Superadmin sprint pauses immediately, resumes only when launch track is green.
+
+**Rationale**:
+- **Foundation before scale.** Building the route surface + role model + audit contract now (when there are 0 paying salons) is cheap. Retrofitting them after 50+ paying salons — with live impersonation needs, real audit obligations, regional split, etc. — is exponentially more expensive.
+- **No premature complexity.** Foundation V1 explicitly excludes business logic (AI ops, billing engine, risk, rollouts). It is **architecture placeholder**, not fake business logic. Disabled modules render as `<span>` with concrete phase labels, not fake forms with no-op handlers.
+- **Real impersonation, not skeleton.** Login-as-salon is the single highest-value Superadmin feature for early-stage support (beta partners hitting bugs at the desk). PM explicitly approved real backend implementation with cookie swap, audit log, banner, 30-min expiry.
+- **Audit obligation lands now.** PR #82 explicitly deferred audit logs because `booking_events` is booking-scoped. Foundation V1 ships the dedicated `superadmin_audit_logs` table so every privileged action from this point forward leaves a trail. Operating without that is a compliance liability once we have paying salons.
+
+**Alternatives rejected**:
+- **Full Superadmin (AI Ops, billing engine, risk, rollouts, analytics) now**: prompt-engineering ambition, not real need. ~3-5 weeks of work, conflicts directly with V1 launch in ~20 days. PM and Claude aligned on rejecting this on 2026-05-10 after initial prompt rewrite.
+- **Defer all Superadmin to post-launch**: founder explicitly wants `support_admin` and `founder` impersonation available when first beta salon hits a bug. Without that, support burden = full-screen-share + careful click coaching, which does not scale.
+- **Build only `superadmin_audit_logs` for now, defer the shell**: technically possible but loses the architectural-shell benefit. The shell + audit table land together so audit semantics are not retrofitted onto a later sidebar redesign.
+
+**Trade-offs accepted**:
+- 3 days of dev time during a V1-launch sprint, partially budget-protected by the guardrail above.
+- Disabled-module pattern requires discipline — every Phase 2/3 placeholder must NOT render a fake form. Easy to drift toward "fake it for the demo" if not policed.
+- Two role axes (salon-scoped + platform-scoped) increases cognitive load on every new server action author. `PERMISSION_MATRIX.md` §8 calls this out explicitly.
+
+**Revisit when**:
+- 3+ paying salons live → re-evaluate Phase 2 priority (incident center vs billing analytics vs AI ops vs rollout engine).
+- First impersonation audit-log review with PM → judge whether `support_admin` should be promoted to impersonation rights.
+- Any single Phase 2/3 placeholder route sits without real implementation for > 6 months → drop it from the sidebar entirely rather than carry dead architecture.
+
+**Cost to reverse**: Medium-low. Foundation V1 is additive — drop the `/superadmin/*` route family and the `superadmin_audit_logs` table; existing salon-facing code is untouched. ~1 day to fully unwind.
+
+**Governance amendments shipped same day**:
+- `docs/PERMISSION_MATRIX.md` §8 — Superadmin role contract, impersonation rules, server action audit-or-rollback.
+- `docs/DASHBOARD_LAYOUT_RULES.md` §10 — Superadmin sidebar geometry, navigation, disabled module pattern, impersonation banner.
+
+**PM approval**: in-chat 2026-05-10, after explicit Foundation-Shell-only scope clarification and rejection of full-Superadmin prompt.
+
+---
+
 ## 2026-05-03 (afternoon): V1.1 backlog from Q1 ship review — defer add-service, smart conflicts, price override
 
 **Context**: Q1 founder review surfaced three Receptionist / booking ideas for after V1: (1) **add service** to an existing booking (real nail workflow: booked Manicure, client adds Pedicure) vs today’s **replace**-one-service model — implies schema move from 1:1 service + addon toward **N:N or service array** (~2–3 days); (2) **smart conflict suggestions** instead of flat “slot taken” — e.g. “Mai busy 3pm. Try Trang 3pm or Mai 4pm” via cross-staff + same-staff alt slots (~2–3 days); (3) **custom price override** with toggle off default auto-price (~1–2h). Stage is **0 paying customers**; outreach is the bottleneck, not feature depth.
