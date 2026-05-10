@@ -444,6 +444,7 @@ function ReceptionistCenterInner({
           is_vip: b.is_vip,
           has_notes: b.has_notes,
           has_design: b.has_design,
+          has_staff_request: b.has_staff_request,
         },
       ];
     });

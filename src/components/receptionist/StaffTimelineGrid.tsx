@@ -77,6 +77,9 @@ export interface GridBooking {
   is_vip: boolean;
   has_notes: boolean;
   has_design: boolean;
+  /** Booking carries a non-empty `staff_request_note`. Drives the
+   * heart icon in the booking-block icon stack. */
+  has_staff_request: boolean;
 }
 
 export interface StaffTimelineGridProps {
@@ -110,6 +113,9 @@ export interface StaffTimelineGridProps {
       notes: string;
       late: string;
       design: string;
+      /** Aria label for the heart icon shown when the booking has a
+       * non-empty staff request note. */
+      staffRequest: string;
     };
   };
   /** When false, hides per-staff role line and busy ring on avatars (`staff_performance`). */
@@ -608,6 +614,7 @@ function StaffTimelineGridImpl({
                           isVip={b.is_vip}
                           hasNotes={b.has_notes}
                           hasDesign={b.has_design}
+                          hasStaffRequest={b.has_staff_request}
                           isLate={isLate}
                           iconLabels={labels.bookingIcon}
                         />

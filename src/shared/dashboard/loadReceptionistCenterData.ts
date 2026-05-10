@@ -139,6 +139,13 @@ export interface ReceptionistCenterData {
     is_vip: boolean;
     has_notes: boolean;
     has_design: boolean;
+    /**
+     * Booking carries a non-empty `staff_request_note` ("requests
+     * Tuong Vy", "wants the same staff as last time", etc.). Surfaces
+     * a heart icon on the booking block so the receptionist sees the
+     * request preference without opening the drawer.
+     */
+    has_staff_request: boolean;
   }>;
   /** Per-staff service whitelist for this salon. `null` = no rows → all-capable fallback. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
@@ -480,6 +487,7 @@ export async function loadReceptionistCenterData(
       client_name,
       client_phone,
       client_notes,
+      staff_request_note,
       staff_id,
       start_time_utc,
       end_time_utc,
@@ -555,6 +563,7 @@ export async function loadReceptionistCenterData(
     client_name: string;
     client_phone: string | null;
     client_notes: string | null;
+    staff_request_note: string | null;
     staff_id: string | null;
     start_time_utc: string | null;
     end_time_utc: string | null;
@@ -633,6 +642,9 @@ export async function loadReceptionistCenterData(
       row.walkin_source.trim().toLowerCase() === "vip";
     const hasNotes =
       typeof row.client_notes === "string" && row.client_notes.trim().length > 0;
+    const hasStaffRequest =
+      typeof row.staff_request_note === "string" &&
+      row.staff_request_note.trim().length > 0;
     // Heuristic: catalog naming convention. Match "nail art" or "design" in
     // either the primary or addon service name. No structured DB flag exists
     // yet; documented for PM reconciliation if a `services.is_design_capable`
@@ -672,6 +684,7 @@ export async function loadReceptionistCenterData(
       is_vip: isVip,
       has_notes: hasNotes,
       has_design: hasDesign,
+      has_staff_request: hasStaffRequest,
     };
   });
 

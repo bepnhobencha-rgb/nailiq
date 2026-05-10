@@ -592,6 +592,9 @@ export type UserMessages = {
         notes: string;
         late: string;
         design: string;
+        /** Heart icon shown when the booking has a non-empty
+         * `staff_request_note` (e.g. "wants Tuong Vy"). */
+        staffRequest: string;
       };
     };
     undo: {
@@ -1446,6 +1449,7 @@ export const userEn: UserMessages = {
         notes: "Has notes",
         late: "Late",
         design: "Design / nail art",
+        staffRequest: "Staff request",
       },
     },
     undo: {

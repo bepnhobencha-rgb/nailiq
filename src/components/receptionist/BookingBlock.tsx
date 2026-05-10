@@ -17,6 +17,8 @@ import { motion, useReducedMotion } from "@/shared/lib/motionClient";
  * per `UX_PRINCIPLES.md` §2 rule 5):
  *   - ⭐ VIP        (`isVip`)
  *   - 📝 Notes      (`hasNotes`)
+ *   - ❤️ Staff req. (`hasStaffRequest` — booking has a non-empty
+ *     `staff_request_note`, e.g. "wants Tuong Vy")
  *   - ⚠ Late        (`isLate` overlay flag — see `STATE_MACHINE.md` §3+§5)
  *   - 🎨 Design     (`hasDesign`)
  *
@@ -85,6 +87,10 @@ export interface BookingBlockProps {
    * exists).
    */
   hasDesign?: boolean;
+  /** Booking has a non-empty `staff_request_note`. Renders the heart
+   * icon in the icon stack so the receptionist sees the preferred-
+   * staff request without opening the drawer. */
+  hasStaffRequest?: boolean;
   /**
    * Overlay flag — `status === 'in_progress'` AND service end time has
    * passed. Per `STATE_MACHINE.md` §5 (auto-transition `in_service +
@@ -98,6 +104,8 @@ export interface BookingBlockProps {
     notes: string;
     late: string;
     design: string;
+    /** Aria label for the heart shown when `hasStaffRequest` is true. */
+    staffRequest: string;
   };
 }
 
@@ -138,6 +146,7 @@ const DEFAULT_ICON_LABELS = {
   notes: "Notes",
   late: "Late",
   design: "Design",
+  staffRequest: "Staff request",
 } as const;
 
 function formatPrice(priceCents: number | null): string {
@@ -166,6 +175,7 @@ export function BookingBlock(props: BookingBlockProps) {
     isVip = false,
     hasNotes = false,
     hasDesign = false,
+    hasStaffRequest = false,
     isLate = false,
     iconLabels = DEFAULT_ICON_LABELS,
   } = props;
@@ -184,7 +194,8 @@ export function BookingBlock(props: BookingBlockProps) {
 
   const isWalkin = source === "walkin";
   const isCompleted = status === "completed";
-  const hasIcons = isVip || hasNotes || isLate || hasDesign;
+  const hasIcons =
+    isVip || hasNotes || hasStaffRequest || isLate || hasDesign;
 
   // When density supplies an explicit min-height, the inline `style` on
   // the wrapper takes precedence over the default `min-h-11` tailwind
@@ -257,6 +268,15 @@ export function BookingBlock(props: BookingBlockProps) {
             {hasNotes ? (
               <span aria-label={iconLabels.notes} title={iconLabels.notes}>
                 📝
+              </span>
+            ) : null}
+            {hasStaffRequest ? (
+              <span
+                aria-label={iconLabels.staffRequest}
+                title={iconLabels.staffRequest}
+                data-testid={`booking-block-icon-staff-request-${bookingId}`}
+              >
+                ❤️
               </span>
             ) : null}
             {isLate ? (
