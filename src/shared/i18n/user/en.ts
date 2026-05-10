@@ -522,6 +522,10 @@ export type UserMessages = {
     };
     queue: {
       title: string;
+      /** Short label for the slide-over toggle button in the top bar. */
+      toggleShort: string;
+      /** Aria-label on the slide-over close (X) button. */
+      closePanel: string;
       emptyMessage: string;
       cancelButton: string;
       assignButton: string;
@@ -1367,6 +1371,8 @@ export const userEn: UserMessages = {
     },
     queue: {
       title: "Walk-in queue",
+      toggleShort: "Queue",
+      closePanel: "Close queue panel",
       emptyMessage: "No walk-ins queued. Use the form above to add.",
       cancelButton: "Remove",
       assignButton: "Assign",

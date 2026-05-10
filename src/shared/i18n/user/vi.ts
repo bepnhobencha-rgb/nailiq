@@ -525,6 +525,8 @@ export const userVi: UserMessages = {
     },
     queue: {
       title: "Hàng walk-in",
+      toggleShort: "Hàng chờ",
+      closePanel: "Đóng panel hàng chờ",
       emptyMessage: "Chưa có khách xếp hàng. Thêm ở form phía trên.",
       cancelButton: "Bỏ",
       assignButton: "Xếp chỗ",

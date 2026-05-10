@@ -2,6 +2,12 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-05-10 (docs — DASHBOARD_LAYOUT_RULES §11 walk-in queue slide-over, PM-approved)
+
+- **PM approval:** explicit chat directive `2026-05-10` instructing the receptionist queue refactor (`feat/queue-slide-over-panel`) to convert the always-visible queue column into a toggle-driven slide-over.
+- **`docs/DASHBOARD_LAYOUT_RULES.md` §11 (Walk-in queue slide-over):** new section. Scopes a defined relaxation of §2 RIGHT ZONE: the queue panel defaults to **collapsed** on every viewport (was: persistent on tablet-landscape + desktop). Auto-open contract preserves §2's "always discoverable when needed" — when `bookingsForDay.filter(status === 'waiting').length > 0` the panel opens automatically unless the user explicitly closed it during the session. Cross-session preference persists in `localStorage["nailiq-queue-panel-open"]`. Module gating + TV preset behavior unchanged. Toggle button is the canonical entry point and is always visible.
+- **No changes to §1–§10.** Three-zone Front Desk contract elsewhere unchanged.
+
 ## 2026-05-09 (docs — DASHBOARD_LAYOUT_RULES §9 sidebar navigation, PM-approved)
 
 - **PM approval:** explicit chat directive `2026-05-09` instructing the dashboard sidebar refactor (`feat/dashboard-sidebar`) to add a new section governing the app-shell sidebar + mobile bottom-bar pattern.
