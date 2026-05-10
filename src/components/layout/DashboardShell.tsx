@@ -67,7 +67,11 @@ export function DashboardShell({
         onToggleCollapsed={toggle}
       />
       <main
-        className="min-h-dvh md:pl-[var(--nq-sidebar-w)] pb-16 md:pb-0"
+        // Padding-left tracks the sidebar width via the CSS variable.
+        // Adding a transition makes the grid slide rather than snap
+        // when the user toggles collapse — same easing tokens the
+        // receptionist motion uses.
+        className="min-h-dvh md:pl-[var(--nq-sidebar-w)] pb-16 md:pb-0 transition-[padding-left] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]"
       >
         {children}
       </main>

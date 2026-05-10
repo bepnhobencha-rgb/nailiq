@@ -156,7 +156,11 @@ export function WeekView({
   return (
     <div
       data-testid="week-view"
-      className="mx-auto flex w-full max-w-[var(--max-nq-desktop)] flex-col gap-3 px-[var(--pad-nq-section-mobile)] py-4 md:px-6"
+      // Same reasoning as ReceptionistCenter day body: the shell
+      // already manages horizontal real estate via the sidebar
+      // padding. Capping here at 1180px would prevent the week grid
+      // from filling the space the sidebar gives back when collapsed.
+      className="mx-auto flex w-full flex-col gap-3 px-[var(--pad-nq-section-mobile)] py-4 md:px-6"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
