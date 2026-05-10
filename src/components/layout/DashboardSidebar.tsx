@@ -70,6 +70,8 @@ export function DashboardSidebar({
   const t = messages.nav;
   const { collapsed, toggle } = useSidebarCollapsed();
 
+  const roleLabels = messages.chooseSalon.roleBadge;
+
   const otherSalons = useMemo(
     () => (salons ?? []).filter((s) => s.slug !== slug),
     [salons, slug],
@@ -285,7 +287,7 @@ export function DashboardSidebar({
                 {salonName}
               </p>
               <p className="truncate text-xs text-nq-muted">
-                {roleLabel(role)}
+                {localizedRoleLabel(role, roleLabels)}
               </p>
             </div>
             <ChevronUp
@@ -302,7 +304,7 @@ export function DashboardSidebar({
               "flex items-center gap-3 rounded-lg px-2 py-2",
               collapsed ? "justify-center" : "",
             )}
-            title={collapsed ? `${salonName} · ${roleLabel(role)}` : undefined}
+            title={collapsed ? `${salonName} · ${localizedRoleLabel(role, roleLabels)}` : undefined}
           >
             <SalonAvatar salonName={salonName} />
             {collapsed ? null : (
@@ -311,7 +313,7 @@ export function DashboardSidebar({
                   {salonName}
                 </p>
                 <p className="truncate text-xs text-nq-muted">
-                  {roleLabel(role)}
+                  {localizedRoleLabel(role, roleLabels)}
                 </p>
               </div>
             )}
@@ -428,12 +430,19 @@ function SidebarRow({
   );
 }
 
-function roleLabel(role: string): string {
-  // Cheap, locale-agnostic surface label until a richer profile slot exists.
-  if (role === "owner") return "Owner";
-  if (role === "senior") return "Senior";
-  if (role === "nail_tech") return "Nail tech";
-  return role || "Staff";
+type RoleBadgeMap = {
+  owner: string;
+  senior: string;
+  nail_tech: string;
+};
+
+function localizedRoleLabel(role: string, labels: RoleBadgeMap): string {
+  if (role === "owner") return labels.owner;
+  if (role === "senior") return labels.senior;
+  if (role === "nail_tech") return labels.nail_tech;
+  // Fallback for unknown / future roles — keep the raw role name so it's
+  // still parseable rather than collapsing to an English placeholder.
+  return role || labels.nail_tech;
 }
 
 function SalonAvatar({ salonName }: { salonName: string }) {

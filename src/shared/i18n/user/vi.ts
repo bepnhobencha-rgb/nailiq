@@ -103,6 +103,127 @@ export const userVi: UserMessages = {
     verifyErrorInvalid: "Mã không đúng.",
     verifyErrorMissingToken: "Thiếu token hoàn tất. Thử lại.",
   },
+  landing: {
+    nav: {
+      signIn: "Đăng nhập",
+      tryFree: "Dùng thử",
+      langAriaLabel: "Ngôn ngữ",
+    },
+    hero: {
+      eyebrow: "Được tin dùng bởi tiệm nail tại Canada & Việt Nam",
+      h1Line1: "$29/tháng. Đặt lịch + walk-in queue,",
+      h1Gold: "thiết kế riêng cho tiệm nail.",
+      subline:
+        "Rẻ hơn Booksy 3–5 lần. Tiếng Việt trước. Không bỏ lỡ cuộc gọi.",
+      ctaPrimary: "Dùng thử 14 ngày miễn phí",
+      ctaSecondary: "Xem cách hoạt động ↓",
+      microtrust:
+        "Không cần thẻ tín dụng · 14 ngày miễn phí · Cài đặt trong 2 phút",
+    },
+    pain: {
+      eyebrow: "Vấn đề",
+      h2: "Bạn đang mất tiền ngay lúc này",
+      lede:
+        "Mọi chủ tiệm chúng tôi nói chuyện đều có cùng ba lỗ hổng. Đây là con số.",
+      stat1: {
+        label: "Mất từ cuộc gọi nhỡ",
+        body:
+          "Điện thoại reo khi nhân viên đang bận. Mỗi cuộc gọi không bắt máy là một khách bước sang tiệm đối thủ.",
+      },
+      stat2: {
+        label: "Không quay lại sau lần đầu",
+        body:
+          "Không có link đặt lịch tiện lợi, khách quen mặc định chọn tiệm có lịch online — dù họ thích bạn.",
+      },
+      stat3: {
+        display: "Walk-in",
+        sub: "bỏ đi",
+        label: "Khi bạn quá bận để tiếp",
+        body:
+          "Không có queue, walk-in phải đoán thời gian chờ, bực mình rồi bỏ đi. Queue trực tiếp giữ họ — và doanh thu của bạn.",
+      },
+    },
+    features: {
+      eyebrow: "Tính năng",
+      h2: "Đầy đủ những gì tiệm nail cần",
+      booking: {
+        title: "Đặt lịch online",
+        body:
+          "Link đặt lịch hoạt động 24/7. Khách chọn dịch vụ, thợ và giờ mà không cần gọi — chạy trên mọi điện thoại, không cần cài app.",
+      },
+      queue: {
+        title: "Walk-in Queue",
+        body:
+          "Quản lý hàng chờ thời gian thực. Không hỗn loạn giờ cao điểm — biết ai sắp tới lượt, khách luôn biết thời gian chờ.",
+      },
+      center: {
+        title: "Trung tâm tiếp tân",
+        body:
+          "Lưới trực tiếp hiển thị mọi lịch hẹn và walk-in. Đổi lịch, đổi thợ, xử lý xung đột trong vài giây.",
+      },
+    },
+    howItWorks: {
+      eyebrow: "Bắt đầu",
+      h2: "Hoạt động trong 15 phút",
+      step1: {
+        title: "Đăng ký bằng số điện thoại",
+        body: "Xác thực OTP. Không cần email để bắt đầu.",
+        preview:
+          "Bạn sẽ thấy — mã 4 chữ số trong vài giây, sau đó vào dashboard.",
+      },
+      step2: {
+        title: "Thêm dịch vụ và nhân viên",
+        body:
+          "Mẫu sẵn giúp tăng tốc. Đa số tiệm hoàn thành trong 10 phút.",
+        preview:
+          "Bạn sẽ thấy — menu của bạn sẵn sàng nhận lịch.",
+      },
+      step3: {
+        title: "Chia sẻ link đặt lịch",
+        body:
+          "Sao chép URL nailiq.com/your-salon. Gửi cho khách qua Zalo, SMS, hoặc dán ở quầy.",
+        preview:
+          "Bạn sẽ thấy — lịch đầu tiên về trong vài giờ.",
+      },
+      bottomCta: "Sẵn sàng khi bạn muốn. Dùng thử 14 ngày miễn phí",
+    },
+    socialProof: {
+      eyebrow: "Tin dùng bởi",
+      h2: "Chủ tiệm nói gì",
+      sub: "Phản hồi truy cập sớm",
+    },
+    pricing: {
+      eyebrow: "Bảng giá",
+      h2: "Một gói duy nhất",
+      sub: "Không phí ẩn. Hủy bất cứ lúc nào.",
+      mostPopular: "Phổ biến nhất",
+      perMonth: "/tháng",
+      taxNote: "+ thuế áp dụng. Giá CAD.",
+      features: [
+        "Đầy đủ mọi tính năng",
+        "Lịch hẹn & walk-in không giới hạn",
+        "Hỗ trợ tiếng Việt & tiếng Anh",
+        "Trung tâm tiếp tân thời gian thực",
+        "Hủy bất cứ lúc nào — không hợp đồng",
+      ],
+      cta: "Bắt đầu dùng thử 14 ngày",
+      ccNotice: "Không cần thẻ tín dụng",
+    },
+    finalCta: {
+      eyebrow: "Một điều cuối cùng",
+      h2: "Sẵn sàng ngừng mất khách?",
+      sub:
+        "14 ngày miễn phí. Không cần thẻ tín dụng. Hủy bất cứ lúc nào. Cài đặt trong 2 phút.",
+      ctaPrimary: "Bắt đầu dùng thử miễn phí",
+      ctaSecondary: "Xem cách hoạt động ↓",
+    },
+    footer: {
+      privacy: "Bảo mật",
+      terms: "Điều khoản",
+      contact: "Liên hệ",
+      builtIn: "Xây dựng tại Vancouver, BC 🇨🇦",
+    },
+  },
   nav: {
     frontDesk: "Tiếp Tân",
     calendar: "Lịch",

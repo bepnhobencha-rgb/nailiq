@@ -1,11 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo } from "react";
 import { motion, useReducedMotion } from "@/shared/lib/motionClient";
 import { cn } from "@/shared/lib/cn";
+import { getUserMessages } from "@/shared/i18n/user";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 export function LandingHero() {
   const reduce = useReducedMotion();
+  const { language } = useUserLanguage();
+  const t = useMemo(
+    () => getUserMessages(language).landing.hero,
+    [language],
+  );
 
   return (
     <section className="relative overflow-hidden pt-32 pb-16 md:pt-40 md:pb-24">
@@ -20,21 +28,21 @@ export function LandingHero() {
         >
           <span className="inline-flex items-center gap-2 rounded-full border border-nq-primary/40 bg-nq-primary/10 px-3 py-1 text-[11px] font-semibold tracking-[0.18em] text-nq-primary-soft uppercase">
             <span aria-hidden className="nq-spark-pulse">⚡</span>
-            Trusted by salons in Canada &amp; Vietnam
+            {t.eyebrow}
           </span>
 
           <h1 className="mt-6 text-4xl font-semibold tracking-tight text-nq-foreground md:text-5xl lg:text-6xl">
-            $29/month. Booking + walk-in queue,{" "}
+            {t.h1Line1}{" "}
             <span
               className="font-[family-name:var(--font-landing-playfair),ui-serif,Georgia,serif] italic font-bold text-nq-primary-soft"
               style={{ fontStyle: "italic" }}
             >
-              built for nail salons.
+              {t.h1Gold}
             </span>
           </h1>
 
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-nq-muted/80 md:text-xl">
-            3–5× cheaper than Booksy. Vietnamese-first. No missed calls.
+            {t.subline}
           </p>
 
           <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
@@ -42,19 +50,17 @@ export function LandingHero() {
               href="/register"
               className="inline-flex items-center justify-center rounded-full border border-nq-primary/50 bg-nq-primary px-6 py-3.5 text-base font-semibold text-nq-bg shadow-[0_8px_28px_-8px_rgba(212,175,55,0.55)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
             >
-              Try free for 14 days
+              {t.ctaPrimary}
             </Link>
             <a
               href="#how-it-works"
               className="inline-flex items-center justify-center rounded-full px-4 py-3 text-sm font-medium text-nq-muted transition hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
             >
-              See how it works ↓
+              {t.ctaSecondary}
             </a>
           </div>
 
-          <p className="mt-4 text-xs text-nq-muted/80">
-            No credit card · 14-day trial · Setup in 2 minutes
-          </p>
+          <p className="mt-4 text-xs text-nq-muted/80">{t.microtrust}</p>
         </motion.div>
 
         <motion.div

@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "@/shared/lib/motionClient";
+import { getUserMessages } from "@/shared/i18n/user";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 type Stat = {
   /** Numeric headline used by the count-up animation. `null` = display `display` literally. */
@@ -16,33 +18,43 @@ type Stat = {
   body: string;
 };
 
-const stats: Stat[] = [
-  {
-    countTo: 200,
-    display: "$50–200",
-    prefix: "$50–",
-    sub: "/day",
-    label: "Lost from missed calls",
-    body: "Phones ring while staff are busy. Each unanswered call is a booking that walks down the block to your competitor.",
-  },
-  {
-    countTo: 23,
-    display: "23%",
-    sub: "of clients",
-    label: "Don't rebook after first visit",
-    body: "Without an easy booking link, returning customers default to whoever has online slots — even if they loved you.",
-  },
-  {
-    countTo: null,
-    display: "Walk-ins",
-    sub: "leave",
-    label: "When you're too busy to take them",
-    body: "No queue means walk-ins guess at wait times, get frustrated, and leave. A live queue keeps them — and your revenue.",
-  },
-];
-
 export function LandingPainSection() {
   const reduce = useReducedMotion();
+  const { language } = useUserLanguage();
+  const t = useMemo(
+    () => getUserMessages(language).landing.pain,
+    [language],
+  );
+
+  // Numeric pieces ($50, 200, 23%) are universal; the surrounding labels +
+  // bodies + sub-lines flip with locale.
+  const stats: Stat[] = useMemo(
+    () => [
+      {
+        countTo: 200,
+        display: "$50–200",
+        prefix: "$50–",
+        sub: "/day",
+        label: t.stat1.label,
+        body: t.stat1.body,
+      },
+      {
+        countTo: 23,
+        display: "23%",
+        sub: language === "vi" ? "khách" : "of clients",
+        label: t.stat2.label,
+        body: t.stat2.body,
+      },
+      {
+        countTo: null,
+        display: t.stat3.display,
+        sub: t.stat3.sub,
+        label: t.stat3.label,
+        body: t.stat3.body,
+      },
+    ],
+    [language, t],
+  );
 
   return (
     <section className="relative bg-nq-bg py-14 md:py-20">
@@ -54,15 +66,12 @@ export function LandingPainSection() {
           transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
         >
           <p className="text-[11px] font-semibold tracking-[0.24em] text-nq-primary uppercase">
-            The Problem
+            {t.eyebrow}
           </p>
           <h2 className="mt-4 text-3xl font-semibold tracking-tight text-nq-foreground md:text-5xl lg:text-6xl">
-            You&rsquo;re losing money right now
+            {t.h2}
           </h2>
-          <p className="mt-4 max-w-2xl text-lg text-nq-muted/70">
-            Every salon owner we&rsquo;ve talked to has the same three holes in
-            the bucket. Here&rsquo;s the math.
-          </p>
+          <p className="mt-4 max-w-2xl text-lg text-nq-muted/70">{t.lede}</p>
         </motion.div>
 
         <div className="mt-12 grid gap-6 md:grid-cols-3">

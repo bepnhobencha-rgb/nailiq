@@ -1,6 +1,9 @@
 "use client";
 
+import { useMemo } from "react";
 import { motion, useReducedMotion } from "@/shared/lib/motionClient";
+import { getUserMessages } from "@/shared/i18n/user";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 type Quote = {
   initials: string;
@@ -30,6 +33,11 @@ const quotes: Quote[] = [
 
 export function LandingSocialProof() {
   const reduce = useReducedMotion();
+  const { language } = useUserLanguage();
+  const t = useMemo(
+    () => getUserMessages(language).landing.socialProof,
+    [language],
+  );
 
   return (
     <section className="relative bg-nq-bg py-14 md:py-20">
@@ -42,13 +50,13 @@ export function LandingSocialProof() {
           className="text-center"
         >
           <p className="text-[11px] font-semibold tracking-[0.24em] text-nq-primary uppercase">
-            Trusted By
+            {t.eyebrow}
           </p>
           <h2 className="mt-4 text-3xl font-semibold tracking-tight text-nq-foreground md:text-5xl">
-            What salon owners say
+            {t.h2}
           </h2>
           <p className="mt-3 text-[10px] font-semibold tracking-[0.18em] text-nq-muted uppercase">
-            Early access feedback
+            {t.sub}
           </p>
         </motion.div>
 

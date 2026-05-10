@@ -1,7 +1,9 @@
 "use client";
 
+import { useMemo, type ReactNode } from "react";
 import { motion, useReducedMotion } from "@/shared/lib/motionClient";
-import type { ReactNode } from "react";
+import { getUserMessages } from "@/shared/i18n/user";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 type Feature = {
   icon: ReactNode;
@@ -10,32 +12,37 @@ type Feature = {
   body: string;
 };
 
-const features: Feature[] = [
-  {
-    icon: <IconCalendar />,
-    illustration: <PhoneCalendarIllustration />,
-    title: "Online Booking",
-    body:
-      "Your booking link, open 24/7. Clients pick service, staff, and time without calling — works on any phone, no app install.",
-  },
-  {
-    icon: <IconPolish />,
-    illustration: <QueuePillsIllustration />,
-    title: "Walk-in Queue",
-    body:
-      "Real-time queue management. No chaos during busy hours — see who's next at a glance, and customers always know their wait.",
-  },
-  {
-    icon: <IconGrid />,
-    illustration: <GridIllustration />,
-    title: "Receptionist Center",
-    body:
-      "Live grid showing all bookings and walk-ins. Reschedule, reassign staff, and resolve conflicts in seconds, not minutes.",
-  },
-];
-
 export function LandingFeatures() {
   const reduce = useReducedMotion();
+  const { language } = useUserLanguage();
+  const t = useMemo(
+    () => getUserMessages(language).landing.features,
+    [language],
+  );
+
+  const features: Feature[] = useMemo(
+    () => [
+      {
+        icon: <IconCalendar />,
+        illustration: <PhoneCalendarIllustration />,
+        title: t.booking.title,
+        body: t.booking.body,
+      },
+      {
+        icon: <IconPolish />,
+        illustration: <QueuePillsIllustration />,
+        title: t.queue.title,
+        body: t.queue.body,
+      },
+      {
+        icon: <IconGrid />,
+        illustration: <GridIllustration />,
+        title: t.center.title,
+        body: t.center.body,
+      },
+    ],
+    [t],
+  );
 
   return (
     <section className="relative bg-nq-bg py-14 md:py-20">
@@ -47,10 +54,10 @@ export function LandingFeatures() {
           transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
         >
           <p className="text-[11px] font-semibold tracking-[0.24em] text-nq-primary uppercase">
-            Features
+            {t.eyebrow}
           </p>
           <h2 className="mt-4 text-3xl font-semibold tracking-tight text-nq-foreground md:text-5xl lg:text-6xl">
-            Everything a nail salon needs
+            {t.h2}
           </h2>
         </motion.div>
 

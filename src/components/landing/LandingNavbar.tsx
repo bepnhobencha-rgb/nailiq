@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/shared/lib/cn";
+import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import type { UserLanguage } from "@/shared/i18n/user/types";
 
@@ -13,6 +14,10 @@ export function LandingNavbar() {
   const [open, setOpen] = useState(false);
   // Persisted, shared with /login + /register and the dashboard.
   const { language: lang, setLanguage: setLang } = useUserLanguage();
+  const t = useMemo(
+    () => getUserMessages(lang).landing.nav,
+    [lang],
+  );
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 80);
@@ -48,18 +53,22 @@ export function LandingNavbar() {
         </Link>
 
         <div className="hidden items-center gap-5 md:flex">
-          <LangToggle lang={lang} setLang={setLang} />
+          <LangToggle
+            lang={lang}
+            setLang={setLang}
+            ariaLabel={t.langAriaLabel}
+          />
           <Link
             href="/login"
             className="text-sm text-nq-muted transition hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg rounded-md px-2 py-1"
           >
-            Sign in
+            {t.signIn}
           </Link>
           <Link
             href="/register"
             className="inline-flex items-center justify-center rounded-full border border-nq-primary/40 bg-nq-primary px-4 py-2 text-sm font-semibold text-nq-bg shadow-[0_2px_12px_rgba(212,175,55,0.25)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
           >
-            Try free
+            {t.tryFree}
           </Link>
         </div>
 
@@ -101,20 +110,25 @@ export function LandingNavbar() {
         aria-hidden={!open}
       >
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-5 py-5">
-          <LangToggle lang={lang} setLang={setLang} compact />
+          <LangToggle
+            lang={lang}
+            setLang={setLang}
+            compact
+            ariaLabel={t.langAriaLabel}
+          />
           <Link
             href="/login"
             onClick={closeSheet}
             className="rounded-xl border border-nq-border/40 bg-nq-surface/40 px-4 py-3 text-sm text-nq-foreground"
           >
-            Sign in
+            {t.signIn}
           </Link>
           <Link
             href="/register"
             onClick={closeSheet}
             className="rounded-xl bg-nq-primary px-4 py-3 text-center text-sm font-semibold text-nq-bg"
           >
-            Try free
+            {t.tryFree}
           </Link>
         </div>
       </div>
@@ -126,15 +140,17 @@ function LangToggle({
   lang,
   setLang,
   compact = false,
+  ariaLabel,
 }: {
   lang: Lang;
   setLang: (l: Lang) => void;
   compact?: boolean;
+  ariaLabel: string;
 }) {
   return (
     <div
       role="group"
-      aria-label="Language"
+      aria-label={ariaLabel}
       className={cn(
         "inline-flex items-center rounded-full border border-nq-border/40 bg-nq-surface/40 p-1 text-[11px] font-semibold tracking-widest uppercase",
         compact ? "self-start" : "",
