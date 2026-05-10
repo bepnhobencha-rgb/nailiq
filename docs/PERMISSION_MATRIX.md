@@ -220,4 +220,82 @@ Recommended extension points for future roles: central **pure policy functions**
 
 ---
 
-*Operational software fails loudly at the boundaries of authority; NailIQ’s desk depends on predictable enforcement under Friday-evening pressure.*
+## 8. Superadmin roles _(platform-level, added 2026-05-10)_
+
+**Scope clarification.** Sections §1–§7 govern **salon-scoped** roles: `owner`, `senior`, `nail_tech`. Those control what a member can do **inside one salon**. This §8 introduces a separate, **platform-scoped** role axis for internal NailIQ operators: support staff, billing analysts, founders. A single human may carry both — Huy is simultaneously `owner` of his pilot salon **and** `founder` of NailIQ — but the two axes are evaluated independently.
+
+Foundation lands incrementally; this section names the stable contract so future routes do not relitigate it.
+
+### 8.1 Storage
+
+PR #82 (2026-05-10) shipped `public.superadmins` as a binary membership table — presence of a row grants access to `/superadmin/*`. Foundation V1 evolves this **additively**:
+
+- **Add column `role text not null default 'founder'`** with `CHECK (role IN ('founder', 'ops_admin', 'support_admin', 'billing_admin', 'ai_admin', 'readonly_analyst'))`.
+- **Add column `revoked_at timestamptz`** — soft delete; non-null rows are inert.
+- **Add column `created_by uuid references auth.users(id)`** — audit who promoted.
+- Existing rows (Huy) are backfilled to `role = 'founder'`.
+- RLS unchanged: `superadmins_self_read` still gates `select` to `auth.uid()` only. Writes remain service-role-only.
+
+The companion table `superadmin_audit_logs` (Phase 1A migration) records every mutating `/superadmin/*` action and every impersonation enter/exit.
+
+### 8.2 Role definitions
+
+| Role | Purpose | Scope |
+| --- | --- | --- |
+| `founder` | Full platform access. The **only** role permitted to impersonate (see §8.4) during Foundation V1. | All `/superadmin/*` routes, all mutations, impersonation. |
+| `ops_admin` | Day-to-day operations: incidents, system health, feature flags, rollouts. | Operations + Support routes; no billing, no AI ops, no impersonation. |
+| `support_admin` | Salon-facing support: read salon health, view audit logs, message owners. | Salons + Support routes; **no** impersonation in Foundation V1 (granted via amendment after PM review). |
+| `billing_admin` | Subscription state, MRR, billing overrides, refund coordination. | Billing routes only; no salon data mutations. |
+| `ai_admin` | AI prompts, performance metrics, cost ceilings. | AI Ops routes; read-only on operational data. |
+| `readonly_analyst` | Platform analytics dashboards. | Analytics routes; **no** mutations anywhere. |
+
+### 8.3 Route gate
+
+Every page and server action under `/superadmin/*` MUST resolve the caller's superadmin role server-side via `getSuperadminRole(userId): SuperadminRole | null`. The contract:
+
+- `null` → caller is not a superadmin. Page returns 404 (do not leak existence). Server action returns `unauthorized`.
+- Role string → caller is a superadmin of that tier. Cross-check against the route's allowed-roles list. Mismatch → server action returns `forbidden`.
+- `revoked_at IS NOT NULL` → treated as `null` (revoked).
+- Cache: process-local Map with TTL ≤ 5 min, identical to the existing `isSuperAdmin` cache pattern. `clearSuperadminCache(userId)` invalidates on role change.
+
+The proxy's existing `/superadmin → /login` redirect for unauthenticated users stays. The role check happens **inside** server components and server actions, not in the proxy — keeping membership logic in one canonical place per `CLAUDE.md`.
+
+### 8.4 Impersonation (login-as-salon)
+
+A `founder` may impersonate any salon `owner` for support purposes. This is the highest-risk operation on the platform and is governed strictly.
+
+- **Server-side cookie swap only.** A dedicated server action issues a new Supabase session cookie bound to the target salon's owner `auth.users.id`, via the service-role client. **No client-side hacks. No fake JWT mint.** The receptionist/owner dashboard sees a real owner session.
+- **Audit row on every transition.** Enter and exit each insert into `superadmin_audit_logs` with `actor_user_id`, `action ∈ {'impersonate_enter', 'impersonate_exit'}`, `target_salon_id`, `target_user_id`, `started_at`, `ended_at`, `reason` (free text, founder-supplied).
+- **Persistent banner required.** While impersonating, every page under `/dashboard/[slug]/*` renders a top-of-viewport banner: `You are viewing <salon-name> as <role>` plus an explicit Exit button. Banner cannot be dismissed without exiting. Banner z-index sits above sticky chrome and below modal scrims (see `DASHBOARD_LAYOUT_RULES.md` §10.5).
+- **Time-limited.** Impersonation cookie carries a 30-minute hard expiry. After expiry, the next mutating action fails with `forbidden` and prompts re-impersonation.
+- **Read-only mode option.** A boolean flag on the impersonation action that gates all mutating server actions to return `unauthorized` while the flag is set. Useful for "just want to see what they see, do not touch."
+- **`founder`-only initially.** No other role may invoke impersonation in Foundation V1. Extension to `support_admin` is a deliberate future amendment, not a permission creep.
+- **No silent impersonation.** If the audit log insert fails for any reason, the impersonation **does not proceed**. The system fails closed.
+
+### 8.5 Server action contract _(additive to §7)_
+
+Every mutating server action under `/superadmin/*` MUST:
+
+1. **Verify superadmin membership** via `getSuperadminRole(userId)`. `null` → `unauthorized`.
+2. **Verify role tier** against the action's allowed-roles list. Mismatch → `forbidden`.
+3. **Verify target tenant** when the action mutates a salon: confirm the salon exists; in impersonation paths confirm an `owner` exists for the target salon.
+4. **Write an audit row to `superadmin_audit_logs`** before returning. Schema: `id`, `actor_user_id`, `actor_role`, `action`, `target_kind` (`salon` / `user` / `flag` / `announcement` / …), `target_id`, `before_jsonb`, `after_jsonb`, `created_at`. If the audit write fails, the mutation **does not proceed** — superadmin actions are audit-or-rollback.
+5. **Never bypass `salon_members`** when reading salon data. Service-role bypass is reserved for the impersonation cookie swap itself and for audit-log inserts.
+
+### 8.6 UI gating
+
+- Sidebar navigation items the current role cannot reach are **disabled, not hidden** (see `DASHBOARD_LAYOUT_RULES.md` §10.3 disabled-module pattern). Hiding obscures the roadmap; disabling teaches the role boundary.
+- Mutating buttons under a role's reach but for which the **target state** disallows the action (e.g. impersonating a salon that has `superadmin_locked_at` set) remain visible and disabled, with explanatory copy per §6.
+
+### 8.7 Out of scope for Foundation V1
+
+The following are deliberately deferred to Phase 2 or later amendments:
+
+- Multi-role-per-user mixing (`founder + billing_admin` blends): one role per superadmin row.
+- Time-windowed roles (auto-revoke after N days): manual `revoked_at` only.
+- Role-aware impersonation (`support_admin` impersonation): `founder`-only until separate PM review.
+- Audit log read API for non-superadmins: audit log is superadmin-internal.
+
+---
+
+*Operational software fails loudly at the boundaries of authority; NailIQ’s desk depends on predictable enforcement under Friday-evening pressure. The platform tier depends on predictable enforcement under audit.*
