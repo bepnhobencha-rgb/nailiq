@@ -121,12 +121,17 @@ export interface StaffTimelineGridProps {
   /** Passed to each booking block (`vip_indicators`). */
   showWalkinAccent?: boolean;
   /**
-   * Density-derived flag — controls the secondary meta line (service +
-   * price) on booking blocks. Off in `simple` density to keep blocks
-   * calm; on otherwise. Composes with `showBookingPrices` (price segment
-   * still requires both).
+   * Density-derived flag — controls the SERVICE NAME line on booking
+   * blocks. Off in `simple` density to keep blocks calm; on otherwise.
    */
   showBookingMetaLine?: boolean;
+  /**
+   * Density-derived flag — controls the time-range + price line on
+   * booking blocks. Off in `simple` and `balanced`; on in `pro`. The
+   * price segment still requires `showBookingPrices` to be true (gates
+   * compose).
+   */
+  showBookingTimeRange?: boolean;
   /**
    * Density-derived flag — controls the `StaffAvatar` skills row in the
    * staff column. Composes with `showStaffPerformanceDetail` (both must
@@ -225,6 +230,7 @@ function StaffTimelineGridImpl({
   showBookingPrices = true,
   showWalkinAccent = true,
   showBookingMetaLine = true,
+  showBookingTimeRange = true,
   showStaffSkillBadges = true,
   bookingBlockMinHeightPx,
   // `timeSlotMinutesVisualHint` is reserved for future row-height
@@ -586,6 +592,7 @@ function StaffTimelineGridImpl({
                           onClick={() => onBookingClick(b.id)}
                           showPrice={showBookingPrices}
                           showMetaLine={showBookingMetaLine}
+                          showTimeRange={showBookingTimeRange}
                           showWalkinAccent={showWalkinAccent}
                           minHeightPx={bookingBlockMinHeightPx}
                           isVip={b.is_vip}

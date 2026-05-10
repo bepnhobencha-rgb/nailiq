@@ -1397,6 +1397,7 @@ function ReceptionistCenterInner({
               showBookingPrices={modules.revenue_today && densityConfig.showPriceInBlock}
               showWalkinAccent={modules.vip_indicators}
               showBookingMetaLine={densityConfig.showMetaLine}
+              showBookingTimeRange={densityConfig.showTimeRangeInBlock}
               showStaffSkillBadges={densityConfig.showSkillBadges}
               bookingBlockMinHeightPx={densityConfig.bookingBlockMinHeight}
               timeSlotMinutesVisualHint={densityConfig.timeSlotMinutes}
