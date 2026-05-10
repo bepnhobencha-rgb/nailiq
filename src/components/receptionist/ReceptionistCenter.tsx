@@ -1361,8 +1361,15 @@ function ReceptionistCenterInner({
           />
         ) : (
         <div
+          // Day-view body intentionally NOT capped at
+          // --max-nq-desktop. The dashboard shell already absorbs the
+          // sidebar width via main's pl-[var(--nq-sidebar-w)]; capping
+          // here at 1180px meant collapsing the sidebar just widened
+          // the right gutter instead of growing the grid. Header / date
+          // switcher / banner above stay capped (sparse text content
+          // benefits from a centered max-width).
           className={cn(
-            "mx-auto flex h-full min-h-[min(100dvh-8rem,48rem)] w-full max-w-[var(--max-nq-desktop)] flex-1 flex-col gap-0",
+            "mx-auto flex h-full min-h-[min(100dvh-8rem,48rem)] w-full flex-1 flex-col gap-0",
             isViewingToday && modules.queue_panel && "md:flex-row",
           )}
         >
