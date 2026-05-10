@@ -184,10 +184,8 @@ Tests hit a real Supabase (test DB) via the service-role client. `e2e/helpers/db
 
 ## ⚠️ Known Tech Debt / Gotchas
 
-- **Registration uses `sessionStorage`** (`src/shared/register/registerSessionKeys.ts`) to carry completion tokens between `/register/*` steps. Doesn't survive reload, breaks across tabs. Phase-2 candidate to move to server-side state.
-- **Phase-2 TODOs**:
-  - `src/shared/booking/submitPublicBooking.ts:10` — "Phase 2 WOW" placeholder.
-  - `src/shared/dashboard/addEmailAction.ts:36,39` — email verification via Resend not yet wired.
+- **Registration sessionStorage + server-side fallback**: keys defined in `src/shared/lib/registerSessionKeys.ts`; `RegisterPageClient` and `VerifyPageClient` still write/read sessionStorage as the primary path. PR #72 (2026-05-09) added `src/shared/register/loadRegisterFlowStateAction.ts` — a server-side fallback that resolves register flow state from `register_completion_tokens` so reloads / cross-tab don't dead-end. Full migration off sessionStorage is future work; for now both code paths exist and you must keep them in sync.
+- **Phase-2 returning-customer WOW** — `src/shared/booking/submitPublicBooking.ts:513` carries a TODO to use `client_profiles` lookup at phone entry for auto-fill name + suggest preferred staff + "Welcome back" greeting. Not V1-blocking; activate when first beta salons report friction.
 - **Demo OTP mode**: `NEXT_PUBLIC_DEMO_OTP` + `NAILQ_DEMO_SLUG_COOKIE` allow bypassing real auth in dev/test. Verify it's off in prod.
 - **Conflict checking is application-level**, not enforced by DB constraints — be careful when touching `conflictCheck.ts` or booking insert paths.
 - **Single proxy entry**: `src/proxy.ts` is the active one. Don't add a second one in `src/app/`.
