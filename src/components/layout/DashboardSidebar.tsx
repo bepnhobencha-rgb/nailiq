@@ -229,38 +229,52 @@ export function DashboardSidebar({
       )}
       aria-label={t.primaryNav}
     >
-      <div className="flex items-center gap-3 px-3 py-4 border-b border-nq-border/40">
-        <Link
-          href="/"
-          className="flex items-center gap-2 min-w-0 flex-1 rounded-lg px-1 py-1 transition-colors hover:bg-nq-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
-          aria-label="NailIQ home"
-        >
-          <span
-            aria-hidden
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-nq-primary/15 text-sm font-bold tracking-tight text-nq-primary"
+      {collapsed ? (
+        // Collapsed: only the toggle, right-aligned within the 64px
+        // rail. The NQ logo + salon name don't fit at this width
+        // alongside a 36px button (NQ + gap + button = 80px > 40px
+        // content area), so we drop them. The toggle alone gives the
+        // user a clear way back to the expanded shell where both
+        // re-appear.
+        <div className="flex items-center justify-end px-2 py-4 border-b border-nq-border/40">
+          <button
+            type="button"
+            onClick={toggle}
+            aria-label={t.expandSidebar}
+            aria-expanded={false}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-nq-border/40 bg-nq-surface/40 text-nq-muted transition-colors hover:bg-nq-surface/80 hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
           >
-            NQ
-          </span>
-          {collapsed ? null : (
+            <ChevronRight className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3 px-3 py-4 border-b border-nq-border/40">
+          <Link
+            href="/"
+            className="flex items-center gap-2 min-w-0 flex-1 rounded-lg px-1 py-1 transition-colors hover:bg-nq-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
+            aria-label="NailIQ home"
+          >
+            <span
+              aria-hidden
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-nq-primary/15 text-sm font-bold tracking-tight text-nq-primary"
+            >
+              NQ
+            </span>
             <span className="min-w-0 truncate text-sm font-semibold text-nq-foreground">
               {salonName}
             </span>
-          )}
-        </Link>
-        <button
-          type="button"
-          onClick={toggle}
-          aria-label={collapsed ? t.expandSidebar : t.collapseSidebar}
-          aria-expanded={!collapsed}
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-nq-border/40 bg-nq-surface/40 text-nq-muted transition-colors hover:bg-nq-surface/80 hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
-        >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4" aria-hidden />
-          ) : (
+          </Link>
+          <button
+            type="button"
+            onClick={toggle}
+            aria-label={t.collapseSidebar}
+            aria-expanded={true}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-nq-border/40 bg-nq-surface/40 text-nq-muted transition-colors hover:bg-nq-surface/80 hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
+          >
             <ChevronLeft className="h-4 w-4" aria-hidden />
-          )}
-        </button>
-      </div>
+          </button>
+        </div>
+      )}
 
       <nav className="flex-1 overflow-y-auto px-2 py-3" aria-label={t.primaryNav}>
         <ul className="flex flex-col gap-1">
@@ -311,10 +325,10 @@ export function DashboardSidebar({
           </button>
         ) : (
           <div
-            className={cn(
-              "flex items-center gap-3 rounded-lg px-2 py-2",
-              collapsed ? "justify-center" : "",
-            )}
+            // Footer stays left-aligned in both states (matches the
+            // nav rows above) so the avatar pip's x-position is
+            // stable when the user toggles collapse.
+            className="flex items-center gap-3 rounded-lg px-2 py-2"
             title={collapsed ? `${salonName} · ${localizedRoleLabel(role, roleLabels)}` : undefined}
           >
             <SalonAvatar salonName={salonName} />
@@ -398,10 +412,15 @@ function SidebarRow({
     </Badge>
   ) : null;
 
+  // Nav rows stay left-aligned regardless of collapse state — icon
+  // sits at the same x-position when expanded vs collapsed so the
+  // user's eye doesn't have to re-find it on toggle. Collapsed uses a
+  // tighter px to land the icon flush with the rail's left edge
+  // (matches the toggle button's px-2 in the header).
   const baseClass = cn(
-    "relative flex min-h-11 w-full touch-manipulation items-center gap-3 rounded-lg px-2.5 transition-colors",
+    "relative flex min-h-11 w-full touch-manipulation items-center gap-3 rounded-lg transition-colors",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45",
-    collapsed ? "justify-center" : "",
+    collapsed ? "px-3" : "px-2.5",
     item.disabled
       ? "cursor-not-allowed opacity-50 text-nq-muted"
       : active
