@@ -86,26 +86,61 @@ export async function loadAllSalons(): Promise<LoadAllSalonsResult> {
     return { ok: false, error: "server_error" };
   }
 
-  const salons: SuperAdminSalonRow[] = (data ?? []).map((row) => ({
-    id: String(row.id),
-    slug: String(row.slug ?? ""),
-    name: String(row.name ?? "").trim(),
-    phone: String(row.phone ?? "").trim(),
-    subscription_plan:
-      typeof row.subscription_plan === "string"
-        ? row.subscription_plan
-        : null,
-    plan_override: normalizePlanOverride(row.plan_override),
-    feature_flags: normalizeFeatureFlags(row.feature_flags),
-    is_beta: Boolean(row.is_beta),
-    admin_notes:
-      typeof row.admin_notes === "string" && row.admin_notes.trim().length > 0
-        ? row.admin_notes
-        : null,
-    created_at: row.created_at ?? null,
-  }));
+  // Bookings-this-month per salon. Single query for the whole tenant
+  // set — we count in JS rather than running N+1 per-salon queries
+  // or pulling in pgcrypto. Excludes cancelled rows since they
+  // represent voided traffic, not real demand.
+  const monthStart = startOfCurrentUtcMonth();
+  const { data: bookingsRows, error: bookingsErr } = (await admin
+    .from("bookings")
+    .select("salon_id" as never)
+    .gte("start_time_utc", monthStart.toISOString())
+    .neq("status", "cancelled")) as {
+    data: Array<{ salon_id?: string | null }> | null;
+    error: unknown;
+  };
+
+  if (bookingsErr) {
+    // Don't fail the panel load over a count — log + continue with 0s.
+    console.error("[superadmin/loadAllSalons] bookings count", bookingsErr);
+  }
+
+  const monthlyCounts = new Map<string, number>();
+  for (const row of bookingsRows ?? []) {
+    const salonId = row.salon_id == null ? "" : String(row.salon_id);
+    if (!salonId) continue;
+    monthlyCounts.set(salonId, (monthlyCounts.get(salonId) ?? 0) + 1);
+  }
+
+  const salons: SuperAdminSalonRow[] = (data ?? []).map((row) => {
+    const id = String(row.id);
+    return {
+      id,
+      slug: String(row.slug ?? ""),
+      name: String(row.name ?? "").trim(),
+      phone: String(row.phone ?? "").trim(),
+      subscription_plan:
+        typeof row.subscription_plan === "string"
+          ? row.subscription_plan
+          : null,
+      plan_override: normalizePlanOverride(row.plan_override),
+      feature_flags: normalizeFeatureFlags(row.feature_flags),
+      is_beta: Boolean(row.is_beta),
+      admin_notes:
+        typeof row.admin_notes === "string" && row.admin_notes.trim().length > 0
+          ? row.admin_notes
+          : null,
+      created_at: row.created_at ?? null,
+      bookings_this_month: monthlyCounts.get(id) ?? 0,
+    };
+  });
 
   return { ok: true, salons };
+}
+
+function startOfCurrentUtcMonth(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 }
 
 export async function updateSalonFlags(

@@ -46,6 +46,10 @@ export type SuperAdminSalonRow = {
   is_beta: boolean;
   admin_notes: string | null;
   created_at: string | null;
+  /** Bookings whose `start_time_utc` falls in the current calendar
+   * month (UTC). Excludes status='cancelled' since those represent
+   * voided traffic, not real demand. */
+  bookings_this_month: number;
 };
 
 export type LoadAllSalonsResult =
