@@ -110,6 +110,77 @@ export type UserMessages = {
     verifyErrorInvalid: string;
     verifyErrorMissingToken: string;
   };
+  /** Marketing landing page (`/`) — full copy across all sections.
+   * Wired through `useUserLanguage` so the EN/VI toggle in the nav
+   * actually re-renders the page content. */
+  landing: {
+    nav: {
+      signIn: string;
+      tryFree: string;
+      langAriaLabel: string;
+    };
+    hero: {
+      eyebrow: string;
+      h1Line1: string;
+      h1Gold: string;
+      subline: string;
+      ctaPrimary: string;
+      ctaSecondary: string;
+      microtrust: string;
+    };
+    pain: {
+      eyebrow: string;
+      h2: string;
+      lede: string;
+      stat1: { label: string; body: string };
+      stat2: { label: string; body: string };
+      stat3: { display: string; sub: string; label: string; body: string };
+    };
+    features: {
+      eyebrow: string;
+      h2: string;
+      booking: { title: string; body: string };
+      queue: { title: string; body: string };
+      center: { title: string; body: string };
+    };
+    howItWorks: {
+      eyebrow: string;
+      h2: string;
+      step1: { title: string; body: string; preview: string };
+      step2: { title: string; body: string; preview: string };
+      step3: { title: string; body: string; preview: string };
+      bottomCta: string;
+    };
+    socialProof: {
+      eyebrow: string;
+      h2: string;
+      sub: string;
+    };
+    pricing: {
+      eyebrow: string;
+      h2: string;
+      sub: string;
+      mostPopular: string;
+      perMonth: string;
+      taxNote: string;
+      features: ReadonlyArray<string>;
+      cta: string;
+      ccNotice: string;
+    };
+    finalCta: {
+      eyebrow: string;
+      h2: string;
+      sub: string;
+      ctaPrimary: string;
+      ctaSecondary: string;
+    };
+    footer: {
+      privacy: string;
+      terms: string;
+      contact: string;
+      builtIn: string;
+    };
+  };
   /** Dashboard app-shell navigation (sidebar + mobile bottom bar). */
   nav: {
     frontDesk: string;
@@ -879,6 +950,125 @@ export const userEn: UserMessages = {
       "We could not verify your code. Check SUPABASE_SERVICE_ROLE_KEY and migrations.",
     verifyErrorInvalid: "Invalid code.",
     verifyErrorMissingToken: "Missing completion token. Try again.",
+  },
+  landing: {
+    nav: {
+      signIn: "Sign in",
+      tryFree: "Try free",
+      langAriaLabel: "Language",
+    },
+    hero: {
+      eyebrow: "Trusted by salons in Canada & Vietnam",
+      h1Line1: "$29/month. Booking + walk-in queue,",
+      h1Gold: "built for nail salons.",
+      subline:
+        "3–5× cheaper than Booksy. Vietnamese-first. No missed calls.",
+      ctaPrimary: "Try free for 14 days",
+      ctaSecondary: "See how it works ↓",
+      microtrust: "No credit card · 14-day trial · Setup in 2 minutes",
+    },
+    pain: {
+      eyebrow: "The Problem",
+      h2: "You’re losing money right now",
+      lede:
+        "Every salon owner we’ve talked to has the same three holes in the bucket. Here’s the math.",
+      stat1: {
+        label: "Lost from missed calls",
+        body:
+          "Phones ring while staff are busy. Each unanswered call is a booking that walks down the block to your competitor.",
+      },
+      stat2: {
+        label: "Don’t rebook after first visit",
+        body:
+          "Without an easy booking link, returning customers default to whoever has online slots — even if they loved you.",
+      },
+      stat3: {
+        display: "Walk-ins",
+        sub: "leave",
+        label: "When you’re too busy to take them",
+        body:
+          "No queue means walk-ins guess at wait times, get frustrated, and leave. A live queue keeps them — and your revenue.",
+      },
+    },
+    features: {
+      eyebrow: "Features",
+      h2: "Everything a nail salon needs",
+      booking: {
+        title: "Online Booking",
+        body:
+          "Your booking link, open 24/7. Clients pick service, staff, and time without calling — works on any phone, no app install.",
+      },
+      queue: {
+        title: "Walk-in Queue",
+        body:
+          "Real-time queue management. No chaos during busy hours — see who’s next at a glance, and customers always know their wait.",
+      },
+      center: {
+        title: "Receptionist Center",
+        body:
+          "Live grid showing all bookings and walk-ins. Reschedule, reassign staff, and resolve conflicts in seconds, not minutes.",
+      },
+    },
+    howItWorks: {
+      eyebrow: "Get Started",
+      h2: "Live in 15 minutes",
+      step1: {
+        title: "Sign up with your phone",
+        body: "OTP verification. No email required to start.",
+        preview:
+          "You’ll see — a 4-digit code in seconds, then your dashboard.",
+      },
+      step2: {
+        title: "Add services and staff",
+        body:
+          "Pre-loaded templates speed it up. Most salons finish in 10 minutes.",
+        preview:
+          "You’ll see — your menu live and ready to take bookings.",
+      },
+      step3: {
+        title: "Share your booking link",
+        body:
+          "Copy your nailiq.com/your-salon URL. Send to clients via Zalo, SMS, or stick on the front desk.",
+        preview: "You’ll see — your first booking land within hours.",
+      },
+      bottomCta: "Ready when you are. Try free for 14 days",
+    },
+    socialProof: {
+      eyebrow: "Trusted By",
+      h2: "What salon owners say",
+      sub: "Early access feedback",
+    },
+    pricing: {
+      eyebrow: "Pricing",
+      h2: "One simple plan",
+      sub: "No hidden fees. Cancel anytime.",
+      mostPopular: "Most Popular",
+      perMonth: "/month",
+      taxNote: "+ applicable taxes. CAD pricing.",
+      features: [
+        "All features included",
+        "Unlimited bookings & walk-ins",
+        "Vietnamese & English support",
+        "Real-time receptionist center",
+        "Cancel anytime — no contract",
+      ],
+      cta: "Start your 14-day free trial",
+      ccNotice: "No credit card required",
+    },
+    finalCta: {
+      eyebrow: "One last thing",
+      h2: "Ready to stop losing bookings?",
+      sub:
+        "14-day free trial. No credit card. Cancel anytime. Setup in 2 minutes.",
+      ctaPrimary: "Start your free trial",
+      ctaSecondary: "See how it works ↓",
+    },
+    footer: {
+      privacy: "Privacy",
+      terms: "Terms",
+      contact: "Contact",
+      builtIn: "Built in Vancouver, BC 🇨🇦",
+    },
   },
   nav: {
     frontDesk: "Front Desk",

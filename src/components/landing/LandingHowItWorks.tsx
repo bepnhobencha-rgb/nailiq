@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo } from "react";
 import { motion, useReducedMotion } from "@/shared/lib/motionClient";
+import { getUserMessages } from "@/shared/i18n/user";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 type Step = {
   number: string;
@@ -11,29 +14,22 @@ type Step = {
   preview: string;
 };
 
-const steps: Step[] = [
-  {
-    number: "01",
-    title: "Sign up with your phone",
-    body: "OTP verification. No email required to start.",
-    preview: "You'll see — a 4-digit code in seconds, then your dashboard.",
-  },
-  {
-    number: "02",
-    title: "Add services and staff",
-    body: "Pre-loaded templates speed it up. Most salons finish in 10 minutes.",
-    preview: "You'll see — your menu live and ready to take bookings.",
-  },
-  {
-    number: "03",
-    title: "Share your booking link",
-    body: "Copy your nailiq.com/your-salon URL. Send to clients via Zalo, SMS, or stick on the front desk.",
-    preview: "You'll see — your first booking land within hours.",
-  },
-];
-
 export function LandingHowItWorks() {
   const reduce = useReducedMotion();
+  const { language } = useUserLanguage();
+  const t = useMemo(
+    () => getUserMessages(language).landing.howItWorks,
+    [language],
+  );
+
+  const steps: Step[] = useMemo(
+    () => [
+      { number: "01", ...t.step1 },
+      { number: "02", ...t.step2 },
+      { number: "03", ...t.step3 },
+    ],
+    [t],
+  );
 
   return (
     <section
@@ -48,10 +44,10 @@ export function LandingHowItWorks() {
           transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
         >
           <p className="text-[11px] font-semibold tracking-[0.24em] text-nq-primary uppercase">
-            Get Started
+            {t.eyebrow}
           </p>
           <h2 className="mt-4 text-3xl font-semibold tracking-tight text-nq-foreground md:text-5xl lg:text-6xl">
-            Live in 15 minutes
+            {t.h2}
           </h2>
         </motion.div>
 
@@ -112,7 +108,7 @@ export function LandingHowItWorks() {
             href="/register"
             className="group inline-flex items-center gap-2 text-sm font-medium text-nq-primary-soft transition hover:text-nq-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg rounded-md px-2 py-1"
           >
-            Ready when you are. Try free for 14 days
+            {t.bottomCta}
             <span aria-hidden className="transition-transform group-hover:translate-x-0.5">
               →
             </span>

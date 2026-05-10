@@ -1,13 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo } from "react";
 import { cn } from "@/shared/lib/cn";
-
-type Lang = "en" | "vi";
+import { getUserMessages } from "@/shared/i18n/user";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import type { UserLanguage } from "@/shared/i18n/user/types";
 
 export function LandingFooter() {
-  const [lang, setLang] = useState<Lang>("en");
+  // Use the real shared toggle so the choice persists across pages and
+  // matches the nav. Was previously a local useState (cosmetic only).
+  const { language: lang, setLanguage: setLang } = useUserLanguage();
+  const messages = useMemo(() => getUserMessages(lang), [lang]);
+  const t = messages.landing.footer;
+  const navT = messages.landing.nav;
 
   return (
     <footer className="border-t border-nq-border/30 bg-nq-bg py-6 md:py-8">
@@ -35,52 +41,70 @@ export function LandingFooter() {
               href="/privacy"
               className="transition hover:text-nq-foreground focus-visible:outline-none focus-visible:text-nq-foreground"
             >
-              Privacy
+              {t.privacy}
             </Link>
             <Link
               href="/terms"
               className="transition hover:text-nq-foreground focus-visible:outline-none focus-visible:text-nq-foreground"
             >
-              Terms
+              {t.terms}
             </Link>
             <Link
               href="/contact"
               className="transition hover:text-nq-foreground focus-visible:outline-none focus-visible:text-nq-foreground"
             >
-              Contact
+              {t.contact}
             </Link>
           </nav>
         </div>
 
         <div className="mt-4 flex flex-col gap-3 md:mt-5 md:flex-row md:items-center md:justify-between">
-          <div
-            role="group"
-            aria-label="Language"
-            className="inline-flex w-fit items-center rounded-full border border-nq-border/40 bg-nq-surface/40 p-1 text-[11px] font-semibold tracking-widest uppercase"
-          >
-            {(["en", "vi"] as const).map((code) => {
-              const active = lang === code;
-              return (
-                <button
-                  key={code}
-                  type="button"
-                  onClick={() => setLang(code)}
-                  className={cn(
-                    "min-w-9 rounded-full px-3 py-1 transition",
-                    active
-                      ? "bg-nq-primary/15 text-nq-primary-soft shadow-[inset_0_0_0_1px_rgba(212,175,55,0.25)]"
-                      : "text-nq-muted hover:text-nq-foreground",
-                  )}
-                  aria-pressed={active}
-                >
-                  {code}
-                </button>
-              );
-            })}
-          </div>
-          <p className="text-xs text-nq-muted">Built in Vancouver, BC 🇨🇦</p>
+          <FooterLangToggle
+            lang={lang}
+            setLang={setLang}
+            ariaLabel={navT.langAriaLabel}
+          />
+          <p className="text-xs text-nq-muted">{t.builtIn}</p>
         </div>
       </div>
     </footer>
+  );
+}
+
+function FooterLangToggle({
+  lang,
+  setLang,
+  ariaLabel,
+}: {
+  lang: UserLanguage;
+  setLang: (l: UserLanguage) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className="inline-flex w-fit items-center rounded-full border border-nq-border/40 bg-nq-surface/40 p-1 text-[11px] font-semibold tracking-widest uppercase"
+    >
+      {(["en", "vi"] as const).map((code) => {
+        const active = lang === code;
+        return (
+          <button
+            key={code}
+            type="button"
+            onClick={() => setLang(code)}
+            className={cn(
+              "min-w-9 rounded-full px-3 py-1 transition",
+              active
+                ? "bg-nq-primary/15 text-nq-primary-soft shadow-[inset_0_0_0_1px_rgba(212,175,55,0.25)]"
+                : "text-nq-muted hover:text-nq-foreground",
+            )}
+            aria-pressed={active}
+          >
+            {code}
+          </button>
+        );
+      })}
+    </div>
   );
 }
