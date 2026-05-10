@@ -22,7 +22,6 @@ import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/shared/lib/cn";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
-import { useSidebarCollapsed } from "@/shared/lib/useSidebarCollapsed";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
 
 type Props = {
@@ -35,6 +34,16 @@ type Props = {
    * switcher dropdown when this list contains > 1 entry (the current
    * salon is always one of them; the dropdown lists the others). */
   salons?: OwnerSalonSummary[];
+  /**
+   * Collapse state — owned by DashboardShell so a single hook instance
+   * drives both the aside's `--nq-sidebar-w` CSS variable AND the
+   * sidebar's internal layout. Wiring this through props (instead of
+   * calling useSidebarCollapsed here) prevents the duplicate-state
+   * bug where the toggle button would flip the icon but never update
+   * the actual width.
+   */
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 };
 
 type NavItem = {
@@ -63,12 +72,14 @@ export function DashboardSidebar({
   walkinQueueCount = 0,
   messagesCount = 0,
   salons,
+  collapsed,
+  onToggleCollapsed,
 }: Props) {
   const pathname = usePathname() ?? "";
   const { language } = useUserLanguage();
   const messages = useMemo(() => getUserMessages(language), [language]);
   const t = messages.nav;
-  const { collapsed, toggle } = useSidebarCollapsed();
+  const toggle = onToggleCollapsed;
 
   const roleLabels = messages.chooseSalon.roleBadge;
 
