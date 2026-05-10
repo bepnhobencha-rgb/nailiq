@@ -12,27 +12,37 @@ import {
 import { createClient } from "@/shared/lib/supabase/server";
 import { setPublicBookingSalonTags } from "@/shared/observability/salonSentry";
 
-/** Paths that must not resolve as salon slugs (overlap static routes or reserved names).
+/**
+ * Paths that must not resolve as salon slugs.
  *
- * Add a segment here whenever a new top-level route is introduced so a
- * salon registering with the same slug can't shadow it. The wait page
- * lives at `/[slug]/wait/[bookingId]` so `/wait` itself should never
- * resolve as a salon — defense in depth in case someone visits the
- * naked `/wait` URL or registers `wait` as their slug. */
+ * Two reasons a slug ends up here:
+ *   (a) it shadows a literal `src/app/<name>/` route — Next.js routing
+ *       picks the literal segment over `[slug]`, so a salon registered
+ *       with this slug would be unreachable at `/<slug>` (and we want
+ *       the wizard to refuse it before the row is even created); OR
+ *   (b) it's a brand or shadow-route name we never want a salon to
+ *       claim. `wait` lives at `/[slug]/wait/[bookingId]` so the naked
+ *       `/wait` should never resolve as a salon.
+ *
+ * Keep this list in sync whenever a new top-level folder lands in
+ * `src/app/` — a quick `ls src/app/` and add anything missing.
+ */
 export const RESERVED_BOOKING_SLUGS = new Set([
-  "login",
-  "register",
-  "dashboard",
+  // (a) shadow-protected — these are real Next routes.
   "api",
-  "aggressive",
-  "wait",
-  "superadmin",
   "auth",
   "choose-salon",
   "contact",
-  "privacy",
-  "terms",
+  "dashboard",
   "debug-sentry",
+  "login",
+  "privacy",
+  "register",
+  "superadmin",
+  "terms",
+  // (b) brand- / path-protected.
+  "aggressive",
+  "wait",
 ]);
 
 export type ResolvedPublicBookingPage =
