@@ -120,6 +120,15 @@ export async function proxy(request: NextRequest) {
     return applyCookiesFrom(redirect, supabaseResponse);
   }
 
+  // SuperAdmin route: unauthenticated users → /login. The page itself
+  // does the membership check (isSuperAdmin) and bounces non-admin
+  // signed-in users; we keep this layer minimal so the gate logic
+  // stays in one place (the page server component).
+  if (!user && pathname.startsWith("/superadmin")) {
+    const redirect = NextResponse.redirect(new URL("/login", request.url));
+    return applyCookiesFrom(redirect, supabaseResponse);
+  }
+
   return supabaseResponse;
 }
 
