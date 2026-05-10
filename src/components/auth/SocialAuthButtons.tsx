@@ -38,7 +38,7 @@ export function SocialAuthButtons({ mode }: Props) {
       const { error: oauthErr } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: "https://www.nailiq.ca/auth/callback",
         },
       });
       if (oauthErr) {
@@ -61,7 +61,7 @@ export function SocialAuthButtons({ mode }: Props) {
       const { error: otpErr } = await supabase.auth.signInWithOtp({
         email: trimmed,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: "https://www.nailiq.ca/auth/callback",
         },
       });
       if (otpErr) {
