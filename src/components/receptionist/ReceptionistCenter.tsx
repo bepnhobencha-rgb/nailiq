@@ -1444,8 +1444,11 @@ function ReceptionistCenterInner({
             className={cn(
               "flex min-h-[min(50dvh,28rem)] min-w-0 flex-1 flex-col border-t border-nq-muted/20",
               "transition-[padding-right] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]",
+              // Arbitrary value (`md:pr-[20rem]`) instead of `md:pr-80`
+              // so Tailwind always emits the rule even if the static
+              // utility hash changes between versions. Same 320px.
               isViewingToday && modules.queue_panel && queuePanelOpen
-                ? "md:pr-80"
+                ? "md:pr-[20rem]"
                 : "",
             )}
           >
@@ -1509,26 +1512,34 @@ function ReceptionistCenterInner({
             aria-hidden={!queuePanelOpen}
             aria-label={rcMessages.queue.title}
             className={cn(
-              "fixed inset-y-0 right-0 z-40 w-80 max-w-full",
+              // Flex column so the header is shrink-0 and the body
+              // owns the remaining vertical space — replaces the old
+              // brittle `h-[calc(100%-44px)]` (would break the moment
+              // the header wrapped to two lines).
+              // overflow-x-hidden contains any wide form input
+              // (priority select, request-tag chips) that might
+              // otherwise visually escape the 320px panel.
+              "fixed inset-y-0 right-0 z-40 flex w-80 max-w-full flex-col",
+              "overflow-x-hidden",
               "bg-nq-surface border-l border-nq-border/40 shadow-nq-card",
               "transition-transform duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]",
               queuePanelOpen ? "translate-x-0" : "translate-x-full",
             )}
           >
-            <div className="flex items-center justify-between border-b border-nq-border/40 px-3 py-2">
-              <p className="text-sm font-semibold text-nq-foreground">
+            <div className="flex shrink-0 items-center justify-between border-b border-nq-border/40 px-3 py-2">
+              <p className="min-w-0 truncate text-sm font-semibold text-nq-foreground">
                 {rcMessages.queue.title}
               </p>
               <button
                 type="button"
                 onClick={() => setQueuePanelOpen(false)}
                 aria-label={rcMessages.queue.closePanel}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-nq-border/40 bg-nq-surface/40 text-nq-muted transition-colors hover:bg-nq-surface/80 hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-nq-border/40 bg-nq-surface/40 text-nq-muted transition-colors hover:bg-nq-surface/80 hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
               >
                 <CloseIcon className="h-4 w-4" aria-hidden />
               </button>
             </div>
-            <div className="h-[calc(100%-44px)] overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto">
               <WalkinQueueSidebar
                 assigningId={assigningWalkinId}
                 items={queueItems}
