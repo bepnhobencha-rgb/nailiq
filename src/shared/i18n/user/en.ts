@@ -193,6 +193,10 @@ export type UserMessages = {
     reports: string;
     marketing: string;
     settings: string;
+    /** Quick-action button at the bottom of the nav rail. */
+    quickAddWalkin: string;
+    /** Static placeholder badge for the disabled Messages row. */
+    messagesSoonBadge: string;
     collapseSidebar: string;
     expandSidebar: string;
     /** Aria label on the bottom-tab `<nav>`. */
@@ -1075,16 +1079,18 @@ export const userEn: UserMessages = {
     },
   },
   nav: {
-    frontDesk: "Front Desk",
+    frontDesk: "Live Board",
     calendar: "Calendar",
-    clients: "Clients",
+    clients: "Customers",
     services: "Services",
     staff: "Staff",
     walkinQueue: "Walk-in Queue",
     messages: "Messages",
     reports: "Reports",
-    marketing: "Marketing",
+    marketing: "Retention",
     settings: "Settings",
+    quickAddWalkin: "+ Walk-in",
+    messagesSoonBadge: "Soon",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
     primaryNav: "Primary navigation",
