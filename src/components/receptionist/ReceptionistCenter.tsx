@@ -1,6 +1,7 @@
 "use client";
 
 import * as Sentry from "@sentry/nextjs";
+import { Users, X as CloseIcon } from "lucide-react";
 
 /**
  * ReceptionistCenter — performance notes
@@ -74,6 +75,8 @@ import { getUserMessages } from "@/shared/i18n/user";
 import { checkBookingConflict, type ConflictCheckBooking } from "@/shared/lib/conflictCheck";
 import { cn } from "@/shared/lib/cn";
 import { cleanPhone, formatPhone } from "@/shared/lib/phoneFormat";
+import { isWalkinUrgent } from "@/shared/lib/queueUrgency";
+import { useQueuePanelOpen } from "@/shared/lib/useQueuePanelOpen";
 import {
   canCancelBooking,
   type SalonMemberRole,
@@ -449,6 +452,31 @@ function ReceptionistCenterInner({
   const queueItems: QueueItem[] = data.walkinQueue;
 
   const inProgressToday = data.bookingsForDay.filter((b) => b.status === "in_progress").length;
+
+  // Walk-in slide-over toggle state — see DASHBOARD_LAYOUT_RULES §11.
+  // The hook handles the auto-open contract (waiting > 0 → open
+  // unless the user explicitly closed in this session).
+  const queueWaitingCount = queueItems.length;
+  const queueUrgentCount = useMemo(() => {
+    let n = 0;
+    for (const q of queueItems) {
+      if (
+        isWalkinUrgent({
+          joinedQueueAtIso: q.joined_queue_at,
+          staffRequestNote: q.staff_request_note,
+          nowIso,
+        })
+      ) {
+        n += 1;
+      }
+    }
+    return n;
+  }, [queueItems, nowIso]);
+  const {
+    open: queuePanelOpen,
+    setOpen: setQueuePanelOpen,
+    toggle: toggleQueuePanel,
+  } = useQueuePanelOpen(queueWaitingCount);
 
   const assignedSlot =
     assigningWalkinId !== null
@@ -1227,6 +1255,49 @@ function ReceptionistCenterInner({
                   );
                 })}
               </div>
+              {/*
+               * Walk-in queue slide-over toggle. See
+               * DASHBOARD_LAYOUT_RULES §11.3. Hidden when the queue
+               * module is off (the slide-over wouldn't render anyway,
+               * so don't surface a button that does nothing). Badge
+               * color tracks operational urgency: red when any walk-in
+               * is overdue, gold when ≥1 waiting but none urgent, no
+               * badge when empty.
+               */}
+              {modules.queue_panel ? (
+                <button
+                  type="button"
+                  onClick={toggleQueuePanel}
+                  aria-label={rcMessages.queue.title}
+                  aria-pressed={queuePanelOpen}
+                  data-testid="queue-panel-toggle"
+                  className={cn(
+                    "relative inline-flex min-h-9 touch-manipulation items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45",
+                    queuePanelOpen
+                      ? "border-nq-primary/40 bg-nq-primary/15 text-nq-primary"
+                      : "border-nq-border bg-nq-surface text-nq-muted hover:text-nq-foreground",
+                  )}
+                >
+                  <Users className="h-4 w-4" aria-hidden />
+                  <span className="hidden sm:inline">
+                    {rcMessages.queue.toggleShort}
+                  </span>
+                  {queueWaitingCount > 0 ? (
+                    <span
+                      data-testid="queue-panel-toggle-badge"
+                      className={cn(
+                        "ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none",
+                        queueUrgentCount > 0
+                          ? "bg-nq-error text-nq-foreground"
+                          : "bg-nq-primary text-nq-bg",
+                      )}
+                    >
+                      {queueWaitingCount}
+                    </span>
+                  ) : null}
+                </button>
+              ) : null}
               <UserLanguageToggle language={language} onLanguageChange={setLanguage} />
             </div>
           </div>
@@ -1361,24 +1432,21 @@ function ReceptionistCenterInner({
           />
         ) : (
         <div
-          // Day-view body intentionally NOT capped at
-          // --max-nq-desktop. The dashboard shell already absorbs the
-          // sidebar width via main's pl-[var(--nq-sidebar-w)]; capping
-          // here at 1180px meant collapsing the sidebar just widened
-          // the right gutter instead of growing the grid. Header / date
-          // switcher / banner above stay capped (sparse text content
-          // benefits from a centered max-width).
-          className={cn(
-            "mx-auto flex h-full min-h-[min(100dvh-8rem,48rem)] w-full flex-1 flex-col gap-0",
-            isViewingToday && modules.queue_panel && "md:flex-row",
-          )}
+          // Day-view body now full-width on every viewport. The walk-in
+          // queue moved into a fixed slide-over (DASHBOARD_LAYOUT_RULES
+          // §11) so the timeline owns the row. When the slide-over is
+          // open AND the viewport is md+, we add right-padding equal to
+          // the panel width (320px) so the grid shrinks to make room
+          // instead of being covered by the panel.
+          className="mx-auto flex h-full min-h-[min(100dvh-8rem,48rem)] w-full flex-1 flex-col gap-0"
         >
           <section
             className={cn(
               "flex min-h-[min(50dvh,28rem)] min-w-0 flex-1 flex-col border-t border-nq-muted/20",
-              isViewingToday && modules.queue_panel
-                ? "order-2 md:order-1 md:border-t-0 md:border-r"
-                : "order-1 w-full",
+              "transition-[padding-right] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]",
+              isViewingToday && modules.queue_panel && queuePanelOpen
+                ? "md:pr-80"
+                : "",
             )}
           >
             <StaffTimelineGrid
@@ -1410,8 +1478,57 @@ function ReceptionistCenterInner({
               timeSlotMinutesVisualHint={densityConfig.timeSlotMinutes}
             />
           </section>
-          {isViewingToday && modules.queue_panel ? (
-            <div className="order-1 h-[min(42dvh,22rem)] min-h-[12rem] w-full shrink-0 md:order-2 md:h-auto md:w-[min(22rem,calc(100vw-2rem))] md:max-w-sm">
+        </div>
+        )}
+      </div>
+
+      {/*
+       * Walk-in slide-over. Mounted at the receptionist root so its
+       * fixed positioning is relative to the viewport. Only renders
+       * on the day view (the queue is a "today" concept) and only
+       * when the salon's queue_panel module is enabled. On mobile, a
+       * backdrop appears beneath the panel and click-to-close.
+       */}
+      {viewMode === "day" && isViewingToday && modules.queue_panel ? (
+        <>
+          {/* Mobile backdrop — md:hidden so desktop just flexes the
+              grid via pr-80 instead of dimming the rest of the desk. */}
+          {queuePanelOpen ? (
+            <button
+              type="button"
+              aria-hidden
+              tabIndex={-1}
+              onClick={() => setQueuePanelOpen(false)}
+              className="md:hidden fixed inset-0 z-30 bg-nq-bg/60"
+              data-testid="queue-panel-backdrop"
+            />
+          ) : null}
+
+          <aside
+            data-testid="queue-panel-slideover"
+            aria-hidden={!queuePanelOpen}
+            aria-label={rcMessages.queue.title}
+            className={cn(
+              "fixed inset-y-0 right-0 z-40 w-80 max-w-full",
+              "bg-nq-surface border-l border-nq-border/40 shadow-nq-card",
+              "transition-transform duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]",
+              queuePanelOpen ? "translate-x-0" : "translate-x-full",
+            )}
+          >
+            <div className="flex items-center justify-between border-b border-nq-border/40 px-3 py-2">
+              <p className="text-sm font-semibold text-nq-foreground">
+                {rcMessages.queue.title}
+              </p>
+              <button
+                type="button"
+                onClick={() => setQueuePanelOpen(false)}
+                aria-label={rcMessages.queue.closePanel}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-nq-border/40 bg-nq-surface/40 text-nq-muted transition-colors hover:bg-nq-surface/80 hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
+              >
+                <CloseIcon className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+            <div className="h-[calc(100%-44px)] overflow-y-auto">
               <WalkinQueueSidebar
                 assigningId={assigningWalkinId}
                 items={queueItems}
@@ -1461,10 +1578,9 @@ function ReceptionistCenterInner({
                 }}
               />
             </div>
-          ) : null}
-        </div>
-        )}
-      </div>
+          </aside>
+        </>
+      ) : null}
 
       {shakeMessage !== null ? (
         <output

@@ -193,6 +193,10 @@ export type UserMessages = {
     reports: string;
     marketing: string;
     settings: string;
+    /** Quick-action button at the bottom of the nav rail. */
+    quickAddWalkin: string;
+    /** Static placeholder badge for the disabled Messages row. */
+    messagesSoonBadge: string;
     collapseSidebar: string;
     expandSidebar: string;
     /** Aria label on the bottom-tab `<nav>`. */
@@ -522,6 +526,10 @@ export type UserMessages = {
     };
     queue: {
       title: string;
+      /** Short label for the slide-over toggle button in the top bar. */
+      toggleShort: string;
+      /** Aria-label on the slide-over close (X) button. */
+      closePanel: string;
       emptyMessage: string;
       cancelButton: string;
       assignButton: string;
@@ -1071,16 +1079,18 @@ export const userEn: UserMessages = {
     },
   },
   nav: {
-    frontDesk: "Front Desk",
+    frontDesk: "Live Board",
     calendar: "Calendar",
-    clients: "Clients",
+    clients: "Customers",
     services: "Services",
     staff: "Staff",
     walkinQueue: "Walk-in Queue",
     messages: "Messages",
     reports: "Reports",
-    marketing: "Marketing",
+    marketing: "Retention",
     settings: "Settings",
+    quickAddWalkin: "+ Walk-in",
+    messagesSoonBadge: "Soon",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
     primaryNav: "Primary navigation",
@@ -1367,6 +1377,8 @@ export const userEn: UserMessages = {
     },
     queue: {
       title: "Walk-in queue",
+      toggleShort: "Queue",
+      closePanel: "Close queue panel",
       emptyMessage: "No walk-ins queued. Use the form above to add.",
       cancelButton: "Remove",
       assignButton: "Assign",

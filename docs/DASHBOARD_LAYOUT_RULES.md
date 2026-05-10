@@ -406,3 +406,58 @@ When a `founder` is impersonating a salon owner (per `PERMISSION_MATRIX.md` §8.
 - Multi-operator concurrent impersonation (two `founder`s impersonating different salons): out of Foundation V1; if it lands, audit log already captures the parallel sessions.
 
 ---
+
+## 11. Walk-in queue slide-over _(added 2026-05-10)_
+
+**Scope.** This section governs how the walk-in queue panel renders inside `ReceptionistCenter` on `tablet landscape` and `desktop` widths. It scopes a defined relaxation of the §2 RIGHT ZONE persistence rule.
+
+### 11.1 Why the relaxation
+
+§2 RIGHT ZONE mandates the queue as a persistent adjacent column on tablet-landscape and desktop. In practice salons with low walk-in volume reported the timeline grid felt unnecessarily cramped — the queue column was always-present chrome even when the queue had been empty for hours. The slide-over preserves "always discoverable" without permanent geometry cost.
+
+### 11.2 Default state + auto-open contract
+
+The receptionist queue panel defaults to **collapsed** (slide-over hidden) on every viewport — INCLUDING tablet-landscape and desktop. This is the contract change vs §2.
+
+**Auto-open conditions** (the "always discoverable when needed" safety net that satisfies §2 spirit):
+
+- On data load AND on every realtime update where `bookingsForDay.filter(status === 'waiting').length > 0`, the panel auto-opens IF the user has not explicitly closed it during this session.
+- Manual close (toggle button) sets a session-scoped suppression flag — re-suppressed on the next page reload so the auto-open contract resumes.
+- Cross-session preference is persisted in `localStorage["nailiq-queue-panel-open"]` (`"1"` = open, `"0"` = closed). Auto-open above takes precedence over `"0"` ONLY when waiting > 0.
+
+### 11.3 Toggle button
+
+- Position: receptionist top-bar, next to the existing density slider / view-mode toggle.
+- Always visible on every viewport, every preset (TV preset excluded — see §11.6). The toggle is the canonical entry point per §2 ("must always have a discoverable path to queue and quick add").
+- Content: `Users` icon + `t.queue.title` label (label hidden on mobile to save horizontal space).
+- Count badge — color tracks operational urgency:
+  - 0 waiting → no badge.
+  - 1+ waiting, no urgency → `bg-nq-primary` with inverse foreground (gold accent — pair with text label per `COLOR_TOKENS.md` §7).
+  - 1+ urgent (overdue or `urgentByLib` per `queueUrgency.ts`) → `bg-nq-error` with inverse foreground.
+
+### 11.4 Geometry
+
+- **Panel width:** 320px (`w-80`).
+- **Slide direction:** in from the right edge via `translate-x-full` → `translate-x-0`.
+- **Transition:** `transform var(--duration-nq-base) var(--ease-nq-out)` — same tokens used by `DashboardShell` for the sidebar shift. No inline ms literals (`ANIMATION_RULES.md`).
+- **Timeline reflow:** when the panel is open AND the viewport is `md`+, the timeline body container adds `pr-80` (320px) so the grid shrinks to make room — same right-padding pattern the shell uses for the left sidebar. The transition is on `padding-right` with the same motion tokens.
+- **Mobile (<md):** panel covers the timeline as an overlay (no padding shift) AND a backdrop scrim (`bg-nq-bg/60`) appears beneath the panel. Click on backdrop closes the panel.
+
+### 11.5 Z-index + backdrop discipline
+
+- Panel: `z-40` (same as `DashboardSidebar`).
+- Mobile backdrop: `z-30`.
+- Panel never stacks ABOVE an active modal (`Modal` z-index policy from `COMPONENT_RULES.md` §3 still wins).
+- No popup stacking — opening the booking detail drawer from inside the queue panel must REPLACE the panel context, not stack a second overlay.
+
+### 11.6 Module gating
+
+- `dashboard_modules.queue_panel = false` still hides the queue entirely (toggle button included). The slide-over does NOT bypass the salon-wide module flag.
+- TV preset (`dashboard_preset = 'tv'`) renders the read-only `TVModeView` and skips the slide-over entirely (already handled by the TV early-return in `ReceptionistCenter`).
+
+### 11.7 Out of scope for this section
+
+- Queue contents, urgency calculation, sort behavior — unchanged; `WalkinQueueSidebar` is just re-parented into the slide-over container. Mutations and feature flags remain governed by their existing surfaces.
+- Animation values (durations, easing) inherit from `ANIMATION_RULES.md`. This section names which transition fires; values trace to the named tokens.
+
+---

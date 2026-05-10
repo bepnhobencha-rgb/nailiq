@@ -61,12 +61,36 @@ export default async function DashboardSlugLayout({
   const salons =
     ctx.role === "owner" ? await loadOwnerSalons(slug) : [];
 
+  // Live-board badge counters for the sidebar Walk-in Queue row.
+  // Two queries (waiting + overdue) are issued in parallel; we tolerate
+  // either failing (badge just hides). True realtime updates piggyback
+  // on per-page navigation — the layout re-renders on every route
+  // change so counts stay reasonably fresh without a client-side
+  // postgres_changes subscription at the layout level.
+  const [waitingRes, overdueRes] = await Promise.all([
+    ctx.supabase
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("salon_id", ctx.salon.id)
+      .eq("status", "waiting"),
+    ctx.supabase
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("salon_id", ctx.salon.id)
+      .eq("status", "in_progress")
+      .lt("end_time_utc", new Date().toISOString()),
+  ]);
+  const walkinQueueCount = waitingRes.count ?? 0;
+  const overdueCount = overdueRes.count ?? 0;
+
   return (
     <DashboardShell
       slug={slug}
       role={ctx.role}
       salonName={salonName}
       salons={salons}
+      walkinQueueCount={walkinQueueCount}
+      overdueCount={overdueCount}
     >
       {children}
     </DashboardShell>

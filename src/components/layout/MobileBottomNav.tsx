@@ -4,10 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
 import {
-  BarChart2,
   Clock,
   LayoutGrid,
   Settings as SettingsIcon,
+  TrendingUp,
   Users,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
@@ -61,7 +61,9 @@ export function MobileBottomNav({ slug, walkinQueueCount = 0 }: Props) {
         key: "reports",
         label: t.reports,
         href: `${dashRoot}/reports`,
-        icon: BarChart2,
+        // Mirrors the sidebar swap (BarChart2 → TrendingUp). Reads as
+        // analytics rather than generic "bars".
+        icon: TrendingUp,
         match: (p: string) => p.startsWith(`${dashRoot}/reports`),
       },
       {

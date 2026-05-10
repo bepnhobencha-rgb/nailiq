@@ -4,21 +4,21 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  BarChart2,
   Calendar,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
   Clock,
   LayoutGrid,
-  Megaphone,
   MessageSquare,
+  Plus,
   Scissors,
   Settings as SettingsIcon,
+  Sparkles,
+  TrendingUp,
   UserCheck,
   Users,
 } from "lucide-react";
-import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/shared/lib/cn";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -29,6 +29,9 @@ type Props = {
   role: string;
   salonName: string;
   walkinQueueCount?: number;
+  /** When > 0, the Walk-in Queue badge flips red (regardless of
+   * `walkinQueueCount`). Driven by overdue in-progress bookings. */
+  overdueCount?: number;
   messagesCount?: number;
   /** Owner-only: every salon this user owns. The footer renders a
    * switcher dropdown when this list contains > 1 entry (the current
@@ -53,10 +56,20 @@ type NavItem = {
   icon: typeof LayoutGrid;
   /** When set, render a Badge with this count next to the label (when > 0). */
   badge?: number;
+  /** Override the badge text — used by the static "Soon" pill on Messages. */
+  badgeLabel?: string;
+  /** Override badge color: gold (default), red (urgent), muted (placeholder). */
+  badgeTone?: "gold" | "red" | "muted";
   /** Match logic for the active state. Pathname matchers run in priority order. */
   match: (pathname: string) => boolean;
   /** Disabled placeholder (no href). */
   disabled?: boolean;
+};
+
+/** Visual grouping; rendered as a thin border between sections. */
+type NavSection = {
+  key: string;
+  items: NavItem[];
 };
 
 /**
@@ -70,6 +83,7 @@ export function DashboardSidebar({
   role,
   salonName,
   walkinQueueCount = 0,
+  overdueCount = 0,
   messagesCount = 0,
   salons,
   collapsed,
@@ -123,83 +137,124 @@ export function DashboardSidebar({
   const slugSeg = encodeURIComponent(slug);
   const dashRoot = `/dashboard/${slugSeg}`;
 
-  const items: NavItem[] = useMemo(
+  // Sections render with thin separator dividers between them.
+  // Settings sits in its OWN trailing section so it gets visually
+  // pushed to the bottom (separator above) per the new info hierarchy.
+  const sections: NavSection[] = useMemo(
     () => [
+      // 1. Live operations — what the receptionist looks at right now.
       {
-        key: "front-desk",
-        label: t.frontDesk,
-        href: `${dashRoot}/center`,
-        icon: LayoutGrid,
-        match: (p) => p.startsWith(`${dashRoot}/center`),
+        key: "live",
+        items: [
+          {
+            key: "front-desk",
+            label: t.frontDesk,
+            href: `${dashRoot}/center`,
+            icon: LayoutGrid,
+            match: (p) => p.startsWith(`${dashRoot}/center`),
+          },
+          {
+            key: "queue",
+            label: t.walkinQueue,
+            // Center anchors a queue panel; deep-link via #queue.
+            href: `${dashRoot}/center#queue`,
+            icon: Clock,
+            match: () => false,
+            // Combined badge: overdue count takes precedence over
+            // waiting count (so the receptionist sees "1 overdue" in
+            // red, not "3 waiting" in gold). When ONLY waiting > 0, we
+            // surface the waiting count in gold.
+            badge:
+              overdueCount > 0
+                ? overdueCount
+                : walkinQueueCount > 0
+                  ? walkinQueueCount
+                  : 0,
+            badgeTone: overdueCount > 0 ? "red" : "gold",
+          },
+          {
+            key: "calendar",
+            label: t.calendar,
+            // Center supports a week view via ?view=week (no separate route yet).
+            href: `${dashRoot}/center?view=week`,
+            icon: Calendar,
+            match: () => false,
+          },
+        ],
       },
+      // 2. Tenant data — who/what the salon offers.
       {
-        key: "calendar",
-        label: t.calendar,
-        // Center supports a week view via ?view=week (no separate route yet).
-        href: `${dashRoot}/center?view=week`,
-        icon: Calendar,
-        match: () => false,
+        key: "data",
+        items: [
+          {
+            key: "clients",
+            label: t.clients,
+            href: `${dashRoot}/clients`,
+            icon: Users,
+            match: (p) => p.startsWith(`${dashRoot}/clients`),
+          },
+          {
+            key: "staff",
+            label: t.staff,
+            href: `${dashRoot}/setup/staff`,
+            icon: UserCheck,
+            match: (p) => p.startsWith(`${dashRoot}/setup/staff`),
+          },
+          {
+            key: "services",
+            label: t.services,
+            href: `${dashRoot}/setup/services`,
+            icon: Scissors,
+            match: (p) => p.startsWith(`${dashRoot}/setup/services`),
+          },
+        ],
       },
+      // 3. Insight + lifecycle.
       {
-        key: "clients",
-        label: t.clients,
-        href: `${dashRoot}/clients`,
-        icon: Users,
-        match: (p) => p.startsWith(`${dashRoot}/clients`),
+        key: "insight",
+        items: [
+          {
+            key: "reports",
+            label: t.reports,
+            href: `${dashRoot}/reports`,
+            // TrendingUp reads as "business analytics" more than the
+            // prior BarChart2.
+            icon: TrendingUp,
+            match: (p) => p.startsWith(`${dashRoot}/reports`),
+          },
+          {
+            key: "messages",
+            label: t.messages,
+            href: null,
+            icon: MessageSquare,
+            match: () => false,
+            // Static "Soon" pill until messaging ships.
+            badgeLabel: t.messagesSoonBadge,
+            badgeTone: "muted",
+            disabled: true,
+          },
+          {
+            key: "marketing",
+            label: t.marketing,
+            href: null,
+            icon: Sparkles,
+            match: () => false,
+            disabled: true,
+          },
+        ],
       },
+      // 4. Settings — separator pushes this to the bottom of the rail.
       {
-        key: "services",
-        label: t.services,
-        href: `${dashRoot}/setup/services`,
-        icon: Scissors,
-        match: (p) => p.startsWith(`${dashRoot}/setup/services`),
-      },
-      {
-        key: "staff",
-        label: t.staff,
-        href: `${dashRoot}/setup/staff`,
-        icon: UserCheck,
-        match: (p) => p.startsWith(`${dashRoot}/setup/staff`),
-      },
-      {
-        key: "queue",
-        label: t.walkinQueue,
-        // Center anchors a queue panel; deep-link via #queue.
-        href: `${dashRoot}/center#queue`,
-        icon: Clock,
-        match: () => false,
-        badge: walkinQueueCount,
-      },
-      {
-        key: "messages",
-        label: t.messages,
-        href: null,
-        icon: MessageSquare,
-        match: () => false,
-        badge: messagesCount,
-        disabled: true,
-      },
-      {
-        key: "reports",
-        label: t.reports,
-        href: `${dashRoot}/reports`,
-        icon: BarChart2,
-        match: (p) => p.startsWith(`${dashRoot}/reports`),
-      },
-      {
-        key: "marketing",
-        label: t.marketing,
-        href: null,
-        icon: Megaphone,
-        match: () => false,
-        disabled: true,
-      },
-      {
-        key: "settings",
-        label: t.settings,
-        href: `${dashRoot}/settings`,
-        icon: SettingsIcon,
-        match: (p) => p.startsWith(`${dashRoot}/settings`),
+        key: "config",
+        items: [
+          {
+            key: "settings",
+            label: t.settings,
+            href: `${dashRoot}/settings`,
+            icon: SettingsIcon,
+            match: (p) => p.startsWith(`${dashRoot}/settings`),
+          },
+        ],
       },
     ],
     [
@@ -209,15 +264,21 @@ export function DashboardSidebar({
       t.frontDesk,
       t.marketing,
       t.messages,
+      t.messagesSoonBadge,
       t.reports,
       t.services,
       t.settings,
       t.staff,
       t.walkinQueue,
       walkinQueueCount,
-      messagesCount,
+      overdueCount,
     ],
   );
+
+  // Reference the prop so unused-var lint stays clean. messagesCount is
+  // intentionally not surfaced in the new layout (Messages shows the
+  // static "Soon" badge instead of a numeric count).
+  void messagesCount;
 
   return (
     <aside
@@ -276,18 +337,41 @@ export function DashboardSidebar({
         </div>
       )}
 
-      <nav className="flex-1 overflow-y-auto px-2 py-3" aria-label={t.primaryNav}>
-        <ul className="flex flex-col gap-1">
-          {items.map((item) => (
-            <li key={item.key}>
-              <SidebarRow
-                item={item}
-                active={item.href ? item.match(pathname) : false}
-                collapsed={collapsed}
+      <nav
+        className="flex-1 overflow-y-auto px-2 py-3"
+        aria-label={t.primaryNav}
+      >
+        {sections.map((section, sectionIdx) => (
+          <div key={section.key}>
+            {sectionIdx > 0 ? (
+              <div
+                className="my-2 border-t border-nq-border/30"
+                aria-hidden
               />
-            </li>
-          ))}
-        </ul>
+            ) : null}
+            <ul className="flex flex-col gap-1">
+              {section.items.map((item) => (
+                <li key={item.key}>
+                  <SidebarRow
+                    item={item}
+                    active={item.href ? item.match(pathname) : false}
+                    collapsed={collapsed}
+                  />
+                </li>
+              ))}
+            </ul>
+            {/* Quick action sits inside the insight section so the
+                separator before Settings naturally wraps both the
+                insight rows AND the +Walk-in button. */}
+            {section.key === "insight" ? (
+              <QuickAddWalkinButton
+                slug={slug}
+                collapsed={collapsed}
+                label={t.quickAddWalkin}
+              />
+            ) : null}
+          </div>
+        ))}
       </nav>
 
       <div className="relative mt-auto border-t border-nq-border/40 px-2 py-3">
@@ -394,22 +478,39 @@ function SidebarRow({
   collapsed: boolean;
 }) {
   const Icon = item.icon;
-  const showBadge = !item.disabled && (item.badge ?? 0) > 0;
+
+  // Badge resolution:
+  // - `badgeLabel` (string) wins; renders even on disabled rows
+  //   (used for the static "Soon" pill on Messages).
+  // - Otherwise show the numeric `badge` only when > 0 AND not disabled.
+  const numericBadgeVisible = !item.disabled && (item.badge ?? 0) > 0;
+  const stringBadgeVisible = !!item.badgeLabel;
+  const showBadge = stringBadgeVisible || numericBadgeVisible;
+
+  const tone = item.badgeTone ?? "gold";
+  const badgeColorClass =
+    tone === "red"
+      ? "bg-nq-error text-nq-foreground"
+      : tone === "muted"
+        ? "bg-nq-surface/60 text-nq-muted border border-nq-border/40"
+        : "bg-nq-primary text-nq-bg";
 
   const label = collapsed ? null : (
     <span className="min-w-0 flex-1 truncate text-sm">{item.label}</span>
   );
 
   const badge = showBadge ? (
-    <Badge
-      variant={active ? "default" : "muted"}
+    <span
       className={cn(
-        "ml-auto shrink-0",
-        collapsed ? "absolute -right-0.5 -top-0.5 h-4 min-w-4 px-1 text-[10px]" : "",
+        "ml-auto inline-flex shrink-0 items-center justify-center rounded-full text-[10px] font-bold leading-none",
+        badgeColorClass,
+        collapsed
+          ? "absolute -right-0.5 -top-0.5 h-4 min-w-4 px-1"
+          : "h-5 min-w-5 px-1.5",
       )}
     >
-      {item.badge}
-    </Badge>
+      {item.badgeLabel ?? item.badge}
+    </span>
   ) : null;
 
   // Nav rows stay left-aligned regardless of collapse state — icon
@@ -473,6 +574,49 @@ function localizedRoleLabel(role: string, labels: RoleBadgeMap): string {
   // Fallback for unknown / future roles — keep the raw role name so it's
   // still parseable rather than collapsing to an English placeholder.
   return role || labels.nail_tech;
+}
+
+/**
+ * Sidebar quick action — navigates to the receptionist Front Desk
+ * with a `#queue` hash AND primes the queue-panel localStorage flag
+ * so the slide-over auto-opens once the page loads. Cleaner UX than
+ * just relying on the hash scroll.
+ */
+function QuickAddWalkinButton({
+  slug,
+  collapsed,
+  label,
+}: {
+  slug: string;
+  collapsed: boolean;
+  label: string;
+}) {
+  const target = `/dashboard/${encodeURIComponent(slug)}/center#queue`;
+  return (
+    <Link
+      href={target}
+      onClick={() => {
+        try {
+          // Matches QUEUE_PANEL_OPEN_STORAGE_KEY in useQueuePanelOpen.
+          // Inlined to avoid pulling the hook into a server-render-safe
+          // sidebar; the contract is a one-line localStorage write.
+          window.localStorage.setItem("nailiq-queue-panel-open", "1");
+        } catch {
+          /* ignore */
+        }
+      }}
+      title={collapsed ? label : undefined}
+      aria-label={label}
+      className={cn(
+        "mt-3 flex min-h-11 w-full touch-manipulation items-center gap-2 rounded-lg border border-nq-primary/40 px-3 text-sm font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45",
+        collapsed ? "justify-center px-0" : "justify-start",
+      )}
+    >
+      <Plus className="h-4 w-4 shrink-0" aria-hidden />
+      {collapsed ? null : <span className="truncate">{label}</span>}
+    </Link>
+  );
 }
 
 function SalonAvatar({ salonName }: { salonName: string }) {
