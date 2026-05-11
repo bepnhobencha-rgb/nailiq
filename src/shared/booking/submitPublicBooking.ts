@@ -460,6 +460,12 @@ export async function submitPublicBooking(
     (rpcErr.code === "PGRST202" ||
       String(rpcErr.message ?? "").includes("Could not find the function"));
 
+  // Customer specifically requested this staff (anything other than
+  // the "any" sentinel). Drives the ❤️ icon on booking chips and the
+  // "Khách yêu cầu thợ này" line in the drawer.
+  const customerRequestedStaff =
+    requestedStaffId !== BOOKING_ANY_STAFF_ID;
+
   if (!bookingId && rpcMissing) {
     bookingId = crypto.randomUUID();
     const { error: insertErr } = await supabase.from("bookings").insert({
@@ -477,7 +483,8 @@ export async function submitPublicBooking(
       price_cents: insertPayload.price_cents,
       addon_service_id: insertPayload.addon_service_id,
       addon_price_cents: insertPayload.addon_price_cents,
-    });
+      staff_requested_by_client: customerRequestedStaff,
+    } as never);
 
     if (insertErr) {
       if (insertErr.code === "23505") throw new BookingConflictError();
@@ -512,6 +519,32 @@ export async function submitPublicBooking(
 
   const totalPriceCents =
     (priceSnapshot ?? 0) + (addonPriceSnapshot ?? 0);
+
+  // Best-effort: stamp the staff-requested flag for the RPC path.
+  // The fallback INSERT path above already sets the column inline.
+  // The `create_public_booking` RPC currently has a fixed parameter
+  // list that doesn't include this field; rather than gate the
+  // feature on a SQL function migration, we follow up with an UPDATE
+  // when the customer picked a specific staff. Failures here are
+  // logged but don't fail the booking — the chip just renders
+  // without a heart, identical to the prior behavior.
+  if (customerRequestedStaff && bookingId) {
+    const { error: stampErr } = await supabase
+      .from("bookings")
+      .update({ staff_requested_by_client: true } as never)
+      .eq("id", bookingId);
+    if (stampErr) {
+      const err = new Error(stampErr.message);
+      err.name = "StaffRequestedFlagStampError";
+      Sentry.captureException(err, {
+        tags: {
+          "booking.rpc": "staff_requested_flag",
+          "booking.rpc.failure": "post_insert_stamp",
+        },
+        extra: { bookingId, message: stampErr.message },
+      });
+    }
+  }
 
   // TODO Phase 2 WOW:
   // - Check client_profiles when guest enters phone

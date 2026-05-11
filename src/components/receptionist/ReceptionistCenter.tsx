@@ -884,6 +884,10 @@ function ReceptionistCenterInner({
       staffName,
       statusLabel: bookingStatusLabel(messages, b.status),
       sourceLabel,
+      // Reuse the timeline-chip flag — same server-derived signal,
+      // same heart icon meaning. Drives the "Khách yêu cầu thợ này"
+      // line under the source label.
+      staffRequestedByClient: b.has_staff_request,
       scheduleLine,
       durationLine,
       priceLine,
@@ -919,6 +923,11 @@ function ReceptionistCenterInner({
       noNotes: d.noNotesHint,
       callGuest: d.callGuest,
       nonePrice: d.none,
+      // Same string as the walk-in add form's checkbox — single
+      // source of truth for the "khách yêu cầu thợ này" copy across
+      // the entire receptionist surface.
+      staffRequestedByClient:
+        messages.receptionist.queue.addForm.staffRequestedByClient,
     };
   }, [messages]);
 
@@ -945,6 +954,7 @@ function ReceptionistCenterInner({
     clientPhone: string;
     serviceId: string;
     staffRequestNote: string | null;
+    staffRequestedByClient?: boolean;
     walkinSource?: import("@/shared/types").QueueSource | null;
     walkinPriority?: import("@/shared/types").QueuePriority | null;
     walkinRequestTags?: string[];
@@ -955,6 +965,7 @@ function ReceptionistCenterInner({
       clientPhone: input.clientPhone,
       serviceId: input.serviceId,
       staffRequestNote: input.staffRequestNote ?? undefined,
+      staffRequestedByClient: input.staffRequestedByClient === true,
       walkinSource: input.walkinSource ?? null,
       walkinPriority: input.walkinPriority ?? null,
       walkinRequestTags: input.walkinRequestTags ?? null,
