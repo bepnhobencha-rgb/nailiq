@@ -178,7 +178,7 @@ async function PublicBookingRouteBody({
               t={t}
               themeMode={load.salon.themeMode}
             />
-            <h1 className="hidden lg:block text-2xl font-semibold tracking-tight text-nq-foreground sm:text-3xl lg:text-[2.125rem] lg:leading-[1.15] lg:tracking-[-0.035em]">
+            <h1 className="hidden lg:block text-2xl font-semibold tracking-tight text-[var(--booking-text)] sm:text-3xl lg:text-[2.125rem] lg:leading-[1.15] lg:tracking-[-0.035em]">
               {t.pageTitle}
             </h1>
             <p className="mt-4 text-sm text-nq-muted sm:text-base lg:mt-3 lg:text-[17px] lg:leading-relaxed">

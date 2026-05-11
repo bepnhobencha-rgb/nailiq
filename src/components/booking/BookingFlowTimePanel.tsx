@@ -167,7 +167,7 @@ export function BookingFlowTimePanel({
                 <Button
                   type="button"
                   variant="secondary"
-                  className="nq-booking-glass h-12 min-h-11 w-full border border-[var(--booking-border)] text-[var(--salon-primary)] shadow-none hover:bg-[var(--booking-bg-input)] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="nq-booking-glass h-12 min-h-11 w-full border border-[var(--booking-border)] bg-transparent text-[var(--booking-text)] shadow-none hover:bg-[var(--booking-bg-input)] disabled:cursor-not-allowed disabled:opacity-40"
                   disabled={
                     waitlistSubmitting ||
                     waitlistContactInvalid
@@ -228,7 +228,7 @@ export function BookingFlowTimePanel({
         <Button
           type="button"
           variant="secondary"
-          className="nq-booking-glass h-14 min-h-11 w-full shrink-0 border border-[var(--booking-border)] text-[var(--salon-primary)] shadow-none hover:bg-[var(--booking-bg-input)] sm:w-auto sm:min-w-[8.5rem]"
+          className="nq-booking-glass h-14 min-h-11 w-full shrink-0 border border-[var(--booking-border)] bg-transparent text-[var(--booking-text)] shadow-none hover:bg-[var(--booking-bg-input)] sm:w-auto sm:min-w-[8.5rem]"
           onClick={onBack}
         >
           {t.back}
