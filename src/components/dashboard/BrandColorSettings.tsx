@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/Button";
@@ -9,6 +9,13 @@ import {
   updateBrandColor,
   updateSalonThemeMode,
 } from "@/shared/dashboard/salonOwnerActions";
+import {
+  extractDominantColor,
+  extractDominantColorAndTheme,
+  EXTRACT_ACCEPTED_MIME_ATTR,
+  type DominantColorAndThemeResult,
+  type DominantColorResult,
+} from "@/shared/lib/extractBrandFromImageFile";
 import {
   BRAND_COLOR_PRESETS,
   DEFAULT_BRAND_COLOR,
@@ -76,6 +83,22 @@ export function BrandColorSettings({
   const [urlDraft, setUrlDraft] = useState("");
   const [extract, setExtract] = useState<ExtractState>({ kind: "idle" });
   const [isExtracting, startExtractTransition] = useTransition();
+
+  // Client-side upload extractors (PR #118). Two independent flows
+  // — logo (color only) and screenshot (color + theme detection) —
+  // share the file-input hidden-element pattern but keep separate
+  // result + error state so neither can clobber the other.
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
+  const screenshotInputRef = useRef<HTMLInputElement | null>(null);
+  const [logoResult, setLogoResult] = useState<DominantColorResult | null>(
+    null,
+  );
+  const [screenshotResult, setScreenshotResult] =
+    useState<DominantColorAndThemeResult | null>(null);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const [screenshotError, setScreenshotError] = useState<string | null>(null);
+  const [isLogoProcessing, setIsLogoProcessing] = useState(false);
+  const [isScreenshotProcessing, setIsScreenshotProcessing] = useState(false);
 
   useEffect(() => {
     setColor(safeInitial);
@@ -148,6 +171,85 @@ export function BrandColorSettings({
     if (targetTheme !== themeMode) persistThemeMode(targetTheme);
     // Keep the result card around with a "applied" hint until the
     // owner explicitly clears it via another extract.
+  };
+
+  /** File-input change for the "Upload logo" button — extracts a
+   *  single dominant color and parks it in `logoResult` for review
+   *  before the owner clicks Apply. */
+  const onLogoFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset the input value so selecting the SAME file again still
+    // fires onChange (otherwise re-uploading the same logo silently
+    // no-ops). Do this synchronously before any await.
+    e.target.value = "";
+    if (!file) return;
+    setLogoError(null);
+    setLogoResult(null);
+    setIsLogoProcessing(true);
+    void (async () => {
+      try {
+        const r = await extractDominantColor(file);
+        if (!r) {
+          setLogoError(t.extract.colorExtractionFailed);
+          return;
+        }
+        setLogoResult(r);
+      } finally {
+        setIsLogoProcessing(false);
+      }
+    })();
+  };
+
+  /** Same flow as `onLogoFileSelect` but also samples corner
+   *  brightness to suggest a `theme_mode`. */
+  const onScreenshotFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setScreenshotError(null);
+    setScreenshotResult(null);
+    setIsScreenshotProcessing(true);
+    void (async () => {
+      try {
+        const r = await extractDominantColorAndTheme(file);
+        if (!r) {
+          setScreenshotError(t.extract.colorExtractionFailed);
+          return;
+        }
+        setScreenshotResult(r);
+      } finally {
+        setIsScreenshotProcessing(false);
+      }
+    })();
+  };
+
+  const onApplyLogo = () => {
+    if (!logoResult) return;
+    setColor(logoResult.color);
+    setHexDraft(logoResult.color);
+    setError(null);
+    persist(logoResult.color);
+  };
+
+  const onApplyScreenshot = () => {
+    if (!screenshotResult) return;
+    setColor(screenshotResult.color);
+    setHexDraft(screenshotResult.color);
+    setError(null);
+    persist(screenshotResult.color);
+    if (screenshotResult.themeMode !== themeMode) {
+      persistThemeMode(screenshotResult.themeMode);
+    }
+  };
+
+  const clearLogoResult = () => {
+    setLogoResult(null);
+    setLogoError(null);
+  };
+
+  const clearScreenshotResult = () => {
+    setScreenshotResult(null);
+    setScreenshotError(null);
   };
 
   const dirty = color.toUpperCase() !== savedColor.toUpperCase();
@@ -231,85 +333,254 @@ export function BrandColorSettings({
         className="mt-3 rounded-xl border border-nq-muted/30 bg-nq-bg/40 p-3"
       >
         <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
-          {t.extract.sectionLabel}
+          {t.extract.matchYourBrand}
         </p>
-        <p className="mt-1 text-[11px] leading-snug text-nq-muted">
-          {t.extract.hint}
-        </p>
-        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-          <input
-            type="url"
-            inputMode="url"
-            placeholder={t.extract.placeholder}
-            value={urlDraft}
-            disabled={isExtracting}
-            onChange={(e) => setUrlDraft(e.target.value)}
-            data-testid="brand-color-url-input"
-            className="h-11 w-full rounded-md border border-nq-muted/35 bg-nq-bg px-3 text-sm text-nq-foreground placeholder:text-nq-muted/70 focus:border-nq-primary focus:outline-none focus:ring-2 focus:ring-nq-primary/35 disabled:opacity-60"
-          />
+
+        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Button
             type="button"
             variant="secondary"
             size="sm"
-            onClick={onExtract}
-            disabled={!urlDraft.trim() || isExtracting}
-            data-testid="brand-color-url-extract"
+            onClick={() => logoInputRef.current?.click()}
+            disabled={isLogoProcessing}
+            data-testid="brand-color-logo-upload"
           >
-            {isExtracting ? t.extract.extracting : t.extract.extract}
+            {isLogoProcessing ? t.extract.extracting : t.extract.uploadLogo}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => screenshotInputRef.current?.click()}
+            disabled={isScreenshotProcessing}
+            data-testid="brand-color-screenshot-upload"
+          >
+            {isScreenshotProcessing
+              ? t.extract.extracting
+              : t.extract.uploadScreenshot}
           </Button>
         </div>
 
-        {extract.kind === "error" ? (
-          <p
-            role="alert"
-            className="mt-2 text-[11px] text-nq-error"
-            data-testid="brand-color-url-error"
-          >
-            {extract.message}
-          </p>
-        ) : null}
+        <input
+          ref={logoInputRef}
+          type="file"
+          accept={EXTRACT_ACCEPTED_MIME_ATTR}
+          className="hidden"
+          onChange={onLogoFileSelect}
+          data-testid="brand-color-logo-input"
+        />
+        <input
+          ref={screenshotInputRef}
+          type="file"
+          accept={EXTRACT_ACCEPTED_MIME_ATTR}
+          className="hidden"
+          onChange={onScreenshotFileSelect}
+          data-testid="brand-color-screenshot-input"
+        />
 
-        {extract.kind === "ready" ? (
+        {logoResult ? (
           <div
-            data-testid="brand-color-url-result"
+            data-testid="brand-color-logo-result"
             className="mt-2 flex items-start gap-3 rounded-md border border-nq-muted/35 bg-nq-surface px-2.5 py-2"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={extract.imageUrl}
+              src={logoResult.preview}
               alt=""
               className="h-12 w-12 shrink-0 rounded object-cover"
             />
             <div className="min-w-0 flex-1">
               <p className="truncate text-[11px] text-nq-muted">
-                {extract.sourceUrl}
+                {t.extract.extractedFromLogo}
               </p>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <span
                   className="inline-flex h-5 w-5 shrink-0 rounded border border-nq-muted/40"
-                  style={{ backgroundColor: extract.primary_color }}
+                  style={{ backgroundColor: logoResult.color }}
                   aria-hidden
                 />
                 <span className="font-mono text-xs tabular-nums">
-                  {extract.primary_color}
-                </span>
-                <span className="rounded-full border border-nq-muted/35 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-nq-muted">
-                  {extract.theme_mode}
+                  {logoResult.color}
                 </span>
               </div>
             </div>
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              onClick={onApplyExtract}
-              disabled={isPending || isThemePending}
-              data-testid="brand-color-url-apply"
-            >
-              {t.extract.apply}
-            </Button>
+            <div className="flex shrink-0 flex-col gap-1">
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={onApplyLogo}
+                disabled={isPending}
+                data-testid="brand-color-logo-apply"
+              >
+                {t.extract.applyColor}
+              </Button>
+              <button
+                type="button"
+                onClick={clearLogoResult}
+                className="text-[11px] font-medium text-nq-muted hover:text-nq-foreground"
+                data-testid="brand-color-logo-clear"
+              >
+                {t.extract.tryAnother}
+              </button>
+            </div>
           </div>
         ) : null}
+        {logoError ? (
+          <p
+            role="alert"
+            className="mt-2 text-[11px] text-nq-error"
+            data-testid="brand-color-logo-error"
+          >
+            {logoError}
+          </p>
+        ) : null}
+
+        {screenshotResult ? (
+          <div
+            data-testid="brand-color-screenshot-result"
+            className="mt-2 flex items-start gap-3 rounded-md border border-nq-muted/35 bg-nq-surface px-2.5 py-2"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={screenshotResult.preview}
+              alt=""
+              className="h-12 w-12 shrink-0 rounded object-cover"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[11px] text-nq-muted">
+                {t.extract.extractedFromScreenshot}
+              </p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <span
+                  className="inline-flex h-5 w-5 shrink-0 rounded border border-nq-muted/40"
+                  style={{ backgroundColor: screenshotResult.color }}
+                  aria-hidden
+                />
+                <span className="font-mono text-xs tabular-nums">
+                  {screenshotResult.color}
+                </span>
+                <span className="rounded-full border border-nq-muted/35 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-nq-muted">
+                  {screenshotResult.themeMode}
+                </span>
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-col gap-1">
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={onApplyScreenshot}
+                disabled={isPending || isThemePending}
+                data-testid="brand-color-screenshot-apply"
+              >
+                {t.extract.applyColor}
+              </Button>
+              <button
+                type="button"
+                onClick={clearScreenshotResult}
+                className="text-[11px] font-medium text-nq-muted hover:text-nq-foreground"
+                data-testid="brand-color-screenshot-clear"
+              >
+                {t.extract.tryAnother}
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {screenshotError ? (
+          <p
+            role="alert"
+            className="mt-2 text-[11px] text-nq-error"
+            data-testid="brand-color-screenshot-error"
+          >
+            {screenshotError}
+          </p>
+        ) : null}
+
+        {/* Tertiary fallback: direct image URL (for owners who have a
+            hosted-image link and prefer to skip the file picker). */}
+        <div className="mt-3 border-t border-nq-muted/20 pt-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+            {t.extract.sectionLabel}
+          </p>
+          <p className="mt-1 text-[11px] leading-snug text-nq-muted">
+            {t.extract.hint}
+          </p>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <input
+              type="url"
+              inputMode="url"
+              placeholder={t.extract.placeholder}
+              value={urlDraft}
+              disabled={isExtracting}
+              onChange={(e) => setUrlDraft(e.target.value)}
+              data-testid="brand-color-url-input"
+              className="h-11 w-full rounded-md border border-nq-muted/35 bg-nq-bg px-3 text-sm text-nq-foreground placeholder:text-nq-muted/70 focus:border-nq-primary focus:outline-none focus:ring-2 focus:ring-nq-primary/35 disabled:opacity-60"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={onExtract}
+              disabled={!urlDraft.trim() || isExtracting}
+              data-testid="brand-color-url-extract"
+            >
+              {isExtracting ? t.extract.extracting : t.extract.extract}
+            </Button>
+          </div>
+
+          {extract.kind === "error" ? (
+            <p
+              role="alert"
+              className="mt-2 text-[11px] text-nq-error"
+              data-testid="brand-color-url-error"
+            >
+              {extract.message}
+            </p>
+          ) : null}
+
+          {extract.kind === "ready" ? (
+            <div
+              data-testid="brand-color-url-result"
+              className="mt-2 flex items-start gap-3 rounded-md border border-nq-muted/35 bg-nq-surface px-2.5 py-2"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={extract.imageUrl}
+                alt=""
+                className="h-12 w-12 shrink-0 rounded object-cover"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[11px] text-nq-muted">
+                  {extract.sourceUrl}
+                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <span
+                    className="inline-flex h-5 w-5 shrink-0 rounded border border-nq-muted/40"
+                    style={{ backgroundColor: extract.primary_color }}
+                    aria-hidden
+                  />
+                  <span className="font-mono text-xs tabular-nums">
+                    {extract.primary_color}
+                  </span>
+                  <span className="rounded-full border border-nq-muted/35 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-nq-muted">
+                    {extract.theme_mode}
+                  </span>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={onApplyExtract}
+                disabled={isPending || isThemePending}
+                data-testid="brand-color-url-apply"
+              >
+                {t.extract.apply}
+              </Button>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <div className="mt-3">
