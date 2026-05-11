@@ -80,6 +80,12 @@ import { cn } from "@/shared/lib/cn";
 import { cleanPhone, formatPhone } from "@/shared/lib/phoneFormat";
 import { isWalkinUrgent } from "@/shared/lib/queueUrgency";
 import { useQueuePanelOpen } from "@/shared/lib/useQueuePanelOpen";
+import { useRushHourMode } from "./useRushHourMode";
+import {
+  setSoftHold as setSoftHoldAction,
+  clearSoftHold as clearSoftHoldAction,
+} from "@/shared/dashboard/receptionistActions";
+import { logSalonRushEvent } from "@/shared/dashboard/rushHourEvent";
 import {
   canCancelBooking,
   type SalonMemberRole,
@@ -510,6 +516,107 @@ function ReceptionistCenterInner({
     toggle: toggleQueuePanel,
   } = useQueuePanelOpen(queueWaitingCount);
 
+  const rush = useRushHourMode({
+    queueLength: queueWaitingCount,
+    overloadedStaffCount: overloadedStaff.length,
+  });
+
+  // Auto-open queue panel on rush activation. The panel hook already
+  // handles the "user dismissed" contract, so we only force-open on
+  // the leading edge.
+  const prevRushActiveRef = useRef(false);
+  useEffect(() => {
+    if (rush.active && !prevRushActiveRef.current) {
+      setQueuePanelOpen(true);
+      void logSalonRushEvent(slug, data.salon.id, "rush_hour_started", {
+        queueLength: queueWaitingCount,
+        overloadedStaffCount: overloadedStaff.length,
+      });
+    } else if (!rush.active && prevRushActiveRef.current) {
+      void logSalonRushEvent(slug, data.salon.id, "rush_hour_ended", {
+        queueLength: queueWaitingCount,
+      });
+    }
+    prevRushActiveRef.current = rush.active;
+  }, [
+    rush.active,
+    setQueuePanelOpen,
+    slug,
+    data.salon.id,
+    queueWaitingCount,
+    overloadedStaff.length,
+  ]);
+
+  const onSetSoftHold = async (bookingId: string, minutes: number) => {
+    const r = await setSoftHoldAction(slug, {
+      salonId: data.salon.id,
+      bookingId,
+      minutes,
+    });
+    if (!r.ok) {
+      setShakeMessage(mutationMessage(messages.receptionist, r.error));
+      return { ok: false, error: r.error };
+    }
+    await reloadCurrentDay();
+    router.refresh();
+    return { ok: true, holdUntilIso: r.holdUntilIso };
+  };
+
+  const onClearSoftHold = async (bookingId: string) => {
+    const r = await clearSoftHoldAction(slug, {
+      salonId: data.salon.id,
+      bookingId,
+      reason: "returned",
+    });
+    if (!r.ok) {
+      setShakeMessage(mutationMessage(messages.receptionist, r.error));
+      return { ok: false, error: r.error };
+    }
+    await reloadCurrentDay();
+    router.refresh();
+    return { ok: true };
+  };
+
+  // Auto-expire sweep — minute tick checks the queue for any held
+  // rows whose hold has passed, then clears them server-side. Each
+  // clear logs a `soft_hold_expired` event and surfaces a notice
+  // on the receptionist's status line.
+  useEffect(() => {
+    const expired = queueItems.filter((q) => {
+      if (!q.soft_hold_until) return false;
+      const ms = Date.parse(q.soft_hold_until);
+      return Number.isFinite(ms) && ms <= Date.parse(nowIso);
+    });
+    if (expired.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      for (const q of expired) {
+        if (cancelled) break;
+        await clearSoftHoldAction(slug, {
+          salonId: data.salon.id,
+          bookingId: q.id,
+          reason: "expired",
+        });
+        if (!cancelled) {
+          setShakeMessage(
+            messages.receptionist.queue.softHoldExpiredNotice.replace(
+              "{name}",
+              q.client_name,
+            ),
+          );
+        }
+      }
+      if (!cancelled) {
+        await reloadCurrentDay();
+        router.refresh();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- nowIso ticks every minute, queueItems changes on reload
+  }, [nowIso]);
+
   const assignedSlot =
     assigningWalkinId !== null
       ? (() => {
@@ -528,9 +635,14 @@ function ReceptionistCenterInner({
   const timezone = data.salon.timezone;
   const isViewingToday = data.selectedDate === salonToday(timezone, nowIso);
   const modules = data.dashboardModules;
+  // Rush mode forces density to "simple" so the desk renders with
+  // the highest-contrast / lowest-noise rhythm. We override the
+  // visual config without persisting back to the salon — when rush
+  // clears, density returns to the user's saved choice.
+  const effectiveDensity = rush.active ? "simple" : data.dashboardDensity;
   const densityConfig = useMemo(
-    () => densityConfigFor(data.dashboardDensity),
-    [data.dashboardDensity],
+    () => densityConfigFor(effectiveDensity),
+    [effectiveDensity],
   );
 
   const onDensityChanged = useCallback((next: DensityLevel) => {
@@ -1200,8 +1312,36 @@ function ReceptionistCenterInner({
     <>
       <div
         data-testid="receptionist-center-loaded"
-        className="flex min-h-[100dvh] w-full flex-col bg-nq-bg"
+        data-rush-mode={rush.active ? "on" : "off"}
+        className={cn(
+          "flex min-h-[100dvh] w-full flex-col bg-nq-bg",
+          rush.active && "[&_[data-rush-fade]]:opacity-50",
+        )}
       >
+        {rush.active ? (
+          <div
+            data-testid="receptionist-rush-banner"
+            role="status"
+            className="shrink-0 border-b border-amber-500/45 bg-amber-400/15 px-[var(--pad-nq-section-mobile)] py-2 md:px-6"
+          >
+            <div className="mx-auto flex w-full max-w-[var(--max-nq-desktop)] items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-amber-800">
+                {rcMessages.rushHour.bannerLabel.replace(
+                  "{n}",
+                  String(queueWaitingCount),
+                )}
+              </p>
+              <button
+                type="button"
+                onClick={() => rush.setDismissed(true)}
+                className="text-xs font-semibold text-amber-800/80 hover:text-amber-900"
+                data-testid="receptionist-rush-banner-dismiss"
+              >
+                {rcMessages.rushHour.dismiss}
+              </button>
+            </div>
+          </div>
+        ) : null}
         <header className="shrink-0 border-b border-nq-muted/20 bg-nq-surface/90 px-[var(--pad-nq-section-mobile)] py-3 backdrop-blur-sm md:px-6">
           <div className="mx-auto flex w-full max-w-[var(--max-nq-desktop)] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
@@ -1290,13 +1430,15 @@ function ReceptionistCenterInner({
                * to a personal density.
                */}
               {viewerRole !== "nail_tech" ? (
-                <DensitySlider
-                  slug={slug}
-                  value={data.dashboardDensity}
-                  labels={rcMessages.density}
-                  onChanged={onDensityChanged}
-                  onError={(msg) => setShakeMessage(msg)}
-                />
+                <span data-rush-fade>
+                  <DensitySlider
+                    slug={slug}
+                    value={data.dashboardDensity}
+                    labels={rcMessages.density}
+                    onChanged={onDensityChanged}
+                    onError={(msg) => setShakeMessage(msg)}
+                  />
+                </span>
               ) : null}
               {/* Day / Week view-mode toggle. Day is the live desk job;
                   Week is a read-only planning glance per
@@ -1308,6 +1450,7 @@ function ReceptionistCenterInner({
                 role="tablist"
                 aria-label={rcMessages.viewMode.ariaLabel}
                 data-testid="view-mode-toggle"
+                data-rush-fade
                 className="inline-flex overflow-hidden rounded-md border border-nq-border bg-nq-surface text-xs font-medium"
               >
                 {(["day", "week"] as const).map((mode) => {
@@ -1375,7 +1518,12 @@ function ReceptionistCenterInner({
                   ) : null}
                 </button>
               ) : null}
-              <UserLanguageToggle language={language} onLanguageChange={setLanguage} />
+              <span data-rush-fade>
+                <UserLanguageToggle
+                  language={language}
+                  onLanguageChange={setLanguage}
+                />
+              </span>
             </div>
           </div>
           <div
@@ -1657,6 +1805,9 @@ function ReceptionistCenterInner({
                   name: s.name,
                 }))}
                 overloadedStaff={overloadedStaff}
+                onSetSoftHold={onSetSoftHold}
+                onClearSoftHold={onClearSoftHold}
+                rushMode={rush.active}
                 onCancelWalkin={onCancelWalkin}
                 onStartAssign={(id) => setAssigningWalkinId(id)}
                 onCancelAssign={() => setAssigningWalkinId(null)}
@@ -1692,6 +1843,10 @@ function ReceptionistCenterInner({
                   overloadBanner: rcMessages.queue.overloadBanner,
                   overloadBannerDismiss:
                     rcMessages.queue.overloadBannerDismiss,
+                  softHoldButton: rcMessages.queue.softHoldButton,
+                  softHoldClear: rcMessages.queue.softHoldClear,
+                  softHoldLabel: rcMessages.queue.softHoldLabel,
+                  softHoldCountdown: rcMessages.queue.softHoldCountdown,
                   addForm: {
                     ...rcMessages.queue.addForm,
                     invalidPhone: rcMessages.walkin.invalidPhone,

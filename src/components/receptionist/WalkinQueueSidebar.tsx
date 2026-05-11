@@ -29,6 +29,9 @@ export interface QueueItem {
   requested_staff_ready_at_iso?: string | null;
   /** Returning-VIP flag (drives the gold crown badge). */
   is_vip?: boolean;
+  /** Soft-hold expiry (UTC ISO). When set + > now the card renders a
+   * countdown instead of the normal waiting treatment. */
+  soft_hold_until?: string | null;
   joined_queue_at: string;
   walkin_source?: QueueSource | null;
   walkin_priority?: QueuePriority | null;
@@ -72,6 +75,11 @@ export interface WalkinQueueSidebarProps {
     /** "⚠️ {name} — {n} đang chờ. Cân nhắc thợ khác." overload banner. */
     overloadBanner: (input: { name: string; queueAhead: number }) => string;
     overloadBannerDismiss: string;
+    /** Soft-hold copy (PR #104). */
+    softHoldButton: string;
+    softHoldClear: string;
+    softHoldLabel: string;
+    softHoldCountdown: (minutesLeft: number) => string;
   };
   /** Callbacks */
   onAddWalkin: WalkinAddFormProps["onSubmit"];
@@ -90,6 +98,18 @@ export interface WalkinQueueSidebarProps {
    * above the queue list. Optional — when omitted no banner renders.
    */
   overloadedStaff?: ReadonlyArray<{ name: string; queueAhead: number }>;
+  /** Soft-hold callbacks. Optional — when omitted the per-card hold
+   * action is hidden (keeps the form usable in storybook / tests). */
+  onSetSoftHold?: (
+    bookingId: string,
+    minutes: number,
+  ) => Promise<{ ok: boolean; holdUntilIso?: string; error?: string }>;
+  onClearSoftHold?: (
+    bookingId: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  /** True when the desk is in rush hour. Cards enlarge the wait
+   * number and the form header gets a subtle peripheral fade upstream. */
+  rushMode?: boolean;
   onCancelWalkin: (bookingId: string) => Promise<void>;
   onStartAssign: (bookingId: string) => void;
   onCancelAssign: () => void;
@@ -133,6 +153,9 @@ export function WalkinQueueSidebar({
   onCheckAvailability,
   staffOptions,
   overloadedStaff,
+  onSetSoftHold,
+  onClearSoftHold,
+  rushMode = false,
   onCancelWalkin,
   onStartAssign,
   onCancelAssign,
@@ -343,6 +366,9 @@ export function WalkinQueueSidebar({
                       }
                       showWaitTime={showWaitTime}
                       showVipIndicator={showVipIndicator}
+                      emphasizeWait={rushMode}
+                      softHoldUntilIso={item.soft_hold_until ?? null}
+                      nowIso={nowIso}
                       isAssigning={assigningThis}
                       labels={{
                         waitHeroSuffix: labels.waitHeroSuffix,
@@ -354,9 +380,11 @@ export function WalkinQueueSidebar({
                         priorityLow: labels.priorityLow,
                         partySizeLabel: labels.partySizeLabel,
                         sourceFallback: labels.sourceFallback,
+                        softHoldCountdown: labels.softHoldCountdown,
+                        softHoldLabel: labels.softHoldLabel,
                       }}
                       actions={
-                        <div className="flex gap-2">
+                        <div className="space-y-2">
                           {urgentByLib && showWaitTime ? (
                             <span
                               aria-hidden
@@ -366,30 +394,71 @@ export function WalkinQueueSidebar({
                               ⚡ {labels.urgentBadge}
                             </span>
                           ) : null}
-                          <button
-                            type="button"
-                            disabled={blockOthers}
-                            onClick={() => void onCancelWalkin(item.id)}
-                            data-testid={`queue-cancel-${item.id}`}
-                            className={cn(
-                              "min-h-10 flex-1 rounded-lg border border-nq-muted/40 bg-transparent px-3 text-sm font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
-                              blockOthers && "pointer-events-none opacity-45",
-                            )}
-                          >
-                            {labels.cancelButton}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={blockOthers}
-                            onClick={() => onAssignClick(item.id)}
-                            data-testid={`queue-assign-${item.id}`}
-                            className={cn(
-                              "min-h-10 flex-[1.15] rounded-lg bg-nq-primary px-3 text-sm font-semibold text-nq-navy-deep transition-opacity hover:opacity-95",
-                              blockOthers && "pointer-events-none opacity-45",
-                            )}
-                          >
-                            {labels.assignButton}
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              disabled={blockOthers}
+                              onClick={() => void onCancelWalkin(item.id)}
+                              data-testid={`queue-cancel-${item.id}`}
+                              className={cn(
+                                "min-h-10 flex-1 rounded-lg border border-nq-muted/40 bg-transparent px-3 text-sm font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
+                                blockOthers && "pointer-events-none opacity-45",
+                              )}
+                            >
+                              {labels.cancelButton}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={blockOthers}
+                              onClick={() => onAssignClick(item.id)}
+                              data-testid={`queue-assign-${item.id}`}
+                              className={cn(
+                                "min-h-10 flex-[1.15] rounded-lg bg-nq-primary px-3 text-sm font-semibold text-nq-navy-deep transition-opacity hover:opacity-95",
+                                blockOthers && "pointer-events-none opacity-45",
+                              )}
+                            >
+                              {labels.assignButton}
+                            </button>
+                          </div>
+                          {onSetSoftHold || onClearSoftHold ? (() => {
+                            const isHeld = !!item.soft_hold_until &&
+                              Date.parse(item.soft_hold_until) > Date.parse(nowIso);
+                            if (isHeld && onClearSoftHold) {
+                              return (
+                                <button
+                                  type="button"
+                                  disabled={blockOthers}
+                                  onClick={() => void onClearSoftHold(item.id)}
+                                  data-testid={`queue-clear-hold-${item.id}`}
+                                  className={cn(
+                                    "min-h-9 w-full rounded-lg border border-amber-500/55 bg-transparent px-3 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-400/15",
+                                    blockOthers && "pointer-events-none opacity-45",
+                                  )}
+                                >
+                                  {labels.softHoldClear}
+                                </button>
+                              );
+                            }
+                            if (!isHeld && onSetSoftHold) {
+                              return (
+                                <button
+                                  type="button"
+                                  disabled={blockOthers}
+                                  onClick={() =>
+                                    void onSetSoftHold(item.id, 10)
+                                  }
+                                  data-testid={`queue-soft-hold-${item.id}`}
+                                  className={cn(
+                                    "min-h-9 w-full rounded-lg border border-nq-muted/35 bg-transparent px-3 text-xs font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
+                                    blockOthers && "pointer-events-none opacity-45",
+                                  )}
+                                >
+                                  {labels.softHoldButton}
+                                </button>
+                              );
+                            }
+                            return null;
+                          })() : null}
                         </div>
                       }
                     />

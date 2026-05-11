@@ -18,7 +18,16 @@ export type BookingEventType =
   | "booking_cancelled"
   | "booking_status_changed"
   | "walkin_added"
-  | "addon_added";
+  | "addon_added"
+  /* Operational metrics (PR #104) — feed future analytics on
+   * walk-away rate, average wait acceptance, queue conversion. */
+  | "queue_joined"
+  | "queue_assigned"
+  | "queue_left"
+  | "soft_hold_set"
+  | "soft_hold_expired"
+  | "rush_hour_started"
+  | "rush_hour_ended";
 
 export type ActorRole =
   | "owner"
@@ -33,7 +42,10 @@ export type ActorRole =
   | "system";
 
 export type LogBookingEventInput = {
-  bookingId: string;
+  /** Booking this event pertains to. Null for salon-scoped events
+   * (`rush_hour_started`, `rush_hour_ended`) that span the desk
+   * rather than a single booking. */
+  bookingId: string | null;
   salonId: string;
   /** Null for public-guest / demo-cookie / system writers. */
   actorUserId: string | null;

@@ -93,6 +93,8 @@ export interface ReceptionistCenterData {
     /** True when the customer is a returning VIP per
      * `client_profiles.is_vip` (joined by phone, salon-agnostic). */
     is_vip: boolean;
+    /** UTC ISO time the soft hold expires; null when not held (PR #104). */
+    soft_hold_until: string | null;
     joined_queue_at: string;
     /** Optional walk-in queue metadata; nullable until tagged. */
     walkin_source: QueueSource | null;
@@ -483,6 +485,7 @@ export async function loadReceptionistCenterData(
       staff_id,
       staff_request_note,
       staff_requested_by_client,
+      soft_hold_until,
       joined_queue_at,
       walkin_source,
       walkin_priority,
@@ -569,6 +572,7 @@ export async function loadReceptionistCenterData(
     staff_id: string | null;
     staff_request_note: string | null;
     staff_requested_by_client: boolean | null;
+    soft_hold_until: string | null;
     joined_queue_at: string | null;
     walkin_source?: unknown;
     walkin_priority?: unknown;
@@ -709,6 +713,7 @@ export async function loadReceptionistCenterData(
         requested_staff_ready_at_iso:
           readyAtMs != null ? new Date(readyAtMs).toISOString() : null,
         is_vip: phone ? vipByPhone.get(phone) === true : false,
+        soft_hold_until: row.soft_hold_until ?? null,
         joined_queue_at: row.joined_queue_at!,
         walkin_source: isQueueSource(row.walkin_source)
           ? row.walkin_source
