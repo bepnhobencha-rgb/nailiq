@@ -394,10 +394,10 @@ export function BookingFlowDatePanel({
                   isToday &&
                     !selected &&
                     !disabled &&
-                    "ring-1 ring-nq-primary/55 ring-offset-2 ring-offset-nq-bg",
+                    "ring-1 ring-[color-mix(in_srgb,var(--salon-primary)_55%,transparent)] ring-offset-2 ring-offset-nq-bg",
                   selected &&
                     !disabled &&
-                    "border-nq-primary bg-nq-primary text-nq-bg shadow-[0_0_24px_-10px_rgba(212,175,55,0.55)]",
+                    "border-[var(--salon-primary)] bg-[var(--salon-primary)] text-nq-bg shadow-[0_0_24px_-10px_color-mix(in_srgb,var(--salon-primary)_55%,transparent)]",
                 )}
               >
                 <span
@@ -422,7 +422,7 @@ export function BookingFlowDatePanel({
                 </span>
                 {hasSlotsHint ? (
                   <div
-                    className="mt-1 h-1 w-1 shrink-0 rounded-full bg-nq-primary mx-auto"
+                    className="mt-1 h-1 w-1 shrink-0 rounded-full bg-[var(--salon-primary)] mx-auto"
                     aria-hidden
                   />
                 ) : (
@@ -439,7 +439,7 @@ export function BookingFlowDatePanel({
         >
           <span className="inline-flex items-center gap-1.5">
             <span
-              className="inline-block h-1.5 w-1.5 rounded-full bg-nq-primary"
+              className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--salon-primary)]"
               aria-hidden
             />
             {t.calendarLegendAvailable}
@@ -458,7 +458,7 @@ export function BookingFlowDatePanel({
         <Button
           type="button"
           variant="secondary"
-          className="nq-booking-glass h-14 min-h-11 w-full shrink-0 border border-white/[0.08] text-nq-primary shadow-none hover:bg-white/[0.04] sm:w-auto sm:min-w-[8.5rem]"
+          className="nq-booking-glass h-14 min-h-11 w-full shrink-0 border border-white/[0.08] text-[var(--salon-primary)] shadow-none hover:bg-white/[0.04] sm:w-auto sm:min-w-[8.5rem]"
           onClick={onBack}
         >
           {t.back}

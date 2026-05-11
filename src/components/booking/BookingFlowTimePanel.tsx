@@ -88,7 +88,7 @@ export function BookingFlowTimePanel({
       ) : null}
 
       {scarcityHint ? (
-        <p className="mt-3 text-sm font-medium text-nq-primary/95 lg:mt-4 lg:text-[15px]">
+        <p className="mt-3 text-sm font-medium text-[color-mix(in_srgb,var(--salon-primary)_95%,transparent)] lg:mt-4 lg:text-[15px]">
           {scarcityHint}
         </p>
       ) : null}
@@ -167,7 +167,7 @@ export function BookingFlowTimePanel({
                 <Button
                   type="button"
                   variant="secondary"
-                  className="nq-booking-glass h-12 min-h-11 w-full border border-white/[0.08] text-nq-primary shadow-none hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="nq-booking-glass h-12 min-h-11 w-full border border-white/[0.08] text-[var(--salon-primary)] shadow-none hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
                   disabled={
                     waitlistSubmitting ||
                     waitlistContactInvalid
@@ -228,7 +228,7 @@ export function BookingFlowTimePanel({
         <Button
           type="button"
           variant="secondary"
-          className="nq-booking-glass h-14 min-h-11 w-full shrink-0 border border-white/[0.08] text-nq-primary shadow-none hover:bg-white/[0.04] sm:w-auto sm:min-w-[8.5rem]"
+          className="nq-booking-glass h-14 min-h-11 w-full shrink-0 border border-white/[0.08] text-[var(--salon-primary)] shadow-none hover:bg-white/[0.04] sm:w-auto sm:min-w-[8.5rem]"
           onClick={onBack}
         >
           {t.back}

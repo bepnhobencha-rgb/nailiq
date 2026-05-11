@@ -17,11 +17,11 @@ export function BookingMobileHero({
   return (
     <section
       aria-label={t.salonHeroAriaLabel}
-      className="lg:hidden relative overflow-hidden rounded-2xl border border-nq-primary/25 bg-gradient-to-br from-nq-primary/12 via-nq-primary/[0.04] to-transparent px-5 py-5 sm:px-6 sm:py-6"
+      className="lg:hidden relative overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--salon-primary)_25%,transparent)] bg-gradient-to-br from-[color-mix(in_srgb,var(--salon-primary)_12%,transparent)] via-[color-mix(in_srgb,var(--salon-primary)_4%,transparent)] to-transparent px-5 py-5 sm:px-6 sm:py-6"
     >
       <span
         aria-hidden
-        className="pointer-events-none absolute -top-12 -right-10 h-32 w-32 rounded-full bg-nq-primary/15 blur-3xl"
+        className="pointer-events-none absolute -top-12 -right-10 h-32 w-32 rounded-full bg-[color-mix(in_srgb,var(--salon-primary)_15%,transparent)] blur-3xl"
       />
       <p className="relative text-[10px] font-medium uppercase tracking-[0.28em] text-nq-muted">
         {t.salonHeroEyebrow}
