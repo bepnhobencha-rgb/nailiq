@@ -565,6 +565,16 @@ export type UserMessages = {
       softHoldCountdown: (minutesLeft: number) => string;
       /** "{name}'s hold expired" — shown via the desk status line. */
       softHoldExpiredNotice: string;
+      /** Customer wait-link share (PR #105). */
+      waitLinkButton: string;
+      waitLinkModal: {
+        title: string;
+        instruction: string;
+        copyLink: string;
+        copied: string;
+        openLink: string;
+        closeAria: string;
+      };
       addForm: {
         namePlaceholder: string;
         phonePlaceholder: string;
@@ -1480,6 +1490,16 @@ export const userEn: UserMessages = {
       softHoldLabel: "Hold",
       softHoldCountdown: (n: number) => `${n} min left`,
       softHoldExpiredNotice: "{name}'s hold expired",
+      waitLinkButton: "Send wait link",
+      waitLinkModal: {
+        title: "Customer wait link",
+        instruction:
+          "Show this QR to {name} or copy the link to send via SMS.",
+        copyLink: "Copy link",
+        copied: "Copied!",
+        openLink: "Open link",
+        closeAria: "Close",
+      },
       addForm: {
         namePlaceholder: "Guest name",
         phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
