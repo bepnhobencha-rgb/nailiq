@@ -9,6 +9,7 @@ import { SalonBookingSkeleton } from "@/components/booking/SalonBookingSkeleton"
 import { BookingFlowErrorBoundary } from "@/components/booking/BookingFlowErrorBoundary";
 import { resolvePublicBookingPage } from "@/shared/booking/resolvePublicBookingPage";
 import { bookingEn } from "@/shared/i18n/booking/en";
+import { getCtaColor } from "@/shared/lib/colorUtils";
 import { formatSalonDisplayName } from "@/shared/lib/salonDisplay";
 import { BookingDocumentEn } from "./BookingDocumentEn";
 
@@ -112,13 +113,26 @@ async function PublicBookingRouteBody({
         "--booking-text-muted": "rgba(255, 255, 255, 0.5)",
         "--booking-border": "rgba(255, 255, 255, 0.1)",
       };
+  // Continue / Confirm pill needs WCAG-passable contrast against the
+  // near-white light-mode background. `getCtaColor` returns the brand
+  // hex unchanged when it already passes 4.5:1 on white, otherwise
+  // walks HSL lightness down until it does. The 3-stop gradient that
+  // styles `.nq-booking-luxury-cta` is rebuilt from the resolved CTA
+  // color so a pastel brand (e.g. `#E8D8B8` cream) lands as a
+  // readable darker variant on the pill without losing the luxury
+  // sheen. Accent uses of the brand color (calendar dots, price
+  // labels, step indicators, tile-selected shadow) continue to
+  // reference `--brand` / `--salon-primary` directly — darkening
+  // them would defeat the decorative purpose.
+  const ctaColor = getCtaColor(load.salon.brandColor);
   const brandStyle = {
     "--salon-primary": load.salon.brandColor,
     "--brand": load.salon.brandColor,
+    "--cta-color": ctaColor,
     ...themeVars,
-    "--nq-luxury-cta-from": `color-mix(in srgb, ${load.salon.brandColor} 75%, white 25%)`,
-    "--nq-luxury-cta-mid": load.salon.brandColor,
-    "--nq-luxury-cta-to": `color-mix(in srgb, ${load.salon.brandColor} 70%, black 30%)`,
+    "--nq-luxury-cta-from": `color-mix(in srgb, ${ctaColor} 75%, white 25%)`,
+    "--nq-luxury-cta-mid": ctaColor,
+    "--nq-luxury-cta-to": `color-mix(in srgb, ${ctaColor} 70%, black 30%)`,
     "--shadow-nq-tile-selected": `0 0 0 1px ${load.salon.brandColor}, 0 18px 50px -20px rgba(0, 0, 0, 0.55), 0 0 40px -8px color-mix(in srgb, ${load.salon.brandColor} 35%, transparent)`,
   } as React.CSSProperties;
 
@@ -181,7 +195,7 @@ async function PublicBookingRouteBody({
             <h1 className="hidden lg:block text-2xl font-semibold tracking-tight text-[var(--booking-text)] sm:text-3xl lg:text-[2.125rem] lg:leading-[1.15] lg:tracking-[-0.035em]">
               {t.pageTitle}
             </h1>
-            <p className="mt-4 text-sm text-nq-muted sm:text-base lg:mt-3 lg:text-[17px] lg:leading-relaxed">
+            <p className="mt-4 text-sm text-[var(--booking-text-muted)] sm:text-base lg:mt-3 lg:text-[17px] lg:leading-relaxed">
               {t.pageSubtitle}
             </p>
             <BookingFlowErrorBoundary
