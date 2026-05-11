@@ -17,7 +17,7 @@ import {
   SERVICE_CATEGORIES,
   type ServiceCategory,
 } from "@/shared/booking/serviceCategory";
-import { SERVICE_DESCRIPTION_MAX_LEN } from "@/shared/dashboard/setupActions";
+import { SERVICE_DESCRIPTION_MAX_LEN } from "@/shared/dashboard/serviceConstraints";
 import { getUserMessages, type UserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 

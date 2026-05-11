@@ -36,17 +36,13 @@ import {
   isServiceCategory,
   type ServiceCategory,
 } from "@/shared/booking/serviceCategory";
+import { SERVICE_DESCRIPTION_MAX_LEN } from "@/shared/dashboard/serviceConstraints";
 import {
   DEMO_SALON_SLUG,
   isDemoOtpRuntime,
   isDemoSlugPinBypassed,
 } from "@/shared/lib/demoOtpMode";
 import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
-
-/** Owner-facing length cap on `services.description`. Enforced here
- * (not in the DB) so copy guidance can change without a migration.
- * Kept in sync with `userMessages.serviceForm.descriptionTooLong`. */
-export const SERVICE_DESCRIPTION_MAX_LEN = 100;
 
 export type StaffJobRole = "owner" | "senior" | "nail_tech";
 
