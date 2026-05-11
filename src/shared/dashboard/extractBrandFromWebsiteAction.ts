@@ -102,12 +102,24 @@ export async function extractBrandFromWebsite(
     const res = await fetch(url, {
       method: "GET",
       headers: {
-        // Some sites gate generic crawlers. A normal browser UA gets
-        // through more often without triggering bot-protection
-        // redirects we can't follow.
-        "user-agent":
-          "Mozilla/5.0 (compatible; NailIQ/1.0; +https://nailiq.ca)",
-        accept: "text/html,application/xhtml+xml",
+        // Mimic a recent Chrome on macOS closely enough to pass the
+        // heuristic bot gates run by Wix / Cloudflare / Squarespace.
+        // The bare `NailIQ/1.0` UA + `Accept: text/html` minimal pair
+        // gets 403'd or served a JS-challenge page on Wix-hosted
+        // sites (observed against technailssalon.ca). The full
+        // `Sec-Fetch-*` triad in particular is what most bot
+        // protectors key on now.
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
       },
       signal: ctrl.signal,
       // Don't follow infinite redirect chains.
