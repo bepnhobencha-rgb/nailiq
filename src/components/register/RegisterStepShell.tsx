@@ -8,7 +8,7 @@ import { AuthLanguageToggle } from "@/components/auth/AuthLanguageToggle";
 
 type RegisterStepShellProps = {
   title: string;
-  children: ReactNode;
+  children?: ReactNode;
   /** Muted one-liner under the title */
   subtext?: string;
   /** Smaller, dev-only hint rendered under the subtext (gated by caller). */

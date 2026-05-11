@@ -109,6 +109,19 @@ export type UserMessages = {
     verifyErrorServer: string;
     verifyErrorInvalid: string;
     verifyErrorMissingToken: string;
+    /** Email magic-link mode (sms_enabled=false, email_enabled=true) */
+    emailEntryTitle: string;
+    emailAuthSubtext: string;
+    emailPlaceholder: string;
+    emailInvalid: string;
+    sendEmailLink: string;
+    sendingEmailLink: string;
+    /** Shown after magic link is dispatched — replaces the form. */
+    emailLinkSentTitle: string;
+    emailLinkSentBody: string;
+    /** Shown when both sms_enabled and email_enabled are false. */
+    registrationDisabledTitle: string;
+    registrationDisabledBody: string;
   };
   /** Marketing landing page (`/`) — full copy across all sections.
    * Wired through `useUserLanguage` so the EN/VI toggle in the nav
@@ -1092,6 +1105,19 @@ export const userEn: UserMessages = {
       "We could not verify your code. Check SUPABASE_SERVICE_ROLE_KEY and migrations.",
     verifyErrorInvalid: "Invalid code.",
     verifyErrorMissingToken: "Missing completion token. Try again.",
+    emailEntryTitle: "Enter your email",
+    emailAuthSubtext:
+      "We'll send you a secure sign-in link — no code to type.",
+    emailPlaceholder: "you@example.com",
+    emailInvalid: "Enter a valid email address.",
+    sendEmailLink: "Send sign-in link",
+    sendingEmailLink: "Sending…",
+    emailLinkSentTitle: "Check your inbox",
+    emailLinkSentBody:
+      "We sent a sign-in link to {email}. Click the link in the email to continue — it expires in 60 minutes.",
+    registrationDisabledTitle: "Registration temporarily unavailable",
+    registrationDisabledBody:
+      "We're unable to accept new registrations at this time. Please try again later.",
   },
   landing: {
     nav: {

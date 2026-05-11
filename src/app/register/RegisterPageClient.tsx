@@ -21,40 +21,57 @@ import {
   REG_SESSION_PHONE_DIGITS_KEY,
 } from "@/shared/lib/registerSessionKeys";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
-import { sendRegisterOtp } from "@/shared/register/actions";
+import { sendRegisterOtp, sendEmailMagicLink } from "@/shared/register/actions";
 import {
   isRegisterPhoneDigitsValid,
   normalizeRegisterPhone,
 } from "@/shared/register/phone";
 
-type Props = { demoMode: boolean };
+type Props = {
+  demoMode: boolean;
+  /** When false the SMS path is bypassed — check emailEnabled for fallback. */
+  smsEnabled: boolean;
+  /** When true (and smsEnabled=false), show the email magic-link input. */
+  emailEnabled: boolean;
+};
 
 /** `idle` = before Send code; distinguishes returning owner vs net-new OTP tone after send */
 type PostSendTone = "idle" | "returning" | "new";
 
-export function RegisterPageClient({ demoMode }: Props) {
+export function RegisterPageClient({ demoMode, smsEnabled, emailEnabled }: Props) {
   const router = useRouter();
   const { language } = useUserLanguage();
   const t = useMemo(() => getUserMessages(language), [language]);
+
+  // Phone state (SMS path)
   const [phoneRaw, setPhoneRaw] = useState("+1 ");
-  const [error, setError] = useState<string | null>(null);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+
+  // Email state (magic-link path)
+  const [emailRaw, setEmailRaw] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailSentTo, setEmailSentTo] = useState<string | null>(null);
+
   const [pending, startTransition] = useTransition();
   const [demoCode, setDemoCode] = useState<string | null>(null);
   const [postSendTone, setPostSendTone] = useState<PostSendTone>("idle");
   const [toast, setToast] = useState<SetupToastPayload | null>(null);
 
-  const onSubmit = useCallback(
+  // Determine which mode to render
+  const useEmailPath = !demoMode && !smsEnabled && emailEnabled;
+  const bothDisabled = !demoMode && !smsEnabled && !emailEnabled;
+
+  // ── SMS submit ────────────────────────────────────────────────────────────
+  const onPhoneSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
       const normalized = normalizeRegisterPhone(phoneRaw);
       if (!isRegisterPhoneDigitsValid(normalized)) {
-        setError(t.register.phoneDigitsInvalid);
+        setPhoneError(t.register.phoneDigitsInvalid);
         return;
       }
-      setError(null);
+      setPhoneError(null);
       startTransition(async () => {
-        // Detect a resend: phone-digits already in sessionStorage means a
-        // prior `sendRegisterOtp` succeeded earlier in this tab.
         const isResend =
           typeof window !== "undefined" &&
           window.sessionStorage.getItem(REG_SESSION_PHONE_DIGITS_KEY) !== null;
@@ -67,31 +84,24 @@ export function RegisterPageClient({ demoMode }: Props) {
         }
         const result = await sendRegisterOtp(normalized);
         if (!result.success) {
-          setError(result.error);
+          setPhoneError(result.error);
           return;
         }
 
         if (typeof window !== "undefined") {
-          window.sessionStorage.setItem(
-            REG_SESSION_PHONE_DIGITS_KEY,
-            normalized,
-          );
+          window.sessionStorage.setItem(REG_SESSION_PHONE_DIGITS_KEY, normalized);
           if (result.mode === "returning") {
             window.sessionStorage.setItem(REG_FLOW_OWNER_RETURNING, "1");
           } else {
             window.sessionStorage.removeItem(REG_FLOW_OWNER_RETURNING);
           }
           if (isResend) {
-            // Picked up by VerifyPageClient on the next mount.
             window.sessionStorage.setItem(REG_OTP_RESENT_FLAG, "1");
           }
         }
 
         if (isResend) {
-          setToast({
-            variant: "success",
-            message: t.register.otpResentToast,
-          });
+          setToast({ variant: "success", message: t.register.otpResentToast });
         }
 
         const isReturning = result.mode === "returning";
@@ -117,6 +127,29 @@ export function RegisterPageClient({ demoMode }: Props) {
     [phoneRaw, router, t.register.otpResentToast, t.register.phoneDigitsInvalid],
   );
 
+  // ── Email submit ──────────────────────────────────────────────────────────
+  const onEmailSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      const email = emailRaw.trim().toLowerCase();
+      if (!email || !email.includes("@") || email.length > 254) {
+        setEmailError(t.register.emailInvalid);
+        return;
+      }
+      setEmailError(null);
+      startTransition(async () => {
+        const result = await sendEmailMagicLink(email);
+        if (!result.success) {
+          setEmailError(result.error);
+          return;
+        }
+        // Show "check your email" confirmation in place of the form.
+        setEmailSentTo(email);
+      });
+    },
+    [emailRaw, t.register.emailInvalid],
+  );
+
   const demoBadgeLabel =
     postSendTone === "returning"
       ? t.register.demoBadgeReturning
@@ -127,6 +160,94 @@ export function RegisterPageClient({ demoMode }: Props) {
       ? t.register.welcomeBackAfterSend
       : t.register.newDemoOtpBadgeNote;
 
+  // ── Registration disabled ─────────────────────────────────────────────────
+  if (bothDisabled) {
+    return (
+      <RegisterStepShell
+        title={t.register.registrationDisabledTitle}
+        subtext={t.register.registrationDisabledBody}
+      />
+    );
+  }
+
+  // ── Email magic-link path ─────────────────────────────────────────────────
+  if (useEmailPath) {
+    // After the magic link is dispatched, replace the form with a confirmation.
+    if (emailSentTo) {
+      return (
+        <RegisterStepShell
+          title={t.register.emailLinkSentTitle}
+          subtext={t.register.emailLinkSentBody.replace("{email}", emailSentTo)}
+        >
+          <p className="mt-4 text-center text-xs text-nq-muted">
+            {t.register.returningOwnerHint}
+          </p>
+          <button
+            type="button"
+            className="mt-3 w-full min-h-11 text-center text-sm text-nq-primary-soft underline decoration-nq-primary/35 underline-offset-2 transition-opacity duration-150 hover:opacity-90"
+            onClick={() => {
+              setEmailSentTo(null);
+              setEmailRaw("");
+            }}
+          >
+            {t.register.verifyUseDifferentNumber}
+          </button>
+        </RegisterStepShell>
+      );
+    }
+
+    return (
+      <RegisterStepShell
+        title={t.register.emailEntryTitle}
+        subtext={t.register.emailAuthSubtext}
+      >
+        <Toast toast={toast} onDismiss={() => setToast(null)} />
+
+        <p className="mb-2 text-sm text-nq-muted sm:mb-4">
+          {t.register.returningOwnerHint}
+        </p>
+
+        <form onSubmit={onEmailSubmit} method="post" className="flex flex-col gap-6">
+          <div>
+            <Input
+              name="email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              placeholder={t.register.emailPlaceholder}
+              className="text-base"
+              value={emailRaw}
+              onChange={(ev) => {
+                setEmailRaw(ev.target.value);
+                if (emailError) setEmailError(null);
+              }}
+              aria-invalid={Boolean(emailError)}
+              error={Boolean(emailError)}
+              autoFocus
+            />
+            {emailError ? (
+              <p className="mt-2 text-sm text-nq-error" role="status">
+                {emailError}
+              </p>
+            ) : null}
+          </div>
+          <Button
+            type="submit"
+            size="lg"
+            className="w-full min-h-11"
+            loading={pending}
+            disabled={pending}
+          >
+            {pending ? t.register.sendingEmailLink : t.register.sendEmailLink}
+          </Button>
+        </form>
+
+        <SocialAuthButtons mode="register" />
+      </RegisterStepShell>
+    );
+  }
+
+  // ── Default SMS / phone-OTP path ──────────────────────────────────────────
   return (
     <RegisterStepShell
       title={t.register.phoneEntryTitle}
@@ -172,7 +293,7 @@ export function RegisterPageClient({ demoMode }: Props) {
       </p>
 
       <form
-        onSubmit={onSubmit}
+        onSubmit={onPhoneSubmit}
         method="post"
         className="flex flex-col gap-6"
       >
@@ -188,23 +309,23 @@ export function RegisterPageClient({ demoMode }: Props) {
             value={phoneRaw}
             onChange={(ev) => {
               setPhoneRaw(ev.target.value);
-              if (error) setError(null);
+              if (phoneError) setPhoneError(null);
             }}
             onBlur={() => {
               const trimmed = phoneRaw.trim();
               if (trimmed.length === 0) return;
               const normalized = normalizeRegisterPhone(trimmed);
               if (!isRegisterPhoneDigitsValid(normalized)) {
-                setError(t.register.phoneDigitsInvalid);
+                setPhoneError(t.register.phoneDigitsInvalid);
               }
             }}
-            aria-invalid={Boolean(error)}
-            error={Boolean(error)}
+            aria-invalid={Boolean(phoneError)}
+            error={Boolean(phoneError)}
             autoFocus
           />
-          {error ? (
+          {phoneError ? (
             <p className="mt-2 text-sm text-nq-error" role="status">
-              {error}
+              {phoneError}
             </p>
           ) : null}
         </div>
