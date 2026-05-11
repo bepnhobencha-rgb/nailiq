@@ -22,7 +22,14 @@ import { normalizePublicBookingSlug } from "@/shared/booking/normalizePublicBook
  */
 
 export type CustomerWaitState =
-  | { ok: false; error: "not_found" | "server_error" }
+  | {
+      ok: false;
+      /** `not_found`: salon or booking row missing (404).
+       *  `wrong_salon`: booking exists but on a different salon (404).
+       *  `server_error`: lookup blew up (500-style).
+       *  `invalid_id`: the URL bookingId isn't a UUID. */
+      error: "not_found" | "wrong_salon" | "server_error" | "invalid_id";
+    }
   | {
       ok: true;
       salon: { id: string; slug: string; name: string };
@@ -64,10 +71,19 @@ export async function loadCustomerWaitState(
   rawBookingId: string,
 ): Promise<CustomerWaitState> {
   const slug = normalizePublicBookingSlug(rawSlug);
-  if (!slug) return { ok: false, error: "not_found" };
+  if (!slug) {
+    console.warn("[loadCustomerWaitState] empty slug", { rawSlug });
+    return { ok: false, error: "not_found" };
+  }
 
   const bookingId = String(rawBookingId ?? "").trim();
-  if (!UUID_RE.test(bookingId)) return { ok: false, error: "not_found" };
+  if (!UUID_RE.test(bookingId)) {
+    console.warn("[loadCustomerWaitState] invalid bookingId", {
+      slug,
+      rawBookingId,
+    });
+    return { ok: false, error: "invalid_id" };
+  }
 
   let admin;
   try {
@@ -83,10 +99,16 @@ export async function loadCustomerWaitState(
     .eq("slug", slug)
     .maybeSingle();
   if (salonRes.error) {
-    console.error("[loadCustomerWaitState] salon", salonRes.error);
+    console.error("[loadCustomerWaitState] salon lookup", {
+      slug,
+      error: salonRes.error,
+    });
     return { ok: false, error: "server_error" };
   }
-  if (!salonRes.data) return { ok: false, error: "not_found" };
+  if (!salonRes.data) {
+    console.warn("[loadCustomerWaitState] salon not found", { slug });
+    return { ok: false, error: "not_found" };
+  }
   const salon = {
     id: String(salonRes.data.id),
     slug: String(salonRes.data.slug),
@@ -129,16 +151,27 @@ export async function loadCustomerWaitState(
     .maybeSingle()) as { data: BookingRow | null; error: unknown };
 
   if (bookingRes.error) {
-    console.error("[loadCustomerWaitState] booking", bookingRes.error);
+    console.error("[loadCustomerWaitState] booking lookup", {
+      slug,
+      bookingId,
+      error: bookingRes.error,
+    });
     return { ok: false, error: "server_error" };
   }
-  if (!bookingRes.data) return { ok: false, error: "not_found" };
-  const b = bookingRes.data;
-  if (String(b.source ?? "") !== "walkin") {
-    // Only walk-ins have queue context. Appointment bookings have a
-    // distinct UX surface (the original booking confirmation page).
+  if (!bookingRes.data) {
+    console.warn("[loadCustomerWaitState] booking not found", {
+      slug,
+      bookingId,
+      salonId: salon.id,
+    });
     return { ok: false, error: "not_found" };
   }
+  const b = bookingRes.data;
+  // Walk-ins are the primary use case; appointments also benefit from
+  // a public status surface (start time, assigned staff). We keep the
+  // page rendering for both — the queue-position branch only fires
+  // when source='walkin' AND status='waiting'. Appointments fall into
+  // the assigned-screen branch automatically.
 
   const status = (b.status ?? "waiting") as CustomerWaitState extends {
     ok: true;
@@ -177,7 +210,11 @@ export async function loadCustomerWaitState(
   let estimatedWaitMinutes: number | null = null;
   let readyAroundIso: string | null = null;
 
-  if (status === "waiting" && b.joined_queue_at) {
+  if (
+    status === "waiting" &&
+    b.joined_queue_at &&
+    String(b.source ?? "") === "walkin"
+  ) {
     type QueueRow = { id: string; joined_queue_at: string | null };
     const queueRes = (await admin
       .from("bookings")
