@@ -27,7 +27,7 @@ jobs:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
     needs: i18n-check
-    timeout-minutes: 60
+    timeout-minutes: 15
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
@@ -50,6 +50,23 @@ jobs:
         run: npx playwright install --with-deps chromium webkit
       - name: Build app
         run: npm run build
+      - name: Start dev server (background) & verify it boots within 30s
+        # Pre-flight: if `next dev` can't serve a request within 30s the
+        # job fails here with a clear message rather than burning the
+        # full 15-min budget on Playwright's silent webServer wait.
+        # Playwright is configured with reuseExistingServer: true so the
+        # test step picks up this same process.
+        run: |
+          mkdir -p tmp
+          nohup npx next dev > tmp/next-dev.log 2>&1 &
+          echo "$!" > tmp/next-dev.pid
+          npx --yes wait-on http://localhost:3000 --timeout 30000 --interval 500 || {
+            echo "::error::Dev server did not respond on http://localhost:3000 within 30s"
+            echo "--- next-dev.log (last 200 lines) ---"
+            tail -n 200 tmp/next-dev.log || true
+            exit 1
+          }
+          echo "::notice::Dev server up after pre-flight check"
       - name: Decide which specs to run
         id: scope
         run: |
@@ -131,3 +148,103 @@ jobs:
           name: updated-snapshots
           path: e2e/visual/__screenshots__/
           retention-days: 14
+
+  ai-triage:
+    name: AI Triage (Claude)
+    runs-on: ubuntu-latest
+    needs: e2e
+    if: failure()
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download playwright report
+        uses: actions/download-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+        continue-on-error: true
+
+      - name: AI analyze failures and comment on PR
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -u
+          # Extract failed tests from JSON report. Our e2e job runs
+          # playwright with `--reporter=json` and PLAYWRIGHT_JSON_OUTPUT_NAME
+          # pointed at playwright-report/results.json (NOT report.json).
+          FAILURES=$(node -e "
+            const fs = require('fs');
+            function walk(suites, out) {
+              if (!Array.isArray(suites)) return;
+              for (const s of suites) {
+                for (const spec of s.specs || []) {
+                  for (const t of spec.tests || []) {
+                    const last = t.results?.[t.results.length-1];
+                    if (last && (last.status === 'failed' || last.status === 'timedOut')) {
+                      const err = last.error?.message || last.errors?.[0]?.message || 'no message';
+                      out.push(spec.title + ' :: ' + String(err).slice(0, 300));
+                    }
+                  }
+                }
+                walk(s.suites, out);
+              }
+            }
+            try {
+              const r = JSON.parse(fs.readFileSync('playwright-report/results.json','utf8'));
+              const fails = [];
+              walk(r.suites, fails);
+              console.log(fails.slice(0, 10).join('\n') || 'No failed tests in report.');
+            } catch (e) {
+              console.log('Could not parse results.json: ' + e.message);
+            }
+          " 2>/dev/null || echo "Report unavailable")
+
+          echo "----- captured failures -----"
+          echo "$FAILURES"
+          echo "-----------------------------"
+
+          # Build request body via jq so quotes/newlines in $FAILURES
+          # cannot break the JSON payload.
+          PROMPT="NailIQ is a Next.js 16 + Supabase nail salon app. These Playwright E2E tests failed in CI:
+
+          $FAILURES
+
+          Give 2-3 specific fix suggestions. Be concise."
+
+          REQ_BODY=$(jq -n \
+            --arg model "claude-haiku-4-5-20251001" \
+            --arg prompt "$PROMPT" \
+            '{model: $model, max_tokens: 1024, messages: [{role: "user", content: $prompt}]}')
+
+          RESPONSE=$(curl -sS https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$REQ_BODY" || echo '{"content":[{"text":"Claude API call failed."}]}')
+
+          ANALYSIS=$(echo "$RESPONSE" | jq -r '.content[0].text // "No analysis returned."')
+
+          echo "----- claude analysis -----"
+          echo "$ANALYSIS"
+          echo "---------------------------"
+
+          # Post comment to PR (only on pull_request events).
+          if [ -n "${PR_NUMBER:-}" ]; then
+            BODY=$(printf '## 🤖 AI Triage\n\n**Failed tests (first 10):**\n```\n%s\n```\n\n**Claude analysis:**\n\n%s\n' "$FAILURES" "$ANALYSIS")
+            COMMENT_BODY=$(jq -n --arg b "$BODY" '{body: $b}')
+            curl -sS -X POST \
+              "https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments" \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/json" \
+              -d "$COMMENT_BODY" > /dev/null
+            echo "::notice::Posted AI triage comment to PR #$PR_NUMBER"
+          else
+            echo "::notice::No PR_NUMBER (push event) — skipping comment, see step log above for analysis"
+          fi

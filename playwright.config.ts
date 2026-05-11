@@ -68,7 +68,12 @@ export default defineConfig({
   webServer: {
     command: "npm run dev",
     url: "http://localhost:3000",
-    reuseExistingServer: !isCI,
-    timeout: 120_000,
+    // In CI we pre-start `next dev` in the workflow and gate the job on
+    // a 30s wait-on health check (see .github/workflows/e2e.yml). The
+    // pre-flight is the real fail-fast signal; here we just reuse that
+    // running server. Locally we keep the standard reuse-when-existing
+    // behaviour so re-running specs against an open `npm run dev` works.
+    reuseExistingServer: true,
+    timeout: 30_000,
   },
 });
