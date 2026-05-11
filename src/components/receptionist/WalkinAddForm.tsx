@@ -27,6 +27,10 @@ import type {
   ClientLookupProfile,
   ClientLookupResult,
 } from "@/shared/dashboard/lookupClientByPhoneAction";
+import type {
+  AvailabilityResult,
+  StaffAvailability,
+} from "@/shared/dashboard/availabilityEngine";
 import { maskPhonePartial } from "@/shared/lib/maskPhone";
 
 export interface WalkinAddFormProps {
@@ -95,8 +99,33 @@ export interface WalkinAddFormProps {
     favoriteStaffPrefix: string;
     /** Notes label prefix shown above the notes paragraph. */
     notesLabel: string;
-    /** "Just now" / "Today" / "{n} days ago" / "{n} weeks ago" — used by
-     * formatRelativeShort below. */
+    /** Smart-availability dropdown + card copy. */
+    requestedStaffLabel: string;
+    bestMatchOption: string;
+    /** "Best Match: {name} — Ready in {wait}" recommendation line. */
+    bestMatchRecommendation: string;
+    readyNow: string;
+    /** "~{n} min wait" — interpolate {n}. */
+    waitMinutesShort: (n: number) => string;
+    /** "Ready around {time}" — interpolate {time}. */
+    readyAroundTime: string;
+    /** Available-now action: bypasses the queue. */
+    assignImmediately: string;
+    /** "Wait for {name}" — interpolate {name}. */
+    waitForStaff: string;
+    /** "Other staff" link / button when receptionist wants to revert
+     * to Best Match after picking a busy staff. */
+    pickAnotherStaff: string;
+    heavyLoad: string;
+    heavyLoadDetail: string;
+    /** Aria label / heading on the availability card. */
+    availabilityHeader: string;
+    availabilityChecking: string;
+    /** "{n} ahead" — interpolate {n}. */
+    queueAheadHint: (n: number) => string;
+    /** Confidence chip labels. */
+    confidenceMedium: string;
+    confidenceLow: string;
     relative: {
       justNow: string;
       today: string;
@@ -136,6 +165,41 @@ export interface WalkinAddFormProps {
   popularServiceIds?: ReadonlyArray<string>;
   /** Localized label for the popular chip row. */
   popularServicesLabel?: string;
+  /**
+   * Active staff for the "Requested staff" dropdown. Empty/omitted
+   * hides the smart-availability UI entirely (keeps the form usable
+   * outside ReceptionistCenter).
+   */
+  staffOptions?: ReadonlyArray<{ id: string; name: string }>;
+  /**
+   * Hook the parent uses to query the availability engine. Called
+   * whenever staff or service selection changes. Empty `staffId`
+   * means the receptionist picked "Best Match (auto)" — server
+   * returns the ranked list and the form recommends the top entry.
+   */
+  onCheckAvailability?: (input: {
+    staffId: string | null;
+    serviceId: string;
+  }) => Promise<AvailabilityResult>;
+  /**
+   * Direct-assign path: bypasses the queue and inserts the booking
+   * already pinned to a staff and start time. Used when the chosen
+   * staff is `isAvailableNow`. The parent server action wraps
+   * addWalkin + assign in one transaction.
+   */
+  onAddAndAssign?: (input: {
+    clientName: string;
+    clientPhone: string;
+    serviceId: string;
+    staffId: string;
+    /** Caller's "now" — keeps form and server in agreement on the
+     * start time even with small clock skew. */
+    startAtIso: string;
+    staffRequestedByClient: boolean;
+    walkinSource: QueueSource | null;
+    walkinPriority: QueuePriority | null;
+    walkinRequestTags: QueueRequestTag[];
+  }) => Promise<{ ok: boolean; error?: string }>;
 }
 
 function formatServicePrice(priceCents: number): string {
@@ -152,6 +216,12 @@ type LookupState =
   | { kind: "loading" }
   | { kind: "found"; phoneMasked: string; profile: ClientLookupProfile }
   | { kind: "not_found" }
+  | { kind: "error" };
+
+type AvailabilityState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "ready"; staff: StaffAvailability[]; nowIso: string }
   | { kind: "error" };
 
 function formatRelativeShort(
@@ -181,6 +251,9 @@ export function WalkinAddForm({
   offlineDisabledHint,
   popularServiceIds,
   popularServicesLabel,
+  staffOptions,
+  onCheckAvailability,
+  onAddAndAssign,
 }: WalkinAddFormProps) {
   const nameId = useId();
   const phoneId = useId();
@@ -208,6 +281,16 @@ export function WalkinAddForm({
   const [walkinPriority, setWalkinPriority] = useState<QueuePriority | "">("");
   const [requestTags, setRequestTags] = useState<QueueRequestTag[]>([]);
   const [tagDraft, setTagDraft] = useState("");
+
+  // Smart-availability state. Empty `selectedStaffId` means "Best
+  // Match (auto)" — the form recommends the top-ranked staff but does
+  // not force the receptionist into one until they pick a specific
+  // dropdown option.
+  const [selectedStaffId, setSelectedStaffId] = useState<string>("");
+  const [availability, setAvailability] = useState<AvailabilityState>({
+    kind: "idle",
+  });
+  const availabilityRequestSeqRef = useRef(0);
 
   // Phone-lookup state — driven by debounced phone changes when the
   // parent passes onPhoneLookup. See `useEffect` block below.
@@ -313,6 +396,44 @@ export function WalkinAddForm({
     return () => window.clearTimeout(timer);
   }, [clientPhone, onPhoneLookup]);
 
+  // Smart availability: refresh whenever staff selection or service
+  // changes. The seq guard prevents an in-flight result for an old
+  // pair from clobbering a newer one.
+  useEffect(() => {
+    if (!onCheckAvailability) return;
+    if (!selectedServiceId) {
+      setAvailability({ kind: "idle" });
+      return;
+    }
+
+    const seq = ++availabilityRequestSeqRef.current;
+    setAvailability({ kind: "loading" });
+
+    const run = async () => {
+      try {
+        const r = await onCheckAvailability({
+          staffId: selectedStaffId === "" ? null : selectedStaffId,
+          serviceId: selectedServiceId,
+        });
+        if (seq !== availabilityRequestSeqRef.current) return;
+        if (!r.ok) {
+          setAvailability({ kind: "error" });
+          return;
+        }
+        setAvailability({
+          kind: "ready",
+          staff: r.staff,
+          nowIso: r.nowIso,
+        });
+      } catch (e) {
+        console.error("[WalkinAddForm] onCheckAvailability", e);
+        if (seq !== availabilityRequestSeqRef.current) return;
+        setAvailability({ kind: "error" });
+      }
+    };
+    void run();
+  }, [onCheckAvailability, selectedStaffId, selectedServiceId]);
+
   const resetAfterSuccess = useCallback(() => {
     setClientName("");
     setClientPhone("");
@@ -329,6 +450,9 @@ export function WalkinAddForm({
     setTagDraft("");
     setLookup({ kind: "idle" });
     autoFilledForPhoneRef.current = null;
+    setSelectedStaffId("");
+    setAvailability({ kind: "idle" });
+    availabilityRequestSeqRef.current += 1;
     queueMicrotask(() => nameRef.current?.focus());
   }, []);
 
@@ -348,80 +472,135 @@ export function WalkinAddForm({
     setRequestTags((prev) => prev.filter((t) => t !== tag));
   }, []);
 
-  const runSubmit = useCallback(async () => {
-    if (disabled) return;
-    const trimmedName = clientName.trim();
-    if (trimmedName.length === 0) {
-      setNameError(labels.nameRequired);
-      return;
+  // The recommended staff and its availability — drives the
+  // assign-vs-queue decision below. When the receptionist picked a
+  // specific staff we use that row; otherwise we use the top-ranked
+  // entry from the engine's reply.
+  const recommendedAvailability = useMemo<StaffAvailability | null>(() => {
+    if (availability.kind !== "ready" || availability.staff.length === 0) {
+      return null;
     }
-    if (trimmedName.length > BOOKING_GUEST_NAME_MAX) {
-      setNameError(labels.nameTooLong);
-      return;
+    if (selectedStaffId === "") {
+      return availability.staff[0] ?? null;
     }
-    if (!isValidCustomerName(trimmedName)) {
-      setNameError(labels.invalidNameChars);
-      return;
-    }
-    const trimmedPhone = clientPhone.trim();
-    if (trimmedPhone.length === 0) {
-      setPhoneError(labels.phoneRequired);
-      return;
-    }
-    if (!validateGuestPhone(trimmedPhone).ok) {
-      setPhoneError(labels.invalidPhone);
-      return;
-    }
-    if (selectedServiceId === null) {
-      setErrorMessage(labels.errorRequired);
-      return;
-    }
+    return (
+      availability.staff.find((s) => s.staffId === selectedStaffId) ?? null
+    );
+  }, [availability, selectedStaffId]);
 
-    setErrorMessage(null);
-    setNameError(null);
-    setPhoneError(null);
+  // The "Assign immediately" affordance is only offered when the
+  // engine has a confident answer AND the parent wired the direct-
+  // assign callback. Falling back to the queue keeps the form usable
+  // even when the engine is unreachable.
+  const canAssignImmediately =
+    !!onAddAndAssign &&
+    !!recommendedAvailability &&
+    recommendedAvailability.isAvailableNow;
 
-    setSubmitting(true);
-    try {
-      const result = await onSubmit({
-        clientName: trimmedName,
-        clientPhone: trimmedPhone,
-        serviceId: selectedServiceId,
-        staffRequestNote: staffRequestNote.trim().length
-          ? staffRequestNote.trim()
-          : null,
-        staffRequestedByClient,
-        walkinSource: walkinSource === "" ? null : walkinSource,
-        walkinPriority: walkinPriority === "" ? null : walkinPriority,
-        walkinRequestTags: requestTags,
-      });
-
-      if (result.ok) {
-        resetAfterSuccess();
-      } else {
-        setErrorMessage(result.error ?? labels.errorRequired);
+  const runSubmit = useCallback(
+    async (mode: "queue" | "immediate") => {
+      if (disabled) return;
+      const trimmedName = clientName.trim();
+      if (trimmedName.length === 0) {
+        setNameError(labels.nameRequired);
+        return;
       }
-    } finally {
-      setSubmitting(false);
-    }
-  }, [
-    clientName,
-    clientPhone,
-    labels.errorRequired,
-    labels.nameRequired,
-    labels.nameTooLong,
-    labels.invalidNameChars,
-    labels.invalidPhone,
-    labels.phoneRequired,
-    onSubmit,
-    resetAfterSuccess,
-    selectedServiceId,
-    staffRequestNote,
-    walkinSource,
-    walkinPriority,
-    requestTags,
-    disabled,
-  ]);
+      if (trimmedName.length > BOOKING_GUEST_NAME_MAX) {
+        setNameError(labels.nameTooLong);
+        return;
+      }
+      if (!isValidCustomerName(trimmedName)) {
+        setNameError(labels.invalidNameChars);
+        return;
+      }
+      const trimmedPhone = clientPhone.trim();
+      if (trimmedPhone.length === 0) {
+        setPhoneError(labels.phoneRequired);
+        return;
+      }
+      if (!validateGuestPhone(trimmedPhone).ok) {
+        setPhoneError(labels.invalidPhone);
+        return;
+      }
+      if (selectedServiceId === null) {
+        setErrorMessage(labels.errorRequired);
+        return;
+      }
+
+      setErrorMessage(null);
+      setNameError(null);
+      setPhoneError(null);
+
+      setSubmitting(true);
+      try {
+        let result: { ok: boolean; error?: string };
+        if (
+          mode === "immediate" &&
+          onAddAndAssign &&
+          recommendedAvailability &&
+          recommendedAvailability.isAvailableNow
+        ) {
+          result = await onAddAndAssign({
+            clientName: trimmedName,
+            clientPhone: trimmedPhone,
+            serviceId: selectedServiceId,
+            staffId: recommendedAvailability.staffId,
+            startAtIso:
+              availability.kind === "ready"
+                ? availability.nowIso
+                : new Date().toISOString(),
+            staffRequestedByClient: true,
+            walkinSource: walkinSource === "" ? null : walkinSource,
+            walkinPriority: walkinPriority === "" ? null : walkinPriority,
+            walkinRequestTags: requestTags,
+          });
+        } else {
+          result = await onSubmit({
+            clientName: trimmedName,
+            clientPhone: trimmedPhone,
+            serviceId: selectedServiceId,
+            staffRequestNote: staffRequestNote.trim().length
+              ? staffRequestNote.trim()
+              : null,
+            staffRequestedByClient,
+            walkinSource: walkinSource === "" ? null : walkinSource,
+            walkinPriority: walkinPriority === "" ? null : walkinPriority,
+            walkinRequestTags: requestTags,
+          });
+        }
+
+        if (result.ok) {
+          resetAfterSuccess();
+        } else {
+          setErrorMessage(result.error ?? labels.errorRequired);
+        }
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [
+      clientName,
+      clientPhone,
+      labels.errorRequired,
+      labels.nameRequired,
+      labels.nameTooLong,
+      labels.invalidNameChars,
+      labels.invalidPhone,
+      labels.phoneRequired,
+      onSubmit,
+      onAddAndAssign,
+      recommendedAvailability,
+      availability,
+      resetAfterSuccess,
+      selectedServiceId,
+      staffRequestNote,
+      staffRequestedByClient,
+      walkinSource,
+      walkinPriority,
+      requestTags,
+      disabled,
+    ],
+  );
 
   useEffect(() => {
     if (!disabled) nameRef.current?.focus();
@@ -452,7 +631,7 @@ export function WalkinAddForm({
   const onNoteKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      void runSubmit();
+      void runSubmit(canAssignImmediately ? "immediate" : "queue");
     }
     if (e.key === "Escape") {
       setErrorMessage(null);
@@ -472,7 +651,7 @@ export function WalkinAddForm({
     if (e.key === "Enter") {
       e.preventDefault();
       submitRef.current?.focus();
-      void runSubmit();
+      void runSubmit(canAssignImmediately ? "immediate" : "queue");
     }
   };
 
@@ -493,7 +672,7 @@ export function WalkinAddForm({
       !formLocked
     ) {
       e.preventDefault();
-      void runSubmit();
+      void runSubmit(canAssignImmediately ? "immediate" : "queue");
     }
   };
 
@@ -509,7 +688,7 @@ export function WalkinAddForm({
       )}
       onSubmit={(e) => {
         e.preventDefault();
-        void runSubmit();
+        void runSubmit(canAssignImmediately ? "immediate" : "queue");
       }}
       onKeyDown={onFormKeyDown}
     >
@@ -880,6 +1059,44 @@ export function WalkinAddForm({
         ) : null}
       </div>
 
+      {staffOptions && staffOptions.length > 0 && onCheckAvailability ? (
+        <div className="space-y-1.5">
+          <label
+            htmlFor="walkin-requested-staff"
+            className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted"
+          >
+            {labels.requestedStaffLabel}
+          </label>
+          <select
+            id="walkin-requested-staff"
+            data-testid="walkin-requested-staff"
+            disabled={formLocked}
+            value={selectedStaffId}
+            onChange={(e) => setSelectedStaffId(e.target.value)}
+            className={cn(
+              "h-11 w-full rounded-lg border border-nq-muted/35 bg-nq-bg px-3 text-sm text-nq-foreground focus:border-nq-primary focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
+              formLocked && "opacity-60",
+            )}
+          >
+            <option value="">{labels.bestMatchOption}</option>
+            {staffOptions.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          {selectedServiceId !== null ? (
+            <AvailabilityCard
+              state={availability}
+              recommended={recommendedAvailability}
+              isAutoMatch={selectedStaffId === ""}
+              labels={labels}
+              onResetToBestMatch={() => setSelectedStaffId("")}
+            />
+          ) : null}
+        </div>
+      ) : null}
+
       <div>
         <label htmlFor={noteId} className="sr-only">
           {labels.notePlaceholder}
@@ -946,8 +1163,14 @@ export function WalkinAddForm({
         }
         title={isOffline ? offlineDisabledHint : undefined}
         className="w-full sm:w-full"
+        data-testid="walkin-submit"
+        data-walkin-mode={canAssignImmediately ? "immediate" : "queue"}
       >
-        {submitting ? labels.submitting : labels.addButton}
+        {submitting
+          ? labels.submitting
+          : canAssignImmediately
+            ? labels.assignImmediately
+            : labels.addButton}
       </Button>
     </form>
   );
@@ -1036,6 +1259,122 @@ function ClientLookupCard({
           {profile.notes}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+
+function AvailabilityCard({
+  state,
+  recommended,
+  isAutoMatch,
+  labels,
+  onResetToBestMatch,
+}: {
+  state: AvailabilityState;
+  recommended: StaffAvailability | null;
+  isAutoMatch: boolean;
+  labels: WalkinAddFormProps["labels"];
+  onResetToBestMatch: () => void;
+}) {
+  if (state.kind === "loading") {
+    return (
+      <p
+        role="status"
+        className="inline-flex items-center gap-1.5 text-xs text-nq-muted"
+        data-testid="walkin-availability-loading"
+      >
+        <span
+          aria-hidden
+          className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-nq-primary/80"
+        />
+        {labels.availabilityChecking}
+      </p>
+    );
+  }
+  if (state.kind === "error" || !recommended) return null;
+
+  const readyAtClock = recommended.estimatedReadyAt
+    ? new Date(recommended.estimatedReadyAt).toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : null;
+
+  const isHeavy = recommended.overloaded;
+  const isFree = recommended.isAvailableNow;
+
+  const recHeading = isAutoMatch
+    ? labels.bestMatchRecommendation
+        .replace("{name}", recommended.staffName)
+        .replace(
+          "{wait}",
+          isFree ? labels.readyNow : labels.waitMinutesShort(recommended.waitMinutes),
+        )
+    : recommended.staffName;
+
+  return (
+    <div
+      role="status"
+      data-testid="walkin-availability-card"
+      data-walkin-availability-state={
+        isFree ? "free" : isHeavy ? "heavy" : "busy"
+      }
+      className={cn(
+        "space-y-1 rounded-md border bg-nq-surface px-2.5 py-2 text-xs text-nq-foreground",
+        isFree
+          ? "border-emerald-400/55 ring-1 ring-emerald-300/35"
+          : isHeavy
+            ? "border-amber-500/55 ring-1 ring-amber-400/35"
+            : "border-nq-muted/35",
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">
+            {isFree ? "✅" : isHeavy ? "⚠️" : "⏳"} {recHeading}
+          </p>
+          {!isAutoMatch ? (
+            <p className="text-[11px] text-nq-muted">
+              {isFree
+                ? labels.readyNow
+                : isHeavy
+                  ? labels.heavyLoadDetail
+                  : labels.waitMinutesShort(recommended.waitMinutes)}
+            </p>
+          ) : null}
+          {!isFree && readyAtClock ? (
+            <p className="text-[11px] text-nq-muted">
+              {labels.readyAroundTime.replace("{time}", readyAtClock)}
+            </p>
+          ) : null}
+          {recommended.queueAhead > 0 ? (
+            <p className="text-[11px] text-nq-muted">
+              {labels.queueAheadHint(recommended.queueAhead)}
+            </p>
+          ) : null}
+          {recommended.confidenceLevel === "low" && !isHeavy ? (
+            <p className="text-[11px] font-semibold text-amber-700">
+              {labels.confidenceLow}
+            </p>
+          ) : null}
+          {recommended.confidenceLevel === "medium" ? (
+            <p className="text-[11px] text-nq-muted">
+              {labels.confidenceMedium}
+            </p>
+          ) : null}
+        </div>
+        {!isAutoMatch && !isFree ? (
+          <button
+            type="button"
+            onClick={onResetToBestMatch}
+            className="shrink-0 whitespace-nowrap rounded-md border border-nq-muted/35 bg-nq-bg px-2 py-1 text-[11px] font-semibold text-nq-foreground hover:bg-nq-surface focus:outline-none focus:ring-2 focus:ring-nq-primary/35"
+            data-testid="walkin-availability-reset"
+          >
+            {labels.pickAnotherStaff}
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }
