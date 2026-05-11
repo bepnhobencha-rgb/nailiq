@@ -143,7 +143,12 @@ export function BookingFlowServicePanel({
           {s.description ? (
             <span
               data-testid="service-description"
-              className="mt-1 block truncate text-xs leading-snug text-[var(--booking-text-muted)] sm:text-[13px]"
+              // `line-clamp-2` lets descriptions occupy up to two lines
+              // and ellipsis only if they overflow that. The previous
+              // `truncate` (`white-space: nowrap`) collapsed the line
+              // to one row, which on cards with a duration+price gutter
+              // showed only ~8 characters before "…".
+              className="mt-1 line-clamp-2 text-xs leading-snug text-[var(--booking-text-muted)] sm:text-[13px]"
             >
               {s.description}
             </span>
