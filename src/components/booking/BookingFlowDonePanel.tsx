@@ -95,10 +95,7 @@ export function BookingFlowDonePanel({
         : t.summaryDurationMinutes.replace("{n}", String(totalMinutes))
       : null;
 
-  const staffDisplayName = getPublicStaffDisplayName(
-    staffName,
-    t.staffPlaceholderName,
-  );
+  const staffDisplayName = getPublicStaffDisplayName(staffName);
   const staffLine =
     staffName.trim().length > 0
       ? t.successStaffLine.replace("{name}", staffDisplayName)

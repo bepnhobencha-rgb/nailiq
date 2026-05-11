@@ -422,8 +422,8 @@ export function useBookingFlowState(
     if (!staffId || staffId === BOOKING_ANY_STAFF_ID) return t.anyStaffSummary;
     const row = staff.find((s) => s.id === staffId);
     if (!row) return "—";
-    return getPublicStaffDisplayName(row.name, t.staffPlaceholderName);
-  }, [staffId, staff, t.anyStaffSummary, t.staffPlaceholderName]);
+    return getPublicStaffDisplayName(row.name);
+  }, [staffId, staff, t.anyStaffSummary]);
 
   const confirmTimeLabel = useMemo(() => {
     if (!timeSlot) return "";

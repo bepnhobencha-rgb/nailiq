@@ -11,10 +11,7 @@ import {
   type BookingMotionDir,
 } from "@/components/booking/bookingMotion";
 import { formatStaffJobRole } from "@/shared/booking/staffJobRoleLabel";
-import {
-  getPublicStaffDisplayName,
-  isPlaceholderStaffName,
-} from "@/shared/booking/publicStaffDisplay";
+import { getPublicStaffDisplayName } from "@/shared/booking/publicStaffDisplay";
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -119,11 +116,7 @@ export function BookingFlowStaffPanel({
         {staff.map((s, index) => {
           const selected = staffId === s.id;
           const tone = AVATAR_TONES[index % AVATAR_TONES.length]!;
-          const placeholder = isPlaceholderStaffName(s.name);
-          const displayName = getPublicStaffDisplayName(
-            s.name,
-            t.staffPlaceholderName,
-          );
+          const displayName = getPublicStaffDisplayName(s.name);
           return (
             <motion.button
               key={s.id}
@@ -150,7 +143,7 @@ export function BookingFlowStaffPanel({
                 )}
                 aria-hidden
               >
-                {placeholder ? "?" : initials(s.name)}
+                {initials(displayName)}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-[15px] font-medium leading-snug text-[var(--booking-text)] sm:text-base">
