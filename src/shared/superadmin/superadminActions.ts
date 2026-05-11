@@ -4,16 +4,22 @@ import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { isSuperAdmin } from "@/shared/lib/superadmin";
 import {
+  isPlatformFlagKey,
   isRestorableTable,
   normalizeFeatureFlags,
   normalizePlanOverride,
+  PLATFORM_FLAG_KEYS,
   type DeletedRecord,
   type LoadAllSalonsResult,
   type LoadDeletedRecordsResult,
+  type LoadPlatformFlagsResult,
+  type PlatformFlag,
+  type PlatformFlagKey,
   type RestorableTable,
   type RestoreSalonRecordResult,
   type SuperAdminFeatureFlags,
   type SuperAdminSalonRow,
+  type UpdatePlatformFlagResult,
   type UpdateSalonFlagsInput,
   type UpdateSalonFlagsResult,
 } from "@/shared/superadmin/superadminTypes";
@@ -342,4 +348,111 @@ export async function restoreSalonRecord(
   }
 
   return { ok: true };
+}
+
+
+/* ───────────────── Platform-wide flags (PR #108) ───────────────── */
+
+/**
+ * Load every row from `platform_flags`. The 5 seeded keys are
+ * authoritative; any extra rows in the table are dropped. Returned
+ * with descriptors merged so the UI can render label + badge without
+ * a second round trip.
+ */
+export async function loadPlatformFlags(): Promise<LoadPlatformFlagsResult> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+
+  let admin;
+  try {
+    admin = createServiceRoleClient();
+  } catch (e) {
+    console.error("[superadmin/loadPlatformFlags] service role", e);
+    return { ok: false, error: "server_error" };
+  }
+
+  const { data, error } = (await admin
+    .from("platform_flags")
+    .select("key, enabled, description, updated_at" as never)) as {
+    data:
+      | Array<{
+          key: string;
+          enabled?: boolean | null;
+          description?: string | null;
+          updated_at?: string | null;
+        }>
+      | null;
+    error: unknown;
+  };
+
+  if (error) {
+    console.error("[superadmin/loadPlatformFlags] query", error);
+    return { ok: false, error: "server_error" };
+  }
+
+  type PlatformRow = NonNullable<typeof data>[number];
+  const byKey = new Map<string, PlatformRow>();
+  for (const r of data ?? []) {
+    if (typeof r.key === "string") byKey.set(r.key, r);
+  }
+
+  // Materialize a row for every known key — surfaces newly-added flags
+  // even when the migration seed didn't run on this environment.
+  const flags: PlatformFlag[] = PLATFORM_FLAG_KEYS.map((key) => {
+    const row = byKey.get(key);
+    return {
+      key,
+      enabled: row?.enabled === true,
+      description: typeof row?.description === "string" ? row.description : null,
+      updated_at: row?.updated_at ?? null,
+    };
+  });
+
+  return { ok: true, flags };
+}
+
+export async function updatePlatformFlag(
+  key: string,
+  enabled: boolean,
+): Promise<UpdatePlatformFlagResult> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+
+  if (!isPlatformFlagKey(key)) {
+    return { ok: false, error: "invalid_payload" };
+  }
+  if (typeof enabled !== "boolean") {
+    return { ok: false, error: "invalid_payload" };
+  }
+
+  let admin;
+  try {
+    admin = createServiceRoleClient();
+  } catch (e) {
+    console.error("[superadmin/updatePlatformFlag] service role", e);
+    return { ok: false, error: "server_error" };
+  }
+
+  const k: PlatformFlagKey = key;
+
+  // Upsert so the row materializes on first toggle even when the
+  // migration seed hasn't been applied on this environment.
+  const { error } = await admin
+    .from("platform_flags")
+    .upsert(
+      {
+        key: k,
+        enabled,
+        updated_at: new Date().toISOString(),
+        updated_by: caller.userId,
+      } as never,
+      { onConflict: "key" } as never,
+    );
+
+  if (error) {
+    console.error("[superadmin/updatePlatformFlag] upsert", error);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true, key: k, enabled };
 }
