@@ -43,6 +43,11 @@ import {
 } from "@/shared/lib/demoOtpMode";
 import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
 
+/** Owner-facing length cap on `services.description`. Enforced here
+ * (not in the DB) so copy guidance can change without a migration.
+ * Kept in sync with `userMessages.serviceForm.descriptionTooLong`. */
+export const SERVICE_DESCRIPTION_MAX_LEN = 100;
+
 export type StaffJobRole = "owner" | "senior" | "nail_tech";
 
 type WritableSupabase =
@@ -314,6 +319,13 @@ export async function addService(
     duration_minutes: number;
     buffer_minutes: number;
     category?: ServiceCategory | string;
+    /** Optional one-line marketing copy shown under the service name
+     * on the public booking page (migration 20260511600000). */
+    description?: string | null;
+    /** When true, the public tile renders a "Popular" badge. */
+    is_popular?: boolean;
+    /** When true, the public tile renders larger with a subtle glow. */
+    is_featured?: boolean;
   },
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
@@ -342,6 +354,29 @@ export async function addService(
     category = input.category;
   }
 
+  // `description`: trim, treat empty as null, enforce length cap. Length
+  // is application-only so copy guidance can shift without a migration.
+  let description: string | null | undefined;
+  if (input.description !== undefined) {
+    if (input.description === null) {
+      description = null;
+    } else {
+      const trimmed = String(input.description).trim();
+      if (trimmed.length === 0) {
+        description = null;
+      } else if (trimmed.length > SERVICE_DESCRIPTION_MAX_LEN) {
+        return fail("invalid_description");
+      } else {
+        description = trimmed;
+      }
+    }
+  }
+
+  const isPopular =
+    input.is_popular === undefined ? undefined : Boolean(input.is_popular);
+  const isFeatured =
+    input.is_featured === undefined ? undefined : Boolean(input.is_featured);
+
   const supabase = await writableSupabase(slug, r.kind);
 
   // Plan-limit gate. Free plan caps services at 10 (see PLAN_LIMITS).
@@ -353,8 +388,9 @@ export async function addService(
     return fail("plan_limit_reached");
   }
 
-  // `category` cast: column not yet in the auto-generated DB types
-  // (migration 20260511500000). DB default fills "other" when omitted.
+  // `category`, `description`, `is_popular`, `is_featured` are cast:
+  // columns not yet in the auto-generated DB types (migrations
+  // 20260511500000 + 20260511600000). DB defaults handle omitted keys.
   const insertPayload = {
     salon_id: r.salon.id,
     name,
@@ -362,6 +398,9 @@ export async function addService(
     duration_minutes: duration,
     buffer_minutes: buffer,
     ...(category !== null ? { category } : {}),
+    ...(description !== undefined ? { description } : {}),
+    ...(isPopular !== undefined ? { is_popular: isPopular } : {}),
+    ...(isFeatured !== undefined ? { is_featured: isFeatured } : {}),
   } as never;
   const { data: insertedSvc, error } = await supabase
     .from("services")
@@ -419,6 +458,10 @@ export async function updateService(
     duration_minutes: number;
     buffer_minutes: number;
     category: ServiceCategory | string;
+    /** Pass `null` to clear, a trimmed string to set, omit to leave alone. */
+    description: string | null;
+    is_popular: boolean;
+    is_featured: boolean;
   }>,
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
@@ -451,6 +494,26 @@ export async function updateService(
   if (data.category !== undefined) {
     if (!isServiceCategory(data.category)) return fail("invalid_category");
     patch.category = data.category;
+  }
+  if (data.description !== undefined) {
+    if (data.description === null) {
+      patch.description = null;
+    } else {
+      const trimmed = String(data.description).trim();
+      if (trimmed.length === 0) {
+        patch.description = null;
+      } else if (trimmed.length > SERVICE_DESCRIPTION_MAX_LEN) {
+        return fail("invalid_description");
+      } else {
+        patch.description = trimmed;
+      }
+    }
+  }
+  if (data.is_popular !== undefined) {
+    patch.is_popular = Boolean(data.is_popular);
+  }
+  if (data.is_featured !== undefined) {
+    patch.is_featured = Boolean(data.is_featured);
   }
 
   if (Object.keys(patch).length === 0) return fail("empty_update");

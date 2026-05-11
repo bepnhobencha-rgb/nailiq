@@ -17,6 +17,13 @@ export type BookingServiceItem = {
    * `"other"` for legacy rows. Used by the public booking page to group
    * tiles under category headings. */
   category: ServiceCategory;
+  /** From `services.description` (migration 20260511600000). One-line
+   * marketing copy shown under the service name. `null` → hide the line. */
+  description: string | null;
+  /** From `services.is_popular`. Renders a "Popular" badge on the tile. */
+  isPopular: boolean;
+  /** From `services.is_featured`. Lifts the tile (larger card + subtle glow). */
+  isFeatured: boolean;
 };
 
 export function getServiceById(
