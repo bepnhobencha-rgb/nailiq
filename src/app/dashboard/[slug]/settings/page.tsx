@@ -28,7 +28,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -48,6 +48,7 @@ export default async function SalonSettingsPage({ params }: Props) {
         email_verified?: unknown;
         subscription_plan?: unknown;
         brand_color?: unknown;
+        theme_mode?: unknown;
       }
     | null;
 
@@ -62,6 +63,8 @@ export default async function SalonSettingsPage({ params }: Props) {
   const emailVerified = row?.email_verified === true;
   const subscriptionPlan = parseSubscriptionPlan(row?.subscription_plan);
   const brandColor = normalizeBrandColor(row?.brand_color);
+  const themeMode: "dark" | "light" =
+    row?.theme_mode === "light" ? "light" : "dark";
 
   return (
     <SalonSettingsHub
@@ -73,6 +76,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       emailVerified={emailVerified}
       subscriptionPlan={subscriptionPlan}
       brandColor={brandColor}
+      themeMode={themeMode}
     />
   );
 }

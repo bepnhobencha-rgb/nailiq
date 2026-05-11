@@ -431,6 +431,10 @@ export type UserMessages = {
       resetDefault: string;
       errorInvalid: string;
       errorGeneric: string;
+      /** Light/dark toggle copy (booking page theme). */
+      themeLabel: string;
+      themeDark: string;
+      themeLight: string;
     };
   };
   /** Setup CRUD error strings (services, etc.) */
@@ -1399,6 +1403,9 @@ export const userEn: UserMessages = {
       resetDefault: "Reset to default",
       errorInvalid: "Use a 6-digit hex like #D4AF37.",
       errorGeneric: "Could not save. Try again.",
+      themeLabel: "Theme",
+      themeDark: "Dark",
+      themeLight: "Light",
     },
   },
   setupErrors: {

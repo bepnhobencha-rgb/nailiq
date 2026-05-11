@@ -265,7 +265,7 @@ export function BookingFlowDatePanel({
     >
       <h2
         id="date-heading"
-        className="text-lg font-semibold tracking-tight text-nq-foreground sm:text-xl lg:text-[1.625rem] lg:tracking-[-0.02em]"
+        className="text-lg font-semibold tracking-tight text-[var(--booking-text)] sm:text-xl lg:text-[1.625rem] lg:tracking-[-0.02em]"
       >
         {t.stepDateHeading}
       </h2>
@@ -281,9 +281,9 @@ export function BookingFlowDatePanel({
             }}
             aria-label={t.calendarPrevMonthAria}
             className={cn(
-              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.08] text-nq-foreground transition-colors",
+              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--booking-border)] text-[var(--booking-text)] transition-colors",
               canPrev
-                ? "hover:border-white/[0.2] hover:bg-white/[0.04]"
+                ? "hover:border-[var(--booking-border)] hover:bg-[var(--booking-bg-input)]"
                 : "cursor-not-allowed opacity-40",
             )}
           >
@@ -301,7 +301,7 @@ export function BookingFlowDatePanel({
             </svg>
           </button>
           <div
-            className="text-sm font-semibold tracking-tight text-nq-foreground sm:text-base"
+            className="text-sm font-semibold tracking-tight text-[var(--booking-text)] sm:text-base"
             aria-live="polite"
             data-testid="calendar-month-label"
           >
@@ -316,9 +316,9 @@ export function BookingFlowDatePanel({
             }}
             aria-label={t.calendarNextMonthAria}
             className={cn(
-              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.08] text-nq-foreground transition-colors",
+              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--booking-border)] text-[var(--booking-text)] transition-colors",
               canNext
-                ? "hover:border-white/[0.2] hover:bg-white/[0.04]"
+                ? "hover:border-[var(--booking-border)] hover:bg-[var(--booking-bg-input)]"
                 : "cursor-not-allowed opacity-40",
             )}
           >
@@ -344,7 +344,7 @@ export function BookingFlowDatePanel({
           {WEEK_HDR.map((h) => (
             <div
               key={h}
-              className="pb-2 text-[11px] font-semibold uppercase tracking-wide text-nq-muted sm:text-xs"
+              className="pb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--booking-text-muted)] sm:text-xs"
             >
               {h}
             </div>
@@ -385,25 +385,25 @@ export function BookingFlowDatePanel({
                 className={cn(
                   "flex min-h-11 flex-col items-center justify-center rounded-xl border px-0.5 py-2 text-center transition-colors sm:min-h-[3rem]",
                   disabled && "cursor-not-allowed opacity-35",
-                  !disabled && !selected && "nq-booking-tile-interactive border-white/[0.06] hover:border-white/[0.12]",
+                  !disabled && !selected && "nq-booking-tile-interactive border-[var(--booking-border)] hover:border-[var(--booking-border)]",
                   closed && !past && !beyondWindow && "opacity-45",
                   !disabled &&
                     !selected &&
                     !closed &&
-                    "border-white/[0.06] bg-white/[0.02]",
+                    "border-[var(--booking-border)] bg-[var(--booking-bg-input)]",
                   isToday &&
                     !selected &&
                     !disabled &&
-                    "ring-1 ring-[color-mix(in_srgb,var(--salon-primary)_55%,transparent)] ring-offset-2 ring-offset-nq-bg",
+                    "ring-1 ring-[color-mix(in_srgb,var(--salon-primary)_55%,transparent)] ring-offset-2 ring-offset-[var(--booking-bg)]",
                   selected &&
                     !disabled &&
-                    "border-[var(--salon-primary)] bg-[var(--salon-primary)] text-nq-bg shadow-[0_0_24px_-10px_color-mix(in_srgb,var(--salon-primary)_55%,transparent)]",
+                    "border-[var(--salon-primary)] bg-[var(--salon-primary)] text-[var(--booking-bg)] shadow-[0_0_24px_-10px_color-mix(in_srgb,var(--salon-primary)_55%,transparent)]",
                 )}
               >
                 <span
                   className={cn(
                     "text-[13px] font-semibold tabular-nums sm:text-sm",
-                    selected ? "text-nq-bg" : "text-nq-foreground",
+                    selected ? "text-[var(--booking-bg)]" : "text-[var(--booking-text)]",
                   )}
                 >
                   {labelDay}
@@ -411,7 +411,7 @@ export function BookingFlowDatePanel({
                 <span
                   className={cn(
                     "mt-0.5 text-[10px] font-medium uppercase leading-none sm:text-[11px]",
-                    selected ? "text-nq-bg/90" : "text-nq-muted",
+                    selected ? "text-[var(--booking-bg)]/90" : "text-[var(--booking-text-muted)]",
                   )}
                 >
                   {closed && !past
@@ -434,7 +434,7 @@ export function BookingFlowDatePanel({
         </div>
 
         <div
-          className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-1 text-[11px] text-nq-muted sm:text-xs"
+          className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-1 text-[11px] text-[var(--booking-text-muted)] sm:text-xs"
           data-testid="calendar-legend"
         >
           <span className="inline-flex items-center gap-1.5">
@@ -458,7 +458,7 @@ export function BookingFlowDatePanel({
         <Button
           type="button"
           variant="secondary"
-          className="nq-booking-glass h-14 min-h-11 w-full shrink-0 border border-white/[0.08] text-[var(--salon-primary)] shadow-none hover:bg-white/[0.04] sm:w-auto sm:min-w-[8.5rem]"
+          className="nq-booking-glass h-14 min-h-11 w-full shrink-0 border border-[var(--booking-border)] text-[var(--salon-primary)] shadow-none hover:bg-[var(--booking-bg-input)] sm:w-auto sm:min-w-[8.5rem]"
           onClick={onBack}
         >
           {t.back}

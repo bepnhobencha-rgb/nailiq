@@ -89,7 +89,7 @@ export function BookingFlowInfoPanel({
     >
       <h2
         id="info-heading"
-        className="text-lg font-semibold tracking-tight text-nq-foreground sm:text-xl lg:text-[1.625rem] lg:tracking-[-0.02em]"
+        className="text-lg font-semibold tracking-tight text-[var(--booking-text)] sm:text-xl lg:text-[1.625rem] lg:tracking-[-0.02em]"
       >
         {t.stepInfoHeading}
       </h2>
@@ -98,7 +98,7 @@ export function BookingFlowInfoPanel({
         <div>
           <label
             htmlFor="booking-info-name"
-            className="mb-2 block text-sm font-medium text-nq-foreground"
+            className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
           >
             {t.clientNameLabel}
           </label>
@@ -136,7 +136,7 @@ export function BookingFlowInfoPanel({
         <div>
           <label
             htmlFor="booking-info-phone"
-            className="mb-2 block text-sm font-medium text-nq-foreground"
+            className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
           >
             {t.clientPhoneLabel}
           </label>
@@ -174,11 +174,11 @@ export function BookingFlowInfoPanel({
         <div>
           <label
             htmlFor="booking-info-email"
-            className="mb-2 block text-sm font-medium text-nq-foreground"
+            className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
           >
             {t.clientEmailLabel}
           </label>
-          <p className="mb-2 text-xs text-nq-muted">{t.clientEmailHint}</p>
+          <p className="mb-2 text-xs text-[var(--booking-text-muted)]">{t.clientEmailHint}</p>
           <input
             id="booking-info-email"
             ref={emailRef}
@@ -212,11 +212,11 @@ export function BookingFlowInfoPanel({
         <div>
           <label
             htmlFor="booking-info-notes"
-            className="mb-2 block text-sm font-medium text-nq-foreground"
+            className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
           >
             {t.clientNotesLabel}
           </label>
-          <p className="mb-2 text-xs text-nq-muted">{t.clientNotesOptionalHint}</p>
+          <p className="mb-2 text-xs text-[var(--booking-text-muted)]">{t.clientNotesOptionalHint}</p>
           <textarea
             id="booking-info-notes"
             name="clientNotes"
@@ -238,7 +238,7 @@ export function BookingFlowInfoPanel({
         <Button
           type="button"
           variant="secondary"
-          className="nq-booking-glass h-14 min-h-11 w-full shrink-0 border border-white/[0.08] text-[var(--salon-primary)] shadow-none hover:bg-white/[0.04] sm:w-auto sm:min-w-[8.5rem]"
+          className="nq-booking-glass h-14 min-h-11 w-full shrink-0 border border-[var(--booking-border)] text-[var(--salon-primary)] shadow-none hover:bg-[var(--booking-bg-input)] sm:w-auto sm:min-w-[8.5rem]"
           onClick={onBack}
         >
           {t.back}

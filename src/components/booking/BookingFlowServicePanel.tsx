@@ -46,7 +46,7 @@ export function BookingFlowServicePanel({
     >
       <h2
         id="svc-heading"
-        className="text-lg font-semibold tracking-tight text-nq-foreground sm:text-xl lg:text-[1.625rem] lg:tracking-[-0.02em]"
+        className="text-lg font-semibold tracking-tight text-[var(--booking-text)] sm:text-xl lg:text-[1.625rem] lg:tracking-[-0.02em]"
       >
         {t.stepServiceHeading}
       </h2>
@@ -75,17 +75,17 @@ export function BookingFlowServicePanel({
               className={cn(
                 "nq-booking-glass flex w-full min-w-0 min-h-[4.5rem] items-center justify-between gap-4 rounded-2xl px-4 py-3.5 text-left sm:min-h-[5rem] sm:gap-5 sm:px-5",
                 !selected && "nq-booking-tile-interactive",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--booking-bg)]",
                 selected
                   ? "border border-[var(--salon-primary)] shadow-[var(--shadow-nq-tile-selected)]"
-                  : "border border-white/[0.06] hover:border-white/[0.12]",
+                  : "border border-[var(--booking-border)] hover:border-[var(--booking-border)]",
               )}
             >
-              <span className="min-w-0 flex-1 pr-2 text-[15px] font-medium leading-snug tracking-tight text-nq-foreground sm:text-base">
+              <span className="min-w-0 flex-1 pr-2 text-[15px] font-medium leading-snug tracking-tight text-[var(--booking-text)] sm:text-base">
                 {s.name}
               </span>
               <div className="flex shrink-0 flex-col items-end gap-1 text-right">
-                <span className="text-sm font-medium tabular-nums tracking-tight text-nq-muted sm:text-[15px]">
+                <span className="text-sm font-medium tabular-nums tracking-tight text-[var(--booking-text-muted)] sm:text-[15px]">
                   {durationText}
                 </span>
                 {s.priceDisplay ? (

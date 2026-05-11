@@ -28,6 +28,7 @@ export function SalonSettingsHub({
   emailVerified,
   subscriptionPlan,
   brandColor,
+  themeMode,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -42,6 +43,9 @@ export function SalonSettingsHub({
   subscriptionPlan: SubscriptionPlan;
   /** `salons.brand_color` — drives the booking page primary color (PR #109). */
   brandColor: string;
+  /** `salons.theme_mode` — drives the booking page light/dark surface
+   *  set. Dashboard itself is unaffected. */
+  themeMode: "dark" | "light";
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -201,7 +205,11 @@ export function SalonSettingsHub({
           canEdit={canEditDashboardModules}
         />
 
-        <BrandColorSettings slug={slug} initialValue={brandColor} />
+        <BrandColorSettings
+          slug={slug}
+          initialValue={brandColor}
+          initialThemeMode={themeMode}
+        />
 
         {/* Pricing — owner-only. The server actions also gate on
             `role === 'owner'`, so this is defense-in-depth. */}

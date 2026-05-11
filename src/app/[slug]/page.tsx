@@ -88,8 +88,34 @@ async function PublicBookingRouteBody({
   // tile-selected shadow). Components that need the brand reference
   // `var(--salon-primary)` directly via Tailwind arbitrary syntax
   // (`bg-[var(--salon-primary)]`, `text-[var(--salon-primary)]`).
+  //
+  // Theme mode (PR: this commit): per-salon light/dark for the
+  // booking page only. Exposes a `--booking-*` palette that
+  // downstream components consume via `var(...)` so a salon can
+  // flip to a light scheme without touching the dashboard. Same
+  // wrapper-override pattern as `--salon-primary` above.
+  const isLightTheme = load.salon.themeMode === "light";
+  const themeVars = isLightTheme
+    ? {
+        "--booking-bg": "#f9f9f9",
+        "--booking-bg-card": "#ffffff",
+        "--booking-bg-input": "#f2f2f2",
+        "--booking-text": "#1a1a1a",
+        "--booking-text-muted": "rgba(0, 0, 0, 0.45)",
+        "--booking-border": "rgba(0, 0, 0, 0.1)",
+      }
+    : {
+        "--booking-bg": "#0a0a0a",
+        "--booking-bg-card": "#1c1c1e",
+        "--booking-bg-input": "#2c2c2e",
+        "--booking-text": "#ffffff",
+        "--booking-text-muted": "rgba(255, 255, 255, 0.5)",
+        "--booking-border": "rgba(255, 255, 255, 0.1)",
+      };
   const brandStyle = {
     "--salon-primary": load.salon.brandColor,
+    "--brand": load.salon.brandColor,
+    ...themeVars,
     "--nq-luxury-cta-from": `color-mix(in srgb, ${load.salon.brandColor} 75%, white 25%)`,
     "--nq-luxury-cta-mid": load.salon.brandColor,
     "--nq-luxury-cta-to": `color-mix(in srgb, ${load.salon.brandColor} 70%, black 30%)`,
@@ -102,7 +128,11 @@ async function PublicBookingRouteBody({
         <BookingDocumentEn />
         <div
           className="relative min-h-dvh px-4 py-10 pb-safe sm:px-6 lg:px-8"
-          style={brandStyle}
+          style={{
+            ...brandStyle,
+            background: "var(--booking-bg)",
+            color: "var(--booking-text)",
+          }}
         >
           <SalonBookingPaused shopLabel={shopLabel} t={t} />
         </div>
@@ -113,7 +143,14 @@ async function PublicBookingRouteBody({
   return (
     <>
       <BookingDocumentEn />
-      <div className="relative min-h-dvh" style={brandStyle}>
+      <div
+        className="relative min-h-dvh"
+        style={{
+          ...brandStyle,
+          background: "var(--booking-bg)",
+          color: "var(--booking-text)",
+        }}
+      >
         <div
           className="pointer-events-none fixed inset-0 -z-10 hidden lg:block"
           aria-hidden
@@ -124,18 +161,23 @@ async function PublicBookingRouteBody({
             alt=""
             className="h-full w-full object-cover opacity-[0.18]"
           />
-          <div className="absolute inset-0 bg-[#0b0c10]/86 backdrop-blur-[3px]" />
+          <div className="absolute inset-0 backdrop-blur-[3px] bg-[color-mix(in_srgb,var(--booking-bg)_86%,transparent)]" />
         </div>
 
         <main className="relative z-10 mx-auto w-full max-w-[1200px] px-4 py-10 pb-safe sm:px-6 lg:flex lg:items-start lg:gap-10 lg:px-8 lg:py-14">
           <BookingSalonHero
             shopLabel={shopLabel}
             t={t}
+            themeMode={load.salon.themeMode}
             className="lg:sticky lg:top-10 lg:flex-shrink-0"
           />
 
           <div className="min-w-0 flex-1 lg:max-w-[min(100%,740px)] lg:pt-1">
-            <BookingMobileHero shopLabel={shopLabel} t={t} />
+            <BookingMobileHero
+              shopLabel={shopLabel}
+              t={t}
+              themeMode={load.salon.themeMode}
+            />
             <h1 className="hidden lg:block text-2xl font-semibold tracking-tight text-nq-foreground sm:text-3xl lg:text-[2.125rem] lg:leading-[1.15] lg:tracking-[-0.035em]">
               {t.pageTitle}
             </h1>

@@ -166,7 +166,7 @@ export function BookingFlowDonePanel({
     >
       <div className="flex flex-col items-center text-center">
         <div
-          className="flex h-[5.25rem] w-[5.25rem] shrink-0 items-center justify-center rounded-full bg-[var(--salon-primary)] text-nq-bg ring-4 ring-[color-mix(in_srgb,var(--salon-primary)_25%,transparent)]"
+          className="flex h-[5.25rem] w-[5.25rem] shrink-0 items-center justify-center rounded-full bg-[var(--salon-primary)] text-[var(--booking-bg)] ring-4 ring-[color-mix(in_srgb,var(--salon-primary)_25%,transparent)]"
           aria-hidden
         >
           <svg
@@ -181,7 +181,7 @@ export function BookingFlowDonePanel({
             <path d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h2 className="mt-5 text-2xl font-semibold tracking-tight text-nq-foreground sm:text-3xl lg:text-[2.0625rem]">
+        <h2 className="mt-5 text-2xl font-semibold tracking-tight text-[var(--booking-text)] sm:text-3xl lg:text-[2.0625rem]">
           {t.successHeading}
         </h2>
         {staffLine ? (
@@ -189,9 +189,9 @@ export function BookingFlowDonePanel({
             {staffLine}
           </p>
         ) : null}
-        <p className="mt-2 max-w-md text-base leading-relaxed text-nq-muted">
+        <p className="mt-2 max-w-md text-base leading-relaxed text-[var(--booking-text-muted)]">
           {t.successSeeYouSoonBefore}
-          <span className="font-medium text-nq-foreground">{shopLabel}</span>
+          <span className="font-medium text-[var(--booking-text)]">{shopLabel}</span>
         </p>
       </div>
 
@@ -204,28 +204,28 @@ export function BookingFlowDonePanel({
           {t.stepConfirmHeading}
         </h3>
         <div className="space-y-3.5">
-          <div className="flex items-baseline justify-between gap-4 border-b border-white/[0.06] pb-3.5 text-[15px] sm:text-base">
-            <span className="font-semibold text-nq-muted">{t.summaryShop}</span>
-            <span className="min-w-0 shrink text-right font-semibold text-nq-foreground tabular-nums">
+          <div className="flex items-baseline justify-between gap-4 border-b border-[var(--booking-border)] pb-3.5 text-[15px] sm:text-base">
+            <span className="font-semibold text-[var(--booking-text-muted)]">{t.summaryShop}</span>
+            <span className="min-w-0 shrink text-right font-semibold text-[var(--booking-text)] tabular-nums">
               {shopLabel}
             </span>
           </div>
           {service ? (
-            <div className="flex items-baseline justify-between gap-4 border-b border-white/[0.06] pb-3.5 text-[15px] sm:text-base">
-              <span className="font-semibold text-nq-muted">
+            <div className="flex items-baseline justify-between gap-4 border-b border-[var(--booking-border)] pb-3.5 text-[15px] sm:text-base">
+              <span className="font-semibold text-[var(--booking-text-muted)]">
                 {t.summaryService}
               </span>
-              <span className="min-w-0 shrink text-right font-semibold text-nq-foreground">
+              <span className="min-w-0 shrink text-right font-semibold text-[var(--booking-text)]">
                 {service.name}
               </span>
             </div>
           ) : null}
           {addonServiceName && addonServiceName.trim().length > 0 ? (
-            <div className="flex items-baseline justify-between gap-4 border-b border-white/[0.06] pb-3.5 text-[15px] sm:text-base">
-              <span className="font-semibold text-nq-muted">
+            <div className="flex items-baseline justify-between gap-4 border-b border-[var(--booking-border)] pb-3.5 text-[15px] sm:text-base">
+              <span className="font-semibold text-[var(--booking-text-muted)]">
                 {t.summaryAddOn}
               </span>
-              <span className="min-w-0 shrink text-right font-semibold text-nq-foreground">
+              <span className="min-w-0 shrink text-right font-semibold text-[var(--booking-text)]">
                 {(() => {
                   const priceLabel = formatGuestPriceUsd(addonPriceCents);
                   return priceLabel
@@ -236,38 +236,38 @@ export function BookingFlowDonePanel({
             </div>
           ) : null}
           {staffName.trim().length > 0 ? (
-            <div className="flex items-baseline justify-between gap-4 border-b border-white/[0.06] pb-3.5 text-[15px] sm:text-base">
-              <span className="font-semibold text-nq-muted">{t.summaryStaff}</span>
-              <span className="min-w-0 shrink text-right font-semibold text-nq-foreground">
+            <div className="flex items-baseline justify-between gap-4 border-b border-[var(--booking-border)] pb-3.5 text-[15px] sm:text-base">
+              <span className="font-semibold text-[var(--booking-text-muted)]">{t.summaryStaff}</span>
+              <span className="min-w-0 shrink text-right font-semibold text-[var(--booking-text)]">
                 {staffDisplayName}
               </span>
             </div>
           ) : null}
           <div className="flex items-baseline justify-between gap-4 text-[15px] sm:text-base">
-            <span className="font-semibold text-nq-muted">{t.summaryTime}</span>
+            <span className="font-semibold text-[var(--booking-text-muted)]">{t.summaryTime}</span>
             <span className="min-w-0 shrink text-right font-semibold text-[var(--salon-primary)]">
               {whenLabel}
             </span>
           </div>
           {durationLabel ? (
-            <div className="flex items-baseline justify-between gap-4 border-t border-white/[0.06] pt-3.5 text-[15px] sm:text-base">
-              <span className="font-semibold text-nq-muted">
+            <div className="flex items-baseline justify-between gap-4 border-t border-[var(--booking-border)] pt-3.5 text-[15px] sm:text-base">
+              <span className="font-semibold text-[var(--booking-text-muted)]">
                 {t.summaryDuration}
               </span>
-              <span className="min-w-0 shrink text-right font-semibold text-nq-foreground">
+              <span className="min-w-0 shrink text-right font-semibold text-[var(--booking-text)]">
                 {durationLabel}
               </span>
             </div>
           ) : null}
-          <div className="flex items-baseline justify-between gap-4 border-t border-white/[0.06] pt-3.5 text-[15px] sm:text-base">
-            <span className="font-semibold text-nq-muted">{t.summaryTotal}</span>
+          <div className="flex items-baseline justify-between gap-4 border-t border-[var(--booking-border)] pt-3.5 text-[15px] sm:text-base">
+            <span className="font-semibold text-[var(--booking-text-muted)]">{t.summaryTotal}</span>
             <span className="min-w-0 shrink text-right font-semibold tabular-nums text-[var(--salon-primary)]">
               {totalPaidFormatted}
             </span>
           </div>
         </div>
-        <p className="mt-5 border-t border-white/[0.08] pt-4 text-sm text-nq-muted">
-          <span className="text-nq-muted">{t.bookingReferenceLabel}: </span>
+        <p className="mt-5 border-t border-[var(--booking-border)] pt-4 text-sm text-[var(--booking-text-muted)]">
+          <span className="text-[var(--booking-text-muted)]">{t.bookingReferenceLabel}: </span>
           <span className="font-mono text-[var(--salon-primary)]">{refLabel}</span>
         </p>
       </div>
@@ -287,7 +287,7 @@ export function BookingFlowDonePanel({
           type="button"
           variant="secondary"
           size="lg"
-          className="nq-booking-glass min-h-11 w-full shrink-0 border border-[color-mix(in_srgb,var(--salon-primary)_35%,transparent)] bg-transparent text-[var(--salon-primary)] shadow-none hover:bg-white/[0.04] hover:opacity-100 sm:min-w-[11rem] lg:w-auto"
+          className="nq-booking-glass min-h-11 w-full shrink-0 border border-[color-mix(in_srgb,var(--salon-primary)_35%,transparent)] bg-transparent text-[var(--salon-primary)] shadow-none hover:bg-[var(--booking-bg-input)] hover:opacity-100 sm:min-w-[11rem] lg:w-auto"
           onClick={handleAddToCalendarClick}
         >
           {t.addToCalendar}
@@ -296,7 +296,7 @@ export function BookingFlowDonePanel({
           type="button"
           variant="secondary"
           size="lg"
-          className="nq-booking-glass min-h-11 w-full shrink-0 border border-[color-mix(in_srgb,var(--salon-primary)_35%,transparent)] bg-transparent text-[var(--salon-primary)] shadow-none hover:bg-white/[0.04] hover:opacity-100 sm:min-w-[11rem] lg:w-auto"
+          className="nq-booking-glass min-h-11 w-full shrink-0 border border-[color-mix(in_srgb,var(--salon-primary)_35%,transparent)] bg-transparent text-[var(--salon-primary)] shadow-none hover:bg-[var(--booking-bg-input)] hover:opacity-100 sm:min-w-[11rem] lg:w-auto"
           onClick={() => void handleShare()}
         >
           {t.shareBooking}
@@ -318,7 +318,7 @@ export function BookingFlowDonePanel({
                 data-testid="booking-call-reschedule"
                 href={manageTel}
                 aria-label={callLabel}
-                className="nq-booking-glass inline-flex min-h-14 w-full max-w-md items-center justify-center rounded-2xl border border-white/[0.12] px-6 py-3 text-center text-base font-medium text-nq-foreground shadow-none hover:bg-white/[0.04] sm:w-auto"
+                className="nq-booking-glass inline-flex min-h-14 w-full max-w-md items-center justify-center rounded-2xl border border-[var(--booking-border)] px-6 py-3 text-center text-base font-medium text-[var(--booking-text)] shadow-none hover:bg-[var(--booking-bg-input)] sm:w-auto"
               >
                 {callLabel}
               </a>
