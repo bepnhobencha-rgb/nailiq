@@ -57,7 +57,7 @@ export function BookingStepper({
                     "flex h-2.5 w-2.5 shrink-0 rounded-full border border-transparent sm:h-3 sm:w-3",
                     state === "done" && "bg-nq-muted/85",
                     state === "current" &&
-                      "border-nq-primary bg-nq-primary shadow-[0_0_18px_-4px_rgba(212,175,55,0.55)]",
+                      "border-[var(--salon-primary)] bg-[var(--salon-primary)] shadow-[0_0_18px_-4px_color-mix(in_srgb,var(--salon-primary)_55%,transparent)]",
                     state === "upcoming" &&
                       "border-white/[0.22] bg-transparent",
                   )}
