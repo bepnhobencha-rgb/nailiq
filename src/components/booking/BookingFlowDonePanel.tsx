@@ -287,7 +287,7 @@ export function BookingFlowDonePanel({
           type="button"
           variant="secondary"
           size="lg"
-          className="nq-booking-glass min-h-11 w-full shrink-0 border border-nq-primary/35 bg-transparent text-nq-primary shadow-none hover:bg-white/[0.04] hover:opacity-100 sm:min-w-[11rem] lg:w-auto"
+          className="nq-booking-glass min-h-11 w-full shrink-0 border border-[color-mix(in_srgb,var(--salon-primary)_35%,transparent)] bg-transparent text-[var(--salon-primary)] shadow-none hover:bg-white/[0.04] hover:opacity-100 sm:min-w-[11rem] lg:w-auto"
           onClick={handleAddToCalendarClick}
         >
           {t.addToCalendar}
@@ -296,7 +296,7 @@ export function BookingFlowDonePanel({
           type="button"
           variant="secondary"
           size="lg"
-          className="nq-booking-glass min-h-11 w-full shrink-0 border border-nq-primary/35 bg-transparent text-nq-primary shadow-none hover:bg-white/[0.04] hover:opacity-100 sm:min-w-[11rem] lg:w-auto"
+          className="nq-booking-glass min-h-11 w-full shrink-0 border border-[color-mix(in_srgb,var(--salon-primary)_35%,transparent)] bg-transparent text-[var(--salon-primary)] shadow-none hover:bg-white/[0.04] hover:opacity-100 sm:min-w-[11rem] lg:w-auto"
           onClick={() => void handleShare()}
         >
           {t.shareBooking}

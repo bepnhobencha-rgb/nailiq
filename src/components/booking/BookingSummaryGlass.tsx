@@ -66,7 +66,7 @@ export function BookingSummaryGlass({
             <span
               className={cn(
                 "min-w-0 shrink text-right text-[15px] font-semibold leading-snug tracking-tight sm:text-base",
-                row.valueGold ? "text-nq-primary" : "text-nq-foreground",
+                row.valueGold ? "text-[var(--salon-primary)]" : "text-nq-foreground",
               )}
             >
               {row.value}
