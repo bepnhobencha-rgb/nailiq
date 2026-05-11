@@ -17,6 +17,7 @@ import {
   SERVICE_CATEGORIES,
   type ServiceCategory,
 } from "@/shared/booking/serviceCategory";
+import { SERVICE_DESCRIPTION_MAX_LEN } from "@/shared/dashboard/setupActions";
 import { getUserMessages, type UserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
@@ -27,9 +28,13 @@ export type SetupServiceRow = {
   duration_minutes: number;
   buffer_minutes: number;
   category: ServiceCategory;
+  description: string | null;
+  is_popular: boolean;
+  is_featured: boolean;
 };
 
 type ServiceCategoryLabels = UserMessages["serviceCategory"];
+type ServiceFormLabels = UserMessages["serviceForm"];
 
 function centsFromDollarsString(raw: string): number | null {
   const normalized = raw.replace(/[^0-9.]/g, "");
@@ -55,6 +60,7 @@ export function ServicesSetupPanel({
   const messages = getUserMessages(language);
   const setupErrors = messages.setupErrors;
   const categoryLabels = messages.serviceCategory;
+  const formLabels = messages.serviceForm;
   const router = useRouter();
   const [rows, setRows] = useState<SetupServiceRow[]>(initialRows);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -72,6 +78,8 @@ export function ServicesSetupPanel({
   const [draftCategory, setDraftCategory] = useState<ServiceCategory>(
     DEFAULT_SERVICE_CATEGORY,
   );
+  const [draftDescription, setDraftDescription] = useState("");
+  const [draftIsPopular, setDraftIsPopular] = useState(false);
 
   const clearAddStatusTimer = useCallback(() => {
     if (addStatusTimerRef.current !== null) {
@@ -105,6 +113,9 @@ export function ServicesSetupPanel({
           | "duration_minutes"
           | "buffer_minutes"
           | "category"
+          | "description"
+          | "is_popular"
+          | "is_featured"
         >
       >,
     ) => {
@@ -113,7 +124,7 @@ export function ServicesSetupPanel({
       const res = await updateService(slug, serviceId, patch);
       setPendingId(null);
       if (!res.ok) {
-        setFormError(mapUpdateError(res.error));
+        setFormError(mapUpdateError(res.error, formLabels));
         setToast({ variant: "error", message: TOAST_ERR });
         return;
       }
@@ -134,6 +145,15 @@ export function ServicesSetupPanel({
                   : {}),
                 ...(patch.category !== undefined
                   ? { category: patch.category }
+                  : {}),
+                ...(patch.description !== undefined
+                  ? { description: patch.description }
+                  : {}),
+                ...(patch.is_popular !== undefined
+                  ? { is_popular: patch.is_popular }
+                  : {}),
+                ...(patch.is_featured !== undefined
+                  ? { is_featured: patch.is_featured }
                   : {}),
               }
             : r,
@@ -186,6 +206,14 @@ export function ServicesSetupPanel({
       return;
     }
 
+    // Description length is also enforced server-side (SERVICE_DESCRIPTION_MAX_LEN);
+    // catching it pre-flight gives the owner a localized error without a round-trip.
+    const descTrimmed = draftDescription.trim();
+    if (descTrimmed.length > SERVICE_DESCRIPTION_MAX_LEN) {
+      setAddError(formLabels.descriptionTooLong);
+      return;
+    }
+
     clearAddStatusTimer();
     setAddSaveStatus("saving");
     const res = await addService(slug, {
@@ -194,13 +222,18 @@ export function ServicesSetupPanel({
       duration_minutes: dm,
       buffer_minutes: bm,
       category: draftCategory,
+      description: descTrimmed.length > 0 ? descTrimmed : null,
+      is_popular: draftIsPopular,
     });
     if (!res.ok) {
       setAddSaveStatus("error");
       // plan_limit_reached → inline error + Upgrade link below;
-      // other errors fall back to the generic toast.
+      // invalid_description → localized hint; other errors fall back
+      // to the generic toast.
       if (res.error === "plan_limit_reached") {
         setAddError(setupErrors.serviceLimitReached);
+      } else if (res.error === "invalid_description") {
+        setAddError(formLabels.descriptionTooLong);
       } else {
         setToast({ variant: "error", message: TOAST_ERR });
       }
@@ -215,14 +248,19 @@ export function ServicesSetupPanel({
     setDraftDur("45");
     setDraftBuf("10");
     setDraftCategory(DEFAULT_SERVICE_CATEGORY);
+    setDraftDescription("");
+    setDraftIsPopular(false);
     refresh();
   }, [
     clearAddStatusTimer,
     draftBuf,
     draftCategory,
+    draftDescription,
     draftDur,
+    draftIsPopular,
     draftName,
     draftPrice,
+    formLabels.descriptionTooLong,
     refresh,
     setupErrors.serviceLimitReached,
     slug,
@@ -248,6 +286,7 @@ export function ServicesSetupPanel({
               disabled={pendingId === row.id}
               confirmingDelete={confirmDeleteId === row.id}
               categoryLabels={categoryLabels}
+              formLabels={formLabels}
               onBeginDelete={() => {
                 setConfirmDeleteId(row.id);
               }}
@@ -364,6 +403,20 @@ export function ServicesSetupPanel({
               </select>
             </label>
           </div>
+          <DescriptionField
+            value={draftDescription}
+            disabled={addSaveStatus === "saving"}
+            onChange={setDraftDescription}
+            labels={formLabels}
+            testId="service-description-add"
+          />
+          <PopularToggle
+            checked={draftIsPopular}
+            disabled={addSaveStatus === "saving"}
+            onChange={setDraftIsPopular}
+            labels={formLabels}
+            testId="service-popular-add"
+          />
           <SaveButton
             status={addSaveStatus}
             onSave={() => {
@@ -374,7 +427,8 @@ export function ServicesSetupPanel({
             disabled={
               addSaveStatus === "saving" ||
               !draftName.trim() ||
-              centsFromDollarsString(draftPrice) === null
+              centsFromDollarsString(draftPrice) === null ||
+              draftDescription.trim().length > SERVICE_DESCRIPTION_MAX_LEN
             }
             className="min-h-11 w-full"
           />
@@ -389,6 +443,7 @@ function ServiceRowFields({
   disabled,
   confirmingDelete,
   categoryLabels,
+  formLabels,
   onBeginDelete,
   onCancelDelete,
   onConfirmDelete,
@@ -399,6 +454,7 @@ function ServiceRowFields({
   disabled: boolean;
   confirmingDelete: boolean;
   categoryLabels: ServiceCategoryLabels;
+  formLabels: ServiceFormLabels;
   onBeginDelete: () => void;
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
@@ -411,6 +467,9 @@ function ServiceRowFields({
         | "duration_minutes"
         | "buffer_minutes"
         | "category"
+        | "description"
+        | "is_popular"
+        | "is_featured"
       >
     >,
   ) => void;
@@ -420,6 +479,7 @@ function ServiceRowFields({
   const [price, setPrice] = useState(dollarsFromCents(row.price_cents));
   const [dur, setDur] = useState(String(row.duration_minutes));
   const [buf, setBuf] = useState(String(row.buffer_minutes));
+  const [description, setDescription] = useState(row.description ?? "");
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- row props after save / refresh
@@ -427,6 +487,7 @@ function ServiceRowFields({
     setPrice(dollarsFromCents(row.price_cents));
     setDur(String(row.duration_minutes));
     setBuf(String(row.buffer_minutes));
+    setDescription(row.description ?? "");
   }, [row]);
 
   if (confirmingDelete) {
@@ -532,6 +593,35 @@ function ServiceRowFields({
           </select>
         </label>
       </div>
+      <DescriptionField
+        value={description}
+        disabled={disabled}
+        onChange={setDescription}
+        labels={formLabels}
+        testId={`service-description-row-${row.id}`}
+        onBlurCommit={() => {
+          const trimmed = description.trim();
+          const next = trimmed.length === 0 ? null : trimmed;
+          if (next !== (row.description ?? null)) {
+            // Server-side validator will also reject oversized strings; the
+            // input maxLength keeps the field short in normal use.
+            if (next === null || next.length <= SERVICE_DESCRIPTION_MAX_LEN) {
+              onBlurSave({ description: next });
+            }
+          }
+        }}
+      />
+      <PopularToggle
+        checked={row.is_popular}
+        disabled={disabled}
+        onChange={(next) => {
+          if (next !== row.is_popular) {
+            onBlurSave({ is_popular: next });
+          }
+        }}
+        labels={formLabels}
+        testId={`service-popular-row-${row.id}`}
+      />
       <Button
         type="button"
         variant="secondary"
@@ -545,8 +635,9 @@ function ServiceRowFields({
   );
 }
 
-function mapUpdateError(code: string): string {
+function mapUpdateError(code: string, formLabels: ServiceFormLabels): string {
   if (code === "invalid_name") return "Fix the name and try again.";
+  if (code === "invalid_description") return formLabels.descriptionTooLong;
   if (code === "not_found") return "Could not update that row.";
   return "Could not save. Try again.";
 }
@@ -560,4 +651,93 @@ function mapDeleteError(
   if (code === "service_in_use" || code === "in_use")
     return setupErrors.serviceInUse;
   return "Could not delete. Try again.";
+}
+
+/** Description textarea with a live character counter. Shared by the
+ *  add-form (commits on form submit) and each row (commits on blur). */
+function DescriptionField({
+  value,
+  disabled,
+  onChange,
+  onBlurCommit,
+  labels,
+  testId,
+}: {
+  value: string;
+  disabled: boolean;
+  onChange: (next: string) => void;
+  onBlurCommit?: () => void;
+  labels: ServiceFormLabels;
+  testId: string;
+}) {
+  const trimmed = value.trim();
+  const used = trimmed.length;
+  const over = used > SERVICE_DESCRIPTION_MAX_LEN;
+  const counter = labels.characterCount
+    .replace("{used}", String(used))
+    .replace("{max}", String(SERVICE_DESCRIPTION_MAX_LEN));
+  return (
+    <label className="block text-sm font-medium text-nq-muted">
+      <span className="flex items-baseline justify-between">
+        <span>{labels.descriptionLabel}</span>
+        <span
+          className={
+            over ? "text-xs text-nq-error" : "text-xs text-nq-muted/80"
+          }
+          aria-live="polite"
+        >
+          {counter}
+        </span>
+      </span>
+      <textarea
+        className="mt-1.5 flex min-h-[72px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
+        rows={2}
+        maxLength={SERVICE_DESCRIPTION_MAX_LEN}
+        value={value}
+        disabled={disabled}
+        placeholder={labels.descriptionPlaceholder}
+        data-testid={testId}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlurCommit}
+      />
+      <span className="mt-1 block text-xs text-nq-muted/80">
+        {labels.descriptionHint}
+      </span>
+    </label>
+  );
+}
+
+/** "Popular" checkbox toggle. Renders a small gold badge on the public
+ *  booking page when checked (see BookingFlowServicePanel). */
+function PopularToggle({
+  checked,
+  disabled,
+  onChange,
+  labels,
+  testId,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  onChange: (next: boolean) => void;
+  labels: ServiceFormLabels;
+  testId: string;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-nq-border/40 bg-nq-bg/40 px-3 py-2.5 text-sm text-nq-foreground">
+      <input
+        type="checkbox"
+        className="mt-0.5 h-5 w-5 cursor-pointer accent-nq-primary"
+        checked={checked}
+        disabled={disabled}
+        data-testid={testId}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className="flex-1">
+        <span className="block font-medium">{labels.popularLabel}</span>
+        <span className="mt-0.5 block text-xs text-nq-muted">
+          {labels.popularHint}
+        </span>
+      </span>
+    </label>
+  );
 }

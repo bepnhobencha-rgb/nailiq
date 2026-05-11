@@ -91,10 +91,11 @@ export async function loadBookingServicesForSalonSlug(
 
   const { data: rows, error: servicesErr } = await client
     .from("services")
-    // `category` column added by migration 20260511500000; not yet in the
-    // auto-generated DB types so we cast the SELECT spread.
+    // `category`, `description`, `is_popular`, `is_featured` were added
+    // in migrations 20260511500000 and 20260511600000; not yet in the
+    // auto-generated DB types so the SELECT spread is cast.
     .select(
-      "id, name, duration_minutes, buffer_minutes, price_cents, category" as never,
+      "id, name, duration_minutes, buffer_minutes, price_cents, category, description, is_popular, is_featured" as never,
     )
     .eq("salon_id", salonId)
     .is("deleted_at" as never, null)
@@ -126,6 +127,9 @@ export async function loadBookingServicesForSalonSlug(
       buffer_minutes?: unknown;
       price_cents?: unknown;
       category?: unknown;
+      description?: unknown;
+      is_popular?: unknown;
+      is_featured?: unknown;
     };
     const duration = Number(row.duration_minutes) || 0;
     const buffer = Number(row.buffer_minutes) || 0;
@@ -134,6 +138,12 @@ export async function loadBookingServicesForSalonSlug(
     const priceCents =
       priceCentsRaw != null && Number.isFinite(Number(priceCentsRaw))
         ? Math.round(Number(priceCentsRaw))
+        : null;
+
+    const descRaw = row.description;
+    const description =
+      typeof descRaw === "string" && descRaw.trim().length > 0
+        ? descRaw.trim()
         : null;
 
     return {
@@ -145,6 +155,9 @@ export async function loadBookingServicesForSalonSlug(
       priceCents,
       priceDisplay: formatGuestPriceUsd(priceCents),
       category: parseServiceCategory(row.category),
+      description,
+      isPopular: row.is_popular === true,
+      isFeatured: row.is_featured === true,
     };
   });
 

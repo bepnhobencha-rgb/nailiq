@@ -1,6 +1,7 @@
 "use client";
 
-import { motion } from "@/shared/lib/motionClient";
+import { useState } from "react";
+import { AnimatePresence, motion } from "@/shared/lib/motionClient";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
 import {
   SERVICE_CATEGORIES,
@@ -31,6 +32,14 @@ function groupByCategory(
   }));
 }
 
+/** Initial accordion state: first category open, rest closed. */
+function initialOpenSet(groups: ReadonlyArray<{ category: ServiceCategory }>) {
+  const set = new Set<ServiceCategory>();
+  const first = groups[0]?.category;
+  if (first) set.add(first);
+  return set;
+}
+
 export function BookingFlowServicePanel({
   t,
   services,
@@ -52,11 +61,23 @@ export function BookingFlowServicePanel({
   onSelectService: (id: string) => void;
   onNext: () => void;
 }) {
-  // Group by category for headed rendering. If the salon hasn't
+  // Group by category for accordion rendering. If the salon hasn't
   // touched setup yet, every row is "other" — render a flat list with
   // no category header so the UI stays backward-compatible.
   const groups = groupByCategory(services);
   const flatLayout = groups.length === 1 && groups[0]?.category === "other";
+  const [openCategories, setOpenCategories] = useState<Set<ServiceCategory>>(
+    () => initialOpenSet(groups),
+  );
+
+  function toggleCategory(c: ServiceCategory) {
+    setOpenCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(c)) next.delete(c);
+      else next.add(c);
+      return next;
+    });
+  }
 
   const renderTile = (s: BookingServiceItem) => {
     const selected = serviceId === s.id;
@@ -71,6 +92,8 @@ export function BookingFlowServicePanel({
         type="button"
         data-testid="service-item"
         data-category={s.category}
+        data-popular={s.isPopular || undefined}
+        data-featured={s.isFeatured || undefined}
         whileTap={{ scale: 0.99 }}
         transition={{
           type: "spring",
@@ -80,7 +103,14 @@ export function BookingFlowServicePanel({
         aria-pressed={selected}
         onClick={() => onSelectService(s.id)}
         className={cn(
-          "nq-booking-glass flex w-full min-w-0 min-h-[4.5rem] items-center justify-between gap-4 rounded-2xl px-4 py-3.5 text-left sm:min-h-[5rem] sm:gap-5 sm:px-5",
+          "nq-booking-glass flex w-full min-w-0 items-start justify-between gap-4 rounded-2xl px-4 text-left sm:gap-5 sm:px-5",
+          // Featured cards get extra vertical breathing room + a subtle
+          // ring tinted with the salon's brand color. Tailwind's
+          // arbitrary-value opacity modifier (`/40`) handles the
+          // alpha against the hex value of `--salon-primary`.
+          s.isFeatured
+            ? "min-h-[5.5rem] py-4 sm:min-h-[6rem] sm:py-4 ring-1 ring-[var(--salon-primary)]/40"
+            : "min-h-[4.5rem] py-3.5 sm:min-h-[5rem]",
           !selected && "nq-booking-tile-interactive",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--booking-bg)]",
           selected
@@ -88,8 +118,36 @@ export function BookingFlowServicePanel({
             : "border border-[var(--booking-border)] hover:border-[var(--booking-border)]",
         )}
       >
-        <span className="min-w-0 flex-1 pr-2 text-[15px] font-medium leading-snug tracking-tight text-[var(--booking-text)] sm:text-base">
-          {s.name}
+        <span className="min-w-0 flex-1 pr-2">
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-[15px] font-medium leading-snug tracking-tight text-[var(--booking-text)] sm:text-base">
+              {s.name}
+            </span>
+            {s.isPopular ? (
+              <span
+                data-testid="service-popular-badge"
+                className="rounded-full bg-[var(--salon-primary)]/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--salon-primary)]"
+              >
+                {t.popularBadge}
+              </span>
+            ) : null}
+            {s.isFeatured ? (
+              <span
+                data-testid="service-featured-badge"
+                className="rounded-full border border-[var(--salon-primary)]/40 bg-[var(--salon-primary)]/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--salon-primary)]"
+              >
+                {t.featuredBadge}
+              </span>
+            ) : null}
+          </span>
+          {s.description ? (
+            <span
+              data-testid="service-description"
+              className="mt-1 block truncate text-xs leading-snug text-[var(--booking-text-muted)] sm:text-[13px]"
+            >
+              {s.description}
+            </span>
+          ) : null}
         </span>
         <div className="flex shrink-0 flex-col items-end gap-1 text-right">
           <span className="text-sm font-medium tabular-nums tracking-tight text-[var(--booking-text-muted)] sm:text-[15px]">
@@ -130,19 +188,81 @@ export function BookingFlowServicePanel({
           {groups[0]!.items.map(renderTile)}
         </div>
       ) : (
-        <div className="mt-6 space-y-7 lg:mt-8 lg:space-y-9">
-          {groups.map((group) => (
-            <div key={group.category} data-testid={`service-group-${group.category}`}>
-              <h3
-                className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--booking-text-muted)] lg:mb-4 lg:text-[0.8125rem]"
+        <div className="mt-6 space-y-3 lg:mt-8 lg:space-y-4">
+          {groups.map((group) => {
+            const isOpen = openCategories.has(group.category);
+            const categoryLabel = t.serviceCategory[group.category];
+            return (
+              <div
+                key={group.category}
+                data-testid={`service-group-${group.category}`}
+                className="rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-input)]/30"
               >
-                {t.serviceCategory[group.category]}
-              </h3>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 lg:gap-6 lg:gap-y-7">
-                {group.items.map(renderTile)}
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  aria-controls={`service-group-${group.category}-panel`}
+                  aria-label={t.categoryToggleAria.replace(
+                    "{category}",
+                    categoryLabel,
+                  )}
+                  data-testid={`service-group-${group.category}-toggle`}
+                  onClick={() => toggleCategory(group.category)}
+                  className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left sm:px-5 sm:py-3.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--booking-bg)] rounded-2xl"
+                >
+                  <span className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.12em] text-[var(--booking-text)] sm:text-[0.9375rem]">
+                    {categoryLabel}
+                    <span className="text-xs font-medium normal-case tracking-normal text-[var(--booking-text-muted)]">
+                      {group.items.length}
+                    </span>
+                  </span>
+                  <motion.svg
+                    aria-hidden
+                    viewBox="0 0 24 24"
+                    className="h-4 w-4 text-[var(--booking-text-muted)]"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    animate={{ rotate: isOpen ? 180 : 0 }}
+                    transition={
+                      reducedMotion
+                        ? { duration: 0 }
+                        : { type: "spring", stiffness: 320, damping: 28 }
+                    }
+                  >
+                    <path d="M6 9l6 6 6-6" />
+                  </motion.svg>
+                </button>
+                <AnimatePresence initial={false}>
+                  {isOpen ? (
+                    <motion.div
+                      key="panel"
+                      id={`service-group-${group.category}-panel`}
+                      initial={
+                        reducedMotion ? false : { opacity: 0, height: 0 }
+                      }
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={
+                        reducedMotion
+                          ? { opacity: 0 }
+                          : { opacity: 0, height: 0 }
+                      }
+                      transition={
+                        reducedMotion
+                          ? { duration: 0 }
+                          : { duration: 0.22, ease: [0.16, 1, 0.3, 1] }
+                      }
+                      className="overflow-hidden"
+                    >
+                      <div className="grid grid-cols-1 gap-3 px-3 pb-3 sm:grid-cols-2 sm:gap-4 sm:px-4 sm:pb-4 lg:grid-cols-3 lg:gap-6">
+                        {group.items.map(renderTile)}
+                      </div>
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

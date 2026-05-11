@@ -140,6 +140,12 @@ export const bookingEn = {
     waxing: "Waxing",
     other: "Other",
   },
+  /** Small badge rendered on `services.is_popular === true` tiles. */
+  popularBadge: "Popular",
+  /** Small badge rendered on `services.is_featured === true` tiles. */
+  featuredBadge: "Featured",
+  /** Aria label on each category accordion header — "Toggle {category} services". */
+  categoryToggleAria: "Toggle {category} services",
 } as const;
 
 export type BookingMessages = typeof bookingEn;

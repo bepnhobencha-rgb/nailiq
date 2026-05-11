@@ -26,10 +26,11 @@ export default async function SetupServicesPage({ params }: Props) {
 
   const { data: rows, error } = await ctx.supabase
     .from("services")
-    // `category` column added by migration 20260511500000; not yet
-    // in the auto-generated DB types so the SELECT spread is cast.
+    // `category`, `description`, `is_popular`, `is_featured` were added
+    // by migrations 20260511500000 + 20260511600000; not yet in the
+    // auto-generated DB types so the SELECT spread is cast.
     .select(
-      "id, name, price_cents, duration_minutes, buffer_minutes, category" as never,
+      "id, name, price_cents, duration_minutes, buffer_minutes, category, description, is_popular, is_featured" as never,
     )
     .eq("salon_id", ctx.salon.id)
     .is("deleted_at" as never, null)
@@ -54,7 +55,11 @@ export default async function SetupServicesPage({ params }: Props) {
               duration_minutes?: number;
               buffer_minutes?: number;
               category?: unknown;
+              description?: unknown;
+              is_popular?: unknown;
+              is_featured?: unknown;
             };
+            const descRaw = row.description;
             return {
               id: String(row.id),
               name: String(row.name ?? ""),
@@ -62,6 +67,12 @@ export default async function SetupServicesPage({ params }: Props) {
               duration_minutes: Number(row.duration_minutes ?? 0),
               buffer_minutes: Number(row.buffer_minutes ?? 0),
               category: parseServiceCategory(row.category),
+              description:
+                typeof descRaw === "string" && descRaw.trim().length > 0
+                  ? descRaw.trim()
+                  : null,
+              is_popular: row.is_popular === true,
+              is_featured: row.is_featured === true,
             };
           })}
         />

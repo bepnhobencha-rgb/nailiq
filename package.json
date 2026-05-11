@@ -14,7 +14,8 @@
     "test:e2e:report": "playwright show-report",
     "db:push": "node scripts/db-push-guard.js",
     "auto-push": "node scripts/auto-push.js",
-    "check:i18n": "tsx scripts/check-i18n.ts"
+    "check:i18n": "tsx scripts/check-i18n.ts",
+    "gen:service-descriptions": "tsx scripts/generate-service-descriptions.ts"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.51.0",

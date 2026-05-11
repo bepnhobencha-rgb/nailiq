@@ -509,6 +509,23 @@ export type UserMessages = {
     /** Aria label / fallback for the setup-wizard category dropdown. */
     pickerLabel: string;
   };
+  /** Service description + curation labels for the setup wizard form. */
+  serviceForm: {
+    /** Label on the description textarea in add/edit service form. */
+    descriptionLabel: string;
+    /** Placeholder text inside the description textarea. */
+    descriptionPlaceholder: string;
+    /** Inline hint under the textarea explaining length / purpose. */
+    descriptionHint: string;
+    /** Validation error when description exceeds DESCRIPTION_MAX_LEN. */
+    descriptionTooLong: string;
+    /** Toggle / checkbox label for the is_popular flag. */
+    popularLabel: string;
+    /** Helper line under the popular toggle. */
+    popularHint: string;
+    /** Live "{used}/{max}" counter rendered next to the description field. */
+    characterCount: string;
+  };
   /** Setup CRUD error strings (services, etc.) */
   setupErrors: {
     serviceInUse: string;
@@ -1570,6 +1587,17 @@ export const userEn: UserMessages = {
     waxing: "Waxing",
     other: "Other",
     pickerLabel: "Category",
+  },
+  serviceForm: {
+    descriptionLabel: "Description",
+    descriptionPlaceholder: "e.g. Long-lasting shine, perfectly shaped nails.",
+    descriptionHint:
+      "One line shown under the service name on your booking page.",
+    descriptionTooLong: "Keep the description to 100 characters or fewer.",
+    popularLabel: "Popular",
+    popularHint:
+      "Shows a small gold badge on the public booking page — pick your busiest 1–3 services.",
+    characterCount: "{used}/{max}",
   },
   setupErrors: {
     serviceInUse:
