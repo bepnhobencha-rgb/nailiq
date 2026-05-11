@@ -23,8 +23,28 @@ const ANTHROPIC_VERSION = "2023-06-01";
 /** Vision-capable, current default Sonnet (4.6) per project guidance. */
 const ANTHROPIC_MODEL = "claude-sonnet-4-6";
 
-const PAGE_FETCH_TIMEOUT_MS = 5000;
+/** Bumped from 5s to 8s — Wix-hosted sites in particular can be slow
+ *  to first-byte (bot-protection round-trip + heavy server rendering). */
+const PAGE_FETCH_TIMEOUT_MS = 8000;
 const IMAGE_FETCH_TIMEOUT_MS = 3000;
+
+/** Browser-like fetch headers. Servers behind Wix / Cloudflare /
+ *  Squarespace bot-protection layers reject the bare `NailIQ/1.0` UA
+ *  with 403 / blocked-page HTML. This set mimics a recent Chrome on
+ *  macOS closely enough to pass their heuristic gates. */
+const BROWSER_LIKE_HEADERS: Record<string, string> = {
+  "User-Agent":
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.5",
+  "Accept-Encoding": "gzip, deflate, br",
+  "Cache-Control": "no-cache",
+  Pragma: "no-cache",
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+};
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_HTML_PARSE_BYTES = 200_000;
 
@@ -141,10 +161,7 @@ async function fetchPageHtml(pageUrl: URL): Promise<string | null> {
   const timer = setTimeout(() => controller.abort(), PAGE_FETCH_TIMEOUT_MS);
   try {
     const r = await fetch(pageUrl.toString(), {
-      headers: {
-        "User-Agent": "NailIQ/1.0",
-        Accept: "text/html,application/xhtml+xml",
-      },
+      headers: BROWSER_LIKE_HEADERS,
       redirect: "follow",
       signal: controller.signal,
     });
