@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/Button";
-import { extractBrandFromWebsite } from "@/shared/dashboard/extractBrandFromWebsiteAction";
+import { extractBrandFromImageUrl } from "@/shared/dashboard/extractBrandFromWebsiteAction";
 import {
   updateBrandColor,
   updateSalonThemeMode,
@@ -112,20 +112,16 @@ export function BrandColorSettings({
     setExtract({ kind: "loading" });
     startExtractTransition(() => {
       void (async () => {
-        const r = await extractBrandFromWebsite(slug, trimmed);
+        const r = await extractBrandFromImageUrl(slug, trimmed);
         if (!r.ok) {
           setExtract({
             kind: "error",
             message:
               r.error === "invalid_url"
                 ? t.extract.errorInvalidUrl
-                : r.error === "fetch_failed"
-                  ? t.extract.errorFetchFailed
-                  : r.error === "no_image"
-                    ? t.extract.errorNoImage
-                    : r.error === "missing_api_key"
-                      ? t.extract.errorMissingKey
-                      : t.extract.errorGeneric,
+                : r.error === "missing_api_key"
+                  ? t.extract.errorMissingKey
+                  : t.extract.errorGeneric,
           });
           return;
         }
