@@ -9,7 +9,6 @@ import { SalonBookingSkeleton } from "@/components/booking/SalonBookingSkeleton"
 import { BookingFlowErrorBoundary } from "@/components/booking/BookingFlowErrorBoundary";
 import { resolvePublicBookingPage } from "@/shared/booking/resolvePublicBookingPage";
 import { bookingEn } from "@/shared/i18n/booking/en";
-import { getCtaColor } from "@/shared/lib/colorUtils";
 import { formatSalonDisplayName } from "@/shared/lib/salonDisplay";
 import { BookingDocumentEn } from "./BookingDocumentEn";
 
@@ -95,6 +94,15 @@ async function PublicBookingRouteBody({
   // downstream components consume via `var(...)` so a salon can
   // flip to a light scheme without touching the dashboard. Same
   // wrapper-override pattern as `--salon-primary` above.
+  // CTA pill uses high-contrast black/white per the simpler Square-
+  // style philosophy: brand color is reserved for accent details
+  // (step dots, prices, selected-state highlights, focus rings) and
+  // the big Continue / Confirm pill flips to plain monochrome.
+  // Dark mode → white button on dark page; light mode → dark
+  // button on light page. The previous brand-derived gold gradient
+  // (`--nq-luxury-cta-from/mid/to`) is no longer threaded through —
+  // `.nq-booking-luxury-cta` now reads `--cta-bg` / `--cta-text`
+  // directly.
   const isLightTheme = load.salon.themeMode === "light";
   const themeVars = isLightTheme
     ? {
@@ -104,6 +112,8 @@ async function PublicBookingRouteBody({
         "--booking-text": "#1a1a1a",
         "--booking-text-muted": "rgba(0, 0, 0, 0.45)",
         "--booking-border": "rgba(0, 0, 0, 0.1)",
+        "--cta-bg": "#1a1a1a",
+        "--cta-text": "#ffffff",
       }
     : {
         "--booking-bg": "#0a0a0a",
@@ -112,27 +122,13 @@ async function PublicBookingRouteBody({
         "--booking-text": "#ffffff",
         "--booking-text-muted": "rgba(255, 255, 255, 0.5)",
         "--booking-border": "rgba(255, 255, 255, 0.1)",
+        "--cta-bg": "#ffffff",
+        "--cta-text": "#0a0a0a",
       };
-  // Continue / Confirm pill needs WCAG-passable contrast against the
-  // near-white light-mode background. `getCtaColor` returns the brand
-  // hex unchanged when it already passes 4.5:1 on white, otherwise
-  // walks HSL lightness down until it does. The 3-stop gradient that
-  // styles `.nq-booking-luxury-cta` is rebuilt from the resolved CTA
-  // color so a pastel brand (e.g. `#E8D8B8` cream) lands as a
-  // readable darker variant on the pill without losing the luxury
-  // sheen. Accent uses of the brand color (calendar dots, price
-  // labels, step indicators, tile-selected shadow) continue to
-  // reference `--brand` / `--salon-primary` directly — darkening
-  // them would defeat the decorative purpose.
-  const ctaColor = getCtaColor(load.salon.brandColor);
   const brandStyle = {
     "--salon-primary": load.salon.brandColor,
     "--brand": load.salon.brandColor,
-    "--cta-color": ctaColor,
     ...themeVars,
-    "--nq-luxury-cta-from": `color-mix(in srgb, ${ctaColor} 75%, white 25%)`,
-    "--nq-luxury-cta-mid": ctaColor,
-    "--nq-luxury-cta-to": `color-mix(in srgb, ${ctaColor} 70%, black 30%)`,
     "--shadow-nq-tile-selected": `0 0 0 1px ${load.salon.brandColor}, 0 18px 50px -20px rgba(0, 0, 0, 0.55), 0 0 40px -8px color-mix(in srgb, ${load.salon.brandColor} 35%, transparent)`,
   } as React.CSSProperties;
 

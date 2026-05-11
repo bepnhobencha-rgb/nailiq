@@ -464,12 +464,15 @@
     animation: fadeIn 0.65s ease 0.16s both;
   }
 
-  /** Gold primary confirm — horizontal shine; pair with `:not(:disabled)` in markup */
+  /** Primary confirm — high-contrast monochrome (Square-style) with
+   *  a horizontal shine. Pairs with `:not(:disabled)` in markup. Falls
+   *  back to the legacy gold tokens when the booking page hasn't
+   *  injected `--cta-bg` / `--cta-text` (e.g. unrelated surfaces). */
   .nq-booking-confirm-btn {
     position: relative;
     overflow: hidden;
-    background-color: var(--color-nq-primary);
-    color: var(--booking-bg, var(--color-nq-bg));
+    background-color: var(--cta-bg, var(--color-nq-primary));
+    color: var(--cta-text, var(--booking-bg, var(--color-nq-bg)));
     border-color: transparent;
     --tw-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
     box-shadow: var(--shadow-nq-sm, var(--tw-shadow));
@@ -497,10 +500,11 @@
     z-index: 1;
   }
 
-  /** Solid gold on hover (Button primary defaults to softer gold hover) */
+  /** Keep the CTA bg/text on hover — Tailwind's Button primary
+   *  variant would otherwise soften to the legacy gold hover. */
   .nq-booking-confirm-btn:not(:disabled):hover {
-    background-color: var(--color-nq-primary) !important;
-    color: var(--color-nq-bg) !important;
+    background-color: var(--cta-bg, var(--color-nq-primary)) !important;
+    color: var(--cta-text, var(--color-nq-bg)) !important;
   }
 
   /** Glass card — deep navy + blur(10px) per booking spec */
@@ -571,22 +575,20 @@
       0 0 24px -6px rgba(212, 175, 55, 0.25);
   }
 
-  /** Continue / Confirm — gold gradient pill + sheen */
+  /** Continue / Confirm — high-contrast monochrome pill (Square-style).
+   *  Was a 3-stop gold gradient; brand color is now reserved for
+   *  accent details so the primary CTA uses `--cta-bg` / `--cta-text`
+   *  injected on the booking page wrapper. Sheen kept for the
+   *  premium feel (looks subtle on white, snappy on dark). */
   .nq-booking-luxury-cta {
     position: relative;
     overflow: hidden;
     border-radius: 9999px;
-    border: 1px solid rgba(212, 175, 55, 0.35);
-    background: linear-gradient(
-      125deg,
-      var(--nq-luxury-cta-from) 0%,
-      var(--nq-luxury-cta-mid) 42%,
-      var(--nq-luxury-cta-to) 100%
-    );
-    color: var(--color-nq-bg);
+    border: 1px solid transparent;
+    background: var(--cta-bg);
+    color: var(--cta-text);
     font-weight: 600;
-    box-shadow: 0 2px 12px rgba(212, 175, 55, 0.22),
-      0 8px 28px -10px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 8px 28px -10px rgba(0, 0, 0, 0.6);
   }
 
   .nq-booking-luxury-cta:not(:disabled)::before {
