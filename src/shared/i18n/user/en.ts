@@ -418,6 +418,20 @@ export type UserMessages = {
         tv: string;
       };
     };
+    /** Brand color picker (PR #109). */
+    brandColor: {
+      sectionTitle: string;
+      intro: string;
+      colorPickerAria: string;
+      presetsLabel: string;
+      previewLabel: string;
+      previewButton: string;
+      save: string;
+      saving: string;
+      resetDefault: string;
+      errorInvalid: string;
+      errorGeneric: string;
+    };
   };
   /** Setup CRUD error strings (services, etc.) */
   setupErrors: {
@@ -1372,6 +1386,19 @@ export const userEn: UserMessages = {
         training: "Stripped-down view for new staff: queue and quick add.",
         tv: "Read-only wall display: queue at a glance, no input chrome.",
       },
+    },
+    brandColor: {
+      sectionTitle: "Brand color",
+      intro: "Your salon's primary color. Shows on the public booking page.",
+      colorPickerAria: "Pick brand color",
+      presetsLabel: "Suggested colors",
+      previewLabel: "Preview",
+      previewButton: "Book Now",
+      save: "Save color",
+      saving: "Saving…",
+      resetDefault: "Reset to default",
+      errorInvalid: "Use a 6-digit hex like #D4AF37.",
+      errorGeneric: "Could not save. Try again.",
     },
   },
   setupErrors: {

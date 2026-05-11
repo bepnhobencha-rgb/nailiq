@@ -438,6 +438,19 @@ export const userVi: UserMessages = {
           "Hiển thị tường, chỉ đọc: nhìn nhanh hàng chờ, ẩn thao tác nhập.",
       },
     },
+    brandColor: {
+      sectionTitle: "Màu thương hiệu",
+      intro: "Màu chính của tiệm bạn. Hiển thị trên trang đặt lịch công khai.",
+      colorPickerAria: "Chọn màu thương hiệu",
+      presetsLabel: "Gợi ý màu phổ biến",
+      previewLabel: "Xem trước",
+      previewButton: "Đặt lịch",
+      save: "Lưu màu",
+      saving: "Đang lưu…",
+      resetDefault: "Khôi phục mặc định",
+      errorInvalid: "Dùng mã hex 6 ký tự, ví dụ #D4AF37.",
+      errorGeneric: "Không lưu được. Vui lòng thử lại.",
+    },
   },
   setupErrors: {
     serviceInUse:

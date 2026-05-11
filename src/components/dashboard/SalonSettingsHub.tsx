@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { AuditLogViewer } from "@/components/dashboard/AuditLogViewer";
 import { DashboardModulesSettings } from "@/components/dashboard/DashboardModulesSettings";
 import { DashboardPresetSettings } from "@/components/dashboard/DashboardPresetSettings";
+import { BrandColorSettings } from "@/components/dashboard/BrandColorSettings";
 import { PricingPanel } from "@/components/dashboard/PricingPanel";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
@@ -26,6 +27,7 @@ export function SalonSettingsHub({
   salonEmail,
   emailVerified,
   subscriptionPlan,
+  brandColor,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -38,6 +40,8 @@ export function SalonSettingsHub({
   /** `salons.subscription_plan` — drives the Pricing panel and the
    *  top-bar plan Badge. */
   subscriptionPlan: SubscriptionPlan;
+  /** `salons.brand_color` — drives the booking page primary color (PR #109). */
+  brandColor: string;
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -196,6 +200,8 @@ export function SalonSettingsHub({
           initialPreset={dashboardPreset}
           canEdit={canEditDashboardModules}
         />
+
+        <BrandColorSettings slug={slug} initialValue={brandColor} />
 
         {/* Pricing — owner-only. The server actions also gate on
             `role === 'owner'`, so this is defense-in-depth. */}
