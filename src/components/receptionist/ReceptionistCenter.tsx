@@ -61,6 +61,7 @@ import type {
 } from "@/shared/dashboard/loadReceptionistCenterData";
 import { loadReceptionistCenterDataAction } from "@/shared/dashboard/loadReceptionistCenterDataAction";
 import {
+  addWalkinAndAssign,
   addWalkinToQueue,
   assignWalkinToSlot,
   cancelDeskBooking,
@@ -68,6 +69,7 @@ import {
   undoWalkinAssignment,
 } from "@/shared/dashboard/receptionistActions";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
+import { getStaffAvailability } from "@/shared/dashboard/availabilityEngine";
 import {
   type UpdateBookingStatusResult,
   updateBookingStatus,
@@ -982,6 +984,40 @@ function ReceptionistCenterInner({
     return { ok: true as const };
   };
 
+  const onAddAndAssign = async (input: {
+    clientName: string;
+    clientPhone: string;
+    serviceId: string;
+    staffId: string;
+    startAtIso: string;
+    staffRequestedByClient: boolean;
+    walkinSource: import("@/shared/types").QueueSource | null;
+    walkinPriority: import("@/shared/types").QueuePriority | null;
+    walkinRequestTags: string[];
+  }) => {
+    const r = await addWalkinAndAssign(slug, {
+      salonId: data.salon.id,
+      clientName: input.clientName,
+      clientPhone: input.clientPhone,
+      serviceId: input.serviceId,
+      staffId: input.staffId,
+      startAtIso: input.startAtIso,
+      staffRequestedByClient: input.staffRequestedByClient,
+      walkinSource: input.walkinSource,
+      walkinPriority: input.walkinPriority,
+      walkinRequestTags: input.walkinRequestTags,
+    });
+    if (!r.ok) {
+      return {
+        ok: false as const,
+        error: mutationMessage(messages.receptionist, r.error),
+      };
+    }
+    await reloadCurrentDay();
+    router.refresh();
+    return { ok: true as const };
+  };
+
   const onCancelWalkin = async (bookingId: string) => {
     const r = await cancelWaitingWalkin(slug, {
       salonId: data.salon.id,
@@ -1583,7 +1619,15 @@ function ReceptionistCenterInner({
                 }))}
                 nowIso={nowIso}
                 onAddWalkin={onAddWalkin}
+                onAddAndAssign={onAddAndAssign}
                 onPhoneLookup={(phone) => lookupClientByPhone(slug, phone)}
+                onCheckAvailability={({ staffId, serviceId }) =>
+                  getStaffAvailability(slug, serviceId)
+                }
+                staffOptions={data.staff.map((s) => ({
+                  id: s.id,
+                  name: s.name,
+                }))}
                 onCancelWalkin={onCancelWalkin}
                 onStartAssign={(id) => setAssigningWalkinId(id)}
                 onCancelAssign={() => setAssigningWalkinId(null)}

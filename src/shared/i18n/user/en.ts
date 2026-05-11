@@ -593,6 +593,23 @@ export type UserMessages = {
         notesLabel: string;
         lookupLoading: string;
         lookupLoadingAria: string;
+        /** Smart-availability dropdown + card copy (PR #101). */
+        requestedStaffLabel: string;
+        bestMatchOption: string;
+        bestMatchRecommendation: string;
+        readyNow: string;
+        waitMinutesShort: (n: number) => string;
+        readyAroundTime: string;
+        assignImmediately: string;
+        waitForStaff: string;
+        pickAnotherStaff: string;
+        heavyLoad: string;
+        heavyLoadDetail: string;
+        availabilityHeader: string;
+        availabilityChecking: string;
+        queueAheadHint: (n: number) => string;
+        confidenceMedium: string;
+        confidenceLow: string;
         relative: {
           justNow: string;
           today: string;
@@ -1467,6 +1484,23 @@ export const userEn: UserMessages = {
         notesLabel: "Note",
         lookupLoading: "Looking up…",
         lookupLoadingAria: "Searching customer history",
+        requestedStaffLabel: "Requested staff",
+        bestMatchOption: "Best Match (auto)",
+        bestMatchRecommendation: "Best Match: {name} — {wait}",
+        readyNow: "Ready now",
+        waitMinutesShort: (n: number) => `~${n} min wait`,
+        readyAroundTime: "Ready around {time}",
+        assignImmediately: "Assign immediately",
+        waitForStaff: "Wait for {name}",
+        pickAnotherStaff: "Other staff",
+        heavyLoad: "Heavy load",
+        heavyLoadDetail: "Est. wait: 45+ min",
+        availabilityHeader: "Availability",
+        availabilityChecking: "Checking availability…",
+        queueAheadHint: (n: number) =>
+          `${n} ${n === 1 ? "customer" : "customers"} ahead`,
+        confidenceMedium: "Running slightly over schedule",
+        confidenceLow: "Multiple delays — wait may grow",
         relative: {
           justNow: "Just now",
           today: "Today",

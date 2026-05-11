@@ -669,3 +669,58 @@ export async function editBooking(
     { role: ctxActorRole(ctx), userId: null },
   );
 }
+
+
+/**
+ * Composite "assign immediately" path used by the smart walk-in form
+ * when the chosen staff is `isAvailableNow`. Bypasses the queue:
+ * creates the booking with `addWalkinToQueue`, then transitions it
+ * straight to `confirmed` via `assignWalkinToSlot` at the supplied
+ * start time. Either step failing surfaces a typed error code that
+ * the client maps to `mutationMessage`.
+ *
+ * Slot start defaults to "now" when the caller does not provide one.
+ * The `addWalkinToQueue` row is left in the database even when the
+ * subsequent assign fails — the receptionist can still finish the
+ * assignment from the queue panel without losing the customer entry.
+ */
+export async function addWalkinAndAssign(
+  slug: string,
+  input: {
+    salonId: string;
+    clientName: string;
+    clientPhone: string;
+    serviceId: string;
+    staffId: string;
+    /** ISO start time. Falls back to `now()` when omitted. */
+    startAtIso?: string;
+    staffRequestedByClient?: boolean;
+    walkinSource?: QueueSource | null;
+    walkinPriority?: QueuePriority | null;
+    walkinRequestTags?: string[] | null;
+  },
+): Promise<OkBooking | { ok: false; error: string }> {
+  const created = await addWalkinToQueue(slug, {
+    salonId: input.salonId,
+    clientName: input.clientName,
+    clientPhone: input.clientPhone,
+    serviceId: input.serviceId,
+    staffRequestedByClient: input.staffRequestedByClient ?? true,
+    walkinSource: input.walkinSource ?? null,
+    walkinPriority: input.walkinPriority ?? null,
+    walkinRequestTags: input.walkinRequestTags ?? null,
+  });
+  if (!created.ok) return created;
+
+  const startAt = input.startAtIso?.trim() || new Date().toISOString();
+  const assigned = await assignWalkinToSlot(slug, {
+    salonId: input.salonId,
+    bookingId: created.bookingId,
+    staffId: input.staffId,
+    slotStartUtc: startAt,
+  });
+  if (!assigned.ok) {
+    return { ok: false, error: assigned.error };
+  }
+  return created;
+}

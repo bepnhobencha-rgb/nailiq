@@ -59,8 +59,14 @@ export interface WalkinQueueSidebarProps {
   };
   /** Callbacks */
   onAddWalkin: WalkinAddFormProps["onSubmit"];
+  /** Direct-assign path — bypasses the queue when staff is free now. */
+  onAddAndAssign?: WalkinAddFormProps["onAddAndAssign"];
   /** Phone lookup hook — server action for client_profile + per-salon stats. */
   onPhoneLookup?: WalkinAddFormProps["onPhoneLookup"];
+  /** Smart-availability hook — server-side staff availability lookup. */
+  onCheckAvailability?: WalkinAddFormProps["onCheckAvailability"];
+  /** Active staff for the "Requested staff" dropdown. */
+  staffOptions?: WalkinAddFormProps["staffOptions"];
   onCancelWalkin: (bookingId: string) => Promise<void>;
   onStartAssign: (bookingId: string) => void;
   onCancelAssign: () => void;
@@ -99,7 +105,10 @@ export function WalkinQueueSidebar({
   services,
   labels,
   onAddWalkin,
+  onAddAndAssign,
   onPhoneLookup,
+  onCheckAvailability,
+  staffOptions,
   onCancelWalkin,
   onStartAssign,
   onCancelAssign,
@@ -161,7 +170,10 @@ export function WalkinQueueSidebar({
             services={services}
             labels={labels.addForm}
             onSubmit={onAddWalkin}
+            onAddAndAssign={onAddAndAssign}
             onPhoneLookup={onPhoneLookup}
+            onCheckAvailability={onCheckAvailability}
+            staffOptions={staffOptions}
             disabled={addFormDisabled}
             isOffline={isOffline}
             offlineDisabledHint={offlineAddDisabledHint}
