@@ -482,6 +482,18 @@ export type UserMessages = {
       };
     };
   };
+  /** Service category labels — IDs match `services.category` CHECK constraint. */
+  serviceCategory: {
+    manicure: string;
+    pedicure: string;
+    acrylic: string;
+    gel: string;
+    dip: string;
+    waxing: string;
+    other: string;
+    /** Aria label / fallback for the setup-wizard category dropdown. */
+    pickerLabel: string;
+  };
   /** Setup CRUD error strings (services, etc.) */
   setupErrors: {
     serviceInUse: string;
@@ -1521,6 +1533,16 @@ export const userEn: UserMessages = {
           "Couldn't read a brand color from that image. Try a higher-contrast logo.",
       },
     },
+  },
+  serviceCategory: {
+    manicure: "Manicure",
+    pedicure: "Pedicure",
+    acrylic: "Acrylic",
+    gel: "Gel",
+    dip: "Dip Powder",
+    waxing: "Waxing",
+    other: "Other",
+    pickerLabel: "Category",
   },
   setupErrors: {
     serviceInUse:

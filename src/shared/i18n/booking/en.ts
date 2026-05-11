@@ -129,6 +129,19 @@ export const bookingEn = {
   serviceDurationFlexible: "Flexible",
   /** Minute suffix on service tiles, e.g. "45 min" */
   minuteSuffixShort: "min",
+  /** Service-category section headings on the service-pick step. Keys
+   * match `services.category` (see `src/shared/booking/serviceCategory.ts`).
+   * Public booking is English-only by design; the owner dashboard has its
+   * own EN+VI map at `userMessages.serviceCategory`. */
+  serviceCategory: {
+    manicure: "Manicure",
+    pedicure: "Pedicure",
+    acrylic: "Acrylic",
+    gel: "Gel",
+    dip: "Dip Powder",
+    waxing: "Waxing",
+    other: "Other",
+  },
 } as const;
 
 export type BookingMessages = typeof bookingEn;
