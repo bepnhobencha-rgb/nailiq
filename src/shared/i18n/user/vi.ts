@@ -453,6 +453,25 @@ export const userVi: UserMessages = {
       themeLabel: "Giao diện",
       themeDark: "Tối",
       themeLight: "Sáng",
+      matchFromUrl: "Lấy màu từ website",
+      urlPlaceholder: "https://tiemcuaban.com",
+      analyzeButton: "Phân tích →",
+      analyzing: "Đang phân tích website…",
+      foundColors: "Đã tìm thấy từ website của bạn:",
+      applyColors: "Áp dụng màu này",
+      applying: "Đang áp dụng…",
+      dismissButton: "Đóng",
+      themeLightSuggestion: "Giao diện sáng",
+      themeDarkSuggestion: "Giao diện tối",
+      errorNoImage:
+        "Không tìm thấy hình ảnh trên website. Hãy thử tải logo lên thay vào.",
+      errorFetchFailed:
+        "Không truy cập được website. Kiểm tra lại đường dẫn và thử lại.",
+      errorParseFailed:
+        "Không tự động lấy được màu. Hãy thử tải logo lên thay vào.",
+      errorInvalidUrl:
+        "Nhập đường dẫn hợp lệ, bắt đầu bằng http:// hoặc https://.",
+      errorImageTooLarge: "Hình ảnh trên website quá lớn để phân tích.",
     },
   },
   setupErrors: {

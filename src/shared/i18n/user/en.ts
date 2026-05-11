@@ -435,6 +435,22 @@ export type UserMessages = {
       themeLabel: string;
       themeDark: string;
       themeLight: string;
+      /** Auto-extract brand color/theme from the salon's website. */
+      matchFromUrl: string;
+      urlPlaceholder: string;
+      analyzeButton: string;
+      analyzing: string;
+      foundColors: string;
+      applyColors: string;
+      applying: string;
+      dismissButton: string;
+      themeLightSuggestion: string;
+      themeDarkSuggestion: string;
+      errorNoImage: string;
+      errorFetchFailed: string;
+      errorParseFailed: string;
+      errorInvalidUrl: string;
+      errorImageTooLarge: string;
     };
   };
   /** Setup CRUD error strings (services, etc.) */
@@ -1406,6 +1422,24 @@ export const userEn: UserMessages = {
       themeLabel: "Theme",
       themeDark: "Dark",
       themeLight: "Light",
+      matchFromUrl: "Match from website",
+      urlPlaceholder: "https://yoursalon.com",
+      analyzeButton: "Analyze →",
+      analyzing: "Analyzing your website…",
+      foundColors: "We found these from your website:",
+      applyColors: "Apply these colors",
+      applying: "Applying…",
+      dismissButton: "Dismiss",
+      themeLightSuggestion: "Light theme",
+      themeDarkSuggestion: "Dark theme",
+      errorNoImage:
+        "Couldn't find an image on your website. Try uploading your logo instead.",
+      errorFetchFailed:
+        "Couldn't reach your website. Check the URL and try again.",
+      errorParseFailed:
+        "Couldn't extract colors automatically. Try uploading your logo instead.",
+      errorInvalidUrl: "Please enter a valid URL starting with http:// or https://.",
+      errorImageTooLarge: "Your website's image is too large to analyze.",
     },
   },
   setupErrors: {
