@@ -69,6 +69,11 @@ export async function addWalkinToQueue(
     clientPhone?: string | null;
     serviceId: string;
     staffRequestNote?: string | null;
+    /** Explicit checkbox from the receptionist form. Walk-ins where
+     * `staff_request_note` has visible content are also treated as
+     * requested even if this flag is false (caller doesn't have to
+     * coordinate the two). */
+    staffRequestedByClient?: boolean | null;
     walkinSource?: QueueSource | null;
     walkinPriority?: QueuePriority | null;
     walkinRequestTags?: string[] | null;
@@ -158,9 +163,17 @@ export async function addWalkinToQueue(
       ? partyRaw
       : null;
 
-  // `walkin_*` and `party_size` columns are not yet in the auto-generated
-  // Supabase types; cast the patch object so .insert() accepts the new
-  // columns. Will become a plain typed call after the next regeneration.
+  // Effective staff-requested signal: explicit checkbox OR a
+  // non-empty note both count. Walk-ins predating the explicit
+  // checkbox kept the same behavior — the note alone implies a
+  // request — so this OR keeps that contract intact.
+  const staffRequestedByClient =
+    input.staffRequestedByClient === true || note !== null;
+
+  // `walkin_*` / `party_size` / `staff_requested_by_client` columns
+  // are not yet in the auto-generated Supabase types; cast the patch
+  // object so .insert() accepts the new columns. Will become a plain
+  // typed call after the next regeneration.
   const insertPatch = {
     salon_id: ctx.salon.id,
     service_id: serviceId,
@@ -174,6 +187,7 @@ export async function addWalkinToQueue(
     source: "walkin",
     joined_queue_at: joinedAt,
     staff_request_note: note,
+    staff_requested_by_client: staffRequestedByClient,
     price_cents: Number.isFinite(price ?? NaN) ? price : null,
     walkin_source: walkinSource,
     walkin_priority: walkinPriority,

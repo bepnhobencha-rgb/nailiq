@@ -488,6 +488,7 @@ export async function loadReceptionistCenterData(
       client_phone,
       client_notes,
       staff_request_note,
+      staff_requested_by_client,
       staff_id,
       start_time_utc,
       end_time_utc,
@@ -558,12 +559,18 @@ export async function loadReceptionistCenterData(
     services: ServiceJoinMinimal | ServiceJoinMinimal[] | null;
   }> | null;
 
-  const bookingsRows = bookingsResult.data as Array<{
+  // Cast through `unknown` because `staff_requested_by_client` isn't
+  // in the auto-generated DB types yet (added by the 2026-05-10
+  // migration); the Supabase typegen returns a `SelectQueryError`
+  // placeholder for unknown columns and the direct `as` cast trips
+  // on insufficient-overlap. The runtime shape matches.
+  const bookingsRows = bookingsResult.data as unknown as Array<{
     id: string;
     client_name: string;
     client_phone: string | null;
     client_notes: string | null;
     staff_request_note: string | null;
+    staff_requested_by_client: boolean | null;
     staff_id: string | null;
     start_time_utc: string | null;
     end_time_utc: string | null;
@@ -642,9 +649,15 @@ export async function loadReceptionistCenterData(
       row.walkin_source.trim().toLowerCase() === "vip";
     const hasNotes =
       typeof row.client_notes === "string" && row.client_notes.trim().length > 0;
+    // First-class signal (preferred): the new
+    // `staff_requested_by_client` boolean. Set on insert by every
+    // booking source (online → specific staff chosen, walk-in →
+    // checkbox or non-empty note). Note non-empty stays a fallback so
+    // any older row that wasn't backfilled still surfaces the heart.
     const hasStaffRequest =
-      typeof row.staff_request_note === "string" &&
-      row.staff_request_note.trim().length > 0;
+      row.staff_requested_by_client === true ||
+      (typeof row.staff_request_note === "string" &&
+        row.staff_request_note.trim().length > 0);
     // Heuristic: catalog naming convention. Match "nail art" or "design" in
     // either the primary or addon service name. No structured DB flag exists
     // yet; documented for PM reconciliation if a `services.is_design_capable`

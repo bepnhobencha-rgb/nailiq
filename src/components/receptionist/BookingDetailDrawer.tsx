@@ -26,6 +26,10 @@ export type BookingDetailDrawerModel = {
   staffName: string;
   statusLabel: string;
   sourceLabel: string;
+  /** When true, render a "Khách yêu cầu thợ này" line under the
+   * source. Drives operator awareness without forcing them to scan
+   * the staff_request_note (which may be empty for online bookings). */
+  staffRequestedByClient: boolean;
   /** One line: localized date + wall-clock range; reflects total span (main + add-on). */
   scheduleLine: string;
   /** Combined main + add-on duration, formatted via `durationMinutes` copy. */
@@ -56,6 +60,8 @@ export interface BookingDetailDrawerProps {
     noNotes: string;
     callGuest: (formattedDisplay: string) => string;
     nonePrice: string;
+    /** "❤️ Khách yêu cầu thợ này" line under the source label. */
+    staffRequestedByClient: string;
   };
   /** Caller's `salon_members.role` — gates Edit (Cancel is gated upstream). */
   viewerRole: SalonMemberRole;
@@ -225,6 +231,15 @@ export function BookingDetailDrawer({
                 <p className="text-nq-muted">
                   <span className="text-nq-muted">{model.sourceLabel}</span>
                 </p>
+                {model.staffRequestedByClient ? (
+                  <p
+                    className="inline-flex items-center gap-1.5 text-nq-foreground"
+                    data-testid="booking-drawer-staff-requested"
+                  >
+                    <span aria-hidden>❤️</span>
+                    <span>{copy.staffRequestedByClient}</span>
+                  </p>
+                ) : null}
                 {model.telHref !== null ? (
                   <a
                     data-testid="booking-call-link"

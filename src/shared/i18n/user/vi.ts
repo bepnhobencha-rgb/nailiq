@@ -573,6 +573,7 @@ export const userVi: UserMessages = {
         requestTagsPlaceholder: "ví dụ Muốn gặp Tina",
         requestTagAdd: "Thêm",
         requestTagRemove: (label: string) => `Xóa ${label}`,
+        staffRequestedByClient: "Khách yêu cầu thợ này",
       },
     },
     walkin: {

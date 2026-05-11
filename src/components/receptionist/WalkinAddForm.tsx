@@ -64,6 +64,8 @@ export interface WalkinAddFormProps {
     requestTagsPlaceholder: string;
     requestTagAdd: string;
     requestTagRemove: (label: string) => string;
+    /** "Khách yêu cầu thợ này" checkbox label. */
+    staffRequestedByClient: string;
   };
   /** Async callback — parent calls server action */
   onSubmit: (input: {
@@ -71,6 +73,10 @@ export interface WalkinAddFormProps {
     clientPhone: string;
     serviceId: string;
     staffRequestNote: string | null;
+    /** Explicit "khách yêu cầu thợ này" checkbox. Walk-ins where the
+     * note has visible content are also treated as requested by the
+     * server, so callers don't have to coordinate the two. */
+    staffRequestedByClient: boolean;
     walkinSource: QueueSource | null;
     walkinPriority: QueuePriority | null;
     walkinRequestTags: QueueRequestTag[];
@@ -118,6 +124,7 @@ export function WalkinAddForm({
     null,
   );
   const [staffRequestNote, setStaffRequestNote] = useState("");
+  const [staffRequestedByClient, setStaffRequestedByClient] = useState(false);
   const [showMoreServices, setShowMoreServices] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -162,6 +169,7 @@ export function WalkinAddForm({
     setClientPhone("");
     setSelectedServiceId(null);
     setStaffRequestNote("");
+    setStaffRequestedByClient(false);
     setShowMoreServices(false);
     setErrorMessage(null);
     setNameError(null);
@@ -231,6 +239,7 @@ export function WalkinAddForm({
         staffRequestNote: staffRequestNote.trim().length
           ? staffRequestNote.trim()
           : null,
+        staffRequestedByClient,
         walkinSource: walkinSource === "" ? null : walkinSource,
         walkinPriority: walkinPriority === "" ? null : walkinPriority,
         walkinRequestTags: requestTags,
@@ -706,6 +715,22 @@ export function WalkinAddForm({
           )}
         />
       </div>
+
+      <label
+        className={cn(
+          "flex cursor-pointer items-start gap-2 text-sm text-nq-foreground",
+          formLocked && "opacity-60",
+        )}
+      >
+        <input
+          type="checkbox"
+          checked={staffRequestedByClient}
+          onChange={(e) => setStaffRequestedByClient(e.target.checked)}
+          disabled={formLocked}
+          className="mt-0.5 size-4 cursor-pointer accent-nq-primary"
+        />
+        <span className="leading-snug">{labels.staffRequestedByClient}</span>
+      </label>
 
       {errorMessage ? (
         <p className="text-sm text-nq-error" role="alert">
