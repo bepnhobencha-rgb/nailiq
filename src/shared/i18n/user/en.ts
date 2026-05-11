@@ -436,7 +436,10 @@ export type UserMessages = {
       themeDark: string;
       themeLight: string;
       /** Brand-from-image-URL extractor (PR #114, pivoted in #117 from
-       *  website-URL → direct image URL after CDN/bot-protection blocks). */
+       *  website-URL → direct image URL after CDN/bot-protection blocks).
+       *  PR #118 adds two client-side upload buttons (logo / screenshot)
+       *  that run entirely in the browser; the URL input is kept as a
+       *  tertiary fallback. */
       extract: {
         sectionLabel: string;
         hint: string;
@@ -447,6 +450,15 @@ export type UserMessages = {
         errorInvalidUrl: string;
         errorMissingKey: string;
         errorGeneric: string;
+        /** Client-side upload UI keys. */
+        matchYourBrand: string;
+        uploadLogo: string;
+        uploadScreenshot: string;
+        extractedFromLogo: string;
+        extractedFromScreenshot: string;
+        applyColor: string;
+        tryAnother: string;
+        colorExtractionFailed: string;
       };
     };
   };
@@ -1420,8 +1432,8 @@ export const userEn: UserMessages = {
       themeDark: "Dark",
       themeLight: "Light",
       extract: {
-        sectionLabel: "Extract from image",
-        hint: "Paste a direct link to your logo or brand image.",
+        sectionLabel: "Extract from image URL",
+        hint: "Or paste a direct link to your logo or brand image.",
         placeholder: "https://your-logo-or-image-url.com/image.jpg",
         extract: "Extract",
         extracting: "Analyzing…",
@@ -1429,6 +1441,15 @@ export const userEn: UserMessages = {
         errorInvalidUrl: "That URL doesn't look right. Use https://…",
         errorMissingKey: "Vision API not configured. Contact NailIQ support.",
         errorGeneric: "Couldn't analyze that image. Try a different URL.",
+        matchYourBrand: "Match your brand",
+        uploadLogo: "📷 Upload logo",
+        uploadScreenshot: "🖥 Upload screenshot",
+        extractedFromLogo: "Extracted from logo",
+        extractedFromScreenshot: "Extracted from screenshot",
+        applyColor: "Apply color",
+        tryAnother: "Try another",
+        colorExtractionFailed:
+          "Couldn't read a brand color from that image. Try a higher-contrast logo.",
       },
     },
   },
