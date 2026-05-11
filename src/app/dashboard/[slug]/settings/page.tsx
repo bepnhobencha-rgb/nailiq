@@ -28,7 +28,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -49,6 +49,7 @@ export default async function SalonSettingsPage({ params }: Props) {
         subscription_plan?: unknown;
         brand_color?: unknown;
         theme_mode?: unknown;
+        walkin_auto_assign?: unknown;
       }
     | null;
 
@@ -65,6 +66,10 @@ export default async function SalonSettingsPage({ params }: Props) {
   const brandColor = normalizeBrandColor(row?.brand_color);
   const themeMode: "dark" | "light" =
     row?.theme_mode === "light" ? "light" : "dark";
+  // Default true when the column comes back null/missing (pre-migration
+  // safety; column has NOT NULL DEFAULT true in 20260511100000).
+  const walkinAutoAssign =
+    row?.walkin_auto_assign === false ? false : true;
 
   return (
     <SalonSettingsHub
@@ -77,6 +82,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       subscriptionPlan={subscriptionPlan}
       brandColor={brandColor}
       themeMode={themeMode}
+      walkinAutoAssign={walkinAutoAssign}
     />
   );
 }

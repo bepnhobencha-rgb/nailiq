@@ -1811,6 +1811,7 @@ function ReceptionistCenterInner({
                 nowIso={nowIso}
                 onAddWalkin={onAddWalkin}
                 onAddAndAssign={onAddAndAssign}
+                autoAssignEnabled={data.salon.walkinAutoAssign}
                 onPhoneLookup={(phone) => lookupClientByPhone(slug, phone)}
                 onCheckAvailability={({ staffId, serviceId }) =>
                   getStaffAvailability(slug, serviceId)

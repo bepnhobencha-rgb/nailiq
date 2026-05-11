@@ -758,6 +758,15 @@ export const userVi: UserMessages = {
           "Không nhận được màu thương hiệu từ ảnh này. Thử logo rõ nét hơn.",
       },
     },
+    walkinAutoAssign: {
+      sectionTitle: "Walk-in Queue",
+      toggleLabel: "Tự động gán thợ rảnh",
+      descriptionOn:
+        "Khách walk-in được gán thẳng vào lịch khi có thợ rảnh. Nhanh hơn.",
+      descriptionOff:
+        "Mọi khách walk-in vào hàng chờ trước để lễ tân kiểm soát thủ công.",
+      errorGeneric: "Không lưu được. Vui lòng thử lại.",
+    },
   },
   serviceCategory: {
     pickerLabel: "Phân loại",

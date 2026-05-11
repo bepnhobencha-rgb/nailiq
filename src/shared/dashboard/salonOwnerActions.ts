@@ -842,3 +842,52 @@ export async function updateSalonThemeMode(
 
   return { ok: true, themeMode };
 }
+
+/* ───────────── Walk-in auto-assign toggle (PR #107) ───────────── */
+
+export type UpdateWalkinAutoAssignResult =
+  | { ok: true; walkinAutoAssign: boolean }
+  | {
+      ok: false;
+      error: "unauthorized" | "forbidden" | "server_error";
+    };
+
+/**
+ * Owner-only: writes `salons.walkin_auto_assign`. Controls whether
+ * the receptionist's "Assign immediately" path is enabled when a
+ * walk-in is added and the chosen staff is free now.
+ *
+ * TRUE  → existing behavior (skip the queue, confirm at start=now()).
+ * FALSE → every walk-in lands in `status=waiting` first; the
+ *         receptionist must dispatch from the queue panel even when
+ *         a staff member is available now.
+ */
+export async function updateWalkinAutoAssign(
+  slug: string,
+  enabled: boolean,
+): Promise<UpdateWalkinAutoAssignResult> {
+  if (typeof enabled !== "boolean") {
+    return { ok: false, error: "server_error" };
+  }
+
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+
+  // Cast: `walkin_auto_assign` is not yet in the auto-generated
+  // Supabase types until the next regeneration.
+  const { error: upErr } = await ctx.supabase
+    .from("salons")
+    .update({ walkin_auto_assign: enabled } as never)
+    .eq("id", ctx.salon.id);
+
+  if (upErr) {
+    console.error("[updateWalkinAutoAssign]", upErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true, walkinAutoAssign: enabled };
+}
