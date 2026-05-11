@@ -222,6 +222,19 @@ export async function addWalkinToQueue(
     },
   });
 
+  // Operational metric: explicit "queue_joined" alongside the
+  // domain-shaped "walkin_added". The two are intentionally
+  // duplicative — analytics queries the metric event independent of
+  // the booking-mutation event family.
+  void logBookingEvent({
+    bookingId: bid,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "queue_joined",
+    payload: { serviceId },
+  });
+
   return { ok: true, bookingId: bid };
 }
 
@@ -426,6 +439,15 @@ export async function assignWalkinToSlot(
     },
   });
 
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "queue_assigned",
+    payload: { staffId, slotStartUtc },
+  });
+
   return { ok: true };
 }
 
@@ -472,6 +494,15 @@ export async function cancelWaitingWalkin(
     actorRole: ctxActorRole(ctx),
     eventType: "booking_cancelled",
     payload: { from: "waiting", reason: "walkin_removed" },
+  });
+
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "queue_left",
+    payload: { reason: "walkin_removed" },
   });
 
   return { ok: true };
@@ -723,4 +754,111 @@ export async function addWalkinAndAssign(
     return { ok: false, error: assigned.error };
   }
   return created;
+}
+
+
+/* ───────────────────────── Soft hold (PR #104) ───────────────────────── */
+
+const SOFT_HOLD_DEFAULT_MINUTES = 10;
+const SOFT_HOLD_MAX_MINUTES = 60;
+
+/**
+ * Mark a waiting walk-in as "stepped out" — preserves their queue
+ * position without requiring them to be physically present. The card
+ * renders a countdown until `soft_hold_until`, after which it returns
+ * to its normal waiting treatment and the receptionist is notified.
+ *
+ * Restricted to `status=waiting` walk-ins so a confirmed/in-progress
+ * booking can not accidentally have its seat held off.
+ */
+export async function setSoftHold(
+  slug: string,
+  input: {
+    salonId: string;
+    bookingId: string;
+    minutes?: number;
+  },
+): Promise<{ ok: true; holdUntilIso: string } | { ok: false; error: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim()) {
+    return fail("salon_mismatch");
+  }
+
+  const bookingId = String(input.bookingId ?? "").trim();
+  if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+
+  const requested = Number.isFinite(input.minutes) ? Math.round(input.minutes!) : SOFT_HOLD_DEFAULT_MINUTES;
+  const minutes = Math.max(1, Math.min(SOFT_HOLD_MAX_MINUTES, requested));
+  const holdUntilIso = new Date(Date.now() + minutes * 60_000).toISOString();
+
+  const supabase = ctx.supabase;
+  const { data: updated, error } = await supabase
+    .from("bookings")
+    .update({ soft_hold_until: holdUntilIso } as never)
+    .eq("id", bookingId)
+    .eq("salon_id", ctx.salon.id)
+    .eq("source", "walkin")
+    .eq("status", "waiting")
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    console.error("[setSoftHold]", error);
+    return fail("server_error");
+  }
+  if (!updated?.id) return fail("invalid_state");
+
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "soft_hold_set",
+    payload: { minutes, holdUntilIso },
+  });
+
+  return { ok: true, holdUntilIso };
+}
+
+/**
+ * Clear an active soft hold — used both by the explicit "Customer
+ * came back" affordance and by the auto-expiry sweep when the hold
+ * window passes. Idempotent: clearing an already-null hold is a
+ * no-op success so the realtime tick can safely fire.
+ */
+export async function clearSoftHold(
+  slug: string,
+  input: { salonId: string; bookingId: string; reason?: "expired" | "returned" },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim()) {
+    return fail("salon_mismatch");
+  }
+  const bookingId = String(input.bookingId ?? "").trim();
+  if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+
+  const supabase = ctx.supabase;
+  const { error } = await supabase
+    .from("bookings")
+    .update({ soft_hold_until: null } as never)
+    .eq("id", bookingId)
+    .eq("salon_id", ctx.salon.id);
+
+  if (error) {
+    console.error("[clearSoftHold]", error);
+    return fail("server_error");
+  }
+
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "soft_hold_expired",
+    payload: { reason: input.reason ?? "returned" },
+  });
+
+  return { ok: true };
 }

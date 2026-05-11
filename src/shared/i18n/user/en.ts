@@ -558,6 +558,13 @@ export type UserMessages = {
         queueAhead: number;
       }) => string;
       overloadBannerDismiss: string;
+      /** Soft-hold copy (PR #104). */
+      softHoldButton: string;
+      softHoldClear: string;
+      softHoldLabel: string;
+      softHoldCountdown: (minutesLeft: number) => string;
+      /** "{name}'s hold expired" — shown via the desk status line. */
+      softHoldExpiredNotice: string;
       addForm: {
         namePlaceholder: string;
         phonePlaceholder: string;
@@ -751,6 +758,12 @@ export type UserMessages = {
     /** Quick Add: popular service shortcut chips above the service grid. */
     popularServices: {
       label: string;
+    };
+    /** Rush hour banner (PR #104). */
+    rushHour: {
+      /** "⚡ Rush Hour — {n} customers waiting". Interpolate {n}. */
+      bannerLabel: string;
+      dismiss: string;
     };
     /** Edit Booking: addon select copy. */
     editAddon: {
@@ -1462,6 +1475,11 @@ export const userEn: UserMessages = {
       overloadBanner: ({ name, queueAhead }) =>
         `⚠️ ${name} — ${queueAhead} customer${queueAhead === 1 ? "" : "s"} waiting. Consider another staff.`,
       overloadBannerDismiss: "Dismiss",
+      softHoldButton: "Hold seat",
+      softHoldClear: "Customer returned",
+      softHoldLabel: "Hold",
+      softHoldCountdown: (n: number) => `${n} min left`,
+      softHoldExpiredNotice: "{name}'s hold expired",
       addForm: {
         namePlaceholder: "Guest name",
         phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
@@ -1641,6 +1659,10 @@ export const userEn: UserMessages = {
     },
     popularServices: {
       label: "Popular today",
+    },
+    rushHour: {
+      bannerLabel: "⚡ Rush Hour — {n} customers waiting",
+      dismiss: "Dismiss",
     },
     editAddon: {
       label: "Add-on",

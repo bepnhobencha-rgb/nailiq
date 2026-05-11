@@ -73,6 +73,14 @@ export type QueueEntryCardProps = {
   showWaitTime?: boolean;
   /** When false, suppresses the VIP source chip (other sources still render). */
   showVipIndicator?: boolean;
+  /** When true, the wait number renders +4px larger (rush hour). */
+  emphasizeWait?: boolean;
+  /** Soft-hold expiry — when set + > now, the card replaces the wait
+   * hero with a countdown until this passes (PR #104). */
+  softHoldUntilIso?: string | null;
+  /** Current wall-clock — passed in so countdown ticks every minute
+   * without each card mounting its own interval. */
+  nowIso?: string;
   /** Localized strings (no fallback copy). */
   labels: {
     /** Hero suffix below the big wait number, e.g. "chờ" / "waiting" */
@@ -88,6 +96,10 @@ export type QueueEntryCardProps = {
     readyAroundShort: string;
     /** "❤️ Khách yêu cầu thợ này" — full heart-line copy. */
     requestedByClientLine: string;
+    /** "Giữ chỗ: {n} phút còn lại" — interpolate {n}. */
+    softHoldCountdown: (minutesLeft: number) => string;
+    /** Static label rendered above the countdown. */
+    softHoldLabel: string;
   };
   /** Highlighted treatment when this row is the active assign target. */
   isAssigning?: boolean;
@@ -112,6 +124,9 @@ export function QueueEntryCard({
   requestedStaffReadyAtIso,
   showWaitTime = true,
   showVipIndicator = true,
+  emphasizeWait = false,
+  softHoldUntilIso,
+  nowIso,
   labels,
   isAssigning = false,
   className,
@@ -197,29 +212,61 @@ export function QueueEntryCard({
       </div>
 
       {/* Hero wait number — the dispatch-board centerpiece. */}
-      {showWaitTime ? (
-        <div
-          data-testid="queue-wait-hero"
-          className="mt-2 text-center"
-        >
-          <p
-            className={cn(
-              "font-mono text-3xl font-bold leading-none tabular-nums",
-              waitColorClass(waitMinutes),
-            )}
-          >
-            {waitMinutes}
-            <span className="ml-1 text-base font-semibold">min</span>
-          </p>
-          <p className="mt-1 truncate text-[11px] uppercase tracking-wide text-nq-muted">
-            {labels.waitHeroSuffix} · {serviceName}
-            {typeof serviceDurationMinutes === "number" &&
-            serviceDurationMinutes > 0 ? (
-              <span className="font-mono"> · {serviceDurationMinutes}m</span>
-            ) : null}
-          </p>
-        </div>
-      ) : (
+      {showWaitTime ? (() => {
+        const nowMs = nowIso ? Date.parse(nowIso) : Date.now();
+        const holdMs = softHoldUntilIso ? Date.parse(softHoldUntilIso) : NaN;
+        const isHeld = Number.isFinite(holdMs) && holdMs > nowMs;
+        if (isHeld) {
+          const minutesLeft = Math.max(
+            0,
+            Math.ceil((holdMs - nowMs) / 60_000),
+          );
+          return (
+            <div
+              data-testid="queue-soft-hold-hero"
+              className="mt-2 rounded-md border border-amber-500/55 bg-amber-400/10 px-2.5 py-2 text-center"
+            >
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                ⏸ {labels.softHoldLabel}
+              </p>
+              <p className="mt-1 font-mono text-2xl font-bold leading-none tabular-nums text-amber-700">
+                {labels.softHoldCountdown(minutesLeft)}
+              </p>
+              <p className="mt-1 truncate text-[11px] uppercase tracking-wide text-nq-muted">
+                {serviceName}
+              </p>
+            </div>
+          );
+        }
+        return (
+          <div data-testid="queue-wait-hero" className="mt-2 text-center">
+            <p
+              className={cn(
+                "font-mono font-bold leading-none tabular-nums",
+                emphasizeWait ? "text-4xl" : "text-3xl",
+                waitColorClass(waitMinutes),
+              )}
+            >
+              {waitMinutes}
+              <span
+                className={cn(
+                  "ml-1 font-semibold",
+                  emphasizeWait ? "text-lg" : "text-base",
+                )}
+              >
+                min
+              </span>
+            </p>
+            <p className="mt-1 truncate text-[11px] uppercase tracking-wide text-nq-muted">
+              {labels.waitHeroSuffix} · {serviceName}
+              {typeof serviceDurationMinutes === "number" &&
+              serviceDurationMinutes > 0 ? (
+                <span className="font-mono"> · {serviceDurationMinutes}m</span>
+              ) : null}
+            </p>
+          </div>
+        );
+      })() : (
         <p className="mt-2 truncate text-xs text-nq-muted">
           {serviceName}
           {typeof serviceDurationMinutes === "number" &&

@@ -551,6 +551,11 @@ export const userVi: UserMessages = {
       overloadBanner: ({ name, queueAhead }) =>
         `⚠️ ${name} — ${queueAhead} khách đang chờ. Cân nhắc thợ khác.`,
       overloadBannerDismiss: "Bỏ qua",
+      softHoldButton: "Tạm giữ chỗ",
+      softHoldClear: "Khách đã quay lại",
+      softHoldLabel: "Giữ chỗ",
+      softHoldCountdown: (n: number) => `${n} phút còn lại`,
+      softHoldExpiredNotice: "Hết giờ giữ chỗ — {name}",
       addForm: {
         namePlaceholder: "Tên khách",
         phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
@@ -720,6 +725,10 @@ export const userVi: UserMessages = {
     },
     popularServices: {
       label: "Phổ biến hôm nay",
+    },
+    rushHour: {
+      bannerLabel: "⚡ Giờ cao điểm — {n} khách đang chờ",
+      dismiss: "Bỏ qua",
     },
     editAddon: {
       label: "Dịch vụ thêm",
