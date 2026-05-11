@@ -58,7 +58,7 @@ export function LoginPageClient({ demoMode }: Props) {
           window.sessionStorage.setItem(REG_FLOW_OWNER_RETURNING, "1");
         }
 
-        if (result.code) {
+        if (result.mode !== "email_link" && result.code) {
           setDemoCode(result.code);
           return;
         }

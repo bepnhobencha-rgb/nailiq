@@ -102,6 +102,19 @@ export const userVi: UserMessages = {
       "Không thể xác thực mã. Kiểm tra SUPABASE_SERVICE_ROLE_KEY và migrations.",
     verifyErrorInvalid: "Mã không đúng.",
     verifyErrorMissingToken: "Thiếu token hoàn tất. Thử lại.",
+    emailEntryTitle: "Nhập email của bạn",
+    emailAuthSubtext:
+      "Chúng tôi sẽ gửi liên kết đăng nhập bảo mật — không cần nhập mã.",
+    emailPlaceholder: "ban@example.com",
+    emailInvalid: "Nhập địa chỉ email hợp lệ.",
+    sendEmailLink: "Gửi liên kết đăng nhập",
+    sendingEmailLink: "Đang gửi…",
+    emailLinkSentTitle: "Kiểm tra hộp thư",
+    emailLinkSentBody:
+      "Chúng tôi đã gửi liên kết đăng nhập đến {email}. Nhấp vào liên kết trong email để tiếp tục — có hiệu lực trong 60 phút.",
+    registrationDisabledTitle: "Đăng ký tạm thời không khả dụng",
+    registrationDisabledBody:
+      "Hiện tại chúng tôi không thể nhận đăng ký mới. Vui lòng thử lại sau.",
   },
   landing: {
     nav: {

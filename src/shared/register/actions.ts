@@ -267,12 +267,14 @@ export async function finalizeRegisterSessionAfterPhoneOtp(
 /**
  * Result of requesting a registration / sign-in OTP.
  * - `returning.code` is only set in demo OTP mode (modal). Never returns slug before verify.
+ * - `email_link` means a magic-link email was dispatched; no code-entry step follows.
  */
 export type SendRegisterOtpResult =
   | { success: false; error: string }
   | { success: true; mode: "new"; code?: string }
   | { success: true; mode: "returning"; code?: string }
-  | { success: true; mode: "demo"; code: string };
+  | { success: true; mode: "demo"; code: string }
+  | { success: true; mode: "email_link" };
 
 /** @alias SendRegisterOtpResult */
 export type SendOtpResult = SendRegisterOtpResult;
@@ -583,4 +585,57 @@ export async function verifyLoginOtp(
   rememberDevice: boolean = true,
 ): Promise<VerifyRegisterOtpResult> {
   return verifyRegisterOtp(phoneRaw, codeRaw, rememberDevice);
+}
+
+/**
+ * Send an email magic link for sign-up / sign-in when the `sms_enabled`
+ * platform flag is off and `email_enabled` is on.
+ *
+ * Uses Supabase Auth `signInWithOtp({ email })` which dispatches a magic link
+ * to the address. The link redirects to `/auth/callback` which exchanges
+ * the code for a session and routes the user:
+ *   - existing salon_members row → dashboard
+ *   - no membership → /register/setup  (OAuth / email path already supported
+ *     by completeSalonRegistration's blank-phone branch)
+ *
+ * Note: the server Supabase client uses the anon key for Auth API calls —
+ * no service role needed here.
+ */
+export async function sendEmailMagicLink(
+  emailRaw: string,
+): Promise<SendRegisterOtpResult> {
+  const email = emailRaw.trim().toLowerCase();
+  if (!email || !email.includes("@") || email.length > 254) {
+    return { success: false, error: "Please enter a valid email address." };
+  }
+
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "";
+  const redirectTo = siteUrl
+    ? `${siteUrl}/auth/callback`
+    : "/auth/callback";
+
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: redirectTo,
+        shouldCreateUser: true,
+      },
+    });
+
+    if (error) {
+      console.error("[sendEmailMagicLink]", error);
+      return {
+        success: false,
+        error: "Could not send magic link. Try again.",
+      };
+    }
+
+    return { success: true, mode: "email_link" };
+  } catch (err) {
+    console.error("[sendEmailMagicLink] unexpected", err);
+    return { success: false, error: "Could not send magic link. Try again." };
+  }
 }

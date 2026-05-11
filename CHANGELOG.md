@@ -2,6 +2,19 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-05-11 (platform-flag gated auth modes)
+
+### feat(register): wire platform_flags sms_enabled / email_enabled to /register flow
+
+- **`src/shared/register/platformFlagReader.ts`** — new server-only helper. Reads `sms_enabled` and `email_enabled` rows from `platform_flags` table via service role. Defaults to `{ smsEnabled: true, emailEnabled: false }` so existing prod installs are unaffected when the row is absent.
+- **`src/shared/register/actions.ts`** — added `sendEmailMagicLink(emailRaw)` server action. Validates email format, calls `supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: SITE_URL/auth/callback } })`, returns `{ success: true, mode: "email_link" }`. Added `"email_link"` variant to `SendRegisterOtpResult` union.
+- **`src/app/register/page.tsx`** — reads `readAuthPlatformFlags()` server-side; passes `smsEnabled` / `emailEnabled` props to `RegisterPageClient`. In demo mode flags are ignored (always SMS path).
+- **`src/app/register/RegisterPageClient.tsx`** — three render branches: (1) `smsEnabled=true` → unchanged phone/SMS form. (2) `smsEnabled=false, emailEnabled=true` → email input + `sendEmailMagicLink`; after send, shows "Check your inbox" confirmation with the dispatched address. (3) Both false → "Registration temporarily unavailable" screen, no form.
+- **`src/shared/i18n/user/en.ts` + `vi.ts`** — added 10 new `register.*` keys: `emailEntryTitle`, `emailAuthSubtext`, `emailPlaceholder`, `emailInvalid`, `sendEmailLink`, `sendingEmailLink`, `emailLinkSentTitle`, `emailLinkSentBody`, `registrationDisabledTitle`, `registrationDisabledBody`. Type definition in `UserMessages.register` updated.
+- **`src/components/register/RegisterStepShell.tsx`** — made `children` prop optional (needed for the disabled state render with no form body).
+- **`src/app/login/LoginPageClient.tsx`** — narrowed `result.code` access to exclude `email_link` mode (TS type guard fix).
+- **Activation:** set `email_enabled=true` (and optionally `sms_enabled=false`) in `platform_flags` table. The `/auth/callback` route already handles magic-link → session exchange → dashboard or `/register/setup` routing. `completeSalonRegistration` already supports the blank-phone OAuth/email path.
+
 ## 2026-05-11 (landing — ReceptionistMockup)
 
 ### feat(landing): replace static booking grid mockup with live-coded ReceptionistMockup
