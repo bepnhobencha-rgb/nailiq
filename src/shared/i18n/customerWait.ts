@@ -30,6 +30,12 @@ export type CustomerWaitMessages = {
   seeYouAgain: string;
   cancelled: string;
   autoRefreshNote: string;
+  /** Fallback screen — booking row missing or expired. */
+  notFound: string;
+  /** Fallback screen — service-role lookup blew up. */
+  tryAgainLater: string;
+  /** Hint under the fallback message. */
+  contactSalon: string;
 };
 
 const en: CustomerWaitMessages = {
@@ -50,6 +56,9 @@ const en: CustomerWaitMessages = {
   seeYouAgain: "See you again 💛",
   cancelled: "This booking was cancelled",
   autoRefreshNote: "This page updates automatically — no need to refresh",
+  notFound: "We couldn't find this booking",
+  tryAgainLater: "Couldn't load — please try again in a moment",
+  contactSalon: "If you just joined the queue, ask the front desk for a fresh link.",
 };
 
 const vi: CustomerWaitMessages = {
@@ -70,6 +79,9 @@ const vi: CustomerWaitMessages = {
   seeYouAgain: "Hẹn gặp lại 💛",
   cancelled: "Lịch hẹn đã được huỷ",
   autoRefreshNote: "Trang này tự cập nhật — không cần F5",
+  notFound: "Không tìm thấy lịch hẹn này",
+  tryAgainLater: "Không tải được — vui lòng thử lại sau ít phút",
+  contactSalon: "Nếu bạn vừa vào hàng chờ, hỏi tiếp tân để lấy link mới.",
 };
 
 export function getCustomerWaitMessages(

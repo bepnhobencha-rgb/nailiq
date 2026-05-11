@@ -12,13 +12,27 @@ import {
 import { createClient } from "@/shared/lib/supabase/server";
 import { setPublicBookingSalonTags } from "@/shared/observability/salonSentry";
 
-/** Paths that must not resolve as salon slugs (overlap static routes or reserved names). */
+/** Paths that must not resolve as salon slugs (overlap static routes or reserved names).
+ *
+ * Add a segment here whenever a new top-level route is introduced so a
+ * salon registering with the same slug can't shadow it. The wait page
+ * lives at `/[slug]/wait/[bookingId]` so `/wait` itself should never
+ * resolve as a salon — defense in depth in case someone visits the
+ * naked `/wait` URL or registers `wait` as their slug. */
 export const RESERVED_BOOKING_SLUGS = new Set([
   "login",
   "register",
   "dashboard",
   "api",
   "aggressive",
+  "wait",
+  "superadmin",
+  "auth",
+  "choose-salon",
+  "contact",
+  "privacy",
+  "terms",
+  "debug-sentry",
 ]);
 
 export type ResolvedPublicBookingPage =
