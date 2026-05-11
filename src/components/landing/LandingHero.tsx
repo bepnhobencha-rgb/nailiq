@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { motion, useReducedMotion } from "@/shared/lib/motionClient";
-import { cn } from "@/shared/lib/cn";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { ReceptionistMockup } from "@/components/landing/ReceptionistMockup";
 
 export function LandingHero() {
   const reduce = useReducedMotion();
@@ -69,7 +69,7 @@ export function LandingHero() {
           transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
           className="relative hidden xl:block"
         >
-          <BookingMockup reduce={reduce ?? false} />
+          <ReceptionistMockup reduce={reduce ?? false} />
         </motion.div>
       </div>
     </section>
@@ -92,148 +92,3 @@ function BackgroundGlow() {
   );
 }
 
-function BookingMockup({ reduce }: { reduce: boolean }) {
-  const times = ["9:00", "9:30", "10:00", "10:30", "11:00", "11:30"];
-  const staffNames = ["Lan", "Tina", "Mai", "Anh", "Linh"];
-
-  return (
-    <div className="relative">
-      <div
-        aria-hidden
-        className="absolute -inset-10 rounded-[36px] bg-[radial-gradient(closest-side,rgba(212,175,55,0.22),rgba(212,175,55,0.06)_55%,transparent_80%)] blur-2xl"
-      />
-      <div
-        aria-hidden
-        className="absolute -inset-2 rounded-[28px] bg-gradient-to-br from-nq-primary/12 via-transparent to-transparent blur-xl"
-      />
-      <div className={cn(
-        "relative rounded-2xl border border-nq-border/40 bg-nq-surface/60 p-4 shadow-[0_40px_100px_-30px_rgba(0,0,0,0.75),0_8px_28px_-8px_rgba(212,175,55,0.18),0_0_0_1px_rgba(212,175,55,0.14)] backdrop-blur-md",
-        !reduce && "nq-mockup-float",
-      )}>
-        <div className="flex items-center gap-2 border-b border-nq-border/30 px-1 pb-3">
-          <span className="h-2.5 w-2.5 rounded-full bg-red-400/70" aria-hidden />
-          <span className="h-2.5 w-2.5 rounded-full bg-yellow-400/70" aria-hidden />
-          <span className="h-2.5 w-2.5 rounded-full bg-green-400/70" aria-hidden />
-          <div className="ml-3 flex-1 truncate rounded-md border border-nq-border/30 bg-nq-bg/40 px-3 py-1 text-[11px] text-nq-muted">
-            nailiq.com/your-salon
-          </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-[44px_repeat(5,minmax(0,1fr))] text-[10px] text-nq-muted">
-          <div />
-          {staffNames.map((s) => (
-            <div key={s} className="px-1.5 pb-2 text-center font-semibold tracking-wide text-nq-foreground/80">
-              {s}
-            </div>
-          ))}
-
-          {times.map((t, rowIdx) => (
-            <Row key={t} time={t} rowIdx={rowIdx} />
-          ))}
-        </div>
-
-        <div
-          aria-hidden
-          className={cn(
-            "pointer-events-none absolute left-12 right-4 top-[155px] flex items-center gap-2",
-            !reduce && "animate-pulse",
-          )}
-        >
-          <span className="relative -ml-3 flex h-2.5 w-2.5 items-center justify-center">
-            <span className="absolute inline-flex h-full w-full rounded-full bg-nq-primary opacity-70" />
-            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-nq-primary" />
-          </span>
-          <span className="block h-px flex-1 bg-gradient-to-r from-nq-primary/80 via-nq-primary/40 to-transparent" />
-        </div>
-
-        <motion.div
-          initial={reduce ? false : { opacity: 0, scale: 0.92 }}
-          animate={reduce ? undefined : { opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5, delay: 1.2, ease: [0.22, 1, 0.36, 1] }}
-          className="absolute right-5 bottom-5 rounded-xl border border-nq-success/40 bg-nq-success/15 px-3 py-2 text-[11px] font-medium text-nq-success backdrop-blur-md"
-        >
-          ● New booking
-        </motion.div>
-      </div>
-    </div>
-  );
-}
-
-function Row({ time, rowIdx }: { time: string; rowIdx: number }) {
-  const blocks = getBlocks(rowIdx);
-  return (
-    <>
-      <div className="border-t border-nq-border/15 py-3 pr-2 text-right text-[10px] text-nq-muted">
-        {time}
-      </div>
-      {[0, 1, 2, 3, 4].map((col) => {
-        const block = blocks[col];
-        return (
-          <div
-            key={col}
-            className="relative border-t border-nq-border/15 px-1 py-1"
-          >
-            {block ? (
-              <div
-                className={cn(
-                  "rounded-md px-2 py-1.5 text-[9px] font-medium leading-tight",
-                  block.kind === "walkin"
-                    ? "border border-nq-success/40 bg-nq-success/15 text-nq-success"
-                    : "border border-nq-primary/40 bg-nq-primary/15 text-nq-primary-soft",
-                )}
-              >
-                <div className="truncate">{block.client}</div>
-                <div className="truncate text-[8.5px] opacity-70">{block.service}</div>
-              </div>
-            ) : null}
-          </div>
-        );
-      })}
-    </>
-  );
-}
-
-type Block = { client: string; service: string; kind: "booking" | "walkin" };
-
-function getBlocks(rowIdx: number): (Block | null)[] {
-  if (rowIdx === 0) {
-    return [
-      null,
-      null,
-      { client: "Walk-in", service: "Quick mani", kind: "walkin" },
-      null,
-      null,
-    ];
-  }
-  if (rowIdx === 1) {
-    return [
-      { client: "Lan", service: "Gel manicure", kind: "booking" },
-      null,
-      { client: "Walk-in", service: "Quick mani", kind: "walkin" },
-      null,
-      null,
-    ];
-  }
-  if (rowIdx === 2) {
-    return [
-      { client: "Lan", service: "Gel manicure", kind: "booking" },
-      { client: "Tina", service: "Pedicure", kind: "booking" },
-      null,
-      null,
-      { client: "Linh", service: "Nail art", kind: "booking" },
-    ];
-  }
-  if (rowIdx === 3) {
-    return [
-      null,
-      { client: "Tina", service: "Pedicure", kind: "booking" },
-      null,
-      { client: "Anh", service: "Acrylic full", kind: "booking" },
-      { client: "Linh", service: "Nail art", kind: "booking" },
-    ];
-  }
-  if (rowIdx === 4) {
-    return [null, null, null, { client: "Anh", service: "Acrylic full", kind: "booking" }, null];
-  }
-  return [null, null, null, null, null];
-}
