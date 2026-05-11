@@ -11,14 +11,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  e2e:
+  i18n-check:
+    name: i18n & Copy Check
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run check:i18n
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    needs: i18n-check
     timeout-minutes: 60
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      BASE_URL: http://localhost:3000
+      PLAYWRIGHT_BASE_URL: http://localhost:3000
       NEXT_PUBLIC_SENTRY_DSN: ""
       SENTRY_AUTH_TOKEN: ""
       NEXT_PUBLIC_DEMO_OTP: "true"
@@ -30,21 +46,88 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npx playwright install chromium webkit --with-deps
-      - name: Run E2E Tests
-        # `--reporter=list,html` gives per-spec live progress (so the
-        # CI log shows which spec is currently running / hanging) plus
-        # an HTML report artifact for post-mortem. The default dot
-        # reporter interleaves with `--workers=2` and hides the hung
-        # spec when the job hits its 60-minute hard timeout.
-        run: npm run test:e2e -- --workers=2 --reporter=list,html
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium webkit
+      - name: Build app
+        run: npm run build
+      - name: Decide which specs to run
+        id: scope
+        run: |
+          if [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "specs=" >> "$GITHUB_OUTPUT"
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+            echo "::notice::SUPABASE_SERVICE_ROLE_KEY present — running full E2E suite"
+          else
+            echo "specs=e2e/content e2e/accessibility" >> "$GITHUB_OUTPUT"
+            echo "mode=db-free" >> "$GITHUB_OUTPUT"
+            echo "::warning::SUPABASE_SERVICE_ROLE_KEY missing — skipping DB-dependent specs (running i18n/copy + a11y only)"
+          fi
+      - name: Run E2E tests
+        run: npx playwright test ${{ steps.scope.outputs.specs }} --reporter=list,html,json
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
+      - name: Summarize results
+        if: always()
+        run: node scripts/playwright-summary.js >> "$GITHUB_STEP_SUMMARY" || true
       - uses: actions/upload-artifact@v4
-        # Upload on every outcome, not only `failure()`. GitHub
-        # Actions treats workflow-timeout `cancelled` as neither
-        # success nor failure, so the report was being skipped exactly
-        # when we needed it most.
         if: always()
         with:
           name: playwright-report
           path: playwright-report/
-          retention-days: 7
+          retention-days: 14
+
+  visual-tests:
+    name: Visual Regression
+    runs-on: ubuntu-latest
+    needs: i18n-check
+    # Visual baselines drift across OS/browser versions, so we only run
+    # them on push-to-main where the baseline-update flag is meaningful.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 30
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      BASE_URL: http://localhost:3000
+      PLAYWRIGHT_BASE_URL: http://localhost:3000
+      NEXT_PUBLIC_SENTRY_DSN: ""
+      SENTRY_AUTH_TOKEN: ""
+      NEXT_PUBLIC_DEMO_OTP: "true"
+      DEMO_OTP: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run build
+      - name: Detect snapshot-update intent
+        id: snap
+        run: |
+          if echo "${{ github.event.head_commit.message }}" | grep -qiF "[update-snapshots]"; then
+            echo "flag=--update-snapshots" >> "$GITHUB_OUTPUT"
+            echo "::notice::Commit message contains [update-snapshots] — refreshing visual baselines"
+          else
+            echo "flag=" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run visual tests
+        run: npx playwright test e2e/visual ${{ steps.snap.outputs.flag }} --reporter=list,html
+      - name: Upload visual diff artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diffs
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+      - name: Upload updated snapshots
+        if: success() && steps.snap.outputs.flag != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: updated-snapshots
+          path: e2e/visual/__screenshots__/
+          retention-days: 14

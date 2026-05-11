@@ -13,7 +13,8 @@
     "test:e2e:debug": "playwright test --debug",
     "test:e2e:report": "playwright show-report",
     "db:push": "node scripts/db-push-guard.js",
-    "auto-push": "node scripts/auto-push.js"
+    "auto-push": "node scripts/auto-push.js",
+    "check:i18n": "tsx scripts/check-i18n.ts"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.51.0",
@@ -32,6 +33,7 @@
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.3",
     "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4",
     "@types/canvas-confetti": "^1.9.0",
@@ -42,6 +44,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }

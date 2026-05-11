@@ -27,17 +27,28 @@ function loadDotEnv(filename: string) {
 loadDotEnv(".env.local");
 loadDotEnv(".env.test.local");
 
+const isCI = !!process.env.CI;
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  forbidOnly: isCI,
+  retries: isCI ? 1 : 0,
   workers: 1,
-  reporter: "html",
+  reporter: [
+    ["list"],
+    ["html", { outputFolder: "playwright-report", open: "never" }],
+    ...(isCI
+      ? ([["json", { outputFile: "playwright-report/results.json" }]] as const)
+      : []),
+  ],
   use: {
     /** Match default `salons.timezone` (see seed + migrations); RPC v2.4 validates hours in salon TZ. */
     timezoneId: "America/Los_Angeles",
-    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000",
+    baseURL:
+      process.env.PLAYWRIGHT_BASE_URL ??
+      process.env.BASE_URL ??
+      "http://localhost:3000",
     headless: true,
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -50,7 +61,7 @@ export default defineConfig({
   webServer: {
     command: "npm run dev",
     url: "http://localhost:3000",
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !isCI,
     timeout: 120_000,
   },
 });
