@@ -2,6 +2,26 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-05-11 (pricing section — 3-plan grid)
+
+### feat(landing): expand pricing section from 1 card to 3-plan grid
+
+- **`src/shared/i18n/user/en.ts`** — updated `UserMessages.landing.pricing` type: removed flat single-plan fields (`mostPopular`, `features`, `cta`) and replaced with a `plans: ReadonlyArray<{id, name, price, badge, features, cta}>` array. Added EN copy for Free ($0), Pro ($29 — most popular), Studio ($59 — coming soon). Updated section `h2` → "Simple, transparent pricing".
+- **`src/shared/i18n/user/vi.ts`** — matching VI copy for all three plans; Studio CTA = "Sắp ra mắt" (disabled).
+- **`src/components/landing/LandingPricing.tsx`** — rewritten. Layout: `grid-cols-1` mobile → `md:grid-cols-3` desktop, `items-stretch` so cards share height. Pro card: gold `border-2 border-nq-primary/60`, ambient glow div, larger price, gold CTA with shadow. Free/Studio: muted surface cards, secondary CTA. Studio CTA is a `disabled` button ("Coming soon" / "Sắp ra mắt") — no Stripe wired. All cards stagger-animate on viewport entry. Responds to EN/VI toggle instantly via context.
+- Section max-width expanded from `max-w-3xl` to `max-w-5xl`.
+
+## 2026-05-11
+
+### fix(i18n): language switch now takes effect instantly without a page refresh
+
+- **Root cause:** `useUserLanguage` was a plain React hook. Each component that called it got its own isolated state. Switching language in the navbar updated only that component's state; siblings (`LandingHero`, `LandingFeatures`, dashboard panels, etc.) kept their old value until the next full page load which re-read `localStorage`.
+- **Fix:** Lifted language state into a React context (`src/shared/lib/UserLanguageContext.tsx`). `UserLanguageProvider` is mounted once at the root layout and holds the single source of truth. All `useUserLanguage()` consumers share the same state and re-render together on every language change.
+- **`src/shared/lib/UserLanguageContext.tsx`** — new file: `UserLanguageContext`, `UserLanguageProvider` (client component; reads `localStorage` after mount, persists on change, syncs `document.documentElement.lang`), and `useUserLanguageContext` hook.
+- **`src/shared/lib/useUserLanguage.ts`** — rewritten to re-export `useUserLanguageContext as useUserLanguage`; all call-sites unchanged.
+- **`src/app/layout.tsx`** — wraps `{children}` in `<UserLanguageProvider>`.
+- No changes to call-sites (all 30+ components importing `useUserLanguage` continue to work without modification).
+
 ## 2026-05-10 (docs — DASHBOARD_LAYOUT_RULES §11 walk-in queue slide-over, PM-approved)
 
 - **PM approval:** explicit chat directive `2026-05-10` instructing the receptionist queue refactor (`feat/queue-slide-over-panel`) to convert the always-visible queue column into a toggle-driven slide-over.

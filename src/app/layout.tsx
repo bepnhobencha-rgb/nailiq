@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Be_Vietnam_Pro, JetBrains_Mono } from "next/font/google";
 import { getSiteUrl } from "@/shared/seo/site";
+import { UserLanguageProvider } from "@/shared/lib/UserLanguageContext";
 import "./globals.css";
 
 // Be Vietnam Pro: hand-tuned VN diacritics for body sans.
@@ -84,7 +85,7 @@ export default function RootLayout({
       className={`${appSans.variable} ${appMono.variable} h-full antialiased`}
     >
       <body className="min-h-dvh min-w-0 flex flex-col overflow-x-hidden">
-        {children}
+        <UserLanguageProvider>{children}</UserLanguageProvider>
       </body>
     </html>
   );
