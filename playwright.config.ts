@@ -35,6 +35,13 @@ export default defineConfig({
   forbidOnly: isCI,
   retries: isCI ? 1 : 0,
   workers: 1,
+  // e2e/receptionist-center/helpers.ts:514-524 waits up to 45s for
+  // `receptionist-center-loaded` / `staff-timeline-grid` / `walkin-add-form`
+  // to handle slow Next dev-mode hydration. The default 30s test timeout
+  // killed every dashboard-navigating test before that helper could
+  // finish — visible in CI run 25686403140 as uniform 30.3s timeouts.
+  // 90s gives headroom on cold compiles without masking real hangs.
+  timeout: 90_000,
   reporter: [
     ["list"],
     ["html", { outputFolder: "playwright-report", open: "never" }],
