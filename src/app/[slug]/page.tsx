@@ -79,11 +79,26 @@ async function PublicBookingRouteBody({
     slug: normalizedSlug,
   });
 
+  // Per-salon brand color (PR #109): inject as `--salon-primary` for
+  // any new inline-styled elements + remap `--color-nq-primary` for
+  // the entire booking subtree so existing `bg-nq-primary` /
+  // `text-nq-primary` / `border-nq-primary` Tailwind classes adopt
+  // the salon's color without per-component edits. The dashboard
+  // remains untouched because nothing under /dashboard is a child
+  // of this wrapper.
+  const brandStyle = {
+    "--salon-primary": load.salon.brandColor,
+    "--color-nq-primary": load.salon.brandColor,
+  } as React.CSSProperties;
+
   if (!load.salon.acceptingBookings) {
     return (
       <>
         <BookingDocumentEn />
-        <div className="relative min-h-dvh px-4 py-10 pb-safe sm:px-6 lg:px-8">
+        <div
+          className="relative min-h-dvh px-4 py-10 pb-safe sm:px-6 lg:px-8"
+          style={brandStyle}
+        >
           <SalonBookingPaused shopLabel={shopLabel} t={t} />
         </div>
       </>
@@ -93,7 +108,7 @@ async function PublicBookingRouteBody({
   return (
     <>
       <BookingDocumentEn />
-      <div className="relative min-h-dvh">
+      <div className="relative min-h-dvh" style={brandStyle}>
         <div
           className="pointer-events-none fixed inset-0 -z-10 hidden lg:block"
           aria-hidden

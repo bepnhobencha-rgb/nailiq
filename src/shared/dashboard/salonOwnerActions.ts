@@ -717,3 +717,55 @@ export async function updateDashboardDensity(
   return { ok: true, density };
 }
 
+
+
+/* ───────────────── Brand color (PR #109) ───────────────── */
+
+export type UpdateBrandColorResult =
+  | { ok: true; brandColor: string }
+  | {
+      ok: false;
+      error:
+        | "unauthorized"
+        | "invalid_color"
+        | "server_error";
+    };
+
+/**
+ * Member-gated: writes `salons.brand_color`. Color must be a 6-digit
+ * hex literal (e.g. `#D4AF37`) — `isValidBrandColor` mirrors the DB
+ * CHECK constraint so we reject the bad value before the round-trip.
+ *
+ * Open to any salon member (not owner-only) so a senior reception
+ * rebrand isn't blocked by an absent owner. The role gate could be
+ * tightened later via `canEditBrand` if PM asks.
+ */
+export async function updateBrandColor(
+  slug: string,
+  color: string,
+): Promise<UpdateBrandColorResult> {
+  const { isValidBrandColor } = await import("@/shared/lib/brandColor");
+  if (!isValidBrandColor(color)) {
+    return { ok: false, error: "invalid_color" };
+  }
+
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+
+  // Cast: `brand_color` is not yet in the auto-generated Supabase
+  // types until the next regeneration.
+  const { error: upErr } = await ctx.supabase
+    .from("salons")
+    .update({ brand_color: color.trim().toUpperCase() } as never)
+    .eq("id", ctx.salon.id);
+
+  if (upErr) {
+    console.error("[updateBrandColor]", upErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true, brandColor: color.trim().toUpperCase() };
+}

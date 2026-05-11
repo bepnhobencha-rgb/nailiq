@@ -4,6 +4,7 @@ import type { BookingServiceItem } from "@/shared/booking/catalog";
 import { formatGuestPriceUsd } from "@/shared/booking/formatBookingPrice";
 import { getSalonBySlug } from "@/shared/booking/getSalonBySlug";
 import { createClient } from "@/shared/lib/supabase/server";
+import { normalizeBrandColor } from "@/shared/lib/brandColor";
 
 export type BookingStaffItem = {
   id: string;
@@ -23,6 +24,10 @@ export type BookingSalonMeta = {
   salonPhone: string | null;
   /** IANA TZ for slot-grid label and confirmation copy (B-16). DB column is NOT NULL DEFAULT 'America/Los_Angeles'; "UTC" is a paranoid fallback. */
   timezone: string;
+  /** Per-salon primary color for the booking page (PR #109). Always
+   * a `#RRGGBB` literal — `normalizeBrandColor` falls back to the
+   * default gold when the column is missing or invalid. */
+  brandColor: string;
 };
 
 export type BookingLoadData = {
@@ -174,6 +179,9 @@ export async function loadBookingServicesForSalonSlug(
         const s = typeof tz === "string" ? tz.trim() : "";
         return s.length > 0 ? s : "UTC";
       })(),
+      brandColor: normalizeBrandColor(
+        (salon as { brand_color?: unknown }).brand_color,
+      ),
     },
   };
 }
