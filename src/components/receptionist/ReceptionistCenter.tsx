@@ -248,6 +248,10 @@ function ReceptionistCenterInner({
     return () => window.clearInterval(tick);
   }, []);
 
+  const [overloadedStaff, setOverloadedStaff] = useState<
+    Array<{ name: string; queueAhead: number }>
+  >([]);
+
   const [data, setData] = useState<ReceptionistCenterData>(() => ({
     ...initialOk,
     selectedDate: initialOk.selectedDate,
@@ -454,6 +458,30 @@ function ReceptionistCenterInner({
   }, [data.bookingsForDay]);
 
   const queueItems: QueueItem[] = data.walkinQueue;
+
+  // Overload signals — refresh whenever the queue length changes (or
+  // every minute via nowIso). Service-id agnostic snapshot so the
+  // engine returns every active staff member's overload status.
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const r = await getStaffAvailability(slug, null);
+        if (cancelled || !r.ok) return;
+        setOverloadedStaff(
+          r.staff
+            .filter((s) => s.overloaded)
+            .map((s) => ({ name: s.staffName, queueAhead: s.queueAhead })),
+        );
+      } catch {
+        /* swallow — banner is non-critical */
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, nowIso, queueItems.length]);
 
   const inProgressToday = data.bookingsForDay.filter((b) => b.status === "in_progress").length;
 
@@ -1628,6 +1656,7 @@ function ReceptionistCenterInner({
                   id: s.id,
                   name: s.name,
                 }))}
+                overloadedStaff={overloadedStaff}
                 onCancelWalkin={onCancelWalkin}
                 onStartAssign={(id) => setAssigningWalkinId(id)}
                 onCancelAssign={() => setAssigningWalkinId(null)}
@@ -1655,6 +1684,14 @@ function ReceptionistCenterInner({
                   priorityLow: rcMessages.queue.priorityLow,
                   partySizeLabel: rcMessages.queue.partySizeLabel,
                   sourceFallback: rcMessages.queue.sourceFallback,
+                  waitHeroSuffix: rcMessages.queue.waitHeroSuffix,
+                  vipAria: rcMessages.queue.vipAria,
+                  readyAroundShort: rcMessages.queue.readyAroundShort,
+                  requestedByClientLine:
+                    rcMessages.queue.requestedByClientLine,
+                  overloadBanner: rcMessages.queue.overloadBanner,
+                  overloadBannerDismiss:
+                    rcMessages.queue.overloadBannerDismiss,
                   addForm: {
                     ...rcMessages.queue.addForm,
                     invalidPhone: rcMessages.walkin.invalidPhone,

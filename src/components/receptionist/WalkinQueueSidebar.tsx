@@ -22,6 +22,13 @@ export interface QueueItem {
   service_name: string;
   service_duration_minutes: number;
   staff_request_note: string | null;
+  staff_requested_by_client?: boolean;
+  /** Resolved staff name for the requested-staff row on the queue card. */
+  requested_staff_name?: string | null;
+  /** Projected UTC ISO time the requested staff is free. */
+  requested_staff_ready_at_iso?: string | null;
+  /** Returning-VIP flag (drives the gold crown badge). */
+  is_vip?: boolean;
   joined_queue_at: string;
   walkin_source?: QueueSource | null;
   walkin_priority?: QueuePriority | null;
@@ -56,6 +63,15 @@ export interface WalkinQueueSidebarProps {
     priorityLow: string;
     partySizeLabel: (n: number) => string;
     sourceFallback: string;
+    /** "chờ" / "waiting" — shown under the hero wait number on each card. */
+    waitHeroSuffix: string;
+    vipAria: string;
+    /** "Ready ~{time}" template for the staff-dispatch line. */
+    readyAroundShort: string;
+    requestedByClientLine: string;
+    /** "⚠️ {name} — {n} đang chờ. Cân nhắc thợ khác." overload banner. */
+    overloadBanner: (input: { name: string; queueAhead: number }) => string;
+    overloadBannerDismiss: string;
   };
   /** Callbacks */
   onAddWalkin: WalkinAddFormProps["onSubmit"];
@@ -67,6 +83,13 @@ export interface WalkinQueueSidebarProps {
   onCheckAvailability?: WalkinAddFormProps["onCheckAvailability"];
   /** Active staff for the "Requested staff" dropdown. */
   staffOptions?: WalkinAddFormProps["staffOptions"];
+  /**
+   * Overload signals — names of staff currently flagged
+   * `overloaded=true` by the availability engine plus their
+   * pending-customer count. Drives the dismissible warning banner
+   * above the queue list. Optional — when omitted no banner renders.
+   */
+  overloadedStaff?: ReadonlyArray<{ name: string; queueAhead: number }>;
   onCancelWalkin: (bookingId: string) => Promise<void>;
   onStartAssign: (bookingId: string) => void;
   onCancelAssign: () => void;
@@ -109,6 +132,7 @@ export function WalkinQueueSidebar({
   onPhoneLookup,
   onCheckAvailability,
   staffOptions,
+  overloadedStaff,
   onCancelWalkin,
   onStartAssign,
   onCancelAssign,
@@ -123,6 +147,18 @@ export function WalkinQueueSidebar({
   popularServicesLabel,
 }: WalkinQueueSidebarProps) {
   const [sortMode, setSortMode] = useState<QueueSortMode>("fifo");
+  // Per-session dismissals — receptionist can suppress a specific
+  // staff's overload warning until the page is reloaded. We key by
+  // name (only field surfaced today) so the dismissed set survives
+  // the staff still being in the overloaded list.
+  const [dismissedOverloads, setDismissedOverloads] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const visibleOverloads = useMemo(() => {
+    return (overloadedStaff ?? []).filter(
+      (o) => !dismissedOverloads.has(o.name),
+    );
+  }, [overloadedStaff, dismissedOverloads]);
 
   const orderedItems = useMemo(() => {
     if (sortMode !== "longest_wait") return items;
@@ -180,6 +216,44 @@ export function WalkinQueueSidebar({
             popularServiceIds={popularServiceIds}
             popularServicesLabel={popularServicesLabel}
           />
+        ) : null}
+
+        {visibleOverloads.length > 0 ? (
+          <div
+            data-testid="walkin-queue-overload-banners"
+            className="mt-3 space-y-1.5"
+          >
+            {visibleOverloads.map((o) => (
+              <div
+                key={o.name}
+                role="status"
+                data-testid={`walkin-queue-overload-${o.name}`}
+                className="flex items-start justify-between gap-2 rounded-md border border-amber-500/55 bg-amber-400/10 px-2.5 py-2 text-[11px] text-nq-foreground"
+              >
+                <p>
+                  {labels.overloadBanner({
+                    name: o.name,
+                    queueAhead: o.queueAhead,
+                  })}
+                </p>
+                <button
+                  type="button"
+                  aria-label={labels.overloadBannerDismiss}
+                  title={labels.overloadBannerDismiss}
+                  onClick={() =>
+                    setDismissedOverloads((prev) => {
+                      const next = new Set(prev);
+                      next.add(o.name);
+                      return next;
+                    })
+                  }
+                  className="shrink-0 text-nq-muted hover:text-nq-foreground"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
         ) : null}
 
         {items.length === 0 ? (
@@ -259,11 +333,22 @@ export function WalkinQueueSidebar({
                       priority={item.walkin_priority ?? null}
                       requestTags={tags}
                       partySize={item.party_size ?? null}
+                      isVip={item.is_vip ?? false}
+                      staffRequestedByClient={
+                        item.staff_requested_by_client ?? false
+                      }
+                      requestedStaffName={item.requested_staff_name ?? null}
+                      requestedStaffReadyAtIso={
+                        item.requested_staff_ready_at_iso ?? null
+                      }
                       showWaitTime={showWaitTime}
                       showVipIndicator={showVipIndicator}
                       isAssigning={assigningThis}
                       labels={{
-                        minutesAgo: labels.minutesAgo,
+                        waitHeroSuffix: labels.waitHeroSuffix,
+                        vipAria: labels.vipAria,
+                        readyAroundShort: labels.readyAroundShort,
+                        requestedByClientLine: labels.requestedByClientLine,
                         priorityHigh: labels.priorityHigh,
                         priorityMedium: labels.priorityMedium,
                         priorityLow: labels.priorityLow,

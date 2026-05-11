@@ -544,6 +544,13 @@ export const userVi: UserMessages = {
       priorityLow: "Thấp",
       partySizeLabel: (n: number) => `Nhóm ${n} người`,
       sourceFallback: "Walk-in",
+      waitHeroSuffix: "chờ",
+      vipAria: "Khách VIP",
+      readyAroundShort: "Sẵn sàng ~{time}",
+      requestedByClientLine: "Yêu cầu thợ này",
+      overloadBanner: ({ name, queueAhead }) =>
+        `⚠️ ${name} — ${queueAhead} khách đang chờ. Cân nhắc thợ khác.`,
+      overloadBannerDismiss: "Bỏ qua",
       addForm: {
         namePlaceholder: "Tên khách",
         phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
