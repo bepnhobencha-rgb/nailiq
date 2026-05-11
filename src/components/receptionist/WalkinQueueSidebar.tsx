@@ -12,6 +12,7 @@ import type {
 
 import { QueueEntryCard } from "./QueueEntryCard";
 import { WalkinAddForm, type WalkinAddFormProps } from "./WalkinAddForm";
+import { CustomerWaitLinkModal } from "./CustomerWaitLinkModal";
 
 export interface QueueItem {
   id: string;
@@ -80,6 +81,16 @@ export interface WalkinQueueSidebarProps {
     softHoldClear: string;
     softHoldLabel: string;
     softHoldCountdown: (minutesLeft: number) => string;
+    /** Customer wait-link share (PR #105). */
+    waitLinkButton: string;
+    waitLinkModal: {
+      title: string;
+      instruction: string;
+      copyLink: string;
+      copied: string;
+      openLink: string;
+      closeAria: string;
+    };
   };
   /** Callbacks */
   onAddWalkin: WalkinAddFormProps["onSubmit"];
@@ -110,6 +121,14 @@ export interface WalkinQueueSidebarProps {
   /** True when the desk is in rush hour. Cards enlarge the wait
    * number and the form header gets a subtle peripheral fade upstream. */
   rushMode?: boolean;
+  /**
+   * Origin (`https://nailiq.ca`) the customer wait link is built on.
+   * The full URL becomes `${waitLinkBaseUrl}/${slug}/wait/${bookingId}`.
+   * Omit to hide the wait-link button entirely (storybook/tests).
+   */
+  waitLinkBaseUrl?: string;
+  /** Salon slug — only used when `waitLinkBaseUrl` is set. */
+  waitLinkSalonSlug?: string;
   onCancelWalkin: (bookingId: string) => Promise<void>;
   onStartAssign: (bookingId: string) => void;
   onCancelAssign: () => void;
@@ -156,6 +175,8 @@ export function WalkinQueueSidebar({
   onSetSoftHold,
   onClearSoftHold,
   rushMode = false,
+  waitLinkBaseUrl,
+  waitLinkSalonSlug,
   onCancelWalkin,
   onStartAssign,
   onCancelAssign,
@@ -170,6 +191,11 @@ export function WalkinQueueSidebar({
   popularServicesLabel,
 }: WalkinQueueSidebarProps) {
   const [sortMode, setSortMode] = useState<QueueSortMode>("fifo");
+  // Per-card wait-link modal — null when closed; otherwise the
+  // bookingId whose modal is currently open.
+  const [waitLinkOpenForId, setWaitLinkOpenForId] = useState<string | null>(
+    null,
+  );
   // Per-session dismissals — receptionist can suppress a specific
   // staff's overload warning until the page is reloaded. We key by
   // name (only field surfaced today) so the dismissed set survives
@@ -459,6 +485,22 @@ export function WalkinQueueSidebar({
                             }
                             return null;
                           })() : null}
+                          {waitLinkBaseUrl ? (
+                            <button
+                              type="button"
+                              disabled={blockOthers}
+                              onClick={() =>
+                                setWaitLinkOpenForId(item.id)
+                              }
+                              data-testid={`queue-wait-link-${item.id}`}
+                              className={cn(
+                                "min-h-9 w-full rounded-lg border border-nq-muted/35 bg-transparent px-3 text-xs font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
+                                blockOthers && "pointer-events-none opacity-45",
+                              )}
+                            >
+                              📱 {labels.waitLinkButton}
+                            </button>
+                          ) : null}
                         </div>
                       }
                     />
@@ -469,6 +511,23 @@ export function WalkinQueueSidebar({
           </>
         )}
       </div>
+
+      {waitLinkOpenForId && waitLinkBaseUrl && waitLinkSalonSlug ? (() => {
+        const target = items.find((i) => i.id === waitLinkOpenForId);
+        if (!target) return null;
+        const url = `${waitLinkBaseUrl.replace(/\/$/, "")}/${encodeURIComponent(
+          waitLinkSalonSlug,
+        )}/wait/${target.id}`;
+        return (
+          <CustomerWaitLinkModal
+            open
+            url={url}
+            customerName={target.client_name}
+            onClose={() => setWaitLinkOpenForId(null)}
+            labels={labels.waitLinkModal}
+          />
+        );
+      })() : null}
     </aside>
   );
 }

@@ -1808,6 +1808,10 @@ function ReceptionistCenterInner({
                 onSetSoftHold={onSetSoftHold}
                 onClearSoftHold={onClearSoftHold}
                 rushMode={rush.active}
+                waitLinkBaseUrl={
+                  typeof window !== "undefined" ? window.location.origin : ""
+                }
+                waitLinkSalonSlug={slug}
                 onCancelWalkin={onCancelWalkin}
                 onStartAssign={(id) => setAssigningWalkinId(id)}
                 onCancelAssign={() => setAssigningWalkinId(null)}
@@ -1847,6 +1851,8 @@ function ReceptionistCenterInner({
                   softHoldClear: rcMessages.queue.softHoldClear,
                   softHoldLabel: rcMessages.queue.softHoldLabel,
                   softHoldCountdown: rcMessages.queue.softHoldCountdown,
+                  waitLinkButton: rcMessages.queue.waitLinkButton,
+                  waitLinkModal: rcMessages.queue.waitLinkModal,
                   addForm: {
                     ...rcMessages.queue.addForm,
                     invalidPhone: rcMessages.walkin.invalidPhone,

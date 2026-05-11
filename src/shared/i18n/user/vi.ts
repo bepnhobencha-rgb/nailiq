@@ -556,6 +556,16 @@ export const userVi: UserMessages = {
       softHoldLabel: "Giữ chỗ",
       softHoldCountdown: (n: number) => `${n} phút còn lại`,
       softHoldExpiredNotice: "Hết giờ giữ chỗ — {name}",
+      waitLinkButton: "Gửi link chờ",
+      waitLinkModal: {
+        title: "Link theo dõi cho khách",
+        instruction:
+          "Cho {name} quét mã QR hoặc sao chép link gửi qua SMS.",
+        copyLink: "Sao chép link",
+        copied: "Đã sao chép!",
+        openLink: "Mở link",
+        closeAria: "Đóng",
+      },
       addForm: {
         namePlaceholder: "Tên khách",
         phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
