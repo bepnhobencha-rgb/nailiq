@@ -102,8 +102,9 @@ test.describe("Copy & i18n live-render check", () => {
 
   test.describe("register page", () => {
     for (const lang of ["en", "vi"] as const) {
-      test(`/register?lang=${lang}`, async ({ page }) => {
-        await page.goto(`/register?lang=${lang}`);
+      test(`/register renders ${lang} without leaked keys`, async ({ page }) => {
+        await presetUserLang(page, lang);
+        await page.goto("/register");
         await page.waitForLoadState("networkidle");
         await assertNoLeakedKeys(page, lang);
       });
