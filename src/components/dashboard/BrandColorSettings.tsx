@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/Button";
+import { extractBrandFromWebsite } from "@/shared/dashboard/extractBrandFromWebsiteAction";
 import {
   updateBrandColor,
   updateSalonThemeMode,
@@ -58,6 +59,24 @@ export function BrandColorSettings({
   const [isPending, startTransition] = useTransition();
   const [isThemePending, startThemeTransition] = useTransition();
 
+  // Brand-from-URL extractor (PR #114): owner pastes website URL,
+  // Claude Vision returns suggested color + theme, owner reviews
+  // and clicks Apply to persist via the existing update actions.
+  type ExtractState =
+    | { kind: "idle" }
+    | { kind: "loading" }
+    | {
+        kind: "ready";
+        sourceUrl: string;
+        imageUrl: string;
+        primary_color: string;
+        theme_mode: "dark" | "light";
+      }
+    | { kind: "error"; message: string };
+  const [urlDraft, setUrlDraft] = useState("");
+  const [extract, setExtract] = useState<ExtractState>({ kind: "idle" });
+  const [isExtracting, startExtractTransition] = useTransition();
+
   useEffect(() => {
     setColor(safeInitial);
     setHexDraft(safeInitial);
@@ -85,6 +104,54 @@ export function BrandColorSettings({
         router.refresh();
       })();
     });
+  };
+
+  const onExtract = () => {
+    const trimmed = urlDraft.trim();
+    if (!trimmed) return;
+    setExtract({ kind: "loading" });
+    startExtractTransition(() => {
+      void (async () => {
+        const r = await extractBrandFromWebsite(slug, trimmed);
+        if (!r.ok) {
+          setExtract({
+            kind: "error",
+            message:
+              r.error === "invalid_url"
+                ? t.extract.errorInvalidUrl
+                : r.error === "fetch_failed"
+                  ? t.extract.errorFetchFailed
+                  : r.error === "no_image"
+                    ? t.extract.errorNoImage
+                    : r.error === "missing_api_key"
+                      ? t.extract.errorMissingKey
+                      : t.extract.errorGeneric,
+          });
+          return;
+        }
+        setExtract({
+          kind: "ready",
+          sourceUrl: r.sourceUrl,
+          imageUrl: r.imageUrl,
+          primary_color: r.primary_color,
+          theme_mode: r.theme_mode,
+        });
+      })();
+    });
+  };
+
+  const onApplyExtract = () => {
+    if (extract.kind !== "ready") return;
+    const targetColor = extract.primary_color;
+    const targetTheme = extract.theme_mode;
+    // Local optimistic flip — picker shows the suggestion immediately.
+    setColor(targetColor);
+    setHexDraft(targetColor);
+    setError(null);
+    persist(targetColor);
+    if (targetTheme !== themeMode) persistThemeMode(targetTheme);
+    // Keep the result card around with a "applied" hint until the
+    // owner explicitly clears it via another extract.
   };
 
   const dirty = color.toUpperCase() !== savedColor.toUpperCase();
@@ -162,6 +229,92 @@ export function BrandColorSettings({
       <p className="mt-1 text-xs leading-relaxed text-nq-muted">
         {t.intro}
       </p>
+
+      <div
+        data-testid="brand-color-from-url"
+        className="mt-3 rounded-xl border border-nq-muted/30 bg-nq-bg/40 p-3"
+      >
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+          {t.extract.sectionLabel}
+        </p>
+        <p className="mt-1 text-[11px] leading-snug text-nq-muted">
+          {t.extract.hint}
+        </p>
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+          <input
+            type="url"
+            inputMode="url"
+            placeholder={t.extract.placeholder}
+            value={urlDraft}
+            disabled={isExtracting}
+            onChange={(e) => setUrlDraft(e.target.value)}
+            data-testid="brand-color-url-input"
+            className="h-11 w-full rounded-md border border-nq-muted/35 bg-nq-bg px-3 text-sm text-nq-foreground placeholder:text-nq-muted/70 focus:border-nq-primary focus:outline-none focus:ring-2 focus:ring-nq-primary/35 disabled:opacity-60"
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={onExtract}
+            disabled={!urlDraft.trim() || isExtracting}
+            data-testid="brand-color-url-extract"
+          >
+            {isExtracting ? t.extract.extracting : t.extract.extract}
+          </Button>
+        </div>
+
+        {extract.kind === "error" ? (
+          <p
+            role="alert"
+            className="mt-2 text-[11px] text-nq-error"
+            data-testid="brand-color-url-error"
+          >
+            {extract.message}
+          </p>
+        ) : null}
+
+        {extract.kind === "ready" ? (
+          <div
+            data-testid="brand-color-url-result"
+            className="mt-2 flex items-start gap-3 rounded-md border border-nq-muted/35 bg-nq-surface px-2.5 py-2"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={extract.imageUrl}
+              alt=""
+              className="h-12 w-12 shrink-0 rounded object-cover"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[11px] text-nq-muted">
+                {extract.sourceUrl}
+              </p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <span
+                  className="inline-flex h-5 w-5 shrink-0 rounded border border-nq-muted/40"
+                  style={{ backgroundColor: extract.primary_color }}
+                  aria-hidden
+                />
+                <span className="font-mono text-xs tabular-nums">
+                  {extract.primary_color}
+                </span>
+                <span className="rounded-full border border-nq-muted/35 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-nq-muted">
+                  {extract.theme_mode}
+                </span>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={onApplyExtract}
+              disabled={isPending || isThemePending}
+              data-testid="brand-color-url-apply"
+            >
+              {t.extract.apply}
+            </Button>
+          </div>
+        ) : null}
+      </div>
 
       <div className="mt-3">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
