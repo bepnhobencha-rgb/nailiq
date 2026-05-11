@@ -23,6 +23,11 @@ import {
   type QueueRequestTag,
   type QueueSource,
 } from "@/shared/types";
+import type {
+  ClientLookupProfile,
+  ClientLookupResult,
+} from "@/shared/dashboard/lookupClientByPhoneAction";
+import { maskPhonePartial } from "@/shared/lib/maskPhone";
 
 export interface WalkinAddFormProps {
   services: Array<{
@@ -66,7 +71,47 @@ export interface WalkinAddFormProps {
     requestTagRemove: (label: string) => string;
     /** "Khách yêu cầu thợ này" checkbox label. */
     staffRequestedByClient: string;
+    /** Phone-lookup card copy. */
+    returningCustomer: string;
+    newCustomer: string;
+    /** "VIP · {visits} visits · ${total}" template — interpolates
+     * `{visits}` and `{total}` via simple string replace. */
+    profileSummary: string;
+    /** "Last visit: {when}" — `{when}` is a localized relative phrase. */
+    lastVisitLine: string;
+    /** "Usual: {service}" line on the client card. */
+    usualServiceLine: string;
+    /** "Often with: {staff}" line on the client card. */
+    favoriteStaffLine: string;
+    /** Loading hint shown next to phone field while debounce fires. */
+    lookupLoading: string;
+    /** Aria label for the spinner. */
+    lookupLoadingAria: string;
+    /** Header text when "found" card is rendered. */
+    returningCustomerHeader: string;
+    /** VIP pill label. */
+    vipBadge: string;
+    /** Heart-prefix for top staff line, e.g. "❤️ Often with {name}" */
+    favoriteStaffPrefix: string;
+    /** Notes label prefix shown above the notes paragraph. */
+    notesLabel: string;
+    /** "Just now" / "Today" / "{n} days ago" / "{n} weeks ago" — used by
+     * formatRelativeShort below. */
+    relative: {
+      justNow: string;
+      today: string;
+      daysAgo: (n: number) => string;
+      weeksAgo: (n: number) => string;
+      monthsAgo: (n: number) => string;
+    };
   };
+  /**
+   * Phone lookup hook (parent calls the server action). When provided,
+   * the form debounces phone changes and shows a client card on hit.
+   * When omitted, the lookup UI is hidden — keeps the form usable
+   * outside ReceptionistCenter (storybook, tests).
+   */
+  onPhoneLookup?: (phone: string) => Promise<ClientLookupResult>;
   /** Async callback — parent calls server action */
   onSubmit: (input: {
     clientName: string;
@@ -74,8 +119,9 @@ export interface WalkinAddFormProps {
     serviceId: string;
     staffRequestNote: string | null;
     /** Explicit "khách yêu cầu thợ này" checkbox. Walk-ins where the
-     * note has visible content are also treated as requested by the
-     * server, so callers don't have to coordinate the two. */
+     * note has visible content are also treated as requested server-side.
+     * Auto-set by the phone-lookup card when the customer has a
+     * top-staff history. */
     staffRequestedByClient: boolean;
     walkinSource: QueueSource | null;
     walkinPriority: QueuePriority | null;
@@ -98,10 +144,38 @@ function formatServicePrice(priceCents: number): string {
 
 const TOP_SERVICE_COUNT = 6;
 
+const PHONE_LOOKUP_DEBOUNCE_MS = 600;
+const PHONE_LOOKUP_MIN_DIGITS = 8;
+
+type LookupState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "found"; phoneMasked: string; profile: ClientLookupProfile }
+  | { kind: "not_found" }
+  | { kind: "error" };
+
+function formatRelativeShort(
+  iso: string,
+  now: Date,
+  copy: WalkinAddFormProps["labels"]["relative"],
+): string {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "";
+  const diffMs = now.getTime() - t;
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  const days = Math.floor(diffMs / oneDayMs);
+  if (days <= 0) return copy.today;
+  if (days < 1) return copy.justNow;
+  if (days < 14) return copy.daysAgo(days);
+  if (days < 60) return copy.weeksAgo(Math.floor(days / 7));
+  return copy.monthsAgo(Math.floor(days / 30));
+}
+
 export function WalkinAddForm({
   services,
   labels,
   onSubmit,
+  onPhoneLookup,
   disabled = false,
   isOffline = false,
   offlineDisabledHint,
@@ -135,6 +209,17 @@ export function WalkinAddForm({
   const [requestTags, setRequestTags] = useState<QueueRequestTag[]>([]);
   const [tagDraft, setTagDraft] = useState("");
 
+  // Phone-lookup state — driven by debounced phone changes when the
+  // parent passes onPhoneLookup. See `useEffect` block below.
+  const [lookup, setLookup] = useState<LookupState>({ kind: "idle" });
+  // Track which phone digit-string the lookup result corresponds to,
+  // so the card disappears when the user edits to a different number.
+  const lookupRequestSeqRef = useRef(0);
+  // Snapshot of fields auto-applied from the last lookup. When the
+  // user types over them we don't want a stale prefill to keep
+  // overwriting their input on every render.
+  const autoFilledForPhoneRef = useRef<string | null>(null);
+
   // Offline locks every interactive control except read-only fields,
   // matching the existing `disabled` semantic; the inline hint below
   // the submit gives the receptionist offline-specific copy so they
@@ -164,6 +249,70 @@ export function WalkinAddForm({
     return out;
   }, [popularServiceIds, services]);
 
+  // Debounced phone lookup. Fires only when:
+  //   - parent supplied an `onPhoneLookup` (sidebar / center wires it),
+  //   - the entered phone passes validation AND has ≥ 8 digits, AND
+  //   - the user hasn't typed for PHONE_LOOKUP_DEBOUNCE_MS.
+  // Stale-result guard via lookupRequestSeqRef so an in-flight result
+  // for an older phone doesn't override a newer one.
+  useEffect(() => {
+    if (!onPhoneLookup) return;
+    const trimmed = clientPhone.trim();
+    if (trimmed.length === 0) {
+      setLookup({ kind: "idle" });
+      autoFilledForPhoneRef.current = null;
+      return;
+    }
+    const validation = validateGuestPhone(trimmed);
+    if (!validation.ok || validation.digits.length < PHONE_LOOKUP_MIN_DIGITS) {
+      setLookup({ kind: "idle" });
+      autoFilledForPhoneRef.current = null;
+      return;
+    }
+
+    const targetDigits = validation.digits;
+    const seq = ++lookupRequestSeqRef.current;
+    const timer = window.setTimeout(async () => {
+      setLookup({ kind: "loading" });
+      try {
+        const result = await onPhoneLookup(trimmed);
+        if (lookupRequestSeqRef.current !== seq) return; // stale
+        if (!result.ok) {
+          setLookup({ kind: "error" });
+          return;
+        }
+        if (result.found) {
+          setLookup({
+            kind: "found",
+            phoneMasked: maskPhonePartial(result.phone),
+            profile: result.profile,
+          });
+          // Auto-fill (only once per phone — don't fight the user's
+          // edits on subsequent renders).
+          if (autoFilledForPhoneRef.current !== targetDigits) {
+            autoFilledForPhoneRef.current = targetDigits;
+            const profileName = result.profile.name?.trim() ?? "";
+            if (profileName) setClientName(profileName);
+            if (result.profile.top_service?.id) {
+              setSelectedServiceId(result.profile.top_service.id);
+            }
+            if (result.profile.top_staff?.id) {
+              setStaffRequestedByClient(true);
+            }
+          }
+        } else {
+          setLookup({ kind: "not_found" });
+          autoFilledForPhoneRef.current = null;
+        }
+      } catch {
+        if (lookupRequestSeqRef.current !== seq) return;
+        setLookup({ kind: "error" });
+      }
+    }, PHONE_LOOKUP_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [clientPhone, onPhoneLookup]);
+
   const resetAfterSuccess = useCallback(() => {
     setClientName("");
     setClientPhone("");
@@ -178,6 +327,8 @@ export function WalkinAddForm({
     setWalkinPriority("");
     setRequestTags([]);
     setTagDraft("");
+    setLookup({ kind: "idle" });
+    autoFilledForPhoneRef.current = null;
     queueMicrotask(() => nameRef.current?.focus());
   }, []);
 
@@ -459,6 +610,38 @@ export function WalkinAddForm({
             {phoneError}
           </p>
         ) : null}
+
+        {onPhoneLookup && lookup.kind === "loading" ? (
+          <p
+            role="status"
+            aria-label={labels.lookupLoadingAria}
+            className="inline-flex items-center gap-1.5 text-xs text-nq-muted"
+            data-testid="walkin-phone-lookup-loading"
+          >
+            <span
+              aria-hidden
+              className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-nq-primary/80"
+            />
+            {labels.lookupLoading}
+          </p>
+        ) : null}
+
+        {onPhoneLookup && lookup.kind === "not_found" ? (
+          <p
+            className="rounded-md border border-nq-info/35 bg-nq-info/10 px-2.5 py-1.5 text-xs text-nq-foreground"
+            data-testid="walkin-phone-lookup-newcustomer"
+          >
+            {labels.newCustomer}
+          </p>
+        ) : null}
+
+        {onPhoneLookup && lookup.kind === "found" ? (
+          <ClientLookupCard
+            phoneMasked={lookup.phoneMasked}
+            profile={lookup.profile}
+            labels={labels}
+          />
+        ) : null}
       </div>
 
       {popularServices.length > 0 ? (
@@ -727,6 +910,7 @@ export function WalkinAddForm({
           checked={staffRequestedByClient}
           onChange={(e) => setStaffRequestedByClient(e.target.checked)}
           disabled={formLocked}
+          data-testid="walkin-requested-by-client"
           className="mt-0.5 size-4 cursor-pointer accent-nq-primary"
         />
         <span className="leading-snug">{labels.staffRequestedByClient}</span>
@@ -766,5 +950,92 @@ export function WalkinAddForm({
         {submitting ? labels.submitting : labels.addButton}
       </Button>
     </form>
+  );
+}
+
+function ClientLookupCard({
+  phoneMasked,
+  profile,
+  labels,
+}: {
+  phoneMasked: string;
+  profile: ClientLookupProfile;
+  labels: WalkinAddFormProps["labels"];
+}) {
+  const now = new Date();
+  const lastVisitText = profile.last_visit_at
+    ? formatRelativeShort(profile.last_visit_at, now, labels.relative)
+    : null;
+  const totalSpent = formatServicePrice(profile.total_spent_cents);
+  const summary = labels.profileSummary
+    .replace("{count}", String(profile.visit_count))
+    .replace("{total}", totalSpent);
+  const noteIsWarning =
+    !!profile.notes && profile.notes.includes("⚠️");
+
+  return (
+    <div
+      role="status"
+      data-testid="walkin-phone-lookup-card"
+      className={cn(
+        "mt-1 space-y-1 rounded-md border bg-nq-surface px-2.5 py-2 text-xs text-nq-foreground",
+        profile.is_vip
+          ? "border-amber-400/60 ring-1 ring-amber-300/40"
+          : "border-nq-muted/35",
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate font-semibold">
+            {profile.name?.trim() || labels.returningCustomerHeader}
+          </span>
+          {profile.is_vip ? (
+            <span
+              data-testid="walkin-phone-lookup-vip"
+              className="inline-flex items-center rounded-full bg-amber-400/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700"
+            >
+              {labels.vipBadge}
+            </span>
+          ) : null}
+        </div>
+        <span className="shrink-0 font-mono text-[10px] tabular-nums text-nq-muted">
+          {phoneMasked}
+        </span>
+      </div>
+      <p className="text-[11px] text-nq-muted">{summary}</p>
+      {lastVisitText ? (
+        <p className="text-[11px] text-nq-muted">
+          {labels.lastVisitLine.replace("{date}", lastVisitText)}
+        </p>
+      ) : null}
+      {profile.top_service ? (
+        <p className="text-[11px] text-nq-muted">
+          {labels.usualServiceLine.replace(
+            "{service}",
+            profile.top_service.name,
+          )}
+        </p>
+      ) : null}
+      {profile.top_staff ? (
+        <p className="text-[11px] text-nq-muted">
+          <span aria-hidden>❤️ </span>
+          {labels.favoriteStaffPrefix.replace(
+            "{name}",
+            profile.top_staff.name,
+          )}
+        </p>
+      ) : null}
+      {profile.notes ? (
+        <p
+          className={cn(
+            "text-[11px]",
+            noteIsWarning ? "font-semibold text-nq-error" : "text-nq-muted",
+          )}
+        >
+          <span className="font-semibold">{labels.notesLabel}: </span>
+          {profile.notes}
+        </p>
+      ) : null}
+    </div>
   );
 }

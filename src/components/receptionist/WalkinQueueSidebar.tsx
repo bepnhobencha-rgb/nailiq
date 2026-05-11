@@ -59,6 +59,8 @@ export interface WalkinQueueSidebarProps {
   };
   /** Callbacks */
   onAddWalkin: WalkinAddFormProps["onSubmit"];
+  /** Phone lookup hook — server action for client_profile + per-salon stats. */
+  onPhoneLookup?: WalkinAddFormProps["onPhoneLookup"];
   onCancelWalkin: (bookingId: string) => Promise<void>;
   onStartAssign: (bookingId: string) => void;
   onCancelAssign: () => void;
@@ -97,6 +99,7 @@ export function WalkinQueueSidebar({
   services,
   labels,
   onAddWalkin,
+  onPhoneLookup,
   onCancelWalkin,
   onStartAssign,
   onCancelAssign,
@@ -158,6 +161,7 @@ export function WalkinQueueSidebar({
             services={services}
             labels={labels.addForm}
             onSubmit={onAddWalkin}
+            onPhoneLookup={onPhoneLookup}
             disabled={addFormDisabled}
             isOffline={isOffline}
             offlineDisabledHint={offlineAddDisabledHint}

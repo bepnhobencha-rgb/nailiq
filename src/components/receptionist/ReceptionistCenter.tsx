@@ -67,6 +67,7 @@ import {
   cancelWaitingWalkin,
   undoWalkinAssignment,
 } from "@/shared/dashboard/receptionistActions";
+import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
 import {
   type UpdateBookingStatusResult,
   updateBookingStatus,
@@ -1582,6 +1583,7 @@ function ReceptionistCenterInner({
                 }))}
                 nowIso={nowIso}
                 onAddWalkin={onAddWalkin}
+                onPhoneLookup={(phone) => lookupClientByPhone(slug, phone)}
                 onCancelWalkin={onCancelWalkin}
                 onStartAssign={(id) => setAssigningWalkinId(id)}
                 onCancelAssign={() => setAssigningWalkinId(null)}

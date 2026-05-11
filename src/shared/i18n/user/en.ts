@@ -576,6 +576,30 @@ export type UserMessages = {
         /** Walk-in form checkbox: "khách yêu cầu thợ này". Drives the
          * ❤️ icon on the resulting booking chip. */
         staffRequestedByClient: string;
+        /** Phone-lookup card copy (PR #100). */
+        returningCustomer: string;
+        newCustomer: string;
+        returningCustomerHeader: string;
+        vipBadge: string;
+        /** "{count} visits · {total} total" — interpolate {count} and {total}. */
+        profileSummary: string;
+        /** "Last visit: {date}" — interpolate {date}. */
+        lastVisitLine: string;
+        /** "Usual: {service}" — interpolate {service}. */
+        usualServiceLine: string;
+        /** "❤️ Often with {name}" — interpolate {name}. */
+        favoriteStaffPrefix: string;
+        favoriteStaffLine: string;
+        notesLabel: string;
+        lookupLoading: string;
+        lookupLoadingAria: string;
+        relative: {
+          justNow: string;
+          today: string;
+          daysAgo: (n: number) => string;
+          weeksAgo: (n: number) => string;
+          monthsAgo: (n: number) => string;
+        };
       };
     };
     walkin: {
@@ -1431,6 +1455,25 @@ export const userEn: UserMessages = {
         requestTagAdd: "Add",
         requestTagRemove: (label: string) => `Remove ${label}`,
         staffRequestedByClient: "Customer requested this staff",
+        returningCustomer: "Returning customer",
+        newCustomer: "New customer",
+        returningCustomerHeader: "Returning customer",
+        vipBadge: "VIP",
+        profileSummary: "{count} visits · {total} total",
+        lastVisitLine: "Last visit: {date}",
+        usualServiceLine: "Usual: {service}",
+        favoriteStaffPrefix: "Often with {name}",
+        favoriteStaffLine: "Often with {name}",
+        notesLabel: "Note",
+        lookupLoading: "Looking up…",
+        lookupLoadingAria: "Searching customer history",
+        relative: {
+          justNow: "Just now",
+          today: "Today",
+          daysAgo: (n: number) => `${n} day${n === 1 ? "" : "s"} ago`,
+          weeksAgo: (n: number) => `${n} week${n === 1 ? "" : "s"} ago`,
+          monthsAgo: (n: number) => `${n} month${n === 1 ? "" : "s"} ago`,
+        },
       },
     },
     walkin: {
