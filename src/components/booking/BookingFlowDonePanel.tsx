@@ -166,7 +166,7 @@ export function BookingFlowDonePanel({
     >
       <div className="flex flex-col items-center text-center">
         <div
-          className="flex h-[5.25rem] w-[5.25rem] shrink-0 items-center justify-center rounded-full bg-nq-primary text-nq-bg ring-4 ring-nq-primary/25"
+          className="flex h-[5.25rem] w-[5.25rem] shrink-0 items-center justify-center rounded-full bg-[var(--salon-primary)] text-nq-bg ring-4 ring-[color-mix(in_srgb,var(--salon-primary)_25%,transparent)]"
           aria-hidden
         >
           <svg
@@ -185,7 +185,7 @@ export function BookingFlowDonePanel({
           {t.successHeading}
         </h2>
         {staffLine ? (
-          <p className="mt-3 text-lg font-medium tracking-tight text-nq-primary">
+          <p className="mt-3 text-lg font-medium tracking-tight text-[var(--salon-primary)]">
             {staffLine}
           </p>
         ) : null}
@@ -245,7 +245,7 @@ export function BookingFlowDonePanel({
           ) : null}
           <div className="flex items-baseline justify-between gap-4 text-[15px] sm:text-base">
             <span className="font-semibold text-nq-muted">{t.summaryTime}</span>
-            <span className="min-w-0 shrink text-right font-semibold text-nq-primary">
+            <span className="min-w-0 shrink text-right font-semibold text-[var(--salon-primary)]">
               {whenLabel}
             </span>
           </div>
@@ -261,14 +261,14 @@ export function BookingFlowDonePanel({
           ) : null}
           <div className="flex items-baseline justify-between gap-4 border-t border-white/[0.06] pt-3.5 text-[15px] sm:text-base">
             <span className="font-semibold text-nq-muted">{t.summaryTotal}</span>
-            <span className="min-w-0 shrink text-right font-semibold tabular-nums text-nq-primary">
+            <span className="min-w-0 shrink text-right font-semibold tabular-nums text-[var(--salon-primary)]">
               {totalPaidFormatted}
             </span>
           </div>
         </div>
         <p className="mt-5 border-t border-white/[0.08] pt-4 text-sm text-nq-muted">
           <span className="text-nq-muted">{t.bookingReferenceLabel}: </span>
-          <span className="font-mono text-nq-primary">{refLabel}</span>
+          <span className="font-mono text-[var(--salon-primary)]">{refLabel}</span>
         </p>
       </div>
 

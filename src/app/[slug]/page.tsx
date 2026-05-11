@@ -79,16 +79,21 @@ async function PublicBookingRouteBody({
     slug: normalizedSlug,
   });
 
-  // Per-salon brand color (PR #109): inject as `--salon-primary` for
-  // any new inline-styled elements + remap `--color-nq-primary` for
-  // the entire booking subtree so existing `bg-nq-primary` /
-  // `text-nq-primary` / `border-nq-primary` Tailwind classes adopt
-  // the salon's color without per-component edits. The dashboard
-  // remains untouched because nothing under /dashboard is a child
-  // of this wrapper.
+  // Per-salon brand color (PR #109 + #110 fix): Tailwind v4's
+  // `@theme inline` block compiles `bg-nq-primary` to a literal hex
+  // at build time, so overriding `--color-nq-primary` on a wrapper
+  // does NOT cascade into utility classes (BUG that prompted this
+  // fix). Instead we expose `--salon-primary` and override the
+  // hand-rolled `:root` vars (.nq-booking-luxury-cta gradient,
+  // tile-selected shadow). Components that need the brand reference
+  // `var(--salon-primary)` directly via Tailwind arbitrary syntax
+  // (`bg-[var(--salon-primary)]`, `text-[var(--salon-primary)]`).
   const brandStyle = {
     "--salon-primary": load.salon.brandColor,
-    "--color-nq-primary": load.salon.brandColor,
+    "--nq-luxury-cta-from": `color-mix(in srgb, ${load.salon.brandColor} 75%, white 25%)`,
+    "--nq-luxury-cta-mid": load.salon.brandColor,
+    "--nq-luxury-cta-to": `color-mix(in srgb, ${load.salon.brandColor} 70%, black 30%)`,
+    "--shadow-nq-tile-selected": `0 0 0 1px ${load.salon.brandColor}, 0 18px 50px -20px rgba(0, 0, 0, 0.55), 0 0 40px -8px color-mix(in srgb, ${load.salon.brandColor} 35%, transparent)`,
   } as React.CSSProperties;
 
   if (!load.salon.acceptingBookings) {

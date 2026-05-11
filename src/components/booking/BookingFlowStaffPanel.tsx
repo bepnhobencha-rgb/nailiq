@@ -87,7 +87,7 @@ export function BookingFlowStaffPanel({
             staffId !== BOOKING_ANY_STAFF_ID && "nq-booking-tile-interactive",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
             staffId === BOOKING_ANY_STAFF_ID
-              ? "border border-[#D4AF37] shadow-[var(--shadow-nq-tile-selected)]"
+              ? "border border-[var(--salon-primary)] shadow-[var(--shadow-nq-tile-selected)]"
               : "border border-white/[0.06] hover:border-white/[0.12]",
           )}
         >
@@ -139,7 +139,7 @@ export function BookingFlowStaffPanel({
                 !selected && "nq-booking-tile-interactive",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
                 selected
-                  ? "border border-[#D4AF37] shadow-[var(--shadow-nq-tile-selected)]"
+                  ? "border border-[var(--salon-primary)] shadow-[var(--shadow-nq-tile-selected)]"
                   : "border border-white/[0.06] hover:border-white/[0.12]",
               )}
             >

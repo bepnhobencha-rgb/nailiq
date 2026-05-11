@@ -210,7 +210,7 @@ export function BookingFlowTimePanel({
                     !selected && !disabled && "nq-booking-tile-interactive",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
                     selected
-                      ? "border border-[#D4AF37] text-nq-foreground shadow-[var(--shadow-nq-tile-selected)]"
+                      ? "border border-[var(--salon-primary)] text-nq-foreground shadow-[var(--shadow-nq-tile-selected)]"
                       : disabled
                         ? "cursor-not-allowed border border-white/[0.04] text-nq-muted/50 line-through opacity-50"
                         : "border border-white/[0.06] text-nq-foreground hover:border-white/[0.12]",

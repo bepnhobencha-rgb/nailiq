@@ -163,7 +163,7 @@ export function BookingFlowConfirmPanel({
                 className={cn(
                   "rounded-full border px-4 py-2 text-sm font-medium transition-colors",
                   selectedAddonId === null
-                    ? "border-nq-primary bg-nq-primary/15 text-nq-primary"
+                    ? "border-[var(--salon-primary)] bg-[color-mix(in_srgb,var(--salon-primary)_15%,transparent)] text-[var(--salon-primary)]"
                     : "border-white/[0.12] text-nq-muted hover:border-white/[0.2]",
                 )}
               >
@@ -179,7 +179,7 @@ export function BookingFlowConfirmPanel({
                     className={cn(
                       "rounded-full border px-4 py-2 text-left text-sm font-medium transition-colors",
                       on
-                        ? "border-nq-primary bg-nq-primary/15 text-nq-primary"
+                        ? "border-[var(--salon-primary)] bg-[color-mix(in_srgb,var(--salon-primary)_15%,transparent)] text-[var(--salon-primary)]"
                         : "border-white/[0.12] text-nq-foreground hover:border-white/[0.2]",
                     )}
                   >
