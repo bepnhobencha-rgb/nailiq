@@ -435,6 +435,20 @@ export type UserMessages = {
       themeLabel: string;
       themeDark: string;
       themeLight: string;
+      /** Brand-from-URL extractor (PR #114). */
+      extract: {
+        sectionLabel: string;
+        hint: string;
+        placeholder: string;
+        extract: string;
+        extracting: string;
+        apply: string;
+        errorInvalidUrl: string;
+        errorFetchFailed: string;
+        errorNoImage: string;
+        errorMissingKey: string;
+        errorGeneric: string;
+      };
     };
   };
   /** Setup CRUD error strings (services, etc.) */
@@ -1406,6 +1420,19 @@ export const userEn: UserMessages = {
       themeLabel: "Theme",
       themeDark: "Dark",
       themeLight: "Light",
+      extract: {
+        sectionLabel: "Extract from website",
+        hint: "Paste your website URL — we'll detect the brand color from your OG image.",
+        placeholder: "https://your-salon.com",
+        extract: "Extract",
+        extracting: "Analyzing…",
+        apply: "Apply",
+        errorInvalidUrl: "That URL doesn't look right. Use https://…",
+        errorFetchFailed: "Couldn't load that page. Check the URL and try again.",
+        errorNoImage: "No OG / hero image found on that page.",
+        errorMissingKey: "Vision API not configured. Contact NailIQ support.",
+        errorGeneric: "Couldn't analyze that image. Try a different URL.",
+      },
     },
   },
   setupErrors: {
