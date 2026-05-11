@@ -2,6 +2,13 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-05-11 (landing — ReceptionistMockup)
+
+### feat(landing): replace static booking grid mockup with live-coded ReceptionistMockup
+
+- **`src/components/landing/ReceptionistMockup.tsx`** — new component. Purely decorative (`aria-hidden`), client-only (Framer Motion). Renders a mini receptionist dashboard shell: browser chrome bar with animated green "LIVE" realtime pulse dot; date sub-header with "Hôm nay" badge + lịch/chờ KPI chips; a 3-column booking grid (Linh, Mai, Hoa) showing 7 half-hour slots (9:00–12:00); 5 booking cards with status-accurate colours (confirmed=`bg-nq-info/85`, pending=amber border/tint, in_progress=`bg-nq-success/85`); one card with ❤️ staff-request icon; animated gold "now" line with ping pulse; walk-in queue panel (hidden < sm, visible sm+) with 2 entries — 5 min wait (muted) and 14 min wait (amber). All text is realistic Vietnamese salon data, no real salon records. Framer Motion: cards stagger-animate fade+slide+scale on entrance; queue entries slide in from the right. Reduced-motion respects `useReducedMotion()` — all motion disabled when `prefers-reduced-motion`.
+- **`src/components/landing/LandingHero.tsx`** — replaced inline `BookingMockup` + `Row` + `getBlocks` helper functions (5-column booking grid, `nailiq.com/your-salon` URL bar) with `<ReceptionistMockup>`. Removed dead `Block` type. Import for `cn` removed (no longer used in the file). Hero right-column layout and entrance animation unchanged.
+
 ## 2026-05-11 (pricing section — 3-plan grid)
 
 ### feat(landing): expand pricing section from 1 card to 3-plan grid
