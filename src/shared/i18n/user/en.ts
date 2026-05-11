@@ -160,12 +160,19 @@ export type UserMessages = {
       eyebrow: string;
       h2: string;
       sub: string;
-      mostPopular: string;
       perMonth: string;
       taxNote: string;
-      features: ReadonlyArray<string>;
-      cta: string;
       ccNotice: string;
+      plans: ReadonlyArray<{
+        /** "free" | "pro" | "studio" — component uses id to apply highlight + CTA logic */
+        id: string;
+        name: string;
+        price: string;
+        /** Badge text (e.g. "Most Popular"). Null means no badge, but a spacer is rendered for vertical alignment. */
+        badge: string | null;
+        features: ReadonlyArray<string>;
+        cta: string;
+      }>;
     };
     finalCta: {
       eyebrow: string;
@@ -1175,20 +1182,56 @@ export const userEn: UserMessages = {
     },
     pricing: {
       eyebrow: "Pricing",
-      h2: "One simple plan",
-      sub: "No hidden fees. Cancel anytime.",
-      mostPopular: "Most Popular",
+      h2: "Simple, transparent pricing",
+      sub: "No hidden fees. Upgrade or cancel anytime.",
       perMonth: "/month",
       taxNote: "+ applicable taxes. CAD pricing.",
-      features: [
-        "All features included",
-        "Unlimited bookings & walk-ins",
-        "Vietnamese & English support",
-        "Real-time receptionist center",
-        "Cancel anytime — no contract",
-      ],
-      cta: "Start your 14-day free trial",
       ccNotice: "No credit card required",
+      plans: [
+        {
+          id: "free",
+          name: "Free",
+          price: "$0",
+          badge: null,
+          features: [
+            "1 staff member",
+            "Up to 10 services",
+            "Online booking link",
+            "Walk-in queue",
+            "Vietnamese & English support",
+          ],
+          cta: "Get started free",
+        },
+        {
+          id: "pro",
+          name: "Pro",
+          price: "$29",
+          badge: "Most Popular",
+          features: [
+            "Up to 10 staff",
+            "Up to 50 services",
+            "Real-time receptionist center",
+            "Owner reports & analytics",
+            "Audit log",
+            "Cancel anytime — no contract",
+          ],
+          cta: "Start 14-day free trial",
+        },
+        {
+          id: "studio",
+          name: "Studio",
+          price: "$59",
+          badge: null,
+          features: [
+            "Unlimited staff",
+            "Unlimited services",
+            "Everything in Pro",
+            "Multi-location (coming soon)",
+            "Priority support",
+          ],
+          cta: "Coming soon",
+        },
+      ],
     },
     finalCta: {
       eyebrow: "One last thing",
