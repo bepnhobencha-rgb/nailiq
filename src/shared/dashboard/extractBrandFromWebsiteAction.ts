@@ -4,32 +4,39 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isValidBrandColor } from "@/shared/lib/brandColor";
 
 /**
- * Extract a salon's brand color + theme mode from a public website
- * URL using Claude Vision.
+ * Extract a salon's brand color + theme mode from a direct image URL
+ * (logo, hero, OG asset — anything the owner can paste a link to)
+ * using Claude Vision.
+ *
+ * The previous version of this action fetched the salon's website
+ * HTML server-side and parsed `<meta og:image>` to find a brand
+ * asset. Wix / Cloudflare / Squarespace bot-protection consistently
+ * 403'd the server fetch even with browser-mimicking headers, so
+ * the strategy now is to ask the owner for the image URL directly
+ * and skip the HTML round-trip entirely.
  *
  * Flow:
  *   1. Salon-member gate via `getDashboardWriteClient`.
- *   2. Fetch the page HTML (no auth — public URLs only).
- *   3. Parse `<meta property="og:image">` (or the Twitter card image
- *      as fallback) — the OG image is the salon's hero / brand
- *      asset, so Claude gets a clean colour signal instead of the
- *      whole DOM.
- *   4. Send image URL to Claude (`claude-sonnet-4-6`) with a
- *      schema-tight prompt.
- *   5. Return `{ primary_color, theme_mode }` for the receptionist
- *      to preview + Apply.
+ *   2. Validate the URL (http/https only).
+ *   3. Pass the URL to Claude Vision (`source: { type: "url" }`) —
+ *      Anthropic fetches the image from their network, so we don't
+ *      touch the image bytes ourselves (no SSRF surface, no CDN
+ *      block hassles).
+ *   4. Parse the JSON response and validate against the same
+ *      `#RRGGBB` constraint the DB CHECK uses.
  *
  * The owner ALWAYS has the final say — this action does not persist
  * `salons.brand_color` itself. The settings UI calls
- * `updateBrandColor` separately once the owner clicks Apply.
+ * `updateBrandColor` + `updateSalonThemeMode` once Apply is clicked.
  */
 
 export type ExtractBrandResult =
   | {
       ok: true;
+      /** Echoed back to the UI for the source-link display (same as
+       *  `imageUrl` in this flow; both retained so the existing UI
+       *  layout doesn't need a separate redesign). */
       sourceUrl: string;
-      /** OG image / Twitter card image URL the model saw. Surfaced so the
-       * UI can show a preview of what was analysed. */
       imageUrl: string;
       primary_color: string;
       theme_mode: "light" | "dark";
@@ -39,21 +46,10 @@ export type ExtractBrandResult =
       error:
         | "unauthorized"
         | "invalid_url"
-        | "fetch_failed"
-        | "no_image"
         | "vision_failed"
         | "invalid_response"
         | "missing_api_key";
     };
-
-const META_OG_IMAGE_RE = /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["'][^>]*>/i;
-const META_TWITTER_IMAGE_RE =
-  /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["'][^>]*>/i;
-const META_OG_IMAGE_REVERSE_RE =
-  /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["'][^>]*>/i;
-
-const HTML_FETCH_TIMEOUT_MS = 8_000;
-const HTML_MAX_BYTES = 1_000_000; // 1MB — guards against huge pages
 
 function normalizeUrl(raw: string): string | null {
   const trimmed = String(raw ?? "").trim();
@@ -68,97 +64,27 @@ function normalizeUrl(raw: string): string | null {
   }
 }
 
-function resolveImageUrl(raw: string, baseUrl: string): string | null {
-  try {
-    return new URL(raw, baseUrl).toString();
-  } catch {
-    return null;
-  }
-}
-
-export async function extractBrandFromWebsite(
+export async function extractBrandFromImageUrl(
   slug: string,
   rawUrl: string,
 ): Promise<ExtractBrandResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
 
-  const url = normalizeUrl(rawUrl);
-  if (!url) return { ok: false, error: "invalid_url" };
+  const imageUrl = normalizeUrl(rawUrl);
+  if (!imageUrl) return { ok: false, error: "invalid_url" };
 
   // Bracket access keeps the literal off the secret-scanner pre-commit
   // hook's regex (apiKey = process.env.X looks like a key-value pair).
   const visionKey = process.env["ANTHROPIC_API_KEY"];
   if (!visionKey) {
-    console.error("[extractBrandFromWebsite] ANTHROPIC_API_KEY missing");
+    console.error("[extractBrandFromImageUrl] ANTHROPIC_API_KEY missing");
     return { ok: false, error: "missing_api_key" };
   }
 
-  // 1. Fetch page HTML with a timeout + size cap.
-  let html: string;
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), HTML_FETCH_TIMEOUT_MS);
-    const res = await fetch(url, {
-      method: "GET",
-      headers: {
-        // Mimic a recent Chrome on macOS closely enough to pass the
-        // heuristic bot gates run by Wix / Cloudflare / Squarespace.
-        // The bare `NailIQ/1.0` UA + `Accept: text/html` minimal pair
-        // gets 403'd or served a JS-challenge page on Wix-hosted
-        // sites (observed against technailssalon.ca). The full
-        // `Sec-Fetch-*` triad in particular is what most bot
-        // protectors key on now.
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Cache-Control": "no-cache",
-        Pragma: "no-cache",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-      },
-      signal: ctrl.signal,
-      // Don't follow infinite redirect chains.
-      redirect: "follow",
-    });
-    clearTimeout(timer);
-    if (!res.ok) {
-      console.warn("[extractBrandFromWebsite] non-ok fetch", {
-        url,
-        status: res.status,
-      });
-      return { ok: false, error: "fetch_failed" };
-    }
-    const buffer = await res.arrayBuffer();
-    if (buffer.byteLength > HTML_MAX_BYTES) {
-      console.warn("[extractBrandFromWebsite] html too large", {
-        url,
-        bytes: buffer.byteLength,
-      });
-      return { ok: false, error: "fetch_failed" };
-    }
-    html = new TextDecoder("utf-8").decode(buffer);
-  } catch (e) {
-    console.error("[extractBrandFromWebsite] fetch", { url, error: e });
-    return { ok: false, error: "fetch_failed" };
-  }
-
-  // 2. Pull the OG / Twitter card image URL out of the HTML.
-  const ogMatch =
-    html.match(META_OG_IMAGE_RE) ??
-    html.match(META_OG_IMAGE_REVERSE_RE) ??
-    html.match(META_TWITTER_IMAGE_RE);
-  if (!ogMatch || !ogMatch[1]) {
-    return { ok: false, error: "no_image" };
-  }
-  const imageUrl = resolveImageUrl(ogMatch[1], url);
-  if (!imageUrl) return { ok: false, error: "no_image" };
-
-  // 3. Ask Claude Vision for the brand color + theme mode.
+  // Ask Claude Vision for the brand color + theme mode. Anthropic
+  // fetches the image URL from their network, so the bot-protection
+  // problems we hit doing it server-side go away.
   let vision;
   try {
     vision = await fetch("https://api.anthropic.com/v1/messages", {
@@ -189,12 +115,12 @@ export async function extractBrandFromWebsite(
       }),
     });
   } catch (e) {
-    console.error("[extractBrandFromWebsite] anthropic fetch", e);
+    console.error("[extractBrandFromImageUrl] anthropic fetch", e);
     return { ok: false, error: "vision_failed" };
   }
   if (!vision.ok) {
     const body = await vision.text().catch(() => "");
-    console.error("[extractBrandFromWebsite] anthropic non-ok", {
+    console.error("[extractBrandFromImageUrl] anthropic non-ok", {
       status: vision.status,
       body: body.slice(0, 300),
     });
@@ -207,7 +133,7 @@ export async function extractBrandFromWebsite(
   try {
     payload = (await vision.json()) as AnthropicMessage;
   } catch (e) {
-    console.error("[extractBrandFromWebsite] anthropic json parse", e);
+    console.error("[extractBrandFromImageUrl] anthropic json parse", e);
     return { ok: false, error: "vision_failed" };
   }
   const textBlock = (payload.content ?? []).find(
@@ -239,7 +165,10 @@ export async function extractBrandFromWebsite(
 
   return {
     ok: true,
-    sourceUrl: url,
+    // In the new flow the user-supplied URL is the image; surface it
+    // in both fields so the existing UI (which renders sourceUrl as a
+    // line of text and imageUrl as the preview) still works.
+    sourceUrl: imageUrl,
     imageUrl,
     primary_color: primaryColor.toUpperCase(),
     theme_mode: themeMode,
