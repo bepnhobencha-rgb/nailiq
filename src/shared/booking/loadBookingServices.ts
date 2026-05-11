@@ -28,6 +28,9 @@ export type BookingSalonMeta = {
    * a `#RRGGBB` literal — `normalizeBrandColor` falls back to the
    * default gold when the column is missing or invalid. */
   brandColor: string;
+  /** Per-salon light/dark theme for the public booking page only.
+   * Defaults to `"dark"` for legacy rows and any invalid value. */
+  themeMode: "dark" | "light";
 };
 
 export type BookingLoadData = {
@@ -182,6 +185,10 @@ export async function loadBookingServicesForSalonSlug(
       brandColor: normalizeBrandColor(
         (salon as { brand_color?: unknown }).brand_color,
       ),
+      themeMode:
+        (salon as { theme_mode?: unknown }).theme_mode === "light"
+          ? "light"
+          : "dark",
     },
   };
 }

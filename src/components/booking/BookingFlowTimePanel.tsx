@@ -73,14 +73,14 @@ export function BookingFlowTimePanel({
     >
       <h2
         id="time-heading"
-        className="text-lg font-semibold tracking-tight text-nq-foreground sm:text-xl lg:text-[1.625rem] lg:tracking-[-0.02em]"
+        className="text-lg font-semibold tracking-tight text-[var(--booking-text)] sm:text-xl lg:text-[1.625rem] lg:tracking-[-0.02em]"
       >
         {t.stepTimeHeading}
       </h2>
 
       {timezoneAbbr ? (
         <p
-          className="mt-2 text-sm text-nq-muted lg:text-[15px]"
+          className="mt-2 text-sm text-[var(--booking-text-muted)] lg:text-[15px]"
           data-testid="slots-timezone-label"
         >
           {t.slotsTimezoneLabel.replace("{tz}", timezoneAbbr)}
@@ -105,14 +105,14 @@ export function BookingFlowTimePanel({
             {Array.from({ length: 6 }).map((_, i) => (
               <div
                 key={i}
-                className="nq-booking-glass min-h-11 rounded-2xl border border-white/[0.06] bg-white/[0.03] motion-safe:animate-pulse motion-reduce:opacity-60 sm:min-h-[3rem]"
+                className="nq-booking-glass min-h-11 rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-input)] motion-safe:animate-pulse motion-reduce:opacity-60 sm:min-h-[3rem]"
                 aria-hidden
               />
             ))}
           </div>
         ) : timeSlots.length === 0 ? (
           <div className="space-y-6 py-2">
-            <p className="text-center text-sm text-nq-muted">{t.noSlotsAvailable}</p>
+            <p className="text-center text-sm text-[var(--booking-text-muted)]">{t.noSlotsAvailable}</p>
             {waitlistSlotJoined ? (
               <p className="rounded-2xl border border-nq-success/35 bg-nq-success/12 px-4 py-3 text-center text-sm font-medium text-nq-success">
                 {t.waitlistJoined}
@@ -123,7 +123,7 @@ export function BookingFlowTimePanel({
                   <div>
                     <label
                       htmlFor="booking-waitlist-name"
-                      className="mb-2 block text-sm font-medium text-nq-foreground"
+                      className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
                     >
                       {t.clientNameLabel}
                     </label>
@@ -143,7 +143,7 @@ export function BookingFlowTimePanel({
                   <div>
                     <label
                       htmlFor="booking-waitlist-phone"
-                      className="mb-2 block text-sm font-medium text-nq-foreground"
+                      className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
                     >
                       {t.clientPhoneLabel}
                     </label>
@@ -167,7 +167,7 @@ export function BookingFlowTimePanel({
                 <Button
                   type="button"
                   variant="secondary"
-                  className="nq-booking-glass h-12 min-h-11 w-full border border-white/[0.08] text-[var(--salon-primary)] shadow-none hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="nq-booking-glass h-12 min-h-11 w-full border border-[var(--booking-border)] text-[var(--salon-primary)] shadow-none hover:bg-[var(--booking-bg-input)] disabled:cursor-not-allowed disabled:opacity-40"
                   disabled={
                     waitlistSubmitting ||
                     waitlistContactInvalid
@@ -208,12 +208,12 @@ export function BookingFlowTimePanel({
                   className={cn(
                     "nq-booking-glass min-h-11 rounded-2xl px-3 py-3 text-center text-sm font-medium tracking-tight sm:min-h-[3rem] sm:text-[15px]",
                     !selected && !disabled && "nq-booking-tile-interactive",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--booking-bg)]",
                     selected
-                      ? "border border-[var(--salon-primary)] text-nq-foreground shadow-[var(--shadow-nq-tile-selected)]"
+                      ? "border border-[var(--salon-primary)] text-[var(--booking-text)] shadow-[var(--shadow-nq-tile-selected)]"
                       : disabled
-                        ? "cursor-not-allowed border border-white/[0.04] text-nq-muted/50 line-through opacity-50"
-                        : "border border-white/[0.06] text-nq-foreground hover:border-white/[0.12]",
+                        ? "cursor-not-allowed border border-[var(--booking-border)] text-[var(--booking-text-muted)]/50 line-through opacity-50"
+                        : "border border-[var(--booking-border)] text-[var(--booking-text)] hover:border-[var(--booking-border)]",
                   )}
                 >
                   {slot.label}
@@ -228,7 +228,7 @@ export function BookingFlowTimePanel({
         <Button
           type="button"
           variant="secondary"
-          className="nq-booking-glass h-14 min-h-11 w-full shrink-0 border border-white/[0.08] text-[var(--salon-primary)] shadow-none hover:bg-white/[0.04] sm:w-auto sm:min-w-[8.5rem]"
+          className="nq-booking-glass h-14 min-h-11 w-full shrink-0 border border-[var(--booking-border)] text-[var(--salon-primary)] shadow-none hover:bg-[var(--booking-bg-input)] sm:w-auto sm:min-w-[8.5rem]"
           onClick={onBack}
         >
           {t.back}

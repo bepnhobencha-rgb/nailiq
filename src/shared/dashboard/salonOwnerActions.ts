@@ -769,3 +769,46 @@ export async function updateBrandColor(
 
   return { ok: true, brandColor: color.trim().toUpperCase() };
 }
+
+/* ───────────────── Theme mode (light / dark booking page) ───────────────── */
+
+export type UpdateThemeModeResult =
+  | { ok: true; themeMode: "dark" | "light" }
+  | { ok: false; error: "unauthorized" | "invalid_mode" | "server_error" };
+
+/**
+ * Member-gated: writes `salons.theme_mode`. Mirrors the DB CHECK
+ * constraint — only `"dark"` or `"light"` are accepted.
+ *
+ * Open to any salon member (matches `updateBrandColor` permission
+ * scope) so a senior reception can flip the booking page theme
+ * without an owner present.
+ */
+export async function updateSalonThemeMode(
+  slug: string,
+  themeMode: "dark" | "light",
+): Promise<UpdateThemeModeResult> {
+  if (themeMode !== "dark" && themeMode !== "light") {
+    return { ok: false, error: "invalid_mode" };
+  }
+
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+
+  // Cast: `theme_mode` is not yet in the auto-generated Supabase
+  // types until the next regeneration.
+  const { error: upErr } = await ctx.supabase
+    .from("salons")
+    .update({ theme_mode: themeMode } as never)
+    .eq("id", ctx.salon.id);
+
+  if (upErr) {
+    console.error("[updateSalonThemeMode]", upErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true, themeMode };
+}

@@ -469,7 +469,7 @@
     position: relative;
     overflow: hidden;
     background-color: var(--color-nq-primary);
-    color: var(--color-nq-bg);
+    color: var(--booking-bg, var(--color-nq-bg));
     border-color: transparent;
     --tw-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
     box-shadow: var(--shadow-nq-sm, var(--tw-shadow));
@@ -505,7 +505,7 @@
 
   /** Glass card — deep navy + blur(10px) per booking spec */
   .nq-booking-glass {
-    background: var(--color-nq-navy-glass);
+    background: var(--booking-bg-card, var(--color-nq-navy-glass));
     backdrop-filter: blur(10px) saturate(160%);
     -webkit-backdrop-filter: blur(10px) saturate(160%);
     border: 1px solid rgba(255, 255, 255, 0.06);
@@ -514,7 +514,7 @@
 
   /** Stronger glass for desktop salon identity card (`BookingSalonHero`) */
   .nq-booking-glass-strong-panel {
-    background: rgba(15, 23, 42, 0.62);
+    background: var(--booking-bg-card, rgba(15, 23, 42, 0.62));
     backdrop-filter: blur(20px) saturate(165%);
     -webkit-backdrop-filter: blur(20px) saturate(165%);
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -548,8 +548,11 @@
     min-height: 52px;
     width: 100%;
     border-radius: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: color-mix(in srgb, var(--color-nq-navy-deep) 78%, transparent);
+    border: 1px solid var(--booking-border, rgba(255, 255, 255, 0.08));
+    background: var(
+      --booking-bg-input,
+      color-mix(in srgb, var(--color-nq-navy-deep) 78%, transparent)
+    );
     padding: 0.75rem 1rem;
     font-size: 1rem;
     color: var(--color-nq-foreground);
@@ -563,7 +566,7 @@
   }
 
   .nq-booking-field:focus {
-    border-color: rgba(212, 175, 55, 0.75);
+    border-color: var(--brand, rgba(212, 175, 55, 0.75));
     box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.22),
       0 0 24px -6px rgba(212, 175, 55, 0.25);
   }

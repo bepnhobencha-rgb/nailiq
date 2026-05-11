@@ -47,7 +47,7 @@ export function BookingStepper({
             <li key={id} className="flex min-w-0 flex-1 items-start">
               {i > 0 ? (
                 <div
-                  className="mt-[0.42rem] h-px min-w-[6px] flex-1 bg-white/[0.12] sm:mt-[0.48rem]"
+                  className="mt-[0.42rem] h-px min-w-[6px] flex-1 bg-[var(--booking-bg-input)] sm:mt-[0.48rem]"
                   aria-hidden
                 />
               ) : null}
@@ -59,7 +59,7 @@ export function BookingStepper({
                     state === "current" &&
                       "border-[var(--salon-primary)] bg-[var(--salon-primary)] shadow-[0_0_18px_-4px_color-mix(in_srgb,var(--salon-primary)_55%,transparent)]",
                     state === "upcoming" &&
-                      "border-white/[0.22] bg-transparent",
+                      "border-[var(--booking-border)] bg-transparent",
                   )}
                   aria-hidden
                 />
@@ -67,8 +67,8 @@ export function BookingStepper({
                   className={cn(
                     "w-full text-[10px] leading-tight tracking-tight sm:line-clamp-2 sm:text-[11px] lg:text-xs",
                     state === "current"
-                      ? "font-semibold text-nq-foreground"
-                      : "text-nq-muted/75",
+                      ? "font-semibold text-[var(--booking-text)]"
+                      : "text-[var(--booking-text-muted)]/75",
                     // Below sm: only render the label for the current step so
                     // long labels (e.g. "Your details") don't wrap and shove
                     // the row onto two lines on narrow viewports.

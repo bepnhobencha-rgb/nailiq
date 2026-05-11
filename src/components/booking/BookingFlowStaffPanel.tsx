@@ -68,7 +68,7 @@ export function BookingFlowStaffPanel({
     >
       <h2
         id="staff-heading"
-        className="text-lg font-semibold tracking-tight text-nq-foreground sm:text-xl lg:text-[1.625rem] lg:tracking-[-0.02em]"
+        className="text-lg font-semibold tracking-tight text-[var(--booking-text)] sm:text-xl lg:text-[1.625rem] lg:tracking-[-0.02em]"
       >
         {t.stepStaffHeading}
       </h2>
@@ -85,21 +85,21 @@ export function BookingFlowStaffPanel({
           className={cn(
             "nq-booking-glass flex min-h-11 w-full items-center gap-3 rounded-2xl px-4 py-3.5 text-left sm:min-h-[3rem]",
             staffId !== BOOKING_ANY_STAFF_ID && "nq-booking-tile-interactive",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--booking-bg)]",
             staffId === BOOKING_ANY_STAFF_ID
               ? "border border-[var(--salon-primary)] shadow-[var(--shadow-nq-tile-selected)]"
-              : "border border-white/[0.06] hover:border-white/[0.12]",
+              : "border border-[var(--booking-border)] hover:border-[var(--booking-border)]",
           )}
         >
           <span
             className={cn(
-              "flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/[0.14] bg-white/[0.06] text-[13px] font-semibold text-nq-foreground ring-2 ring-white/[0.08]",
+              "flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--booking-border)] bg-[var(--booking-bg-input)] text-[13px] font-semibold text-[var(--booking-text)] ring-2 ring-[var(--booking-border)]",
             )}
             aria-hidden
           >
             <svg
               viewBox="0 0 24 24"
-              className="h-6 w-6 text-nq-muted"
+              className="h-6 w-6 text-[var(--booking-text-muted)]"
               fill="none"
               stroke="currentColor"
               strokeWidth={1.75}
@@ -109,10 +109,10 @@ export function BookingFlowStaffPanel({
             </svg>
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-[15px] font-medium leading-snug text-nq-foreground sm:text-base">
+            <span className="block text-[15px] font-medium leading-snug text-[var(--booking-text)] sm:text-base">
               {t.anyStaffOptionTitle}
             </span>
-            <span className="mt-0.5 block text-sm text-nq-muted">{t.anyStaffOptionSubtitle}</span>
+            <span className="mt-0.5 block text-sm text-[var(--booking-text-muted)]">{t.anyStaffOptionSubtitle}</span>
           </span>
         </motion.button>
 
@@ -137,15 +137,15 @@ export function BookingFlowStaffPanel({
               className={cn(
                 "nq-booking-glass flex min-h-11 w-full items-center gap-3 rounded-2xl px-4 py-3.5 text-left sm:min-h-[3rem]",
                 !selected && "nq-booking-tile-interactive",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--booking-bg)]",
                 selected
                   ? "border border-[var(--salon-primary)] shadow-[var(--shadow-nq-tile-selected)]"
-                  : "border border-white/[0.06] hover:border-white/[0.12]",
+                  : "border border-[var(--booking-border)] hover:border-[var(--booking-border)]",
               )}
             >
               <span
                 className={cn(
-                  "flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold tracking-tight text-nq-foreground ring-2",
+                  "flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold tracking-tight text-[var(--booking-text)] ring-2",
                   tone,
                 )}
                 aria-hidden
@@ -153,10 +153,10 @@ export function BookingFlowStaffPanel({
                 {placeholder ? "?" : initials(s.name)}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-[15px] font-medium leading-snug text-nq-foreground sm:text-base">
+                <span className="block text-[15px] font-medium leading-snug text-[var(--booking-text)] sm:text-base">
                   {displayName}
                 </span>
-                <span className="mt-0.5 block text-sm text-nq-muted">
+                <span className="mt-0.5 block text-sm text-[var(--booking-text-muted)]">
                   {formatStaffJobRole(s.job_role)}
                 </span>
               </span>

@@ -13,17 +13,38 @@ type BookingSalonHeroProps = {
   shopLabel: string;
   t: BookingMessages;
   className?: string;
+  themeMode?: "dark" | "light";
 };
 
 /**
  * Desktop-only glass panel: salon identity + decor imagery.
  * Hidden below `lg` so mobile / iPhone layout is unchanged.
+ *
+ * Light mode keeps the luxury feel of dark-photo + white salon name:
+ * the photo overlay drops to ~30% so the image reads naturally, and
+ * the name card switches to `rgba(0,0,0,0.4)` so white type stays
+ * legible against the photo.
  */
 export function BookingSalonHero({
   shopLabel,
   t,
   className,
+  themeMode = "dark",
 }: BookingSalonHeroProps) {
+  const isLight = themeMode === "light";
+
+  const ambientGradient = isLight
+    ? "linear-gradient(to bottom, color-mix(in srgb, var(--booking-bg) 20%, transparent), color-mix(in srgb, var(--booking-bg) 25%, transparent), color-mix(in srgb, var(--booking-bg) 30%, transparent))"
+    : "linear-gradient(to bottom, color-mix(in srgb, var(--booking-bg) 55%, transparent), color-mix(in srgb, var(--booking-bg) 72%, transparent), color-mix(in srgb, var(--booking-bg) 95%, transparent))";
+
+  const thumbVignette = isLight
+    ? "linear-gradient(to top, color-mix(in srgb, var(--booking-bg) 20%, transparent), transparent)"
+    : "linear-gradient(to top, color-mix(in srgb, var(--booking-bg) 55%, transparent), transparent)";
+
+  const nameCardStyle = isLight
+    ? { background: "rgba(0, 0, 0, 0.4)" }
+    : undefined;
+
   return (
     <aside
       className={cn(
@@ -40,20 +61,24 @@ export function BookingSalonHero({
           className="h-full w-full scale-105 object-cover blur-[2px]"
         />
         <div
-          className="absolute inset-0 bg-gradient-to-b from-[#0b0c10]/55 via-[#0b0c10]/72 to-[#0b0c10]/95"
+          className="absolute inset-0"
+          style={{ background: ambientGradient }}
           aria-hidden
         />
       </div>
 
       <div className="relative z-10 flex min-h-0 flex-1 flex-col justify-between gap-8 p-7 lg:p-8">
-        <div className="nq-booking-glass-strong-panel rounded-[1.35rem] px-6 py-6">
-          <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-nq-muted">
+        <div
+          className="nq-booking-glass-strong-panel rounded-[1.35rem] px-6 py-6"
+          style={nameCardStyle}
+        >
+          <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-white/70">
             {t.salonHeroEyebrow}
           </p>
-          <h2 className="mt-3 text-balance font-semibold tracking-tight text-nq-foreground lg:text-3xl lg:leading-[1.15] lg:tracking-[-0.02em]">
+          <h2 className="mt-3 text-balance font-semibold tracking-tight text-white lg:text-3xl lg:leading-[1.15] lg:tracking-[-0.02em]">
             {shopLabel}
           </h2>
-          <p className="mt-4 text-[15px] leading-relaxed text-nq-muted lg:text-base">
+          <p className="mt-4 text-[15px] leading-relaxed text-white/70 lg:text-base">
             {t.salonHeroTagline}
           </p>
         </div>
@@ -67,7 +92,8 @@ export function BookingSalonHero({
               className="h-full w-full object-cover"
             />
             <div
-              className="absolute inset-0 bg-gradient-to-t from-[#0b0c10]/55 to-transparent"
+              className="absolute inset-0"
+              style={{ background: thumbVignette }}
               aria-hidden
             />
           </div>
@@ -79,7 +105,8 @@ export function BookingSalonHero({
               className="h-full w-full object-cover"
             />
             <div
-              className="absolute inset-0 bg-gradient-to-t from-[#0b0c10]/55 to-transparent"
+              className="absolute inset-0"
+              style={{ background: thumbVignette }}
               aria-hidden
             />
           </div>

@@ -450,6 +450,9 @@ export const userVi: UserMessages = {
       resetDefault: "Khôi phục mặc định",
       errorInvalid: "Dùng mã hex 6 ký tự, ví dụ #D4AF37.",
       errorGeneric: "Không lưu được. Vui lòng thử lại.",
+      themeLabel: "Giao diện",
+      themeDark: "Tối",
+      themeLight: "Sáng",
     },
   },
   setupErrors: {

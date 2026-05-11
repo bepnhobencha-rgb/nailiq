@@ -129,7 +129,7 @@ export function BookingFlowConfirmPanel({
       >
         <h2
           id="conf-heading"
-          className="text-lg font-semibold tracking-tight text-nq-foreground sm:text-xl lg:text-[1.625rem] lg:tracking-[-0.02em]"
+          className="text-lg font-semibold tracking-tight text-[var(--booking-text)] sm:text-xl lg:text-[1.625rem] lg:tracking-[-0.02em]"
         >
           {t.stepConfirmHeading}
         </h2>
@@ -154,8 +154,8 @@ export function BookingFlowConfirmPanel({
           );
           return (
           <div className="mt-8" role="group" aria-label={heading}>
-            <p className="text-sm font-medium text-nq-foreground">{heading}</p>
-            <p className="mt-1 text-xs text-nq-muted">{t.upsellToggleHint}</p>
+            <p className="text-sm font-medium text-[var(--booking-text)]">{heading}</p>
+            <p className="mt-1 text-xs text-[var(--booking-text-muted)]">{t.upsellToggleHint}</p>
             <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="button"
@@ -164,7 +164,7 @@ export function BookingFlowConfirmPanel({
                   "rounded-full border px-4 py-2 text-sm font-medium transition-colors",
                   selectedAddonId === null
                     ? "border-[var(--salon-primary)] bg-[color-mix(in_srgb,var(--salon-primary)_15%,transparent)] text-[var(--salon-primary)]"
-                    : "border-white/[0.12] text-nq-muted hover:border-white/[0.2]",
+                    : "border-[var(--booking-border)] text-[var(--booking-text-muted)] hover:border-[var(--booking-border)]",
                 )}
               >
                 {t.upsellNoThanks}
@@ -180,7 +180,7 @@ export function BookingFlowConfirmPanel({
                       "rounded-full border px-4 py-2 text-left text-sm font-medium transition-colors",
                       on
                         ? "border-[var(--salon-primary)] bg-[color-mix(in_srgb,var(--salon-primary)_15%,transparent)] text-[var(--salon-primary)]"
-                        : "border-white/[0.12] text-nq-foreground hover:border-white/[0.2]",
+                        : "border-[var(--booking-border)] text-[var(--booking-text)] hover:border-[var(--booking-border)]",
                     )}
                   >
                     {s.priceDisplay ? `${s.name} · ${s.priceDisplay}` : s.name}
@@ -198,11 +198,11 @@ export function BookingFlowConfirmPanel({
           </p>
         ) : null}
 
-        <div className="mt-5 flex flex-col gap-3 border-t border-nq-border/25 pt-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="mt-5 flex flex-col gap-3 border-t border-[var(--booking-border)]/25 pt-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <Button
             type="button"
             variant="secondary"
-            className="nq-booking-glass h-14 min-h-11 w-full shrink-0 border border-white/[0.08] text-[var(--salon-primary)] shadow-none hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:min-w-[8.5rem]"
+            className="nq-booking-glass h-14 min-h-11 w-full shrink-0 border border-[var(--booking-border)] text-[var(--salon-primary)] shadow-none hover:bg-[var(--booking-bg-input)] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:min-w-[8.5rem]"
             disabled={submitting}
             onClick={onBack}
           >
