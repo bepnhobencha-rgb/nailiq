@@ -146,6 +146,11 @@ export const bookingEn = {
   featuredBadge: "Featured",
   /** Aria label on each category accordion header — "Toggle {category} services". */
   categoryToggleAria: "Toggle {category} services",
+  /** Label on the action button that appears inside an expanded
+   *  service tile. Tap commits the service to the booking flow. */
+  selectThisService: "Select this service",
+  /** Aria label on the per-tile expand/collapse header button. */
+  serviceTileToggleAria: "Toggle {service} details",
 } as const;
 
 export type BookingMessages = typeof bookingEn;
