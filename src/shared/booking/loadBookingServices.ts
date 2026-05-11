@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/nextjs";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
 import { formatGuestPriceUsd } from "@/shared/booking/formatBookingPrice";
 import { getSalonBySlug } from "@/shared/booking/getSalonBySlug";
+import { parseServiceCategory } from "@/shared/booking/serviceCategory";
 import { createClient } from "@/shared/lib/supabase/server";
 import { normalizeBrandColor } from "@/shared/lib/brandColor";
 
@@ -90,7 +91,11 @@ export async function loadBookingServicesForSalonSlug(
 
   const { data: rows, error: servicesErr } = await client
     .from("services")
-    .select("id, name, duration_minutes, buffer_minutes, price_cents")
+    // `category` column added by migration 20260511500000; not yet in the
+    // auto-generated DB types so we cast the SELECT spread.
+    .select(
+      "id, name, duration_minutes, buffer_minutes, price_cents, category" as never,
+    )
     .eq("salon_id", salonId)
     .is("deleted_at" as never, null)
     .order("name", { ascending: true });
@@ -114,23 +119,32 @@ export async function loadBookingServicesForSalonSlug(
   }
 
   const services: BookingServiceItem[] = (rows ?? []).map((r) => {
-    const duration = Number(r.duration_minutes) || 0;
-    const buffer = Number(r.buffer_minutes) || 0;
+    const row = r as unknown as {
+      id: string;
+      name: string;
+      duration_minutes?: unknown;
+      buffer_minutes?: unknown;
+      price_cents?: unknown;
+      category?: unknown;
+    };
+    const duration = Number(row.duration_minutes) || 0;
+    const buffer = Number(row.buffer_minutes) || 0;
     const totalMinutes = duration + buffer;
-    const priceCentsRaw = r.price_cents;
+    const priceCentsRaw = row.price_cents;
     const priceCents =
       priceCentsRaw != null && Number.isFinite(Number(priceCentsRaw))
         ? Math.round(Number(priceCentsRaw))
         : null;
 
     return {
-      id: r.id as string,
-      name: r.name as string,
+      id: row.id,
+      name: row.name,
       durationMinutes: duration,
       bufferMinutes: buffer,
       totalMinutes,
       priceCents,
       priceDisplay: formatGuestPriceUsd(priceCents),
+      category: parseServiceCategory(row.category),
     };
   });
 

@@ -536,6 +536,16 @@ export const userVi: UserMessages = {
       },
     },
   },
+  serviceCategory: {
+    manicure: "Manicure",
+    pedicure: "Pedicure",
+    acrylic: "Acrylic",
+    gel: "Gel",
+    dip: "Bột nhúng",
+    waxing: "Wax",
+    other: "Khác",
+    pickerLabel: "Phân loại",
+  },
   setupErrors: {
     serviceInUse:
       "Dịch vụ đang được dùng trong booking. Hủy/hoàn thành các booking trước khi xóa.",

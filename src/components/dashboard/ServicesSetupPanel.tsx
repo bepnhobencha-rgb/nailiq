@@ -12,7 +12,12 @@ import {
   deleteService,
   updateService,
 } from "@/shared/dashboard/setupActions";
-import { getUserMessages } from "@/shared/i18n/user";
+import {
+  DEFAULT_SERVICE_CATEGORY,
+  SERVICE_CATEGORIES,
+  type ServiceCategory,
+} from "@/shared/booking/serviceCategory";
+import { getUserMessages, type UserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 export type SetupServiceRow = {
@@ -21,7 +26,10 @@ export type SetupServiceRow = {
   price_cents: number;
   duration_minutes: number;
   buffer_minutes: number;
+  category: ServiceCategory;
 };
+
+type ServiceCategoryLabels = UserMessages["serviceCategory"];
 
 function centsFromDollarsString(raw: string): number | null {
   const normalized = raw.replace(/[^0-9.]/g, "");
@@ -44,7 +52,9 @@ export function ServicesSetupPanel({
   initialRows: SetupServiceRow[];
 }) {
   const { language } = useUserLanguage();
-  const setupErrors = getUserMessages(language).setupErrors;
+  const messages = getUserMessages(language);
+  const setupErrors = messages.setupErrors;
+  const categoryLabels = messages.serviceCategory;
   const router = useRouter();
   const [rows, setRows] = useState<SetupServiceRow[]>(initialRows);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -59,6 +69,9 @@ export function ServicesSetupPanel({
   const [draftPrice, setDraftPrice] = useState("");
   const [draftDur, setDraftDur] = useState("45");
   const [draftBuf, setDraftBuf] = useState("10");
+  const [draftCategory, setDraftCategory] = useState<ServiceCategory>(
+    DEFAULT_SERVICE_CATEGORY,
+  );
 
   const clearAddStatusTimer = useCallback(() => {
     if (addStatusTimerRef.current !== null) {
@@ -87,7 +100,11 @@ export function ServicesSetupPanel({
       patch: Partial<
         Pick<
           SetupServiceRow,
-          "name" | "price_cents" | "duration_minutes" | "buffer_minutes"
+          | "name"
+          | "price_cents"
+          | "duration_minutes"
+          | "buffer_minutes"
+          | "category"
         >
       >,
     ) => {
@@ -114,6 +131,9 @@ export function ServicesSetupPanel({
                   : {}),
                 ...(patch.buffer_minutes !== undefined
                   ? { buffer_minutes: patch.buffer_minutes }
+                  : {}),
+                ...(patch.category !== undefined
+                  ? { category: patch.category }
                   : {}),
               }
             : r,
@@ -173,6 +193,7 @@ export function ServicesSetupPanel({
       price_cents: cents,
       duration_minutes: dm,
       buffer_minutes: bm,
+      category: draftCategory,
     });
     if (!res.ok) {
       setAddSaveStatus("error");
@@ -193,14 +214,17 @@ export function ServicesSetupPanel({
     setDraftPrice("");
     setDraftDur("45");
     setDraftBuf("10");
+    setDraftCategory(DEFAULT_SERVICE_CATEGORY);
     refresh();
   }, [
     clearAddStatusTimer,
     draftBuf,
+    draftCategory,
     draftDur,
     draftName,
     draftPrice,
     refresh,
+    setupErrors.serviceLimitReached,
     slug,
   ]);
 
@@ -223,6 +247,7 @@ export function ServicesSetupPanel({
               row={row}
               disabled={pendingId === row.id}
               confirmingDelete={confirmDeleteId === row.id}
+              categoryLabels={categoryLabels}
               onBeginDelete={() => {
                 setConfirmDeleteId(row.id);
               }}
@@ -320,6 +345,24 @@ export function ServicesSetupPanel({
                 }}
               />
             </label>
+            <label className="block text-sm font-medium text-nq-muted sm:col-span-2">
+              {categoryLabels.pickerLabel}
+              <select
+                className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
+                value={draftCategory}
+                disabled={addSaveStatus === "saving"}
+                onChange={(e) => {
+                  setDraftCategory(e.target.value as ServiceCategory);
+                }}
+                data-testid="service-category-add"
+              >
+                {SERVICE_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {categoryLabels[c]}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
           <SaveButton
             status={addSaveStatus}
@@ -345,6 +388,7 @@ function ServiceRowFields({
   row,
   disabled,
   confirmingDelete,
+  categoryLabels,
   onBeginDelete,
   onCancelDelete,
   onConfirmDelete,
@@ -354,6 +398,7 @@ function ServiceRowFields({
   row: SetupServiceRow;
   disabled: boolean;
   confirmingDelete: boolean;
+  categoryLabels: ServiceCategoryLabels;
   onBeginDelete: () => void;
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
@@ -361,7 +406,11 @@ function ServiceRowFields({
     patch: Partial<
       Pick<
         SetupServiceRow,
-        "name" | "price_cents" | "duration_minutes" | "buffer_minutes"
+        | "name"
+        | "price_cents"
+        | "duration_minutes"
+        | "buffer_minutes"
+        | "category"
       >
     >,
   ) => void;
@@ -462,6 +511,25 @@ function ServiceRowFields({
                 onBlurSave({ buffer_minutes: n });
             }}
           />
+        </label>
+        <label className="block text-sm font-medium text-nq-muted sm:col-span-2">
+          {categoryLabels.pickerLabel}
+          <select
+            className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
+            value={row.category}
+            disabled={disabled}
+            data-testid={`service-category-row-${row.id}`}
+            onChange={(e) => {
+              const next = e.target.value as ServiceCategory;
+              if (next !== row.category) onBlurSave({ category: next });
+            }}
+          >
+            {SERVICE_CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {categoryLabels[c]}
+              </option>
+            ))}
+          </select>
         </label>
       </div>
       <Button

@@ -33,6 +33,10 @@ import {
   validateStreet,
 } from "@/shared/dashboard/addressSetupValidation";
 import {
+  isServiceCategory,
+  type ServiceCategory,
+} from "@/shared/booking/serviceCategory";
+import {
   DEMO_SALON_SLUG,
   isDemoOtpRuntime,
   isDemoSlugPinBypassed,
@@ -309,6 +313,7 @@ export async function addService(
     price_cents: number;
     duration_minutes: number;
     buffer_minutes: number;
+    category?: ServiceCategory | string;
   },
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
@@ -328,6 +333,15 @@ export async function addService(
     return fail("invalid_duration");
   if (!Number.isFinite(buffer) || buffer < 0) return fail("invalid_buffer");
 
+  // Reject unknown categories rather than silently fallback — keeps the
+  // form / API contract honest. `undefined` is allowed (defaults to
+  // "other" via the DB column default).
+  let category: ServiceCategory | null = null;
+  if (input.category !== undefined) {
+    if (!isServiceCategory(input.category)) return fail("invalid_category");
+    category = input.category;
+  }
+
   const supabase = await writableSupabase(slug, r.kind);
 
   // Plan-limit gate. Free plan caps services at 10 (see PLAN_LIMITS).
@@ -339,15 +353,19 @@ export async function addService(
     return fail("plan_limit_reached");
   }
 
+  // `category` cast: column not yet in the auto-generated DB types
+  // (migration 20260511500000). DB default fills "other" when omitted.
+  const insertPayload = {
+    salon_id: r.salon.id,
+    name,
+    price_cents: price,
+    duration_minutes: duration,
+    buffer_minutes: buffer,
+    ...(category !== null ? { category } : {}),
+  } as never;
   const { data: insertedSvc, error } = await supabase
     .from("services")
-    .insert({
-      salon_id: r.salon.id,
-      name,
-      price_cents: price,
-      duration_minutes: duration,
-      buffer_minutes: buffer,
-    })
+    .insert(insertPayload)
     .select("id")
     .single();
 
@@ -400,6 +418,7 @@ export async function updateService(
     price_cents: number;
     duration_minutes: number;
     buffer_minutes: number;
+    category: ServiceCategory | string;
   }>,
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
@@ -428,6 +447,10 @@ export async function updateService(
     const v = Math.round(Number(data.buffer_minutes));
     if (!Number.isFinite(v) || v < 0) return fail("invalid_buffer");
     patch.buffer_minutes = v;
+  }
+  if (data.category !== undefined) {
+    if (!isServiceCategory(data.category)) return fail("invalid_category");
+    patch.category = data.category;
   }
 
   if (Object.keys(patch).length === 0) return fail("empty_update");

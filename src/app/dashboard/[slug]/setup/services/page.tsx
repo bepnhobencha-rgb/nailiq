@@ -4,6 +4,7 @@ import { MobileStack } from "@/components/layout/MobileStack";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
 import { ServicesSetupPanel } from "@/components/dashboard/ServicesSetupPanel";
+import { parseServiceCategory } from "@/shared/booking/serviceCategory";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -25,7 +26,11 @@ export default async function SetupServicesPage({ params }: Props) {
 
   const { data: rows, error } = await ctx.supabase
     .from("services")
-    .select("id, name, price_cents, duration_minutes, buffer_minutes")
+    // `category` column added by migration 20260511500000; not yet
+    // in the auto-generated DB types so the SELECT spread is cast.
+    .select(
+      "id, name, price_cents, duration_minutes, buffer_minutes, category" as never,
+    )
     .eq("salon_id", ctx.salon.id)
     .is("deleted_at" as never, null)
     .order("name", { ascending: true });
@@ -41,13 +46,24 @@ export default async function SetupServicesPage({ params }: Props) {
         <SetupBackNav slug={slug} title="Services" />
         <ServicesSetupPanel
           slug={slug}
-          initialRows={(rows ?? []).map((r) => ({
-            id: String(r.id),
-            name: String(r.name ?? ""),
-            price_cents: Number(r.price_cents ?? 0),
-            duration_minutes: Number(r.duration_minutes ?? 0),
-            buffer_minutes: Number(r.buffer_minutes ?? 0),
-          }))}
+          initialRows={(rows ?? []).map((r) => {
+            const row = r as unknown as {
+              id: string;
+              name?: string;
+              price_cents?: number;
+              duration_minutes?: number;
+              buffer_minutes?: number;
+              category?: unknown;
+            };
+            return {
+              id: String(row.id),
+              name: String(row.name ?? ""),
+              price_cents: Number(row.price_cents ?? 0),
+              duration_minutes: Number(row.duration_minutes ?? 0),
+              buffer_minutes: Number(row.buffer_minutes ?? 0),
+              category: parseServiceCategory(row.category),
+            };
+          })}
         />
       </MobileStack>
     </ResponsiveShell>
