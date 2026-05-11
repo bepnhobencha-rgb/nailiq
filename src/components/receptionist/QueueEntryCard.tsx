@@ -57,18 +57,37 @@ export type QueueEntryCardProps = {
   priority?: QueuePriority | null;
   requestTags?: ReadonlyArray<QueueRequestTag>;
   partySize?: number | null;
+  /** Marks the customer as a returning VIP — drives the gold crown badge. */
+  isVip?: boolean;
+  /** Customer specifically asked for a particular staff. Pairs with
+   * `requestedStaffName` to render the heart-line. */
+  staffRequestedByClient?: boolean;
+  /** Localized name of the requested staff (resolved by the parent
+   * loader). When absent, the heart-line still renders if
+   * `staffRequestedByClient` is set, but without a name suffix. */
+  requestedStaffName?: string | null;
+  /** ISO time the requested staff is projected to be free. Powers the
+   * "Ready ~3:25 PM" suffix on the staff line. */
+  requestedStaffReadyAtIso?: string | null;
   /** When false, hides wait time + urgency colour entirely. */
   showWaitTime?: boolean;
   /** When false, suppresses the VIP source chip (other sources still render). */
   showVipIndicator?: boolean;
   /** Localized strings (no fallback copy). */
   labels: {
-    minutesAgo: (n: number) => string;
+    /** Hero suffix below the big wait number, e.g. "chờ" / "waiting" */
+    waitHeroSuffix: string;
     priorityHigh: string;
     priorityMedium: string;
     priorityLow: string;
     partySizeLabel: (n: number) => string;
     sourceFallback: string;
+    /** "👑 VIP" tooltip / aria. */
+    vipAria: string;
+    /** "Ready ~{time}" — interpolate {time}. */
+    readyAroundShort: string;
+    /** "❤️ Khách yêu cầu thợ này" — full heart-line copy. */
+    requestedByClientLine: string;
   };
   /** Highlighted treatment when this row is the active assign target. */
   isAssigning?: boolean;
@@ -87,6 +106,10 @@ export function QueueEntryCard({
   priority,
   requestTags,
   partySize,
+  isVip = false,
+  staffRequestedByClient = false,
+  requestedStaffName,
+  requestedStaffReadyAtIso,
   showWaitTime = true,
   showVipIndicator = true,
   labels,
@@ -107,6 +130,12 @@ export function QueueEntryCard({
     medium: labels.priorityMedium,
     low: labels.priorityLow,
   };
+  const requestedStaffReadyClock = requestedStaffReadyAtIso
+    ? new Date(requestedStaffReadyAtIso).toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : null;
 
   return (
     <Card
@@ -121,15 +150,17 @@ export function QueueEntryCard({
           !isDangerByWait &&
           !isAssigning &&
           "border-nq-warning/45 bg-nq-warning/[0.08]",
+        isVip && !isAssigning && "ring-1 ring-amber-300/40",
         className,
       )}
     >
-      <div className="flex items-start gap-3">
+      {/* Top row: position · name · VIP crown */}
+      <div className="flex items-start gap-2">
         <span
           aria-hidden
           className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-nq-bg text-xs font-semibold tabular-nums text-nq-muted ring-1 ring-inset ring-nq-border"
         >
-          {position}
+          #{position}
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -152,51 +183,111 @@ export function QueueEntryCard({
               </Badge>
             ) : null}
           </div>
-          <p className="mt-1 truncate text-xs text-nq-muted">
-            {serviceName}
+        </div>
+        {isVip ? (
+          <span
+            aria-label={labels.vipAria}
+            title={labels.vipAria}
+            data-testid="queue-vip-crown"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-400/20 text-base text-amber-700 ring-1 ring-inset ring-amber-300/45"
+          >
+            <span aria-hidden>👑</span>
+          </span>
+        ) : null}
+      </div>
+
+      {/* Hero wait number — the dispatch-board centerpiece. */}
+      {showWaitTime ? (
+        <div
+          data-testid="queue-wait-hero"
+          className="mt-2 text-center"
+        >
+          <p
+            className={cn(
+              "font-mono text-3xl font-bold leading-none tabular-nums",
+              waitColorClass(waitMinutes),
+            )}
+          >
+            {waitMinutes}
+            <span className="ml-1 text-base font-semibold">min</span>
+          </p>
+          <p className="mt-1 truncate text-[11px] uppercase tracking-wide text-nq-muted">
+            {labels.waitHeroSuffix} · {serviceName}
             {typeof serviceDurationMinutes === "number" &&
             serviceDurationMinutes > 0 ? (
               <span className="font-mono"> · {serviceDurationMinutes}m</span>
             ) : null}
           </p>
-
-          {showWaitTime ? (
-            <p
-              className={cn(
-                "mt-1 text-xs tabular-nums",
-                waitColorClass(waitMinutes),
-              )}
-            >
-              {labels.minutesAgo(waitMinutes)}
-            </p>
-          ) : null}
-
-          {showSourceChip || tags.length > 0 ? (
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {showSourceChip && source ? (
-                <QueueChip
-                  type="source"
-                  variant={queueSourceToChipVariant(source)}
-                  size="sm"
-                  label={
-                    source === "walk_in"
-                      ? labels.sourceFallback
-                      : source
-                  }
-                />
-              ) : null}
-              {tags.map((tag, idx) => (
-                <QueueChip
-                  key={`${tag}-${idx}`}
-                  type="request"
-                  size="sm"
-                  label={tag}
-                />
-              ))}
-            </div>
-          ) : null}
         </div>
-      </div>
+      ) : (
+        <p className="mt-2 truncate text-xs text-nq-muted">
+          {serviceName}
+          {typeof serviceDurationMinutes === "number" &&
+          serviceDurationMinutes > 0 ? (
+            <span className="font-mono"> · {serviceDurationMinutes}m</span>
+          ) : null}
+        </p>
+      )}
+
+      {/* Staff dispatch line: name + ready-around. */}
+      {requestedStaffName || requestedStaffReadyClock ? (
+        <p
+          data-testid="queue-staff-dispatch"
+          className="mt-2 flex items-center justify-between gap-2 text-[11px] text-nq-muted"
+        >
+          {requestedStaffName ? (
+            <span className="inline-flex items-center gap-1 truncate">
+              <span aria-hidden className="text-nq-primary">
+                ●
+              </span>
+              <span className="truncate">{requestedStaffName}</span>
+            </span>
+          ) : (
+            <span />
+          )}
+          {requestedStaffReadyClock ? (
+            <span className="shrink-0 font-mono tabular-nums">
+              {labels.readyAroundShort.replace(
+                "{time}",
+                requestedStaffReadyClock,
+              )}
+            </span>
+          ) : null}
+        </p>
+      ) : null}
+
+      {staffRequestedByClient ? (
+        <p
+          data-testid="queue-requested-by-client"
+          className="mt-1 text-[11px] font-medium text-rose-600"
+        >
+          <span aria-hidden>❤️ </span>
+          {labels.requestedByClientLine}
+        </p>
+      ) : null}
+
+      {showSourceChip || tags.length > 0 ? (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {showSourceChip && source ? (
+            <QueueChip
+              type="source"
+              variant={queueSourceToChipVariant(source)}
+              size="sm"
+              label={
+                source === "walk_in" ? labels.sourceFallback : source
+              }
+            />
+          ) : null}
+          {tags.map((tag, idx) => (
+            <QueueChip
+              key={`${tag}-${idx}`}
+              type="request"
+              size="sm"
+              label={tag}
+            />
+          ))}
+        </div>
+      ) : null}
 
       {actions ? <div className="mt-3">{actions}</div> : null}
     </Card>

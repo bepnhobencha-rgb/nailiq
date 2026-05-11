@@ -544,6 +544,20 @@ export type UserMessages = {
       priorityLow: string;
       partySizeLabel: (n: number) => string;
       sourceFallback: string;
+      /** Hero-suffix below the wait number on the dispatch card. */
+      waitHeroSuffix: string;
+      /** Aria label for the gold VIP crown badge. */
+      vipAria: string;
+      /** "Ready ~{time}" template — interpolate {time}. */
+      readyAroundShort: string;
+      /** "❤️ Khách yêu cầu thợ này" full line. */
+      requestedByClientLine: string;
+      /** Overload banner template. */
+      overloadBanner: (input: {
+        name: string;
+        queueAhead: number;
+      }) => string;
+      overloadBannerDismiss: string;
       addForm: {
         namePlaceholder: string;
         phonePlaceholder: string;
@@ -1441,6 +1455,13 @@ export const userEn: UserMessages = {
       priorityLow: "Low",
       partySizeLabel: (n: number) => `Party of ${n}`,
       sourceFallback: "Walk-in",
+      waitHeroSuffix: "waiting",
+      vipAria: "VIP customer",
+      readyAroundShort: "Ready ~{time}",
+      requestedByClientLine: "Customer requested this staff",
+      overloadBanner: ({ name, queueAhead }) =>
+        `⚠️ ${name} — ${queueAhead} customer${queueAhead === 1 ? "" : "s"} waiting. Consider another staff.`,
+      overloadBannerDismiss: "Dismiss",
       addForm: {
         namePlaceholder: "Guest name",
         phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,

@@ -79,6 +79,20 @@ export interface ReceptionistCenterData {
     service_name: string;
     service_duration_minutes: number;
     staff_request_note: string | null;
+    /** First-class boolean flag — pairs with `requested_staff_*` to
+     * power the heart-line on the queue card. Sourced from the
+     * `bookings.staff_requested_by_client` column. */
+    staff_requested_by_client: boolean;
+    /** Resolved name of the requested staff member when the queue
+     * row carries `staff_id`. Null when no specific staff requested
+     * or when the FK can't be resolved (deleted staff, etc.). */
+    requested_staff_name: string | null;
+    /** UTC ISO time the requested staff is projected to be free.
+     * Null when no requested staff or when projection is unknown. */
+    requested_staff_ready_at_iso: string | null;
+    /** True when the customer is a returning VIP per
+     * `client_profiles.is_vip` (joined by phone, salon-agnostic). */
+    is_vip: boolean;
     joined_queue_at: string;
     /** Optional walk-in queue metadata; nullable until tagged. */
     walkin_source: QueueSource | null;
@@ -466,7 +480,9 @@ export async function loadReceptionistCenterData(
       client_name,
       client_phone,
       service_id,
+      staff_id,
       staff_request_note,
+      staff_requested_by_client,
       joined_queue_at,
       walkin_source,
       walkin_priority,
@@ -550,7 +566,9 @@ export async function loadReceptionistCenterData(
     client_name: string;
     client_phone: string | null;
     service_id: string;
+    staff_id: string | null;
     staff_request_note: string | null;
+    staff_requested_by_client: boolean | null;
     joined_queue_at: string | null;
     walkin_source?: unknown;
     walkin_priority?: unknown;
@@ -586,7 +604,12 @@ export async function loadReceptionistCenterData(
     addon: ServiceJoinMinimal | ServiceJoinMinimal[] | null;
   }> | null;
 
-  const walkinQueue: ReceptionistCenterData["walkinQueue"] = [];
+  const rawQueueRows: Array<{
+    row: NonNullable<typeof queueRows>[number];
+    svc: ReturnType<typeof serviceFromJoin>;
+    spanMin: number;
+    partySize: number | null;
+  }> = [];
 
   for (const row of queueRows ?? []) {
     const svc = serviceFromJoin(row.services);
@@ -601,25 +624,110 @@ export async function loadReceptionistCenterData(
       Number.isFinite(partyRaw) && partyRaw >= 1 && partyRaw <= 50
         ? Math.round(partyRaw)
         : null;
-
-    walkinQueue.push({
-      id: row.id,
-      client_name: row.client_name,
-      client_phone: row.client_phone ?? null,
-      service_id: row.service_id,
-      service_name: svc?.name ?? "—",
-      /** Total slot span (duration + buffer) aligned with catalog + desk assign/conflict logic. */
-      service_duration_minutes: spanMin,
-      staff_request_note: row.staff_request_note ?? null,
-      joined_queue_at: row.joined_queue_at,
-      walkin_source: isQueueSource(row.walkin_source) ? row.walkin_source : null,
-      walkin_priority: isQueuePriority(row.walkin_priority)
-        ? row.walkin_priority
-        : null,
-      walkin_request_tags: parseRequestTags(row.walkin_request_tags),
-      party_size: partySize,
-    });
+    rawQueueRows.push({ row, svc, spanMin, partySize });
   }
+
+  // VIP enrichment — single bulk query against `client_profiles`
+  // (global table, salon-agnostic per the schema doc). Phones already
+  // stored in normalized digit form, so we lower-noise compare.
+  const queuePhones = Array.from(
+    new Set(
+      rawQueueRows
+        .map((r) => (r.row.client_phone ?? "").trim())
+        .filter((p) => p.length > 0),
+    ),
+  );
+  const vipByPhone = new Map<string, boolean>();
+  if (queuePhones.length > 0) {
+    const vipRes = (await supabase
+      .from("client_profiles")
+      .select("phone, is_vip" as never)
+      .in("phone", queuePhones)) as {
+      data: Array<{ phone: string; is_vip: boolean | null }> | null;
+      error: unknown;
+    };
+    if (!vipRes.error) {
+      for (const r of vipRes.data ?? []) {
+        if (r.phone) vipByPhone.set(String(r.phone), r.is_vip === true);
+      }
+    } else {
+      console.error("[loadReceptionistCenterData] vip lookup", vipRes.error);
+    }
+  }
+
+  // Project per-staff "free at" by looking at the in-progress + confirmed
+  // bookings already loaded for the day. Same heuristic the
+  // availability engine uses: staff is free at max(end_time_utc) of
+  // their in-progress + currently-active confirmed window, floored to
+  // "now". We compute it here so each queue card can carry its own
+  // ready-at hint without an extra round-trip.
+  const nowMsForReady = Date.now();
+  const freeAtMsByStaff = new Map<string, number>();
+  for (const b of bookingsRows ?? []) {
+    const sid = b.staff_id?.trim();
+    if (!sid) continue;
+    const endMs = b.end_time_utc ? Date.parse(b.end_time_utc) : NaN;
+    if (!Number.isFinite(endMs)) continue;
+    if (b.status !== "in_progress" && b.status !== "confirmed") continue;
+    const prev = freeAtMsByStaff.get(sid) ?? 0;
+    if (endMs > prev) freeAtMsByStaff.set(sid, endMs);
+  }
+
+  // Resolve requested staff name from `staff_id` when present (the
+  // assign-to-specific-staff path sets staff_id even before the
+  // booking flips out of `waiting`). When absent but the receptionist
+  // wrote a free-text note, we keep the heart line but leave the
+  // name null so the card just reads "❤️ Yêu cầu thợ này".
+  const staffNameById = new Map<string, string>();
+  for (const s of staffRows ?? []) {
+    if (s.id) staffNameById.set(s.id, String(s.name ?? "").trim());
+  }
+
+  const walkinQueue: ReceptionistCenterData["walkinQueue"] = rawQueueRows.map(
+    ({ row, svc, spanMin, partySize }) => {
+      const phone = (row.client_phone ?? "").trim();
+      const requestedStaffId = row.staff_id?.trim() || null;
+      const freeAtMs = requestedStaffId
+        ? freeAtMsByStaff.get(requestedStaffId) ?? null
+        : null;
+      const readyAtMs = freeAtMs == null ? null : Math.max(freeAtMs, nowMsForReady);
+      return {
+        id: row.id,
+        client_name: row.client_name,
+        client_phone: row.client_phone ?? null,
+        service_id: row.service_id,
+        service_name: svc?.name ?? "—",
+        service_duration_minutes: spanMin,
+        staff_request_note: row.staff_request_note ?? null,
+        staff_requested_by_client:
+          row.staff_requested_by_client === true ||
+          (typeof row.staff_request_note === "string" &&
+            row.staff_request_note.trim().length > 0),
+        requested_staff_name: requestedStaffId
+          ? staffNameById.get(requestedStaffId) ?? null
+          : null,
+        requested_staff_ready_at_iso:
+          readyAtMs != null ? new Date(readyAtMs).toISOString() : null,
+        is_vip: phone ? vipByPhone.get(phone) === true : false,
+        joined_queue_at: row.joined_queue_at!,
+        walkin_source: isQueueSource(row.walkin_source)
+          ? row.walkin_source
+          : null,
+        walkin_priority: isQueuePriority(row.walkin_priority)
+          ? row.walkin_priority
+          : null,
+        walkin_request_tags: parseRequestTags(row.walkin_request_tags),
+        party_size: partySize,
+      };
+    },
+  );
+
+  // Apply server-side priority sort. Ordered:
+  //   1. VIP customers first
+  //   2. Anyone waiting > 20 min (longest first within this band)
+  //   3. Customers whose requested staff is free now
+  //   4. FIFO joined_queue_at for the rest
+  sortQueueByPriority(walkinQueue, nowMsForReady);
 
   const bookingsForDayUnfiltered = (bookingsRows ?? []).map((row): ReceptionistCenterData["bookingsForDay"][0] | null => {
     const staffId = row.staff_id != null ? String(row.staff_id).trim() : "";
@@ -910,4 +1018,61 @@ function computeKpiSnapshot(args: {
     nextAvailableStaff,
     revenueTodayCents,
   };
+}
+
+
+/**
+ * Server-side queue sort with operational priority. Mutates in place
+ * for cheap allocation in the hot loader path; callers may treat the
+ * input array as the canonical FIFO list and let this rewrite the
+ * order for dispatch-board rendering.
+ *
+ * Ordering bands (highest priority first):
+ *   1. VIP customers (`is_vip` from client_profiles).
+ *   2. Anyone waiting longer than the danger threshold (20 min) —
+ *      the > 20 min protection prevents starvation when many newer
+ *      VIPs join.
+ *   3. Customers whose requested staff is free right now (the heart
+ *      ❤️-line is the operational signal were honouring).
+ *   4. FIFO `joined_queue_at` for everyone else.
+ *
+ * Within each band the older `joined_queue_at` wins.
+ */
+const QUEUE_LONG_WAIT_DANGER_MS = 20 * 60 * 1000;
+
+export function sortQueueByPriority<
+  T extends {
+    is_vip: boolean;
+    joined_queue_at: string;
+    requested_staff_name: string | null;
+    requested_staff_ready_at_iso: string | null;
+  },
+>(queue: T[], nowMs: number): T[] {
+  function band(item: T): number {
+    if (item.is_vip) return 0;
+    const joinedMs = Date.parse(item.joined_queue_at);
+    if (
+      Number.isFinite(joinedMs) &&
+      nowMs - joinedMs >= QUEUE_LONG_WAIT_DANGER_MS
+    ) {
+      return 1;
+    }
+    if (item.requested_staff_name) {
+      const readyMs = item.requested_staff_ready_at_iso
+        ? Date.parse(item.requested_staff_ready_at_iso)
+        : NaN;
+      if (Number.isFinite(readyMs) && readyMs <= nowMs) return 2;
+    }
+    return 3;
+  }
+  queue.sort((a, b) => {
+    const ba = band(a);
+    const bb = band(b);
+    if (ba !== bb) return ba - bb;
+    const aMs = Date.parse(a.joined_queue_at);
+    const bMs = Date.parse(b.joined_queue_at);
+    if (Number.isFinite(aMs) && Number.isFinite(bMs)) return aMs - bMs;
+    return 0;
+  });
+  return queue;
 }
