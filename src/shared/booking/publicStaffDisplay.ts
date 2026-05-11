@@ -1,21 +1,15 @@
-/** Hides auto-generated placeholders ("Staff 1", "staff 2", empty) on public surfaces. */
-const PLACEHOLDER_NAME_RE = /^staff\s+\d+$/i;
-
-export function isPlaceholderStaffName(raw: string | null | undefined): boolean {
-  const t = (raw ?? "").trim();
-  if (t.length === 0) return true;
-  return PLACEHOLDER_NAME_RE.test(t);
-}
-
 /**
- * Returns the staff name to render on the public booking surface, or the
- * supplied placeholder fallback when the DB row still has an auto-generated
- * "Staff N" / empty value. The DB stays untouched.
+ * Returns the staff name to render on the public booking surface.
+ *
+ * Earlier versions of this helper detected auto-generated placeholders
+ * ("Staff 1", empty, etc.) and substituted "(Pending)" so customers
+ * wouldn't see a half-finished menu. That backfired: salons whose owner
+ * deliberately named the row "Staff 1" still saw "(Pending)" on the
+ * public page. We now render exactly what the salon set in the DB —
+ * the owner is the source of truth.
  */
 export function getPublicStaffDisplayName(
   raw: string | null | undefined,
-  placeholder: string,
 ): string {
-  if (isPlaceholderStaffName(raw)) return placeholder;
   return (raw ?? "").trim();
 }
