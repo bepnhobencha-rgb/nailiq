@@ -231,11 +231,26 @@ export type UserMessages = {
     title: string;
     subtextSms: string;
     subtextDemo: string;
+    /** Subtext shown when SMS is off but email magic-link is on. */
+    subtextEmail: string;
     promptEnterPhone: string;
     sendCode: string;
     sendingCode: string;
     noSalonPrefix: string;
     signupLink: string;
+    /** Email magic-link branch (sms_enabled=false, email_enabled=true). */
+    emailEntryTitle: string;
+    emailPlaceholder: string;
+    emailInvalid: string;
+    sendSigninLink: string;
+    sendingSigninLink: string;
+    emailLinkSentTitle: string;
+    /** `{email}` placeholder gets replaced at render time. */
+    emailLinkSentBody: string;
+    emailLinkUseDifferent: string;
+    /** Branch shown when both sms_enabled and email_enabled are false. */
+    signinDisabledTitle: string;
+    signinDisabledBody: string;
     /** /login/verify */
     verifyTitle: string;
     /** "Code sent to ending ····{last4}" */
@@ -1296,11 +1311,23 @@ export const userEn: UserMessages = {
     title: "Sign in",
     subtextSms: "We'll send you an OTP via SMS.",
     subtextDemo: "Demo mode shows the OTP on screen.",
+    subtextEmail: "We'll email you a sign-in link.",
     promptEnterPhone: "Enter the phone number registered to your salon.",
     sendCode: "Send code",
     sendingCode: "Sending…",
     noSalonPrefix: "No salon yet? ",
     signupLink: "Sign up",
+    emailEntryTitle: "Enter your email",
+    emailPlaceholder: "you@example.com",
+    emailInvalid: "Enter a valid email address.",
+    sendSigninLink: "Send sign-in link",
+    sendingSigninLink: "Sending…",
+    emailLinkSentTitle: "Check your email",
+    emailLinkSentBody: "We sent a sign-in link to {email}.",
+    emailLinkUseDifferent: "Use a different email",
+    signinDisabledTitle: "Sign-in is temporarily unavailable",
+    signinDisabledBody:
+      "We've paused sign-in while platform maintenance is in progress. Please check back soon.",
     verifyTitle: "Enter OTP",
     verifySubtextSent: "Sent a 6-digit code to {masked}",
     verifySubtextLoading: "Loading…",
