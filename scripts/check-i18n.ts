@@ -57,7 +57,14 @@ function walkKeys(obj: Locale, prefix = ""): string[] {
     if (isPlainObject(value)) {
       out.push(...walkKeys(value, path));
     } else if (Array.isArray(value)) {
-      value.forEach((_, i) => out.push(`${path}[${i}]`));
+      value.forEach((item, i) => {
+        const itemPath = `${path}[${i}]`;
+        if (isPlainObject(item)) {
+          out.push(...walkKeys(item as Locale, itemPath));
+        } else {
+          out.push(itemPath);
+        }
+      });
     } else {
       out.push(path);
     }
@@ -86,6 +93,10 @@ function checkValue(
   const issues: Issue[] = [];
 
   if (typeof value === "function") return issues;
+
+  // Nullable string fields (e.g. `pricing.plans[].badge`) legitimately
+  // store `null` to mean "intentionally absent" — treat as fine.
+  if (value === null) return issues;
 
   if (typeof value !== "string") {
     issues.push({
