@@ -75,6 +75,8 @@ export function StaffSetupPanel({
   const messages = getUserMessages(language);
   const setupErrors = messages.setupErrors;
   const setupStaffCopy = messages.setupStaff;
+  // P0.1 — shared setup-page labels.
+  const tLabels = messages.setupLabels;
   const router = useRouter();
   const [rows, setRows] = useState(initialRows);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -171,7 +173,7 @@ export function StaffSetupPanel({
             : r,
         ),
       );
-      setToast({ variant: "success", message: "✓ Staff member saved" });
+      setToast({ variant: "success", message: tLabels.staffSaved });
       refresh();
     },
     [refresh, slug],
@@ -203,7 +205,7 @@ export function StaffSetupPanel({
         return;
       }
       setRows((prev) => prev.filter((r) => r.id !== staffId));
-      setToast({ variant: "success", message: "✓ Staff member removed" });
+      setToast({ variant: "success", message: tLabels.staffRemoved });
       refresh();
     },
     [refresh, setupErrors, slug],
@@ -249,7 +251,7 @@ export function StaffSetupPanel({
       return;
     }
     setAddSaveStatus("saved");
-    setToast({ variant: "success", message: "✓ Staff member saved" });
+    setToast({ variant: "success", message: tLabels.staffSaved });
     addStatusTimerRef.current = setTimeout(() => setAddSaveStatus("idle"), 2000);
     setDraftName("");
     setDraftRole("nail_tech");
@@ -316,10 +318,10 @@ export function StaffSetupPanel({
       </ul>
 
       <section
-        aria-label="Add staff"
+        aria-label={tLabels.addStaff}
         className="rounded-2xl border border-nq-primary/35 bg-nq-bg/85 p-4"
       >
-        <h2 className="text-base font-semibold text-nq-foreground">Add staff</h2>
+        <h2 className="text-base font-semibold text-nq-foreground">{tLabels.addStaff}</h2>
         {atStaffLimit ? (
           <p
             className="mt-2 rounded-xl border border-nq-primary/30 bg-nq-primary/10 px-3 py-2 text-sm text-nq-foreground"
@@ -359,7 +361,7 @@ export function StaffSetupPanel({
         ) : null}
         <div className="mt-3 flex flex-col gap-3">
           <label className="block text-sm font-medium text-nq-muted">
-            Name
+            {tLabels.name}
             <input
               className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
               value={draftName}
@@ -400,7 +402,7 @@ export function StaffSetupPanel({
             onSave={() => {
               void onAdd();
             }}
-            idleLabel="Add staff"
+            idleLabel={tLabels.addStaff}
             savedLabel="✓ Saved"
             disabled={isMutating || atStaffLimit || !draftName.trim()}
             className="min-h-11 w-full"
@@ -465,6 +467,8 @@ function StaffRowFields({
 }) {
   const { language } = useUserLanguage();
   const setupStaffCopy = getUserMessages(language).setupStaff;
+  // P0.1 — pull shared labels for the row's Name + Remove buttons.
+  const tLabels = getUserMessages(language).setupLabels;
   const [name, setName] = useState(row.name);
   const [role, setRole] = useState<StaffJobRole>(row.job_role);
   const [status, setStatus] = useState<StaffStatus>(row.status);
@@ -538,7 +542,7 @@ function StaffRowFields({
       ) : null}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block text-sm font-medium text-nq-muted">
-          Name
+          {tLabels.name}
           <input
             className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
             value={name}
@@ -600,7 +604,7 @@ function StaffRowFields({
           disabled={disabled || !canDelete}
           onClick={onBeginDelete}
         >
-          Remove staff
+          {tLabels.removeStaff}
         </Button>
         <Button
           type="button"

@@ -13,6 +13,11 @@ import { Button } from "@/components/ui/Button";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { cn } from "@/shared/lib/cn";
+import {
+  formatCurrency,
+  type Currency,
+} from "@/shared/lib/currencyFormat";
+import { formatPhoneInputProgressive } from "@/shared/lib/phoneFormat";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import {
   QUEUE_PRIORITIES,
@@ -40,6 +45,9 @@ export interface WalkinAddFormProps {
     duration_minutes: number;
     price_cents: number;
   }>;
+  /** P0.2 — salon's configured currency. Drives the per-service
+   * price labels on the tile grid and the VIP profile summary. */
+  currency: Currency;
   /** Salon setup incomplete — block walk-in intake until catalog is ready */
   disabled?: boolean;
   /**
@@ -213,8 +221,11 @@ export interface WalkinAddFormProps {
   }) => Promise<{ ok: boolean; error?: string }>;
 }
 
-function formatServicePrice(priceCents: number): string {
-  return `$${(priceCents / 100).toFixed(2)}`;
+function formatServicePrice(
+  priceCents: number,
+  currency: import("@/shared/lib/currencyFormat").Currency,
+): string {
+  return formatCurrency(priceCents, currency) ?? "—";
 }
 
 const TOP_SERVICE_COUNT = 6;
@@ -254,6 +265,7 @@ function formatRelativeShort(
 
 export function WalkinAddForm({
   services,
+  currency,
   labels,
   onSubmit,
   onPhoneLookup,
@@ -815,7 +827,9 @@ export function WalkinAddForm({
           value={clientPhone}
           maxLength={24}
           onChange={(e) => {
-            setClientPhone(e.target.value);
+            // P2.6 — live-format NANP numbers so receptionists see
+            // "(604) 555-…" while typing rather than the raw digits.
+            setClientPhone(formatPhoneInputProgressive(e.target.value));
             setPhoneError(null);
             // P1.2 — see name field for rationale.
             if (!phoneTouched) setPhoneTouched(true);
@@ -883,6 +897,7 @@ export function WalkinAddForm({
             phoneMasked={lookup.phoneMasked}
             profile={lookup.profile}
             labels={labels}
+            currency={currency}
           />
         ) : null}
       </div>
@@ -947,7 +962,7 @@ export function WalkinAddForm({
                   {s.name}
                 </span>
                 <span className="mt-0.5 font-mono text-[11px] text-nq-muted">
-                  {s.duration_minutes}m · {formatServicePrice(s.price_cents)}
+                  {s.duration_minutes}m · {formatServicePrice(s.price_cents, currency)}
                 </span>
               </button>
             );
@@ -989,7 +1004,7 @@ export function WalkinAddForm({
                         <span className="font-medium">{s.name}</span>
                         <span className="font-mono text-[11px] text-nq-muted">
                           {s.duration_minutes}m ·{" "}
-                          {formatServicePrice(s.price_cents)}
+                          {formatServicePrice(s.price_cents, currency)}
                         </span>
                       </button>
                     </li>
@@ -1270,16 +1285,18 @@ function ClientLookupCard({
   phoneMasked,
   profile,
   labels,
+  currency,
 }: {
   phoneMasked: string;
   profile: ClientLookupProfile;
   labels: WalkinAddFormProps["labels"];
+  currency: Currency;
 }) {
   const now = new Date();
   const lastVisitText = profile.last_visit_at
     ? formatRelativeShort(profile.last_visit_at, now, labels.relative)
     : null;
-  const totalSpent = formatServicePrice(profile.total_spent_cents);
+  const totalSpent = formatServicePrice(profile.total_spent_cents, currency);
   const summary = labels.profileSummary
     .replace("{count}", String(profile.visit_count))
     .replace("{total}", totalSpent);

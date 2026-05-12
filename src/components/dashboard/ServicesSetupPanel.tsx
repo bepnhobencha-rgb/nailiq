@@ -15,7 +15,7 @@ import {
 } from "@/shared/dashboard/setupActions";
 import type { ServiceCategorySummary } from "@/shared/booking/loadServiceCategories";
 import {
-  DEFAULT_SERVICE_CATEGORY,
+  ADD_FORM_DEFAULT_CATEGORY,
   type ServiceCategory,
 } from "@/shared/booking/serviceCategory";
 import { SERVICE_DESCRIPTION_MAX_LEN } from "@/shared/dashboard/serviceConstraints";
@@ -80,6 +80,8 @@ export function ServicesSetupPanel({
   const setupErrors = messages.setupErrors;
   const categoryPickerLabel = messages.serviceCategory.pickerLabel;
   const formLabels = messages.serviceForm;
+  // P0.1 — shared setup-page labels (Name, Price, etc.).
+  const tLabels = messages.setupLabels;
   // Localized + memo-friendly option list. Computed once per render
   // and passed down so per-row dropdowns don't each re-localize.
   const categoryOptions = categories.map((c) => ({
@@ -101,7 +103,7 @@ export function ServicesSetupPanel({
   const [draftDur, setDraftDur] = useState("45");
   const [draftBuf, setDraftBuf] = useState("10");
   const [draftCategory, setDraftCategory] = useState<ServiceCategory>(
-    DEFAULT_SERVICE_CATEGORY,
+    ADD_FORM_DEFAULT_CATEGORY,
   );
   const [draftDescription, setDraftDescription] = useState("");
   const [draftIsPopular, setDraftIsPopular] = useState(false);
@@ -225,7 +227,7 @@ export function ServicesSetupPanel({
               variant: "success",
               message: formLabels.descriptionGeneratedToast,
             }
-          : { variant: "success", message: "✓ Service saved" },
+          : { variant: "success", message: tLabels.serviceSaved },
       );
       refresh();
     },
@@ -261,7 +263,7 @@ export function ServicesSetupPanel({
         return;
       }
       setRows((prev) => prev.filter((r) => r.id !== serviceId));
-      setToast({ variant: "success", message: "✓ Service removed" });
+      setToast({ variant: "success", message: tLabels.serviceRemoved });
       refresh();
     },
     [refresh, setupErrors, slug],
@@ -343,7 +345,7 @@ export function ServicesSetupPanel({
             variant: "success",
             message: formLabels.descriptionGeneratedToast,
           }
-        : { variant: "success", message: "✓ Service saved" },
+        : { variant: "success", message: tLabels.serviceSaved },
     );
     addStatusTimerRef.current = setTimeout(() => setAddSaveStatus("idle"), 2000);
     setDraftName("");
@@ -417,11 +419,11 @@ export function ServicesSetupPanel({
       </ul>
 
       <section
-        aria-label="Add service"
+        aria-label={tLabels.addService}
         className="rounded-2xl border border-nq-primary/35 bg-nq-bg/85 p-4"
       >
         <h2 className="text-base font-semibold text-nq-foreground">
-          Add service
+          {tLabels.addService}
         </h2>
         {atServiceLimit ? (
           <p
@@ -462,7 +464,7 @@ export function ServicesSetupPanel({
         ) : null}
         <div className="mt-3 flex flex-col gap-3">
           <label className="block text-sm font-medium text-nq-muted">
-            Name
+            {tLabels.name}
             <input
               className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
               value={draftName}
@@ -475,7 +477,7 @@ export function ServicesSetupPanel({
           </label>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="block text-sm font-medium text-nq-muted">
-              {`Price (${currency})`}
+              {`${tLabels.price} (${currency})`}
               <input
                 inputMode="decimal"
                 className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
@@ -488,7 +490,7 @@ export function ServicesSetupPanel({
               />
             </label>
             <label className="block text-sm font-medium text-nq-muted">
-              Duration (min)
+              {tLabels.durationMin}
               <input
                 inputMode="numeric"
                 className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
@@ -500,7 +502,7 @@ export function ServicesSetupPanel({
               />
             </label>
             <label className="block text-sm font-medium text-nq-muted sm:col-span-2">
-              Buffer (min)
+              {tLabels.bufferMin}
               <input
                 inputMode="numeric"
                 className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
@@ -549,7 +551,7 @@ export function ServicesSetupPanel({
             onSave={() => {
               void onAdd();
             }}
-            idleLabel="Add service"
+            idleLabel={tLabels.addService}
             savedLabel="✓ Saved"
             disabled={
               isMutating ||
@@ -609,6 +611,10 @@ function ServiceRowFields({
   ) => void;
   canDelete: boolean;
 }) {
+  // P0.1 — pull labels per-row so labels stay localized. Avoids
+  // dragging a prop chain through `ServiceRowFields`.
+  const { language: rowLang } = useUserLanguage();
+  const tLabels = getUserMessages(rowLang).setupLabels;
   const [name, setName] = useState(row.name);
   const [price, setPrice] = useState(dollarsFromCents(row.price_cents));
   const [dur, setDur] = useState(String(row.duration_minutes));
@@ -701,7 +707,7 @@ function ServiceRowFields({
     <div className="flex flex-col gap-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block text-sm font-medium text-nq-muted">
-          Name
+          {tLabels.name}
           <input
             className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
             value={name}
@@ -710,7 +716,7 @@ function ServiceRowFields({
           />
         </label>
         <label className="block text-sm font-medium text-nq-muted">
-          {`Price (${rowCurrency})`}
+          {`${tLabels.price} (${rowCurrency})`}
           <input
             inputMode="decimal"
             className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
@@ -720,7 +726,7 @@ function ServiceRowFields({
           />
         </label>
         <label className="block text-sm font-medium text-nq-muted">
-          Duration (min)
+          {tLabels.durationMin}
           <input
             inputMode="numeric"
             className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
@@ -730,7 +736,7 @@ function ServiceRowFields({
           />
         </label>
         <label className="block text-sm font-medium text-nq-muted">
-          Buffer (min)
+          {tLabels.bufferMin}
           <input
             inputMode="numeric"
             className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
@@ -780,7 +786,7 @@ function ServiceRowFields({
           disabled={disabled || !canDelete}
           onClick={onBeginDelete}
         >
-          Delete service
+          {tLabels.deleteService}
         </Button>
         <Button
           type="button"

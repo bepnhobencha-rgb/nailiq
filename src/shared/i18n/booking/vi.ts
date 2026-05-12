@@ -1,0 +1,123 @@
+/**
+ * Vietnamese translation of the public booking copy. Mirrors the
+ * shape of `bookingEn` exactly — `BookingMessages` is derived from
+ * `bookingEn` so any added key shows up here as a type error until
+ * filled in.
+ *
+ * Day-of-week abbreviations are formatted via Intl with the
+ * locale-aware path in components (not hardcoded here) so the
+ * receptionist-side calendar can still render English day labels
+ * if the booking surface is rendered EN.
+ */
+import { PHONE_INPUT_PLACEHOLDER_NANP } from "@/shared/lib/phoneFormat";
+import type { BookingMessages } from "./en";
+
+export const bookingVi: BookingMessages = {
+  pageTitle: "Đặt lịch tại tiệm",
+  pageSubtitle:
+    "Chọn dịch vụ, thợ, ngày và giờ — sau đó nhập thông tin và xác nhận.",
+  breadcrumbServices: "Dịch vụ",
+  breadcrumbStaff: "Thợ",
+  breadcrumbDate: "Ngày",
+  breadcrumbTime: "Giờ",
+  breadcrumbYourDetails: "Thông tin",
+  breadcrumbConfirm: "Xem lại",
+  salonHeroEyebrow: "Đặt lịch tại",
+  salonHeroTagline:
+    "Không gian thư giãn, dịch vụ làm nail tinh tế — chuyến ghé của bạn bắt đầu từ đây.",
+  salonHeroAriaLabel: "Tiệm",
+  stepServiceHeading: "Chọn dịch vụ",
+  stepStaffHeading: "Bạn muốn chọn thợ nào?",
+  stepDateHeading: "Chọn ngày",
+  stepTimeHeading: "Chọn giờ",
+  stepInfoHeading: "Thông tin của bạn",
+  stepConfirmHeading: "Xem lại & xác nhận",
+  anyStaffOptionTitle: "Bất kỳ thợ nào còn trống",
+  anyStaffOptionSubtitle: "Bất kỳ",
+  anyStaffSummary: "Bất kỳ thợ nào còn trống",
+  dateClosedLabel: "Nghỉ",
+  dateClosedShort: "Nghỉ",
+  dateHolidayLabel: "Tiệm nghỉ",
+  dateHolidayShort: "Nghỉ",
+  calendarPrevMonthAria: "Tháng trước",
+  calendarNextMonthAria: "Tháng sau",
+  calendarLegendAvailable: "Còn chỗ",
+  calendarLegendClosed: "Nghỉ",
+  scarcityFewSlots: "Chỉ còn {n} giờ trống — ngày này sắp đầy.",
+  slotLoading: "Đang tải giờ trống…",
+  noSlotsAvailable: "Hết giờ trống. Vui lòng chọn ngày khác.",
+  slotsTimezoneLabel: "Giờ {tz}",
+  next: "Tiếp theo",
+  back: "Quay lại",
+  confirmBooking: "Xác nhận đặt lịch",
+  submitting: "Đang gửi…",
+  successHeading: "Đã đặt lịch thành công!",
+  successStaffLine: "với {name}",
+  successSeeYouSoonBefore: "Hẹn gặp bạn tại ",
+  bookingReferenceLabel: "Mã đặt lịch",
+  addToCalendar: "Thêm vào lịch",
+  addToCalendarDownloaded: "Đã tạo tệp lịch — mở để thêm sự kiện.",
+  shareBooking: "Chia sẻ",
+  shareBookingSheetTitle: "Đặt lịch NailIQ",
+  shareBookingCopied: "Đã sao chép — dán vào tin nhắn hoặc Zalo.",
+  manageBookingCall: "Cần đổi giờ? Gọi tiệm: {phone}",
+  doneCta: "Đặt thêm lịch",
+  submitError: "Không hoàn tất được đặt lịch. Vui lòng thử lại.",
+  summaryShop: "Tiệm",
+  summaryService: "Dịch vụ",
+  summaryStaff: "Thợ",
+  summaryTime: "Giờ",
+  summaryDuration: "Thời gian",
+  summaryDurationMinutes: "{n} phút",
+  summaryDurationIncludesAddon: "đã bao gồm dịch vụ thêm",
+  summaryClientName: "Họ tên",
+  summaryClientPhone: "Số điện thoại",
+  summaryClientNotes: "Ghi chú",
+  summaryAddOn: "Dịch vụ thêm",
+  summaryServicePrice: "Giá dịch vụ",
+  summaryAddonPrice: "Giá dịch vụ thêm",
+  summaryTotal: "Tổng",
+  bookingErrors: {
+    slotJustTaken: "Khung giờ vừa có khách khác đặt. Vui lòng chọn giờ khác.",
+    invalidPhone:
+      "Số không hợp lệ — ví dụ +1 (604) 555-1234 hoặc +84 90 123 4567",
+    phoneRequired: "Nhập số điện thoại của bạn.",
+    nameRequired: "Vui lòng nhập họ tên.",
+    nameTooShort: "Tên phải có ít nhất 2 ký tự.",
+    nameTooLong: "Tên không được quá 100 ký tự.",
+    invalidNameChars: "Tên chứa ký tự không hợp lệ.",
+    invalidEmail: "Email không hợp lệ. Ví dụ: jane@email.com",
+    serviceRequired: "Vui lòng chọn dịch vụ để tiếp tục.",
+  },
+  clientNameLabel: "Họ tên",
+  clientPhoneLabel: "Số điện thoại",
+  clientPhonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
+  clientEmailLabel: "Email (không bắt buộc)",
+  clientEmailHint: "Nhận xác nhận đặt lịch qua email.",
+  clientNotesLabel: "Ghi chú",
+  clientNotesOptionalHint:
+    "Không bắt buộc — dị ứng, ý tưởng thiết kế, chỗ đỗ xe, v.v.",
+  waitlistNotifyCta: "Báo cho tôi nếu có chỗ trống",
+  waitlistSubmitting: "Đang lưu…",
+  waitlistJoined: "Đã ghi nhận. Chúng tôi sẽ nhắn tin khi có chỗ trống.",
+  waitlistError: "Không lưu được. Vui lòng thử lại.",
+  contactRequiredError: "Vui lòng nhập họ tên và số điện thoại.",
+  pastTimeError: "Giờ này đã qua. Vui lòng chọn giờ khác.",
+  outsideHoursError: "Ngoài giờ mở cửa. Vui lòng chọn giờ khác.",
+  salonClosedError: "Tiệm nghỉ vào ngày này. Vui lòng chọn ngày khác.",
+  salonNotLiveHeading: "Tạm dừng nhận đặt lịch",
+  salonNotLiveBody:
+    "{shop} đang hoàn tất cài đặt và chưa nhận đặt lịch online. Vui lòng quay lại sau.",
+  upsellHeading: "Thêm dịch vụ nữa? Bạn còn {n} phút trống.",
+  upsellNoThanks: "Không, cảm ơn",
+  upsellToggleHint:
+    "Chọn trước khi xác nhận để gộp chung với lịch đặt.",
+  serviceDurationFlexible: "Linh hoạt",
+  minuteSuffixShort: "phút",
+  popularBadge: "Phổ biến",
+  featuredBadge: "Nổi bật",
+  categoryToggleAria: "Mở/đóng dịch vụ {category}",
+  selectThisService: "Chọn dịch vụ này",
+  serviceTileToggleAria: "Mở/đóng chi tiết {service}",
+  serviceTileDescriptionAria: "Xem mô tả dịch vụ {service}",
+};

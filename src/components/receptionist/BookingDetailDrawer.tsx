@@ -117,6 +117,8 @@ export interface BookingDetailDrawerProps {
     dayYmd: string;
     timezone: string;
     rcMessages: UserMessages["receptionist"];
+    /** P0.2 — currency for the inline edit form's price preview. */
+    currency: import("@/shared/lib/currencyFormat").Currency;
     onBookingUpdated: (updated: SalonDashboardBooking) => void | Promise<void>;
   };
 }
@@ -405,6 +407,7 @@ export function BookingDetailDrawer({
                     dayYmd={deskEdit.dayYmd}
                     timezone={deskEdit.timezone}
                     rcMessages={deskEdit.rcMessages}
+                    currency={deskEdit.currency}
                     isOffline={isOffline}
                     offlineEditDisabledHint={offlineEditDisabledHint}
                     onCancel={() => setEditMode(false)}

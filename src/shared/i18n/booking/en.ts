@@ -141,6 +141,16 @@ export const bookingEn = {
   /** P1.4 — aria label on the small chevron that toggles the
    *  description preview without committing the service. */
   serviceTileDescriptionAria: "Show description for {service}",
-} as const;
+};
 
-export type BookingMessages = typeof bookingEn;
+// P0.1 — keep the literal-type info for callers that want
+// autocomplete but drop the `as const` literal constraint so the VI
+// bundle can supply Vietnamese strings without each one having to
+// be the same literal as the English. Mapped type preserves nested
+// bookingErrors shape.
+type WidenLiterals<T> = T extends string
+  ? string
+  : T extends object
+    ? { [K in keyof T]: WidenLiterals<T[K]> }
+    : T;
+export type BookingMessages = WidenLiterals<typeof bookingEn>;

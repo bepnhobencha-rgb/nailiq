@@ -159,6 +159,8 @@ export interface WalkinQueueSidebarProps {
   popularServiceIds?: ReadonlyArray<string>;
   /** Localized label for the popular services chip row ("Popular today"). */
   popularServicesLabel?: string;
+  /** P0.2 — salon's configured currency (drives service-tile + VIP-card prices). */
+  currency: import("@/shared/lib/currencyFormat").Currency;
 }
 
 export function WalkinQueueSidebar({
@@ -189,6 +191,7 @@ export function WalkinQueueSidebar({
   showVipIndicator = true,
   popularServiceIds,
   popularServicesLabel,
+  currency,
 }: WalkinQueueSidebarProps) {
   const [sortMode, setSortMode] = useState<QueueSortMode>("fifo");
   // Per-card wait-link modal — null when closed; otherwise the
@@ -253,6 +256,7 @@ export function WalkinQueueSidebar({
         {showQuickAdd ? (
           <WalkinAddForm
             services={services}
+            currency={currency}
             labels={labels.addForm}
             onSubmit={onAddWalkin}
             onAddAndAssign={onAddAndAssign}

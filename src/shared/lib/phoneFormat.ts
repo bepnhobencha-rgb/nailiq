@@ -46,6 +46,49 @@ export function formatPhone(raw: string | null | undefined): string {
  */
 export const PHONE_INPUT_PLACEHOLDER_NANP = "+1 (604) 555-1234";
 
+/**
+ * P2.6 — Live-format-as-you-type helper for phone inputs.
+ *
+ * Differs from `formatPhone` in three ways:
+ *   1. Returns the partial format string for any digit count (1 digit
+ *      shows "(6"), so the input never "reverts" while the user types.
+ *   2. Preserves a leading `+` so international callers (+84, +33) can
+ *      still type their own format.
+ *   3. Never re-arranges or drops characters — what's stored matches
+ *      what's rendered character-for-character.
+ *
+ * Storage path is unchanged: `cleanPhone` / `normalizedPhoneDigits`
+ * still strip formatting before validation + DB write, so this is
+ * purely a presentation layer.
+ */
+export function formatPhoneInputProgressive(raw: string): string {
+  const s = raw ?? "";
+  if (s.trim().length === 0) return "";
+
+  // International (`+...`) phones — leave the user's spacing alone.
+  // Trying to auto-format +84 / +33 / etc. is more harmful than
+  // helpful when users from different regions paste in their own
+  // formats. We still strip stray non-digits after the `+` so the
+  // displayed value stays sane.
+  if (s.startsWith("+")) {
+    const digits = s.slice(1).replace(/\D/g, "");
+    return `+${digits}`;
+  }
+
+  // NANP local-format path: progressively wrap into "(AAA) BBB-CCCC"
+  // as the user fills digits. Below 4 digits the open paren makes the
+  // cursor jump weirdly, so we hold off on it.
+  const d = s.replace(/\D/g, "");
+  if (d.length === 0) return "";
+  if (d.length < 4) return d;
+  if (d.length < 7) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
+  if (d.length <= 10)
+    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6, 10)}`;
+  // Past 10 digits, assume the user is typing a country code without
+  // the `+`. Promote to a `+` prefix so it formats consistently.
+  return `+${d}`;
+}
+
 /** Digits-only body used for validation / storage parity with `cleanPhone`. */
 export function normalizedPhoneDigits(input: string): string {
   const c = cleanPhone(input.trim());

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { ReportsPanel } from "@/components/dashboard/ReportsPanel";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { userEn } from "@/shared/i18n/user";
+import { parseCurrency } from "@/shared/lib/currencyFormat";
 
 export const dynamic = "force-dynamic";
 
@@ -29,12 +30,28 @@ export default async function ReportsPage({ params }: PageProps) {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
 
+  // P0.2 — pull salon currency for the reports panel. Reads come from
+  // `getDashboardWriteClient` ctx which already has the row; one extra
+  // SELECT keeps the read scoped to a single column.
+  const { data: currencyRow } = await ctx.supabase
+    .from("salons")
+    .select("currency_code" as never)
+    .eq("id", ctx.salon.id)
+    .maybeSingle();
+  const currency = parseCurrency(
+    (currencyRow as { currency_code?: unknown } | null)?.currency_code,
+  );
+
   return (
     <main className="mx-auto w-full max-w-[var(--max-nq-desktop)] px-[var(--pad-nq-section-mobile)] py-6 md:px-6">
       <h1 className="mb-4 text-xl font-semibold text-nq-foreground">
         {userEn.receptionist.reports.pageTitle}
       </h1>
-      <ReportsPanel slug={slug} messages={userEn.receptionist.reports} />
+      <ReportsPanel
+        slug={slug}
+        messages={userEn.receptionist.reports}
+        currency={currency}
+      />
     </main>
   );
 }

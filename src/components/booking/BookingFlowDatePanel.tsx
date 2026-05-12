@@ -400,17 +400,13 @@ export function BookingFlowDatePanel({
                     "border-[var(--salon-primary)] bg-[var(--salon-primary)] text-[var(--booking-bg)] shadow-[0_0_24px_-10px_color-mix(in_srgb,var(--salon-primary)_55%,transparent)]",
                 )}
               >
+                {/* P2.2 — render the day-abbrev FIRST so the cell
+                    reads "MON 11" top-down (was "11 MON"). Matches
+                    Booksy/Square date-picker convention and what
+                    receptionists scan for first. */}
                 <span
                   className={cn(
-                    "text-[13px] font-semibold tabular-nums sm:text-sm",
-                    selected ? "text-[var(--booking-bg)]" : "text-[var(--booking-text)]",
-                  )}
-                >
-                  {labelDay}
-                </span>
-                <span
-                  className={cn(
-                    "mt-0.5 text-[10px] font-medium uppercase leading-none sm:text-[11px]",
+                    "text-[10px] font-medium uppercase leading-none sm:text-[11px]",
                     selected ? "text-[var(--booking-bg)]/90" : "text-[var(--booking-text-muted)]",
                   )}
                 >
@@ -419,6 +415,14 @@ export function BookingFlowDatePanel({
                       ? t.dateHolidayShort
                       : t.dateClosedShort
                     : abbrev}
+                </span>
+                <span
+                  className={cn(
+                    "mt-0.5 text-[13px] font-semibold tabular-nums sm:text-sm",
+                    selected ? "text-[var(--booking-bg)]" : "text-[var(--booking-text)]",
+                  )}
+                >
+                  {labelDay}
                 </span>
                 {hasSlotsHint ? (
                   <div

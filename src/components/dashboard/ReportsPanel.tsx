@@ -13,6 +13,10 @@ import {
 } from "@/shared/dashboard/loadSalonReportsAction";
 import type { ReceptionistMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
+import {
+  formatCurrency,
+  type Currency,
+} from "@/shared/lib/currencyFormat";
 
 /**
  * Owner-only reports panel.
@@ -32,16 +36,21 @@ import { cn } from "@/shared/lib/cn";
 const HOURS_START = 9;
 const HOURS_END = 20;
 
-function dollars(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
+// P0.2 — currency-aware money formatter for the reports panel.
+// Reads the salon's configured currency (CAD/USD/VND); falls back to
+// CAD via parseCurrency upstream.
+function formatMoney(cents: number, currency: Currency): string {
+  return formatCurrency(cents, currency) ?? "—";
 }
 
 export interface ReportsPanelProps {
   slug: string;
   messages: ReceptionistMessages["reports"];
+  /** P0.2 — salon's configured currency. */
+  currency: Currency;
 }
 
-export function ReportsPanel({ slug, messages }: ReportsPanelProps) {
+export function ReportsPanel({ slug, messages, currency }: ReportsPanelProps) {
   const [range, setRange] = useState<ReportsDateRange>("today");
   const [state, setState] = useState<
     | { kind: "loading" }
@@ -119,7 +128,9 @@ export function ReportsPanel({ slug, messages }: ReportsPanelProps) {
         <KPIWidget
           label={messages.kpis.totalRevenue}
           value={
-            state.kind === "ok" ? dollars(state.data.totalRevenueCents) : "—"
+            state.kind === "ok"
+              ? formatMoney(state.data.totalRevenueCents, currency)
+              : "—"
           }
           isLoading={state.kind === "loading"}
         />
@@ -182,7 +193,7 @@ export function ReportsPanel({ slug, messages }: ReportsPanelProps) {
                   <td className="py-1.5 text-nq-foreground">{s.name}</td>
                   <td className="py-1.5 text-right tabular-nums">{s.count}</td>
                   <td className="py-1.5 text-right tabular-nums">
-                    {dollars(s.revenueCents)}
+                    {formatMoney(s.revenueCents, currency)}
                   </td>
                 </tr>
               ))}
@@ -222,7 +233,7 @@ export function ReportsPanel({ slug, messages }: ReportsPanelProps) {
                     {s.appointmentCount}
                   </td>
                   <td className="py-1.5 text-right tabular-nums">
-                    {dollars(s.revenueCents)}
+                    {formatMoney(s.revenueCents, currency)}
                   </td>
                 </tr>
               ))}

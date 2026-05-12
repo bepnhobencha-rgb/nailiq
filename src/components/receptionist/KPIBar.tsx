@@ -3,6 +3,10 @@
 import { useMemo } from "react";
 
 import { KPIWidget, type KPIStatus } from "@/components/ui/KPIWidget";
+import {
+  formatCurrency,
+  type Currency,
+} from "@/shared/lib/currencyFormat";
 import type { ReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
 import type { getUserMessages } from "@/shared/i18n/user";
 
@@ -41,6 +45,9 @@ export type KPIBarProps = {
   showRevenue: boolean;
   /** Receptionist `kpiBar` i18n bundle from `getUserMessages(language)`. */
   messages: KpiBarMessages;
+  /** P0.2 — salon's configured currency. Drives the Revenue Today
+   * tile so CAD/USD/VND each render in their native locale. */
+  currencyCode: Currency;
   /**
    * Render skeleton tiles in place of values. Used when the parent is
    * mid-day-switch and a stale snapshot would mislead.
@@ -55,17 +62,11 @@ type Tile = {
   status: KPIStatus;
 };
 
-/** Locale-stable CAD formatter (whole dollars for desk scan). */
-const CAD_FORMATTER = new Intl.NumberFormat("en-CA", {
-  style: "currency",
-  currency: "CAD",
-  maximumFractionDigits: 0,
-});
-
 export function KPIBar({
   snapshot,
   showRevenue,
   messages,
+  currencyCode,
   isLoading = false,
 }: KPIBarProps) {
   const tiles = useMemo<Tile[]>(() => {
@@ -132,13 +133,16 @@ export function KPIBar({
       out.push({
         key: "revenue",
         label: messages.revenueToday,
-        value: cents === null ? messages.emptyDash : CAD_FORMATTER.format(cents / 100),
+        value:
+          cents === null
+            ? messages.emptyDash
+            : (formatCurrency(cents, currencyCode) ?? messages.emptyDash),
         status: "default",
       });
     }
 
     return out;
-  }, [snapshot, showRevenue, messages]);
+  }, [snapshot, showRevenue, messages, currencyCode]);
 
   return (
     <div

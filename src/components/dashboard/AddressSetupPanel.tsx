@@ -22,6 +22,8 @@ import {
   validateStreet,
 } from "@/shared/dashboard/addressSetupValidation";
 import { cn } from "@/shared/lib/cn";
+import { getUserMessages } from "@/shared/i18n/user";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 const TOAST_ERR = "✗ Could not save. Check your connection.";
 const ERR = {
@@ -86,6 +88,7 @@ export function AddressSetupPanel({
   initialAddress,
   initialSalonPhone,
   initialCurrency,
+  initialDescription,
 }: {
   slug: string;
   initialAddress: string;
@@ -94,6 +97,8 @@ export function AddressSetupPanel({
    *  by `parseCurrency`, but kept optional here so callers can drop
    *  the prop without breaking type-check. */
   initialCurrency?: Currency;
+  /** P2.8 — owner-written salon tagline shown on the booking page. */
+  initialDescription?: string;
 }) {
   const router = useRouter();
   const parsed = parseStoredAddress(initialAddress);
@@ -109,6 +114,10 @@ export function AddressSetupPanel({
   const [currency, setCurrency] = useState<Currency>(
     initialCurrency ?? DEFAULT_CURRENCY,
   );
+  const [description, setDescription] = useState(initialDescription ?? "");
+  // P0.1 — shared setup labels for the field text.
+  const { language: pageLang } = useUserLanguage();
+  const tLabels = getUserMessages(pageLang).setupLabels;
 
   const [fieldErrors, setFieldErrors] = useState<
     Partial<Record<FieldKey, string | undefined>>
@@ -142,9 +151,10 @@ export function AddressSetupPanel({
     setCountry(p.country);
     setSalonPhone(filterSalonPhoneInput(initialSalonPhone));
     setCurrency(initialCurrency ?? DEFAULT_CURRENCY);
+    setDescription(initialDescription ?? "");
     setFieldErrors({});
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [initialAddress, initialSalonPhone, initialCurrency]);
+  }, [initialAddress, initialSalonPhone, initialCurrency, initialDescription]);
 
   const setFieldError = useCallback((key: FieldKey, message: string | null) => {
     setFieldErrors((prev) => {
@@ -209,6 +219,7 @@ export function AddressSetupPanel({
       country,
       salon_phone: salonPhone,
       currency_code: currency,
+      description,
     });
     if (!res.ok) {
       setSaveStatus("error");
@@ -218,13 +229,15 @@ export function AddressSetupPanel({
       return;
     }
     setSaveStatus("saved");
-    setToast({ variant: "success", message: "✓ Address saved" });
+    setToast({ variant: "success", message: tLabels.addressSaved });
     statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
     router.refresh();
   }, [
     city,
     clearStatusTimer,
     country,
+    currency,
+    description,
     postal,
     province,
     router,
@@ -248,7 +261,7 @@ export function AddressSetupPanel({
       ) : null}
 
       <label className={labelClass}>
-        <span>Street address</span>
+        <span>{tLabels.streetAddress}</span>
         <span className="text-[#FF375F]" aria-hidden>
           {" "}
           *
@@ -276,7 +289,7 @@ export function AddressSetupPanel({
       </label>
 
       <label className={labelClass}>
-        <span>City</span>
+        <span>{tLabels.city}</span>
         <span className="text-[#FF375F]" aria-hidden>
           {" "}
           *
@@ -306,7 +319,7 @@ export function AddressSetupPanel({
       </label>
 
       <label className={labelClass}>
-        <span>Province / state</span>
+        <span>{tLabels.provinceState}</span>
         <span className="text-[#FF375F]" aria-hidden>
           {" "}
           *
@@ -336,7 +349,7 @@ export function AddressSetupPanel({
       </label>
 
       <label className={labelClass}>
-        <span>Postal code / ZIP</span>
+        <span>{tLabels.postalCode}</span>
         <span className="text-[#FF375F]" aria-hidden>
           {" "}
           *
@@ -366,7 +379,7 @@ export function AddressSetupPanel({
       </label>
 
       <label className={labelClass}>
-        <span>Country</span>
+        <span>{tLabels.country}</span>
         <span className="text-[#FF375F]" aria-hidden>
           {" "}
           *
@@ -402,7 +415,7 @@ export function AddressSetupPanel({
       </label>
 
       <label className={labelClass}>
-        <span>Salon phone</span>
+        <span>{tLabels.salonPhone}</span>
         <span className="text-[#FF375F]" aria-hidden>
           {" "}
           *
@@ -464,6 +477,34 @@ export function AddressSetupPanel({
             </option>
           ))}
         </select>
+      </label>
+
+      {/* P2.8 — owner-written salon description shown on the booking
+          page hero. Optional. Replaces the generic "Curated nail
+          artistry..." fallback when set. */}
+      <label className={labelClass}>
+        <span>Mô tả tiệm · Salon description</span>
+        <span className="block text-xs font-normal text-nq-muted/85">
+          Hiển thị trên trang đặt lịch dưới tên tiệm — tối đa 400 ký tự.
+          {" "}
+          Shown on the booking page below the salon name (optional, max 400 chars).
+        </span>
+        <textarea
+          data-testid="setup-salon-description"
+          className={cn(
+            "mt-1.5 min-h-[88px] w-full resize-y border",
+            inputRing,
+            "border-nq-border/50",
+          )}
+          value={description}
+          disabled={saveStatus === "saving"}
+          maxLength={400}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Ví dụ: Tiệm nail gia đình ấm cúng tại Vancouver — chuyên sơn gel, đắp acrylic và nail art."
+        />
+        <span className="mt-1 block text-right text-xs text-nq-muted/70">
+          {description.length}/400
+        </span>
       </label>
 
       <SaveButton

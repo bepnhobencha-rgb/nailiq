@@ -13,15 +13,18 @@ import {
 } from "@/shared/dashboard/openingHoursDefaults";
 import { normalizeBookingClosedDateList } from "@/shared/booking/parseBookingClosedDates";
 import { updateOpeningHours } from "@/shared/dashboard/setupActions";
+import { getUserMessages } from "@/shared/i18n/user";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
-const DAY_ORDER: { key: DayKey; label: string }[] = [
-  { key: "mon", label: "Monday" },
-  { key: "tue", label: "Tuesday" },
-  { key: "wed", label: "Wednesday" },
-  { key: "thu", label: "Thursday" },
-  { key: "fri", label: "Friday" },
-  { key: "sat", label: "Saturday" },
-  { key: "sun", label: "Sunday" },
+// P0.1 — day-key ordering only; labels resolved at render time.
+const DAY_KEYS_ORDERED: DayKey[] = [
+  "mon",
+  "tue",
+  "wed",
+  "thu",
+  "fri",
+  "sat",
+  "sun",
 ];
 
 /** P1.11 — typical Vietnamese nail-salon hours preset.
@@ -98,6 +101,8 @@ export function HoursSetupPanel({
   initialClosedDatesRaw: unknown;
 }) {
   const router = useRouter();
+  const { language } = useUserLanguage();
+  const labels = getUserMessages(language).setupLabels;
   const [hours, setHours] = useState<OpeningHoursWeek>(() =>
     parseOpeningHours(initialRaw) ?? defaultOpeningHoursWeek(),
   );
@@ -151,20 +156,16 @@ export function HoursSetupPanel({
       return;
     }
     setSaveStatus("saved");
-    setToast({ variant: "success", message: "✓ Hours saved" });
+    setToast({ variant: "success", message: labels.hoursSaved });
     statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
     router.refresh();
-  }, [clearStatusTimer, closedDatesText, hours, router, slug]);
+  }, [clearStatusTimer, closedDatesText, hours, labels.hoursSaved, router, slug]);
 
   return (
     <div className="flex flex-col gap-6">
       <SetupToast toast={toast} onDismiss={() => setToast(null)} />
 
-      <p className="text-sm leading-snug text-nq-muted">
-        Set when clients can book. Weekly closed days won&apos;t show slots. Add
-        extra closed dates (holidays) one per line as{" "}
-        <span className="font-mono text-nq-foreground/90">YYYY-MM-DD</span>.
-      </p>
+      <p className="text-sm leading-snug text-nq-muted">{labels.hoursIntro}</p>
       <div
         className="flex flex-wrap items-center gap-2"
         data-testid="hours-shortcuts"
@@ -217,8 +218,9 @@ export function HoursSetupPanel({
       ) : null}
       <section className="rounded-2xl border border-nq-border/40 bg-nq-surface/40 p-4">
         <ul className="flex flex-col divide-y divide-nq-border/30">
-          {DAY_ORDER.map(({ key, label }) => {
+          {DAY_KEYS_ORDERED.map((key) => {
             const day = hours[key];
+            const label = labels.days[key];
             return (
               <li key={key} className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -239,13 +241,13 @@ export function HoursSetupPanel({
                         }));
                       }}
                     />
-                    Closed
+                    {labels.closed}
                   </label>
                 </div>
                 {!day.closed ? (
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <label className="block text-sm font-medium text-nq-muted">
-                      Opens
+                      {labels.opens}
                       <input
                         type="time"
                         className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
@@ -261,7 +263,7 @@ export function HoursSetupPanel({
                       />
                     </label>
                     <label className="block text-sm font-medium text-nq-muted">
-                      Closes
+                      {labels.closes}
                       <input
                         type="time"
                         className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
@@ -286,7 +288,7 @@ export function HoursSetupPanel({
 
       <section className="rounded-2xl border border-nq-border/40 bg-nq-surface/40 p-4">
         <label className="block text-sm font-medium text-nq-muted">
-          Extra closed dates (optional)
+          {labels.extraClosedDates}
           <textarea
             className="mt-2 min-h-[120px] w-full resize-y rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 font-mono text-sm tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
             placeholder={"2026-01-01\n2026-12-25"}
@@ -297,11 +299,59 @@ export function HoursSetupPanel({
             autoComplete="off"
           />
         </label>
+        {/* P2.7 — VN public-holiday quick-add chips. Tapping appends
+            the chosen date (current year) to the textarea on its own
+            line, dedup'd against what's already there. Existing
+            entries are preserved; the owner can still edit freely. */}
+        <div
+          className="mt-3 flex flex-wrap gap-2"
+          data-testid="hours-holiday-presets"
+        >
+          {(() => {
+            const year = new Date().getFullYear();
+            // Tết Nguyên Đán is lunar — we pin a best-guess Gregorian
+            // date for the current year; owners override the exact
+            // date in the textarea if their schedule differs.
+            // 2026 Tết is Feb 17, 2027 Tết is Feb 6. Default to a
+            // mid-Feb placeholder + a comment chip lets the owner
+            // know the exact Tết date needs manual confirmation.
+            const PRESETS: Array<{ label: string; date: string }> = [
+              { label: "🧧 Tết Nguyên Đán", date: `${year}-02-17` },
+              { label: "🇻🇳 30/4 — Thống nhất", date: `${year}-04-30` },
+              { label: "👷 1/5 — Quốc tế lao động", date: `${year}-05-01` },
+              { label: "🇻🇳 2/9 — Quốc khánh", date: `${year}-09-02` },
+              { label: "🎄 Christmas · 25/12", date: `${year}-12-25` },
+              { label: "🎆 New Year · 1/1", date: `${year + 1}-01-01` },
+            ];
+            return PRESETS.map((p) => (
+              <button
+                key={p.date}
+                type="button"
+                data-testid={`hours-holiday-${p.date}`}
+                disabled={saveStatus === "saving"}
+                onClick={() => {
+                  setClosedDatesText((prev) => {
+                    const lines = prev
+                      .split(/\n/)
+                      .map((s) => s.trim())
+                      .filter(Boolean);
+                    if (lines.includes(p.date)) return prev;
+                    lines.push(p.date);
+                    return lines.join("\n");
+                  });
+                }}
+                className="inline-flex min-h-8 items-center rounded-full border border-nq-border/60 bg-nq-surface/60 px-2.5 py-1 text-xs font-medium text-nq-foreground hover:bg-nq-surface disabled:opacity-50"
+              >
+                {p.label}
+              </button>
+            ));
+          })()}
+        </div>
       </section>
 
       <div className="rounded-2xl border border-nq-border/35 bg-nq-bg/80 px-4 py-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
-          Preview
+          {labels.hoursPreview}
         </p>
         <p className="mt-2 text-base leading-snug text-nq-foreground">
           {preview}
@@ -313,7 +363,7 @@ export function HoursSetupPanel({
         onSave={() => {
           void onSaveAll();
         }}
-        idleLabel="Save all"
+        idleLabel={labels.saveAll}
         className="min-h-[48px] w-full sm:w-full"
       />
     </div>
