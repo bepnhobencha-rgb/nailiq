@@ -5,6 +5,7 @@ import {
   fillMemberCard,
   gotoGroupFlow,
   nextOpenDateYmd,
+  pickDateInCalendar,
   seedGroupTestSalon,
 } from "./helpers";
 
@@ -79,7 +80,7 @@ test.describe("Group booking — validation errors", () => {
     await fillMemberCard(page, 0, "Mai", 1, 1);
     await fillMemberCard(page, 1, "Linh", 1, 2);
     await page.getByTestId("group-service-next").click();
-    await page.getByTestId("group-date-input").fill(nextOpenDateYmd());
+    await pickDateInCalendar(page, nextOpenDateYmd());
     await page.getByTestId("group-arrival-afternoon").click();
     await page.getByTestId("group-date-next").click();
     await page
@@ -92,40 +93,47 @@ test.describe("Group booking — validation errors", () => {
       .waitFor({ state: "visible" });
   }
 
-  test("step 5: empty phone → phone-required error", async ({ page }) => {
+  // BUG 2 (2026-05-12): the Confirm CTA is now disabled until the
+  // basic contact-validity gate passes (phone ≥ 10 digits AND email
+  // empty-or-valid). The pre-fix contract was "click → server
+  // round-trip → error banner". The new contract is "button stays
+  // disabled — user can't even fire the submit". Granular server-
+  // side reasons (invalid_phone / invalid_email / etc., shipped in
+  // PR #147) remain as a backstop if the client gate is ever
+  // bypassed; we're not exercising that path here because it's not
+  // reachable through normal UX.
+
+  test("step 5: empty phone → Confirm stays disabled", async ({ page }) => {
     await walkToStep5(page);
-    // Leave phone blank; submit.
-    await page.getByTestId("group-confirm").click();
-    const err = page.getByTestId("group-error");
-    await expect(err).toBeVisible();
-    // EN copy: "Please enter a phone number."  VI copy: "Vui lòng nhập…".
-    // Either way the string contains "phone" or "điện thoại".
-    await expect(err).toHaveText(/phone|điện thoại/i);
+    // No phone typed.
+    await expect(page.getByTestId("group-confirm")).toBeDisabled();
   });
 
-  test('step 5: phone "123" → format error, not generic server error', async ({
+  test('step 5: phone "123" (under 10 digits) → Confirm stays disabled', async ({
     page,
   }) => {
     await walkToStep5(page);
     await page.getByTestId("group-primary-phone").fill("123");
-    await page.getByTestId("group-confirm").click();
-    const err = page.getByTestId("group-error");
-    await expect(err).toBeVisible();
-    // Must mention "valid" or "không hợp lệ" — proves we hit the
-    // client-side format check, not the catch-all server error.
-    await expect(err).toHaveText(/valid|không hợp lệ|isn't valid/i);
-    // Crucially must NOT be the generic "couldn't book the group"
-    // banner — that was the pre-fix behavior we're locking out.
-    await expect(err).not.toHaveText(/couldn't book|không đặt lịch nhóm/i);
+    await expect(page.getByTestId("group-confirm")).toBeDisabled();
   });
 
-  test('step 5: email "notanemail" → email format error', async ({ page }) => {
+  test('step 5: valid phone + invalid email → Confirm stays disabled', async ({
+    page,
+  }) => {
     await walkToStep5(page);
     await page.getByTestId("group-primary-phone").fill("+16045551234");
     await page.getByTestId("group-primary-email").fill("notanemail");
-    await page.getByTestId("group-confirm").click();
-    const err = page.getByTestId("group-error");
-    await expect(err).toBeVisible();
-    await expect(err).toHaveText(/email/i);
+    await expect(page.getByTestId("group-confirm")).toBeDisabled();
+  });
+
+  test("step 5: valid phone + empty email → Confirm enables", async ({
+    page,
+  }) => {
+    // Positive case so the disabled-only assertions above aren't
+    // tautological. With a 10-digit NANP phone and no email, the
+    // CTA should flip enabled. Email is optional so empty is OK.
+    await walkToStep5(page);
+    await page.getByTestId("group-primary-phone").fill("+16045551234");
+    await expect(page.getByTestId("group-confirm")).toBeEnabled();
   });
 });

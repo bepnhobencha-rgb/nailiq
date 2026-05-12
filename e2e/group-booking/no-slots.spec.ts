@@ -6,6 +6,7 @@ import {
   gotoGroupFlow,
   nextOpenDateYmd,
   nextSundayYmd,
+  pickDateInCalendar,
   seedGroupTestSalon,
 } from "./helpers";
 
@@ -34,9 +35,14 @@ test.describe("Group booking — empty states", () => {
     await cleanupTestSalon(SLUG);
   });
 
-  test("closed weekday shows step-3 closed banner + disables Continue", async ({
+  test("closed weekday cells render disabled in the calendar", async ({
     page,
   }) => {
+    // Post-2026-05-12: the native `<input type="date">` was replaced
+    // with a visual calendar that disables closed weekdays at the
+    // cell level — so the previous "type a Sunday + see banner" path
+    // is structurally impossible now. The user simply can't click a
+    // Sunday cell. The test enforces that contract.
     await gotoGroupFlow(page, SLUG);
     await page.getByTestId("group-size-2").click();
     await page.getByTestId("group-size-next").click();
@@ -44,14 +50,17 @@ test.describe("Group booking — empty states", () => {
     await fillMemberCard(page, 1, "Linh", 1, 2);
     await page.getByTestId("group-service-next").click();
 
-    // Sunday is closed in the default opening_hours.
-    const sunday = nextSundayYmd();
-    await page.getByTestId("group-date-input").fill(sunday);
+    await page
+      .getByTestId("group-step-date-panel")
+      .waitFor({ state: "visible" });
 
-    // Closed banner visible.
-    await expect(page.getByTestId("group-date-closed")).toBeVisible();
-    // Continue CTA is disabled — the BookingGroupFlow refuses to
-    // advance off a closed day even before the scheduler runs.
+    // Sunday is closed by the default `opening_hours` seed.
+    const sundayYmd = nextSundayYmd();
+    const sundayCell = page.locator(`[data-ymd="${sundayYmd}"]`);
+    await expect(sundayCell).toBeVisible();
+    await expect(sundayCell).toBeDisabled();
+
+    // Continue stays disabled while no date is picked yet.
     await expect(page.getByTestId("group-date-next")).toBeDisabled();
   });
 
@@ -65,7 +74,7 @@ test.describe("Group booking — empty states", () => {
     await fillMemberCard(page, 1, "Linh", 1, 2);
     await page.getByTestId("group-service-next").click();
 
-    await page.getByTestId("group-date-input").fill(nextOpenDateYmd());
+    await pickDateInCalendar(page, nextOpenDateYmd());
     await page.getByTestId("group-arrival-specific").click();
     // 03:00 — well outside default hours (09:00-18:00). The ±90min
     // window around 03:00 = 01:30–04:30, which clamps to nothing.

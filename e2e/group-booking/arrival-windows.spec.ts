@@ -5,6 +5,7 @@ import {
   fillMemberCard,
   gotoGroupFlow,
   nextOpenDateYmd,
+  pickDateInCalendar,
   seedGroupTestSalon,
 } from "./helpers";
 
@@ -39,9 +40,9 @@ test.describe("Group booking — arrival window pills", () => {
     await page
       .getByTestId("group-step-date-panel")
       .waitFor({ state: "visible" });
-    // Date pre-filled so subsequent assertions don't get tangled
+    // Date pre-picked so subsequent assertions don't get tangled
     // with the closed-day banner.
-    await page.getByTestId("group-date-input").fill(nextOpenDateYmd());
+    await pickDateInCalendar(page, nextOpenDateYmd());
   });
 
   test("morning pill selects with aria-checked=true", async ({ page }) => {
