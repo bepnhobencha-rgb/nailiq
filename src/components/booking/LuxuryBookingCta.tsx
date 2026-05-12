@@ -9,12 +9,19 @@ export function LuxuryBookingCta({
   className,
   onClick,
   type = "button",
+  "data-testid": dataTestId,
 }: {
   children: React.ReactNode;
   disabled?: boolean;
   className?: string;
   onClick?: () => void | Promise<void>;
   type?: "button" | "submit";
+  /** Optional Playwright test selector — forwarded to the underlying
+   * <motion.button>. Several callers in BookingGroupFlow pass this
+   * already; without the explicit prop declaration framer-motion
+   * silently dropped it (Playwright tests couldn't find the next
+   * button). Forwarding here is the single source of truth. */
+  "data-testid"?: string;
 }) {
   const reduceMotion = useReducedMotion();
 
@@ -22,6 +29,7 @@ export function LuxuryBookingCta({
     <motion.button
       type={type}
       disabled={disabled}
+      data-testid={dataTestId}
       onClick={() => {
         void onClick?.();
       }}
