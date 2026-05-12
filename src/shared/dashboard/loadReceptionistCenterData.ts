@@ -167,6 +167,12 @@ export interface ReceptionistCenterData {
      * request preference without opening the drawer.
      */
     has_staff_request: boolean;
+    /** Group-booking marker (migration 20260512200000). Non-null
+     * UUID means this booking is part of a multi-member group;
+     * UI renders a 👥 indicator and the drawer surfaces group
+     * context. */
+    group_id: string | null;
+    group_size: number | null;
   }>;
   /** Per-staff service whitelist for this salon. `null` = no rows → all-capable fallback. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
@@ -529,6 +535,8 @@ export async function loadReceptionistCenterData(
       walkin_source,
       addon_service_id,
       addon_price_cents,
+      group_id,
+      group_size,
       services!bookings_service_id_fkey ( name, duration_minutes, buffer_minutes ),
       addon:services!bookings_addon_service_id_fkey ( name, duration_minutes, buffer_minutes )
     `,
@@ -821,6 +829,16 @@ export async function loadReceptionistCenterData(
       has_notes: hasNotes,
       has_design: hasDesign,
       has_staff_request: hasStaffRequest,
+      group_id:
+        (row as { group_id?: unknown }).group_id != null
+          ? String((row as { group_id?: unknown }).group_id)
+          : null,
+      group_size: (() => {
+        const v = (row as { group_size?: unknown }).group_size;
+        if (v == null) return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      })(),
     };
   });
 

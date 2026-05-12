@@ -141,6 +141,43 @@ export const bookingEn = {
   /** P1.4 — aria label on the small chevron that toggles the
    *  description preview without committing the service. */
   serviceTileDescriptionAria: "Show description for {service}",
+  /** Group booking (Phase 1). 2–4 friends/family book together; each
+   * member becomes its own `bookings` row bound by a shared
+   * `group_id`. Out-of-scope strings (split, merge, queue) are
+   * intentionally NOT added — those flows don't exist yet. */
+  groupBooking: {
+    entryTitle: "How would you like to book?",
+    individual: "Just me",
+    group: "Group booking 👥",
+    sizeHeading: "How many people?",
+    personLabel: "Person {n}",
+    primaryContactHeading: "Primary contact",
+    primaryContactHint:
+      "We'll send the confirmation to this phone. Each person can add their own phone below if they want their own reminder.",
+    reviewHeading: "Review group booking",
+    confirmGroup: "Confirm group booking",
+    submittingGroup: "Booking your group…",
+    successHeading: "Group booking confirmed! 🎉",
+    successSubtitle: "Reference #{id}",
+    conflictMember: "Conflict for Person {n} — pick a different time or staff.",
+    conflictBanner:
+      "{n} of your slots are no longer available. Adjust those people and try again.",
+    duplicateSubmission:
+      "Looks like this group was already booked. Refresh the page to see the confirmation.",
+    salonClosedDay:
+      "The salon is closed on one of the days you picked. Please choose a different date.",
+    salonPaused: "This salon isn't accepting bookings right now.",
+    invalidGroupSize: "Group size must be 2, 3, or 4 people.",
+    serverError: "Couldn't book the group. Please try again.",
+    addPerson: "Add person",
+    removePerson: "Remove",
+    /** Receptionist surface: the group-icon tooltip + drawer chip. */
+    groupIconLabel: "Part of a group booking",
+    groupContextHeading: "Group members",
+    cancelEntireGroup: "Cancel entire group",
+    cancelEntireGroupConfirm:
+      "Cancel every booking in this group? This affects {n} people.",
+  },
 };
 
 // P0.1 — keep the literal-type info for callers that want
