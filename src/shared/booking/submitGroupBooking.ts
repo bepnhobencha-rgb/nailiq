@@ -94,7 +94,23 @@ export type GroupBookingResult =
         | "service_not_found"
         | "staff_not_found"
         | "past_date"
-        | "server_error";
+        | "server_error"
+        // P1 #18–#20 (QA re-sweep 2026-05-12) — granular validation
+        // reasons so the UI can show "phone format wrong" / "email
+        // format wrong" etc. instead of the catch-all
+        // "couldn't book". Each maps 1:1 onto a copy key in
+        // `groupBooking.bookingErrors.*`. `invalid_input` is kept as
+        // a defensive fallback for inputs that fail before per-member
+        // validation (idempotency key, members array shape).
+        | "invalid_name"
+        | "invalid_phone"
+        | "invalid_email"
+        | "invalid_time"
+        | "invalid_date";
+      /** 1-indexed member number for granular per-member errors so
+       *  the UI can say "Person 2 has an invalid phone". `null` when
+       *  the error is global (e.g. invalid group size). */
+      memberNumber?: number | null;
     };
 
 const HHMM_RE = /^(\d{1,2}):(\d{2})$/;
@@ -114,8 +130,9 @@ function fail(
     Extract<GroupBookingResult, { ok: false }>["reason"],
     "slot_conflict"
   >,
+  memberNumber: number | null = null,
 ): GroupBookingResult {
-  return { ok: false, reason };
+  return { ok: false, reason, memberNumber };
 }
 
 export async function submitGroupBooking(
@@ -135,20 +152,34 @@ export async function submitGroupBooking(
   if (typeof params.idempotencyKey !== "string" || params.idempotencyKey.trim().length === 0) {
     return fail("invalid_input");
   }
-  for (const m of params.members) {
+  // P1 #20 (QA re-sweep 2026-05-12) — granular per-field reasons.
+  // Each branch identifies the failing FIELD and the 1-indexed
+  // MEMBER number so the UI can render copy like "Person 2 has an
+  // invalid phone" instead of "couldn't book the group".
+  for (let i = 0; i < params.members.length; i++) {
+    const m = params.members[i];
+    const memberNumber = i + 1;
     const nameTrim = (m.name ?? "").trim();
     if (nameTrim.length === 0 || nameTrim.length > BOOKING_GUEST_NAME_MAX) {
-      return fail("invalid_input");
+      return fail("invalid_name", memberNumber);
     }
-    if (!isValidCustomerName(nameTrim)) return fail("invalid_input");
+    if (!isValidCustomerName(nameTrim)) {
+      return fail("invalid_name", memberNumber);
+    }
     const phoneOk = validateGuestPhone(m.phone ?? "");
-    if (!phoneOk.ok) return fail("invalid_input");
+    if (!phoneOk.ok) {
+      return fail("invalid_phone", memberNumber);
+    }
     const emailRaw = (m.email ?? "").trim();
     if (emailRaw.length > 0 && !isValidEmailFormat(emailRaw)) {
-      return fail("invalid_input");
+      return fail("invalid_email", memberNumber);
     }
-    if (parseHmToMinutes(m.time ?? "") === null) return fail("invalid_input");
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(m.date ?? "")) return fail("invalid_input");
+    if (parseHmToMinutes(m.time ?? "") === null) {
+      return fail("invalid_time", memberNumber);
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(m.date ?? "")) {
+      return fail("invalid_date", memberNumber);
+    }
   }
 
   const supabase = createClient();

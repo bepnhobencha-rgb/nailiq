@@ -258,6 +258,28 @@ export const bookingEn = {
      * scheduler can't resolve any non-overlapping arrangement. */
     staffConflictNote:
       "Two people have selected the same staff. The scheduler will try to find a non-overlapping time.",
+    /** P1 #18–#20 (QA re-sweep 2026-05-12) — granular submit-error
+     *  copy. Each key matches a `submitGroupBooking` reason; UI
+     *  substitutes `{n}` with the 1-indexed member number when the
+     *  server returns one. The catch-all generic stays as
+     *  `groupBooking.serverError` for truly unknown cases. */
+    invalidNameForMember:
+      "Person {n}'s name is missing or contains invalid characters.",
+    invalidPhoneForMember:
+      "Person {n}'s phone number isn't valid. Example: +1 (604) 555-1234 or +84 90 123 4567.",
+    invalidEmailForMember:
+      "Person {n}'s email format isn't valid. Example: jane@email.com.",
+    invalidTimeForMember:
+      "Person {n}'s time is invalid. Please pick again on the previous step.",
+    invalidDateForMember:
+      "Person {n}'s date is invalid. Please pick again on the previous step.",
+    /** Same six errors but for client-side step 5 contact validation,
+     *  before we even hit the server. Phone is the primary contact
+     *  for the whole group so there's no member number. */
+    contactInvalidPhone:
+      "The phone number isn't valid. Example: +1 (604) 555-1234 or +84 90 123 4567.",
+    contactInvalidEmail:
+      "The email format isn't valid. Example: jane@email.com.",
   },
 };
 

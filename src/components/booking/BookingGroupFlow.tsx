@@ -28,7 +28,9 @@ import {
   type OpeningHoursWeek,
 } from "@/shared/dashboard/openingHoursDefaults";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
+import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { formatPhoneInputProgressive } from "@/shared/lib/phoneFormat";
+import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { formatInSalonTz, salonToday } from "@/shared/lib/salonTime";
 import { cn } from "@/shared/lib/cn";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
@@ -377,8 +379,28 @@ export function BookingGroupFlow({
     ) {
       return;
     }
+    // P1 #18 — empty-state check first so the user gets the
+    // "required" copy rather than the "invalid format" copy.
     if (primaryPhone.trim().length === 0) {
       setErrorMessage(groupCopy.phoneRequired ?? "Vui lòng nhập số điện thoại.");
+      return;
+    }
+    // P1 #18 — format check before the server round-trip. Same
+    // helper the server action uses (`validateGuestPhone`) so
+    // client + server stay in lockstep.
+    if (!validateGuestPhone(primaryPhone).ok) {
+      setErrorMessage(
+        groupCopy.contactInvalidPhone ??
+          "Số điện thoại không hợp lệ.",
+      );
+      return;
+    }
+    // P1 #19 — email is optional, but if filled it must be valid.
+    const emailTrim = primaryEmail.trim();
+    if (emailTrim.length > 0 && !isValidEmailFormat(emailTrim)) {
+      setErrorMessage(
+        groupCopy.contactInvalidEmail ?? "Email không hợp lệ.",
+      );
       return;
     }
     setErrorMessage(null);
@@ -453,6 +475,45 @@ export function BookingGroupFlow({
       }
       if (res.reason === "invalid_group_size") {
         setErrorMessage(groupCopy.invalidGroupSize);
+        return;
+      }
+      // P1 #20 — granular validation reasons. Each carries a 1-indexed
+      // `memberNumber` so the copy can pinpoint the problem instead
+      // of showing the generic "couldn't book the group" fallback.
+      const mn = String(res.memberNumber ?? 1);
+      if (res.reason === "invalid_name") {
+        setErrorMessage(
+          (groupCopy.invalidNameForMember ??
+            "Person {n}'s name is missing or invalid.").replace("{n}", mn),
+        );
+        return;
+      }
+      if (res.reason === "invalid_phone") {
+        setErrorMessage(
+          (groupCopy.invalidPhoneForMember ??
+            "Person {n}'s phone isn't valid.").replace("{n}", mn),
+        );
+        return;
+      }
+      if (res.reason === "invalid_email") {
+        setErrorMessage(
+          (groupCopy.invalidEmailForMember ??
+            "Person {n}'s email isn't valid.").replace("{n}", mn),
+        );
+        return;
+      }
+      if (res.reason === "invalid_time") {
+        setErrorMessage(
+          (groupCopy.invalidTimeForMember ??
+            "Person {n}'s time is invalid.").replace("{n}", mn),
+        );
+        return;
+      }
+      if (res.reason === "invalid_date") {
+        setErrorMessage(
+          (groupCopy.invalidDateForMember ??
+            "Person {n}'s date is invalid.").replace("{n}", mn),
+        );
         return;
       }
       setErrorMessage(groupCopy.serverError);

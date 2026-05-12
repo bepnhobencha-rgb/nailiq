@@ -197,5 +197,19 @@ export const bookingVi: BookingMessages = {
     groupTotal: "Tổng",
     staffConflictNote:
       "Hai người đang chọn cùng một thợ. Hệ thống sẽ sắp xếp giờ lệch nhau để không trùng.",
+    invalidNameForMember:
+      "Họ tên của Người {n} bị thiếu hoặc có ký tự không hợp lệ.",
+    invalidPhoneForMember:
+      "Số điện thoại của Người {n} không hợp lệ. Ví dụ: +1 (604) 555-1234 hoặc +84 90 123 4567.",
+    invalidEmailForMember:
+      "Email của Người {n} không đúng định dạng. Ví dụ: jane@email.com.",
+    invalidTimeForMember:
+      "Giờ của Người {n} không hợp lệ. Vui lòng chọn lại ở bước trước.",
+    invalidDateForMember:
+      "Ngày của Người {n} không hợp lệ. Vui lòng chọn lại ở bước trước.",
+    contactInvalidPhone:
+      "Số điện thoại không hợp lệ. Ví dụ: +1 (604) 555-1234 hoặc +84 90 123 4567.",
+    contactInvalidEmail:
+      "Email không đúng định dạng. Ví dụ: jane@email.com.",
   },
 };
