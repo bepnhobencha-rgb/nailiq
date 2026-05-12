@@ -1,5 +1,6 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -51,6 +52,7 @@ export function StaffSetupPanel({
   services,
   initialServiceIdsByStaff,
   salonHasCapabilityRows,
+  maxStaff,
 }: {
   slug: string;
   initialRows: SetupStaffRow[];
@@ -60,6 +62,10 @@ export function StaffSetupPanel({
   /** When false, the salon is in the all-capable fallback; checkboxes are pre-checked
    *  so the first save does not accidentally narrow capability. */
   salonHasCapabilityRows: boolean;
+  /** Server-resolved cap (from `getEffectivePlanLimits`). `Infinity`
+   *  for unlimited plans / feature-flag overrides. Server still
+   *  re-validates on every `addStaff` call. */
+  maxStaff: number;
 }) {
   const { language } = useUserLanguage();
   const messages = getUserMessages(language);
@@ -109,6 +115,12 @@ export function StaffSetupPanel({
 
   const refresh = useCallback(() => router.refresh(), [router]);
 
+  // Mirrors ServicesSetupPanel — disables the Add button + lights up
+  // the at-limit banner while any save is in flight.
+  const isMutating = pendingId !== null || addSaveStatus === "saving";
+  const atStaffLimit =
+    Number.isFinite(maxStaff) && rows.length >= maxStaff;
+
   const handleUpdate = useCallback(
     async (
       staffId: string,
@@ -118,12 +130,25 @@ export function StaffSetupPanel({
     ) => {
       setFormError(null);
       setPendingId(staffId);
-      const res = await updateStaff(slug, staffId, {
-        name: patch.name,
-        role: patch.job_role,
-        status: patch.status,
-        serviceIds: patch.serviceIds,
-      });
+      let res: Awaited<ReturnType<typeof updateStaff>>;
+      try {
+        res = await updateStaff(slug, staffId, {
+          name: patch.name,
+          role: patch.job_role,
+          status: patch.status,
+          serviceIds: patch.serviceIds,
+        });
+      } catch (err) {
+        Sentry.captureMessage("[StaffSetupPanel] updateStaff threw", {
+          level: "error",
+          tags: { "salon.action": "update_staff", "salon.slug": slug },
+          extra: { staffId, patch, error: String(err) },
+        });
+        setPendingId(null);
+        setFormError("Could not save changes. Try again.");
+        setToast({ variant: "error", message: TOAST_ERR });
+        return;
+      }
       setPendingId(null);
       if (!res.ok) {
         setFormError("Could not save changes. Try again.");
@@ -153,7 +178,20 @@ export function StaffSetupPanel({
       setFormError(null);
       setConfirmDeleteId(null);
       setPendingId(staffId);
-      const res = await deleteStaff(slug, staffId);
+      let res: Awaited<ReturnType<typeof deleteStaff>>;
+      try {
+        res = await deleteStaff(slug, staffId);
+      } catch (err) {
+        Sentry.captureMessage("[StaffSetupPanel] deleteStaff threw", {
+          level: "error",
+          tags: { "salon.action": "delete_staff", "salon.slug": slug },
+          extra: { staffId, error: String(err) },
+        });
+        setPendingId(null);
+        setFormError("Could not remove. Try again.");
+        setToast({ variant: "error", message: TOAST_ERR });
+        return;
+      }
       setPendingId(null);
       if (!res.ok) {
         setFormError(mapDeleteStaffError(res.error, setupErrors));
@@ -175,11 +213,24 @@ export function StaffSetupPanel({
     }
     clearAddStatusTimer();
     setAddSaveStatus("saving");
-    const res = await addStaff(slug, {
-      name: draftName.trim(),
-      role: draftRole,
-      serviceIds: draftServiceIds,
-    });
+    let res: Awaited<ReturnType<typeof addStaff>>;
+    try {
+      res = await addStaff(slug, {
+        name: draftName.trim(),
+        role: draftRole,
+        serviceIds: draftServiceIds,
+      });
+    } catch (err) {
+      Sentry.captureMessage("[StaffSetupPanel] addStaff threw", {
+        level: "error",
+        tags: { "salon.action": "add_staff", "salon.slug": slug },
+        extra: { name: draftName.trim(), error: String(err) },
+      });
+      setAddSaveStatus("error");
+      setToast({ variant: "error", message: TOAST_ERR });
+      addStatusTimerRef.current = setTimeout(() => setAddSaveStatus("idle"), 3000);
+      return;
+    }
     if (!res.ok) {
       setAddSaveStatus("error");
       // plan_limit_reached gets a localized inline message + Upgrade
@@ -264,6 +315,22 @@ export function StaffSetupPanel({
         className="rounded-2xl border border-nq-primary/35 bg-nq-bg/85 p-4"
       >
         <h2 className="text-base font-semibold text-nq-foreground">Add staff</h2>
+        {atStaffLimit ? (
+          <p
+            className="mt-2 rounded-xl border border-nq-primary/30 bg-nq-primary/10 px-3 py-2 text-sm text-nq-foreground"
+            role="status"
+            data-testid="staff-at-limit-banner"
+          >
+            {setupErrors.staffLimitReached}{" "}
+            <Link
+              href={`/dashboard/${encodeURIComponent(slug)}/settings`}
+              className="font-semibold text-nq-primary hover:text-nq-primary/85 underline-offset-2 hover:underline"
+              data-testid="staff-at-limit-upgrade-link"
+            >
+              {setupErrors.upgradeCta}
+            </Link>
+          </p>
+        ) : null}
         {addError ? (
           <p
             className="mt-2 text-sm text-nq-error"
@@ -330,7 +397,7 @@ export function StaffSetupPanel({
             }}
             idleLabel="Add staff"
             savedLabel="✓ Saved"
-            disabled={addSaveStatus === "saving" || !draftName.trim()}
+            disabled={isMutating || atStaffLimit || !draftName.trim()}
             className="min-h-11 w-full"
           />
         </div>
