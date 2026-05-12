@@ -178,7 +178,13 @@ export function BookingFlowServicePanel({
             aria-pressed={isSelected}
             data-testid="service-tile-select"
             className={cn(
-              "flex min-w-0 flex-1 items-start justify-between gap-4 px-4 text-left sm:gap-5 sm:px-5",
+              // QA: name was visually colliding with the price column
+              // on narrow widths because the outer name wrapper was an
+              // inline <span> with `flex-1 min-w-0` — inline elements
+              // are inconsistent flex-children across browsers. Bumped
+              // gap from 4→5 (mobile) / 5→6 (sm) and tightened the
+              // price column's `pl` separator below.
+              "flex min-w-0 flex-1 items-start justify-between gap-5 px-4 text-left sm:gap-6 sm:px-5",
               s.isFeatured
                 ? "min-h-[5.5rem] py-4 sm:min-h-[6rem] sm:py-4"
                 : "min-h-[4.5rem] py-3.5 sm:min-h-[5rem]",
@@ -186,11 +192,18 @@ export function BookingFlowServicePanel({
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--booking-bg)] focus-visible:rounded-2xl",
             )}
           >
-            <span className="min-w-0 flex-1 pr-2">
-              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {/* QA: outer name wrapper is now a <div> with explicit
+                `block` (was an inline <span>) so `min-w-0 flex-1`
+                consistently constrains its width and long names
+                wrap inside the column instead of bleeding into the
+                price column on the right. `break-words` handles the
+                edge case where a single token is wider than the
+                available space (e.g. a long unbroken product name). */}
+            <div className="block min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span
                   id={nameId}
-                  className="text-[15px] font-medium leading-snug tracking-tight text-[var(--booking-text)] sm:text-base"
+                  className="break-words text-[15px] font-medium leading-snug tracking-tight text-[var(--booking-text)] sm:text-base"
                 >
                   {s.name}
                 </span>
@@ -210,9 +223,12 @@ export function BookingFlowServicePanel({
                     {t.featuredBadge}
                   </span>
                 ) : null}
-              </span>
-            </span>
-            <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+              </div>
+            </div>
+            {/* Price column: pin a small min-width so prices align
+                vertically across cards regardless of name length,
+                and the price never visually crashes into the name. */}
+            <div className="flex min-w-[4.5rem] shrink-0 flex-col items-end gap-1 text-right">
               <span className="text-sm font-medium tabular-nums tracking-tight text-[var(--booking-text-muted)] sm:text-[15px]">
                 {durationText}
               </span>
