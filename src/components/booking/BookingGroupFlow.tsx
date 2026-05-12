@@ -1,18 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
 import type {
   BookingSalonMeta,
   BookingStaffItem,
 } from "@/shared/booking/loadBookingServices";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
-import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
+import {
+  loadGroupSmartSchedule,
+  type GroupArrangement,
+  type GroupArrivalPreference,
+  type GroupSmartScheduleResult,
+} from "@/shared/booking/loadGroupSmartSchedule";
 import {
   submitGroupBooking,
   type GroupBookingMember,
   type GroupBookingResult,
 } from "@/shared/booking/submitGroupBooking";
+import {
+  buildCapabilityMap,
+  filterStaffCapableForService,
+} from "@/shared/booking/staffCapability";
 import {
   parseOpeningHours,
   type DayKey,
@@ -20,73 +29,66 @@ import {
 } from "@/shared/dashboard/openingHoursDefaults";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { formatPhoneInputProgressive } from "@/shared/lib/phoneFormat";
-import {
-  salonDayRangeUtc,
-  salonToday,
-  salonWallTimeToUtcIso,
-} from "@/shared/lib/salonTime";
-import { createClient } from "@/shared/lib/supabase/client";
+import { formatInSalonTz, salonToday } from "@/shared/lib/salonTime";
 import { cn } from "@/shared/lib/cn";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 import { Button } from "@/components/ui/Button";
 
 /**
- * Group booking flow — QA-revised after the round-2 report (12/05/2026).
+ * Group booking — AI Arrival-First redesign (May 2026).
  *
- * Key model change from PR #140 (P0.G2): the group now picks ONE shared
- * date + ONE shared time at the top. Each member only chooses their
- * own name + service + staff. The real-world use case is "friends /
- * family / wedding party come together at the same time" — per-member
- * pickers were forcing the wrong mental model.
+ * Replaces the previous "shared date + shared time + per-member
+ * service/staff" model with a 5-step arrival-first flow. The earlier
+ * model forced the customer to guess a time that worked for the
+ * whole group; the AI flow asks for an arrival *window* (morning /
+ * afternoon / evening / specific) and lets the scheduler propose 3
+ * arrangements based on real-time staff availability.
  *
- * Other QA fixes layered in:
- *   - P0.G1: submit is always enabled; click validates each member
- *            field with inline errors instead of silent disable.
- *   - P0.G3: step 2 heading renamed from "Xem lại lịch nhóm" to
- *            the data-entry-accurate "Đặt lịch cho từng người".
- *   - P1.G1: sticky primary-contact summary at the top of step 2.
- *   - P1.G5: group size selector extended 2–4 → 2–8.
- *   - P1.G7: same-staff-twice in a shared-time group is now flagged
- *            inline on the second occurrence before submit.
- *   - P1.G8: sticky total (sum of prices + max duration) above the
- *            confirm button.
+ *   STEP 1  Number of people     — pill selector 2…maxGroupSize
+ *   STEP 2  Service & Staff      — per-member: name + service +
+ *                                  preferred staff (or "Any")
+ *   STEP 3  Date & Arrival window — date + 4 arrival pills
+ *                                  ("Morning / Afternoon / Evening /
+ *                                  Specific time"); specific reveals
+ *                                  a native time input
+ *   STEP 4  AI Arrangement        — 3 option cards from
+ *                                  `loadGroupSmartSchedule`:
+ *                                  Best ✨ · Alternative · Earliest
+ *   STEP 5  Confirm               — summary + contact + submit
  *
- * Deferred to follow-up (flagged in PR #142 body):
- *   - Group-specific stepper (cosmetic)
- *   - Replacing native date/time inputs with the visual calendar +
- *     filtered slot grid (substantial scope)
- *   - Receptionist-side group walk-in flow
+ * State is hoisted to this component so back-navigation preserves
+ * everything the user already entered. The stepper at the top is the
+ * single source of navigation truth — clicking earlier steps jumps
+ * back (and clears arrangement results, which depend on data the
+ * user is about to re-pick).
+ *
+ * Reuses (NEVER reimplements):
+ *   - `loadGroupSmartSchedule` for the AI core (server action;
+ *     ultimately reuses `salonTime`, `conflictCheck`-equivalent
+ *     overlap, `staffCapability`).
+ *   - `submitGroupBooking` for the final atomic write. The chosen
+ *     arrangement's per-member start times are passed straight
+ *     through (each member is treated as a normal group booking row
+ *     by the existing RPC).
  */
 
-type BookingGroupFlowProps = {
-  t: BookingMessages;
-  shopSlug: string;
-  services: readonly BookingServiceItem[];
-  staff: readonly BookingStaffItem[];
-  salon: BookingSalonMeta;
-  /** Upper bound on group size, derived from active-staff count in
-   * the parent (`Math.min(activeStaff, HARD_GROUP_CAP)`). Drives the
-   * size pill grid + clamps `applySize`. The DB function still
-   * accepts up to 8 — this is a salon-specific UX cap, not a
-   * security boundary. */
-  maxGroupSize: number;
-};
+const ARRIVAL_PRESETS: ReadonlyArray<
+  Exclude<GroupArrivalPreference, { kind: "specific" }>["kind"]
+> = ["morning", "afternoon", "evening"];
+
+type Step = 1 | 2 | 3 | 4 | 5 | "success";
 
 type MemberDraft = {
   name: string;
   serviceId: string;
-  staffId: string;
+  /** `null` = "Any available". String UUID = explicit pick. */
+  preferredStaffId: string | null;
 };
 
-type MemberFieldError = "name" | "service" | "staff";
-
 function blankMember(): MemberDraft {
-  return { name: "", serviceId: "", staffId: "" };
+  return { name: "", serviceId: "", preferredStaffId: null };
 }
 
-// P1.2 — clamp to today..+90d in salon-local time. Native
-// <input type="date"> respects min/max so the picker UI itself
-// rejects out-of-range dates without an extra error path.
 function addDaysYmd(ymd: string, days: number): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
   if (!m) return ymd;
@@ -95,9 +97,6 @@ function addDaysYmd(ymd: string, days: number): string {
   return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, "0")}-${String(x.getUTCDate()).padStart(2, "0")}`;
 }
 
-// P1.3 — map salon-local YYYY-MM-DD to its weekday key for the
-// opening-hours lookup. Uses UTC arithmetic so the result is
-// timezone-independent (the YMD is already in salon-local).
 const DAY_KEY_BY_INDEX: readonly DayKey[] = [
   "sun",
   "mon",
@@ -110,14 +109,26 @@ const DAY_KEY_BY_INDEX: readonly DayKey[] = [
 function dayKeyForYmd(ymd: string): DayKey | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
   if (!m) return null;
-  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d))
-    return null;
-  const idx = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
+  const idx = new Date(
+    Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])),
+  ).getUTCDay();
   return DAY_KEY_BY_INDEX[idx] ?? null;
 }
 
-type Step = "size" | "members" | "success";
+type BookingGroupFlowProps = {
+  t: BookingMessages;
+  shopSlug: string;
+  services: readonly BookingServiceItem[];
+  staff: readonly BookingStaffItem[];
+  salon: BookingSalonMeta;
+  /** `Math.min(activeStaffCount, HARD_GROUP_CAP)` — drives the
+   *  size pill grid. The DB function allows up to 8; this is a
+   *  UX cap, not a security check. */
+  maxGroupSize: number;
+  /** Optional staff capability rows for the salon. Threaded
+   *  through so step 2's staff dropdown can filter by service. */
+  capabilityRows?: { staff_id: string; service_id: string }[] | null;
+};
 
 export function BookingGroupFlow({
   t,
@@ -126,84 +137,96 @@ export function BookingGroupFlow({
   staff,
   salon,
   maxGroupSize,
+  capabilityRows,
 }: BookingGroupFlowProps) {
-  const [step, setStep] = useState<Step>("size");
-  const [size, setSize] = useState<number>(2);
-  const [primaryPhone, setPrimaryPhone] = useState("");
-  const [primaryEmail, setPrimaryEmail] = useState("");
-  // P0.G2 — shared date + time across the whole group.
-  const [sharedDate, setSharedDate] = useState("");
-  const [sharedTime, setSharedTime] = useState("");
+  // ── Wizard state (hoisted; preserves on back-nav) ──────────────
+  const [step, setStep] = useState<Step>(1);
+  const [size, setSize] = useState(2);
   const [members, setMembers] = useState<MemberDraft[]>(() => [
     blankMember(),
     blankMember(),
   ]);
+  const [date, setDate] = useState("");
+  const [arrivalKind, setArrivalKind] = useState<
+    GroupArrivalPreference["kind"]
+  >("morning");
+  const [specificTime, setSpecificTime] = useState("");
+  const [primaryPhone, setPrimaryPhone] = useState("");
+  const [primaryEmail, setPrimaryEmail] = useState("");
+
+  // Smart-schedule results.
+  const [scheduling, setScheduling] = useState(false);
+  const [scheduleResult, setScheduleResult] =
+    useState<GroupSmartScheduleResult | null>(null);
+  const [selectedArrangementIdx, setSelectedArrangementIdx] = useState(0);
+
+  // Submit state.
   const [submitting, setSubmitting] = useState(false);
-  const [conflictIdx, setConflictIdx] = useState<Set<number>>(() => new Set());
-  // P0.G1 — explicit per-field error state, set on submit-click.
-  const [memberErrors, setMemberErrors] = useState<
-    Map<number, Set<MemberFieldError>>
-  >(() => new Map());
-  const [scheduleErrors, setScheduleErrors] = useState<Set<"date" | "time">>(
-    () => new Set(),
-  );
-  // P1.1 — visible inline error for step-1 phone, set on click-next.
-  const [contactPhoneError, setContactPhoneError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  // P1.6 — last known conflict kind from the server, drives copy.
-  const [conflictKind, setConflictKind] = useState<
-    "cross_member" | "external" | null
-  >(null);
-  // P1.7 — flip to true after submit-error so the green availability
-  // banner doesn't show alongside the red error. Cleared when any
-  // form field changes (covered by patchMember + sharedDate/Time
-  // onChange handlers below).
-  const [suppressAvailability, setSuppressAvailability] = useState(false);
   const [successResult, setSuccessResult] = useState<{
     groupId: string;
     bookingIds: string[];
   } | null>(null);
-  const firstErrorRef = useRef<HTMLElement | null>(null);
 
-  // Defensive — see PR #141 note: an older cached bundle without
-  // `groupBooking` would crash inside the error boundary.
-  const groupCopy = (t.groupBooking ?? {
-    entryTitle: "How would you like to book?",
-    individual: "Individual",
-    group: "Group 👥",
-    sizeHeading: "How many people?",
-    personLabel: "Person {n}",
-    primaryContactHeading: "Primary contact",
-    primaryContactHint:
-      "We'll send the confirmation to this phone. Each person can add their own phone below if they want their own reminder.",
-    reviewHeading: "Booking details per person",
-    confirmGroup: "Confirm group booking",
-    submittingGroup: "Booking your group…",
-    successHeading: "Group booking confirmed! 🎉",
-    successSubtitle: "Reference #{id}",
-    conflictMember: "Conflict for Person {n}",
-    conflictBanner: "{n} slots are no longer available.",
-    duplicateSubmission: "This group was already booked.",
-    salonClosedDay: "Salon is closed that day.",
-    salonPaused: "Booking is paused.",
-    invalidGroupSize: "Group size must be 2–8.",
-    serverError: "Couldn't book the group. Try again.",
-    addPerson: "Add person",
-    removePerson: "Remove",
-    groupIconLabel: "Group",
-    groupContextHeading: "Group members",
-    cancelEntireGroup: "Cancel entire group",
-    cancelEntireGroupConfirm: "Cancel every booking in this group?",
-  }) as NonNullable<BookingMessages["groupBooking"]>;
+  // Per-field error sets for the wizard step validations.
+  const [stepErrors, setStepErrors] = useState<Set<string>>(() => new Set());
 
-  // P1.G7 — same staff picked twice = inline conflict on the
-  // SECOND occurrence. Shared time means same-staff is unavoidable
-  // overlap, so we can flag it without computing intervals.
+  const groupCopy = (t.groupBooking ?? {}) as NonNullable<
+    BookingMessages["groupBooking"]
+  >;
+
+  // ── Derived ────────────────────────────────────────────────────
+  const capability = useMemo(
+    () => buildCapabilityMap(capabilityRows ?? null),
+    [capabilityRows],
+  );
+
+  const dateBounds = useMemo(() => {
+    const today = salonToday(salon.timezone);
+    return { min: today, max: addDaysYmd(today, 90) };
+  }, [salon.timezone]);
+
+  const openingWeek: OpeningHoursWeek | null = useMemo(
+    () => parseOpeningHours(salon.opening_hours),
+    [salon.opening_hours],
+  );
+  const dayHours = useMemo(() => {
+    if (!openingWeek || !date) return null;
+    const key = dayKeyForYmd(date);
+    if (!key) return null;
+    return openingWeek[key];
+  }, [openingWeek, date]);
+  const isSelectedDayClosed = !!dayHours?.closed;
+
+  // Totals — sum of service prices + max member duration (the
+  // group "spans" that long when aligned).
+  const totals = useMemo(() => {
+    let cents = 0;
+    let anyPriced = false;
+    let maxMin = 0;
+    for (const m of members) {
+      const svc = services.find((s) => s.id === m.serviceId);
+      if (!svc) continue;
+      if (svc.priceCents != null) {
+        anyPriced = true;
+        cents += svc.priceCents;
+      }
+      if (svc.totalMinutes > maxMin) maxMin = svc.totalMinutes;
+    }
+    return { totalCents: anyPriced ? cents : null, maxMinutes: maxMin };
+  }, [members, services]);
+
+  const totalDisplay = useMemo(() => {
+    if (totals.totalCents == null) return null;
+    return formatCurrency(totals.totalCents, salon.currencyCode) ?? null;
+  }, [totals.totalCents, salon.currencyCode]);
+
+  // Same staff twice → soft warning only (scheduler will stagger).
   const duplicateStaffIdx = useMemo(() => {
     const seen = new Map<string, number>();
     const dupes = new Set<number>();
     for (let i = 0; i < members.length; i++) {
-      const sid = members[i].staffId;
+      const sid = members[i].preferredStaffId;
       if (!sid) continue;
       if (seen.has(sid)) dupes.add(i);
       else seen.set(sid, i);
@@ -211,175 +234,14 @@ export function BookingGroupFlow({
     return dupes;
   }, [members]);
 
-  // P1.G8 — totals across the group.
-  const totals = useMemo(() => {
-    let totalCents = 0;
-    let hasAnyPrice = false;
-    let maxMinutes = 0;
-    for (const m of members) {
-      const svc = services.find((s) => s.id === m.serviceId);
-      if (!svc) continue;
-      if (svc.priceCents != null) {
-        hasAnyPrice = true;
-        totalCents += svc.priceCents;
-      }
-      if (svc.totalMinutes > maxMinutes) maxMinutes = svc.totalMinutes;
+  const arrivalPref: GroupArrivalPreference = useMemo(() => {
+    if (arrivalKind === "specific") {
+      return { kind: "specific", time: specificTime };
     }
-    return { totalCents: hasAnyPrice ? totalCents : null, maxMinutes };
-  }, [members, services]);
+    return { kind: arrivalKind };
+  }, [arrivalKind, specificTime]);
 
-  const totalDisplay = useMemo(() => {
-    if (totals.totalCents == null) return null;
-    return formatCurrency(totals.totalCents, salon.currencyCode) ?? null;
-  }, [totals, salon.currencyCode]);
-
-  // P1.2 — date input bounds in the salon's calendar. Today in salon
-  // tz, today + 90 days. We compute once per render — these don't
-  // need to react to inputs.
-  const dateBounds = useMemo(() => {
-    const today = salonToday(salon.timezone);
-    return { min: today, max: addDaysYmd(today, 90) };
-  }, [salon.timezone]);
-
-  // P1.3 — opening hours for the selected date. `dayHours.closed` →
-  // disable the time input entirely + surface a closed banner.
-  // `dayHours.open`/`.close` are HH:MM in salon-local; we pass them
-  // straight to the native time input's min/max attributes.
-  const openingWeek: OpeningHoursWeek | null = useMemo(
-    () => parseOpeningHours(salon.opening_hours),
-    [salon.opening_hours],
-  );
-  const dayHours = useMemo(() => {
-    if (!openingWeek || !sharedDate) return null;
-    const key = dayKeyForYmd(sharedDate);
-    if (!key) return null;
-    return openingWeek[key];
-  }, [openingWeek, sharedDate]);
-  const isSelectedDayClosed = !!dayHours?.closed;
-
-  // QA STEP 4 — real-time availability check.
-  //
-  // When the customer has picked a shared date + time AND at least
-  // one member has a service, we want to surface "X staff are free
-  // at this time" before they submit. Reuses the existing
-  // `public_booking_occupancy_for_range` RPC (same endpoint single
-  // bookings use). Conservative window = [shared start, shared
-  // start + longest selected service duration]; any staff with ANY
-  // overlap in that range counts as busy.
-  //
-  // Debounced 400 ms because the native time input fires onChange
-  // per keystroke (typing "10" → "1" then "10"). Without debounce
-  // we'd thrash the RPC.
-  const [availability, setAvailability] = useState<
-    | { kind: "idle" }
-    | { kind: "loading" }
-    | { kind: "ready"; availableCount: number; totalActiveStaff: number }
-    | { kind: "error" }
-  >({ kind: "idle" });
-  const availabilitySeqRef = useRef(0);
-
-  // Longest duration among MEMBERS WITH a selected service. If no
-  // member has picked a service yet, returns 0 → skip the check.
-  const longestSelectedDurationMin = useMemo(() => {
-    let max = 0;
-    for (const m of members) {
-      const svc = services.find((s) => s.id === m.serviceId);
-      if (!svc) continue;
-      if (svc.totalMinutes > max) max = svc.totalMinutes;
-    }
-    return max;
-  }, [members, services]);
-
-  const totalActiveStaff = staff.length;
-
-  useEffect(() => {
-    if (
-      sharedDate.length === 0 ||
-      sharedTime.length === 0 ||
-      longestSelectedDurationMin === 0
-    ) {
-      setAvailability({ kind: "idle" });
-      return;
-    }
-    const seq = ++availabilitySeqRef.current;
-    setAvailability({ kind: "loading" });
-    const timer = window.setTimeout(async () => {
-      try {
-        // Parse HH:MM client-side; reuse the same DST-safe helper
-        // single bookings + the server action use.
-        const [hStr, miStr] = sharedTime.split(":");
-        const h = Number.parseInt(hStr ?? "", 10);
-        const mi = Number.parseInt(miStr ?? "", 10);
-        if (!Number.isFinite(h) || !Number.isFinite(mi)) {
-          if (seq === availabilitySeqRef.current)
-            setAvailability({ kind: "idle" });
-          return;
-        }
-        const startUtcIso = salonWallTimeToUtcIso(
-          sharedDate,
-          h * 60 + mi,
-          salon.timezone,
-        );
-        const startMs = Date.parse(startUtcIso);
-        const endMs = startMs + longestSelectedDurationMin * 60_000;
-        const { startUtc, endUtc } = salonDayRangeUtc(
-          sharedDate,
-          salon.timezone,
-        );
-        const supabase = createClient();
-        const { data, error } = await supabase.rpc(
-          "public_booking_occupancy_for_range",
-          { p_salon_id: salon.id, p_start: startUtc, p_end: endUtc },
-        );
-        if (seq !== availabilitySeqRef.current) return;
-        if (error) {
-          setAvailability({ kind: "error" });
-          return;
-        }
-        const rows = (data ?? []) as Array<{
-          staff_id: string;
-          start_time_utc: string;
-          end_time_utc: string;
-        }>;
-        const busyStaff = new Set<string>();
-        for (const r of rows) {
-          if (!r.staff_id) continue;
-          const rStart = Date.parse(r.start_time_utc);
-          const rEnd = Date.parse(r.end_time_utc);
-          if (!Number.isFinite(rStart) || !Number.isFinite(rEnd)) continue;
-          if (intervalsOverlapMs(startMs, endMs, rStart, rEnd)) {
-            busyStaff.add(String(r.staff_id));
-          }
-        }
-        const availableCount = Math.max(0, totalActiveStaff - busyStaff.size);
-        setAvailability({
-          kind: "ready",
-          availableCount,
-          totalActiveStaff,
-        });
-      } catch (e) {
-        if (seq !== availabilitySeqRef.current) return;
-        console.error("[BookingGroupFlow] availability check", e);
-        setAvailability({ kind: "error" });
-      }
-    }, 400);
-    return () => window.clearTimeout(timer);
-  }, [
-    sharedDate,
-    sharedTime,
-    longestSelectedDurationMin,
-    salon.id,
-    salon.timezone,
-    totalActiveStaff,
-  ]);
-
-  // Group is too big for the salon at the chosen time. Surface a
-  // warning above the schedule card so it can't be missed.
-  const insufficientCapacity =
-    availability.kind === "ready" && availability.availableCount < size;
-
-  const sizeNextEnabled = primaryPhone.trim().length > 0;
-
+  // ── Helpers ────────────────────────────────────────────────────
   function applySize(n: number) {
     const clamped = Math.max(2, Math.min(maxGroupSize, Math.round(n)));
     setSize(clamped);
@@ -390,113 +252,169 @@ export function BookingGroupFlow({
       }
       return next;
     });
+    setStepErrors(new Set());
   }
 
   function patchMember(i: number, patch: Partial<MemberDraft>) {
     setMembers((prev) => {
       const next = prev.slice();
       next[i] = { ...next[i], ...patch };
+      // If the service changed, drop a preferred staff who isn't
+      // capable of the new service to avoid stale ghosts.
+      if (patch.serviceId !== undefined && capability) {
+        const sid = next[i].preferredStaffId;
+        if (sid && !(capability.get(sid)?.has(patch.serviceId) ?? false)) {
+          next[i] = { ...next[i], preferredStaffId: null };
+        }
+      }
       return next;
     });
-    // Clear per-member conflict highlight + field errors once the
-    // user touches anything on that card. Encourages re-validation.
-    setConflictIdx((prev) => {
-      if (!prev.has(i)) return prev;
+    setStepErrors((prev) => {
+      if (prev.size === 0) return prev;
       const next = new Set(prev);
-      next.delete(i);
-      return next;
-    });
-    setMemberErrors((prev) => {
-      if (!prev.has(i)) return prev;
-      const next = new Map(prev);
-      next.delete(i);
+      next.delete(`m${i}.name`);
+      next.delete(`m${i}.service`);
       return next;
     });
     setErrorMessage(null);
-    // Touching a member field invalidates last-known conflict +
-    // unsuppresses availability (the user might have moved away
-    // from the conflicting state).
-    setConflictKind(null);
-    setSuppressAvailability(false);
+    // Member edits invalidate prior schedule results.
+    setScheduleResult(null);
   }
 
-  function validate(): boolean {
-    const newMemberErrors = new Map<number, Set<MemberFieldError>>();
-    const newScheduleErrors = new Set<"date" | "time">();
-    if (sharedDate.length === 0) newScheduleErrors.add("date");
-    if (sharedTime.length === 0) newScheduleErrors.add("time");
-    members.forEach((m, i) => {
-      const fields = new Set<MemberFieldError>();
-      if (m.name.trim().length === 0) fields.add("name");
-      if (!m.serviceId) fields.add("service");
-      if (!m.staffId) fields.add("staff");
-      if (fields.size > 0) newMemberErrors.set(i, fields);
-    });
-    setScheduleErrors(newScheduleErrors);
-    setMemberErrors(newMemberErrors);
-    if (newScheduleErrors.size > 0 || newMemberErrors.size > 0) {
-      // P0.G1 — scroll the first invalid field into view.
-      queueMicrotask(() => {
-        firstErrorRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
+  /** Move forward to the given step, validating the current one
+   *  on the way. Back-navigation (step < current) skips validation
+   *  so the user can always retreat. */
+  function goToStep(target: Step) {
+    if (typeof target === "number" && typeof step === "number" && target < step) {
+      setStep(target);
+      setStepErrors(new Set());
+      setErrorMessage(null);
+      return;
+    }
+    if (step === 1 && target !== 1) {
+      // Step 1 has no fields to validate (size is already clamped).
+      setStep(target);
+      return;
+    }
+    if (step === 2 && target !== 2) {
+      const errs = new Set<string>();
+      members.forEach((m, i) => {
+        if (m.name.trim().length === 0) errs.add(`m${i}.name`);
+        if (!m.serviceId) errs.add(`m${i}.service`);
       });
-      return false;
+      if (errs.size > 0) {
+        setStepErrors(errs);
+        return;
+      }
+      setStepErrors(new Set());
+      setStep(target);
+      return;
     }
-    // P1.G7 — same staff twice is a structural conflict in a
-    // shared-time group; the DB would catch it too, but better UX
-    // to refuse client-side.
-    if (duplicateStaffIdx.size > 0) {
-      setErrorMessage(
-        groupCopy.conflictBanner.replace("{n}", String(duplicateStaffIdx.size)),
-      );
-      return false;
+    if (step === 3 && target !== 3) {
+      const errs = new Set<string>();
+      if (date.length === 0) errs.add("date");
+      if (isSelectedDayClosed) errs.add("closed");
+      if (arrivalKind === "specific" && specificTime.length === 0) {
+        errs.add("time");
+      }
+      if (errs.size > 0) {
+        setStepErrors(errs);
+        return;
+      }
+      setStepErrors(new Set());
+      // Generate arrangements on the way into step 4.
+      void runScheduler();
+      setStep(target);
+      return;
     }
-    return true;
+    if (step === 4 && target !== 4) {
+      if (
+        !scheduleResult ||
+        !scheduleResult.ok ||
+        scheduleResult.arrangements.length === 0
+      ) {
+        return;
+      }
+      setStep(target);
+      return;
+    }
+    if (step === 5 && target !== 5) {
+      setStep(target);
+      return;
+    }
+  }
+
+  async function runScheduler() {
+    setScheduling(true);
+    setScheduleResult(null);
+    setSelectedArrangementIdx(0);
+    try {
+      const res = await loadGroupSmartSchedule({
+        shopSlug,
+        date,
+        arrivalPref,
+        members: members.map((m) => ({
+          name: m.name.trim(),
+          serviceId: m.serviceId,
+          preferredStaffId: m.preferredStaffId,
+        })),
+      });
+      setScheduleResult(res);
+    } catch (e) {
+      console.error("[BookingGroupFlow] scheduler failed", e);
+      setScheduleResult({ ok: false, reason: "server_error" });
+    } finally {
+      setScheduling(false);
+    }
   }
 
   async function onSubmit() {
     if (submitting) return;
+    if (
+      !scheduleResult ||
+      !scheduleResult.ok ||
+      !scheduleResult.arrangements[selectedArrangementIdx]
+    ) {
+      return;
+    }
+    if (primaryPhone.trim().length === 0) {
+      setErrorMessage(groupCopy.phoneRequired ?? "Vui lòng nhập số điện thoại.");
+      return;
+    }
     setErrorMessage(null);
-    setConflictIdx(new Set());
-    setConflictKind(null);
-    setSuppressAvailability(false);
-    if (!validate()) return;
-    // P1.3 — refuse on closed day. The DB allows arbitrary times
-    // (the GIST only checks overlap with other bookings), so we
-    // need the app-side guard to enforce salon hours.
-    if (isSelectedDayClosed) {
-      setErrorMessage(
-        groupCopy.salonClosedDay ?? "Tiệm nghỉ vào ngày này.",
-      );
-      setSuppressAvailability(true);
-      return;
-    }
-    // QA STEP 4 — block submit on insufficient capacity. The DB
-    // catches this anyway (per-staff slot would conflict), but
-    // refusing client-side gives the cleanest error path.
-    if (insufficientCapacity && availability.kind === "ready") {
-      setErrorMessage(
-        (groupCopy.insufficientCapacity ??
-          "Chỉ còn {n} thợ rảnh vào thời điểm này. Vui lòng chọn giờ khác hoặc giảm số người.")
-          .replace("{n}", String(availability.availableCount)),
-      );
-      setSuppressAvailability(true);
-      return;
-    }
-
     setSubmitting(true);
     try {
-      const payload: GroupBookingMember[] = members.map((m) => ({
-        name: m.name,
-        phone: primaryPhone,
-        email: primaryEmail.trim() || undefined,
-        serviceId: m.serviceId,
-        staffId: m.staffId,
-        date: sharedDate,
-        time: sharedTime,
-      }));
+      const arr = scheduleResult.arrangements[selectedArrangementIdx];
+      // Map per-member assignment → wall-clock HH:MM in salon tz.
+      const payload: GroupBookingMember[] = arr.assignments
+        .slice()
+        .sort((a, b) => a.memberIndex - b.memberIndex)
+        .map((a) => {
+          const draft = members[a.memberIndex];
+          // The scheduler returns UTC ISO; `submitGroupBooking`
+          // expects salon-local "HH:MM" (24h). Convert via Intl in
+          // the salon's tz so DST is correctly handled (e.g. spring-
+          // forward day where wall-clock 02:30 doesn't exist).
+          const parts = new Intl.DateTimeFormat("en-US", {
+            timeZone: salon.timezone,
+            hour: "2-digit",
+            minute: "2-digit",
+            hourCycle: "h23",
+          }).formatToParts(new Date(a.startUtcIso));
+          const hh = parts.find((p) => p.type === "hour")?.value ?? "00";
+          const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
+          const time24 = `${hh}:${mm}`;
+          return {
+            name: draft.name.trim(),
+            phone: primaryPhone,
+            email: primaryEmail.trim() || undefined,
+            serviceId: draft.serviceId,
+            staffId: a.staffId,
+            date,
+            time: time24,
+          };
+        });
+
       const res: GroupBookingResult = await submitGroupBooking({
         shopSlug,
         members: payload,
@@ -508,35 +426,17 @@ export function BookingGroupFlow({
         return;
       }
       if (res.reason === "slot_conflict") {
-        setConflictIdx(new Set(res.conflictingMembers));
-        setConflictKind(res.conflictKind);
-        // P1.6 — distinct copy per kind. Cross-member tells the user
-        // they picked the same staff twice; external blames a race
-        // with another customer.
-        if (res.conflictKind === "cross_member") {
-          setErrorMessage(
-            (groupCopy.conflictCrossMember ??
-              "Hai người không thể chọn cùng một thợ. Vui lòng chọn thợ khác.")
-              .replace(
-                "{n}",
-                String(res.conflictingMembers[0] != null ? res.conflictingMembers[0] + 1 : 0),
-              ),
-          );
-        } else {
-          setErrorMessage(
-            groupCopy.conflictExternal ??
-              "Khung giờ vừa bị đặt mất bởi khách khác. Vui lòng chọn giờ khác.",
-          );
-        }
-        setSuppressAvailability(true);
+        // The arrangement we picked just got raced. Re-run the
+        // scheduler so the user can pick a fresh option.
+        setErrorMessage(
+          groupCopy.conflictExternal ??
+            "Khung giờ vừa bị đặt mất. Đã tạo lại danh sách lựa chọn.",
+        );
+        await runScheduler();
         return;
       }
       if (res.reason === "past_date") {
-        setErrorMessage(
-          groupCopy.pastDate ??
-            "Không thể đặt lịch vào ngày đã qua. Vui lòng chọn ngày khác.",
-        );
-        setSuppressAvailability(true);
+        setErrorMessage(groupCopy.pastDate ?? "Không thể đặt lịch vào ngày đã qua.");
         return;
       }
       if (res.reason === "duplicate_submission") {
@@ -561,43 +461,28 @@ export function BookingGroupFlow({
     }
   }
 
+  // Step 4 enters → kick the scheduler if results are missing
+  // (e.g. user back-stepped to 3, didn't change anything, forward
+  // again — we still want fresh data because availability moves).
+  useEffect(() => {
+    if (step === 4 && !scheduling && !scheduleResult) {
+      void runScheduler();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
+  // ── Render ─────────────────────────────────────────────────────
   if (step === "success" && successResult) {
     return (
-      <section
-        data-testid="booking-group-success"
-        className="mt-8 rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-6 text-center"
-        style={{ color: "var(--booking-text)" }}
-      >
-        <h2 className="text-xl font-semibold sm:text-2xl">
-          {groupCopy.successHeading}
-        </h2>
-        <p className="mt-2 text-sm text-[var(--booking-text-muted)]">
-          {groupCopy.successSubtitle.replace(
-            "{id}",
-            successResult.groupId.slice(0, 8).toUpperCase(),
-          )}
-        </p>
-        <ul className="mt-5 space-y-2 text-left text-sm">
-          {members.map((m, i) => {
-            const svc = services.find((s) => s.id === m.serviceId);
-            const st = staff.find((x) => x.id === m.staffId);
-            return (
-              <li
-                key={i}
-                className="flex flex-wrap items-baseline justify-between gap-2 border-b border-[var(--booking-border)] pb-2"
-              >
-                <span className="font-semibold">{m.name}</span>
-                <span className="text-[var(--booking-text-muted)]">
-                  {svc?.name} · {st?.name}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-        <p className="mt-4 text-sm text-[var(--booking-text-muted)]">
-          {sharedDate} {sharedTime}
-        </p>
-      </section>
+      <SuccessPanel
+        t={t}
+        groupCopy={groupCopy}
+        successResult={successResult}
+        members={members}
+        services={services}
+        scheduleResult={scheduleResult}
+        selectedArrangementIdx={selectedArrangementIdx}
+      />
     );
   }
 
@@ -607,420 +492,352 @@ export function BookingGroupFlow({
       className="mt-8 w-full"
       style={{ color: "var(--booking-text)" }}
     >
-      {step === "size" ? (
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold sm:text-xl">
-            {groupCopy.sizeHeading}
-          </h2>
-          {/* QA round-2 — size options are dynamic now: 2…maxGroupSize
-              where maxGroupSize = min(activeStaffCount, 6). A salon
-              with 3 active stylists shows pills [2, 3]; a salon with
-              ≥6 shows [2…6]. */}
-          <div
-            className={cn(
-              "grid gap-2",
-              maxGroupSize <= 3
-                ? "grid-cols-2"
-                : maxGroupSize <= 4
-                  ? "grid-cols-3"
-                  : "grid-cols-4 sm:grid-cols-5",
-            )}
-            role="radiogroup"
-            aria-label={groupCopy.sizeHeading}
-          >
-            {Array.from(
-              { length: Math.max(0, maxGroupSize - 1) },
-              (_, i) => i + 2,
-            ).map((n) => (
-              <button
-                key={n}
-                type="button"
-                role="radio"
-                aria-checked={size === n}
-                data-testid={`group-size-${n}`}
-                onClick={() => applySize(n)}
+      <Stepper
+        current={typeof step === "number" ? step : 5}
+        labels={[
+          groupCopy.groupStep1 ?? "Số người",
+          groupCopy.groupStep2 ?? "Dịch vụ",
+          groupCopy.groupStep3 ?? "Ngày & giờ",
+          groupCopy.groupStep4 ?? "Sắp xếp",
+          groupCopy.groupStep5 ?? "Xác nhận",
+        ]}
+        onJump={(n) => {
+          if (n < (typeof step === "number" ? step : 5)) {
+            goToStep(n as Step);
+          }
+        }}
+      />
+
+      {step === 1 ? (
+        <SizeStep
+          t={t}
+          groupCopy={groupCopy}
+          size={size}
+          maxGroupSize={maxGroupSize}
+          onApplySize={applySize}
+          onNext={() => goToStep(2)}
+        />
+      ) : null}
+
+      {step === 2 ? (
+        <ServiceStaffStep
+          t={t}
+          groupCopy={groupCopy}
+          members={members}
+          services={services}
+          staff={staff}
+          capability={capability}
+          duplicateStaffIdx={duplicateStaffIdx}
+          stepErrors={stepErrors}
+          totalDisplay={totalDisplay}
+          maxMinutes={totals.maxMinutes}
+          size={size}
+          onPatchMember={patchMember}
+          onBack={() => goToStep(1)}
+          onNext={() => goToStep(3)}
+        />
+      ) : null}
+
+      {step === 3 ? (
+        <DateArrivalStep
+          t={t}
+          groupCopy={groupCopy}
+          date={date}
+          dateBounds={dateBounds}
+          arrivalKind={arrivalKind}
+          specificTime={specificTime}
+          isSelectedDayClosed={isSelectedDayClosed}
+          stepErrors={stepErrors}
+          onDateChange={(v) => {
+            setDate(v);
+            setStepErrors(new Set());
+            setScheduleResult(null);
+          }}
+          onArrivalKindChange={(k) => {
+            setArrivalKind(k);
+            setStepErrors(new Set());
+            setScheduleResult(null);
+          }}
+          onSpecificTimeChange={(v) => {
+            setSpecificTime(v);
+            setScheduleResult(null);
+          }}
+          onBack={() => goToStep(2)}
+          onNext={() => goToStep(4)}
+        />
+      ) : null}
+
+      {step === 4 ? (
+        <ArrangementStep
+          t={t}
+          groupCopy={groupCopy}
+          scheduling={scheduling}
+          scheduleResult={scheduleResult}
+          selectedIdx={selectedArrangementIdx}
+          currencyCode={salon.currencyCode}
+          onSelect={setSelectedArrangementIdx}
+          onRetry={() => void runScheduler()}
+          onBack={() => goToStep(3)}
+          onNext={() => goToStep(5)}
+        />
+      ) : null}
+
+      {step === 5 ? (
+        <ConfirmStep
+          t={t}
+          groupCopy={groupCopy}
+          arrangement={
+            scheduleResult && scheduleResult.ok
+              ? scheduleResult.arrangements[selectedArrangementIdx] ?? null
+              : null
+          }
+          members={members}
+          services={services}
+          date={date}
+          timezone={salon.timezone}
+          primaryPhone={primaryPhone}
+          primaryEmail={primaryEmail}
+          submitting={submitting}
+          errorMessage={errorMessage}
+          totalDisplay={totalDisplay}
+          maxMinutes={totals.maxMinutes}
+          size={size}
+          onPhoneChange={(v) => setPrimaryPhone(formatPhoneInputProgressive(v))}
+          onEmailChange={setPrimaryEmail}
+          onBack={() => goToStep(4)}
+          onSubmit={() => void onSubmit()}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+// ─── Stepper ────────────────────────────────────────────────────
+
+function Stepper({
+  current,
+  labels,
+  onJump,
+}: {
+  current: number;
+  labels: readonly string[];
+  onJump: (n: number) => void;
+}) {
+  return (
+    <ol
+      data-testid="group-stepper"
+      aria-label="Group booking steps"
+      className="mb-6 flex flex-wrap items-center gap-1.5 text-xs"
+    >
+      {labels.map((label, idx) => {
+        const n = idx + 1;
+        const isCurrent = n === current;
+        const isPast = n < current;
+        const isClickable = isPast;
+        const Tag = isClickable ? "button" : "span";
+        return (
+          <li key={label} className="flex items-center gap-1.5">
+            <Tag
+              type={isClickable ? "button" : undefined}
+              onClick={isClickable ? () => onJump(n) : undefined}
+              aria-current={isCurrent ? "step" : undefined}
+              data-testid={`group-step-${n}`}
+              className={cn(
+                "flex h-7 items-center gap-1.5 rounded-full px-2.5 font-semibold transition-colors",
+                isCurrent
+                  ? "bg-[var(--salon-primary)] text-[var(--booking-bg)]"
+                  : isPast
+                    ? "bg-[var(--booking-bg-card)] text-[var(--booking-text)] hover:bg-[var(--booking-bg-input)]"
+                    : "bg-transparent text-[var(--booking-text-muted)]",
+              )}
+            >
+              <span
                 className={cn(
-                  "min-h-11 rounded-xl border text-lg font-semibold transition-colors",
-                  size === n
-                    ? "border-[var(--salon-primary)] bg-[var(--salon-primary)] text-[var(--booking-bg)]"
-                    : "border-[var(--booking-border)] bg-[var(--booking-bg-input)]",
+                  "flex h-4 w-4 items-center justify-center rounded-full text-[10px]",
+                  isCurrent
+                    ? "bg-[var(--booking-bg)] text-[var(--salon-primary)]"
+                    : isPast
+                      ? "bg-[var(--booking-bg-input)] text-[var(--booking-text-muted)]"
+                      : "border border-[var(--booking-text-muted)]/40",
                 )}
               >
                 {n}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-[var(--booking-text-muted)]">
-            {(groupCopy.maxSizeHint ?? "Tối đa {n} người (theo số thợ rảnh)")
-              .replace("{n}", String(maxGroupSize))}
-          </p>
-
-          <div className="mt-6 space-y-3">
-            <h3 className="text-base font-medium">
-              {groupCopy.primaryContactHeading}
-            </h3>
-            <p className="text-xs text-[var(--booking-text-muted)]">
-              {groupCopy.primaryContactHint}
-            </p>
-            <div>
-              <input
-                type="tel"
-                inputMode="tel"
-                autoComplete="tel"
-                data-testid="group-primary-phone"
-                value={primaryPhone}
-                maxLength={24}
-                placeholder={t.clientPhonePlaceholder}
-                aria-invalid={contactPhoneError || undefined}
-                aria-describedby={
-                  contactPhoneError ? "group-primary-phone-error" : undefined
-                }
-                onChange={(e) => {
-                  setPrimaryPhone(formatPhoneInputProgressive(e.target.value));
-                  setContactPhoneError(false);
-                }}
-                className={cn(
-                  "nq-booking-field",
-                  contactPhoneError && "border-nq-error/50",
-                )}
+              </span>
+              <span className="hidden sm:inline">{label}</span>
+            </Tag>
+            {idx < labels.length - 1 ? (
+              <span
+                aria-hidden
+                className="h-px w-3 bg-[var(--booking-border)] sm:w-5"
               />
-              {/* P1.1 — visible inline error when user clicks Next
-                  with an empty phone field. Was silent-disabled
-                  before. */}
-              {contactPhoneError ? (
-                <p
-                  id="group-primary-phone-error"
-                  role="alert"
-                  className="mt-1 text-xs font-semibold text-nq-error"
-                  data-testid="group-primary-phone-error"
-                >
-                  {groupCopy.phoneRequired ?? "Vui lòng nhập số điện thoại."}
-                </p>
-              ) : null}
-            </div>
-            <input
-              type="email"
-              autoComplete="email"
-              data-testid="group-primary-email"
-              value={primaryEmail}
-              placeholder={t.clientEmailLabel}
-              onChange={(e) => setPrimaryEmail(e.target.value)}
-              className="nq-booking-field"
-            />
-          </div>
+            ) : null}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
-          <div className="mt-6 flex justify-end">
-            <LuxuryBookingCta
-              onClick={() => {
-                if (!sizeNextEnabled) {
-                  setContactPhoneError(true);
-                  return;
-                }
-                setStep("members");
-              }}
-            >
-              {t.next}
-            </LuxuryBookingCta>
-          </div>
-        </div>
+// ─── STEP 1 — Number of people ──────────────────────────────────
+
+function SizeStep({
+  t,
+  groupCopy,
+  size,
+  maxGroupSize,
+  onApplySize,
+  onNext,
+}: {
+  t: BookingMessages;
+  groupCopy: NonNullable<BookingMessages["groupBooking"]>;
+  size: number;
+  maxGroupSize: number;
+  onApplySize: (n: number) => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="space-y-4" data-testid="group-step-size-panel">
+      <h2 className="text-lg font-semibold sm:text-xl">{groupCopy.sizeHeading}</h2>
+      <div
+        className={cn(
+          "grid gap-2",
+          maxGroupSize <= 3
+            ? "grid-cols-2"
+            : maxGroupSize <= 4
+              ? "grid-cols-3"
+              : "grid-cols-4 sm:grid-cols-5",
+        )}
+        role="radiogroup"
+        aria-label={groupCopy.sizeHeading}
+      >
+        {Array.from(
+          { length: Math.max(0, maxGroupSize - 1) },
+          (_, i) => i + 2,
+        ).map((n) => (
+          <button
+            key={n}
+            type="button"
+            role="radio"
+            aria-checked={size === n}
+            data-testid={`group-size-${n}`}
+            onClick={() => onApplySize(n)}
+            className={cn(
+              "min-h-11 rounded-xl border text-lg font-semibold transition-colors",
+              size === n
+                ? "border-[var(--salon-primary)] bg-[var(--salon-primary)] text-[var(--booking-bg)]"
+                : "border-[var(--booking-border)] bg-[var(--booking-bg-input)]",
+            )}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-[var(--booking-text-muted)]">
+        {(groupCopy.maxSizeHint ?? "Up to {n} people").replace(
+          "{n}",
+          String(maxGroupSize),
+        )}
+      </p>
+      <div className="mt-6 flex justify-end">
+        <LuxuryBookingCta onClick={onNext} data-testid="group-size-next">
+          {t.next}
+        </LuxuryBookingCta>
+      </div>
+    </div>
+  );
+}
+
+// ─── STEP 2 — Service & Staff per member ────────────────────────
+
+function ServiceStaffStep({
+  t,
+  groupCopy,
+  members,
+  services,
+  staff,
+  capability,
+  duplicateStaffIdx,
+  stepErrors,
+  totalDisplay,
+  maxMinutes,
+  size,
+  onPatchMember,
+  onBack,
+  onNext,
+}: {
+  t: BookingMessages;
+  groupCopy: NonNullable<BookingMessages["groupBooking"]>;
+  members: readonly MemberDraft[];
+  services: readonly BookingServiceItem[];
+  staff: readonly BookingStaffItem[];
+  capability: ReturnType<typeof buildCapabilityMap>;
+  duplicateStaffIdx: Set<number>;
+  stepErrors: Set<string>;
+  totalDisplay: string | null;
+  maxMinutes: number;
+  size: number;
+  onPatchMember: (i: number, patch: Partial<MemberDraft>) => void;
+  onBack: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="space-y-4 pb-32" data-testid="group-step-service-panel">
+      <h2 className="text-lg font-semibold sm:text-xl">
+        {groupCopy.reviewHeading}
+      </h2>
+      {duplicateStaffIdx.size > 0 ? (
+        <p
+          role="status"
+          data-testid="group-staff-conflict-note"
+          className="rounded-xl border border-nq-warning/45 bg-nq-warning/10 px-3 py-2 text-xs"
+        >
+          {groupCopy.staffConflictNote ??
+            "Two people have selected the same staff."}
+        </p>
       ) : null}
 
-      {step === "members" ? (
-        <div className="space-y-4 pb-32">
-          {/* P0.G3 — renamed from "Xem lại lịch nhóm" (which read as
-              "review your booking") to a data-entry-accurate heading. */}
-          <h2 className="text-lg font-semibold sm:text-xl">
-            {groupCopy.reviewHeading}
-          </h2>
+      <div className="space-y-3">
+        {members.map((m, i) => (
+          <MemberCard
+            key={i}
+            index={i}
+            t={t}
+            groupCopy={groupCopy}
+            member={m}
+            services={services}
+            staff={staff}
+            capability={capability}
+            isDuplicateStaff={duplicateStaffIdx.has(i)}
+            nameError={stepErrors.has(`m${i}.name`)}
+            serviceError={stepErrors.has(`m${i}.service`)}
+            onChange={(patch) => onPatchMember(i, patch)}
+          />
+        ))}
+      </div>
 
-          {/* P1.G1 — sticky primary-contact summary. The user used
-              to enter phone + email then lose them on step 2; now
-              the values are visible + editable from a single
-              "Sửa" link that pops back to step 1. */}
-          <div
-            className="rounded-xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] px-3 py-2.5 text-sm"
-            data-testid="group-contact-summary"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0 flex-1 truncate">
-                <span className="text-[var(--booking-text-muted)]">
-                  {groupCopy.primaryContactHeading}:
-                </span>{" "}
-                <span className="font-medium">
-                  {primaryPhone}
-                  {primaryEmail.trim().length > 0 ? ` · ${primaryEmail}` : ""}
-                </span>
-                <span className="text-[var(--booking-text-muted)]">
-                  {" · "}
-                  {size}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setStep("size")}
-                className="shrink-0 text-xs font-semibold text-[var(--salon-primary)] underline-offset-2 hover:underline"
-                data-testid="group-contact-edit"
-              >
-                {groupCopy.editContact ?? "Sửa"}
-              </button>
-            </div>
-          </div>
-
-          {errorMessage ? (
-            <p
-              role="alert"
-              data-testid="group-error"
-              className="rounded-xl border border-nq-error/40 bg-nq-error/10 px-4 py-3 text-sm text-nq-error"
-            >
-              {errorMessage}
-            </p>
-          ) : null}
-
-          {/* P0.G2 — shared schedule for the whole group. */}
-          <div
-            className="rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4 sm:p-5"
-            data-testid="group-shared-schedule"
-          >
-            <h3 className="mb-2 text-base font-semibold">
-              {groupCopy.sharedScheduleHeading ?? "Ngày & giờ chung của nhóm"}
-            </h3>
-            <p className="mb-3 text-xs text-[var(--booking-text-muted)]">
-              {groupCopy.sharedScheduleHint ??
-                "Cả nhóm đến cùng giờ. Mỗi người chọn dịch vụ và thợ riêng bên dưới."}
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <label
-                className="block"
-                htmlFor="group-shared-date-input"
-              >
-                <span className="mb-1 block text-xs font-medium text-[var(--booking-text-muted)]">
-                  {t.breadcrumbDate}
-                </span>
-                <input
-                  id="group-shared-date-input"
-                  ref={(el) => {
-                    if (el && scheduleErrors.has("date") && !firstErrorRef.current)
-                      firstErrorRef.current = el;
-                  }}
-                  type="date"
-                  value={sharedDate}
-                  min={dateBounds.min}
-                  max={dateBounds.max}
-                  aria-invalid={scheduleErrors.has("date") || undefined}
-                  aria-describedby={
-                    scheduleErrors.has("date") ? "group-shared-error" : undefined
-                  }
-                  onChange={(e) => {
-                    setSharedDate(e.target.value);
-                    setSuppressAvailability(false);
-                    setScheduleErrors((prev) => {
-                      if (!prev.has("date")) return prev;
-                      const next = new Set(prev);
-                      next.delete("date");
-                      return next;
-                    });
-                  }}
-                  className={cn(
-                    "nq-booking-field",
-                    scheduleErrors.has("date") && "border-nq-error/50",
-                  )}
-                  data-testid="group-shared-date"
-                />
-              </label>
-              <label
-                className="block"
-                htmlFor="group-shared-time-input"
-              >
-                <span className="mb-1 block text-xs font-medium text-[var(--booking-text-muted)]">
-                  {t.breadcrumbTime}
-                </span>
-                <input
-                  id="group-shared-time-input"
-                  ref={(el) => {
-                    if (el && scheduleErrors.has("time") && !firstErrorRef.current)
-                      firstErrorRef.current = el;
-                  }}
-                  type="time"
-                  step={300}
-                  value={sharedTime}
-                  // P1.3 — opening-hours-derived bounds. Native time
-                  // picker enforces these client-side; server still
-                  // re-validates via assertSlotWithinOpeningHours-
-                  // equivalent in the submit path.
-                  min={
-                    dayHours && !dayHours.closed ? dayHours.open : undefined
-                  }
-                  max={
-                    dayHours && !dayHours.closed ? dayHours.close : undefined
-                  }
-                  disabled={isSelectedDayClosed}
-                  aria-invalid={scheduleErrors.has("time") || undefined}
-                  aria-describedby={
-                    scheduleErrors.has("time") ? "group-shared-error" : undefined
-                  }
-                  onChange={(e) => {
-                    setSharedTime(e.target.value);
-                    setSuppressAvailability(false);
-                    setScheduleErrors((prev) => {
-                      if (!prev.has("time")) return prev;
-                      const next = new Set(prev);
-                      next.delete("time");
-                      return next;
-                    });
-                  }}
-                  className={cn(
-                    "nq-booking-field tabular-nums",
-                    scheduleErrors.has("time") && "border-nq-error/50",
-                    isSelectedDayClosed && "cursor-not-allowed opacity-60",
-                  )}
-                  data-testid="group-shared-time"
-                />
-              </label>
-            </div>
-            {/* P1.3 — closed-day banner overrides the schedule-required
-                error since the day itself is unbookable. */}
-            {isSelectedDayClosed ? (
-              <p
-                className="mt-2 rounded-lg border border-nq-warning/45 bg-nq-warning/10 px-3 py-2 text-xs font-semibold text-nq-foreground"
-                role="alert"
-                data-testid="group-day-closed"
-              >
-                {groupCopy.salonClosedDay ?? "Tiệm nghỉ vào ngày này."}
-              </p>
-            ) : null}
-            {!isSelectedDayClosed && scheduleErrors.size > 0 ? (
-              <p
-                id="group-shared-error"
-                className="mt-2 text-xs font-semibold text-nq-error"
-                role="alert"
-                data-testid="group-shared-error"
-              >
-                {groupCopy.sharedScheduleRequired ??
-                  "Vui lòng chọn ngày và giờ cho cả nhóm."}
-              </p>
-            ) : null}
-
-            {/* QA STEP 4 — live availability pill. Three states:
-                loading (subtle), available (green/muted), insufficient
-                (red, blocks submit). Hidden when the data needed to
-                compute it isn't ready yet (no time picked, no services
-                selected yet). */}
-            {/* P1.7 — suppress availability banner while a submit
-                error is visible. The error banner above will explain;
-                showing "Có 3/3 thợ rảnh" simultaneously is confusing
-                ("then why did it fail?"). Touching any input clears
-                `suppressAvailability` via the onChange handlers. */}
-            {!suppressAvailability && availability.kind === "loading" ? (
-              <p
-                className="mt-2 text-xs text-[var(--booking-text-muted)]"
-                data-testid="group-availability-loading"
-              >
-                {groupCopy.availabilityChecking ??
-                  "Đang kiểm tra số thợ rảnh…"}
-              </p>
-            ) : null}
-            {!suppressAvailability &&
-            availability.kind === "ready" &&
-            !insufficientCapacity ? (
-              <p
-                className="mt-2 text-xs text-[var(--booking-text-muted)]"
-                data-testid="group-availability-ok"
-              >
-                {(groupCopy.availabilityOk ??
-                  "Có {free}/{total} thợ rảnh vào giờ này.")
-                  .replace("{free}", String(availability.availableCount))
-                  .replace("{total}", String(availability.totalActiveStaff))}
-              </p>
-            ) : null}
-            {!suppressAvailability &&
-            availability.kind === "ready" &&
-            insufficientCapacity ? (
-              <p
-                className="mt-2 rounded-lg border border-nq-error/40 bg-nq-error/10 px-3 py-2 text-xs font-semibold text-nq-error"
-                role="alert"
-                data-testid="group-availability-insufficient"
-              >
-                {(groupCopy.insufficientCapacity ??
-                  "Chỉ còn {n} thợ rảnh vào thời điểm này. Vui lòng chọn giờ khác hoặc giảm số người.")
-                  .replace("{n}", String(availability.availableCount))}
-              </p>
-            ) : null}
-          </div>
-
-          {/* Reset firstErrorRef before per-member cards iterate so
-              the schedule error wins precedence if present. */}
-          {(() => {
-            if (scheduleErrors.size === 0) firstErrorRef.current = null;
-            return null;
-          })()}
-
-          {members.map((m, i) => {
-            const fields = memberErrors.get(i) ?? new Set<MemberFieldError>();
-            const isDupStaff = duplicateStaffIdx.has(i);
-            return (
-              <MemberCard
-                key={i}
-                index={i}
-                t={t}
-                groupCopy={groupCopy}
-                member={m}
-                services={services}
-                staff={staff}
-                isConflict={conflictIdx.has(i)}
-                isDuplicateStaff={isDupStaff}
-                fieldErrors={fields}
-                onChange={(patch) => patchMember(i, patch)}
-                brandColor={salon.brandColor}
-                registerErrorRef={(el) => {
-                  if (el && fields.size > 0 && !firstErrorRef.current)
-                    firstErrorRef.current = el;
-                }}
-              />
-            );
-          })}
-
-          {/* P1.G8 — sticky total. Floats above the page so it stays
-              visible while the user fills out tall member cards. */}
-          <div
-            className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--booking-border)] bg-[var(--booking-bg)] px-4 py-3 backdrop-blur"
-            data-testid="group-sticky-footer"
-          >
-            <div className="mx-auto flex w-full max-w-[680px] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div
-                className="text-sm"
-                data-testid="group-total-preview"
-              >
-                <span className="text-[var(--booking-text-muted)]">
-                  {groupCopy.totalLabel ?? "Tổng"}:
-                </span>{" "}
-                <span className="font-semibold">
-                  {size} {groupCopy.peopleSuffix ?? "người"} ·{" "}
-                  {totals.maxMinutes} {t.minuteSuffixShort}
-                  {totalDisplay ? ` · ${totalDisplay}` : ""}
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => setStep("size")}
-                  className="nq-booking-glass h-11 min-h-11 shrink-0 border border-[var(--booking-border)] bg-transparent text-[var(--booking-text-muted)] shadow-none"
-                >
-                  {t.back}
-                </Button>
-                <LuxuryBookingCta
-                  onClick={onSubmit}
-                  disabled={submitting}
-                  data-testid="group-confirm"
-                >
-                  {submitting ? groupCopy.submittingGroup : groupCopy.confirmGroup}
-                </LuxuryBookingCta>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </section>
+      <StickyFooter
+        leftLabel={groupCopy.totalLabel ?? "Total"}
+        leftValue={
+          <span>
+            {size} {groupCopy.peopleSuffix ?? "people"}
+            {totalDisplay ? ` · ${totalDisplay}` : ""}
+            {maxMinutes > 0 ? ` · ${maxMinutes} ${t.minuteSuffixShort}` : ""}
+          </span>
+        }
+      >
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={onBack}
+          className="nq-booking-glass h-11 min-h-11 shrink-0 border border-[var(--booking-border)] bg-transparent text-[var(--booking-text-muted)] shadow-none"
+        >
+          {t.back}
+        </Button>
+        <LuxuryBookingCta onClick={onNext} data-testid="group-service-next">
+          {t.next}
+        </LuxuryBookingCta>
+      </StickyFooter>
+    </div>
   );
 }
 
@@ -1031,12 +848,11 @@ function MemberCard({
   member,
   services,
   staff,
-  isConflict,
+  capability,
   isDuplicateStaff,
-  fieldErrors,
+  nameError,
+  serviceError,
   onChange,
-  brandColor,
-  registerErrorRef,
 }: {
   index: number;
   t: BookingMessages;
@@ -1044,77 +860,52 @@ function MemberCard({
   member: MemberDraft;
   services: readonly BookingServiceItem[];
   staff: readonly BookingStaffItem[];
-  isConflict: boolean;
+  capability: ReturnType<typeof buildCapabilityMap>;
   isDuplicateStaff: boolean;
-  fieldErrors: Set<MemberFieldError>;
+  nameError: boolean;
+  serviceError: boolean;
   onChange: (patch: Partial<MemberDraft>) => void;
-  brandColor: string;
-  /** Ref-callback so the parent can scroll to the first error on
-   * submit-click. */
-  registerErrorRef: (el: HTMLElement | null) => void;
 }) {
-  const ready =
-    member.name.trim().length > 0 && member.serviceId && member.staffId;
+  const eligibleStaff = useMemo(() => {
+    if (!member.serviceId) return staff;
+    return filterStaffCapableForService(staff, capability, member.serviceId);
+  }, [staff, capability, member.serviceId]);
+
   return (
     <div
       data-testid={`group-member-${index}`}
-      data-conflict={isConflict || undefined}
       className={cn(
         "rounded-2xl border bg-[var(--booking-bg-card)] p-4 sm:p-5",
-        isConflict || isDuplicateStaff
-          ? "border-nq-error/60 ring-1 ring-nq-error/40"
+        isDuplicateStaff
+          ? "border-nq-warning/60 ring-1 ring-nq-warning/30"
           : "border-[var(--booking-border)]",
       )}
     >
       <h3 className="mb-3 text-base font-semibold">
         {groupCopy.personLabel.replace("{n}", String(index + 1))}
       </h3>
-      {isConflict ? (
-        <p
-          className="mb-3 text-xs font-semibold text-nq-error"
-          data-testid={`group-member-${index}-conflict`}
-        >
-          {groupCopy.conflictMember.replace("{n}", String(index + 1))}
-        </p>
-      ) : null}
 
-      {/* P1.4 — every inline error now has role="alert" and the
-          input/select carries `aria-invalid` + `aria-describedby`
-          pointing to the error span. Screen readers announce the
-          problem instead of silently leaving the form stuck. */}
       <div className="space-y-3">
         <div>
           <input
-            ref={(el) => {
-              if (fieldErrors.has("name")) registerErrorRef(el);
-            }}
             id={`group-member-${index}-name-input`}
             type="text"
             autoComplete="name"
             placeholder={t.clientNameLabel}
             value={member.name}
             maxLength={100}
-            aria-invalid={fieldErrors.has("name") || undefined}
-            aria-describedby={
-              fieldErrors.has("name")
-                ? `group-member-${index}-name-error`
-                : undefined
-            }
+            aria-invalid={nameError || undefined}
             onChange={(e) => onChange({ name: e.target.value })}
             className={cn(
               "nq-booking-field",
               member.name.trim().length > 0 &&
                 "font-medium text-[var(--booking-text)]",
-              fieldErrors.has("name") && "border-nq-error/50",
+              nameError && "border-nq-error/50",
             )}
             data-testid={`group-member-${index}-name`}
           />
-          {fieldErrors.has("name") ? (
-            <p
-              id={`group-member-${index}-name-error`}
-              role="alert"
-              className="mt-1 text-xs text-nq-error"
-            >
+          {nameError ? (
+            <p role="alert" className="mt-1 text-xs text-nq-error">
               {t.bookingErrors.nameRequired}
             </p>
           ) : null}
@@ -1122,25 +913,19 @@ function MemberCard({
 
         <div>
           <select
-            ref={(el) => {
-              if (fieldErrors.has("service")) registerErrorRef(el);
-            }}
             id={`group-member-${index}-service-input`}
             value={member.serviceId}
-            aria-invalid={fieldErrors.has("service") || undefined}
-            aria-describedby={
-              fieldErrors.has("service")
-                ? `group-member-${index}-service-error`
-                : undefined
-            }
+            aria-invalid={serviceError || undefined}
             onChange={(e) => onChange({ serviceId: e.target.value })}
             className={cn(
               "nq-booking-field",
-              fieldErrors.has("service") && "border-nq-error/50",
+              serviceError && "border-nq-error/50",
             )}
             data-testid={`group-member-${index}-service`}
             style={{
-              color: member.serviceId ? "var(--booking-text)" : "var(--booking-text-muted)",
+              color: member.serviceId
+                ? "var(--booking-text)"
+                : "var(--booking-text-muted)",
             }}
           >
             <option value="">— {t.breadcrumbServices} —</option>
@@ -1151,12 +936,8 @@ function MemberCard({
               </option>
             ))}
           </select>
-          {fieldErrors.has("service") ? (
-            <p
-              id={`group-member-${index}-service-error`}
-              role="alert"
-              className="mt-1 text-xs text-nq-error"
-            >
+          {serviceError ? (
+            <p role="alert" className="mt-1 text-xs text-nq-error">
               {t.bookingErrors.serviceRequired}
             </p>
           ) : null}
@@ -1164,66 +945,698 @@ function MemberCard({
 
         <div>
           <select
-            ref={(el) => {
-              if (fieldErrors.has("staff")) registerErrorRef(el);
-            }}
             id={`group-member-${index}-staff-input`}
-            value={member.staffId}
-            aria-invalid={
-              fieldErrors.has("staff") || isDuplicateStaff || undefined
+            value={member.preferredStaffId ?? ""}
+            onChange={(e) =>
+              onChange({ preferredStaffId: e.target.value || null })
             }
-            aria-describedby={
-              fieldErrors.has("staff") || isDuplicateStaff
-                ? `group-member-${index}-staff-error`
-                : undefined
-            }
-            onChange={(e) => onChange({ staffId: e.target.value })}
-            className={cn(
-              "nq-booking-field",
-              (fieldErrors.has("staff") || isDuplicateStaff) &&
-                "border-nq-error/50",
-            )}
+            className="nq-booking-field"
             data-testid={`group-member-${index}-staff`}
             style={{
-              color: member.staffId ? "var(--booking-text)" : "var(--booking-text-muted)",
+              color: member.preferredStaffId
+                ? "var(--booking-text)"
+                : "var(--booking-text-muted)",
             }}
           >
-            <option value="">— {t.breadcrumbStaff} —</option>
-            {staff.map((s) => (
+            <option value="">— {t.anyStaffOptionTitle} —</option>
+            {eligibleStaff.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
               </option>
             ))}
           </select>
-          {fieldErrors.has("staff") ? (
+          {isDuplicateStaff ? (
             <p
-              id={`group-member-${index}-staff-error`}
               role="alert"
-              className="mt-1 text-xs text-nq-error"
-            >
-              {groupCopy.staffRequired ?? "Chọn thợ."}
-            </p>
-          ) : isDuplicateStaff ? (
-            <p
-              id={`group-member-${index}-staff-error`}
-              role="alert"
-              className="mt-1 text-xs font-semibold text-nq-error"
+              className="mt-1 text-xs text-nq-warning"
               data-testid={`group-member-${index}-duplicate-staff`}
             >
-              {(groupCopy.duplicateStaff ??
-                "This staff is already chosen for another person — pick a different staff.")
-                .replace("{n}", String(index))}
+              {groupCopy.staffConflictNote ??
+                "Two people have selected the same staff."}
             </p>
           ) : null}
         </div>
       </div>
-      {ready && !isConflict && !isDuplicateStaff ? (
+    </div>
+  );
+}
+
+// ─── STEP 3 — Date & Arrival window ──────────────────────────────
+
+function DateArrivalStep({
+  t,
+  groupCopy,
+  date,
+  dateBounds,
+  arrivalKind,
+  specificTime,
+  isSelectedDayClosed,
+  stepErrors,
+  onDateChange,
+  onArrivalKindChange,
+  onSpecificTimeChange,
+  onBack,
+  onNext,
+}: {
+  t: BookingMessages;
+  groupCopy: NonNullable<BookingMessages["groupBooking"]>;
+  date: string;
+  dateBounds: { min: string; max: string };
+  arrivalKind: GroupArrivalPreference["kind"];
+  specificTime: string;
+  isSelectedDayClosed: boolean;
+  stepErrors: Set<string>;
+  onDateChange: (v: string) => void;
+  onArrivalKindChange: (k: GroupArrivalPreference["kind"]) => void;
+  onSpecificTimeChange: (v: string) => void;
+  onBack: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="space-y-5 pb-32" data-testid="group-step-date-panel">
+      <h2 className="text-lg font-semibold sm:text-xl">
+        {t.stepDateHeading}
+      </h2>
+      <div>
+        <label
+          className="mb-1 block text-xs font-medium text-[var(--booking-text-muted)]"
+          htmlFor="group-date"
+        >
+          {t.breadcrumbDate}
+        </label>
+        <input
+          id="group-date"
+          type="date"
+          value={date}
+          min={dateBounds.min}
+          max={dateBounds.max}
+          onChange={(e) => onDateChange(e.target.value)}
+          aria-invalid={stepErrors.has("date") || undefined}
+          className={cn(
+            "nq-booking-field",
+            stepErrors.has("date") && "border-nq-error/50",
+          )}
+          data-testid="group-date-input"
+        />
+        {isSelectedDayClosed ? (
+          <p
+            role="alert"
+            data-testid="group-date-closed"
+            className="mt-2 rounded-lg border border-nq-warning/45 bg-nq-warning/10 px-3 py-2 text-xs font-semibold"
+          >
+            {groupCopy.schedulingClosed ??
+              "Salon is closed on this date. Please pick another date."}
+          </p>
+        ) : null}
+        {stepErrors.has("date") && !isSelectedDayClosed ? (
+          <p role="alert" className="mt-1 text-xs text-nq-error">
+            {groupCopy.sharedScheduleRequired ?? "Please pick a date."}
+          </p>
+        ) : null}
+      </div>
+
+      <fieldset>
+        <legend className="mb-2 block text-base font-semibold">
+          {groupCopy.arrivalQuestion ?? "When would you like to arrive?"}
+        </legend>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {ARRIVAL_PRESETS.map((k) => {
+            const label =
+              k === "morning"
+                ? groupCopy.arrivalMorning ?? "Morning"
+                : k === "afternoon"
+                  ? groupCopy.arrivalAfternoon ?? "Afternoon"
+                  : groupCopy.arrivalEvening ?? "Evening";
+            const emoji =
+              k === "morning" ? "🌅" : k === "afternoon" ? "☀️" : "🌆";
+            const active = arrivalKind === k;
+            return (
+              <button
+                key={k}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                data-testid={`group-arrival-${k}`}
+                onClick={() => onArrivalKindChange(k)}
+                className={cn(
+                  "min-h-12 rounded-xl border px-4 py-2 text-left text-sm font-medium transition-colors",
+                  active
+                    ? "border-[var(--salon-primary)] bg-[var(--salon-primary)]/10 text-[var(--booking-text)]"
+                    : "border-[var(--booking-border)] bg-[var(--booking-bg-input)] text-[var(--booking-text-muted)]",
+                )}
+              >
+                <span className="mr-2" aria-hidden>
+                  {emoji}
+                </span>
+                {label}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            role="radio"
+            aria-checked={arrivalKind === "specific"}
+            data-testid="group-arrival-specific"
+            onClick={() => onArrivalKindChange("specific")}
+            className={cn(
+              "min-h-12 rounded-xl border px-4 py-2 text-left text-sm font-medium transition-colors sm:col-span-2",
+              arrivalKind === "specific"
+                ? "border-[var(--salon-primary)] bg-[var(--salon-primary)]/10 text-[var(--booking-text)]"
+                : "border-[var(--booking-border)] bg-[var(--booking-bg-input)] text-[var(--booking-text-muted)]",
+            )}
+          >
+            <span className="mr-2" aria-hidden>
+              🕐
+            </span>
+            {groupCopy.arrivalSpecific ?? "Specific time"}
+          </button>
+        </div>
+        {arrivalKind === "specific" ? (
+          <div className="mt-3">
+            <input
+              type="time"
+              step={300}
+              value={specificTime}
+              aria-invalid={stepErrors.has("time") || undefined}
+              onChange={(e) => onSpecificTimeChange(e.target.value)}
+              className={cn(
+                "nq-booking-field tabular-nums",
+                stepErrors.has("time") && "border-nq-error/50",
+              )}
+              data-testid="group-specific-time"
+            />
+            {stepErrors.has("time") ? (
+              <p role="alert" className="mt-1 text-xs text-nq-error">
+                {groupCopy.sharedScheduleRequired ?? "Please pick a time."}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </fieldset>
+
+      <StickyFooter leftLabel={null} leftValue={null}>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={onBack}
+          className="nq-booking-glass h-11 min-h-11 shrink-0 border border-[var(--booking-border)] bg-transparent text-[var(--booking-text-muted)] shadow-none"
+        >
+          {t.back}
+        </Button>
+        <LuxuryBookingCta
+          onClick={onNext}
+          disabled={isSelectedDayClosed}
+          data-testid="group-date-next"
+        >
+          {t.next}
+        </LuxuryBookingCta>
+      </StickyFooter>
+    </div>
+  );
+}
+
+// ─── STEP 4 — AI Arrangement ─────────────────────────────────────
+
+function ArrangementStep({
+  t,
+  groupCopy,
+  scheduling,
+  scheduleResult,
+  selectedIdx,
+  currencyCode,
+  onSelect,
+  onRetry,
+  onBack,
+  onNext,
+}: {
+  t: BookingMessages;
+  groupCopy: NonNullable<BookingMessages["groupBooking"]>;
+  scheduling: boolean;
+  scheduleResult: GroupSmartScheduleResult | null;
+  selectedIdx: number;
+  currencyCode: BookingSalonMeta["currencyCode"];
+  onSelect: (i: number) => void;
+  onRetry: () => void;
+  onBack: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="space-y-4 pb-32" data-testid="group-step-arrangement-panel">
+      <h2 className="text-lg font-semibold sm:text-xl">
+        {groupCopy.groupStep4 ?? "AI Arrangement"}
+      </h2>
+
+      {scheduling ? (
         <div
-          aria-hidden
-          className="mt-3 h-0.5 w-12 rounded-full"
-          style={{ background: brandColor }}
+          role="status"
+          data-testid="group-scheduling-loading"
+          className="rounded-xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] px-4 py-8 text-center text-sm text-[var(--booking-text-muted)]"
+        >
+          {groupCopy.availabilityChecking ?? "Đang tính lịch tối ưu…"}
+        </div>
+      ) : null}
+
+      {!scheduling && scheduleResult && !scheduleResult.ok ? (
+        <EmptyState
+          reason={scheduleResult.reason}
+          groupCopy={groupCopy}
+          onRetry={onRetry}
+          onBack={onBack}
         />
       ) : null}
+
+      {!scheduling && scheduleResult?.ok ? (
+        <div className="space-y-3">
+          {scheduleResult.arrangements.map((arr, idx) => (
+            <ArrangementCard
+              key={`${arr.kind}-${idx}`}
+              t={t}
+              groupCopy={groupCopy}
+              arrangement={arr}
+              currencyCode={currencyCode}
+              selected={idx === selectedIdx}
+              onSelect={() => onSelect(idx)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      <StickyFooter leftLabel={null} leftValue={null}>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={onBack}
+          className="nq-booking-glass h-11 min-h-11 shrink-0 border border-[var(--booking-border)] bg-transparent text-[var(--booking-text-muted)] shadow-none"
+        >
+          {t.back}
+        </Button>
+        <LuxuryBookingCta
+          onClick={onNext}
+          disabled={
+            !scheduleResult ||
+            !scheduleResult.ok ||
+            scheduleResult.arrangements.length === 0
+          }
+          data-testid="group-arrangement-next"
+        >
+          {t.next}
+        </LuxuryBookingCta>
+      </StickyFooter>
+    </div>
+  );
+}
+
+function ArrangementCard({
+  t,
+  groupCopy,
+  arrangement,
+  currencyCode,
+  selected,
+  onSelect,
+}: {
+  t: BookingMessages;
+  groupCopy: NonNullable<BookingMessages["groupBooking"]>;
+  arrangement: GroupArrangement;
+  currencyCode: BookingSalonMeta["currencyCode"];
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const heading =
+    arrangement.kind === "best"
+      ? groupCopy.schedulingBest ?? "Best ✨"
+      : arrangement.kind === "alternative"
+        ? groupCopy.schedulingAlt ?? "Alternative"
+        : groupCopy.schedulingEarly ?? "Earliest";
+  const icon =
+    arrangement.kind === "best"
+      ? "✨"
+      : arrangement.kind === "alternative"
+        ? "🔄"
+        : "⚡";
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      data-testid={`group-arrangement-${arrangement.kind}`}
+      className={cn(
+        "block w-full rounded-2xl border p-4 text-left transition-colors sm:p-5",
+        selected
+          ? "border-[var(--salon-primary)] bg-[var(--salon-primary)]/5 shadow-[var(--shadow-nq-tile-selected)]"
+          : "border-[var(--booking-border)] bg-[var(--booking-bg-card)] hover:border-[var(--booking-text-muted)]/40",
+      )}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm font-semibold">
+          <span aria-hidden className="mr-1.5">
+            {icon}
+          </span>
+          {heading}
+        </span>
+        {arrangement.kind === "best" ? (
+          <span className="rounded-full bg-[var(--salon-primary)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--booking-bg)]">
+            {groupCopy.schedulingRecommended ?? "Recommended"}
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-1 text-xs text-[var(--booking-text-muted)]">
+        {arrangement.groupStartDisplay} → {arrangement.groupEndDisplay}
+      </p>
+      <ul className="mt-3 space-y-1.5 text-sm">
+        {arrangement.assignments.map((a) => (
+          <li
+            key={a.memberIndex}
+            className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"
+          >
+            <span className="font-medium">
+              {a.memberName || `#${a.memberIndex + 1}`}
+            </span>
+            <span className="text-[var(--booking-text-muted)]">
+              {a.startDisplay} · {a.staffName} · {a.serviceName}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-xs text-[var(--booking-text-muted)]">
+        {(groupCopy.schedulingFinish ?? "Finishes at {time}").replace(
+          "{time}",
+          arrangement.groupEndDisplay,
+        )}
+      </p>
+      {/* Hide currency from the card if any member is unpriced. */}
+      {arrangement.totalCents != null ? (
+        <p className="mt-1 text-xs text-[var(--booking-text-muted)]">
+          {t.summaryTotal}:{" "}
+          {formatCurrency(arrangement.totalCents, currencyCode) ?? ""}
+        </p>
+      ) : null}
+    </button>
+  );
+}
+
+function EmptyState({
+  reason,
+  groupCopy,
+  onRetry,
+  onBack,
+}: {
+  reason: Exclude<GroupSmartScheduleResult, { ok: true }>["reason"];
+  groupCopy: NonNullable<BookingMessages["groupBooking"]>;
+  onRetry: () => void;
+  onBack: () => void;
+}) {
+  const copy =
+    reason === "salon_closed"
+      ? groupCopy.schedulingClosed ??
+        "Salon is closed on this date. Please pick another date."
+      : reason === "no_slots"
+        ? groupCopy.schedulingNoSlots ??
+          "No slots available in that window. Try a different time or date."
+        : reason === "salon_paused"
+          ? groupCopy.salonPaused
+          : groupCopy.serverError;
+  return (
+    <div
+      role="alert"
+      data-testid="group-scheduling-empty"
+      data-reason={reason}
+      className="rounded-xl border border-nq-warning/45 bg-nq-warning/10 px-4 py-5 text-sm"
+    >
+      <p>{copy}</p>
+      <div className="mt-3 flex gap-2">
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={onBack}
+          className="h-9 min-h-9 rounded-full border border-[var(--booking-border)] bg-transparent px-3 text-xs"
+        >
+          {groupCopy.schedulingTryDate ?? "Try another date"}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={onRetry}
+          className="h-9 min-h-9 rounded-full border border-[var(--booking-border)] bg-transparent px-3 text-xs"
+        >
+          Retry
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── STEP 5 — Confirm ────────────────────────────────────────────
+
+function ConfirmStep({
+  t,
+  groupCopy,
+  arrangement,
+  members,
+  services,
+  date,
+  timezone,
+  primaryPhone,
+  primaryEmail,
+  submitting,
+  errorMessage,
+  totalDisplay,
+  maxMinutes,
+  size,
+  onPhoneChange,
+  onEmailChange,
+  onBack,
+  onSubmit,
+}: {
+  t: BookingMessages;
+  groupCopy: NonNullable<BookingMessages["groupBooking"]>;
+  arrangement: GroupArrangement | null;
+  members: readonly MemberDraft[];
+  services: readonly BookingServiceItem[];
+  date: string;
+  timezone: string;
+  primaryPhone: string;
+  primaryEmail: string;
+  submitting: boolean;
+  errorMessage: string | null;
+  totalDisplay: string | null;
+  maxMinutes: number;
+  size: number;
+  onPhoneChange: (v: string) => void;
+  onEmailChange: (v: string) => void;
+  onBack: () => void;
+  onSubmit: () => void;
+}) {
+  const dateDisplay = useMemo(() => {
+    // Display the chosen date in salon-tz long form. The
+    // arrangement carries UTC ISO; reuse formatInSalonTz for
+    // consistency with the per-row times.
+    const firstStart = arrangement?.assignments[0]?.startUtcIso;
+    if (!firstStart) return date;
+    return formatInSalonTz(firstStart, timezone, "date");
+  }, [arrangement, date, timezone]);
+
+  if (!arrangement) {
+    return (
+      <p
+        role="alert"
+        className="rounded-xl border border-nq-error/40 bg-nq-error/10 px-4 py-3 text-sm text-nq-error"
+      >
+        {groupCopy.schedulingNoSlots ?? "Please pick an arrangement first."}
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4 pb-32" data-testid="group-step-confirm-panel">
+      <h2 className="text-lg font-semibold sm:text-xl">
+        {t.stepConfirmHeading}
+      </h2>
+
+      <div className="rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4 sm:p-5">
+        <p className="text-xs text-[var(--booking-text-muted)]">
+          {dateDisplay}
+        </p>
+        <ul className="mt-3 space-y-2 text-sm">
+          {arrangement.assignments.map((a) => {
+            const draft = members[a.memberIndex];
+            const svc = services.find((s) => s.id === draft?.serviceId);
+            return (
+              <li
+                key={a.memberIndex}
+                className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-[var(--booking-border)]/60 pb-2 last:border-b-0 last:pb-0"
+              >
+                <span className="font-medium">{draft?.name || "—"}</span>
+                <span className="text-[var(--booking-text-muted)]">
+                  {a.startDisplay} · {a.staffName} ·{" "}
+                  {svc?.name ?? a.serviceName}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-base font-semibold">
+          {groupCopy.primaryContactHeading}
+        </h3>
+        <p className="text-xs text-[var(--booking-text-muted)]">
+          {groupCopy.primaryContactHint}
+        </p>
+        <input
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          data-testid="group-primary-phone"
+          value={primaryPhone}
+          maxLength={24}
+          placeholder={t.clientPhonePlaceholder}
+          onChange={(e) => onPhoneChange(e.target.value)}
+          className="nq-booking-field"
+        />
+        <input
+          type="email"
+          autoComplete="email"
+          data-testid="group-primary-email"
+          value={primaryEmail}
+          placeholder={t.clientEmailLabel}
+          onChange={(e) => onEmailChange(e.target.value)}
+          className="nq-booking-field"
+        />
+      </div>
+
+      {errorMessage ? (
+        <p
+          role="alert"
+          data-testid="group-error"
+          className="rounded-xl border border-nq-error/40 bg-nq-error/10 px-4 py-3 text-sm text-nq-error"
+        >
+          {errorMessage}
+        </p>
+      ) : null}
+
+      <StickyFooter
+        leftLabel={groupCopy.groupTotal ?? groupCopy.totalLabel ?? "Total"}
+        leftValue={
+          <span>
+            {size} {groupCopy.peopleSuffix ?? "people"}
+            {totalDisplay ? ` · ${totalDisplay}` : ""}
+            {maxMinutes > 0 ? ` · ${maxMinutes} ${t.minuteSuffixShort}` : ""}
+          </span>
+        }
+      >
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={onBack}
+          className="nq-booking-glass h-11 min-h-11 shrink-0 border border-[var(--booking-border)] bg-transparent text-[var(--booking-text-muted)] shadow-none"
+        >
+          {t.back}
+        </Button>
+        <LuxuryBookingCta
+          onClick={onSubmit}
+          disabled={submitting}
+          data-testid="group-confirm"
+        >
+          {submitting ? groupCopy.submittingGroup : groupCopy.confirmGroup}
+        </LuxuryBookingCta>
+      </StickyFooter>
+    </div>
+  );
+}
+
+// ─── Success ─────────────────────────────────────────────────────
+
+function SuccessPanel({
+  t,
+  groupCopy,
+  successResult,
+  members,
+  services,
+  scheduleResult,
+  selectedArrangementIdx,
+}: {
+  t: BookingMessages;
+  groupCopy: NonNullable<BookingMessages["groupBooking"]>;
+  successResult: { groupId: string; bookingIds: string[] };
+  members: readonly MemberDraft[];
+  services: readonly BookingServiceItem[];
+  scheduleResult: GroupSmartScheduleResult | null;
+  selectedArrangementIdx: number;
+}) {
+  const arrangement =
+    scheduleResult && scheduleResult.ok
+      ? scheduleResult.arrangements[selectedArrangementIdx]
+      : null;
+  return (
+    <section
+      data-testid="booking-group-success"
+      className="mt-8 rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-6 text-center"
+      style={{ color: "var(--booking-text)" }}
+    >
+      <h2 className="text-xl font-semibold sm:text-2xl">
+        {groupCopy.groupSuccess ?? groupCopy.successHeading}
+      </h2>
+      <p className="mt-2 text-sm text-[var(--booking-text-muted)]">
+        {(groupCopy.groupRef ?? "Reference") + " #"}
+        {successResult.groupId.slice(0, 8).toUpperCase()}
+      </p>
+      {arrangement ? (
+        <ul className="mt-5 space-y-2 text-left text-sm">
+          {arrangement.assignments.map((a) => {
+            const draft = members[a.memberIndex];
+            const svc = services.find((s) => s.id === draft?.serviceId);
+            return (
+              <li
+                key={a.memberIndex}
+                className="flex flex-wrap items-baseline justify-between gap-2 border-b border-[var(--booking-border)] pb-2"
+              >
+                <span className="font-semibold">{draft?.name}</span>
+                <span className="text-[var(--booking-text-muted)]">
+                  {a.startDisplay} · {svc?.name ?? a.serviceName} · {a.staffName}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      {t ? null : null}
+    </section>
+  );
+}
+
+// ─── Sticky footer (shared) ──────────────────────────────────────
+
+function StickyFooter({
+  leftLabel,
+  leftValue,
+  children,
+}: {
+  leftLabel: string | null;
+  leftValue: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--booking-border)] bg-[var(--booking-bg)] px-4 py-3 backdrop-blur"
+      data-testid="group-sticky-footer"
+    >
+      <div className="mx-auto flex w-full max-w-[680px] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        {leftLabel != null || leftValue != null ? (
+          <div className="text-sm" data-testid="group-total-preview">
+            {leftLabel != null ? (
+              <span className="text-[var(--booking-text-muted)]">
+                {leftLabel}:{" "}
+              </span>
+            ) : null}
+            <span className="font-semibold">{leftValue}</span>
+          </div>
+        ) : (
+          <span aria-hidden />
+        )}
+        <div className="flex gap-2">{children}</div>
+      </div>
     </div>
   );
 }
