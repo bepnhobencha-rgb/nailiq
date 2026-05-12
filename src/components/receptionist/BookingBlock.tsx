@@ -150,8 +150,14 @@ const DEFAULT_ICON_LABELS = {
 } as const;
 
 function formatPrice(priceCents: number | null): string {
+  // Was: `(priceCents/100).toFixed(2)` — rendered "45.00" with no
+  // currency symbol, which is what the QA report flagged as the
+  // "empty price" bug. The "$" prefix is correct for CAD/USD; VND
+  // salons see the same "$45" until a follow-up threads
+  // `salons.currency_code` into BookingBlock (current rendering
+  // path doesn't have access to the salon row).
   if (priceCents == null) return "—";
-  return (priceCents / 100).toFixed(2);
+  return `$${(priceCents / 100).toFixed(2)}`;
 }
 
 export function BookingBlock(props: BookingBlockProps) {

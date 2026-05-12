@@ -6,6 +6,11 @@ import { SaveButton, type SaveButtonStatus } from "@/components/ui/SaveButton";
 import { SetupToast, type SetupToastPayload } from "@/components/ui/Toast";
 import { updateAddress } from "@/shared/dashboard/setupActions";
 import {
+  DEFAULT_CURRENCY,
+  SUPPORTED_CURRENCIES,
+  type Currency,
+} from "@/shared/lib/currencyFormat";
+import {
   SETUP_COUNTRY_OPTIONS,
   filterSalonPhoneInput,
   isAllowedCountry,
@@ -80,10 +85,15 @@ export function AddressSetupPanel({
   slug,
   initialAddress,
   initialSalonPhone,
+  initialCurrency,
 }: {
   slug: string;
   initialAddress: string;
   initialSalonPhone: string;
+  /** Salon's display currency at load time. Defaulted to CAD upstream
+   *  by `parseCurrency`, but kept optional here so callers can drop
+   *  the prop without breaking type-check. */
+  initialCurrency?: Currency;
 }) {
   const router = useRouter();
   const parsed = parseStoredAddress(initialAddress);
@@ -95,6 +105,9 @@ export function AddressSetupPanel({
   const [country, setCountry] = useState(parsed.country);
   const [salonPhone, setSalonPhone] = useState(() =>
     filterSalonPhoneInput(initialSalonPhone),
+  );
+  const [currency, setCurrency] = useState<Currency>(
+    initialCurrency ?? DEFAULT_CURRENCY,
   );
 
   const [fieldErrors, setFieldErrors] = useState<
@@ -128,9 +141,10 @@ export function AddressSetupPanel({
     setPostal(p.postal);
     setCountry(p.country);
     setSalonPhone(filterSalonPhoneInput(initialSalonPhone));
+    setCurrency(initialCurrency ?? DEFAULT_CURRENCY);
     setFieldErrors({});
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [initialAddress, initialSalonPhone]);
+  }, [initialAddress, initialSalonPhone, initialCurrency]);
 
   const setFieldError = useCallback((key: FieldKey, message: string | null) => {
     setFieldErrors((prev) => {
@@ -194,6 +208,7 @@ export function AddressSetupPanel({
       postal,
       country,
       salon_phone: salonPhone,
+      currency_code: currency,
     });
     if (!res.ok) {
       setSaveStatus("error");
@@ -424,6 +439,31 @@ export function AddressSetupPanel({
             {fieldErrors.phone}
           </p>
         ) : null}
+      </label>
+
+      <label className="block text-sm font-medium text-nq-foreground">
+        Currency
+        <span className="block text-xs font-normal text-nq-muted/85">
+          Used to display service prices and revenue totals across the
+          public booking page and your dashboard.
+        </span>
+        <select
+          className={cn(
+            "mt-1.5 flex min-h-[44px] w-full appearance-none border",
+            inputRing,
+            "border-nq-border/50",
+          )}
+          value={currency}
+          disabled={saveStatus === "saving"}
+          data-testid="salon-currency-select"
+          onChange={(e) => setCurrency(e.target.value as Currency)}
+        >
+          {SUPPORTED_CURRENCIES.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
       </label>
 
       <SaveButton

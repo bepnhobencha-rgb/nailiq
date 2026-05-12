@@ -38,6 +38,10 @@ import {
 } from "@/shared/booking/serviceCategory";
 import { SERVICE_DESCRIPTION_MAX_LEN } from "@/shared/dashboard/serviceConstraints";
 import {
+  isSupportedCurrency,
+  type Currency,
+} from "@/shared/lib/currencyFormat";
+import {
   DEMO_SALON_SLUG,
   isDemoOtpRuntime,
   isDemoSlugPinBypassed,
@@ -1122,6 +1126,9 @@ export async function updateAddress(
     postal: string;
     country: string;
     salon_phone: string;
+    /** Salon's display currency (CAD / USD / VND). Optional — when
+     *  omitted the existing value is preserved. */
+    currency_code?: Currency | string;
   },
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
@@ -1141,6 +1148,16 @@ export async function updateAddress(
   const country = input.country.trim();
   if (!country || !isAllowedCountry(country)) return fail("invalid_country");
 
+  // Reject unknown currency codes rather than silently falling back —
+  // keeps the API honest. Omitted is fine (DB keeps existing value).
+  let currencyCode: Currency | undefined;
+  if (input.currency_code !== undefined) {
+    if (!isSupportedCurrency(input.currency_code)) {
+      return fail("invalid_currency");
+    }
+    currencyCode = input.currency_code;
+  }
+
   const address = buildSalonAddressString({
     street: input.street,
     city: input.city,
@@ -1150,10 +1167,17 @@ export async function updateAddress(
   });
   if (!address || address.length > 400) return fail("invalid_address");
 
+  // currency_code cast: column added by migration 20260512000000;
+  // not yet in the auto-generated DB types.
+  const patch = {
+    address,
+    salon_phone: salonPhone,
+    ...(currencyCode !== undefined ? { currency_code: currencyCode } : {}),
+  } as never;
   const supabase = await writableSupabase(slug, r.kind);
   const { error } = await supabase
     .from("salons")
-    .update({ address, salon_phone: salonPhone })
+    .update(patch)
     .eq("id", r.salon.id)
     .eq("slug", slug);
 
