@@ -6,6 +6,7 @@ import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
 import { ServicesSetupPanel } from "@/components/dashboard/ServicesSetupPanel";
 import { parseServiceCategory } from "@/shared/booking/serviceCategory";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -41,12 +42,33 @@ export default async function SetupServicesPage({ params }: Props) {
     redirect("/register");
   }
 
+  // Read the salon's effective plan to size the proactive at-limit
+  // banner + hard-disable the Add button on the client. Server still
+  // enforces independently via canAddService — this is UX only.
+  const { data: planRow } = await ctx.supabase
+    .from("salons")
+    .select(
+      "subscription_plan, plan_override, feature_flags" as never,
+    )
+    .eq("id", ctx.salon.id)
+    .maybeSingle();
+  const planForLimits = (planRow ?? {}) as {
+    subscription_plan?: string | null;
+    plan_override?: string | null;
+    feature_flags?: Record<string, unknown> | null;
+  };
+  const planLimits = getEffectivePlanLimits(planForLimits);
+  const maxServices = Number.isFinite(planLimits.maxServices)
+    ? planLimits.maxServices
+    : Number.POSITIVE_INFINITY;
+
   return (
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 sm:pt-6">
         <SetupBackNav slug={slug} title="Services" />
         <ServicesSetupPanel
           slug={slug}
+          maxServices={maxServices}
           initialRows={(rows ?? []).map((r) => {
             const row = r as unknown as {
               id: string;

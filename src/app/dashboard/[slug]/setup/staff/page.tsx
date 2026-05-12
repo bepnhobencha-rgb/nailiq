@@ -8,6 +8,7 @@ import {
   getDashboardWriteClient,
   type StaffJobRole,
 } from "@/shared/dashboard/setupActions";
+import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -89,12 +90,32 @@ export default async function SetupStaffPage({ params }: Props) {
     (initialServiceIdsByStaff[row.staff_id] ??= []).push(row.service_id);
   }
 
+  // Same plan-limit plumbing as the services page — UX gate only; the
+  // server still re-enforces via `canAddStaff`.
+  const { data: planRow } = await ctx.supabase
+    .from("salons")
+    .select(
+      "subscription_plan, plan_override, feature_flags" as never,
+    )
+    .eq("id", ctx.salon.id)
+    .maybeSingle();
+  const planForLimits = (planRow ?? {}) as {
+    subscription_plan?: string | null;
+    plan_override?: string | null;
+    feature_flags?: Record<string, unknown> | null;
+  };
+  const planLimits = getEffectivePlanLimits(planForLimits);
+  const maxStaff = Number.isFinite(planLimits.maxStaff)
+    ? planLimits.maxStaff
+    : Number.POSITIVE_INFINITY;
+
   return (
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 sm:pt-6">
         <SetupBackNav slug={slug} title="Staff" />
         <StaffSetupPanel
           slug={slug}
+          maxStaff={maxStaff}
           initialRows={staffRows.map((r) => ({
             id: String(r.id),
             name: String(r.name ?? ""),

@@ -1,5 +1,6 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -52,9 +53,14 @@ const TOAST_ERR = "✗ Could not save. Check your connection.";
 export function ServicesSetupPanel({
   slug,
   initialRows,
+  maxServices,
 }: {
   slug: string;
   initialRows: SetupServiceRow[];
+  /** Server-resolved cap (from `getEffectivePlanLimits`). `Infinity`
+   *  for unlimited plans / feature-flag overrides. Server still
+   *  re-validates on every `addService` call. */
+  maxServices: number;
 }) {
   const { language } = useUserLanguage();
   const messages = getUserMessages(language);
@@ -102,6 +108,19 @@ export function ServicesSetupPanel({
 
   const refresh = useCallback(() => router.refresh(), [router]);
 
+  // "Any mutation in flight" — disables the Add button and the
+  // per-row blur-saves while another save is round-tripping. Prevents
+  // a rapid-tap from queueing two creates / two updates from the same
+  // form and getting an inconsistent UI.
+  const isMutating = pendingId !== null || addSaveStatus === "saving";
+
+  // Plan-cap UX gate. `rows` reflects the optimistic-after-confirm
+  // state, so this stays accurate as the owner adds/removes services
+  // without a refetch. Server-side validator still re-checks every
+  // request, so this is a UX nudge, not a security boundary.
+  const atServiceLimit =
+    Number.isFinite(maxServices) && rows.length >= maxServices;
+
   const handleUpdate = useCallback(
     async (
       serviceId: string,
@@ -121,7 +140,26 @@ export function ServicesSetupPanel({
     ) => {
       setFormError(null);
       setPendingId(serviceId);
-      const res = await updateService(slug, serviceId, patch);
+      let res: Awaited<ReturnType<typeof updateService>>;
+      try {
+        res = await updateService(slug, serviceId, patch);
+      } catch (err) {
+        // Unexpected throw (network blip, server-action crash). Surface
+        // a red toast and log to Sentry — without this branch the
+        // pending state would stick and the owner would see no signal.
+        Sentry.captureMessage(
+          "[ServicesSetupPanel] updateService threw",
+          {
+            level: "error",
+            tags: { "salon.action": "update_service", "salon.slug": slug },
+            extra: { serviceId, patch, error: String(err) },
+          },
+        );
+        setPendingId(null);
+        setFormError("Could not save. Try again.");
+        setToast({ variant: "error", message: TOAST_ERR });
+        return;
+      }
       setPendingId(null);
       if (!res.ok) {
         setFormError(mapUpdateError(res.error, formLabels));
@@ -180,7 +218,23 @@ export function ServicesSetupPanel({
       setFormError(null);
       setConfirmDeleteId(null);
       setPendingId(serviceId);
-      const res = await deleteService(slug, serviceId);
+      let res: Awaited<ReturnType<typeof deleteService>>;
+      try {
+        res = await deleteService(slug, serviceId);
+      } catch (err) {
+        Sentry.captureMessage(
+          "[ServicesSetupPanel] deleteService threw",
+          {
+            level: "error",
+            tags: { "salon.action": "delete_service", "salon.slug": slug },
+            extra: { serviceId, error: String(err) },
+          },
+        );
+        setPendingId(null);
+        setFormError("Could not delete. Try again.");
+        setToast({ variant: "error", message: TOAST_ERR });
+        return;
+      }
       setPendingId(null);
       if (!res.ok) {
         setFormError(mapDeleteError(res.error, setupErrors));
@@ -226,15 +280,28 @@ export function ServicesSetupPanel({
 
     clearAddStatusTimer();
     setAddSaveStatus("saving");
-    const res = await addService(slug, {
-      name: draftName.trim(),
-      price_cents: cents,
-      duration_minutes: dm,
-      buffer_minutes: bm,
-      category: draftCategory,
-      description: descTrimmed.length > 0 ? descTrimmed : null,
-      is_popular: draftIsPopular,
-    });
+    let res: Awaited<ReturnType<typeof addService>>;
+    try {
+      res = await addService(slug, {
+        name: draftName.trim(),
+        price_cents: cents,
+        duration_minutes: dm,
+        buffer_minutes: bm,
+        category: draftCategory,
+        description: descTrimmed.length > 0 ? descTrimmed : null,
+        is_popular: draftIsPopular,
+      });
+    } catch (err) {
+      Sentry.captureMessage("[ServicesSetupPanel] addService threw", {
+        level: "error",
+        tags: { "salon.action": "add_service", "salon.slug": slug },
+        extra: { name: draftName.trim(), error: String(err) },
+      });
+      setAddSaveStatus("error");
+      setToast({ variant: "error", message: TOAST_ERR });
+      addStatusTimerRef.current = setTimeout(() => setAddSaveStatus("idle"), 3000);
+      return;
+    }
     if (!res.ok) {
       setAddSaveStatus("error");
       // plan_limit_reached → inline error + Upgrade link below;
@@ -329,6 +396,22 @@ export function ServicesSetupPanel({
         <h2 className="text-base font-semibold text-nq-foreground">
           Add service
         </h2>
+        {atServiceLimit ? (
+          <p
+            className="mt-2 rounded-xl border border-nq-primary/30 bg-nq-primary/10 px-3 py-2 text-sm text-nq-foreground"
+            role="status"
+            data-testid="service-at-limit-banner"
+          >
+            {setupErrors.serviceLimitReached}{" "}
+            <Link
+              href={`/dashboard/${encodeURIComponent(slug)}/settings`}
+              className="font-semibold text-nq-primary hover:text-nq-primary/85 underline-offset-2 hover:underline"
+              data-testid="service-at-limit-upgrade-link"
+            >
+              {setupErrors.upgradeCta}
+            </Link>
+          </p>
+        ) : null}
         {addError ? (
           <p
             className="mt-2 text-sm text-nq-error"
@@ -442,7 +525,8 @@ export function ServicesSetupPanel({
             idleLabel="Add service"
             savedLabel="✓ Saved"
             disabled={
-              addSaveStatus === "saving" ||
+              isMutating ||
+              atServiceLimit ||
               !draftName.trim() ||
               centsFromDollarsString(draftPrice) === null ||
               draftDescription.trim().length > SERVICE_DESCRIPTION_MAX_LEN
