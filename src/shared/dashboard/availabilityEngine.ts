@@ -62,6 +62,17 @@ export type StaffAvailability = {
   overloaded: boolean;
   /** Confidence in the wait estimate. */
   confidenceLevel: "high" | "medium" | "low";
+  /**
+   * Task #04-D FIX 16 — earliest UTC ISO of a future group
+   * booking for this staff within the 4h horizon, or `null`
+   * when none. Surfaced so the walk-in form can warn a
+   * receptionist before assigning a customer to a staff who
+   * has a group session starting in the next ~30 min — a
+   * group session is harder to reshuffle than a single
+   * booking, so the form prompts confirmation rather than
+   * silently assigning.
+   */
+  nextGroupBookingAt: string | null;
 };
 
 export type AvailabilityResult =
@@ -82,6 +93,11 @@ type BookingRow = {
   start_time_utc: string | null;
   end_time_utc: string | null;
   staff_request_note: string | null;
+  /** Non-null means this booking is part of a multi-member group
+   * (column populated by `insert_group_bookings`). Walk-in
+   * assignment warns the receptionist before stepping on a
+   * group's window — see FIX 16. */
+  group_id: string | null;
 };
 
 type StaffServiceRow = {
@@ -170,7 +186,7 @@ export async function getStaffAvailability(
   const bookingsRes = (await supabase
     .from("bookings")
     .select(
-      "id, staff_id, client_name, status, start_time_utc, end_time_utc, staff_request_note",
+      "id, staff_id, client_name, status, start_time_utc, end_time_utc, staff_request_note, group_id",
     )
     .eq("salon_id", salonId)
     .in("staff_id", staffIds)
@@ -287,6 +303,21 @@ export async function getStaffAvailability(
       return Number.isFinite(startMs) && startMs <= twoHourCutoff;
     }).length;
 
+    // Task #04-D FIX 16 — earliest upcoming group booking start
+    // for this staff inside the 4h horizon (engine query window).
+    // Only future starts count — a group booking already in
+    // progress is covered by `currentBooking` and not a "watch
+    // out, X is about to start" signal.
+    let nextGroupBookingAtMs: number | null = null;
+    for (const b of own) {
+      if (!b.group_id) continue;
+      const startMs = b.start_time_utc ? Date.parse(b.start_time_utc) : NaN;
+      if (!Number.isFinite(startMs) || startMs <= nowMs) continue;
+      if (nextGroupBookingAtMs === null || startMs < nextGroupBookingAtMs) {
+        nextGroupBookingAtMs = startMs;
+      }
+    }
+
     const queueAhead = queueAheadByStaffName.get(s.id) ?? 0;
 
     const overloaded =
@@ -328,6 +359,10 @@ export async function getStaffAvailability(
       bookingsNext2h,
       overloaded,
       confidenceLevel,
+      nextGroupBookingAt:
+        nextGroupBookingAtMs !== null
+          ? new Date(nextGroupBookingAtMs).toISOString()
+          : null,
     };
   });
 

@@ -1,5 +1,7 @@
 "use server";
 
+import * as Sentry from "@sentry/nextjs";
+
 /**
  * AI Arrival-First scheduler for the group booking flow.
  *
@@ -543,6 +545,27 @@ export async function loadGroupSmartSchedule(
   for (const r of serviceRows ?? []) {
     const dur = Number(r.duration_minutes) || 0;
     const buf = Number(r.buffer_minutes) || 0;
+    // Task #04-D FIX 17 — surface zero-buffer services so the
+    // operator can fix the catalog. A 0-min buffer back-to-backs
+    // the next booking right on top of the previous one's
+    // wall-clock end, which produces a poor in-salon experience
+    // (no cleanup/setup time). We don't block — some salons
+    // legitimately run 0-buffer for express services — but the
+    // rate of capture lets ops nudge tenants that look misconfigured.
+    if (buf === 0) {
+      Sentry.captureMessage("service_zero_buffer", {
+        level: "warning",
+        tags: {
+          surface: "group_smart_schedule",
+        },
+        extra: {
+          serviceId: String(r.id),
+          serviceName: String(r.name ?? ""),
+          salonId: salonRow.id,
+          slug: params.shopSlug,
+        },
+      });
+    }
     serviceById.set(String(r.id), {
       id: String(r.id),
       name: String(r.name ?? ""),

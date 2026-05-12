@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import { WALKIN_GROUP_BUFFER_MS } from "@/shared/config/constants";
 import { cn } from "@/shared/lib/cn";
 import {
   formatCurrency,
@@ -145,6 +146,14 @@ export interface WalkinAddFormProps {
     subLabelAssignNow: string;
     subLabelQueue: string;
     subLabelAssignTo: string;
+    /** FIX 16 — staff has a group booking starting within
+     * `WALKIN_GROUP_BUFFER_MS` (30 min). `{time}` is interpolated
+     * with a localized clock-time string. */
+    walkinConflictsGroup: string;
+    /** "Continue anyway" — keep selection and submit. */
+    walkinContinueAnyway: string;
+    /** "Choose different staff" — clears `selectedStaffId`. */
+    walkinChooseDifferent: string;
     relative: {
       justNow: string;
       today: string;
@@ -520,6 +529,31 @@ export function WalkinAddForm({
       availability.staff.find((s) => s.staffId === selectedStaffId) ?? null
     );
   }, [availability, selectedStaffId]);
+
+  // Task #04-D FIX 16 — detect "this staff has a group booking
+  // starting in the next 30 min". Only fires when the receptionist
+  // explicitly picked a staff (auto / Best Match already ranks
+  // busy-soon staff lower so the auto path doesn't need a warning).
+  // Returns the localized clock-time of the imminent group booking
+  // so the warning can interpolate `{time}`; null means "no
+  // imminent group booking — render nothing".
+  const imminentGroupBookingTime = useMemo<string | null>(() => {
+    if (selectedStaffId === "") return null;
+    if (!recommendedAvailability) return null;
+    const ng = recommendedAvailability.nextGroupBookingAt;
+    if (!ng) return null;
+    const ngMs = Date.parse(ng);
+    if (!Number.isFinite(ngMs)) return null;
+    const nowMs =
+      availability.kind === "ready"
+        ? Date.parse(availability.nowIso)
+        : Date.now();
+    if (ngMs - nowMs > WALKIN_GROUP_BUFFER_MS) return null;
+    return new Date(ngMs).toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }, [recommendedAvailability, selectedStaffId, availability]);
 
   // The "Assign immediately" affordance is only offered when the
   // engine has a confident answer AND the parent wired the direct-
@@ -1172,6 +1206,44 @@ export function WalkinAddForm({
               labels={labels}
               onResetToBestMatch={() => setSelectedStaffId("")}
             />
+          ) : null}
+          {imminentGroupBookingTime && recommendedAvailability ? (
+            <div
+              role="status"
+              data-testid="walkin-group-conflict-warning"
+              data-group-time={imminentGroupBookingTime}
+              className="space-y-2 rounded-md border border-amber-500/55 bg-amber-500/10 px-3 py-2 text-xs text-nq-foreground ring-1 ring-amber-400/35"
+            >
+              <p>
+                <span aria-hidden>⚠️ </span>
+                {labels.walkinConflictsGroup
+                  .replace("{name}", recommendedAvailability.staffName)
+                  .replace("{time}", imminentGroupBookingTime)}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  data-testid="walkin-group-conflict-continue"
+                  onClick={() => {
+                    /* no-op — leaves selection intact, receptionist
+                     * proceeds with submit as normal. The button
+                     * exists to make the "I read this and chose to
+                     * continue" explicit. */
+                  }}
+                  className="rounded-md border border-amber-500/55 bg-nq-bg px-2 py-1 text-[11px] font-semibold text-nq-foreground hover:bg-nq-surface focus:outline-none focus:ring-2 focus:ring-amber-400/45"
+                >
+                  {labels.walkinContinueAnyway}
+                </button>
+                <button
+                  type="button"
+                  data-testid="walkin-group-conflict-reset"
+                  onClick={() => setSelectedStaffId("")}
+                  className="rounded-md border border-nq-muted/35 bg-nq-bg px-2 py-1 text-[11px] font-semibold text-nq-foreground hover:bg-nq-surface focus:outline-none focus:ring-2 focus:ring-nq-primary/35"
+                >
+                  {labels.walkinChooseDifferent}
+                </button>
+              </div>
+            </div>
           ) : null}
         </div>
       ) : null}
