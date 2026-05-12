@@ -61,12 +61,6 @@ export interface ReceptionistCenterData {
      * staff is 100). Returns 0 when no staff has any bookings today.
      */
     workload: number;
-    /**
-     * Skill tags filtered to the `StaffSkill` enum from
-     * `src/components/ui/StaffAvatar.tsx`. Unknown DB values are dropped
-     * at the boundary so the avatar component receives only valid keys.
-     */
-    skills: ("acrylic" | "design" | "pedicure" | "fast" | "junior")[];
   }>;
   services: Array<{
     id: string;
@@ -257,37 +251,6 @@ type ServiceJoinMinimal = {
 };
 
 /**
- * Skill values surfaced on `StaffAvatar`. Mirrors the `StaffSkill` enum in
- * `src/components/ui/StaffAvatar.tsx` — kept as a literal here to avoid a
- * client→server import (the avatar is "use client"). DB stores raw text[];
- * unknown values are filtered at the boundary.
- */
-const KNOWN_STAFF_SKILLS = [
-  "acrylic",
-  "design",
-  "pedicure",
-  "fast",
-  "junior",
-] as const;
-type KnownStaffSkill = (typeof KNOWN_STAFF_SKILLS)[number];
-
-function isKnownStaffSkill(value: unknown): value is KnownStaffSkill {
-  return (
-    typeof value === "string" &&
-    (KNOWN_STAFF_SKILLS as readonly string[]).includes(value)
-  );
-}
-
-function filterKnownSkills(raw: unknown): KnownStaffSkill[] {
-  if (!Array.isArray(raw)) return [];
-  const out: KnownStaffSkill[] = [];
-  for (const v of raw) {
-    if (isKnownStaffSkill(v) && !out.includes(v)) out.push(v);
-  }
-  return out;
-}
-
-/**
  * Per-staff operational availability for the receptionist staff column.
  * "now" is captured once at call time so all rows share a snapshot
  * timestamp.
@@ -314,7 +277,6 @@ function enrichStaffRows(
     name: string;
     job_role: string;
     status: string | null;
-    skills: string[] | null;
   }>,
   bookingsForDay: ReceptionistCenterData["bookingsForDay"],
 ): ReceptionistCenterData["staff"] {
@@ -358,7 +320,6 @@ function enrichStaffRows(
       job_role: s.job_role,
       status: avatarStatus,
       workload,
-      skills: filterKnownSkills(s.skills),
     };
   });
 }
@@ -480,7 +441,7 @@ export async function loadReceptionistCenterData(
   const [staffResult, servicesResult, queueResult, bookingsResult] = await Promise.all([
     supabase
       .from("staff")
-      .select("id, name, job_role, status, skills")
+      .select("id, name, job_role, status")
       .eq("salon_id", ctx.salon.id)
       .is("deleted_at" as never, null)
       .order("created_at", { ascending: true }),
@@ -570,7 +531,6 @@ export async function loadReceptionistCenterData(
     name: string;
     job_role: string;
     status: string | null;
-    skills: string[] | null;
   }> | null;
 
   const serviceRows = servicesResult.data as Array<{

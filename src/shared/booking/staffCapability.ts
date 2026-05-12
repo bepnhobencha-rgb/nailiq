@@ -1,4 +1,23 @@
 /**
+ * Staff capability for booking — does staff X know how to do service Y?
+ *
+ * Storage: `staff_services` JOIN table (migration
+ * `20260506120000_add_staff_services.sql`). **Not** `staff.skills` — that
+ * array column was dropped in
+ * `20260512500000_drop_staff_skills_column.sql` because it was never
+ * wired into the booking flow (it only fed a never-shipped
+ * receptionist-side skill-chip UI). The JOIN table is the right shape
+ * here: FK-enforced (deleting a service CASCADEs its capability rows),
+ * soft-delete-aware via filtered SELECTs, and RLS-friendly.
+ *
+ * Backward-compat semantic: a salon with zero `staff_services` rows is
+ * treated as "every staff can do every service" — kept so legacy salons
+ * that haven't migrated through the StaffSetupPanel still book through
+ * the front door. Once the panel writes any row for the salon, the
+ * whitelist takes over.
+ */
+
+/**
  * staff_id → Set<service_id>. `null` means: zero rows for this salon, so
  * every staff is capable of every service (backward-compatible fallback).
  */

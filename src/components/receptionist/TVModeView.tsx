@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 
 import { Badge } from "@/components/ui/Badge";
-import { StaffAvatar, type StaffSkill, type StaffStatus } from "@/components/ui/StaffAvatar";
+import { StaffAvatar, type StaffStatus } from "@/components/ui/StaffAvatar";
 import { updateDashboardPreset } from "@/shared/dashboard/salonOwnerActions";
 import { cn } from "@/shared/lib/cn";
 import { minutesWaiting } from "@/shared/lib/queueUrgency";
@@ -26,7 +26,6 @@ export type TVModeStaff = {
   id: string;
   name: string;
   status: StaffStatus;
-  skills: ReadonlyArray<StaffSkill>;
 };
 
 export type TVModeBooking = {
@@ -162,7 +161,6 @@ export function TVModeView({
                   status={s.status}
                   size="lg"
                   showStatus
-                  skills={s.skills}
                 />
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <p className="truncate text-2xl font-semibold leading-tight">

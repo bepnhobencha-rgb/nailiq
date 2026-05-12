@@ -1,9 +1,7 @@
 import { cn } from "@/shared/lib/cn";
-import { Badge } from "@/components/ui/Badge";
 
 export type StaffStatus = "available" | "busy" | "overbooked" | "offline";
 export type StaffSize = "sm" | "md" | "lg";
-export type StaffSkill = "acrylic" | "design" | "pedicure" | "fast" | "junior";
 
 const avatarSizeClasses: Record<StaffSize, string> = {
   sm: "h-8 w-8 text-xs",
@@ -50,6 +48,12 @@ function getInitials(name: string): string {
   return (first + last).toUpperCase();
 }
 
+// `skills` chips removed 2026-05-12: the `staff.skills` array column they
+// rendered was never written to in prod (0/8 staff had data). The column
+// was dropped in migration `20260512500000_drop_staff_skills_column`. If
+// salons later request visual skill tags as a separate feature (distinct
+// from `staff_services` capability matching), reintroduce with a real
+// data-entry path on the StaffSetupPanel.
 export type StaffAvatarProps = {
   name: string;
   imageUrl?: string;
@@ -58,8 +62,6 @@ export type StaffAvatarProps = {
   showWorkload?: boolean;
   showStatus?: boolean;
   size: StaffSize;
-  skills?: ReadonlyArray<StaffSkill>;
-  showSkills?: boolean;
   className?: string;
 };
 
@@ -71,8 +73,6 @@ export function StaffAvatar({
   showWorkload = false,
   showStatus = true,
   size,
-  skills,
-  showSkills = false,
   className,
 }: StaffAvatarProps) {
   const initials = getInitials(name);
@@ -81,7 +81,6 @@ export function StaffAvatar({
       ? Math.max(0, Math.min(100, workload))
       : 0;
   const showWorkloadBar = showWorkload && typeof workload === "number";
-  const showSkillsRow = showSkills && skills !== undefined && skills.length > 0;
 
   return (
     <div
@@ -140,16 +139,6 @@ export function StaffAvatar({
             style={{ width: `${safeWorkload}%` }}
             aria-hidden
           />
-        </div>
-      ) : null}
-
-      {showSkillsRow ? (
-        <div className="flex flex-wrap items-center justify-center gap-1">
-          {skills.map((skill) => (
-            <Badge key={skill} size="sm" state="subtle" variant="neutral">
-              {skill}
-            </Badge>
-          ))}
         </div>
       ) : null}
     </div>

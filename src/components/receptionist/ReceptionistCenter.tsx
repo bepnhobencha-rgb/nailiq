@@ -418,8 +418,8 @@ function ReceptionistCenterInner({
     return map;
   }, [data.staff]);
 
-  // `data.staff` already carries the derived `status` / `workload` /
-  // `skills` from `loadReceptionistCenterData`'s `enrichStaffRows` — pass
+  // `data.staff` already carries the derived `status` / `workload`
+  // from `loadReceptionistCenterData`'s `enrichStaffRows` — pass
   // through verbatim. Status dot replaces the prior custom busy-ring, so
   // the local `busyStaffIds` set is no longer needed here.
   const gridStaff = useMemo(
@@ -430,7 +430,6 @@ function ReceptionistCenterInner({
         job_role: s.job_role,
         status: s.status,
         workload: s.workload,
-        skills: s.skills,
       })),
     [data.staff],
   );
@@ -1266,7 +1265,6 @@ function ReceptionistCenterInner({
           id: s.id,
           name: s.name,
           status: s.status,
-          skills: s.skills,
         }))}
         bookingsForDay={data.bookingsForDay.map((b) => ({
           id: b.id,
@@ -1737,7 +1735,6 @@ function ReceptionistCenterInner({
               currencyCode={data.salon.currencyCode}
               showBookingMetaLine={densityConfig.showMetaLine}
               showBookingTimeRange={densityConfig.showTimeRangeInBlock}
-              showStaffSkillBadges={densityConfig.showSkillBadges}
               bookingBlockMinHeightPx={densityConfig.bookingBlockMinHeight}
               timeSlotMinutesVisualHint={densityConfig.timeSlotMinutes}
             />
