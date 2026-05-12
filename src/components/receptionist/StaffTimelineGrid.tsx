@@ -80,6 +80,9 @@ export interface GridBooking {
   /** Booking carries a non-empty `staff_request_note`. Drives the
    * heart icon in the booking-block icon stack. */
   has_staff_request: boolean;
+  /** Booking belongs to a group (migration 20260512200000) — drives
+   * the 👥 marker on the chip. */
+  group_id?: string | null;
 }
 
 export interface StaffTimelineGridProps {
@@ -619,6 +622,7 @@ function StaffTimelineGridImpl({
                           hasNotes={b.has_notes}
                           hasDesign={b.has_design}
                           hasStaffRequest={b.has_staff_request}
+                          isGroup={b.group_id != null}
                           isLate={isLate}
                           iconLabels={labels.bookingIcon}
                         />

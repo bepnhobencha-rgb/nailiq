@@ -104,6 +104,10 @@ export interface BookingBlockProps {
    * state, not a replacement.
    */
   isLate?: boolean;
+  /** Booking is part of a group (migration 20260512200000). Renders
+   * the 👥 marker in the icon stack so receptionists can identify
+   * grouped bookings at a glance. */
+  isGroup?: boolean;
   /** Localized accessible labels for the icon stack (so VI/EN parity stays clean). */
   iconLabels?: {
     vip: string;
@@ -112,6 +116,8 @@ export interface BookingBlockProps {
     design: string;
     /** Aria label for the heart shown when `hasStaffRequest` is true. */
     staffRequest: string;
+    /** Aria label for the 👥 marker shown when `isGroup` is true. */
+    group?: string;
   };
 }
 
@@ -153,6 +159,7 @@ const DEFAULT_ICON_LABELS = {
   late: "Late",
   design: "Design",
   staffRequest: "Staff request",
+  group: "Group booking",
 } as const;
 
 function formatPrice(
@@ -189,6 +196,7 @@ export function BookingBlock(props: BookingBlockProps) {
     hasDesign = false,
     hasStaffRequest = false,
     isLate = false,
+    isGroup = false,
     iconLabels = DEFAULT_ICON_LABELS,
     currencyCode,
   } = props;
@@ -207,7 +215,7 @@ export function BookingBlock(props: BookingBlockProps) {
   const isWalkin = source === "walkin";
   const isCompleted = status === "completed";
   const hasIcons =
-    isVip || hasNotes || hasStaffRequest || isLate || hasDesign;
+    isVip || hasNotes || hasStaffRequest || isLate || hasDesign || isGroup;
 
   // When density supplies an explicit min-height, the inline `style` on
   // the wrapper takes precedence over the default `min-h-11` tailwind
@@ -289,6 +297,15 @@ export function BookingBlock(props: BookingBlockProps) {
                 data-testid={`booking-block-icon-staff-request-${bookingId}`}
               >
                 ❤️
+              </span>
+            ) : null}
+            {isGroup ? (
+              <span
+                aria-label={iconLabels.group ?? "Group booking"}
+                title={iconLabels.group ?? "Group booking"}
+                data-testid={`booking-block-icon-group-${bookingId}`}
+              >
+                👥
               </span>
             ) : null}
             {isLate ? (

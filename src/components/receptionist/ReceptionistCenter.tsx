@@ -460,6 +460,7 @@ function ReceptionistCenterInner({
           has_notes: b.has_notes,
           has_design: b.has_design,
           has_staff_request: b.has_staff_request,
+          group_id: b.group_id,
         },
       ];
     });

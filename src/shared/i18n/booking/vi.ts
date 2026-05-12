@@ -120,4 +120,36 @@ export const bookingVi: BookingMessages = {
   selectThisService: "Chọn dịch vụ này",
   serviceTileToggleAria: "Mở/đóng chi tiết {service}",
   serviceTileDescriptionAria: "Xem mô tả dịch vụ {service}",
+  groupBooking: {
+    entryTitle: "Bạn muốn đặt lịch kiểu nào?",
+    individual: "Một mình",
+    group: "Đặt lịch nhóm 👥",
+    sizeHeading: "Nhóm mấy người?",
+    personLabel: "Người {n}",
+    primaryContactHeading: "Liên hệ chính",
+    primaryContactHint:
+      "Chúng tôi sẽ gửi xác nhận đến số này. Mỗi người có thể thêm số riêng bên dưới nếu muốn nhận nhắc lịch riêng.",
+    reviewHeading: "Xem lại lịch nhóm",
+    confirmGroup: "Xác nhận đặt lịch nhóm",
+    submittingGroup: "Đang đặt lịch nhóm…",
+    successHeading: "Đặt lịch nhóm thành công! 🎉",
+    successSubtitle: "Mã đặt lịch #{id}",
+    conflictMember: "Xung đột lịch ở Người {n} — chọn giờ hoặc thợ khác.",
+    conflictBanner:
+      "Có {n} khung giờ vừa bị đặt mất. Điều chỉnh lại và thử lại.",
+    duplicateSubmission:
+      "Có vẻ nhóm này đã được đặt rồi. Tải lại trang để xem xác nhận.",
+    salonClosedDay:
+      "Tiệm nghỉ vào một trong những ngày bạn chọn. Vui lòng chọn ngày khác.",
+    salonPaused: "Tiệm này hiện không nhận đặt lịch.",
+    invalidGroupSize: "Nhóm phải có 2, 3 hoặc 4 người.",
+    serverError: "Không đặt lịch nhóm được. Vui lòng thử lại.",
+    addPerson: "Thêm người",
+    removePerson: "Xoá",
+    groupIconLabel: "Thuộc lịch nhóm",
+    groupContextHeading: "Thành viên nhóm",
+    cancelEntireGroup: "Huỷ toàn bộ nhóm",
+    cancelEntireGroupConfirm:
+      "Huỷ tất cả lịch trong nhóm này? Ảnh hưởng tới {n} người.",
+  },
 };

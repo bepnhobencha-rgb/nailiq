@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
-import { BookingFlow } from "@/components/booking/BookingFlow";
+import { BookingTypeSwitcher } from "@/components/booking/BookingTypeSwitcher";
 import { SalonBookingPaused } from "@/components/booking/SalonBookingPaused";
 import { BookingMobileHero } from "@/components/booking/BookingMobileHero";
 import { BookingSalonHero } from "@/components/booking/BookingSalonHero";
@@ -222,7 +222,7 @@ async function PublicBookingRouteBody({
               shopSlug={normalizedSlug}
               salon={load.salon}
             >
-              <BookingFlow
+              <BookingTypeSwitcher
                 t={t}
                 shopSlug={normalizedSlug}
                 services={load.services}
