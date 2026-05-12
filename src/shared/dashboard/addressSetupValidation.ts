@@ -48,6 +48,24 @@ export function isAllowedCountry(country: string): country is SetupCountry {
   return (SETUP_COUNTRY_OPTIONS as readonly string[]).includes(c);
 }
 
+/** QA re-test #11 — normalize postal-code casing at write-time so
+ * the DB stores a canonical form. Canadian A1A 1A1 is uppercased
+ * regardless of how the owner typed it; US ZIP and other formats
+ * pass through untouched. Display-side regex (BookingSalonInfoLine)
+ * remains as a belt-and-braces for any legacy lowercase rows that
+ * haven't been re-saved since this normalization landed. */
+function normalizePostal(raw: string): string {
+  const t = raw.trim();
+  if (/^[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d$/.test(t)) {
+    // Canonical Canadian form: uppercase + single space.
+    return t.replace(/\s+/g, "").toUpperCase().replace(
+      /^([A-Z]\d[A-Z])(\d[A-Z]\d)$/,
+      "$1 $2",
+    );
+  }
+  return t;
+}
+
 export function buildSalonAddressString(parts: {
   street: string;
   city: string;
@@ -58,7 +76,7 @@ export function buildSalonAddressString(parts: {
   const street = parts.street.trim();
   const city = parts.city.trim();
   const province = parts.province.trim();
-  const postal = parts.postal.trim();
+  const postal = normalizePostal(parts.postal);
   const country = parts.country.trim();
   return `${street}, ${city}, ${province} ${postal}, ${country}`;
 }

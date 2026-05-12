@@ -2,13 +2,24 @@ import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { cn } from "@/shared/lib/cn";
 import { BookingSalonInfoLine } from "./BookingSalonInfoLine";
 
-/** Curated high-res salon imagery (Unsplash); used only on `lg:` and up. */
+/** Curated high-res salon imagery (Unsplash); used only on `lg:` and up.
+ *
+ * QA re-test #15: the thumbs render at ~210px wide inside the hero
+ * panel but were being served at 800px (≈ 4× oversized even at 2×
+ * DPR). Sources are now sized to roughly 2× their CSS box so the
+ * file is right-sized without compromising sharpness on retina. */
 const HERO_BG =
+  "https://images.unsplash.com/photo-1610992015732-2449b76344bc?auto=format&fit=crop&q=85&w=1200";
+const HERO_BG_2X =
   "https://images.unsplash.com/photo-1610992015732-2449b76344bc?auto=format&fit=crop&q=85&w=1600";
 const THUMB_A =
-  "https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&q=85&w=800";
+  "https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&q=85&w=400";
+const THUMB_A_2X =
+  "https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&q=85&w=600";
 const THUMB_B =
-  "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&q=85&w=800";
+  "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&q=85&w=400";
+const THUMB_B_2X =
+  "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&q=85&w=600";
 
 type BookingSalonHeroProps = {
   shopLabel: string;
@@ -69,10 +80,14 @@ export function BookingSalonHero({
     >
       <div className="pointer-events-none absolute inset-0">
         {/* P2.6 — decorative; aria-hidden so AT skip it, lazy
-            so the LCP-relevant content paints first. */}
+            so the LCP-relevant content paints first.
+            QA re-test #15 — srcset narrows the download to the
+            actual rendered size on the user's display density. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={HERO_BG}
+          srcSet={`${HERO_BG} 1x, ${HERO_BG_2X} 2x`}
+          sizes="440px"
           alt=""
           aria-hidden="true"
           loading="lazy"
@@ -115,6 +130,8 @@ export function BookingSalonHero({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={THUMB_A}
+              srcSet={`${THUMB_A} 1x, ${THUMB_A_2X} 2x`}
+              sizes="210px"
               alt=""
               aria-hidden="true"
               loading="lazy"
@@ -130,6 +147,8 @@ export function BookingSalonHero({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={THUMB_B}
+              srcSet={`${THUMB_B} 1x, ${THUMB_B_2X} 2x`}
+              sizes="210px"
               alt=""
               aria-hidden="true"
               loading="lazy"

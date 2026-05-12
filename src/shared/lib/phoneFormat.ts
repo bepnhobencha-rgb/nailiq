@@ -90,24 +90,34 @@ export function formatPhoneInputProgressive(raw: string): string {
     return `+${digits}`;
   }
 
-  // NANP local-format path: progressively wrap into "(AAA) BBB-CCCC"
-  // as the user fills digits. Below 4 digits the open paren makes the
-  // cursor jump weirdly, so we hold off on it. Once the user reaches
-  // 11 digits starting with "1" we promote to the `+1 (AAA)…` form.
+  // NANP local-format path. Once the user fills 10 digits we
+  // promote to the explicit `+1 (AAA) BBB-CCCC` form so the
+  // country prefix is visible — placeholder text already promised
+  // `+1`, so previously dropping it on display confused users
+  // ("did the +1 get saved?"). For partial entries we keep the
+  // local-only format until 10 digits land.
   const d = s.replace(/\D/g, "");
   if (d.length === 0) return "";
   if (d.length < 4) return d;
   if (d.length < 7) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
-  if (d.length <= 10)
-    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6, 10)}`;
-  // P2.1: 11 digits starting with 1 = unmarked NANP. Promote to
-  // explicit `+1 (AAA) BBB-CCCC` so the prefix doesn't disappear.
+  if (d.length === 10) {
+    // QA re-test #9: promote 10-digit NANP to "+1 (AAA) BBB-CCCC"
+    // so the prefix stays visible. Backend stores E.164 digits via
+    // `validateGuestPhone`; the display change is cosmetic only.
+    return `+1 (${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6, 10)}`;
+  }
+  if (d.length < 10) {
+    // Still typing — keep the local-only form so the cursor
+    // doesn't jump while the user mid-types.
+    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+  // 11+ digits starting with 1 = unmarked NANP with country prefix.
   if (d.length === 11 && d.startsWith("1")) {
     const rest = d.slice(1);
     return `+1 (${rest.slice(0, 3)}) ${rest.slice(3, 6)}-${rest.slice(6, 10)}`;
   }
-  // Past 10 digits, assume the user is typing a country code without
-  // the `+`. Promote to a `+` prefix.
+  // Past 11 digits, assume the user is typing a country code
+  // without the `+`. Promote to a `+` prefix.
   return `+${d}`;
 }
 
