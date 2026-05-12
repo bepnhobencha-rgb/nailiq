@@ -1,36 +1,33 @@
 /**
- * Service category — single source of truth for the IDs that match the
- * DB CHECK constraint in
- * `supabase/migrations/20260511500000_add_service_category.sql`, plus
- * the canonical display order used by the public booking page and the
- * setup-wizard menu.
+ * Service-category helpers.
  *
- * Labels are intentionally NOT in this file — those live in the i18n
- * bundles (`booking/en.ts` for the public surface, `user/{en,vi}.ts`
- * for the owner dashboard) so the language switcher keeps working.
+ * The list used to be a hardcoded `as const` union; it now lives in
+ * the `service_categories` table (see `loadServiceCategories.ts`).
+ * `ServiceCategory` is therefore `string` — any slug the server has
+ * accepted into the table is a valid value.
+ *
+ * Runtime validation against the live list happens in:
+ *   - `addService` / `updateService` server actions (DB lookup before
+ *     a write — see `setupActions.ts`)
+ *   - the SuperAdmin add/update flows (uniqueness + non-empty checks)
+ *
+ * `parseServiceCategory` only does string-coercion + the default
+ * fallback — it CANNOT enforce existence in the DB synchronously
+ * (loaders are async). Callers who need that should use
+ * `isKnownCategorySlug` from `loadServiceCategories.ts`.
  */
 
-export const SERVICE_CATEGORIES = [
-  "manicure",
-  "pedicure",
-  "acrylic",
-  "gel",
-  "dip",
-  "waxing",
-  "other",
-] as const;
+/** Any slug present in `service_categories.slug`. Treated as opaque
+ *  by every consumer outside the loader / SuperAdmin CRUD. */
+export type ServiceCategory = string;
 
-export type ServiceCategory = (typeof SERVICE_CATEGORIES)[number];
-
+/** Matches the seeded "other" row (sort_order 99). Used as the fallback
+ *  whenever a service row's `category` is null / unknown so the public
+ *  booking renderer always has a bucket to drop it into. */
 export const DEFAULT_SERVICE_CATEGORY: ServiceCategory = "other";
 
-export function isServiceCategory(value: unknown): value is ServiceCategory {
-  return (
-    typeof value === "string" &&
-    (SERVICE_CATEGORIES as readonly string[]).includes(value)
-  );
-}
-
 export function parseServiceCategory(value: unknown): ServiceCategory {
-  return isServiceCategory(value) ? value : DEFAULT_SERVICE_CATEGORY;
+  if (typeof value !== "string") return DEFAULT_SERVICE_CATEGORY;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : DEFAULT_SERVICE_CATEGORY;
 }

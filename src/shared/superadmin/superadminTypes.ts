@@ -484,3 +484,38 @@ export function normalizePlanOverride(input: unknown): SuperAdminPlanOverride {
     ? (trimmed as SuperAdminPlanOverride)
     : null;
 }
+
+/** Slug pattern enforced when SuperAdmin adds a new category — keeps
+ *  the value URL-safe and recognisable on the wire. */
+export const SUPERADMIN_CATEGORY_SLUG_RE = /^[a-z][a-z0-9_]{1,39}$/;
+
+export type SuperAdminCategoryRow = {
+  slug: string;
+  nameEn: string;
+  nameVi: string;
+  sortOrder: number;
+  deletedAt: string | null;
+};
+
+export type LoadAllCategoriesResult =
+  | { ok: true; rows: SuperAdminCategoryRow[] }
+  | { ok: false; error: string };
+
+export type AddCategoryInput = {
+  slug: string;
+  nameEn: string;
+  nameVi: string;
+  /** Defaults to 50 server-side if omitted, so a brand-new entry
+   *  lands above "other" (sort_order 99) without crowding the seeded
+   *  list. SuperAdmin can adjust on update. */
+  sortOrder?: number;
+};
+
+export type UpdateCategoryInput = {
+  slug: string;
+  nameEn?: string;
+  nameVi?: string;
+  sortOrder?: number;
+};
+
+export type CategoryMutationResult = { ok: true } | { ok: false; error: string };

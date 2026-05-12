@@ -9,7 +9,11 @@ import {
   normalizeFeatureFlags,
   normalizePlanOverride,
   PLATFORM_FLAG_KEYS,
+  SUPERADMIN_CATEGORY_SLUG_RE,
+  type AddCategoryInput,
+  type CategoryMutationResult,
   type DeletedRecord,
+  type LoadAllCategoriesResult,
   type LoadAllSalonsResult,
   type LoadDeletedRecordsResult,
   type LoadPlatformFlagsResult,
@@ -17,8 +21,10 @@ import {
   type PlatformFlagKey,
   type RestorableTable,
   type RestoreSalonRecordResult,
+  type SuperAdminCategoryRow,
   type SuperAdminFeatureFlags,
   type SuperAdminSalonRow,
+  type UpdateCategoryInput,
   type UpdatePlatformFlagResult,
   type UpdateSalonFlagsInput,
   type UpdateSalonFlagsResult,
@@ -455,4 +461,176 @@ export async function updatePlatformFlag(
   }
 
   return { ok: true, key: k, enabled };
+}
+
+// ─── service-category management ─────────────────────────────────────
+//
+// Public API: addCategory / updateCategory / deleteCategory. Deletes
+// are SOFT — `deleted_at = now()` — so historical service rows that
+// reference the slug still have a label to fall back on. Hard deletes
+// are intentionally not exposed.
+
+const CATEGORY_NAME_MAX_LEN = 80;
+
+function normalizeCategoryName(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim().replace(/\s+/g, " ");
+  if (trimmed.length === 0) return null;
+  if (trimmed.length > CATEGORY_NAME_MAX_LEN) return null;
+  return trimmed;
+}
+
+export async function loadAllCategories(): Promise<LoadAllCategoriesResult> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+
+  const admin = createServiceRoleClient();
+  const { data, error } = await admin
+    .from("service_categories")
+    .select("slug, name_en, name_vi, sort_order, deleted_at")
+    .order("sort_order", { ascending: true })
+    .order("slug", { ascending: true });
+
+  if (error) {
+    console.error("[superadmin/loadAllCategories]", error);
+    return { ok: false, error: "server_error" };
+  }
+
+  const rows: SuperAdminCategoryRow[] = (data ?? []).map((r) => {
+    const row = r as unknown as {
+      slug: string;
+      name_en?: string | null;
+      name_vi?: string | null;
+      sort_order?: number | null;
+      deleted_at?: string | null;
+    };
+    return {
+      slug: String(row.slug ?? "").trim(),
+      nameEn: String(row.name_en ?? row.slug ?? "").trim(),
+      nameVi: String(row.name_vi ?? row.name_en ?? row.slug ?? "").trim(),
+      sortOrder: Number.isFinite(Number(row.sort_order))
+        ? Number(row.sort_order)
+        : 0,
+      deletedAt: row.deleted_at ?? null,
+    };
+  });
+
+  return { ok: true, rows };
+}
+
+export async function addCategory(
+  input: AddCategoryInput,
+): Promise<CategoryMutationResult> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+
+  const slug = typeof input.slug === "string" ? input.slug.trim() : "";
+  if (!SUPERADMIN_CATEGORY_SLUG_RE.test(slug)) {
+    return { ok: false, error: "invalid_slug" };
+  }
+  const nameEn = normalizeCategoryName(input.nameEn);
+  const nameVi = normalizeCategoryName(input.nameVi);
+  if (!nameEn || !nameVi) {
+    return { ok: false, error: "invalid_name" };
+  }
+  const sortOrder =
+    typeof input.sortOrder === "number" && Number.isFinite(input.sortOrder)
+      ? Math.round(input.sortOrder)
+      : 50;
+
+  const admin = createServiceRoleClient();
+  const { error } = await admin.from("service_categories").insert(
+    {
+      slug,
+      name_en: nameEn,
+      name_vi: nameVi,
+      sort_order: sortOrder,
+    } as never,
+  );
+
+  if (error) {
+    // 23505 = unique_violation (slug already exists, including a
+    // soft-deleted row). Surface a distinct code so the UI can offer
+    // an "Undelete" path instead of forcing a different slug.
+    const code = (error as { code?: string }).code;
+    if (code === "23505") return { ok: false, error: "slug_already_exists" };
+    console.error("[superadmin/addCategory]", error);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true };
+}
+
+export async function updateCategory(
+  input: UpdateCategoryInput,
+): Promise<CategoryMutationResult> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+
+  const slug = typeof input.slug === "string" ? input.slug.trim() : "";
+  if (!slug) return { ok: false, error: "invalid_slug" };
+
+  const patch: Record<string, unknown> = {};
+  if (input.nameEn !== undefined) {
+    const normalized = normalizeCategoryName(input.nameEn);
+    if (!normalized) return { ok: false, error: "invalid_name" };
+    patch.name_en = normalized;
+  }
+  if (input.nameVi !== undefined) {
+    const normalized = normalizeCategoryName(input.nameVi);
+    if (!normalized) return { ok: false, error: "invalid_name" };
+    patch.name_vi = normalized;
+  }
+  if (input.sortOrder !== undefined) {
+    if (!Number.isFinite(input.sortOrder)) {
+      return { ok: false, error: "invalid_sort_order" };
+    }
+    patch.sort_order = Math.round(input.sortOrder);
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return { ok: false, error: "empty_update" };
+  }
+
+  const admin = createServiceRoleClient();
+  const { error } = await admin
+    .from("service_categories")
+    .update(patch as never)
+    .eq("slug", slug)
+    .is("deleted_at" as never, null);
+
+  if (error) {
+    console.error("[superadmin/updateCategory]", error);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true };
+}
+
+export async function deleteCategory(
+  slug: string,
+): Promise<CategoryMutationResult> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+
+  const trimmed = typeof slug === "string" ? slug.trim() : "";
+  if (!trimmed) return { ok: false, error: "invalid_slug" };
+
+  // Never hard-delete — history matters. The soft-delete here makes
+  // the row disappear from `loadServiceCategories` (which filters on
+  // `deleted_at IS NULL`) while preserving the row so historical
+  // `services.category` values still resolve to a label if you join.
+  const admin = createServiceRoleClient();
+  const { error } = await admin
+    .from("service_categories")
+    .update({ deleted_at: new Date().toISOString() } as never)
+    .eq("slug", trimmed)
+    .is("deleted_at" as never, null);
+
+  if (error) {
+    console.error("[superadmin/deleteCategory]", error);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true };
 }
