@@ -24,6 +24,18 @@ const DAY_ORDER: { key: DayKey; label: string }[] = [
   { key: "sun", label: "Sunday" },
 ];
 
+/** P1.11 — typical Vietnamese nail-salon hours preset.
+ * 10:00–19:00 Mon–Sat, closed Sun. Owners can still tweak afterwards. */
+const NAIL_SHOP_PRESET: OpeningHoursWeek = {
+  mon: { open: "10:00", close: "19:00", closed: false },
+  tue: { open: "10:00", close: "19:00", closed: false },
+  wed: { open: "10:00", close: "19:00", closed: false },
+  thu: { open: "10:00", close: "19:00", closed: false },
+  fri: { open: "10:00", close: "19:00", closed: false },
+  sat: { open: "10:00", close: "19:00", closed: false },
+  sun: { open: "10:00", close: "19:00", closed: true },
+};
+
 const TOAST_GENERIC = "✗ Could not save.";
 
 function openingHoursToastMessage(code: string): string {
@@ -153,6 +165,51 @@ export function HoursSetupPanel({
         extra closed dates (holidays) one per line as{" "}
         <span className="font-mono text-nq-foreground/90">YYYY-MM-DD</span>.
       </p>
+      <div
+        className="flex flex-wrap items-center gap-2"
+        data-testid="hours-shortcuts"
+      >
+        <button
+          type="button"
+          data-testid="hours-preset-nail-shop"
+          disabled={saveStatus === "saving"}
+          onClick={() => {
+            // P1.11 — overwrite the editor (not the saved row) so the
+            // owner still sees the existing Save button + can review
+            // before persisting. Doesn't auto-save; matches the rest
+            // of this panel's "edit then Save all" model.
+            setHours(NAIL_SHOP_PRESET);
+          }}
+          className="inline-flex min-h-9 items-center rounded-full border border-nq-primary/45 bg-nq-primary/10 px-3 py-1 text-xs font-semibold text-nq-primary hover:bg-nq-primary/15 disabled:opacity-50"
+        >
+          ⚡ Giờ tiệm nail phổ biến · 10:00–19:00, đóng CN
+        </button>
+        <button
+          type="button"
+          data-testid="hours-apply-monday-to-all"
+          disabled={saveStatus === "saving"}
+          onClick={() => {
+            // P1.11 — copy Monday's open/close + closed flag to every
+            // other day. Most salons run the same hours Mon–Sat, so
+            // this saves 6× clicking through individual day pickers.
+            setHours((prev) => {
+              const mon = prev.mon;
+              return {
+                mon,
+                tue: { ...mon },
+                wed: { ...mon },
+                thu: { ...mon },
+                fri: { ...mon },
+                sat: { ...mon },
+                sun: { ...mon },
+              };
+            });
+          }}
+          className="inline-flex min-h-9 items-center rounded-full border border-nq-border/60 bg-nq-surface/60 px-3 py-1 text-xs font-medium text-nq-foreground hover:bg-nq-surface disabled:opacity-50"
+        >
+          📋 Áp dụng cho tất cả ngày · Apply Monday to all
+        </button>
+      </div>
       {error ? (
         <p className="rounded-xl border border-nq-error/40 bg-nq-error/10 px-4 py-3 text-sm text-nq-error">
           {error}

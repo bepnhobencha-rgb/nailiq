@@ -177,11 +177,16 @@ export function BookingDetailDrawer({
   // Edit visibility = booking is in an editable status AND viewer's role
   // allows it. `roleAllowsEditBooking` is the role-side gate (owner/senior
   // yes, nail_tech no); the status check is the booking-state gate.
+  // P1.12 — `in_progress` bookings are now editable too: receptionists
+  // sometimes need to add a service / shift staff after the chair is
+  // already in use. Cancel from in_progress was already allowed
+  // (`drawerCancelAction`), so this just unifies the surface.
   const canEditBooking =
     deskEdit !== undefined &&
     roleAllowsEditBooking(viewerRole) &&
     (deskEdit.booking.status === "pending" ||
-      deskEdit.booking.status === "confirmed");
+      deskEdit.booking.status === "confirmed" ||
+      deskEdit.booking.status === "in_progress");
 
   const showFooter =
     (deskEdit !== undefined && editMode) ||

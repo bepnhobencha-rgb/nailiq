@@ -13,22 +13,30 @@ import { getUserMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
-const OWNER_ROWS: {
+type OwnerRow = {
   key: (typeof DASHBOARD_MODULE_OWNER_TOGGLES)[number];
   label: keyof ReturnType<
     typeof getUserMessages
   >["salonSettings"]["dashboardModules"]["labels"];
-}[] = [
-  { key: "quick_add", label: "quickAdd" },
-  { key: "kpi_bar", label: "kpiBar" },
+};
+
+// P1.13 — the 4 toggles owners actually flip day-to-day stay visible
+// up top. The remaining 6 fold into a collapsed "Advanced" section so
+// the panel reads as 4 decisions, not 10.
+const PRIMARY_ROWS: OwnerRow[] = [
+  { key: "sound_alerts", label: "soundAlerts" },
   { key: "ai_suggestions", label: "aiSuggestions" },
   { key: "revenue_today", label: "revenueToday" },
+  { key: "kpi_bar", label: "kpiBar" },
+];
+
+const ADVANCED_ROWS: OwnerRow[] = [
+  { key: "quick_add", label: "quickAdd" },
   { key: "wait_time", label: "waitTime" },
   { key: "alerts", label: "alerts" },
   { key: "vip_indicators", label: "vipIndicators" },
   { key: "staff_performance", label: "staffPerformance" },
   { key: "timeline_heatmap", label: "timelineHeatmap" },
-  { key: "sound_alerts", label: "soundAlerts" },
 ];
 
 const toggleInputClass =
@@ -52,6 +60,10 @@ export function DashboardModulesSettings({
     useState<DashboardModulesConfig>(initialModules);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  // P1.13 — advanced section is collapsed by default. Opens with a
+  // user-visible chevron rotate so it's discoverable but doesn't
+  // bloat the initial scan of the panel.
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   useEffect(() => {
     setModules(initialModules);
@@ -168,7 +180,7 @@ export function DashboardModulesSettings({
           />
         </li>
 
-        {OWNER_ROWS.map(({ key, label }) => (
+        {PRIMARY_ROWS.map(({ key, label }) => (
           <li
             key={key}
             className="flex items-center justify-between gap-4 py-3"
@@ -197,6 +209,66 @@ export function DashboardModulesSettings({
           </li>
         ))}
       </ul>
+
+      <div className="mt-4">
+        <button
+          type="button"
+          data-testid="dashboard-modules-advanced-toggle"
+          aria-expanded={advancedOpen}
+          aria-controls="dashboard-modules-advanced-list"
+          onClick={() => setAdvancedOpen((v) => !v)}
+          className="flex w-full items-center justify-between gap-2 rounded-lg border border-nq-border/40 bg-nq-bg/60 px-3 py-2 text-sm font-medium text-nq-foreground hover:bg-nq-bg/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/40"
+        >
+          <span>{t.advancedSectionTitle}</span>
+          <span
+            aria-hidden
+            className={cn(
+              "transition-transform duration-200",
+              advancedOpen && "rotate-180",
+            )}
+          >
+            ▼
+          </span>
+        </button>
+        {advancedOpen ? (
+          <ul
+            id="dashboard-modules-advanced-list"
+            className="mt-2 flex flex-col gap-0 divide-y divide-nq-border/25 border-y border-nq-border/25"
+          >
+            {ADVANCED_ROWS.map(({ key, label }) => (
+              <li
+                key={key}
+                className="flex items-center justify-between gap-4 py-3"
+              >
+                <label
+                  htmlFor={`dm-${key}`}
+                  className={cn(
+                    "min-w-0 cursor-pointer select-none text-sm font-medium text-nq-foreground",
+                    !canEdit && "cursor-default opacity-70",
+                  )}
+                >
+                  {t.labels[label]}
+                </label>
+                <input
+                  id={`dm-${key}`}
+                  type="checkbox"
+                  role="switch"
+                  checked={modules[key]}
+                  disabled={!canEdit || isPending}
+                  aria-checked={modules[key]}
+                  onChange={(e) =>
+                    setModules((prev) => ({
+                      ...prev,
+                      [key]: e.target.checked,
+                    }))
+                  }
+                  className={toggleInputClass}
+                />
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
 
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-end">
         <Button

@@ -465,6 +465,7 @@ export const userVi: UserMessages = {
         timelineHeatmap: "Đường lưới timeline dày",
         soundAlerts: "Âm báo",
       },
+      advancedSectionTitle: "Nâng cao",
     },
     dashboardPreset: {
       sectionTitle: "Bố cục bàn lễ tân",
@@ -557,6 +558,7 @@ export const userVi: UserMessages = {
       "Hiện huy hiệu vàng nhỏ trên trang đặt lịch — chọn 1–3 dịch vụ chạy nhất.",
     characterCount: "{used}/{max}",
     descriptionGeneratedToast: "✨ Đã tạo mô tả bằng AI",
+    saveButton: "Lưu",
   },
   setupErrors: {
     serviceInUse:
@@ -584,6 +586,12 @@ export const userVi: UserMessages = {
     inactiveBadge: "Tạm nghỉ",
     statusHint:
       "Chỉ nhân viên đang hoạt động mới hiển thị trên trang đặt lịch và walk-in.",
+    roleLabel: "Vai trò",
+    roleOptions: {
+      owner: "Chủ tiệm",
+      senior: "Thợ chính",
+      nail_tech: "Thợ phụ",
+    },
   },
   receptionist: {
     title: "Lễ tân",
@@ -609,8 +617,8 @@ export const userVi: UserMessages = {
       label: "Mật độ",
       simple: "Đơn giản",
       balanced: "Cân bằng",
-      pro: "Chuyên",
-      ariaLabel: "Mật độ dashboard — Đơn giản, Cân bằng, hoặc Chuyên",
+      pro: "Nâng cao",
+      ariaLabel: "Mật độ dashboard — Đơn giản, Cân bằng, hoặc Nâng cao",
       updated: (label: string) => `Đã đổi mật độ sang ${label}`,
       updateFailed: "Không đổi được mật độ. Thử lại sau.",
     },
@@ -789,7 +797,7 @@ export const userVi: UserMessages = {
       title: "Lịch hẹn",
       closeAria: "Đóng chi tiết",
       scheduleTimeRangeSep: " — ",
-      bufferNote: "+ {n} phút chuyển ca",
+      bufferNote: "+ {n} phút chuẩn bị (buffer)",
       durationMinutes: "{n} phút",
       sourceWalkin: "Walk-in",
       sourceAppointment: "Đặt trước",

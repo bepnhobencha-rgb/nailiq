@@ -426,6 +426,10 @@ export type UserMessages = {
         timelineHeatmap: string;
         soundAlerts: string;
       };
+      /** P1.13 — header on the collapsible "Advanced" subsection that
+       * hides the less-common toggles. Stays collapsed by default
+       * so the owner only sees the high-frequency switches up top. */
+      advancedSectionTitle: string;
     };
     dashboardPreset: {
       sectionTitle: string;
@@ -528,6 +532,10 @@ export type UserMessages = {
     /** Toast shown for ~2s after save when the server auto-generated a
      *  description because the owner left the field blank. */
     descriptionGeneratedToast: string;
+    /** P1.1 — per-row Save button label. Unified explicit save replaces
+     * the prior on-blur autosaves; the row now batches changes and
+     * commits them in a single server call when this button is tapped. */
+    saveButton: string;
   };
   /** Setup CRUD error strings (services, etc.) */
   setupErrors: {
@@ -555,6 +563,14 @@ export type UserMessages = {
     pendingBadge: string;
     inactiveBadge: string;
     statusHint: string;
+    /** P1.8 — localized job-role names for the role dropdown.
+     * Replaces the previously hardcoded English `ROLE_OPTIONS`. */
+    roleLabel: string;
+    roleOptions: {
+      owner: string;
+      senior: string;
+      nail_tech: string;
+    };
   };
   /** `/dashboard/[slug]/center` — operational receptionist workspace */
   receptionist: {
@@ -1555,6 +1571,7 @@ export const userEn: UserMessages = {
         timelineHeatmap: "Dense timeline grid lines",
         soundAlerts: "Sound alerts",
       },
+      advancedSectionTitle: "Advanced",
     },
     dashboardPreset: {
       sectionTitle: "Workspace preset",
@@ -1643,6 +1660,7 @@ export const userEn: UserMessages = {
       "Shows a small gold badge on the public booking page — pick your busiest 1–3 services.",
     characterCount: "{used}/{max}",
     descriptionGeneratedToast: "✨ Description generated",
+    saveButton: "Save",
   },
   setupErrors: {
     serviceInUse:
@@ -1669,6 +1687,12 @@ export const userEn: UserMessages = {
     inactiveBadge: "Inactive",
     statusHint:
       "Only active staff appear in the public booking flow and walk-in queue.",
+    roleLabel: "Role",
+    roleOptions: {
+      owner: "Owner",
+      senior: "Senior",
+      nail_tech: "Nail tech",
+    },
   },
   receptionist: {
     title: "Front desk",

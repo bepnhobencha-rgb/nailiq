@@ -140,6 +140,11 @@ export function BookingFlowServicePanel({
         : t.serviceDurationFlexible;
     const detailId = `service-tile-${s.id}-detail`;
     const nameId = `service-tile-${s.id}-name`;
+    // P1.4 — only show the description-toggle chevron when there is
+    // actually a description to reveal. Otherwise the chevron is dead
+    // weight and a tap-target hazard next to the main select area.
+    const hasDescription =
+      typeof s.description === "string" && s.description.trim().length > 0;
 
     return (
       <div
@@ -161,62 +166,98 @@ export function BookingFlowServicePanel({
             : "border border-[var(--booking-border)] hover:border-[var(--booking-border)]",
         )}
       >
-        <button
-          type="button"
-          onClick={() => toggleExpand(s.id)}
-          aria-expanded={isExpanded}
-          aria-controls={detailId}
-          aria-label={t.serviceTileToggleAria.replace("{service}", s.name)}
-          data-testid="service-tile-toggle"
-          className={cn(
-            "flex w-full min-w-0 items-start justify-between gap-4 px-4 text-left sm:gap-5 sm:px-5",
-            s.isFeatured
-              ? "min-h-[5.5rem] py-4 sm:min-h-[6rem] sm:py-4"
-              : "min-h-[4.5rem] py-3.5 sm:min-h-[5rem]",
-            !isSelected && "nq-booking-tile-interactive",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--booking-bg)] focus-visible:rounded-2xl",
-          )}
-        >
-          <span className="min-w-0 flex-1 pr-2">
-            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span
-                id={nameId}
-                className="text-[15px] font-medium leading-snug tracking-tight text-[var(--booking-text)] sm:text-base"
+        {/* P1.4 — Main tile body is the select target. One click =
+            commit the service, switch to gold border, light up Continue.
+            Removes the prior two-step expand→select interaction that
+            tested poorly with QA. The chevron sibling button (below)
+            handles description preview separately. */}
+        <div className="flex w-full min-w-0 items-stretch">
+          <button
+            type="button"
+            onClick={() => onSelectService(s.id)}
+            aria-pressed={isSelected}
+            data-testid="service-tile-select"
+            className={cn(
+              "flex min-w-0 flex-1 items-start justify-between gap-4 px-4 text-left sm:gap-5 sm:px-5",
+              s.isFeatured
+                ? "min-h-[5.5rem] py-4 sm:min-h-[6rem] sm:py-4"
+                : "min-h-[4.5rem] py-3.5 sm:min-h-[5rem]",
+              !isSelected && "nq-booking-tile-interactive",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--booking-bg)] focus-visible:rounded-2xl",
+            )}
+          >
+            <span className="min-w-0 flex-1 pr-2">
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span
+                  id={nameId}
+                  className="text-[15px] font-medium leading-snug tracking-tight text-[var(--booking-text)] sm:text-base"
+                >
+                  {s.name}
+                </span>
+                {s.isPopular ? (
+                  <span
+                    data-testid="service-popular-badge"
+                    className="rounded-full bg-[var(--salon-primary)]/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--salon-primary)]"
+                  >
+                    {t.popularBadge}
+                  </span>
+                ) : null}
+                {s.isFeatured ? (
+                  <span
+                    data-testid="service-featured-badge"
+                    className="rounded-full border border-[var(--salon-primary)]/40 bg-[var(--salon-primary)]/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--salon-primary)]"
+                  >
+                    {t.featuredBadge}
+                  </span>
+                ) : null}
+              </span>
+            </span>
+            <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+              <span className="text-sm font-medium tabular-nums tracking-tight text-[var(--booking-text-muted)] sm:text-[15px]">
+                {durationText}
+              </span>
+              {s.priceDisplay ? (
+                <span className="text-sm font-semibold tabular-nums text-[var(--salon-primary)] sm:text-[15px]">
+                  {s.priceDisplay}
+                </span>
+              ) : null}
+            </div>
+          </button>
+          {hasDescription ? (
+            <button
+              type="button"
+              onClick={() => toggleExpand(s.id)}
+              aria-expanded={isExpanded}
+              aria-controls={detailId}
+              aria-label={t.serviceTileDescriptionAria.replace(
+                "{service}",
+                s.name,
+              )}
+              data-testid="service-tile-toggle"
+              className="flex w-11 shrink-0 items-center justify-center border-l border-[var(--booking-border)] text-[var(--booking-text-muted)] hover:bg-[var(--booking-bg-input)] hover:text-[var(--booking-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--booking-bg)]"
+            >
+              <motion.svg
+                aria-hidden
+                viewBox="0 0 24 24"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                animate={{ rotate: isExpanded ? 180 : 0 }}
+                transition={
+                  reducedMotion
+                    ? { duration: 0 }
+                    : { type: "spring", stiffness: 320, damping: 28 }
+                }
               >
-                {s.name}
-              </span>
-              {s.isPopular ? (
-                <span
-                  data-testid="service-popular-badge"
-                  className="rounded-full bg-[var(--salon-primary)]/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--salon-primary)]"
-                >
-                  {t.popularBadge}
-                </span>
-              ) : null}
-              {s.isFeatured ? (
-                <span
-                  data-testid="service-featured-badge"
-                  className="rounded-full border border-[var(--salon-primary)]/40 bg-[var(--salon-primary)]/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--salon-primary)]"
-                >
-                  {t.featuredBadge}
-                </span>
-              ) : null}
-            </span>
-          </span>
-          <div className="flex shrink-0 flex-col items-end gap-1 text-right">
-            <span className="text-sm font-medium tabular-nums tracking-tight text-[var(--booking-text-muted)] sm:text-[15px]">
-              {durationText}
-            </span>
-            {s.priceDisplay ? (
-              <span className="text-sm font-semibold tabular-nums text-[var(--salon-primary)] sm:text-[15px]">
-                {s.priceDisplay}
-              </span>
-            ) : null}
-          </div>
-        </button>
+                <path d="M6 9l6 6 6-6" />
+              </motion.svg>
+            </button>
+          ) : null}
+        </div>
 
         <AnimatePresence initial={false}>
-          {isExpanded ? (
+          {isExpanded && hasDescription ? (
             <motion.div
               key="detail"
               id={detailId}
@@ -234,25 +275,12 @@ export function BookingFlowServicePanel({
               className="overflow-hidden"
             >
               <div className="border-t border-[var(--booking-border)] px-4 py-3 sm:px-5 sm:py-4">
-                {s.description ? (
-                  <p
-                    data-testid="service-description"
-                    className="text-sm leading-relaxed text-[var(--booking-text-muted)] sm:text-[15px]"
-                  >
-                    {s.description}
-                  </p>
-                ) : null}
-                <LuxuryBookingCta
-                  onClick={() => onSelectService(s.id)}
-                  className={cn(
-                    "mt-3 h-11 min-h-11 w-full px-5 text-sm lg:w-full lg:min-w-0 lg:px-5",
-                    s.description ? undefined : "mt-0",
-                  )}
+                <p
+                  data-testid="service-description"
+                  className="text-sm leading-relaxed text-[var(--booking-text-muted)] sm:text-[15px]"
                 >
-                  <span data-testid="service-tile-select">
-                    {t.selectThisService} →
-                  </span>
-                </LuxuryBookingCta>
+                  {s.description}
+                </p>
               </div>
             </motion.div>
           ) : null}
