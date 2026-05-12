@@ -1,11 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import * as Sentry from "@sentry/nextjs";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
-import { formatGuestPriceUsd } from "@/shared/booking/formatBookingPrice";
+import { formatBookingPrice } from "@/shared/booking/formatBookingPrice";
 import { getSalonBySlug } from "@/shared/booking/getSalonBySlug";
 import { parseServiceCategory } from "@/shared/booking/serviceCategory";
 import { createClient } from "@/shared/lib/supabase/server";
 import { normalizeBrandColor } from "@/shared/lib/brandColor";
+import { parseCurrency, type Currency } from "@/shared/lib/currencyFormat";
 
 export type BookingStaffItem = {
   id: string;
@@ -32,6 +33,9 @@ export type BookingSalonMeta = {
   /** Per-salon light/dark theme for the public booking page only.
    * Defaults to `"dark"` for legacy rows and any invalid value. */
   themeMode: "dark" | "light";
+  /** Salon's display currency (CAD / USD / VND). Service prices and
+   *  totals on the booking page render in this currency. */
+  currencyCode: Currency;
 };
 
 export type BookingLoadData = {
@@ -119,6 +123,10 @@ export async function loadBookingServicesForSalonSlug(
     console.error("loadBookingServices staff error:", staffErr);
   }
 
+  const salonCurrency = parseCurrency(
+    (salon as { currency_code?: unknown }).currency_code,
+  );
+
   const services: BookingServiceItem[] = (rows ?? []).map((r) => {
     const row = r as unknown as {
       id: string;
@@ -153,7 +161,7 @@ export async function loadBookingServicesForSalonSlug(
       bufferMinutes: buffer,
       totalMinutes,
       priceCents,
-      priceDisplay: formatGuestPriceUsd(priceCents),
+      priceDisplay: formatBookingPrice(priceCents, salonCurrency),
       category: parseServiceCategory(row.category),
       description,
       isPopular: row.is_popular === true,
@@ -216,6 +224,7 @@ export async function loadBookingServicesForSalonSlug(
         (salon as { theme_mode?: unknown }).theme_mode === "light"
           ? "light"
           : "dark",
+      currencyCode: salonCurrency,
     },
   };
 }

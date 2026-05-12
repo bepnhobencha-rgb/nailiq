@@ -20,6 +20,7 @@ import {
 } from "@/shared/booking/serviceCategory";
 import { SERVICE_DESCRIPTION_MAX_LEN } from "@/shared/dashboard/serviceConstraints";
 import { getUserMessages, type UserMessages } from "@/shared/i18n/user";
+import type { Currency } from "@/shared/lib/currencyFormat";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 export type SetupServiceRow = {
@@ -54,6 +55,7 @@ export function ServicesSetupPanel({
   slug,
   initialRows,
   maxServices,
+  currency,
 }: {
   slug: string;
   initialRows: SetupServiceRow[];
@@ -61,6 +63,10 @@ export function ServicesSetupPanel({
    *  for unlimited plans / feature-flag overrides. Server still
    *  re-validates on every `addService` call. */
   maxServices: number;
+  /** Salon's display currency. Drives the "Price ({sym})" labels in
+   *  the add form and per-row editor. Stored cents are interpreted in
+   *  this currency by every formatter. */
+  currency: Currency;
 }) {
   const { language } = useUserLanguage();
   const messages = getUserMessages(language);
@@ -371,6 +377,7 @@ export function ServicesSetupPanel({
               confirmingDelete={confirmDeleteId === row.id}
               categoryLabels={categoryLabels}
               formLabels={formLabels}
+              currency={currency}
               onBeginDelete={() => {
                 setConfirmDeleteId(row.id);
               }}
@@ -448,7 +455,7 @@ export function ServicesSetupPanel({
           </label>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="block text-sm font-medium text-nq-muted">
-              Price (USD)
+              {`Price (${currency})`}
               <input
                 inputMode="decimal"
                 className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
@@ -545,6 +552,7 @@ function ServiceRowFields({
   confirmingDelete,
   categoryLabels,
   formLabels,
+  currency: rowCurrency,
   onBeginDelete,
   onCancelDelete,
   onConfirmDelete,
@@ -556,6 +564,7 @@ function ServiceRowFields({
   confirmingDelete: boolean;
   categoryLabels: ServiceCategoryLabels;
   formLabels: ServiceFormLabels;
+  currency: Currency;
   onBeginDelete: () => void;
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
@@ -621,7 +630,7 @@ function ServiceRowFields({
           />
         </label>
         <label className="block text-sm font-medium text-nq-muted">
-          Price (USD)
+          {`Price (${rowCurrency})`}
           <input
             inputMode="decimal"
             className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"

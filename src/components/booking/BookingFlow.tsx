@@ -22,7 +22,7 @@ import {
 } from "@/components/booking/BookingStepper";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
-import { formatGuestPriceUsdReceipt } from "@/shared/booking/formatBookingPrice";
+import { formatBookingPriceReceipt } from "@/shared/booking/formatBookingPrice";
 import { salonTimezoneAbbreviation } from "@/shared/lib/salonTime";
 import { useBookingFlowState } from "@/components/booking/useBookingFlowState";
 
@@ -100,9 +100,11 @@ export function BookingFlow({
         bookingId={flow.bookingResult.bookingId}
         salonPhone={salon.salonPhone}
         salonTimezone={salon.timezone}
-        totalPaidFormatted={formatGuestPriceUsdReceipt(
+        totalPaidFormatted={formatBookingPriceReceipt(
           flow.bookingResult.price_cents,
+          salon.currencyCode,
         )}
+        currency={salon.currencyCode}
         onAddToCalendar={flow.handleAddToCalendar}
         onBookAnother={flow.resetAfterDone}
       />
@@ -231,6 +233,7 @@ export function BookingFlow({
             stepDir={flow.stepDir}
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}
+            currency={salon.currencyCode}
             onSelectAddonId={flow.setSelectedAddonId}
             onBack={flow.backToInfo}
             onConfirm={() => void flow.onConfirm()}

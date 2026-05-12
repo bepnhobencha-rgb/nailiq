@@ -12,7 +12,8 @@ import {
 } from "@/shared/lib/phoneFormat";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 import { getPublicStaffDisplayName } from "@/shared/booking/publicStaffDisplay";
-import { formatGuestPriceUsd } from "@/shared/booking/formatBookingPrice";
+import { formatBookingPrice } from "@/shared/booking/formatBookingPrice";
+import type { Currency } from "@/shared/lib/currencyFormat";
 import {
   formatInSalonTz,
   salonTimezoneAbbreviation,
@@ -31,6 +32,7 @@ export function BookingFlowDonePanel({
   salonPhone,
   salonTimezone,
   totalPaidFormatted,
+  currency,
   onAddToCalendar,
   onBookAnother,
 }: {
@@ -49,6 +51,8 @@ export function BookingFlowDonePanel({
   salonTimezone: string;
   /** Receipt-style total from `bookingResult.price_cents`. */
   totalPaidFormatted: string;
+  /** Salon's display currency — used to format the addon price chip. */
+  currency: Currency;
   /** Fires the .ics download. Returns true if the click was dispatched. */
   onAddToCalendar: () => boolean;
   onBookAnother: () => void;
@@ -224,7 +228,7 @@ export function BookingFlowDonePanel({
               </span>
               <span className="min-w-0 shrink text-right font-semibold text-[var(--booking-text)]">
                 {(() => {
-                  const priceLabel = formatGuestPriceUsd(addonPriceCents);
+                  const priceLabel = formatBookingPrice(addonPriceCents, currency);
                   return priceLabel
                     ? `${addonServiceName.trim()} — ${priceLabel}`
                     : addonServiceName.trim();

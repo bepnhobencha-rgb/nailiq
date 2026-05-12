@@ -4,9 +4,10 @@ import { motion } from "@/shared/lib/motionClient";
 import { Button } from "@/components/ui/Button";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
 import {
-  formatGuestPriceUsd,
-  formatGuestPriceUsdReceipt,
+  formatBookingPrice,
+  formatBookingPriceReceipt,
 } from "@/shared/booking/formatBookingPrice";
+import type { Currency } from "@/shared/lib/currencyFormat";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { BookingSummaryGlass } from "@/components/booking/BookingSummaryGlass";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
@@ -33,6 +34,7 @@ export function BookingFlowConfirmPanel({
   stepDir,
   reducedMotion,
   stepTransition,
+  currency,
   onSelectAddonId,
   onBack,
   onConfirm,
@@ -53,6 +55,8 @@ export function BookingFlowConfirmPanel({
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
   stepTransition: { duration: number; ease: [number, number, number, number] };
+  /** Salon's display currency. Drives the receipt total formatting. */
+  currency: Currency;
   onSelectAddonId: (id: string | null) => void;
   onBack: () => void;
   onConfirm: () => void | Promise<void>;
@@ -86,7 +90,7 @@ export function BookingFlowConfirmPanel({
     ? (() => {
         const priceLabel =
           selectedAddOn.priceDisplay ??
-          formatGuestPriceUsd(selectedAddOn.priceCents);
+          formatBookingPrice(selectedAddOn.priceCents, currency);
         return {
           label: t.summaryAddOn,
           value: priceLabel
@@ -101,13 +105,13 @@ export function BookingFlowConfirmPanel({
       label: t.summaryServicePrice,
       value:
         service.priceDisplay ??
-        formatGuestPriceUsd(service.priceCents) ??
+        formatBookingPrice(service.priceCents, currency) ??
         "—",
     },
     ...(addonRow ? [addonRow] : []),
     {
       label: t.summaryTotal,
-      value: formatGuestPriceUsdReceipt(totalCents),
+      value: formatBookingPriceReceipt(totalCents, currency),
       valueGold: true as const,
     },
   ];

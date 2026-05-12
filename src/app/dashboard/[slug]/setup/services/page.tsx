@@ -6,6 +6,7 @@ import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
 import { ServicesSetupPanel } from "@/components/dashboard/ServicesSetupPanel";
 import { parseServiceCategory } from "@/shared/booking/serviceCategory";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { parseCurrency } from "@/shared/lib/currencyFormat";
 import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -48,7 +49,7 @@ export default async function SetupServicesPage({ params }: Props) {
   const { data: planRow } = await ctx.supabase
     .from("salons")
     .select(
-      "subscription_plan, plan_override, feature_flags" as never,
+      "subscription_plan, plan_override, feature_flags, currency_code" as never,
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -56,11 +57,13 @@ export default async function SetupServicesPage({ params }: Props) {
     subscription_plan?: string | null;
     plan_override?: string | null;
     feature_flags?: Record<string, unknown> | null;
+    currency_code?: unknown;
   };
   const planLimits = getEffectivePlanLimits(planForLimits);
   const maxServices = Number.isFinite(planLimits.maxServices)
     ? planLimits.maxServices
     : Number.POSITIVE_INFINITY;
+  const currency = parseCurrency(planForLimits.currency_code);
 
   return (
     <ResponsiveShell>
@@ -69,6 +72,7 @@ export default async function SetupServicesPage({ params }: Props) {
         <ServicesSetupPanel
           slug={slug}
           maxServices={maxServices}
+          currency={currency}
           initialRows={(rows ?? []).map((r) => {
             const row = r as unknown as {
               id: string;
