@@ -167,6 +167,7 @@ export function BookingTypeSwitcher({
           staff={staff}
           salon={salon}
           maxGroupSize={maxGroupSize}
+          capabilityRows={capabilityRows}
         />
       )}
     </div>

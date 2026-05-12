@@ -218,6 +218,68 @@ export const bookingEn = {
     cancelEntireGroup: "Cancel entire group",
     cancelEntireGroupConfirm:
       "Cancel every booking in this group? This affects {n} people.",
+    /** ─── AI Arrival-First redesign (PR: feat/group-booking-ai-arrival) ───
+     * 5-step flow: size → per-member service/staff → date & arrival
+     * window → AI-generated 3-option arrangement → confirm. New keys
+     * below; legacy keys above kept for receptionist-side reuse. */
+    /** Step 3 — arrival-window heading. */
+    arrivalQuestion: "When would you like to arrive?",
+    arrivalMorning: "Morning · 9 AM – 12 PM",
+    arrivalAfternoon: "Afternoon · 12 PM – 5 PM",
+    arrivalEvening: "Evening · 5 PM – close",
+    arrivalSpecific: "Specific time",
+    /** Step 4 — three smart-schedule option cards. */
+    schedulingBest: "Best — everyone within 15 min",
+    schedulingAlt: "Alternative — within 30 min",
+    schedulingEarly: "Earliest available",
+    /** Recommended badge on the BEST card. */
+    schedulingRecommended: "Recommended",
+    /** Per-card "Finishes at {time}" footer line. */
+    schedulingFinish: "Finishes at {time}",
+    /** Empty-state copy when the scheduler returns zero arrangements. */
+    schedulingNoSlots:
+      "No slots available in that window. Try a different time or date.",
+    schedulingTryDate: "Try another date",
+    schedulingClosed:
+      "Salon is closed on this date. Please pick another date.",
+    /** Stepper labels — five top-level steps. */
+    groupStep1: "Size",
+    groupStep2: "Services",
+    groupStep3: "Date & Time",
+    groupStep4: "Arrangement",
+    groupStep5: "Confirm",
+    /** Step 5 success heading after submit. */
+    groupSuccess: "Group booking confirmed!",
+    groupRef: "Booking reference",
+    /** Sticky-footer total label. */
+    groupTotal: "Total",
+    /** Step 2 cross-member soft-warning (non-blocking) shown when two
+     * members pick the same staff. Submission only blocks if the
+     * scheduler can't resolve any non-overlapping arrangement. */
+    staffConflictNote:
+      "Two people have selected the same staff. The scheduler will try to find a non-overlapping time.",
+    /** P1 #18–#20 (QA re-sweep 2026-05-12) — granular submit-error
+     *  copy. Each key matches a `submitGroupBooking` reason; UI
+     *  substitutes `{n}` with the 1-indexed member number when the
+     *  server returns one. The catch-all generic stays as
+     *  `groupBooking.serverError` for truly unknown cases. */
+    invalidNameForMember:
+      "Person {n}'s name is missing or contains invalid characters.",
+    invalidPhoneForMember:
+      "Person {n}'s phone number isn't valid. Example: +1 (604) 555-1234 or +84 90 123 4567.",
+    invalidEmailForMember:
+      "Person {n}'s email format isn't valid. Example: jane@email.com.",
+    invalidTimeForMember:
+      "Person {n}'s time is invalid. Please pick again on the previous step.",
+    invalidDateForMember:
+      "Person {n}'s date is invalid. Please pick again on the previous step.",
+    /** Same six errors but for client-side step 5 contact validation,
+     *  before we even hit the server. Phone is the primary contact
+     *  for the whole group so there's no member number. */
+    contactInvalidPhone:
+      "The phone number isn't valid. Example: +1 (604) 555-1234 or +84 90 123 4567.",
+    contactInvalidEmail:
+      "The email format isn't valid. Example: jane@email.com.",
   },
 };
 
