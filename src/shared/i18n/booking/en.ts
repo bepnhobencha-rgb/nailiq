@@ -291,6 +291,18 @@ export const bookingEn = {
     schedulingStillWorking: "Still working, please wait...",
     schedulingTimeout:
       "Could not find arrangements. Try another date.",
+    /** Task #04-A FIX 03 — stale arrangement banner on step 5.
+     *  The arrangement carries server-side availability snapshots
+     *  that age out — by 3 min another customer may have grabbed
+     *  one of the slots. Banner lets the user choose to confirm
+     *  now (acceptable race) or refresh the schedule. */
+    arrangementStale: "This arrangement is 3+ min old.",
+    confirmAnyway: "Confirm anyway",
+    refreshSchedule: "Refresh schedule",
+    /** FIX 14 — idle reminder on step 5. The booking isn't
+     *  cancelled, just nudged. */
+    sessionExpiringSoon:
+      "Session expiring soon. Please confirm to lock in your slots.",
   },
 };
 

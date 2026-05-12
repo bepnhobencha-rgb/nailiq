@@ -81,9 +81,9 @@ test.describe("Group booking — happy path", () => {
       timeout: 15_000,
     });
     await expect(page.getByText(/confirmed|thành công/i)).toBeVisible();
-    // Reference label is `${groupRef} #${first8charsOfGroupId}` —
-    // the first 8 chars of a UUID are uppercase alphanumerics. Match
-    // the prefix loosely (label may be "Reference" or "Mã đặt lịch").
-    await expect(page.getByText(/#[A-F0-9]{8}/)).toBeVisible();
+    // FIX 18 (Task #04-A) — new reference format
+    // `#GRP-YYYYMMDD-XXXX`. Date prefix is the salon-local booking
+    // date (always 8 digits), 4-hex suffix from the group_id UUID.
+    await expect(page.getByText(/#GRP-\d{8}-[A-F0-9]{4}/)).toBeVisible();
   });
 });
