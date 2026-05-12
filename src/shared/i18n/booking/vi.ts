@@ -211,5 +211,8 @@ export const bookingVi: BookingMessages = {
       "Số điện thoại không hợp lệ. Ví dụ: +1 (604) 555-1234 hoặc +84 90 123 4567.",
     contactInvalidEmail:
       "Email không đúng định dạng. Ví dụ: jane@email.com.",
+    schedulingSearching: "✨ Đang tìm lịch tốt nhất cho nhóm...",
+    schedulingStillWorking: "Đang xử lý, vui lòng chờ thêm...",
+    schedulingTimeout: "Không tìm được lịch. Thử ngày khác.",
   },
 };
