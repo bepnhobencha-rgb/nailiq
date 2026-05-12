@@ -20,6 +20,7 @@ export function BookingMobileHero({
   openingHoursRaw,
   timezone,
   description,
+  lang = "vi",
 }: {
   shopLabel: string;
   t: BookingMessages;
@@ -29,6 +30,8 @@ export function BookingMobileHero({
   timezone?: string;
   /** P2.8 — owner-written tagline override. */
   description?: string | null;
+  /** P2.2 — drive the info-line locale. */
+  lang?: "vi" | "en";
 }) {
   const isLight = themeMode === "light";
   return (
@@ -62,6 +65,7 @@ export function BookingMobileHero({
             openingHoursRaw={openingHoursRaw ?? null}
             timezone={timezone}
             variant="mobile"
+            lang={lang}
           />
         </div>
       ) : null}

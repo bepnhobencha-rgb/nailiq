@@ -65,27 +65,49 @@ export function formatPhoneInputProgressive(raw: string): string {
   const s = raw ?? "";
   if (s.trim().length === 0) return "";
 
-  // International (`+...`) phones — leave the user's spacing alone.
-  // Trying to auto-format +84 / +33 / etc. is more harmful than
-  // helpful when users from different regions paste in their own
-  // formats. We still strip stray non-digits after the `+` so the
-  // displayed value stays sane.
+  // International (`+...`) phones — keep the country prefix
+  // visible while progressively formatting NANP (+1) numbers the
+  // same way we format locals. P2.1: previously a "+1 6045551234"
+  // entry collapsed to "+16045551234" with no spacing; now it
+  // renders as "+1 (604) 555-1234" so the country code stays
+  // legible.
   if (s.startsWith("+")) {
     const digits = s.slice(1).replace(/\D/g, "");
+    // NANP starts with country code 1; format the 10-digit tail
+    // exactly like the local path.
+    if (digits.startsWith("1")) {
+      const rest = digits.slice(1);
+      if (rest.length === 0) return "+1 ";
+      if (rest.length < 4) return `+1 ${rest}`;
+      if (rest.length < 7) return `+1 (${rest.slice(0, 3)}) ${rest.slice(3)}`;
+      if (rest.length <= 10)
+        return `+1 (${rest.slice(0, 3)}) ${rest.slice(3, 6)}-${rest.slice(6, 10)}`;
+      return `+1 (${rest.slice(0, 3)}) ${rest.slice(3, 6)}-${rest.slice(6, 10)}${rest.slice(10)}`;
+    }
+    // Other countries (+84, +33, …) — leave the user's input alone
+    // except for non-digit cleanup. Trying to guess national
+    // formats causes more confusion than it solves.
     return `+${digits}`;
   }
 
   // NANP local-format path: progressively wrap into "(AAA) BBB-CCCC"
   // as the user fills digits. Below 4 digits the open paren makes the
-  // cursor jump weirdly, so we hold off on it.
+  // cursor jump weirdly, so we hold off on it. Once the user reaches
+  // 11 digits starting with "1" we promote to the `+1 (AAA)…` form.
   const d = s.replace(/\D/g, "");
   if (d.length === 0) return "";
   if (d.length < 4) return d;
   if (d.length < 7) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
   if (d.length <= 10)
     return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6, 10)}`;
+  // P2.1: 11 digits starting with 1 = unmarked NANP. Promote to
+  // explicit `+1 (AAA) BBB-CCCC` so the prefix doesn't disappear.
+  if (d.length === 11 && d.startsWith("1")) {
+    const rest = d.slice(1);
+    return `+1 (${rest.slice(0, 3)}) ${rest.slice(3, 6)}-${rest.slice(6, 10)}`;
+  }
   // Past 10 digits, assume the user is typing a country code without
-  // the `+`. Promote to a `+` prefix so it formats consistently.
+  // the `+`. Promote to a `+` prefix.
   return `+${d}`;
 }
 

@@ -178,58 +178,51 @@ export function BookingFlowServicePanel({
             aria-pressed={isSelected}
             data-testid="service-tile-select"
             className={cn(
-              // QA: name was visually colliding with the price column
-              // on narrow widths because the outer name wrapper was an
-              // inline <span> with `flex-1 min-w-0` — inline elements
-              // are inconsistent flex-children across browsers. Bumped
-              // gap from 4→5 (mobile) / 5→6 (sm) and tightened the
-              // price column's `pl` separator below.
-              "flex min-w-0 flex-1 items-start justify-between gap-5 px-4 text-left sm:gap-6 sm:px-5",
-              s.isFeatured
-                ? "min-h-[5.5rem] py-4 sm:min-h-[6rem] sm:py-4"
-                : "min-h-[4.5rem] py-3.5 sm:min-h-[5rem]",
+              // P2.8 — stacked layout (name on top, price/duration
+              // below) replaces the prior side-by-side. Name always
+              // gets full width so it can't visually collide with
+              // the price column; meta row sits beneath, right-
+              // aligned. Min-height bumped slightly so two-line
+              // names + meta row fit without clipping.
+              "flex w-full min-w-0 flex-col items-start gap-1.5 px-4 py-3.5 text-left sm:px-5 sm:py-4",
+              s.isFeatured ? "min-h-[6rem]" : "min-h-[5rem]",
               !isSelected && "nq-booking-tile-interactive",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--booking-bg)] focus-visible:rounded-2xl",
             )}
           >
-            {/* QA: outer name wrapper is now a <div> with explicit
-                `block` (was an inline <span>) so `min-w-0 flex-1`
-                consistently constrains its width and long names
-                wrap inside the column instead of bleeding into the
-                price column on the right. `break-words` handles the
-                edge case where a single token is wider than the
-                available space (e.g. a long unbroken product name). */}
-            <div className="block min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {/* P2.8 — Name + badges row. `flex-wrap` lets the
+                Popular/Featured chips drop to a second line on
+                tiny screens. `break-words` handles long single
+                tokens. */}
+            <div className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <span
+                id={nameId}
+                className="break-words text-[15px] font-medium leading-snug tracking-tight text-[var(--booking-text)] sm:text-base"
+              >
+                {s.name}
+              </span>
+              {s.isPopular ? (
                 <span
-                  id={nameId}
-                  className="break-words text-[15px] font-medium leading-snug tracking-tight text-[var(--booking-text)] sm:text-base"
+                  data-testid="service-popular-badge"
+                  className="rounded-full bg-[var(--salon-primary)]/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--salon-primary)]"
                 >
-                  {s.name}
+                  {t.popularBadge}
                 </span>
-                {s.isPopular ? (
-                  <span
-                    data-testid="service-popular-badge"
-                    className="rounded-full bg-[var(--salon-primary)]/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--salon-primary)]"
-                  >
-                    {t.popularBadge}
-                  </span>
-                ) : null}
-                {s.isFeatured ? (
-                  <span
-                    data-testid="service-featured-badge"
-                    className="rounded-full border border-[var(--salon-primary)]/40 bg-[var(--salon-primary)]/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--salon-primary)]"
-                  >
-                    {t.featuredBadge}
-                  </span>
-                ) : null}
-              </div>
+              ) : null}
+              {s.isFeatured ? (
+                <span
+                  data-testid="service-featured-badge"
+                  className="rounded-full border border-[var(--salon-primary)]/40 bg-[var(--salon-primary)]/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--salon-primary)]"
+                >
+                  {t.featuredBadge}
+                </span>
+              ) : null}
             </div>
-            {/* Price column: pin a small min-width so prices align
-                vertically across cards regardless of name length,
-                and the price never visually crashes into the name. */}
-            <div className="flex min-w-[4.5rem] shrink-0 flex-col items-end gap-1 text-right">
-              <span className="text-sm font-medium tabular-nums tracking-tight text-[var(--booking-text-muted)] sm:text-[15px]">
+            {/* P2.8 — Meta row below name. Right-aligned so the
+                price visually anchors against the card edge while
+                still leaving room above for a two-line name. */}
+            <div className="flex w-full items-baseline justify-between gap-3 text-[var(--booking-text-muted)]">
+              <span className="text-sm font-medium tabular-nums tracking-tight sm:text-[15px]">
                 {durationText}
               </span>
               {s.priceDisplay ? (

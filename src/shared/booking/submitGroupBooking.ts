@@ -9,7 +9,7 @@ import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDa
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
-import { salonDayRangeUtc, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+import { salonDayRangeUtc, salonToday, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 import { createClient } from "@/shared/lib/supabase/client";
 
 /**
@@ -73,6 +73,14 @@ export type GroupBookingResult =
       ok: false;
       reason: "slot_conflict";
       conflictingMembers: number[];
+      /** P1.6 — distinguishes "two members in this group collided
+       * with each other" from "another customer just took that
+       * slot". UI copy differs: cross-member asks the user to pick
+       * a different staff/time within the group, external blames
+       * the race and asks for a different time entirely. The DB-
+       * level race always surfaces as `external` because we can't
+       * attribute the lost slot to a specific in-group pair. */
+      conflictKind: "cross_member" | "external";
     }
   | {
       ok: false;
@@ -85,6 +93,7 @@ export type GroupBookingResult =
         | "invalid_group_size"
         | "service_not_found"
         | "staff_not_found"
+        | "past_date"
         | "server_error";
     };
 
@@ -175,6 +184,15 @@ export async function submitGroupBooking(
     if (closedYmdSet.has(m.date)) return fail("salon_closed_day");
   }
 
+  // P1.2 — past-date guard, mirrors submitPublicBooking.ts:199. The
+  // client also `min`-bounds the date input, but a manually-crafted
+  // payload bypasses that. Compares YMD strings in salon timezone to
+  // avoid server-tz drift.
+  const todayYmd = salonToday(timezone);
+  for (const m of params.members) {
+    if (m.date < todayYmd) return fail("past_date");
+  }
+
   scope.setTag("salon.id", String(salonRow.id));
   scope.setTag("group.size", String(params.members.length));
 
@@ -259,7 +277,12 @@ export async function submitGroupBooking(
   // The DB GIST constraint also catches this at insert time; we run
   // the app check first so we can return a structured list of
   // conflicting indices for the UI to highlight.
-  const conflictingMembers = new Set<number>();
+  //
+  // P1.6 — track in-group conflicts separately from external ones so
+  // the UI can show distinct copy. In-group: "two members chose the
+  // same staff". External: "another customer just took it".
+  const crossMemberConflicts = new Set<number>();
+  const externalConflicts = new Set<number>();
   for (let i = 0; i < resolved.length; i++) {
     for (let j = i + 1; j < resolved.length; j++) {
       if (resolved[i].member.staffId !== resolved[j].member.staffId) continue;
@@ -271,8 +294,8 @@ export async function submitGroupBooking(
           resolved[j].endMs,
         )
       ) {
-        conflictingMembers.add(i);
-        conflictingMembers.add(j);
+        crossMemberConflicts.add(i);
+        crossMemberConflicts.add(j);
       }
     }
   }
@@ -316,14 +339,19 @@ export async function submitGroupBooking(
       endUtcIso: r.endUtcIso,
       existingBookings: occ,
     });
-    if (conflict !== null) conflictingMembers.add(i);
+    if (conflict !== null) externalConflicts.add(i);
   }
 
-  if (conflictingMembers.size > 0) {
+  if (crossMemberConflicts.size > 0 || externalConflicts.size > 0) {
+    // Cross-member is the more actionable category — surface it
+    // first if both are present. The UI highlights all conflicting
+    // indices regardless.
+    const all = new Set([...crossMemberConflicts, ...externalConflicts]);
     return {
       ok: false,
       reason: "slot_conflict",
-      conflictingMembers: Array.from(conflictingMembers).sort((a, b) => a - b),
+      conflictingMembers: Array.from(all).sort((a, b) => a - b),
+      conflictKind: crossMemberConflicts.size > 0 ? "cross_member" : "external",
     };
   }
 
@@ -371,7 +399,14 @@ export async function submitGroupBooking(
     // structured JSON; if they reach here it means the RPC itself
     // didn't trap them (e.g. older deployed version).
     if (rpcErr.code === "23P01") {
-      return { ok: false, reason: "slot_conflict", conflictingMembers: [] };
+      // DB-level race → another customer took it. Can't attribute
+      // to a specific in-group pair, so kind = external.
+      return {
+        ok: false,
+        reason: "slot_conflict",
+        conflictingMembers: [],
+        conflictKind: "external",
+      };
     }
     if (rpcErr.code === "23505") return fail("duplicate_submission");
     return fail("server_error");
@@ -389,7 +424,14 @@ export async function submitGroupBooking(
   if (result.success === false) {
     const code = result.code ?? "";
     if (code === "slot_conflict") {
-      return { ok: false, reason: "slot_conflict", conflictingMembers: [] };
+      // DB-level race → another customer took it. Can't attribute
+      // to a specific in-group pair, so kind = external.
+      return {
+        ok: false,
+        reason: "slot_conflict",
+        conflictingMembers: [],
+        conflictKind: "external",
+      };
     }
     if (code === "duplicate_submission") return fail("duplicate_submission");
     if (code === "invalid_group_size") return fail("invalid_group_size");
