@@ -27,6 +27,32 @@ const DAY_KEYS_ORDERED: DayKey[] = [
   "sun",
 ];
 
+/** P2.7 — compute the Nth occurrence of a weekday in a given month.
+ *
+ * `month` is 0-indexed (0 = January, 11 = December).
+ * `weekday` is 0-indexed (0 = Sunday, 1 = Monday, … 6 = Saturday).
+ * `n` is 1-indexed (1 = first, 2 = second, …).
+ *
+ * Used for North American floating holidays:
+ *   - Labour/Labor Day  → first Monday of September   (9 → month 8, weekday 1, n=1)
+ *   - Canadian Thanksgiving → second Monday of October (10 → month 9, weekday 1, n=2)
+ *   - US Thanksgiving   → fourth Thursday of November  (11 → month 10, weekday 4, n=4)
+ *
+ * Uses UTC math throughout to avoid local-tz drift; the resulting
+ * YYYY-MM-DD is timezone-independent (calendar date only). */
+function nthWeekdayOfMonth(
+  year: number,
+  month: number,
+  weekday: number,
+  n: number,
+): string {
+  const firstOfMonth = new Date(Date.UTC(year, month, 1));
+  const firstWeekday = firstOfMonth.getUTCDay();
+  const offset = (weekday - firstWeekday + 7) % 7;
+  const day = 1 + offset + (n - 1) * 7;
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 /** P1.11 — typical Vietnamese nail-salon hours preset.
  * 10:00–19:00 Mon–Sat, closed Sun. Owners can still tweak afterwards. */
 const NAIL_SHOP_PRESET: OpeningHoursWeek = {
@@ -299,29 +325,56 @@ export function HoursSetupPanel({
             autoComplete="off"
           />
         </label>
-        {/* P2.7 — VN public-holiday quick-add chips. Tapping appends
-            the chosen date (current year) to the textarea on its own
-            line, dedup'd against what's already there. Existing
-            entries are preserved; the owner can still edit freely. */}
+        {/* P2.7 — North American holiday quick-add chips. NailIQ is
+            launching for nail salons in Canada and the US, so the
+            preset list reflects the holidays nail shops in those
+            markets most commonly close on. Tapping appends the
+            chosen date (current year) to the textarea on its own
+            line, dedup'd. Owners can still edit freely. Floating
+            holidays (Labour Day, Thanksgiving) are computed for the
+            current year via `nthWeekdayOfMonth`. */}
         <div
           className="mt-3 flex flex-wrap gap-2"
           data-testid="hours-holiday-presets"
         >
           {(() => {
             const year = new Date().getFullYear();
-            // Tết Nguyên Đán is lunar — we pin a best-guess Gregorian
-            // date for the current year; owners override the exact
-            // date in the textarea if their schedule differs.
-            // 2026 Tết is Feb 17, 2027 Tết is Feb 6. Default to a
-            // mid-Feb placeholder + a comment chip lets the owner
-            // know the exact Tết date needs manual confirmation.
             const PRESETS: Array<{ label: string; date: string }> = [
-              { label: "🧧 Tết Nguyên Đán", date: `${year}-02-17` },
-              { label: "🇻🇳 30/4 — Thống nhất", date: `${year}-04-30` },
-              { label: "👷 1/5 — Quốc tế lao động", date: `${year}-05-01` },
-              { label: "🇻🇳 2/9 — Quốc khánh", date: `${year}-09-02` },
-              { label: "🎄 Christmas · 25/12", date: `${year}-12-25` },
-              { label: "🎆 New Year · 1/1", date: `${year + 1}-01-01` },
+              { label: "🎆 New Year · Jan 1", date: `${year}-01-01` },
+              {
+                label: "🇨🇦 Canada Day · Jul 1",
+                date: `${year}-07-01`,
+              },
+              {
+                label: "🇺🇸 Independence Day · Jul 4",
+                date: `${year}-07-04`,
+              },
+              {
+                // First Monday of September. Same date for both
+                // Canadian "Labour Day" and US "Labor Day".
+                label: "👷 Labour Day",
+                date: nthWeekdayOfMonth(year, 8, 1, 1),
+              },
+              {
+                // Second Monday of October — Canada only.
+                label: "🍂 Thanksgiving (CA)",
+                date: nthWeekdayOfMonth(year, 9, 1, 2),
+              },
+              {
+                // Fourth Thursday of November — US only.
+                label: "🦃 Thanksgiving (US)",
+                date: nthWeekdayOfMonth(year, 10, 4, 4),
+              },
+              {
+                label: "🎄 Christmas · Dec 25",
+                date: `${year}-12-25`,
+              },
+              {
+                // Boxing Day is observed in Canada; included as a
+                // common closure for CA-based salons.
+                label: "🎁 Boxing Day · Dec 26",
+                date: `${year}-12-26`,
+              },
             ];
             return PRESETS.map((p) => (
               <button
