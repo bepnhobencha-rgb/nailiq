@@ -160,6 +160,14 @@ export function BookingGroupFlow({
   const [scheduleResult, setScheduleResult] =
     useState<GroupSmartScheduleResult | null>(null);
   const [selectedArrangementIdx, setSelectedArrangementIdx] = useState(0);
+  // QA bug (2026-05-12, GB-3): staged loading phase for step 4.
+  // The scheduler can take 5–15s on a cold cache + heavy day.
+  // `normal` → friendly progress, `still-working` → past 10s heads-
+  // up, `timeout` → past 20s with a back-out CTA. Reset on every
+  // new scheduling cycle in the useEffect below.
+  const [latencyPhase, setLatencyPhase] = useState<
+    "normal" | "still-working" | "timeout"
+  >("normal");
 
   // Submit state.
   const [submitting, setSubmitting] = useState(false);
@@ -186,7 +194,7 @@ export function BookingGroupFlow({
    *  accepted typed-in years like 0513 on Chromium even when
    *  `min`/`max` were set — the constraint only fires for picker-
    *  driven selections. We replaced the input with a click-only
-   *  visual calendar (`BookingCalendarGrid`, ≤365 days out), so the
+   *  visual calendar (`BookingCalendarGrid`, ≤90 days out), so the
    *  user can't enter a corrupt year through normal UX. This year
    *  check stays as a defense-in-depth gate in case a stale YMD
    *  reaches the wizard via back-nav or a future code path. */
@@ -564,6 +572,27 @@ export function BookingGroupFlow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
+  // QA bug (2026-05-12, GB-3) — staged loading copy. Watch
+  // `scheduling` and advance the phase at 10s + 20s. Always reset
+  // to `normal` when scheduling flips false (result arrived or
+  // user navigated away).
+  useEffect(() => {
+    if (!scheduling) {
+      setLatencyPhase("normal");
+      return;
+    }
+    setLatencyPhase("normal");
+    const t10 = window.setTimeout(
+      () => setLatencyPhase("still-working"),
+      10_000,
+    );
+    const t20 = window.setTimeout(() => setLatencyPhase("timeout"), 20_000);
+    return () => {
+      window.clearTimeout(t10);
+      window.clearTimeout(t20);
+    };
+  }, [scheduling]);
+
   // ── Render ─────────────────────────────────────────────────────
   if (step === "success" && successResult) {
     return (
@@ -669,6 +698,7 @@ export function BookingGroupFlow({
           t={t}
           groupCopy={groupCopy}
           scheduling={scheduling}
+          latencyPhase={latencyPhase}
           scheduleResult={scheduleResult}
           selectedIdx={selectedArrangementIdx}
           currencyCode={salon.currencyCode}
@@ -1179,9 +1209,14 @@ function DateArrivalStep({
           staffId={BOOKING_ANY_STAFF_ID}
           serviceTotalMinutes={serviceTotalMinutes}
           selectedDate={selectedDate}
-          // Salons asked for ~year-out visibility (wedding parties,
-          // overseas family). Matches BUG 1's `dateBounds.max` cap.
-          windowDays={365}
+          // QA spec (2026-05-12, follow-up): salons settled on a
+          // 90-day forward window after beta feedback. Was 365 in
+          // PR #149 (which was the original "wedding parties / 6+
+          // months" ask) — narrowed back because a year out felt
+          // overly distant in practice and added load to the slot-
+          // availability fetch. Individual flow uses 60d; group
+          // bumps to 90d for a small wedding-party buffer.
+          windowDays={90}
           onSelectDate={(d) => onDateChange(bookingDateYmdFromLocalDate(d))}
         />
         {isSelectedDayClosed ? (
@@ -1312,6 +1347,7 @@ function ArrangementStep({
   t,
   groupCopy,
   scheduling,
+  latencyPhase,
   scheduleResult,
   selectedIdx,
   currencyCode,
@@ -1323,6 +1359,10 @@ function ArrangementStep({
   t: BookingMessages;
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
   scheduling: boolean;
+  /** Staged loading phase: `normal` (0–10s) → `still-working`
+   *  (10–20s) → `timeout` (20s+). Driven from the parent by a
+   *  `setTimeout` chain that resets when `scheduling` flips. */
+  latencyPhase: "normal" | "still-working" | "timeout";
   scheduleResult: GroupSmartScheduleResult | null;
   selectedIdx: number;
   currencyCode: BookingSalonMeta["currencyCode"];
@@ -1337,14 +1377,21 @@ function ArrangementStep({
         {groupCopy.groupStep4 ?? "AI Arrangement"}
       </h2>
 
-      {scheduling ? (
-        <div
-          role="status"
-          data-testid="group-scheduling-loading"
-          className="rounded-xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] px-4 py-8 text-center text-sm text-[var(--booking-text-muted)]"
-        >
-          {groupCopy.availabilityChecking ?? "Đang tính lịch tối ưu…"}
-        </div>
+      {/* QA bug (2026-05-12, GB-3) — staged loading.
+          - normal       (0–10s):   "✨ Finding the best arrangements..."
+          - still-working (10–20s):  "Still working, please wait..."
+          - timeout      (20s+):    Same panel as the empty-state, with
+                                    a "Try another date" CTA that
+                                    bounces the user back to step 3. */}
+      {scheduling && latencyPhase !== "timeout" ? (
+        <SchedulingLoading
+          phase={latencyPhase}
+          groupCopy={groupCopy}
+        />
+      ) : null}
+
+      {scheduling && latencyPhase === "timeout" ? (
+        <SchedulingTimeout groupCopy={groupCopy} onBack={onBack} />
       ) : null}
 
       {!scheduling && scheduleResult && !scheduleResult.ok ? (
@@ -1484,6 +1531,82 @@ function ArrangementCard({
         </p>
       ) : null}
     </button>
+  );
+}
+
+function SchedulingLoading({
+  phase,
+  groupCopy,
+}: {
+  phase: "normal" | "still-working";
+  groupCopy: NonNullable<BookingMessages["groupBooking"]>;
+}) {
+  // Copy switches when we cross the 10s threshold so the user gets
+  // an explicit "still working" reassurance instead of staring at
+  // the same line forever.
+  const copy =
+    phase === "still-working"
+      ? groupCopy.schedulingStillWorking ?? "Still working, please wait..."
+      : groupCopy.schedulingSearching ??
+        "✨ Finding the best arrangements...";
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      data-testid="group-scheduling-loading"
+      data-phase={phase}
+      className="rounded-xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] px-4 py-8 text-center text-sm text-[var(--booking-text-muted)]"
+    >
+      {/* Simple CSS-only pulse — heavier motion would compete with
+          the framer-motion step transitions. The dot trio
+          telegraphs "in progress" at a glance. */}
+      <div
+        className="mx-auto mb-2 inline-flex items-center gap-1"
+        aria-hidden
+      >
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--salon-primary)]" />
+        <span
+          className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--salon-primary)]"
+          style={{ animationDelay: "150ms" }}
+        />
+        <span
+          className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--salon-primary)]"
+          style={{ animationDelay: "300ms" }}
+        />
+      </div>
+      <p>{copy}</p>
+    </div>
+  );
+}
+
+function SchedulingTimeout({
+  groupCopy,
+  onBack,
+}: {
+  groupCopy: NonNullable<BookingMessages["groupBooking"]>;
+  onBack: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      data-testid="group-scheduling-timeout"
+      className="rounded-xl border border-nq-warning/45 bg-nq-warning/10 px-4 py-5 text-sm"
+    >
+      <p>
+        {groupCopy.schedulingTimeout ??
+          "Could not find arrangements. Try another date."}
+      </p>
+      <div className="mt-3 flex gap-2">
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={onBack}
+          className="h-9 min-h-9 rounded-full border border-[var(--booking-border)] bg-transparent px-3 text-xs"
+        >
+          {groupCopy.schedulingTryDate ?? "Try another date"}
+        </Button>
+      </div>
+    </div>
   );
 }
 

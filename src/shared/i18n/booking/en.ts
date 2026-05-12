@@ -280,6 +280,17 @@ export const bookingEn = {
       "The phone number isn't valid. Example: +1 (604) 555-1234 or +84 90 123 4567.",
     contactInvalidEmail:
       "The email format isn't valid. Example: jane@email.com.",
+    /** QA bug (2026-05-12, GB-3) — staged loading copy for step 4
+     *  while `loadGroupSmartSchedule` is in flight. The scheduler
+     *  can do up to (90 / SLOT_STEP_MIN ≈ 360) anchor probes plus
+     *  per-anchor staff overlap checks, so on a cold cache + heavy
+     *  salon day it can run 5–15s. Show a friendly progress line,
+     *  bump to "still working" past 10s so the user knows we're
+     *  alive, and offer a back-out at 20s. */
+    schedulingSearching: "✨ Finding the best arrangements...",
+    schedulingStillWorking: "Still working, please wait...",
+    schedulingTimeout:
+      "Could not find arrangements. Try another date.",
   },
 };
 
