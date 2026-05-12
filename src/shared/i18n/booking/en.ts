@@ -189,6 +189,16 @@ export const bookingEn = {
     /** P1.G8 — sticky totals footer. */
     totalLabel: "Total",
     peopleSuffix: "people",
+    /** QA round-2 — staff-aware capacity hint under the size picker.
+     * `{n}` = `maxGroupSize` (min of active-staff-count and hard cap). */
+    maxSizeHint: "Up to {n} people (limited by available staff)",
+    /** Live capacity probe on the shared schedule card. `loading`
+     * fires while debounced fetch is in flight; `ok` is the steady
+     * state; `insufficient` blocks submit. */
+    availabilityChecking: "Checking how many staff are free…",
+    availabilityOk: "{free} of {total} staff free at this time.",
+    insufficientCapacity:
+      "Only {n} staff free at this time. Pick a different time or reduce group size.",
     /** Receptionist surface: the group-icon tooltip + drawer chip. */
     groupIconLabel: "Part of a group booking",
     groupContextHeading: "Group members",

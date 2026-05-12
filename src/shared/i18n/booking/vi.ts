@@ -156,6 +156,11 @@ export const bookingVi: BookingMessages = {
       "Thợ này đã được chọn cho người khác — vui lòng chọn thợ khác.",
     totalLabel: "Tổng",
     peopleSuffix: "người",
+    maxSizeHint: "Tối đa {n} người (theo số thợ rảnh)",
+    availabilityChecking: "Đang kiểm tra số thợ rảnh…",
+    availabilityOk: "Có {free}/{total} thợ rảnh vào giờ này.",
+    insufficientCapacity:
+      "Chỉ còn {n} thợ rảnh vào thời điểm này. Vui lòng chọn giờ khác hoặc giảm số người.",
     groupIconLabel: "Thuộc lịch nhóm",
     groupContextHeading: "Thành viên nhóm",
     cancelEntireGroup: "Huỷ toàn bộ nhóm",
