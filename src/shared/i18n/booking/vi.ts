@@ -221,5 +221,12 @@ export const bookingVi: BookingMessages = {
     refreshSchedule: "Làm mới lịch",
     sessionExpiringSoon:
       "Phiên sắp hết hạn. Vui lòng xác nhận để giữ chỗ.",
+    slotTakenRefinding:
+      "Một slot vừa bị đặt. Đang tìm lịch mới...",
+    concurrentGroupTaken:
+      "Vừa có nhóm khác đặt cùng giờ. Đang tải các lựa chọn mới...",
+    staffUnavailable: "Thợ không còn nhận lịch. Đang tìm thợ thay thế...",
+    serviceUnavailable:
+      "Dịch vụ không còn được cung cấp. Vui lòng chọn dịch vụ khác.",
   },
 };

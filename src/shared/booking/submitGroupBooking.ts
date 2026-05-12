@@ -91,6 +91,13 @@ export type GroupBookingResult =
         | "salon_closed_day"
         | "invalid_input"
         | "invalid_group_size"
+        // Task #04-C — `service_not_found` / `staff_not_found` are
+        // retained for backward-compat with any external caller
+        // that may already pattern-match on them. New code paths
+        // (Task #04-C FIX 12 / FIX 13) prefer the more specific
+        // `_unavailable` reasons below, which carry `memberIndex`
+        // so the UI can recover (auto re-run scheduler for staff,
+        // navigate to step 2 with highlight for service).
         | "service_not_found"
         | "staff_not_found"
         | "past_date"
@@ -106,11 +113,25 @@ export type GroupBookingResult =
         | "invalid_phone"
         | "invalid_email"
         | "invalid_time"
-        | "invalid_date";
+        | "invalid_date"
+        // Task #04-C FIX 12 — staff was deleted / inactivated
+        // between the user picking an arrangement and submitting.
+        // Recoverable by re-running the scheduler.
+        | "staff_unavailable"
+        // Task #04-C FIX 13 — service was soft-deleted between
+        // step 2 and submit. Recoverable only by sending the user
+        // back to step 2 to pick a different service.
+        | "service_unavailable";
       /** 1-indexed member number for granular per-member errors so
        *  the UI can say "Person 2 has an invalid phone". `null` when
        *  the error is global (e.g. invalid group size). */
       memberNumber?: number | null;
+      /** 0-indexed member position — same as `memberNumber - 1`,
+       *  surfaced specifically for `staff_unavailable` /
+       *  `service_unavailable` where the UI needs to operate on the
+       *  member array (highlight a card / pre-select a member for
+       *  re-pick). */
+      memberIndex?: number | null;
     };
 
 const HHMM_RE = /^(\d{1,2}):(\d{2})$/;
@@ -205,10 +226,23 @@ export async function submitGroupBooking(
   };
   if (!salonRow.profile_complete) return fail("salon_paused");
 
+  // Task #04-C (post #04-B cleanup) — `salons.timezone` is NOT NULL
+  // (migration 20260512600000_timezone_required). The legacy
+  // `?? "UTC"` fallback was dead code that, before the constraint,
+  // would have silently produced 8-hour-offset bookings. We now
+  // hard-fail with `server_error` rather than risk wrong slot
+  // math; the constraint makes this unreachable in normal flow.
   const timezone =
     typeof salonRow.timezone === "string" && salonRow.timezone.trim().length > 0
-      ? salonRow.timezone
-      : "UTC";
+      ? salonRow.timezone.trim()
+      : null;
+  if (timezone === null) {
+    Sentry.captureMessage("submitGroupBooking timezone missing on salon row", {
+      level: "error",
+      extra: { salon_id: salonRow.id, slug: params.shopSlug },
+    });
+    return fail("server_error");
+  }
 
   const closedYmdSet = parseBookingClosedDateSet(salonRow.booking_closed_dates);
   for (const m of params.members) {
@@ -250,8 +284,21 @@ export async function submitGroupBooking(
       priceCents: s.price_cents != null ? Number(s.price_cents) : null,
     });
   }
-  for (const m of params.members) {
-    if (!serviceById.has(m.serviceId)) return fail("service_not_found");
+  // Task #04-C FIX 13 — pinpoint which member's service vanished.
+  // The select above already filtered `deleted_at IS NULL`, so a
+  // missing id means the service was soft-deleted between step 2
+  // and submit. UI navigates back to step 2 + highlights the
+  // affected card.
+  for (let i = 0; i < params.members.length; i++) {
+    const m = params.members[i];
+    if (!serviceById.has(m.serviceId)) {
+      return {
+        ok: false,
+        reason: "service_unavailable",
+        memberNumber: i + 1,
+        memberIndex: i,
+      };
+    }
   }
 
   // 4. Staff ---------------------------------------------------------
@@ -265,8 +312,22 @@ export async function submitGroupBooking(
     .is("deleted_at" as never, null);
   if (staffErr) return fail("server_error");
   const staffSet = new Set((staffRows ?? []).map((s) => String(s.id)));
-  for (const m of params.members) {
-    if (!staffSet.has(m.staffId)) return fail("staff_not_found");
+  // Task #04-C FIX 12 — pinpoint which member's preferred staff
+  // disappeared between arrangement-pick and submit. The select
+  // above filtered `status='active'` + `deleted_at IS NULL`, so a
+  // missing id means the staff was deleted, paused, or marked
+  // inactive in the meantime. UI auto re-runs the scheduler so the
+  // remaining members get fresh staff suggestions.
+  for (let i = 0; i < params.members.length; i++) {
+    const m = params.members[i];
+    if (!staffSet.has(m.staffId)) {
+      return {
+        ok: false,
+        reason: "staff_unavailable",
+        memberNumber: i + 1,
+        memberIndex: i,
+      };
+    }
   }
 
   // 5. Resolve each member's UTC range -------------------------------
