@@ -117,7 +117,10 @@ export async function submitGroupBooking(
   scope.setTag("salon.slug", params.shopSlug);
 
   // 1. Surface-level validation -------------------------------------
-  if (!Array.isArray(params.members) || params.members.length < 2 || params.members.length > 4) {
+  // QA P1.G5: raised cap 4 → 8 (wedding parties, family groups).
+  // DB function enforces the same range; this client-side check
+  // gives a faster reject before the RPC round-trip.
+  if (!Array.isArray(params.members) || params.members.length < 2 || params.members.length > 8) {
     return fail("invalid_group_size");
   }
   if (typeof params.idempotencyKey !== "string" || params.idempotencyKey.trim().length === 0) {
