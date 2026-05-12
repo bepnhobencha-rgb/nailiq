@@ -32,10 +32,8 @@ import {
   validateProvince,
   validateStreet,
 } from "@/shared/dashboard/addressSetupValidation";
-import {
-  isServiceCategory,
-  type ServiceCategory,
-} from "@/shared/booking/serviceCategory";
+import { isKnownCategorySlug } from "@/shared/booking/loadServiceCategories";
+import type { ServiceCategory } from "@/shared/booking/serviceCategory";
 import { SERVICE_DESCRIPTION_MAX_LEN } from "@/shared/dashboard/serviceConstraints";
 import {
   isSupportedCurrency,
@@ -424,12 +422,17 @@ export async function addService(
     return fail("invalid_duration");
   if (!Number.isFinite(buffer) || buffer < 0) return fail("invalid_buffer");
 
-  // Reject unknown categories rather than silently fallback — keeps the
-  // form / API contract honest. `undefined` is allowed (defaults to
-  // "other" via the DB column default).
+  // Reject unknown categories rather than silently fallback — keeps
+  // the form / API contract honest. The slug must currently exist
+  // (and not be soft-deleted) in `service_categories`. `undefined`
+  // is allowed (DB default fills "other").
   let category: ServiceCategory | null = null;
   if (input.category !== undefined) {
-    if (!isServiceCategory(input.category)) return fail("invalid_category");
+    if (typeof input.category !== "string" || input.category.length === 0) {
+      return fail("invalid_category");
+    }
+    const ok = await isKnownCategorySlug(input.category);
+    if (!ok) return fail("invalid_category");
     category = input.category;
   }
 
@@ -593,7 +596,11 @@ export async function updateService(
     patch.buffer_minutes = v;
   }
   if (data.category !== undefined) {
-    if (!isServiceCategory(data.category)) return fail("invalid_category");
+    if (typeof data.category !== "string" || data.category.length === 0) {
+      return fail("invalid_category");
+    }
+    const ok = await isKnownCategorySlug(data.category);
+    if (!ok) return fail("invalid_category");
     patch.category = data.category;
   }
   if (data.description !== undefined) {

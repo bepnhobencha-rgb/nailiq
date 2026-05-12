@@ -3,6 +3,7 @@
 import { AnimatePresence, useReducedMotion } from "@/shared/lib/motionClient";
 import { useMemo } from "react";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
+import type { ServiceCategorySummary } from "@/shared/booking/loadServiceCategories";
 import type {
   BookingSalonMeta,
   BookingStaffItem,
@@ -33,6 +34,7 @@ type BookingFlowProps = {
   staff: readonly BookingStaffItem[];
   salon: BookingSalonMeta;
   capabilityRows: { staff_id: string; service_id: string }[] | null;
+  categories: readonly ServiceCategorySummary[];
 };
 
 export function BookingFlow({
@@ -42,6 +44,7 @@ export function BookingFlow({
   staff,
   salon,
   capabilityRows,
+  categories,
 }: BookingFlowProps) {
   const reducedMotion = useReducedMotion();
   const flow = useBookingFlowState(
@@ -124,6 +127,7 @@ export function BookingFlow({
             stepDir={flow.stepDir}
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}
+            categories={categories}
             onSelectService={flow.setServiceId}
             onNext={flow.goServiceNext}
           />

@@ -7,6 +7,7 @@ import { BookingMobileHero } from "@/components/booking/BookingMobileHero";
 import { BookingSalonHero } from "@/components/booking/BookingSalonHero";
 import { SalonBookingSkeleton } from "@/components/booking/SalonBookingSkeleton";
 import { BookingFlowErrorBoundary } from "@/components/booking/BookingFlowErrorBoundary";
+import { loadServiceCategories } from "@/shared/booking/loadServiceCategories";
 import { resolvePublicBookingPage } from "@/shared/booking/resolvePublicBookingPage";
 import { bookingEn } from "@/shared/i18n/booking/en";
 import { formatSalonDisplayName } from "@/shared/lib/salonDisplay";
@@ -205,6 +206,7 @@ async function PublicBookingRouteBody({
                 staff={load.staff}
                 salon={load.salon}
                 capabilityRows={load.capabilityRows}
+                categories={await loadServiceCategories()}
               />
             </BookingFlowErrorBoundary>
           </div>

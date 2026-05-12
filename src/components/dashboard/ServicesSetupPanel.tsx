@@ -13,9 +13,9 @@ import {
   deleteService,
   updateService,
 } from "@/shared/dashboard/setupActions";
+import type { ServiceCategorySummary } from "@/shared/booking/loadServiceCategories";
 import {
   DEFAULT_SERVICE_CATEGORY,
-  SERVICE_CATEGORIES,
   type ServiceCategory,
 } from "@/shared/booking/serviceCategory";
 import { SERVICE_DESCRIPTION_MAX_LEN } from "@/shared/dashboard/serviceConstraints";
@@ -35,8 +35,11 @@ export type SetupServiceRow = {
   is_featured: boolean;
 };
 
-type ServiceCategoryLabels = UserMessages["serviceCategory"];
 type ServiceFormLabels = UserMessages["serviceForm"];
+type CategoryPickerLabels = Pick<
+  UserMessages["serviceCategory"],
+  "pickerLabel"
+>;
 
 function centsFromDollarsString(raw: string): number | null {
   const normalized = raw.replace(/[^0-9.]/g, "");
@@ -56,6 +59,7 @@ export function ServicesSetupPanel({
   initialRows,
   maxServices,
   currency,
+  categories,
 }: {
   slug: string;
   initialRows: SetupServiceRow[];
@@ -67,12 +71,21 @@ export function ServicesSetupPanel({
    *  the add form and per-row editor. Stored cents are interpreted in
    *  this currency by every formatter. */
   currency: Currency;
+  /** Live category list from `loadServiceCategories`. Populates the
+   *  add-form dropdown and each row's category select. */
+  categories: readonly ServiceCategorySummary[];
 }) {
   const { language } = useUserLanguage();
   const messages = getUserMessages(language);
   const setupErrors = messages.setupErrors;
-  const categoryLabels = messages.serviceCategory;
+  const categoryPickerLabel = messages.serviceCategory.pickerLabel;
   const formLabels = messages.serviceForm;
+  // Localized + memo-friendly option list. Computed once per render
+  // and passed down so per-row dropdowns don't each re-localize.
+  const categoryOptions = categories.map((c) => ({
+    value: c.slug,
+    label: language === "vi" ? c.nameVi : c.nameEn,
+  }));
   const router = useRouter();
   const [rows, setRows] = useState<SetupServiceRow[]>(initialRows);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -375,7 +388,8 @@ export function ServicesSetupPanel({
               row={row}
               disabled={pendingId === row.id}
               confirmingDelete={confirmDeleteId === row.id}
-              categoryLabels={categoryLabels}
+              categoryOptions={categoryOptions}
+              categoryPickerLabel={categoryPickerLabel}
               formLabels={formLabels}
               currency={currency}
               onBeginDelete={() => {
@@ -492,7 +506,7 @@ export function ServicesSetupPanel({
               />
             </label>
             <label className="block text-sm font-medium text-nq-muted sm:col-span-2">
-              {categoryLabels.pickerLabel}
+              {categoryPickerLabel}
               <select
                 className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
                 value={draftCategory}
@@ -502,9 +516,9 @@ export function ServicesSetupPanel({
                 }}
                 data-testid="service-category-add"
               >
-                {SERVICE_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {categoryLabels[c]}
+                {categoryOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
                   </option>
                 ))}
               </select>
@@ -550,7 +564,8 @@ function ServiceRowFields({
   row,
   disabled,
   confirmingDelete,
-  categoryLabels,
+  categoryOptions,
+  categoryPickerLabel,
   formLabels,
   currency: rowCurrency,
   onBeginDelete,
@@ -562,7 +577,8 @@ function ServiceRowFields({
   row: SetupServiceRow;
   disabled: boolean;
   confirmingDelete: boolean;
-  categoryLabels: ServiceCategoryLabels;
+  categoryOptions: ReadonlyArray<{ value: string; label: string }>;
+  categoryPickerLabel: CategoryPickerLabels["pickerLabel"];
   formLabels: ServiceFormLabels;
   currency: Currency;
   onBeginDelete: () => void;
@@ -684,7 +700,7 @@ function ServiceRowFields({
           />
         </label>
         <label className="block text-sm font-medium text-nq-muted sm:col-span-2">
-          {categoryLabels.pickerLabel}
+          {categoryPickerLabel}
           <select
             className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
             value={row.category}
@@ -695,9 +711,9 @@ function ServiceRowFields({
               if (next !== row.category) onBlurSave({ category: next });
             }}
           >
-            {SERVICE_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {categoryLabels[c]}
+            {categoryOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
               </option>
             ))}
           </select>

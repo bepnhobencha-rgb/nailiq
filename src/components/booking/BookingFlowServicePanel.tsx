@@ -3,10 +3,8 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "@/shared/lib/motionClient";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
-import {
-  SERVICE_CATEGORIES,
-  type ServiceCategory,
-} from "@/shared/booking/serviceCategory";
+import type { ServiceCategorySummary } from "@/shared/booking/loadServiceCategories";
+import type { ServiceCategory } from "@/shared/booking/serviceCategory";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { cn } from "@/shared/lib/cn";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
@@ -15,21 +13,56 @@ import {
   type BookingMotionDir,
 } from "@/components/booking/bookingMotion";
 
-/** Group services by `category`, preserving SERVICE_CATEGORIES order.
- *  Empty groups are dropped; this lets the renderer simply iterate. */
-function groupByCategory(
+type ServiceGroup = {
+  category: ServiceCategory;
+  /** Localized header label sourced from the `service_categories` row. */
+  label: string;
+  items: BookingServiceItem[];
+};
+
+/** Group services by `category` in the order the DB returned. Categories
+ *  not present in `categories` (e.g. a soft-deleted row that still has
+ *  attached services) fall into an "Other"-styled bucket at the end so
+ *  no service is silently dropped from the menu. */
+function groupServices(
   services: readonly BookingServiceItem[],
-): Array<{ category: ServiceCategory; items: BookingServiceItem[] }> {
+  categories: readonly ServiceCategorySummary[],
+): ServiceGroup[] {
   const buckets = new Map<ServiceCategory, BookingServiceItem[]>();
   for (const s of services) {
     const arr = buckets.get(s.category);
     if (arr) arr.push(s);
     else buckets.set(s.category, [s]);
   }
-  return SERVICE_CATEGORIES.filter((c) => buckets.has(c)).map((c) => ({
-    category: c,
-    items: buckets.get(c) ?? [],
-  }));
+
+  const groups: ServiceGroup[] = [];
+  const seen = new Set<string>();
+  for (const cat of categories) {
+    if (!buckets.has(cat.slug)) continue;
+    groups.push({
+      category: cat.slug,
+      label: cat.nameEn,
+      items: buckets.get(cat.slug) ?? [],
+    });
+    seen.add(cat.slug);
+  }
+  // Orphan slugs (deleted from `service_categories` but still on
+  // service rows) — render under a single "Other" bucket so the
+  // owner notices something needs cleanup.
+  const orphans: BookingServiceItem[] = [];
+  for (const [slug, items] of buckets) {
+    if (!seen.has(slug)) orphans.push(...items);
+  }
+  if (orphans.length > 0) {
+    groups.push({
+      category: "other",
+      label:
+        categories.find((c) => c.slug === "other")?.nameEn ?? "Other",
+      items: orphans,
+    });
+  }
+
+  return groups;
 }
 
 /** Initial accordion state: first category open, rest closed. */
@@ -48,6 +81,7 @@ export function BookingFlowServicePanel({
   stepDir,
   reducedMotion,
   stepTransition,
+  categories,
   onSelectService,
   onNext,
 }: {
@@ -58,13 +92,17 @@ export function BookingFlowServicePanel({
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
   stepTransition: { duration: number; ease: [number, number, number, number] };
+  /** Live category list from `loadServiceCategories`. Drives accordion
+   *  order, group labels (EN — booking surface is EN-only), and the
+   *  orphan-bucket fallback. */
+  categories: readonly ServiceCategorySummary[];
   onSelectService: (id: string) => void;
   onNext: () => void;
 }) {
   // Group by category for accordion rendering. If the salon hasn't
   // touched setup yet, every row is "other" — render a flat list with
   // no category header so the UI stays backward-compatible.
-  const groups = groupByCategory(services);
+  const groups = groupServices(services, categories);
   const flatLayout = groups.length === 1 && groups[0]?.category === "other";
   const [openCategories, setOpenCategories] = useState<Set<ServiceCategory>>(
     () => initialOpenSet(groups),
@@ -251,7 +289,7 @@ export function BookingFlowServicePanel({
         <div className="mt-6 space-y-3 lg:mt-8 lg:space-y-4">
           {groups.map((group) => {
             const isOpen = openCategories.has(group.category);
-            const categoryLabel = t.serviceCategory[group.category];
+            const categoryLabel = group.label;
             return (
               <div
                 key={group.category}

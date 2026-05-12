@@ -4,6 +4,7 @@ import { MobileStack } from "@/components/layout/MobileStack";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
 import { ServicesSetupPanel } from "@/components/dashboard/ServicesSetupPanel";
+import { loadServiceCategories } from "@/shared/booking/loadServiceCategories";
 import { parseServiceCategory } from "@/shared/booking/serviceCategory";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
@@ -64,6 +65,7 @@ export default async function SetupServicesPage({ params }: Props) {
     ? planLimits.maxServices
     : Number.POSITIVE_INFINITY;
   const currency = parseCurrency(planForLimits.currency_code);
+  const categories = await loadServiceCategories();
 
   return (
     <ResponsiveShell>
@@ -73,6 +75,7 @@ export default async function SetupServicesPage({ params }: Props) {
           slug={slug}
           maxServices={maxServices}
           currency={currency}
+          categories={categories}
           initialRows={(rows ?? []).map((r) => {
             const row = r as unknown as {
               id: string;
