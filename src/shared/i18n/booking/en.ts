@@ -147,8 +147,8 @@ export const bookingEn = {
    * intentionally NOT added — those flows don't exist yet. */
   groupBooking: {
     entryTitle: "How would you like to book?",
-    individual: "Just me",
-    group: "Group booking 👥",
+    individual: "Individual",
+    group: "Group 👥",
     sizeHeading: "How many people?",
     personLabel: "Person {n}",
     primaryContactHeading: "Primary contact",

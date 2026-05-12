@@ -122,8 +122,8 @@ export const bookingVi: BookingMessages = {
   serviceTileDescriptionAria: "Xem mô tả dịch vụ {service}",
   groupBooking: {
     entryTitle: "Bạn muốn đặt lịch kiểu nào?",
-    individual: "Một mình",
-    group: "Đặt lịch nhóm 👥",
+    individual: "Cá nhân",
+    group: "Nhóm 👥",
     sizeHeading: "Nhóm mấy người?",
     personLabel: "Người {n}",
     primaryContactHeading: "Liên hệ chính",
