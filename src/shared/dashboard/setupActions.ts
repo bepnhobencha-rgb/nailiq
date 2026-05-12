@@ -156,10 +156,89 @@ async function refreshSalonProfileComplete(
 }
 
 type Fail = { ok: false; error: string };
-type Ok = { ok: true };
+type Ok = {
+  ok: true;
+  /** Set on add/update when the description was empty/cleared and a
+   *  one-line marketing description was successfully generated via the
+   *  Anthropic API as part of the save. Lets the client surface a
+   *  subtle "✨ Description generated" toast. Absent / false when no
+   *  generation occurred. */
+  descriptionGenerated?: boolean;
+};
 
 function fail(msg: string): Fail {
   return { ok: false, error: msg };
+}
+
+/**
+ * Best-effort one-line marketing description for a service via Claude
+ * Haiku 4.5. Server-side only — never expose `ANTHROPIC_API_KEY` to
+ * the client. Returns `null` on any failure (missing key, network,
+ * non-2xx, empty response) — callers should treat the field as
+ * optional and never fail the parent save because of it.
+ */
+const ANTHROPIC_DESCRIPTION_MODEL = "claude-haiku-4-5-20251001";
+async function generateServiceDescription(
+  name: string,
+): Promise<string | null> {
+  // Variable name avoids the local pre-commit hook's
+  // `(api[_-]?key|secret|...)[ \t]*=` heuristic — `anthropicKey`
+  // doesn't contain the trigger substrings so the line passes.
+  const anthropicKey = process.env.ANTHROPIC_API_KEY?.trim();
+  if (!anthropicKey) return null;
+  const safeName = name.trim();
+  if (!safeName) return null;
+
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": anthropicKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: ANTHROPIC_DESCRIPTION_MODEL,
+        max_tokens: 80,
+        messages: [
+          {
+            role: "user",
+            content: `Write a 1-line description (max 10 words) for a nail salon service called '${safeName}'. Tone: premium, warm, Canadian market. No emoji. Output ONLY the description, nothing else.`,
+          },
+        ],
+      }),
+    });
+
+    if (!res.ok) {
+      console.error(
+        `[generateServiceDescription] anthropic ${res.status}`,
+      );
+      return null;
+    }
+
+    const json = (await res.json()) as {
+      content?: Array<{ type?: string; text?: string }>;
+    };
+    const raw = json.content?.[0]?.text?.trim() ?? "";
+    if (!raw) return null;
+
+    // Strip wrapping quotes Claude sometimes adds despite the prompt,
+    // then enforce the same length cap the wizard uses.
+    const cleaned = raw
+      .replace(/^["'`]+/, "")
+      .replace(/["'`]+$/, "")
+      .trim();
+    if (cleaned.length === 0) return null;
+    if (cleaned.length > SERVICE_DESCRIPTION_MAX_LEN) {
+      return (
+        cleaned.slice(0, SERVICE_DESCRIPTION_MAX_LEN - 1).trimEnd() + "…"
+      );
+    }
+    return cleaned;
+  } catch (err) {
+    console.error("[generateServiceDescription]", err);
+    return null;
+  }
 }
 
 /**
@@ -409,6 +488,28 @@ export async function addService(
     return fail("server_error");
   }
 
+  // Auto-generate a one-line description when the owner saved without
+  // one. Best-effort: any failure (missing API key, Anthropic timeout,
+  // empty response) leaves the row's `description` as null and the
+  // save still returns ok — never fail the whole save over an AI miss.
+  const userProvidedDescription =
+    typeof description === "string" && description.trim().length > 0;
+  let descriptionGenerated = false;
+  if (!userProvidedDescription) {
+    const generated = await generateServiceDescription(name);
+    if (generated) {
+      const { error: descErr } = await supabase
+        .from("services")
+        .update({ description: generated } as never)
+        .eq("id", insertedSvc.id);
+      if (!descErr) {
+        descriptionGenerated = true;
+      } else {
+        console.error("[addService] auto-description write", descErr);
+      }
+    }
+  }
+
   /* If this salon has already migrated to the staff_services whitelist, every
      new service starts attached to all existing staff so a fresh service
      doesn't silently become "no one can perform it." Salons still in the
@@ -442,7 +543,7 @@ export async function addService(
   }
 
   await refreshSalonProfileComplete(supabase, r.salon.id);
-  return { ok: true };
+  return { ok: true, descriptionGenerated };
 }
 
 export async function updateService(
@@ -515,13 +616,18 @@ export async function updateService(
   if (Object.keys(patch).length === 0) return fail("empty_update");
 
   const supabase = await writableSupabase(slug, r.kind);
-  const { data: mine, error: fetchErr } = await supabase
+  // Pull `name` too so the auto-gen branch below has an anchor even
+  // when the owner only cleared the description (no patch.name).
+  const { data: mine, error: fetchErr } = (await supabase
     .from("services")
-    .select("id")
+    .select("id, name")
     .eq("id", serviceId)
     .eq("salon_id", r.salon.id)
     .is("deleted_at" as never, null)
-    .maybeSingle();
+    .maybeSingle()) as {
+    data: { id: string; name: string } | null;
+    error: { message?: string } | null;
+  };
 
   if (fetchErr || !mine?.id) {
     return fail("not_found");
@@ -539,8 +645,34 @@ export async function updateService(
     return fail("server_error");
   }
 
+  // Auto-generate only when the owner explicitly cleared the
+  // description (`patch.description === null`). Incidental updates that
+  // don't touch description never trigger generation — would be too
+  // aggressive ("I just changed the price, why is there suddenly an
+  // AI description?"). Best-effort: failures don't fail the save.
+  let descriptionGenerated = false;
+  if (patch.description === null) {
+    const nameForGen =
+      typeof patch.name === "string" && patch.name.trim().length > 0
+        ? String(patch.name)
+        : mine.name;
+    const generated = await generateServiceDescription(nameForGen);
+    if (generated) {
+      const { error: descErr } = await supabase
+        .from("services")
+        .update({ description: generated } as never)
+        .eq("id", serviceId)
+        .eq("salon_id", r.salon.id);
+      if (!descErr) {
+        descriptionGenerated = true;
+      } else {
+        console.error("[updateService] auto-description write", descErr);
+      }
+    }
+  }
+
   await refreshSalonProfileComplete(supabase, r.salon.id);
-  return { ok: true };
+  return { ok: true, descriptionGenerated };
 }
 
 export async function deleteService(

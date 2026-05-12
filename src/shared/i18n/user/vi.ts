@@ -550,12 +550,13 @@ export const userVi: UserMessages = {
     descriptionLabel: "Mô tả",
     descriptionPlaceholder: "VD: Bóng lâu, dáng móng chuẩn.",
     descriptionHint:
-      "Hiển thị một dòng dưới tên dịch vụ trên trang đặt lịch.",
+      "Hiển thị một dòng dưới tên dịch vụ trên trang đặt lịch. Bỏ trống — chúng tôi sẽ tự viết giúp.",
     descriptionTooLong: "Mô tả tối đa 100 ký tự.",
     popularLabel: "Phổ biến",
     popularHint:
       "Hiện huy hiệu vàng nhỏ trên trang đặt lịch — chọn 1–3 dịch vụ chạy nhất.",
     characterCount: "{used}/{max}",
+    descriptionGeneratedToast: "✨ Đã tạo mô tả bằng AI",
   },
   setupErrors: {
     serviceInUse:
