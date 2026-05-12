@@ -180,6 +180,9 @@ async function PublicBookingRouteBody({
             shopLabel={shopLabel}
             t={t}
             themeMode={load.salon.themeMode}
+            address={load.salon.address}
+            openingHoursRaw={load.salon.opening_hours}
+            timezone={load.salon.timezone}
             className="lg:sticky lg:top-10 lg:flex-shrink-0"
           />
 
@@ -188,6 +191,9 @@ async function PublicBookingRouteBody({
               shopLabel={shopLabel}
               t={t}
               themeMode={load.salon.themeMode}
+              address={load.salon.address}
+              openingHoursRaw={load.salon.opening_hours}
+              timezone={load.salon.timezone}
             />
             <h1 className="hidden lg:block text-2xl font-semibold tracking-tight text-[var(--booking-text)] sm:text-3xl lg:text-[2.125rem] lg:leading-[1.15] lg:tracking-[-0.035em]">
               {t.pageTitle}

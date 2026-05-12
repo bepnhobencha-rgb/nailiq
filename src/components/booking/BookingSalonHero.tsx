@@ -1,5 +1,6 @@
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { cn } from "@/shared/lib/cn";
+import { BookingSalonInfoLine } from "./BookingSalonInfoLine";
 
 /** Curated high-res salon imagery (Unsplash); used only on `lg:` and up. */
 const HERO_BG =
@@ -14,6 +15,9 @@ type BookingSalonHeroProps = {
   t: BookingMessages;
   className?: string;
   themeMode?: "dark" | "light";
+  address?: string | null;
+  openingHoursRaw?: unknown | null;
+  timezone?: string;
 };
 
 /**
@@ -30,6 +34,9 @@ export function BookingSalonHero({
   t,
   className,
   themeMode = "dark",
+  address,
+  openingHoursRaw,
+  timezone,
 }: BookingSalonHeroProps) {
   const isLight = themeMode === "light";
 
@@ -81,6 +88,14 @@ export function BookingSalonHero({
           <p className="mt-4 text-[15px] leading-relaxed text-white/70 lg:text-base">
             {t.salonHeroTagline}
           </p>
+          {timezone ? (
+            <BookingSalonInfoLine
+              address={address ?? null}
+              openingHoursRaw={openingHoursRaw ?? null}
+              timezone={timezone}
+              variant="desktop"
+            />
+          ) : null}
         </div>
 
         <div className="grid grid-cols-2 gap-3">

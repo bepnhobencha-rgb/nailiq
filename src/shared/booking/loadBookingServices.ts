@@ -36,6 +36,10 @@ export type BookingSalonMeta = {
   /** Salon's display currency (CAD / USD / VND). Service prices and
    *  totals on the booking page render in this currency. */
   currencyCode: Currency;
+  /** Public street address (`salons.address`). Single free-form text
+   * column — caller renders verbatim. `null` when the owner hasn't
+   * completed the Address setup step. */
+  address: string | null;
 };
 
 export type BookingLoadData = {
@@ -225,6 +229,11 @@ export async function loadBookingServicesForSalonSlug(
           ? "light"
           : "dark",
       currencyCode: salonCurrency,
+      address: (() => {
+        const a = (salon as { address?: unknown }).address;
+        const s = typeof a === "string" ? a.trim() : "";
+        return s.length > 0 ? s : null;
+      })(),
     },
   };
 }

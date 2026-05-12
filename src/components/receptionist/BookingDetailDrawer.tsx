@@ -21,6 +21,10 @@ export type BookingDetailDrawerModel = {
   telHref: string | null;
   /** US/CA style display for copy + tel label */
   phoneDisplay: string | null;
+  /** P0.8: privacy-masked phone display, e.g. "***-***-7890".
+   * Rendered by default; revealing swaps in `phoneDisplay`. Computed
+   * by the caller so this leaf stays dumb about formatting. */
+  phoneMasked: string | null;
   clientNotes: string | null;
   serviceName: string;
   staffName: string;
@@ -59,6 +63,14 @@ export interface BookingDetailDrawerProps {
     sectionAddon: string;
     noNotes: string;
     callGuest: (formattedDisplay: string) => string;
+    /** P0.8: short "Call" label (no phone embedded) for the masked
+     * phone block — full number only appears in the masked/revealed
+     * display above. */
+    callGuestShort: string;
+    /** P0.8 phone-privacy labels. */
+    phoneSection: string;
+    revealPhone: string;
+    hidePhone: string;
     nonePrice: string;
     /** "❤️ Khách yêu cầu thợ này" line under the source label. */
     staffRequestedByClient: string;
@@ -123,6 +135,11 @@ export function BookingDetailDrawer({
 }: BookingDetailDrawerProps) {
   const [editMode, setEditMode] = useState(false);
   const [portalEl, setPortalEl] = useState<HTMLElement | null>(null);
+  // P0.8 — phone is masked by default; receptionist must explicitly
+  // tap "Show number" to reveal. Resets whenever the drawer closes or
+  // switches to a different booking, so an unrelated open never leaks
+  // the previous customer's full digits.
+  const [phoneRevealed, setPhoneRevealed] = useState(false);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- portal target is only available client-side
@@ -136,12 +153,16 @@ export function BookingDetailDrawer({
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- exit edit mode when drawer closes
-    if (!open) setEditMode(false);
+    if (!open) {
+      setEditMode(false);
+      setPhoneRevealed(false);
+    }
   }, [open]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- exit edit mode when drawer rebinds to a different booking
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- exit edit mode + re-mask when drawer rebinds to a different booking
     setEditMode(false);
+    setPhoneRevealed(false);
   }, [deskEdit?.booking.id]);
 
   useEffect(() => {
@@ -241,15 +262,47 @@ export function BookingDetailDrawer({
                   </p>
                 ) : null}
                 {model.telHref !== null ? (
-                  <a
-                    data-testid="booking-call-link"
-                    href={`tel:${model.telHref}`}
-                    className={cn(
-                      "mt-2 inline-flex min-h-11 items-center justify-center rounded-lg border border-nq-primary/45 bg-nq-primary/12 px-4 text-sm font-semibold text-nq-primary",
-                    )}
+                  // P0.8 — phone privacy: masked-by-default display +
+                  // explicit reveal toggle. The `tel:` link always
+                  // dials the real number regardless of reveal state,
+                  // so the receptionist can hit Call without showing
+                  // the digits to anyone behind them.
+                  <div
+                    className="mt-2 space-y-1.5"
+                    data-testid="booking-drawer-phone-block"
                   >
-                    {copy.callGuest(model.phoneDisplay ?? "")}
-                  </a>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+                      {copy.phoneSection}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        data-testid="booking-drawer-phone-display"
+                        data-phone-revealed={phoneRevealed ? "true" : "false"}
+                        className="font-mono text-sm tabular-nums text-nq-foreground"
+                      >
+                        {phoneRevealed
+                          ? model.phoneDisplay ?? ""
+                          : model.phoneMasked ?? ""}
+                      </span>
+                      <button
+                        type="button"
+                        data-testid="booking-drawer-phone-toggle"
+                        onClick={() => setPhoneRevealed((v) => !v)}
+                        className="inline-flex min-h-8 items-center rounded-md border border-nq-muted/40 px-2 py-1 text-xs font-medium text-nq-muted hover:border-nq-muted hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/40"
+                      >
+                        {phoneRevealed ? copy.hidePhone : copy.revealPhone}
+                      </button>
+                    </div>
+                    <a
+                      data-testid="booking-call-link"
+                      href={`tel:${model.telHref}`}
+                      className={cn(
+                        "mt-1 inline-flex min-h-11 items-center justify-center rounded-lg border border-nq-primary/45 bg-nq-primary/12 px-4 text-sm font-semibold text-nq-primary",
+                      )}
+                    >
+                      {copy.callGuestShort}
+                    </a>
+                  </div>
                 ) : null}
               </section>
 
