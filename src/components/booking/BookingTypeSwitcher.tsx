@@ -40,15 +40,35 @@ export function BookingTypeSwitcher({
   categories: readonly ServiceCategorySummary[];
 }) {
   const [mode, setMode] = useState<"individual" | "group">("individual");
-  const groupCopy = t.groupBooking;
+  // Defensive fallback — older deployed booking i18n bundles (before
+  // PR #140 / #141) may not have the `groupBooking` namespace; if a
+  // cached client gets here without it the destructure would throw
+  // inside the error boundary. Synthesize a minimal English default
+  // so the toggle still renders and we don't blank-screen.
+  const groupCopy = (t.groupBooking ?? {
+    entryTitle: "How would you like to book?",
+    individual: "Individual",
+    group: "Group 👥",
+  }) as NonNullable<BookingMessages["groupBooking"]>;
 
   return (
-    <div>
+    <div className="mt-6" data-testid="booking-type-switcher-root">
+      {/* Heading + pill stacked. Was previously an inline-flex pill
+          on its own line with no heading — easy to miss on first
+          paint. Promoted to a small section so it's clearly part of
+          the booking flow, not site chrome. */}
+      <p
+        id="booking-type-heading"
+        className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--booking-text-muted)]"
+      >
+        {groupCopy.entryTitle}
+      </p>
       <div
         role="tablist"
+        aria-labelledby="booking-type-heading"
         aria-label={groupCopy.entryTitle}
         data-testid="booking-type-switcher"
-        className="mt-6 inline-flex rounded-full border border-[var(--booking-border)] bg-[var(--booking-bg-input)]/40 p-0.5 text-sm font-medium"
+        className="mt-2 flex w-full max-w-md rounded-full border border-[var(--booking-border)] bg-[var(--booking-bg-input)] p-1 text-sm font-semibold"
       >
         {(["individual", "group"] as const).map((m) => {
           const active = mode === m;
@@ -61,10 +81,10 @@ export function BookingTypeSwitcher({
               data-testid={`booking-type-${m}`}
               onClick={() => setMode(m)}
               className={cn(
-                "min-h-9 rounded-full px-4 py-1.5 transition-colors",
+                "flex-1 min-h-10 rounded-full px-4 py-2 transition-colors",
                 active
-                  ? "bg-[var(--salon-primary)] text-[var(--booking-bg)]"
-                  : "text-[var(--booking-text-muted)] hover:text-[var(--booking-text)]",
+                  ? "bg-[var(--salon-primary)] text-[var(--booking-bg)] shadow-sm"
+                  : "text-[var(--booking-text)] hover:bg-[var(--booking-bg-card)]",
               )}
             >
               {m === "individual" ? groupCopy.individual : groupCopy.group}
