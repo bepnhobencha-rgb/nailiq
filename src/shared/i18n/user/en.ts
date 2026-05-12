@@ -604,6 +604,12 @@ export type UserMessages = {
     salonPhone: string;
     addressSaved: string;
     descriptionLabel: string;
+    /** Task #04-B — required IANA-timezone picker in the address
+     *  setup page. `timezone` is the dropdown label; `timezoneRequired`
+     *  is the inline validation error when the field is blank or
+     *  holds an unsupported value. */
+    timezone: string;
+    timezoneRequired: string;
   };
   /** F8 staff form (setup) */
   setupStaff: {
@@ -1779,6 +1785,8 @@ export const userEn: UserMessages = {
     salonPhone: "Salon phone",
     addressSaved: "✓ Address saved",
     descriptionLabel: "Salon description",
+    timezone: "Timezone",
+    timezoneRequired: "Timezone is required",
   },
   setupStaff: {
     servicesCapableLabel: "Services this staff can perform",

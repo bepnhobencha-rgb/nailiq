@@ -622,6 +622,8 @@ export const userVi: UserMessages = {
     salonPhone: "SĐT tiệm",
     addressSaved: "✓ Đã lưu địa chỉ",
     descriptionLabel: "Mô tả tiệm",
+    timezone: "Múi giờ",
+    timezoneRequired: "Vui lòng chọn múi giờ",
   },
   setupStaff: {
     servicesCapableLabel: "Dịch vụ có thể làm",

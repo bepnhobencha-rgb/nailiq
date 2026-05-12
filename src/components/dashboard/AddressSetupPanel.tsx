@@ -21,6 +21,11 @@ import {
   validateProvince,
   validateStreet,
 } from "@/shared/dashboard/addressSetupValidation";
+import {
+  SETUP_TIMEZONE_DEFAULT,
+  SETUP_TIMEZONE_OPTIONS,
+  isAllowedTimezone,
+} from "@/shared/dashboard/timezoneOptions";
 import { cn } from "@/shared/lib/cn";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -33,6 +38,7 @@ const ERR = {
   postal: "Please enter a valid postal or ZIP code",
   country: "Please select country",
   phone: "Please enter a valid phone number (8–15 digits)",
+  timezone: "Timezone is required",
 } as const;
 
 type FieldKey =
@@ -41,7 +47,8 @@ type FieldKey =
   | "province"
   | "postal"
   | "country"
-  | "phone";
+  | "phone"
+  | "timezone";
 
 function serverErrorMessage(code: string): string {
   switch (code) {
@@ -57,6 +64,8 @@ function serverErrorMessage(code: string): string {
       return ERR.postal;
     case "invalid_country":
       return ERR.country;
+    case "invalid_timezone":
+      return ERR.timezone;
     case "invalid_address":
       return "Address could not be saved.";
     default:
@@ -71,6 +80,7 @@ function formIsValid(parts: {
   postal: string;
   country: string;
   salonPhone: string;
+  timezone: string;
 }): boolean {
   return (
     validateStreet(parts.street) &&
@@ -79,7 +89,8 @@ function formIsValid(parts: {
     isValidPostalCode(parts.postal) &&
     parts.country.trim().length > 0 &&
     isAllowedCountry(parts.country) &&
-    isValidPhone(parts.salonPhone)
+    isValidPhone(parts.salonPhone) &&
+    isAllowedTimezone(parts.timezone)
   );
 }
 
@@ -89,6 +100,7 @@ export function AddressSetupPanel({
   initialSalonPhone,
   initialCurrency,
   initialDescription,
+  initialTimezone,
 }: {
   slug: string;
   initialAddress: string;
@@ -99,6 +111,11 @@ export function AddressSetupPanel({
   initialCurrency?: Currency;
   /** P2.8 — owner-written salon tagline shown on the booking page. */
   initialDescription?: string;
+  /** Task #04-B — salon's current timezone (IANA). Empty string if
+   *  the column was somehow NULL despite the NOT NULL migration —
+   *  the dropdown falls back to a blank "choose one" placeholder so
+   *  the owner makes a conscious selection. */
+  initialTimezone?: string;
 }) {
   const router = useRouter();
   const parsed = parseStoredAddress(initialAddress);
@@ -115,6 +132,19 @@ export function AddressSetupPanel({
     initialCurrency ?? DEFAULT_CURRENCY,
   );
   const [description, setDescription] = useState(initialDescription ?? "");
+  // Task #04-B — timezone is a required field now. Initial value is
+  // the salon's current `timezone` (always present after the
+  // 20260512600000 migration); if it doesn't match one of the
+  // dropdown options (e.g. legacy "UTC" value on an e2e fixture),
+  // the select renders blank-but-required so the owner picks a real
+  // one. We DON'T silently coerce to the default — forcing a
+  // conscious choice prevents an owner from accepting a wrong
+  // timezone they never reviewed.
+  const [timezone, setTimezone] = useState<string>(
+    initialTimezone && isAllowedTimezone(initialTimezone)
+      ? initialTimezone
+      : "",
+  );
   // P0.1 — shared setup labels for the field text.
   const { language: pageLang } = useUserLanguage();
   const tLabels = getUserMessages(pageLang).setupLabels;
@@ -152,9 +182,20 @@ export function AddressSetupPanel({
     setSalonPhone(filterSalonPhoneInput(initialSalonPhone));
     setCurrency(initialCurrency ?? DEFAULT_CURRENCY);
     setDescription(initialDescription ?? "");
+    setTimezone(
+      initialTimezone && isAllowedTimezone(initialTimezone)
+        ? initialTimezone
+        : "",
+    );
     setFieldErrors({});
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [initialAddress, initialSalonPhone, initialCurrency, initialDescription]);
+  }, [
+    initialAddress,
+    initialSalonPhone,
+    initialCurrency,
+    initialDescription,
+    initialTimezone,
+  ]);
 
   const setFieldError = useCallback((key: FieldKey, message: string | null) => {
     setFieldErrors((prev) => {
@@ -198,6 +239,11 @@ export function AddressSetupPanel({
     else setFieldError("phone", null);
   }, [salonPhone, setFieldError]);
 
+  const validateTimezoneField = useCallback(() => {
+    if (!isAllowedTimezone(timezone)) setFieldError("timezone", ERR.timezone);
+    else setFieldError("timezone", null);
+  }, [timezone, setFieldError]);
+
   const canSave = formIsValid({
     street,
     city,
@@ -205,10 +251,20 @@ export function AddressSetupPanel({
     postal,
     country,
     salonPhone,
+    timezone,
   });
 
   const save = useCallback(async () => {
     setSaveBannerError(null);
+    // Task #04-B — guard at the form layer too. `canSave` already
+    // disables the button; this is a belt-and-braces check in case
+    // a future code path bypasses the disabled state. Surfacing the
+    // inline error gives the owner a clearer signal than the
+    // generic toast.
+    if (!isAllowedTimezone(timezone)) {
+      setFieldError("timezone", ERR.timezone);
+      return;
+    }
     clearStatusTimer();
     setSaveStatus("saving");
     const res = await updateAddress(slug, {
@@ -220,6 +276,7 @@ export function AddressSetupPanel({
       salon_phone: salonPhone,
       currency_code: currency,
       description,
+      timezone,
     });
     if (!res.ok) {
       setSaveStatus("error");
@@ -242,8 +299,11 @@ export function AddressSetupPanel({
     province,
     router,
     salonPhone,
+    setFieldError,
     slug,
     street,
+    tLabels.addressSaved,
+    timezone,
   ]);
 
   const inputRing =
@@ -412,6 +472,65 @@ export function AddressSetupPanel({
             {fieldErrors.country}
           </p>
         ) : null}
+      </label>
+
+      {/* Task #04-B — required timezone dropdown. Sits below Country
+          because the salon's IANA zone is conceptually a refinement
+          of "which region am I in?". Locked to the 10-option list
+          in `timezoneOptions.ts`; any free-form value would corrupt
+          downstream salonTime math. */}
+      <label className={labelClass}>
+        <span>{tLabels.timezone}</span>
+        <span className="text-[#FF375F]" aria-hidden>
+          {" "}
+          *
+        </span>
+        <select
+          data-testid="setup-timezone-select"
+          className={cn(
+            "mt-1.5 flex min-h-[44px] w-full cursor-pointer appearance-none border bg-[length:1rem_1rem] bg-[right_0.75rem_center] bg-no-repeat pr-10",
+            inputRing,
+            fieldErrors.timezone ? "border-red-500/50" : "border-nq-border/50",
+          )}
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%239ca3af'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E")`,
+          }}
+          value={timezone}
+          disabled={saveStatus === "saving"}
+          onBlur={validateTimezoneField}
+          onChange={(e) => {
+            setTimezone(e.target.value);
+            if (fieldErrors.timezone) setFieldError("timezone", null);
+          }}
+        >
+          {/* Blank placeholder forces a conscious choice when the
+              salon currently holds an unrecognised legacy value. */}
+          {!isAllowedTimezone(timezone) ? (
+            <option value="" disabled>
+              — {tLabels.timezone} —
+            </option>
+          ) : null}
+          {SETUP_TIMEZONE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.value} — {pageLang === "vi" ? opt.labelVi : opt.labelEn}
+            </option>
+          ))}
+        </select>
+        {fieldErrors.timezone ? (
+          <p
+            className="mt-1 text-sm text-[#FF375F]"
+            role="alert"
+            data-testid="setup-timezone-error"
+          >
+            {fieldErrors.timezone}
+          </p>
+        ) : null}
+        {/* Static default hint — clarifies which zone we'll fall
+            back to if the owner skips this step elsewhere (e.g. via
+            the register wizard which doesn't yet collect tz). */}
+        <span className="mt-1 block text-xs text-nq-muted/80">
+          {SETUP_TIMEZONE_DEFAULT}
+        </span>
       </label>
 
       <label className={labelClass}>
