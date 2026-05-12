@@ -309,6 +309,24 @@ export const bookingEn = {
      *  cancelled, just nudged. */
     sessionExpiringSoon:
       "Session expiring soon. Please confirm to lock in your slots.",
+    /** Task #04-C FIX 01 — pre-submit availability probe banner
+     *  on step 5 while the auto-rescheduler is running. */
+    slotTakenRefinding:
+      "A slot was just taken. Finding new options...",
+    /** FIX 10 — copy for the slot_conflict path after submit
+     *  (DB-level race). Distinct from `conflictExternal` because
+     *  this specifically blames another *group* (the most common
+     *  collision pattern at the busy times when groups book). */
+    concurrentGroupTaken:
+      "Another group just booked one of these slots. Loading fresh options...",
+    /** FIX 12 — staff was deleted/inactivated between arrangement
+     *  selection and submit. Triggers an auto-rerun of the
+     *  scheduler. */
+    staffUnavailable: "Staff is no longer available. Finding a replacement...",
+    /** FIX 13 — service was soft-deleted between step 2 and submit.
+     *  Triggers a bounce back to step 2 to re-pick. */
+    serviceUnavailable:
+      "Service is no longer offered. Please choose another.",
   },
 };
 

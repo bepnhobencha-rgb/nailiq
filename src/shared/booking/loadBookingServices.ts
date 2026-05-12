@@ -220,10 +220,16 @@ export async function loadBookingServicesForSalonSlug(
         const s = typeof p === "string" ? p.trim() : "";
         return s.length > 0 ? s : null;
       })(),
+      // Task #04-C — `salons.timezone` is NOT NULL after migration
+      // 20260512600000_timezone_required. The legacy "UTC" fallback
+      // would have silently shipped 8-hour-offset booking times for
+      // BC salons; we now fall back to empty string to surface the
+      // missing data to the next consumer (booking page renders
+      // "salon not ready" rather than wrong times).
       timezone: (() => {
         const tz = (salon as { timezone?: unknown }).timezone;
         const s = typeof tz === "string" ? tz.trim() : "";
-        return s.length > 0 ? s : "UTC";
+        return s;
       })(),
       brandColor: normalizeBrandColor(
         (salon as { brand_color?: unknown }).brand_color,

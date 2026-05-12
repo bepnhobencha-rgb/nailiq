@@ -19,6 +19,7 @@ import {
   type GroupBookingMember,
   type GroupBookingResult,
 } from "@/shared/booking/submitGroupBooking";
+import { checkGroupSlotsAvailable } from "@/shared/booking/checkGroupSlotsAvailable";
 import {
   buildCapabilityMap,
   filterStaffCapableForService,
@@ -249,6 +250,12 @@ export function BookingGroupFlow({
   // confirming. Non-blocking; the booking still works after the
   // banner appears.
   const [sessionWarning, setSessionWarning] = useState(false);
+
+  // Task #04-C FIX 01 — slot-just-taken banner on step 5. Shows
+  // while the auto-rescheduler is running after a pre-submit
+  // probe detected one of the user's slots was raced by another
+  // booking. Cleared once the new scheduler results land.
+  const [slotJustTaken, setSlotJustTaken] = useState(false);
 
   // Per-field error sets for the wizard step validations.
   const [stepErrors, setStepErrors] = useState<Set<string>>(() => new Set());
@@ -597,11 +604,42 @@ export function BookingGroupFlow({
       if (res.reason === "slot_conflict") {
         // The arrangement we picked just got raced. Re-run the
         // scheduler so the user can pick a fresh option.
+        // Task #04-C FIX 10 — copy now points the user at "another
+        // group just took it" so the error message matches the
+        // real-world cause (concurrent group at the same time).
         setErrorMessage(
-          groupCopy.conflictExternal ??
+          groupCopy.concurrentGroupTaken ??
+            groupCopy.conflictExternal ??
             "Khung giờ vừa bị đặt mất. Đã tạo lại danh sách lựa chọn.",
         );
         await runScheduler();
+        return;
+      }
+      // Task #04-C FIX 12 — staff was deleted/inactivated between
+      // arrangement-pick and submit. Recoverable: re-run the
+      // scheduler so the remaining members get fresh staff
+      // suggestions. Banner shown briefly while the new schedule
+      // loads; the empty-state path on step 4 handles the
+      // "couldn't replace" case.
+      if (res.reason === "staff_unavailable") {
+        setErrorMessage(
+          groupCopy.staffUnavailable ?? "Thợ không còn nhận lịch.",
+        );
+        await runScheduler();
+        return;
+      }
+      // Task #04-C FIX 13 — service was soft-deleted between
+      // step 2 and submit. Not recoverable from step 5 — the user
+      // must re-pick a service. Bounce back to step 2 and
+      // highlight the affected member's service field.
+      if (res.reason === "service_unavailable") {
+        const mi = typeof res.memberIndex === "number" ? res.memberIndex : 0;
+        setStepErrors(new Set([`m${mi}.service`]));
+        setErrorMessage(
+          groupCopy.serviceUnavailable ??
+            "Dịch vụ không còn được cung cấp.",
+        );
+        setStep(2);
         return;
       }
       if (res.reason === "past_date") {
@@ -751,6 +789,66 @@ export function BookingGroupFlow({
     const t = window.setTimeout(() => setSessionWarning(true), SESSION_WARNING_MS);
     return () => window.clearTimeout(t);
   }, [step]);
+
+  // Task #04-C FIX 01 — pre-submit slot availability probe. On
+  // step 5 mount (or when the user picks a different arrangement
+  // while on step 5), call the lightweight `check_group_slots_available`
+  // RPC. If any slot raced, surface the banner + auto-rerun the
+  // scheduler so the user lands on fresh options without ever
+  // clicking Confirm.
+  //
+  // Effect intentionally re-fires when `selectedArrangementIdx` or
+  // `arrangementSelectedAt` change so a user who back-navs to step
+  // 4, picks a different card, then returns to step 5 also gets
+  // the probe.
+  useEffect(() => {
+    if (step !== 5) {
+      setSlotJustTaken(false);
+      return;
+    }
+    if (
+      !scheduleResult ||
+      !scheduleResult.ok ||
+      !scheduleResult.arrangements[selectedArrangementIdx]
+    ) {
+      return;
+    }
+    const arr = scheduleResult.arrangements[selectedArrangementIdx];
+    let cancelled = false;
+    void (async () => {
+      const probe = await checkGroupSlotsAvailable(
+        arr.assignments.map((a) => ({
+          memberIndex: a.memberIndex,
+          salonId: salon.id,
+          staffId: a.staffId,
+          startUtcIso: a.startUtcIso,
+          endUtcIso: a.endUtcIso,
+        })),
+      );
+      if (cancelled) return;
+      // Soft-fail: a probe error doesn't block the user — the
+      // GIST constraint at insert time will still catch the race.
+      // Treat error like "no conflict known" and let the user
+      // proceed.
+      if ("error" in probe || probe.available === true) return;
+      // At least one slot is gone. Surface the banner, then
+      // re-run the scheduler. The scheduler call will set
+      // scheduleResult fresh, which triggers a re-render and the
+      // banner gets cleared by the next branch of this effect on
+      // the new arrangement.
+      setSlotJustTaken(true);
+      await runScheduler();
+      if (!cancelled) setSlotJustTaken(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // `runScheduler` reads `date`/`arrivalPref`/`members`/`shopSlug`
+    // from closure; not putting it in deps to avoid re-firing on
+    // every input keystroke during step 5. The effect re-fires on
+    // arrangement-selection change which is the real trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, selectedArrangementIdx, arrangementSelectedAt, salon.id]);
 
   // ── Render ─────────────────────────────────────────────────────
   if (step === "success" && successResult) {
@@ -924,6 +1022,10 @@ export function BookingGroupFlow({
           }}
           // FIX 14 — non-blocking idle warning.
           showSessionWarning={sessionWarning}
+          // Task #04-C FIX 01 — banner shown while the auto-
+          // rescheduler is running because the pre-submit probe
+          // caught a raced slot.
+          showSlotJustTaken={slotJustTaken}
           onPhoneChange={(v) => setPrimaryPhone(formatPhoneInputProgressive(v))}
           onEmailChange={setPrimaryEmail}
           onBack={() => goToStep(4)}
@@ -1869,6 +1971,7 @@ function ConfirmStep({
   onStaleAcknowledge,
   onStaleRefresh,
   showSessionWarning,
+  showSlotJustTaken,
   onPhoneChange,
   onEmailChange,
   onBack,
@@ -1897,6 +2000,9 @@ function ConfirmStep({
   onStaleRefresh: () => void;
   /** FIX 14 — true when user has been on step 5 for ≥ 25 min. */
   showSessionWarning: boolean;
+  /** Task #04-C FIX 01 — true while the pre-submit availability
+   *  probe is auto-rescheduling after detecting a raced slot. */
+  showSlotJustTaken: boolean;
   onPhoneChange: (v: string) => void;
   onEmailChange: (v: string) => void;
   onBack: () => void;
@@ -1927,6 +2033,24 @@ function ConfirmStep({
       <h2 className="text-lg font-semibold sm:text-xl">
         {t.stepConfirmHeading}
       </h2>
+
+      {/* Task #04-C FIX 01 — slot-just-taken banner. Shown while
+          the pre-submit probe is auto-rescheduling. Disappears
+          when the new arrangements land (probe effect resets the
+          flag). Non-blocking; Confirm button is still functional
+          but the user will see the new arrangement once the
+          scheduler returns. */}
+      {showSlotJustTaken ? (
+        <p
+          role="status"
+          aria-live="polite"
+          data-testid="group-slot-just-taken"
+          className="rounded-xl border border-nq-warning/45 bg-nq-warning/10 px-3 py-2 text-xs"
+        >
+          {groupCopy.slotTakenRefinding ??
+            "A slot was just taken. Finding new options..."}
+        </p>
+      ) : null}
 
       {/* FIX 03 — stale arrangement banner. The user can either
           acknowledge ("Confirm anyway" dismisses just the banner)
