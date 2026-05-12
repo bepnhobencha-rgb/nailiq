@@ -1136,6 +1136,10 @@ export async function updateAddress(
     /** Salon's display currency (CAD / USD / VND). Optional — when
      *  omitted the existing value is preserved. */
     currency_code?: Currency | string;
+    /** P2.8 — owner-written salon description shown on the booking
+     * page. Optional; omitted leaves the column unchanged. Empty
+     * string after trim clears the column to null. */
+    description?: string | null;
   },
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
@@ -1174,12 +1178,30 @@ export async function updateAddress(
   });
   if (!address || address.length > 400) return fail("invalid_address");
 
+  // P2.8 — Description column added by migration 20260512100000.
+  // Same `as never` cast pattern as currency_code; column may not be
+  // in the auto-generated types until the next regeneration. Treat
+  // empty-string as "clear back to null".
+  let descriptionPatch: string | null | undefined;
+  if (input.description !== undefined) {
+    if (input.description === null) {
+      descriptionPatch = null;
+    } else {
+      const d = input.description.trim();
+      if (d.length > 400) return fail("invalid_description");
+      descriptionPatch = d.length > 0 ? d : null;
+    }
+  }
+
   // currency_code cast: column added by migration 20260512000000;
   // not yet in the auto-generated DB types.
   const patch = {
     address,
     salon_phone: salonPhone,
     ...(currencyCode !== undefined ? { currency_code: currencyCode } : {}),
+    ...(descriptionPatch !== undefined
+      ? { description: descriptionPatch }
+      : {}),
   } as never;
   const supabase = await writableSupabase(slug, r.kind);
   const { error } = await supabase

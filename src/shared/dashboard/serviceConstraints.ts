@@ -12,5 +12,9 @@
 
 /** Owner-facing length cap on `services.description`. Enforced in the
  *  app (not in the DB) so copy guidance can change without a migration.
- *  Kept in sync with `userMessages.serviceForm.descriptionTooLong`. */
-export const SERVICE_DESCRIPTION_MAX_LEN = 100;
+ *  Kept in sync with `userMessages.serviceForm.descriptionTooLong`.
+ *
+ *  P2.4 — raised from 100 → 250 chars based on QA report; some salons
+ *  want to add finish/duration/allergen detail beyond what fits in
+ *  100. UI counter and the descriptionTooLong copy update alongside. */
+export const SERVICE_DESCRIPTION_MAX_LEN = 250;

@@ -16,6 +16,7 @@ import {
 } from "@/shared/lib/salonTime";
 import type { SalonDashboardBooking } from "@/shared/types";
 import { cn } from "@/shared/lib/cn";
+import { formatCurrency } from "@/shared/lib/currencyFormat";
 
 /** Desk day row: ids + times required for edit defaults (receptionist `bookingsForDay`).
  *  Addon fields ride along for read-only display + correct end-time calc on save. */
@@ -99,6 +100,9 @@ export interface EditBookingFormProps {
   onSaved: (updated: SalonDashboardBooking) => void;
   onCancel: () => void;
   rcMessages: ReceptionistMessages;
+  /** P0.2 — salon's configured currency. Drives the service dropdown
+   * price suffix + the total price preview. */
+  currency: import("@/shared/lib/currencyFormat").Currency;
 }
 
 export function EditBookingForm({
@@ -116,6 +120,7 @@ export function EditBookingForm({
   onSaved,
   onCancel,
   rcMessages,
+  currency,
 }: EditBookingFormProps) {
   const slots = useMemo(() => slotMinutesOptions(), []);
 
@@ -215,8 +220,9 @@ export function EditBookingForm({
       ? Number(selectedAddonSvc.price_cents ?? 0)
       : 0;
     const total = mainCents + (Number.isFinite(addonCents) ? addonCents : 0);
-    return `$${(total / 100).toFixed(2)}`;
-  }, [selectedSvc, selectedAddonSvc]);
+    // P0.2 — render in the salon's currency.
+    return formatCurrency(total, currency) ?? "—";
+  }, [selectedSvc, selectedAddonSvc, currency]);
 
   const proposedStartUtc = useMemo(
     () => salonWallTimeToUtcIso(dayYmd, selectedTimeMinutes, timezone),
@@ -349,11 +355,12 @@ export function EditBookingForm({
             onChange={(e) => setSelectedService(e.target.value)}
           >
             {services.map((s) => {
-              const dollars = (Number(s.price_cents) / 100).toFixed(2);
+              const priceText =
+                formatCurrency(Number(s.price_cents), currency) ?? "—";
               const dur = Number(s.duration_minutes);
               return (
                 <option key={s.id} value={s.id}>
-                  {`${s.name} · ${dur}m · $${dollars}`}
+                  {`${s.name} · ${dur}m · ${priceText}`}
                 </option>
               );
             })}
@@ -375,11 +382,12 @@ export function EditBookingForm({
           >
             <option value="">{addonCopy.none}</option>
             {services.map((s) => {
-              const dollars = (Number(s.price_cents) / 100).toFixed(2);
+              const priceText =
+                formatCurrency(Number(s.price_cents), currency) ?? "—";
               const dur = Number(s.duration_minutes);
               return (
                 <option key={s.id} value={s.id}>
-                  {`${s.name} · ${dur}m · $${dollars}`}
+                  {`${s.name} · ${dur}m · ${priceText}`}
                 </option>
               );
             })}

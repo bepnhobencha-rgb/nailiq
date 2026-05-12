@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
+import { parseCurrency } from "@/shared/lib/currencyFormat";
 import { salonDayRangeUtc } from "@/shared/lib/salonTime";
 import {
   isQueuePriority,
@@ -33,6 +34,10 @@ export interface ReceptionistCenterData {
     name: string;
     slug: string;
     timezone: string;
+    /** P0.2 — salon-configured currency (CAD/USD/VND). Drives every
+     * money-formatting surface on the desk (KPI bar, drawer price,
+     * walk-in service tile, reports panel). */
+    currencyCode: import("@/shared/lib/currencyFormat").Currency;
   };
   staff: Array<{
     id: string;
@@ -414,7 +419,10 @@ export async function loadReceptionistCenterData(
   const salonResult = await supabase
     .from("salons")
     .select(
-      "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density",
+      // currency_code added by migration 20260512000000 — not in
+      // auto-generated types yet, hence the `as never` cast on the
+      // SELECT string. Drives money formatting across the desk.
+      "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code" as never,
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -432,6 +440,7 @@ export async function loadReceptionistCenterData(
     dashboard_modules?: unknown;
     dashboard_preset?: unknown;
     dashboard_density?: unknown;
+    currency_code?: unknown;
   } | null;
 
   if (!salonData?.id || typeof salonData.timezone !== "string" || salonData.timezone.trim() === "") {
@@ -443,6 +452,7 @@ export async function loadReceptionistCenterData(
     name: String(salonData.name ?? ""),
     slug: String(salonData.slug ?? ""),
     timezone: salonData.timezone.trim(),
+    currencyCode: parseCurrency(salonData.currency_code),
   };
 
   const rawDashboardModules = parseDashboardModules(

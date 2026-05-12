@@ -9,9 +9,13 @@ import { SalonBookingSkeleton } from "@/components/booking/SalonBookingSkeleton"
 import { BookingFlowErrorBoundary } from "@/components/booking/BookingFlowErrorBoundary";
 import { loadServiceCategories } from "@/shared/booking/loadServiceCategories";
 import { resolvePublicBookingPage } from "@/shared/booking/resolvePublicBookingPage";
-import { bookingEn } from "@/shared/i18n/booking/en";
+import {
+  getBookingMessages,
+  resolveBookingLanguage,
+} from "@/shared/i18n/booking";
 import { formatSalonDisplayName } from "@/shared/lib/salonDisplay";
 import { BookingDocumentEn } from "./BookingDocumentEn";
+import { BookingLanguageToggle } from "@/components/booking/BookingLanguageToggle";
 
 /** Avoid stale static segments for salons created after deploy. */
 export const dynamic = "force-dynamic";
@@ -55,7 +59,10 @@ async function PublicBookingRouteBody({
   paramsPromise: Promise<{ slug: string }>;
 }) {
   const { slug } = await paramsPromise;
-  const t = bookingEn;
+  // P0.1 — resolve booking locale from cookie / Accept-Language.
+  // Vietnam is the primary market so VI wins when no signal is set.
+  const lang = await resolveBookingLanguage();
+  const t = getBookingMessages(lang);
 
   const resolved = await resolvePublicBookingPage(slug);
   if (resolved.status === "reserved") {
@@ -136,7 +143,7 @@ async function PublicBookingRouteBody({
   if (!load.salon.acceptingBookings) {
     return (
       <>
-        <BookingDocumentEn />
+        <BookingDocumentEn lang={lang} />
         <div
           className="relative min-h-dvh px-4 py-10 pb-safe sm:px-6 lg:px-8"
           style={{
@@ -175,6 +182,14 @@ async function PublicBookingRouteBody({
           <div className="absolute inset-0 backdrop-blur-[3px] bg-[color-mix(in_srgb,var(--booking-bg)_86%,transparent)]" />
         </div>
 
+        {/* P0.1 — language toggle anchored top-right; floats above
+            the main column so it doesn't push the layout. */}
+        <div className="pointer-events-none absolute top-4 right-4 z-20 sm:top-6 sm:right-6 lg:top-8 lg:right-8">
+          <div className="pointer-events-auto">
+            <BookingLanguageToggle currentLang={lang} />
+          </div>
+        </div>
+
         <main className="relative z-10 mx-auto w-full max-w-[1200px] px-4 py-10 pb-safe sm:px-6 lg:flex lg:items-start lg:gap-10 lg:px-8 lg:py-14">
           <BookingSalonHero
             shopLabel={shopLabel}
@@ -183,6 +198,7 @@ async function PublicBookingRouteBody({
             address={load.salon.address}
             openingHoursRaw={load.salon.opening_hours}
             timezone={load.salon.timezone}
+            description={load.salon.description}
             className="lg:sticky lg:top-10 lg:flex-shrink-0"
           />
 
@@ -194,6 +210,7 @@ async function PublicBookingRouteBody({
               address={load.salon.address}
               openingHoursRaw={load.salon.opening_hours}
               timezone={load.salon.timezone}
+              description={load.salon.description}
             />
             <h1 className="hidden lg:block text-2xl font-semibold tracking-tight text-[var(--booking-text)] sm:text-3xl lg:text-[2.125rem] lg:leading-[1.15] lg:tracking-[-0.035em]">
               {t.pageTitle}
@@ -227,7 +244,9 @@ export default function PublicBookingPage({ params }: PublicBookingPageProps) {
     <Suspense
       fallback={
         <>
-          <BookingDocumentEn />
+          {/* Skeleton runs before language resolution; pick the VI
+              default so screen readers don't briefly mis-announce. */}
+          <BookingDocumentEn lang="vi" />
           <SalonBookingSkeleton />
         </>
       }

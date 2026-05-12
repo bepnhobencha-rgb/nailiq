@@ -150,6 +150,8 @@ export interface StaffTimelineGridProps {
    * remains on the salon's true 30-minute cadence.
    */
   bookingBlockMinHeightPx?: number;
+  /** P0.2 — salon's configured currency for the price line. */
+  currencyCode?: import("@/shared/lib/currencyFormat").Currency;
   /**
    * Density-derived visual hint for slot row height tier (20 / 30 / 40
    * minutes equivalent). Visual only — does not change `SLOT_PX` or
@@ -239,6 +241,7 @@ function StaffTimelineGridImpl({
   showBookingTimeRange = true,
   showStaffSkillBadges = true,
   bookingBlockMinHeightPx,
+  currencyCode,
   // `timeSlotMinutesVisualHint` is reserved for future row-height
   // adjustments; currently unused at runtime.
   timeSlotMinutesVisualHint: _timeSlotMinutesVisualHint,
@@ -603,6 +606,7 @@ function StaffTimelineGridImpl({
                           startTimeLabel={labels.formatTimeLabel(b.start_time_utc)}
                           endTimeLabel={labels.formatTimeLabel(b.end_time_utc)}
                           priceCents={b.price_cents}
+                          currencyCode={currencyCode}
                           leftPx={leftPx}
                           widthPx={widthPx}
                           onClick={() => onBookingClick(b.id)}

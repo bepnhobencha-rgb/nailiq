@@ -92,6 +92,10 @@ export type UserMessages = {
     submitErrorGeneric: string;
     /** Shown when the OTP-issued completion token has expired. */
     submitErrorExpiredToken: string;
+    /** P0.1 — localized fallback for SMS-send failures. The server
+     * action returns the raw English string from Twilio; client
+     * swaps it in when the raw matches. */
+    sendSmsFailed: string;
     /** Submit button on /register before/while sending OTP. */
     sendCode: string;
     sendingCode: string;
@@ -548,6 +552,58 @@ export type UserMessages = {
     serviceLimitReached: string;
     /** CTA copy on the inline upgrade link. */
     upgradeCta: string;
+  };
+  /** P0.1 — shared labels across the four setup pages.
+   * services, staff, hours, address all consume from this single
+   * namespace so a label change ripples cleanly. */
+  setupLabels: {
+    name: string;
+    save: string;
+    saveAll: string;
+    delete: string;
+    cancel: string;
+    servicesTitle: string;
+    price: string;
+    durationMin: string;
+    bufferMin: string;
+    deleteService: string;
+    addService: string;
+    serviceSaved: string;
+    serviceRemoved: string;
+    saveFailed: string;
+    deleteFailed: string;
+    staffTitle: string;
+    removeStaff: string;
+    addStaff: string;
+    staffSaved: string;
+    staffRemoved: string;
+    hoursTitle: string;
+    /** Day names indexed Mon..Sun for HoursSetupPanel. */
+    days: {
+      mon: string;
+      tue: string;
+      wed: string;
+      thu: string;
+      fri: string;
+      sat: string;
+      sun: string;
+    };
+    opens: string;
+    closes: string;
+    closed: string;
+    extraClosedDates: string;
+    hoursPreview: string;
+    hoursSaved: string;
+    hoursIntro: string;
+    addressTitle: string;
+    streetAddress: string;
+    city: string;
+    provinceState: string;
+    postalCode: string;
+    country: string;
+    salonPhone: string;
+    addressSaved: string;
+    descriptionLabel: string;
   };
   /** F8 staff form (setup) */
   setupStaff: {
@@ -1191,6 +1247,7 @@ export const userEn: UserMessages = {
     submitCreate: "Create your booking page",
     submitCreating: "Creating…",
     submitErrorGeneric: "Could not create your salon. Try again.",
+    sendSmsFailed: "Could not send SMS. Try again.",
     submitErrorExpiredToken:
       "Your verification expired — start again from phone entry.",
     sendCode: "Send code",
@@ -1654,7 +1711,7 @@ export const userEn: UserMessages = {
     descriptionPlaceholder: "e.g. Long-lasting shine, perfectly shaped nails.",
     descriptionHint:
       "One line shown under the service name on your booking page. Leave blank and we'll write one for you.",
-    descriptionTooLong: "Keep the description to 100 characters or fewer.",
+    descriptionTooLong: "Keep the description to 250 characters or fewer.",
     popularLabel: "Popular",
     popularHint:
       "Shows a small gold badge on the public booking page — pick your busiest 1–3 services.",
@@ -1673,6 +1730,55 @@ export const userEn: UserMessages = {
     serviceLimitReached:
       "Free plan allows 10 services. Upgrade to Pro for 50.",
     upgradeCta: "Upgrade your plan",
+  },
+  setupLabels: {
+    name: "Name",
+    save: "Save",
+    saveAll: "Save all",
+    delete: "Delete",
+    cancel: "Cancel",
+    servicesTitle: "Services",
+    price: "Price",
+    durationMin: "Duration (min)",
+    bufferMin: "Buffer (min)",
+    deleteService: "Delete service",
+    addService: "Add service",
+    serviceSaved: "✓ Service saved",
+    serviceRemoved: "✓ Service removed",
+    saveFailed: "Could not save. Try again.",
+    deleteFailed: "Could not delete. Try again.",
+    staffTitle: "Staff",
+    removeStaff: "Remove staff",
+    addStaff: "Add staff",
+    staffSaved: "✓ Staff member saved",
+    staffRemoved: "✓ Staff member removed",
+    hoursTitle: "Opening hours",
+    days: {
+      mon: "Monday",
+      tue: "Tuesday",
+      wed: "Wednesday",
+      thu: "Thursday",
+      fri: "Friday",
+      sat: "Saturday",
+      sun: "Sunday",
+    },
+    opens: "Opens",
+    closes: "Closes",
+    closed: "Closed",
+    extraClosedDates: "Extra closed dates",
+    hoursPreview: "Preview",
+    hoursSaved: "✓ Hours saved",
+    hoursIntro:
+      "Set when clients can book. Weekly closed days won't show slots. Add extra closed dates (holidays) one per line as YYYY-MM-DD.",
+    addressTitle: "Salon address",
+    streetAddress: "Street address",
+    city: "City",
+    provinceState: "Province/State",
+    postalCode: "Postal code",
+    country: "Country",
+    salonPhone: "Salon phone",
+    addressSaved: "✓ Address saved",
+    descriptionLabel: "Salon description",
   },
   setupStaff: {
     servicesCapableLabel: "Services this staff can perform",

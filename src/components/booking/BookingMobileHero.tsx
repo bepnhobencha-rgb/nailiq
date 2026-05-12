@@ -19,6 +19,7 @@ export function BookingMobileHero({
   address,
   openingHoursRaw,
   timezone,
+  description,
 }: {
   shopLabel: string;
   t: BookingMessages;
@@ -26,6 +27,8 @@ export function BookingMobileHero({
   address?: string | null;
   openingHoursRaw?: unknown | null;
   timezone?: string;
+  /** P2.8 — owner-written tagline override. */
+  description?: string | null;
 }) {
   const isLight = themeMode === "light";
   return (
@@ -50,7 +53,7 @@ export function BookingMobileHero({
         {shopLabel}
       </h1>
       <p className="relative mt-2 text-sm leading-relaxed text-white/70">
-        {t.salonHeroTagline}
+        {description?.trim() || t.salonHeroTagline}
       </p>
       {timezone ? (
         <div className="relative text-white/85">

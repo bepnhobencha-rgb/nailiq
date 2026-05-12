@@ -40,6 +40,10 @@ export type BookingSalonMeta = {
    * column — caller renders verbatim. `null` when the owner hasn't
    * completed the Address setup step. */
   address: string | null;
+  /** P2.8 — owner-editable salon description rendered as the booking
+   * page tagline. `null` falls back to the generic copy in
+   * `bookingEn.salonHeroTagline`. */
+  description: string | null;
 };
 
 export type BookingLoadData = {
@@ -232,6 +236,14 @@ export async function loadBookingServicesForSalonSlug(
       address: (() => {
         const a = (salon as { address?: unknown }).address;
         const s = typeof a === "string" ? a.trim() : "";
+        return s.length > 0 ? s : null;
+      })(),
+      description: (() => {
+        // `description` column added by migration 20260512100000. Cast
+        // path tolerates a DB still on the prior schema by returning
+        // null, so this never crashes a salon that hasn't migrated.
+        const d = (salon as { description?: unknown }).description;
+        const s = typeof d === "string" ? d.trim() : "";
         return s.length > 0 ? s : null;
       })(),
     },

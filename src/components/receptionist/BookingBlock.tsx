@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/shared/lib/cn";
+import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { motion, useReducedMotion } from "@/shared/lib/motionClient";
 
 /**
@@ -49,6 +50,11 @@ export interface BookingBlockProps {
   /** Optional end-of-service label rendered as `start – end` on line 3. */
   endTimeLabel?: string;
   priceCents: number | null;
+  /** P0.2 — salon's configured currency. Drives the price string in
+   * the time/price line (CAD/USD/VND), replacing the prior hardcoded
+   * "$" prefix. Optional for back-compat — callers without a salon
+   * row in scope fall back to CAD via `parseCurrency`. */
+  currencyCode?: import("@/shared/lib/currencyFormat").Currency;
   leftPx: number;
   widthPx: number;
   onClick?: () => void;
@@ -149,15 +155,15 @@ const DEFAULT_ICON_LABELS = {
   staffRequest: "Staff request",
 } as const;
 
-function formatPrice(priceCents: number | null): string {
-  // Was: `(priceCents/100).toFixed(2)` — rendered "45.00" with no
-  // currency symbol, which is what the QA report flagged as the
-  // "empty price" bug. The "$" prefix is correct for CAD/USD; VND
-  // salons see the same "$45" until a follow-up threads
-  // `salons.currency_code` into BookingBlock (current rendering
-  // path doesn't have access to the salon row).
+function formatPrice(
+  priceCents: number | null,
+  currencyCode: import("@/shared/lib/currencyFormat").Currency | undefined,
+): string {
   if (priceCents == null) return "—";
-  return `$${(priceCents / 100).toFixed(2)}`;
+  // P0.2 — render in the salon's currency. `formatCurrency` returns
+  // null only for null/NaN/negative input; we've already null-guarded
+  // priceCents above so the fallback path is just defensive.
+  return formatCurrency(priceCents, currencyCode) ?? "—";
 }
 
 export function BookingBlock(props: BookingBlockProps) {
@@ -184,12 +190,12 @@ export function BookingBlock(props: BookingBlockProps) {
     hasStaffRequest = false,
     isLate = false,
     iconLabels = DEFAULT_ICON_LABELS,
+    currencyCode,
   } = props;
 
   const reduced = useReducedMotion();
   const styles = STATUS_STYLES[status];
-  const pricePart =
-    priceCents != null ? `$${formatPrice(priceCents)}` : formatPrice(priceCents);
+  const pricePart = formatPrice(priceCents, currencyCode);
 
   // Line 3: time range (+ price when `revenue_today` is on). Time stays
   // the leading token so scan order matches the timeline axis.

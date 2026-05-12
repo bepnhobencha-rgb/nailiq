@@ -18,6 +18,9 @@ type BookingSalonHeroProps = {
   address?: string | null;
   openingHoursRaw?: unknown | null;
   timezone?: string;
+  /** P2.8 — owner-written tagline override. Falls back to the
+   * `salonHeroTagline` generic copy when null/empty. */
+  description?: string | null;
 };
 
 /**
@@ -37,6 +40,7 @@ export function BookingSalonHero({
   address,
   openingHoursRaw,
   timezone,
+  description,
 }: BookingSalonHeroProps) {
   const isLight = themeMode === "light";
 
@@ -86,7 +90,7 @@ export function BookingSalonHero({
             {shopLabel}
           </h2>
           <p className="mt-4 text-[15px] leading-relaxed text-white/70 lg:text-base">
-            {t.salonHeroTagline}
+            {description?.trim() || t.salonHeroTagline}
           </p>
           {timezone ? (
             <BookingSalonInfoLine

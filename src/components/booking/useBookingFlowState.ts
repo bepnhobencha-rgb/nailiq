@@ -25,6 +25,7 @@ import type {
   BookingStaffItem,
 } from "@/shared/booking/loadBookingServices";
 import { formatNailiqBookingRef } from "@/shared/lib/formatNailiqBookingRef";
+import { formatPhoneInputProgressive } from "@/shared/lib/phoneFormat";
 import { generateBookingCalendarIcs } from "@/components/booking/bookingCalendar";
 import { formatSalonDisplayName } from "@/shared/lib/salonDisplay";
 import { fireBookingConfetti } from "@/components/booking/bookingConfetti";
@@ -167,7 +168,11 @@ export function useBookingFlowState(
   }, []);
 
   const setBookingClientPhone = useCallback((v: string) => {
-    setClientPhone(v);
+    // P2.6 — live-format NANP-style numbers as the guest types so the
+    // value reads "(604) 778-2345" while they're typing instead of
+    // jumping at blur. International (`+...`) entries are left to the
+    // user's own format.
+    setClientPhone(formatPhoneInputProgressive(v));
     setInfoPhoneError(null);
   }, []);
 

@@ -28,24 +28,33 @@ export default async function SetupAddressPage({ params }: Props) {
   // `getDashboardWriteClient` yet, so query it directly here. Column
   // was added by migration 20260512000000; cast for the select since
   // the auto-generated DB types haven't been refreshed.
-  const { data: currencyRow } = await ctx.supabase
+  // P2.8 — also pull `description` (column added by migration
+  // 20260512100000). Same `as never` pattern as currency_code.
+  const { data: extraRow } = await ctx.supabase
     .from("salons")
-    .select("currency_code" as never)
+    .select("currency_code, description" as never)
     .eq("id", ctx.salon.id)
     .maybeSingle();
-  const initialCurrency = parseCurrency(
-    (currencyRow as { currency_code?: unknown } | null)?.currency_code,
-  );
+  const extraData = (extraRow ?? null) as {
+    currency_code?: unknown;
+    description?: unknown;
+  } | null;
+  const initialCurrency = parseCurrency(extraData?.currency_code);
+  const initialDescription =
+    typeof extraData?.description === "string"
+      ? extraData.description
+      : "";
 
   return (
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 sm:pt-6">
-        <SetupBackNav slug={slug} title="Salon address" />
+        <SetupBackNav slug={slug} title="Địa chỉ tiệm · Salon address" />
         <AddressSetupPanel
           slug={slug}
           initialAddress={ctx.salon.address ?? ""}
           initialSalonPhone={ctx.salon.salon_phone ?? ""}
           initialCurrency={initialCurrency}
+          initialDescription={initialDescription}
         />
       </MobileStack>
     </ResponsiveShell>

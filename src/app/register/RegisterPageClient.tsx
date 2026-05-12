@@ -84,7 +84,16 @@ export function RegisterPageClient({ demoMode, smsEnabled, emailEnabled }: Props
         }
         const result = await sendRegisterOtp(normalized);
         if (!result.success) {
-          setPhoneError(result.error);
+          // P0.1 — server action returns the raw Twilio string in
+          // English. Swap to the localized copy when it matches the
+          // known "Could not send SMS. Try again." sentinel; pass
+          // anything else through (Supabase / hook errors).
+          const raw = result.error ?? "";
+          const localized =
+            raw === "Could not send SMS. Try again."
+              ? t.register.sendSmsFailed
+              : raw;
+          setPhoneError(localized);
           return;
         }
 

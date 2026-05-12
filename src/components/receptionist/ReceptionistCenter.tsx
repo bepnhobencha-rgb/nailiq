@@ -78,6 +78,7 @@ import { getUserMessages } from "@/shared/i18n/user";
 import { checkBookingConflict, type ConflictCheckBooking } from "@/shared/lib/conflictCheck";
 import { cn } from "@/shared/lib/cn";
 import { cleanPhone, formatPhone } from "@/shared/lib/phoneFormat";
+import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { maskPhoneDigits } from "@/shared/lib/maskPhone";
 import { isWalkinUrgent } from "@/shared/lib/queueUrgency";
 import { useQueuePanelOpen } from "@/shared/lib/useQueuePanelOpen";
@@ -1002,9 +1003,12 @@ function ReceptionistCenterInner({
       mainCents != null || addonCents != null
         ? (mainCents ?? 0) + (addonCents ?? 0)
         : null;
+    // P0.2 — render in the salon's configured currency rather than a
+    // hardcoded "$". formatCurrency returns null for null/NaN cents
+    // so the existing "no price" path still works.
     const priceLine =
       data.dashboardModules.revenue_today && totalCents != null
-        ? `$${(totalCents / 100).toFixed(2)}`
+        ? formatCurrency(totalCents, data.salon.currencyCode)
         : null;
 
     const addonServiceName = b.addon_service_name?.trim()
@@ -1615,6 +1619,7 @@ function ReceptionistCenterInner({
             // the salon's existing module toggle.
             showRevenue={modules.revenue_today && viewerRole !== "nail_tech"}
             messages={rcMessages.kpiBar}
+            currencyCode={data.salon.currencyCode}
             isLoading={dayLoading}
           />
         ) : null}
@@ -1728,6 +1733,7 @@ function ReceptionistCenterInner({
               showTimelineHeatmap={modules.timeline_heatmap}
               showBookingPrices={modules.revenue_today && densityConfig.showPriceInBlock}
               showWalkinAccent={modules.vip_indicators}
+              currencyCode={data.salon.currencyCode}
               showBookingMetaLine={densityConfig.showMetaLine}
               showBookingTimeRange={densityConfig.showTimeRangeInBlock}
               showStaffSkillBadges={densityConfig.showSkillBadges}
@@ -1803,6 +1809,7 @@ function ReceptionistCenterInner({
                   duration_minutes: s.duration_minutes,
                   price_cents: s.price_cents,
                 }))}
+                currency={data.salon.currencyCode}
                 nowIso={nowIso}
                 onAddWalkin={onAddWalkin}
                 onAddAndAssign={onAddAndAssign}
@@ -1949,6 +1956,7 @@ function ReceptionistCenterInner({
                 dayYmd: data.selectedDate,
                 timezone,
                 rcMessages,
+                currency: data.salon.currencyCode,
                 onBookingUpdated: async () => {
                   await reloadCurrentDay();
                   router.refresh();
