@@ -78,6 +78,7 @@ import { getUserMessages } from "@/shared/i18n/user";
 import { checkBookingConflict, type ConflictCheckBooking } from "@/shared/lib/conflictCheck";
 import { cn } from "@/shared/lib/cn";
 import { cleanPhone, formatPhone } from "@/shared/lib/phoneFormat";
+import { maskPhoneDigits } from "@/shared/lib/maskPhone";
 import { isWalkinUrgent } from "@/shared/lib/queueUrgency";
 import { useQueuePanelOpen } from "@/shared/lib/useQueuePanelOpen";
 import { useRushHourMode } from "./useRushHourMode";
@@ -928,11 +929,15 @@ function ReceptionistCenterInner({
 
     let telHref: string | null = null;
     let phoneDisplay: string | null = null;
+    let phoneMasked: string | null = null;
     if (b.client_phone?.trim()) {
       const raw = cleanPhone(b.client_phone);
       telHref = raw.length ? raw : null;
       phoneDisplay = formatPhone(b.client_phone);
       if (!phoneDisplay) phoneDisplay = b.client_phone;
+      // P0.8 — last-4 mask used as the drawer's default display.
+      // Drives the `phoneRevealed=false` render path.
+      phoneMasked = maskPhoneDigits(b.client_phone);
     }
 
     const dateStr = formatInSalonTz(b.start_time_utc, timezone, "date");
@@ -1022,6 +1027,7 @@ function ReceptionistCenterInner({
       clientName: b.client_name,
       telHref,
       phoneDisplay,
+      phoneMasked,
       clientNotes: b.client_notes ?? null,
       serviceName: b.service_name,
       staffName,
@@ -1065,6 +1071,10 @@ function ReceptionistCenterInner({
       sectionAddon: d.sectionAddon,
       noNotes: d.noNotesHint,
       callGuest: d.callGuest,
+      callGuestShort: d.callGuestShort,
+      phoneSection: d.phoneSection,
+      revealPhone: d.revealPhone,
+      hidePhone: d.hidePhone,
       nonePrice: d.none,
       // Same string as the walk-in add form's checkbox — single
       // source of truth for the "khách yêu cầu thợ này" copy across

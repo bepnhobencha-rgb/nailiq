@@ -813,6 +813,15 @@ export type UserMessages = {
       sourceWalkin: string;
       sourceAppointment: string;
       callGuest: (formattedDisplay: string) => string;
+      /** P0.8: phone-privacy block. Phone is masked by default
+       * ("***-***-7890") with a toggle to reveal. Section heading,
+       * toggle labels, and a short "Call" CTA that does not embed
+       * the number in its label (the call still dials the real
+       * number via `tel:`). */
+      phoneSection: string;
+      revealPhone: string;
+      hidePhone: string;
+      callGuestShort: string;
       startService: string;
       markComplete: string;
       cancelBooking: string;
@@ -926,7 +935,25 @@ export type UserMessages = {
         booking_status_changed: string;
         walkin_added: string;
         addon_added: string;
+        /** P0.9 — operational event summaries (no booking-status
+         * transition; the action itself is the verb). Receptionist
+         * mostly cares about queue lifecycle. */
+        queue_joined: string;
+        queue_assigned: string;
+        queue_left: string;
+        soft_hold_set: string;
+        soft_hold_expired: string;
       };
+      /** P0.9 — localized booking status names. Used by the audit log
+       * viewer to render `booking_status_changed` rows in human
+       * terms ("Confirmed → In progress" rather than the raw
+       * `confirmed → in_progress` codes). */
+      statusNames: Partial<Record<string, string>>;
+      /** P0.9 — transition-specific phrasing, indexed by
+       * `${from}_to_${to}`. When a key matches, the summary uses
+       * this phrase instead of the generic "X → Y" template; falls
+       * back to `booking_status_changed` for unknown transitions. */
+      statusTransitions: Partial<Record<string, string>>;
     };
     /** Top-level error boundary fallback for the Receptionist Center. */
     errorBoundary: {
@@ -1857,6 +1884,10 @@ export const userEn: UserMessages = {
       sourceWalkin: "Walk-in",
       sourceAppointment: "Appointment",
       callGuest: (formattedDisplay: string) => `📞 Call ${formattedDisplay}`,
+      phoneSection: "Phone",
+      revealPhone: "Show number",
+      hidePhone: "Hide number",
+      callGuestShort: "📞 Call",
       startService: "Start service",
       markComplete: "Mark complete",
       cancelBooking: "Cancel booking",
@@ -1968,6 +1999,29 @@ export const userEn: UserMessages = {
         booking_status_changed: "Status for {name}: {from} → {to}",
         walkin_added: "Added {name} to walk-in queue",
         addon_added: "Added an add-on to {name}'s booking",
+        queue_joined: "{name} joined the waiting queue",
+        queue_assigned: "{name} was assigned a slot",
+        queue_left: "{name} left the queue",
+        soft_hold_set: "Held a slot for {name}",
+        soft_hold_expired: "Hold expired for {name}",
+      },
+      statusNames: {
+        pending: "Pending",
+        confirmed: "Confirmed",
+        in_progress: "In progress",
+        completed: "Completed",
+        cancelled: "Cancelled",
+        waiting: "Waiting",
+        no_show: "No-show",
+      },
+      statusTransitions: {
+        confirmed_to_in_progress: "Started service for {name}",
+        in_progress_to_completed: "Completed service for {name}",
+        pending_to_confirmed: "Confirmed booking for {name}",
+        waiting_to_confirmed: "Confirmed booking for {name}",
+        confirmed_to_cancelled: "Cancelled booking for {name}",
+        pending_to_cancelled: "Cancelled booking for {name}",
+        in_progress_to_cancelled: "Cancelled in-progress booking for {name}",
       },
     },
     errorBoundary: {

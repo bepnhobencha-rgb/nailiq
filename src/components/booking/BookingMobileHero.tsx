@@ -1,4 +1,5 @@
 import type { BookingMessages } from "@/shared/i18n/booking/en";
+import { BookingSalonInfoLine } from "./BookingSalonInfoLine";
 
 /**
  * Mobile-only salon identity banner. Mirrors the eyebrow + name + tagline
@@ -15,10 +16,16 @@ export function BookingMobileHero({
   shopLabel,
   t,
   themeMode = "dark",
+  address,
+  openingHoursRaw,
+  timezone,
 }: {
   shopLabel: string;
   t: BookingMessages;
   themeMode?: "dark" | "light";
+  address?: string | null;
+  openingHoursRaw?: unknown | null;
+  timezone?: string;
 }) {
   const isLight = themeMode === "light";
   return (
@@ -45,6 +52,16 @@ export function BookingMobileHero({
       <p className="relative mt-2 text-sm leading-relaxed text-white/70">
         {t.salonHeroTagline}
       </p>
+      {timezone ? (
+        <div className="relative text-white/85">
+          <BookingSalonInfoLine
+            address={address ?? null}
+            openingHoursRaw={openingHoursRaw ?? null}
+            timezone={timezone}
+            variant="mobile"
+          />
+        </div>
+      ) : null}
     </section>
   );
 }

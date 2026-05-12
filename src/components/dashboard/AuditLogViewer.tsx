@@ -69,15 +69,35 @@ function eventSummary(
       const from =
         typeof row.payload.from === "string" ? row.payload.from : "?";
       const to = typeof row.payload.to === "string" ? row.payload.to : "?";
+      // P0.9 — Prefer transition-specific phrasing ("Started service
+      // for {name}") when the salon has localized copy for that
+      // exact {from}_to_{to} pair. Otherwise fall back to the
+      // generic template with localized status names so the
+      // operator never sees raw `confirmed`/`in_progress` codes.
+      const transitionKey = `${from}_to_${to}`;
+      const tmpl = m.statusTransitions[transitionKey];
+      if (tmpl) return tmpl.replace("{name}", name);
+      const fromLabel = m.statusNames[from] ?? from;
+      const toLabel = m.statusNames[to] ?? to;
       return m.summaries.booking_status_changed
         .replace("{name}", name)
-        .replace("{from}", from)
-        .replace("{to}", to);
+        .replace("{from}", fromLabel)
+        .replace("{to}", toLabel);
     }
     case "walkin_added":
       return m.summaries.walkin_added.replace("{name}", name);
     case "addon_added":
       return m.summaries.addon_added.replace("{name}", name);
+    case "queue_joined":
+      return m.summaries.queue_joined.replace("{name}", name);
+    case "queue_assigned":
+      return m.summaries.queue_assigned.replace("{name}", name);
+    case "queue_left":
+      return m.summaries.queue_left.replace("{name}", name);
+    case "soft_hold_set":
+      return m.summaries.soft_hold_set.replace("{name}", name);
+    case "soft_hold_expired":
+      return m.summaries.soft_hold_expired.replace("{name}", name);
     default:
       return row.eventType;
   }
