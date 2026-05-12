@@ -126,6 +126,17 @@ export interface WalkinAddFormProps {
     /** Confidence chip labels. */
     confidenceMedium: string;
     confidenceLow: string;
+    /** P0.5: shown inline when receptionist submits in auto-pick mode
+     * but the availability engine has zero usable staff (e.g. salon
+     * after hours). Form preserves all entered values so they can
+     * switch the dropdown to a specific staff without retyping. */
+    autoPickNoStaffAvailable: string;
+    /** P1.17: unified submit button has a smaller second line that
+     * tells the receptionist exactly what will happen when they tap.
+     * Templates — interpolate `{name}` for the assign variants. */
+    subLabelAssignNow: string;
+    subLabelQueue: string;
+    subLabelAssignTo: string;
     relative: {
       justNow: string;
       today: string;
@@ -277,6 +288,14 @@ export function WalkinAddForm({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
+  // P1.2 — per-field touched gate. We only surface validation errors
+  // after the user has interacted with a field (typed into it OR
+  // clicked submit). Avoids the "open form → focus moves away →
+  // 'Name required' flashes immediately" anti-UX. Submit click flips
+  // both to true so the runSubmit-side checks still render their
+  // messages.
+  const [nameTouched, setNameTouched] = useState(false);
+  const [phoneTouched, setPhoneTouched] = useState(false);
   const [walkinSource, setWalkinSource] = useState<QueueSource | "">("");
   const [walkinPriority, setWalkinPriority] = useState<QueuePriority | "">("");
   const [requestTags, setRequestTags] = useState<QueueRequestTag[]>([]);
@@ -444,6 +463,8 @@ export function WalkinAddForm({
     setErrorMessage(null);
     setNameError(null);
     setPhoneError(null);
+    setNameTouched(false);
+    setPhoneTouched(false);
     setWalkinSource("");
     setWalkinPriority("");
     setRequestTags([]);
@@ -500,6 +521,11 @@ export function WalkinAddForm({
   const runSubmit = useCallback(
     async (mode: "queue" | "immediate") => {
       if (disabled) return;
+      // P1.2 — clicking submit counts as "intent to use the field",
+      // so any per-field validators below should always render their
+      // messages regardless of whether the user blurred first.
+      setNameTouched(true);
+      setPhoneTouched(true);
       const trimmedName = clientName.trim();
       if (trimmedName.length === 0) {
         setNameError(labels.nameRequired);
@@ -524,6 +550,25 @@ export function WalkinAddForm({
       }
       if (selectedServiceId === null) {
         setErrorMessage(labels.errorRequired);
+        return;
+      }
+
+      // P0.5 — Auto-pick + no available staff (e.g. after hours).
+      // Without this guard the form silently falls through to the
+      // queue path; the receptionist sees a success toast but the
+      // walk-in is invisibly parked, and they don't realize they
+      // need to assign a specific staff. We require staff selection
+      // in this state instead of submitting anything.
+      if (
+        mode === "queue" &&
+        selectedStaffId === "" &&
+        !!onCheckAvailability &&
+        !!staffOptions &&
+        staffOptions.length > 0 &&
+        availability.kind === "ready" &&
+        availability.staff.length === 0
+      ) {
+        setErrorMessage(labels.autoPickNoStaffAvailable);
         return;
       }
 
@@ -587,12 +632,16 @@ export function WalkinAddForm({
       labels.invalidNameChars,
       labels.invalidPhone,
       labels.phoneRequired,
+      labels.autoPickNoStaffAvailable,
       onSubmit,
       onAddAndAssign,
+      onCheckAvailability,
       recommendedAvailability,
       availability,
       resetAfterSuccess,
       selectedServiceId,
+      selectedStaffId,
+      staffOptions,
       staffRequestNote,
       staffRequestedByClient,
       walkinSource,
@@ -709,10 +758,21 @@ export function WalkinAddForm({
           onChange={(e) => {
             setClientName(e.target.value);
             setNameError(null);
+            // Typing into a field counts as the user "engaging" with
+            // it for P1.2 — from now on blur-validation will surface
+            // errors. This avoids the "open form → focus moves
+            // away → error flashes immediately" anti-UX before any
+            // typing has happened.
+            if (!nameTouched) setNameTouched(true);
           }}
           onBlur={() => {
             const t = clientName.trim();
             setClientName(t);
+            // P1.2 — only surface validation on blur once the user
+            // has actually typed something. If the receptionist
+            // tabs through the form without touching name, we stay
+            // silent.
+            if (!nameTouched) return;
             if (t.length === 0) {
               setNameError(labels.nameRequired);
             } else if (t.length > BOOKING_GUEST_NAME_MAX) {
@@ -757,10 +817,14 @@ export function WalkinAddForm({
           onChange={(e) => {
             setClientPhone(e.target.value);
             setPhoneError(null);
+            // P1.2 — see name field for rationale.
+            if (!phoneTouched) setPhoneTouched(true);
           }}
           onBlur={() => {
             const p = clientPhone.trim();
             setClientPhone(p);
+            // P1.2 — silent until the field has been engaged.
+            if (!phoneTouched) return;
             if (p.length === 0) {
               setPhoneError(null);
               return;
@@ -1166,11 +1230,37 @@ export function WalkinAddForm({
         data-testid="walkin-submit"
         data-walkin-mode={canAssignImmediately ? "immediate" : "queue"}
       >
-        {submitting
-          ? labels.submitting
-          : canAssignImmediately
-            ? labels.assignImmediately
-            : labels.addButton}
+        {submitting ? (
+          labels.submitting
+        ) : (
+          // P1.17 — the main label is constant ("Add customer") so the
+          // button doesn't shift wording between renders. The smaller
+          // second line tells the receptionist exactly what will
+          // happen on tap: assign now to {name}, assign to {name}
+          // (busy), or fall back to the queue.
+          <span
+            className="inline-flex flex-col items-center leading-tight"
+            data-testid="walkin-submit-label"
+          >
+            <span>{labels.addButton}</span>
+            <span
+              className="text-[11px] font-normal opacity-80"
+              data-testid="walkin-submit-sublabel"
+            >
+              {canAssignImmediately && recommendedAvailability
+                ? labels.subLabelAssignNow.replace(
+                    "{name}",
+                    recommendedAvailability.staffName,
+                  )
+                : selectedStaffId !== "" && recommendedAvailability
+                  ? labels.subLabelAssignTo.replace(
+                      "{name}",
+                      recommendedAvailability.staffName,
+                    )
+                  : labels.subLabelQueue}
+            </span>
+          </span>
+        )}
       </Button>
     </form>
   );

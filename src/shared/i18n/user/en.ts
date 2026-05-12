@@ -751,6 +751,20 @@ export type UserMessages = {
         queueAheadHint: (n: number) => string;
         confidenceMedium: string;
         confidenceLow: string;
+        /** Inline error when auto-pick mode finds no available staff
+         * (e.g. after-hours walk-in attempt). The form keeps all
+         * existing values so the receptionist can pick a staff
+         * member manually without re-entering data. */
+        autoPickNoStaffAvailable: string;
+        /** Sub-label under the unified "Add customer" button when the
+         * recommended staff is free now. Template — interpolate `{name}`. */
+        subLabelAssignNow: string;
+        /** Sub-label when no staff is free now → falls back to queue. */
+        subLabelQueue: string;
+        /** Sub-label when a specific staff is picked but they are busy
+         * — assignment is deferred until their queue clears. Template
+         * — interpolate `{name}`. */
+        subLabelAssignTo: string;
         relative: {
           justNow: string;
           today: string;
@@ -1734,7 +1748,7 @@ export const userEn: UserMessages = {
         phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
         notePlaceholder:
           "Note for staff — e.g. polish color, prefers window seat",
-        addButton: "Add to queue",
+        addButton: "Add customer",
         moreServices: "More services",
         submitting: "Adding…",
         errorRequired: "Pick a service to continue.",
@@ -1789,6 +1803,11 @@ export const userEn: UserMessages = {
           `${n} ${n === 1 ? "customer" : "customers"} ahead`,
         confidenceMedium: "Running slightly over schedule",
         confidenceLow: "Multiple delays — wait may grow",
+        autoPickNoStaffAvailable:
+          "No staff available right now. Please select a staff member manually.",
+        subLabelAssignNow: "→ Assign now to {name}",
+        subLabelQueue: "→ Add to waiting list",
+        subLabelAssignTo: "→ Assign to {name}",
         relative: {
           justNow: "Just now",
           today: "Today",

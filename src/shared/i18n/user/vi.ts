@@ -689,7 +689,7 @@ export const userVi: UserMessages = {
         namePlaceholder: "Tên khách",
         phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
         notePlaceholder: "Ghi chú nhân viên — ví dụ màu sơn…",
-        addButton: "Thêm vào hàng chờ",
+        addButton: "Thêm khách",
         moreServices: "Thêm dịch vụ",
         submitting: "Đang thêm…",
         errorRequired: "Chọn một dịch vụ để tiếp tục.",
@@ -743,6 +743,11 @@ export const userVi: UserMessages = {
         queueAheadHint: (n: number) => `${n} khách đang chờ trước`,
         confidenceMedium: "Đang chạy hơi chậm",
         confidenceLow: "Nhiều ca trễ — thời gian chờ có thể tăng",
+        autoPickNoStaffAvailable:
+          "Hiện không có thợ rảnh. Vui lòng chọn thợ thủ công.",
+        subLabelAssignNow: "→ Xếp ngay cho {name}",
+        subLabelQueue: "→ Vào hàng chờ",
+        subLabelAssignTo: "→ Xếp cho {name}",
         relative: {
           justNow: "Vừa xong",
           today: "Hôm nay",
