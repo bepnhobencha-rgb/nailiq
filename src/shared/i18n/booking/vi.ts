@@ -129,7 +129,7 @@ export const bookingVi: BookingMessages = {
     primaryContactHeading: "Liên hệ chính",
     primaryContactHint:
       "Chúng tôi sẽ gửi xác nhận đến số này. Mỗi người có thể thêm số riêng bên dưới nếu muốn nhận nhắc lịch riêng.",
-    reviewHeading: "Xem lại lịch nhóm",
+    reviewHeading: "Đặt lịch cho từng người",
     confirmGroup: "Xác nhận đặt lịch nhóm",
     submittingGroup: "Đang đặt lịch nhóm…",
     successHeading: "Đặt lịch nhóm thành công! 🎉",
@@ -142,10 +142,20 @@ export const bookingVi: BookingMessages = {
     salonClosedDay:
       "Tiệm nghỉ vào một trong những ngày bạn chọn. Vui lòng chọn ngày khác.",
     salonPaused: "Tiệm này hiện không nhận đặt lịch.",
-    invalidGroupSize: "Nhóm phải có 2, 3 hoặc 4 người.",
+    invalidGroupSize: "Nhóm phải có từ 2 đến 8 người.",
     serverError: "Không đặt lịch nhóm được. Vui lòng thử lại.",
     addPerson: "Thêm người",
     removePerson: "Xoá",
+    editContact: "Sửa",
+    sharedScheduleHeading: "Ngày & giờ chung của nhóm",
+    sharedScheduleHint:
+      "Cả nhóm đến cùng giờ. Mỗi người chọn dịch vụ và thợ riêng bên dưới.",
+    sharedScheduleRequired: "Vui lòng chọn ngày và giờ cho cả nhóm.",
+    staffRequired: "Vui lòng chọn thợ.",
+    duplicateStaff:
+      "Thợ này đã được chọn cho người khác — vui lòng chọn thợ khác.",
+    totalLabel: "Tổng",
+    peopleSuffix: "người",
     groupIconLabel: "Thuộc lịch nhóm",
     groupContextHeading: "Thành viên nhóm",
     cancelEntireGroup: "Huỷ toàn bộ nhóm",

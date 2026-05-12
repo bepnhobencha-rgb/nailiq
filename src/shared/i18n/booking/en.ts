@@ -154,7 +154,9 @@ export const bookingEn = {
     primaryContactHeading: "Primary contact",
     primaryContactHint:
       "We'll send the confirmation to this phone. Each person can add their own phone below if they want their own reminder.",
-    reviewHeading: "Review group booking",
+    /** QA P0.G3 — was "Review group booking" which read as a final
+     * review step. This screen is the data-entry step. */
+    reviewHeading: "Booking details per person",
     confirmGroup: "Confirm group booking",
     submittingGroup: "Booking your group…",
     successHeading: "Group booking confirmed! 🎉",
@@ -167,10 +169,26 @@ export const bookingEn = {
     salonClosedDay:
       "The salon is closed on one of the days you picked. Please choose a different date.",
     salonPaused: "This salon isn't accepting bookings right now.",
-    invalidGroupSize: "Group size must be 2, 3, or 4 people.",
+    invalidGroupSize: "Group size must be between 2 and 8 people.",
     serverError: "Couldn't book the group. Please try again.",
     addPerson: "Add person",
     removePerson: "Remove",
+    /** P1.G1 — sticky contact-summary row. */
+    editContact: "Edit",
+    /** P0.G2 — shared schedule section. */
+    sharedScheduleHeading: "Group date & time",
+    sharedScheduleHint:
+      "The whole group comes in at the same time. Each person picks their own service and staff below.",
+    sharedScheduleRequired:
+      "Please pick a date and time for the group.",
+    /** Inline error under the staff dropdown for member-level
+     * required + duplicate-staff cases (P0.G1 + P1.G7). */
+    staffRequired: "Pick a staff member.",
+    duplicateStaff:
+      "This staff is already chosen for another person — pick a different staff.",
+    /** P1.G8 — sticky totals footer. */
+    totalLabel: "Total",
+    peopleSuffix: "people",
     /** Receptionist surface: the group-icon tooltip + drawer chip. */
     groupIconLabel: "Part of a group booking",
     groupContextHeading: "Group members",
