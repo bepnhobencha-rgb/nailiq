@@ -890,6 +890,7 @@ function ServiceStaffStep({
           type="button"
           variant="secondary"
           onClick={onBack}
+          data-testid="group-back"
           className="nq-booking-glass h-11 min-h-11 shrink-0 border border-[var(--booking-border)] bg-transparent text-[var(--booking-text-muted)] shadow-none"
         >
           {t.back}
@@ -1200,6 +1201,7 @@ function DateArrivalStep({
           type="button"
           variant="secondary"
           onClick={onBack}
+          data-testid="group-back"
           className="nq-booking-glass h-11 min-h-11 shrink-0 border border-[var(--booking-border)] bg-transparent text-[var(--booking-text-muted)] shadow-none"
         >
           {t.back}
@@ -1287,6 +1289,7 @@ function ArrangementStep({
           type="button"
           variant="secondary"
           onClick={onBack}
+          data-testid="group-back"
           className="nq-booking-glass h-11 min-h-11 shrink-0 border border-[var(--booking-border)] bg-transparent text-[var(--booking-text-muted)] shadow-none"
         >
           {t.back}
@@ -1591,6 +1594,7 @@ function ConfirmStep({
           type="button"
           variant="secondary"
           onClick={onBack}
+          data-testid="group-back"
           className="nq-booking-glass h-11 min-h-11 shrink-0 border border-[var(--booking-border)] bg-transparent text-[var(--booking-text-muted)] shadow-none"
         >
           {t.back}

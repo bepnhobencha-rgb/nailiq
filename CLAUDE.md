@@ -198,6 +198,13 @@ Tests hit a real Supabase (test DB) via the service-role client. `e2e/helpers/db
 - `sentry.client.config.ts`, `src/sentry.{server,edge}.config.ts` — Sentry configs.
 - `.env.local` — secrets. **Do not read.** Hook will block it.
 
+## 🤝 PM Workflow
+- PM uses Claude.ai as Tech Lead — prompts are pre-written there
+- Always run npm run build before opening PR
+- Always apply DB migrations to prod via Supabase MCP in same PR
+- Open PR as draft, PM reviews and merges manually
+- One PR per logical change
+
 ---
 
 > When in doubt, explore the codebase first. Don't assume — verify.
