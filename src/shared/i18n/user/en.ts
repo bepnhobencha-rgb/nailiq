@@ -843,6 +843,15 @@ export type UserMessages = {
          * — assignment is deferred until their queue clears. Template
          * — interpolate `{name}`. */
         subLabelAssignTo: string;
+        /** Task #04-D FIX 16 — warning when receptionist picks a
+         *  staff with a group booking starting within
+         *  `WALKIN_GROUP_BUFFER_MS` (30 min). `{name}` is the staff
+         *  display name, `{time}` is the localized clock time. */
+        walkinConflictsGroup: string;
+        /** Affordance: keeps the staff selection and proceeds. */
+        walkinContinueAnyway: string;
+        /** Affordance: clears the staff back to Best-Match auto. */
+        walkinChooseDifferent: string;
         relative: {
           justNow: string;
           today: string;
@@ -1973,6 +1982,10 @@ export const userEn: UserMessages = {
         subLabelAssignNow: "→ Assign now to {name}",
         subLabelQueue: "→ Add to waiting list",
         subLabelAssignTo: "→ Assign to {name}",
+        walkinConflictsGroup:
+          "{name} has a group booking at {time}. Continue?",
+        walkinContinueAnyway: "Continue anyway",
+        walkinChooseDifferent: "Choose different staff",
         relative: {
           justNow: "Just now",
           today: "Today",

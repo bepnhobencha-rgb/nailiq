@@ -40,7 +40,7 @@ import {
   normalizedPhoneDigits,
 } from "@/shared/lib/phoneFormat";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
-import { formatInSalonTz } from "@/shared/lib/salonTime";
+import { formatInSalonTz, salonDateOffset } from "@/shared/lib/salonTime";
 import {
   GROUP_ARRANGEMENT_STALE_MS,
   SESSION_WARNING_MS,
@@ -960,6 +960,8 @@ export function BookingGroupFlow({
           scheduleResult={scheduleResult}
           selectedIdx={selectedArrangementIdx}
           currencyCode={salon.currencyCode}
+          date={date}
+          timezone={salon.timezone}
           onSelect={(idx) => {
             setSelectedArrangementIdx(idx);
             // FIX 03 — explicit pick re-stamps the timestamp.
@@ -972,6 +974,15 @@ export function BookingGroupFlow({
           onRetry={() => void runScheduler()}
           onBack={() => goToStep(3)}
           onNext={() => goToStep(5)}
+          onPickDate={(ymd) => {
+            // FIX 06 — quick-pick from EmptyState. Update the date
+            // and re-trigger the scheduler in one step so the user
+            // doesn't have to scroll back to step 3 just to bump
+            // the date forward by a day. We stay on step 4 so the
+            // loading state is visible without a navigation jump.
+            setDate(ymd);
+            void runScheduler();
+          }}
         />
       ) : null}
 
@@ -1636,10 +1647,13 @@ function ArrangementStep({
   scheduleResult,
   selectedIdx,
   currencyCode,
+  date,
+  timezone,
   onSelect,
   onRetry,
   onBack,
   onNext,
+  onPickDate,
 }: {
   t: BookingMessages;
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
@@ -1651,10 +1665,18 @@ function ArrangementStep({
   scheduleResult: GroupSmartScheduleResult | null;
   selectedIdx: number;
   currencyCode: BookingSalonMeta["currencyCode"];
+  /** FIX 06 — needed by EmptyState to avoid re-offering the
+   *  date the user is already on as a quick-pick. */
+  date: string;
+  /** FIX 06 — quick-pick labels resolve to salon-local weekdays. */
+  timezone: string;
   onSelect: (i: number) => void;
   onRetry: () => void;
   onBack: () => void;
   onNext: () => void;
+  /** FIX 06 — invoked when the receptionist taps a quick-pick.
+   *  Parent updates `date` and re-runs the scheduler. */
+  onPickDate: (ymd: string) => void;
 }) {
   return (
     <div className="space-y-4 pb-32" data-testid="group-step-arrangement-panel">
@@ -1683,8 +1705,11 @@ function ArrangementStep({
         <EmptyState
           reason={scheduleResult.reason}
           groupCopy={groupCopy}
+          date={date}
+          timezone={timezone}
           onRetry={onRetry}
           onBack={onBack}
+          onPickDate={onPickDate}
         />
       ) : null}
 
@@ -1898,27 +1923,79 @@ function SchedulingTimeout({
 function EmptyState({
   reason,
   groupCopy,
+  date,
+  timezone,
   onRetry,
   onBack,
+  onPickDate,
 }: {
   reason: Exclude<GroupSmartScheduleResult, { ok: true }>["reason"];
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
+  /** Salon-local YMD of the currently-selected date — used to derive
+   *  the "try +N days" quick-pick offsets without re-introducing
+   *  server-tz drift. */
+  date: string;
+  /** Salon IANA tz — needed because "tomorrow" must be tomorrow in
+   *  salon-local, not in the user's browser TZ. */
+  timezone: string;
   onRetry: () => void;
   onBack: () => void;
+  /** Caller updates the form date + re-runs the scheduler. */
+  onPickDate: (ymd: string) => void;
 }) {
+  // Task #04-D FIX 06 — "all staff fully booked" empty state with
+  // quick-pick affordances for the next three days in salon-local
+  // time. We don't probe each candidate day for availability up
+  // front (3× scheduler calls per render = too costly + we only
+  // need a friendly nudge, not a guarantee). If the user picks one
+  // and it's also empty, they land back on this same state with
+  // different dates — same recovery loop, one click each.
+  const isCapacityEmpty = reason === "no_slots";
   const copy =
     reason === "salon_closed"
       ? groupCopy.schedulingClosed ??
         "Salon is closed on this date. Please pick another date."
-      : reason === "no_slots"
-        ? groupCopy.schedulingNoSlots ??
-          "No slots available in that window. Try a different time or date."
+      : isCapacityEmpty
+        ? groupCopy.allStaffBooked ??
+          groupCopy.schedulingNoSlots ??
+          "All staff fully booked this day. Try another date or reduce group size."
         : reason === "salon_paused"
           ? groupCopy.salonPaused
           : reason === "timezone_not_set"
             ? groupCopy.timezoneNotSet ??
               "Salon timezone not configured. Please contact the salon."
             : groupCopy.serverError;
+
+  // Compute the next three candidate dates in salon time. We anchor
+  // off the salon's "today" rather than the user-selected `date`
+  // because if the user is already looking at a date 2 weeks out,
+  // shortcuts like "Tomorrow" would be confusing. salonDateOffset
+  // gives YMDs that respect DST + the salon's wall-clock midnight.
+  const quickPickOffsets = isCapacityEmpty && timezone ? [1, 2, 3] : [];
+  const quickPicks = quickPickOffsets
+    .map((n) => {
+      const ymd = salonDateOffset(timezone, n);
+      // Skip dates already selected — the receptionist clicked +1
+      // and we shouldn't re-offer +1 as a shortcut on the next
+      // empty state.
+      if (ymd === date) return null;
+      const label =
+        n === 1
+          ? (groupCopy.tryTomorrow ?? "Tomorrow")
+          : (() => {
+              // Use noon UTC as a stable midpoint so formatInSalonTz
+              // returns the salon-local calendar date (avoids midnight
+              // edge cases where a UTC instant is "yesterday" in salon
+              // tz).
+              const noonUtc = new Date(
+                Date.parse(`${ymd}T12:00:00Z`),
+              ).toISOString();
+              return formatInSalonTz(noonUtc, timezone, "date");
+            })();
+      return { ymd, label };
+    })
+    .filter((p): p is { ymd: string; label: string } => p !== null);
+
   return (
     <div
       role="alert"
@@ -1927,6 +2004,25 @@ function EmptyState({
       className="rounded-xl border border-nq-warning/45 bg-nq-warning/10 px-4 py-5 text-sm"
     >
       <p>{copy}</p>
+      {quickPicks.length > 0 ? (
+        <div
+          className="mt-3 flex flex-wrap gap-2"
+          data-testid="group-scheduling-quick-picks"
+        >
+          {quickPicks.map((p) => (
+            <Button
+              key={p.ymd}
+              type="button"
+              variant="secondary"
+              data-testid={`group-scheduling-quick-pick-${p.ymd}`}
+              onClick={() => onPickDate(p.ymd)}
+              className="h-9 min-h-9 rounded-full border border-[var(--booking-border)] bg-transparent px-3 text-xs"
+            >
+              {p.label}
+            </Button>
+          ))}
+        </div>
+      ) : null}
       <div className="mt-3 flex gap-2">
         <Button
           type="button"

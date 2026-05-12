@@ -808,6 +808,10 @@ export const userVi: UserMessages = {
         subLabelAssignNow: "→ Xếp ngay cho {name}",
         subLabelQueue: "→ Vào hàng chờ",
         subLabelAssignTo: "→ Xếp cho {name}",
+        walkinConflictsGroup:
+          "{name} có lịch nhóm lúc {time}. Bạn có chắc không?",
+        walkinContinueAnyway: "Tiếp tục",
+        walkinChooseDifferent: "Chọn thợ khác",
         relative: {
           justNow: "Vừa xong",
           today: "Hôm nay",

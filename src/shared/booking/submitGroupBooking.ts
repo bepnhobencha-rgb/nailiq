@@ -541,6 +541,113 @@ export async function submitGroupBooking(
     return fail("server_error");
   }
 
+  // Task #04-D FIX 15 — client_profiles upsert parity. The
+  // individual flow (submitPublicBooking.ts:554) upserts the
+  // guest into `client_profiles` so:
+  //   - the receptionist phone-lookup card shows them as a
+  //     returning customer next visit,
+  //   - `visit_count` + `last_service_date` feed the owner's
+  //     reports, and
+  //   - `preferred_staff_id` powers the "Often with X" hint.
+  // Group bookings used to skip this entirely — each member
+  // landed in `bookings` but never appeared in `client_profiles`,
+  // so a group customer looked brand-new on their next visit and
+  // their revenue didn't roll up. We mirror the individual flow
+  // exactly: best-effort post-RPC upsert; failures are Sentry'd
+  // but never propagate back to the customer (booking is already
+  // confirmed; profile bookkeeping must not break confirmation).
+  //
+  // Dedup by phone digits so a parent booking under their own
+  // number for a child (same phone, different member rows)
+  // upserts only once. First member with that phone wins for
+  // `name`/`preferred_staff_id`.
+  try {
+    const byPhoneDigits = new Map<
+      string,
+      { name: string; staffId: string }
+    >();
+    for (const r of resolved) {
+      const v = validateGuestPhone(r.member.phone);
+      if (!v.ok) continue;
+      if (byPhoneDigits.has(v.digits)) continue;
+      byPhoneDigits.set(v.digits, {
+        name: r.member.name.trim(),
+        staffId: r.member.staffId,
+      });
+    }
+
+    const nowIso = new Date().toISOString();
+    const profileOps = Array.from(byPhoneDigits.entries()).map(
+      async ([digits, info]) => {
+        const { data: existingProfile } = await supabase
+          .from("client_profiles")
+          .select("visit_count")
+          .eq("phone", digits)
+          .is("deleted_at" as never, null)
+          .maybeSingle();
+
+        const nextVisits = (existingProfile?.visit_count ?? 0) + 1;
+
+        const { error: profileUpsertErr } = await supabase
+          .from("client_profiles")
+          .upsert(
+            {
+              phone: digits,
+              name: info.name,
+              preferred_staff_id: info.staffId,
+              last_service_date: nowIso,
+              visit_count: nextVisits,
+            },
+            { onConflict: "phone" },
+          );
+
+        if (profileUpsertErr) {
+          const err = new Error(profileUpsertErr.message);
+          err.name = "ClientProfilesUpsertError";
+          Sentry.captureException(err, {
+            tags: {
+              "booking.rpc": "client_profiles",
+              "booking.rpc.failure": "upsert_best_effort",
+              "booking.flow": "group",
+            },
+            extra: { message: profileUpsertErr.message },
+          });
+        }
+      },
+    );
+    await Promise.all(profileOps);
+  } catch {
+    /* booking succeeded; profile update is best-effort */
+  }
+
+  // Task #04-D FIX 02 — atomic-rollback observability. The RPC
+  // is wrapped in a single PL/pgSQL transaction so the only ways
+  // we should see a length mismatch here are:
+  //   (a) the RPC was redeployed with a different contract and
+  //       the client didn't get the version bump, or
+  //   (b) a future RPC author breaks atomicity (e.g. catches a
+  //       per-row exception inside the loop).
+  // Both are silent-data-loss bugs from the customer's POV —
+  // they see "booking confirmed for 4" but only 3 rows exist.
+  // Sentry capture surfaces the drift; we still return ok so the
+  // confirmation page renders for the rows that did land.
+  if (result.booking_ids.length !== params.members.length) {
+    Sentry.captureMessage("group_booking_partial_rollback", {
+      level: "error",
+      tags: {
+        "booking.rpc": "insert_group_bookings",
+        "booking.flow": "group",
+      },
+      extra: {
+        groupId: result.group_id,
+        successCount: result.booking_ids.length,
+        totalCount: params.members.length,
+        salonId: salonRow.id,
+        slug: params.shopSlug,
+      },
+    });
+  }
+
   return {
     ok: true,
     groupId: result.group_id,

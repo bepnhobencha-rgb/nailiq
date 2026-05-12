@@ -186,6 +186,9 @@ export const bookingVi: BookingMessages = {
     schedulingNoSlots:
       "Không còn lịch trống trong khoảng giờ này. Vui lòng chọn giờ khác hoặc ngày khác.",
     schedulingTryDate: "Chọn ngày khác",
+    allStaffBooked:
+      "Tất cả thợ đã kín lịch ngày này. Vui lòng chọn ngày khác hoặc giảm số người.",
+    tryTomorrow: "Ngày mai",
     schedulingClosed: "Tiệm nghỉ vào ngày này. Vui lòng chọn ngày khác.",
     groupStep1: "Số người",
     groupStep2: "Dịch vụ",

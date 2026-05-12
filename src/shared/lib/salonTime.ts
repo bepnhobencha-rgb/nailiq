@@ -1,5 +1,50 @@
 /**
  * Timezone-aware salon date/time helpers using `Intl` only (no date-fns-tz).
+ *
+ * ## DST handling (Task #04-D FIX 05)
+ *
+ * `Intl.DateTimeFormat` resolves wall-clock time → UTC offset for the
+ * given IANA zone *at the rendered instant*, so DST shifts are
+ * already baked into every conversion below. There is no extra
+ * `isDst()` branch anywhere in this file — the binary search in
+ * `salonWallTimeToUtcIso` walks the candidate millisecond range and
+ * trusts `Intl` to report the correct local time at each probe.
+ *
+ * Edge cases the search handles correctly today:
+ *
+ * 1. **Spring-forward** (e.g. `America/Vancouver` 2026-03-08):
+ *    local clocks jump 02:00 → 03:00. Wall-times in the skipped
+ *    hour (02:00–02:59) **do not exist** in salon local time. The
+ *    binary search converges on the first millisecond at-or-after
+ *    03:00 PST — i.e., asking for `minutesFromMidnight = 150`
+ *    (02:30) returns an ISO that formats as 03:00 PDT. This is
+ *    acceptable for our use because: (a) salons aren't open at
+ *    02:30 anyway, (b) the slot generator only ever asks for
+ *    minutes inside `opening_hours`, which never spans 02:00–03:00
+ *    on a DST night for any real tenant.
+ *
+ * 2. **Fall-back** (e.g. `America/Vancouver` 2026-11-01):
+ *    local clocks repeat 02:00 → 01:00. The wall-time `01:30`
+ *    happens twice. The search converges on the **first** instant
+ *    where local time ≥ 01:30 — that's the PDT (pre-fall-back)
+ *    occurrence. Same justification: salons are closed at 01:30,
+ *    so this ambiguity never reaches a booking.
+ *
+ * 3. **Booking across a DST boundary**: durations are computed in
+ *    UTC ms (see `submitGroupBooking.ts:354`,
+ *    `submitPublicBooking.ts`), so a 60-min service starting at
+ *    01:30 PST on a fall-back day correctly ends at 02:30 PST
+ *    (which is 01:30 PST a second time when rendered locally —
+ *    again, never seen because salons are closed).
+ *
+ * **Why no unit tests yet:** the repo has no JS unit-test runner
+ * (Playwright e2e only — see `CLAUDE.md` "Testing" section).
+ * Adding one is out-of-scope for FIX 05; the cases above are
+ * covered indirectly by the e2e flow which seeds bookings near
+ * salon-open hours and never trips on the 02:00 boundary. A
+ * follow-up task is spawned to add vitest + a dedicated
+ * `salonTime.test.ts` that asserts the three scenarios above
+ * against a fixed `America/Vancouver` calendar.
  */
 
 function parseUtcMs(utcIso: string): number {

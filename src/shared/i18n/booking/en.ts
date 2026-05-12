@@ -240,6 +240,17 @@ export const bookingEn = {
     schedulingNoSlots:
       "No slots available in that window. Try a different time or date.",
     schedulingTryDate: "Try another date",
+    /** Task #04-D FIX 06 — capacity-specific copy used when the
+     *  scheduler returns `no_slots`. Distinct from the more generic
+     *  `schedulingNoSlots` (kept as a fallback) because most real
+     *  "no_slots" cases are "all staff fully booked on this day",
+     *  not "no opening hours match". */
+    allStaffBooked:
+      "All staff fully booked this day. Try another date or reduce group size.",
+    /** Quick-pick button label rendered on the empty state. The
+     *  next two quick-picks use the salon-local weekday/date
+     *  rendered via `formatInSalonTz` rather than a fixed key. */
+    tryTomorrow: "Tomorrow",
     schedulingClosed:
       "Salon is closed on this date. Please pick another date.",
     /** Stepper labels — five top-level steps. */
