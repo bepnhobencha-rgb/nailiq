@@ -214,5 +214,10 @@ export const bookingVi: BookingMessages = {
     schedulingSearching: "✨ Đang tìm lịch tốt nhất cho nhóm...",
     schedulingStillWorking: "Đang xử lý, vui lòng chờ thêm...",
     schedulingTimeout: "Không tìm được lịch. Thử ngày khác.",
+    arrangementStale: "Lịch này được tạo hơn 3 phút trước.",
+    confirmAnyway: "Xác nhận vẫn đúng",
+    refreshSchedule: "Làm mới lịch",
+    sessionExpiringSoon:
+      "Phiên sắp hết hạn. Vui lòng xác nhận để giữ chỗ.",
   },
 };

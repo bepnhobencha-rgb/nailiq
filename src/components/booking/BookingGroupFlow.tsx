@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
 import type {
   BookingSalonMeta,
@@ -39,6 +40,10 @@ import {
 } from "@/shared/lib/phoneFormat";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { formatInSalonTz } from "@/shared/lib/salonTime";
+import {
+  GROUP_ARRANGEMENT_STALE_MS,
+  SESSION_WARNING_MS,
+} from "@/shared/config/constants";
 import { cn } from "@/shared/lib/cn";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 import { Button } from "@/components/ui/Button";
@@ -98,6 +103,33 @@ function blankMember(): MemberDraft {
   return { name: "", serviceId: "", preferredStaffId: null };
 }
 
+/**
+ * FIX 18 (Task #04-A) — display-only group reference format.
+ *
+ * Old format: `groupId.slice(0,8).toUpperCase()` → `A3F2E4B1`.
+ *   Opaque to anyone reading it; receptionists couldn't tell which
+ *   day the group was booked for, and 8 hex chars across all groups
+ *   collide every ~16 million entries.
+ *
+ * New format: `#GRP-YYYYMMDD-XXXX`.
+ *   - `YYYYMMDD` is the booking date (salon-local YMD the user
+ *     already picked — pulled from `date` state, no DB lookup).
+ *   - `XXXX` is the first 4 hex chars of `group_id` (uppercased).
+ *   - Display only — `group_id` UUID remains the canonical
+ *     primary key in the DB. Nothing here changes write paths.
+ *
+ * Collision rate at the 4-char × per-day scope is 1 in 65,536
+ * within a single day, which is well below realistic group volume
+ * per salon. Salon-wide search/lookup still uses the full UUID.
+ */
+function formatGroupRef(groupId: string, dateYmd: string): string {
+  const dateCompact = /^(\d{4})-(\d{2})-(\d{2})$/.test(dateYmd)
+    ? dateYmd.replace(/-/g, "")
+    : "00000000";
+  const suffix = groupId.replace(/-/g, "").slice(0, 4).toUpperCase();
+  return `#GRP-${dateCompact}-${suffix}`;
+}
+
 const DAY_KEY_BY_INDEX: readonly DayKey[] = [
   "sun",
   "mon",
@@ -140,6 +172,9 @@ export function BookingGroupFlow({
   maxGroupSize,
   capabilityRows,
 }: BookingGroupFlowProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+
   // ── Wizard state (hoisted; preserves on back-nav) ──────────────
   const [step, setStep] = useState<Step>(1);
   const [size, setSize] = useState(2);
@@ -176,6 +211,44 @@ export function BookingGroupFlow({
     groupId: string;
     bookingIds: string[];
   } | null>(null);
+
+  // FIX 09 (Task #04-A) — idempotency key MUST be stable across
+  // retries within the same browser session, otherwise a network
+  // drop + retry path produces two distinct keys and the server
+  // can no longer dedupe (`insert_group_bookings` UNIQUE on
+  // `(salon_id, idempotency_key, staff_id, start_time_utc)`).
+  // `useRef` initialised on first render gives us a per-mount key
+  // that survives `runScheduler` re-runs, race-loss retries, and
+  // any other in-flight retry path. Refreshing the page (full
+  // remount) generates a new key, which is correct — that's a new
+  // group attempt.
+  const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
+
+  // FIX 07 (Task #04-A) — double-tap guard. The `submitting`
+  // state flag drives UI disabled, but mobile double-taps can
+  // fire two `onClick` handlers within a single React frame
+  // *before* the disabled state has rendered. The ref is read
+  // synchronously inside the handler, so the second tap exits
+  // immediately. Reset only on error so the user can retry; not
+  // reset on success (which transitions to a different step).
+  const submittingRef = useRef<boolean>(false);
+
+  // FIX 03 (Task #04-A) — track when the user picked the
+  // arrangement they're about to confirm. Step 5 banner uses this
+  // age against `GROUP_ARRANGEMENT_STALE_MS` to warn that another
+  // customer may have raced the slot during the user's hesitation.
+  // `null` = no arrangement picked yet (still on steps 1–4).
+  const [arrangementSelectedAt, setArrangementSelectedAt] = useState<
+    number | null
+  >(null);
+  const [arrangementStale, setArrangementStale] = useState(false);
+  const [staleAcknowledged, setStaleAcknowledged] = useState(false);
+
+  // FIX 14 (Task #04-A) — session-idle warning. Fires when the
+  // user has been on step 5 for `SESSION_WARNING_MS` without
+  // confirming. Non-blocking; the booking still works after the
+  // banner appears.
+  const [sessionWarning, setSessionWarning] = useState(false);
 
   // Per-field error sets for the wizard step validations.
   const [stepErrors, setStepErrors] = useState<Set<string>>(() => new Set());
@@ -390,6 +463,13 @@ export function BookingGroupFlow({
     setScheduling(true);
     setScheduleResult(null);
     setSelectedArrangementIdx(0);
+    // FIX 03 — clear stale-arrangement state on every new run.
+    // The next selection re-stamps `arrangementSelectedAt` either
+    // implicitly (auto-pick #0 below) or explicitly (user clicks
+    // a card in step 4).
+    setArrangementSelectedAt(null);
+    setArrangementStale(false);
+    setStaleAcknowledged(false);
     try {
       const res = await loadGroupSmartSchedule({
         shopSlug,
@@ -402,6 +482,11 @@ export function BookingGroupFlow({
         })),
       });
       setScheduleResult(res);
+      // Auto-pick first option = arrangement selection. Stamp the
+      // time so the step-5 stale check has an anchor.
+      if (res.ok && res.arrangements.length > 0) {
+        setArrangementSelectedAt(Date.now());
+      }
     } catch (e) {
       console.error("[BookingGroupFlow] scheduler failed", e);
       setScheduleResult({ ok: false, reason: "server_error" });
@@ -411,18 +496,25 @@ export function BookingGroupFlow({
   }
 
   async function onSubmit() {
-    if (submitting) return;
+    // FIX 07 — synchronous double-tap guard. `submitting` state
+    // would race a double-tap inside the same React frame; the ref
+    // is read inline before any setState so the second tap exits
+    // immediately. Reset only on error so the user can retry.
+    if (submittingRef.current || submitting) return;
+    submittingRef.current = true;
     if (
       !scheduleResult ||
       !scheduleResult.ok ||
       !scheduleResult.arrangements[selectedArrangementIdx]
     ) {
+      submittingRef.current = false;
       return;
     }
     // P1 #18 — empty-state check first so the user gets the
     // "required" copy rather than the "invalid format" copy.
     if (primaryPhone.trim().length === 0) {
       setErrorMessage(groupCopy.phoneRequired ?? "Vui lòng nhập số điện thoại.");
+      submittingRef.current = false;
       return;
     }
     // P1 #18 — format check before the server round-trip. Same
@@ -433,6 +525,7 @@ export function BookingGroupFlow({
         groupCopy.contactInvalidPhone ??
           "Số điện thoại không hợp lệ.",
       );
+      submittingRef.current = false;
       return;
     }
     // P1 #19 — email is optional, but if filled it must be valid.
@@ -441,6 +534,7 @@ export function BookingGroupFlow({
       setErrorMessage(
         groupCopy.contactInvalidEmail ?? "Email không hợp lệ.",
       );
+      submittingRef.current = false;
       return;
     }
     setErrorMessage(null);
@@ -480,11 +574,24 @@ export function BookingGroupFlow({
       const res: GroupBookingResult = await submitGroupBooking({
         shopSlug,
         members: payload,
-        idempotencyKey: crypto.randomUUID(),
+        // FIX 09 — stable key across retries. A network drop +
+        // retry sends the same key; server's UNIQUE on
+        // `(salon_id, idempotency_key, …)` returns
+        // `duplicate_submission` instead of creating a second
+        // group.
+        idempotencyKey: idempotencyKeyRef.current,
       });
       if (res.ok) {
         setSuccessResult({ groupId: res.groupId, bookingIds: res.bookingIds });
         setStep("success");
+        // FIX 08 — drop the `?mode=group` query so a browser back
+        // from the success panel lands on the clean booking home
+        // rather than the filled-form mid-state. `router.replace`
+        // (not push) so no extra history entry is created. The
+        // success panel itself is still rendered from component
+        // state — the URL change is purely a history-stack hygiene
+        // tweak.
+        router.replace(pathname);
         return;
       }
       if (res.reason === "slot_conflict") {
@@ -559,6 +666,12 @@ export function BookingGroupFlow({
       setErrorMessage(groupCopy.serverError);
     } finally {
       setSubmitting(false);
+      // FIX 07 — release the double-tap guard so a legitimate
+      // retry can proceed. Success path doesn't reach here because
+      // it `return`s early; the guard stays held until the
+      // component unmounts (correct — user shouldn't be able to
+      // re-fire the SAME confirmed group).
+      submittingRef.current = false;
     }
   }
 
@@ -593,6 +706,52 @@ export function BookingGroupFlow({
     };
   }, [scheduling]);
 
+  // FIX 11 (Task #04-A) — clear cached arrangements when group
+  // size changes. `applySize` mutates `members.length`; without
+  // this effect a back-nav → resize → forward leaves the step-4
+  // useEffect short-circuited (scheduleResult truthy) and the
+  // user sees a stale N-arrangement set whose member count
+  // doesn't match the new group size. First firing on mount is a
+  // no-op (scheduleResult already null).
+  useEffect(() => {
+    setScheduleResult(null);
+  }, [members.length]);
+
+  // FIX 03 (Task #04-A) — staleness timer for the arrangement
+  // banner. Only active while the user is on step 5; otherwise
+  // reset so re-entering step 5 (via back-nav) starts a fresh
+  // countdown. If the arrangement was selected more than the
+  // threshold ago when step 5 mounts, flag it immediately;
+  // otherwise schedule a one-shot timer for the remaining window.
+  useEffect(() => {
+    if (step !== 5 || arrangementSelectedAt === null) {
+      setArrangementStale(false);
+      return;
+    }
+    const elapsed = Date.now() - arrangementSelectedAt;
+    if (elapsed >= GROUP_ARRANGEMENT_STALE_MS) {
+      setArrangementStale(true);
+      return;
+    }
+    const remaining = GROUP_ARRANGEMENT_STALE_MS - elapsed;
+    const t = window.setTimeout(() => setArrangementStale(true), remaining);
+    return () => window.clearTimeout(t);
+  }, [step, arrangementSelectedAt]);
+
+  // FIX 14 (Task #04-A) — session-idle warning on step 5. Reset
+  // whenever the user enters or leaves step 5 so the banner
+  // appears once per dwell, not as a persistent state across the
+  // whole flow.
+  useEffect(() => {
+    if (step !== 5) {
+      setSessionWarning(false);
+      return;
+    }
+    setSessionWarning(false);
+    const t = window.setTimeout(() => setSessionWarning(true), SESSION_WARNING_MS);
+    return () => window.clearTimeout(t);
+  }, [step]);
+
   // ── Render ─────────────────────────────────────────────────────
   if (step === "success" && successResult) {
     return (
@@ -604,6 +763,7 @@ export function BookingGroupFlow({
         services={services}
         scheduleResult={scheduleResult}
         selectedArrangementIdx={selectedArrangementIdx}
+        date={date}
       />
     );
   }
@@ -702,7 +862,15 @@ export function BookingGroupFlow({
           scheduleResult={scheduleResult}
           selectedIdx={selectedArrangementIdx}
           currencyCode={salon.currencyCode}
-          onSelect={setSelectedArrangementIdx}
+          onSelect={(idx) => {
+            setSelectedArrangementIdx(idx);
+            // FIX 03 — explicit pick re-stamps the timestamp.
+            // The user just made a fresh decision, so the staleness
+            // clock should restart.
+            setArrangementSelectedAt(Date.now());
+            setArrangementStale(false);
+            setStaleAcknowledged(false);
+          }}
           onRetry={() => void runScheduler()}
           onBack={() => goToStep(3)}
           onNext={() => goToStep(5)}
@@ -741,6 +909,21 @@ export function BookingGroupFlow({
             (primaryEmail.trim().length === 0 ||
               isValidEmailFormat(primaryEmail.trim()))
           }
+          // FIX 03 — show stale-arrangement banner when the user's
+          // selection is >3min old AND they haven't acknowledged
+          // it yet. "Refresh" navigates back to step 4 (clearing
+          // scheduleResult forces re-run on entry).
+          showStaleArrangement={arrangementStale && !staleAcknowledged}
+          onStaleAcknowledge={() => setStaleAcknowledged(true)}
+          onStaleRefresh={() => {
+            setScheduleResult(null);
+            setArrangementSelectedAt(null);
+            setArrangementStale(false);
+            setStaleAcknowledged(false);
+            setStep(4);
+          }}
+          // FIX 14 — non-blocking idle warning.
+          showSessionWarning={sessionWarning}
           onPhoneChange={(v) => setPrimaryPhone(formatPhoneInputProgressive(v))}
           onEmailChange={setPrimaryEmail}
           onBack={() => goToStep(4)}
@@ -1679,6 +1862,10 @@ function ConfirmStep({
   maxMinutes,
   size,
   contactReady,
+  showStaleArrangement,
+  onStaleAcknowledge,
+  onStaleRefresh,
+  showSessionWarning,
   onPhoneChange,
   onEmailChange,
   onBack,
@@ -1700,6 +1887,13 @@ function ConfirmStep({
   size: number;
   /** Computed by parent — phone ≥ 10 digits AND email empty-or-valid. */
   contactReady: boolean;
+  /** FIX 03 — true when arrangement age > 3 min and user hasn't
+   *  acknowledged yet. Renders the staleness warning + actions. */
+  showStaleArrangement: boolean;
+  onStaleAcknowledge: () => void;
+  onStaleRefresh: () => void;
+  /** FIX 14 — true when user has been on step 5 for ≥ 25 min. */
+  showSessionWarning: boolean;
   onPhoneChange: (v: string) => void;
   onEmailChange: (v: string) => void;
   onBack: () => void;
@@ -1730,6 +1924,56 @@ function ConfirmStep({
       <h2 className="text-lg font-semibold sm:text-xl">
         {t.stepConfirmHeading}
       </h2>
+
+      {/* FIX 03 — stale arrangement banner. The user can either
+          acknowledge ("Confirm anyway" dismisses just the banner)
+          or refresh (re-runs the scheduler, lands back on step 4
+          with fresh options). Server still runs a final conflict
+          check as a backstop. */}
+      {showStaleArrangement ? (
+        <div
+          role="alert"
+          data-testid="group-arrangement-stale"
+          className="rounded-xl border border-nq-warning/45 bg-nq-warning/10 px-4 py-3 text-sm"
+        >
+          <p>
+            {groupCopy.arrangementStale ?? "This arrangement is 3+ min old."}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onStaleAcknowledge}
+              data-testid="group-stale-ack"
+              className="h-9 min-h-9 rounded-full border border-[var(--booking-border)] bg-transparent px-3 text-xs"
+            >
+              {groupCopy.confirmAnyway ?? "Confirm anyway"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onStaleRefresh}
+              data-testid="group-stale-refresh"
+              className="h-9 min-h-9 rounded-full border border-[var(--booking-border)] bg-transparent px-3 text-xs"
+            >
+              {groupCopy.refreshSchedule ?? "Refresh schedule"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* FIX 14 — session-idle reminder. Non-blocking; renders
+          alongside the form rather than overlaying it. */}
+      {showSessionWarning ? (
+        <p
+          role="status"
+          data-testid="group-session-warning"
+          className="rounded-xl border border-nq-warning/45 bg-nq-warning/10 px-3 py-2 text-xs"
+        >
+          {groupCopy.sessionExpiringSoon ??
+            "Session expiring soon. Please confirm."}
+        </p>
+      ) : null}
 
       <div className="rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4 sm:p-5">
         <p className="text-xs text-[var(--booking-text-muted)]">
@@ -1835,6 +2079,7 @@ function SuccessPanel({
   services,
   scheduleResult,
   selectedArrangementIdx,
+  date,
 }: {
   t: BookingMessages;
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
@@ -1843,6 +2088,11 @@ function SuccessPanel({
   services: readonly BookingServiceItem[];
   scheduleResult: GroupSmartScheduleResult | null;
   selectedArrangementIdx: number;
+  /** FIX 18 — booking date powers the YYYYMMDD prefix in the
+   *  group reference. Passed in rather than re-derived from the
+   *  arrangement assignments so success works even if scheduleResult
+   *  was already cleared. */
+  date: string;
 }) {
   const arrangement =
     scheduleResult && scheduleResult.ok
@@ -1857,9 +2107,12 @@ function SuccessPanel({
       <h2 className="text-xl font-semibold sm:text-2xl">
         {groupCopy.groupSuccess ?? groupCopy.successHeading}
       </h2>
-      <p className="mt-2 text-sm text-[var(--booking-text-muted)]">
-        {(groupCopy.groupRef ?? "Reference") + " #"}
-        {successResult.groupId.slice(0, 8).toUpperCase()}
+      <p
+        className="mt-2 text-sm text-[var(--booking-text-muted)]"
+        data-testid="group-success-reference"
+      >
+        {(groupCopy.groupRef ?? "Reference") + " "}
+        {formatGroupRef(successResult.groupId, date)}
       </p>
       {arrangement ? (
         <ul className="mt-5 space-y-2 text-left text-sm">
