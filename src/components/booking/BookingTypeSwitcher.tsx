@@ -12,6 +12,15 @@ import { BookingFlow } from "@/components/booking/BookingFlow";
 import { BookingGroupFlow } from "@/components/booking/BookingGroupFlow";
 import { cn } from "@/shared/lib/cn";
 
+/** QA round-2: group bookings need at least N distinct staff free at
+ * the same time. The picker is capped at 6 (anything bigger is rare
+ * and stresses the salon layout); the real cap is whichever is
+ * smaller — the salon's active-staff count, or 6. A salon with only
+ * one stylist physically can't host a group booking, so the toggle
+ * vanishes entirely below this threshold. */
+const HARD_GROUP_CAP = 6;
+const MIN_GROUP_SIZE = 2;
+
 /**
  * Public booking entry-type selector — wraps both single-guest and
  * group flows so the customer can toggle between them on the
@@ -40,6 +49,13 @@ export function BookingTypeSwitcher({
   categories: readonly ServiceCategorySummary[];
 }) {
   const [mode, setMode] = useState<"individual" | "group">("individual");
+  // QA round-2: active-staff-count drives group capacity. `staff` is
+  // already pre-filtered to `status='active'` upstream in
+  // `loadBookingServicesForSalonSlug`, so .length is the count.
+  const activeStaffCount = staff.length;
+  const maxGroupSize = Math.min(activeStaffCount, HARD_GROUP_CAP);
+  const groupEnabled = maxGroupSize >= MIN_GROUP_SIZE;
+
   // Defensive fallback — older deployed booking i18n bundles (before
   // PR #140 / #141) may not have the `groupBooking` namespace; if a
   // cached client gets here without it the destructure would throw
@@ -50,6 +66,23 @@ export function BookingTypeSwitcher({
     individual: "Individual",
     group: "Group 👥",
   }) as NonNullable<BookingMessages["groupBooking"]>;
+
+  // Solo-staff salon → no group booking, no toggle. Render only the
+  // individual flow so the page reads exactly like the pre-group
+  // experience for these salons.
+  if (!groupEnabled) {
+    return (
+      <BookingFlow
+        t={t}
+        shopSlug={shopSlug}
+        services={services}
+        staff={staff}
+        salon={salon}
+        capabilityRows={capabilityRows}
+        categories={categories}
+      />
+    );
+  }
 
   return (
     <div className="mt-6" data-testid="booking-type-switcher-root">
@@ -110,6 +143,7 @@ export function BookingTypeSwitcher({
           services={services}
           staff={staff}
           salon={salon}
+          maxGroupSize={maxGroupSize}
         />
       )}
     </div>
