@@ -200,3 +200,29 @@ export async function fillMemberCard(
     .getByTestId(`group-member-${index}-staff`)
     .selectOption({ index: staffOptionIndex });
 }
+
+/**
+ * Click a calendar cell for the target YMD in the group flow's
+ * step-3 date picker (the visual calendar that replaced the native
+ * `<input type="date">` in 2026-05-12). Each cell carries
+ * `data-ymd="YYYY-MM-DD"` for direct selection. Navigates forward
+ * up to 12 months if the target isn't in the currently-displayed
+ * month.
+ */
+export async function pickDateInCalendar(
+  page: Page,
+  ymd: string,
+): Promise<void> {
+  for (let i = 0; i < 12; i++) {
+    const cell = page.locator(`[data-ymd="${ymd}"]`);
+    if ((await cell.count()) > 0) {
+      // `force` because some calendar cells live behind the
+      // Next.js dev-overlay portal at certain viewport widths;
+      // production has no overlay so this is a test-env shim.
+      await cell.first().click({ force: true });
+      return;
+    }
+    await page.getByTestId("calendar-next-month").click();
+  }
+  throw new Error(`pickDateInCalendar: YMD ${ymd} not reachable`);
+}

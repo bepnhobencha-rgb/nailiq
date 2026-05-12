@@ -5,6 +5,7 @@ import {
   fillMemberCard,
   gotoGroupFlow,
   nextOpenDateYmd,
+  pickDateInCalendar,
   seedGroupTestSalon,
 } from "./helpers";
 
@@ -118,7 +119,7 @@ test.describe("Group booking — back-nav preserves state", () => {
     await page.getByTestId("group-service-next").click();
 
     const date = nextOpenDateYmd();
-    await page.getByTestId("group-date-input").fill(date);
+    await pickDateInCalendar(page, date);
     await page.getByTestId("group-arrival-evening").click();
     await page.getByTestId("group-date-next").click();
 
@@ -147,7 +148,13 @@ test.describe("Group booking — back-nav preserves state", () => {
       .getByTestId("group-step-date-panel")
       .waitFor({ state: "visible" });
 
-    await expect(page.getByTestId("group-date-input")).toHaveValue(date);
+    // Calendar cell for the picked YMD must still show as selected
+    // (aria-pressed=true) after the back-nav round-trip — proves
+    // the date state survived the step transition.
+    await expect(page.locator(`[data-ymd="${date}"]`)).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     await expect(page.getByTestId("group-arrival-evening")).toHaveAttribute(
       "aria-checked",
       "true",

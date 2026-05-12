@@ -35,31 +35,49 @@ function groupServices(
     else buckets.set(s.category, [s]);
   }
 
+  // QA bug (2026-05-12): two "Other" accordions appeared when a
+  // salon had BOTH services in the explicit "other" bucket AND
+  // orphan-category services. The first loop pushed the explicit
+  // "Other" group; the orphan branch below pushed ANOTHER one. Fix:
+  // dedupe by slug inside the first loop, and merge orphans into the
+  // existing "other" group rather than creating a parallel one.
   const groups: ServiceGroup[] = [];
-  const seen = new Set<string>();
+  const groupIdxBySlug = new Map<string, number>();
   for (const cat of categories) {
     if (!buckets.has(cat.slug)) continue;
+    // Defensive: skip if we already added this slug. The DB has a
+    // UNIQUE-ish convention on `service_categories.slug` but the
+    // display layer should never trust that — a duplicate row would
+    // otherwise produce a duplicate accordion section.
+    if (groupIdxBySlug.has(cat.slug)) continue;
+    groupIdxBySlug.set(cat.slug, groups.length);
     groups.push({
       category: cat.slug,
       label: cat.nameEn,
       items: buckets.get(cat.slug) ?? [],
     });
-    seen.add(cat.slug);
   }
-  // Orphan slugs (deleted from `service_categories` but still on
-  // service rows) — render under a single "Other" bucket so the
-  // owner notices something needs cleanup.
+  // Orphan slugs (a category was renamed/deleted in `service_categories`
+  // but services still carry the old slug). Collect them into the
+  // "Other" bucket — merging into the existing group if it's already
+  // rendered, otherwise creating a fresh one. Either way: at most
+  // ONE "Other" group total.
   const orphans: BookingServiceItem[] = [];
   for (const [slug, items] of buckets) {
-    if (!seen.has(slug)) orphans.push(...items);
+    if (!groupIdxBySlug.has(slug)) orphans.push(...items);
   }
   if (orphans.length > 0) {
-    groups.push({
-      category: "other",
-      label:
-        categories.find((c) => c.slug === "other")?.nameEn ?? "Other",
-      items: orphans,
-    });
+    const existingOtherIdx = groupIdxBySlug.get("other");
+    if (existingOtherIdx !== undefined) {
+      groups[existingOtherIdx].items.push(...orphans);
+    } else {
+      groups.push({
+        category: "other",
+        label:
+          categories.find((c) => c.slug === "other")?.nameEn ?? "Other",
+        items: orphans,
+      });
+    }
   }
 
   return groups;

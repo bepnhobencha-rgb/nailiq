@@ -5,6 +5,7 @@ import {
   fillMemberCard,
   gotoGroupFlow,
   nextOpenDateYmd,
+  pickDateInCalendar,
   seedGroupTestSalon,
 } from "./helpers";
 
@@ -45,8 +46,8 @@ test.describe("Group booking — happy path", () => {
     await page
       .getByTestId("group-step-date-panel")
       .waitFor({ state: "visible" });
-    const date = nextOpenDateYmd();
-    await page.getByTestId("group-date-input").fill(date);
+    // Date picker is now the visual calendar (post-2026-05-12).
+    await pickDateInCalendar(page, nextOpenDateYmd());
     await page.getByTestId("group-arrival-afternoon").click();
     await expect(page.getByTestId("group-arrival-afternoon")).toHaveAttribute(
       "aria-checked",

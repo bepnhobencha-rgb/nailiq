@@ -50,22 +50,35 @@ export const loadServiceCategories = cache(
       return [];
     }
 
-    return (data ?? []).map((row) => {
+    // QA bug (2026-05-12): two "Other" accordions appeared on the
+    // booking page even though prod only has one row. The duplicate
+    // was traced to the display layer, but a paranoid loader-level
+    // dedupe is cheap insurance against any future seed/migration
+    // accidentally re-inserting a colliding slug. First-wins keeps
+    // the lowest sort_order entry (we already ordered by sort_order
+    // ASC, slug ASC).
+    const seenSlug = new Set<string>();
+    const out: ServiceCategorySummary[] = [];
+    for (const row of data ?? []) {
       const r = row as unknown as {
         slug: string;
         name_en?: string | null;
         name_vi?: string | null;
         sort_order?: number | null;
       };
-      return {
-        slug: String(r.slug ?? "").trim(),
-        nameEn: String(r.name_en ?? r.slug ?? "").trim(),
-        nameVi: String(r.name_vi ?? r.name_en ?? r.slug ?? "").trim(),
+      const slug = String(r.slug ?? "").trim();
+      if (!slug || seenSlug.has(slug)) continue;
+      seenSlug.add(slug);
+      out.push({
+        slug,
+        nameEn: String(r.name_en ?? slug).trim(),
+        nameVi: String(r.name_vi ?? r.name_en ?? slug).trim(),
         sortOrder: Number.isFinite(Number(r.sort_order))
           ? Number(r.sort_order)
           : 0,
-      };
-    });
+      });
+    }
+    return out;
   },
 );
 

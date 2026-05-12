@@ -22,6 +22,10 @@ import {
   buildCapabilityMap,
   filterStaffCapableForService,
 } from "@/shared/booking/staffCapability";
+import { BookingCalendarGrid } from "@/components/booking/BookingCalendarGrid";
+import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
+import { bookingDateYmdFromLocalDate } from "@/shared/booking/bookingConfirmLabels";
+import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import {
   parseOpeningHours,
   type DayKey,
@@ -29,9 +33,12 @@ import {
 } from "@/shared/dashboard/openingHoursDefaults";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
-import { formatPhoneInputProgressive } from "@/shared/lib/phoneFormat";
+import {
+  formatPhoneInputProgressive,
+  normalizedPhoneDigits,
+} from "@/shared/lib/phoneFormat";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
-import { formatInSalonTz, salonToday } from "@/shared/lib/salonTime";
+import { formatInSalonTz } from "@/shared/lib/salonTime";
 import { cn } from "@/shared/lib/cn";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 import { Button } from "@/components/ui/Button";
@@ -89,14 +96,6 @@ type MemberDraft = {
 
 function blankMember(): MemberDraft {
   return { name: "", serviceId: "", preferredStaffId: null };
-}
-
-function addDaysYmd(ymd: string, days: number): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
-  if (!m) return ymd;
-  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  const x = new Date(Date.UTC(y, mo - 1, d + days));
-  return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, "0")}-${String(x.getUTCDate()).padStart(2, "0")}`;
 }
 
 const DAY_KEY_BY_INDEX: readonly DayKey[] = [
@@ -183,10 +182,20 @@ export function BookingGroupFlow({
     [capabilityRows],
   );
 
-  const dateBounds = useMemo(() => {
-    const today = salonToday(salon.timezone);
-    return { min: today, max: addDaysYmd(today, 90) };
-  }, [salon.timezone]);
+  /** QA bug (2026-05-12): the *previous* native `<input type="date">`
+   *  accepted typed-in years like 0513 on Chromium even when
+   *  `min`/`max` were set — the constraint only fires for picker-
+   *  driven selections. We replaced the input with a click-only
+   *  visual calendar (`BookingCalendarGrid`, ≤365 days out), so the
+   *  user can't enter a corrupt year through normal UX. This year
+   *  check stays as a defense-in-depth gate in case a stale YMD
+   *  reaches the wizard via back-nav or a future code path. */
+  function isYearInRange(ymd: string): boolean {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+    if (!m) return false;
+    const year = Number(m[1]);
+    return year >= 2024 && year <= 2030;
+  }
 
   const openingWeek: OpeningHoursWeek | null = useMemo(
     () => parseOpeningHours(salon.opening_hours),
@@ -217,6 +226,15 @@ export function BookingGroupFlow({
     }
     return { totalCents: anyPriced ? cents : null, maxMinutes: maxMin };
   }, [members, services]);
+
+  // QA bug — closed-date set for the visual calendar in step 3.
+  // Owner-defined exceptions (holidays, one-off closures) get
+  // surfaced as disabled cells in addition to the weekly opening-
+  // hours gating that `BookingCalendarGrid` already handles.
+  const closedDateYmdSet = useMemo(
+    () => parseBookingClosedDateSet(salon.booking_closed_dates),
+    [salon.booking_closed_dates],
+  );
 
   const totalDisplay = useMemo(() => {
     if (totals.totalCents == null) return null;
@@ -315,6 +333,11 @@ export function BookingGroupFlow({
     if (step === 3 && target !== 3) {
       const errs = new Set<string>();
       if (date.length === 0) errs.add("date");
+      // QA bug — block corrupt years (e.g. "0513") before the
+      // scheduler ever sees them. The date input's `min`/`max`
+      // catches picker selections but typed segments slip through
+      // on Chromium.
+      else if (!isYearInRange(date)) errs.add("date");
       if (isSelectedDayClosed) errs.add("closed");
       if (arrivalKind === "specific" && specificTime.length === 0) {
         errs.add("time");
@@ -347,6 +370,15 @@ export function BookingGroupFlow({
   }
 
   async function runScheduler() {
+    // Last-line guard: never call the server with an out-of-range
+    // year. Surface as an empty `no_slots` state because the UI
+    // already renders that with a "Try another date" action and we
+    // don't want a new error code just for this corner.
+    if (!isYearInRange(date)) {
+      setScheduleResult({ ok: false, reason: "no_slots" });
+      setScheduling(false);
+      return;
+    }
     setScheduling(true);
     setScheduleResult(null);
     setSelectedArrangementIdx(0);
@@ -604,11 +636,15 @@ export function BookingGroupFlow({
           t={t}
           groupCopy={groupCopy}
           date={date}
-          dateBounds={dateBounds}
           arrivalKind={arrivalKind}
           specificTime={specificTime}
           isSelectedDayClosed={isSelectedDayClosed}
           stepErrors={stepErrors}
+          salonId={salon.id}
+          openingHoursRaw={salon.opening_hours}
+          closedDateYmdSet={closedDateYmdSet}
+          staff={staff}
+          serviceTotalMinutes={totals.maxMinutes}
           onDateChange={(v) => {
             setDate(v);
             setStepErrors(new Set());
@@ -663,6 +699,18 @@ export function BookingGroupFlow({
           totalDisplay={totalDisplay}
           maxMinutes={totals.maxMinutes}
           size={size}
+          // QA bug — disable Confirm until the basic 10-digit
+          // threshold is met so users can't burn a click on a phone
+          // they're still typing. Both the strict `validateGuestPhone`
+          // and the same client/server error path stay in place as
+          // backstops; this is purely a "don't enable the button too
+          // early" guard. Optional email also has to be format-valid
+          // when present (empty is fine).
+          contactReady={
+            normalizedPhoneDigits(primaryPhone).length >= 10 &&
+            (primaryEmail.trim().length === 0 ||
+              isValidEmailFormat(primaryEmail.trim()))
+          }
           onPhoneChange={(v) => setPrimaryPhone(formatPhoneInputProgressive(v))}
           onEmailChange={setPrimaryEmail}
           onBack={() => goToStep(4)}
@@ -1049,11 +1097,15 @@ function DateArrivalStep({
   t,
   groupCopy,
   date,
-  dateBounds,
   arrivalKind,
   specificTime,
   isSelectedDayClosed,
   stepErrors,
+  salonId,
+  openingHoursRaw,
+  closedDateYmdSet,
+  staff,
+  serviceTotalMinutes,
   onDateChange,
   onArrivalKindChange,
   onSpecificTimeChange,
@@ -1063,42 +1115,74 @@ function DateArrivalStep({
   t: BookingMessages;
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
   date: string;
-  dateBounds: { min: string; max: string };
   arrivalKind: GroupArrivalPreference["kind"];
   specificTime: string;
   isSelectedDayClosed: boolean;
   stepErrors: Set<string>;
+  salonId: string;
+  openingHoursRaw: unknown | null;
+  closedDateYmdSet: ReadonlySet<string>;
+  staff: readonly BookingStaffItem[];
+  /** Longest selected service duration (drives per-cell slot dots).
+   *  0 when no member has picked a service yet. */
+  serviceTotalMinutes: number;
   onDateChange: (v: string) => void;
   onArrivalKindChange: (k: GroupArrivalPreference["kind"]) => void;
   onSpecificTimeChange: (v: string) => void;
   onBack: () => void;
   onNext: () => void;
 }) {
+  // YMD ↔ Date adapter for the shared calendar. The group flow
+  // stores the date as YMD; `BookingCalendarGrid` works in local
+  // Date. `null` when nothing's picked.
+  const selectedDate = useMemo(() => {
+    if (!date) return null;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+    if (!m) return null;
+    const d = new Date(
+      Number(m[1]),
+      Number(m[2]) - 1,
+      Number(m[3]),
+      12,
+      0,
+      0,
+    );
+    return Number.isNaN(d.getTime()) ? null : d;
+  }, [date]);
+
   return (
     <div className="space-y-5 pb-32" data-testid="group-step-date-panel">
       <h2 className="text-lg font-semibold sm:text-xl">
         {t.stepDateHeading}
       </h2>
-      <div>
-        <label
-          className="mb-1 block text-xs font-medium text-[var(--booking-text-muted)]"
-          htmlFor="group-date"
-        >
-          {t.breadcrumbDate}
-        </label>
-        <input
-          id="group-date"
-          type="date"
-          value={date}
-          min={dateBounds.min}
-          max={dateBounds.max}
-          onChange={(e) => onDateChange(e.target.value)}
-          aria-invalid={stepErrors.has("date") || undefined}
-          className={cn(
-            "nq-booking-field",
-            stepErrors.has("date") && "border-nq-error/50",
-          )}
-          data-testid="group-date-input"
+      {/* QA bug fix (2026-05-12): replaced the native `<input
+          type="date">` with the same visual calendar the individual
+          flow uses. Native inputs accepted typed-in years like 0513
+          on Chromium even with `min`/`max` set; the calendar grid is
+          click-only so corrupt YMDs can't reach the scheduler. */}
+      <div
+        // The container keeps the legacy testid so any test that
+        // scopes to the date region still finds it; the actual
+        // cells are addressed via `[data-testid="date-day"]` /
+        // `date-today` (same as the individual flow).
+        data-testid="group-date-input"
+        aria-invalid={stepErrors.has("date") || undefined}
+      >
+        <BookingCalendarGrid
+          t={t}
+          salonId={salonId}
+          openingHoursRaw={openingHoursRaw}
+          closedDateYmdSet={closedDateYmdSet}
+          staff={staff}
+          // No bound staff in group flow — any-available drives the
+          // per-cell slot-availability fetch.
+          staffId={BOOKING_ANY_STAFF_ID}
+          serviceTotalMinutes={serviceTotalMinutes}
+          selectedDate={selectedDate}
+          // Salons asked for ~year-out visibility (wedding parties,
+          // overseas family). Matches BUG 1's `dateBounds.max` cap.
+          windowDays={365}
+          onSelectDate={(d) => onDateChange(bookingDateYmdFromLocalDate(d))}
         />
         {isSelectedDayClosed ? (
           <p
@@ -1208,7 +1292,11 @@ function DateArrivalStep({
         </Button>
         <LuxuryBookingCta
           onClick={onNext}
-          disabled={isSelectedDayClosed}
+          // Same pattern as the step-5 Confirm CTA (BUG 2): block
+          // the click before it can fire instead of allowing a
+          // click-then-error round-trip. Empty date OR a closed-day
+          // selection both gate the user here.
+          disabled={isSelectedDayClosed || date.length === 0}
           data-testid="group-date-next"
         >
           {t.next}
@@ -1467,6 +1555,7 @@ function ConfirmStep({
   totalDisplay,
   maxMinutes,
   size,
+  contactReady,
   onPhoneChange,
   onEmailChange,
   onBack,
@@ -1486,6 +1575,8 @@ function ConfirmStep({
   totalDisplay: string | null;
   maxMinutes: number;
   size: number;
+  /** Computed by parent — phone ≥ 10 digits AND email empty-or-valid. */
+  contactReady: boolean;
   onPhoneChange: (v: string) => void;
   onEmailChange: (v: string) => void;
   onBack: () => void;
@@ -1601,7 +1692,7 @@ function ConfirmStep({
         </Button>
         <LuxuryBookingCta
           onClick={onSubmit}
-          disabled={submitting}
+          disabled={submitting || !contactReady}
           data-testid="group-confirm"
         >
           {submitting ? groupCopy.submittingGroup : groupCopy.confirmGroup}
