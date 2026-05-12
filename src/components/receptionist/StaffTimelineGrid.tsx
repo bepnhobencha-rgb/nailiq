@@ -14,11 +14,7 @@ import {
 import { BookingBlock } from "./BookingBlock";
 import { GhostBlock } from "./GhostBlock";
 import { NowLine } from "./NowLine";
-import {
-  StaffAvatar,
-  type StaffSkill,
-  type StaffStatus,
-} from "@/components/ui/StaffAvatar";
+import { StaffAvatar, type StaffStatus } from "@/components/ui/StaffAvatar";
 import { checkBookingConflict, type ConflictCheckBooking } from "@/shared/lib/conflictCheck";
 import { cn } from "@/shared/lib/cn";
 import {
@@ -51,12 +47,6 @@ export interface GridStaff {
    * the bar under the avatar when `staff_performance` module is on.
    */
   workload: number;
-  /**
-   * Skill tags (filtered to known `StaffSkill` keys at the data boundary).
-   * Rendered as `Badge` row under the avatar when `staff_performance` is
-   * on.
-   */
-  skills: ReadonlyArray<StaffSkill>;
 }
 
 export interface GridBooking {
@@ -141,12 +131,6 @@ export interface StaffTimelineGridProps {
    * compose).
    */
   showBookingTimeRange?: boolean;
-  /**
-   * Density-derived flag — controls the `StaffAvatar` skills row in the
-   * staff column. Composes with `showStaffPerformanceDetail` (both must
-   * be true).
-   */
-  showStaffSkillBadges?: boolean;
   /**
    * Density-derived visual override for booking block minimum height
    * (px). Visual only — schedule math (slot count + GIST overlap)
@@ -242,7 +226,6 @@ function StaffTimelineGridImpl({
   showWalkinAccent = true,
   showBookingMetaLine = true,
   showBookingTimeRange = true,
-  showStaffSkillBadges = true,
   bookingBlockMinHeightPx,
   currencyCode,
   // `timeSlotMinutesVisualHint` is reserved for future row-height
@@ -349,9 +332,9 @@ function StaffTimelineGridImpl({
                * Sanctioned `StaffAvatar` primitive (`src/components/ui/`).
                * Status dot replaces the previous custom busy-ring; the
                * `staff_performance` module gate now governs the workload
-               * bar + skill row (and the role text below). The dot itself
-               * stays visible regardless — basic availability signal is
-               * core operational truth, not analytics chrome.
+               * bar + role text below. The dot itself stays visible
+               * regardless — basic availability signal is core
+               * operational truth, not analytics chrome.
                */}
               <StaffAvatar
                 name={s.name}
@@ -360,12 +343,6 @@ function StaffTimelineGridImpl({
                 showWorkload={showStaffPerformanceDetail}
                 showStatus
                 size="md"
-                skills={s.skills}
-                showSkills={
-                  showStaffPerformanceDetail &&
-                  showStaffSkillBadges &&
-                  s.skills.length > 0
-                }
               />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-nq-foreground">{s.name}</p>

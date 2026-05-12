@@ -1,0 +1,20 @@
+-- Drop the dead `staff.skills` column added in
+-- `20260508110000_add_staff_skills.sql`.
+--
+-- That column was designed to power read-only skill chips on the
+-- receptionist `StaffAvatar` ("acrylic", "design", "pedicure", "fast",
+-- "junior") with a Phase-2 owner-side editor planned. The editor was
+-- never built; in the meantime, capability matching for the booking
+-- flow shipped via the normalized `staff_services` JOIN table
+-- (migration `20260506120000_add_staff_services.sql`). That table is
+-- what the smart scheduler + individual booking flow gate against,
+-- and the StaffSetupPanel writes to.
+--
+-- Result by 2026-05-12: `staff.skills` had 0/8 rows with any value
+-- across prod (verified via Supabase MCP). No code path wrote to it,
+-- the receptionist UI's skill chips rendered nothing for every row,
+-- and the column existed only to confuse future contributors about
+-- which capability system to use.
+--
+-- Idempotent DROP — safe to re-run.
+ALTER TABLE public.staff DROP COLUMN IF EXISTS skills;

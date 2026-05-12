@@ -3,9 +3,8 @@
  *
  * Orthogonal to `dashboard_preset` (zone layout) and `dashboard_modules`
  * (feature flags). Density tunes **visual rhythm** only — booking-block
- * min height, label visibility, skill row visibility, slot granularity
- * — without altering the three-zone layout per
- * `docs/DASHBOARD_LAYOUT_RULES.md`.
+ * min height, label visibility, slot granularity — without altering the
+ * three-zone layout per `docs/DASHBOARD_LAYOUT_RULES.md`.
  *
  * Spacing maps to `docs/DESIGN_SYSTEM.md §1` tokens (`space-1`–`space-9`)
  * via the consuming components — values here describe **intent in
@@ -52,12 +51,6 @@ export interface DensityConfig {
    */
   showPriceInBlock: boolean;
   /**
-   * Render `StaffAvatar` skills row in the staff column. Composes with
-   * `dashboard_modules.staff_performance` — both must be true. Off in
-   * Simple to reduce chrome; on in Balanced/Pro.
-   */
-  showSkillBadges: boolean;
-  /**
    * Visual slot height bucket — affects vertical pixel height of timeline
    * rows. Schedule slot count + booking math remain on the salon's true
    * cadence (30 min). Pro users see denser vertical rhythm.
@@ -78,7 +71,6 @@ export const DENSITY_CONFIG: Record<DensityLevel, DensityConfig> = {
     showMetaLine: false,
     showTimeRangeInBlock: false,
     showPriceInBlock: false,
-    showSkillBadges: false,
     timeSlotMinutes: 40,
   },
   // Balanced: client name + service name. Time stays on the timeline
@@ -88,7 +80,6 @@ export const DENSITY_CONFIG: Record<DensityLevel, DensityConfig> = {
     showMetaLine: true,
     showTimeRangeInBlock: false,
     showPriceInBlock: false,
-    showSkillBadges: true,
     timeSlotMinutes: 30,
   },
   // Pro: client name + service + time range (price gated on
@@ -98,7 +89,6 @@ export const DENSITY_CONFIG: Record<DensityLevel, DensityConfig> = {
     showMetaLine: true,
     showTimeRangeInBlock: true,
     showPriceInBlock: true,
-    showSkillBadges: true,
     timeSlotMinutes: 20,
   },
 };
