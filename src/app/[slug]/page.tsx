@@ -160,7 +160,11 @@ async function PublicBookingRouteBody({
 
   return (
     <>
-      <BookingDocumentEn />
+      {/* QA re-test follow-up — the prop was missing on this branch
+          so `<html lang>` defaulted to "vi" forever even after the
+          user flipped to EN, which throws screen readers into
+          Vietnamese phonetics for English copy. */}
+      <BookingDocumentEn lang={lang} />
       <div
         className="relative min-h-dvh"
         style={{
