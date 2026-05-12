@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
 import type {
   BookingSalonMeta,
   BookingStaffItem,
 } from "@/shared/booking/loadBookingServices";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
+import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import {
   submitGroupBooking,
   type GroupBookingMember,
@@ -14,6 +15,8 @@ import {
 } from "@/shared/booking/submitGroupBooking";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { formatPhoneInputProgressive } from "@/shared/lib/phoneFormat";
+import { salonDayRangeUtc, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+import { createClient } from "@/shared/lib/supabase/client";
 import { cn } from "@/shared/lib/cn";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 import { Button } from "@/components/ui/Button";
@@ -52,6 +55,12 @@ type BookingGroupFlowProps = {
   services: readonly BookingServiceItem[];
   staff: readonly BookingStaffItem[];
   salon: BookingSalonMeta;
+  /** Upper bound on group size, derived from active-staff count in
+   * the parent (`Math.min(activeStaff, HARD_GROUP_CAP)`). Drives the
+   * size pill grid + clamps `applySize`. The DB function still
+   * accepts up to 8 — this is a salon-specific UX cap, not a
+   * security boundary. */
+  maxGroupSize: number;
 };
 
 type MemberDraft = {
@@ -74,6 +83,7 @@ export function BookingGroupFlow({
   services,
   staff,
   salon,
+  maxGroupSize,
 }: BookingGroupFlowProps) {
   const [step, setStep] = useState<Step>("size");
   const [size, setSize] = useState<number>(2);
@@ -171,10 +181,131 @@ export function BookingGroupFlow({
     return formatCurrency(totals.totalCents, salon.currencyCode) ?? null;
   }, [totals, salon.currencyCode]);
 
+  // QA STEP 4 — real-time availability check.
+  //
+  // When the customer has picked a shared date + time AND at least
+  // one member has a service, we want to surface "X staff are free
+  // at this time" before they submit. Reuses the existing
+  // `public_booking_occupancy_for_range` RPC (same endpoint single
+  // bookings use). Conservative window = [shared start, shared
+  // start + longest selected service duration]; any staff with ANY
+  // overlap in that range counts as busy.
+  //
+  // Debounced 400 ms because the native time input fires onChange
+  // per keystroke (typing "10" → "1" then "10"). Without debounce
+  // we'd thrash the RPC.
+  const [availability, setAvailability] = useState<
+    | { kind: "idle" }
+    | { kind: "loading" }
+    | { kind: "ready"; availableCount: number; totalActiveStaff: number }
+    | { kind: "error" }
+  >({ kind: "idle" });
+  const availabilitySeqRef = useRef(0);
+
+  // Longest duration among MEMBERS WITH a selected service. If no
+  // member has picked a service yet, returns 0 → skip the check.
+  const longestSelectedDurationMin = useMemo(() => {
+    let max = 0;
+    for (const m of members) {
+      const svc = services.find((s) => s.id === m.serviceId);
+      if (!svc) continue;
+      if (svc.totalMinutes > max) max = svc.totalMinutes;
+    }
+    return max;
+  }, [members, services]);
+
+  const totalActiveStaff = staff.length;
+
+  useEffect(() => {
+    if (
+      sharedDate.length === 0 ||
+      sharedTime.length === 0 ||
+      longestSelectedDurationMin === 0
+    ) {
+      setAvailability({ kind: "idle" });
+      return;
+    }
+    const seq = ++availabilitySeqRef.current;
+    setAvailability({ kind: "loading" });
+    const timer = window.setTimeout(async () => {
+      try {
+        // Parse HH:MM client-side; reuse the same DST-safe helper
+        // single bookings + the server action use.
+        const [hStr, miStr] = sharedTime.split(":");
+        const h = Number.parseInt(hStr ?? "", 10);
+        const mi = Number.parseInt(miStr ?? "", 10);
+        if (!Number.isFinite(h) || !Number.isFinite(mi)) {
+          if (seq === availabilitySeqRef.current)
+            setAvailability({ kind: "idle" });
+          return;
+        }
+        const startUtcIso = salonWallTimeToUtcIso(
+          sharedDate,
+          h * 60 + mi,
+          salon.timezone,
+        );
+        const startMs = Date.parse(startUtcIso);
+        const endMs = startMs + longestSelectedDurationMin * 60_000;
+        const { startUtc, endUtc } = salonDayRangeUtc(
+          sharedDate,
+          salon.timezone,
+        );
+        const supabase = createClient();
+        const { data, error } = await supabase.rpc(
+          "public_booking_occupancy_for_range",
+          { p_salon_id: salon.id, p_start: startUtc, p_end: endUtc },
+        );
+        if (seq !== availabilitySeqRef.current) return;
+        if (error) {
+          setAvailability({ kind: "error" });
+          return;
+        }
+        const rows = (data ?? []) as Array<{
+          staff_id: string;
+          start_time_utc: string;
+          end_time_utc: string;
+        }>;
+        const busyStaff = new Set<string>();
+        for (const r of rows) {
+          if (!r.staff_id) continue;
+          const rStart = Date.parse(r.start_time_utc);
+          const rEnd = Date.parse(r.end_time_utc);
+          if (!Number.isFinite(rStart) || !Number.isFinite(rEnd)) continue;
+          if (intervalsOverlapMs(startMs, endMs, rStart, rEnd)) {
+            busyStaff.add(String(r.staff_id));
+          }
+        }
+        const availableCount = Math.max(0, totalActiveStaff - busyStaff.size);
+        setAvailability({
+          kind: "ready",
+          availableCount,
+          totalActiveStaff,
+        });
+      } catch (e) {
+        if (seq !== availabilitySeqRef.current) return;
+        console.error("[BookingGroupFlow] availability check", e);
+        setAvailability({ kind: "error" });
+      }
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [
+    sharedDate,
+    sharedTime,
+    longestSelectedDurationMin,
+    salon.id,
+    salon.timezone,
+    totalActiveStaff,
+  ]);
+
+  // Group is too big for the salon at the chosen time. Surface a
+  // warning above the schedule card so it can't be missed.
+  const insufficientCapacity =
+    availability.kind === "ready" && availability.availableCount < size;
+
   const sizeNextEnabled = primaryPhone.trim().length > 0;
 
   function applySize(n: number) {
-    const clamped = Math.max(2, Math.min(8, Math.round(n)));
+    const clamped = Math.max(2, Math.min(maxGroupSize, Math.round(n)));
     setSize(clamped);
     setMembers((prev) => {
       const next: MemberDraft[] = [];
@@ -249,6 +380,17 @@ export function BookingGroupFlow({
     setErrorMessage(null);
     setConflictIdx(new Set());
     if (!validate()) return;
+    // QA STEP 4 — block submit on insufficient capacity. The DB
+    // catches this anyway (per-staff slot would conflict), but
+    // refusing client-side gives the cleanest error path.
+    if (insufficientCapacity && availability.kind === "ready") {
+      setErrorMessage(
+        (groupCopy.insufficientCapacity ??
+          "Chỉ còn {n} thợ rảnh vào thời điểm này. Vui lòng chọn giờ khác hoặc giảm số người.")
+          .replace("{n}", String(availability.availableCount)),
+      );
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -356,13 +498,26 @@ export function BookingGroupFlow({
           <h2 className="text-lg font-semibold sm:text-xl">
             {groupCopy.sizeHeading}
           </h2>
-          {/* P1.G5 — extended to 2–8 (was 2–4). */}
+          {/* QA round-2 — size options are dynamic now: 2…maxGroupSize
+              where maxGroupSize = min(activeStaffCount, 6). A salon
+              with 3 active stylists shows pills [2, 3]; a salon with
+              ≥6 shows [2…6]. */}
           <div
-            className="grid grid-cols-4 gap-2 sm:grid-cols-7"
+            className={cn(
+              "grid gap-2",
+              maxGroupSize <= 3
+                ? "grid-cols-2"
+                : maxGroupSize <= 4
+                  ? "grid-cols-3"
+                  : "grid-cols-4 sm:grid-cols-5",
+            )}
             role="radiogroup"
             aria-label={groupCopy.sizeHeading}
           >
-            {[2, 3, 4, 5, 6, 7, 8].map((n) => (
+            {Array.from(
+              { length: Math.max(0, maxGroupSize - 1) },
+              (_, i) => i + 2,
+            ).map((n) => (
               <button
                 key={n}
                 type="button"
@@ -381,6 +536,10 @@ export function BookingGroupFlow({
               </button>
             ))}
           </div>
+          <p className="text-xs text-[var(--booking-text-muted)]">
+            {(groupCopy.maxSizeHint ?? "Tối đa {n} người (theo số thợ rảnh)")
+              .replace("{n}", String(maxGroupSize))}
+          </p>
 
           <div className="mt-6 space-y-3">
             <h3 className="text-base font-medium">
@@ -555,6 +714,43 @@ export function BookingGroupFlow({
               >
                 {groupCopy.sharedScheduleRequired ??
                   "Vui lòng chọn ngày và giờ cho cả nhóm."}
+              </p>
+            ) : null}
+
+            {/* QA STEP 4 — live availability pill. Three states:
+                loading (subtle), available (green/muted), insufficient
+                (red, blocks submit). Hidden when the data needed to
+                compute it isn't ready yet (no time picked, no services
+                selected yet). */}
+            {availability.kind === "loading" ? (
+              <p
+                className="mt-2 text-xs text-[var(--booking-text-muted)]"
+                data-testid="group-availability-loading"
+              >
+                {groupCopy.availabilityChecking ??
+                  "Đang kiểm tra số thợ rảnh…"}
+              </p>
+            ) : null}
+            {availability.kind === "ready" && !insufficientCapacity ? (
+              <p
+                className="mt-2 text-xs text-[var(--booking-text-muted)]"
+                data-testid="group-availability-ok"
+              >
+                {(groupCopy.availabilityOk ??
+                  "Có {free}/{total} thợ rảnh vào giờ này.")
+                  .replace("{free}", String(availability.availableCount))
+                  .replace("{total}", String(availability.totalActiveStaff))}
+              </p>
+            ) : null}
+            {availability.kind === "ready" && insufficientCapacity ? (
+              <p
+                className="mt-2 rounded-lg border border-nq-error/40 bg-nq-error/10 px-3 py-2 text-xs font-semibold text-nq-error"
+                role="alert"
+                data-testid="group-availability-insufficient"
+              >
+                {(groupCopy.insufficientCapacity ??
+                  "Chỉ còn {n} thợ rảnh vào thời điểm này. Vui lòng chọn giờ khác hoặc giảm số người.")
+                  .replace("{n}", String(availability.availableCount))}
               </p>
             ) : null}
           </div>
