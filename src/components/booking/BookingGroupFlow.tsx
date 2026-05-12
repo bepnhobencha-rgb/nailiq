@@ -1813,7 +1813,10 @@ function EmptyState({
           "No slots available in that window. Try a different time or date."
         : reason === "salon_paused"
           ? groupCopy.salonPaused
-          : groupCopy.serverError;
+          : reason === "timezone_not_set"
+            ? groupCopy.timezoneNotSet ??
+              "Salon timezone not configured. Please contact the salon."
+            : groupCopy.serverError;
   return (
     <div
       role="alert"

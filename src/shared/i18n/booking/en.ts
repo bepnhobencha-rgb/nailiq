@@ -291,6 +291,12 @@ export const bookingEn = {
     schedulingStillWorking: "Still working, please wait...",
     schedulingTimeout:
       "Could not find arrangements. Try another date.",
+    /** Task #04-B — defensive copy for `loadGroupSmartSchedule`'s
+     *  `timezone_not_set` reason. Salon DB column is NOT NULL after
+     *  migration 20260512600000, so the user should only see this
+     *  if the row was wiped or the migration reverted. */
+    timezoneNotSet:
+      "This salon hasn't set its timezone yet. Please contact the salon to confirm booking times.",
     /** Task #04-A FIX 03 — stale arrangement banner on step 5.
      *  The arrangement carries server-side availability snapshots
      *  that age out — by 3 min another customer may have grabbed

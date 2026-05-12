@@ -139,7 +139,15 @@ export type GroupSmartScheduleResult =
         | "salon_not_found"
         | "salon_paused"
         | "invalid_input"
-        | "server_error";
+        | "server_error"
+        // Task #04-B — defensive guard. After migration
+        // 20260512600000 the salons.timezone column is NOT NULL,
+        // so this branch is only reachable if (a) the migration
+        // is somehow reverted, or (b) the column was wiped between
+        // resolve and read. Surfacing as a distinct reason lets
+        // the UI render a "contact the salon" message instead of
+        // silently falling back to UTC and computing wrong slots.
+        | "timezone_not_set";
     };
 
 /** Salon-local weekday key for a YMD; UTC arithmetic (the YMD is
@@ -484,10 +492,17 @@ export async function loadGroupSmartSchedule(
   };
   if (!salonRow.profile_complete) return { ok: false, reason: "salon_paused" };
 
-  const timezone =
-    typeof salonRow.timezone === "string" && salonRow.timezone.trim().length > 0
-      ? salonRow.timezone
-      : "UTC";
+  // Task #04-B — strict timezone read. Previously fell back to "UTC"
+  // which produced an 8-hour offset bug for Vancouver tenants when
+  // the column happened to be empty. Migration 20260512600000 makes
+  // this unreachable in normal flow; the guard stays as defense in
+  // depth so a corrupt row can never produce wrong slot math.
+  const rawTimezone =
+    typeof salonRow.timezone === "string" ? salonRow.timezone.trim() : "";
+  if (rawTimezone.length === 0) {
+    return { ok: false, reason: "timezone_not_set" };
+  }
+  const timezone = rawTimezone;
 
   // 2. Closed-day guard (owner override beats opening_hours) --------
   const closedYmdSet = parseBookingClosedDateSet(salonRow.booking_closed_dates);

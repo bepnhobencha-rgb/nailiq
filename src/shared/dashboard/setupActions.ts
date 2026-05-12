@@ -39,6 +39,7 @@ import {
   isSupportedCurrency,
   type Currency,
 } from "@/shared/lib/currencyFormat";
+import { isAllowedTimezone } from "@/shared/dashboard/timezoneOptions";
 import {
   DEMO_SALON_SLUG,
   isDemoOtpRuntime,
@@ -1140,6 +1141,13 @@ export async function updateAddress(
      * page. Optional; omitted leaves the column unchanged. Empty
      * string after trim clears the column to null. */
     description?: string | null;
+    /** Task #04-B — salon IANA timezone. Required-and-validated on
+     *  the server: must be one of the 10 supported zones in
+     *  `timezoneOptions.ts`. Optional in this shape because the
+     *  field was added retroactively; existing callers that omit it
+     *  leave the column unchanged. New saves from the AddressSetupPanel
+     *  always include it. */
+    timezone?: string;
   },
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
@@ -1169,6 +1177,19 @@ export async function updateAddress(
     currencyCode = input.currency_code;
   }
 
+  // Task #04-B — timezone must be one of the 10 supported zones
+  // when present. The DB has `timezone NOT NULL DEFAULT
+  // 'America/Vancouver'` (migration 20260512600000) so omitting
+  // this field is safe (column keeps its current value); supplying
+  // an unknown IANA name is rejected here.
+  let timezoneVal: string | undefined;
+  if (input.timezone !== undefined) {
+    if (!isAllowedTimezone(input.timezone)) {
+      return fail("invalid_timezone");
+    }
+    timezoneVal = input.timezone;
+  }
+
   const address = buildSalonAddressString({
     street: input.street,
     city: input.city,
@@ -1194,7 +1215,9 @@ export async function updateAddress(
   }
 
   // currency_code cast: column added by migration 20260512000000;
-  // not yet in the auto-generated DB types.
+  // not yet in the auto-generated DB types. `timezone` predates
+  // the generated types but lives in `salons.timezone TEXT NOT NULL`
+  // (migration 20260512600000_timezone_required).
   const patch = {
     address,
     salon_phone: salonPhone,
@@ -1202,6 +1225,7 @@ export async function updateAddress(
     ...(descriptionPatch !== undefined
       ? { description: descriptionPatch }
       : {}),
+    ...(timezoneVal !== undefined ? { timezone: timezoneVal } : {}),
   } as never;
   const supabase = await writableSupabase(slug, r.kind);
   const { error } = await supabase

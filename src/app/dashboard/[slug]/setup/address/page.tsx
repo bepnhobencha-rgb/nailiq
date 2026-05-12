@@ -30,19 +30,28 @@ export default async function SetupAddressPage({ params }: Props) {
   // the auto-generated DB types haven't been refreshed.
   // P2.8 — also pull `description` (column added by migration
   // 20260512100000). Same `as never` pattern as currency_code.
+  // Task #04-B — `timezone` is now NOT NULL (migration
+  // 20260512600000_timezone_required). Pulled so the address
+  // panel's timezone dropdown can pre-select the salon's current
+  // value rather than forcing the owner to re-pick on every visit.
   const { data: extraRow } = await ctx.supabase
     .from("salons")
-    .select("currency_code, description" as never)
+    .select("currency_code, description, timezone" as never)
     .eq("id", ctx.salon.id)
     .maybeSingle();
   const extraData = (extraRow ?? null) as {
     currency_code?: unknown;
     description?: unknown;
+    timezone?: unknown;
   } | null;
   const initialCurrency = parseCurrency(extraData?.currency_code);
   const initialDescription =
     typeof extraData?.description === "string"
       ? extraData.description
+      : "";
+  const initialTimezone =
+    typeof extraData?.timezone === "string" && extraData.timezone.trim().length > 0
+      ? extraData.timezone
       : "";
 
   return (
@@ -55,6 +64,7 @@ export default async function SetupAddressPage({ params }: Props) {
           initialSalonPhone={ctx.salon.salon_phone ?? ""}
           initialCurrency={initialCurrency}
           initialDescription={initialDescription}
+          initialTimezone={initialTimezone}
         />
       </MobileStack>
     </ResponsiveShell>
