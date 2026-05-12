@@ -21,6 +21,8 @@ type BookingSalonHeroProps = {
   /** P2.8 — owner-written tagline override. Falls back to the
    * `salonHeroTagline` generic copy when null/empty. */
   description?: string | null;
+  /** P2.2 — pick localized strings inside the info line below. */
+  lang?: "vi" | "en";
 };
 
 /**
@@ -41,6 +43,7 @@ export function BookingSalonHero({
   openingHoursRaw,
   timezone,
   description,
+  lang = "vi",
 }: BookingSalonHeroProps) {
   const isLight = themeMode === "light";
 
@@ -65,10 +68,14 @@ export function BookingSalonHero({
       aria-label={t.salonHeroAriaLabel}
     >
       <div className="pointer-events-none absolute inset-0">
+        {/* P2.6 — decorative; aria-hidden so AT skip it, lazy
+            so the LCP-relevant content paints first. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={HERO_BG}
           alt=""
+          aria-hidden="true"
+          loading="lazy"
           className="h-full w-full scale-105 object-cover blur-[2px]"
         />
         <div
@@ -98,6 +105,7 @@ export function BookingSalonHero({
               openingHoursRaw={openingHoursRaw ?? null}
               timezone={timezone}
               variant="desktop"
+              lang={lang}
             />
           ) : null}
         </div>
@@ -108,6 +116,8 @@ export function BookingSalonHero({
             <img
               src={THUMB_A}
               alt=""
+              aria-hidden="true"
+              loading="lazy"
               className="h-full w-full object-cover"
             />
             <div
@@ -121,6 +131,8 @@ export function BookingSalonHero({
             <img
               src={THUMB_B}
               alt=""
+              aria-hidden="true"
+              loading="lazy"
               className="h-full w-full object-cover"
             />
             <div

@@ -137,6 +137,13 @@ export const bookingVi: BookingMessages = {
     conflictMember: "Xung đột lịch ở Người {n} — chọn giờ hoặc thợ khác.",
     conflictBanner:
       "Có {n} khung giờ vừa bị đặt mất. Điều chỉnh lại và thử lại.",
+    conflictCrossMember:
+      "Hai người không thể chọn cùng một thợ. Vui lòng chọn thợ khác cho Người {n}.",
+    conflictExternal:
+      "Khung giờ vừa bị đặt mất bởi khách khác. Vui lòng chọn giờ khác.",
+    pastDate:
+      "Không thể đặt lịch vào ngày đã qua. Vui lòng chọn ngày khác.",
+    phoneRequired: "Vui lòng nhập số điện thoại.",
     duplicateSubmission:
       "Có vẻ nhóm này đã được đặt rồi. Tải lại trang để xem xác nhận.",
     salonClosedDay:

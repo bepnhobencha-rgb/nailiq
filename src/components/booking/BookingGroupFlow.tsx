@@ -13,9 +13,18 @@ import {
   type GroupBookingMember,
   type GroupBookingResult,
 } from "@/shared/booking/submitGroupBooking";
+import {
+  parseOpeningHours,
+  type DayKey,
+  type OpeningHoursWeek,
+} from "@/shared/dashboard/openingHoursDefaults";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { formatPhoneInputProgressive } from "@/shared/lib/phoneFormat";
-import { salonDayRangeUtc, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+import {
+  salonDayRangeUtc,
+  salonToday,
+  salonWallTimeToUtcIso,
+} from "@/shared/lib/salonTime";
 import { createClient } from "@/shared/lib/supabase/client";
 import { cn } from "@/shared/lib/cn";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
@@ -75,6 +84,39 @@ function blankMember(): MemberDraft {
   return { name: "", serviceId: "", staffId: "" };
 }
 
+// P1.2 — clamp to today..+90d in salon-local time. Native
+// <input type="date"> respects min/max so the picker UI itself
+// rejects out-of-range dates without an extra error path.
+function addDaysYmd(ymd: string, days: number): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!m) return ymd;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const x = new Date(Date.UTC(y, mo - 1, d + days));
+  return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, "0")}-${String(x.getUTCDate()).padStart(2, "0")}`;
+}
+
+// P1.3 — map salon-local YYYY-MM-DD to its weekday key for the
+// opening-hours lookup. Uses UTC arithmetic so the result is
+// timezone-independent (the YMD is already in salon-local).
+const DAY_KEY_BY_INDEX: readonly DayKey[] = [
+  "sun",
+  "mon",
+  "tue",
+  "wed",
+  "thu",
+  "fri",
+  "sat",
+];
+function dayKeyForYmd(ymd: string): DayKey | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d))
+    return null;
+  const idx = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
+  return DAY_KEY_BY_INDEX[idx] ?? null;
+}
+
 type Step = "size" | "members" | "success";
 
 export function BookingGroupFlow({
@@ -105,8 +147,18 @@ export function BookingGroupFlow({
   const [scheduleErrors, setScheduleErrors] = useState<Set<"date" | "time">>(
     () => new Set(),
   );
+  // P1.1 — visible inline error for step-1 phone, set on click-next.
   const [contactPhoneError, setContactPhoneError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // P1.6 — last known conflict kind from the server, drives copy.
+  const [conflictKind, setConflictKind] = useState<
+    "cross_member" | "external" | null
+  >(null);
+  // P1.7 — flip to true after submit-error so the green availability
+  // banner doesn't show alongside the red error. Cleared when any
+  // form field changes (covered by patchMember + sharedDate/Time
+  // onChange handlers below).
+  const [suppressAvailability, setSuppressAvailability] = useState(false);
   const [successResult, setSuccessResult] = useState<{
     groupId: string;
     bookingIds: string[];
@@ -180,6 +232,30 @@ export function BookingGroupFlow({
     if (totals.totalCents == null) return null;
     return formatCurrency(totals.totalCents, salon.currencyCode) ?? null;
   }, [totals, salon.currencyCode]);
+
+  // P1.2 — date input bounds in the salon's calendar. Today in salon
+  // tz, today + 90 days. We compute once per render — these don't
+  // need to react to inputs.
+  const dateBounds = useMemo(() => {
+    const today = salonToday(salon.timezone);
+    return { min: today, max: addDaysYmd(today, 90) };
+  }, [salon.timezone]);
+
+  // P1.3 — opening hours for the selected date. `dayHours.closed` →
+  // disable the time input entirely + surface a closed banner.
+  // `dayHours.open`/`.close` are HH:MM in salon-local; we pass them
+  // straight to the native time input's min/max attributes.
+  const openingWeek: OpeningHoursWeek | null = useMemo(
+    () => parseOpeningHours(salon.opening_hours),
+    [salon.opening_hours],
+  );
+  const dayHours = useMemo(() => {
+    if (!openingWeek || !sharedDate) return null;
+    const key = dayKeyForYmd(sharedDate);
+    if (!key) return null;
+    return openingWeek[key];
+  }, [openingWeek, sharedDate]);
+  const isSelectedDayClosed = !!dayHours?.closed;
 
   // QA STEP 4 — real-time availability check.
   //
@@ -337,6 +413,11 @@ export function BookingGroupFlow({
       return next;
     });
     setErrorMessage(null);
+    // Touching a member field invalidates last-known conflict +
+    // unsuppresses availability (the user might have moved away
+    // from the conflicting state).
+    setConflictKind(null);
+    setSuppressAvailability(false);
   }
 
   function validate(): boolean {
@@ -379,7 +460,19 @@ export function BookingGroupFlow({
     if (submitting) return;
     setErrorMessage(null);
     setConflictIdx(new Set());
+    setConflictKind(null);
+    setSuppressAvailability(false);
     if (!validate()) return;
+    // P1.3 — refuse on closed day. The DB allows arbitrary times
+    // (the GIST only checks overlap with other bookings), so we
+    // need the app-side guard to enforce salon hours.
+    if (isSelectedDayClosed) {
+      setErrorMessage(
+        groupCopy.salonClosedDay ?? "Tiệm nghỉ vào ngày này.",
+      );
+      setSuppressAvailability(true);
+      return;
+    }
     // QA STEP 4 — block submit on insufficient capacity. The DB
     // catches this anyway (per-staff slot would conflict), but
     // refusing client-side gives the cleanest error path.
@@ -389,6 +482,7 @@ export function BookingGroupFlow({
           "Chỉ còn {n} thợ rảnh vào thời điểm này. Vui lòng chọn giờ khác hoặc giảm số người.")
           .replace("{n}", String(availability.availableCount)),
       );
+      setSuppressAvailability(true);
       return;
     }
 
@@ -415,14 +509,34 @@ export function BookingGroupFlow({
       }
       if (res.reason === "slot_conflict") {
         setConflictIdx(new Set(res.conflictingMembers));
-        setErrorMessage(
-          res.conflictingMembers.length > 0
-            ? groupCopy.conflictBanner.replace(
+        setConflictKind(res.conflictKind);
+        // P1.6 — distinct copy per kind. Cross-member tells the user
+        // they picked the same staff twice; external blames a race
+        // with another customer.
+        if (res.conflictKind === "cross_member") {
+          setErrorMessage(
+            (groupCopy.conflictCrossMember ??
+              "Hai người không thể chọn cùng một thợ. Vui lòng chọn thợ khác.")
+              .replace(
                 "{n}",
-                String(res.conflictingMembers.length),
-              )
-            : t.bookingErrors.slotJustTaken,
+                String(res.conflictingMembers[0] != null ? res.conflictingMembers[0] + 1 : 0),
+              ),
+          );
+        } else {
+          setErrorMessage(
+            groupCopy.conflictExternal ??
+              "Khung giờ vừa bị đặt mất bởi khách khác. Vui lòng chọn giờ khác.",
+          );
+        }
+        setSuppressAvailability(true);
+        return;
+      }
+      if (res.reason === "past_date") {
+        setErrorMessage(
+          groupCopy.pastDate ??
+            "Không thể đặt lịch vào ngày đã qua. Vui lòng chọn ngày khác.",
         );
+        setSuppressAvailability(true);
         return;
       }
       if (res.reason === "duplicate_submission") {
@@ -548,23 +662,42 @@ export function BookingGroupFlow({
             <p className="text-xs text-[var(--booking-text-muted)]">
               {groupCopy.primaryContactHint}
             </p>
-            <input
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel"
-              data-testid="group-primary-phone"
-              value={primaryPhone}
-              maxLength={24}
-              placeholder={t.clientPhonePlaceholder}
-              onChange={(e) => {
-                setPrimaryPhone(formatPhoneInputProgressive(e.target.value));
-                setContactPhoneError(false);
-              }}
-              className={cn(
-                "nq-booking-field",
-                contactPhoneError && "border-nq-error/50",
-              )}
-            />
+            <div>
+              <input
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                data-testid="group-primary-phone"
+                value={primaryPhone}
+                maxLength={24}
+                placeholder={t.clientPhonePlaceholder}
+                aria-invalid={contactPhoneError || undefined}
+                aria-describedby={
+                  contactPhoneError ? "group-primary-phone-error" : undefined
+                }
+                onChange={(e) => {
+                  setPrimaryPhone(formatPhoneInputProgressive(e.target.value));
+                  setContactPhoneError(false);
+                }}
+                className={cn(
+                  "nq-booking-field",
+                  contactPhoneError && "border-nq-error/50",
+                )}
+              />
+              {/* P1.1 — visible inline error when user clicks Next
+                  with an empty phone field. Was silent-disabled
+                  before. */}
+              {contactPhoneError ? (
+                <p
+                  id="group-primary-phone-error"
+                  role="alert"
+                  className="mt-1 text-xs font-semibold text-nq-error"
+                  data-testid="group-primary-phone-error"
+                >
+                  {groupCopy.phoneRequired ?? "Vui lòng nhập số điện thoại."}
+                </p>
+              ) : null}
+            </div>
             <input
               type="email"
               autoComplete="email"
@@ -656,16 +789,30 @@ export function BookingGroupFlow({
                 "Cả nhóm đến cùng giờ. Mỗi người chọn dịch vụ và thợ riêng bên dưới."}
             </p>
             <div className="grid grid-cols-2 gap-2">
-              <div>
+              <label
+                className="block"
+                htmlFor="group-shared-date-input"
+              >
+                <span className="mb-1 block text-xs font-medium text-[var(--booking-text-muted)]">
+                  {t.breadcrumbDate}
+                </span>
                 <input
+                  id="group-shared-date-input"
                   ref={(el) => {
                     if (el && scheduleErrors.has("date") && !firstErrorRef.current)
                       firstErrorRef.current = el;
                   }}
                   type="date"
                   value={sharedDate}
+                  min={dateBounds.min}
+                  max={dateBounds.max}
+                  aria-invalid={scheduleErrors.has("date") || undefined}
+                  aria-describedby={
+                    scheduleErrors.has("date") ? "group-shared-error" : undefined
+                  }
                   onChange={(e) => {
                     setSharedDate(e.target.value);
+                    setSuppressAvailability(false);
                     setScheduleErrors((prev) => {
                       if (!prev.has("date")) return prev;
                       const next = new Set(prev);
@@ -679,9 +826,16 @@ export function BookingGroupFlow({
                   )}
                   data-testid="group-shared-date"
                 />
-              </div>
-              <div>
+              </label>
+              <label
+                className="block"
+                htmlFor="group-shared-time-input"
+              >
+                <span className="mb-1 block text-xs font-medium text-[var(--booking-text-muted)]">
+                  {t.breadcrumbTime}
+                </span>
                 <input
+                  id="group-shared-time-input"
                   ref={(el) => {
                     if (el && scheduleErrors.has("time") && !firstErrorRef.current)
                       firstErrorRef.current = el;
@@ -689,8 +843,24 @@ export function BookingGroupFlow({
                   type="time"
                   step={300}
                   value={sharedTime}
+                  // P1.3 — opening-hours-derived bounds. Native time
+                  // picker enforces these client-side; server still
+                  // re-validates via assertSlotWithinOpeningHours-
+                  // equivalent in the submit path.
+                  min={
+                    dayHours && !dayHours.closed ? dayHours.open : undefined
+                  }
+                  max={
+                    dayHours && !dayHours.closed ? dayHours.close : undefined
+                  }
+                  disabled={isSelectedDayClosed}
+                  aria-invalid={scheduleErrors.has("time") || undefined}
+                  aria-describedby={
+                    scheduleErrors.has("time") ? "group-shared-error" : undefined
+                  }
                   onChange={(e) => {
                     setSharedTime(e.target.value);
+                    setSuppressAvailability(false);
                     setScheduleErrors((prev) => {
                       if (!prev.has("time")) return prev;
                       const next = new Set(prev);
@@ -701,13 +871,26 @@ export function BookingGroupFlow({
                   className={cn(
                     "nq-booking-field tabular-nums",
                     scheduleErrors.has("time") && "border-nq-error/50",
+                    isSelectedDayClosed && "cursor-not-allowed opacity-60",
                   )}
                   data-testid="group-shared-time"
                 />
-              </div>
+              </label>
             </div>
-            {scheduleErrors.size > 0 ? (
+            {/* P1.3 — closed-day banner overrides the schedule-required
+                error since the day itself is unbookable. */}
+            {isSelectedDayClosed ? (
               <p
+                className="mt-2 rounded-lg border border-nq-warning/45 bg-nq-warning/10 px-3 py-2 text-xs font-semibold text-nq-foreground"
+                role="alert"
+                data-testid="group-day-closed"
+              >
+                {groupCopy.salonClosedDay ?? "Tiệm nghỉ vào ngày này."}
+              </p>
+            ) : null}
+            {!isSelectedDayClosed && scheduleErrors.size > 0 ? (
+              <p
+                id="group-shared-error"
                 className="mt-2 text-xs font-semibold text-nq-error"
                 role="alert"
                 data-testid="group-shared-error"
@@ -722,7 +905,12 @@ export function BookingGroupFlow({
                 (red, blocks submit). Hidden when the data needed to
                 compute it isn't ready yet (no time picked, no services
                 selected yet). */}
-            {availability.kind === "loading" ? (
+            {/* P1.7 — suppress availability banner while a submit
+                error is visible. The error banner above will explain;
+                showing "Có 3/3 thợ rảnh" simultaneously is confusing
+                ("then why did it fail?"). Touching any input clears
+                `suppressAvailability` via the onChange handlers. */}
+            {!suppressAvailability && availability.kind === "loading" ? (
               <p
                 className="mt-2 text-xs text-[var(--booking-text-muted)]"
                 data-testid="group-availability-loading"
@@ -731,7 +919,9 @@ export function BookingGroupFlow({
                   "Đang kiểm tra số thợ rảnh…"}
               </p>
             ) : null}
-            {availability.kind === "ready" && !insufficientCapacity ? (
+            {!suppressAvailability &&
+            availability.kind === "ready" &&
+            !insufficientCapacity ? (
               <p
                 className="mt-2 text-xs text-[var(--booking-text-muted)]"
                 data-testid="group-availability-ok"
@@ -742,7 +932,9 @@ export function BookingGroupFlow({
                   .replace("{total}", String(availability.totalActiveStaff))}
               </p>
             ) : null}
-            {availability.kind === "ready" && insufficientCapacity ? (
+            {!suppressAvailability &&
+            availability.kind === "ready" &&
+            insufficientCapacity ? (
               <p
                 className="mt-2 rounded-lg border border-nq-error/40 bg-nq-error/10 px-3 py-2 text-xs font-semibold text-nq-error"
                 role="alert"
@@ -886,23 +1078,31 @@ function MemberCard({
         </p>
       ) : null}
 
+      {/* P1.4 — every inline error now has role="alert" and the
+          input/select carries `aria-invalid` + `aria-describedby`
+          pointing to the error span. Screen readers announce the
+          problem instead of silently leaving the form stuck. */}
       <div className="space-y-3">
         <div>
           <input
             ref={(el) => {
               if (fieldErrors.has("name")) registerErrorRef(el);
             }}
+            id={`group-member-${index}-name-input`}
             type="text"
             autoComplete="name"
             placeholder={t.clientNameLabel}
             value={member.name}
             maxLength={100}
+            aria-invalid={fieldErrors.has("name") || undefined}
+            aria-describedby={
+              fieldErrors.has("name")
+                ? `group-member-${index}-name-error`
+                : undefined
+            }
             onChange={(e) => onChange({ name: e.target.value })}
             className={cn(
               "nq-booking-field",
-              // Filled value is high-contrast; empty falls back to
-              // the muted placeholder color. Fixes the P2 "input
-              // value looks like placeholder" report.
               member.name.trim().length > 0 &&
                 "font-medium text-[var(--booking-text)]",
               fieldErrors.has("name") && "border-nq-error/50",
@@ -910,7 +1110,11 @@ function MemberCard({
             data-testid={`group-member-${index}-name`}
           />
           {fieldErrors.has("name") ? (
-            <p className="mt-1 text-xs text-nq-error">
+            <p
+              id={`group-member-${index}-name-error`}
+              role="alert"
+              className="mt-1 text-xs text-nq-error"
+            >
               {t.bookingErrors.nameRequired}
             </p>
           ) : null}
@@ -921,7 +1125,14 @@ function MemberCard({
             ref={(el) => {
               if (fieldErrors.has("service")) registerErrorRef(el);
             }}
+            id={`group-member-${index}-service-input`}
             value={member.serviceId}
+            aria-invalid={fieldErrors.has("service") || undefined}
+            aria-describedby={
+              fieldErrors.has("service")
+                ? `group-member-${index}-service-error`
+                : undefined
+            }
             onChange={(e) => onChange({ serviceId: e.target.value })}
             className={cn(
               "nq-booking-field",
@@ -941,7 +1152,11 @@ function MemberCard({
             ))}
           </select>
           {fieldErrors.has("service") ? (
-            <p className="mt-1 text-xs text-nq-error">
+            <p
+              id={`group-member-${index}-service-error`}
+              role="alert"
+              className="mt-1 text-xs text-nq-error"
+            >
               {t.bookingErrors.serviceRequired}
             </p>
           ) : null}
@@ -952,7 +1167,16 @@ function MemberCard({
             ref={(el) => {
               if (fieldErrors.has("staff")) registerErrorRef(el);
             }}
+            id={`group-member-${index}-staff-input`}
             value={member.staffId}
+            aria-invalid={
+              fieldErrors.has("staff") || isDuplicateStaff || undefined
+            }
+            aria-describedby={
+              fieldErrors.has("staff") || isDuplicateStaff
+                ? `group-member-${index}-staff-error`
+                : undefined
+            }
             onChange={(e) => onChange({ staffId: e.target.value })}
             className={cn(
               "nq-booking-field",
@@ -972,11 +1196,17 @@ function MemberCard({
             ))}
           </select>
           {fieldErrors.has("staff") ? (
-            <p className="mt-1 text-xs text-nq-error">
+            <p
+              id={`group-member-${index}-staff-error`}
+              role="alert"
+              className="mt-1 text-xs text-nq-error"
+            >
               {groupCopy.staffRequired ?? "Chọn thợ."}
             </p>
           ) : isDuplicateStaff ? (
             <p
+              id={`group-member-${index}-staff-error`}
+              role="alert"
               className="mt-1 text-xs font-semibold text-nq-error"
               data-testid={`group-member-${index}-duplicate-staff`}
             >

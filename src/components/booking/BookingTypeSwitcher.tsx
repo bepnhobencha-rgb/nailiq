@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
 import type { ServiceCategorySummary } from "@/shared/booking/loadServiceCategories";
 import type {
@@ -48,7 +49,26 @@ export function BookingTypeSwitcher({
   capabilityRows: { staff_id: string; service_id: string }[] | null;
   categories: readonly ServiceCategorySummary[];
 }) {
-  const [mode, setMode] = useState<"individual" | "group">("individual");
+  // P2.3 — initialize from ?mode= so language switch (which reloads
+  // the page) doesn't drop the user back to individual.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const initialMode: "individual" | "group" =
+    searchParams.get("mode") === "group" ? "group" : "individual";
+  const [mode, setMode] = useState<"individual" | "group">(initialMode);
+
+  // Reflect mode changes back into the URL so language-toggle reloads
+  // pick the same mode up via `searchParams.get("mode")`. Uses
+  // `router.replace` so the history stack stays clean (the user
+  // doesn't want a back-button trail for "individual → group").
+  useEffect(() => {
+    const current = new URLSearchParams(searchParams.toString());
+    if (mode === "group") current.set("mode", "group");
+    else current.delete("mode");
+    const qs = current.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [mode, pathname, router, searchParams]);
   // QA round-2: active-staff-count drives group capacity. `staff` is
   // already pre-filtered to `status='active'` upstream in
   // `loadBookingServicesForSalonSlug`, so .length is the count.
@@ -114,7 +134,10 @@ export function BookingTypeSwitcher({
               data-testid={`booking-type-${m}`}
               onClick={() => setMode(m)}
               className={cn(
-                "flex-1 min-h-10 rounded-full px-4 py-2 transition-colors",
+                // P2.4 — touch target 44px (was 40px). Matches the
+                // Apple HIG / WCAG 2.2 SC 2.5.5 recommendation and
+                // the rest of the booking surface.
+                "flex-1 min-h-11 rounded-full px-4 py-2 transition-colors",
                 active
                   ? "bg-[var(--salon-primary)] text-[var(--booking-bg)] shadow-sm"
                   : "text-[var(--booking-text)] hover:bg-[var(--booking-bg-card)]",

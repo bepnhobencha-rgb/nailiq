@@ -164,6 +164,19 @@ export const bookingEn = {
     conflictMember: "Conflict for Person {n} — pick a different time or staff.",
     conflictBanner:
       "{n} of your slots are no longer available. Adjust those people and try again.",
+    /** P1.6 — distinguish in-group same-staff collision vs external
+     * race (someone else just took the slot). `{n}` = 1-indexed
+     * member number for cross-member. */
+    conflictCrossMember:
+      "Two people can't pick the same staff. Please choose a different staff for Person {n}.",
+    conflictExternal:
+      "This time was just booked by someone else. Please pick a different time.",
+    /** P1.2 — past-date guard surfaced after server-side check. */
+    pastDate:
+      "Can't book in the past. Please pick a different date.",
+    /** P1.1 — step-1 phone validation surfaces this when the user
+     * clicks Next with an empty phone field. */
+    phoneRequired: "Please enter a phone number.",
     duplicateSubmission:
       "Looks like this group was already booked. Refresh the page to see the confirmation.",
     salonClosedDay:
