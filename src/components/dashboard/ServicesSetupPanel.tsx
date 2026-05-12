@@ -159,10 +159,20 @@ export function ServicesSetupPanel({
             : r,
         ),
       );
-      setToast({ variant: "success", message: "✓ Service saved" });
+      // Prefer the "description generated" toast when the server's
+      // best-effort auto-gen kicked in — it's a more specific signal
+      // than the generic save toast and replaces it for ~2s.
+      setToast(
+        res.descriptionGenerated
+          ? {
+              variant: "success",
+              message: formLabels.descriptionGeneratedToast,
+            }
+          : { variant: "success", message: "✓ Service saved" },
+      );
       refresh();
     },
-    [refresh, slug],
+    [formLabels.descriptionGeneratedToast, refresh, slug],
   );
 
   const handleDelete = useCallback(
@@ -241,7 +251,14 @@ export function ServicesSetupPanel({
       return;
     }
     setAddSaveStatus("saved");
-    setToast({ variant: "success", message: "✓ Service saved" });
+    setToast(
+      res.descriptionGenerated
+        ? {
+            variant: "success",
+            message: formLabels.descriptionGeneratedToast,
+          }
+        : { variant: "success", message: "✓ Service saved" },
+    );
     addStatusTimerRef.current = setTimeout(() => setAddSaveStatus("idle"), 2000);
     setDraftName("");
     setDraftPrice("");

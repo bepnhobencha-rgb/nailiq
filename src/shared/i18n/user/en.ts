@@ -525,6 +525,9 @@ export type UserMessages = {
     popularHint: string;
     /** Live "{used}/{max}" counter rendered next to the description field. */
     characterCount: string;
+    /** Toast shown for ~2s after save when the server auto-generated a
+     *  description because the owner left the field blank. */
+    descriptionGeneratedToast: string;
   };
   /** Setup CRUD error strings (services, etc.) */
   setupErrors: {
@@ -1592,12 +1595,13 @@ export const userEn: UserMessages = {
     descriptionLabel: "Description",
     descriptionPlaceholder: "e.g. Long-lasting shine, perfectly shaped nails.",
     descriptionHint:
-      "One line shown under the service name on your booking page.",
+      "One line shown under the service name on your booking page. Leave blank and we'll write one for you.",
     descriptionTooLong: "Keep the description to 100 characters or fewer.",
     popularLabel: "Popular",
     popularHint:
       "Shows a small gold badge on the public booking page — pick your busiest 1–3 services.",
     characterCount: "{used}/{max}",
+    descriptionGeneratedToast: "✨ Description generated",
   },
   setupErrors: {
     serviceInUse:
