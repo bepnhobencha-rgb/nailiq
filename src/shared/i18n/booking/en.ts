@@ -138,6 +138,9 @@ export const bookingEn = {
   selectThisService: "Select this service",
   /** Aria label on the per-tile expand/collapse header button. */
   serviceTileToggleAria: "Toggle {service} details",
+  /** P1.4 — aria label on the small chevron that toggles the
+   *  description preview without committing the service. */
+  serviceTileDescriptionAria: "Show description for {service}",
 } as const;
 
 export type BookingMessages = typeof bookingEn;

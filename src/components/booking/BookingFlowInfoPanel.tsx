@@ -244,7 +244,15 @@ export function BookingFlowInfoPanel({
           {t.back}
         </Button>
         <div className="flex w-full justify-end sm:flex-1">
-          <LuxuryBookingCta onClick={onNext}>{t.next}</LuxuryBookingCta>
+          {/* P1.16 — Continue is gated to non-empty name + phone so the
+              guest can't tap through and surface a generic validation
+              error on the next step. Email + notes stay optional. */}
+          <LuxuryBookingCta
+            onClick={onNext}
+            disabled={clientName.trim().length === 0 || clientPhone.trim().length === 0}
+          >
+            {t.next}
+          </LuxuryBookingCta>
         </div>
       </div>
     </motion.section>

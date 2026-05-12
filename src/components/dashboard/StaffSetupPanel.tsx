@@ -32,11 +32,15 @@ export type SetupStaffServiceOption = {
   name: string;
 };
 
-const ROLE_OPTIONS: { value: StaffJobRole; label: string }[] = [
-  { value: "owner", label: "Owner" },
-  { value: "senior", label: "Senior" },
-  { value: "nail_tech", label: "Nail Tech" },
-];
+/** P1.8 — role labels are now localized via `setupStaff.roleOptions`.
+ * Only the enum order is fixed here; labels resolve at render time so
+ * VI sees "Chủ tiệm / Thợ chính / Thợ phụ" while EN keeps the English
+ * names. */
+const ROLE_VALUES: readonly StaffJobRole[] = [
+  "owner",
+  "senior",
+  "nail_tech",
+] as const;
 
 const STATUS_VALUES: readonly StaffStatus[] = [
   "active",
@@ -301,10 +305,11 @@ export function StaffSetupPanel({
               onConfirmDelete={() => {
                 void handleDelete(row.id);
               }}
-              onBlurSave={(partial) => {
+              onRowSave={(partial) => {
                 void handleUpdate(row.id, partial);
               }}
               canDelete={rows.length > 1}
+              saveButtonLabel={messages.serviceForm.saveButton}
             />
           </li>
         ))}
@@ -365,7 +370,7 @@ export function StaffSetupPanel({
             />
           </label>
           <label className="block text-sm font-medium text-nq-muted">
-            Role
+            {setupStaffCopy.roleLabel}
             <select
               className="mt-1.5 flex min-h-[44px] w-full appearance-none rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
               value={draftRole}
@@ -374,9 +379,9 @@ export function StaffSetupPanel({
                 setDraftRole(e.target.value as StaffJobRole);
               }}
             >
-              {ROLE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
+              {ROLE_VALUES.map((v) => (
+                <option key={v} value={v}>
+                  {setupStaffCopy.roleOptions[v]}
                 </option>
               ))}
             </select>
@@ -434,8 +439,9 @@ function StaffRowFields({
   onBeginDelete,
   onCancelDelete,
   onConfirmDelete,
-  onBlurSave,
+  onRowSave,
   canDelete,
+  saveButtonLabel,
 }: {
   row: SetupStaffRow;
   services: SetupStaffServiceOption[];
@@ -448,12 +454,14 @@ function StaffRowFields({
   onBeginDelete: () => void;
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
-  onBlurSave: (
+  /** P1.1 — explicit Save commits all dirty fields at once. */
+  onRowSave: (
     patch: Partial<Pick<SetupStaffRow, "name" | "job_role" | "status">> & {
       serviceIds?: string[];
     },
   ) => void;
   canDelete: boolean;
+  saveButtonLabel: string;
 }) {
   const { language } = useUserLanguage();
   const setupStaffCopy = getUserMessages(language).setupStaff;
@@ -461,6 +469,21 @@ function StaffRowFields({
   const [role, setRole] = useState<StaffJobRole>(row.job_role);
   const [status, setStatus] = useState<StaffStatus>(row.status);
   const [serviceIds, setServiceIds] = useState<string[]>(initialServiceIds);
+
+  // P1.1 — sort + join is a stable canonical form for the capability
+  // set; lets us detect dirty without spreading the array. Empty
+  // string is treated as the row's "actually empty" state.
+  const initialServicesKey = [...initialServiceIds].sort().join("|");
+  const currentServicesKey = [...serviceIds].sort().join("|");
+  const trimmedName = name.trim();
+  const patch: Partial<Pick<SetupStaffRow, "name" | "job_role" | "status">> & {
+    serviceIds?: string[];
+  } = {};
+  if (trimmedName && trimmedName !== row.name) patch.name = trimmedName;
+  if (role !== row.job_role) patch.job_role = role;
+  if (status !== row.status) patch.status = status;
+  if (currentServicesKey !== initialServicesKey) patch.serviceIds = serviceIds;
+  const isDirty = Object.keys(patch).length > 0;
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- row props after save / refresh
@@ -520,30 +543,20 @@ function StaffRowFields({
             className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
             value={name}
             disabled={disabled}
-            onChange={(e) => {
-              setName(e.target.value);
-            }}
-            onBlur={() => {
-              const t = name.trim();
-              if (t && t !== row.name) onBlurSave({ name: t });
-            }}
+            onChange={(e) => setName(e.target.value)}
           />
         </label>
         <label className="block text-sm font-medium text-nq-muted">
-          Role
+          {setupStaffCopy.roleLabel}
           <select
             className="mt-1.5 flex min-h-[44px] w-full appearance-none rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
             value={role}
             disabled={disabled}
-            onChange={(e) => {
-              const v = e.target.value as StaffJobRole;
-              setRole(v);
-              if (v !== row.job_role) onBlurSave({ job_role: v });
-            }}
+            onChange={(e) => setRole(e.target.value as StaffJobRole)}
           >
-            {ROLE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
+            {ROLE_VALUES.map((v) => (
+              <option key={v} value={v}>
+                {setupStaffCopy.roleOptions[v]}
               </option>
             ))}
           </select>
@@ -556,11 +569,7 @@ function StaffRowFields({
           className="mt-1.5 flex min-h-[44px] w-full appearance-none rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60 sm:max-w-[16rem]"
           value={status}
           disabled={disabled}
-          onChange={(e) => {
-            const v = e.target.value as StaffStatus;
-            setStatus(v);
-            if (v !== row.status) onBlurSave({ status: v });
-          }}
+          onChange={(e) => setStatus(e.target.value as StaffStatus)}
         >
           {STATUS_VALUES.map((v) => (
             <option key={v} value={v}>
@@ -579,23 +588,32 @@ function StaffRowFields({
         label={capabilityLabel}
         hint={capabilityHint}
         emptyLabel={capabilityEmpty}
-        onChange={(next) => {
-          setServiceIds(next);
-          /* Save on every toggle. The row's name/role change paths debounce
-             via blur; capability is a low-frequency, idempotent set so we
-             don't bother batching. */
-          onBlurSave({ serviceIds: next });
-        }}
+        onChange={setServiceIds}
       />
-      <Button
-        type="button"
-        variant="secondary"
-        className="min-h-11 w-full touch-manipulation sm:w-auto sm:self-start"
-        disabled={disabled || !canDelete}
-        onClick={onBeginDelete}
-      >
-        Remove staff
-      </Button>
+      {/* P1.1 — explicit Save button; commits all dirty fields
+          (name/role/status/serviceIds) in one server call. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+        <Button
+          type="button"
+          variant="secondary"
+          className="min-h-11 touch-manipulation sm:w-auto"
+          disabled={disabled || !canDelete}
+          onClick={onBeginDelete}
+        >
+          Remove staff
+        </Button>
+        <Button
+          type="button"
+          variant="primary"
+          data-testid={`staff-row-save-${row.id}`}
+          className="min-h-11 touch-manipulation sm:w-auto"
+          disabled={disabled || !isDirty}
+          loading={disabled}
+          onClick={() => onRowSave(patch)}
+        >
+          {saveButtonLabel}
+        </Button>
+      </div>
     </div>
   );
 }

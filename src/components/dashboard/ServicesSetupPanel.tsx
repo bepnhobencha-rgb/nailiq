@@ -350,8 +350,14 @@ export function ServicesSetupPanel({
     setDraftPrice("");
     setDraftDur("45");
     setDraftBuf("10");
-    setDraftCategory(DEFAULT_SERVICE_CATEGORY);
+    // P1.5 — keep the last category selected so the owner can add a
+    // run of services in the same category without re-picking each
+    // time. Resetting only the variable fields (name/price/duration/
+    // buffer/description/popular) matches the actual usage pattern.
     setDraftDescription("");
+    // P1.6 — explicitly reset Popular so the next service doesn't
+    // inherit the flag accidentally. (Was already here, but pin it
+    // down so a future refactor doesn't silently drop it.)
     setDraftIsPopular(false);
     refresh();
   }, [
@@ -401,7 +407,7 @@ export function ServicesSetupPanel({
               onConfirmDelete={() => {
                 void handleDelete(row.id);
               }}
-              onBlurSave={(partial) => {
+              onRowSave={(partial) => {
                 void handleUpdate(row.id, partial);
               }}
               canDelete={rows.length > 1}
@@ -571,7 +577,7 @@ function ServiceRowFields({
   onBeginDelete,
   onCancelDelete,
   onConfirmDelete,
-  onBlurSave,
+  onRowSave,
   canDelete,
 }: {
   row: SetupServiceRow;
@@ -584,7 +590,9 @@ function ServiceRowFields({
   onBeginDelete: () => void;
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
-  onBlurSave: (
+  /** P1.1 — explicit Save commits ALL dirty fields in one shot.
+   * Was previously `onBlurSave` per-field. */
+  onRowSave: (
     patch: Partial<
       Pick<
         SetupServiceRow,
@@ -605,7 +613,9 @@ function ServiceRowFields({
   const [price, setPrice] = useState(dollarsFromCents(row.price_cents));
   const [dur, setDur] = useState(String(row.duration_minutes));
   const [buf, setBuf] = useState(String(row.buffer_minutes));
+  const [category, setCategory] = useState<ServiceCategory>(row.category);
   const [description, setDescription] = useState(row.description ?? "");
+  const [isPopular, setIsPopular] = useState(row.is_popular);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- row props after save / refresh
@@ -613,8 +623,68 @@ function ServiceRowFields({
     setPrice(dollarsFromCents(row.price_cents));
     setDur(String(row.duration_minutes));
     setBuf(String(row.buffer_minutes));
+    setCategory(row.category);
     setDescription(row.description ?? "");
+    setIsPopular(row.is_popular);
   }, [row]);
+
+  // P1.1 — build the patch of fields that differ from server state.
+  // Save button is disabled when the patch is empty (no changes).
+  const dirtyPatch = (): Partial<
+    Pick<
+      SetupServiceRow,
+      | "name"
+      | "price_cents"
+      | "duration_minutes"
+      | "buffer_minutes"
+      | "category"
+      | "description"
+      | "is_popular"
+    >
+  > => {
+    const patch: Partial<
+      Pick<
+        SetupServiceRow,
+        | "name"
+        | "price_cents"
+        | "duration_minutes"
+        | "buffer_minutes"
+        | "category"
+        | "description"
+        | "is_popular"
+      >
+    > = {};
+    const nameTrim = name.trim();
+    if (nameTrim && nameTrim !== row.name) patch.name = nameTrim;
+    const cents = centsFromDollarsString(price);
+    if (cents !== null && cents !== row.price_cents) patch.price_cents = cents;
+    const durNum = Number.parseInt(dur, 10);
+    if (
+      Number.isFinite(durNum) &&
+      durNum >= 1 &&
+      durNum !== row.duration_minutes
+    )
+      patch.duration_minutes = durNum;
+    const bufNum = Number.parseInt(buf, 10);
+    if (
+      Number.isFinite(bufNum) &&
+      bufNum >= 0 &&
+      bufNum !== row.buffer_minutes
+    )
+      patch.buffer_minutes = bufNum;
+    if (category !== row.category) patch.category = category;
+    const descTrim = description.trim();
+    const descNext = descTrim.length === 0 ? null : descTrim;
+    if (descNext !== (row.description ?? null)) {
+      // Server enforces SERVICE_DESCRIPTION_MAX_LEN; trust input
+      // `maxLength` to keep the local value short.
+      patch.description = descNext;
+    }
+    if (isPopular !== row.is_popular) patch.is_popular = isPopular;
+    return patch;
+  };
+  const patch = dirtyPatch();
+  const isDirty = Object.keys(patch).length > 0;
 
   if (confirmingDelete) {
     return (
@@ -636,13 +706,7 @@ function ServiceRowFields({
             className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
             value={name}
             disabled={disabled}
-            onChange={(e) => {
-              setName(e.target.value);
-            }}
-            onBlur={() => {
-              const t = name.trim();
-              if (t && t !== row.name) onBlurSave({ name: t });
-            }}
+            onChange={(e) => setName(e.target.value)}
           />
         </label>
         <label className="block text-sm font-medium text-nq-muted">
@@ -652,13 +716,7 @@ function ServiceRowFields({
             className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
             value={price}
             disabled={disabled}
-            onChange={(e) => {
-              setPrice(e.target.value);
-            }}
-            onBlur={() => {
-              const c = centsFromDollarsString(price);
-              if (c !== null && c !== row.price_cents) onBlurSave({ price_cents: c });
-            }}
+            onChange={(e) => setPrice(e.target.value)}
           />
         </label>
         <label className="block text-sm font-medium text-nq-muted">
@@ -668,18 +726,7 @@ function ServiceRowFields({
             className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
             value={dur}
             disabled={disabled}
-            onChange={(e) => {
-              setDur(e.target.value);
-            }}
-            onBlur={() => {
-              const n = Number.parseInt(dur, 10);
-              if (
-                Number.isFinite(n) &&
-                n >= 1 &&
-                n !== row.duration_minutes
-              )
-                onBlurSave({ duration_minutes: n });
-            }}
+            onChange={(e) => setDur(e.target.value)}
           />
         </label>
         <label className="block text-sm font-medium text-nq-muted">
@@ -689,27 +736,17 @@ function ServiceRowFields({
             className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
             value={buf}
             disabled={disabled}
-            onChange={(e) => {
-              setBuf(e.target.value);
-            }}
-            onBlur={() => {
-              const n = Number.parseInt(buf, 10);
-              if (Number.isFinite(n) && n >= 0 && n !== row.buffer_minutes)
-                onBlurSave({ buffer_minutes: n });
-            }}
+            onChange={(e) => setBuf(e.target.value)}
           />
         </label>
         <label className="block text-sm font-medium text-nq-muted sm:col-span-2">
           {categoryPickerLabel}
           <select
             className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
-            value={row.category}
+            value={category}
             disabled={disabled}
             data-testid={`service-category-row-${row.id}`}
-            onChange={(e) => {
-              const next = e.target.value as ServiceCategory;
-              if (next !== row.category) onBlurSave({ category: next });
-            }}
+            onChange={(e) => setCategory(e.target.value as ServiceCategory)}
           >
             {categoryOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -725,38 +762,38 @@ function ServiceRowFields({
         onChange={setDescription}
         labels={formLabels}
         testId={`service-description-row-${row.id}`}
-        onBlurCommit={() => {
-          const trimmed = description.trim();
-          const next = trimmed.length === 0 ? null : trimmed;
-          if (next !== (row.description ?? null)) {
-            // Server-side validator will also reject oversized strings; the
-            // input maxLength keeps the field short in normal use.
-            if (next === null || next.length <= SERVICE_DESCRIPTION_MAX_LEN) {
-              onBlurSave({ description: next });
-            }
-          }
-        }}
       />
       <PopularToggle
-        checked={row.is_popular}
+        checked={isPopular}
         disabled={disabled}
-        onChange={(next) => {
-          if (next !== row.is_popular) {
-            onBlurSave({ is_popular: next });
-          }
-        }}
+        onChange={setIsPopular}
         labels={formLabels}
         testId={`service-popular-row-${row.id}`}
       />
-      <Button
-        type="button"
-        variant="secondary"
-        className="min-h-11 w-full touch-manipulation sm:w-auto sm:self-start"
-        disabled={disabled || !canDelete}
-        onClick={onBeginDelete}
-      >
-        Delete service
-      </Button>
+      {/* P1.1 — explicit Save button per row. Commits every dirty
+          field in one server roundtrip → one toast on success. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+        <Button
+          type="button"
+          variant="secondary"
+          className="min-h-11 touch-manipulation sm:w-auto"
+          disabled={disabled || !canDelete}
+          onClick={onBeginDelete}
+        >
+          Delete service
+        </Button>
+        <Button
+          type="button"
+          variant="primary"
+          data-testid={`service-row-save-${row.id}`}
+          className="min-h-11 touch-manipulation sm:w-auto"
+          disabled={disabled || !isDirty}
+          loading={disabled}
+          onClick={() => onRowSave(patch)}
+        >
+          {formLabels.saveButton}
+        </Button>
+      </div>
     </div>
   );
 }
