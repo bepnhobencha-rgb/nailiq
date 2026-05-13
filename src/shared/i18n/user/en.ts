@@ -132,6 +132,25 @@ export type UserMessages = {
     /** Shown when both sms_enabled and email_enabled are false. */
     registrationDisabledTitle: string;
     registrationDisabledBody: string;
+    /** Post-signup confirmation page (`/register/success`). */
+    success: {
+      title: string;
+      subtext: string;
+      /** Rendered when `?adjusted=1` — the requested slug was taken and we
+       *  reserved a different one. `{slug}` is substituted client-side. */
+      slugAdjusted: string;
+      callout: string;
+      salonOwnerLabel: string;
+      goToDashboard: string;
+      dashboardHint: string;
+      bookingLinkLabel: string;
+      copyLink: string;
+      copied: string;
+      testBookingNow: string;
+      homeBookmarkPrefix: string;
+      homeBookmarkLinkText: string;
+      homeBookmarkSuffix: string;
+    };
   };
   /** Marketing landing page (`/`) — full copy across all sections.
    * Wired through `useUserLanguage` so the EN/VI toggle in the nav
@@ -334,6 +353,10 @@ export type UserMessages = {
     magicLinkSentBody: string;
     /** "Use a different email" button on confirmation screen. */
     useDifferentEmail: string;
+    /** Top-left back link rendered by `RegisterStepShell` on every auth
+     *  surface (/register, /register/setup, /login, /login/verify,
+     *  /register/success). Includes the leading arrow glyph. */
+    backHome: string;
   };
   /** Multi-salon picker (`/choose-salon`). Shown when an authenticated user
    * has more than one `salon_members` row. Single-salon users skip it. */
@@ -1342,6 +1365,26 @@ export const userEn: UserMessages = {
     registrationDisabledTitle: "Registration temporarily unavailable",
     registrationDisabledBody:
       "We're unable to accept new registrations at this time. Please try again later.",
+    success: {
+      title: "Your salon is live!",
+      subtext:
+        "You can take bookings immediately — share your link anywhere clients already message you.",
+      slugAdjusted:
+        "Your first-choice URL was taken, so we reserved {slug} for you.",
+      callout:
+        "Guests book on your page now — open it once to confirm everything feels right, then drop the link in Instagram or SMS.",
+      salonOwnerLabel: "Salon owner",
+      goToDashboard: "Go to Dashboard",
+      dashboardHint:
+        "If your profile isn't complete yet, the dashboard shows a setup checklist (services, staff, hours, address) before real bookings are recommended.",
+      bookingLinkLabel: "Public booking link",
+      copyLink: "Copy link",
+      copied: "Copied",
+      testBookingNow: "Test booking now",
+      homeBookmarkPrefix: "Home later? Bookmark ",
+      homeBookmarkLinkText: "NailIQ home",
+      homeBookmarkSuffix: ".",
+    },
   },
   landing: {
     nav: {
@@ -1607,6 +1650,7 @@ export const userEn: UserMessages = {
     magicLinkSentBody:
       "We sent a sign-in link to {email}. Click it to continue — the link expires in 60 minutes.",
     useDifferentEmail: "Use a different email",
+    backHome: "← Home",
   },
   chooseSalon: {
     title: "Choose your salon",

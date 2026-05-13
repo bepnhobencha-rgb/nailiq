@@ -1,10 +1,12 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
 import Link from "next/link";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { AuthLanguageToggle } from "@/components/auth/AuthLanguageToggle";
+import { getUserMessages } from "@/shared/i18n/user";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 type RegisterStepShellProps = {
   title: string;
@@ -24,6 +26,9 @@ export function RegisterStepShell({
   helperHint,
   children,
 }: RegisterStepShellProps) {
+  const { language } = useUserLanguage();
+  const t = useMemo(() => getUserMessages(language).auth, [language]);
+
   return (
     <ResponsiveShell>
       <MobileStack className="w-full max-w-[var(--max-nq-mobile)] sm:pt-2">
@@ -33,7 +38,7 @@ export function RegisterStepShell({
               href="/"
               className="text-sm text-nq-muted transition-colors duration-200 hover:text-nq-foreground/90"
             >
-              ← Home
+              {t.backHome}
             </Link>
             <AuthLanguageToggle />
           </div>
