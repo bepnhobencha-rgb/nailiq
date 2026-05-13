@@ -559,7 +559,7 @@
     );
     padding: 0.75rem 1rem;
     font-size: 1rem;
-    color: var(--color-nq-foreground);
+    color: var(--booking-text, var(--color-nq-foreground));
     outline: none;
     transition: border-color 0.2s var(--ease-nq-out, ease),
       box-shadow 0.2s var(--ease-nq-out, ease);
