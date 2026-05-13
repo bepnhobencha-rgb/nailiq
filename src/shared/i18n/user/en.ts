@@ -53,6 +53,12 @@ export type UserMessages = {
     /** User-facing subtext when SMS phone auth has not yet been configured. */
     phoneAuthDisabledSubtext: string;
     returningOwnerHint: string;
+    /** B3 (QA 2026-05-13) — email-path variant of `returningOwnerHint`.
+     *  The phone-based hint reads as misleading on the magic-link
+     *  screen (no phone field). This key swaps the noun for "email"
+     *  so the hint still tells returning owners they can use the
+     *  same flow to sign in. */
+    returningOwnerEmailHint: string;
     /** Shown after “Send code” when this phone is already tied to a salon (before verify). */
     welcomeBackAfterSend: string;
     /** Enter-code screen when continuing as returning owner */
@@ -172,6 +178,18 @@ export type UserMessages = {
       eyebrow: string;
       h2: string;
       sub: string;
+      /** B4 (QA 2026-05-13) — testimonial quotes were hardcoded
+       *  EN strings in `LandingSocialProof.tsx`, so VI visitors
+       *  saw English copy. Moving them to i18n so they participate
+       *  in the locale switch. Two entries is the current count;
+       *  add to the array to render more cards without touching
+       *  the component. */
+      quotes: ReadonlyArray<{
+        initials: string;
+        body: string;
+        author: string;
+        venue: string;
+      }>;
     };
     pricing: {
       eyebrow: string;
@@ -1231,6 +1249,8 @@ export const userEn: UserMessages = {
     phoneAuthDisabledSubtext: "⚠️ SMS login is not configured yet.",
     returningOwnerHint:
       "Returning owner? Enter your number to sign back in.",
+    returningOwnerEmailHint:
+      "Returning owner? Enter your email to sign back in.",
     welcomeBackAfterSend:
       "Welcome back! Enter the code to access your dashboard.",
     welcomeBackVerifySubtext:
@@ -1357,10 +1377,16 @@ export const userEn: UserMessages = {
       eyebrow: "Get Started",
       h2: "Live in 15 minutes",
       step1: {
-        title: "Sign up with your phone",
-        body: "OTP verification. No email required to start.",
+        // B2 (QA 2026-05-13) — landing claimed "Sign up with your
+        // phone — OTP verification" but the prod register surface
+        // ships email magic-link as the recommended path
+        // (`smsEnabled=false` on the current SMS-disabled config).
+        // Switching the headline + body so the landing matches the
+        // experience the customer actually lands on.
+        title: "Sign up with your email",
+        body: "Instant access via magic link — no app, no password.",
         preview:
-          "You’ll see — a 4-digit code in seconds, then your dashboard.",
+          "You’ll see — a sign-in link in your inbox, then your dashboard.",
       },
       step2: {
         title: "Add services and staff",
@@ -1381,6 +1407,22 @@ export const userEn: UserMessages = {
       eyebrow: "Trusted By",
       h2: "What salon owners say",
       sub: "Early access feedback",
+      quotes: [
+        {
+          initials: "LN",
+          body:
+            "Perfect for busy salons. We stopped losing walk-ins because the queue is right there on iPad. Front desk finally has a clear picture.",
+          author: "Lan Nguyen, Owner",
+          venue: "Nails by Lan · Toronto",
+        },
+        {
+          initials: "TM",
+          body:
+            "Vietnamese support saved us. Our customers book themselves now in Vietnamese and our phone barely rings — in a good way.",
+          author: "Thuy Mai, Owner",
+          venue: "Saigon Nail Studio · Houston",
+        },
+      ],
     },
     pricing: {
       eyebrow: "Pricing",

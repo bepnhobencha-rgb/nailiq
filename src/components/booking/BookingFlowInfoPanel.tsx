@@ -10,6 +10,7 @@ import {
 } from "@/components/booking/bookingMotion";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
+import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { cn } from "@/shared/lib/cn";
 
 export function BookingFlowInfoPanel({
@@ -60,6 +61,20 @@ export function BookingFlowInfoPanel({
   const nameRef = useRef<HTMLInputElement | null>(null);
   const phoneRef = useRef<HTMLInputElement | null>(null);
   const emailRef = useRef<HTMLInputElement | null>(null);
+
+  // B1 (QA 2026-05-13) — local phone validity gate. The parent runs
+  // `validateGuestPhone` on blur and sets `phoneError`, but a user
+  // typing "123" and clicking Continue WITHOUT blurring would slip
+  // past (phoneError stays null, blur fires after click). We
+  // re-derive validity on every render from the live phone string
+  // so Continue is gated on a digit count the server will actually
+  // accept — eliminates the "Continue succeeds, server rejects"
+  // round trip.
+  const phoneTrimmed = clientPhone.trim();
+  const phoneLocallyInvalid =
+    phoneTrimmed.length > 0 && !validateGuestPhone(phoneTrimmed).ok;
+  const effectivePhoneError =
+    phoneError ?? (phoneLocallyInvalid ? t.bookingErrors.invalidPhone : null);
   // Auto-focus the first invalid field after Continue surfaces an error.
   useEffect(() => {
     const target = nameError
@@ -156,18 +171,18 @@ export function BookingFlowInfoPanel({
             }}
             className={cn(
               "nq-booking-field",
-              phoneError && "border-nq-error/50",
+              effectivePhoneError && "border-nq-error/50",
             )}
-            aria-invalid={Boolean(phoneError)}
+            aria-invalid={Boolean(effectivePhoneError)}
             data-testid="booking-info-phone"
           />
-          {phoneError ? (
+          {effectivePhoneError ? (
             <p
               className="mt-1 text-xs text-nq-error"
               data-testid="booking-info-phone-error"
               role="alert"
             >
-              {phoneError}
+              {effectivePhoneError}
             </p>
           ) : null}
         </div>
@@ -244,12 +259,20 @@ export function BookingFlowInfoPanel({
           {t.back}
         </Button>
         <div className="flex w-full justify-end sm:flex-1">
-          {/* P1.16 — Continue is gated to non-empty name + phone so the
-              guest can't tap through and surface a generic validation
-              error on the next step. Email + notes stay optional. */}
+          {/* P1.16 + B1 (QA 2026-05-13) — Continue is gated on:
+              - non-empty name
+              - non-empty phone
+              - phone passes `validateGuestPhone` (≥10 digits with
+                a valid country prefix). Previously a "123" entry
+                could slip through to Review and bounce off the
+                server's validator. */}
           <LuxuryBookingCta
             onClick={onNext}
-            disabled={clientName.trim().length === 0 || clientPhone.trim().length === 0}
+            disabled={
+              clientName.trim().length === 0 ||
+              phoneTrimmed.length === 0 ||
+              phoneLocallyInvalid
+            }
           >
             {t.next}
           </LuxuryBookingCta>

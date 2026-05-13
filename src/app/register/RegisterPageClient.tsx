@@ -212,8 +212,12 @@ export function RegisterPageClient({ demoMode, smsEnabled, emailEnabled }: Props
       >
         <Toast toast={toast} onDismiss={() => setToast(null)} />
 
+        {/* B3 (QA 2026-05-13) — email path used the SMS-flavored
+            `returningOwnerHint` ("Nhập số điện thoại") which read
+            as misleading next to the email input. Use the
+            email-specific variant instead. */}
         <p className="mb-2 text-sm text-nq-muted sm:mb-4">
-          {t.register.returningOwnerHint}
+          {t.register.returningOwnerEmailHint}
         </p>
 
         <form onSubmit={onEmailSubmit} method="post" className="flex flex-col gap-6">
