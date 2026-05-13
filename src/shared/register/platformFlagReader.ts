@@ -4,8 +4,10 @@
  * server-only code paths (page.tsx, server actions) before any user
  * session is available.
  *
- * Defaults are conservative: smsEnabled=true preserves the existing SMS
- * flow when the table is missing or the row hasn't been seeded yet.
+ * Defaults flipped 2026-05-13: Twilio not approved, so SMS is unusable in
+ * production. Email magic link + Google OAuth + email/password are the
+ * primary methods now. The DB row can still flip `sms_enabled=true` if
+ * SMS becomes available later.
  */
 
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -16,8 +18,8 @@ export type AuthPlatformFlags = {
 };
 
 const AUTH_FLAG_DEFAULTS: AuthPlatformFlags = {
-  smsEnabled: true,
-  emailEnabled: false,
+  smsEnabled: false,
+  emailEnabled: true,
 };
 
 export async function readAuthPlatformFlags(): Promise<AuthPlatformFlags> {
@@ -51,12 +53,13 @@ export async function readAuthPlatformFlags(): Promise<AuthPlatformFlags> {
     }
 
     return {
-      // Default smsEnabled=true so existing prod installs without a row
-      // continue sending SMS uninterrupted.
-      smsEnabled: byKey.has("sms_enabled")
-        ? (byKey.get("sms_enabled") as boolean)
+      // Defaults match AUTH_FLAG_DEFAULTS — only flip when the DB row
+      // explicitly says otherwise. SMS is OFF by default (Twilio not
+      // approved); email is ON.
+      smsEnabled: byKey.get("sms_enabled") ?? false,
+      emailEnabled: byKey.has("email_enabled")
+        ? (byKey.get("email_enabled") as boolean)
         : true,
-      emailEnabled: byKey.get("email_enabled") ?? false,
     };
   } catch {
     return AUTH_FLAG_DEFAULTS;

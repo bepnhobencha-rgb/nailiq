@@ -288,12 +288,15 @@ export type UserMessages = {
   };
   /** Shared auth surfaces (login + register social buttons). Public booking is unaffected. */
   auth: {
+    /** Page title for the unified sign-in/sign-up screen on /register. */
+    signInOrSignUpTitle: string;
+    signInOrSignUpSubtext: string;
     /** OR divider in social buttons block. */
     orDivider: string;
     continueWithGoogle: string;
-    /** Toggle reveals magic-link form. */
+    /** Toggle reveals magic-link form (legacy "compact" layout). */
     otherOptions: string;
-    /** Toggle when magic-link form is open. */
+    /** Toggle when magic-link form is open (legacy "compact" layout). */
     hideOptions: string;
     /** Submit button on /login (mode="login"). */
     sendLoginLink: string;
@@ -301,11 +304,36 @@ export type UserMessages = {
     sendSignupLink: string;
     emailPlaceholder: string;
     emailInvalid: string;
+    emailRequired: string;
     magicLinkSent: string;
     /** Generic Google sign-in failure copy. */
     googleSigninFailed: string;
     /** Generic magic-link send failure copy. */
     magicLinkSendFailed: string;
+    /** Password section (collapsible under the magic-link button). */
+    passwordLabel: string;
+    passwordPlaceholder: string;
+    passwordTooShort: string;
+    passwordRequired: string;
+    signInButton: string;
+    signUpButton: string;
+    signingIn: string;
+    signingUp: string;
+    showPasswordToggle: string;
+    hidePasswordToggle: string;
+    signInFailed: string;
+    signUpFailed: string;
+    /** Shown when signUp is called but the email is already registered. */
+    accountExists: string;
+    /** Sign-up + email confirmation enabled: ask the user to check inbox. */
+    signUpConfirmEmailTitle: string;
+    /** {email} placeholder is substituted client-side. */
+    signUpConfirmEmailBody: string;
+    /** Magic-link confirmation screen (shared title/body). */
+    magicLinkSentTitle: string;
+    magicLinkSentBody: string;
+    /** "Use a different email" button on confirmation screen. */
+    useDifferentEmail: string;
   };
   /** Multi-salon picker (`/choose-salon`). Shown when an authenticated user
    * has more than one `salon_members` row. Single-salon users skip it. */
@@ -1543,17 +1571,42 @@ export const userEn: UserMessages = {
     verifyErrorNoSalon: "This number is not registered.",
   },
   auth: {
+    signInOrSignUpTitle: "Sign in or sign up",
+    signInOrSignUpSubtext:
+      "Welcome to NailIQ — continue with Google, a magic link, or your password.",
     orDivider: "or",
     continueWithGoogle: "Continue with Google",
     otherOptions: "Other options",
     hideOptions: "Hide options",
     sendLoginLink: "Send login link",
-    sendSignupLink: "Send sign-up link",
+    sendSignupLink: "Send magic link",
     emailPlaceholder: "you@example.com",
     emailInvalid: "Enter a valid email address.",
+    emailRequired: "Enter your email above first.",
     magicLinkSent: "Magic link sent. Check your email to continue.",
     googleSigninFailed: "Google sign-in failed.",
     magicLinkSendFailed: "Could not send link. Try again.",
+    passwordLabel: "Password",
+    passwordPlaceholder: "Enter your password",
+    passwordTooShort: "Password must be at least 8 characters.",
+    passwordRequired: "Enter your password.",
+    signInButton: "Sign in",
+    signUpButton: "Sign up",
+    signingIn: "Signing in…",
+    signingUp: "Creating account…",
+    showPasswordToggle: "Sign in with password",
+    hidePasswordToggle: "Use magic link instead",
+    signInFailed: "Incorrect email or password.",
+    signUpFailed: "Could not create your account. Try again.",
+    accountExists:
+      "An account with this email already exists. Try signing in instead.",
+    signUpConfirmEmailTitle: "Confirm your email",
+    signUpConfirmEmailBody:
+      "We sent a confirmation link to {email}. Click it to activate your account.",
+    magicLinkSentTitle: "Check your inbox",
+    magicLinkSentBody:
+      "We sent a sign-in link to {email}. Click it to continue — the link expires in 60 minutes.",
+    useDifferentEmail: "Use a different email",
   },
   chooseSalon: {
     title: "Choose your salon",
