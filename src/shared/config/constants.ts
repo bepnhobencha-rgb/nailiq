@@ -71,3 +71,39 @@ export const SCHEDULER_TIMEOUT_MS = 20 * 1000;
  * `Math.min(activeStaffCount, GROUP_MAX_SIZE)`.
  */
 export const GROUP_MAX_SIZE = 6;
+
+/**
+ * Task #05 — smart-alternatives "next available date" sub-query
+ * horizon. When the group can't fit on the requested date the
+ * scheduler probes the next N salon-local days in parallel to find
+ * the soonest day that DOES fit. Capped at 5 (≈ one work week)
+ * because:
+ *   - 7 was the original spec but 5 is enough to bracket any
+ *     non-holiday week without triggering an extra round of
+ *     opening-hours-closed days in the middle
+ *   - each probe is a full `loadGroupSmartSchedule` run; 5 in
+ *     parallel is the upper bound on Supabase connection
+ *     pressure we want from a single user impression
+ */
+export const ALTERNATIVE_SEARCH_DAYS = 5;
+
+/**
+ * Task #05 — per-sub-query timeout for the smart-alternatives
+ * fan-out. Each sub-query races against this clock; whichever
+ * ones don't return inside the budget are dropped from the
+ * results card list. 5 s sits inside the user-perceived "loading
+ * is still OK" window — the parent flow already shows the
+ * `schedulingStillWorking` copy after 10 s, so the alternatives
+ * results card has room to render before that nag fires.
+ */
+export const ALTERNATIVE_QUERY_TIMEOUT_MS = 5 * 1000;
+
+/**
+ * Task #05 — minimum gap between the main group's wall-clock
+ * end and the "late" member's start in a split-option
+ * arrangement. 15 min matches `SLOT_STEP_MIN` in the scheduler,
+ * which keeps the late member's start aligned to the same grid
+ * as the rest of the day and lets the salon flip the chair
+ * cleanly between guests.
+ */
+export const SPLIT_LATE_BUFFER_MIN = 15;
