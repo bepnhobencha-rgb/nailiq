@@ -118,6 +118,26 @@ export const userVi: UserMessages = {
     registrationDisabledTitle: "Đăng ký tạm thời không khả dụng",
     registrationDisabledBody:
       "Hiện tại chúng tôi không thể nhận đăng ký mới. Vui lòng thử lại sau.",
+    success: {
+      title: "Tiệm của bạn đã hoạt động!",
+      subtext:
+        "Bạn có thể nhận lịch ngay — chia sẻ link đến những nơi khách đã từng nhắn cho bạn.",
+      slugAdjusted:
+        "Đường dẫn bạn chọn đã có người dùng, nên chúng tôi giữ {slug} cho bạn.",
+      callout:
+        "Khách đã có thể đặt lịch trên trang của bạn — mở trang một lần để kiểm tra, rồi gửi link qua Instagram hoặc SMS.",
+      salonOwnerLabel: "Chủ tiệm",
+      goToDashboard: "Vào bảng điều khiển",
+      dashboardHint:
+        "Nếu hồ sơ tiệm chưa hoàn thiện, bảng điều khiển sẽ hiển thị danh sách thiết lập (dịch vụ, nhân viên, giờ mở, địa chỉ) trước khi đề xuất nhận lịch thật.",
+      bookingLinkLabel: "Link đặt lịch công khai",
+      copyLink: "Sao chép link",
+      copied: "Đã chép",
+      testBookingNow: "Thử đặt lịch ngay",
+      homeBookmarkPrefix: "Quay lại sau? Đánh dấu ",
+      homeBookmarkLinkText: "trang chủ NailIQ",
+      homeBookmarkSuffix: ".",
+    },
   },
   landing: {
     nav: {
@@ -379,6 +399,7 @@ export const userVi: UserMessages = {
     magicLinkSentBody:
       "Chúng tôi đã gửi link đăng nhập đến {email}. Nhấp vào link để tiếp tục — link có hiệu lực trong 60 phút.",
     useDifferentEmail: "Dùng email khác",
+    backHome: "← Trang chủ",
   },
   chooseSalon: {
     title: "Chọn tiệm của bạn",

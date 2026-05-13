@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useTransition } from "react";
+import { AuthLanguageToggle } from "@/components/auth/AuthLanguageToggle";
 import { getUserMessages } from "@/shared/i18n/user";
 import { type SalonMemberRole } from "@/shared/lib/salonMemberRole";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -27,6 +28,9 @@ export function ChooseSalonClient({ cards }: Props) {
   return (
     <main className="min-h-screen bg-nq-bg text-nq-foreground">
       <div className="mx-auto flex w-full max-w-md flex-col gap-8 px-5 py-12 md:py-16">
+        <div className="flex justify-end">
+          <AuthLanguageToggle />
+        </div>
         <header className="text-center">
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
             {t.title}
