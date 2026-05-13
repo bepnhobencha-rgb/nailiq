@@ -5,32 +5,6 @@ import { motion, useReducedMotion } from "@/shared/lib/motionClient";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
-type Quote = {
-  initials: string;
-  body: string;
-  /** Person + role line. */
-  author: string;
-  /** Salon + city line. */
-  venue: string;
-};
-
-const quotes: Quote[] = [
-  {
-    initials: "LN",
-    body:
-      "Perfect for busy salons. We stopped losing walk-ins because the queue is right there on iPad. Front desk finally has a clear picture.",
-    author: "Lan Nguyen, Owner",
-    venue: "Nails by Lan · Toronto",
-  },
-  {
-    initials: "TM",
-    body:
-      "Vietnamese support saved us. Our customers book themselves now in Vietnamese and our phone barely rings — in a good way.",
-    author: "Thuy Mai, Owner",
-    venue: "Saigon Nail Studio · Houston",
-  },
-];
-
 export function LandingSocialProof() {
   const reduce = useReducedMotion();
   const { language } = useUserLanguage();
@@ -38,6 +12,10 @@ export function LandingSocialProof() {
     () => getUserMessages(language).landing.socialProof,
     [language],
   );
+  // B4 (QA 2026-05-13) — quotes used to be a module-level const in
+  // English. Reading them off the per-language bundle so VI
+  // visitors see the translated copy instead of the EN fallback.
+  const quotes = t.quotes;
 
   return (
     <section className="relative bg-nq-bg py-14 md:py-20">

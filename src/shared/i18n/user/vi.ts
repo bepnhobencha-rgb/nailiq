@@ -53,6 +53,8 @@ export const userVi: UserMessages = {
     phoneAuthDisabledSubtext: "⚠️ Đăng nhập qua SMS chưa được cấu hình.",
     returningOwnerHint:
       "Đã là chủ tiệm? Nhập số điện thoại để đăng nhập lại.",
+    returningOwnerEmailHint:
+      "Đã là chủ tiệm? Nhập email để đăng nhập lại.",
     welcomeBackAfterSend:
       "Chào mừng trở lại! Nhập mã để vào bảng điều khiển.",
     welcomeBackVerifySubtext:
@@ -180,10 +182,10 @@ export const userVi: UserMessages = {
       eyebrow: "Bắt đầu",
       h2: "Hoạt động trong 15 phút",
       step1: {
-        title: "Đăng ký bằng số điện thoại",
-        body: "Xác thực OTP. Không cần email để bắt đầu.",
+        title: "Đăng ký bằng email",
+        body: "Truy cập tức thì qua đường link — không cần cài app, không cần mật khẩu.",
         preview:
-          "Bạn sẽ thấy — mã 4 chữ số trong vài giây, sau đó vào dashboard.",
+          "Bạn sẽ thấy — liên kết đăng nhập trong hộp thư, sau đó vào dashboard.",
       },
       step2: {
         title: "Thêm dịch vụ và nhân viên",
@@ -205,6 +207,22 @@ export const userVi: UserMessages = {
       eyebrow: "Tin dùng bởi",
       h2: "Chủ tiệm nói gì",
       sub: "Phản hồi truy cập sớm",
+      quotes: [
+        {
+          initials: "LN",
+          body:
+            "Hoàn hảo cho tiệm bận. Tụi mình không còn để mất khách walk-in vì hàng chờ luôn hiển thị ngay trên iPad. Bàn lễ tân cuối cùng đã có bức tranh rõ ràng.",
+          author: "Lan Nguyễn, Chủ tiệm",
+          venue: "Nails by Lan · Toronto",
+        },
+        {
+          initials: "TM",
+          body:
+            "Hỗ trợ tiếng Việt cứu tụi mình. Khách tự đặt lịch bằng tiếng Việt và điện thoại tiệm gần như im — theo nghĩa tốt.",
+          author: "Thúy Mai, Chủ tiệm",
+          venue: "Saigon Nail Studio · Houston",
+        },
+      ],
     },
     pricing: {
       eyebrow: "Bảng giá",
