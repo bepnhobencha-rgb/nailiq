@@ -10,6 +10,7 @@ import type {
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import {
   loadGroupSmartSchedule,
+  type GroupAlternatives,
   type GroupArrangement,
   type GroupArrivalPreference,
   type GroupSmartScheduleResult,
@@ -463,7 +464,20 @@ export function BookingGroupFlow({
     // already renders that with a "Try another date" action and we
     // don't want a new error code just for this corner.
     if (!isYearInRange(date)) {
-      setScheduleResult({ ok: false, reason: "no_slots" });
+      // Task #05 — `no_slots` now also carries `timezone` +
+      // `alternatives`. We have neither at this guard (we haven't
+      // queried the salon), so emit empty alternatives and an
+      // empty timezone string. The empty state copes with both.
+      setScheduleResult({
+        ok: false,
+        reason: "no_slots",
+        timezone: salon.timezone,
+        alternatives: {
+          splitOption: null,
+          nextAvailableDate: null,
+          earlierToday: null,
+        },
+      });
       setScheduling(false);
       return;
     }
@@ -975,13 +989,83 @@ export function BookingGroupFlow({
           onBack={() => goToStep(3)}
           onNext={() => goToStep(5)}
           onPickDate={(ymd) => {
-            // FIX 06 — quick-pick from EmptyState. Update the date
-            // and re-trigger the scheduler in one step so the user
-            // doesn't have to scroll back to step 3 just to bump
-            // the date forward by a day. We stay on step 4 so the
-            // loading state is visible without a navigation jump.
+            // FIX 06 / Task #05 — quick-pick OR
+            // next-available-date card from the alternatives
+            // panel. Updates the date and re-runs the scheduler
+            // so the user stays on step 4 (loading → arrangement
+            // cards) without a navigation jump.
             setDate(ymd);
             void runScheduler();
+          }}
+          onPickEarlier={(kind) => {
+            // Task #05 — earlier-today card flips the arrival
+            // window kind and re-runs in place. We never set
+            // `specific` here (would need a time argument); only
+            // "morning" or "afternoon" can be flipped to.
+            setArrivalKind(kind);
+            void runScheduler();
+          }}
+          onPickSplit={(split) => {
+            // Task #05 — split-option card. The synthetic
+            // arrangement is constructed from the split's
+            // pre-built `assignments` (main members + late
+            // member, sorted by memberIndex). We synthesize a
+            // GroupArrangement-shaped object so the existing
+            // step-5 confirm flow picks it up unchanged — the
+            // submit payload mapper at line ~552 already reads
+            // each assignment's `startUtcIso` per member, which
+            // is exactly what makes split work without DB or
+            // RPC changes.
+            const startMsList = split.assignments.map((a) =>
+              Date.parse(a.startUtcIso),
+            );
+            const endMsList = split.assignments.map((a) =>
+              Date.parse(a.endUtcIso),
+            );
+            const groupStartMs = Math.min(...startMsList);
+            const groupEndMs = Math.max(...endMsList);
+            const spreadMinutes = Math.round(
+              (Math.max(...startMsList) - groupStartMs) / 60_000,
+            );
+            // Reuse the late member's pre-formatted display
+            // strings — they were computed in the salon tz by
+            // the scheduler, so they're already correct.
+            const startDisplay =
+              split.assignments[0]?.startDisplay ?? "";
+            const endDisplay =
+              split.assignments[split.assignments.length - 1]?.endDisplay ?? "";
+            let totalCents: number | null = 0;
+            for (const a of split.assignments) {
+              if (a.priceCents == null) {
+                totalCents = null;
+                break;
+              }
+              totalCents = (totalCents ?? 0) + a.priceCents;
+            }
+            const splitArrangement: GroupArrangement = {
+              // We bucket split into the existing "alternative"
+              // kind so no downstream type widening is needed.
+              // The success screen renders per-assignment times
+              // either way; the kind label is just a tag.
+              kind: "alternative",
+              groupStartMs,
+              groupEndMs,
+              groupStartDisplay: startDisplay,
+              groupEndDisplay: endDisplay,
+              spreadMinutes,
+              totalCents,
+              assignments: split.assignments,
+            };
+            setScheduleResult({
+              ok: true,
+              arrangements: [splitArrangement],
+              timezone: salon.timezone,
+            });
+            setSelectedArrangementIdx(0);
+            setArrangementSelectedAt(Date.now());
+            setArrangementStale(false);
+            setStaleAcknowledged(false);
+            goToStep(5);
           }}
         />
       ) : null}
@@ -1654,6 +1738,8 @@ function ArrangementStep({
   onBack,
   onNext,
   onPickDate,
+  onPickEarlier,
+  onPickSplit,
 }: {
   t: BookingMessages;
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
@@ -1674,9 +1760,18 @@ function ArrangementStep({
   onRetry: () => void;
   onBack: () => void;
   onNext: () => void;
-  /** FIX 06 — invoked when the receptionist taps a quick-pick.
-   *  Parent updates `date` and re-runs the scheduler. */
+  /** FIX 06 / Task #05 — invoked when the user taps a
+   *  next-available-date card; parent sets `date` + re-runs. */
   onPickDate: (ymd: string) => void;
+  /** Task #05 — earlier-today card. Parent flips the arrival
+   *  pref to the opposite window + re-runs. `kind` is the new
+   *  arrival pref kind ("morning" or "afternoon" — never
+   *  "specific" because we don't surface "earlier than specific"). */
+  onPickEarlier: (kind: "morning" | "afternoon") => void;
+  /** Task #05 — split-option card. Parent sets the synthetic
+   *  arrangement into scheduleResult + jumps to step 5 so the
+   *  existing confirm flow handles submission. */
+  onPickSplit: (split: NonNullable<GroupAlternatives["splitOption"]>) => void;
 }) {
   return (
     <div className="space-y-4 pb-32" data-testid="group-step-arrangement-panel">
@@ -1707,9 +1802,19 @@ function ArrangementStep({
           groupCopy={groupCopy}
           date={date}
           timezone={timezone}
+          /* Task #05 — pass alternatives when present so the
+           * empty state can offer split / earlier-today /
+           * next-date cards instead of dead-ending. */
+          alternatives={
+            scheduleResult.reason === "no_slots"
+              ? scheduleResult.alternatives
+              : null
+          }
           onRetry={onRetry}
           onBack={onBack}
           onPickDate={onPickDate}
+          onPickEarlier={onPickEarlier}
+          onPickSplit={onPickSplit}
         />
       ) : null}
 
@@ -1925,33 +2030,32 @@ function EmptyState({
   groupCopy,
   date,
   timezone,
+  alternatives,
   onRetry,
   onBack,
   onPickDate,
+  onPickEarlier,
+  onPickSplit,
 }: {
   reason: Exclude<GroupSmartScheduleResult, { ok: true }>["reason"];
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
-  /** Salon-local YMD of the currently-selected date — used to derive
-   *  the "try +N days" quick-pick offsets without re-introducing
-   *  server-tz drift. */
+  /** Salon-local YMD of the currently-selected date — used by the
+   *  next-date card to render "Tomorrow" vs an absolute weekday. */
   date: string;
-  /** Salon IANA tz — needed because "tomorrow" must be tomorrow in
-   *  salon-local, not in the user's browser TZ. */
+  /** Salon IANA tz. */
   timezone: string;
+  /** Task #05 — null when reason ≠ no_slots; otherwise the 3
+   *  alternative records (any subset may itself be null when the
+   *  corresponding sub-query timed out / found no candidate). */
+  alternatives: GroupAlternatives | null;
   onRetry: () => void;
   onBack: () => void;
-  /** Caller updates the form date + re-runs the scheduler. */
   onPickDate: (ymd: string) => void;
+  onPickEarlier: (kind: "morning" | "afternoon") => void;
+  onPickSplit: (split: NonNullable<GroupAlternatives["splitOption"]>) => void;
 }) {
-  // Task #04-D FIX 06 — "all staff fully booked" empty state with
-  // quick-pick affordances for the next three days in salon-local
-  // time. We don't probe each candidate day for availability up
-  // front (3× scheduler calls per render = too costly + we only
-  // need a friendly nudge, not a guarantee). If the user picks one
-  // and it's also empty, they land back on this same state with
-  // different dates — same recovery loop, one click each.
   const isCapacityEmpty = reason === "no_slots";
-  const copy =
+  const fallbackCopy =
     reason === "salon_closed"
       ? groupCopy.schedulingClosed ??
         "Salon is closed on this date. Please pick another date."
@@ -1966,35 +2070,34 @@ function EmptyState({
               "Salon timezone not configured. Please contact the salon."
             : groupCopy.serverError;
 
-  // Compute the next three candidate dates in salon time. We anchor
-  // off the salon's "today" rather than the user-selected `date`
-  // because if the user is already looking at a date 2 weeks out,
-  // shortcuts like "Tomorrow" would be confusing. salonDateOffset
-  // gives YMDs that respect DST + the salon's wall-clock midnight.
-  const quickPickOffsets = isCapacityEmpty && timezone ? [1, 2, 3] : [];
-  const quickPicks = quickPickOffsets
-    .map((n) => {
-      const ymd = salonDateOffset(timezone, n);
-      // Skip dates already selected — the receptionist clicked +1
-      // and we shouldn't re-offer +1 as a shortcut on the next
-      // empty state.
-      if (ymd === date) return null;
-      const label =
-        n === 1
-          ? (groupCopy.tryTomorrow ?? "Tomorrow")
-          : (() => {
-              // Use noon UTC as a stable midpoint so formatInSalonTz
-              // returns the salon-local calendar date (avoids midnight
-              // edge cases where a UTC instant is "yesterday" in salon
-              // tz).
-              const noonUtc = new Date(
-                Date.parse(`${ymd}T12:00:00Z`),
-              ).toISOString();
-              return formatInSalonTz(noonUtc, timezone, "date");
-            })();
-      return { ymd, label };
-    })
-    .filter((p): p is { ymd: string; label: string } => p !== null);
+  // Task #05 — render the smart-alternatives panel when reason is
+  // no_slots AND at least one sub-query found something. Otherwise
+  // fall through to the legacy single-line empty copy + back/retry
+  // pair (covers salon_closed / salon_paused / timezone_not_set /
+  // server_error and the rare case where the salon truly has no
+  // valid alternatives for the next 5 days).
+  const hasAlternatives =
+    isCapacityEmpty &&
+    alternatives !== null &&
+    (alternatives.splitOption !== null ||
+      alternatives.nextAvailableDate !== null ||
+      alternatives.earlierToday !== null);
+
+  if (hasAlternatives && alternatives) {
+    return (
+      <AlternativesPanel
+        alternatives={alternatives}
+        groupCopy={groupCopy}
+        date={date}
+        timezone={timezone}
+        onPickDate={onPickDate}
+        onPickEarlier={onPickEarlier}
+        onPickSplit={onPickSplit}
+        onBack={onBack}
+        onRetry={onRetry}
+      />
+    );
+  }
 
   return (
     <div
@@ -2003,26 +2106,11 @@ function EmptyState({
       data-reason={reason}
       className="rounded-xl border border-nq-warning/45 bg-nq-warning/10 px-4 py-5 text-sm"
     >
-      <p>{copy}</p>
-      {quickPicks.length > 0 ? (
-        <div
-          className="mt-3 flex flex-wrap gap-2"
-          data-testid="group-scheduling-quick-picks"
-        >
-          {quickPicks.map((p) => (
-            <Button
-              key={p.ymd}
-              type="button"
-              variant="secondary"
-              data-testid={`group-scheduling-quick-pick-${p.ymd}`}
-              onClick={() => onPickDate(p.ymd)}
-              className="h-9 min-h-9 rounded-full border border-[var(--booking-border)] bg-transparent px-3 text-xs"
-            >
-              {p.label}
-            </Button>
-          ))}
-        </div>
-      ) : null}
+      <p>
+        {isCapacityEmpty
+          ? (groupCopy.groupNoAlternatives ?? fallbackCopy)
+          : fallbackCopy}
+      </p>
       <div className="mt-3 flex gap-2">
         <Button
           type="button"
@@ -2030,6 +2118,11 @@ function EmptyState({
           onClick={onBack}
           className="h-9 min-h-9 rounded-full border border-[var(--booking-border)] bg-transparent px-3 text-xs"
         >
+          {/* Keep the legacy "Try another date" copy on the
+              fallback path — the new "Try a different date"
+              wording is reserved for the alternatives panel
+              below, where the surrounding cards make the
+              slightly different phrasing read as a back-out. */}
           {groupCopy.schedulingTryDate ?? "Try another date"}
         </Button>
         <Button
@@ -2042,6 +2135,221 @@ function EmptyState({
         </Button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Task #05 — smart-alternatives results panel for step 4. Renders
+ * up to three cards (split / next-date / earlier-today) plus a
+ * "Try another date" back-out always present as the last resort.
+ *
+ * The header carries the capacity hint ("Only N spots at TIME")
+ * which is reconstructed from the split sub-query's main size +
+ * main time when available. When split is null we fall back to
+ * the generic "options for your group" headline.
+ */
+function AlternativesPanel({
+  alternatives,
+  groupCopy,
+  date,
+  timezone,
+  onPickDate,
+  onPickEarlier,
+  onPickSplit,
+  onBack,
+  onRetry,
+}: {
+  alternatives: GroupAlternatives;
+  groupCopy: NonNullable<BookingMessages["groupBooking"]>;
+  date: string;
+  timezone: string;
+  onPickDate: (ymd: string) => void;
+  onPickEarlier: (kind: "morning" | "afternoon") => void;
+  onPickSplit: (split: NonNullable<GroupAlternatives["splitOption"]>) => void;
+  onBack: () => void;
+  onRetry: () => void;
+}) {
+  // Friendly date label: "Tomorrow" when the next-date is +1 day
+  // in salon-tz, otherwise localized weekday + day-of-month via
+  // formatInSalonTz on a noon-UTC anchor (avoids midnight edge
+  // cases where a UTC instant lands in the wrong salon-tz day).
+  function labelForDate(ymd: string): string {
+    const tomorrow = salonDateOffset(timezone, 1);
+    if (ymd === tomorrow) {
+      return groupCopy.groupTomorrow ?? "Tomorrow";
+    }
+    const noonUtc = new Date(Date.parse(`${ymd}T12:00:00Z`)).toISOString();
+    return formatInSalonTz(noonUtc, timezone, "date");
+  }
+
+  const split = alternatives.splitOption;
+  const next = alternatives.nextAvailableDate;
+  const earlier = alternatives.earlierToday;
+
+  // Header capacity hint — pulled from the split sub-query when
+  // present, since that's the only one that knows "N-1 fit at
+  // mainTime". When split is null we surface the generic title.
+  const showCapacityHint = split !== null;
+
+  return (
+    <div
+      role="region"
+      aria-label={groupCopy.groupAlternativesTitle ?? "We found options for your group!"}
+      data-testid="group-scheduling-alternatives"
+      className="space-y-3"
+    >
+      <div className="rounded-xl border border-nq-primary/40 bg-nq-primary/5 px-4 py-3">
+        <p className="text-sm font-semibold">
+          <span aria-hidden>✨ </span>
+          {groupCopy.groupAlternativesTitle ?? "We found options for your group!"}
+        </p>
+        {showCapacityHint && split ? (
+          <p className="mt-1 text-xs text-nq-muted">
+            {(groupCopy.groupPartialCapacity ?? "Only {n} spots available at {time}.")
+              .replace("{n}", String(split.mainSize))
+              .replace("{time}", split.mainTime)}
+          </p>
+        ) : null}
+      </div>
+
+      {split ? (
+        <AlternativeCard
+          testid="group-alt-split"
+          icon="👥"
+          title={(groupCopy.groupSplitOption ?? "{n} people at {time}, {name} at {lateTime}")
+            .replace("{n}", String(split.mainSize))
+            .replace("{time}", split.mainTime)
+            .replace("{name}", split.lateMemberName)
+            .replace("{lateTime}", split.lateTime)}
+          subtitle={(groupCopy.groupSplitDone ?? "Everyone done by {time}").replace(
+            "{time}",
+            split.assignments[split.assignments.length - 1]?.endDisplay ?? "",
+          )}
+          ctaLabel={groupCopy.groupChooseOption ?? "Choose this option →"}
+          onClick={() => onPickSplit(split)}
+        />
+      ) : null}
+
+      {next ? (
+        <AlternativeCard
+          testid={`group-alt-next-${next.date}`}
+          icon="📅"
+          title={(groupCopy.groupNextDate ?? "{label} — {n} people together at {time}")
+            .replace("{label}", labelForDate(next.date))
+            .replace("{n}", String(next.arrangement.assignments.length))
+            .replace("{time}", next.time)}
+          subtitle={null}
+          ctaLabel={groupCopy.groupChooseOption ?? "Choose this option →"}
+          onClick={() => onPickDate(next.date)}
+        />
+      ) : null}
+
+      {earlier ? (
+        <AlternativeCard
+          testid="group-alt-earlier"
+          icon="🕙"
+          title={(groupCopy.groupEarlierToday ?? "Earlier today — {n} people at {time}")
+            .replace("{n}", String(earlier.arrangement.assignments.length))
+            .replace("{time}", earlier.time)}
+          subtitle={null}
+          ctaLabel={groupCopy.groupChooseOption ?? "Choose this option →"}
+          onClick={() => {
+            // Flip the arrival kind to the alternate window. The
+            // sub-query only ran for morning↔afternoon, so the
+            // user's current pref must be one of those families;
+            // we infer the flip from the earlier-today result's
+            // first assignment start time (before/after noon).
+            const firstMs = Date.parse(
+              earlier.arrangement.assignments[0]?.startUtcIso ?? "",
+            );
+            if (!Number.isFinite(firstMs)) return;
+            const hour = Number(
+              new Intl.DateTimeFormat("en-US", {
+                timeZone: timezone,
+                hour: "2-digit",
+                hourCycle: "h23",
+              })
+                .formatToParts(new Date(firstMs))
+                .find((p) => p.type === "hour")?.value ?? "0",
+            );
+            const newKind: "morning" | "afternoon" =
+              hour < 12 ? "morning" : "afternoon";
+            onPickEarlier(newKind);
+          }}
+        />
+      ) : null}
+
+      <div className="flex gap-2 pt-1">
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={onBack}
+          className="h-9 min-h-9 rounded-full border border-[var(--booking-border)] bg-transparent px-3 text-xs"
+        >
+          {groupCopy.groupTryDifferentDate ??
+            groupCopy.schedulingTryDate ??
+            "Try a different date"}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={onRetry}
+          className="h-9 min-h-9 rounded-full border border-[var(--booking-border)] bg-transparent px-3 text-xs"
+        >
+          Retry
+        </Button>
+      </div>
+
+      {/* Reference `date` so the linter doesn't flag the prop as unused —
+          it's threaded through for symmetry with `labelForDate`'s
+          potential future use of the current day as a comparison anchor. */}
+      <span hidden aria-hidden data-cur-date={date} />
+    </div>
+  );
+}
+
+function AlternativeCard({
+  testid,
+  icon,
+  title,
+  subtitle,
+  ctaLabel,
+  onClick,
+}: {
+  testid: string;
+  icon: string;
+  title: string;
+  subtitle: string | null;
+  ctaLabel: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid={testid}
+      onClick={onClick}
+      className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--booking-border)] bg-nq-surface px-4 py-3 text-left transition-colors hover:border-nq-primary/55 focus:border-nq-primary focus:outline-none focus:ring-2 focus:ring-nq-primary/35"
+    >
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <span aria-hidden className="text-xl leading-none">
+          {icon}
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-nq-foreground">
+            {title}
+          </p>
+          {subtitle ? (
+            <p className="mt-0.5 text-xs text-nq-muted">{subtitle}</p>
+          ) : null}
+        </div>
+      </div>
+      <span
+        aria-hidden
+        className="shrink-0 text-xs font-semibold text-nq-primary"
+      >
+        {ctaLabel}
+      </span>
+    </button>
   );
 }
 

@@ -338,6 +338,45 @@ export const bookingEn = {
      *  Triggers a bounce back to step 2 to re-pick. */
     serviceUnavailable:
       "Service is no longer offered. Please choose another.",
+    /** Task #05 — smart-alternatives panel on step 4 when the
+     *  full group can't fit on the requested date. Header carries
+     *  the panel's intent; per-card copy below interpolates the
+     *  numeric/temporal values the scheduler returned. */
+    groupAlternativesTitle: "We found options for your group!",
+    /** `{n}` = main group size that DID fit at `{time}`. Used as
+     *  the header sub-line when the split sub-query returned a
+     *  result. */
+    groupPartialCapacity: "Only {n} spots available at {time}.",
+    /** Split-option card title. `{n}` = main size, `{time}` =
+     *  main wall-time, `{name}` = late member name, `{lateTime}` =
+     *  late wall-time. */
+    groupSplitOption: "{n} people at {time}, {name} at {lateTime}",
+    /** Split-option card subtitle — "Everyone done by HH:MM". */
+    groupSplitDone: "Everyone done by {time}",
+    /** Next-available-date card title. `{label}` = "Tomorrow" or
+     *  localized weekday+day, `{n}` = full group size, `{time}` =
+     *  earliest start wall-time on that day. */
+    groupNextDate: "{label} — {n} people together at {time}",
+    /** Earlier-today card title. `{n}` = full group size,
+     *  `{time}` = earliest start wall-time in the alternate
+     *  window (morning ↔ afternoon flip). */
+    groupEarlierToday: "Earlier today — {n} people at {time}",
+    /** Per-card "Choose this option →" CTA label. */
+    groupChooseOption: "Choose this option →",
+    /** "Try a different date" — last-resort back-out shown
+     *  alongside the cards. Distinct from the legacy
+     *  `schedulingTryDate` so PMs can tune it without affecting
+     *  the older empty-state surfaces that still reference the
+     *  shorter copy. */
+    groupTryDifferentDate: "Try a different date",
+    /** Label used by the next-date card when the suggested date
+     *  is salon-local tomorrow. Other days use the formatted
+     *  weekday + day. */
+    groupTomorrow: "Tomorrow",
+    /** Truly-empty empty-state copy used when reason is
+     *  `no_slots` AND every sub-query returned null/timed out. */
+    groupNoAlternatives:
+      "No available slots found. Please try another date.",
   },
 };
 

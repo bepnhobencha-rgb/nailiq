@@ -44,6 +44,8 @@ import * as Sentry from "@sentry/nextjs";
  *     time-slot grid).
  */
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { createClient } from "@/shared/lib/supabase/server";
 import {
   intervalsOverlapMs,
@@ -55,12 +57,18 @@ import {
   type StaffCapabilityMap,
 } from "@/shared/booking/staffCapability";
 import {
+  ALTERNATIVE_QUERY_TIMEOUT_MS,
+  ALTERNATIVE_SEARCH_DAYS,
+  SPLIT_LATE_BUFFER_MIN,
+} from "@/shared/config/constants";
+import {
   parseOpeningHours,
   type DayKey,
   type OpeningHoursWeek,
 } from "@/shared/dashboard/openingHoursDefaults";
 import {
   formatInSalonTz,
+  salonDateOffset,
   salonDayRangeUtc,
   salonWallTimeToUtcIso,
 } from "@/shared/lib/salonTime";
@@ -126,6 +134,74 @@ export type GroupArrangement = {
   assignments: GroupArrangementAssignment[];
 };
 
+/**
+ * Task #05 — when the full group can't fit on the requested date
+ * the scheduler attempts three sub-queries in parallel and
+ * surfaces whichever succeed inside the 5 s budget. The UI
+ * renders one card per non-null entry; if all three are null the
+ * empty state falls back to "no alternatives — please try
+ * another date".
+ *
+ * Each alternative carries enough data for the UI to either
+ * (a) navigate the user to a different point in the flow with
+ * fields pre-filled, or (b) submit a split booking directly via
+ * the existing per-member `time` payload on `submitGroupBooking`.
+ */
+export type GroupAlternatives = {
+  /**
+   * N-1 members fit at `mainTime`, the remaining 1 (always the
+   * last member by input index — matches the spec) fits at
+   * `lateTime` after the main group's wall-clock end + the
+   * `SPLIT_LATE_BUFFER_MIN` buffer. UI shows it as "4 people at
+   * 2:00 PM, Emma at 3:30 PM with Tina".
+   */
+  splitOption: {
+    mainArrangement: GroupArrangement;
+    /** Wall-time HH:MM string (salon tz) for the main group. */
+    mainTime: string;
+    mainSize: number;
+    /** Wall-time HH:MM string for the late member. */
+    lateTime: string;
+    lateStaffId: string;
+    lateStaffName: string;
+    lateMemberIndex: number;
+    /** Display name of the late member (echoed from input). */
+    lateMemberName: string;
+    /** Pre-built assignment list ready to flow into step 5 —
+     *  matches the shape of `GroupArrangement.assignments`. The
+     *  late member's `startUtcIso` is its split time, all others
+     *  are the main time. */
+    assignments: GroupArrangementAssignment[];
+  } | null;
+  /**
+   * First salon-local day in the next `ALTERNATIVE_SEARCH_DAYS`
+   * window where the full group fits at the original arrival
+   * preference. `null` when none of the candidate days returned
+   * inside the timeout / all of them were also no-slot.
+   */
+  nextAvailableDate: {
+    /** YYYY-MM-DD in salon tz. */
+    date: string;
+    /** Earliest arrangement on that day — what the UI shows as
+     *  "{label} — N people at {time}". */
+    arrangement: GroupArrangement;
+    /** Wall-time HH:MM string for the earliest member start. */
+    time: string;
+  } | null;
+  /**
+   * Same-day cross-window flip. If the user picked afternoon /
+   * evening / specific we try morning; if they picked morning we
+   * try afternoon. `null` for specific-time queries (the user
+   * already targeted an exact slot, so "earlier" is ambiguous)
+   * and when the alternate window has no arrangements either.
+   */
+  earlierToday: {
+    arrangement: GroupArrangement;
+    /** Wall-time HH:MM string for the earliest member start. */
+    time: string;
+  } | null;
+};
+
 export type GroupSmartScheduleResult =
   | {
       ok: true;
@@ -135,9 +211,19 @@ export type GroupSmartScheduleResult =
     }
   | {
       ok: false;
+      reason: "no_slots";
+      /** Salon-tz timezone string — present even on `no_slots` so
+       *  the UI can format alternative timestamps. */
+      timezone: string;
+      /** Task #05 — null-safe slots; UI renders one card per
+       *  non-null member. All three can be null on a truly empty
+       *  salon (closed + no future bookable days). */
+      alternatives: GroupAlternatives;
+    }
+  | {
+      ok: false;
       reason:
         | "salon_closed"
-        | "no_slots"
         | "salon_not_found"
         | "salon_paused"
         | "invalid_input"
@@ -466,8 +552,20 @@ function buildArrangement(
   };
 }
 
+/**
+ * Internal flag — when true, skips the smart-alternatives
+ * computation on `no_slots`. Set by `computeNextAvailableDate`
+ * when it fans out to candidate days so we don't loop forever:
+ *   loadGroupSmartSchedule (date A, no slots)
+ *     → computeAlternatives
+ *       → computeNextAvailableDate (date B)
+ *         → loadGroupSmartSchedule (date B, no slots, no further alts)
+ */
+type InternalScheduleOpts = { skipAlternatives?: boolean };
+
 export async function loadGroupSmartSchedule(
   params: GroupSmartScheduleParams,
+  _opts: InternalScheduleOpts = {},
 ): Promise<GroupSmartScheduleResult> {
   if (!Array.isArray(params.members) || params.members.length < 2) {
     return { ok: false, reason: "invalid_input" };
@@ -524,7 +622,22 @@ export async function loadGroupSmartSchedule(
 
   // 4. Resolve arrival window ----------------------------------------
   const window = windowForArrival(params.arrivalPref, dayHours);
-  if (!window) return { ok: false, reason: "no_slots" };
+  if (!window) {
+    // Specific-time outside opening hours / morning window after
+    // close — empty alternatives because we haven't loaded staff
+    // or bookings yet and can't responsibly suggest a split or
+    // earlier-today flip without that context.
+    return {
+      ok: false,
+      reason: "no_slots",
+      timezone,
+      alternatives: {
+        splitOption: null,
+        nextAvailableDate: null,
+        earlierToday: null,
+      },
+    };
+  }
 
   // 5. Services ------------------------------------------------------
   const serviceIds = Array.from(
@@ -603,8 +716,21 @@ export async function loadGroupSmartSchedule(
     name: String(s.name ?? ""),
   }));
   if (staffList.length < resolvedMembers.length) {
-    // Not enough physical staff to host this group on any day.
-    return { ok: false, reason: "no_slots" };
+    // Not enough physical staff to host this group on ANY day —
+    // staff roster is the same across dates, so next-date is
+    // hopeless. Same logic excludes split (split needs even more
+    // staff capacity) and earlier-today (window is irrelevant
+    // when no day can host the group).
+    return {
+      ok: false,
+      reason: "no_slots",
+      timezone,
+      alternatives: {
+        splitOption: null,
+        nextAvailableDate: null,
+        earlierToday: null,
+      },
+    };
   }
   const staffById = new Map<string, StaffRow>();
   for (const s of staffList) staffById.set(s.id, s);
@@ -655,55 +781,121 @@ export async function loadGroupSmartSchedule(
   }
 
   // 10. Slot scan ----------------------------------------------------
+  // Task #05 — pure-search extracted into `findArrangementsInWindow`
+  // so the alternatives sub-queries (split + earlier-today) can
+  // reuse the loaded staff / capability / existing-bookings ctx
+  // without re-fetching from the DB.
+  const arrangements = findArrangementsInWindow({
+    date: params.date,
+    timezone,
+    window,
+    resolvedMembers,
+    staffList,
+    staffById,
+    capability,
+    existing,
+  });
+
+  if (arrangements.length === 0) {
+    // Task #05 — instead of dead-ending the user, compute up to
+    // three alternative paths in parallel: split (N-1 now + 1
+    // later same day), next-available-date (next 5 salon-local
+    // days), earlier-today (cross-window flip). Each races a 5 s
+    // budget — whichever return inside the budget are surfaced.
+    //
+    // The recursion guard skips alternatives when we ARE the
+    // next-date sub-query (otherwise each candidate day would
+    // fire its own fan-out → exponential blow-up).
+    const alternatives = _opts.skipAlternatives
+      ? { splitOption: null, nextAvailableDate: null, earlierToday: null }
+      : await computeAlternatives({
+          supabase,
+          shopSlug: params.shopSlug,
+          salonId: salonRow.id,
+          date: params.date,
+          timezone,
+          arrivalPref: params.arrivalPref,
+          dayHours,
+          window,
+          resolvedMembers,
+          staffList,
+          staffById,
+          capability,
+          existing,
+          rawMembers: params.members,
+        });
+    return { ok: false, reason: "no_slots", timezone, alternatives };
+  }
+
+  return { ok: true, arrangements, timezone };
+}
+
+// ─── Pure search ────────────────────────────────────────────────
+// Task #05 — extracted from the old inline block in
+// `loadGroupSmartSchedule`. Takes everything the search needs as
+// pre-loaded data so the alternatives path can call it multiple
+// times (different windows, different member subsets) without
+// hitting the DB again.
+
+type SchedulerSearchCtx = {
+  date: string;
+  timezone: string;
+  window: { startMin: number; endMin: number };
+  resolvedMembers: ResolvedMember[];
+  staffList: StaffRow[];
+  staffById: Map<string, StaffRow>;
+  capability: StaffCapabilityMap;
+  existing: ExistingBooking[];
+};
+
+function findArrangementsInWindow(
+  ctx: SchedulerSearchCtx,
+): GroupArrangement[] {
   const anchors: number[] = [];
-  for (let mm = window.startMin; mm <= window.endMin; mm += SLOT_STEP_MIN) {
-    const iso = salonWallTimeToUtcIso(params.date, mm, timezone);
+  for (let mm = ctx.window.startMin; mm <= ctx.window.endMin; mm += SLOT_STEP_MIN) {
+    const iso = salonWallTimeToUtcIso(ctx.date, mm, ctx.timezone);
     const ms = Date.parse(iso);
     if (Number.isFinite(ms)) anchors.push(ms);
   }
-  if (anchors.length === 0) return { ok: false, reason: "no_slots" };
+  if (anchors.length === 0) return [];
 
   let bestArrangement: GroupArrangement | null = null;
   let altArrangement: GroupArrangement | null = null;
   let earliestArrangement: GroupArrangement | null = null;
 
   for (const anchorMs of anchors) {
-    // BEST attempt — fully aligned (spread=0), preferred staff respected.
     if (!bestArrangement) {
       const aligned = tryAlignedArrangement(
         anchorMs,
-        resolvedMembers,
-        staffList,
-        staffById,
-        capability,
-        existing,
+        ctx.resolvedMembers,
+        ctx.staffList,
+        ctx.staffById,
+        ctx.capability,
+        ctx.existing,
         true,
       );
       if (aligned) {
         bestArrangement = buildArrangement(
           "best",
           aligned,
-          resolvedMembers,
-          staffById,
-          timezone,
+          ctx.resolvedMembers,
+          ctx.staffById,
+          ctx.timezone,
         );
       }
     }
 
-    // ALTERNATIVE attempt — staggered up to 30 min.
     if (!altArrangement) {
       const staggered = tryStaggeredArrangement(
         anchorMs,
-        resolvedMembers,
-        staffList,
-        staffById,
-        capability,
-        existing,
+        ctx.resolvedMembers,
+        ctx.staffList,
+        ctx.staffById,
+        ctx.capability,
+        ctx.existing,
         ALT_SPREAD_LIMIT_MIN,
       );
       if (staggered) {
-        // Skip if this is identical to BEST (anchor + aligned) so we
-        // don't return the same arrangement twice.
         const sameAsBest =
           bestArrangement !== null &&
           bestArrangement.assignments.every((a, i) =>
@@ -716,32 +908,31 @@ export async function loadGroupSmartSchedule(
           altArrangement = buildArrangement(
             "alternative",
             staggered,
-            resolvedMembers,
-            staffById,
-            timezone,
+            ctx.resolvedMembers,
+            ctx.staffById,
+            ctx.timezone,
           );
         }
       }
     }
 
-    // EARLIEST attempt — preferred-staff *not* required, anchor-aligned.
     if (!earliestArrangement) {
       const earliest = tryAlignedArrangement(
         anchorMs,
-        resolvedMembers,
-        staffList,
-        staffById,
-        capability,
-        existing,
+        ctx.resolvedMembers,
+        ctx.staffList,
+        ctx.staffById,
+        ctx.capability,
+        ctx.existing,
         false,
       );
       if (earliest) {
         earliestArrangement = buildArrangement(
           "earliest",
           earliest,
-          resolvedMembers,
-          staffById,
-          timezone,
+          ctx.resolvedMembers,
+          ctx.staffById,
+          ctx.timezone,
         );
       }
     }
@@ -749,10 +940,6 @@ export async function loadGroupSmartSchedule(
     if (bestArrangement && altArrangement && earliestArrangement) break;
   }
 
-  // Final spread filtering:
-  //   - BEST must be ≤ 15min spread (always true for aligned).
-  //   - ALT must be ≤ 30min spread and not == BEST.
-  //   - EARLIEST is "any valid"; dedupe vs BEST.
   const arrangements: GroupArrangement[] = [];
   if (bestArrangement && bestArrangement.spreadMinutes <= BEST_SPREAD_LIMIT_MIN) {
     arrangements.push(bestArrangement);
@@ -768,7 +955,6 @@ export async function loadGroupSmartSchedule(
     earliestArrangement &&
     (!bestArrangement ||
       earliestArrangement.groupStartMs !== bestArrangement.groupStartMs ||
-      // Different staff assignments still count as a distinct option.
       earliestArrangement.assignments.some(
         (a, i) =>
           bestArrangement!.assignments[i] &&
@@ -778,9 +964,341 @@ export async function loadGroupSmartSchedule(
     arrangements.push(earliestArrangement);
   }
 
-  if (arrangements.length === 0) {
-    return { ok: false, reason: "no_slots" };
+  return arrangements;
+}
+
+// ─── Smart alternatives (Task #05) ──────────────────────────────
+// Sub-queries run in parallel against a per-query 5 s budget so
+// the user sees alternatives within the same loading impression
+// even if any one path stalls. `Promise.allSettled` (not `all`)
+// is intentional — a single sub-query timing out should never
+// hide the ones that succeeded.
+
+type AlternativesCtx = {
+  supabase: SupabaseClient;
+  shopSlug: string;
+  salonId: string;
+  date: string;
+  timezone: string;
+  arrivalPref: GroupArrivalPreference;
+  dayHours: { open: string; close: string; closed: boolean };
+  window: { startMin: number; endMin: number };
+  resolvedMembers: ResolvedMember[];
+  staffList: StaffRow[];
+  staffById: Map<string, StaffRow>;
+  capability: StaffCapabilityMap;
+  existing: ExistingBooking[];
+  /** The raw `params.members` passed to the public function —
+   *  needed to re-call `loadGroupSmartSchedule` for the
+   *  next-date sub-query without losing preferred-staff info. */
+  rawMembers: GroupSmartScheduleMemberInput[];
+};
+
+function withTimeout<T>(
+  p: Promise<T>,
+  ms: number,
+): Promise<T | { __timeout: true }> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve({ __timeout: true }), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      () => {
+        clearTimeout(t);
+        resolve({ __timeout: true });
+      },
+    );
+  });
+}
+
+function isTimeout<T>(x: T | { __timeout: true }): x is { __timeout: true } {
+  return (
+    typeof x === "object" &&
+    x !== null &&
+    (x as { __timeout?: true }).__timeout === true
+  );
+}
+
+/** Convert a UTC ISO into salon-local wall HH:MM (24h). Used so
+ *  alternative cards carry the same "HH:MM" shape that the rest
+ *  of the flow uses for submission. */
+function utcIsoToSalonHm(utcIso: string, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(Date.parse(utcIso)));
+  const hh = parts.find((p) => p.type === "hour")?.value ?? "00";
+  const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
+  return `${hh}:${mm}`;
+}
+
+/**
+ * Split-option sub-query (Sub-query 1).
+ *
+ * Drops the LAST member (matches spec "members[N-1]") from the
+ * resolved list and runs the normal arrangement search. If that
+ * succeeds, walks forward from the main group's max end +
+ * SPLIT_LATE_BUFFER_MIN looking for a single anchor where the
+ * dropped member can be slotted onto a capable + free staff.
+ *
+ * Returns `null` when N === 2 (can't split a duo without becoming
+ * an individual booking, which is a different flow) or when no
+ * late slot can be found inside the day's opening hours.
+ */
+function computeSplitOption(ctx: AlternativesCtx): GroupAlternatives["splitOption"] {
+  if (ctx.resolvedMembers.length < 3) return null;
+
+  const mainMembers = ctx.resolvedMembers.slice(0, -1);
+  const lateMember = ctx.resolvedMembers[ctx.resolvedMembers.length - 1];
+
+  const mainArrangements = findArrangementsInWindow({
+    date: ctx.date,
+    timezone: ctx.timezone,
+    window: ctx.window,
+    resolvedMembers: mainMembers,
+    staffList: ctx.staffList,
+    staffById: ctx.staffById,
+    capability: ctx.capability,
+    existing: ctx.existing,
+  });
+  if (mainArrangements.length === 0) return null;
+  // Use the BEST arrangement for the main group — most compact.
+  const mainArrangement = mainArrangements[0];
+
+  // Find the late slot. The earliest a late member can start is
+  // the main group's max end + the buffer, rounded up to the
+  // next SLOT_STEP_MIN grid line so the staff's chair turns at
+  // a clean boundary.
+  const mainMaxEndMs = Math.max(
+    ...mainArrangement.assignments.map((a) => Date.parse(a.endUtcIso)),
+  );
+  const lateMinStartMs =
+    mainMaxEndMs + SPLIT_LATE_BUFFER_MIN * 60_000;
+
+  const closeMin = hmToMinutes(ctx.dayHours.close);
+  if (closeMin === null) return null;
+  const dayCloseIso = salonWallTimeToUtcIso(ctx.date, closeMin, ctx.timezone);
+  const dayCloseMs = Date.parse(dayCloseIso);
+  if (!Number.isFinite(dayCloseMs)) return null;
+
+  // Walk forward from lateMinStartMs in SLOT_STEP_MIN ticks, try
+  // every capable + still-free staff. The main group's slots are
+  // already represented in soft-reservations through the standard
+  // `existing` list (the main arrangement is in-memory and hasn't
+  // been written to the DB), so we manually treat the main
+  // arrangement as additional occupancy for this search.
+  const augmentedExisting: ExistingBooking[] = [
+    ...ctx.existing,
+    ...mainArrangement.assignments.map((a) => ({
+      staffId: a.staffId,
+      startMs: Date.parse(a.startUtcIso),
+      endMs: Date.parse(a.endUtcIso),
+    })),
+  ];
+
+  const lateDurationMs = lateMember.totalMinutes * 60_000;
+  for (let ms = lateMinStartMs; ms + lateDurationMs <= dayCloseMs; ms += SLOT_STEP_MIN * 60_000) {
+    const endMs = ms + lateDurationMs;
+    const candidateOrder: string[] = [];
+    if (lateMember.preferredStaffId != null) {
+      candidateOrder.push(lateMember.preferredStaffId);
+    }
+    for (const s of ctx.staffList) {
+      if (s.id !== lateMember.preferredStaffId) candidateOrder.push(s.id);
+    }
+    for (const sid of candidateOrder) {
+      if (!ctx.staffById.has(sid)) continue;
+      if (!isStaffCapableForService(ctx.capability, sid, lateMember.serviceId)) continue;
+      if (!staffIsFree(sid, ms, endMs, augmentedExisting, new Map())) continue;
+
+      const staff = ctx.staffById.get(sid)!;
+      const lateStartIso = new Date(ms).toISOString();
+      const lateEndIso = new Date(endMs).toISOString();
+
+      // Build a synthetic combined arrangement so the UI flow
+      // through step 5 + the submit payload can index by
+      // memberIndex naturally. Order matches the input member
+      // order so `members[a.memberIndex]` lookups stay valid.
+      const lateAssignment: GroupArrangementAssignment = {
+        memberIndex: lateMember.index,
+        staffId: sid,
+        staffName: staff.name,
+        startUtcIso: lateStartIso,
+        endUtcIso: lateEndIso,
+        startDisplay: formatInSalonTz(lateStartIso, ctx.timezone, "shortTime"),
+        endDisplay: formatInSalonTz(lateEndIso, ctx.timezone, "shortTime"),
+        durationMinutes: lateMember.totalMinutes,
+        priceCents: lateMember.priceCents,
+        memberName: lateMember.name,
+        serviceName: lateMember.serviceName,
+      };
+      const combinedAssignments: GroupArrangementAssignment[] = [
+        ...mainArrangement.assignments,
+        lateAssignment,
+      ].sort((a, b) => a.memberIndex - b.memberIndex);
+
+      const mainTime = utcIsoToSalonHm(
+        mainArrangement.assignments[0].startUtcIso,
+        ctx.timezone,
+      );
+      const lateTime = utcIsoToSalonHm(lateStartIso, ctx.timezone);
+
+      return {
+        mainArrangement,
+        mainTime,
+        mainSize: mainMembers.length,
+        lateTime,
+        lateStaffId: sid,
+        lateStaffName: staff.name,
+        lateMemberIndex: lateMember.index,
+        lateMemberName: lateMember.name,
+        assignments: combinedAssignments,
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Next-available-date sub-query (Sub-query 2).
+ *
+ * Probes the next `ALTERNATIVE_SEARCH_DAYS` salon-local days
+ * (starting tomorrow). For each candidate we re-call
+ * `loadGroupSmartSchedule` with the same arrival pref + members
+ * — yes, this re-fetches salon/services/staff/bookings per
+ * candidate, but those queries are cheap and parallelizing them
+ * keeps total wall-time bounded by `ALTERNATIVE_QUERY_TIMEOUT_MS`.
+ *
+ * `Promise.allSettled` returns every result; we walk them in
+ * date order and pick the first day that returned `ok: true`.
+ */
+async function computeNextAvailableDate(
+  ctx: AlternativesCtx,
+): Promise<GroupAlternatives["nextAvailableDate"]> {
+  const candidateDates: string[] = [];
+  for (let i = 1; i <= ALTERNATIVE_SEARCH_DAYS; i++) {
+    candidateDates.push(salonDateOffset(ctx.timezone, i));
   }
 
-  return { ok: true, arrangements, timezone };
+  const probes = candidateDates.map((ymd) =>
+    loadGroupSmartSchedule(
+      {
+        shopSlug: ctx.shopSlug,
+        date: ymd,
+        arrivalPref: ctx.arrivalPref,
+        members: ctx.rawMembers,
+      },
+      // Recursion guard — without this each candidate day would
+      // fire its own next-date fan-out (5 × 5 = 25 probes per
+      // failed call, 125 at depth 3, etc.).
+      { skipAlternatives: true },
+    ),
+  );
+  const settled = await Promise.allSettled(probes);
+
+  for (let i = 0; i < settled.length; i++) {
+    const r = settled[i];
+    if (r.status !== "fulfilled") continue;
+    const v = r.value;
+    if (!v.ok) continue;
+    if (v.arrangements.length === 0) continue;
+    const arrangement = v.arrangements[0];
+    const time = utcIsoToSalonHm(
+      arrangement.assignments[0].startUtcIso,
+      ctx.timezone,
+    );
+    return {
+      date: candidateDates[i],
+      arrangement,
+      time,
+    };
+  }
+  return null;
+}
+
+/**
+ * Earlier-today sub-query (Sub-query 3).
+ *
+ * Flips the arrival window: morning ↔ afternoon. Evening flips
+ * to morning (skipping afternoon, which is the closest "earlier"
+ * but may still be too late if the user actually wanted morning).
+ * `specific` returns null — the user already targeted an exact
+ * time so "earlier than that" is ambiguous and we don't want to
+ * second-guess them.
+ *
+ * Reuses the same loaded ctx (same date, same staff, same
+ * bookings) — only the window changes, so no DB round-trip.
+ */
+function computeEarlierToday(
+  ctx: AlternativesCtx,
+): GroupAlternatives["earlierToday"] {
+  let alternateWindow: { startMin: number; endMin: number } | null = null;
+
+  if (ctx.arrivalPref.kind === "morning") {
+    alternateWindow = windowForArrival(
+      { kind: "afternoon" },
+      ctx.dayHours,
+    );
+  } else if (
+    ctx.arrivalPref.kind === "afternoon" ||
+    ctx.arrivalPref.kind === "evening"
+  ) {
+    alternateWindow = windowForArrival(
+      { kind: "morning" },
+      ctx.dayHours,
+    );
+  }
+  if (!alternateWindow) return null;
+
+  const arrangements = findArrangementsInWindow({
+    date: ctx.date,
+    timezone: ctx.timezone,
+    window: alternateWindow,
+    resolvedMembers: ctx.resolvedMembers,
+    staffList: ctx.staffList,
+    staffById: ctx.staffById,
+    capability: ctx.capability,
+    existing: ctx.existing,
+  });
+  if (arrangements.length === 0) return null;
+  const arrangement = arrangements[0];
+  const time = utcIsoToSalonHm(
+    arrangement.assignments[0].startUtcIso,
+    ctx.timezone,
+  );
+  return { arrangement, time };
+}
+
+async function computeAlternatives(
+  ctx: AlternativesCtx,
+): Promise<GroupAlternatives> {
+  // All three sub-queries race in parallel against the per-query
+  // 5 s budget. Split + earlier-today are pure functions; we wrap
+  // them in `Promise.resolve(...)` so the timeout helper sees a
+  // uniform Promise shape. Next-available-date is genuinely
+  // async (fans out to the next 5 days' schedulers).
+  const [splitR, earlierR, nextDateR] = await Promise.all([
+    withTimeout(
+      Promise.resolve(computeSplitOption(ctx)),
+      ALTERNATIVE_QUERY_TIMEOUT_MS,
+    ),
+    withTimeout(
+      Promise.resolve(computeEarlierToday(ctx)),
+      ALTERNATIVE_QUERY_TIMEOUT_MS,
+    ),
+    withTimeout(
+      computeNextAvailableDate(ctx),
+      ALTERNATIVE_QUERY_TIMEOUT_MS,
+    ),
+  ]);
+
+  return {
+    splitOption: isTimeout(splitR) ? null : splitR,
+    earlierToday: isTimeout(earlierR) ? null : earlierR,
+    nextAvailableDate: isTimeout(nextDateR) ? null : nextDateR,
+  };
 }

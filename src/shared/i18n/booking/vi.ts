@@ -231,5 +231,15 @@ export const bookingVi: BookingMessages = {
     staffUnavailable: "Thợ không còn nhận lịch. Đang tìm thợ thay thế...",
     serviceUnavailable:
       "Dịch vụ không còn được cung cấp. Vui lòng chọn dịch vụ khác.",
+    groupAlternativesTitle: "Chúng tôi sắp xếp được cho nhóm!",
+    groupPartialCapacity: "Chỉ còn {n} chỗ lúc {time}.",
+    groupSplitOption: "{n} người lúc {time}, {name} lúc {lateTime}",
+    groupSplitDone: "Cả nhóm xong trước {time}",
+    groupNextDate: "{label} — {n} người cùng lúc {time}",
+    groupEarlierToday: "Hôm nay sớm hơn — {n} người lúc {time}",
+    groupChooseOption: "Chọn phương án này →",
+    groupTryDifferentDate: "Thử ngày khác",
+    groupTomorrow: "Ngày mai",
+    groupNoAlternatives: "Không tìm được lịch. Vui lòng thử ngày khác.",
   },
 };
