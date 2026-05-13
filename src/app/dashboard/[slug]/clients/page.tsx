@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ClientProfilesPanel } from "@/components/dashboard/ClientProfilesPanel";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
-import { userEn } from "@/shared/i18n/user";
 
 export const dynamic = "force-dynamic";
 
@@ -29,19 +28,9 @@ export default async function ClientsPage({ params }: PageProps) {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
 
-  // Owner-facing page; English copy is the primary product language
-  // per UX_PRINCIPLES §7. A client wrapper that reads `useUserLanguage`
-  // can fold VI later if real-world traffic justifies it.
   return (
     <main className="mx-auto w-full max-w-[var(--max-nq-desktop)] px-[var(--pad-nq-section-mobile)] py-6 md:px-6">
-      <h1 className="mb-4 text-xl font-semibold text-nq-foreground">
-        {userEn.receptionist.clientProfiles.pageTitle}
-      </h1>
-      <ClientProfilesPanel
-        slug={slug}
-        viewerRole={ctx.role}
-        messages={userEn.receptionist.clientProfiles}
-      />
+      <ClientProfilesPanel slug={slug} viewerRole={ctx.role} />
     </main>
   );
 }

@@ -11,10 +11,15 @@ import {
   type ClientProfileRow,
   type LoadClientProfilesResult,
 } from "@/shared/dashboard/loadClientProfilesAction";
-import type { ReceptionistMessages } from "@/shared/i18n/user";
+import {
+  getUserMessages,
+  type ReceptionistMessages,
+  type UserLanguage,
+} from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
 import { formatPhone } from "@/shared/lib/phoneFormat";
 import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 /**
  * Client profiles panel — searchable list of recent clients with an
@@ -28,14 +33,19 @@ import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
 export interface ClientProfilesPanelProps {
   slug: string;
   viewerRole: SalonMemberRole;
-  messages: ReceptionistMessages["clientProfiles"];
 }
 
-function formatLastVisit(iso: string | null): string {
+function formatLastVisit(iso: string | null, language: UserLanguage): string {
   if (!iso) return "—";
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return iso;
-  return new Date(ms).toLocaleDateString();
+  const d = new Date(ms);
+  // VI: DD/M/YYYY (no zero-padding, matches "13/5/2026" spec).
+  // EN: locale-default (US-style M/D/YYYY for English browsers).
+  if (language === "vi") {
+    return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+  }
+  return d.toLocaleDateString();
 }
 
 function formatDollars(cents: number): string {
@@ -46,8 +56,12 @@ function formatDollars(cents: number): string {
 export function ClientProfilesPanel({
   slug,
   viewerRole,
-  messages,
 }: ClientProfilesPanelProps) {
+  const { language } = useUserLanguage();
+  const messages = useMemo(
+    () => getUserMessages(language).receptionist.clientProfiles,
+    [language],
+  );
   const [state, setState] = useState<
     | { kind: "loading" }
     | { kind: "ok"; rows: ClientProfileRow[] }
@@ -87,6 +101,10 @@ export function ClientProfilesPanel({
   }, [state, messages]);
 
   return (
+    <div className="space-y-4">
+      <h1 className="text-xl font-semibold text-nq-foreground">
+        {messages.pageTitle}
+      </h1>
     <Card variant="default" padding="md">
       <div className="space-y-3">
         <div>
@@ -146,6 +164,7 @@ export function ClientProfilesPanel({
                   canEditVip={viewerRole === "owner"}
                   slug={slug}
                   messages={messages}
+                  language={language}
                   onVipChanged={(next) => {
                     setState((prev) => {
                       if (prev.kind !== "ok") return prev;
@@ -164,6 +183,7 @@ export function ClientProfilesPanel({
         ) : null}
       </div>
     </Card>
+    </div>
   );
 }
 
@@ -174,6 +194,7 @@ function ClientRow({
   canEditVip,
   slug,
   messages,
+  language,
   onVipChanged,
 }: {
   row: ClientProfileRow;
@@ -182,6 +203,7 @@ function ClientRow({
   canEditVip: boolean;
   slug: string;
   messages: ReceptionistMessages["clientProfiles"];
+  language: UserLanguage;
   onVipChanged: (next: boolean) => void;
 }) {
   const [vipPending, startVipTransition] = useTransition();
@@ -218,7 +240,7 @@ function ClientRow({
         <span className="text-[11px] text-nq-muted">
           {messages.summaryLine
             .replace("{visits}", String(row.visitCount))
-            .replace("{lastVisit}", formatLastVisit(row.lastVisitAt))}
+            .replace("{lastVisit}", formatLastVisit(row.lastVisitAt, language))}
         </span>
       </button>
 
