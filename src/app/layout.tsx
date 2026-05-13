@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Be_Vietnam_Pro, JetBrains_Mono } from "next/font/google";
 import { getSiteUrl } from "@/shared/seo/site";
 import { UserLanguageProvider } from "@/shared/lib/UserLanguageContext";
+import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
 import "./globals.css";
 
 // Be Vietnam Pro: hand-tuned VN diacritics for body sans.
@@ -74,18 +75,28 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Read cookie + Accept-Language on the server so the first HTML paint
+  // is already in the visitor's preferred language. EN is the fallback;
+  // we only flip to VI when the visitor's primary locale starts with
+  // `vi`. Reading headers() opts the root layout into dynamic rendering,
+  // which is acceptable here — every downstream page already depends on
+  // auth/cookies via `proxy.ts`.
+  const initialLanguage = await resolveUserLanguage();
+
   return (
     <html
-      lang="en"
+      lang={initialLanguage}
       className={`${appSans.variable} ${appMono.variable} h-full antialiased`}
     >
       <body className="min-h-dvh min-w-0 flex flex-col overflow-x-hidden">
-        <UserLanguageProvider>{children}</UserLanguageProvider>
+        <UserLanguageProvider initialLanguage={initialLanguage}>
+          {children}
+        </UserLanguageProvider>
       </body>
     </html>
   );
