@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ReportsPanel } from "@/components/dashboard/ReportsPanel";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
-import { userEn } from "@/shared/i18n/user";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 
 export const dynamic = "force-dynamic";
@@ -44,14 +43,7 @@ export default async function ReportsPage({ params }: PageProps) {
 
   return (
     <main className="mx-auto w-full max-w-[var(--max-nq-desktop)] px-[var(--pad-nq-section-mobile)] py-6 md:px-6">
-      <h1 className="mb-4 text-xl font-semibold text-nq-foreground">
-        {userEn.receptionist.reports.pageTitle}
-      </h1>
-      <ReportsPanel
-        slug={slug}
-        messages={userEn.receptionist.reports}
-        currency={currency}
-      />
+      <ReportsPanel slug={slug} currency={currency} />
     </main>
   );
 }

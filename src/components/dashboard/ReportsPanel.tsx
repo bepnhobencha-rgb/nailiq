@@ -11,12 +11,13 @@ import {
   type ReportsDateRange,
   type ReportsSnapshot,
 } from "@/shared/dashboard/loadSalonReportsAction";
-import type { ReceptionistMessages } from "@/shared/i18n/user";
+import { getUserMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
 import {
   formatCurrency,
   type Currency,
 } from "@/shared/lib/currencyFormat";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 /**
  * Owner-only reports panel.
@@ -45,12 +46,16 @@ function formatMoney(cents: number, currency: Currency): string {
 
 export interface ReportsPanelProps {
   slug: string;
-  messages: ReceptionistMessages["reports"];
   /** P0.2 — salon's configured currency. */
   currency: Currency;
 }
 
-export function ReportsPanel({ slug, messages, currency }: ReportsPanelProps) {
+export function ReportsPanel({ slug, currency }: ReportsPanelProps) {
+  const { language } = useUserLanguage();
+  const messages = useMemo(
+    () => getUserMessages(language).receptionist.reports,
+    [language],
+  );
   const [range, setRange] = useState<ReportsDateRange>("today");
   const [state, setState] = useState<
     | { kind: "loading" }
@@ -79,6 +84,9 @@ export function ReportsPanel({ slug, messages, currency }: ReportsPanelProps) {
 
   return (
     <div className="space-y-4">
+      <h1 className="text-xl font-semibold text-nq-foreground">
+        {messages.pageTitle}
+      </h1>
       {/* Date-range selector */}
       <div
         role="tablist"
