@@ -65,6 +65,12 @@ export type GroupBookingParams = {
    * key a second time hits the UNIQUE constraint and returns
    * `duplicate_submission` rather than creating a second group. */
   idempotencyKey: string;
+  /** Task #09-11 honeypot. Optional; matches the public booking
+   *  contract. UI plumbing in `BookingGroupFlow.tsx` is TODO —
+   *  accepting the field now means a future hidden input there can
+   *  ship as a UI-only change. Empty / unset = pass-through to the
+   *  real flow. */
+  clientWebsite?: string;
 };
 
 export type GroupBookingResult =
@@ -162,6 +168,27 @@ export async function submitGroupBooking(
   const scope = Sentry.getCurrentScope();
   scope.setTag("booking.flow", "submit_group_booking");
   scope.setTag("salon.slug", params.shopSlug);
+
+  // Task #09-11 — honeypot guard. Mirrors `submitPublicBooking`.
+  // `BookingGroupFlow.tsx` does not yet render a hidden input that
+  // sets this field, so today the branch never fires from the real
+  // UI — accepting the field positions the server side to short-
+  // circuit silently as soon as the UI plumbing lands.
+  if ((params.clientWebsite ?? "").trim().length > 0) {
+    Sentry.captureMessage("group booking honeypot tripped", {
+      level: "info",
+      tags: {
+        "booking.flow": "submit_group_booking",
+        "booking.honeypot": "tripped",
+        "salon.slug": params.shopSlug,
+      },
+    });
+    return {
+      ok: true,
+      groupId: `bot-${Date.now()}`,
+      bookingIds: [],
+    };
+  }
 
   // 1. Surface-level validation -------------------------------------
   // QA P1.G5: raised cap 4 → 8 (wedding parties, family groups).

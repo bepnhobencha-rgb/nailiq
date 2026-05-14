@@ -31,6 +31,12 @@ export type BookingParams = {
   clientNotes?: string;
   /** Optional add-on booked into the same row (pre-confirm upsell with real float only). */
   addonServiceId?: string | null;
+  /** Task #09-11 honeypot. Empty for real users (the HTML field is
+   *  hidden, `tabIndex=-1`, and `aria-hidden`). Bots autofilling
+   *  every input populate this — `submitPublicBooking` short-circuits
+   *  with a fake-success when it's non-empty so no row is written
+   *  and the bot doesn't learn it was detected. */
+  clientWebsite?: string;
 };
 
 export type BookingResult = {
@@ -132,6 +138,36 @@ export async function submitPublicBooking(
   const bookingScope = Sentry.getCurrentScope();
   bookingScope.setTag("booking.flow", "submit_public_booking");
   bookingScope.setTag("salon.slug", shopSlug);
+
+  // Task #09-11 — honeypot guard. The `clientWebsite` field is
+  // hidden in the DOM (display:none + aria-hidden + tabIndex=-1) so
+  // a real user never fills it. Naive form-stuffer bots populate
+  // every `<input>` and trip this branch. Return a fake-but-shape-
+  // valid BookingResult so the UI shows a normal success page;
+  // no DB row is written. Sentry tags the hit so we can monitor
+  // abuse without blocking on it.
+  if ((params.clientWebsite ?? "").trim().length > 0) {
+    Sentry.captureMessage("booking honeypot tripped", {
+      level: "info",
+      tags: {
+        "booking.flow": "submit_public_booking",
+        "booking.honeypot": "tripped",
+        "salon.slug": shopSlug,
+      },
+    });
+    const nowIso = new Date().toISOString();
+    return {
+      bookingId: `bot-${Date.now()}`,
+      serviceName: "",
+      startTimeUtc: nowIso,
+      endTimeUtc: nowIso,
+      status: "confirmed",
+      price_cents: 0,
+      staffName: "",
+      addonServiceName: null,
+      addonPriceCents: null,
+    };
+  }
 
   const phoneOk = validateGuestPhone(clientPhone);
   if (!phoneOk.ok) {
