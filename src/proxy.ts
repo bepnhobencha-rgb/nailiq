@@ -28,6 +28,52 @@ import {
   isDemoOtpRuntime,
   isDemoSlugPinBypassed,
 } from "@/shared/lib/demoOtpMode";
+import {
+  checkAuthRateLimit,
+  checkBookingPageRateLimit,
+  checkBookingRateLimit,
+} from "@/shared/lib/rateLimit";
+
+/** Public booking slug path: `/<slug>` only (single segment, kebab case).
+ *  Excludes `/dashboard`, `/register`, `/login`, `/api`, `/auth`,
+ *  `/superadmin`, `/_next`, etc. — those reserved roots are filtered
+ *  out separately so we don't rate-limit ourselves into a corner. */
+const PUBLIC_BOOKING_SLUG_RE = /^\/([a-z0-9][a-z0-9-]{0,63})\/?$/;
+const RESERVED_TOP_LEVEL_SEGMENTS = new Set<string>([
+  "api",
+  "auth",
+  "dashboard",
+  "login",
+  "register",
+  "choose-salon",
+  "contact",
+  "debug-sentry",
+  "opengraph-image",
+  "privacy",
+  "robots.txt",
+  "sitemap.xml",
+  "superadmin",
+  "terms",
+]);
+
+/** Returns true when the path is `/<slug>` for a customer booking page
+ *  (i.e. not one of the reserved app routes). Used to gate rate-limit
+ *  checks against just the public booking surface. */
+function isPublicBookingSlugPath(pathname: string): boolean {
+  const m = PUBLIC_BOOKING_SLUG_RE.exec(pathname);
+  if (!m) return false;
+  return !RESERVED_TOP_LEVEL_SEGMENTS.has(m[1]);
+}
+
+function rateLimitedResponse(message: string): NextResponse {
+  return new NextResponse(message, {
+    status: 429,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Retry-After": "60",
+    },
+  });
+}
 
 /** Copy cookies from the Supabase session response (refresh via getUser/setAll) onto another response. */
 function applyCookiesFrom(
@@ -45,6 +91,73 @@ function applyCookiesFrom(
 }
 
 export async function proxy(request: NextRequest) {
+  const pathnameEarly = request.nextUrl.pathname;
+  const methodEarly = request.method;
+
+  // Task #09-10 — rate-limit checks at the proxy layer.
+  //
+  // These call `@vercel/firewall.checkRateLimit(id)` which looks up the
+  // rule with that ID in the Vercel WAF dashboard. If no rule is
+  // configured the helper returns `false` (fail-open) — see PR body
+  // for the rule IDs the project owner needs to create.
+  //
+  // Run BEFORE the Supabase session bootstrap so a 429 doesn't waste a
+  // round-trip to Supabase. Auth/POST checks are method-gated so GET
+  // pages on the same paths don't burn the per-IP quota.
+
+  // Booking submission — only fires for POST to `/<slug>` paths that
+  // aren't reserved app routes. Today the public booking form goes
+  // browser→Supabase directly, so no POST hits this path; the check is
+  // here for when `submitPublicBooking` moves to a server action.
+  if (
+    methodEarly === "POST" &&
+    isPublicBookingSlugPath(pathnameEarly) &&
+    (await checkBookingRateLimit(request))
+  ) {
+    Sentry.captureMessage("rate-limit hit: booking-submit", {
+      level: "info",
+      tags: { "rate.limit": "booking-submit" },
+    });
+    return rateLimitedResponse(
+      "Too many booking attempts. Please try again in a minute.",
+    );
+  }
+
+  // Booking page load — GET on `/<slug>`. Anti-scrape on the public
+  // booking surface; the dashboard rule should be loose (e.g.
+  // 60/min/IP) so real users with multiple tabs aren't blocked.
+  if (
+    methodEarly === "GET" &&
+    isPublicBookingSlugPath(pathnameEarly) &&
+    (await checkBookingPageRateLimit(request))
+  ) {
+    Sentry.captureMessage("rate-limit hit: booking-page-load", {
+      level: "info",
+      tags: { "rate.limit": "booking-page-load" },
+    });
+    return rateLimitedResponse(
+      "Too many requests. Please try again in a minute.",
+    );
+  }
+
+  // Auth attempts — POST to `/register` or `/login`. After Task #06
+  // the real auth happens client-side via supabase-js (no POST hits
+  // these paths today), so this currently only catches direct probes.
+  // Supabase Auth has its own rate limits as the primary defence.
+  if (
+    methodEarly === "POST" &&
+    (pathnameEarly === "/register" || pathnameEarly === "/login") &&
+    (await checkAuthRateLimit(request))
+  ) {
+    Sentry.captureMessage("rate-limit hit: auth-attempt", {
+      level: "info",
+      tags: { "rate.limit": "auth-attempt", "auth.path": pathnameEarly },
+    });
+    return rateLimitedResponse(
+      "Too many sign-in attempts. Please try again in a minute.",
+    );
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
