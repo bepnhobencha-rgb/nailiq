@@ -28,6 +28,17 @@ import {
 
 const INVALID_PHONE_MSG = REGISTER_INVALID_PHONE_HINT_EN;
 
+/**
+ * Production guard for phone OTP entry points. Wrap the env check in a
+ * helper so TypeScript doesn't narrow `process.env.NODE_ENV` to
+ * `"development" | "test"` for the rest of the function body — there
+ * are downstream `process.env.NODE_ENV === "production"` reads (cookie
+ * `secure` flag) that would otherwise be flagged as always-false.
+ */
+function isPhoneOtpDisabledInProd(): boolean {
+  return String(process.env.NODE_ENV) === "production";
+}
+
 function registerFlowDebugEnabled(): boolean {
   return (
     process.env.NODE_ENV === "development" ||
@@ -282,6 +293,18 @@ export type SendOtpResult = SendRegisterOtpResult;
 export async function sendRegisterOtp(
   phoneRaw: string,
 ): Promise<SendRegisterOtpResult> {
+  // Phone OTP (Twilio) is not operational. After Task #06 the UI no
+  // longer routes through this action, but the Next server-action
+  // endpoint stays callable. Block in prod to remove the latent
+  // Twilio / `otps`-table attack surface. Dev + e2e still need the
+  // path for demo-OTP mode.
+  if (isPhoneOtpDisabledInProd()) {
+    return {
+      success: false,
+      error: "Phone OTP is currently disabled.",
+    };
+  }
+
   const isDemo = isDemoOtpRuntime();
   logRegisterFlow("sendOtp.env", {
     isDemo,
@@ -394,6 +417,16 @@ export async function sendRegisterOtp(
 export async function sendLoginOtp(
   phoneRaw: string,
 ): Promise<SendRegisterOtpResult> {
+  // Mirrors `sendRegisterOtp` — phone OTP is disabled in production.
+  // `sendRegisterOtp` has the same guard, but gate here too so we exit
+  // before any DB lookup runs.
+  if (isPhoneOtpDisabledInProd()) {
+    return {
+      success: false,
+      error: "Phone OTP is currently disabled.",
+    };
+  }
+
   const phone = normalizeRegisterPhone(phoneRaw);
   if (!isRegisterPhoneDigitsValid(phone)) {
     return { success: false, error: INVALID_PHONE_MSG };
@@ -428,6 +461,14 @@ export async function verifyRegisterOtp(
    */
   rememberDevice: boolean = true,
 ): Promise<VerifyRegisterOtpResult> {
+  // Phone OTP (Twilio) is disabled in production — see sendRegisterOtp.
+  // Return type is `{ok, reason}` so the prod guard uses `server_error`
+  // (the closest existing reason; UI shows the generic server-error
+  // string). Dev + e2e demo-OTP path still runs through unmodified.
+  if (isPhoneOtpDisabledInProd()) {
+    return { ok: false, reason: "server_error" };
+  }
+
   const phone = normalizeRegisterPhone(phoneRaw);
   const code = codeRaw.replace(/\D/g, "").slice(0, 6);
 
@@ -584,6 +625,12 @@ export async function verifyLoginOtp(
   codeRaw: string,
   rememberDevice: boolean = true,
 ): Promise<VerifyRegisterOtpResult> {
+  // Belt-and-suspenders: `verifyRegisterOtp` has the same guard, but
+  // gate here too so we never call into the delegate in prod.
+  if (isPhoneOtpDisabledInProd()) {
+    return { ok: false, reason: "server_error" };
+  }
+
   return verifyRegisterOtp(phoneRaw, codeRaw, rememberDevice);
 }
 
