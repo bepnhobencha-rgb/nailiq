@@ -547,7 +547,11 @@
     }
   }
 
-  /** Form fields — rounded 16px, navy fill, gold focus ring */
+  /** Form fields — rounded 16px, navy fill, gold focus ring.
+   *  Text color follows the booking theme palette (`--booking-text`)
+   *  so light-theme salons render dark text on the light gray fill.
+   *  Without this, the hardcoded `--color-nq-foreground` (#fff) made
+   *  typed text invisible on `--booking-bg-input: #f2f2f2`. */
   .nq-booking-field {
     min-height: 52px;
     width: 100%;
