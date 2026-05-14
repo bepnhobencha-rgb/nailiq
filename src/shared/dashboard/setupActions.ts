@@ -1257,6 +1257,20 @@ export async function getDashboardWriteClient(slug: string): Promise<
         opening_hours: unknown | null;
         profile_complete: boolean;
         booking_closed_dates: unknown | null;
+        /** IANA timezone (e.g. "America/Los_Angeles"). Sourced from
+         *  `resolveSalonForDashboard`'s expanded SELECT so callers
+         *  on `/dashboard/[slug]/center` no longer need a second
+         *  round-trip just to compute "today" in the salon's tz. */
+        timezone: string;
+        /** Receptionist-center config + currency, threaded through
+         *  the same expanded SELECT so `loadReceptionistCenterData`
+         *  can accept the salon row instead of re-fetching it.
+         *  Caller-side parsers (`parseDashboardModules`, etc.)
+         *  remain the source of truth for narrowing. */
+        dashboard_modules: unknown | null;
+        dashboard_preset: unknown | null;
+        dashboard_density: unknown | null;
+        currency_code: unknown | null;
       };
       kind: "member" | "demo_cookie";
       /** `salon_members.role` for this user-salon pair. Demo-cookie path is `"owner"`. */

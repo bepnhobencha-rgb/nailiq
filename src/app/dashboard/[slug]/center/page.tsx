@@ -34,29 +34,22 @@ export default async function ReceptionistCenterPage({
     redirect("/register");
   }
 
-  const dateOk = typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date);
-
-  let targetDate: string;
-  if (dateOk) {
-    targetDate = date;
-  } else {
-    const tzResult = await ctx.supabase
-      .from("salons")
-      .select("timezone")
-      .eq("id", ctx.salon.id)
-      .maybeSingle();
-
-    const tz =
-      tzResult.data?.timezone != null
-        ? String(tzResult.data.timezone).trim()
-        : "";
-    if (!tz) {
-      redirect(`/dashboard/${encodeURIComponent(slug)}`);
-    }
-    targetDate = salonToday(tz);
+  // Perf — `resolveSalonForDashboard` now fetches `timezone` alongside
+  // the rest of the salon row, so we can compute today without a
+  // dedicated round-trip. Previously this page issued THREE separate
+  // `salons` queries per request (auth, this timezone lookup, and
+  // `loadReceptionistCenterData`'s own fetch). The pre-fetched salon
+  // is also handed to the loader below so it can skip its own fetch.
+  const tz = ctx.salon.timezone.trim();
+  if (!tz) {
+    redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
+  const dateOk = typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date);
+  const targetDate = dateOk ? date : salonToday(tz);
 
-  const initialResult = await loadReceptionistCenterData(slug, targetDate);
+  const initialResult = await loadReceptionistCenterData(slug, targetDate, {
+    preFetchedSalon: ctx.salon,
+  });
 
   if (!initialResult.ok && initialResult.error === "unauthorized") {
     redirect("/register");

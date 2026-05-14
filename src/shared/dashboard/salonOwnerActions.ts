@@ -40,8 +40,20 @@ import {
 import type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
 import { ACTIVE_GRID_STATUSES } from "@/shared/types";
 
+/** Single source of truth for the salon row shape every dashboard
+ *  surface needs. Adding `timezone` + dashboard config fields here
+ *  closes the triple-fetch perf bug on `/dashboard/[slug]/center`
+ *  where `page.tsx` and `loadReceptionistCenterData` were each
+ *  re-fetching `salons` with overlapping fields. The select is one
+ *  string sent to PostgREST so extra columns are essentially free.
+ *
+ *  `currency_code` is cast through `as never` at SELECT-site only
+ *  in `loadReceptionistCenterData` because the migration that adds
+ *  the column hadn't been regenerated into `database.types.ts` yet
+ *  at the time of writing; the column itself exists. Here we read
+ *  the value through `as { … }` casts at the call site instead. */
 const SALON_DASHBOARD_SELECT =
-  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete";
+  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code";
 
 type SalonRow = {
   id: string;
@@ -54,6 +66,18 @@ type SalonRow = {
   opening_hours: unknown | null;
   profile_complete: boolean;
   booking_closed_dates: unknown | null;
+  /** IANA timezone string (e.g. "America/Los_Angeles"). Required by
+   *  NOT NULL constraint per migration `20260512600000_timezone_required`. */
+  timezone: string;
+  /** JSON map of dashboard module flags. Parsed by `parseDashboardModules`
+   *  before consumption. Null when never configured. */
+  dashboard_modules: unknown | null;
+  /** Preset key applied on top of `dashboard_modules`. */
+  dashboard_preset: unknown | null;
+  /** Density level (compact / cozy / spacious). */
+  dashboard_density: unknown | null;
+  /** Currency token (CAD / USD / VND). Drives money formatting. */
+  currency_code: unknown | null;
 };
 
 async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
@@ -236,6 +260,12 @@ async function getSalonIfMember(
           ? null
           : String(row.email).trim() || null,
       profile_complete: !!row.profile_complete,
+      timezone:
+        typeof row.timezone === "string" ? row.timezone.trim() : "",
+      dashboard_modules: row.dashboard_modules ?? null,
+      dashboard_preset: row.dashboard_preset ?? null,
+      dashboard_density: row.dashboard_density ?? null,
+      currency_code: row.currency_code ?? null,
     },
     role,
     viewerEmail,
