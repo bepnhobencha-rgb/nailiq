@@ -338,6 +338,122 @@ export const userVi: UserMessages = {
         },
       },
     },
+    compare: {
+      eyebrow: "Tại sao NailIQ",
+      h2: "Xây cho tiệm nail — không phải phần mềm lịch hẹn chung chung",
+      sub:
+        "So sánh thẳng thắn với 3 công cụ chủ tiệm hay nhắc nhất. Giá đối thủ là giá niêm yết năm 2026; nên kiểm tra trang của họ để biết khuyến mãi mới.",
+      headers: ["Tính năng", "NailIQ", "Booksy", "Square Appts", "Mangomint"],
+      rows: [
+        {
+          label: "Giá khởi điểm",
+          cells: ["$29/tháng", "$30/tháng + phụ phí", "$29/chi nhánh", "$165/tháng"],
+        },
+        {
+          label: "Giao diện tiếng Việt",
+          cells: ["✓", "✕", "✕", "✕"],
+        },
+        {
+          label: "Hàng đợi walk-in",
+          cells: ["✓", "Hạn chế", "✕", "✓"],
+        },
+        {
+          label: "Thời gian setup",
+          cells: ["15 phút", "2-3 ngày", "1-2 ngày", "1-2 ngày"],
+        },
+        {
+          label: "Phí giao dịch",
+          cells: ["Không", "Không", "2.6% + 10¢", "~1-3% (POS)"],
+        },
+        {
+          label: "Dùng thử miễn phí",
+          cells: ["14 ngày, không thẻ", "7 ngày, cần thẻ", "30 ngày, cần thẻ", "Chỉ xem demo"],
+        },
+      ],
+      footnote:
+        "So sánh dựa trên trang giá công khai tại thời điểm viết. Giá và tính năng NailIQ khớp trực tiếp với bảng plan ở trên.",
+    },
+    faq: {
+      eyebrow: "Câu hỏi thường gặp",
+      h2: "Những câu chủ tiệm hỏi trước khi chuyển sang",
+      sub:
+        "Nếu câu hỏi của bạn không có ở đây, nhắn cho mình — phản hồi trong 1 ngày làm việc.",
+      items: [
+        {
+          q: "Có cần cài app không?",
+          a: "Không. NailIQ chạy trên trình duyệt web — điện thoại, máy tính bảng, laptop đều dùng được. Khách hàng cũng không phải tải app, chỉ cần mở link đặt lịch là book được.",
+        },
+        {
+          q: "Có hủy bất cứ lúc nào được không?",
+          a: "Được. Không hợp đồng, không cam kết tối thiểu. Hủy ngay trong dashboard, gói sẽ dừng cuối tháng thanh toán hiện tại.",
+        },
+        {
+          q: "Setup mất bao lâu?",
+          a: "Khoảng 15 phút với phần lớn tiệm. Đã có sẵn template dịch vụ và mặc định nhân viên — bạn chỉ cần xác nhận và chỉnh giá.",
+        },
+        {
+          q: "NailIQ có hỗ trợ tiếng Việt không?",
+          a: "Có — toàn bộ giao diện chủ tiệm và lễ tân là EN/VN, trang đặt lịch khách tự nhận diện ngôn ngữ. Đây là nền tảng duy nhất xây tiếng Việt-first.",
+        },
+        {
+          q: "Có phí giao dịch không?",
+          a: "Không có phí theo booking hay theo khách. Phí thuê bao tháng là khoản phí duy nhất từ NailIQ. Nếu bạn thu thẻ qua bên thứ 3 (Square, Stripe), phí xử lý của họ tính riêng.",
+        },
+        {
+          q: "Khách hàng có cần tải app để đặt lịch không?",
+          a: "Không. Khách chạm link đặt lịch và book luôn trong trình duyệt — chạy được trên iPhone, Android, desktop, không cần cài gì.",
+        },
+        {
+          q: "Có import data từ Booksy hay tool khác được không?",
+          a: "Được — hỗ trợ import CSV. Email support@nailiq.ca kèm file export, mình giúp map cột. Cho khách chuyển từ tool khác, 3 tháng đầu miễn phí.",
+        },
+        {
+          q: "Nếu mạng yếu thì sao?",
+          a: "Receptionist Center có cache booking và walk-in gần đây, nên thao tác cơ bản vẫn chạy được khi mất mạng ngắn. Thao tác nặng (tạo booking mới, sync edit) cần kết nối.",
+        },
+      ],
+      footerText: "Còn câu hỏi khác?",
+      footerCta: "Liên hệ →",
+    },
+    contact: {
+      pageTitle: "Liên hệ",
+      lede:
+        "Đặt tại Vancouver, BC, Canada. Mình phản hồi trong 1 ngày làm việc.",
+      formHeading: "Gửi tin nhắn",
+      nameLabel: "Tên của bạn",
+      namePlaceholder: "Jane Nguyễn",
+      emailLabel: "Email",
+      emailPlaceholder: "jane@tiembancua.com",
+      salonLabel: "Tên tiệm (không bắt buộc)",
+      salonPlaceholder: "Saigon Nail Studio",
+      messageLabel: "Tin nhắn",
+      messagePlaceholder:
+        "Mình muốn biết NailIQ xử lý hàng đợi walk-in giờ cao điểm thế nào…",
+      submit: "Gửi tin nhắn",
+      submitting: "Đang gửi…",
+      successHeading: "Đã gửi tin nhắn",
+      successBody:
+        "Cảm ơn — mình đã nhận và sẽ phản hồi trong 1 ngày làm việc. Kiểm tra inbox (và thư mục spam) phòng khi cần.",
+      sendAnother: "Gửi tin khác",
+      errors: {
+        nameRequired: "Vui lòng nhập tên.",
+        emailRequired: "Vui lòng nhập email.",
+        emailInvalid: "Email không hợp lệ.",
+        messageRequired: "Vui lòng nhập tin nhắn.",
+        rateLimited:
+          "Quá nhiều lần gửi từ mạng này. Vui lòng thử lại sau vài phút.",
+        serverError:
+          "Có lỗi xảy ra. Vui lòng thử lại hoặc email trực tiếp tới hello@nailiq.ca.",
+      },
+      demoHeading: "Muốn xem trực tiếp?",
+      demoBody:
+        "Đặt 15 phút screen-share với đội sáng lập. Mình sẽ đi qua booking, hàng đợi walk-in, và Receptionist Center trên tiệm thật.",
+      demoCta: "Đặt lịch demo 15 phút →",
+      directEmailHeading: "Thích email hơn?",
+      directEmailBody:
+        "Chung: hello@nailiq.ca · Hỗ trợ: support@nailiq.ca · Bảo mật: privacy@nailiq.ca",
+      backToHome: "← Về trang chủ",
+    },
     finalCta: {
       eyebrow: "Một điều cuối cùng",
       h2: "Thay thế lễ tân với giá dưới $39/tháng.",

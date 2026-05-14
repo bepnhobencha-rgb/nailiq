@@ -29,6 +29,11 @@ export const RATE_LIMIT_IDS = {
   authAttempt: "auth-attempt",
   /** Future: magic-link / OAuth init endpoints if they get a server wrapper */
   magicLinkSend: "magic-link-send",
+  /** POST from /contact form (public marketing inquiry). Create the
+   *  matching rule in Vercel WAF with a low ceiling — e.g. 5 submissions
+   *  per IP per hour — since this is unauthenticated and prone to spam.
+   *  Fail-open until the rule exists. */
+  contactSubmit: "contact-submit",
 } as const;
 
 export type RateLimitId = (typeof RATE_LIMIT_IDS)[keyof typeof RATE_LIMIT_IDS];
