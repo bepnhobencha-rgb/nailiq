@@ -36,10 +36,7 @@ import {
 } from "@/shared/dashboard/openingHoursDefaults";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
-import {
-  formatPhoneInputProgressive,
-  normalizedPhoneDigits,
-} from "@/shared/lib/phoneFormat";
+import { formatPhoneInputProgressive } from "@/shared/lib/phoneFormat";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { formatInSalonTz, salonDateOffset } from "@/shared/lib/salonTime";
 import {
@@ -1090,15 +1087,17 @@ export function BookingGroupFlow({
           totalDisplay={totalDisplay}
           maxMinutes={totals.maxMinutes}
           size={size}
-          // QA bug — disable Confirm until the basic 10-digit
-          // threshold is met so users can't burn a click on a phone
-          // they're still typing. Both the strict `validateGuestPhone`
-          // and the same client/server error path stay in place as
-          // backstops; this is purely a "don't enable the button too
-          // early" guard. Optional email also has to be format-valid
-          // when present (empty is fine).
+          // P1 #18 / #19 (QA re-sweep 2026-05-12) — disable Confirm
+          // until phone passes the same `validateGuestPhone` the
+          // server uses (was a loose >=10-digit gate that could
+          // accept invalid NANP and bounce off the submit handler).
+          // Tightening here lets ConfirmStep show inline
+          // aria-invalid feedback while typing without ever letting
+          // the user "burn a click" on input that submit will reject.
+          // Optional email still has to be format-valid when present
+          // (empty is fine).
           contactReady={
-            normalizedPhoneDigits(primaryPhone).length >= 10 &&
+            validateGuestPhone(primaryPhone).ok &&
             (primaryEmail.trim().length === 0 ||
               isValidEmailFormat(primaryEmail.trim()))
           }
@@ -2432,6 +2431,20 @@ function ConfirmStep({
     );
   }
 
+  // P1 #18 / #19 (QA re-sweep 2026-05-12) — live-derived field
+  // validity. Mirrors the BookingFlowInfoPanel pattern: only flag
+  // invalid once the user has typed something (empty = no error
+  // before they've engaged). Drives `aria-invalid`, the red field
+  // border, and the inline `role="alert"` text below each input —
+  // a non-sighted user no longer has to wait for the submit banner
+  // to learn which field is wrong.
+  const phoneTrim = primaryPhone.trim();
+  const phoneLocallyInvalid =
+    phoneTrim.length > 0 && !validateGuestPhone(phoneTrim).ok;
+  const emailTrim = primaryEmail.trim();
+  const emailLocallyInvalid =
+    emailTrim.length > 0 && !isValidEmailFormat(emailTrim);
+
   return (
     <div className="space-y-4 pb-32" data-testid="group-step-confirm-panel">
       <h2 className="text-lg font-semibold sm:text-xl">
@@ -2537,26 +2550,80 @@ function ConfirmStep({
         <p className="text-xs text-[var(--booking-text-muted)]">
           {groupCopy.primaryContactHint}
         </p>
-        <input
-          type="tel"
-          inputMode="tel"
-          autoComplete="tel"
-          data-testid="group-primary-phone"
-          value={primaryPhone}
-          maxLength={24}
-          placeholder={t.clientPhonePlaceholder}
-          onChange={(e) => onPhoneChange(e.target.value)}
-          className="nq-booking-field"
-        />
-        <input
-          type="email"
-          autoComplete="email"
-          data-testid="group-primary-email"
-          value={primaryEmail}
-          placeholder={t.clientEmailLabel}
-          onChange={(e) => onEmailChange(e.target.value)}
-          className="nq-booking-field"
-        />
+        <div>
+          <label
+            htmlFor="group-primary-phone-input"
+            className="mb-1 block text-sm font-medium text-[var(--booking-text)]"
+          >
+            {t.clientPhoneLabel}
+          </label>
+          <input
+            id="group-primary-phone-input"
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            data-testid="group-primary-phone"
+            value={primaryPhone}
+            maxLength={24}
+            placeholder={t.clientPhonePlaceholder}
+            onChange={(e) => onPhoneChange(e.target.value)}
+            aria-invalid={phoneLocallyInvalid || undefined}
+            aria-describedby={
+              phoneLocallyInvalid ? "group-primary-phone-error" : undefined
+            }
+            className={cn(
+              "nq-booking-field",
+              phoneLocallyInvalid && "border-nq-error/50",
+            )}
+          />
+          {phoneLocallyInvalid ? (
+            <p
+              id="group-primary-phone-error"
+              role="alert"
+              data-testid="group-primary-phone-error"
+              className="mt-1 text-xs text-nq-error"
+            >
+              {groupCopy.contactInvalidPhone ??
+                "The phone number isn't valid."}
+            </p>
+          ) : null}
+        </div>
+        <div>
+          <label
+            htmlFor="group-primary-email-input"
+            className="mb-1 block text-sm font-medium text-[var(--booking-text)]"
+          >
+            {t.clientEmailLabel}
+          </label>
+          <input
+            id="group-primary-email-input"
+            type="email"
+            autoComplete="email"
+            data-testid="group-primary-email"
+            value={primaryEmail}
+            placeholder={t.clientEmailLabel}
+            onChange={(e) => onEmailChange(e.target.value)}
+            aria-invalid={emailLocallyInvalid || undefined}
+            aria-describedby={
+              emailLocallyInvalid ? "group-primary-email-error" : undefined
+            }
+            className={cn(
+              "nq-booking-field",
+              emailLocallyInvalid && "border-nq-error/50",
+            )}
+          />
+          {emailLocallyInvalid ? (
+            <p
+              id="group-primary-email-error"
+              role="alert"
+              data-testid="group-primary-email-error"
+              className="mt-1 text-xs text-nq-error"
+            >
+              {groupCopy.contactInvalidEmail ??
+                "The email format isn't valid."}
+            </p>
+          ) : null}
+        </div>
       </div>
 
       {errorMessage ? (
