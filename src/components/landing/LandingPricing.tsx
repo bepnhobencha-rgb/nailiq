@@ -43,7 +43,7 @@ export function LandingPricing() {
 
   return (
     <section className="relative bg-nq-bg py-14 md:py-20">
-      <div className="mx-auto w-full max-w-5xl px-5 md:px-8">
+      <div className="mx-auto w-full max-w-7xl px-5 md:px-8">
         {/* Section header */}
         <motion.div
           initial={reduce ? false : { opacity: 0, y: 16 }}
@@ -63,11 +63,14 @@ export function LandingPricing() {
           </p>
         </motion.div>
 
-        {/* Plans grid — stacked on mobile, 3-col on md+ */}
-        <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-3 md:items-stretch lg:gap-6">
+        {/* Plans grid — 1-col mobile, 2-col md, 4-col lg.
+            Task #10 (pricing v2) — was 3-col; expanded to 4 to fit
+            Enterprise. Pro keeps the gold glow even at 4 cards because
+            the conditional border + ambient layer do the heavy lift. */}
+        <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-2 md:items-stretch lg:grid-cols-4 lg:gap-6">
           {t.plans.map((plan, i) => {
             const isPro = plan.id === "pro";
-            const isStudio = plan.id === "studio";
+            const isEnterprise = plan.id === "enterprise";
 
             return (
               <motion.div
@@ -77,7 +80,7 @@ export function LandingPricing() {
                 viewport={{ once: true, margin: "-60px" }}
                 transition={{
                   duration: 0.55,
-                  delay: 0.05 + i * 0.1,
+                  delay: 0.05 + i * 0.08,
                   ease: [0.22, 1, 0.36, 1],
                 }}
                 className="relative flex flex-col"
@@ -92,7 +95,7 @@ export function LandingPricing() {
 
                 <div
                   className={cn(
-                    "relative flex flex-1 flex-col rounded-3xl p-7 md:p-8",
+                    "relative flex flex-1 flex-col rounded-3xl p-6 md:p-7",
                     isPro
                       ? "border-2 border-nq-primary/60 bg-gradient-to-b from-nq-surface/70 to-nq-bg/40 shadow-[0_30px_80px_-30px_rgba(212,175,55,0.35)]"
                       : "border border-nq-border/30 bg-nq-surface/50",
@@ -117,7 +120,7 @@ export function LandingPricing() {
                     <span
                       className={cn(
                         "font-bold tracking-tight text-nq-foreground",
-                        isPro ? "text-6xl md:text-7xl" : "text-5xl md:text-6xl",
+                        isPro ? "text-5xl md:text-6xl" : "text-4xl md:text-5xl",
                       )}
                     >
                       {plan.price}
@@ -139,20 +142,22 @@ export function LandingPricing() {
                     ))}
                   </ul>
 
-                  {/* CTA — pinned to card bottom */}
+                  {/* CTA — pinned to card bottom.
+                      Pro: filled gold, → /register.
+                      Enterprise: outlined, → /contact (no checkout flow).
+                      Free / Studio: outlined, → /register. */}
                   <div className="mt-7">
-                    {isStudio ? (
-                      <button
-                        type="button"
-                        disabled
-                        className="inline-flex w-full cursor-not-allowed items-center justify-center rounded-full border border-nq-border/25 bg-nq-surface/30 px-6 py-3 text-sm font-semibold text-nq-muted/40"
-                      >
-                        {plan.cta}
-                      </button>
-                    ) : isPro ? (
+                    {isPro ? (
                       <Link
                         href="/register"
                         className="inline-flex w-full items-center justify-center rounded-full border border-nq-primary/50 bg-nq-primary px-6 py-3.5 text-sm font-semibold text-nq-bg shadow-[0_8px_28px_-8px_rgba(212,175,55,0.55)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
+                      >
+                        {plan.cta}
+                      </Link>
+                    ) : isEnterprise ? (
+                      <Link
+                        href="/contact"
+                        className="inline-flex w-full items-center justify-center rounded-full border border-nq-border/50 bg-nq-surface/60 px-6 py-3 text-sm font-semibold text-nq-foreground transition hover:bg-nq-surface hover:border-nq-border/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
                       >
                         {plan.cta}
                       </Link>
@@ -166,9 +171,14 @@ export function LandingPricing() {
                     )}
 
                     {isPro && (
-                      <p className="mt-2.5 text-center text-xs text-nq-muted">
-                        {t.ccNotice}
-                      </p>
+                      <>
+                        <p className="mt-2.5 text-center text-xs text-nq-muted">
+                          {t.ccNotice}
+                        </p>
+                        <p className="mt-1.5 text-center text-xs leading-snug text-nq-primary-soft/85">
+                          {t.proMigrationNote}
+                        </p>
+                      </>
                     )}
                   </div>
                 </div>
@@ -176,6 +186,41 @@ export function LandingPricing() {
             );
           })}
         </div>
+
+        {/* Add-ons rail (Task #10) — three small cards rendered below
+            the four plans. Kept inside the same <section> so the
+            visual rhythm follows the primary pricing block. */}
+        <motion.div
+          initial={reduce ? false : { opacity: 0, y: 24 }}
+          whileInView={reduce ? undefined : { opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-60px" }}
+          transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+          className="mt-14 md:mt-20"
+        >
+          <h3 className="text-center text-xl font-semibold tracking-tight text-nq-foreground md:text-2xl">
+            {t.addons.sectionTitle}
+          </h3>
+          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-5">
+            {([t.addons.sms, t.addons.location, t.addons.branding] as const).map(
+              (addon) => (
+                <div
+                  key={addon.name}
+                  className="flex flex-col rounded-2xl border border-nq-border/30 bg-nq-surface/40 p-5 md:p-6"
+                >
+                  <p className="text-xs font-semibold uppercase tracking-widest text-nq-muted">
+                    {addon.name}
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-nq-foreground md:text-xl">
+                    {addon.price}
+                  </p>
+                  <p className="mt-2 text-sm leading-relaxed text-nq-muted/80">
+                    {addon.description}
+                  </p>
+                </div>
+              ),
+            )}
+          </div>
+        </motion.div>
       </div>
     </section>
   );

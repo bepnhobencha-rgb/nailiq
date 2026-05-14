@@ -26,9 +26,10 @@ const landingPlayfair = Playfair_Display({
 });
 
 const landingDescription =
-  "Built for nail salons. $29/month. 3–5× cheaper than Booksy. Vietnamese-first booking, walk-in queue, and live receptionist center.";
+  "AI-powered salon OS for nail salons. Vietnamese-first. Booking + walk-in queue + receptionist center. From $39/month — less than one manicure.";
 
-const landingTitle = "NailIQ — Booking + walk-in queue for nail salons";
+const landingTitle =
+  "NailIQ — AI-Powered Salon OS for Nail Salons | From $39/month";
 
 export const metadata: Metadata = {
   // Use absolute so the root template (`%s | NailIQ`) doesn't append a

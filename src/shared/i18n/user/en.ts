@@ -217,8 +217,14 @@ export type UserMessages = {
       perMonth: string;
       taxNote: string;
       ccNotice: string;
+      /** Migration note rendered under the Pro CTA (below `ccNotice`).
+       *  Task #10 — pricing v2: "Switching from another tool? First 3
+       *  months free." Calls out the migration discount inline so it
+       *  doesn't get lost in the FAQ. */
+      proMigrationNote: string;
       plans: ReadonlyArray<{
-        /** "free" | "pro" | "studio" — component uses id to apply highlight + CTA logic */
+        /** "free" | "pro" | "studio" | "enterprise" — component keys on this
+         *  for the Pro glow + Enterprise contact-CTA path. */
         id: string;
         name: string;
         price: string;
@@ -227,6 +233,15 @@ export type UserMessages = {
         features: ReadonlyArray<string>;
         cta: string;
       }>;
+      /** Add-ons rail rendered below the four pricing cards. Three cards:
+       *  extra SMS credits, extra location, and the one-time branded
+       *  digital-card design package. */
+      addons: {
+        sectionTitle: string;
+        sms: { name: string; price: string; description: string };
+        location: { name: string; price: string; description: string };
+        branding: { name: string; price: string; description: string };
+      };
     };
     finalCta: {
       eyebrow: string;
@@ -1394,10 +1409,10 @@ export const userEn: UserMessages = {
     },
     hero: {
       eyebrow: "Trusted by salons in Canada & Vietnam",
-      h1Line1: "$29/month. Booking + walk-in queue,",
-      h1Gold: "built for nail salons.",
+      h1Line1: "Less than one manicure a month.",
+      h1Gold: "Your salon runs itself.",
       subline:
-        "3–5× cheaper than Booksy. Vietnamese-first. No missed calls.",
+        "Vietnamese-first. AI-powered. No missed bookings, ever.",
       ctaPrimary: "Try free for 14 days",
       ctaSecondary: "See how it works ↓",
       microtrust: "No credit card · 14-day trial · Setup in 2 minutes",
@@ -1502,6 +1517,7 @@ export const userEn: UserMessages = {
       perMonth: "/month",
       taxNote: "+ applicable taxes. CAD pricing.",
       ccNotice: "No credit card required",
+      proMigrationNote: "Switching from another tool? First 3 months free.",
       plans: [
         {
           id: "free",
@@ -1510,49 +1526,88 @@ export const userEn: UserMessages = {
           badge: null,
           features: [
             "1 staff member",
-            "Up to 10 services",
+            "Up to 50 bookings/month",
             "Online booking link",
             "Walk-in queue",
-            "Vietnamese & English support",
+            "Vietnamese & English",
+            "AI Menu Scanner (setup only)",
           ],
           cta: "Get started free",
         },
         {
           id: "pro",
           name: "Pro",
-          price: "$29",
+          price: "$39",
           badge: "Most Popular",
           features: [
-            "Up to 10 staff",
-            "Up to 50 services",
+            "Everything in Free",
+            "Unlimited bookings & staff",
             "Real-time receptionist center",
+            "Smart AI Upsell",
+            "Auto review requests",
             "Owner reports & analytics",
-            "Audit log",
-            "Cancel anytime — no contract",
+            "Cancel anytime",
           ],
           cta: "Start 14-day free trial",
         },
         {
           id: "studio",
           name: "Studio",
-          price: "$59",
-          badge: null,
+          price: "$89",
+          badge: "Best Value",
           features: [
-            "Unlimited staff",
-            "Unlimited services",
             "Everything in Pro",
-            "Multi-location (coming soon)",
+            "AI Review Defense (1-click approve)",
+            "Loyalty program & Gift Cards (coming soon)",
+            "Staff performance reports",
+            "CRM & client history",
+            "SMS marketing (100 msgs/month)",
             "Priority support",
           ],
-          cta: "Coming soon",
+          cta: "Start 14-day free trial",
+        },
+        {
+          id: "enterprise",
+          name: "Enterprise",
+          price: "$199",
+          badge: "For Chains",
+          features: [
+            "Everything in Studio",
+            "Voice AI (English + Vietnamese) (coming soon)",
+            "Multi-location management",
+            "Staff payroll & commission (coming soon)",
+            "T4 tax export (coming soon)",
+            "AI inventory management (coming soon)",
+            "Unlimited SMS",
+            "Dedicated onboarding",
+          ],
+          cta: "Contact us",
         },
       ],
+      addons: {
+        sectionTitle: "Need more? Add what you need.",
+        sms: {
+          name: "SMS Extra",
+          price: "$20 / 500 messages",
+          description: "Extra SMS credits for any plan",
+        },
+        location: {
+          name: "Extra Location",
+          price: "$49/month per location",
+          description: "Add another salon location",
+        },
+        branding: {
+          name: "Branded Digital Card",
+          price: "$199 one-time",
+          description: "Custom luxury branding package",
+        },
+      },
     },
     finalCta: {
       eyebrow: "One last thing",
-      h2: "Ready to stop losing bookings?",
+      h2: "Replace your receptionist for less than $39/month.",
       sub:
-        "14-day free trial. No credit card. Cancel anytime. Setup in 2 minutes.",
+        "14-day free trial. No credit card. Setup in 2 minutes.",
       ctaPrimary: "Start your free trial",
       ctaSecondary: "See how it works ↓",
     },
