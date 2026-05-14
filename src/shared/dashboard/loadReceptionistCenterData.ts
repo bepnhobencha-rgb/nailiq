@@ -346,6 +346,32 @@ type DashboardWriteResolver = (
 export type ReceptionistCenterDataLoaderDeps = {
   /** Omit in app routes; smoke tests inject a service-role resolver. */
   resolveWrite?: DashboardWriteResolver;
+  /**
+   * Pre-fetched salon row from `getDashboardWriteClient`. When the
+   * caller already has the salon row in hand (the only real caller is
+   * `/dashboard/[slug]/center/page.tsx`), passing it here lets the
+   * loader skip its own `salons` SELECT — saving one Vercel→Supabase
+   * round-trip per page load. The loader still uses the caller's
+   * supabase client for the remaining queries (staff / services /
+   * queue / bookings / capabilities).
+   *
+   * Must carry the dashboard-config fields (`timezone`,
+   * `dashboard_modules`, `dashboard_preset`, `dashboard_density`,
+   * `currency_code`) so the loader can derive its outputs without a
+   * second fetch. `resolveSalonForDashboard`'s expanded SELECT
+   * (PR — perf/center-eliminate-triple-salon-fetch) gathers these
+   * up front.
+   */
+  preFetchedSalon?: {
+    id: string;
+    name: string;
+    slug: string;
+    timezone: string;
+    dashboard_modules: unknown | null;
+    dashboard_preset: unknown | null;
+    dashboard_density: unknown | null;
+    currency_code: unknown | null;
+  };
 };
 
 const DATE_YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -383,23 +409,12 @@ export async function loadReceptionistCenterData(
 
   const supabase = ctx.supabase;
 
-  const salonResult = await supabase
-    .from("salons")
-    .select(
-      // currency_code added by migration 20260512000000 — not in
-      // auto-generated types yet, hence the `as never` cast on the
-      // SELECT string. Drives money formatting across the desk.
-      "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code" as never,
-    )
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-
-  if (salonResult.error) {
-    console.error("[loadReceptionistCenterData] salons", salonResult.error);
-    return { ok: false, error: "server_error" };
-  }
-
-  const salonData = salonResult.data as {
+  // Perf — when the caller already has the salon row (the
+  // /center page route now does, since `resolveSalonForDashboard`
+  // SELECTs everything we need in one go), skip the dedicated
+  // salons fetch. Smoke tests and any other caller that doesn't
+  // pre-fetch still hit the original query path.
+  type SalonShape = {
     id: string;
     name: string;
     slug: string;
@@ -408,7 +423,37 @@ export async function loadReceptionistCenterData(
     dashboard_preset?: unknown;
     dashboard_density?: unknown;
     currency_code?: unknown;
-  } | null;
+  };
+  let salonData: SalonShape | null;
+  if (deps?.preFetchedSalon) {
+    salonData = {
+      id: deps.preFetchedSalon.id,
+      name: deps.preFetchedSalon.name,
+      slug: deps.preFetchedSalon.slug,
+      timezone: deps.preFetchedSalon.timezone,
+      dashboard_modules: deps.preFetchedSalon.dashboard_modules,
+      dashboard_preset: deps.preFetchedSalon.dashboard_preset,
+      dashboard_density: deps.preFetchedSalon.dashboard_density,
+      currency_code: deps.preFetchedSalon.currency_code,
+    };
+  } else {
+    const salonResult = await supabase
+      .from("salons")
+      .select(
+        // currency_code added by migration 20260512000000 — not in
+        // auto-generated types yet, hence the `as never` cast on the
+        // SELECT string. Drives money formatting across the desk.
+        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code" as never,
+      )
+      .eq("id", ctx.salon.id)
+      .maybeSingle();
+
+    if (salonResult.error) {
+      console.error("[loadReceptionistCenterData] salons", salonResult.error);
+      return { ok: false, error: "server_error" };
+    }
+    salonData = salonResult.data as SalonShape | null;
+  }
 
   if (!salonData?.id || typeof salonData.timezone !== "string" || salonData.timezone.trim() === "") {
     return { ok: false, error: "salon_not_found" };
