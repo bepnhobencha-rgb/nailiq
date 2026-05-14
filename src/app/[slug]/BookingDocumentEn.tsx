@@ -6,27 +6,32 @@ import { useEffect } from "react";
  * Keeps `<html lang>` in sync with the booking page's resolved
  * locale so screen readers + browser-translate behave correctly.
  *
- * QA re-sweep 2026-05-12: on first load with cookie
- * `nq-booking-lang=en` the document ended up tagged as `lang="vi"`
+ * Background — QA re-sweep 2026-05-12: on first load with cookie
+ * `nq-booking-lang=en` the document ended up tagged `lang="vi"`
  * because the root-level `UserLanguageProvider` *also* mutates
  * `document.documentElement.lang` from a separate localStorage
  * key (`nailiq-user-lang`, default "vi") and its useEffect runs
  * AFTER ours (parent-after-child effect order). The booking
- * surface was effectively losing the race every initial mount.
+ * surface was losing the race on every initial mount; the prior
+ * `setTimeout(0)` patch only fixed scenarios where the parent's
+ * effect happened to complete inside the same macrotask, so it
+ * was flaky.
  *
- * Fix layers (defense in depth):
+ * Defense in depth, in order of operation:
  *
- *   1. Inline `<script>` rendered server-side — runs at HTML parse
- *      time, before React loads, so the page is tagged correctly
- *      from the first paint.
- *   2. `useEffect` re-assert — handles client-side lang changes
- *      (toggle click → router.refresh).
- *   3. `setTimeout(0)` re-assert inside the same effect — fires
- *      after every other current-tick `useEffect`, so we
- *      definitively beat `UserLanguageProvider`'s parent effect.
+ *   1. Inline `<script>` rendered server-side — runs at HTML
+ *      parse time, before React mounts, so the page is tagged
+ *      correctly from the very first paint.
+ *   2. `useEffect` — re-asserts on mount and on lang change.
+ *   3. `MutationObserver` — watches `<html lang>` for any other
+ *      mutation (root `UserLanguageProvider`, browser extension,
+ *      third-party script) and immediately reverts to the
+ *      booking-resolved value. Order-of-effects no longer
+ *      matters: whoever writes last, we always have the last
+ *      word.
  *
- * Component name kept (`BookingDocumentEn`) to avoid touching every
- * import site; the prop drives behavior.
+ * Component name kept (`BookingDocumentEn`) to avoid touching
+ * every import site; the prop drives behavior.
  */
 export function BookingDocumentEn({
   lang = "vi",
@@ -35,21 +40,31 @@ export function BookingDocumentEn({
 }) {
   useEffect(() => {
     document.documentElement.lang = lang;
-    // Defer one tick past parent useEffects (UserLanguageProvider
-    // at the root sets lang from its own state, which may still be
-    // the "vi" SSR default at this point).
-    const t = setTimeout(() => {
-      document.documentElement.lang = lang;
-    }, 0);
-    return () => clearTimeout(t);
+
+    // The `if` guard prevents an infinite loop: our own revert
+    // re-fires the observer, but `lang === lang` short-circuits
+    // before we mutate again. Scoping the observer to the `lang`
+    // attribute on `<html>` keeps it cheap — it only fires when
+    // something actually touches that attribute.
+    const observer = new MutationObserver(() => {
+      if (document.documentElement.lang !== lang) {
+        document.documentElement.lang = lang;
+      }
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["lang"],
+    });
+
+    return () => observer.disconnect();
   }, [lang]);
 
   return (
     <script
       // Synchronous DOM update during HTML parse — closes the
-      // window between root-layout `<html lang="en">` (which our
-      // server-resolved booking lang might disagree with) and the
-      // first React effect. Safe `JSON.stringify` ensures the lang
+      // window between root-layout `<html lang="en">` (which may
+      // disagree with the server-resolved booking lang) and the
+      // first React effect. `JSON.stringify` ensures the lang
       // literal can't break out of the script context.
       dangerouslySetInnerHTML={{
         __html: `try{document.documentElement.lang=${JSON.stringify(lang)};}catch(e){}`,
