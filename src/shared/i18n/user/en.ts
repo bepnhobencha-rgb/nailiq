@@ -243,6 +243,72 @@ export type UserMessages = {
         branding: { name: string; price: string; description: string };
       };
     };
+    /** Comparison table — NailIQ vs major competitors. Rendered
+     *  between Features and How-It-Works to validate the
+     *  "3-5× cheaper than Booksy" claim made in the hero. */
+    compare: {
+      eyebrow: string;
+      h2: string;
+      sub: string;
+      /** Column headers; first cell is the row label, the rest are
+       *  competitor names. NailIQ is always the second column so
+       *  the highlight ring is positioned consistently. */
+      headers: ReadonlyArray<string>;
+      /** Each row: first string is the feature label, then one cell
+       *  per competitor column. `null` means "not supported / red
+       *  X"; `true` means "supported / green check"; any string is
+       *  rendered as-is (e.g. "$29/mo", "15 min"). */
+      rows: ReadonlyArray<{
+        label: string;
+        cells: ReadonlyArray<string | true | null>;
+      }>;
+      footnote: string;
+    };
+    /** FAQ accordion — addresses pre-purchase friction from
+     *  salon owner conversations. Click each Q to reveal A. */
+    faq: {
+      eyebrow: string;
+      h2: string;
+      sub: string;
+      items: ReadonlyArray<{ q: string; a: string }>;
+      footerText: string;
+      footerCta: string;
+    };
+    /** /contact page (extends from `landing.footer.contact` label). */
+    contact: {
+      pageTitle: string;
+      lede: string;
+      formHeading: string;
+      nameLabel: string;
+      namePlaceholder: string;
+      emailLabel: string;
+      emailPlaceholder: string;
+      salonLabel: string;
+      salonPlaceholder: string;
+      messageLabel: string;
+      messagePlaceholder: string;
+      submit: string;
+      submitting: string;
+      successHeading: string;
+      successBody: string;
+      sendAnother: string;
+      errors: {
+        nameRequired: string;
+        emailRequired: string;
+        emailInvalid: string;
+        messageRequired: string;
+        rateLimited: string;
+        serverError: string;
+      };
+      /** Demo-request CTA box rendered below the form. */
+      demoHeading: string;
+      demoBody: string;
+      demoCta: string;
+      /** Direct-email fallback rendered below the demo CTA. */
+      directEmailHeading: string;
+      directEmailBody: string;
+      backToHome: string;
+    };
     finalCta: {
       eyebrow: string;
       h2: string;
@@ -1602,6 +1668,121 @@ export const userEn: UserMessages = {
           description: "Custom luxury branding package",
         },
       },
+    },
+    compare: {
+      eyebrow: "Why NailIQ",
+      h2: "Built for nail salons — not generic appointment software",
+      sub:
+        "Honest comparison against the three tools we hear most often. Competitor prices are list rates as of 2026; check their sites for current promos.",
+      headers: ["", "NailIQ", "Booksy", "Square Appts", "Mangomint"],
+      rows: [
+        {
+          label: "Starting price",
+          cells: ["$29/mo", "$30/mo + add-ons", "$29/loc", "$165/mo"],
+        },
+        {
+          label: "Vietnamese UI",
+          cells: [true, null, null, null],
+        },
+        {
+          label: "Walk-in queue",
+          cells: [true, "Limited", null, true],
+        },
+        {
+          label: "Setup time",
+          cells: ["15 min", "2-3 days", "1-2 days", "1-2 days"],
+        },
+        {
+          label: "Transaction fees",
+          cells: ["None", "None", "2.6% + 10¢", "~1-3% (POS)"],
+        },
+        {
+          label: "Free trial",
+          cells: ["14 days, no card", "7 days, card", "30 days, card", "Demo only"],
+        },
+      ],
+      footnote:
+        "Comparisons reflect public pricing pages at time of writing. NailIQ pricing and feature claims map directly to the plan grid above.",
+    },
+    faq: {
+      eyebrow: "FAQ",
+      h2: "Questions salon owners ask before they switch",
+      sub: "If your question isn't here, message us — we reply within one business day.",
+      items: [
+        {
+          q: "Do I need to install an app?",
+          a: "No. NailIQ runs in any web browser on phone, tablet, or laptop. Your customers also book without installing anything — they just open your booking link.",
+        },
+        {
+          q: "Can I cancel anytime?",
+          a: "Yes. No contract, no minimum term. Cancel from your dashboard and your subscription stops at the end of the current billing month.",
+        },
+        {
+          q: "How long does setup take?",
+          a: "About 15 minutes for most salons. Pre-loaded service templates and staff defaults speed it up — you just confirm what's already there and tweak prices.",
+        },
+        {
+          q: "Does NailIQ support Vietnamese?",
+          a: "Yes — the full owner and receptionist UI is bilingual EN/VN, and the customer-facing booking page auto-detects language. We're the only salon platform built Vietnamese-first.",
+        },
+        {
+          q: "Are there transaction fees?",
+          a: "No per-booking or per-customer fees. The monthly subscription is the only charge from NailIQ. If you accept card payments through a third party (Square, Stripe), their processing fees apply separately.",
+        },
+        {
+          q: "Do customers need to download an app to book?",
+          a: "No. Customers tap your booking link and book in the browser — works on iPhone, Android, and desktop without an install.",
+        },
+        {
+          q: "Can I import my customers from Booksy or another tool?",
+          a: "Yes — CSV import is supported. Email support@nailiq.ca with your export and we'll help you map the columns. For full migrations, the first 3 months are free.",
+        },
+        {
+          q: "What happens if my internet is slow?",
+          a: "The receptionist center caches recent bookings and walk-ins, so basic operations keep working through short outages. Heavy actions (creating a new booking, syncing edits) need a connection to complete.",
+        },
+      ],
+      footerText: "Still have questions?",
+      footerCta: "Contact us →",
+    },
+    contact: {
+      pageTitle: "Contact us",
+      lede:
+        "Based in Vancouver, BC, Canada. We aim to respond within one business day.",
+      formHeading: "Send us a message",
+      nameLabel: "Your name",
+      namePlaceholder: "Jane Nguyen",
+      emailLabel: "Email",
+      emailPlaceholder: "jane@yoursalon.com",
+      salonLabel: "Salon name (optional)",
+      salonPlaceholder: "Saigon Nail Studio",
+      messageLabel: "Message",
+      messagePlaceholder:
+        "I'd love to learn how NailIQ handles walk-in queue during busy hours…",
+      submit: "Send message",
+      submitting: "Sending…",
+      successHeading: "Message sent",
+      successBody:
+        "Thanks — we've got it and will reply within one business day. Check your inbox (and spam folder) just in case.",
+      sendAnother: "Send another",
+      errors: {
+        nameRequired: "Please enter your name.",
+        emailRequired: "Please enter your email.",
+        emailInvalid: "That email doesn't look valid.",
+        messageRequired: "Please enter a message.",
+        rateLimited:
+          "Too many submissions from this network. Please try again in a few minutes.",
+        serverError:
+          "Something went wrong. Please try again or email hello@nailiq.ca directly.",
+      },
+      demoHeading: "Rather see it live?",
+      demoBody:
+        "Book a 15-minute screen-share with the founding team. We'll walk through booking, walk-in queue, and receptionist center on a real salon.",
+      demoCta: "Book a 15-minute demo →",
+      directEmailHeading: "Prefer email?",
+      directEmailBody:
+        "General: hello@nailiq.ca · Support: support@nailiq.ca · Privacy: privacy@nailiq.ca",
+      backToHome: "← Back to home",
     },
     finalCta: {
       eyebrow: "One last thing",
