@@ -343,7 +343,7 @@ export const userVi: UserMessages = {
       h2: "Xây cho tiệm nail — không phải phần mềm lịch hẹn chung chung",
       sub:
         "So sánh thẳng thắn với 3 công cụ chủ tiệm hay nhắc nhất. Giá đối thủ là giá niêm yết năm 2026; nên kiểm tra trang của họ để biết khuyến mãi mới.",
-      headers: ["", "NailIQ", "Booksy", "Square Appts", "Mangomint"],
+      headers: ["Tính năng", "NailIQ", "Booksy", "Square Appts", "Mangomint"],
       rows: [
         {
           label: "Giá khởi điểm",
@@ -351,11 +351,11 @@ export const userVi: UserMessages = {
         },
         {
           label: "Giao diện tiếng Việt",
-          cells: [true, null, null, null],
+          cells: ["✓", "✕", "✕", "✕"],
         },
         {
           label: "Hàng đợi walk-in",
-          cells: [true, "Hạn chế", null, true],
+          cells: ["✓", "Hạn chế", "✕", "✓"],
         },
         {
           label: "Thời gian setup",

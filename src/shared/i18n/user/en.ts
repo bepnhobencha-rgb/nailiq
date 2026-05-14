@@ -250,17 +250,19 @@ export type UserMessages = {
       eyebrow: string;
       h2: string;
       sub: string;
-      /** Column headers; first cell is the row label, the rest are
-       *  competitor names. NailIQ is always the second column so
-       *  the highlight ring is positioned consistently. */
+      /** Column headers; first cell is the row label column, the
+       *  rest are competitor names. NailIQ is always the second
+       *  column so the highlight ring is positioned consistently. */
       headers: ReadonlyArray<string>;
       /** Each row: first string is the feature label, then one cell
-       *  per competitor column. `null` means "not supported / red
-       *  X"; `true` means "supported / green check"; any string is
-       *  rendered as-is (e.g. "$29/mo", "15 min"). */
+       *  per competitor column. All cells are strings (the i18n
+       *  validator forbids non-string atoms). Sentinel values
+       *  `"✓"` and `"✕"` are detected by the component and rendered
+       *  as green check / muted X chips; any other string is shown
+       *  verbatim (e.g. "$29/mo", "15 min"). */
       rows: ReadonlyArray<{
         label: string;
-        cells: ReadonlyArray<string | true | null>;
+        cells: ReadonlyArray<string>;
       }>;
       footnote: string;
     };
@@ -1674,7 +1676,7 @@ export const userEn: UserMessages = {
       h2: "Built for nail salons — not generic appointment software",
       sub:
         "Honest comparison against the three tools we hear most often. Competitor prices are list rates as of 2026; check their sites for current promos.",
-      headers: ["", "NailIQ", "Booksy", "Square Appts", "Mangomint"],
+      headers: ["Feature", "NailIQ", "Booksy", "Square Appts", "Mangomint"],
       rows: [
         {
           label: "Starting price",
@@ -1682,11 +1684,11 @@ export const userEn: UserMessages = {
         },
         {
           label: "Vietnamese UI",
-          cells: [true, null, null, null],
+          cells: ["✓", "✕", "✕", "✕"],
         },
         {
           label: "Walk-in queue",
-          cells: [true, "Limited", null, true],
+          cells: ["✓", "Limited", "✕", "✓"],
         },
         {
           label: "Setup time",

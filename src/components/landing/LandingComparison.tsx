@@ -6,17 +6,22 @@ import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { cn } from "@/shared/lib/cn";
 
-/** Renders either a green check, a red X, or a plain text string for
- *  a comparison cell. `true` → supported, `null` → unsupported,
- *  any string → rendered as-is (e.g. "$29/mo"). */
+/** i18n schema requires every cell to be a string (the `check:i18n`
+ *  validator rejects boolean / null atoms). We use these sentinel
+ *  characters in the copy to mean "supported" / "not supported";
+ *  the component swaps them for proper a11y-labelled icons. Any
+ *  other string is rendered verbatim. */
+const CELL_YES = "✓";
+const CELL_NO = "✕";
+
 function CompareCell({
   value,
   highlight,
 }: {
-  value: string | true | null;
+  value: string;
   highlight: boolean;
 }) {
-  if (value === true) {
+  if (value === CELL_YES) {
     return (
       <span
         aria-label="Yes"
@@ -42,7 +47,7 @@ function CompareCell({
       </span>
     );
   }
-  if (value === null) {
+  if (value === CELL_NO) {
     return (
       <span
         aria-label="No"
@@ -226,7 +231,7 @@ export function LandingComparison() {
                         </dt>
                         <dd className="text-sm">
                           <CompareCell
-                            value={row.cells[cellIdx] ?? null}
+                            value={row.cells[cellIdx] ?? ""}
                             highlight={isNailIq}
                           />
                         </dd>
