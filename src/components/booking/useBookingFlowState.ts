@@ -102,6 +102,12 @@ export function useBookingFlowState(
   /** B-10: optional. Empty stays empty — we never persist locally (privacy fix B-02). */
   const [clientEmail, setClientEmail] = useState("");
   const [clientNotes, setClientNotes] = useState("");
+  /** Task #09-11 — honeypot field, never shown to humans (CSS-hidden +
+   *  `tabIndex=-1` + `aria-hidden`). Bots autofilling every `<input>`
+   *  in the form will put something here; `submitPublicBooking`
+   *  silently returns a fake success when that happens so no row is
+   *  written and the bot doesn't learn it was caught. */
+  const [clientWebsite, setClientWebsite] = useState("");
   const [selectedAddonId, setSelectedAddonId] = useState<string | null>(null);
   const [upsellCandidates, setUpsellCandidates] = useState<
     BookingServiceItem[]
@@ -552,6 +558,7 @@ export function useBookingFlowState(
     setClientPhone("");
     setClientEmail("");
     setClientNotes("");
+    setClientWebsite("");
     setSelectedAddonId(null);
     setServiceId(null);
     setStaffId(BOOKING_ANY_STAFF_ID);
@@ -668,6 +675,10 @@ export function useBookingFlowState(
         clientEmail: email.length > 0 ? email : null,
         clientNotes: notes,
         addonServiceId: addonId,
+        // Task #09-11 — honeypot. Real users never see this field;
+        // a non-empty value triggers a silent fake-success on the
+        // server so the bot doesn't learn it was detected.
+        clientWebsite,
       });
       setBookingResult({
         bookingId: result.bookingId,
@@ -764,6 +775,7 @@ export function useBookingFlowState(
     clientPhone,
     clientEmail,
     clientNotes,
+    clientWebsite,
     selectedAddonId,
     upsellCandidates,
     selectedDate,
@@ -904,6 +916,7 @@ export function useBookingFlowState(
     clientPhone,
     clientEmail,
     clientNotes,
+    clientWebsite,
     selectedAddonId,
     upsellCandidates,
     upsellGapMinutes,
@@ -932,6 +945,7 @@ export function useBookingFlowState(
     handleInfoPhoneBlur,
     handleInfoEmailBlur,
     setClientNotes,
+    setClientWebsite,
     setSelectedAddonId,
     setError,
     goServiceNext,

@@ -194,6 +194,7 @@ export function BookingFlow({
             clientPhone={flow.clientPhone}
             clientEmail={flow.clientEmail}
             clientNotes={flow.clientNotes}
+            clientWebsite={flow.clientWebsite}
             error={flow.error}
             nameError={flow.infoNameError}
             phoneError={flow.infoPhoneError}
@@ -205,6 +206,7 @@ export function BookingFlow({
             onClientPhoneChange={flow.setClientPhone}
             onClientEmailChange={flow.setClientEmail}
             onClientNotesChange={flow.setClientNotes}
+            onClientWebsiteChange={flow.setClientWebsite}
             onClientNameBlur={flow.handleInfoNameBlur}
             onClientPhoneBlur={flow.handleInfoPhoneBlur}
             onClientEmailBlur={flow.handleInfoEmailBlur}

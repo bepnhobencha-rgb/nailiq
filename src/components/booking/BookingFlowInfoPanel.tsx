@@ -19,6 +19,7 @@ export function BookingFlowInfoPanel({
   clientPhone,
   clientEmail,
   clientNotes,
+  clientWebsite,
   error,
   nameError,
   phoneError,
@@ -30,6 +31,7 @@ export function BookingFlowInfoPanel({
   onClientPhoneChange,
   onClientEmailChange,
   onClientNotesChange,
+  onClientWebsiteChange,
   onClientNameBlur,
   onClientPhoneBlur,
   onClientEmailBlur,
@@ -41,6 +43,10 @@ export function BookingFlowInfoPanel({
   clientPhone: string;
   clientEmail: string;
   clientNotes: string;
+  /** Task #09-11 honeypot — never visible to humans. Bots autofilling
+   *  every input in the form will populate this; `submitPublicBooking`
+   *  short-circuits with a silent fake-success when it's non-empty. */
+  clientWebsite: string;
   error: string | null;
   nameError: string | null;
   phoneError: string | null;
@@ -52,6 +58,7 @@ export function BookingFlowInfoPanel({
   onClientPhoneChange: (v: string) => void;
   onClientEmailChange: (v: string) => void;
   onClientNotesChange: (v: string) => void;
+  onClientWebsiteChange: (v: string) => void;
   onClientNameBlur: () => void;
   onClientPhoneBlur: () => void;
   onClientEmailBlur: () => void;
@@ -240,6 +247,29 @@ export function BookingFlowInfoPanel({
             value={clientNotes}
             onChange={(e) => onClientNotesChange(e.target.value)}
             className="nq-booking-field min-h-[5.5rem] resize-y py-3"
+          />
+        </div>
+        {/*
+         * Task #09-11 — honeypot. Hidden three ways (off-screen, no
+         * display, tabIndex -1, aria-hidden) so screen readers and
+         * keyboard users never reach it. Real humans cannot fill this
+         * field. Naive form-fillers / bots will populate every `<input>`
+         * regardless and trip the server-side guard, which returns a
+         * silent fake-success without writing a row.
+         *
+         * `name="website"` is a deliberate decoy — it's a plausible
+         * field name a bot would expect, increasing the odds of a fill.
+         */}
+        <div aria-hidden="true" style={{ display: "none" }}>
+          <label htmlFor="booking-info-website">Website</label>
+          <input
+            id="booking-info-website"
+            type="text"
+            name="website"
+            autoComplete="off"
+            tabIndex={-1}
+            value={clientWebsite}
+            onChange={(e) => onClientWebsiteChange(e.target.value)}
           />
         </div>
         {error ? (
