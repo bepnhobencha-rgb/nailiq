@@ -467,36 +467,24 @@ export async function submitPublicBooking(
     requestedStaffId !== BOOKING_ANY_STAFF_ID;
 
   if (!bookingId && rpcMissing) {
-    bookingId = crypto.randomUUID();
-    const { error: insertErr } = await supabase.from("bookings").insert({
-      id: bookingId,
-      salon_id: insertPayload.salon_id,
-      service_id: insertPayload.service_id,
-      staff_id: insertPayload.staff_id,
-      client_name: insertPayload.client_name,
-      client_phone: insertPayload.client_phone,
-      client_email: insertPayload.client_email,
-      client_notes: insertPayload.client_notes,
-      start_time_utc: insertPayload.start_time_utc,
-      end_time_utc: insertPayload.end_time_utc,
-      status: insertPayload.status,
-      price_cents: insertPayload.price_cents,
-      addon_service_id: insertPayload.addon_service_id,
-      addon_price_cents: insertPayload.addon_price_cents,
-      staff_requested_by_client: customerRequestedStaff,
-    } as never);
+    // Task #09-A: the fallback `from("bookings").insert(...)` path
+    // was retired. Anon INSERTs into `public.bookings` are now hard
+    // -denied by RLS (`bookings_insert_anon` policy → with check
+    // (false)), so the only safe write path is the SECURITY DEFINER
+    // RPC. If the RPC is missing in prod, fail loudly — silently
+    // bypassing app-layer validation (staff↔salon correlation,
+    // opening hours, lead-time, capability) is worse than a
+    // user-visible error.
+    captureCreatePublicBookingFailure({
+      reason: "rpc_missing_no_fallback",
+      rpcError: rpcErr ?? null,
+    });
+    throw new Error(
+      "create_public_booking RPC is required — direct booking insert is disabled",
+    );
+  }
 
-    if (insertErr) {
-      if (insertErr.code === "23505") throw new BookingConflictError();
-      // exclusion_violation / overlap (btree_gist EXCLUDE)
-      if (insertErr.code === "23P01") throw new BookingConflictError();
-      captureCreatePublicBookingFailure({
-        reason: "rpc_missing_fallback_insert",
-        rpcError: insertErr,
-      });
-      throw new Error(insertErr.message);
-    }
-  } else if (!bookingId) {
+  if (!bookingId) {
     if (rpcErr) {
       if (rpcErr.code === "23505") throw new BookingConflictError();
       if (rpcErr.code === "23P01") throw new BookingConflictError(); // overlap / exclusion
@@ -521,7 +509,6 @@ export async function submitPublicBooking(
     (priceSnapshot ?? 0) + (addonPriceSnapshot ?? 0);
 
   // Best-effort: stamp the staff-requested flag for the RPC path.
-  // The fallback INSERT path above already sets the column inline.
   // The `create_public_booking` RPC currently has a fixed parameter
   // list that doesn't include this field; rather than gate the
   // feature on a SQL function migration, we follow up with an UPDATE
