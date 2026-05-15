@@ -6,6 +6,7 @@ import { AuditLogViewer } from "@/components/dashboard/AuditLogViewer";
 import { DashboardModulesSettings } from "@/components/dashboard/DashboardModulesSettings";
 import { DashboardPresetSettings } from "@/components/dashboard/DashboardPresetSettings";
 import { BrandColorSettings } from "@/components/dashboard/BrandColorSettings";
+import { WalkinAutoAssignSettings } from "@/components/dashboard/WalkinAutoAssignSettings";
 import { PricingPanel } from "@/components/dashboard/PricingPanel";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
@@ -29,6 +30,7 @@ export function SalonSettingsHub({
   subscriptionPlan,
   brandColor,
   themeMode,
+  walkinAutoAssign,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -46,6 +48,9 @@ export function SalonSettingsHub({
   /** `salons.theme_mode` — drives the booking page light/dark surface
    *  set. Dashboard itself is unaffected. */
   themeMode: "dark" | "light";
+  /** `salons.walkin_auto_assign` — drives whether the receptionist's
+   *  "Assign immediately" path is offered (PR #107). */
+  walkinAutoAssign: boolean;
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -209,6 +214,12 @@ export function SalonSettingsHub({
           slug={slug}
           initialValue={brandColor}
           initialThemeMode={themeMode}
+        />
+
+        <WalkinAutoAssignSettings
+          slug={slug}
+          initialValue={walkinAutoAssign}
+          canEdit={canEditDashboardModules}
         />
 
         {/* Pricing — owner-only. The server actions also gate on

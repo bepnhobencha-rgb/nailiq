@@ -96,6 +96,9 @@ export interface WalkinQueueSidebarProps {
   onAddWalkin: WalkinAddFormProps["onSubmit"];
   /** Direct-assign path — bypasses the queue when staff is free now. */
   onAddAndAssign?: WalkinAddFormProps["onAddAndAssign"];
+  /** Salon-level "auto-assign available staff" flag. False forces
+   * every walk-in into the queue. */
+  autoAssignEnabled?: boolean;
   /** Phone lookup hook — server action for client_profile + per-salon stats. */
   onPhoneLookup?: WalkinAddFormProps["onPhoneLookup"];
   /** Smart-availability hook — server-side staff availability lookup. */
@@ -170,6 +173,7 @@ export function WalkinQueueSidebar({
   labels,
   onAddWalkin,
   onAddAndAssign,
+  autoAssignEnabled = true,
   onPhoneLookup,
   onCheckAvailability,
   staffOptions,
@@ -260,6 +264,7 @@ export function WalkinQueueSidebar({
             labels={labels.addForm}
             onSubmit={onAddWalkin}
             onAddAndAssign={onAddAndAssign}
+            autoAssignEnabled={autoAssignEnabled}
             onPhoneLookup={onPhoneLookup}
             onCheckAvailability={onCheckAvailability}
             staffOptions={staffOptions}

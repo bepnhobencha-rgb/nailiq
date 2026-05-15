@@ -228,6 +228,13 @@ export interface WalkinAddFormProps {
     walkinPriority: QueuePriority | null;
     walkinRequestTags: QueueRequestTag[];
   }) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * `salons.walkin_auto_assign` (PR #107). When false, the
+   * "Assign immediately" button is hidden — every walk-in is added
+   * to the queue regardless of staff availability. Defaults to true
+   * for backward compatibility with callers that haven't migrated.
+   */
+  autoAssignEnabled?: boolean;
 }
 
 function formatServicePrice(
@@ -286,6 +293,7 @@ export function WalkinAddForm({
   staffOptions,
   onCheckAvailability,
   onAddAndAssign,
+  autoAssignEnabled = true,
 }: WalkinAddFormProps) {
   const nameId = useId();
   const phoneId = useId();
@@ -557,9 +565,11 @@ export function WalkinAddForm({
 
   // The "Assign immediately" affordance is only offered when the
   // engine has a confident answer AND the parent wired the direct-
-  // assign callback. Falling back to the queue keeps the form usable
-  // even when the engine is unreachable.
+  // assign callback AND the salon-level `walkin_auto_assign` setting
+  // is enabled. Falling back to the queue keeps the form usable even
+  // when the engine is unreachable.
   const canAssignImmediately =
+    autoAssignEnabled &&
     !!onAddAndAssign &&
     !!recommendedAvailability &&
     recommendedAvailability.isAvailableNow;

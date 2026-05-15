@@ -731,6 +731,38 @@ export async function addWalkinAndAssign(
     walkinRequestTags?: string[] | null;
   },
 ): Promise<OkBooking | { ok: false; error: string }> {
+  // Salon-level gate: when `walkin_auto_assign` is FALSE the
+  // receptionist's "Assign immediately" path is disabled regardless of
+  // staff availability. We still create the booking (so the form's
+  // resetAfterSuccess works as before) but stop short of the assign
+  // step — the customer lands in `status=waiting` and the desk
+  // dispatches manually from the queue panel.
+  //
+  // Read the flag against the user-scoped (RLS) client; falling back
+  // to TRUE on any error keeps the historical behavior intact.
+  let autoAssign = true;
+  {
+    const ctx = await getDashboardWriteClient(slug);
+    if (!ctx) return fail("unauthorized");
+    if (ctx.salon.id !== String(input.salonId).trim()) {
+      return fail("salon_mismatch");
+    }
+    const flagRes = await ctx.supabase
+      .from("salons")
+      .select("walkin_auto_assign" as never)
+      .eq("id", ctx.salon.id)
+      .maybeSingle();
+    if (
+      flagRes.data &&
+      typeof flagRes.data === "object" &&
+      "walkin_auto_assign" in flagRes.data &&
+      (flagRes.data as { walkin_auto_assign: unknown }).walkin_auto_assign ===
+        false
+    ) {
+      autoAssign = false;
+    }
+  }
+
   const created = await addWalkinToQueue(slug, {
     salonId: input.salonId,
     clientName: input.clientName,
@@ -742,6 +774,13 @@ export async function addWalkinAndAssign(
     walkinRequestTags: input.walkinRequestTags ?? null,
   });
   if (!created.ok) return created;
+
+  if (!autoAssign) {
+    // Setting is OFF — leave the booking in `waiting`. The queue card
+    // will surface it the same way any other walk-in does, and the
+    // receptionist drives the assign from there.
+    return created;
+  }
 
   const startAt = input.startAtIso?.trim() || new Date().toISOString();
   const assigned = await assignWalkinToSlot(slug, {

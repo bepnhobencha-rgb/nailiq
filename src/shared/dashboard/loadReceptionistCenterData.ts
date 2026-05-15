@@ -38,6 +38,10 @@ export interface ReceptionistCenterData {
      * money-formatting surface on the desk (KPI bar, drawer price,
      * walk-in service tile, reports panel). */
     currencyCode: import("@/shared/lib/currencyFormat").Currency;
+    /** `salons.walkin_auto_assign` (PR #107). When false, the
+     * receptionist's "Assign immediately" path is hidden — every
+     * walk-in lands in the queue first. */
+    walkinAutoAssign: boolean;
   };
   staff: Array<{
     id: string;
@@ -371,6 +375,7 @@ export type ReceptionistCenterDataLoaderDeps = {
     dashboard_preset: unknown | null;
     dashboard_density: unknown | null;
     currency_code: unknown | null;
+    walkin_auto_assign?: unknown | null;
   };
 };
 
@@ -423,6 +428,7 @@ export async function loadReceptionistCenterData(
     dashboard_preset?: unknown;
     dashboard_density?: unknown;
     currency_code?: unknown;
+    walkin_auto_assign?: unknown;
   };
   let salonData: SalonShape | null;
   if (deps?.preFetchedSalon) {
@@ -435,15 +441,16 @@ export async function loadReceptionistCenterData(
       dashboard_preset: deps.preFetchedSalon.dashboard_preset,
       dashboard_density: deps.preFetchedSalon.dashboard_density,
       currency_code: deps.preFetchedSalon.currency_code,
+      walkin_auto_assign: deps.preFetchedSalon.walkin_auto_assign,
     };
   } else {
     const salonResult = await supabase
       .from("salons")
       .select(
-        // currency_code added by migration 20260512000000 — not in
-        // auto-generated types yet, hence the `as never` cast on the
-        // SELECT string. Drives money formatting across the desk.
-        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code" as never,
+        // currency_code + walkin_auto_assign added by recent migrations
+        // (20260512000000 / 20260511100000) — not in auto-generated
+        // types yet, hence the `as never` cast on the SELECT string.
+        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign" as never,
       )
       .eq("id", ctx.salon.id)
       .maybeSingle();
@@ -465,6 +472,7 @@ export async function loadReceptionistCenterData(
     slug: String(salonData.slug ?? ""),
     timezone: salonData.timezone.trim(),
     currencyCode: parseCurrency(salonData.currency_code),
+    walkinAutoAssign: salonData.walkin_auto_assign === false ? false : true,
   };
 
   const rawDashboardModules = parseDashboardModules(

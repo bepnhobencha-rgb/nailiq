@@ -656,6 +656,14 @@ export type UserMessages = {
         colorExtractionFailed: string;
       };
     };
+    /** Walk-in auto-assign toggle (PR #107). */
+    walkinAutoAssign: {
+      sectionTitle: string;
+      toggleLabel: string;
+      descriptionOn: string;
+      descriptionOff: string;
+      errorGeneric: string;
+    };
   };
   /** Aria label for the setup-wizard category dropdown.
    *
@@ -2090,6 +2098,15 @@ export const userEn: UserMessages = {
         colorExtractionFailed:
           "Couldn't read a brand color from that image. Try a higher-contrast logo.",
       },
+    },
+    walkinAutoAssign: {
+      sectionTitle: "Walk-in queue",
+      toggleLabel: "Auto-assign available staff",
+      descriptionOn:
+        "Walk-ins are assigned directly to the timeline when staff is free. Faster.",
+      descriptionOff:
+        "All walk-ins enter the queue first for receptionist review.",
+      errorGeneric: "Could not save. Try again.",
     },
   },
   serviceCategory: {
