@@ -14,10 +14,11 @@ export const metadata: Metadata = {
 /**
  * Landing page for Supabase's password-recovery flow.
  *
- * Supabase exchanges the recovery token in the email link for a
- * session before this page renders, so by the time `getUser()` resolves
- * we either have a recovery session (the happy path) or no user at all
- * (link expired, already consumed, or someone hand-typed the URL).
+ * The recovery email link first hits `/auth/recovery` (a route handler
+ * that exchanges `?code=…` for a session and persists cookies) and
+ * then redirects here. By the time this page renders we either have a
+ * recovery session (the happy path) or no user at all (link expired,
+ * already consumed, or someone hand-typed the URL).
  *
  * Renders three states:
  *   - happy path: form to set a new password
@@ -51,7 +52,7 @@ export default async function SuperadminResetPasswordPage() {
           Set a new password
         </h1>
         <p className="text-sm text-nq-muted">
-          Choose a password at least 12 characters long. You&apos;ll be
+          Choose a password at least 6 characters long. You&apos;ll be
           signed out and asked to sign in fresh with the new password.
         </p>
       </header>

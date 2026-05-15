@@ -109,6 +109,7 @@ export async function requestSuperadminPasswordReset(
     const { data: userList, error: listError } =
       await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
     if (listError) {
+      console.error("[superadminAuth] listUsers failed:", listError);
       return { ok: false, error: "server_error" };
     }
     const matched = userList.users.find(
@@ -126,7 +127,7 @@ export async function requestSuperadminPasswordReset(
     const siteUrl =
       process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXTAUTH_URL ?? "";
     const redirectTo = siteUrl
-      ? `${siteUrl.replace(/\/$/, "")}/superadmin/reset-password`
+      ? `${siteUrl.replace(/\/$/, "")}/auth/recovery`
       : undefined;
 
     const supabase = await createClient();
@@ -162,15 +163,14 @@ export type CompletePasswordResetResult =
  *   3. Sign out so the recovery session is consumed — the operator
  *      then signs in fresh with the new credentials.
  *
- * Minimum password length is 12 to align with the standard Supabase
- * Auth policy NailIQ runs in production. Anything weaker is surfaced
+ * Minimum password length is 6. Anything weaker is surfaced
  * as `weak_password` so the UI can show actionable guidance rather
  * than a generic "server error."
  */
 export async function completeSuperadminPasswordReset(
   newPassword: string,
 ): Promise<CompletePasswordResetResult> {
-  if (!newPassword || newPassword.length < 12) {
+  if (!newPassword || newPassword.length < 6) {
     return { ok: false, error: "weak_password" };
   }
 

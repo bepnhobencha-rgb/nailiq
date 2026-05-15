@@ -242,7 +242,9 @@ export async function proxy(request: NextRequest) {
   if (
     !user &&
     pathname.startsWith("/superadmin") &&
-    pathname !== "/superadmin/login"
+    pathname !== "/superadmin/login" &&
+    pathname !== "/superadmin/forgot-password" &&
+    pathname !== "/superadmin/reset-password"
   ) {
     const redirect = NextResponse.redirect(
       new URL("/superadmin/login", request.url),
