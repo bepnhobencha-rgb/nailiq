@@ -60,13 +60,30 @@ export default async function SuperadminLoginPage({
       </header>
 
       {justReset ? (
-        <p
-          className="rounded-md border border-nq-border bg-nq-surface px-4 py-3 text-sm text-nq-foreground"
+        <div
+          className="flex items-start gap-3 rounded-md border border-nq-success/40 bg-nq-success/15 px-4 py-3 text-nq-success"
           role="status"
           data-testid="superadmin-password-reset-banner"
         >
-          Password updated. Sign in with your new password.
-        </p>
+          <svg
+            className="mt-0.5 size-5 shrink-0"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              fillRule="evenodd"
+              d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.236 4.53L7.53 9.97a.75.75 0 0 0-1.06 1.06l2.5 2.5a.75.75 0 0 0 1.137-.089l3.75-5.25Z"
+              clipRule="evenodd"
+            />
+          </svg>
+          <div className="flex flex-col gap-0.5">
+            <p className="text-sm font-semibold">Password updated</p>
+            <p className="text-sm opacity-90">
+              Sign in with your new password.
+            </p>
+          </div>
+        </div>
       ) : null}
 
       <SuperadminLoginForm />

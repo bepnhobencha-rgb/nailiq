@@ -9,7 +9,7 @@ import { completeSuperadminPasswordReset } from "@/shared/superadmin/superadminA
 type ErrorCode = "weak_password" | "mismatch" | "no_session" | "no_role" | "server_error";
 
 const ERROR_COPY: Record<ErrorCode, string> = {
-  weak_password: "Password must be at least 12 characters.",
+  weak_password: "Password must be at least 6 characters.",
   mismatch: "Passwords don't match.",
   no_session: "Reset link is no longer valid. Request a new one.",
   no_role: "This account is not a SuperAdmin.",
@@ -30,7 +30,7 @@ export function SuperadminResetPasswordForm() {
       setError("mismatch");
       return;
     }
-    if (password.length < 12) {
+    if (password.length < 6) {
       setError("weak_password");
       return;
     }
@@ -61,7 +61,7 @@ export function SuperadminResetPasswordForm() {
           type="password"
           autoComplete="new-password"
           required
-          minLength={12}
+          minLength={6}
           value={password}
           onChange={(ev) => {
             setPassword(ev.target.value);
@@ -81,7 +81,7 @@ export function SuperadminResetPasswordForm() {
           type="password"
           autoComplete="new-password"
           required
-          minLength={12}
+          minLength={6}
           value={confirm}
           onChange={(ev) => {
             setConfirm(ev.target.value);
