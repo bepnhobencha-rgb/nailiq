@@ -54,23 +54,27 @@ jobs:
         run: npx playwright install --with-deps chromium webkit
       - name: Build app
         run: npm run build
-      - name: Start dev server (background) & verify it boots within 30s
-        # Pre-flight: if `next dev` can't serve a request within 30s the
-        # job fails here with a clear message rather than burning the
-        # full 15-min budget on Playwright's silent webServer wait.
-        # Playwright is configured with reuseExistingServer: true so the
-        # test step picks up this same process.
+      - name: Start production server (background) & verify it boots within 30s
+        # Use `next start` against the artifact built in the previous
+        # step. `next dev` JIT-compiles every route on first navigation
+        # (~5-15s per page) which dominated E2E runtime — production
+        # server serves pre-compiled pages so page loads drop to <1s.
+        # Pre-flight: fail fast if the server doesn't respond in 30s
+        # rather than burning the full 15-min budget on Playwright's
+        # silent webServer wait. Playwright is configured with
+        # reuseExistingServer: true so the test step picks up this
+        # same process.
         run: |
           mkdir -p tmp
-          nohup npx next dev > tmp/next-dev.log 2>&1 &
-          echo "$!" > tmp/next-dev.pid
+          nohup npx next start > tmp/next-server.log 2>&1 &
+          echo "$!" > tmp/next-server.pid
           npx --yes wait-on http://localhost:3000 --timeout 30000 --interval 500 || {
-            echo "::error::Dev server did not respond on http://localhost:3000 within 30s"
-            echo "--- next-dev.log (last 200 lines) ---"
-            tail -n 200 tmp/next-dev.log || true
+            echo "::error::Server did not respond on http://localhost:3000 within 30s"
+            echo "--- next-server.log (last 200 lines) ---"
+            tail -n 200 tmp/next-server.log || true
             exit 1
           }
-          echo "::notice::Dev server up after pre-flight check"
+          echo "::notice::Production server up after pre-flight check"
       - name: Decide which specs to run
         id: scope
         run: |
