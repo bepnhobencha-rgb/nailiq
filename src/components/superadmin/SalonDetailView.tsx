@@ -2,6 +2,7 @@ import Link from "next/link";
 import { cn } from "@/shared/lib/cn";
 import { maskPhonePartial } from "@/shared/lib/maskPhone";
 import { DeletedRecordsSection } from "@/components/superadmin/DeletedRecordsSection";
+import { ImpersonateButton } from "@/components/superadmin/ImpersonateButton";
 import { SalonOverrideCard } from "@/components/superadmin/SalonOverrideCard";
 import type { SuperAdminSalonDetail } from "@/shared/superadmin/superadminTypes";
 
@@ -46,6 +47,10 @@ export function SalonDetailView({
       </div>
 
       <div className="mt-6 flex flex-col gap-5">
+        <ImpersonateButton
+          salonId={salon.id}
+          salonName={salon.name || salon.slug}
+        />
         <SalonOverrideCard salon={salon} />
         <DeletedRecordsSection salonId={salon.id} />
       </div>
