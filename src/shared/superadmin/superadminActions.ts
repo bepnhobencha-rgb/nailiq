@@ -17,12 +17,14 @@ import {
   type LoadAllSalonsResult,
   type LoadDeletedRecordsResult,
   type LoadPlatformFlagsResult,
+  type LoadSalonDetailResult,
   type PlatformFlag,
   type PlatformFlagKey,
   type RestorableTable,
   type RestoreSalonRecordResult,
   type SuperAdminCategoryRow,
   type SuperAdminFeatureFlags,
+  type SuperAdminSalonDetail,
   type SuperAdminSalonRow,
   type UpdateCategoryInput,
   type UpdatePlatformFlagResult,
@@ -158,6 +160,180 @@ export async function loadAllSalons(): Promise<LoadAllSalonsResult> {
 function startOfCurrentUtcMonth(): Date {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
+function startOfLast7DaysUtc(): Date {
+  const ms = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  return new Date(ms);
+}
+
+/**
+ * Single-salon detail view for `/superadmin/salons/[salonId]`.
+ *
+ * Returns the same row shape as `loadAllSalons` plus configuration
+ * (timezone, currency, brand) and three aggregate counts: active
+ * staff, active services, and last-7-day bookings. The aggregates
+ * run in parallel after the base row resolves so the page renders
+ * in roughly the time of the slowest query.
+ */
+export async function loadSalonDetail(
+  salonId: string,
+): Promise<LoadSalonDetailResult> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+
+  const id = salonId.trim();
+  if (!id) return { ok: false, error: "not_found" };
+
+  let admin;
+  try {
+    admin = createServiceRoleClient();
+  } catch (e) {
+    console.error("[superadmin/loadSalonDetail] service role", e);
+    return { ok: false, error: "server_error" };
+  }
+
+  const { data: row, error } = (await admin
+    .from("salons")
+    .select(
+      "id, slug, name, phone, subscription_plan, plan_override, feature_flags, is_beta, admin_notes, created_at, timezone, currency_code, brand_color, theme_mode" as never,
+    )
+    .eq("id", id)
+    .maybeSingle()) as {
+    data:
+      | {
+          id: string;
+          slug: string;
+          name: string | null;
+          phone: string | null;
+          subscription_plan?: string | null;
+          plan_override?: string | null;
+          feature_flags?: unknown;
+          is_beta?: boolean | null;
+          admin_notes?: string | null;
+          created_at?: string | null;
+          timezone?: string | null;
+          currency_code?: string | null;
+          brand_color?: string | null;
+          theme_mode?: string | null;
+        }
+      | null;
+    error: unknown;
+  };
+
+  if (error) {
+    console.error("[superadmin/loadSalonDetail] query", error);
+    return { ok: false, error: "server_error" };
+  }
+  if (!row?.id) {
+    return { ok: false, error: "not_found" };
+  }
+
+  const monthStart = startOfCurrentUtcMonth();
+  const last7Start = startOfLast7DaysUtc();
+
+  const [staffRes, servicesRes, monthBookingsRes, last7BookingsRes, lastBookingRes] =
+    await Promise.all([
+      admin
+        .from("staff")
+        .select("id" as never, { count: "exact", head: true })
+        .eq("salon_id", id)
+        .is("deleted_at" as never, null),
+      admin
+        .from("services")
+        .select("id" as never, { count: "exact", head: true })
+        .eq("salon_id", id)
+        .is("deleted_at" as never, null),
+      admin
+        .from("bookings")
+        .select("id" as never, { count: "exact", head: true })
+        .eq("salon_id", id)
+        .gte("start_time_utc", monthStart.toISOString())
+        .neq("status", "cancelled"),
+      admin
+        .from("bookings")
+        .select("id" as never, { count: "exact", head: true })
+        .eq("salon_id", id)
+        .gte("start_time_utc", last7Start.toISOString())
+        .neq("status", "cancelled"),
+      admin
+        .from("bookings")
+        .select("created_at" as never)
+        .eq("salon_id", id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+  if (staffRes.error) {
+    console.error("[superadmin/loadSalonDetail] staff count", staffRes.error);
+  }
+  if (servicesRes.error) {
+    console.error(
+      "[superadmin/loadSalonDetail] services count",
+      servicesRes.error,
+    );
+  }
+  if (monthBookingsRes.error) {
+    console.error(
+      "[superadmin/loadSalonDetail] month bookings",
+      monthBookingsRes.error,
+    );
+  }
+  if (last7BookingsRes.error) {
+    console.error(
+      "[superadmin/loadSalonDetail] last7 bookings",
+      last7BookingsRes.error,
+    );
+  }
+
+  const lastBookingData = lastBookingRes.data as
+    | { created_at?: string | null }
+    | null;
+
+  const themeRaw = typeof row.theme_mode === "string" ? row.theme_mode : null;
+  const themeMode: "dark" | "light" | null =
+    themeRaw === "dark" || themeRaw === "light" ? themeRaw : null;
+
+  const detail: SuperAdminSalonDetail = {
+    id: String(row.id),
+    slug: String(row.slug ?? ""),
+    name: String(row.name ?? "").trim(),
+    phone: String(row.phone ?? "").trim(),
+    subscription_plan:
+      typeof row.subscription_plan === "string" ? row.subscription_plan : null,
+    plan_override: normalizePlanOverride(row.plan_override),
+    feature_flags: normalizeFeatureFlags(row.feature_flags),
+    is_beta: Boolean(row.is_beta),
+    admin_notes:
+      typeof row.admin_notes === "string" && row.admin_notes.trim().length > 0
+        ? row.admin_notes
+        : null,
+    created_at: row.created_at ?? null,
+    bookings_this_month: Number(monthBookingsRes.count ?? 0),
+    timezone:
+      typeof row.timezone === "string" && row.timezone.trim().length > 0
+        ? row.timezone.trim()
+        : null,
+    currency_code:
+      typeof row.currency_code === "string" && row.currency_code.trim().length > 0
+        ? row.currency_code.trim().toUpperCase()
+        : null,
+    brand_color:
+      typeof row.brand_color === "string" && row.brand_color.trim().length > 0
+        ? row.brand_color.trim()
+        : null,
+    theme_mode: themeMode,
+    staff_count: Number(staffRes.count ?? 0),
+    services_count: Number(servicesRes.count ?? 0),
+    bookings_last_7d: Number(last7BookingsRes.count ?? 0),
+    last_booking_created_at:
+      typeof lastBookingData?.created_at === "string"
+        ? lastBookingData.created_at
+        : null,
+  };
+
+  return { ok: true, salon: detail };
 }
 
 export async function updateSalonFlags(
