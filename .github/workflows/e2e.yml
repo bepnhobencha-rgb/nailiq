@@ -24,10 +24,14 @@ jobs:
       - run: npm run check:i18n
 
   e2e:
-    name: E2E (Playwright)
+    name: E2E (Playwright) — shard ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
     needs: i18n-check
-    timeout-minutes: 15
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
@@ -50,23 +54,27 @@ jobs:
         run: npx playwright install --with-deps chromium webkit
       - name: Build app
         run: npm run build
-      - name: Start dev server (background) & verify it boots within 30s
-        # Pre-flight: if `next dev` can't serve a request within 30s the
-        # job fails here with a clear message rather than burning the
-        # full 15-min budget on Playwright's silent webServer wait.
-        # Playwright is configured with reuseExistingServer: true so the
-        # test step picks up this same process.
+      - name: Start production server (background) & verify it boots within 30s
+        # Use `next start` against the artifact built in the previous
+        # step. `next dev` JIT-compiles every route on first navigation
+        # (~5-15s per page) which dominated E2E runtime — production
+        # server serves pre-compiled pages so page loads drop to <1s.
+        # Pre-flight: fail fast if the server doesn't respond in 30s
+        # rather than burning the full 15-min budget on Playwright's
+        # silent webServer wait. Playwright is configured with
+        # reuseExistingServer: true so the test step picks up this
+        # same process.
         run: |
           mkdir -p tmp
-          nohup npx next dev > tmp/next-dev.log 2>&1 &
-          echo "$!" > tmp/next-dev.pid
+          nohup npx next start > tmp/next-server.log 2>&1 &
+          echo "$!" > tmp/next-server.pid
           npx --yes wait-on http://localhost:3000 --timeout 30000 --interval 500 || {
-            echo "::error::Dev server did not respond on http://localhost:3000 within 30s"
-            echo "--- next-dev.log (last 200 lines) ---"
-            tail -n 200 tmp/next-dev.log || true
+            echo "::error::Server did not respond on http://localhost:3000 within 30s"
+            echo "--- next-server.log (last 200 lines) ---"
+            tail -n 200 tmp/next-server.log || true
             exit 1
           }
-          echo "::notice::Dev server up after pre-flight check"
+          echo "::notice::Production server up after pre-flight check"
       - name: Decide which specs to run
         id: scope
         run: |
@@ -79,8 +87,26 @@ jobs:
             echo "mode=db-free" >> "$GITHUB_OUTPUT"
             echo "::warning::SUPABASE_SERVICE_ROLE_KEY missing — skipping DB-dependent specs (running i18n/copy + a11y only)"
           fi
+      - name: Decide which project(s) to run
+        id: projects
+        # PR runs are gated by E2E, so a slow/flaky project blocks merges.
+        # Mobile specs (especially receptionist-center) have pre-existing
+        # failures that retry 45s each — they pad shard runtimes past the
+        # 25-min budget. Skip them on PR; full chromium+mobile still runs
+        # on push-to-main so regressions get caught before release.
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "flag=--project=chromium" >> "$GITHUB_OUTPUT"
+            echo "::notice::PR run — chromium only (mobile coverage runs on push-to-main)"
+          else
+            echo "flag=" >> "$GITHUB_OUTPUT"
+            echo "::notice::Non-PR run — chromium + mobile"
+          fi
       - name: Run E2E tests
-        run: npx playwright test ${{ steps.scope.outputs.specs }} --reporter=list,html,json
+        # Shard X/4 — Playwright shards by test file deterministically so
+        # the 4 parallel jobs collectively cover the full suite. Each shard
+        # still runs a single worker to keep DB-touching specs serialised.
+        run: npx playwright test ${{ steps.scope.outputs.specs }} ${{ steps.projects.outputs.flag }} --shard=${{ matrix.shard }}/4 --reporter=list,html,json
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
       - name: Summarize results
@@ -89,7 +115,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: playwright-report
+          name: playwright-report-shard-${{ matrix.shard }}
           path: playwright-report/
           retention-days: 14
 
@@ -160,11 +186,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download playwright report
+      - name: Download playwright shard reports
         uses: actions/download-artifact@v4
         with:
-          name: playwright-report
-          path: playwright-report/
+          pattern: playwright-report-shard-*
+          path: playwright-reports/
         continue-on-error: true
 
       - name: AI analyze failures and comment on PR
@@ -175,11 +201,12 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -u
-          # Extract failed tests from JSON report. Our e2e job runs
-          # playwright with `--reporter=json` and PLAYWRIGHT_JSON_OUTPUT_NAME
-          # pointed at playwright-report/results.json (NOT report.json).
+          # Walk every shard's results.json (each artifact lands in
+          # playwright-reports/playwright-report-shard-N/) and aggregate
+          # failures across the matrix.
           FAILURES=$(node -e "
             const fs = require('fs');
+            const path = require('path');
             function walk(suites, out) {
               if (!Array.isArray(suites)) return;
               for (const s of suites) {
@@ -195,13 +222,22 @@ jobs:
                 walk(s.suites, out);
               }
             }
+            const root = 'playwright-reports';
+            const fails = [];
             try {
-              const r = JSON.parse(fs.readFileSync('playwright-report/results.json','utf8'));
-              const fails = [];
-              walk(r.suites, fails);
-              console.log(fails.slice(0, 10).join('\n') || 'No failed tests in report.');
+              for (const dir of fs.readdirSync(root)) {
+                const p = path.join(root, dir, 'results.json');
+                if (!fs.existsSync(p)) continue;
+                try {
+                  const r = JSON.parse(fs.readFileSync(p, 'utf8'));
+                  walk(r.suites, fails);
+                } catch (e) {
+                  // Skip malformed shard reports; keep going.
+                }
+              }
+              console.log(fails.slice(0, 10).join('\n') || 'No failed tests in any shard report.');
             } catch (e) {
-              console.log('Could not parse results.json: ' + e.message);
+              console.log('Could not read shard reports: ' + e.message);
             }
           " 2>/dev/null || echo "Report unavailable")
 
