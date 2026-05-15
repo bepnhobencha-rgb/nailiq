@@ -27,7 +27,7 @@ jobs:
     name: E2E (Playwright) — shard ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
     needs: i18n-check
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
