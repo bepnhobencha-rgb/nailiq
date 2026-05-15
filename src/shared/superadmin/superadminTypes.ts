@@ -312,6 +312,40 @@ export type LoadAllSalonsResult =
       error: "unauthorized" | "server_error";
     };
 
+/**
+ * Per-salon detail surface for `/superadmin/salons/[salonId]`.
+ *
+ * Extends `SuperAdminSalonRow` with the fields a support operator
+ * actually needs when triaging a single tenant: configuration
+ * (timezone, currency, brand color, theme), recent-activity
+ * aggregates, and a counts grid. Computed inline in the loader so
+ * the detail page does a single trip per render.
+ */
+export type SuperAdminSalonDetail = SuperAdminSalonRow & {
+  timezone: string | null;
+  currency_code: string | null;
+  brand_color: string | null;
+  theme_mode: "dark" | "light" | null;
+  /** Active (non-soft-deleted) staff count. */
+  staff_count: number;
+  /** Active (non-soft-deleted) services count. */
+  services_count: number;
+  /** Bookings whose `start_time_utc` falls in the last 7 days,
+   * excluding cancelled rows — a quick "are they actually using
+   * this?" signal complementing `bookings_this_month`. */
+  bookings_last_7d: number;
+  /** Most-recent booking `created_at`, or null when the salon has
+   * never had a booking. Powers the "last activity" line. */
+  last_booking_created_at: string | null;
+};
+
+export type LoadSalonDetailResult =
+  | { ok: true; salon: SuperAdminSalonDetail }
+  | {
+      ok: false;
+      error: "unauthorized" | "not_found" | "server_error";
+    };
+
 export type UpdateSalonFlagsInput = {
   planOverride?: SuperAdminPlanOverride;
   featureFlags?: SuperAdminFeatureFlags;
