@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
@@ -100,6 +101,16 @@ export function SuperadminLoginForm() {
           {error}
         </p>
       ) : null}
+
+      <p className="text-sm text-nq-muted">
+        <Link
+          href="/superadmin/forgot-password"
+          className="font-medium text-nq-accent underline-offset-4 hover:underline"
+          data-testid="superadmin-forgot-password-link"
+        >
+          Forgot password?
+        </Link>
+      </p>
     </form>
   );
 }

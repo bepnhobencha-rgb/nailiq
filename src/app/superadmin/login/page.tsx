@@ -24,7 +24,11 @@ export const metadata: Metadata = {
  * who has access; salon owners reaching this URL simply see the form,
  * never a "you're not a superadmin" message.
  */
-export default async function SuperadminLoginPage() {
+export default async function SuperadminLoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ reset?: string }>;
+}) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -36,6 +40,9 @@ export default async function SuperadminLoginPage() {
       redirect("/superadmin");
     }
   }
+
+  const params = await searchParams;
+  const justReset = params.reset === "ok";
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-8 px-5 py-16 md:px-8">
@@ -51,6 +58,16 @@ export default async function SuperadminLoginPage() {
           sign in at the regular login.
         </p>
       </header>
+
+      {justReset ? (
+        <p
+          className="rounded-md border border-nq-border bg-nq-surface px-4 py-3 text-sm text-nq-foreground"
+          role="status"
+          data-testid="superadmin-password-reset-banner"
+        >
+          Password updated. Sign in with your new password.
+        </p>
+      ) : null}
 
       <SuperadminLoginForm />
     </main>
