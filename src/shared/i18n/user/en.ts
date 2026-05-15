@@ -657,13 +657,22 @@ export type UserMessages = {
       };
     };
   };
-  /** Service category labels — IDs match `services.category` CHECK constraint. */
+  /** Service category labels.
+   *  Task #07 (2026-05-13) — historical keys; the per-slug display
+   *  names now come from `service_categories.name_{en,vi}` via
+   *  `loadServiceCategories()`. Only `pickerLabel` still has a
+   *  call site (`ServicesSetupPanel.tsx`). The per-slug entries
+   *  below are kept for legacy callers and renamed to match the
+   *  canonical DB slugs (`dip` → `dip_powder`) — they're a no-op
+   *  in current code but might be re-adopted if we ever pre-render
+   *  category labels without an async loader. A follow-up should
+   *  decide between deletion vs. re-adoption. */
   serviceCategory: {
     manicure: string;
     pedicure: string;
     acrylic: string;
     gel: string;
-    dip: string;
+    dip_powder: string;
     waxing: string;
     other: string;
     /** Aria label / fallback for the setup-wizard category dropdown. */
@@ -2093,7 +2102,7 @@ export const userEn: UserMessages = {
     pedicure: "Pedicure",
     acrylic: "Acrylic",
     gel: "Gel",
-    dip: "Dip Powder",
+    dip_powder: "Dip Powder",
     waxing: "Waxing",
     other: "Other",
     pickerLabel: "Category",

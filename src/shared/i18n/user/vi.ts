@@ -764,7 +764,7 @@ export const userVi: UserMessages = {
     pedicure: "Pedicure",
     acrylic: "Acrylic",
     gel: "Gel",
-    dip: "Bột nhúng",
+    dip_powder: "Bột nhúng",
     waxing: "Wax",
     other: "Khác",
     pickerLabel: "Phân loại",
