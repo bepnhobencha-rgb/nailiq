@@ -760,13 +760,6 @@ export const userVi: UserMessages = {
     },
   },
   serviceCategory: {
-    manicure: "Manicure",
-    pedicure: "Pedicure",
-    acrylic: "Acrylic",
-    gel: "Gel",
-    dip_powder: "Bột nhúng",
-    waxing: "Wax",
-    other: "Khác",
     pickerLabel: "Phân loại",
   },
   serviceForm: {
