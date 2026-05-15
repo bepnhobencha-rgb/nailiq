@@ -657,25 +657,20 @@ export type UserMessages = {
       };
     };
   };
-  /** Service category labels.
-   *  Task #07 (2026-05-13) — historical keys; the per-slug display
-   *  names now come from `service_categories.name_{en,vi}` via
-   *  `loadServiceCategories()`. Only `pickerLabel` still has a
-   *  call site (`ServicesSetupPanel.tsx`). The per-slug entries
-   *  below are kept for legacy callers and renamed to match the
-   *  canonical DB slugs (`dip` → `dip_powder`) — they're a no-op
-   *  in current code but might be re-adopted if we ever pre-render
-   *  category labels without an async loader. A follow-up should
-   *  decide between deletion vs. re-adoption. */
+  /** Aria label for the setup-wizard category dropdown.
+   *
+   *  Display names for every category — booking surface, setup
+   *  panel, SuperAdmin — now come from `service_categories.name_en`
+   *  / `name_vi` via `loadServiceCategories()` (see
+   *  `src/shared/booking/loadServiceCategories.ts`). The historical
+   *  per-slug entries here (`manicure`, `pedicure`, `acrylic`,
+   *  `gel`, `dip` / `dip_powder`, `waxing`, `other`) were already
+   *  dead by the time the DB-driven loader landed; the table also
+   *  carries `nail_art`, `removal`, `spa`, `kids` which were never
+   *  added to this object. Verified zero call sites against
+   *  `src/` before deleting. `pickerLabel` is the single
+   *  remaining consumer (`ServicesSetupPanel.tsx`). */
   serviceCategory: {
-    manicure: string;
-    pedicure: string;
-    acrylic: string;
-    gel: string;
-    dip_powder: string;
-    waxing: string;
-    other: string;
-    /** Aria label / fallback for the setup-wizard category dropdown. */
     pickerLabel: string;
   };
   /** Service description + curation labels for the setup wizard form. */
@@ -2098,13 +2093,6 @@ export const userEn: UserMessages = {
     },
   },
   serviceCategory: {
-    manicure: "Manicure",
-    pedicure: "Pedicure",
-    acrylic: "Acrylic",
-    gel: "Gel",
-    dip_powder: "Dip Powder",
-    waxing: "Waxing",
-    other: "Other",
     pickerLabel: "Category",
   },
   serviceForm: {
