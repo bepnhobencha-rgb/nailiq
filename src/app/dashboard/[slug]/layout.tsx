@@ -1,8 +1,10 @@
 import { type ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { DashboardShell } from "@/components/layout/DashboardShell";
+import { ImpersonationBanner } from "@/components/impersonation/ImpersonationBanner";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { loadOwnerSalons } from "@/shared/dashboard/salonOwnerActions";
+import { expireImpersonationIfStale } from "@/shared/superadmin/impersonationActions";
 
 type Props = {
   children: ReactNode;
@@ -27,6 +29,16 @@ export default async function DashboardSlugLayout({
   params,
 }: Props) {
   const { slug } = await params;
+
+  // Force-expire any stale impersonation BEFORE we resolve the
+  // dashboard context. If the 30-min window has elapsed,
+  // `expireImpersonationIfStale` writes an `impersonate_expire`
+  // audit row, clears both impersonation cookies, and signs out
+  // the now-stale owner session. The subsequent `getDashboardWriteClient`
+  // call will then see no auth and fall through to the standard
+  // redirect-to-login path.
+  await expireImpersonationIfStale();
+
   const ctx = await getDashboardWriteClient(slug);
 
   if (!ctx) {
@@ -84,15 +96,18 @@ export default async function DashboardSlugLayout({
   const overdueCount = overdueRes.count ?? 0;
 
   return (
-    <DashboardShell
-      slug={slug}
-      role={ctx.role}
-      salonName={salonName}
-      salons={salons}
-      walkinQueueCount={walkinQueueCount}
-      overdueCount={overdueCount}
-    >
-      {children}
-    </DashboardShell>
+    <>
+      <ImpersonationBanner />
+      <DashboardShell
+        slug={slug}
+        role={ctx.role}
+        salonName={salonName}
+        salons={salons}
+        walkinQueueCount={walkinQueueCount}
+        overdueCount={overdueCount}
+      >
+        {children}
+      </DashboardShell>
+    </>
   );
 }
