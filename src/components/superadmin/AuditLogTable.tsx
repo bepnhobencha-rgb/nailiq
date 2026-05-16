@@ -1,5 +1,9 @@
 import Link from "next/link";
 import {
+  formatJsonbDiff,
+  renderValueForDiff,
+} from "@/shared/superadmin/auditDiff";
+import {
   KNOWN_AUDIT_ACTIONS,
   type AuditLogRow,
   type KnownAuditAction,
@@ -78,6 +82,86 @@ function shortId(id: string | null): string {
   return id.slice(0, 8);
 }
 
+function DiffCell({ row }: { row: AuditLogRow }) {
+  const hasBefore =
+    row.beforeJsonb && Object.keys(row.beforeJsonb).length > 0;
+  const hasAfter = row.afterJsonb && Object.keys(row.afterJsonb).length > 0;
+  if (!hasBefore && !hasAfter) {
+    return <span className="text-xs text-nq-muted">—</span>;
+  }
+  const diff = formatJsonbDiff(row.beforeJsonb, row.afterJsonb);
+
+  return (
+    <details
+      className="group max-w-[28rem]"
+      data-testid="superadmin-audit-diff"
+    >
+      <summary className="cursor-pointer select-none text-xs text-nq-accent underline-offset-4 hover:underline">
+        View diff
+      </summary>
+      <div className="mt-3 flex flex-col gap-2 rounded-md border border-nq-border/30 bg-nq-bg/40 p-3 text-xs">
+        <span className="inline-flex w-fit items-center rounded-md border border-nq-warning/40 bg-nq-warning/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-nq-warning">
+          Contains tenant data
+        </span>
+        {diff.onlyBefore.length > 0 && (
+          <div>
+            <div className="font-medium text-nq-error">Removed</div>
+            <ul className="ml-3 list-disc">
+              {diff.onlyBefore.map((d) => (
+                <li key={d.key}>
+                  <span className="font-mono">{d.key}:</span>{" "}
+                  <code className="text-nq-muted">
+                    {renderValueForDiff(d.value)}
+                  </code>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {diff.changed.length > 0 && (
+          <div>
+            <div className="font-medium text-nq-info">Changed</div>
+            <ul className="ml-3 list-disc">
+              {diff.changed.map((d) => (
+                <li key={d.key}>
+                  <span className="font-mono">{d.key}:</span>{" "}
+                  <code className="text-nq-muted">
+                    {renderValueForDiff(d.before)}
+                  </code>{" "}
+                  →{" "}
+                  <code className="text-nq-foreground">
+                    {renderValueForDiff(d.after)}
+                  </code>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {diff.onlyAfter.length > 0 && (
+          <div>
+            <div className="font-medium text-nq-success">Added</div>
+            <ul className="ml-3 list-disc">
+              {diff.onlyAfter.map((d) => (
+                <li key={d.key}>
+                  <span className="font-mono">{d.key}:</span>{" "}
+                  <code className="text-nq-foreground">
+                    {renderValueForDiff(d.value)}
+                  </code>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {diff.onlyBefore.length === 0 &&
+          diff.changed.length === 0 &&
+          diff.onlyAfter.length === 0 && (
+            <span className="text-nq-muted">(no field changes detected)</span>
+          )}
+      </div>
+    </details>
+  );
+}
+
 export function AuditLogTable({ rows }: { rows: AuditLogRow[] }) {
   if (rows.length === 0) {
     return (
@@ -103,6 +187,7 @@ export function AuditLogTable({ rows }: { rows: AuditLogRow[] }) {
             <th className="border-b border-nq-border/40 px-4 py-2.5">Action</th>
             <th className="border-b border-nq-border/40 px-4 py-2.5">Target</th>
             <th className="border-b border-nq-border/40 px-4 py-2.5">Reason</th>
+            <th className="border-b border-nq-border/40 px-4 py-2.5">Diff</th>
           </tr>
         </thead>
         <tbody>
@@ -164,6 +249,9 @@ export function AuditLogTable({ rows }: { rows: AuditLogRow[] }) {
                   <span title={row.reason ?? undefined}>
                     {truncate(row.reason)}
                   </span>
+                </td>
+                <td className="border-b border-nq-border/20 px-4 py-3 align-top">
+                  <DiffCell row={row} />
                 </td>
               </tr>
             );
