@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { ReportsPanel } from "@/components/dashboard/ReportsPanel";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
+import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
 
 export const dynamic = "force-dynamic";
 
@@ -29,21 +30,33 @@ export default async function ReportsPage({ params }: PageProps) {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
 
-  // P0.2 — pull salon currency for the reports panel. Reads come from
-  // `getDashboardWriteClient` ctx which already has the row; one extra
-  // SELECT keeps the read scoped to a single column.
-  const { data: currencyRow } = await ctx.supabase
+  // P0.2 — pull salon currency + plan fields. One SELECT, two
+  // columns: currency for the reports panel; subscription/override
+  // for the Studio-tier staff-performance gate.
+  const { data: salonRow } = await ctx.supabase
     .from("salons")
-    .select("currency_code" as never)
+    .select(
+      "currency_code, subscription_plan, plan_override, feature_flags" as never,
+    )
     .eq("id", ctx.salon.id)
     .maybeSingle();
-  const currency = parseCurrency(
-    (currencyRow as { currency_code?: unknown } | null)?.currency_code,
-  );
+  const planFields = (salonRow ?? {}) as {
+    currency_code?: unknown;
+    subscription_plan?: string | null;
+    plan_override?: string | null;
+    feature_flags?: Record<string, unknown> | null;
+  };
+  const currency = parseCurrency(planFields.currency_code);
+  const hasStaffPerformance =
+    getEffectivePlanLimits(planFields).hasStaffPerformance;
 
   return (
     <main className="mx-auto w-full max-w-[var(--max-nq-desktop)] px-[var(--pad-nq-section-mobile)] py-6 md:px-6">
-      <ReportsPanel slug={slug} currency={currency} />
+      <ReportsPanel
+        slug={slug}
+        currency={currency}
+        hasStaffPerformance={hasStaffPerformance}
+      />
     </main>
   );
 }

@@ -28,6 +28,11 @@ export type PlanLimits = {
   maxBookingsPerMonth: number;
   /** Owner reports panel (`/dashboard/[slug]/reports`). */
   hasReports: boolean;
+  /** Per-staff performance drill-down inside the Reports panel —
+   *  cancellation rate, no-show rate, service mix, repeat-client
+   *  count. Landing page advertises this as a Studio-tier
+   *  ("premium") feature. */
+  hasStaffPerformance: boolean;
   /** Owner audit log section in Settings. */
   hasAuditLog: boolean;
 };
@@ -38,6 +43,7 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
     maxServices: 10,
     maxBookingsPerMonth: 50,
     hasReports: false,
+    hasStaffPerformance: false,
     hasAuditLog: false,
   },
   pro: {
@@ -45,6 +51,7 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
     maxServices: 50,
     maxBookingsPerMonth: Number.POSITIVE_INFINITY,
     hasReports: true,
+    hasStaffPerformance: false,
     hasAuditLog: true,
   },
   premium: {
@@ -52,6 +59,7 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
     maxServices: Number.POSITIVE_INFINITY,
     maxBookingsPerMonth: Number.POSITIVE_INFINITY,
     hasReports: true,
+    hasStaffPerformance: true,
     hasAuditLog: true,
   },
 };

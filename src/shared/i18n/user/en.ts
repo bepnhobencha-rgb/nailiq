@@ -1335,6 +1335,25 @@ export type UserMessages = {
         /** "{n} bookings in range" */
         totalBookings: string;
       };
+      /** Studio-tier per-staff performance drill-down. Pro/Free
+       *  salons see the upsell card instead of the table. */
+      staffPerformance: {
+        title: string;
+        empty: string;
+        upsellTitle: string;
+        upsellBody: string;
+        upsellCta: string;
+        col: {
+          staff: string;
+          appointments: string;
+          completion: string;
+          cancellation: string;
+          noShow: string;
+          revenue: string;
+          repeatClients: string;
+          topServices: string;
+        };
+      };
       errors: {
         unauthorized: string;
         forbidden: string;
@@ -2701,6 +2720,24 @@ export const userEn: UserMessages = {
         title: "Busy hours",
         empty: "No bookings in this range.",
         totalBookings: "{n} bookings",
+      },
+      staffPerformance: {
+        title: "Staff performance",
+        empty: "No staff activity in this range yet.",
+        upsellTitle: "Detailed staff metrics on Studio",
+        upsellBody:
+          "See per-staff cancellation rate, no-show rate, service mix, and repeat clients. Available on the Studio plan.",
+        upsellCta: "Upgrade to Studio",
+        col: {
+          staff: "Staff",
+          appointments: "Appts",
+          completion: "Completion",
+          cancellation: "Cancel",
+          noShow: "No-show",
+          revenue: "Revenue",
+          repeatClients: "Repeat clients",
+          topServices: "Top services",
+        },
       },
       errors: {
         unauthorized: "Sign in is required.",
