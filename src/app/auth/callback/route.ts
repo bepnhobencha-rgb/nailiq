@@ -1,7 +1,7 @@
+import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { dashboardPathForRole } from "@/shared/lib/salonMemberRole";
 import { resolveRoleAndSlugForUser } from "@/shared/lib/salonMembership";
-import { createClient } from "@/shared/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 // Supabase ssr server client + cookie writes are exercised against the Node
@@ -38,7 +38,34 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  const supabase = await createClient();
+  // Collect cookies from exchangeCodeForSession so we can attach them
+  // directly to the redirect response. Using the shared createClient()
+  // (which writes via `cookieStore.set()` from `next/headers`) is NOT
+  // reliable here because explicitly-returned NextResponse objects are a
+  // separate response instance — the cookies end up on the wrong object
+  // and the browser never receives the session, causing a redirect loop
+  // back to /register on the first OAuth attempt.
+  const pendingCookies: Array<{
+    name: string;
+    value: string;
+    options?: Record<string, unknown>;
+  }> = [];
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          pendingCookies.push(...cookiesToSet);
+        },
+      },
+    },
+  );
+
   const { error: exchangeErr } =
     await supabase.auth.exchangeCodeForSession(code);
   if (exchangeErr) {
@@ -56,16 +83,20 @@ export async function GET(request: NextRequest) {
   }
 
   const resolved = await resolveRoleAndSlugForUser(supabase, user.id);
+
+  let dest: URL;
   if (!resolved) {
-    return NextResponse.redirect(new URL("/register/setup", request.url));
+    dest = new URL("/register/setup", request.url);
+  } else if (resolved.needsPicker) {
+    dest = new URL("/choose-salon", request.url);
+  } else {
+    dest = new URL(dashboardPathForRole(resolved.slug, resolved.role), request.url);
   }
-  if (resolved.needsPicker) {
-    return NextResponse.redirect(new URL("/choose-salon", request.url));
+
+  const response = NextResponse.redirect(dest);
+  const secure = process.env.NODE_ENV === "production";
+  for (const { name, value, options } of pendingCookies) {
+    response.cookies.set(name, value, { ...options, secure });
   }
-  return NextResponse.redirect(
-    new URL(
-      dashboardPathForRole(resolved.slug, resolved.role),
-      request.url,
-    ),
-  );
+  return response;
 }
