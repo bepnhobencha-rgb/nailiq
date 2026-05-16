@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ReceptionistCenter } from "@/components/receptionist/ReceptionistCenter";
 import { ReceptionistErrorBoundary } from "@/components/receptionist/ReceptionistErrorBoundary";
+import { loadBookingLimitStatus } from "@/shared/dashboard/loadBookingLimitStatus";
 import { loadReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { userEn } from "@/shared/i18n/user";
@@ -47,9 +48,13 @@ export default async function ReceptionistCenterPage({
   const dateOk = typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date);
   const targetDate = dateOk ? date : salonToday(tz);
 
-  const initialResult = await loadReceptionistCenterData(slug, targetDate, {
-    preFetchedSalon: ctx.salon,
-  });
+  const [initialResult, limitResult] = await Promise.all([
+    loadReceptionistCenterData(slug, targetDate, {
+      preFetchedSalon: ctx.salon,
+    }),
+    loadBookingLimitStatus(slug),
+  ]);
+  const bookingLimitStatus = limitResult.ok ? limitResult.status : null;
 
   if (!initialResult.ok && initialResult.error === "unauthorized") {
     redirect("/register");
@@ -69,6 +74,7 @@ export default async function ReceptionistCenterPage({
         slug={slug}
         initialResult={initialResult}
         viewerRole={ctx.role}
+        bookingLimitStatus={bookingLimitStatus}
       />
     </ReceptionistErrorBoundary>
   );

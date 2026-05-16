@@ -1349,5 +1349,15 @@ export const userVi: UserMessages = {
         server_error: "Không tải được. Thử lại sau.",
       },
     },
+    bookingLimitBanner: {
+      warningTitle: "Sắp đạt giới hạn lịch hẹn tháng này",
+      blockingTitle: "Đã đạt giới hạn lịch hẹn tháng này",
+      usageText:
+        "{used}/{cap} lịch trong tháng. Nâng cấp Pro để bỏ giới hạn.",
+      upgradeCta: "Nâng cấp Pro",
+      manageCtaSettings: "Mở trang Cài đặt",
+      upgradeError:
+        "Không bắt đầu được thanh toán. Vào Cài đặt → Thanh toán để thử lại.",
+    },
   },
 };

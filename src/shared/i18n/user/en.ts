@@ -1341,6 +1341,17 @@ export type UserMessages = {
         server_error: string;
       };
     };
+    /** Free-tier monthly booking-cap upsell banner. Rendered at the top
+     *  of Receptionist Center when usage is ≥ 80% of cap. */
+    bookingLimitBanner: {
+      warningTitle: string;
+      blockingTitle: string;
+      /** Uses `{used}` and `{cap}` placeholders. */
+      usageText: string;
+      upgradeCta: string;
+      manageCtaSettings: string;
+      upgradeError: string;
+    };
   };
 };
 
@@ -2696,6 +2707,15 @@ export const userEn: UserMessages = {
         forbidden: "Only the salon owner can view reports.",
         server_error: "Could not load reports. Try again shortly.",
       },
+    },
+    bookingLimitBanner: {
+      warningTitle: "Approaching your monthly booking limit",
+      blockingTitle: "Monthly booking limit reached",
+      usageText: "{used} / {cap} bookings this month. Upgrade to Pro to remove the cap.",
+      upgradeCta: "Upgrade to Pro",
+      manageCtaSettings: "Manage in Settings",
+      upgradeError:
+        "Couldn't start checkout. Try again from Settings → Billing.",
     },
   },
 };

@@ -100,6 +100,7 @@ import {
   type DensityLevel,
 } from "@/shared/dashboard/dashboardDensity";
 import type { BookingStatus } from "@/shared/types";
+import { BookingLimitBanner } from "@/components/dashboard/BookingLimitBanner";
 
 export type ReceptionistCenterProps = {
   slug: string;
@@ -107,6 +108,9 @@ export type ReceptionistCenterProps = {
   initialResult: LoadReceptionistCenterResult;
   /** Caller's `salon_members.role` — gates Edit/Cancel in the booking drawer. */
   viewerRole: SalonMemberRole;
+  /** Free-tier monthly booking-cap status. `null` if the loader
+   *  couldn't fetch it (transient error — banner stays hidden). */
+  bookingLimitStatus?: import("@/shared/dashboard/loadBookingLimitStatus").BookingLimitStatus | null;
 };
 
 function loadErrorCopy(
@@ -231,10 +235,12 @@ function ReceptionistCenterInner({
   slug,
   initialOk,
   viewerRole,
+  bookingLimitStatus,
 }: {
   slug: string;
   initialOk: ReceptionistCenterData;
   viewerRole: SalonMemberRole;
+  bookingLimitStatus: import("@/shared/dashboard/loadBookingLimitStatus").BookingLimitStatus | null;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1331,6 +1337,17 @@ function ReceptionistCenterInner({
           rush.active && "[&_[data-rush-fade]]:opacity-50",
         )}
       >
+        {bookingLimitStatus && !bookingLimitStatus.isUnlimited ? (
+          <div className="shrink-0 border-b border-nq-border/30 px-[var(--pad-nq-section-mobile)] py-2 md:px-6">
+            <div className="mx-auto w-full max-w-[var(--max-nq-desktop)]">
+              <BookingLimitBanner
+                slug={slug}
+                status={bookingLimitStatus}
+                copy={rcMessages.bookingLimitBanner}
+              />
+            </div>
+          </div>
+        ) : null}
         {rush.active ? (
           <div
             data-testid="receptionist-rush-banner"
@@ -1968,7 +1985,12 @@ function ReceptionistCenterInner({
   );
 }
 
-export function ReceptionistCenter({ slug, initialResult, viewerRole }: ReceptionistCenterProps) {
+export function ReceptionistCenter({
+  slug,
+  initialResult,
+  viewerRole,
+  bookingLimitStatus,
+}: ReceptionistCenterProps) {
   if (!initialResult.ok) {
     return <ReceptionistGateError code={initialResult.error} />;
   }
@@ -1977,6 +1999,7 @@ export function ReceptionistCenter({ slug, initialResult, viewerRole }: Receptio
       slug={slug}
       initialOk={initialResult.data}
       viewerRole={viewerRole}
+      bookingLimitStatus={bookingLimitStatus ?? null}
     />
   );
 }
