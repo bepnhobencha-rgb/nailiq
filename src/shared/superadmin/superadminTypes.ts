@@ -553,3 +553,66 @@ export type UpdateCategoryInput = {
 };
 
 export type CategoryMutationResult = { ok: true } | { ok: false; error: string };
+
+/* ───────────────── SuperAdmin audit-log viewer (Phase 1F) ───────────────── */
+
+/**
+ * Known action verbs the viewer renders with explicit labels + color
+ * coding. Unknown verbs (e.g. shipped in future code before this list
+ * is updated) still render — just in mono font without a colour
+ * accent. Keep this list in sync with the writers in
+ * `src/shared/superadmin/*.ts`.
+ */
+export const KNOWN_AUDIT_ACTIONS = [
+  "impersonate_enter",
+  "impersonate_exit",
+  "impersonate_expire",
+  "salon_flags_set",
+  "record_restore",
+  "platform_flag_set",
+  "category_add",
+  "category_update",
+  "category_delete",
+] as const;
+export type KnownAuditAction = (typeof KNOWN_AUDIT_ACTIONS)[number];
+
+export type AuditLogFilters = {
+  /** Filter by action verb(s). Empty = no filter. */
+  actions?: readonly string[];
+  /** Filter by a single actor user_id (uuid). */
+  actorUserId?: string;
+  /** Filter by target kind(s). Empty = no filter. */
+  targetKinds?: readonly string[];
+  /** ISO-8601 lower bound on `created_at` (inclusive). */
+  from?: string;
+  /** ISO-8601 upper bound on `created_at` (exclusive). */
+  to?: string;
+};
+
+export type AuditLogRow = {
+  id: string;
+  createdAt: string;
+  actorUserId: string | null;
+  actorEmail: string | null;
+  actorRole: string;
+  action: string;
+  targetKind: string | null;
+  targetId: string | null;
+  reason: string | null;
+  beforeJsonb: Record<string, unknown> | null;
+  afterJsonb: Record<string, unknown> | null;
+};
+
+export type LoadAuditLogsResult =
+  | {
+      ok: true;
+      rows: AuditLogRow[];
+      /** Opaque cursor for fetching the next page; null when end-of-list. */
+      nextCursor: string | null;
+      /** The cursor of the page *before* the current one; null on first page. */
+      prevCursor: string | null;
+    }
+  | {
+      ok: false;
+      error: "unauthorized" | "forbidden" | "server_error";
+    };

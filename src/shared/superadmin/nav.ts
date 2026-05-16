@@ -59,8 +59,12 @@ export const SUPERADMIN_NAV: readonly SuperadminNavItem[] = [
     key: "support",
     label: "Support",
     href: "/superadmin/support",
-    phaseLabel: "Coming Phase 1E",
-    allowedRoles: ["founder", "support_admin"],
+    allowedRoles: [
+      "founder",
+      "ops_admin",
+      "support_admin",
+      "readonly_analyst",
+    ],
   },
   {
     key: "analytics",
