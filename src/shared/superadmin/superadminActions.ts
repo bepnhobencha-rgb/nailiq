@@ -2,7 +2,11 @@
 
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { isSuperAdmin } from "@/shared/lib/superadmin";
+import {
+  getSuperAdminRole,
+  type SuperAdminRole,
+} from "@/shared/lib/superadmin";
+import { writeAuditLog } from "@/shared/superadmin/audit";
 import {
   isPlatformFlagKey,
   isRestorableTable,
@@ -44,6 +48,7 @@ import {
 type CallerContext = {
   userId: string;
   email: string | null;
+  role: SuperAdminRole;
 };
 
 async function requireSuperAdminCaller(): Promise<CallerContext | null> {
@@ -53,12 +58,13 @@ async function requireSuperAdminCaller(): Promise<CallerContext | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const ok = await isSuperAdmin(user.id);
-  if (!ok) return null;
+  const role = await getSuperAdminRole(user.id);
+  if (!role) return null;
 
   return {
     userId: user.id,
     email: typeof user.email === "string" ? user.email : null,
+    role,
   };
 }
 
@@ -355,13 +361,22 @@ export async function updateSalonFlags(
   }
 
   // Fetch current row so we can merge feature_flags (UI sends a partial
-  // patch). Also confirms the salon exists.
+  // patch) AND capture a complete before-snapshot for the audit log.
   const { data: existing, error: fetchErr } = (await admin
     .from("salons")
-    .select("id, feature_flags" as never)
+    .select(
+      "id, slug, plan_override, is_beta, admin_notes, feature_flags" as never,
+    )
     .eq("id", id)
     .maybeSingle()) as {
-    data: { id: string; feature_flags?: unknown } | null;
+    data: {
+      id: string;
+      slug?: string | null;
+      plan_override?: string | null;
+      is_beta?: boolean | null;
+      admin_notes?: string | null;
+      feature_flags?: unknown;
+    } | null;
     error: unknown;
   };
 
@@ -399,6 +414,26 @@ export async function updateSalonFlags(
 
   if (Object.keys(update).length === 0) {
     return { ok: true };
+  }
+
+  // Audit BEFORE the mutation per §8.5 — failure here aborts cleanly.
+  const audited = await writeAuditLog({
+    actorUserId: caller.userId,
+    actorRole: caller.role,
+    action: "salon_flags_set",
+    targetKind: "salon",
+    targetId: id,
+    beforeJsonb: {
+      salon_slug: existing.slug ?? null,
+      plan_override: normalizePlanOverride(existing.plan_override),
+      is_beta: Boolean(existing.is_beta),
+      admin_notes: existing.admin_notes ?? null,
+      feature_flags: normalizeFeatureFlags(existing.feature_flags),
+    },
+    afterJsonb: { salon_slug: existing.slug ?? null, ...update },
+  });
+  if (!audited) {
+    return { ok: false, error: "server_error" };
   }
 
   const { error: upErr } = await admin
@@ -510,6 +545,42 @@ export async function restoreSalonRecord(
   }
 
   const t: RestorableTable = table;
+
+  // Snapshot the soft-deleted row first so the audit log captures
+  // exactly which record was restored (and from when).
+  const { data: prior, error: priorErr } = (await admin
+    .from(t)
+    .select("id, salon_id, deleted_at" as never)
+    .eq("id", id)
+    .not("deleted_at", "is", null)
+    .maybeSingle()) as {
+    data: { id?: string; salon_id?: string; deleted_at?: string | null } | null;
+    error: unknown;
+  };
+  if (priorErr) {
+    console.error("[superadmin/restoreSalonRecord] fetch", priorErr);
+    return { ok: false, error: "server_error" };
+  }
+  if (!prior?.id) {
+    return { ok: false, error: "not_found" };
+  }
+
+  const audited = await writeAuditLog({
+    actorUserId: caller.userId,
+    actorRole: caller.role,
+    action: "record_restore",
+    targetKind: t,
+    targetId: id,
+    beforeJsonb: {
+      salon_id: prior.salon_id ?? null,
+      deleted_at: prior.deleted_at ?? null,
+    },
+    afterJsonb: { salon_id: prior.salon_id ?? null, deleted_at: null },
+  });
+  if (!audited) {
+    return { ok: false, error: "server_error" };
+  }
+
   const { data, error } = (await admin
     .from(t)
     .update({ deleted_at: null } as never)
@@ -617,6 +688,31 @@ export async function updatePlatformFlag(
 
   const k: PlatformFlagKey = key;
 
+  // Snapshot current enabled state (may not exist yet — first toggle).
+  const { data: prior } = (await admin
+    .from("platform_flags")
+    .select("key, enabled" as never)
+    .eq("key", k)
+    .maybeSingle()) as {
+    data: { key?: string; enabled?: boolean | null } | null;
+    error: unknown;
+  };
+
+  // target_id is a uuid column; platform flag keys are text, so leave
+  // target_id null and surface the key in the jsonb blobs.
+  const audited = await writeAuditLog({
+    actorUserId: caller.userId,
+    actorRole: caller.role,
+    action: "platform_flag_set",
+    targetKind: "platform_flag",
+    targetId: null,
+    beforeJsonb: { key: k, enabled: prior?.enabled === true },
+    afterJsonb: { key: k, enabled },
+  });
+  if (!audited) {
+    return { ok: false, error: "server_error" };
+  }
+
   // Upsert so the row materializes on first toggle even when the
   // migration seed hasn't been applied on this environment.
   const { error } = await admin
@@ -715,6 +811,25 @@ export async function addCategory(
       : 50;
 
   const admin = createServiceRoleClient();
+
+  const audited = await writeAuditLog({
+    actorUserId: caller.userId,
+    actorRole: caller.role,
+    action: "category_add",
+    targetKind: "service_category",
+    targetId: null,
+    beforeJsonb: null,
+    afterJsonb: {
+      slug,
+      name_en: nameEn,
+      name_vi: nameVi,
+      sort_order: sortOrder,
+    },
+  });
+  if (!audited) {
+    return { ok: false, error: "server_error" };
+  }
+
   const { error } = await admin.from("service_categories").insert(
     {
       slug,
@@ -769,6 +884,44 @@ export async function updateCategory(
   }
 
   const admin = createServiceRoleClient();
+
+  // Snapshot the existing row so the audit log shows what changed.
+  const { data: prior } = (await admin
+    .from("service_categories")
+    .select("slug, name_en, name_vi, sort_order" as never)
+    .eq("slug", slug)
+    .is("deleted_at" as never, null)
+    .maybeSingle()) as {
+    data: {
+      slug?: string;
+      name_en?: string | null;
+      name_vi?: string | null;
+      sort_order?: number | null;
+    } | null;
+    error: unknown;
+  };
+  if (!prior?.slug) {
+    return { ok: false, error: "server_error" };
+  }
+
+  const audited = await writeAuditLog({
+    actorUserId: caller.userId,
+    actorRole: caller.role,
+    action: "category_update",
+    targetKind: "service_category",
+    targetId: null,
+    beforeJsonb: {
+      slug,
+      name_en: prior.name_en ?? null,
+      name_vi: prior.name_vi ?? null,
+      sort_order: prior.sort_order ?? null,
+    },
+    afterJsonb: { slug, ...patch },
+  });
+  if (!audited) {
+    return { ok: false, error: "server_error" };
+  }
+
   const { error } = await admin
     .from("service_categories")
     .update(patch as never)
@@ -797,9 +950,49 @@ export async function deleteCategory(
   // `deleted_at IS NULL`) while preserving the row so historical
   // `services.category` values still resolve to a label if you join.
   const admin = createServiceRoleClient();
+
+  // Snapshot pre-delete state for the audit trail.
+  const { data: prior } = (await admin
+    .from("service_categories")
+    .select("slug, name_en, name_vi, sort_order" as never)
+    .eq("slug", trimmed)
+    .is("deleted_at" as never, null)
+    .maybeSingle()) as {
+    data: {
+      slug?: string;
+      name_en?: string | null;
+      name_vi?: string | null;
+      sort_order?: number | null;
+    } | null;
+    error: unknown;
+  };
+  if (!prior?.slug) {
+    return { ok: false, error: "server_error" };
+  }
+
+  const deletedAt = new Date().toISOString();
+  const audited = await writeAuditLog({
+    actorUserId: caller.userId,
+    actorRole: caller.role,
+    action: "category_delete",
+    targetKind: "service_category",
+    targetId: null,
+    beforeJsonb: {
+      slug: trimmed,
+      name_en: prior.name_en ?? null,
+      name_vi: prior.name_vi ?? null,
+      sort_order: prior.sort_order ?? null,
+      deleted_at: null,
+    },
+    afterJsonb: { slug: trimmed, deleted_at: deletedAt },
+  });
+  if (!audited) {
+    return { ok: false, error: "server_error" };
+  }
+
   const { error } = await admin
     .from("service_categories")
-    .update({ deleted_at: new Date().toISOString() } as never)
+    .update({ deleted_at: deletedAt } as never)
     .eq("slug", trimmed)
     .is("deleted_at" as never, null);
 
