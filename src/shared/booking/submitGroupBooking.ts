@@ -3,6 +3,7 @@ import {
   ConflictCheckBooking,
   checkBookingConflict,
 } from "@/shared/lib/conflictCheck";
+import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
@@ -127,7 +128,11 @@ export type GroupBookingResult =
         // Task #04-C FIX 13 — service was soft-deleted between
         // step 2 and submit. Recoverable only by sending the user
         // back to step 2 to pick a different service.
-        | "service_unavailable";
+        | "service_unavailable"
+        // Salon's plan-tier monthly booking cap would be exceeded by
+        // this group submit. Recoverable only by the salon owner
+        // upgrading the plan.
+        | "monthly_booking_limit_reached";
       /** 1-indexed member number for granular per-member errors so
        *  the UI can say "Person 2 has an invalid phone". `null` when
        *  the error is global (e.g. invalid group size). */
@@ -239,7 +244,9 @@ export async function submitGroupBooking(
   // from this column).
   const { data: salonRaw, error: salonErr } = await supabase
     .from("salons")
-    .select("id, profile_complete, opening_hours, timezone, booking_closed_dates")
+    .select(
+      "id, profile_complete, opening_hours, timezone, booking_closed_dates, subscription_plan, plan_override, feature_flags",
+    )
     .eq("slug", params.shopSlug)
     .maybeSingle();
 
@@ -250,8 +257,35 @@ export async function submitGroupBooking(
     opening_hours?: unknown;
     timezone?: unknown;
     booking_closed_dates?: unknown;
+    subscription_plan?: string | null;
+    plan_override?: string | null;
+    feature_flags?: Record<string, unknown> | null;
   };
   if (!salonRow.profile_complete) return fail("salon_paused");
+
+  // Plan-tier monthly cap. Group size is the count of new bookings
+  // we'd insert, so pass it so a 7-person group can't sneak past a
+  // limit that has 6 slots left.
+  try {
+    await assertBookingLimitAvailable(
+      supabase,
+      {
+        id: String(salonRow.id),
+        subscription_plan: salonRow.subscription_plan,
+        plan_override: salonRow.plan_override,
+        feature_flags: salonRow.feature_flags,
+      },
+      params.members.length,
+    );
+  } catch (e) {
+    if (
+      e instanceof Error &&
+      e.message === "monthly_booking_limit_reached"
+    ) {
+      return fail("monthly_booking_limit_reached");
+    }
+    throw e;
+  }
 
   // Task #04-C (post #04-B cleanup) — `salons.timezone` is NOT NULL
   // (migration 20260512600000_timezone_required). The legacy

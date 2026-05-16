@@ -7,6 +7,7 @@ import {
   ConflictCheckBooking,
   checkBookingConflict,
 } from "@/shared/lib/conflictCheck";
+import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
@@ -115,6 +116,36 @@ export async function addWalkinToQueue(
   }
 
   const supabase = ctx.supabase;
+
+  // Plan-tier cap. ctx.salon doesn't carry plan fields, so we fetch
+  // them here. Cheap: maybeSingle on PK; throws are caught and
+  // surfaced as a recoverable error code.
+  try {
+    const { data: planRow } = await supabase
+      .from("salons")
+      .select("subscription_plan, plan_override, feature_flags" as never)
+      .eq("id", ctx.salon.id)
+      .maybeSingle();
+    const planFields = (planRow ?? {}) as {
+      subscription_plan?: string | null;
+      plan_override?: string | null;
+      feature_flags?: Record<string, unknown> | null;
+    };
+    await assertBookingLimitAvailable(supabase, {
+      id: ctx.salon.id,
+      subscription_plan: planFields.subscription_plan,
+      plan_override: planFields.plan_override,
+      feature_flags: planFields.feature_flags,
+    });
+  } catch (e) {
+    if (
+      e instanceof Error &&
+      e.message === "monthly_booking_limit_reached"
+    ) {
+      return fail("monthly_booking_limit_reached");
+    }
+    throw e;
+  }
 
   const { data: svc, error: svcErr } = await supabase
     .from("services")

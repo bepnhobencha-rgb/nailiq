@@ -1133,6 +1133,7 @@ export type UserMessages = {
       invalid_state: string;
       already_started: string;
       invalid_phone: string;
+      monthly_booking_limit_reached: string;
     };
     /** Permission-gated copy. Currently the UI hides the buttons entirely
      * for `nail_tech`; these strings are reserved for a future tooltip /
@@ -2486,6 +2487,8 @@ export const userEn: UserMessages = {
       invalid_state: "That booking is no longer in the right status.",
       already_started: "Service already started — cannot undo.",
       invalid_phone: "Enter a valid guest phone number.",
+      monthly_booking_limit_reached:
+        "This salon hit its plan's monthly booking limit. Upgrade to continue.",
     },
     permissions: {
       noPermissionEdit: "Contact your owner to edit bookings",

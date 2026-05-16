@@ -1140,6 +1140,8 @@ export const userVi: UserMessages = {
       invalid_state: "Trạng thái lịch đã đổi.",
       already_started: "Đã bắt đầu phục vụ — không hoàn tác được.",
       invalid_phone: "Nhập số điện thoại hợp lệ của khách.",
+      monthly_booking_limit_reached:
+        "Tiệm đã đạt giới hạn lịch hẹn tháng này theo gói hiện tại. Nâng gói để tiếp tục.",
     },
     tv: {
       title: "Quầy lễ tân — Màn hình trực tiếp",
