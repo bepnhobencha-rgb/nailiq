@@ -297,6 +297,7 @@ export function SocialAuthButtons({
             type="email"
             inputMode="email"
             autoComplete="email"
+            aria-label={t.emailLabel}
             placeholder={t.emailPlaceholder}
             value={email}
             onChange={(ev) => {

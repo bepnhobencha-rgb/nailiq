@@ -429,7 +429,7 @@ export function BookingFlowServicePanel({
             {error}
           </p>
         ) : null}
-        <LuxuryBookingCta onClick={onNext}>{t.next}</LuxuryBookingCta>
+        <LuxuryBookingCta disabled={!serviceId} onClick={onNext}>{t.next}</LuxuryBookingCta>
       </div>
     </motion.section>
   );

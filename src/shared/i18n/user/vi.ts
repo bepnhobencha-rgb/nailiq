@@ -529,6 +529,7 @@ export const userVi: UserMessages = {
     hideOptions: "Ẩn",
     sendLoginLink: "Gửi link đăng nhập",
     sendSignupLink: "Gửi magic link",
+    emailLabel: "Địa chỉ email",
     emailPlaceholder: "you@example.com",
     emailInvalid: "Email không hợp lệ.",
     emailRequired: "Vui lòng nhập email phía trên trước.",

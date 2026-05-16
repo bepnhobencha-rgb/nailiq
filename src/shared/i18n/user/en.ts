@@ -404,6 +404,7 @@ export type UserMessages = {
     sendLoginLink: string;
     /** Submit button on /register (mode="register"). */
     sendSignupLink: string;
+    emailLabel: string;
     emailPlaceholder: string;
     emailInvalid: string;
     emailRequired: string;
@@ -1904,6 +1905,7 @@ export const userEn: UserMessages = {
     hideOptions: "Hide options",
     sendLoginLink: "Send login link",
     sendSignupLink: "Send magic link",
+    emailLabel: "Email address",
     emailPlaceholder: "you@example.com",
     emailInvalid: "Enter a valid email address.",
     emailRequired: "Enter your email above first.",

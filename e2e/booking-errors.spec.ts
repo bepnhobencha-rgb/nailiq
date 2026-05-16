@@ -33,13 +33,13 @@ const PRIMARY_SLUG = "e2e-booking-errors";
 const OTHER_SLUG = "e2e-booking-errors-other";
 
 const STANDARD_HOURS = {
-  monday: { open: "09:00", close: "17:00", closed: false },
-  tuesday: { open: "09:00", close: "17:00", closed: false },
-  wednesday: { open: "09:00", close: "17:00", closed: false },
-  thursday: { open: "09:00", close: "17:00", closed: false },
-  friday: { open: "09:00", close: "17:00", closed: false },
-  saturday: { open: "09:00", close: "17:00", closed: false },
-  sunday: { open: "09:00", close: "17:00", closed: false },
+  mon: { open: "09:00", close: "17:00", closed: false },
+  tue: { open: "09:00", close: "17:00", closed: false },
+  wed: { open: "09:00", close: "17:00", closed: false },
+  thu: { open: "09:00", close: "17:00", closed: false },
+  fri: { open: "09:00", close: "17:00", closed: false },
+  sat: { open: "09:00", close: "17:00", closed: false },
+  sun: { open: "09:00", close: "17:00", closed: false },
 };
 
 async function getSalonId(slug: string): Promise<string> {
@@ -177,26 +177,41 @@ test.describe("Booking error scenarios — /[slug]", () => {
     const salonId = await getSalonId(PRIMARY_SLUG);
     const { staffId, serviceId } = await getFirstStaffAndService(salonId);
 
-    // First guest — scout an available slot.
-    await navigateToTimeStep(page, PRIMARY_SLUG);
-    const firstSlotText =
-      (await page
-        .locator('[data-testid="time-slot"]')
-        .first()
-        .textContent()) ?? "";
-    expect(firstSlotText.trim()).not.toBe("");
-
-    // Block that slot at the DB level: pick the day the picker is on, parse
-    // the slot label, insert a confirmed booking on the same staff/service.
-    const dayBtn = page.locator(
-      '[data-testid="date-day"][aria-pressed="true"], [data-testid="date-day"][data-selected="true"]',
-    );
-    const ymd =
-      (await dayBtn.first().getAttribute("data-ymd")) ?? null;
+    // First guest — scout an available slot. Navigate manually so we can
+    // read data-ymd from the selected date cell BEFORE leaving the date step
+    // (date-day elements are removed from the DOM once the time panel mounts).
+    await page.goto(`/${PRIMARY_SLUG}`);
+    await page.locator('[data-testid="service-item"]').first().click();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.locator('[data-testid="staff-item"]').first().click();
+    await page.getByRole("button", { name: "Continue" }).click();
+    const pickedDateBtn = page
+      .locator('[data-testid="date-day"]:not([disabled])')
+      .nth(1);
+    await pickedDateBtn.waitFor({ state: "visible", timeout: 10_000 });
+    const ymd = (await pickedDateBtn.getAttribute("data-ymd")) ?? null;
     if (!ymd) {
       test.skip(true, "date-day cells did not expose a data-ymd attribute");
       return;
     }
+    await pickedDateBtn.click();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page
+      .locator('[data-testid="time-slot"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 20_000 });
+
+    // Only pick from AVAILABLE slots — the panel renders booked slots as
+    // disabled buttons (data-available="false"). We block this specific slot,
+    // then verify it becomes disabled for the next guest.
+    const firstSlotText =
+      (await page
+        .locator('[data-testid="time-slot"][data-available="true"]')
+        .first()
+        .textContent()) ?? "";
+    expect(firstSlotText.trim()).not.toBe("");
+
+    // Block that slot at the DB level: parse the slot label to get the UTC time.
     const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(firstSlotText.trim());
     if (!m) throw new Error(`could not parse slot label "${firstSlotText}"`);
     let hour = Number(m[1]);
@@ -219,17 +234,16 @@ test.describe("Booking error scenarios — /[slug]", () => {
       end_time_utc: endLocal.toISOString(),
     });
 
-    // Second guest — same path; the previously-first slot should no longer
-    // be the first slot (it's been removed from the list entirely).
+    // Second guest — same path; the booked slot should now appear as
+    // disabled (data-available="false") rather than bookable.
     const ctx = await browser.newContext();
     const page2 = await ctx.newPage();
     await navigateToTimeStep(page2, PRIMARY_SLUG);
-    const newFirstText =
-      (await page2
-        .locator('[data-testid="time-slot"]')
-        .first()
-        .textContent()) ?? "";
-    expect(newFirstText.trim()).not.toBe(firstSlotText.trim());
+    const blockedSlotBtn = page2
+      .locator('[data-testid="time-slot"]')
+      .filter({ hasText: firstSlotText.trim() })
+      .first();
+    await expect(blockedSlotBtn).toBeDisabled();
     await ctx.close();
   });
 
@@ -326,12 +340,20 @@ test.describe("Booking error scenarios — /[slug]", () => {
       .first()
       .waitFor({ state: "visible", timeout: 20_000 });
 
-    const slotTexts = (
-      await page.locator('[data-testid="time-slot"]').allTextContents()
+    // Only check AVAILABLE (non-disabled) slots — the time panel renders
+    // booked slots as line-through/disabled buttons with data-available="false".
+    // Using allTextContents() on all [data-testid="time-slot"] would include
+    // disabled slots too, giving a false failure.
+    const availableSlotTexts = (
+      await page
+        .locator('[data-testid="time-slot"][data-available="true"]')
+        .allTextContents()
     ).map((s) => s.trim());
-    // The 14:00 slot is also taken; the next-aligned 14:30 must not appear.
-    expect(slotTexts).not.toContain("2:30 PM");
-    expect(slotTexts).not.toContain("14:30");
+
+    // The 14:00 slot is also taken; the next-aligned 14:30 must not appear
+    // as an available (bookable) slot.
+    expect(availableSlotTexts).not.toContain("2:30 PM");
+    expect(availableSlotTexts).not.toContain("14:30");
   });
 
   // ──────────────────────────────────────────────────────────
