@@ -48,9 +48,16 @@ export interface ReportsPanelProps {
   slug: string;
   /** P0.2 — salon's configured currency. */
   currency: Currency;
+  /** Studio-tier (`premium`) gate for the per-staff performance
+   *  drill-down. Pro/Free salons see an upsell card instead. */
+  hasStaffPerformance: boolean;
 }
 
-export function ReportsPanel({ slug, currency }: ReportsPanelProps) {
+export function ReportsPanel({
+  slug,
+  currency,
+  hasStaffPerformance,
+}: ReportsPanelProps) {
   const { language } = useUserLanguage();
   const messages = useMemo(
     () => getUserMessages(language).receptionist.reports,
@@ -248,6 +255,117 @@ export function ReportsPanel({ slug, currency }: ReportsPanelProps) {
             </tbody>
           </table>
         ) : null}
+      </Card>
+
+      {/* C2. Staff performance — Studio-tier drill-down. Free/Pro see
+            the upsell card; Studio (premium) sees the detail table. */}
+      <Card variant="default" padding="md">
+        <h2 className="mb-2 text-sm font-semibold text-nq-foreground">
+          {messages.staffPerformance.title}
+        </h2>
+        {hasStaffPerformance ? (
+          state.kind === "ok" && state.data.staffPerformance.length === 0 ? (
+            <p className="text-sm italic text-nq-muted">
+              {messages.staffPerformance.empty}
+            </p>
+          ) : state.kind === "ok" ? (
+            <div className="overflow-x-auto">
+              <table
+                className="w-full min-w-[640px] text-sm"
+                data-testid="reports-staff-performance"
+              >
+                <thead>
+                  <tr className="text-left text-[11px] uppercase tracking-wide text-nq-muted">
+                    <th className="py-1.5">
+                      {messages.staffPerformance.col.staff}
+                    </th>
+                    <th className="py-1.5 text-right">
+                      {messages.staffPerformance.col.appointments}
+                    </th>
+                    <th className="py-1.5 text-right">
+                      {messages.staffPerformance.col.completion}
+                    </th>
+                    <th className="py-1.5 text-right">
+                      {messages.staffPerformance.col.cancellation}
+                    </th>
+                    <th className="py-1.5 text-right">
+                      {messages.staffPerformance.col.noShow}
+                    </th>
+                    <th className="py-1.5 text-right">
+                      {messages.staffPerformance.col.revenue}
+                    </th>
+                    <th className="py-1.5 text-right">
+                      {messages.staffPerformance.col.repeatClients}
+                    </th>
+                    <th className="py-1.5">
+                      {messages.staffPerformance.col.topServices}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-nq-border/50">
+                  {state.data.staffPerformance.map((s) => (
+                    <tr key={s.staffId}>
+                      <td className="py-1.5 text-nq-foreground">{s.name}</td>
+                      <td className="py-1.5 text-right tabular-nums">
+                        {s.appointmentCount}
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums">
+                        {Math.round(s.completionRate * 100)}%
+                      </td>
+                      <td
+                        className={cn(
+                          "py-1.5 text-right tabular-nums",
+                          s.cancellationRate >= 0.15 && "text-nq-warning",
+                        )}
+                      >
+                        {Math.round(s.cancellationRate * 100)}%
+                      </td>
+                      <td
+                        className={cn(
+                          "py-1.5 text-right tabular-nums",
+                          s.noShowRate >= 0.1 && "text-nq-error",
+                        )}
+                      >
+                        {Math.round(s.noShowRate * 100)}%
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums">
+                        {formatMoney(s.revenueCents, currency)}
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums">
+                        {s.repeatClientCount}
+                      </td>
+                      <td className="py-1.5 text-nq-muted">
+                        {s.topServices
+                          .map((t) => `${t.name} (${t.count})`)
+                          .join(", ") || "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-nq-muted">{messages.loading}</p>
+          )
+        ) : (
+          <div className="flex flex-col gap-3 rounded-xl border border-nq-primary/30 bg-nq-primary/10 px-4 py-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col gap-0.5">
+              <p className="text-sm font-semibold text-nq-foreground">
+                {messages.staffPerformance.upsellTitle}
+              </p>
+              <p className="text-sm text-nq-muted">
+                {messages.staffPerformance.upsellBody}
+              </p>
+            </div>
+            <a
+              href={`/dashboard/${encodeURIComponent(slug)}/settings`}
+              data-testid="reports-staff-performance-upsell"
+              className="inline-flex items-center justify-center rounded-full bg-nq-primary px-4 py-2 text-sm font-semibold text-nq-bg hover:opacity-90"
+            >
+              {messages.staffPerformance.upsellCta}
+            </a>
+          </div>
+        )}
       </Card>
 
       {/* D. Busy hours — CSS bars only, no chart library. Bars use

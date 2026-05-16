@@ -1343,6 +1343,24 @@ export const userVi: UserMessages = {
         empty: "Chưa có lịch trong khoảng này.",
         totalBookings: "{n} lịch",
       },
+      staffPerformance: {
+        title: "Hiệu suất thợ",
+        empty: "Chưa có dữ liệu thợ trong khoảng này.",
+        upsellTitle: "Hiệu suất thợ chi tiết — gói Studio",
+        upsellBody:
+          "Xem tỷ lệ huỷ, không đến, dịch vụ chính, khách quay lại của từng thợ. Có trong gói Studio.",
+        upsellCta: "Nâng cấp Studio",
+        col: {
+          staff: "Thợ",
+          appointments: "Lịch",
+          completion: "Hoàn tất",
+          cancellation: "Huỷ",
+          noShow: "Vắng",
+          revenue: "Doanh thu",
+          repeatClients: "Khách quay lại",
+          topServices: "Dịch vụ chính",
+        },
+      },
       errors: {
         unauthorized: "Cần đăng nhập.",
         forbidden: "Chỉ chủ tiệm mới xem được báo cáo.",

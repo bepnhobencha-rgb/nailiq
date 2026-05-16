@@ -25,6 +25,30 @@ export type ReportsSnapshot = {
   }>;
   /** Per-hour booking counts (0-23). Always exactly 24 entries. */
   busyHours: Array<{ hour: number; count: number }>;
+  /** Per-staff performance breakdown for the Studio-tier drill-down.
+   *  Includes everyone who took at least one booking in range, not
+   *  just the top 5. Sorted by appointmentCount desc. */
+  staffPerformance: StaffPerformanceRow[];
+};
+
+export type StaffPerformanceRow = {
+  staffId: string;
+  name: string;
+  appointmentCount: number;
+  completedCount: number;
+  cancelledCount: number;
+  noShowCount: number;
+  /** completedCount / appointmentCount (0–1). 0 when appointmentCount = 0. */
+  completionRate: number;
+  /** cancelledCount / appointmentCount (0–1). */
+  cancellationRate: number;
+  /** noShowCount / appointmentCount (0–1). */
+  noShowRate: number;
+  revenueCents: number;
+  /** Top 3 services this staff performed (by count) in the range. */
+  topServices: Array<{ name: string; count: number }>;
+  /** Distinct client phones seen >= 2 times for this staff in range. */
+  repeatClientCount: number;
 };
 
 export type LoadSalonReportsResult =
@@ -81,7 +105,7 @@ export async function loadSalonReports(
     .select(
       `
       id, status, staff_id, service_id, start_time_utc, end_time_utc,
-      price_cents, addon_price_cents,
+      price_cents, addon_price_cents, client_phone,
       services!bookings_service_id_fkey ( name, duration_minutes )
     `,
     )
@@ -120,6 +144,7 @@ export async function loadSalonReports(
     end_time_utc: string | null;
     price_cents: number | null;
     addon_price_cents: number | null;
+    client_phone: string | null;
     services: ServiceJoin | ServiceJoin[] | null;
   };
   const bookings = (rows ?? []) as BookingRow[];
@@ -181,6 +206,7 @@ function aggregate(
     end_time_utc: string | null;
     price_cents: number | null;
     addon_price_cents: number | null;
+    client_phone: string | null;
     services:
       | { name: string; duration_minutes: number }
       | { name: string; duration_minutes: number }[]
@@ -203,7 +229,15 @@ function aggregate(
   type StaffAgg = {
     name: string;
     appointmentCount: number;
+    completedCount: number;
+    cancelledCount: number;
+    noShowCount: number;
     revenueCents: number;
+    /** service_id → { name, count } */
+    serviceMix: Map<string, { name: string; count: number }>;
+    /** Each entry is a normalized client_phone — duplicates count
+     *  toward repeat detection. */
+    clientPhones: string[];
   };
   const staffAgg = new Map<string, StaffAgg>();
 
@@ -249,10 +283,27 @@ function aggregate(
       const s = staffAgg.get(b.staff_id) ?? {
         name: sName,
         appointmentCount: 0,
+        completedCount: 0,
+        cancelledCount: 0,
+        noShowCount: 0,
         revenueCents: 0,
+        serviceMix: new Map<string, { name: string; count: number }>(),
+        clientPhones: [] as string[],
       };
       s.appointmentCount += 1;
+      if (b.status === "completed") s.completedCount += 1;
+      if (b.status === "cancelled") s.cancelledCount += 1;
+      if (b.status === "no_show") s.noShowCount += 1;
       s.revenueCents += rev;
+      const svcEntry = s.serviceMix.get(b.service_id) ?? {
+        name: svcName,
+        count: 0,
+      };
+      svcEntry.count += 1;
+      s.serviceMix.set(b.service_id, svcEntry);
+      const phone =
+        typeof b.client_phone === "string" ? b.client_phone.trim() : "";
+      if (phone) s.clientPhones.push(phone);
       staffAgg.set(b.staff_id, s);
     }
 
@@ -290,8 +341,47 @@ function aggregate(
     .slice(0, TOP_LIMIT);
 
   const topStaff = Array.from(staffAgg.values())
+    .map((s) => ({
+      name: s.name,
+      appointmentCount: s.appointmentCount,
+      revenueCents: s.revenueCents,
+    }))
     .sort((a, b) => b.appointmentCount - a.appointmentCount)
     .slice(0, TOP_LIMIT);
+
+  const staffPerformance: StaffPerformanceRow[] = Array.from(
+    staffAgg.entries(),
+  )
+    .map(([staffId, s]) => {
+      const total = s.appointmentCount;
+      const phoneCounts = new Map<string, number>();
+      for (const p of s.clientPhones) {
+        phoneCounts.set(p, (phoneCounts.get(p) ?? 0) + 1);
+      }
+      let repeatClientCount = 0;
+      for (const c of phoneCounts.values()) {
+        if (c >= 2) repeatClientCount += 1;
+      }
+      const topServicesForStaff = Array.from(s.serviceMix.values())
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 3);
+
+      return {
+        staffId,
+        name: s.name,
+        appointmentCount: s.appointmentCount,
+        completedCount: s.completedCount,
+        cancelledCount: s.cancelledCount,
+        noShowCount: s.noShowCount,
+        completionRate: total > 0 ? s.completedCount / total : 0,
+        cancellationRate: total > 0 ? s.cancelledCount / total : 0,
+        noShowRate: total > 0 ? s.noShowCount / total : 0,
+        revenueCents: s.revenueCents,
+        topServices: topServicesForStaff,
+        repeatClientCount,
+      };
+    })
+    .sort((a, b) => b.appointmentCount - a.appointmentCount);
 
   return {
     totalRevenueCents,
@@ -303,6 +393,7 @@ function aggregate(
     topServices,
     topStaff,
     busyHours,
+    staffPerformance,
   };
 }
 
