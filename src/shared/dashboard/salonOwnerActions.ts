@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
+import { sendReviewRequest } from "@/shared/dashboard/sendReviewRequest";
 import {
   NAILQ_DEMO_SLUG_COOKIE,
 } from "@/shared/lib/demoDashboardCookie";
@@ -485,6 +486,14 @@ export async function updateBookingStatus(
     eventType: "booking_status_changed",
     payload: { from: cur, to: nextStatus },
   });
+
+  // Auto review request (Pro+). Fire-and-forget — silently no-ops if
+  // the plan doesn't qualify, the booking has no client_email, or a
+  // review row already exists (idempotent on booking_id). Errors are
+  // logged but never surface to the operator action result.
+  if (nextStatus === "completed") {
+    void sendReviewRequest(bookingId);
+  }
 
   return { ok: true };
 }

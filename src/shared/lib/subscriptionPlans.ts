@@ -33,6 +33,10 @@ export type PlanLimits = {
    *  count. Landing page advertises this as a Studio-tier
    *  ("premium") feature. */
   hasStaffPerformance: boolean;
+  /** Automatic review-request email when a booking flips to
+   *  `completed`. Landing-page advertises this as a Pro-tier
+   *  feature ("Tự động xin đánh giá"). */
+  hasAutoReviewRequest: boolean;
   /** Owner audit log section in Settings. */
   hasAuditLog: boolean;
 };
@@ -44,6 +48,7 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
     maxBookingsPerMonth: 50,
     hasReports: false,
     hasStaffPerformance: false,
+    hasAutoReviewRequest: false,
     hasAuditLog: false,
   },
   pro: {
@@ -52,6 +57,7 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
     maxBookingsPerMonth: Number.POSITIVE_INFINITY,
     hasReports: true,
     hasStaffPerformance: false,
+    hasAutoReviewRequest: true,
     hasAuditLog: true,
   },
   premium: {
@@ -60,6 +66,7 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
     maxBookingsPerMonth: Number.POSITIVE_INFINITY,
     hasReports: true,
     hasStaffPerformance: true,
+    hasAutoReviewRequest: true,
     hasAuditLog: true,
   },
 };
