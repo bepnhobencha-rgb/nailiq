@@ -223,3 +223,71 @@ export async function loadSuperadminAuditLogs(
 
   return { ok: true, rows, nextCursor, prevCursor };
 }
+
+export type AuditActorOption = { id: string; email: string };
+
+export type LoadAuditActorOptionsResult =
+  | { ok: true; actors: AuditActorOption[] }
+  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" };
+
+/**
+ * Lists the superadmin operators eligible to appear in the audit-log
+ * filter bar's "Actor" dropdown. Reads from `public.superadmins` so
+ * only current superadmins surface (revoked rows are hidden via the
+ * revoked_at filter).
+ */
+export async function loadAuditActorOptions(): Promise<LoadAuditActorOptionsResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "unauthorized" };
+  const role = await getSuperAdminRole(user.id);
+  if (!role) return { ok: false, error: "unauthorized" };
+  if (!AUDIT_LOG_VIEWER_ROLES.has(role)) {
+    return { ok: false, error: "forbidden" };
+  }
+
+  let admin;
+  try {
+    admin = createServiceRoleClient();
+  } catch (e) {
+    console.error("[auditLogs/actorOptions] service role", e);
+    return { ok: false, error: "server_error" };
+  }
+
+  const { data: rows, error } = (await admin
+    .from("superadmins")
+    .select("user_id, revoked_at" as never)) as {
+    data: Array<{ user_id: string; revoked_at: string | null }> | null;
+    error: unknown;
+  };
+  if (error) {
+    console.error("[auditLogs/actorOptions] query", error);
+    return { ok: false, error: "server_error" };
+  }
+
+  const activeIds = new Set<string>();
+  for (const r of rows ?? []) {
+    if (r.revoked_at === null) activeIds.add(r.user_id);
+  }
+  if (activeIds.size === 0) {
+    return { ok: true, actors: [] };
+  }
+
+  const { data: userList, error: listErr } =
+    await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (listErr) {
+    console.error("[auditLogs/actorOptions] listUsers", listErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  const actors: AuditActorOption[] = [];
+  for (const u of userList.users) {
+    if (activeIds.has(u.id) && u.email) {
+      actors.push({ id: u.id, email: u.email });
+    }
+  }
+  actors.sort((a, b) => a.email.localeCompare(b.email));
+  return { ok: true, actors };
+}
