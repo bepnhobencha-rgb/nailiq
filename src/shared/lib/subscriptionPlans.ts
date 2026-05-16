@@ -23,6 +23,9 @@ export type PlanLimits = {
   maxStaff: number;
   /** Max service catalog rows; `Infinity` for unlimited. */
   maxServices: number;
+  /** Max non-cancelled bookings per calendar month (UTC);
+   *  `Infinity` for unlimited. */
+  maxBookingsPerMonth: number;
   /** Owner reports panel (`/dashboard/[slug]/reports`). */
   hasReports: boolean;
   /** Owner audit log section in Settings. */
@@ -31,20 +34,23 @@ export type PlanLimits = {
 
 export const PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
   free: {
-    maxStaff: 3,
+    maxStaff: 1,
     maxServices: 10,
+    maxBookingsPerMonth: 50,
     hasReports: false,
     hasAuditLog: false,
   },
   pro: {
     maxStaff: 10,
     maxServices: 50,
+    maxBookingsPerMonth: Number.POSITIVE_INFINITY,
     hasReports: true,
     hasAuditLog: true,
   },
   premium: {
     maxStaff: Number.POSITIVE_INFINITY,
     maxServices: Number.POSITIVE_INFINITY,
+    maxBookingsPerMonth: Number.POSITIVE_INFINITY,
     hasReports: true,
     hasAuditLog: true,
   },
@@ -74,6 +80,7 @@ export function getPlanLimits(plan: string | null | undefined): PlanLimits {
  * - `plan_override` short-circuits subscription_plan when non-null.
  * - `feature_flags.unlimited_staff` lifts maxStaff to Infinity.
  * - `feature_flags.unlimited_services` lifts maxServices to Infinity.
+ * - `feature_flags.unlimited_bookings` lifts maxBookingsPerMonth to Infinity.
  *
  * Existing callers pass `{ subscription_plan }` only; the new fields
  * are optional and absent → no change in behaviour.
@@ -117,7 +124,8 @@ export function getEffectivePlanLimits(salon: PlanCheckSalon): PlanLimits {
 
   if (
     !readBooleanFlag(flags, "unlimited_staff") &&
-    !readBooleanFlag(flags, "unlimited_services")
+    !readBooleanFlag(flags, "unlimited_services") &&
+    !readBooleanFlag(flags, "unlimited_bookings")
   ) {
     return base;
   }
@@ -130,6 +138,9 @@ export function getEffectivePlanLimits(salon: PlanCheckSalon): PlanLimits {
     maxServices: readBooleanFlag(flags, "unlimited_services")
       ? Number.POSITIVE_INFINITY
       : base.maxServices,
+    maxBookingsPerMonth: readBooleanFlag(flags, "unlimited_bookings")
+      ? Number.POSITIVE_INFINITY
+      : base.maxBookingsPerMonth,
   };
 }
 
@@ -145,4 +156,23 @@ export function canAddService(
   currentServiceCount: number,
 ): boolean {
   return currentServiceCount < getEffectivePlanLimits(salon).maxServices;
+}
+
+/**
+ * Whether the salon can create one more non-cancelled booking this
+ * calendar month (UTC). Free is capped at 50/month per landing-page
+ * advertising; Pro/Premium unlimited. Superadmin can lift via
+ * `feature_flags.unlimited_bookings`.
+ *
+ * Walk-ins and online bookings both count — the limit is "any row
+ * landing in `public.bookings`".
+ */
+export function canCreateBooking(
+  salon: PlanCheckSalon,
+  currentMonthBookingCount: number,
+): boolean {
+  return (
+    currentMonthBookingCount <
+    getEffectivePlanLimits(salon).maxBookingsPerMonth
+  );
 }

@@ -754,6 +754,11 @@ export function useBookingFlowState(
       ) {
         setError(t.submitError);
         setSelectedAddonId(null);
+      } else if (
+        err instanceof Error &&
+        err.message === "monthly_booking_limit_reached"
+      ) {
+        setError(t.bookingErrors.monthlyLimitReached);
       } else {
         Sentry.captureException(
           err instanceof Error ? err : new Error(String(err)),

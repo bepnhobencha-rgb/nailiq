@@ -88,6 +88,8 @@ export const bookingVi: BookingMessages = {
     invalidNameChars: "Tên chứa ký tự không hợp lệ.",
     invalidEmail: "Email không hợp lệ. Ví dụ: jane@email.com",
     serviceRequired: "Vui lòng chọn dịch vụ để tiếp tục.",
+    monthlyLimitReached:
+      "Tiệm đã đạt giới hạn đặt lịch online tháng này. Vui lòng gọi điện thoại để đặt.",
   },
   clientNameLabel: "Họ tên",
   clientPhoneLabel: "Số điện thoại",

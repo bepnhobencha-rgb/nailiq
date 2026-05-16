@@ -673,6 +673,10 @@ export function BookingGroupFlow({
         setErrorMessage(groupCopy.invalidGroupSize);
         return;
       }
+      if (res.reason === "monthly_booking_limit_reached") {
+        setErrorMessage(t.bookingErrors.monthlyLimitReached);
+        return;
+      }
       // P1 #20 — granular validation reasons. Each carries a 1-indexed
       // `memberNumber` so the copy can pinpoint the problem instead
       // of showing the generic "couldn't book the group" fallback.

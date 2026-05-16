@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
 import { assertSlotWithinOpeningHours } from "@/shared/booking/assertSlotWithinOpeningHours";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
@@ -194,7 +195,9 @@ export async function submitPublicBooking(
 
   const { data: salon, error: salonErr } = await supabase
     .from("salons")
-    .select("id, profile_complete, opening_hours")
+    .select(
+      "id, profile_complete, opening_hours, subscription_plan, plan_override, feature_flags",
+    )
     .eq("slug", shopSlug)
     .single();
 
@@ -207,6 +210,20 @@ export async function submitPublicBooking(
   });
 
   if (!salon.profile_complete) throw new Error("salon_not_live");
+
+  // Enforce per-plan monthly booking cap (landing-page promise).
+  // Throws `monthly_booking_limit_reached` for the form to surface.
+  const planFields = salon as {
+    subscription_plan?: string | null;
+    plan_override?: string | null;
+    feature_flags?: Record<string, unknown> | null;
+  };
+  await assertBookingLimitAvailable(supabase, {
+    id: String(salon.id),
+    subscription_plan: planFields.subscription_plan,
+    plan_override: planFields.plan_override,
+    feature_flags: planFields.feature_flags,
+  });
 
   const closedYmdSet = parseBookingClosedDateSet(
     (salon as { booking_closed_dates?: unknown }).booking_closed_dates,

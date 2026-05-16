@@ -96,6 +96,8 @@ export const bookingEn = {
     invalidEmail:
       "Email format invalid. Example: jane@email.com",
     serviceRequired: "Please select a service to continue.",
+    monthlyLimitReached:
+      "This salon has reached its monthly online booking limit. Please call the salon to book.",
   },
   clientNameLabel: "Your name",
   clientPhoneLabel: "Phone number",
