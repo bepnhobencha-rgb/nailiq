@@ -52,7 +52,8 @@ export const SUPERADMIN_NAV: readonly SuperadminNavItem[] = [
     key: "operations",
     label: "Operations",
     href: "/superadmin/operations",
-    phaseLabel: "Coming Phase 2",
+    // Foundation V1 lit two sub-routes (feature-flags + announcements
+    // via Phase 1F). Index page surfaces them + Phase 2/3 placeholders.
     allowedRoles: ["founder", "ops_admin"],
   },
   {

@@ -106,24 +106,16 @@ export function SalonListTable({
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold tracking-[0.18em] text-nq-muted uppercase">
-            SuperAdmin · Salons
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-nq-foreground">
-            Salons{" "}
-            <span className="text-nq-muted text-base font-normal">
-              ({salons.length})
-            </span>
-          </h1>
-        </div>
-        <Link
-          href="/superadmin/salons-legacy"
-          className="text-xs font-medium text-nq-muted underline-offset-4 hover:text-nq-foreground hover:underline"
-        >
-          Legacy panel (global flags) →
-        </Link>
+      <div>
+        <p className="text-xs font-semibold tracking-[0.18em] text-nq-muted uppercase">
+          SuperAdmin · Salons
+        </p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-nq-foreground">
+          Salons{" "}
+          <span className="text-nq-muted text-base font-normal">
+            ({salons.length})
+          </span>
+        </h1>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

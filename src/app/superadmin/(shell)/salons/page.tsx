@@ -4,14 +4,13 @@ import { loadAllSalons } from "@/shared/superadmin/superadminActions";
 export const dynamic = "force-dynamic";
 
 /**
- * `/superadmin/salons` — Phase 1D salon list (read-only).
+ * `/superadmin/salons` — salon list (read-only).
  *
- * Replaces the temporary `SuperAdminPanel` render from PR #101. The
- * per-salon override controls have moved to the detail page
- * (`/superadmin/salons/[salonId]`). A small "Legacy panel" link
- * inside `SalonListTable` still routes to `SuperAdminPanel` so the
- * Global Flags admin surface stays reachable until Phase 1F lands a
- * dedicated `/superadmin/operations/feature-flags` route.
+ * Per-salon override controls live on the detail page
+ * (`/superadmin/salons/[salonId]`). Platform-wide flags moved to
+ * `/superadmin/operations/feature-flags` in Phase 1F (this
+ * supplanted the temporary "Legacy panel" link that briefly
+ * existed at `/superadmin/salons-legacy`).
  *
  * Auth + role gate runs in `(shell)/layout.tsx`, so this page can
  * assume an active superadmin.
