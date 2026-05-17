@@ -4,10 +4,13 @@ import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
 import {
   cleanReceptionistData,
   gotoReceptionistCenter,
-  RECEPTIONIST_E2E_SLUG,
   seedReceptionistCenterFixture,
   type ReceptionistCenterFixture,
 } from "./receptionist-center/helpers";
+
+// Isolated slug so this spec's beforeAll/afterAll doesn't race with the
+// receptionist-center specs that share RECEPTIONIST_E2E_SLUG across shards.
+const XSS_RC_SLUG = "e2e-booking-security-rc";
 
 test.describe("Public booking — privacy (reschedule tel)", () => {
   const slug = "e2e-booking-security";
@@ -183,7 +186,7 @@ test.describe("Walk-in name — XSS guard", () => {
   let fx: ReceptionistCenterFixture;
 
   test.beforeAll(async () => {
-    fx = await seedReceptionistCenterFixture();
+    fx = await seedReceptionistCenterFixture(XSS_RC_SLUG);
   });
 
   test.beforeEach(async () => {
@@ -191,7 +194,7 @@ test.describe("Walk-in name — XSS guard", () => {
   });
 
   test.afterAll(async () => {
-    await cleanupTestSalon(RECEPTIONIST_E2E_SLUG);
+    await cleanupTestSalon(XSS_RC_SLUG);
   });
 
   test("xss-2: Receptionist walk-in rejects script tag; submit disabled", async ({

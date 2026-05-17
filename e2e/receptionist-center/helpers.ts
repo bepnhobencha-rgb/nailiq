@@ -130,8 +130,8 @@ async function fetchServicePrice(
 }
 
 /** Full salon + catalog + baseline desk bookings (non-marker names). */
-export async function seedReceptionistCenterFixture(): Promise<ReceptionistCenterFixture> {
-  const slug = RECEPTIONIST_E2E_SLUG;
+export async function seedReceptionistCenterFixture(slugOverride?: string): Promise<ReceptionistCenterFixture> {
+  const slug = slugOverride ?? RECEPTIONIST_E2E_SLUG;
   const { cleanupTestSalon } = await import("../helpers/db");
   await cleanupTestSalon(slug);
 
