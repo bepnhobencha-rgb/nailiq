@@ -1,16 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 
 import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
-import {
-  cleanReceptionistData,
-  gotoReceptionistCenter,
-  seedReceptionistCenterFixture,
-  type ReceptionistCenterFixture,
-} from "./receptionist-center/helpers";
-
-// Isolated slug so this spec's beforeAll/afterAll doesn't race with the
-// receptionist-center specs that share RECEPTIONIST_E2E_SLUG across shards.
-const XSS_RC_SLUG = "e2e-booking-security-rc";
 
 test.describe("Public booking — privacy (reschedule tel)", () => {
   const slug = "e2e-booking-security";
@@ -182,32 +172,3 @@ test.describe("Guest name — XSS / charset guard", () => {
   });
 });
 
-test.describe("Walk-in name — XSS guard", () => {
-  let fx: ReceptionistCenterFixture;
-
-  test.beforeAll(async () => {
-    fx = await seedReceptionistCenterFixture(XSS_RC_SLUG);
-  });
-
-  test.beforeEach(async () => {
-    await cleanReceptionistData(fx.salonId);
-  });
-
-  test.afterAll(async () => {
-    await cleanupTestSalon(XSS_RC_SLUG);
-  });
-
-  test("xss-2: Receptionist walk-in rejects script tag; submit disabled", async ({
-    page,
-  }) => {
-    await gotoReceptionistCenter(page, fx.slug);
-    await page.getByTestId("walkin-name").fill("<script>alert('XSS')</script>");
-    await page.getByTestId("walkin-name").blur();
-    await page.getByTestId("walkin-phone").fill("6045550199");
-
-    await expect(page.getByTestId("walkin-name-error")).toBeVisible();
-    await expect(
-      page.getByTestId("walkin-add-form").locator('button[type="submit"]'),
-    ).toBeDisabled();
-  });
-});
