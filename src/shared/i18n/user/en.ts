@@ -243,29 +243,6 @@ export type UserMessages = {
         branding: { name: string; price: string; description: string };
       };
     };
-    /** Comparison table — NailIQ vs major competitors. Rendered
-     *  between Features and How-It-Works to validate the
-     *  "3-5× cheaper than Booksy" claim made in the hero. */
-    compare: {
-      eyebrow: string;
-      h2: string;
-      sub: string;
-      /** Column headers; first cell is the row label column, the
-       *  rest are competitor names. NailIQ is always the second
-       *  column so the highlight ring is positioned consistently. */
-      headers: ReadonlyArray<string>;
-      /** Each row: first string is the feature label, then one cell
-       *  per competitor column. All cells are strings (the i18n
-       *  validator forbids non-string atoms). Sentinel values
-       *  `"✓"` and `"✕"` are detected by the component and rendered
-       *  as green check / muted X chips; any other string is shown
-       *  verbatim (e.g. "$29/mo", "15 min"). */
-      rows: ReadonlyArray<{
-        label: string;
-        cells: ReadonlyArray<string>;
-      }>;
-      footnote: string;
-    };
     /** FAQ accordion — addresses pre-purchase friction from
      *  salon owner conversations. Click each Q to reveal A. */
     faq: {
@@ -1714,41 +1691,6 @@ export const userEn: UserMessages = {
           description: "Custom luxury branding package",
         },
       },
-    },
-    compare: {
-      eyebrow: "Why NailIQ",
-      h2: "Built for nail salons — not generic appointment software",
-      sub:
-        "Honest comparison against the three tools we hear most often. Competitor prices are list rates as of 2026; check their sites for current promos.",
-      headers: ["Feature", "NailIQ", "Booksy", "Square Appts", "Mangomint"],
-      rows: [
-        {
-          label: "Starting price",
-          cells: ["$29/mo", "$30/mo + add-ons", "$29/loc", "$165/mo"],
-        },
-        {
-          label: "Vietnamese UI",
-          cells: ["✓", "✕", "✕", "✕"],
-        },
-        {
-          label: "Walk-in queue",
-          cells: ["✓", "Limited", "✕", "✓"],
-        },
-        {
-          label: "Setup time",
-          cells: ["15 min", "2-3 days", "1-2 days", "1-2 days"],
-        },
-        {
-          label: "Transaction fees",
-          cells: ["None", "None", "2.6% + 10¢", "~1-3% (POS)"],
-        },
-        {
-          label: "Free trial",
-          cells: ["14 days, no card", "7 days, card", "30 days, card", "Demo only"],
-        },
-      ],
-      footnote:
-        "Comparisons reflect public pricing pages at time of writing. NailIQ pricing and feature claims map directly to the plan grid above.",
     },
     faq: {
       eyebrow: "FAQ",
