@@ -24,14 +24,39 @@ jobs:
       - run: npm run check:i18n
 
   e2e:
-    name: E2E (Playwright) — shard ${{ matrix.shard }}/4
+    name: E2E (Playwright) — ${{ matrix.name }}
     runs-on: ubuntu-latest
     needs: i18n-check
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        include:
+          # Shard 1: all non-receptionist-center specs.
+          - shard: 1
+            name: "non-RC tests"
+            testpath: >-
+              e2e/accessibility
+              e2e/booking-conflict.spec.ts
+              e2e/booking-errors.spec.ts
+              e2e/booking-security.spec.ts
+              e2e/booking-validation.spec.ts
+              e2e/booking.spec.ts
+              e2e/content
+              e2e/dashboard.spec.ts
+              e2e/group-booking
+              e2e/landing-funnel.spec.ts
+              e2e/register.spec.ts
+              e2e/superadmin
+          # Shard 2: ALL receptionist-center specs in ONE shard.
+          # RECEPTIONIST_E2E_SLUG is shared across spec files — they all call
+          # seedReceptionistCenterFixture() which does cleanupTestSalon() first.
+          # If RC specs were split across multiple parallel shards, simultaneous
+          # cleanupTestSalon calls would race and cause unique-slug INSERT failures.
+          # Keeping all RC specs in a single serial shard eliminates that race.
+          - shard: 2
+            name: "receptionist-center"
+            testpath: "e2e/receptionist-center"
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
@@ -112,10 +137,16 @@ jobs:
             echo "::notice::Non-PR run — chromium + mobile"
           fi
       - name: Run E2E tests
-        # Shard X/4 — Playwright shards by test file deterministically so
-        # the 4 parallel jobs collectively cover the full suite. Each shard
-        # still runs a single worker to keep DB-touching specs serialised.
-        run: npx playwright test ${{ steps.scope.outputs.specs }} ${{ steps.projects.outputs.flag }} --shard=${{ matrix.shard }}/4 --reporter=list,html,json
+        # Full mode: each shard runs its dedicated spec paths (matrix.testpath).
+        # Explicit path-based splitting replaces numeric --shard=X/N sharding so
+        # receptionist-center specs all land in one shard and avoid fixture races.
+        # DB-free mode (no service role key): fall back to content + a11y only.
+        run: |
+          if [ "${{ steps.scope.outputs.mode }}" = "full" ]; then
+            npx playwright test ${{ matrix.testpath }} ${{ steps.projects.outputs.flag }} --reporter=list,html,json
+          else
+            npx playwright test ${{ steps.scope.outputs.specs }} ${{ steps.projects.outputs.flag }} --reporter=list,html,json
+          fi
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
       - name: Summarize results
