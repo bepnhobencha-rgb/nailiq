@@ -216,10 +216,12 @@ export async function pickDateInCalendar(
   for (let i = 0; i < 12; i++) {
     const cell = page.locator(`[data-ymd="${ymd}"]`);
     if ((await cell.count()) > 0) {
-      // `force` because some calendar cells live behind the
-      // Next.js dev-overlay portal at certain viewport widths;
-      // production has no overlay so this is a test-env shim.
-      await cell.first().click({ force: true });
+      // `evaluate` dispatches the click directly to the DOM element,
+      // bypassing the Next.js dev-overlay portal that sits on top at
+      // desktop viewport widths and intercepts coordinate-based clicks
+      // (including `force: true`). The native click() bubbles through
+      // React's delegated event system and triggers onClick normally.
+      await cell.first().evaluate((el) => (el as HTMLButtonElement).click());
       return;
     }
     await page.getByTestId("calendar-next-month").click();

@@ -306,6 +306,8 @@ function StaffTimelineGridImpl({
     <div
       ref={scrollRef}
       data-testid="staff-timeline-grid"
+      // tabIndex allows keyboard users to scroll the timeline grid in Safari (scrollable-region-focusable).
+      tabIndex={0}
       className={cn("h-full min-h-0 overflow-auto", assignMode && "cursor-copy")}
     >
       <div className="inline-flex min-w-max flex-row">

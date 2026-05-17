@@ -60,12 +60,14 @@ export function LandingNavbar() {
           />
           <Link
             href="/login"
+            data-testid="nav-sign-in"
             className="text-sm text-nq-muted transition hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg rounded-md px-2 py-1"
           >
             {t.signIn}
           </Link>
           <Link
             href="/register"
+            data-testid="nav-try-free"
             className="inline-flex items-center justify-center rounded-full border border-nq-primary/40 bg-nq-primary px-4 py-2 text-sm font-semibold text-nq-bg shadow-[0_2px_12px_rgba(212,175,55,0.25)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
           >
             {t.tryFree}
@@ -119,6 +121,7 @@ export function LandingNavbar() {
           <Link
             href="/login"
             onClick={closeSheet}
+            data-testid="nav-mobile-sign-in"
             className="rounded-xl border border-nq-border/40 bg-nq-surface/40 px-4 py-3 text-sm text-nq-foreground"
           >
             {t.signIn}
@@ -126,6 +129,7 @@ export function LandingNavbar() {
           <Link
             href="/register"
             onClick={closeSheet}
+            data-testid="nav-mobile-try-free"
             className="rounded-xl bg-nq-primary px-4 py-3 text-center text-sm font-semibold text-nq-bg"
           >
             {t.tryFree}

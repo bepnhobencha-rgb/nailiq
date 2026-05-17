@@ -43,6 +43,7 @@ export function UndoToast({
       )}
       aria-live="polite"
       aria-hidden={!open}
+      inert={!open}
     >
       <div
         className={cn(
