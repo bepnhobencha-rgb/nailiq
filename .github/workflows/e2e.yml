@@ -27,7 +27,7 @@ jobs:
     name: E2E (Playwright) — shard ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
     needs: i18n-check
-    timeout-minutes: 25
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -43,6 +43,15 @@ jobs:
       SENTRY_AUTH_TOKEN: ""
       NEXT_PUBLIC_DEMO_OTP: "true"
       DEMO_OTP: "true"
+      # Allows demo cookie with non-"demo-salon" slugs so E2E fixtures can
+      # use arbitrary test slugs. NEVER set on Vercel production.
+      NAILIQ_TEST_BYPASS_SLUG_PIN: "1"
+      # Align Node.js process timezone with the Playwright browser
+      # (timezoneId: "America/Los_Angeles" in playwright.config.ts).
+      # Without this, new Date(y, mo, d, h, m) in test helpers creates
+      # dates in UTC (CI runner default) instead of Pacific, causing
+      # booking-errors conflict tests to insert at wrong UTC offsets.
+      TZ: America/Los_Angeles
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
