@@ -1,25 +1,39 @@
-import { test, expect } from "./test";
+import { test, expect } from "@playwright/test";
 
+import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   gotoReceptionistCenter,
+  RECEPTIONIST_E2E_SLUG,
+  seedReceptionistCenterFixture,
   seedWalkin,
   testClientNameMarker,
+  type ReceptionistCenterFixture,
 } from "./helpers";
 
-test.beforeEach(async ({ rcFixture }) => {
-  await cleanReceptionistData(rcFixture.salonId);
+let fx: ReceptionistCenterFixture;
+
+test.beforeAll(async () => {
+  fx = await seedReceptionistCenterFixture();
+});
+
+test.beforeEach(async () => {
+  await cleanReceptionistData(fx.salonId);
+});
+
+test.afterAll(async () => {
+  await cleanupTestSalon(RECEPTIONIST_E2E_SLUG);
 });
 
 test.describe("date-tab-sync", () => {
-  test("case dt-1: walk-in queue hidden when viewing yesterday", async ({ page, rcFixture }) => {
+  test("case dt-1: walk-in queue hidden when viewing yesterday", async ({ page }) => {
     const marker = testClientNameMarker();
-    await seedWalkin(rcFixture.salonId, {
+    await seedWalkin(fx.salonId, {
       clientName: marker,
-      serviceId: rcFixture.serviceIds[0]!,
+      serviceId: fx.serviceIds[0]!,
     });
 
-    await gotoReceptionistCenter(page, rcFixture.slug);
+    await gotoReceptionistCenter(page, fx.slug);
     await expect(page.getByTestId("walkin-queue-sidebar")).toBeVisible();
     await expect(
       page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker }),
@@ -31,14 +45,14 @@ test.describe("date-tab-sync", () => {
     await expect(page.getByTestId("staff-timeline-grid")).toBeVisible();
   });
 
-  test("case dt-2: walk-in queue visible again when viewing today", async ({ page, rcFixture }) => {
+  test("case dt-2: walk-in queue visible again when viewing today", async ({ page }) => {
     const marker = testClientNameMarker();
-    await seedWalkin(rcFixture.salonId, {
+    await seedWalkin(fx.salonId, {
       clientName: marker,
-      serviceId: rcFixture.serviceIds[0]!,
+      serviceId: fx.serviceIds[0]!,
     });
 
-    await gotoReceptionistCenter(page, rcFixture.slug);
+    await gotoReceptionistCenter(page, fx.slug);
     await expect(
       page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker }),
     ).toBeVisible({ timeout: 15_000 });

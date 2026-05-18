@@ -1,12 +1,16 @@
-import { test, expect } from "./test";
+import { test, expect } from "@playwright/test";
 
+import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   fetchBookingDeskSnapshot,
   gotoReceptionistCenter,
   isoAtUtcYmdHourMinute,
+  RECEPTIONIST_E2E_SLUG,
   seedDeskBooking,
+  seedReceptionistCenterFixture,
   testClientNameMarker,
+  type ReceptionistCenterFixture,
 } from "./helpers";
 
 /** Wall duration for desk row (matches `performEditBooking` / seed helpers). */
@@ -20,19 +24,29 @@ function salonMinutesUtc(hour: number, minute: number): number {
   return hour * 60 + minute;
 }
 
-test.beforeEach(async ({ rcFixture }) => {
-  await cleanReceptionistData(rcFixture.salonId);
+let fx: ReceptionistCenterFixture;
+
+test.beforeAll(async () => {
+  fx = await seedReceptionistCenterFixture();
+});
+
+test.beforeEach(async () => {
+  await cleanReceptionistData(fx.salonId);
+});
+
+test.afterAll(async () => {
+  await cleanupTestSalon(RECEPTIONIST_E2E_SLUG);
 });
 
 test.describe("Receptionist desk — edit booking", () => {
-  test("eb-1: Edit time successfully", async ({ page, rcFixture }) => {
-    const staffX = rcFixture.conflictStaffId;
-    const manicureSvc = rcFixture.serviceIds[1]!; /* E2E Polish Change — ~30m, $25 */
+  test("eb-1: Edit time successfully", async ({ page }) => {
+    const staffX = fx.conflictStaffId;
+    const manicureSvc = fx.serviceIds[1]!; /* E2E Polish Change — ~30m, $25 */
     const marker = testClientNameMarker();
 
-    const start2pm = isoAtUtcYmdHourMinute(rcFixture.ymdUtc, 14, 0);
+    const start2pm = isoAtUtcYmdHourMinute(fx.ymdUtc, 14, 0);
     const end2pm = endIsoFromDurationBuffer(start2pm, 30, 10);
-    const bookingId = await seedDeskBooking(rcFixture.salonId, {
+    const bookingId = await seedDeskBooking(fx.salonId, {
       clientName: marker,
       serviceId: manicureSvc,
       staffId: staffX,
@@ -41,7 +55,7 @@ test.describe("Receptionist desk — edit booking", () => {
       status: "pending",
     });
 
-    await gotoReceptionistCenter(page, rcFixture.slug, { dateYmd: rcFixture.ymdUtc });
+    await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc });
     await page.getByTestId(`booking-block-${bookingId}`).click();
     await expect(page.getByTestId("booking-detail-drawer")).toBeVisible();
     await expect(page.getByTestId("edit-booking-button")).toBeVisible();
@@ -57,25 +71,25 @@ test.describe("Receptionist desk — edit booking", () => {
     await expect(page.getByTestId("edit-booking-form")).toHaveCount(0, { timeout: 15_000 });
 
     await expect
-      .poll(async () => (await fetchBookingDeskSnapshot(rcFixture.salonId, bookingId))?.start_time_utc, {
+      .poll(async () => (await fetchBookingDeskSnapshot(fx.salonId, bookingId))?.start_time_utc, {
         timeout: 25_000,
       })
-      .toBe(isoAtUtcYmdHourMinute(rcFixture.ymdUtc, 15, 0));
+      .toBe(isoAtUtcYmdHourMinute(fx.ymdUtc, 15, 0));
 
     const block = page.getByTestId(`booking-block-${bookingId}`);
     await expect(block).toBeVisible();
     await expect(block).toContainText(/3:00\s*(PM)?/);
   });
 
-  test("eb-2: Edit staff successfully", async ({ page, rcFixture }) => {
-    const staffX = rcFixture.conflictStaffId;
-    const staffY = rcFixture.freeStaffId;
-    const svc = rcFixture.serviceIds[1]!;
+  test("eb-2: Edit staff successfully", async ({ page }) => {
+    const staffX = fx.conflictStaffId;
+    const staffY = fx.freeStaffId;
+    const svc = fx.serviceIds[1]!;
     const marker = testClientNameMarker();
 
-    const startIso = isoAtUtcYmdHourMinute(rcFixture.ymdUtc, 13, 0);
+    const startIso = isoAtUtcYmdHourMinute(fx.ymdUtc, 13, 0);
     const endIso = endIsoFromDurationBuffer(startIso, 30, 10);
-    const bookingId = await seedDeskBooking(rcFixture.salonId, {
+    const bookingId = await seedDeskBooking(fx.salonId, {
       clientName: marker,
       serviceId: svc,
       staffId: staffX,
@@ -84,7 +98,7 @@ test.describe("Receptionist desk — edit booking", () => {
       status: "pending",
     });
 
-    await gotoReceptionistCenter(page, rcFixture.slug, { dateYmd: rcFixture.ymdUtc });
+    await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc });
     await page.getByTestId(`booking-block-${bookingId}`).click();
     await page.getByTestId("edit-booking-button").click();
     await expect(page.getByTestId("edit-booking-form")).toBeVisible();
@@ -95,7 +109,7 @@ test.describe("Receptionist desk — edit booking", () => {
     await expect(page.getByTestId("edit-booking-form")).toHaveCount(0, { timeout: 15_000 });
 
     await expect
-      .poll(async () => (await fetchBookingDeskSnapshot(rcFixture.salonId, bookingId))?.staff_id, {
+      .poll(async () => (await fetchBookingDeskSnapshot(fx.salonId, bookingId))?.staff_id, {
         timeout: 25_000,
       })
       .toBe(staffY);
@@ -104,15 +118,15 @@ test.describe("Receptionist desk — edit booking", () => {
     await expect(page.getByTestId("booking-detail-drawer")).toContainText("Sam");
   });
 
-  test("eb-3: Edit service updates price + duration", async ({ page, rcFixture }) => {
-    const staffX = rcFixture.conflictStaffId;
-    const polishId = rcFixture.serviceIds[1]!;
-    const deluxePedId = rcFixture.serviceIds[2]!;
+  test("eb-3: Edit service updates price + duration", async ({ page }) => {
+    const staffX = fx.conflictStaffId;
+    const polishId = fx.serviceIds[1]!;
+    const deluxePedId = fx.serviceIds[2]!;
     const marker = testClientNameMarker();
 
-    const startIso = isoAtUtcYmdHourMinute(rcFixture.ymdUtc, 11, 0);
+    const startIso = isoAtUtcYmdHourMinute(fx.ymdUtc, 11, 0);
     const endIsoShort = endIsoFromDurationBuffer(startIso, 30, 10);
-    const bookingId = await seedDeskBooking(rcFixture.salonId, {
+    const bookingId = await seedDeskBooking(fx.salonId, {
       clientName: marker,
       serviceId: polishId,
       staffId: staffX,
@@ -121,7 +135,7 @@ test.describe("Receptionist desk — edit booking", () => {
       status: "pending",
     });
 
-    await gotoReceptionistCenter(page, rcFixture.slug, { dateYmd: rcFixture.ymdUtc });
+    await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc });
     await page.getByTestId(`booking-block-${bookingId}`).click();
     await page.getByTestId("edit-booking-button").click();
     await expect(page.getByTestId("edit-booking-form")).toBeVisible();
@@ -136,7 +150,7 @@ test.describe("Receptionist desk — edit booking", () => {
     await expect
       .poll(
         async () => {
-          const row = await fetchBookingDeskSnapshot(rcFixture.salonId, bookingId);
+          const row = await fetchBookingDeskSnapshot(fx.salonId, bookingId);
           if (!row) return null;
           return {
             service_id: row.service_id,
@@ -158,17 +172,17 @@ test.describe("Receptionist desk — edit booking", () => {
     await expect.poll(async () => (await block.boundingBox())?.width ?? 0).toBeGreaterThan(110);
   });
 
-  test("eb-4: Conflict prevented", async ({ page, rcFixture }) => {
-    const staffX = rcFixture.conflictStaffId;
-    const deluxeId = rcFixture.serviceIds[2]!;
-    const polishId = rcFixture.serviceIds[1]!;
+  test("eb-4: Conflict prevented", async ({ page }) => {
+    const staffX = fx.conflictStaffId;
+    const deluxeId = fx.serviceIds[2]!;
+    const polishId = fx.serviceIds[1]!;
 
     const markerA = testClientNameMarker();
     const markerB = testClientNameMarker();
 
-    const startA = isoAtUtcYmdHourMinute(rcFixture.ymdUtc, 14, 0);
+    const startA = isoAtUtcYmdHourMinute(fx.ymdUtc, 14, 0);
     const endA = endIsoFromDurationBuffer(startA, 60, 15);
-    const bookingAId = await seedDeskBooking(rcFixture.salonId, {
+    const bookingAId = await seedDeskBooking(fx.salonId, {
       clientName: markerA,
       serviceId: deluxeId,
       staffId: staffX,
@@ -177,9 +191,9 @@ test.describe("Receptionist desk — edit booking", () => {
       status: "pending",
     });
 
-    const startB = isoAtUtcYmdHourMinute(rcFixture.ymdUtc, 16, 0);
+    const startB = isoAtUtcYmdHourMinute(fx.ymdUtc, 16, 0);
     const endB = endIsoFromDurationBuffer(startB, 30, 10);
-    await seedDeskBooking(rcFixture.salonId, {
+    await seedDeskBooking(fx.salonId, {
       clientName: markerB,
       serviceId: polishId,
       staffId: staffX,
@@ -188,10 +202,10 @@ test.describe("Receptionist desk — edit booking", () => {
       status: "pending",
     });
 
-    const beforeConflict = await fetchBookingDeskSnapshot(rcFixture.salonId, bookingAId);
+    const beforeConflict = await fetchBookingDeskSnapshot(fx.salonId, bookingAId);
     expect(beforeConflict).not.toBeNull();
 
-    await gotoReceptionistCenter(page, rcFixture.slug, { dateYmd: rcFixture.ymdUtc });
+    await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc });
     await page.getByTestId(`booking-block-${bookingAId}`).click();
     await page.getByTestId("edit-booking-button").click();
     await expect(page.getByTestId("edit-booking-form")).toBeVisible();
@@ -203,18 +217,18 @@ test.describe("Receptionist desk — edit booking", () => {
     await expect(err).toBeVisible({ timeout: 15_000 });
     await expect(err).toContainText(markerB);
 
-    const after = await fetchBookingDeskSnapshot(rcFixture.salonId, bookingAId);
+    const after = await fetchBookingDeskSnapshot(fx.salonId, bookingAId);
     expect(after).toEqual(beforeConflict);
   });
 
-  test("eb-5: Edit blocked for in_progress", async ({ page, rcFixture }) => {
-    const taylorStaff = rcFixture.staffIds[2]!;
-    const polishId = rcFixture.serviceIds[1]!;
+  test("eb-5: Edit blocked for in_progress", async ({ page }) => {
+    const taylorStaff = fx.staffIds[2]!;
+    const polishId = fx.serviceIds[1]!;
     const marker = testClientNameMarker();
 
-    const startIso = isoAtUtcYmdHourMinute(rcFixture.ymdUtc, 17, 0);
+    const startIso = isoAtUtcYmdHourMinute(fx.ymdUtc, 17, 0);
     const endIso = endIsoFromDurationBuffer(startIso, 30, 10);
-    const bookingId = await seedDeskBooking(rcFixture.salonId, {
+    const bookingId = await seedDeskBooking(fx.salonId, {
       clientName: marker,
       serviceId: polishId,
       staffId: taylorStaff,
@@ -223,7 +237,7 @@ test.describe("Receptionist desk — edit booking", () => {
       status: "in_progress",
     });
 
-    await gotoReceptionistCenter(page, rcFixture.slug, { dateYmd: rcFixture.ymdUtc });
+    await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc });
     await page.getByTestId(`booking-block-${bookingId}`).click();
     await expect(page.getByTestId("booking-detail-drawer")).toBeVisible();
     await expect(page.getByTestId("edit-booking-button")).toHaveCount(0);

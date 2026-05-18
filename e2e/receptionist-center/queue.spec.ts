@@ -1,5 +1,6 @@
-import { test, expect } from "./test";
+import { test, expect } from "@playwright/test";
 
+import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   clickAssignSlot,
@@ -8,21 +9,36 @@ import {
   fillWalkinGuestContact,
   getBookingRow,
   gotoReceptionistCenter,
+  RECEPTIONIST_E2E_SLUG,
+  seedReceptionistCenterFixture,
   seedWalkin,
   testClientNameMarker,
+  type ReceptionistCenterFixture,
 } from "./helpers";
 
-test.beforeEach(async ({ rcFixture }) => {
-  await cleanReceptionistData(rcFixture.salonId);
+let fx: ReceptionistCenterFixture;
+
+test.beforeAll(async () => {
+  fx = await seedReceptionistCenterFixture();
+});
+
+test.beforeEach(async () => {
+  await cleanReceptionistData(fx.salonId);
+});
+
+test.afterAll(async () => {
+  await cleanupTestSalon(RECEPTIONIST_E2E_SLUG);
 });
 
 test.describe("Receptionist queue + assign", () => {
-  test("case 1: add walk-in via form — queue item + status pill waiting count", async ({ page, rcFixture }) => {
-    await gotoReceptionistCenter(page, rcFixture.slug);
+  test("case 1: add walk-in via form — queue item + status pill waiting count", async ({
+    page,
+  }) => {
+    await gotoReceptionistCenter(page, fx.slug);
     const marker = testClientNameMarker();
 
     await fillWalkinGuestContact(page, marker);
-    await page.locator(`#walkin-service-${rcFixture.serviceIds[0]}`).click();
+    await page.locator(`#walkin-service-${fx.serviceIds[0]}`).click();
     await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
 
     await expect(
@@ -38,12 +54,12 @@ test.describe("Receptionist queue + assign", () => {
     await expect(page.getByTestId("walkin-phone")).toHaveValue("");
   });
 
-  test("case 2: assign walk-in — grid block + queue cleared + undo toast", async ({ page, rcFixture }) => {
-    await gotoReceptionistCenter(page, rcFixture.slug);
+  test("case 2: assign walk-in — grid block + queue cleared + undo toast", async ({ page }) => {
+    await gotoReceptionistCenter(page, fx.slug);
     const marker = testClientNameMarker();
 
     await fillWalkinGuestContact(page, marker);
-    await page.locator(`#walkin-service-${rcFixture.serviceIds[0]}`).click();
+    await page.locator(`#walkin-service-${fx.serviceIds[0]}`).click();
     await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
 
     const row = page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker });
@@ -54,7 +70,7 @@ test.describe("Receptionist queue + assign", () => {
 
     await page.getByTestId(`queue-assign-${bookingId}`).click();
 
-    await clickAssignSlot(page, rcFixture.freeStaffId, rcFixture.noonSlotIndex);
+    await clickAssignSlot(page, fx.freeStaffId, fx.noonSlotIndex);
 
     await expect(
       page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker }),
@@ -67,15 +83,15 @@ test.describe("Receptionist queue + assign", () => {
 
     await expect(page.getByTestId("undo-toast")).toBeVisible({ timeout: 15_000 });
 
-    const rowAfter = await getBookingRow(rcFixture.salonId, bookingId);
+    const rowAfter = await getBookingRow(fx.salonId, bookingId);
     expect(rowAfter?.status).toBe("confirmed");
   });
 
-  test("case 4: parallel assign — single confirmed row for walk-in id", async ({ browser, rcFixture }) => {
+  test("case 4: parallel assign — single confirmed row for walk-in id", async ({ browser }) => {
     const marker = testClientNameMarker();
-    const bookingId = await seedWalkin(rcFixture.salonId, {
+    const bookingId = await seedWalkin(fx.salonId, {
       clientName: marker,
-      serviceId: rcFixture.serviceIds[0]!,
+      serviceId: fx.serviceIds[0]!,
     });
 
     const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
@@ -88,7 +104,7 @@ test.describe("Receptionist queue + assign", () => {
 
     const cookie = {
       name: "nailiq-demo-slug",
-      value: rcFixture.slug,
+      value: fx.slug,
       domain: hostname === "127.0.0.1" ? "127.0.0.1" : hostname === "localhost" ? "localhost" : hostname,
       path: "/" as const,
     };
@@ -101,8 +117,8 @@ test.describe("Receptionist queue + assign", () => {
     const p1 = await ctx1.newPage();
     const p2 = await ctx2.newPage();
     try {
-      await gotoReceptionistCenter(p1, rcFixture.slug);
-      await gotoReceptionistCenter(p2, rcFixture.slug);
+      await gotoReceptionistCenter(p1, fx.slug);
+      await gotoReceptionistCenter(p2, fx.slug);
 
       await expect(p1.getByTestId(`queue-item-${bookingId}`)).toBeVisible({ timeout: 15_000 });
       await expect(p2.getByTestId(`queue-item-${bookingId}`)).toBeVisible({ timeout: 15_000 });
@@ -116,17 +132,17 @@ test.describe("Receptionist queue + assign", () => {
       await expect(p2.getByTestId("staff-timeline-grid")).toHaveClass(/cursor-copy/, { timeout: 15_000 });
 
       const slotClick = async (p: import("@playwright/test").Page) => {
-        await clickAssignSlot(p, rcFixture.freeStaffId, rcFixture.noonSlotIndex);
+        await clickAssignSlot(p, fx.freeStaffId, fx.noonSlotIndex);
       };
       /** Stagger so both contexts hit assign close together without identical millisecond timestamps. */
       await Promise.all([slotClick(p1), (async () => { await p2.waitForTimeout(120); await slotClick(p2); })()]);
 
       await expect
-        .poll(async () => countBookingsForClient(rcFixture.salonId, marker))
+        .poll(async () => countBookingsForClient(fx.salonId, marker))
         .toBe(1);
 
       await expect
-        .poll(async () => (await getBookingRow(rcFixture.salonId, bookingId))?.status, { timeout: 15_000 })
+        .poll(async () => (await getBookingRow(fx.salonId, bookingId))?.status, { timeout: 15_000 })
         .toBe("confirmed");
     } finally {
       await ctx1.close();

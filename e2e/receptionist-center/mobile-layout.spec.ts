@@ -1,12 +1,26 @@
-import { test, expect } from "./test";
+import { test, expect } from "@playwright/test";
 
+import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   gotoReceptionistCenter,
+  RECEPTIONIST_E2E_SLUG,
+  seedReceptionistCenterFixture,
+  type ReceptionistCenterFixture,
 } from "./helpers";
 
-test.beforeEach(async ({ rcFixture }) => {
-  await cleanReceptionistData(rcFixture.salonId);
+let fx: ReceptionistCenterFixture;
+
+test.beforeAll(async () => {
+  fx = await seedReceptionistCenterFixture();
+});
+
+test.beforeEach(async () => {
+  await cleanReceptionistData(fx.salonId);
+});
+
+test.afterAll(async () => {
+  await cleanupTestSalon(RECEPTIONIST_E2E_SLUG);
 });
 
 /**
@@ -14,9 +28,9 @@ test.beforeEach(async ({ rcFixture }) => {
  * Real iPad Safari behavior remains manual (see deliverables).
  */
 test.describe("Mobile layout", () => {
-  test("case 7: narrow viewport places walk-in form above timeline", async ({ page, rcFixture }) => {
+  test("case 7: narrow viewport places walk-in form above timeline", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await gotoReceptionistCenter(page, rcFixture.slug);
+    await gotoReceptionistCenter(page, fx.slug);
 
     const form = page.getByTestId("walkin-add-form");
     const grid = page.getByTestId("staff-timeline-grid");

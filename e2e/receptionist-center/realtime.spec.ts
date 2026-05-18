@@ -1,14 +1,28 @@
-import { test, expect } from "./test";
+import { test, expect } from "@playwright/test";
 
+import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   fillWalkinGuestContact,
   gotoReceptionistCenter,
+  RECEPTIONIST_E2E_SLUG,
+  seedReceptionistCenterFixture,
   testClientNameMarker,
+  type ReceptionistCenterFixture,
 } from "./helpers";
 
-test.beforeEach(async ({ rcFixture }) => {
-  await cleanReceptionistData(rcFixture.salonId);
+let fx: ReceptionistCenterFixture;
+
+test.beforeAll(async () => {
+  fx = await seedReceptionistCenterFixture();
+});
+
+test.beforeEach(async () => {
+  await cleanReceptionistData(fx.salonId);
+});
+
+test.afterAll(async () => {
+  await cleanupTestSalon(RECEPTIONIST_E2E_SLUG);
 });
 
 /**
@@ -16,7 +30,7 @@ test.beforeEach(async ({ rcFixture }) => {
  * We assert cross-tab consistency within polling window — not true realtime latency.
  */
 test.describe("Cross-tab queue visibility", () => {
-  test("case 3: second tab observes walk-in within polling window", async ({ browser, rcFixture }) => {
+  test("case 3: second tab observes walk-in within polling window", async ({ browser }) => {
     const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
     let hostname = "localhost";
     try {
@@ -27,7 +41,7 @@ test.describe("Cross-tab queue visibility", () => {
 
     const cookie = {
       name: "nailiq-demo-slug",
-      value: rcFixture.slug,
+      value: fx.slug,
       domain: hostname === "127.0.0.1" ? "127.0.0.1" : hostname === "localhost" ? "localhost" : hostname,
       path: "/" as const,
     };
@@ -41,13 +55,13 @@ test.describe("Cross-tab queue visibility", () => {
     const follower = await ctx2.newPage();
 
     try {
-      await gotoReceptionistCenter(leader, rcFixture.slug);
-      await gotoReceptionistCenter(follower, rcFixture.slug);
+      await gotoReceptionistCenter(leader, fx.slug);
+      await gotoReceptionistCenter(follower, fx.slug);
 
       const marker = testClientNameMarker();
 
       await fillWalkinGuestContact(leader, marker);
-      await leader.locator(`#walkin-service-${rcFixture.serviceIds[0]}`).click();
+      await leader.locator(`#walkin-service-${fx.serviceIds[0]}`).click();
       await leader.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
 
       await expect(

@@ -1,29 +1,43 @@
-import { test, expect } from "./test";
+import { test, expect } from "@playwright/test";
 
+import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   fillWalkinGuestContact,
   getBookingRow,
   gotoReceptionistCenter,
   moveMouseToAssignSlot,
+  RECEPTIONIST_E2E_SLUG,
   seedDeskBooking,
+  seedReceptionistCenterFixture,
   testClientNameMarker,
+  type ReceptionistCenterFixture,
 } from "./helpers";
 
-function isoHm(ymdUtc: string, h: number, m: number): string {
-  const [y, mo, d] = ymdUtc.split("-").map(Number);
+let fx: ReceptionistCenterFixture;
+
+function isoHm(h: number, m: number): string {
+  const [y, mo, d] = fx.ymdUtc.split("-").map(Number);
   return new Date(Date.UTC(y, mo - 1, d, h, m, 0)).toISOString();
 }
 
-test.beforeEach(async ({ rcFixture }) => {
-  await cleanReceptionistData(rcFixture.salonId);
+test.beforeAll(async () => {
+  fx = await seedReceptionistCenterFixture();
+});
+
+test.beforeEach(async () => {
+  await cleanReceptionistData(fx.salonId);
+});
+
+test.afterAll(async () => {
+  await cleanupTestSalon(RECEPTIONIST_E2E_SLUG);
 });
 
 test.describe("Receptionist grid render + ghost", () => {
-  test("case 5: seeded appointment renders on grid without walk-in border", async ({ page, rcFixture }) => {
-    await gotoReceptionistCenter(page, rcFixture.slug);
+  test("case 5: seeded appointment renders on grid without walk-in border", async ({ page }) => {
+    await gotoReceptionistCenter(page, fx.slug);
 
-    const block = page.getByTestId(`booking-block-${rcFixture.displayApptBookingId}`);
+    const block = page.getByTestId(`booking-block-${fx.displayApptBookingId}`);
     await expect(block).toBeVisible({ timeout: 15_000 });
 
     const walkinBorder = await block.evaluate((el) =>
@@ -32,18 +46,18 @@ test.describe("Receptionist grid render + ghost", () => {
     expect(parseFloat(walkinBorder)).toBe(0);
   });
 
-  test("case 6: cancel booking hides block and sets DB cancelled", async ({ page, rcFixture }) => {
+  test("case 6: cancel booking hides block and sets DB cancelled", async ({ page }) => {
     const marker = testClientNameMarker();
-    const id = await seedDeskBooking(rcFixture.salonId, {
+    const id = await seedDeskBooking(fx.salonId, {
       clientName: marker,
-      serviceId: rcFixture.serviceIds[0]!,
-      staffId: rcFixture.freeStaffId,
-      startIso: isoHm(rcFixture.ymdUtc, 13, 0),
-      endIso: isoHm(rcFixture.ymdUtc, 13, 55),
+      serviceId: fx.serviceIds[0]!,
+      staffId: fx.freeStaffId,
+      startIso: isoHm(13, 0),
+      endIso: isoHm(13, 55),
       status: "confirmed",
     });
 
-    await gotoReceptionistCenter(page, rcFixture.slug);
+    await gotoReceptionistCenter(page, fx.slug);
 
     const block = page.getByTestId(`booking-block-${id}`);
     await expect(block).toBeVisible({ timeout: 15_000 });
@@ -56,21 +70,21 @@ test.describe("Receptionist grid render + ghost", () => {
 
     await expect(block).toHaveCount(0, { timeout: 15_000 });
 
-    const row = await getBookingRow(rcFixture.salonId, id);
+    const row = await getBookingRow(fx.salonId, id);
     expect(row?.status).toBe("cancelled");
   });
 
-  test("case 11: ghost preview states — ok, conflict, overflow", async ({ page, rcFixture }, testInfo) => {
+  test("case 11: ghost preview states — ok, conflict, overflow", async ({ page }, testInfo) => {
     test.skip(
       testInfo.project.name === "mobile",
       "Ghost hover requires a fine pointer; covered on chromium desktop.",
     );
 
-    await gotoReceptionistCenter(page, rcFixture.slug);
+    await gotoReceptionistCenter(page, fx.slug);
     const marker = testClientNameMarker();
 
     await fillWalkinGuestContact(page, marker);
-    await page.locator(`#walkin-service-${rcFixture.longServiceId}`).click();
+    await page.locator(`#walkin-service-${fx.longServiceId}`).click();
     await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
 
     const row = page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker });
@@ -79,13 +93,13 @@ test.describe("Receptionist grid render + ghost", () => {
     const bookingId = tid?.replace(/^queue-item-/, "") ?? "";
     await page.getByTestId(`queue-assign-${bookingId}`).click();
 
-    await moveMouseToAssignSlot(page, rcFixture.freeStaffId, rcFixture.noonSlotIndex);
+    await moveMouseToAssignSlot(page, fx.freeStaffId, fx.noonSlotIndex);
     await expect(page.getByTestId("ghost-block")).toHaveAttribute("data-state", "ok");
 
-    await moveMouseToAssignSlot(page, rcFixture.conflictStaffId, rcFixture.conflictSlotIndex);
+    await moveMouseToAssignSlot(page, fx.conflictStaffId, fx.conflictSlotIndex);
     await expect(page.getByTestId("ghost-block")).toHaveAttribute("data-state", "conflict");
 
-    await moveMouseToAssignSlot(page, rcFixture.freeStaffId, rcFixture.overflowSlotIndex);
+    await moveMouseToAssignSlot(page, fx.freeStaffId, fx.overflowSlotIndex);
     await expect(page.getByTestId("ghost-block")).toHaveAttribute("data-state", "overflow");
   });
 });

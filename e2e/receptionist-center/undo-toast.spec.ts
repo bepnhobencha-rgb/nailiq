@@ -1,24 +1,40 @@
-import { test, expect } from "./test";
+import { test, expect } from "@playwright/test";
 
+import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   clickAssignSlot,
   fillWalkinGuestContact,
   gotoReceptionistCenter,
+  RECEPTIONIST_E2E_SLUG,
+  seedReceptionistCenterFixture,
   testClientNameMarker,
+  type ReceptionistCenterFixture,
 } from "./helpers";
 
-test.beforeEach(async ({ rcFixture }) => {
-  await cleanReceptionistData(rcFixture.salonId);
+let fx: ReceptionistCenterFixture;
+
+test.beforeAll(async () => {
+  fx = await seedReceptionistCenterFixture();
+});
+
+test.beforeEach(async () => {
+  await cleanReceptionistData(fx.salonId);
+});
+
+test.afterAll(async () => {
+  await cleanupTestSalon(RECEPTIONIST_E2E_SLUG);
 });
 
 test.describe("Undo toast", () => {
-  test("case 13: countdown ticks and undo restores queue + removes grid block", async ({ page, rcFixture }) => {
-    await gotoReceptionistCenter(page, rcFixture.slug);
+  test("case 13: countdown ticks and undo restores queue + removes grid block", async ({
+    page,
+  }) => {
+    await gotoReceptionistCenter(page, fx.slug);
     const marker = testClientNameMarker();
 
     await fillWalkinGuestContact(page, marker);
-    await page.locator(`#walkin-service-${rcFixture.serviceIds[0]}`).click();
+    await page.locator(`#walkin-service-${fx.serviceIds[0]}`).click();
     await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
 
     const row = page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker });
@@ -27,7 +43,7 @@ test.describe("Undo toast", () => {
     const bookingId = tid?.replace(/^queue-item-/, "") ?? "";
 
     await page.getByTestId(`queue-assign-${bookingId}`).click();
-    await clickAssignSlot(page, rcFixture.freeStaffId, rcFixture.noonSlotIndex);
+    await clickAssignSlot(page, fx.freeStaffId, fx.noonSlotIndex);
 
     const toast = page.getByTestId("undo-toast");
     await expect(toast).toBeVisible({ timeout: 15_000 });

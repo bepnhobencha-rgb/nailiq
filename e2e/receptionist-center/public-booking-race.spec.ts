@@ -1,4 +1,4 @@
-import { test, expect } from "./test";
+import { test, expect } from "@playwright/test";
 
 import { salonToday, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 import {
@@ -7,6 +7,7 @@ import {
   parseOpeningHours,
 } from "@/shared/dashboard/openingHoursDefaults";
 
+import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   clickAssignSlot,
@@ -14,11 +15,16 @@ import {
   getBookingRow,
   fillWalkinGuestContact,
   gotoReceptionistCenter,
+  RECEPTIONIST_E2E_SLUG,
   seedDeskBooking,
+  seedReceptionistCenterFixture,
   seedWalkin,
   supabaseAdmin,
   testClientNameMarker,
+  type ReceptionistCenterFixture,
 } from "./helpers";
+
+let fx: ReceptionistCenterFixture;
 
 const GRID_HOUR_START = 8;
 const SLOT_MINUTES = 30;
@@ -127,47 +133,55 @@ function rpcShowsSlotConflict(
   return false;
 }
 
-test.beforeEach(async ({ rcFixture }) => {
-  await cleanReceptionistData(rcFixture.salonId);
+test.beforeAll(async () => {
+  fx = await seedReceptionistCenterFixture();
 });
 
-test.afterEach(async ({ rcFixture }) => {
-  await cleanReceptionistData(rcFixture.salonId);
+test.beforeEach(async () => {
+  await cleanReceptionistData(fx.salonId);
+});
+
+test.afterEach(async () => {
+  await cleanReceptionistData(fx.salonId);
+});
+
+test.afterAll(async () => {
+  await cleanupTestSalon(RECEPTIONIST_E2E_SLUG);
 });
 
 test.describe("race-1: walk-in assigned then public RPC same slot", () => {
-  test("rejects create_public_booking with slot_conflict; walk-in is the only client booking", async ({ rcFixture }) => {
+  test("rejects create_public_booking with slot_conflict; walk-in is the only client booking", async () => {
     const minStartMs = Date.now() + 3 * 60_000;
     const dateYmd = pickBookableDateYmd({
-      baseYmd: rcFixture.ymdUtc,
-      timezone: rcFixture.timezone,
-      slotIndex: rcFixture.noonSlotIndex,
+      baseYmd: fx.ymdUtc,
+      timezone: fx.timezone,
+      slotIndex: fx.noonSlotIndex,
       minStartMs,
     });
 
     const { startIso, endIso } = slotBoundsForDate(
       dateYmd,
-      rcFixture.noonSlotIndex,
-      rcFixture.timezone,
+      fx.noonSlotIndex,
+      fx.timezone,
       PRIMARY_SERVICE_TOTAL_MIN,
     );
 
     const walkinName = testClientNameMarker();
-    const walkinId = await seedWalkin(rcFixture.salonId, {
+    const walkinId = await seedWalkin(fx.salonId, {
       clientName: walkinName,
-      serviceId: rcFixture.serviceIds[0]!,
+      serviceId: fx.serviceIds[0]!,
     });
 
     const { data: assigned, error: upErr } = await supabaseAdmin
       .from("bookings")
       .update({
-        staff_id: rcFixture.freeStaffId,
+        staff_id: fx.freeStaffId,
         start_time_utc: startIso,
         end_time_utc: endIso,
         status: "confirmed",
       })
       .eq("id", walkinId)
-      .eq("salon_id", rcFixture.salonId)
+      .eq("salon_id", fx.salonId)
       .eq("source", "walkin")
       .eq("status", "waiting")
       .select("start_time_utc, end_time_utc, staff_id, service_id, status")
@@ -184,7 +198,7 @@ test.describe("race-1: walk-in assigned then public RPC same slot", () => {
 
     const publicName = `Te2ePub${Date.now()}`;
     const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc("create_public_booking", {
-      p_salon_id: rcFixture.salonId,
+      p_salon_id: fx.salonId,
       p_service_id: serviceId,
       p_staff_id: staffId,
       p_client_name: publicName,
@@ -203,17 +217,17 @@ test.describe("race-1: walk-in assigned then public RPC same slot", () => {
       `expected slot_conflict; data=${JSON.stringify(rpcData)} err=${rpcError?.message} code=${rpcError?.code}`,
     ).toBe(true);
 
-    await expect(countBookingsForClient(rcFixture.salonId, publicName)).resolves.toBe(0);
-    await expect(countBookingsForClient(rcFixture.salonId, walkinName)).resolves.toBe(1);
+    await expect(countBookingsForClient(fx.salonId, publicName)).resolves.toBe(0);
+    await expect(countBookingsForClient(fx.salonId, walkinName)).resolves.toBe(1);
   });
 });
 
 test.describe("race-2: appointment blocks walk-in assign same slot", () => {
-  test("desk shows conflict toast; walk-in stays waiting; no grid block", async ({ page, rcFixture }, testInfo) => {
+  test("desk shows conflict toast; walk-in stays waiting; no grid block", async ({ page }, testInfo) => {
     const minStartMs = Date.now() + 3 * 60_000;
     const dateYmd = pickBookableDateYmdTodayOnly({
-      timezone: rcFixture.timezone,
-      slotIndex: rcFixture.noonSlotIndex,
+      timezone: fx.timezone,
+      slotIndex: fx.noonSlotIndex,
       minStartMs,
     });
     if (!dateYmd) {
@@ -224,27 +238,27 @@ test.describe("race-2: appointment blocks walk-in assign same slot", () => {
     const apptName = testClientNameMarker();
     const { startIso, endIso } = slotBoundsForDate(
       dateYmd,
-      rcFixture.noonSlotIndex,
-      rcFixture.timezone,
+      fx.noonSlotIndex,
+      fx.timezone,
       PRIMARY_SERVICE_TOTAL_MIN,
     );
 
-    await seedDeskBooking(rcFixture.salonId, {
+    await seedDeskBooking(fx.salonId, {
       clientName: apptName,
-      serviceId: rcFixture.serviceIds[0]!,
-      staffId: rcFixture.freeStaffId,
+      serviceId: fx.serviceIds[0]!,
+      staffId: fx.freeStaffId,
       startIso,
       endIso,
       status: "confirmed",
       source: "appointment",
     });
 
-    await gotoReceptionistCenter(page, rcFixture.slug, { dateYmd });
+    await gotoReceptionistCenter(page, fx.slug, { dateYmd });
 
     const walkinName = testClientNameMarker();
 
     await fillWalkinGuestContact(page, walkinName);
-    await page.locator(`#walkin-service-${rcFixture.serviceIds[0]}`).click();
+    await page.locator(`#walkin-service-${fx.serviceIds[0]}`).click();
     await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
 
     const row = page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: walkinName });
@@ -253,7 +267,7 @@ test.describe("race-2: appointment blocks walk-in assign same slot", () => {
     const walkinBookingId = tid?.replace(/^queue-item-/, "") ?? "";
 
     await page.getByTestId(`queue-assign-${walkinBookingId}`).click();
-    await clickAssignSlot(page, rcFixture.freeStaffId, rcFixture.noonSlotIndex);
+    await clickAssignSlot(page, fx.freeStaffId, fx.noonSlotIndex);
 
     const deskMsg = page.getByTestId("desk-action-message");
     await expect(deskMsg).toBeVisible({ timeout: 12_000 });
@@ -264,7 +278,7 @@ test.describe("race-2: appointment blocks walk-in assign same slot", () => {
     });
     await expect(page.getByTestId(`booking-block-${walkinBookingId}`)).toHaveCount(0);
 
-    const rowState = await getBookingRow(rcFixture.salonId, walkinBookingId);
+    const rowState = await getBookingRow(fx.salonId, walkinBookingId);
     expect(rowState?.status).toBe("waiting");
   });
 });

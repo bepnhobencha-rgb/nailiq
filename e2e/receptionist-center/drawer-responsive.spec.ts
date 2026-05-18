@@ -1,35 +1,51 @@
-import { test, expect, type Page } from "./test";
+import { test, expect, type Page } from "@playwright/test";
 
+import { cleanupTestSalon } from "../helpers/db";
 import { USER_LANGUAGE_STORAGE_KEY } from "@/shared/i18n/user/types";
 import {
   cleanReceptionistData,
   gotoReceptionistCenter,
   isoAtUtcYmdHourMinute,
+  RECEPTIONIST_E2E_SLUG,
   seedDeskBooking,
+  seedReceptionistCenterFixture,
   testClientNameMarker,
+  type ReceptionistCenterFixture,
 } from "./helpers";
 
-test.beforeEach(async ({ rcFixture }) => {
-  await cleanReceptionistData(rcFixture.salonId);
+let fx: ReceptionistCenterFixture;
+
+test.beforeAll(async () => {
+  fx = await seedReceptionistCenterFixture();
+});
+
+test.beforeEach(async () => {
+  await cleanReceptionistData(fx.salonId);
+});
+
+test.afterAll(async () => {
+  await cleanupTestSalon(RECEPTIONIST_E2E_SLUG);
 });
 
 test.describe("Booking detail drawer — viewport (Issue #9)", () => {
-  test("dr-1: Drawer fits 1456px viewport — drawer and actions in viewport", async ({ page, rcFixture }) => {
+  test("dr-1: Drawer fits 1456px viewport — drawer and actions in viewport", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1456, height: 900 });
 
     const marker = testClientNameMarker();
-    const startIso = new Date(`${rcFixture.ymdUtc}T12:00:00.000Z`).toISOString();
-    const endIso = new Date(`${rcFixture.ymdUtc}T12:55:00.000Z`).toISOString();
-    const bookingId = await seedDeskBooking(rcFixture.salonId, {
+    const startIso = new Date(`${fx.ymdUtc}T12:00:00.000Z`).toISOString();
+    const endIso = new Date(`${fx.ymdUtc}T12:55:00.000Z`).toISOString();
+    const bookingId = await seedDeskBooking(fx.salonId, {
       clientName: marker,
-      serviceId: rcFixture.serviceIds[0]!,
-      staffId: rcFixture.freeStaffId,
+      serviceId: fx.serviceIds[0]!,
+      staffId: fx.freeStaffId,
       startIso,
       endIso,
       status: "confirmed",
     });
 
-    await gotoReceptionistCenter(page, rcFixture.slug, { dateYmd: rcFixture.ymdUtc });
+    await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc });
 
     await page.getByTestId(`booking-block-${bookingId}`).click();
     const drawer = page.getByTestId("booking-detail-drawer");
@@ -40,22 +56,22 @@ test.describe("Booking detail drawer — viewport (Issue #9)", () => {
     await expect(page.getByTestId("drawer-cancel-booking")).toBeInViewport();
   });
 
-  test("dr-2: Drawer fits mobile viewport — full width, actions visible", async ({ page, rcFixture }) => {
+  test("dr-2: Drawer fits mobile viewport — full width, actions visible", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
 
     const marker = testClientNameMarker();
-    const startIso = new Date(`${rcFixture.ymdUtc}T12:00:00.000Z`).toISOString();
-    const endIso = new Date(`${rcFixture.ymdUtc}T12:55:00.000Z`).toISOString();
-    const bookingId = await seedDeskBooking(rcFixture.salonId, {
+    const startIso = new Date(`${fx.ymdUtc}T12:00:00.000Z`).toISOString();
+    const endIso = new Date(`${fx.ymdUtc}T12:55:00.000Z`).toISOString();
+    const bookingId = await seedDeskBooking(fx.salonId, {
       clientName: marker,
-      serviceId: rcFixture.serviceIds[0]!,
-      staffId: rcFixture.freeStaffId,
+      serviceId: fx.serviceIds[0]!,
+      staffId: fx.freeStaffId,
       startIso,
       endIso,
       status: "confirmed",
     });
 
-    await gotoReceptionistCenter(page, rcFixture.slug, { dateYmd: rcFixture.ymdUtc });
+    await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc });
 
     await page.getByTestId(`booking-block-${bookingId}`).click();
     await expect(page.getByTestId("booking-detail-drawer")).toBeVisible();
@@ -72,22 +88,22 @@ test.describe("Booking detail drawer — viewport (Issue #9)", () => {
     await expect(page.getByTestId("drawer-cancel-booking")).toBeInViewport();
   });
 
-  test("dr-3: Edit form fits 1456px viewport — Save and Cancel visible", async ({ page, rcFixture }) => {
+  test("dr-3: Edit form fits 1456px viewport — Save and Cancel visible", async ({ page }) => {
     await page.setViewportSize({ width: 1456, height: 900 });
 
     const marker = testClientNameMarker();
-    const startIso = new Date(`${rcFixture.ymdUtc}T12:00:00.000Z`).toISOString();
-    const endIso = new Date(`${rcFixture.ymdUtc}T12:55:00.000Z`).toISOString();
-    const bookingId = await seedDeskBooking(rcFixture.salonId, {
+    const startIso = new Date(`${fx.ymdUtc}T12:00:00.000Z`).toISOString();
+    const endIso = new Date(`${fx.ymdUtc}T12:55:00.000Z`).toISOString();
+    const bookingId = await seedDeskBooking(fx.salonId, {
       clientName: marker,
-      serviceId: rcFixture.serviceIds[0]!,
-      staffId: rcFixture.freeStaffId,
+      serviceId: fx.serviceIds[0]!,
+      staffId: fx.freeStaffId,
       startIso,
       endIso,
       status: "confirmed",
     });
 
-    await gotoReceptionistCenter(page, rcFixture.slug, { dateYmd: rcFixture.ymdUtc });
+    await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc });
 
     await page.getByTestId(`booking-block-${bookingId}`).click();
     await page.getByTestId("edit-booking-button").click();
@@ -108,22 +124,24 @@ test.describe("Booking detail drawer — service buffer hint (Issue #12)", () =>
     );
   }
 
-  test("bd-1: Schedule shows service end + buffer note when buffer_minutes > 0 (English)", async ({ page, rcFixture }) => {
+  test("bd-1: Schedule shows service end + buffer note when buffer_minutes > 0 (English)", async ({
+    page,
+  }) => {
     await presetUserLang(page, "en");
 
     const marker = testClientNameMarker();
-    const startIso = new Date(`${rcFixture.ymdUtc}T12:00:00.000Z`).toISOString();
-    const endIso = new Date(`${rcFixture.ymdUtc}T12:55:00.000Z`).toISOString();
-    const bookingId = await seedDeskBooking(rcFixture.salonId, {
+    const startIso = new Date(`${fx.ymdUtc}T12:00:00.000Z`).toISOString();
+    const endIso = new Date(`${fx.ymdUtc}T12:55:00.000Z`).toISOString();
+    const bookingId = await seedDeskBooking(fx.salonId, {
       clientName: marker,
-      serviceId: rcFixture.serviceIds[0]!,
-      staffId: rcFixture.freeStaffId,
+      serviceId: fx.serviceIds[0]!,
+      staffId: fx.freeStaffId,
       startIso,
       endIso,
       status: "confirmed",
     });
 
-    await gotoReceptionistCenter(page, rcFixture.slug, { dateYmd: rcFixture.ymdUtc });
+    await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc });
 
     await page.getByTestId(`booking-block-${bookingId}`).click();
     const scheduleEl = page.getByTestId("booking-drawer-schedule");
@@ -133,22 +151,22 @@ test.describe("Booking detail drawer — service buffer hint (Issue #12)", () =>
     await expect(scheduleEl).toContainText("+ 10 min buffer");
   });
 
-  test("bd-1-vi: Buffer note Vietnamese copy", async ({ page, rcFixture }) => {
+  test("bd-1-vi: Buffer note Vietnamese copy", async ({ page }) => {
     await presetUserLang(page, "vi");
 
     const marker = testClientNameMarker();
-    const startIso = new Date(`${rcFixture.ymdUtc}T12:30:00.000Z`).toISOString();
-    const endIso = new Date(`${rcFixture.ymdUtc}T13:25:00.000Z`).toISOString();
-    const bookingId = await seedDeskBooking(rcFixture.salonId, {
+    const startIso = new Date(`${fx.ymdUtc}T12:30:00.000Z`).toISOString();
+    const endIso = new Date(`${fx.ymdUtc}T13:25:00.000Z`).toISOString();
+    const bookingId = await seedDeskBooking(fx.salonId, {
       clientName: marker,
-      serviceId: rcFixture.serviceIds[0]!,
-      staffId: rcFixture.freeStaffId,
+      serviceId: fx.serviceIds[0]!,
+      staffId: fx.freeStaffId,
       startIso,
       endIso,
       status: "confirmed",
     });
 
-    await gotoReceptionistCenter(page, rcFixture.slug, { dateYmd: rcFixture.ymdUtc });
+    await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc });
 
     await page.getByTestId(`booking-block-${bookingId}`).click();
     const scheduleEl = page.getByTestId("booking-drawer-schedule");
@@ -159,23 +177,23 @@ test.describe("Booking detail drawer — service buffer hint (Issue #12)", () =>
     await expect(scheduleEl).toContainText("+ 10 phút chuyển ca");
   });
 
-  test("bd-2: No buffer note when buffer_minutes === 0", async ({ page, rcFixture }) => {
+  test("bd-2: No buffer note when buffer_minutes === 0", async ({ page }) => {
     await presetUserLang(page, "en");
 
     const marker = testClientNameMarker();
     /** Long Overflow Service — duration 240, buffer 0 */
-    const startIso = isoAtUtcYmdHourMinute(rcFixture.ymdUtc, 12, 0);
-    const endIso = isoAtUtcYmdHourMinute(rcFixture.ymdUtc, 16, 0);
-    const bookingId = await seedDeskBooking(rcFixture.salonId, {
+    const startIso = isoAtUtcYmdHourMinute(fx.ymdUtc, 12, 0);
+    const endIso = isoAtUtcYmdHourMinute(fx.ymdUtc, 16, 0);
+    const bookingId = await seedDeskBooking(fx.salonId, {
       clientName: marker,
-      serviceId: rcFixture.serviceIds[5]!,
-      staffId: rcFixture.freeStaffId,
+      serviceId: fx.serviceIds[5]!,
+      staffId: fx.freeStaffId,
       startIso,
       endIso,
       status: "confirmed",
     });
 
-    await gotoReceptionistCenter(page, rcFixture.slug, { dateYmd: rcFixture.ymdUtc });
+    await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc });
 
     await page.getByTestId(`booking-block-${bookingId}`).click();
     const scheduleEl = page.getByTestId("booking-drawer-schedule");

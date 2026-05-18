@@ -1,17 +1,33 @@
-import { test, expect } from "./test";
+import { test, expect } from "@playwright/test";
 
+import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   gotoReceptionistCenter,
+  RECEPTIONIST_E2E_SLUG,
+  seedReceptionistCenterFixture,
+  type ReceptionistCenterFixture,
 } from "./helpers";
 
-test.beforeEach(async ({ rcFixture }) => {
-  await cleanReceptionistData(rcFixture.salonId);
+let fx: ReceptionistCenterFixture;
+
+test.beforeAll(async () => {
+  fx = await seedReceptionistCenterFixture();
+});
+
+test.beforeEach(async () => {
+  await cleanReceptionistData(fx.salonId);
+});
+
+test.afterAll(async () => {
+  await cleanupTestSalon(RECEPTIONIST_E2E_SLUG);
 });
 
 test.describe("Walk-in name — XSS guard", () => {
-  test("xss-2: Receptionist walk-in rejects script tag; submit disabled", async ({ page, rcFixture }) => {
-    await gotoReceptionistCenter(page, rcFixture.slug);
+  test("xss-2: Receptionist walk-in rejects script tag; submit disabled", async ({
+    page,
+  }) => {
+    await gotoReceptionistCenter(page, fx.slug);
     await page.getByTestId("walkin-name").fill("<script>alert('XSS')</script>");
     await page.getByTestId("walkin-name").blur();
     await page.getByTestId("walkin-phone").fill("6045550199");

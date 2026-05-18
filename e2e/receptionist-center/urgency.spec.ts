@@ -1,27 +1,41 @@
-import { test, expect } from "./test";
+import { test, expect } from "@playwright/test";
 
+import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   gotoReceptionistCenter,
+  RECEPTIONIST_E2E_SLUG,
+  seedReceptionistCenterFixture,
   seedWalkin,
+  type ReceptionistCenterFixture,
 } from "./helpers";
 
-test.beforeEach(async ({ rcFixture }) => {
-  await cleanReceptionistData(rcFixture.salonId);
+let fx: ReceptionistCenterFixture;
+
+test.beforeAll(async () => {
+  fx = await seedReceptionistCenterFixture();
+});
+
+test.beforeEach(async () => {
+  await cleanReceptionistData(fx.salonId);
+});
+
+test.afterAll(async () => {
+  await cleanupTestSalon(RECEPTIONIST_E2E_SLUG);
 });
 
 test.describe("Walk-in urgency", () => {
-  test("case 10: old joined_queue_at shows urgent badge", async ({ page, rcFixture }) => {
+  test("case 10: old joined_queue_at shows urgent badge", async ({ page }) => {
     const marker = `Te2eUrgent${Date.now()}`;
     const oldJoined = new Date(Date.now() - 21 * 60_000).toISOString();
 
-    await seedWalkin(rcFixture.salonId, {
+    await seedWalkin(fx.salonId, {
       clientName: marker,
-      serviceId: rcFixture.serviceIds[0]!,
+      serviceId: fx.serviceIds[0]!,
       joinedQueueAtIso: oldJoined,
     });
 
-    await gotoReceptionistCenter(page, rcFixture.slug);
+    await gotoReceptionistCenter(page, fx.slug);
 
     const row = page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker });
     await expect(row).toBeVisible({ timeout: 15_000 });

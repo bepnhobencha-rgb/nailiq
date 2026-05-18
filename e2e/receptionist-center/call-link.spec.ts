@@ -1,35 +1,49 @@
-import { test, expect } from "./test";
+import { test, expect } from "@playwright/test";
 
+import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   gotoReceptionistCenter,
+  RECEPTIONIST_E2E_SLUG,
   seedDeskBooking,
+  seedReceptionistCenterFixture,
   testClientNameMarker,
+  type ReceptionistCenterFixture,
 } from "./helpers";
 
-function isoHm(ymdUtc: string, h: number, m: number): string {
-  const [y, mo, d] = ymdUtc.split("-").map(Number);
+let fx: ReceptionistCenterFixture;
+
+function isoHm(h: number, m: number): string {
+  const [y, mo, d] = fx.ymdUtc.split("-").map(Number);
   return new Date(Date.UTC(y, mo - 1, d, h, m, 0)).toISOString();
 }
 
-test.beforeEach(async ({ rcFixture }) => {
-  await cleanReceptionistData(rcFixture.salonId);
+test.beforeAll(async () => {
+  fx = await seedReceptionistCenterFixture();
+});
+
+test.beforeEach(async () => {
+  await cleanReceptionistData(fx.salonId);
+});
+
+test.afterAll(async () => {
+  await cleanupTestSalon(RECEPTIONIST_E2E_SLUG);
 });
 
 test.describe("Drawer phone link", () => {
-  test("case 14: tel href present when phone set", async ({ page, rcFixture }) => {
+  test("case 14: tel href present when phone set", async ({ page }) => {
     const marker = testClientNameMarker();
-    const id = await seedDeskBooking(rcFixture.salonId, {
+    const id = await seedDeskBooking(fx.salonId, {
       clientName: marker,
-      serviceId: rcFixture.serviceIds[0]!,
-      staffId: rcFixture.freeStaffId,
-      startIso: isoHm(rcFixture.ymdUtc, 13, 0),
-      endIso: isoHm(rcFixture.ymdUtc, 13, 55),
+      serviceId: fx.serviceIds[0]!,
+      staffId: fx.freeStaffId,
+      startIso: isoHm(13, 0),
+      endIso: isoHm(13, 55),
       status: "confirmed",
       clientPhone: "6045550199",
     });
 
-    await gotoReceptionistCenter(page, rcFixture.slug);
+    await gotoReceptionistCenter(page, fx.slug);
     await page.getByTestId(`booking-block-${id}`).click();
 
     const link = page.getByTestId("booking-call-link");
@@ -39,19 +53,19 @@ test.describe("Drawer phone link", () => {
     expect(href?.includes("6045550199") || href?.includes("16045550199")).toBeTruthy();
   });
 
-  test("case 14: tel link absent when phone null", async ({ page, rcFixture }) => {
+  test("case 14: tel link absent when phone null", async ({ page }) => {
     const marker = testClientNameMarker();
-    const id = await seedDeskBooking(rcFixture.salonId, {
+    const id = await seedDeskBooking(fx.salonId, {
       clientName: marker,
-      serviceId: rcFixture.serviceIds[0]!,
-      staffId: rcFixture.freeStaffId,
-      startIso: isoHm(rcFixture.ymdUtc, 13, 0),
-      endIso: isoHm(rcFixture.ymdUtc, 13, 55),
+      serviceId: fx.serviceIds[0]!,
+      staffId: fx.freeStaffId,
+      startIso: isoHm(13, 0),
+      endIso: isoHm(13, 55),
       status: "confirmed",
       clientPhone: null,
     });
 
-    await gotoReceptionistCenter(page, rcFixture.slug);
+    await gotoReceptionistCenter(page, fx.slug);
     await page.getByTestId(`booking-block-${id}`).click();
 
     await expect(page.getByTestId("booking-detail-drawer")).toBeVisible();
