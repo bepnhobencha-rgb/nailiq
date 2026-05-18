@@ -539,6 +539,20 @@ export async function fillWalkinGuestContact(
 }
 
 /**
+ * Click a walk-in service chip by service ID. Uses evaluate() instead of .click() because
+ * the service chip grid sits inside the fixed-height sidebar and can land outside the
+ * Playwright viewport — synthetic .click() retries indefinitely when the element is
+ * "outside of the viewport", causing 1.5m timeouts on CI (observed for cases 1/2/3/11/12/13).
+ */
+export async function clickWalkinService(page: Page, serviceId: string): Promise<void> {
+  const loc = page.locator(`#walkin-service-${serviceId}`);
+  await loc.waitFor({ state: "attached", timeout: 15_000 });
+  await loc.evaluate((el: HTMLElement) => {
+    el.click();
+  });
+}
+
+/**
  * Receptionist sidebar "Assign" for a walk-in queue row. Prefer over `locator.click()`: Playwright synthetic clicks
  * can miss the React `onClick` when the sidebar stacks under fixed chrome — observed in dual-browser parallel assign runs.
  */

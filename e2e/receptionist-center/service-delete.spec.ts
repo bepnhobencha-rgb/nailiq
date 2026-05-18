@@ -172,6 +172,7 @@ async function getServiceRowById(
     .from("services")
     .select("id")
     .eq("id", serviceId)
+    .is("deleted_at" as never, null)
     .maybeSingle();
 
   if (error) throw new Error(error.message);

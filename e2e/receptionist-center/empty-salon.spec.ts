@@ -70,11 +70,7 @@ test.describe("Receptionist Center — empty salon setup", () => {
       page.getByText("Setup incomplete", { exact: true }),
     ).toBeVisible();
 
-    await expect(
-      page
-        .getByTestId("walkin-add-form")
-        .getByRole("button", { name: "Add to queue" }),
-    ).toBeDisabled();
+    await expect(page.getByTestId("walkin-submit")).toBeDisabled();
 
     await page.getByRole("link", { name: "Go to Setup →" }).click();
     await expect(page).toHaveURL(

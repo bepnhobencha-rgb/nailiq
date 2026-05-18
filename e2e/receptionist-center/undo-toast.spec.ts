@@ -4,6 +4,7 @@ import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   clickAssignSlot,
+  clickWalkinService,
   fillWalkinGuestContact,
   gotoReceptionistCenter,
   RECEPTIONIST_E2E_SLUG,
@@ -34,7 +35,7 @@ test.describe("Undo toast", () => {
     const marker = testClientNameMarker();
 
     await fillWalkinGuestContact(page, marker);
-    await page.locator(`#walkin-service-${fx.serviceIds[0]}`).click();
+    await clickWalkinService(page, fx.serviceIds[0]!);
     await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
 
     const row = page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker });
