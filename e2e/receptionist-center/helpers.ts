@@ -160,6 +160,14 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
       // which intentionally hides `kpi_bar` — fine for prod but drops the
       // status-pill that several tests rely on. See dashboardPresets.ts.
       dashboard_preset: "rush_hour",
+      // Force queue mode: walkin_auto_assign defaults to true, which makes
+      // canAssignImmediately=true when staff are free (including all of CI
+      // run time outside business hours). With immediate mode the walk-in is
+      // confirmed+assigned on submit and never appears in the queue panel,
+      // causing every queue-item assertion to fail. Setting false makes the
+      // form always call addWalkinToQueue (status=waiting) regardless of
+      // staff availability — matching what these queue/assign tests expect.
+      ...({ walkin_auto_assign: false } as object),
     })
     .select("id")
     .single();

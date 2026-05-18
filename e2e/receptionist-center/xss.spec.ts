@@ -28,7 +28,10 @@ test.describe("Walk-in name — XSS guard", () => {
     page,
   }) => {
     await gotoReceptionistCenter(page, fx.slug);
-    await page.getByTestId("walkin-name").click();
+    // evaluate bypasses Playwright's viewport check — walkin-name sits inside
+    // the fixed-height overflow:hidden sidebar and is "outside the viewport"
+    // on CI's 1280×720 viewport, causing .click() to retry for 90s.
+    await page.getByTestId("walkin-name").evaluate((el: HTMLElement) => el.click());
     await page.keyboard.type("<script>alert('XSS')</script>");
     await page.getByTestId("walkin-name").press("Tab");
     await page.getByTestId("walkin-phone").fill("6045550199");
