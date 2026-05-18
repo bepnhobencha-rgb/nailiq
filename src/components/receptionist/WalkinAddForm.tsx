@@ -304,6 +304,9 @@ export function WalkinAddForm({
   const nameRef = useRef<HTMLInputElement>(null);
   const phoneRef = useRef<HTMLInputElement>(null);
   const submitRef = useRef<HTMLButtonElement>(null);
+  // Refs (not state) so blur handlers see current value without stale closure issues.
+  const nameTouchedRef = useRef(false);
+  const phoneTouchedRef = useRef(false);
 
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
@@ -323,8 +326,6 @@ export function WalkinAddForm({
   // 'Name required' flashes immediately" anti-UX. Submit click flips
   // both to true so the runSubmit-side checks still render their
   // messages.
-  const [nameTouched, setNameTouched] = useState(false);
-  const [phoneTouched, setPhoneTouched] = useState(false);
   const [walkinSource, setWalkinSource] = useState<QueueSource | "">("");
   const [walkinPriority, setWalkinPriority] = useState<QueuePriority | "">("");
   const [requestTags, setRequestTags] = useState<QueueRequestTag[]>([]);
@@ -492,8 +493,8 @@ export function WalkinAddForm({
     setErrorMessage(null);
     setNameError(null);
     setPhoneError(null);
-    setNameTouched(false);
-    setPhoneTouched(false);
+    nameTouchedRef.current = false;
+    phoneTouchedRef.current = false;
     setWalkinSource("");
     setWalkinPriority("");
     setRequestTags([]);
@@ -580,8 +581,8 @@ export function WalkinAddForm({
       // P1.2 — clicking submit counts as "intent to use the field",
       // so any per-field validators below should always render their
       // messages regardless of whether the user blurred first.
-      setNameTouched(true);
-      setPhoneTouched(true);
+      nameTouchedRef.current = true;
+      phoneTouchedRef.current = true;
       const trimmedName = clientName.trim();
       if (trimmedName.length === 0) {
         setNameError(labels.nameRequired);
@@ -819,7 +820,7 @@ export function WalkinAddForm({
             // errors. This avoids the "open form → focus moves
             // away → error flashes immediately" anti-UX before any
             // typing has happened.
-            if (!nameTouched) setNameTouched(true);
+            nameTouchedRef.current = true;
           }}
           onBlur={() => {
             const t = clientName.trim();
@@ -828,7 +829,7 @@ export function WalkinAddForm({
             // has actually typed something. If the receptionist
             // tabs through the form without touching name, we stay
             // silent.
-            if (!nameTouched) return;
+            if (!nameTouchedRef.current) return;
             if (t.length === 0) {
               setNameError(labels.nameRequired);
             } else if (t.length > BOOKING_GUEST_NAME_MAX) {
@@ -876,13 +877,13 @@ export function WalkinAddForm({
             setClientPhone(formatPhoneInputProgressive(e.target.value));
             setPhoneError(null);
             // P1.2 — see name field for rationale.
-            if (!phoneTouched) setPhoneTouched(true);
+            phoneTouchedRef.current = true;
           }}
           onBlur={() => {
             const p = clientPhone.trim();
             setClientPhone(p);
             // P1.2 — silent until the field has been engaged.
-            if (!phoneTouched) return;
+            if (!phoneTouchedRef.current) return;
             if (p.length === 0) {
               setPhoneError(null);
               return;
