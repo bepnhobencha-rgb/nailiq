@@ -1,2 +1,3 @@
-NailIQ is an AI-first operating system for nail salons and beauty businesses.
-It provides website, booking, staff scheduling, POS, CRM, AI menu scan, AI nail try-on, automation, analytics, and growth tools.
+NailIQ is a salon booking and operations platform for nail salons, built in Vancouver, BC, Canada.
+It provides online booking, walk-in queue management, a real-time receptionist center dashboard, and bilingual support (Vietnamese + English).
+See /llms.txt for the full product description.
