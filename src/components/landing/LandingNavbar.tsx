@@ -78,7 +78,7 @@ export function LandingNavbar() {
           type="button"
           onClick={() => setOpen((v) => !v)}
           className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-nq-border/50 text-nq-foreground md:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary"
-          aria-label={open ? "Close menu" : "Open menu"}
+          aria-label={open ? t.closeMenu : t.openMenu}
           aria-expanded={open}
         >
           <span className="relative block h-3 w-5">

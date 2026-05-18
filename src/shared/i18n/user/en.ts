@@ -160,6 +160,8 @@ export type UserMessages = {
       signIn: string;
       tryFree: string;
       langAriaLabel: string;
+      openMenu: string;
+      closeMenu: string;
     };
     hero: {
       eyebrow: string;
@@ -1495,9 +1497,11 @@ export const userEn: UserMessages = {
       signIn: "Sign in",
       tryFree: "Try free",
       langAriaLabel: "Language",
+      openMenu: "Open menu",
+      closeMenu: "Close menu",
     },
     hero: {
-      eyebrow: "Trusted by salons in Canada & Vietnam",
+      eyebrow: "Trusted by salons in Canada, the US & Vietnam",
       h1Line1: "Less than one manicure a month.",
       h1Gold: "Your salon runs itself.",
       subline:
@@ -1573,7 +1577,7 @@ export const userEn: UserMessages = {
       step3: {
         title: "Share your booking link",
         body:
-          "Copy your nailiq.com/your-salon URL. Send to clients via Zalo, SMS, or stick on the front desk.",
+          "Copy your nailiq.ca/your-salon URL. Send to clients via Zalo, SMS, or stick on the front desk.",
         preview: "You’ll see — your first booking land within hours.",
       },
       bottomCta: "Ready when you are. Try free for 14 days",
@@ -1595,7 +1599,7 @@ export const userEn: UserMessages = {
           body:
             "Vietnamese support saved us. Our customers book themselves now in Vietnamese and our phone barely rings — in a good way.",
           author: "Thuy Mai, Owner",
-          venue: "Saigon Nail Studio · Houston",
+          venue: "Saigon Nail Studio · Houston, TX",
         },
       ],
     },

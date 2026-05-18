@@ -144,9 +144,11 @@ export const userVi: UserMessages = {
       signIn: "Đăng nhập",
       tryFree: "Dùng thử",
       langAriaLabel: "Ngôn ngữ",
+      openMenu: "Mở menu",
+      closeMenu: "Đóng menu",
     },
     hero: {
-      eyebrow: "Được tin dùng bởi tiệm nail tại Canada & Việt Nam",
+      eyebrow: "Được tin dùng bởi tiệm nail tại Canada, Mỹ & Việt Nam",
       h1Line1: "Rẻ hơn một lần làm nail.",
       h1Gold: "Tiệm bạn tự vận hành.",
       subline:
@@ -217,7 +219,7 @@ export const userVi: UserMessages = {
       step3: {
         title: "Chia sẻ link đặt lịch",
         body:
-          "Sao chép URL nailiq.com/your-salon. Gửi cho khách qua Zalo, SMS, hoặc dán ở quầy.",
+          "Sao chép URL nailiq.ca/your-salon. Gửi cho khách qua Zalo, SMS, hoặc dán ở quầy.",
         preview:
           "Bạn sẽ thấy — lịch đầu tiên về trong vài giờ.",
       },
@@ -240,7 +242,7 @@ export const userVi: UserMessages = {
           body:
             "Hỗ trợ tiếng Việt cứu tụi mình. Khách tự đặt lịch bằng tiếng Việt và điện thoại tiệm gần như im — theo nghĩa tốt.",
           author: "Thúy Mai, Chủ tiệm",
-          venue: "Saigon Nail Studio · Houston",
+          venue: "Saigon Nail Studio · Houston, TX",
         },
       ],
     },
