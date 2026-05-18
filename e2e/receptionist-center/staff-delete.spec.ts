@@ -68,7 +68,7 @@ async function gotoSetupStaff(page: Page, slug: string): Promise<void> {
   ]);
 
   await page.goto(`/dashboard/${encodeURIComponent(slug)}/setup/staff`);
-  await page.getByRole("heading", { name: "Staff", exact: false }).waitFor({
+  await page.getByRole("heading", { name: "Staff", exact: false }).first().waitFor({
     timeout: 45_000,
   });
 }

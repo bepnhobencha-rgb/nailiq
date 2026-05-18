@@ -4,6 +4,7 @@ import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   clickWalkinService,
+  clickWalkinSubmit,
   fillWalkinGuestContact,
   getBookingRow,
   gotoReceptionistCenter,
@@ -86,7 +87,7 @@ test.describe("Receptionist grid render + ghost", () => {
 
     await fillWalkinGuestContact(page, marker);
     await clickWalkinService(page, fx.longServiceId);
-    await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
+    await clickWalkinSubmit(page);
 
     const row = page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker });
     await expect(row).toBeVisible({ timeout: 15_000 });

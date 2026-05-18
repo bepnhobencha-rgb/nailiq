@@ -5,6 +5,7 @@ import {
   cleanReceptionistData,
   clickAssignSlot,
   clickWalkinService,
+  clickWalkinSubmit,
   fillWalkinGuestContact,
   gotoReceptionistCenter,
   RECEPTIONIST_E2E_SLUG,
@@ -36,7 +37,7 @@ test.describe("Assign conflict prevention", () => {
 
     await fillWalkinGuestContact(page, marker);
     await clickWalkinService(page, fx.serviceIds[0]!);
-    await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
+    await clickWalkinSubmit(page);
 
     const row = page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker });
     await expect(row).toBeVisible({ timeout: 15_000 });

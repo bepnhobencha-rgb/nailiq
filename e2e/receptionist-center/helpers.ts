@@ -552,6 +552,15 @@ export async function clickWalkinService(page: Page, serviceId: string): Promise
   });
 }
 
+/** Submit the walkin form. Uses evaluate() to bypass overflow:hidden viewport clipping in CI. */
+export async function clickWalkinSubmit(page: Page): Promise<void> {
+  const loc = page.getByTestId("walkin-add-form").locator('button[type="submit"]');
+  await loc.waitFor({ state: "attached", timeout: 15_000 });
+  await loc.evaluate((el: HTMLElement) => {
+    el.click();
+  });
+}
+
 /**
  * Receptionist sidebar "Assign" for a walk-in queue row. Prefer over `locator.click()`: Playwright synthetic clicks
  * can miss the React `onClick` when the sidebar stacks under fixed chrome — observed in dual-browser parallel assign runs.

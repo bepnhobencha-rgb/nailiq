@@ -4,6 +4,7 @@ import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   clickWalkinService,
+  clickWalkinSubmit,
   fillWalkinGuestContact,
   gotoReceptionistCenter,
   RECEPTIONIST_E2E_SLUG,
@@ -63,7 +64,7 @@ test.describe("Cross-tab queue visibility", () => {
 
       await fillWalkinGuestContact(leader, marker);
       await clickWalkinService(leader, fx.serviceIds[0]!);
-      await leader.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
+      await clickWalkinSubmit(leader);
 
       await expect(
         leader.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker }),
