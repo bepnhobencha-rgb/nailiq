@@ -552,9 +552,14 @@ export async function clickWalkinService(page: Page, serviceId: string): Promise
   });
 }
 
-/** Submit the walkin form. Uses evaluate() to bypass overflow:hidden viewport clipping in CI. */
+/**
+ * Submit the walkin form. Waits for the button to be enabled (React may need a tick
+ * to commit service-chip selection state) then evaluates click to bypass the
+ * overflow:hidden sidebar that blocks Playwright's viewport-check in CI.
+ */
 export async function clickWalkinSubmit(page: Page): Promise<void> {
-  const loc = page.getByTestId("walkin-add-form").locator('button[type="submit"]');
+  // :not([disabled]) ensures React has committed the service selection before we click
+  const loc = page.locator('[data-testid="walkin-submit"]:not([disabled])');
   await loc.waitFor({ state: "attached", timeout: 15_000 });
   await loc.evaluate((el: HTMLElement) => {
     el.click();

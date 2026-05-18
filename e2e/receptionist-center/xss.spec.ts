@@ -28,8 +28,7 @@ test.describe("Walk-in name — XSS guard", () => {
     page,
   }) => {
     await gotoReceptionistCenter(page, fx.slug);
-    await page.getByTestId("walkin-name").click();
-    await page.keyboard.type("<script>alert('XSS')</script>");
+    await page.getByTestId("walkin-name").fill("<script>alert('XSS')</script>");
     await page.getByTestId("walkin-name").press("Tab");
     await page.getByTestId("walkin-phone").fill("6045550199");
 

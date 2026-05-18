@@ -268,8 +268,10 @@ test.describe("Setup staff delete", () => {
       timeout: 15_000,
     });
 
-    const gone = await getStaffByName(fx.salonId, NAME_OK);
-    expect(gone).toBeNull();
+    // UI removes optimistically; poll DB until the server-side delete commits
+    await expect
+      .poll(async () => getStaffByName(fx.salonId, NAME_OK), { timeout: 10_000 })
+      .toBeNull();
 
     const { data: bookingRow, error: bErr } = await supabaseAdmin
       .from("bookings")
