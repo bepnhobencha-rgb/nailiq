@@ -260,6 +260,12 @@ export const userVi: UserMessages = {
         },
       ],
     },
+    trustStrip: {
+      made: "Xây dựng tại Vancouver, BC 🇨🇦",
+      pipeda: "Tuân thủ PIPEDA",
+      freeToStart: "Miễn phí để bắt đầu — không cần thẻ",
+      bilingual: "Tiếng Việt & Tiếng Anh",
+    },
     pricing: {
       eyebrow: "Bảng giá",
       h2: "Bảng giá minh bạch",

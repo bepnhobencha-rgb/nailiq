@@ -212,6 +212,12 @@ export type UserMessages = {
         venue: string;
       }>;
     };
+    trustStrip: {
+      made: string;
+      pipeda: string;
+      freeToStart: string;
+      bilingual: string;
+    };
     pricing: {
       eyebrow: string;
       h2: string;
@@ -1621,6 +1627,12 @@ export const userEn: UserMessages = {
           venue: "Lotus Nails · Calgary, AB",
         },
       ],
+    },
+    trustStrip: {
+      made: "Made in Vancouver, BC 🇨🇦",
+      pipeda: "PIPEDA Compliant",
+      freeToStart: "Free to start — no card",
+      bilingual: "Vietnamese & English",
     },
     pricing: {
       eyebrow: "Pricing",
