@@ -150,6 +150,10 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
       timezone: tz,
       address: "123 E2E Receptionist Lane",
       opening_hours: openingParsed,
+      // Required: the dashboard layout gates access on this being non-null
+      // (redirect to /register/setup when null). Without it every RC test
+      // would land on the setup wizard instead of the receptionist center.
+      setup_wizard_completed_at: new Date().toISOString(),
       // Opt the fixture into the `rush_hour` preset so the receptionist
       // center renders the full UI surface tested by these specs (StatusPill
       // / `kpi_bar` in particular). The product default preset is `reception`
