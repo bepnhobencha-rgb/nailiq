@@ -244,6 +244,20 @@ export const userVi: UserMessages = {
           author: "Thúy Mai, Chủ tiệm",
           venue: "Saigon Nail Studio · Houston, TX",
         },
+        {
+          initials: "PN",
+          body:
+            "Cài đặt hết 10 phút — mình hoài nghi nhưng đúng là nhanh vậy. Danh sách walk-in ai trong tiệm cũng thấy và bàn lễ tân không còn hỗn loạn nữa.",
+          author: "Phương Nguyễn, Chủ tiệm",
+          venue: "Pink Nails Studio · Vancouver, BC",
+        },
+        {
+          initials: "JH",
+          body:
+            "Link đặt lịch song ngữ thay đổi tất cả. Khách lớn tuổi người Việt trước không quen hệ thống cũ nay tự đặt lịch mà không cần gọi điện.",
+          author: "Jennifer Ho, Chủ tiệm",
+          venue: "Lotus Nails · Calgary, AB",
+        },
       ],
     },
     pricing: {
@@ -436,6 +450,9 @@ export const userVi: UserMessages = {
       terms: "Điều khoản",
       contact: "Liên hệ",
       builtIn: "Xây dựng tại Vancouver, BC 🇨🇦",
+      followUs: "Theo dõi",
+      instagramAriaLabel: "NailIQ trên Instagram",
+      tiktokAriaLabel: "NailIQ trên TikTok",
     },
   },
   nav: {
