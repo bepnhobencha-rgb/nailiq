@@ -94,7 +94,12 @@ test.describe("Copy & i18n live-render check", () => {
     for (const lang of ["en", "vi"] as const) {
       test(`/${COPY_SLUG}?lang=${lang}`, async ({ page }) => {
         await page.goto(`/${COPY_SLUG}?lang=${lang}`);
-        await page.waitForLoadState("networkidle");
+        // Public booking page keeps a Supabase WebSocket alive — networkidle
+        // never fires. Wait for the booking UI to appear instead.
+        await page.waitForSelector(
+          '[data-testid="service-item"], [data-testid="booking-no-services"]',
+          { timeout: 20_000 },
+        );
         await assertNoLeakedKeys(page, lang);
       });
     }
@@ -127,17 +132,29 @@ test.describe("Copy & i18n live-render check", () => {
         await page.goto("/");
         await page.waitForLoadState("networkidle");
 
-        const visibleText = await page.evaluate(
-          () => document.body?.innerText ?? "",
+        // Scroll to bottom so all whileInView animations trigger (pricing
+        // section starts at opacity:0 until it enters the viewport).
+        await page.evaluate(() =>
+          window.scrollTo({ top: document.body.scrollHeight, behavior: "instant" }),
         );
+
+        // Use textContent (not innerText) so we capture text from opacity:0
+        // animated elements that haven't fully transitioned yet.
+        const visibleText = await page.evaluate(() => {
+          const clone = document.body.cloneNode(true) as HTMLElement;
+          clone.querySelectorAll("script, style, noscript").forEach((el) => el.remove());
+          return clone.textContent ?? "";
+        });
 
         expect(visibleText).not.toContain("[object Object]");
 
         // Hero — proves the lang switch took effect.
+        // Uses landing.hero.h1Gold (the actual rendered key), not the
+        // deprecated home.landingH1Gold which is no longer rendered.
         expect(
           visibleText,
           `[${lang}] landing hero headline not rendered`,
-        ).toContain(messages.home.landingH1Gold);
+        ).toContain(messages.landing.hero.h1Gold);
 
         // Pricing section — the part that motivated this test (plans
         // structure changed after the initial pipeline PR).

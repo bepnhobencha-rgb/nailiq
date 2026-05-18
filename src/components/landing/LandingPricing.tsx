@@ -150,6 +150,7 @@ export function LandingPricing() {
                     {isPro ? (
                       <Link
                         href="/register"
+                        data-testid={`pricing-cta-${plan.id}`}
                         className="inline-flex w-full items-center justify-center rounded-full border border-nq-primary/50 bg-nq-primary px-6 py-3.5 text-sm font-semibold text-nq-bg shadow-[0_8px_28px_-8px_rgba(212,175,55,0.55)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
                       >
                         {plan.cta}
@@ -157,6 +158,7 @@ export function LandingPricing() {
                     ) : isEnterprise ? (
                       <Link
                         href="/contact"
+                        data-testid={`pricing-cta-${plan.id}`}
                         className="inline-flex w-full items-center justify-center rounded-full border border-nq-border/50 bg-nq-surface/60 px-6 py-3 text-sm font-semibold text-nq-foreground transition hover:bg-nq-surface hover:border-nq-border/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
                       >
                         {plan.cta}
@@ -164,6 +166,7 @@ export function LandingPricing() {
                     ) : (
                       <Link
                         href="/register"
+                        data-testid={`pricing-cta-${plan.id}`}
                         className="inline-flex w-full items-center justify-center rounded-full border border-nq-border/50 bg-nq-surface/60 px-6 py-3 text-sm font-semibold text-nq-foreground transition hover:bg-nq-surface hover:border-nq-border/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
                       >
                         {plan.cta}

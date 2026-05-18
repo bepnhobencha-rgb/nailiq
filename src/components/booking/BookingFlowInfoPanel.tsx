@@ -301,7 +301,8 @@ export function BookingFlowInfoPanel({
             disabled={
               clientName.trim().length === 0 ||
               phoneTrimmed.length === 0 ||
-              phoneLocallyInvalid
+              phoneLocallyInvalid ||
+              Boolean(nameError)
             }
           >
             {t.next}

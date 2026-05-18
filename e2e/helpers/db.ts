@@ -95,6 +95,7 @@ export async function seedTestSalon(opts?: {
       name,
       phone,
       profile_complete: true,
+      setup_wizard_completed_at: new Date().toISOString(),
       salon_phone:
         opts?.salon_phone === undefined
           ? null
@@ -165,4 +166,47 @@ export async function seedTestSalon(opts?: {
   }
 
   return { salonId: salon.id as string, slug, phone };
+}
+
+/**
+ * Create a Supabase auth user for E2E tests that exercise email/password sign-in.
+ * Uses the service-role admin API so no real email is sent.
+ * Returns { userId, email, password }.
+ */
+export async function seedTestUser(opts?: { email?: string; password?: string }) {
+  const email = opts?.email ?? `e2e-user-${Date.now()}@nailiq.test.invalid`;
+  const password = opts?.password ?? "E2E_testpass_2026!";
+
+  const { data, error } = await supabase.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
+
+  if (error || !data.user?.id) {
+    throw new Error(error?.message ?? "seedTestUser: failed to create auth user");
+  }
+
+  return { userId: data.user.id, email, password };
+}
+
+/** Remove a Supabase auth user (and any salon they own) from E2E test runs. */
+export async function cleanupTestUser(userId: string) {
+  // Remove salon_members first to find any salon owned by this user.
+  const { data: memberRows } = await supabase
+    .from("salon_members")
+    .select("salon_id")
+    .eq("user_id", userId)
+    .eq("role", "owner");
+
+  for (const row of memberRows ?? []) {
+    const salonId = (row as { salon_id: string }).salon_id;
+    await supabase.from("bookings").delete().eq("salon_id", salonId);
+    await supabase.from("services").delete().eq("salon_id", salonId);
+    await supabase.from("staff").delete().eq("salon_id", salonId);
+    await supabase.from("salon_members").delete().eq("salon_id", salonId);
+    await supabase.from("salons").delete().eq("id", salonId);
+  }
+
+  await supabase.auth.admin.deleteUser(userId);
 }

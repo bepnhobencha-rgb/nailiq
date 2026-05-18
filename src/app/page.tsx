@@ -4,7 +4,6 @@ import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { LandingHero } from "@/components/landing/LandingHero";
 import { LandingPainSection } from "@/components/landing/LandingPainSection";
 import { LandingFeatures } from "@/components/landing/LandingFeatures";
-import { LandingComparison } from "@/components/landing/LandingComparison";
 import { LandingHowItWorks } from "@/components/landing/LandingHowItWorks";
 import { LandingSocialProof } from "@/components/landing/LandingSocialProof";
 import { LandingPricing } from "@/components/landing/LandingPricing";
@@ -73,7 +72,6 @@ export default function Home() {
           <LandingHero />
           <LandingPainSection />
           <LandingFeatures />
-          <LandingComparison />
           <LandingHowItWorks />
           <LandingSocialProof />
           <LandingPricing />

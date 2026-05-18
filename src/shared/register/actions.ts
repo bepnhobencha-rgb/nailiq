@@ -34,8 +34,12 @@ const INVALID_PHONE_MSG = REGISTER_INVALID_PHONE_HINT_EN;
  * `"development" | "test"` for the rest of the function body — there
  * are downstream `process.env.NODE_ENV === "production"` reads (cookie
  * `secure` flag) that would otherwise be flagged as always-false.
+ *
+ * Demo/E2E mode (DEMO_OTP=true) bypasses the prod gate so the returning-owner
+ * phone OTP flow works in E2E CI which runs `next start` (NODE_ENV=production).
  */
 function isPhoneOtpDisabledInProd(): boolean {
+  if (isDemoOtpRuntime()) return false;
   return String(process.env.NODE_ENV) === "production";
 }
 

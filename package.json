@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:test": "NEXT_PUBLIC_DEMO_OTP=true DEMO_OTP=true NAILIQ_TEST_BYPASS_SLUG_PIN=1 next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

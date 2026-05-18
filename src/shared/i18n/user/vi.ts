@@ -338,41 +338,6 @@ export const userVi: UserMessages = {
         },
       },
     },
-    compare: {
-      eyebrow: "Tại sao NailIQ",
-      h2: "Xây cho tiệm nail — không phải phần mềm lịch hẹn chung chung",
-      sub:
-        "So sánh thẳng thắn với 3 công cụ chủ tiệm hay nhắc nhất. Giá đối thủ là giá niêm yết năm 2026; nên kiểm tra trang của họ để biết khuyến mãi mới.",
-      headers: ["Tính năng", "NailIQ", "Booksy", "Square Appts", "Mangomint"],
-      rows: [
-        {
-          label: "Giá khởi điểm",
-          cells: ["$29/tháng", "$30/tháng + phụ phí", "$29/chi nhánh", "$165/tháng"],
-        },
-        {
-          label: "Giao diện tiếng Việt",
-          cells: ["✓", "✕", "✕", "✕"],
-        },
-        {
-          label: "Hàng đợi walk-in",
-          cells: ["✓", "Hạn chế", "✕", "✓"],
-        },
-        {
-          label: "Thời gian setup",
-          cells: ["15 phút", "2-3 ngày", "1-2 ngày", "1-2 ngày"],
-        },
-        {
-          label: "Phí giao dịch",
-          cells: ["Không", "Không", "2.6% + 10¢", "~1-3% (POS)"],
-        },
-        {
-          label: "Dùng thử miễn phí",
-          cells: ["14 ngày, không thẻ", "7 ngày, cần thẻ", "30 ngày, cần thẻ", "Chỉ xem demo"],
-        },
-      ],
-      footnote:
-        "So sánh dựa trên trang giá công khai tại thời điểm viết. Giá và tính năng NailIQ khớp trực tiếp với bảng plan ở trên.",
-    },
     faq: {
       eyebrow: "Câu hỏi thường gặp",
       h2: "Những câu chủ tiệm hỏi trước khi chuyển sang",
@@ -529,6 +494,7 @@ export const userVi: UserMessages = {
     hideOptions: "Ẩn",
     sendLoginLink: "Gửi link đăng nhập",
     sendSignupLink: "Gửi magic link",
+    emailLabel: "Địa chỉ email",
     emailPlaceholder: "you@example.com",
     emailInvalid: "Email không hợp lệ.",
     emailRequired: "Vui lòng nhập email phía trên trước.",

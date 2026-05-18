@@ -42,7 +42,9 @@ test.describe("Booking validation — info step", () => {
   test("bv-1: invalid phone shows error on blur; Continue disabled", async ({ page }) => {
     await navigateToBookingInfo(page, testSlug);
     await page.getByTestId("booking-info-name").fill("Ada");
-    await page.getByTestId("booking-info-phone").fill("abc");
+    // "abc" is stripped to "" by formatPhoneInputProgressive (non-digits removed),
+    // so use partial digits that survive formatting but fail validateGuestPhone.
+    await page.getByTestId("booking-info-phone").fill("123");
     await page.getByTestId("booking-info-phone").blur();
 
     await expect(page.getByTestId("booking-info-phone-error")).toBeVisible();

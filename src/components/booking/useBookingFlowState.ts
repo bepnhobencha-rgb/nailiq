@@ -89,7 +89,7 @@ export function useBookingFlowState(
   const [step, setStep] = useState<BookingFlowStep>("service");
   const [stepDir, setStepDir] = useState<1 | -1>(1);
   const [serviceId, setServiceId] = useState<string | null>(null);
-  const [staffId, setStaffId] = useState<string | null>(BOOKING_ANY_STAFF_ID);
+  const [staffId, setStaffId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(() =>
     normalizeNoon(new Date()),
   );

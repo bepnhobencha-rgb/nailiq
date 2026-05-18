@@ -155,9 +155,11 @@ export function SocialAuthButtons({
           setPendingAction(null);
           return;
         }
-        const dest = await resolvePostAuthRedirect();
-        router.push(dest);
-        router.refresh();
+        // Full navigation to /register/setup: the new session cookie is sent with
+        // the next browser request, so the server can read it correctly.
+        // /register/setup handles all cases: no salon → wizard, existing salon →
+        // dashboard redirect.  Using router.push races with cookie propagation.
+        window.location.assign("/register/setup");
         return;
       }
       // Sign up — Supabase may or may not require email confirmation.
@@ -184,9 +186,8 @@ export function SocialAuthButtons({
         setPendingAction(null);
         return;
       }
-      const dest = await resolvePostAuthRedirect();
-      router.push(dest);
-      router.refresh();
+      // Same reasoning as sign-in above.
+      window.location.assign("/register/setup");
     });
   };
 
@@ -297,6 +298,7 @@ export function SocialAuthButtons({
             type="email"
             inputMode="email"
             autoComplete="email"
+            aria-label={t.emailLabel}
             placeholder={t.emailPlaceholder}
             value={email}
             onChange={(ev) => {

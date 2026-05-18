@@ -3,7 +3,7 @@ import { resolve } from "path";
 
 import { defineConfig, devices } from "@playwright/test";
 
-function loadDotEnv(filename: string) {
+function loadDotEnv(filename: string, override = false) {
   const p = resolve(process.cwd(), filename);
   if (!existsSync(p)) return;
   const raw = readFileSync(p, "utf8");
@@ -20,12 +20,18 @@ function loadDotEnv(filename: string) {
     ) {
       val = val.slice(1, -1);
     }
-    if (process.env[key] === undefined) process.env[key] = val;
+    if (override || process.env[key] === undefined) process.env[key] = val;
   }
 }
 
+// .env.test.local is loaded with override=true so its E2E-specific values
+// (NEXT_PUBLIC_DEMO_OTP=true, NAILIQ_TEST_BYPASS_SLUG_PIN=1) always win over
+// whatever is set in .env.local for the test runner process.
+// NOTE: the Next.js dev server reads .env.local directly; start it with
+// NEXT_PUBLIC_DEMO_OTP=true NAILIQ_TEST_BYPASS_SLUG_PIN=1 npm run dev
+// (or use `npm run dev:test`) when running E2E locally.
 loadDotEnv(".env.local");
-loadDotEnv(".env.test.local");
+loadDotEnv(".env.test.local", true);
 
 const isCI = !!process.env.CI;
 
@@ -66,7 +72,12 @@ export default defineConfig({
     { name: "mobile", use: { ...devices["iPhone 14"] } },
   ],
   webServer: {
-    command: "npm run dev",
+    // Pass E2E-required flags so a freshly-started server has demo mode on.
+    // reuseExistingServer: if a server is already running on :3000 it will
+    // be reused as-is — restart it via `npm run dev:test` if demo flags are
+    // needed (see .env.test.local.example).
+    command:
+      "NEXT_PUBLIC_DEMO_OTP=true DEMO_OTP=true NAILIQ_TEST_BYPASS_SLUG_PIN=1 npm run dev",
     url: "http://localhost:3000",
     // In CI we pre-start `next dev` in the workflow and gate the job on
     // a 30s wait-on health check (see .github/workflows/e2e.yml). The

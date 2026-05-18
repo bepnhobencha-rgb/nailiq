@@ -1785,6 +1785,7 @@ function ReceptionistCenterInner({
           <aside
             data-testid="queue-panel-slideover"
             aria-hidden={!queuePanelOpen}
+            inert={!queuePanelOpen}
             aria-label={rcMessages.queue.title}
             className={cn(
               // Flex column so the header is shrink-0 and the body

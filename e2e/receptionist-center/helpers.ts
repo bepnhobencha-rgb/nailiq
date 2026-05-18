@@ -130,8 +130,8 @@ async function fetchServicePrice(
 }
 
 /** Full salon + catalog + baseline desk bookings (non-marker names). */
-export async function seedReceptionistCenterFixture(): Promise<ReceptionistCenterFixture> {
-  const slug = RECEPTIONIST_E2E_SLUG;
+export async function seedReceptionistCenterFixture(slugOverride?: string): Promise<ReceptionistCenterFixture> {
+  const slug = slugOverride ?? RECEPTIONIST_E2E_SLUG;
   const { cleanupTestSalon } = await import("../helpers/db");
   await cleanupTestSalon(slug);
 
@@ -464,19 +464,14 @@ export async function gotoReceptionistCenter(
   opts?: { dateYmd?: string; expectWalkinQueue?: boolean },
 ): Promise<void> {
   const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
-  let hostname = "localhost";
-  try {
-    hostname = new URL(baseURL).hostname;
-  } catch {
-    /* keep localhost */
-  }
 
   await page.context().addCookies([
     {
       name: "nailiq-demo-slug",
       value: slug,
-      domain: hostname === "127.0.0.1" ? "127.0.0.1" : hostname === "localhost" ? "localhost" : hostname,
-      path: "/",
+      // Use `url` (not `domain`+`path`) — Playwright derives domain/path from
+      // the URL, which is more reliable for localhost in Chromium on Linux CI.
+      url: baseURL,
     },
   ]);
 
@@ -585,19 +580,12 @@ export async function moveMouseToAssignSlot(
 
 export async function gotoOwnerDashboard(page: Page, slug: string): Promise<void> {
   const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
-  let hostname = "localhost";
-  try {
-    hostname = new URL(baseURL).hostname;
-  } catch {
-    /* keep localhost */
-  }
 
   await page.context().addCookies([
     {
       name: "nailiq-demo-slug",
       value: slug,
-      domain: hostname === "127.0.0.1" ? "127.0.0.1" : hostname === "localhost" ? "localhost" : hostname,
-      path: "/",
+      url: baseURL,
     },
   ]);
 
