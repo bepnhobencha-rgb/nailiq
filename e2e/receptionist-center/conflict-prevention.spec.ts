@@ -1,40 +1,24 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./test";
 
-import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   clickAssignSlot,
   fillWalkinGuestContact,
   gotoReceptionistCenter,
-  RECEPTIONIST_E2E_SLUG,
-  seedReceptionistCenterFixture,
   testClientNameMarker,
-  type ReceptionistCenterFixture,
 } from "./helpers";
 
-let fx: ReceptionistCenterFixture;
-
-test.beforeAll(async () => {
-  fx = await seedReceptionistCenterFixture();
-});
-
-test.beforeEach(async () => {
-  await cleanReceptionistData(fx.salonId);
-});
-
-test.afterAll(async () => {
-  await cleanupTestSalon(RECEPTIONIST_E2E_SLUG);
+test.beforeEach(async ({ rcFixture }) => {
+  await cleanReceptionistData(rcFixture.salonId);
 });
 
 test.describe("Assign conflict prevention", () => {
-  test("case 12: conflict slot shows desk message and keeps walk-in in queue", async ({
-    page,
-  }) => {
-    await gotoReceptionistCenter(page, fx.slug);
+  test("case 12: conflict slot shows desk message and keeps walk-in in queue", async ({ page, rcFixture }) => {
+    await gotoReceptionistCenter(page, rcFixture.slug);
     const marker = testClientNameMarker();
 
     await fillWalkinGuestContact(page, marker);
-    await page.locator(`#walkin-service-${fx.serviceIds[0]}`).click();
+    await page.locator(`#walkin-service-${rcFixture.serviceIds[0]}`).click();
     await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
 
     const row = page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker });
@@ -44,7 +28,7 @@ test.describe("Assign conflict prevention", () => {
 
     await page.getByTestId(`queue-assign-${bookingId}`).click();
 
-    await clickAssignSlot(page, fx.conflictStaffId, fx.conflictSlotIndex);
+    await clickAssignSlot(page, rcFixture.conflictStaffId, rcFixture.conflictSlotIndex);
 
     await expect(page.getByTestId(`queue-item-${bookingId}`)).toBeVisible({ timeout: 5000 });
     await expect(page.getByTestId(`booking-block-${bookingId}`)).toHaveCount(0);
