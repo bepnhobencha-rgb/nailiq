@@ -1,21 +1,32 @@
 # NailIQ
 
-NailIQ is an AI-first operating system for nail salons and beauty businesses.
+NailIQ is a salon booking and operations platform for nail salons, built in Vancouver, BC, Canada.
 
-Core capabilities:
-- AI booking system
-- Salon website builder
-- Staff scheduling
-- POS and checkout modules
-- CRM
-- AI menu scanner
-- AI nail try-on
-- AI receptionist
-- Automation engine
-- Analytics and growth dashboard
-- Viral referral system
+## What NailIQ does
 
-Primary users:
-- Nail salon owners
-- Beauty business owners
-- Salon staff
+- **Online booking**: salons get a shareable nailiq.ca/your-salon booking page; clients book by selecting service, staff, and time slot
+- **Walk-in queue**: real-time queue display for walk-in clients — front-desk staff add walk-ins instantly
+- **Receptionist center**: live dashboard showing all appointments and walk-ins, staff availability, and queue status
+- **Vietnamese-first**: booking flow and dashboard available in Vietnamese and English
+- **Staff & service management**: owners manage staff profiles, services, and pricing from the dashboard
+- **SMS OTP auth**: phone-number based sign-in with one-time codes via Twilio
+
+## Who uses NailIQ
+
+- Nail salon owners (primarily Vietnamese-Canadian and Vietnamese-American communities)
+- Front-desk staff managing bookings and walk-ins
+
+## Pricing
+
+- Free tier: 1 staff, up to 50 bookings/month
+- Pro: $39 CAD/month — unlimited bookings and staff, receptionist center, AI upsell, auto review requests
+- Studio: $89 CAD/month — multiple locations, priority support
+- Enterprise: custom pricing
+
+## Tech
+
+Next.js, React, Supabase (Postgres + Auth + Realtime), Vercel, Twilio. Deployed at nailiq.ca.
+
+## Contact
+
+hello@nailiq.ca | privacy@nailiq.ca | https://nailiq.ca/contact
