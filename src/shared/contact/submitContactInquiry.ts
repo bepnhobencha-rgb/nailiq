@@ -91,7 +91,14 @@ export async function submitContactInquiry(input: {
     // Resend's own rate caps are the secondary defenses.
   }
 
-  const resend = getResendClient();
+  let resend: Awaited<ReturnType<typeof getResendClient>>;
+  try {
+    resend = getResendClient();
+  } catch (e) {
+    Sentry.captureException(e, { tags: { surface: "contact" } });
+    return { ok: false, reason: "server_error" };
+  }
+
   if (!resend) {
     // Dev-only path; production throws inside `getResendClient`.
     console.log("[contact] would send inquiry:", {

@@ -298,6 +298,8 @@ export type UserMessages = {
       ctaSecondary: string;
     };
     footer: {
+      about: string;
+      security: string;
       privacy: string;
       terms: string;
       contact: string;
@@ -1608,7 +1610,7 @@ export const userEn: UserMessages = {
       h2: "Simple, transparent pricing",
       sub: "No hidden fees. Upgrade or cancel anytime.",
       perMonth: "/month",
-      taxNote: "+ applicable taxes. CAD pricing.",
+      taxNote: "+ GST/HST (and PST where applicable). Prices in CAD.",
       ccNotice: "No credit card required",
       proMigrationNote: "Switching from another tool? First 3 months free.",
       plans: [
@@ -1785,6 +1787,8 @@ export const userEn: UserMessages = {
       ctaSecondary: "See how it works ↓",
     },
     footer: {
+      about: "About",
+      security: "Security",
       privacy: "Privacy",
       terms: "Terms",
       contact: "Contact",

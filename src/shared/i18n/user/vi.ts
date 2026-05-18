@@ -251,7 +251,7 @@ export const userVi: UserMessages = {
       h2: "Bảng giá minh bạch",
       sub: "Không phí ẩn. Nâng cấp hoặc hủy bất cứ lúc nào.",
       perMonth: "/tháng",
-      taxNote: "+ thuế áp dụng. Giá CAD.",
+      taxNote: "+ GST/HST (và PST nếu áp dụng). Giá CAD.",
       ccNotice: "Không cần thẻ tín dụng",
       proMigrationNote:
         "Đang dùng phần mềm khác? Miễn phí 3 tháng đầu.",
@@ -430,7 +430,9 @@ export const userVi: UserMessages = {
       ctaSecondary: "Xem cách hoạt động ↓",
     },
     footer: {
-      privacy: "Bảo mật",
+      about: "Về chúng tôi",
+      security: "Bảo mật",
+      privacy: "Quyền riêng tư",
       terms: "Điều khoản",
       contact: "Liên hệ",
       builtIn: "Xây dựng tại Vancouver, BC 🇨🇦",

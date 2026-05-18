@@ -38,6 +38,18 @@ export function LandingFooter() {
             className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-nq-muted"
           >
             <Link
+              href="/about"
+              className="transition hover:text-nq-foreground focus-visible:outline-none focus-visible:text-nq-foreground"
+            >
+              {t.about}
+            </Link>
+            <Link
+              href="/security"
+              className="transition hover:text-nq-foreground focus-visible:outline-none focus-visible:text-nq-foreground"
+            >
+              {t.security}
+            </Link>
+            <Link
               href="/privacy"
               className="transition hover:text-nq-foreground focus-visible:outline-none focus-visible:text-nq-foreground"
             >
