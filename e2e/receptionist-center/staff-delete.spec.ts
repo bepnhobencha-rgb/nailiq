@@ -87,6 +87,7 @@ async function seedSalonAnchorAndService(): Promise<Fixture> {
       profile_complete: true,
       timezone: "UTC",
       opening_hours: openingParsed,
+      setup_wizard_completed_at: new Date().toISOString(),
     })
     .select("id")
     .single();

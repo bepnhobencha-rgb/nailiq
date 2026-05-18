@@ -24,6 +24,7 @@ async function seedSalonBare(slug: string, withService: boolean): Promise<void> 
       profile_complete: true,
       timezone: "UTC",
       opening_hours: openingParsed,
+      setup_wizard_completed_at: new Date().toISOString(),
     })
     .select("id")
     .single();
