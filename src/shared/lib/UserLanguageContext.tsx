@@ -85,7 +85,13 @@ export function UserLanguageProvider({
   }, []);
 
   useEffect(() => {
+    // Some browsers reset scroll when `document.documentElement.lang` changes.
+    // Save and restore to prevent the page jumping to the top on toggle.
+    const saved = typeof window !== "undefined" ? window.scrollY : 0;
     document.documentElement.lang = language === "vi" ? "vi" : "en";
+    if (typeof window !== "undefined" && window.scrollY !== saved) {
+      window.scrollTo(0, saved);
+    }
   }, [language]);
 
   const setLanguage = useCallback((next: UserLanguage) => {

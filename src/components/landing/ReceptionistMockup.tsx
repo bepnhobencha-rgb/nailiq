@@ -191,7 +191,7 @@ export function ReceptionistMockup({ reduce }: ReceptionistMockupProps) {
           <span className="h-2 w-2 rounded-full bg-yellow-400/70" />
           <span className="h-2 w-2 rounded-full bg-green-400/70" />
           <div className="ml-2 flex-1 truncate rounded border border-nq-border/30 bg-nq-bg/50 px-2 py-0.5 text-[9px] text-nq-muted">
-            nailiq.com/dashboard/blossom-nail/center
+            nailiq.ca/dashboard/blossom-nail/center
           </div>
 
           {/* Language badge — cycles with the copy */}

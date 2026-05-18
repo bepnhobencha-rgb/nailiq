@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { LandingNavbar } from "@/components/landing/LandingNavbar";
+import { LandingFooter } from "@/components/landing/LandingFooter";
 import { ContactPageClient } from "@/components/contact/ContactPageClient";
 
 export const metadata: Metadata = {
@@ -7,5 +9,11 @@ export const metadata: Metadata = {
 };
 
 export default function ContactPage() {
-  return <ContactPageClient />;
+  return (
+    <>
+      <LandingNavbar />
+      <ContactPageClient />
+      <LandingFooter />
+    </>
+  );
 }

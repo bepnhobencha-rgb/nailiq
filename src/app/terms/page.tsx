@@ -32,7 +32,7 @@ export default function TermsPage() {
               NailIQ provides salon booking and operations software for nail
               salons, including a public booking page, a real-time
               receptionist center, and salon management tools. The service is
-              priced at CAD $29 per month, plus applicable taxes.
+              priced at CAD $39 per month, plus applicable taxes.
             </p>
           </section>
 

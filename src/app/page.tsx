@@ -46,10 +46,15 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
+    type: "website",
+    url: "/",
+    siteName: "NailIQ",
+    locale: "en_CA",
     title: landingTitle,
     description: landingDescription,
   },
   twitter: {
+    card: "summary_large_image",
     title: landingTitle,
     description: landingDescription,
   },

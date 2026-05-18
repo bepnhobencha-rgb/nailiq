@@ -110,6 +110,7 @@ export function ContactForm() {
   return (
     <form
       onSubmit={onSubmit}
+      method="post"
       noValidate
       data-testid="contact-form"
       className="rounded-2xl border border-nq-border/40 bg-nq-surface/40 p-6 md:p-8"
