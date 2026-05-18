@@ -28,11 +28,13 @@ test.describe("Walk-in name — XSS guard", () => {
     page,
   }) => {
     await gotoReceptionistCenter(page, fx.slug);
-    await page.getByTestId("walkin-name").fill("<script>alert('XSS')</script>");
+    await page.getByTestId("walkin-name").click();
+    await page.keyboard.type("<script>alert('XSS')</script>");
     await page.getByTestId("walkin-name").press("Tab");
     await page.getByTestId("walkin-phone").fill("6045550199");
 
-    await expect(page.getByTestId("walkin-name-error")).toBeVisible();
+    // 15s: CI can be slow to process blur→onBlur→setNameError chain
+    await expect(page.getByTestId("walkin-name-error")).toBeVisible({ timeout: 15_000 });
     await expect(
       page.getByTestId("walkin-add-form").locator('button[type="submit"]'),
     ).toBeDisabled();

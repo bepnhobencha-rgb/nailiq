@@ -550,6 +550,13 @@ export async function clickWalkinService(page: Page, serviceId: string): Promise
   await loc.evaluate((el: HTMLElement) => {
     el.click();
   });
+  // Block until React commits the selection — chip gains border-nq-primary class.
+  // Without this wait, clickWalkinSubmit fires against the stale runSubmit closure
+  // (selectedServiceId still null) and the form silently aborts.
+  await page.locator(`#walkin-service-${serviceId}.border-nq-primary`).waitFor({
+    state: "attached",
+    timeout: 5_000,
+  });
 }
 
 /**

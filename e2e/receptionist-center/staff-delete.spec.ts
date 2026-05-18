@@ -162,6 +162,7 @@ async function getStaffByName(
     .select("id")
     .eq("salon_id", salonId)
     .eq("name", name)
+    .is("deleted_at" as never, null) // deleteStaff soft-deletes; filter them out
     .maybeSingle();
 
   if (error) throw new Error(error.message);
