@@ -795,19 +795,33 @@ export async function addStaff(
     return fail("server_error");
   }
 
-  const serviceIds = sanitizeServiceIds(input.serviceIds);
-  if (serviceIds.length > 0) {
-    const { error: capErr } = await supabase
-      .from("staff_services")
-      .insert(
-        serviceIds.map((sid) => ({
-          staff_id: String(insertedStaff.id),
-          service_id: sid,
-        })),
-      );
-    if (capErr) {
-      console.error("[addStaff] staff_services", capErr);
-      return fail("server_error");
+  // Mirror addService behavior: only seed staff_services when the salon
+  // is already in whitelist mode. If the salon is still in the all-capable
+  // fallback (zero rows), adding rows for only the new staff would break
+  // every existing staff member — so we leave 0 rows and keep the fallback.
+  const { data: hasCap } = await supabase.rpc("salon_has_staff_services", {
+    p_salon_id: r.salon.id,
+  });
+  if (hasCap === true) {
+    const { data: svcRows } = await supabase
+      .from("services")
+      .select("id")
+      .eq("salon_id", r.salon.id)
+      .is("deleted_at" as never, null);
+    const allSvcIds = (svcRows ?? []).map((s) => String(s.id));
+    if (allSvcIds.length > 0) {
+      const { error: capErr } = await supabase
+        .from("staff_services")
+        .insert(
+          allSvcIds.map((sid) => ({
+            staff_id: String(insertedStaff.id),
+            service_id: sid,
+          })),
+        );
+      if (capErr) {
+        console.error("[addStaff] staff_services autoattach", capErr);
+        return fail("server_error");
+      }
     }
   }
 

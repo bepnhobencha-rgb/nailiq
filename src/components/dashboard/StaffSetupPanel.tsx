@@ -84,16 +84,6 @@ export function StaffSetupPanel({
 
   const [draftName, setDraftName] = useState("");
   const [draftRole, setDraftRole] = useState<StaffJobRole>("nail_tech");
-  /** New-staff capability selection. Default: all checked, so an owner who
-   *  doesn't think about it preserves the all-capable fallback for that staff. */
-  const [draftServiceIds, setDraftServiceIds] = useState<string[]>(
-    () => services.map((s) => s.id),
-  );
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-seed add-form draft when services list changes
-    setDraftServiceIds(services.map((s) => s.id));
-  }, [services]);
   const [addSaveStatus, setAddSaveStatus] = useState<SaveButtonStatus>("idle");
   const [addError, setAddError] = useState<string | null>(null);
   const [toast, setToast] = useState<SetupToastPayload | null>(null);
@@ -221,10 +211,11 @@ export function StaffSetupPanel({
     setAddSaveStatus("saving");
     let res: Awaited<ReturnType<typeof addStaff>>;
     try {
+      // No serviceIds — server handles mode-aware auto-seed so we never
+      // accidentally break the all-capable fallback for existing staff.
       res = await addStaff(slug, {
         name: draftName.trim(),
         role: draftRole,
-        serviceIds: draftServiceIds,
       });
     } catch (err) {
       Sentry.captureMessage("[StaffSetupPanel] addStaff threw", {
@@ -255,14 +246,11 @@ export function StaffSetupPanel({
     addStatusTimerRef.current = setTimeout(() => setAddSaveStatus("idle"), 2000);
     setDraftName("");
     setDraftRole("nail_tech");
-    setDraftServiceIds(services.map((s) => s.id));
     refresh();
   }, [
     clearAddStatusTimer,
     draftName,
     draftRole,
-    draftServiceIds,
-    services,
     refresh,
     slug,
   ]);
@@ -388,15 +376,6 @@ export function StaffSetupPanel({
               ))}
             </select>
           </label>
-          <ServicesCheckboxList
-            services={services}
-            selectedIds={draftServiceIds}
-            disabled={addSaveStatus === "saving"}
-            label={setupStaffCopy.servicesCapableLabel}
-            hint={setupStaffCopy.servicesCapableHint}
-            emptyLabel={setupStaffCopy.noServicesAvailable}
-            onChange={setDraftServiceIds}
-          />
           <SaveButton
             status={addSaveStatus}
             onSave={() => {
@@ -473,6 +452,7 @@ function StaffRowFields({
   const [role, setRole] = useState<StaffJobRole>(row.job_role);
   const [status, setStatus] = useState<StaffStatus>(row.status);
   const [serviceIds, setServiceIds] = useState<string[]>(initialServiceIds);
+  const [capabilityOpen, setCapabilityOpen] = useState(false);
 
   // P1.1 — sort + join is a stable canonical form for the capability
   // set; lets us detect dirty without spreading the array. Empty
@@ -585,15 +565,45 @@ function StaffRowFields({
           {setupStaffCopy.statusHint}
         </span>
       </label>
-      <ServicesCheckboxList
-        services={services}
-        selectedIds={serviceIds}
-        disabled={disabled}
-        label={capabilityLabel}
-        hint={capabilityHint}
-        emptyLabel={capabilityEmpty}
-        onChange={setServiceIds}
-      />
+      {services.length === 0 ? (
+        <p className="text-sm text-nq-muted" role="note">{capabilityEmpty}</p>
+      ) : capabilityOpen ? (
+        <div className="flex flex-col gap-2">
+          <ServicesCheckboxList
+            services={services}
+            selectedIds={serviceIds}
+            disabled={disabled}
+            label=""
+            hint=""
+            emptyLabel={capabilityEmpty}
+            onChange={setServiceIds}
+          />
+          <button
+            type="button"
+            className="self-start text-xs text-nq-muted underline-offset-2 hover:text-nq-foreground hover:underline"
+            onClick={() => setCapabilityOpen(false)}
+          >
+            Thu gọn
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm text-nq-muted">
+            {serviceIds.length === services.length
+              ? "Tất cả dịch vụ"
+              : `${serviceIds.length}/${services.length} dịch vụ được phép`}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={disabled}
+            onClick={() => setCapabilityOpen(true)}
+          >
+            Giới hạn dịch vụ →
+          </Button>
+        </div>
+      )}
       {/* P1.1 — explicit Save button; commits all dirty fields
           (name/role/status/serviceIds) in one server call. */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
