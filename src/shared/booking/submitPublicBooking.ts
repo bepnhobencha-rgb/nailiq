@@ -15,7 +15,6 @@ import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { createClient } from "@/shared/lib/supabase/client";
-import { sendBookingConfirmationEmail } from "@/shared/booking/sendBookingConfirmationEmail";
 
 export type BookingParams = {
   shopSlug: string;
@@ -630,20 +629,34 @@ export async function submitPublicBooking(
     /* booking succeeded; profile update is best-effort */
   }
 
-  // Send confirmation email when the customer provided an address.
-  // Fire-and-forget — email failure must never surface to the customer.
+  // Send confirmation email via a dedicated Route Handler that uses after()
+  // to guarantee delivery even after the server action returns.
   if (emailToStore) {
-    void sendBookingConfirmationEmail({
-      bookingId,
-      shopSlug,
-      clientName: nameTrimmed,
-      clientEmail: emailToStore,
-      serviceName: service.name as string,
-      addonServiceName: addonRow?.name ?? null,
-      staffName: resolvedStaffName,
-      startTimeUtc: startLocal.toISOString(),
-      totalPriceCents: totalPriceCents > 0 ? totalPriceCents : null,
-    });
+    try {
+      const appUrl =
+        (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+      const secret = (process.env.INTERNAL_API_SECRET ?? "").trim();
+      await fetch(`${appUrl}/api/booking-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-internal-secret": secret,
+        },
+        body: JSON.stringify({
+          bookingId,
+          shopSlug,
+          clientName: nameTrimmed,
+          clientEmail: emailToStore,
+          serviceName: service.name as string,
+          addonServiceName: addonRow?.name ?? null,
+          staffName: resolvedStaffName,
+          startTimeUtc: startLocal.toISOString(),
+          totalPriceCents: totalPriceCents > 0 ? totalPriceCents : null,
+        }),
+      });
+    } catch (e) {
+      console.error("[submitPublicBooking] booking-email dispatch failed", e);
+    }
   }
 
   return {
