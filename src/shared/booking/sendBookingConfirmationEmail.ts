@@ -177,12 +177,14 @@ export async function sendBookingConfirmationEmail(
   if (!input.clientEmail || input.clientEmail.trim().length === 0) return;
 
   const resend = getResendClient();
-  if (!resend) return; // dev without key — skip silently
+  if (!resend) {
+    console.warn("[sendBookingConfirmationEmail] no RESEND_API_KEY — skipping");
+    return;
+  }
+
+  console.log("[sendBookingConfirmationEmail] sending to", input.clientEmail, "booking", input.bookingId);
 
   try {
-    // Fetch salon name + timezone for the email. Best-effort: if the
-    // query fails we still send a degraded email without timezone-aware
-    // formatting or salon name.
     const supabase = createServiceRoleClient();
     const { data: salonRow } = await supabase
       .from("salons")
@@ -214,6 +216,8 @@ export async function sendBookingConfirmationEmail(
 
     if (res.error) {
       console.error("[sendBookingConfirmationEmail] resend error", res.error);
+    } else {
+      console.log("[sendBookingConfirmationEmail] sent ok id=", res.data?.id);
     }
   } catch (e) {
     console.error("[sendBookingConfirmationEmail] threw", e);

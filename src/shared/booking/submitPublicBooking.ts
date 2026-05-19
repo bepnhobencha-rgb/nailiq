@@ -633,9 +633,7 @@ export async function submitPublicBooking(
   // Send confirmation email when the customer provided an address.
   // Fire-and-forget — email failure must never surface to the customer.
   if (emailToStore) {
-    // Awaited so the serverless function stays alive until Resend responds.
-    // sendBookingConfirmationEmail catches all errors internally — never throws.
-    await sendBookingConfirmationEmail({
+    void sendBookingConfirmationEmail({
       bookingId,
       shopSlug,
       clientName: nameTrimmed,
