@@ -485,6 +485,19 @@ export type UserMessages = {
       /** Success bubble shown for 3s after a successful save. */
       successMessage: string;
     };
+    emptySetup: {
+      title: string;
+      subtitle: string;
+    };
+    emptyShare: {
+      readyTitle: string;
+      readySubtitle: string;
+      copyButton: string;
+      copiedButton: string;
+      openButton: string;
+      qrButton: string;
+      qrModalTitle: string;
+    };
   };
   salonDashboard: {
     title: string;
@@ -1973,6 +1986,19 @@ export const userEn: UserMessages = {
       ctaAdd: "Add email",
       ctaLater: "Maybe later",
       successMessage: "✓ Email saved! You're protected.",
+    },
+    emptySetup: {
+      title: "Set up your salon",
+      subtitle: "Complete these steps to start accepting bookings",
+    },
+    emptyShare: {
+      readyTitle: "Your booking page is live!",
+      readySubtitle: "Share your booking link with customers to receive your first booking",
+      copyButton: "Copy link",
+      copiedButton: "Copied!",
+      openButton: "Open page",
+      qrButton: "QR Code",
+      qrModalTitle: "Booking QR Code",
     },
   },
   salonDashboard: {

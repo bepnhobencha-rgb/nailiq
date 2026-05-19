@@ -594,6 +594,19 @@ export const userVi: UserMessages = {
       ctaLater: "Để sau",
       successMessage: "✓ Đã lưu email! Tài khoản đã được bảo vệ.",
     },
+    emptySetup: {
+      title: "Cài đặt tiệm nail",
+      subtitle: "Hoàn thành 4 bước để bắt đầu nhận đặt lịch",
+    },
+    emptyShare: {
+      readyTitle: "Trang đặt lịch đã sẵn sàng!",
+      readySubtitle: "Chia sẻ link với khách để nhận booking đầu tiên",
+      copyButton: "Sao chép link",
+      copiedButton: "Đã sao chép!",
+      openButton: "Mở trang",
+      qrButton: "Mã QR",
+      qrModalTitle: "Mã QR đặt lịch",
+    },
   },
   salonDashboard: {
     title: "Bảng điều khiển tiệm",

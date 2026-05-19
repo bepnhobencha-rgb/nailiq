@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/Button";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { AddEmailBanner } from "@/components/dashboard/AddEmailBanner";
+import { DashboardEmptyShare } from "@/components/dashboard/DashboardEmptyShare";
+import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
 import { SalonOwnerDashboardMain } from "@/components/dashboard/SalonOwnerDashboardMain";
 import {
   nextBookingStatus,
@@ -363,6 +365,52 @@ export function SalonOwnerDashboard({
 
   if (!data || !viewData) {
     return null;
+  }
+
+  // State 1: setup incomplete (not demo mode) — show onboarding checklist
+  const isSetupIncomplete = !data.salon.profile_complete && !data.demoMode;
+  // State 2: setup done but no bookings yet (not demo mode) — show share UI
+  const isZeroBookings =
+    data.salon.profile_complete &&
+    data.allBookings.length === 0 &&
+    !data.demoMode;
+
+  if (isSetupIncomplete) {
+    return (
+      <ResponsiveShell>
+        <div className="w-full max-w-[var(--max-nq-mobile)] mx-auto px-4 py-8">
+          <p className="mb-1 text-xl font-semibold text-nq-foreground">
+            {td.emptySetup.title}
+          </p>
+          <p className="mb-6 text-sm text-nq-muted">{td.emptySetup.subtitle}</p>
+          <SetupChecklist
+            salon={{
+              services_count: data.setup.services_count,
+              staff_count: data.setup.staff_count,
+              address: data.salon.address,
+              opening_hours: data.salon.opening_hours,
+              email: data.salon.email,
+            }}
+            slug={slug}
+            language={language}
+          />
+        </div>
+      </ResponsiveShell>
+    );
+  }
+
+  if (isZeroBookings) {
+    return (
+      <ResponsiveShell>
+        <DashboardEmptyShare
+          salonName={data.salon.name ?? slug}
+          bookingUrl={bookingAbsoluteUrl}
+          copied={copied}
+          onCopy={onCopy}
+          language={language}
+        />
+      </ResponsiveShell>
+    );
   }
 
   return (
