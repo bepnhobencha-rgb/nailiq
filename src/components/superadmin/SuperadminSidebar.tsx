@@ -99,7 +99,7 @@ export function SuperadminSidebar({ role }: Props) {
       </header>
 
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-2 py-3">
-        {SUPERADMIN_NAV.map((item) => (
+        {SUPERADMIN_NAV.filter((item) => !item.mvpHidden).map((item) => (
           <SidebarItem
             key={item.key}
             item={item}
