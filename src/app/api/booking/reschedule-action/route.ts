@@ -1,6 +1,8 @@
+import { after } from "next/server";
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { parseTimeSlotOnDate } from "@/shared/booking/parseBookingTimeSlot";
+import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
 
 type RescheduleBody = {
   token: string;
@@ -23,7 +25,7 @@ export async function POST(req: Request) {
 
   const supabase = createServiceRoleClient();
 
-  // Resolve booking from token to get service duration
+  // Resolve booking from token to get service duration + salon + original slot date
   const { data: tokenRow } = await supabase
     .from("booking_reminder_tokens" as never)
     .select("booking_id, used_at, expires_at")
@@ -37,11 +39,11 @@ export async function POST(req: Request) {
 
   const { data: booking } = await supabase
     .from("bookings" as never)
-    .select("service_id")
+    .select("salon_id, service_id, start_time_utc")
     .eq("id", tr.booking_id)
     .maybeSingle();
 
-  const b = booking as { service_id: string } | null;
+  const b = booking as { salon_id: string; service_id: string; start_time_utc: string } | null;
   if (!b) return NextResponse.json({ ok: false, code: "booking_not_found" }, { status: 404 });
 
   const { data: service } = await supabase
@@ -81,6 +83,20 @@ export async function POST(req: Request) {
   if (!row?.ok) {
     return NextResponse.json({ ok: false, code: row?.code ?? "unknown" }, { status: 400 });
   }
+
+  // Notify the first waitlist entry for the freed original slot
+  const originalDateYmd = b.start_time_utc.split("T")[0];
+  const { salon_id, service_id } = b;
+  after(async () => {
+    const sb = createServiceRoleClient();
+    const [{ data: salonData }, { data: svcData }] = await Promise.all([
+      sb.from("salons" as never).select("name").eq("id", salon_id).maybeSingle(),
+      sb.from("services" as never).select("name").eq("id", service_id).maybeSingle(),
+    ]);
+    const salonName = (salonData as { name: string } | null)?.name ?? "";
+    const serviceName = (svcData as { name: string } | null)?.name ?? "";
+    await notifyWaitlistForSlot({ salonId: salon_id, salonName, serviceId: service_id, serviceName, bookingDateYmd: originalDateYmd });
+  });
 
   return NextResponse.json({
     ok: true,

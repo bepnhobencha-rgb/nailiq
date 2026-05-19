@@ -15,6 +15,8 @@ export type SubmitPublicWaitlistParams = {
   staffId: string;
   clientName: string;
   clientPhone: string;
+  /** Optional — required for email notifications when a slot opens. */
+  clientEmail?: string;
   source: BookingWaitlistSource;
 };
 
@@ -29,6 +31,7 @@ export async function submitPublicWaitlistEntry(
     staffId,
     clientName,
     clientPhone,
+    clientEmail,
     source,
   } = params;
 
@@ -68,6 +71,7 @@ export async function submitPublicWaitlistEntry(
       p_client_name: nameTrimmed,
       p_client_phone: phoneOk.digits,
       p_source: source,
+      p_client_email: clientEmail?.trim() || null,
     },
   );
 

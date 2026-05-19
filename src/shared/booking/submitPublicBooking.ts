@@ -675,22 +675,10 @@ export async function submitPublicBooking(
     /* booking succeeded; profile update is best-effort */
   }
 
-  // Evaluate deposit requirement + AI risk score — both best-effort (never block the booking).
+  // Evaluate deposit requirement + AI risk score — fire-and-forget via server route
+  // (scoreNoShowRisk uses @anthropic-ai/sdk which is Node.js-only, can't run in browser).
   void (async () => {
     try {
-      const { evaluateDeposit } = await import("@/shared/noshow/evaluateDeposit");
-      const { scoreNoShowRisk } = await import("@/shared/noshow/scoreNoShowRisk");
-
-      const svcPrice = priceSnapshot ?? 0;
-
-      const { data: salonSettings } = await supabase
-        .from("salons")
-        .select("deposit_high_value_cents")
-        .eq("id", salon.id)
-        .maybeSingle();
-      const highValueThreshold =
-        (salonSettings as { deposit_high_value_cents?: number } | null)?.deposit_high_value_cents ?? 10000;
-
       const { data: clientForDeposit } = await supabase
         .from("client_profiles")
         .select("no_show_count, is_vip, visit_count")
@@ -700,43 +688,31 @@ export async function submitPublicBooking(
         no_show_count?: number; is_vip?: boolean; visit_count?: number;
       } | null;
 
-      const depositDecision = evaluateDeposit({
-        isNewCustomer: !cp || (cp.visit_count ?? 0) <= 1,
-        previousNoShowCount: cp?.no_show_count ?? 0,
-        isVip: cp?.is_vip ?? false,
-        servicePriceCents: svcPrice,
-        highValueThresholdCents: highValueThreshold,
-      });
-
-      const [riskResult] = await Promise.allSettled([
-        scoreNoShowRisk({
+      const appUrl =
+        (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+      const secret = (process.env.INTERNAL_API_SECRET ?? "").trim();
+      await fetch(`${appUrl}/api/booking/noshow-evaluate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-internal-secret": secret,
+        },
+        body: JSON.stringify({
+          bookingId,
           clientName: nameTrimmed,
           serviceName: service.name as string,
+          salonId: String(salon.id),
           startTimeUtc: startLocal.toISOString(),
           isNewCustomer: !cp || (cp.visit_count ?? 0) <= 1,
           visitCount: cp?.visit_count ?? 0,
           noShowCount: cp?.no_show_count ?? 0,
-          bookingSource: "public_booking",
+          isVip: cp?.is_vip ?? false,
           hasEmail: !!emailToStore,
-          hasPhone: true,
+          svcPriceCents: priceSnapshot ?? 0,
         }),
-      ]);
-
-      const riskScore =
-        riskResult.status === "fulfilled" ? riskResult.value.score : null;
-
-      await supabase
-        .from("bookings")
-        .update({
-          deposit_required: depositDecision.required,
-          deposit_amount_cents: depositDecision.required ? depositDecision.amountCents : null,
-          deposit_reason: depositDecision.reason,
-          deposit_status: depositDecision.required ? "required" : "not_required",
-          no_show_risk_score: riskScore,
-        } as never)
-        .eq("id", bookingId);
+      });
     } catch (e) {
-      console.error("[submitPublicBooking] deposit/risk evaluation failed", e);
+      console.error("[submitPublicBooking] noshow-evaluate dispatch failed", e);
     }
   })();
 

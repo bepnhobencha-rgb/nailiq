@@ -180,6 +180,7 @@ export function BookingFlow({
             stepTransition={stepTransition}
             clientName={flow.clientName}
             clientPhone={flow.clientPhone}
+            clientEmail={flow.clientEmail}
             waitlistSubmitting={flow.waitlistSubmitting}
             waitlistSlotJoined={flow.waitlistSlotJoined}
             waitlistContactInvalid={flow.guestContactInvalid}
@@ -187,6 +188,7 @@ export function BookingFlow({
             error={flow.error}
             onClientNameChange={flow.setClientName}
             onClientPhoneChange={flow.setClientPhone}
+            onClientEmailChange={flow.setClientEmail}
             onWaitlistSubmit={() => void flow.submitWaitlistSlotUnavailable()}
             onSelectSlot={flow.setTimeSlot}
             onBack={flow.backToDate}

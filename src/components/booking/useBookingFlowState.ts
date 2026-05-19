@@ -883,6 +883,7 @@ export function useBookingFlowState(
         preferredSlotLabel: null,
         clientName: name,
         clientPhone: phone,
+        clientEmail: clientEmail.trim() || undefined,
         source: "slot_unavailable",
       });
       setWaitlistSlotJoined(true);
@@ -900,6 +901,7 @@ export function useBookingFlowState(
   }, [
     clientName,
     clientPhone,
+    clientEmail,
     selectedDate,
     serviceId,
     shopSlug,
