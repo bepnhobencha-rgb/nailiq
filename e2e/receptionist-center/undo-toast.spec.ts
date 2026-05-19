@@ -4,12 +4,10 @@ import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   clickAssignSlot,
-  clickWalkinService,
-  clickWalkinSubmit,
-  fillWalkinGuestContact,
   gotoReceptionistCenter,
   RECEPTIONIST_E2E_SLUG,
   seedReceptionistCenterFixture,
+  seedWalkin,
   testClientNameMarker,
   type ReceptionistCenterFixture,
 } from "./helpers";
@@ -32,17 +30,18 @@ test.describe("Undo toast", () => {
   test("case 13: countdown ticks and undo restores queue + removes grid block", async ({
     page,
   }) => {
-    await gotoReceptionistCenter(page, fx.slug);
+    // Seed walk-in directly (bypasses canAssignImmediately / walkin_auto_assign) so the
+    // walk-in always starts in the waiting queue regardless of salon auto-assign setting.
     const marker = testClientNameMarker();
+    const bookingId = await seedWalkin(fx.salonId, {
+      clientName: marker,
+      serviceId: fx.serviceIds[0]!,
+    });
 
-    await fillWalkinGuestContact(page, marker);
-    await clickWalkinService(page, fx.serviceIds[0]!);
-    await clickWalkinSubmit(page);
+    await gotoReceptionistCenter(page, fx.slug);
 
-    const row = page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker });
+    const row = page.getByTestId(`queue-item-${bookingId}`);
     await expect(row).toBeVisible({ timeout: 15_000 });
-    const tid = await row.getAttribute("data-testid");
-    const bookingId = tid?.replace(/^queue-item-/, "") ?? "";
 
     await page.getByTestId(`queue-assign-${bookingId}`).click();
     await clickAssignSlot(page, fx.freeStaffId, fx.noonSlotIndex);

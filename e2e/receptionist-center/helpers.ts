@@ -140,6 +140,13 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
 
   const openingParsed: unknown = JSON.parse(DEFAULT_OPENING_HOURS_JSON);
 
+  // walkin_auto_assign: false — force queue mode from the start.
+  // Default is true: with staff free, canAssignImmediately=true causes the form to
+  // immediately assign the walk-in (status=confirmed, appears on grid, NOT in queue panel),
+  // breaking every queue-item assertion. Setting it in the INSERT (not a post-insert UPDATE)
+  // is more reliable: a separate UPDATE can silently affect 0 rows if PostgREST's schema
+  // cache hasn't yet indexed the column, whereas an INSERT value is always written.
+  // `as never` cast required since the TypeScript types lag behind the migration.
   const { data: salon, error: salonErr } = await supabaseAdmin
     .from("salons")
     .insert({
@@ -160,7 +167,8 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
       // which intentionally hides `kpi_bar` — fine for prod but drops the
       // status-pill that several tests rely on. See dashboardPresets.ts.
       dashboard_preset: "rush_hour",
-    })
+      walkin_auto_assign: false,
+    } as never)
     .select("id")
     .single();
 
@@ -169,19 +177,6 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
   }
 
   const salonId = salon.id as string;
-
-  // Force queue mode: walkin_auto_assign defaults to true, making canAssignImmediately=true
-  // when staff are free. In immediate mode the walk-in is confirmed+assigned on submit
-  // and never appears in the queue panel — causing every queue-item assertion to fail.
-  // Setting false ensures the form always calls addWalkinToQueue (status=waiting).
-  // Uses the same `as never` cast pattern as salonOwnerActions.ts line 893.
-  const { error: autoAssignErr } = await supabaseAdmin
-    .from("salons")
-    .update({ walkin_auto_assign: false } as never)
-    .eq("id", salonId);
-  if (autoAssignErr) {
-    throw new Error(`seedReceptionistCenterFixture: walkin_auto_assign update failed: ${autoAssignErr.message}`);
-  }
 
   const serviceSpecs = [
     { name: "E2E Gel Manicure", duration_minutes: 45, buffer_minutes: 10, price_cents: 4500 },

@@ -4,7 +4,7 @@ import Link from "next/link";
 export const metadata: Metadata = {
   title: "Privacy Policy",
   description:
-    "How NailIQ collects, uses, and protects your data — PIPEDA compliant.",
+    "How NailIQ collects, uses, and protects your data — PIPEDA, CASL, and Quebec Law 25 compliant.",
 };
 
 export default function PrivacyPage() {
@@ -122,6 +122,56 @@ export default function PrivacyPage() {
                 privacy@nailiq.ca
               </a>
               .
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-nq-foreground">
+              Commercial electronic messages (CASL)
+            </h2>
+            <p className="mt-3">
+              Canada&apos;s Anti-Spam Legislation (CASL) governs commercial
+              electronic messages sent to Canadian addresses. NailIQ sends
+              transactional messages only — appointment confirmations, OTP
+              codes, and service notifications required to operate your
+              account. We do not send marketing or promotional emails unless
+              you have expressly opted in. You may withdraw consent at any
+              time by contacting{" "}
+              <a
+                href="mailto:privacy@nailiq.ca"
+                className="text-nq-primary underline-offset-4 hover:underline"
+              >
+                privacy@nailiq.ca
+              </a>
+              .
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-nq-foreground">
+              Quebec residents — Law 25 (Bill 64)
+            </h2>
+            <p className="mt-3">
+              Quebec&apos;s Act respecting the protection of personal
+              information in the private sector (Law 25) grants residents of
+              Quebec additional rights, including the right to data
+              portability, the right to be forgotten (de-indexation), and the
+              right to be informed of any automated decision-making affecting
+              you. NailIQ does not make automated decisions with legal or
+              similarly significant effects on individuals. If you are a
+              Quebec resident and wish to exercise any of these rights,
+              contact our Privacy Officer at{" "}
+              <a
+                href="mailto:privacy@nailiq.ca"
+                className="text-nq-primary underline-offset-4 hover:underline"
+              >
+                privacy@nailiq.ca
+              </a>
+              . We will respond within the 30-day period prescribed by Law 25.
+            </p>
+            <p className="mt-3">
+              Our Privacy Officer is responsible for compliance with Law 25
+              and can be reached at the email above.
             </p>
           </section>
 
