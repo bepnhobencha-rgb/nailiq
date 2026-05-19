@@ -174,7 +174,7 @@ test.describe("Booking detail drawer — service buffer hint (Issue #12)", () =>
     await expect(scheduleEl).toContainText(" — ");
     await expect(scheduleEl).toContainText("1:15 PM");
     await expect(scheduleEl).not.toContainText("1:25 PM");
-    await expect(scheduleEl).toContainText("+ 10 phút chuyển ca");
+    await expect(scheduleEl).toContainText("+ 10 phút chuẩn bị (buffer)");
   });
 
   test("bd-2: No buffer note when buffer_minutes === 0", async ({ page }) => {

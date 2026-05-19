@@ -5,6 +5,8 @@ import {
   cleanReceptionistData,
   clickAssignSlot,
   clickWalkinQueueAssign,
+  clickWalkinService,
+  clickWalkinSubmit,
   countBookingsForClient,
   fillWalkinGuestContact,
   getBookingRow,
@@ -38,8 +40,8 @@ test.describe("Receptionist queue + assign", () => {
     const marker = testClientNameMarker();
 
     await fillWalkinGuestContact(page, marker);
-    await page.locator(`#walkin-service-${fx.serviceIds[0]}`).click();
-    await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
+    await clickWalkinService(page, fx.serviceIds[0]!);
+    await clickWalkinSubmit(page);
 
     await expect(
       page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker }),
@@ -59,8 +61,8 @@ test.describe("Receptionist queue + assign", () => {
     const marker = testClientNameMarker();
 
     await fillWalkinGuestContact(page, marker);
-    await page.locator(`#walkin-service-${fx.serviceIds[0]}`).click();
-    await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
+    await clickWalkinService(page, fx.serviceIds[0]!);
+    await clickWalkinSubmit(page);
 
     const row = page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker });
     await expect(row).toBeVisible({ timeout: 15_000 });

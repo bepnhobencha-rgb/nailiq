@@ -11,6 +11,8 @@ import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   clickAssignSlot,
+  clickWalkinService,
+  clickWalkinSubmit,
   countBookingsForClient,
   getBookingRow,
   fillWalkinGuestContact,
@@ -258,8 +260,8 @@ test.describe("race-2: appointment blocks walk-in assign same slot", () => {
     const walkinName = testClientNameMarker();
 
     await fillWalkinGuestContact(page, walkinName);
-    await page.locator(`#walkin-service-${fx.serviceIds[0]}`).click();
-    await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
+    await clickWalkinService(page, fx.serviceIds[0]!);
+    await clickWalkinSubmit(page);
 
     const row = page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: walkinName });
     await expect(row).toBeVisible({ timeout: 15_000 });

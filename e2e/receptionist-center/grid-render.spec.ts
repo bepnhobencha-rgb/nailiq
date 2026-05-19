@@ -3,6 +3,8 @@ import { test, expect } from "@playwright/test";
 import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
+  clickWalkinService,
+  clickWalkinSubmit,
   fillWalkinGuestContact,
   getBookingRow,
   gotoReceptionistCenter,
@@ -84,8 +86,8 @@ test.describe("Receptionist grid render + ghost", () => {
     const marker = testClientNameMarker();
 
     await fillWalkinGuestContact(page, marker);
-    await page.locator(`#walkin-service-${fx.longServiceId}`).click();
-    await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
+    await clickWalkinService(page, fx.longServiceId);
+    await clickWalkinSubmit(page);
 
     const row = page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker });
     await expect(row).toBeVisible({ timeout: 15_000 });

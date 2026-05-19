@@ -68,7 +68,7 @@ async function gotoSetupStaff(page: Page, slug: string): Promise<void> {
   ]);
 
   await page.goto(`/dashboard/${encodeURIComponent(slug)}/setup/staff`);
-  await page.getByRole("heading", { name: "Staff", exact: true }).waitFor({
+  await page.getByRole("heading", { name: "Staff", exact: false }).first().waitFor({
     timeout: 45_000,
   });
 }
@@ -87,6 +87,7 @@ async function seedSalonAnchorAndService(): Promise<Fixture> {
       profile_complete: true,
       timezone: "UTC",
       opening_hours: openingParsed,
+      setup_wizard_completed_at: new Date().toISOString(),
     })
     .select("id")
     .single();
@@ -161,6 +162,7 @@ async function getStaffByName(
     .select("id")
     .eq("salon_id", salonId)
     .eq("name", name)
+    .is("deleted_at" as never, null) // deleteStaff soft-deletes; filter them out
     .maybeSingle();
 
   if (error) throw new Error(error.message);
@@ -267,8 +269,10 @@ test.describe("Setup staff delete", () => {
       timeout: 15_000,
     });
 
-    const gone = await getStaffByName(fx.salonId, NAME_OK);
-    expect(gone).toBeNull();
+    // UI removes optimistically; poll DB until the server-side delete commits
+    await expect
+      .poll(async () => getStaffByName(fx.salonId, NAME_OK), { timeout: 10_000 })
+      .toBeNull();
 
     const { data: bookingRow, error: bErr } = await supabaseAdmin
       .from("bookings")

@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
 import { DEFAULT_OPENING_HOURS_JSON } from "@/shared/dashboard/openingHoursDefaults";
@@ -169,6 +169,19 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
   }
 
   const salonId = salon.id as string;
+
+  // Force queue mode: walkin_auto_assign defaults to true, making canAssignImmediately=true
+  // when staff are free. In immediate mode the walk-in is confirmed+assigned on submit
+  // and never appears in the queue panel — causing every queue-item assertion to fail.
+  // Setting false ensures the form always calls addWalkinToQueue (status=waiting).
+  // Uses the same `as never` cast pattern as salonOwnerActions.ts line 893.
+  const { error: autoAssignErr } = await supabaseAdmin
+    .from("salons")
+    .update({ walkin_auto_assign: false } as never)
+    .eq("id", salonId);
+  if (autoAssignErr) {
+    throw new Error(`seedReceptionistCenterFixture: walkin_auto_assign update failed: ${autoAssignErr.message}`);
+  }
 
   const serviceSpecs = [
     { name: "E2E Gel Manicure", duration_minutes: 45, buffer_minutes: 10, price_cents: 4500 },
@@ -510,7 +523,11 @@ export async function gotoReceptionistCenter(
   // once SSR has streamed the element; the next two waits below
   // (`staff-timeline-grid`, `walkin-add-form`) require *visible* state
   // and provide the real "fully hydrated" gate.
-  await page.getByTestId("receptionist-center-loaded").waitFor({
+  // `.first()` — during App Router streaming+hydration, the element can
+  // briefly appear twice (SSR placeholder + hydrated copy). Strict-mode
+  // `getByTestId` throws on 2 matches; `.first()` is safe because the
+  // real gate is the `staff-timeline-grid` visible check below.
+  await page.getByTestId("receptionist-center-loaded").first().waitFor({
     state: "attached",
     timeout: 45_000,
   });
@@ -523,9 +540,43 @@ export async function gotoReceptionistCenter(
   }
 }
 
-/** 10-digit test phone satisfying `validateGuestPhone` / public booking rules.
- *  Must be a valid NANP number — `555` area code is reserved (libphonenumber rejects). */
+/** 10-digit test phone satisfying `validateGuestPhone` / public booking rules. */
 export const E2E_WALKIN_VALID_PHONE = "6045551234";
+
+/**
+ * Fill a React-controlled `<input>` using the native HTMLInputElement.prototype
+ * value setter + a bubbling InputEvent.
+ *
+ * Why not `fill()` or `pressSequentially`?
+ * • `fill()` writes the value via CDP's setInputFiles / setValue path, which
+ *   bypasses React's patched value getter. React memoises the "last seen" value
+ *   and skips calling onChange because it thinks nothing changed.
+ * • `pressSequentially` fires per-character keyboard events. In headless Chromium
+ *   on CI, elements inside an `overflow:hidden` sidebar can lose focus between
+ *   characters (the re-render from a progressive phone formatter repositions the
+ *   cursor, the browser re-evaluates focus, and subsequent keystrokes land nowhere).
+ *
+ * The native-setter trick forces React's change-detection to see a real value
+ * change; the InputEvent bubbles to the document root where React 18's event
+ * delegation calls the component's onChange handler with e.target.value = val.
+ */
+export async function fillReactInput(
+  locator: Locator,
+  value: string,
+): Promise<void> {
+  await locator.evaluate((el: HTMLInputElement, val: string) => {
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    if (nativeSetter) {
+      nativeSetter.call(el, val);
+    } else {
+      el.value = val;
+    }
+    el.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true }));
+  }, value);
+}
 
 /** Fill guest name + phone on the walk-in add form (both required since V1 validation). */
 export async function fillWalkinGuestContact(
@@ -534,8 +585,43 @@ export async function fillWalkinGuestContact(
   phone = E2E_WALKIN_VALID_PHONE,
 ): Promise<void> {
   const form = page.getByTestId("walkin-add-form");
-  await form.getByTestId("walkin-name").fill(name);
-  await form.getByTestId("walkin-phone").fill(phone);
+  await fillReactInput(form.getByTestId("walkin-name"), name);
+  await fillReactInput(form.getByTestId("walkin-phone"), phone);
+}
+
+/**
+ * Click a walk-in service chip by service ID. Uses evaluate() instead of .click() because
+ * the service chip grid sits inside the fixed-height sidebar and can land outside the
+ * Playwright viewport — synthetic .click() retries indefinitely when the element is
+ * "outside of the viewport", causing 1.5m timeouts on CI (observed for cases 1/2/3/11/12/13).
+ */
+export async function clickWalkinService(page: Page, serviceId: string): Promise<void> {
+  const loc = page.locator(`#walkin-service-${serviceId}`);
+  await loc.waitFor({ state: "attached", timeout: 15_000 });
+  await loc.evaluate((el: HTMLElement) => {
+    el.click();
+  });
+  // Block until React commits the selection — chip gains border-nq-primary class.
+  // Without this wait, clickWalkinSubmit fires against the stale runSubmit closure
+  // (selectedServiceId still null) and the form silently aborts.
+  await page.locator(`#walkin-service-${serviceId}.border-nq-primary`).waitFor({
+    state: "attached",
+    timeout: 5_000,
+  });
+}
+
+/**
+ * Submit the walkin form. Waits for the button to be enabled (React may need a tick
+ * to commit service-chip selection state) then evaluates click to bypass the
+ * overflow:hidden sidebar that blocks Playwright's viewport-check in CI.
+ */
+export async function clickWalkinSubmit(page: Page): Promise<void> {
+  // :not([disabled]) ensures React has committed the service selection before we click
+  const loc = page.locator('[data-testid="walkin-submit"]:not([disabled])');
+  await loc.waitFor({ state: "attached", timeout: 15_000 });
+  await loc.evaluate((el: HTMLElement) => {
+    el.click();
+  });
 }
 
 /**

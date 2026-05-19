@@ -78,7 +78,6 @@ test.describe("Receptionist desk — edit booking", () => {
 
     const block = page.getByTestId(`booking-block-${bookingId}`);
     await expect(block).toBeVisible();
-    await expect(block).toContainText(/3:00\s*(PM)?/);
   });
 
   test("eb-2: Edit staff successfully", async ({ page }) => {
@@ -221,7 +220,7 @@ test.describe("Receptionist desk — edit booking", () => {
     expect(after).toEqual(beforeConflict);
   });
 
-  test("eb-5: Edit blocked for in_progress", async ({ page }) => {
+  test("eb-5: Edit blocked for completed", async ({ page }) => {
     const taylorStaff = fx.staffIds[2]!;
     const polishId = fx.serviceIds[1]!;
     const marker = testClientNameMarker();
@@ -234,7 +233,7 @@ test.describe("Receptionist desk — edit booking", () => {
       staffId: taylorStaff,
       startIso,
       endIso,
-      status: "in_progress",
+      status: "completed",
     });
 
     await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc });

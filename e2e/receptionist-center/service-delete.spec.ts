@@ -79,6 +79,7 @@ async function seedSalonAndStaff(): Promise<Fixture> {
       profile_complete: true,
       timezone: "UTC",
       opening_hours: openingParsed,
+      setup_wizard_completed_at: new Date().toISOString(),
     })
     .select("id")
     .single();
@@ -171,6 +172,7 @@ async function getServiceRowById(
     .from("services")
     .select("id")
     .eq("id", serviceId)
+    .is("deleted_at" as never, null)
     .maybeSingle();
 
   if (error) throw new Error(error.message);

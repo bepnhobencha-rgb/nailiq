@@ -4,6 +4,8 @@ import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   clickAssignSlot,
+  clickWalkinService,
+  clickWalkinSubmit,
   fillWalkinGuestContact,
   gotoReceptionistCenter,
   RECEPTIONIST_E2E_SLUG,
@@ -34,8 +36,8 @@ test.describe("Assign conflict prevention", () => {
     const marker = testClientNameMarker();
 
     await fillWalkinGuestContact(page, marker);
-    await page.locator(`#walkin-service-${fx.serviceIds[0]}`).click();
-    await page.getByTestId("walkin-add-form").locator('button[type="submit"]').click();
+    await clickWalkinService(page, fx.serviceIds[0]!);
+    await clickWalkinSubmit(page);
 
     const row = page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker });
     await expect(row).toBeVisible({ timeout: 15_000 });
