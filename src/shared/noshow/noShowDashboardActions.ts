@@ -189,6 +189,7 @@ export async function updateReminderSettings(
   settings: {
     reminder_24h_enabled?: boolean;
     reminder_3h_enabled?: boolean;
+    sms_reminders_enabled?: boolean;
     deposit_high_value_cents?: number;
   },
 ): Promise<{ ok: boolean; error?: string }> {

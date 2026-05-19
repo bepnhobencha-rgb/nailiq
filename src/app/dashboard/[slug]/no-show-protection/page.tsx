@@ -19,7 +19,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
   const { data: salonRow } = await (await import("@/shared/lib/supabase/serviceRole"))
     .createServiceRoleClient()
     .from("salons" as never)
-    .select("reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, deposit_high_value_cents")
+    .select("reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents")
     .eq("id", ctx.salon.id)
     .maybeSingle();
 
@@ -27,6 +27,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
     reminders_enabled?: boolean;
     reminder_24h_enabled?: boolean;
     reminder_3h_enabled?: boolean;
+    sms_reminders_enabled?: boolean;
     deposit_high_value_cents?: number;
   } | null;
 
@@ -40,6 +41,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
       remindersEnabled={row?.reminders_enabled ?? false}
       reminder24hEnabled={row?.reminder_24h_enabled ?? true}
       reminder3hEnabled={row?.reminder_3h_enabled ?? true}
+      smsRemindersEnabled={row?.sms_reminders_enabled ?? false}
       depositHighValueCents={row?.deposit_high_value_cents ?? 10000}
       summary={result.summary!}
       unconfirmed={result.unconfirmed!}

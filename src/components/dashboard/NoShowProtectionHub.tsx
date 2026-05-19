@@ -22,6 +22,7 @@ type Props = {
   remindersEnabled: boolean;
   reminder24hEnabled: boolean;
   reminder3hEnabled: boolean;
+  smsRemindersEnabled: boolean;
   depositHighValueCents: number;
   summary: NoShowSummary;
   unconfirmed: UnconfirmedBooking[];
@@ -71,6 +72,7 @@ export function NoShowProtectionHub({
   remindersEnabled: initialReminders,
   reminder24hEnabled: initial24h,
   reminder3hEnabled: initial3h,
+  smsRemindersEnabled: initialSms,
   depositHighValueCents: initialThreshold,
   summary,
   unconfirmed,
@@ -81,6 +83,7 @@ export function NoShowProtectionHub({
   const [remindersEnabled, setRemindersEnabled] = useState(initialReminders);
   const [reminder24h, setReminder24h] = useState(initial24h);
   const [reminder3h, setReminder3h] = useState(initial3h);
+  const [smsReminders, setSmsReminders] = useState(initialSms);
   const [threshold, setThreshold] = useState(String(Math.round(initialThreshold / 100)));
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [waivedIds, setWaivedIds] = useState<Set<string>>(new Set());
@@ -99,6 +102,7 @@ export function NoShowProtectionHub({
       await updateReminderSettings(slug, {
         reminder_24h_enabled: reminder24h,
         reminder_3h_enabled: reminder3h,
+        sms_reminders_enabled: smsReminders,
         deposit_high_value_cents: isNaN(cents) ? 10000 : cents,
       });
       setSaveMsg("Settings saved");
@@ -151,6 +155,7 @@ export function NoShowProtectionHub({
 
             {remindersEnabled && (
               <div className="mt-4 space-y-3 border-t border-nq-border/30 pt-4">
+                <p className="text-xs font-medium uppercase tracking-widest text-nq-muted">Email</p>
                 <label className="flex cursor-pointer items-center gap-3">
                   <input
                     type="checkbox"
@@ -168,6 +173,19 @@ export function NoShowProtectionHub({
                     className="h-4 w-4 rounded accent-nq-gold"
                   />
                   <span className="text-sm text-nq-text">3-hour reminder</span>
+                </label>
+                <p className="mt-1 text-xs font-medium uppercase tracking-widest text-nq-muted">SMS</p>
+                <label className="flex cursor-pointer items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={smsReminders}
+                    onChange={(e) => setSmsReminders(e.target.checked)}
+                    className="h-4 w-4 rounded accent-nq-gold"
+                  />
+                  <span className="text-sm text-nq-text">
+                    SMS reminders
+                    <span className="ml-2 text-xs text-nq-muted">(requires Twilio phone number)</span>
+                  </span>
                 </label>
                 <div className="flex items-center gap-3">
                   <label className="text-sm text-nq-text whitespace-nowrap">High-value threshold ($)</label>

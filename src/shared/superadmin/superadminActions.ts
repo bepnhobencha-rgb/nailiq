@@ -1012,6 +1012,7 @@ export type PlatformSettingsRow = {
   twilioAccountSid: string;
   twilioAuthToken: string;
   twilioVerifyServiceSid: string;
+  twilioPhoneNumber: string;
   resendApiKey: string;
   resendFrom: string;
   updatedAt: string | null;
@@ -1034,7 +1035,7 @@ export async function loadPlatformSettings(): Promise<LoadPlatformSettingsResult
   const { data, error } = await admin
     .from("platform_settings")
     .select(
-      "twilio_account_sid, twilio_auth_token, twilio_verify_service_sid, resend_api_key, resend_from, updated_at",
+      "twilio_account_sid, twilio_auth_token, twilio_verify_service_sid, twilio_phone_number, resend_api_key, resend_from, updated_at",
     )
     .eq("id", "platform")
     .maybeSingle();
@@ -1048,6 +1049,7 @@ export async function loadPlatformSettings(): Promise<LoadPlatformSettingsResult
     twilio_account_sid?: string | null;
     twilio_auth_token?: string | null;
     twilio_verify_service_sid?: string | null;
+    twilio_phone_number?: string | null;
     resend_api_key?: string | null;
     resend_from?: string | null;
     updated_at?: string | null;
@@ -1059,6 +1061,7 @@ export async function loadPlatformSettings(): Promise<LoadPlatformSettingsResult
       twilioAccountSid: maskSecret(row.twilio_account_sid),
       twilioAuthToken: maskSecret(row.twilio_auth_token),
       twilioVerifyServiceSid: maskSecret(row.twilio_verify_service_sid),
+      twilioPhoneNumber: row.twilio_phone_number?.trim() ?? "",
       resendApiKey: maskSecret(row.resend_api_key),
       resendFrom: row.resend_from?.trim() ?? "",
       updatedAt: row.updated_at ?? null,
@@ -1070,6 +1073,7 @@ export type UpdatePlatformSettingsInput = {
   twilioAccountSid?: string;
   twilioAuthToken?: string;
   twilioVerifyServiceSid?: string;
+  twilioPhoneNumber?: string;
   resendApiKey?: string;
   resendFrom?: string;
 };
@@ -1090,7 +1094,7 @@ export async function updatePlatformSettings(
   const { data: current } = await admin
     .from("platform_settings")
     .select(
-      "twilio_account_sid, twilio_auth_token, twilio_verify_service_sid, resend_api_key, resend_from",
+      "twilio_account_sid, twilio_auth_token, twilio_verify_service_sid, twilio_phone_number, resend_api_key, resend_from",
     )
     .eq("id", "platform")
     .maybeSingle();
@@ -1115,6 +1119,9 @@ export async function updatePlatformSettings(
   if (taTok !== undefined) patch.twilio_auth_token = taTok;
   const tvSid = resolveField(input.twilioVerifyServiceSid, cur.twilio_verify_service_sid);
   if (tvSid !== undefined) patch.twilio_verify_service_sid = tvSid;
+  if (input.twilioPhoneNumber !== undefined) {
+    patch.twilio_phone_number = input.twilioPhoneNumber.trim() || null;
+  }
   const rKey = resolveField(input.resendApiKey, cur.resend_api_key);
   if (rKey !== undefined) patch.resend_api_key = rKey;
   if (input.resendFrom !== undefined) {

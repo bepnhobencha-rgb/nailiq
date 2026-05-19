@@ -83,6 +83,7 @@ export function PlatformSettingsAdmin({
   const [twilioSid, setTwilioSid] = useState(initial.twilioAccountSid);
   const [twilioToken, setTwilioToken] = useState(initial.twilioAuthToken);
   const [twilioVSid, setTwilioVSid] = useState(initial.twilioVerifyServiceSid);
+  const [twilioPhone, setTwilioPhone] = useState(initial.twilioPhoneNumber ?? "");
   const [twilioState, setTwilioState] = useState<FieldState>("idle");
   const [twilioMsg, setTwilioMsg] = useState("");
   const [twilioTestState, setTwilioTestState] = useState<FieldState>("idle");
@@ -108,6 +109,7 @@ export function PlatformSettingsAdmin({
         twilioAccountSid: twilioSid,
         twilioAuthToken: twilioToken,
         twilioVerifyServiceSid: twilioVSid,
+        twilioPhoneNumber: twilioPhone,
       };
       const r = await updatePlatformSettings(input);
       if (r.ok) {
@@ -227,6 +229,20 @@ export function PlatformSettingsAdmin({
           placeholder="VAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
           hint="Starts with VA — create a Verify service in Twilio console"
         />
+        <div>
+          <label htmlFor="twilio-phone" className="mb-1 block text-xs font-medium text-nq-muted">
+            Sender Phone Number <span className="text-nq-muted/60">(SMS reminders)</span>
+          </label>
+          <input
+            id="twilio-phone"
+            type="text"
+            value={twilioPhone}
+            onChange={(e) => setTwilioPhone(e.target.value)}
+            placeholder="+17785550100"
+            className="w-full rounded-lg border border-nq-border/40 bg-nq-bg px-3 py-2 text-sm text-nq-text focus:outline-none focus:border-nq-gold/50"
+          />
+          <p className="mt-1 text-xs text-nq-muted/70">E.164 format — e.g. +17785550100. Required for SMS appointment reminders.</p>
+        </div>
 
         <div className="flex flex-wrap items-center gap-3">
           <button
