@@ -6,6 +6,7 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { loadOwnerSalons } from "@/shared/dashboard/salonOwnerActions";
 import { expireImpersonationIfStale } from "@/shared/superadmin/impersonationActions";
 import { salonDayRangeUtc, salonToday } from "@/shared/lib/salonTime";
+import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 
 type Props = {
   children: ReactNode;
@@ -102,6 +103,15 @@ export default async function DashboardSlugLayout({
   const walkinQueueCount = waitingRes.count ?? 0;
   const overdueCount = overdueRes.count ?? 0;
 
+  const { data: planRow } = await ctx.supabase
+    .from("salons")
+    .select("subscription_plan, plan_override" as never)
+    .eq("id", ctx.salon.id)
+    .maybeSingle();
+  const subscriptionPlan = parseSubscriptionPlan(
+    (planRow as { subscription_plan?: unknown } | null)?.subscription_plan,
+  );
+
   return (
     <>
       <ImpersonationBanner />
@@ -112,6 +122,7 @@ export default async function DashboardSlugLayout({
         salons={salons}
         walkinQueueCount={walkinQueueCount}
         overdueCount={overdueCount}
+        subscriptionPlan={subscriptionPlan}
       >
         {children}
       </DashboardShell>

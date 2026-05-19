@@ -16,6 +16,7 @@ import {
   Settings as SettingsIcon,
   ShieldAlert,
   Sparkles,
+  Star,
   TrendingUp,
   UserCheck,
   Users,
@@ -24,6 +25,7 @@ import { cn } from "@/shared/lib/cn";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
+import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 
 type Props = {
   slug: string;
@@ -38,6 +40,8 @@ type Props = {
    * switcher dropdown when this list contains > 1 entry (the current
    * salon is always one of them; the dropdown lists the others). */
   salons?: OwnerSalonSummary[];
+  /** Hides plan-gated items (e.g. Reviews) for free salons. */
+  subscriptionPlan?: SubscriptionPlan;
   /**
    * Collapse state — owned by DashboardShell so a single hook instance
    * drives both the aside's `--nq-sidebar-w` CSS variable AND the
@@ -91,6 +95,7 @@ export function DashboardSidebar({
   salons,
   collapsed,
   onToggleCollapsed,
+  subscriptionPlan = "free",
 }: Props) {
   const pathname = usePathname() ?? "";
   const { language } = useUserLanguage();
@@ -226,6 +231,14 @@ export function DashboardSidebar({
             match: (p) => p.startsWith(`${dashRoot}/reports`),
           },
           {
+            key: "reviews",
+            label: t.reviews,
+            href: `${dashRoot}/reviews`,
+            icon: Star,
+            match: (p) => p.startsWith(`${dashRoot}/reviews`),
+            hidden: subscriptionPlan === "free",
+          },
+          {
             key: "no-show-protection",
             label: t.noShowProtection,
             href: `${dashRoot}/no-show-protection`,
@@ -278,12 +291,14 @@ export function DashboardSidebar({
       t.messagesSoonBadge,
       t.noShowProtection,
       t.reports,
+      t.reviews,
       t.services,
       t.settings,
       t.staff,
       t.walkinQueue,
       walkinQueueCount,
       overdueCount,
+      subscriptionPlan,
     ],
   );
 
