@@ -14,6 +14,7 @@ import { BookingFlowConfirmPanel } from "@/components/booking/BookingFlowConfirm
 import { BookingFlowDatePanel } from "@/components/booking/BookingFlowDatePanel";
 import { BookingFlowDonePanel } from "@/components/booking/BookingFlowDonePanel";
 import { BookingFlowInfoPanel } from "@/components/booking/BookingFlowInfoPanel";
+import { BookingFlowOtpPanel } from "@/components/booking/BookingFlowOtpPanel";
 import { BookingFlowServicePanel } from "@/components/booking/BookingFlowServicePanel";
 import { BookingFlowStaffPanel } from "@/components/booking/BookingFlowStaffPanel";
 import { BookingFlowTimePanel } from "@/components/booking/BookingFlowTimePanel";
@@ -54,6 +55,7 @@ export function BookingFlow({
     staff,
     salon,
     capabilityRows,
+    salon.phoneOtpEnabled,
   );
 
   const closedDateYmdSet = useMemo(
@@ -87,7 +89,11 @@ export function BookingFlow({
   );
 
   const wizardStep: BookingWizardStep =
-    flow.step === "done" ? "confirm" : flow.step;
+    flow.step === "done" || flow.step === "otp"
+      ? flow.step === "done"
+        ? "confirm"
+        : "info"
+      : flow.step;
 
   if (flow.step === "done" && flow.bookingResult) {
     return (
@@ -212,6 +218,18 @@ export function BookingFlow({
             onClientEmailBlur={flow.handleInfoEmailBlur}
             onBack={flow.backToTime}
             onNext={flow.goInfoNext}
+          />
+        ) : null}
+        {flow.step === "otp" ? (
+          <BookingFlowOtpPanel
+            t={t}
+            shopSlug={shopSlug}
+            clientPhone={flow.clientPhone}
+            stepDir={flow.stepDir}
+            reducedMotion={Boolean(reducedMotion)}
+            stepTransition={stepTransition}
+            onVerified={flow.goOtpNext}
+            onBack={flow.backFromOtpToInfo}
           />
         ) : null}
         {flow.step === "confirm" &&

@@ -655,6 +655,15 @@ export type UserMessages = {
       descriptionOff: string;
       errorGeneric: string;
     };
+    /** SMS OTP phone verification toggle. */
+    phoneOtp: {
+      sectionTitle: string;
+      toggleLabel: string;
+      descriptionOn: string;
+      descriptionOff: string;
+      cost: string;
+      errorGeneric: string;
+    };
   };
   /** Aria label for the setup-wizard category dropdown.
    *
@@ -2123,6 +2132,16 @@ export const userEn: UserMessages = {
         "Walk-ins are assigned directly to the timeline when staff is free. Faster.",
       descriptionOff:
         "All walk-ins enter the queue first for receptionist review.",
+      errorGeneric: "Could not save. Try again.",
+    },
+    phoneOtp: {
+      sectionTitle: "Phone verification (SMS OTP)",
+      toggleLabel: "Require SMS code to confirm booking",
+      descriptionOn:
+        "Customers must verify their phone with a 6-digit SMS code before booking is confirmed. Reduces no-shows and fake numbers. ~$0.05 per verification via Twilio Verify.",
+      descriptionOff:
+        "Phone number is collected but not verified by SMS. Turn on to reduce fake bookings.",
+      cost: "Requires Twilio Verify configured in environment.",
       errorGeneric: "Could not save. Try again.",
     },
   },

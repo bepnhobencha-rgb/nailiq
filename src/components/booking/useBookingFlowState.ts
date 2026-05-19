@@ -55,6 +55,7 @@ export type BookingFlowStep =
   | "date"
   | "time"
   | "info"
+  | "otp"
   | "confirm"
   | "done";
 
@@ -71,6 +72,7 @@ export function useBookingFlowState(
   staff: readonly BookingStaffItem[],
   salon: BookingSalonMeta,
   capabilityRows: { staff_id: string; service_id: string }[] | null,
+  phoneOtpEnabled: boolean,
 ) {
   const capability = useMemo(
     () => buildCapabilityMap(capabilityRows),
@@ -115,6 +117,7 @@ export function useBookingFlowState(
   /** Staff free-gap minutes after the main service; surfaced in the upsell heading copy. */
   const [upsellGapMinutes, setUpsellGapMinutes] = useState<number>(0);
 
+  const [otpSessionId, setOtpSessionId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [waitlistSubmitting, setWaitlistSubmitting] = useState(false);
   const [waitlistSlotJoined, setWaitlistSlotJoined] = useState(false);
@@ -536,11 +539,18 @@ export function useBookingFlowState(
 
     setError(null);
     setStepDir(1);
-    setStep("confirm");
+    if (phoneOtpEnabled) {
+      // Reset any prior session when the user re-enters info.
+      setOtpSessionId(null);
+      setStep("otp");
+    } else {
+      setStep("confirm");
+    }
   }, [
     clientName,
     clientPhone,
     clientEmail,
+    phoneOtpEnabled,
     t.bookingErrors.invalidEmail,
     t.bookingErrors.nameRequired,
     t.bookingErrors.nameTooShort,
@@ -549,6 +559,21 @@ export function useBookingFlowState(
     t.bookingErrors.invalidPhone,
     t.bookingErrors.phoneRequired,
   ]);
+
+  const goOtpNext = useCallback((sessionId: string) => {
+    setOtpSessionId(sessionId);
+    setStepDir(1);
+    setStep("confirm");
+  }, []);
+
+  // OTP panel "Back" → returns to info step.
+  const backFromOtpToInfo = useCallback(() => {
+    setStepDir(-1);
+    setStep("info");
+    setError(null);
+    setInfoNameError(null);
+    setInfoPhoneError(null);
+  }, []);
 
   const resetAfterDone = useCallback(() => {
     setStepDir(1);
@@ -560,6 +585,7 @@ export function useBookingFlowState(
     setClientNotes("");
     setClientWebsite("");
     setSelectedAddonId(null);
+    setOtpSessionId(null);
     setServiceId(null);
     setStaffId(BOOKING_ANY_STAFF_ID);
     setSelectedDate(normalizeNoon(new Date()));
@@ -675,6 +701,7 @@ export function useBookingFlowState(
         clientEmail: email.length > 0 ? email : null,
         clientNotes: notes,
         addonServiceId: addonId,
+        otpSessionId: otpSessionId ?? null,
         // Task #09-11 — honeypot. Real users never see this field;
         // a non-empty value triggers a silent fake-success on the
         // server so the bot doesn't learn it was detected.
@@ -759,6 +786,15 @@ export function useBookingFlowState(
         err.message === "monthly_booking_limit_reached"
       ) {
         setError(t.bookingErrors.monthlyLimitReached);
+      } else if (
+        err instanceof Error &&
+        (err.message === "otp_required" || err.message === "otp_invalid")
+      ) {
+        // OTP session missing or expired — send user back to OTP step.
+        setOtpSessionId(null);
+        setStepDir(-1);
+        setStep("otp");
+        setError(t.bookingErrors.otpRequired);
       } else {
         Sentry.captureException(
           err instanceof Error ? err : new Error(String(err)),
@@ -901,11 +937,17 @@ export function useBookingFlowState(
 
   const backToInfo = useCallback(() => {
     setStepDir(-1);
-    setStep("info");
+    // When OTP is enabled, confirm → otp → info (two steps back for confirm).
+    // When OTP is disabled, confirm → info directly.
+    if (phoneOtpEnabled) {
+      setStep("otp");
+    } else {
+      setStep("info");
+    }
     setError(null);
     setInfoNameError(null);
     setInfoPhoneError(null);
-  }, []);
+  }, [phoneOtpEnabled]);
 
   return {
     shopLabel,
@@ -953,11 +995,13 @@ export function useBookingFlowState(
     setClientWebsite,
     setSelectedAddonId,
     setError,
+    otpSessionId,
     goServiceNext,
     goStaffNext,
     goDateNext,
     goTimeNext,
     goInfoNext,
+    goOtpNext,
     resetAfterDone,
     handleAddToCalendar,
     onConfirm,
@@ -967,5 +1011,6 @@ export function useBookingFlowState(
     backToDate,
     backToTime,
     backToInfo,
+    backFromOtpToInfo,
   };
 }

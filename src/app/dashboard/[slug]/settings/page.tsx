@@ -28,7 +28,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, phone_otp_enabled",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -50,6 +50,7 @@ export default async function SalonSettingsPage({ params }: Props) {
         brand_color?: unknown;
         theme_mode?: unknown;
         walkin_auto_assign?: unknown;
+        phone_otp_enabled?: unknown;
       }
     | null;
 
@@ -70,6 +71,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   // safety; column has NOT NULL DEFAULT true in 20260511100000).
   const walkinAutoAssign =
     row?.walkin_auto_assign === false ? false : true;
+  const phoneOtpEnabled = row?.phone_otp_enabled === true;
 
   return (
     <SalonSettingsHub
@@ -83,6 +85,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       brandColor={brandColor}
       themeMode={themeMode}
       walkinAutoAssign={walkinAutoAssign}
+      phoneOtpEnabled={phoneOtpEnabled}
     />
   );
 }

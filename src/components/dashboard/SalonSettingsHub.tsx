@@ -7,6 +7,7 @@ import { DashboardModulesSettings } from "@/components/dashboard/DashboardModule
 import { DashboardPresetSettings } from "@/components/dashboard/DashboardPresetSettings";
 import { BrandColorSettings } from "@/components/dashboard/BrandColorSettings";
 import { WalkinAutoAssignSettings } from "@/components/dashboard/WalkinAutoAssignSettings";
+import { PhoneOtpSettings } from "@/components/dashboard/PhoneOtpSettings";
 import { PricingPanel } from "@/components/dashboard/PricingPanel";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
@@ -31,6 +32,7 @@ export function SalonSettingsHub({
   brandColor,
   themeMode,
   walkinAutoAssign,
+  phoneOtpEnabled,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -51,6 +53,8 @@ export function SalonSettingsHub({
   /** `salons.walkin_auto_assign` — drives whether the receptionist's
    *  "Assign immediately" path is offered (PR #107). */
   walkinAutoAssign: boolean;
+  /** `salons.phone_otp_enabled` — SMS OTP verification for public booking. */
+  phoneOtpEnabled: boolean;
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -219,6 +223,12 @@ export function SalonSettingsHub({
         <WalkinAutoAssignSettings
           slug={slug}
           initialValue={walkinAutoAssign}
+          canEdit={canEditDashboardModules}
+        />
+
+        <PhoneOtpSettings
+          slug={slug}
+          initialValue={phoneOtpEnabled}
           canEdit={canEditDashboardModules}
         />
 

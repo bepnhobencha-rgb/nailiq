@@ -32,6 +32,9 @@ export type BookingParams = {
   clientNotes?: string;
   /** Optional add-on booked into the same row (pre-confirm upsell with real float only). */
   addonServiceId?: string | null;
+  /** SMS OTP session ID from `/api/booking-otp/verify`. Required only
+   *  when the salon has `phone_otp_enabled = true`. */
+  otpSessionId?: string | null;
   /** Task #09-11 honeypot. Empty for real users (the HTML field is
    *  hidden, `tabIndex=-1`, and `aria-hidden`). Bots autofilling
    *  every input populate this — `submitPublicBooking` short-circuits
@@ -196,7 +199,7 @@ export async function submitPublicBooking(
   const { data: salon, error: salonErr } = await supabase
     .from("salons")
     .select(
-      "id, profile_complete, opening_hours, subscription_plan, plan_override, feature_flags",
+      "id, profile_complete, opening_hours, subscription_plan, plan_override, feature_flags, phone_otp_enabled",
     )
     .eq("slug", shopSlug)
     .single();
@@ -210,6 +213,49 @@ export async function submitPublicBooking(
   });
 
   if (!salon.profile_complete) throw new Error("salon_not_live");
+
+  // Validate OTP session when the salon requires phone verification.
+  const salonPhoneOtpEnabled =
+    (salon as { phone_otp_enabled?: unknown }).phone_otp_enabled === true;
+  if (salonPhoneOtpEnabled) {
+    const sessionId = (params.otpSessionId ?? "").trim();
+    if (!sessionId) throw new Error("otp_required");
+
+    const serviceClient = (await import("@/shared/lib/supabase/serviceRole"))
+      .createServiceRoleClient();
+    const { data: otpSession } = await serviceClient
+      .from("phone_otp_sessions")
+      .select("id, phone, consumed_at, expires_at")
+      .eq("id", sessionId)
+      .eq("salon_id", String(salon.id))
+      .maybeSingle();
+
+    if (!otpSession) throw new Error("otp_invalid");
+
+    const sessionRow = otpSession as {
+      id: string;
+      phone: string;
+      consumed_at: string | null;
+      expires_at: string;
+    };
+    // Expired or already consumed.
+    if (
+      sessionRow.consumed_at !== null ||
+      new Date(sessionRow.expires_at) < new Date()
+    ) {
+      throw new Error("otp_invalid");
+    }
+    // Phone must match the booking phone (digits only).
+    if (sessionRow.phone !== phoneOk.digits) {
+      throw new Error("otp_invalid");
+    }
+
+    // Mark as consumed — best-effort; failure should not block the booking.
+    void serviceClient
+      .from("phone_otp_sessions")
+      .update({ consumed_at: new Date().toISOString() } as never)
+      .eq("id", sessionId);
+  }
 
   // Enforce per-plan monthly booking cap (landing-page promise).
   // Throws `monthly_booking_limit_reached` for the form to surface.

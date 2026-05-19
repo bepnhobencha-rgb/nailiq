@@ -900,3 +900,35 @@ export async function updateWalkinAutoAssign(
 
   return { ok: true, walkinAutoAssign: enabled };
 }
+
+type UpdatePhoneOtpResult =
+  | { ok: true; phoneOtpEnabled: boolean }
+  | { ok: false; error: string };
+
+export async function updatePhoneOtpEnabled(
+  slug: string,
+  enabled: boolean,
+): Promise<UpdatePhoneOtpResult> {
+  if (typeof enabled !== "boolean") {
+    return { ok: false, error: "server_error" };
+  }
+
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+
+  const { error: upErr } = await ctx.supabase
+    .from("salons")
+    .update({ phone_otp_enabled: enabled } as never)
+    .eq("id", ctx.salon.id);
+
+  if (upErr) {
+    console.error("[updatePhoneOtpEnabled]", upErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true, phoneOtpEnabled: enabled };
+}

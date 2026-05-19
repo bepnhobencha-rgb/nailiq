@@ -760,6 +760,16 @@ export const userVi: UserMessages = {
         "Mọi khách walk-in vào hàng chờ trước để lễ tân kiểm soát thủ công.",
       errorGeneric: "Không lưu được. Vui lòng thử lại.",
     },
+    phoneOtp: {
+      sectionTitle: "Xác thực số điện thoại (OTP)",
+      toggleLabel: "Yêu cầu mã SMS trước khi đặt lịch",
+      descriptionOn:
+        "Khách phải xác thực số điện thoại bằng mã SMS 6 chữ số trước khi đặt lịch. Giảm no-show và số ảo. ~$0.05 mỗi lần qua Twilio Verify.",
+      descriptionOff:
+        "Số điện thoại được lưu nhưng không xác thực qua SMS. Bật để giảm đặt lịch giả.",
+      cost: "Cần cấu hình Twilio Verify trong biến môi trường.",
+      errorGeneric: "Không lưu được. Vui lòng thử lại.",
+    },
   },
   serviceCategory: {
     pickerLabel: "Phân loại",
