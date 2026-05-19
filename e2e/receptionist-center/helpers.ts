@@ -536,19 +536,30 @@ export async function gotoReceptionistCenter(
   }
 }
 
-/** 10-digit test phone satisfying `validateGuestPhone` / public booking rules.
- *  Must be a valid NANP number — `555` area code is reserved (libphonenumber rejects). */
+/** 10-digit test phone satisfying `validateGuestPhone` / public booking rules. */
 export const E2E_WALKIN_VALID_PHONE = "6045551234";
 
-/** Fill guest name + phone on the walk-in add form (both required since V1 validation). */
+/** Fill guest name + phone on the walk-in add form (both required since V1 validation).
+ *
+ * Uses `pressSequentially` instead of `fill` for both fields. The walkin sidebar sits
+ * inside a fixed-height `overflow:hidden` container — Playwright's `fill()` dispatches
+ * a native input event but cannot focus the element (focus() is not actionability-gated;
+ * `fill()`'s internal focus step silently skips for clipped elements on CI). Without a
+ * real focus → keyboard-event sequence, React's controlled-input `onChange` never fires:
+ * `nameTouchedRef.current` stays false (so `onBlur` returns early with no validation),
+ * and `clientName` / `clientPhone` state stay "" (so `runSubmit` aborts with "name
+ * required"). `pressSequentially` calls `element.focus()` which always succeeds regardless
+ * of overflow clipping, then dispatches per-character keydown/input/keyup events that
+ * React processes as real user input.
+ */
 export async function fillWalkinGuestContact(
   page: Page,
   name: string,
   phone = E2E_WALKIN_VALID_PHONE,
 ): Promise<void> {
   const form = page.getByTestId("walkin-add-form");
-  await form.getByTestId("walkin-name").fill(name);
-  await form.getByTestId("walkin-phone").fill(phone);
+  await form.getByTestId("walkin-name").pressSequentially(name);
+  await form.getByTestId("walkin-phone").pressSequentially(phone);
 }
 
 /**

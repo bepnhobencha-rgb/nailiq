@@ -28,12 +28,11 @@ test.describe("Walk-in name — XSS guard", () => {
     page,
   }) => {
     await gotoReceptionistCenter(page, fx.slug);
-    // fill() bypasses Playwright's viewport actionability check (unlike .click()).
-    // The walkin-name input sits inside the fixed-height overflow:hidden sidebar
-    // and is "outside the viewport" on CI's 1280×720 — .click() retries for 90s.
-    // fill() fires React's onChange (sets nameTouchedRef.current=true); press("Tab")
-    // triggers the onBlur validator that sets nameError for the XSS pattern.
-    await page.getByTestId("walkin-name").fill("<script>alert('XSS')</script>");
+    // pressSequentially focuses the element via element.focus() (not actionability-gated)
+    // then fires per-character keydown/input/keyup events. This ensures React's onChange
+    // fires and sets nameTouchedRef.current=true so the onBlur validator activates.
+    // fill() cannot focus clipped elements in the overflow:hidden sidebar on CI.
+    await page.getByTestId("walkin-name").pressSequentially("<script>alert('XSS')</script>");
     await page.getByTestId("walkin-name").press("Tab");
     await page.getByTestId("walkin-phone").fill("6045550199");
 
