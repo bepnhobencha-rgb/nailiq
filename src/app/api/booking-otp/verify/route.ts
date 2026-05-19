@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { checkVerification } from "@/shared/lib/twilioVerify";
+import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 
 export async function POST(req: Request) {
   let body: { phone?: string; code?: string; shopSlug?: string };
@@ -40,13 +41,19 @@ export async function POST(req: Request) {
   }
 
   const salonId = String(salon.id);
-  const e164 = `+${phoneOk.digits}`;
-  const result = await checkVerification(e164, code);
 
-  if (!result.ok) {
-    const errCode = result.error ?? "invalid_code";
-    const status = errCode === "expired_or_max_attempts" ? 410 : 400;
-    return NextResponse.json({ error: errCode }, { status });
+  if (!isDemoOtpRuntime()) {
+    const e164 = `+${phoneOk.digits}`;
+    const result = await checkVerification(e164, code);
+
+    if (!result.ok) {
+      const errCode = result.error ?? "invalid_code";
+      const status = errCode === "expired_or_max_attempts" ? 410 : 400;
+      return NextResponse.json({ error: errCode }, { status });
+    }
+  } else if (code !== "000000") {
+    // Demo mode: only accept the magic test code.
+    return NextResponse.json({ error: "invalid_code" }, { status: 400 });
   }
 
   // Store a consumed-once session. The booking submission validates this row.

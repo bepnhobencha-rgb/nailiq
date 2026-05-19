@@ -830,6 +830,7 @@ export function useBookingFlowState(
     serviceId,
     service,
     staff,
+    otpSessionId,
     t.bookingErrors.nameRequired,
     t.bookingErrors.nameTooShort,
     t.bookingErrors.nameTooLong,

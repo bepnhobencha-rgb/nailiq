@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { sendVerification } from "@/shared/lib/twilioVerify";
+import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 
 export async function POST(req: Request) {
   let body: { phone?: string; shopSlug?: string };
@@ -31,6 +32,11 @@ export async function POST(req: Request) {
 
   if (!salon || !(salon as unknown as { phone_otp_enabled: boolean }).phone_otp_enabled) {
     return NextResponse.json({ error: "otp_not_enabled" }, { status: 400 });
+  }
+
+  // Demo/E2E mode: skip real SMS, accept code 000000 in verify.
+  if (isDemoOtpRuntime()) {
+    return NextResponse.json({ ok: true });
   }
 
   const e164 = `+${phoneOk.digits}`;

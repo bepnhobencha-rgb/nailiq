@@ -81,6 +81,7 @@ export async function seedTestSalon(opts?: {
   name?: string;
   /** `salons.salon_phone` — public line for reschedule CTA; omit or null for none. */
   salon_phone?: string | null;
+  phone_otp_enabled?: boolean;
 }) {
   const phone = opts?.phone ?? "15550001111";
   const slug = opts?.slug ?? "e2e-test-salon";
@@ -102,6 +103,7 @@ export async function seedTestSalon(opts?: {
           : opts.salon_phone === null || opts.salon_phone === ""
             ? null
             : String(opts.salon_phone).trim() || null,
+      phone_otp_enabled: opts?.phone_otp_enabled ?? false,
     })
     .select("id")
     .single();
