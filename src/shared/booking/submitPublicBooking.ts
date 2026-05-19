@@ -675,6 +675,71 @@ export async function submitPublicBooking(
     /* booking succeeded; profile update is best-effort */
   }
 
+  // Evaluate deposit requirement + AI risk score — both best-effort (never block the booking).
+  void (async () => {
+    try {
+      const { evaluateDeposit } = await import("@/shared/noshow/evaluateDeposit");
+      const { scoreNoShowRisk } = await import("@/shared/noshow/scoreNoShowRisk");
+
+      const svcPrice = priceSnapshot ?? 0;
+
+      const { data: salonSettings } = await supabase
+        .from("salons")
+        .select("deposit_high_value_cents")
+        .eq("id", salon.id)
+        .maybeSingle();
+      const highValueThreshold =
+        (salonSettings as { deposit_high_value_cents?: number } | null)?.deposit_high_value_cents ?? 10000;
+
+      const { data: clientForDeposit } = await supabase
+        .from("client_profiles")
+        .select("no_show_count, is_vip, visit_count")
+        .eq("phone", phoneOk.digits)
+        .maybeSingle();
+      const cp = clientForDeposit as {
+        no_show_count?: number; is_vip?: boolean; visit_count?: number;
+      } | null;
+
+      const depositDecision = evaluateDeposit({
+        isNewCustomer: !cp || (cp.visit_count ?? 0) <= 1,
+        previousNoShowCount: cp?.no_show_count ?? 0,
+        isVip: cp?.is_vip ?? false,
+        servicePriceCents: svcPrice,
+        highValueThresholdCents: highValueThreshold,
+      });
+
+      const [riskResult] = await Promise.allSettled([
+        scoreNoShowRisk({
+          clientName: nameTrimmed,
+          serviceName: service.name as string,
+          startTimeUtc: startLocal.toISOString(),
+          isNewCustomer: !cp || (cp.visit_count ?? 0) <= 1,
+          visitCount: cp?.visit_count ?? 0,
+          noShowCount: cp?.no_show_count ?? 0,
+          bookingSource: "public_booking",
+          hasEmail: !!emailToStore,
+          hasPhone: true,
+        }),
+      ]);
+
+      const riskScore =
+        riskResult.status === "fulfilled" ? riskResult.value.score : null;
+
+      await supabase
+        .from("bookings")
+        .update({
+          deposit_required: depositDecision.required,
+          deposit_amount_cents: depositDecision.required ? depositDecision.amountCents : null,
+          deposit_reason: depositDecision.reason,
+          deposit_status: depositDecision.required ? "required" : "not_required",
+          no_show_risk_score: riskScore,
+        } as never)
+        .eq("id", bookingId);
+    } catch (e) {
+      console.error("[submitPublicBooking] deposit/risk evaluation failed", e);
+    }
+  })();
+
   // Send confirmation email via a dedicated Route Handler that uses after()
   // to guarantee delivery even after the server action returns.
   if (emailToStore) {

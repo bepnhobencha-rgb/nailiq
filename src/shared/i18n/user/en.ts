@@ -323,6 +323,7 @@ export type UserMessages = {
     services: string;
     staff: string;
     walkinQueue: string;
+    noShowProtection: string;
     messages: string;
     reports: string;
     marketing: string;
@@ -1845,6 +1846,7 @@ export const userEn: UserMessages = {
     services: "Services",
     staff: "Staff",
     walkinQueue: "Walk-in Queue",
+    noShowProtection: "No-Show Protection",
     messages: "Messages",
     reports: "Reports",
     marketing: "Retention",
