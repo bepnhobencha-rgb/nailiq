@@ -1,5 +1,4 @@
 import * as Sentry from "@sentry/nextjs";
-import { after } from "next/server";
 import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
 import { assertSlotWithinOpeningHours } from "@/shared/booking/assertSlotWithinOpeningHours";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
@@ -634,21 +633,19 @@ export async function submitPublicBooking(
   // Send confirmation email when the customer provided an address.
   // Fire-and-forget — email failure must never surface to the customer.
   if (emailToStore) {
-    // after() keeps the serverless function alive until the email resolves
-    // without blocking the booking response returned to the client.
-    after(() =>
-      sendBookingConfirmationEmail({
-        bookingId,
-        shopSlug,
-        clientName: nameTrimmed,
-        clientEmail: emailToStore,
-        serviceName: service.name as string,
-        addonServiceName: addonRow?.name ?? null,
-        staffName: resolvedStaffName,
-        startTimeUtc: startLocal.toISOString(),
-        totalPriceCents: totalPriceCents > 0 ? totalPriceCents : null,
-      }),
-    );
+    // Awaited so the serverless function stays alive until Resend responds.
+    // sendBookingConfirmationEmail catches all errors internally — never throws.
+    await sendBookingConfirmationEmail({
+      bookingId,
+      shopSlug,
+      clientName: nameTrimmed,
+      clientEmail: emailToStore,
+      serviceName: service.name as string,
+      addonServiceName: addonRow?.name ?? null,
+      staffName: resolvedStaffName,
+      startTimeUtc: startLocal.toISOString(),
+      totalPriceCents: totalPriceCents > 0 ? totalPriceCents : null,
+    });
   }
 
   return {
