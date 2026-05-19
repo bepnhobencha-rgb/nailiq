@@ -523,7 +523,11 @@ export async function gotoReceptionistCenter(
   // once SSR has streamed the element; the next two waits below
   // (`staff-timeline-grid`, `walkin-add-form`) require *visible* state
   // and provide the real "fully hydrated" gate.
-  await page.getByTestId("receptionist-center-loaded").waitFor({
+  // `.first()` — during App Router streaming+hydration, the element can
+  // briefly appear twice (SSR placeholder + hydrated copy). Strict-mode
+  // `getByTestId` throws on 2 matches; `.first()` is safe because the
+  // real gate is the `staff-timeline-grid` visible check below.
+  await page.getByTestId("receptionist-center-loaded").first().waitFor({
     state: "attached",
     timeout: 45_000,
   });
