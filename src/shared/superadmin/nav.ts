@@ -109,7 +109,6 @@ export const SUPERADMIN_NAV: readonly SuperadminNavItem[] = [
     label: "Settings",
     href: "/superadmin/settings",
     allowedRoles: ALL_ROLES,
-    mvpHidden: true,
   },
 ];
 
@@ -124,6 +123,7 @@ export const SUPERADMIN_MOBILE_TABS: readonly string[] = [
   "salons",
   "operations",
   "support",
+  "settings",
 ];
 
 export function canReach(
