@@ -160,14 +160,6 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
       // which intentionally hides `kpi_bar` — fine for prod but drops the
       // status-pill that several tests rely on. See dashboardPresets.ts.
       dashboard_preset: "rush_hour",
-      // Force queue mode: walkin_auto_assign defaults to true, which makes
-      // canAssignImmediately=true when staff are free (including all of CI
-      // run time outside business hours). With immediate mode the walk-in is
-      // confirmed+assigned on submit and never appears in the queue panel,
-      // causing every queue-item assertion to fail. Setting false makes the
-      // form always call addWalkinToQueue (status=waiting) regardless of
-      // staff availability — matching what these queue/assign tests expect.
-      ...({ walkin_auto_assign: false } as object),
     })
     .select("id")
     .single();
@@ -177,6 +169,19 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
   }
 
   const salonId = salon.id as string;
+
+  // Force queue mode: walkin_auto_assign defaults to true, making canAssignImmediately=true
+  // when staff are free. In immediate mode the walk-in is confirmed+assigned on submit
+  // and never appears in the queue panel — causing every queue-item assertion to fail.
+  // Setting false ensures the form always calls addWalkinToQueue (status=waiting).
+  // Uses the same `as never` cast pattern as salonOwnerActions.ts line 893.
+  const { error: autoAssignErr } = await supabaseAdmin
+    .from("salons")
+    .update({ walkin_auto_assign: false } as never)
+    .eq("id", salonId);
+  if (autoAssignErr) {
+    throw new Error(`seedReceptionistCenterFixture: walkin_auto_assign update failed: ${autoAssignErr.message}`);
+  }
 
   const serviceSpecs = [
     { name: "E2E Gel Manicure", duration_minutes: 45, buffer_minutes: 10, price_cents: 4500 },
