@@ -65,6 +65,8 @@ type NavItem = {
   match: (pathname: string) => boolean;
   /** Disabled placeholder (no href). */
   disabled?: boolean;
+  /** When true, item is not rendered in the sidebar (route still accessible via URL). */
+  hidden?: boolean;
 };
 
 /** Visual grouping; rendered as a thin border between sections. */
@@ -229,6 +231,7 @@ export function DashboardSidebar({
             href: `${dashRoot}/no-show-protection`,
             icon: ShieldAlert,
             match: (p) => p.startsWith(`${dashRoot}/no-show-protection`),
+            hidden: true,
           },
           {
             key: "messages",
@@ -359,7 +362,7 @@ export function DashboardSidebar({
               />
             ) : null}
             <ul className="flex flex-col gap-1">
-              {section.items.map((item) => (
+              {section.items.filter((item) => !item.hidden).map((item) => (
                 <li key={item.key}>
                   <SidebarRow
                     item={item}

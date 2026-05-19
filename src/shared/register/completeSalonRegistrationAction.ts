@@ -478,6 +478,11 @@ export async function completeSalonRegistration(
       phone: phoneForSalon,
       timezone: wizardTimezone,
       setup_wizard_completed_at: new Date().toISOString(),
+      // New salons start with all reminder channels on.
+      reminders_enabled: true,
+      reminder_24h_enabled: true,
+      reminder_3h_enabled: true,
+      sms_reminders_enabled: true,
     } as never)
     .select("id, slug")
     .single();

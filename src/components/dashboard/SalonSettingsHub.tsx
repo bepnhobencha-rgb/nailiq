@@ -1,8 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
+import { Toggle } from "@/components/ui/Toggle";
+import {
+  updateRemindersEnabled,
+  updateReminderSettings,
+} from "@/shared/noshow/noShowDashboardActions";
 import { AuditLogViewer } from "@/components/dashboard/AuditLogViewer";
 import { DashboardModulesSettings } from "@/components/dashboard/DashboardModulesSettings";
 import { DashboardPresetSettings } from "@/components/dashboard/DashboardPresetSettings";
@@ -34,6 +39,10 @@ export function SalonSettingsHub({
   themeMode,
   walkinAutoAssign,
   phoneOtpEnabled,
+  remindersEnabled,
+  reminder24hEnabled,
+  reminder3hEnabled,
+  smsRemindersEnabled,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -46,6 +55,10 @@ export function SalonSettingsHub({
   themeMode: "dark" | "light";
   walkinAutoAssign: boolean;
   phoneOtpEnabled: boolean;
+  remindersEnabled: boolean;
+  reminder24hEnabled: boolean;
+  reminder3hEnabled: boolean;
+  smsRemindersEnabled: boolean;
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -55,6 +68,48 @@ export function SalonSettingsHub({
   const advancedMode = searchParams?.get("advanced") === "true";
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  // Reminder toggle state
+  const [reminderOn, setReminderOn] = useState(remindersEnabled);
+  const [adv24h, setAdv24h] = useState(reminder24hEnabled);
+  const [adv3h, setAdv3h] = useState(reminder3hEnabled);
+  const [advSms, setAdvSms] = useState(smsRemindersEnabled);
+  const [reminderAdvOpen, setReminderAdvOpen] = useState(false);
+  const [reminderPending, startReminderTransition] = useTransition();
+  const [advSaved, setAdvSaved] = useState(false);
+
+  function handleReminderToggle(next: boolean) {
+    setReminderOn(next);
+    if (next) {
+      setAdv24h(true);
+      setAdv3h(true);
+      setAdvSms(true);
+    }
+    startReminderTransition(async () => {
+      if (next) {
+        await updateRemindersEnabled(slug, true);
+        await updateReminderSettings(slug, {
+          reminder_24h_enabled: true,
+          reminder_3h_enabled: true,
+          sms_reminders_enabled: true,
+        });
+      } else {
+        await updateRemindersEnabled(slug, false);
+      }
+    });
+  }
+
+  function handleReminderAdvSave() {
+    startReminderTransition(async () => {
+      await updateReminderSettings(slug, {
+        reminder_24h_enabled: adv24h,
+        reminder_3h_enabled: adv3h,
+        sms_reminders_enabled: advSms,
+      });
+      setAdvSaved(true);
+      setTimeout(() => setAdvSaved(false), 2500);
+    });
+  }
 
   const { language } = useUserLanguage();
   const messages = getUserMessages(language);
@@ -186,6 +241,76 @@ export function SalonSettingsHub({
         <p className="mt-3 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-3 text-sm leading-relaxed text-nq-muted">
           {t.hintRecoveryEmail}
         </p>
+
+        {/* ── Reminder toggle ─────────────────────────────────── */}
+        {canEditDashboardModules ? (
+          <section
+            data-testid="settings-reminder-toggle"
+            className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-4"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-nq-foreground">Tự động nhắc khách</p>
+                <p className="mt-0.5 text-xs text-nq-muted">Email 24h + SMS 3h trước lịch hẹn</p>
+              </div>
+              <Toggle
+                checked={reminderOn}
+                disabled={reminderPending}
+                aria-label="Tự động nhắc khách"
+                onChange={handleReminderToggle}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setReminderAdvOpen((v) => !v)}
+              className="mt-3 flex items-center gap-1 text-xs text-nq-muted underline-offset-2 hover:text-nq-foreground hover:underline"
+              aria-expanded={reminderAdvOpen}
+            >
+              Tuỳ chỉnh nâng cao
+              <span aria-hidden className="text-[10px]">{reminderAdvOpen ? "▲" : "▼"}</span>
+            </button>
+
+            {reminderAdvOpen && (
+              <div className="mt-3 flex flex-col gap-3 border-t border-nq-border/20 pt-3">
+                {(
+                  [
+                    { key: "24h", label: "Email nhắc trước 24h", checked: adv24h, set: setAdv24h },
+                    { key: "3h",  label: "Email nhắc trước 3h",  checked: adv3h,  set: setAdv3h },
+                    { key: "sms", label: "SMS nhắc trước 3h",    checked: advSms, set: setAdvSms },
+                  ] as const
+                ).map(({ key, label, checked, set }) => (
+                  <label
+                    key={key}
+                    className="flex cursor-pointer items-center gap-3 text-sm text-nq-foreground"
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-nq-border/60 text-nq-primary focus:ring-nq-primary/40"
+                      checked={checked}
+                      disabled={reminderPending}
+                      onChange={(e) => set(e.target.checked)}
+                    />
+                    {label}
+                  </label>
+                ))}
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={reminderPending}
+                    onClick={handleReminderAdvSave}
+                    className="rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-3 py-1.5 text-xs font-semibold text-nq-primary transition hover:bg-nq-primary/15 disabled:opacity-50"
+                  >
+                    {reminderPending ? "Đang lưu…" : "Lưu"}
+                  </button>
+                  {advSaved ? (
+                    <span className="text-xs text-nq-success">✓ Đã lưu</span>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </section>
+        ) : null}
 
         {/* ── Pricing ─────────────────────────────────────────── */}
         {canEditDashboardModules ? (
