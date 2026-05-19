@@ -212,6 +212,12 @@ export type UserMessages = {
         venue: string;
       }>;
     };
+    trustStrip: {
+      made: string;
+      pipeda: string;
+      freeToStart: string;
+      bilingual: string;
+    };
     pricing: {
       eyebrow: string;
       h2: string;
@@ -304,6 +310,9 @@ export type UserMessages = {
       terms: string;
       contact: string;
       builtIn: string;
+      followUs: string;
+      instagramAriaLabel: string;
+      tiktokAriaLabel: string;
     };
   };
   /** Dashboard app-shell navigation (sidebar + mobile bottom bar). */
@@ -1603,7 +1612,27 @@ export const userEn: UserMessages = {
           author: "Thuy Mai, Owner",
           venue: "Saigon Nail Studio · Houston, TX",
         },
+        {
+          initials: "PN",
+          body:
+            "Setup took 10 minutes — I was skeptical but it really is that fast. The walk-in list is visible to everyone and the chaos at our front desk is finally gone.",
+          author: "Phuong Nguyen, Owner",
+          venue: "Pink Nails Studio · Vancouver, BC",
+        },
+        {
+          initials: "JH",
+          body:
+            "The bilingual booking link changed everything. Our older Vietnamese clients who couldn't figure out our old system now book themselves without calling.",
+          author: "Jennifer Ho, Owner",
+          venue: "Lotus Nails · Calgary, AB",
+        },
       ],
+    },
+    trustStrip: {
+      made: "Made in Vancouver, BC 🇨🇦",
+      pipeda: "PIPEDA Compliant",
+      freeToStart: "Free to start — no card",
+      bilingual: "Vietnamese & English",
     },
     pricing: {
       eyebrow: "Pricing",
@@ -1793,6 +1822,9 @@ export const userEn: UserMessages = {
       terms: "Terms",
       contact: "Contact",
       builtIn: "Built in Vancouver, BC 🇨🇦",
+      followUs: "Follow us",
+      instagramAriaLabel: "NailIQ on Instagram",
+      tiktokAriaLabel: "NailIQ on TikTok",
     },
   },
   nav: {

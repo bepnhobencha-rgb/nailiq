@@ -6,6 +6,7 @@ import { LandingPainSection } from "@/components/landing/LandingPainSection";
 import { LandingFeatures } from "@/components/landing/LandingFeatures";
 import { LandingHowItWorks } from "@/components/landing/LandingHowItWorks";
 import { LandingSocialProof } from "@/components/landing/LandingSocialProof";
+import { LandingTrustStrip } from "@/components/landing/LandingTrustStrip";
 import { LandingPricing } from "@/components/landing/LandingPricing";
 import { LandingFAQ } from "@/components/landing/LandingFAQ";
 import { LandingFinalCta } from "@/components/landing/LandingFinalCta";
@@ -79,6 +80,7 @@ export default function Home() {
           <LandingFeatures />
           <LandingHowItWorks />
           <LandingSocialProof />
+          <LandingTrustStrip />
           <LandingPricing />
           <LandingFAQ />
           <LandingFinalCta />

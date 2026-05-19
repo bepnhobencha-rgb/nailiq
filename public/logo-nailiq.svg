@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 60" width="260" height="60">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@700&amp;display=swap');
+      text { font-family: 'Be Vietnam Pro', system-ui, sans-serif; font-weight: 700; }
+    </style>
+  </defs>
+  <!-- Dark background for NailIQ -->
+  <rect width="260" height="60" fill="#0b0c10" rx="8"/>
+  <!-- Wordmark: Nail (white) + IQ (gold #d4af37) -->
+  <text x="12" y="44" font-size="52" letter-spacing="-1" fill="#ffffff">Nail</text>
+  <text x="144" y="44" font-size="52" letter-spacing="-1" fill="#d4af37">IQ</text>
+</svg>
