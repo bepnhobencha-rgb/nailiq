@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
 import { DEFAULT_OPENING_HOURS_JSON } from "@/shared/dashboard/openingHoursDefaults";
@@ -539,27 +539,50 @@ export async function gotoReceptionistCenter(
 /** 10-digit test phone satisfying `validateGuestPhone` / public booking rules. */
 export const E2E_WALKIN_VALID_PHONE = "6045551234";
 
-/** Fill guest name + phone on the walk-in add form (both required since V1 validation).
+/**
+ * Fill a React-controlled `<input>` using the native HTMLInputElement.prototype
+ * value setter + a bubbling InputEvent.
  *
- * Uses `pressSequentially` instead of `fill` for both fields. The walkin sidebar sits
- * inside a fixed-height `overflow:hidden` container — Playwright's `fill()` dispatches
- * a native input event but cannot focus the element (focus() is not actionability-gated;
- * `fill()`'s internal focus step silently skips for clipped elements on CI). Without a
- * real focus → keyboard-event sequence, React's controlled-input `onChange` never fires:
- * `nameTouchedRef.current` stays false (so `onBlur` returns early with no validation),
- * and `clientName` / `clientPhone` state stay "" (so `runSubmit` aborts with "name
- * required"). `pressSequentially` calls `element.focus()` which always succeeds regardless
- * of overflow clipping, then dispatches per-character keydown/input/keyup events that
- * React processes as real user input.
+ * Why not `fill()` or `pressSequentially`?
+ * • `fill()` writes the value via CDP's setInputFiles / setValue path, which
+ *   bypasses React's patched value getter. React memoises the "last seen" value
+ *   and skips calling onChange because it thinks nothing changed.
+ * • `pressSequentially` fires per-character keyboard events. In headless Chromium
+ *   on CI, elements inside an `overflow:hidden` sidebar can lose focus between
+ *   characters (the re-render from a progressive phone formatter repositions the
+ *   cursor, the browser re-evaluates focus, and subsequent keystrokes land nowhere).
+ *
+ * The native-setter trick forces React's change-detection to see a real value
+ * change; the InputEvent bubbles to the document root where React 18's event
+ * delegation calls the component's onChange handler with e.target.value = val.
  */
+export async function fillReactInput(
+  locator: Locator,
+  value: string,
+): Promise<void> {
+  await locator.evaluate((el: HTMLInputElement, val: string) => {
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    if (nativeSetter) {
+      nativeSetter.call(el, val);
+    } else {
+      el.value = val;
+    }
+    el.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true }));
+  }, value);
+}
+
+/** Fill guest name + phone on the walk-in add form (both required since V1 validation). */
 export async function fillWalkinGuestContact(
   page: Page,
   name: string,
   phone = E2E_WALKIN_VALID_PHONE,
 ): Promise<void> {
   const form = page.getByTestId("walkin-add-form");
-  await form.getByTestId("walkin-name").pressSequentially(name);
-  await form.getByTestId("walkin-phone").pressSequentially(phone);
+  await fillReactInput(form.getByTestId("walkin-name"), name);
+  await fillReactInput(form.getByTestId("walkin-phone"), phone);
 }
 
 /**
