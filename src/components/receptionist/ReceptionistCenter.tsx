@@ -74,6 +74,7 @@ import {
   type UpdateBookingStatusResult,
   updateBookingStatus,
 } from "@/shared/dashboard/salonOwnerActions";
+import { editBookingAction } from "@/shared/dashboard/editBookingAction";
 import { getUserMessages } from "@/shared/i18n/user";
 import { checkBookingConflict, type ConflictCheckBooking } from "@/shared/lib/conflictCheck";
 import { cn } from "@/shared/lib/cn";
@@ -455,6 +456,7 @@ function ReceptionistCenterInner({
           id: b.id,
           client_name: b.client_name,
           service_name: b.service_name,
+          service_id: b.service_id,
           status: b.status,
           source: b.source,
           staff_id: b.staff_id,
@@ -484,7 +486,9 @@ function ReceptionistCenterInner({
         if (cancelled || !r.ok) return;
         setOverloadedStaff(
           r.staff
-            .filter((s) => s.overloaded)
+            // Only count staff who actually have walk-ins queued ahead —
+            // bookingsNext2h alone (no walk-ins) should not trigger overload banners.
+            .filter((s) => s.overloaded && s.queueAhead > 0)
             .map((s) => ({ name: s.staffName, queueAhead: s.queueAhead })),
         );
       } catch {
@@ -1012,8 +1016,11 @@ function ReceptionistCenterInner({
     // P0.2 — render in the salon's configured currency rather than a
     // hardcoded "$". formatCurrency returns null for null/NaN cents
     // so the existing "no price" path still works.
+    // Per-booking price in the drawer is operational data receptionists
+    // need regardless of the revenue_today KPI module toggle — the
+    // module gates the daily total bar, not the per-booking price line.
     const priceLine =
-      data.dashboardModules.revenue_today && totalCents != null
+      totalCents != null
         ? formatCurrency(totalCents, data.salon.currencyCode)
         : null;
 
@@ -1739,6 +1746,23 @@ function ReceptionistCenterInner({
               existingBookings={gridBookings}
               onBookingClick={(id) => setDrawerBookingId(id)}
               onSlotClick={(staffId, utc) => void onWalkinAssignSlot(staffId, utc)}
+              onRescheduleBooking={async (bookingId, newStaffId, newStartUtc) => {
+                const booking = data.bookingsForDay.find((b) => b.id === bookingId);
+                if (!booking) return { ok: false, error: "not_found" };
+                const result = await editBookingAction(slug, {
+                  salonId: data.salon.id,
+                  bookingId,
+                  newStartTimeUtc: newStartUtc,
+                  newStaffId,
+                  newServiceId: booking.service_id,
+                  newAddonServiceId: booking.addon_service_id ?? null,
+                });
+                if (result.ok) {
+                  router.refresh();
+                  return { ok: true };
+                }
+                return { ok: false, error: result.error };
+              }}
               labels={{
                 formatTimeLabel: (utcIso: string) => formatInSalonTz(utcIso, timezone, "shortTime"),
                 conflictWith: rcMessages.grid.conflictWith,
@@ -1868,6 +1892,8 @@ function ReceptionistCenterInner({
                   sortLabel: rcMessages.queue.sortLabel,
                   sortFifo: rcMessages.queue.sortFifo,
                   sortLongestWait: rcMessages.queue.sortLongestWait,
+                  sortCustom: rcMessages.queue.sortCustom,
+                  avgWait: rcMessages.queue.avgWait,
                   priorityHigh: rcMessages.queue.priorityHigh,
                   priorityMedium: rcMessages.queue.priorityMedium,
                   priorityLow: rcMessages.queue.priorityLow,

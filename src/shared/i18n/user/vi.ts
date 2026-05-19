@@ -934,6 +934,8 @@ export const userVi: UserMessages = {
       sortLabel: "Sắp xếp",
       sortFifo: "Vào trước",
       sortLongestWait: "Chờ lâu nhất",
+      sortCustom: "Thứ tự tùy chỉnh",
+      avgWait: (n: number) => `Chờ TB · ${n} ph`,
       priorityHigh: "Cao",
       priorityMedium: "Vừa",
       priorityLow: "Thấp",

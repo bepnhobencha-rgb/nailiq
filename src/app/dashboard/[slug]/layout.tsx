@@ -5,6 +5,7 @@ import { ImpersonationBanner } from "@/components/impersonation/ImpersonationBan
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { loadOwnerSalons } from "@/shared/dashboard/salonOwnerActions";
 import { expireImpersonationIfStale } from "@/shared/superadmin/impersonationActions";
+import { salonDayRangeUtc, salonToday } from "@/shared/lib/salonTime";
 
 type Props = {
   children: ReactNode;
@@ -79,12 +80,18 @@ export default async function DashboardSlugLayout({
   // on per-page navigation — the layout re-renders on every route
   // change so counts stay reasonably fresh without a client-side
   // postgres_changes subscription at the layout level.
+  const { startUtc: todayStartUtc } = salonDayRangeUtc(
+    salonToday(ctx.salon.timezone),
+    ctx.salon.timezone,
+  );
+
   const [waitingRes, overdueRes] = await Promise.all([
     ctx.supabase
       .from("bookings")
       .select("id", { count: "exact", head: true })
       .eq("salon_id", ctx.salon.id)
-      .eq("status", "waiting"),
+      .eq("status", "waiting")
+      .gte("joined_queue_at", todayStartUtc),
     ctx.supabase
       .from("bookings")
       .select("id", { count: "exact", head: true })

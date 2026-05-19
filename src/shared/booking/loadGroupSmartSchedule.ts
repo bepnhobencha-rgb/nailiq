@@ -789,6 +789,7 @@ export async function loadGroupSmartSchedule(
     date: params.date,
     timezone,
     window,
+    closeMin: hmToMinutes(dayHours.close) ?? 0,
     resolvedMembers,
     staffList,
     staffById,
@@ -841,6 +842,10 @@ type SchedulerSearchCtx = {
   date: string;
   timezone: string;
   window: { startMin: number; endMin: number };
+  /** Salon closing time in minutes-from-midnight. Anchors where any
+   *  member's service would end past this are filtered out so we never
+   *  propose a slot that extends beyond closing time. */
+  closeMin: number;
   resolvedMembers: ResolvedMember[];
   staffList: StaffRow[];
   staffById: Map<string, StaffRow>;
@@ -851,11 +856,21 @@ type SchedulerSearchCtx = {
 function findArrangementsInWindow(
   ctx: SchedulerSearchCtx,
 ): GroupArrangement[] {
+  const maxMemberMin = ctx.resolvedMembers.reduce(
+    (acc, m) => Math.max(acc, m.totalMinutes),
+    0,
+  );
+  const dayCloseIso = salonWallTimeToUtcIso(ctx.date, ctx.closeMin, ctx.timezone);
+  const dayCloseMs = Date.parse(dayCloseIso);
+
   const anchors: number[] = [];
   for (let mm = ctx.window.startMin; mm <= ctx.window.endMin; mm += SLOT_STEP_MIN) {
     const iso = salonWallTimeToUtcIso(ctx.date, mm, ctx.timezone);
     const ms = Date.parse(iso);
-    if (Number.isFinite(ms)) anchors.push(ms);
+    if (!Number.isFinite(ms)) continue;
+    // Reject anchor if the longest member's service would end past closing.
+    if (Number.isFinite(dayCloseMs) && ms + maxMemberMin * 60_000 > dayCloseMs) continue;
+    anchors.push(ms);
   }
   if (anchors.length === 0) return [];
 
@@ -1059,6 +1074,7 @@ function computeSplitOption(ctx: AlternativesCtx): GroupAlternatives["splitOptio
     date: ctx.date,
     timezone: ctx.timezone,
     window: ctx.window,
+    closeMin: hmToMinutes(ctx.dayHours.close) ?? 0,
     resolvedMembers: mainMembers,
     staffList: ctx.staffList,
     staffById: ctx.staffById,
@@ -1258,6 +1274,7 @@ function computeEarlierToday(
     date: ctx.date,
     timezone: ctx.timezone,
     window: alternateWindow,
+    closeMin: hmToMinutes(ctx.dayHours.close) ?? 0,
     resolvedMembers: ctx.resolvedMembers,
     staffList: ctx.staffList,
     staffById: ctx.staffById,

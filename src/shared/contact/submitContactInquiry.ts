@@ -11,7 +11,7 @@ const SALON_MAX = 200;
 const MESSAGE_MAX = 4000;
 const EMAIL_MAX = 254;
 
-const CONTACT_INBOX = "hello@nailiq.ca";
+const CONTACT_INBOX = "thehuytgvn@gmail.com";
 
 export type ContactInquiryResult =
   | { ok: true }

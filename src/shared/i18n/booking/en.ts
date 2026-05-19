@@ -122,7 +122,7 @@ export const bookingEn = {
   salonNotLiveBody:
     "{shop} is finishing setup and isn’t taking online bookings yet. Please check back soon.",
   /** `{n}` = staff free-gap minutes after the chosen service. */
-  upsellHeading: "Add another service? You have {n} extra minutes available.",
+  upsellHeading: "Your tech is free for {n} more minutes — want to add a service?",
   upsellNoThanks: "No thanks",
   upsellToggleHint: "Pick one before you confirm to bundle it with your booking.",
   /** Right column when `totalMinutes` from DB is 0 */

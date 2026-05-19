@@ -110,7 +110,7 @@ export const bookingVi: BookingMessages = {
   salonNotLiveHeading: "Tạm dừng nhận đặt lịch",
   salonNotLiveBody:
     "{shop} đang hoàn tất cài đặt và chưa nhận đặt lịch online. Vui lòng quay lại sau.",
-  upsellHeading: "Thêm dịch vụ nữa? Bạn còn {n} phút trống.",
+  upsellHeading: "Thợ của bạn còn rảnh {n} phút — muốn thêm dịch vụ không?",
   upsellNoThanks: "Không, cảm ơn",
   upsellToggleHint:
     "Chọn trước khi xác nhận để gộp chung với lịch đặt.",

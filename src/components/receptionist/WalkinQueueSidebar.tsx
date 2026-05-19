@@ -1,6 +1,24 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import {
+  DndContext,
+  PointerSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical } from "lucide-react";
 
 import { cn } from "@/shared/lib/cn";
 import { isWalkinUrgent, minutesWaiting } from "@/shared/lib/queueUrgency";
@@ -40,7 +58,7 @@ export interface QueueItem {
   party_size?: number | null;
 }
 
-export type QueueSortMode = "fifo" | "longest_wait";
+export type QueueSortMode = "fifo" | "longest_wait" | "custom";
 
 export interface WalkinQueueSidebarProps {
   /** Queue items, already sorted FIFO by parent */
@@ -62,6 +80,8 @@ export interface WalkinQueueSidebarProps {
     sortLabel: string;
     sortFifo: string;
     sortLongestWait: string;
+    sortCustom: string;
+    avgWait: (n: number) => string;
     priorityHigh: string;
     priorityMedium: string;
     priorityLow: string;
@@ -166,6 +186,40 @@ export interface WalkinQueueSidebarProps {
   currency: import("@/shared/lib/currencyFormat").Currency;
 }
 
+function SortableQueueItem({
+  id,
+  isDragging,
+  children,
+}: {
+  id: string;
+  isDragging: boolean;
+  children: (handle: React.ReactNode) => React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  const handle = (
+    <button
+      type="button"
+      {...attributes}
+      {...listeners}
+      aria-label="Drag to reorder"
+      className="absolute left-1 top-1/2 -translate-y-1/2 cursor-grab touch-none p-1 text-nq-muted/40 hover:text-nq-muted active:cursor-grabbing"
+    >
+      <GripVertical size={14} />
+    </button>
+  );
+  return (
+    <li ref={setNodeRef} style={style} className="relative pl-5">
+      {children(handle)}
+    </li>
+  );
+}
+
 export function WalkinQueueSidebar({
   items,
   assigningId,
@@ -216,20 +270,75 @@ export function WalkinQueueSidebar({
     );
   }, [overloadedStaff, dismissedOverloads]);
 
-  const orderedItems = useMemo(() => {
-    if (sortMode !== "longest_wait") return items;
-    // Stable longest-wait-first: parse joinedAt once; older joinedAt → larger wait.
-    return [...items].sort((a, b) => {
-      const aTime = Date.parse(a.joined_queue_at);
-      const bTime = Date.parse(b.joined_queue_at);
-      const aOk = Number.isFinite(aTime);
-      const bOk = Number.isFinite(bTime);
-      if (!aOk && !bOk) return 0;
-      if (!aOk) return 1;
-      if (!bOk) return -1;
-      return aTime - bTime;
+  // Custom drag order — null means "use server order". When set,
+  // stores the IDs in the receptionist's preferred sequence.
+  const [customOrder, setCustomOrder] = useState<string[] | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const prevItemIds = useRef<string>("");
+
+  // Merge server updates into customOrder: add new arrivals at the
+  // end, drop IDs that are no longer in the queue.
+  useEffect(() => {
+    const incomingIds = items.map((i) => i.id).join(",");
+    if (incomingIds === prevItemIds.current) return;
+    prevItemIds.current = incomingIds;
+    setCustomOrder((prev) => {
+      if (!prev) return null;
+      const incoming = new Set(items.map((i) => i.id));
+      const filtered = prev.filter((id) => incoming.has(id));
+      const added = items.filter((i) => !prev.includes(i.id)).map((i) => i.id);
+      return [...filtered, ...added];
     });
-  }, [items, sortMode]);
+  }, [items]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+  );
+
+  const orderedItems = useMemo(() => {
+    if (sortMode === "custom" && customOrder) {
+      const map = new Map(items.map((i) => [i.id, i]));
+      return customOrder.flatMap((id) => {
+        const item = map.get(id);
+        return item ? [item] : [];
+      });
+    }
+    if (sortMode === "longest_wait") {
+      return [...items].sort((a, b) => {
+        const aTime = Date.parse(a.joined_queue_at);
+        const bTime = Date.parse(b.joined_queue_at);
+        const aOk = Number.isFinite(aTime);
+        const bOk = Number.isFinite(bTime);
+        if (!aOk && !bOk) return 0;
+        if (!aOk) return 1;
+        if (!bOk) return -1;
+        return aTime - bTime;
+      });
+    }
+    return items;
+  }, [items, sortMode, customOrder]);
+
+  const avgWaitMinutes = useMemo(() => {
+    if (items.length === 0) return null;
+    const total = items.reduce(
+      (sum, item) => sum + minutesWaiting(item.joined_queue_at, nowIso),
+      0,
+    );
+    return Math.round(total / items.length);
+  }, [items, nowIso]);
+
+  function handleDragEnd(event: DragEndEvent) {
+    setDraggingId(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const ids = orderedItems.map((i) => i.id);
+    const oldIdx = ids.indexOf(String(active.id));
+    const newIdx = ids.indexOf(String(over.id));
+    if (oldIdx === -1 || newIdx === -1) return;
+    setCustomOrder(arrayMove(ids, oldIdx, newIdx));
+    setSortMode("custom");
+  }
 
   const onAssignClick = (itemId: string) => {
     if (assigningId !== null && assigningId !== itemId) {
@@ -251,9 +360,16 @@ export function WalkinQueueSidebar({
     >
       <header className="flex shrink-0 items-center justify-between gap-2 border-b border-nq-muted/20 px-3 py-2">
         <h2 className="text-sm font-semibold text-nq-foreground">{labels.title}</h2>
-        <span className="rounded-full bg-nq-primary/20 px-2.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-nq-primary">
-          {items.length}
-        </span>
+        <div className="flex items-center gap-2">
+          {showWaitTime && avgWaitMinutes !== null ? (
+            <span className="text-xs text-nq-muted tabular-nums">
+              {labels.avgWait(avgWaitMinutes)}
+            </span>
+          ) : null}
+          <span className="rounded-full bg-nq-primary/20 px-2.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-nq-primary">
+            {items.length}
+          </span>
+        </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-3">
@@ -335,43 +451,61 @@ export function WalkinQueueSidebar({
                   id="walkin-queue-sort"
                   data-testid="walkin-queue-sort"
                   value={sortMode}
-                  onChange={(e) =>
-                    setSortMode(e.target.value as QueueSortMode)
-                  }
+                  onChange={(e) => {
+                    const next = e.target.value as QueueSortMode;
+                    setSortMode(next);
+                    if (next !== "custom") setCustomOrder(null);
+                  }}
                   className="h-8 rounded-md border border-nq-border bg-nq-bg px-2 text-xs text-nq-foreground focus:outline-none focus:ring-2 focus:ring-nq-primary/40"
                 >
                   <option value="fifo">{labels.sortFifo}</option>
                   <option value="longest_wait">{labels.sortLongestWait}</option>
+                  {sortMode === "custom" ? (
+                    <option value="custom">{labels.sortCustom}</option>
+                  ) : null}
                 </select>
               </div>
             ) : null}
 
-            <ul className="mt-3 space-y-3 pb-4">
-              {orderedItems.map((item, idx) => {
-                const waited = minutesWaiting(item.joined_queue_at, nowIso);
-                const urgentByLib =
-                  showWaitTime &&
-                  isWalkinUrgent({
-                    joinedQueueAtIso: item.joined_queue_at,
-                    staffRequestNote: item.staff_request_note,
-                    nowIso,
-                  });
-                const assigningThis = assigningId === item.id;
-                const blockOthers = assigningId !== null && !assigningThis;
-                const tags: QueueRequestTag[] = [];
-                if (item.walkin_request_tags) {
-                  for (const t of item.walkin_request_tags) tags.push(t);
-                }
-                if (item.staff_request_note) {
-                  tags.push(item.staff_request_note);
-                }
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={(e) => setDraggingId(String(e.active.id))}
+              onDragCancel={() => setDraggingId(null)}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={orderedItems.map((i) => i.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <ul className="mt-3 space-y-3 pb-4">
+                  {orderedItems.map((item, idx) => {
+                    const waited = minutesWaiting(item.joined_queue_at, nowIso);
+                    const urgentByLib =
+                      showWaitTime &&
+                      isWalkinUrgent({
+                        joinedQueueAtIso: item.joined_queue_at,
+                        staffRequestNote: item.staff_request_note,
+                        nowIso,
+                      });
+                    const assigningThis = assigningId === item.id;
+                    const blockOthers = assigningId !== null && !assigningThis;
+                    const tags: QueueRequestTag[] = [];
+                    if (item.walkin_request_tags) {
+                      for (const t of item.walkin_request_tags) tags.push(t);
+                    }
+                    if (item.staff_request_note) {
+                      tags.push(item.staff_request_note);
+                    }
 
-                return (
-                  <li
-                    key={item.id}
-                    className="relative"
-                    data-testid={`queue-item-${item.id}`}
-                  >
+                    return (
+                      <SortableQueueItem
+                        key={item.id}
+                        id={item.id}
+                        isDragging={draggingId === item.id}
+                      >
+                        {(handle) => (
+                          <div data-testid={`queue-item-${item.id}`}>
                     {assigningThis ? (
                       <p
                         data-testid="walkin-assign-active-hint"
@@ -512,11 +646,16 @@ export function WalkinQueueSidebar({
                           ) : null}
                         </div>
                       }
+                      dragHandle={handle}
                     />
-                  </li>
-                );
-              })}
-            </ul>
+                          </div>
+                        )}
+                      </SortableQueueItem>
+                    );
+                  })}
+                </ul>
+              </SortableContext>
+            </DndContext>
           </>
         )}
       </div>

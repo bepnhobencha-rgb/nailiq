@@ -119,6 +119,10 @@ export interface BookingBlockProps {
     /** Aria label for the 👥 marker shown when `isGroup` is true. */
     group?: string;
   };
+  /** Grid drag-and-drop — fires on pointerdown when dragging is enabled. */
+  onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void;
+  /** True while this block is being dragged — renders semi-transparent. */
+  isDragging?: boolean;
 }
 
 /**
@@ -199,6 +203,8 @@ export function BookingBlock(props: BookingBlockProps) {
     isGroup = false,
     iconLabels = DEFAULT_ICON_LABELS,
     currencyCode,
+    onPointerDown,
+    isDragging = false,
   } = props;
 
   const reduced = useReducedMotion();
@@ -221,13 +227,16 @@ export function BookingBlock(props: BookingBlockProps) {
   // the wrapper takes precedence over the default `min-h-11` tailwind
   // class — keeps Simple density blocks chunkier (56px) while Pro
   // tightens to 36px without breaking the timeline math.
+  const isDraggable = !!onPointerDown && (status === "pending" || status === "confirmed");
   const commonClass = cn(
-    "absolute top-1.5 bottom-1.5 rounded-lg px-2.5 py-1.5 text-left shadow-none transition-[transform,box-shadow] duration-[var(--duration-nq-fast)] ease-[var(--ease-nq-out)] motion-safe:hover:-translate-y-px motion-safe:hover:shadow-nq-card",
+    "absolute top-1.5 bottom-1.5 rounded-lg px-2.5 py-1.5 text-left shadow-none transition-[transform,box-shadow,opacity] duration-[var(--duration-nq-fast)] ease-[var(--ease-nq-out)] motion-safe:hover:-translate-y-px motion-safe:hover:shadow-nq-card",
     minHeightPx === undefined && "min-h-11",
     styles.root,
     isWalkin && showWalkinAccent && "border-l-[3px] border-nq-primary",
     isCompleted && "opacity-70",
-    onClick && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
+    isDragging && "opacity-40 shadow-nq-card scale-[0.97]",
+    isDraggable && "cursor-grab touch-none select-none",
+    onClick && !isDraggable && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
   );
 
   const style = {
@@ -345,6 +354,7 @@ export function BookingBlock(props: BookingBlockProps) {
         style={style}
         aria-label={`Booking ${bookingId}: ${clientName}`}
         onClick={onClick}
+        onPointerDown={onPointerDown}
       >
         {inner}
       </button>

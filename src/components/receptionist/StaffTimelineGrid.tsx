@@ -31,6 +31,9 @@ const ROW_HEIGHT = 76;
 const STAFF_COL_WIDTH = 140;
 const TIME_HEADER_HEIGHT = 44;
 const TOTAL_SLOTS = (HOUR_END - HOUR_START) * 2;
+// Minimum pointer movement (px) before a pointerdown is promoted to an active drag.
+// Below this threshold the interaction is treated as a click and the drawer opens normally.
+const DRAG_THRESHOLD_PX = 5;
 
 export interface GridStaff {
   id: string;
@@ -53,6 +56,7 @@ export interface GridBooking {
   id: string;
   client_name: string;
   service_name: string;
+  service_id: string;
   status: "pending" | "confirmed" | "in_progress" | "completed";
   source: "appointment" | "walkin";
   staff_id: string;
@@ -93,6 +97,12 @@ export interface StaffTimelineGridProps {
   existingBookings: GridBooking[];
   onBookingClick: (bookingId: string) => void;
   onSlotClick: (staffId: string, slotStartUtc: string) => void;
+  /** Drag-to-reschedule: fires when a booking block is dropped on a new slot. */
+  onRescheduleBooking?: (
+    bookingId: string,
+    newStaffId: string,
+    newStartUtc: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
   labels: {
     formatTimeLabel: (utc: string) => string;
     conflictWith: (clientName: string) => string;
@@ -207,6 +217,19 @@ function toConflictRows(bookings: GridBooking[]): ConflictCheckBooking[] {
 
 const timelineWidthPx = TOTAL_SLOTS * SLOT_PX;
 
+interface GridDragState {
+  bookingId: string;
+  serviceId: string;
+  originalStaffId: string;
+  originalStartUtc: string;
+  durationMinutes: number;
+  /** px from the left edge of the block where the user grabbed it. */
+  grabOffsetPx: number;
+  clientName: string;
+  targetStaffIdx: number;
+  targetSlotIdx: number;
+}
+
 function StaffTimelineGridImpl({
   staff,
   bookings,
@@ -219,6 +242,7 @@ function StaffTimelineGridImpl({
   existingBookings,
   onBookingClick,
   onSlotClick,
+  onRescheduleBooking,
   labels,
   showStaffPerformanceDetail = true,
   showTimelineHeatmap = true,
@@ -240,6 +264,142 @@ function StaffTimelineGridImpl({
     staffId: string;
     slotIndex: number;
   } | null>(null);
+
+  const [dragState, setDragState] = useState<GridDragState | null>(null);
+  const dragStateRef = useRef<GridDragState | null>(null);
+  dragStateRef.current = dragState;
+  // Stable refs so global pointer handlers read the latest values without
+  // re-registering on every render.
+  const staffRef = useRef(staff);
+  staffRef.current = staff;
+  const selectedDateRef = useRef(selectedDate);
+  selectedDateRef.current = selectedDate;
+  const timezoneRef = useRef(timezone);
+  timezoneRef.current = timezone;
+  const onRescheduleRef = useRef(onRescheduleBooking);
+  onRescheduleRef.current = onRescheduleBooking;
+
+  // Pending drag: pointer is down but hasn't yet exceeded DRAG_THRESHOLD_PX.
+  // Stored as a ref (not state) so we don't re-register global handlers on every
+  // pointerdown — handlers are always-on and check both refs.
+  const pendingDragRef = useRef<{
+    bookingId: string;
+    serviceId: string;
+    staffId: string;
+    startUtc: string;
+    durationMinutes: number;
+    clientName: string;
+    startX: number;
+    startY: number;
+    grabOffsetPx: number;
+    initialStaffIdx: number;
+    initialSlotIdx: number;
+  } | null>(null);
+  // Set to true when a drag is promoted; blocks the spurious click that some
+  // browsers fire after pointerup even when the pointer moved significantly.
+  const recentlyDraggedRef = useRef(false);
+
+  // Always-on global handlers — noops when both refs are null (i.e. nothing
+  // is being dragged). Registered once via empty deps; all live state is read
+  // through refs so closures never go stale.
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const pending = pendingDragRef.current;
+      const ds = dragStateRef.current;
+      const scroll = scrollRef.current;
+
+      if (pending) {
+        const dx = e.clientX - pending.startX;
+        const dy = e.clientY - pending.startY;
+        if (Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD_PX) {
+          // Promote to active drag — clear pending so the next move goes to
+          // the position-update branch.
+          recentlyDraggedRef.current = true;
+          pendingDragRef.current = null;
+          setDragState({
+            bookingId: pending.bookingId,
+            serviceId: pending.serviceId,
+            originalStaffId: pending.staffId,
+            originalStartUtc: pending.startUtc,
+            durationMinutes: pending.durationMinutes,
+            grabOffsetPx: pending.grabOffsetPx,
+            clientName: pending.clientName,
+            targetStaffIdx: pending.initialStaffIdx,
+            targetSlotIdx: pending.initialSlotIdx,
+          });
+        }
+        return;
+      }
+
+      if (!ds || !scroll) return;
+
+      const rect = scroll.getBoundingClientRect();
+      const relX = e.clientX - rect.left - STAFF_COL_WIDTH + scroll.scrollLeft;
+      const relY = e.clientY - rect.top - TIME_HEADER_HEIGHT + scroll.scrollTop;
+
+      const slotIdx = Math.max(
+        0,
+        Math.min(TOTAL_SLOTS - 1, Math.round((relX - ds.grabOffsetPx) / SLOT_PX)),
+      );
+      const staffIdx = Math.max(
+        0,
+        Math.min(staffRef.current.length - 1, Math.floor(relY / ROW_HEIGHT)),
+      );
+
+      setDragState((prev) =>
+        prev && (prev.targetSlotIdx !== slotIdx || prev.targetStaffIdx !== staffIdx)
+          ? { ...prev, targetSlotIdx: slotIdx, targetStaffIdx: staffIdx }
+          : prev,
+      );
+    };
+
+    const onUp = () => {
+      const pending = pendingDragRef.current;
+      const ds = dragStateRef.current;
+
+      if (pending) {
+        // Released without reaching the threshold — clear pending; the normal
+        // click event will fire and open the drawer.
+        pendingDragRef.current = null;
+        return;
+      }
+
+      if (!ds) return;
+
+      const targetStaff = staffRef.current[ds.targetStaffIdx];
+      const slotStartUtc = slotIndexToUtc(
+        ds.targetSlotIdx,
+        selectedDateRef.current,
+        timezoneRef.current,
+      );
+
+      const noChange =
+        targetStaff?.id === ds.originalStaffId &&
+        slotStartUtc === ds.originalStartUtc;
+
+      if (!noChange && targetStaff && onRescheduleRef.current) {
+        void onRescheduleRef.current(ds.bookingId, targetStaff.id, slotStartUtc);
+      }
+
+      setDragState(null);
+      // Clear the drag guard after the click event has had a chance to fire
+      // (browsers dispatch click synchronously after pointerup, so 50ms is ample).
+      setTimeout(() => {
+        recentlyDraggedRef.current = false;
+      }, 50);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const conflictRows = useMemo(
     () => toConflictRows(existingBookings),
@@ -308,7 +468,11 @@ function StaffTimelineGridImpl({
       data-testid="staff-timeline-grid"
       // tabIndex allows keyboard users to scroll the timeline grid in Safari (scrollable-region-focusable).
       tabIndex={0}
-      className={cn("h-full min-h-0 overflow-auto", assignMode && "cursor-copy")}
+      className={cn(
+        "h-full min-h-0 overflow-auto",
+        assignMode && "cursor-copy",
+        dragState !== null && "cursor-grabbing select-none",
+      )}
     >
       <div className="inline-flex min-w-max flex-row">
         <div
@@ -432,6 +596,55 @@ function StaffTimelineGridImpl({
           >
             {staff.map((s) => {
               const rowBookings = bookingsByStaff.get(s.id) ?? [];
+              // Drag-to-reschedule ghost — shown when a booking block is being dragged.
+              const isDragTarget =
+                dragState !== null &&
+                staffRef.current[dragState.targetStaffIdx]?.id === s.id;
+              let dragGhostEl: ReactNode = null;
+              if (isDragTarget && dragState !== null) {
+                const slotStartUtc = slotIndexToUtc(
+                  dragState.targetSlotIdx,
+                  selectedDate,
+                  timezone,
+                );
+                const spanEndMs =
+                  Date.parse(slotStartUtc) + dragState.durationMinutes * 60_000;
+                const spanEndIso = new Date(spanEndMs).toISOString();
+                const widthPx = (dragState.durationMinutes / SLOT_MINUTES) * SLOT_PX;
+                const leftPx = dragState.targetSlotIdx * SLOT_PX;
+                const overflowMin =
+                  dragState.targetSlotIdx * SLOT_MINUTES +
+                  dragState.durationMinutes -
+                  TOTAL_SLOTS * SLOT_MINUTES;
+                const overflow = overflowMin > 0;
+                const conflict = overflow
+                  ? null
+                  : checkBookingConflict({
+                      staffId: s.id,
+                      startUtcIso: slotStartUtc,
+                      endUtcIso: spanEndIso,
+                      existingBookings: conflictRows,
+                      excludeBookingId: dragState.bookingId,
+                    });
+                let ghostState: "ok" | "conflict" | "overflow" = "ok";
+                let ghostLabel = `${dragState.clientName}`;
+                if (overflow) {
+                  ghostState = "overflow";
+                  ghostLabel = labels.overflowMessage;
+                } else if (conflict) {
+                  ghostState = "conflict";
+                  ghostLabel = labels.conflictWith(conflict.client_name);
+                }
+                dragGhostEl = (
+                  <GhostBlock
+                    leftPx={leftPx}
+                    widthPx={widthPx}
+                    state={ghostState}
+                    label={ghostLabel}
+                  />
+                );
+              }
+
               const showGhost =
                 assignMode &&
                 assigning !== null &&
@@ -565,11 +778,6 @@ function StaffTimelineGridImpl({
                   >
                     {rowBookings.map((b) => {
                       const { leftPx, widthPx } = bookingToPosition(b, timezone);
-                      // `late` per `STATE_MACHINE.md` §3+§5 is an overlay
-                      // flag on `in_progress` whose end time has passed —
-                      // not a status replacement. Computed client-side
-                      // against `nowIso` so the indicator hydrates in
-                      // sync with the NowLine + per-minute tick.
                       const endMs = Date.parse(b.end_time_utc);
                       const nowMs = Date.parse(nowIso);
                       const isLate =
@@ -577,6 +785,11 @@ function StaffTimelineGridImpl({
                         Number.isFinite(endMs) &&
                         Number.isFinite(nowMs) &&
                         endMs < nowMs;
+                      const isDraggable =
+                        !!onRescheduleBooking &&
+                        !assignMode &&
+                        (b.status === "pending" || b.status === "confirmed");
+                      const isBeingDragged = dragState?.bookingId === b.id;
                       return (
                         <BookingBlock
                           key={b.id}
@@ -591,7 +804,16 @@ function StaffTimelineGridImpl({
                           currencyCode={currencyCode}
                           leftPx={leftPx}
                           widthPx={widthPx}
-                          onClick={() => onBookingClick(b.id)}
+                          onClick={
+                            isBeingDragged
+                              ? undefined
+                              : () => {
+                                  // Guard against the spurious click that fires
+                                  // after a completed drag on some browsers.
+                                  if (recentlyDraggedRef.current) return;
+                                  onBookingClick(b.id);
+                                }
+                          }
                           showPrice={showBookingPrices}
                           showMetaLine={showBookingMetaLine}
                           showTimeRange={showBookingTimeRange}
@@ -604,10 +826,55 @@ function StaffTimelineGridImpl({
                           isGroup={b.group_id != null}
                           isLate={isLate}
                           iconLabels={labels.bookingIcon}
+                          isDragging={isBeingDragged}
+                          onPointerDown={
+                            isDraggable
+                              ? (e) => {
+                                  if (e.button !== 0) return;
+                                  // No preventDefault — let the click event fire
+                                  // normally if the pointer doesn't move past
+                                  // DRAG_THRESHOLD_PX. The global pointermove
+                                  // handler promotes this to a real drag only
+                                  // after the threshold is exceeded.
+                                  const blockRect =
+                                    e.currentTarget.getBoundingClientRect();
+                                  const grabOffsetPx =
+                                    Math.max(0, e.clientX - blockRect.left);
+                                  const staffIdx = staffRef.current.findIndex(
+                                    (st) => st.id === b.staff_id,
+                                  );
+                                  const durationMinutes =
+                                    (Date.parse(b.end_time_utc) -
+                                      Date.parse(b.start_time_utc)) /
+                                    60_000;
+                                  const startMin = utcIsoToSalonMinutesFromMidnight(
+                                    b.start_time_utc,
+                                    timezone,
+                                  );
+                                  const slotIdx = Math.round(
+                                    (startMin - HOUR_START * 60) / SLOT_MINUTES,
+                                  );
+                                  pendingDragRef.current = {
+                                    bookingId: b.id,
+                                    serviceId: b.service_id,
+                                    staffId: b.staff_id,
+                                    startUtc: b.start_time_utc,
+                                    durationMinutes,
+                                    clientName: b.client_name,
+                                    startX: e.clientX,
+                                    startY: e.clientY,
+                                    grabOffsetPx,
+                                    initialStaffIdx: Math.max(0, staffIdx),
+                                    initialSlotIdx: Math.max(0, slotIdx),
+                                  };
+                                }
+                              : undefined
+                          }
                         />
                       );
                     })}
                     {ghostEl}
+                    {dragGhostEl}
                   </div>
                 </div>
               );

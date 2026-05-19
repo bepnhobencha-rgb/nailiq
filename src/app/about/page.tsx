@@ -4,7 +4,7 @@ import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { LandingFooter } from "@/components/landing/LandingFooter";
 
 export const metadata: Metadata = {
-  title: "About NailIQ",
+  title: "About",
   description:
     "NailIQ is a Canadian-built salon booking and operations platform — designed for nail salons from Vancouver to Toronto.",
 };

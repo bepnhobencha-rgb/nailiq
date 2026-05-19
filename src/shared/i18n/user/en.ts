@@ -882,6 +882,8 @@ export type UserMessages = {
       sortLabel: string;
       sortFifo: string;
       sortLongestWait: string;
+      sortCustom: string;
+      avgWait: (n: number) => string;
       priorityHigh: string;
       priorityMedium: string;
       priorityLow: string;
@@ -2296,6 +2298,8 @@ export const userEn: UserMessages = {
       sortLabel: "Sort",
       sortFifo: "First in",
       sortLongestWait: "Longest wait",
+      sortCustom: "Custom order",
+      avgWait: (n: number) => `Avg wait · ${n} min`,
       priorityHigh: "High",
       priorityMedium: "Medium",
       priorityLow: "Low",
