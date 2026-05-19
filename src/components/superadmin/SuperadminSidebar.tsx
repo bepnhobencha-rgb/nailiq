@@ -72,11 +72,12 @@ export function SuperadminSidebar({ role }: Props) {
         )}
       >
         {collapsed ? null : (
-          <div className="flex min-w-0 flex-col">
-            <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-nq-muted">
-              NailIQ
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="inline-flex items-baseline font-bold tracking-[-0.02em] leading-none text-lg select-none">
+              <span className="text-white">Nail</span>
+              <span className="text-nq-primary">IQ</span>
             </span>
-            <span className="truncate text-sm font-semibold text-nq-foreground">
+            <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-nq-muted">
               SuperAdmin
             </span>
           </div>
