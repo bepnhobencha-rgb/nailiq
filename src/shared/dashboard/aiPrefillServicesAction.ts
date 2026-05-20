@@ -75,11 +75,25 @@ type AnthropicMessage = {
   content?: Array<{ type?: string; text?: string }>;
 };
 
+// E2E fixture responses — activated when AI_PREFILL_E2E_MOCK env var is set.
+// "services" → returns 3 realistic nail services; "empty" → returns [].
+// NEVER set in production. Wired via playwright.config.ts webServer.command.
+const E2E_FIXTURE_SERVICES = JSON.stringify([
+  { name: "Gel Manicure", price_cents: 3500, duration_minutes: 30 },
+  { name: "Regular Manicure", price_cents: 2500, duration_minutes: 25 },
+  { name: "Acrylic Full Set", price_cents: 5500, duration_minutes: 60 },
+]);
+
 async function callClaudeVision(
   imageContent:
     | { type: "url"; url: string }
     | { type: "base64"; media_type: string; data: string },
 ): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  // E2E mock gate — short-circuits before any real network call
+  const e2eMock = process.env["AI_PREFILL_E2E_MOCK"];
+  if (e2eMock === "services") return { ok: true, text: E2E_FIXTURE_SERVICES };
+  if (e2eMock === "empty") return { ok: true, text: "[]" };
+
   const apiKey = process.env["ANTHROPIC_API_KEY"];
   if (!apiKey) {
     console.error("[aiPrefillServices] ANTHROPIC_API_KEY missing");

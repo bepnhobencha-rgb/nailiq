@@ -213,6 +213,7 @@ export function AIPrefillWizard({ slug }: { slug: string }) {
           {/* Upload card */}
           <button
             type="button"
+            data-testid="ai-prefill-upload-btn"
             onClick={() => fileInputRef.current?.click()}
             className="group flex w-full items-start gap-4 rounded-2xl border border-nq-border bg-nq-surface px-4 py-4 text-left transition-colors hover:border-nq-primary/60 hover:bg-nq-primary/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary"
           >
@@ -256,6 +257,7 @@ export function AIPrefillWizard({ slug }: { slug: string }) {
             <div className="flex gap-2">
               <input
                 type="url"
+                data-testid="ai-prefill-url-input"
                 value={urlInput}
                 onChange={(e) => setUrlInput(e.target.value)}
                 placeholder={t.urlPlaceholder}
@@ -270,6 +272,7 @@ export function AIPrefillWizard({ slug }: { slug: string }) {
                 type="button"
                 variant="secondary"
                 size="sm"
+                data-testid="ai-prefill-url-analyze"
                 disabled={!urlInput.trim()}
                 onClick={() => { void handleUrlAnalyze(); }}
               >
@@ -281,6 +284,7 @@ export function AIPrefillWizard({ slug }: { slug: string }) {
           {/* Manual card */}
           <button
             type="button"
+            data-testid="ai-prefill-manual-btn"
             onClick={goManual}
             className="group flex w-full items-start gap-4 rounded-2xl border border-nq-border bg-nq-surface px-4 py-4 text-left transition-colors hover:border-nq-border/80 hover:bg-nq-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary"
           >
@@ -300,7 +304,10 @@ export function AIPrefillWizard({ slug }: { slug: string }) {
 
       {/* ── Step: loading ──────────────────────────────────────────────── */}
       {step === "loading" && (
-        <div className="flex min-h-[40dvh] flex-col items-center justify-center gap-5 text-center">
+        <div
+          data-testid="ai-prefill-loading"
+          className="flex min-h-[40dvh] flex-col items-center justify-center gap-5 text-center"
+        >
           {/* Spinner — pure CSS, per ANIMATION_RULES */}
           <div
             className="h-10 w-10 animate-spin rounded-full border-4 border-nq-border border-t-nq-primary"
@@ -316,7 +323,7 @@ export function AIPrefillWizard({ slug }: { slug: string }) {
 
       {/* ── Step: review ───────────────────────────────────────────────── */}
       {step === "review" && (
-        <div className="flex flex-col gap-4">
+        <div data-testid="ai-prefill-review" className="flex flex-col gap-4">
           <div>
             <h1 className="text-xl font-semibold text-nq-foreground">{t.reviewTitle}</h1>
             <p className="mt-1 text-sm text-nq-muted">{t.reviewSub}</p>
@@ -345,6 +352,7 @@ export function AIPrefillWizard({ slug }: { slug: string }) {
             {drafts.map((d, idx) => (
               <div
                 key={idx}
+                data-testid="ai-prefill-service-row"
                 className={`flex items-start gap-3 px-4 py-3 transition-colors ${
                   d.selected ? "" : "opacity-50"
                 }`}
@@ -396,6 +404,7 @@ export function AIPrefillWizard({ slug }: { slug: string }) {
             <Button
               type="button"
               variant="primary"
+              data-testid="ai-prefill-import-btn"
               className="w-full min-h-11"
               disabled={selectedCount === 0 || importing}
               loading={importing}
@@ -408,6 +417,7 @@ export function AIPrefillWizard({ slug }: { slug: string }) {
             <Button
               type="button"
               variant="ghost"
+              data-testid="ai-prefill-manual-fallback"
               className="w-full min-h-11"
               disabled={importing}
               onClick={goManual}

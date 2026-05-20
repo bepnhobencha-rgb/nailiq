@@ -171,6 +171,42 @@ export async function seedTestSalon(opts?: {
 }
 
 /**
+ * Seed a minimal salon with no services and no staff — used by AI Prefill
+ * wizard tests which need a 0-service starting state.
+ */
+export async function seedEmptyTestSalon(opts?: {
+  phone?: string;
+  slug?: string;
+  name?: string;
+}) {
+  const phone = opts?.phone ?? "15550002222";
+  const slug = opts?.slug ?? "e2e-ai-prefill-salon";
+  const name = opts?.name ?? "E2E AI Prefill Salon";
+
+  await cleanupTestSalon(slug);
+
+  const { data: salon, error: salonErr } = await supabase
+    .from("salons")
+    .insert({
+      slug,
+      name,
+      phone,
+      profile_complete: false,
+      setup_wizard_completed_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (salonErr || !salon?.id) {
+    throw new Error(
+      salonErr?.message ?? "seedEmptyTestSalon: failed to insert salon",
+    );
+  }
+
+  return { salonId: salon.id as string, slug, phone };
+}
+
+/**
  * Create a Supabase auth user for E2E tests that exercise email/password sign-in.
  * Uses the service-role admin API so no real email is sent.
  * Returns { userId, email, password }.
