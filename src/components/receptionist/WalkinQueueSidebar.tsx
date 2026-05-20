@@ -174,6 +174,8 @@ export interface WalkinQueueSidebarProps {
   showWaitTime?: boolean;
   /** `vip_indicators` module — hides VIP source chip */
   showVipIndicator?: boolean;
+  /** Compact mode (density=simple): each card shows only position + name + service. */
+  compact?: boolean;
   /**
    * Popular service ids derived from today's bookings (server-side, in
    * `loadReceptionistCenterData`). Rendered as shortcut chips above the
@@ -247,6 +249,7 @@ export function WalkinQueueSidebar({
   showQuickAdd = true,
   showWaitTime = true,
   showVipIndicator = true,
+  compact = false,
   popularServiceIds,
   popularServicesLabel,
   currency,
@@ -539,6 +542,7 @@ export function WalkinQueueSidebar({
                       softHoldUntilIso={item.soft_hold_until ?? null}
                       nowIso={nowIso}
                       isAssigning={assigningThis}
+                      compact={compact}
                       labels={{
                         waitHeroSuffix: labels.waitHeroSuffix,
                         vipAria: labels.vipAria,

@@ -108,6 +108,8 @@ export type QueueEntryCardProps = {
   actions?: ReactNode;
   /** Drag handle injected by the sortable wrapper. Renders in top-left corner. */
   dragHandle?: ReactNode;
+  /** Compact mode (density=simple): position + name + service only — hides wait hero, badges, tags, and secondary actions. */
+  compact?: boolean;
 };
 
 export function QueueEntryCard({
@@ -134,6 +136,7 @@ export function QueueEntryCard({
   className,
   actions,
   dragHandle,
+  compact = false,
 }: QueueEntryCardProps) {
   const isUrgentByWait = showWaitTime && waitMinutes >= WAIT_WARNING_MIN;
   const isDangerByWait = showWaitTime && waitMinutes >= WAIT_DANGER_MIN;
@@ -154,6 +157,29 @@ export function QueueEntryCard({
         minute: "2-digit",
       })
     : null;
+
+  if (compact) {
+    return (
+      <Card
+        variant="default"
+        padding="sm"
+        state={isAssigning ? "selected" : "static"}
+        className={cn("flex items-center gap-2 py-2", className)}
+      >
+        <span
+          aria-hidden
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-nq-bg text-[11px] font-semibold tabular-nums text-nq-muted ring-1 ring-inset ring-nq-border"
+        >
+          {position}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-nq-foreground">{customerName}</p>
+          <p className="truncate text-[11px] text-nq-muted">{serviceName}</p>
+        </div>
+        {actions ? <div className="shrink-0">{actions}</div> : null}
+      </Card>
+    );
+  }
 
   return (
     <Card
