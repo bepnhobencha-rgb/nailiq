@@ -813,6 +813,44 @@ export type UserMessages = {
       nail_tech: string;
     };
   };
+  /** AI Prefill Setup Wizard — import services from menu photo */
+  aiPrefill: {
+    /** Banner shown on Services page when list is empty */
+    bannerTitle: string;
+    bannerSubtitle: string;
+    bannerCta: string;
+    /** Step 1: pick input method */
+    step1Title: string;
+    uploadCard: string;
+    uploadCardSub: string;
+    urlCard: string;
+    urlCardSub: string;
+    manualCard: string;
+    manualCardSub: string;
+    urlPlaceholder: string;
+    analyzeButton: string;
+    /** Step 2: AI processing */
+    processingTitle: string;
+    processingSub: string;
+    /** Step 3: review */
+    reviewTitle: string;
+    reviewSub: string;
+    selectAll: string;
+    deselectAll: string;
+    priceLabel: string;
+    durationLabel: string;
+    importButton: string;
+    importButtonN: string;
+    manualFallback: string;
+    /** Error messages */
+    errorVisionFailed: string;
+    errorNoServices: string;
+    errorPlanLimit: string;
+    errorPayloadTooLarge: string;
+    errorInvalidUrl: string;
+    /** Success */
+    successToast: string;
+  };
   /** `/dashboard/[slug]/center` — operational receptionist workspace */
   receptionist: {
     title: string;
@@ -2273,6 +2311,37 @@ export const userEn: UserMessages = {
       senior: "Senior",
       nail_tech: "Nail tech",
     },
+  },
+  aiPrefill: {
+    bannerTitle: "Import your menu in seconds",
+    bannerSubtitle: "Take a photo of your price list and AI will fill in your services automatically.",
+    bannerCta: "Import from photo",
+    step1Title: "How would you like to add your services?",
+    uploadCard: "Upload menu photo",
+    uploadCardSub: "Photo of your price list, wall menu, or price sheet",
+    urlCard: "Paste image link",
+    urlCardSub: "Link to a photo of your menu (Facebook, website, etc.)",
+    manualCard: "Enter manually",
+    manualCardSub: "I'll type my services in one by one",
+    urlPlaceholder: "https://...",
+    analyzeButton: "Read menu",
+    processingTitle: "Reading your menu…",
+    processingSub: "AI is extracting your services. This takes a few seconds.",
+    reviewTitle: "Review extracted services",
+    reviewSub: "Select the services you'd like to import. You can edit prices and durations.",
+    selectAll: "Select all",
+    deselectAll: "Deselect all",
+    priceLabel: "Price",
+    durationLabel: "Min",
+    importButton: "Import services",
+    importButtonN: "Import {n} services",
+    manualFallback: "Enter manually instead",
+    errorVisionFailed: "Couldn't read the menu. Please try a clearer photo or enter manually.",
+    errorNoServices: "No services found in this image. Try a closer photo of the price list.",
+    errorPlanLimit: "You've reached your plan's service limit.",
+    errorPayloadTooLarge: "Image is too large. Please resize to under 4MB and try again.",
+    errorInvalidUrl: "Invalid image URL. Please check the link and try again.",
+    successToast: "Services imported successfully!",
   },
   receptionist: {
     title: "Front desk",
