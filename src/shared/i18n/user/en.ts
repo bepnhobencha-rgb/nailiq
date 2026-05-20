@@ -433,6 +433,8 @@ export type UserMessages = {
      *  surface (/register, /register/setup, /login, /login/verify,
      *  /register/success). Includes the leading arrow glyph. */
     backHome: string;
+    /** Trial reminder shown on /register below the auth form title. */
+    registerMicrotrust: string;
   };
   /** Multi-salon picker (`/choose-salon`). Shown when an authenticated user
    * has more than one `salon_members` row. Single-salon users skip it. */
@@ -1982,6 +1984,7 @@ export const userEn: UserMessages = {
       "We sent a sign-in link to {email}. Click it to continue — the link expires in 60 minutes.",
     useDifferentEmail: "Use a different email",
     backHome: "← Home",
+    registerMicrotrust: "14-day free trial · No credit card required",
   },
   chooseSalon: {
     title: "Choose your salon",

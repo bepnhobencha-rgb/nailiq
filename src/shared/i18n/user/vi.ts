@@ -552,6 +552,7 @@ export const userVi: UserMessages = {
       "Chúng tôi đã gửi link đăng nhập đến {email}. Nhấp vào link để tiếp tục — link có hiệu lực trong 60 phút.",
     useDifferentEmail: "Dùng email khác",
     backHome: "← Trang chủ",
+    registerMicrotrust: "14 ngày dùng thử miễn phí · Không cần thẻ tín dụng",
   },
   chooseSalon: {
     title: "Chọn tiệm của bạn",

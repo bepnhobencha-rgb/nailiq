@@ -27,6 +27,7 @@ export function RegisterPageClient() {
     <RegisterStepShell
       title={t.signInOrSignUpTitle}
       subtext={t.signInOrSignUpSubtext}
+      helperHint={t.registerMicrotrust}
     >
       <SocialAuthButtons mode="register" layout="open" enablePassword />
     </RegisterStepShell>
