@@ -387,6 +387,7 @@ export function WalkinAddForm({
   //   - the user hasn't typed for PHONE_LOOKUP_DEBOUNCE_MS.
   // Stale-result guard via lookupRequestSeqRef so an in-flight result
   // for an older phone doesn't override a newer one.
+  /* eslint-disable react-hooks/set-state-in-effect -- ARCHITECTURE_LOCK: reset/loading states before async phone lookup */
   useEffect(() => {
     if (!onPhoneLookup) return;
     const trimmed = clientPhone.trim();
@@ -444,10 +445,12 @@ export function WalkinAddForm({
 
     return () => window.clearTimeout(timer);
   }, [clientPhone, onPhoneLookup]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Smart availability: refresh whenever staff selection or service
   // changes. The seq guard prevents an in-flight result for an old
   // pair from clobbering a newer one.
+  /* eslint-disable react-hooks/set-state-in-effect -- ARCHITECTURE_LOCK: reset/loading states before async availability check */
   useEffect(() => {
     if (!onCheckAvailability) return;
     if (!selectedServiceId) {
@@ -482,6 +485,7 @@ export function WalkinAddForm({
     };
     void run();
   }, [onCheckAvailability, selectedStaffId, selectedServiceId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const resetAfterSuccess = useCallback(() => {
     setClientName("");
@@ -553,10 +557,9 @@ export function WalkinAddForm({
     if (!ng) return null;
     const ngMs = Date.parse(ng);
     if (!Number.isFinite(ngMs)) return null;
-    const nowMs =
-      availability.kind === "ready"
-        ? Date.parse(availability.nowIso)
-        : Date.now();
+    // eslint-disable-next-line react-hooks/purity -- ARCHITECTURE_LOCK: Date.now() fallback is intentional; availability.nowIso is preferred but may not be ready
+    const nowFallback = Date.now();
+    const nowMs = availability.kind === "ready" ? Date.parse(availability.nowIso) : nowFallback;
     if (ngMs - nowMs > WALKIN_GROUP_BUFFER_MS) return null;
     return new Date(ngMs).toLocaleTimeString([], {
       hour: "numeric",

@@ -4,7 +4,7 @@ import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { LandingFooter } from "@/components/landing/LandingFooter";
 
 export const metadata: Metadata = {
-  title: "Security — NailIQ",
+  title: "Security",
   description:
     "How NailIQ protects your salon data: encryption, access controls, Canadian data handling, and responsible disclosure.",
 };

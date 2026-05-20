@@ -28,7 +28,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -50,6 +50,11 @@ export default async function SalonSettingsPage({ params }: Props) {
         brand_color?: unknown;
         theme_mode?: unknown;
         walkin_auto_assign?: unknown;
+        phone_otp_enabled?: unknown;
+        reminders_enabled?: unknown;
+        reminder_24h_enabled?: unknown;
+        reminder_3h_enabled?: unknown;
+        sms_reminders_enabled?: unknown;
       }
     | null;
 
@@ -70,6 +75,12 @@ export default async function SalonSettingsPage({ params }: Props) {
   // safety; column has NOT NULL DEFAULT true in 20260511100000).
   const walkinAutoAssign =
     row?.walkin_auto_assign === false ? false : true;
+  const phoneOtpEnabled = row?.phone_otp_enabled === true;
+  // Reminder aggregate state — defaults ON for new salons (seeded at registration).
+  const remindersEnabled = row?.reminders_enabled === true;
+  const reminder24hEnabled = row?.reminder_24h_enabled !== false;
+  const reminder3hEnabled = row?.reminder_3h_enabled !== false;
+  const smsRemindersEnabled = row?.sms_reminders_enabled === true;
 
   return (
     <SalonSettingsHub
@@ -83,6 +94,11 @@ export default async function SalonSettingsPage({ params }: Props) {
       brandColor={brandColor}
       themeMode={themeMode}
       walkinAutoAssign={walkinAutoAssign}
+      phoneOtpEnabled={phoneOtpEnabled}
+      remindersEnabled={remindersEnabled}
+      reminder24hEnabled={reminder24hEnabled}
+      reminder3hEnabled={reminder3hEnabled}
+      smsRemindersEnabled={smsRemindersEnabled}
     />
   );
 }

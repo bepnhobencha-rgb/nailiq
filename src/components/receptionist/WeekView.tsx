@@ -8,7 +8,7 @@ import { loadReceptionistCenterDataAction } from "@/shared/dashboard/loadRecepti
 import type { ReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
 import type { ReceptionistMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
-import { formatInSalonTz, salonToday } from "@/shared/lib/salonTime";
+import { formatInSalonTz } from "@/shared/lib/salonTime";
 
 /**
  * 7-column read-only week-overview grid for the Receptionist Center.
@@ -28,6 +28,8 @@ import { formatInSalonTz, salonToday } from "@/shared/lib/salonTime";
 
 const TOP_BOOKINGS_PER_DAY = 3;
 const DAYS_PER_WEEK = 7;
+/** Per-day fetch timeout (ms). Server action default is 5 min; 20 s is enough for any real load. */
+const DAY_FETCH_TIMEOUT_MS = 20_000;
 
 /** YYYY-MM-DD → Date at local midnight (no tz drift; consumers pass salon-local YMDs). */
 function ymdToLocalDate(ymd: string): Date {
@@ -111,26 +113,48 @@ export function WeekView({
 
   useEffect(() => {
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ARCHITECTURE_LOCK: optimistic loading state before async fetch
     setDays(
       Object.fromEntries(ymds.map((y) => [y, { kind: "loading" } as DayState])),
     );
-    void Promise.all(
+
+    const withTimeout = <T,>(p: Promise<T>): Promise<T> =>
+      Promise.race([
+        p,
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error("timeout")), DAY_FETCH_TIMEOUT_MS),
+        ),
+      ]);
+
+    // allSettled so a single hanging/throwing day doesn't block the rest,
+    // and errors are surfaced per-column rather than swallowing the whole batch.
+    void Promise.allSettled(
       ymds.map(async (ymd) => {
-        const res = await loadReceptionistCenterDataAction(slug, ymd);
+        const res = await withTimeout(loadReceptionistCenterDataAction(slug, ymd));
         return { ymd, res };
       }),
-    ).then((results) => {
+    ).then((settled) => {
       if (cancelled) return;
       const next: Record<string, DayState> = {};
-      for (const { ymd, res } of results) {
-        if (res.ok) {
-          next[ymd] = { kind: "ok", bookings: res.data.bookingsForDay };
+      for (const result of settled) {
+        if (result.status === "fulfilled") {
+          const { ymd, res } = result.value;
+          next[ymd] = res.ok
+            ? { kind: "ok", bookings: res.data.bookingsForDay }
+            : { kind: "error" };
         } else {
-          next[ymd] = { kind: "error" };
+          // Promise rejected — mark all still-loading ymds as error
+          for (const ymd of ymds) {
+            if (!(ymd in next)) next[ymd] = { kind: "error" };
+          }
         }
       }
       setDays(next);
+    }).catch(() => {
+      if (cancelled) return;
+      setDays(Object.fromEntries(ymds.map((y) => [y, { kind: "error" } as DayState])));
     });
+
     return () => {
       cancelled = true;
     };

@@ -6,7 +6,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Đánh giá dịch vụ · NailIQ",
+  title: "Đánh giá dịch vụ",
   robots: { index: false, follow: false },
 };
 

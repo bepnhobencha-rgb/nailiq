@@ -44,6 +44,9 @@ export type BookingSalonMeta = {
    * page tagline. `null` falls back to the generic copy in
    * `bookingEn.salonHeroTagline`. */
   description: string | null;
+  /** When true, the booking flow shows an SMS OTP step to verify the
+   *  customer's phone before confirming. Driven by `salons.phone_otp_enabled`. */
+  phoneOtpEnabled: boolean;
 };
 
 export type BookingLoadData = {
@@ -252,6 +255,8 @@ export async function loadBookingServicesForSalonSlug(
         const s = typeof d === "string" ? d.trim() : "";
         return s.length > 0 ? s : null;
       })(),
+      phoneOtpEnabled:
+        (salon as { phone_otp_enabled?: unknown }).phone_otp_enabled === true,
     },
   };
 }

@@ -46,7 +46,8 @@ export async function seedGroupTestSalon(
   // Standard seed inserted 1 staff (Jenny) + 1 service (Gel Manicure).
   // Add two more of each so size 2 + 3 + various staff combinations
   // are testable.
-  const { data: extraStaff, error: staffErr } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { data: _extraStaff, error: staffErr } = await supabase
     .from("staff")
     .insert([
       { salon_id: salonId, name: "Linda", job_role: "nail_tech" },
@@ -55,7 +56,8 @@ export async function seedGroupTestSalon(
     .select("id");
   if (staffErr) throw new Error(`seedGroupTestSalon staff: ${staffErr.message}`);
 
-  const { data: extraSvc, error: svcErr } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { data: _extraSvc, error: svcErr } = await supabase
     .from("services")
     .insert([
       {

@@ -98,7 +98,23 @@ export const bookingEn = {
     serviceRequired: "Please select a service to continue.",
     monthlyLimitReached:
       "This salon has reached its monthly online booking limit. Please call the salon to book.",
+    otpRequired: "Phone verification required. Please verify your number.",
+    otpInvalidCode: "Incorrect code. Please try again.",
+    otpExpired: "Code expired or too many attempts. Send a new code.",
+    otpSendFailed: "Couldn't send SMS. Please try again.",
   },
+  /** OTP verification step (only shown when salon enables phone OTP). */
+  otpStepHeading: "Verify your phone",
+  otpStepSubheading: "We sent a code to",
+  otpCodeLabel: "6-digit code",
+  otpCodePlaceholder: "123456",
+  otpSendCode: "Send code",
+  otpResend: "Resend",
+  otpResendIn: "Resend in {s}s",
+  otpVerify: "Verify",
+  otpVerifying: "Verifying…",
+  otpSending: "Sending…",
+  otpVerified: "Phone verified ✓",
   clientNameLabel: "Your name",
   clientPhoneLabel: "Phone number",
   /** Placeholder for contact step — NANP Canadian example; guests may enter any valid E.164. */
@@ -122,7 +138,7 @@ export const bookingEn = {
   salonNotLiveBody:
     "{shop} is finishing setup and isn’t taking online bookings yet. Please check back soon.",
   /** `{n}` = staff free-gap minutes after the chosen service. */
-  upsellHeading: "Add another service? You have {n} extra minutes available.",
+  upsellHeading: "Your tech is free for {n} more minutes — want to add a service?",
   upsellNoThanks: "No thanks",
   upsellToggleHint: "Pick one before you confirm to bundle it with your booking.",
   /** Right column when `totalMinutes` from DB is 0 */

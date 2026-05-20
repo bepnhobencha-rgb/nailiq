@@ -72,6 +72,7 @@ export function ReportsPanel({
 
   useEffect(() => {
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional loading state before async fetch
     setState({ kind: "loading" });
     void (async () => {
       const res = await loadSalonReports(slug, range);

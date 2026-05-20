@@ -5,6 +5,7 @@ import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { useSidebarCollapsed } from "@/shared/lib/useSidebarCollapsed";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
+import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 
 type Props = {
   slug: string;
@@ -22,6 +23,8 @@ type Props = {
   /** Owner-only: salons this user owns; sidebar renders a switcher
    * dropdown when there are 2+. Pass `[]` to disable the switcher. */
   salons?: OwnerSalonSummary[];
+  /** Controls plan-gated sidebar items (e.g. Reviews hidden for free). */
+  subscriptionPlan?: SubscriptionPlan;
 };
 
 /**
@@ -46,6 +49,7 @@ export function DashboardShell({
   overdueCount,
   messagesCount,
   salons,
+  subscriptionPlan,
 }: Props) {
   // Single hook instance owns the collapse state. We pass both the
   // value AND the toggle to DashboardSidebar so its toggle button
@@ -71,6 +75,7 @@ export function DashboardShell({
         salons={salons}
         collapsed={collapsed}
         onToggleCollapsed={toggle}
+        subscriptionPlan={subscriptionPlan}
       />
       <main
         // Padding-left tracks the sidebar width via the CSS variable.

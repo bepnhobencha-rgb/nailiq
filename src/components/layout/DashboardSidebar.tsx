@@ -14,7 +14,9 @@ import {
   Plus,
   Scissors,
   Settings as SettingsIcon,
+  ShieldAlert,
   Sparkles,
+  Star,
   TrendingUp,
   UserCheck,
   Users,
@@ -23,6 +25,7 @@ import { cn } from "@/shared/lib/cn";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
+import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 
 type Props = {
   slug: string;
@@ -37,6 +40,8 @@ type Props = {
    * switcher dropdown when this list contains > 1 entry (the current
    * salon is always one of them; the dropdown lists the others). */
   salons?: OwnerSalonSummary[];
+  /** Hides plan-gated items (e.g. Reviews) for free salons. */
+  subscriptionPlan?: SubscriptionPlan;
   /**
    * Collapse state — owned by DashboardShell so a single hook instance
    * drives both the aside's `--nq-sidebar-w` CSS variable AND the
@@ -64,6 +69,8 @@ type NavItem = {
   match: (pathname: string) => boolean;
   /** Disabled placeholder (no href). */
   disabled?: boolean;
+  /** When true, item is not rendered in the sidebar (route still accessible via URL). */
+  hidden?: boolean;
 };
 
 /** Visual grouping; rendered as a thin border between sections. */
@@ -88,6 +95,7 @@ export function DashboardSidebar({
   salons,
   collapsed,
   onToggleCollapsed,
+  subscriptionPlan = "free",
 }: Props) {
   const pathname = usePathname() ?? "";
   const { language } = useUserLanguage();
@@ -131,6 +139,7 @@ export function DashboardSidebar({
   // Auto-close when the user collapses the sidebar — the trigger
   // disappears and the dropdown would become an orphan otherwise.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional derived sync: hide orphaned dropdown when sidebar collapses
     if (collapsed && switcherOpen) setSwitcherOpen(false);
   }, [collapsed, switcherOpen]);
 
@@ -223,6 +232,22 @@ export function DashboardSidebar({
             match: (p) => p.startsWith(`${dashRoot}/reports`),
           },
           {
+            key: "reviews",
+            label: t.reviews,
+            href: `${dashRoot}/reviews`,
+            icon: Star,
+            match: (p) => p.startsWith(`${dashRoot}/reviews`),
+            hidden: subscriptionPlan === "free",
+          },
+          {
+            key: "no-show-protection",
+            label: t.noShowProtection,
+            href: `${dashRoot}/no-show-protection`,
+            icon: ShieldAlert,
+            match: (p) => p.startsWith(`${dashRoot}/no-show-protection`),
+            hidden: true,
+          },
+          {
             key: "messages",
             label: t.messages,
             href: null,
@@ -265,13 +290,16 @@ export function DashboardSidebar({
       t.marketing,
       t.messages,
       t.messagesSoonBadge,
+      t.noShowProtection,
       t.reports,
+      t.reviews,
       t.services,
       t.settings,
       t.staff,
       t.walkinQueue,
       walkinQueueCount,
       overdueCount,
+      subscriptionPlan,
     ],
   );
 
@@ -350,7 +378,7 @@ export function DashboardSidebar({
               />
             ) : null}
             <ul className="flex flex-col gap-1">
-              {section.items.map((item) => (
+              {section.items.filter((item) => !item.hidden).map((item) => (
                 <li key={item.key}>
                   <SidebarRow
                     item={item}

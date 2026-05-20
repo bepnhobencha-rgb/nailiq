@@ -106,6 +106,8 @@ export type QueueEntryCardProps = {
   className?: string;
   /** Footer slot — typically Cancel / Assign action buttons. */
   actions?: ReactNode;
+  /** Drag handle injected by the sortable wrapper. Renders in top-left corner. */
+  dragHandle?: ReactNode;
 };
 
 export function QueueEntryCard({
@@ -131,6 +133,7 @@ export function QueueEntryCard({
   isAssigning = false,
   className,
   actions,
+  dragHandle,
 }: QueueEntryCardProps) {
   const isUrgentByWait = showWaitTime && waitMinutes >= WAIT_WARNING_MIN;
   const isDangerByWait = showWaitTime && waitMinutes >= WAIT_DANGER_MIN;
@@ -169,6 +172,7 @@ export function QueueEntryCard({
         className,
       )}
     >
+      {dragHandle}
       {/* Top row: position · name · VIP crown */}
       <div className="flex items-start gap-2">
         <span
@@ -213,6 +217,7 @@ export function QueueEntryCard({
 
       {/* Hero wait number — the dispatch-board centerpiece. */}
       {showWaitTime ? (() => {
+        // eslint-disable-next-line react-hooks/purity -- ARCHITECTURE_LOCK: Date.now() fallback is intentional; nowIso is preferred but may be absent
         const nowMs = nowIso ? Date.parse(nowIso) : Date.now();
         const holdMs = softHoldUntilIso ? Date.parse(softHoldUntilIso) : NaN;
         const isHeld = Number.isFinite(holdMs) && holdMs > nowMs;

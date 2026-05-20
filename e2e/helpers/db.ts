@@ -81,6 +81,7 @@ export async function seedTestSalon(opts?: {
   name?: string;
   /** `salons.salon_phone` — public line for reschedule CTA; omit or null for none. */
   salon_phone?: string | null;
+  phone_otp_enabled?: boolean;
 }) {
   const phone = opts?.phone ?? "15550001111";
   const slug = opts?.slug ?? "e2e-test-salon";
@@ -102,6 +103,7 @@ export async function seedTestSalon(opts?: {
           : opts.salon_phone === null || opts.salon_phone === ""
             ? null
             : String(opts.salon_phone).trim() || null,
+      phone_otp_enabled: opts?.phone_otp_enabled ?? false,
     })
     .select("id")
     .single();
@@ -163,6 +165,42 @@ export async function seedTestSalon(opts?: {
       await supabase.from("salons").delete().eq("id", salon.id);
       throw new Error(capErr.message);
     }
+  }
+
+  return { salonId: salon.id as string, slug, phone };
+}
+
+/**
+ * Seed a minimal salon with no services and no staff — used by AI Prefill
+ * wizard tests which need a 0-service starting state.
+ */
+export async function seedEmptyTestSalon(opts?: {
+  phone?: string;
+  slug?: string;
+  name?: string;
+}) {
+  const phone = opts?.phone ?? "15550002222";
+  const slug = opts?.slug ?? "e2e-ai-prefill-salon";
+  const name = opts?.name ?? "E2E AI Prefill Salon";
+
+  await cleanupTestSalon(slug);
+
+  const { data: salon, error: salonErr } = await supabase
+    .from("salons")
+    .insert({
+      slug,
+      name,
+      phone,
+      profile_complete: false,
+      setup_wizard_completed_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (salonErr || !salon?.id) {
+    throw new Error(
+      salonErr?.message ?? "seedEmptyTestSalon: failed to insert salon",
+    );
   }
 
   return { salonId: salon.id as string, slug, phone };

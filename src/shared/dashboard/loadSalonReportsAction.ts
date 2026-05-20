@@ -106,7 +106,7 @@ export async function loadSalonReports(
       `
       id, status, staff_id, service_id, start_time_utc, end_time_utc,
       price_cents, addon_price_cents, client_phone,
-      services!bookings_service_id_fkey ( name, duration_minutes )
+      services!bookings_service_id_fkey ( name, duration_minutes, price_cents )
     `,
     )
     .eq("salon_id", resolved.salon.id)
@@ -134,7 +134,7 @@ export async function loadSalonReports(
     return { ok: false, error: "server_error" };
   }
 
-  type ServiceJoin = { name: string; duration_minutes: number };
+  type ServiceJoin = { name: string; duration_minutes: number; price_cents?: number | null };
   type BookingRow = {
     id: string;
     status: string;
@@ -208,8 +208,8 @@ function aggregate(
     addon_price_cents: number | null;
     client_phone: string | null;
     services:
-      | { name: string; duration_minutes: number }
-      | { name: string; duration_minutes: number }[]
+      | { name: string; duration_minutes: number; price_cents?: number | null }
+      | { name: string; duration_minutes: number; price_cents?: number | null }[]
       | null;
   }>,
   staffNameById: Map<string, string>,
@@ -252,9 +252,18 @@ function aggregate(
     if (b.status === "cancelled") cancelledCount += 1;
     if (b.status === "no_show") noShowCount += 1;
 
+    // Service aggregate uses the joined name; orphaned join falls back
+    // to the service_id so the row still appears in the table.
+    const svcRaw = Array.isArray(b.services) ? b.services[0] : b.services;
+
+    // Prefer the booking's snapshotted price; fall back to the current
+    // service catalog price for legacy rows where price_cents was not
+    // snapshotted at creation time (pre-backfill safety net).
+    const effectivePriceCents =
+      b.price_cents != null ? b.price_cents : (svcRaw?.price_cents ?? null);
     const main =
-      b.price_cents != null && Number.isFinite(Number(b.price_cents))
-        ? Number(b.price_cents)
+      effectivePriceCents != null && Number.isFinite(Number(effectivePriceCents))
+        ? Number(effectivePriceCents)
         : 0;
     const addon =
       b.addon_price_cents != null &&
@@ -263,10 +272,6 @@ function aggregate(
         : 0;
     const rev = b.status === "completed" ? main + addon : 0;
     totalRevenueCents += rev;
-
-    // Service aggregate uses the joined name; orphaned join falls back
-    // to the service_id so the row still appears in the table.
-    const svcRaw = Array.isArray(b.services) ? b.services[0] : b.services;
     const svcName = svcRaw?.name?.trim() || b.service_id;
     const svcKey = b.service_id;
     const svc = svcAgg.get(svcKey) ?? {

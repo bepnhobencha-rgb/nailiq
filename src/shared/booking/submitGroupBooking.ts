@@ -12,6 +12,9 @@ import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { salonDayRangeUtc, salonToday, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 import { createClient } from "@/shared/lib/supabase/client";
+import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
+import { hmToMinutes } from "@/shared/booking/hmToMinutes";
+import { dayKeyFromLocalDate } from "@/shared/booking/dayKeyFromDate";
 
 /**
  * Group booking submission — 2–4 friends/family booking together.
@@ -423,6 +426,29 @@ export async function submitGroupBooking(
       bufferMin: svc.buffer,
       priceCents: svc.priceCents,
     });
+  }
+
+  // 5.5. Opening-hours guard — each member's slot must fall within the
+  // salon's open window. The group scheduler enforces this on the read
+  // path, but a crafted payload could bypass it entirely.
+  const openingWeek = parseOpeningHours(salonRow.opening_hours);
+  if (openingWeek) {
+    for (let i = 0; i < resolved.length; i++) {
+      const r = resolved[i];
+      const [y, mo, d] = r.member.date.split("-").map(Number);
+      const localDate = new Date(y!, (mo ?? 1) - 1, d ?? 1);
+      const dayKey = dayKeyFromLocalDate(localDate);
+      const dayHours = dayKey ? openingWeek[dayKey] : null;
+      if (!dayHours || dayHours.closed) return fail("salon_closed_day");
+      const openM = hmToMinutes(dayHours.open);
+      const closeM = hmToMinutes(dayHours.close);
+      if (openM === null || closeM === null) continue;
+      const startM = parseHmToMinutes(r.member.time)!;
+      const endM = startM + r.durationMin + r.bufferMin;
+      if (startM < openM || endM > closeM) {
+        return fail("invalid_time", i + 1);
+      }
+    }
   }
 
   // 6. Cross-member conflict check (app-level pre-flight) ------------

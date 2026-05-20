@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 // Emits a one-line GitHub-Actions step summary derived from
 // playwright-report/results.json. Tolerant of a missing or partial
 // report (e.g. when the test run was cancelled before any result

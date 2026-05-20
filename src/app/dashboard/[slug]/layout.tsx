@@ -5,6 +5,8 @@ import { ImpersonationBanner } from "@/components/impersonation/ImpersonationBan
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { loadOwnerSalons } from "@/shared/dashboard/salonOwnerActions";
 import { expireImpersonationIfStale } from "@/shared/superadmin/impersonationActions";
+import { salonDayRangeUtc, salonToday } from "@/shared/lib/salonTime";
+import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 
 type Props = {
   children: ReactNode;
@@ -79,12 +81,18 @@ export default async function DashboardSlugLayout({
   // on per-page navigation — the layout re-renders on every route
   // change so counts stay reasonably fresh without a client-side
   // postgres_changes subscription at the layout level.
+  const { startUtc: todayStartUtc } = salonDayRangeUtc(
+    salonToday(ctx.salon.timezone),
+    ctx.salon.timezone,
+  );
+
   const [waitingRes, overdueRes] = await Promise.all([
     ctx.supabase
       .from("bookings")
       .select("id", { count: "exact", head: true })
       .eq("salon_id", ctx.salon.id)
-      .eq("status", "waiting"),
+      .eq("status", "waiting")
+      .gte("joined_queue_at", todayStartUtc),
     ctx.supabase
       .from("bookings")
       .select("id", { count: "exact", head: true })
@@ -94,6 +102,15 @@ export default async function DashboardSlugLayout({
   ]);
   const walkinQueueCount = waitingRes.count ?? 0;
   const overdueCount = overdueRes.count ?? 0;
+
+  const { data: planRow } = await ctx.supabase
+    .from("salons")
+    .select("subscription_plan, plan_override" as never)
+    .eq("id", ctx.salon.id)
+    .maybeSingle();
+  const subscriptionPlan = parseSubscriptionPlan(
+    (planRow as { subscription_plan?: unknown } | null)?.subscription_plan,
+  );
 
   return (
     <>
@@ -105,6 +122,7 @@ export default async function DashboardSlugLayout({
         salons={salons}
         walkinQueueCount={walkinQueueCount}
         overdueCount={overdueCount}
+        subscriptionPlan={subscriptionPlan}
       >
         {children}
       </DashboardShell>

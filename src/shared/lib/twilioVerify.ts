@@ -1,17 +1,58 @@
 /**
  * Twilio Verify (SMS) — server-side only. Uses REST + fetch (no Twilio SDK).
  *
- * Env: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SERVICE_SID
+ * Credentials priority: platform_settings DB row → env vars.
+ * This lets SuperAdmin rotate keys without a redeploy.
  *
  * @see https://www.twilio.com/docs/verify/api/verification
  * @see https://www.twilio.com/docs/verify/api/verification-check
  */
 
-function twilioBasicAuthHeader(): string | null {
+type TwilioCreds = {
+  accountSid: string;
+  authToken: string;
+  verifyServiceSid: string;
+};
+
+async function getTwilioCreds(): Promise<TwilioCreds | null> {
+  // Try platform_settings first (set via SuperAdmin UI).
+  try {
+    const { createServiceRoleClient } = await import(
+      "@/shared/lib/supabase/serviceRole"
+    );
+    const supabase = createServiceRoleClient();
+    const { data } = await supabase
+      .from("platform_settings")
+      .select("twilio_account_sid, twilio_auth_token, twilio_verify_service_sid")
+      .eq("id", "platform")
+      .maybeSingle();
+
+    const row = data as {
+      twilio_account_sid?: string | null;
+      twilio_auth_token?: string | null;
+      twilio_verify_service_sid?: string | null;
+    } | null;
+
+    const sid = row?.twilio_account_sid?.trim();
+    const token = row?.twilio_auth_token?.trim();
+    const vsid = row?.twilio_verify_service_sid?.trim();
+
+    if (sid && token && vsid) {
+      return { accountSid: sid, authToken: token, verifyServiceSid: vsid };
+    }
+  } catch {
+    // Fall through to env vars
+  }
+
+  // Env var fallback.
   const sid = process.env.TWILIO_ACCOUNT_SID?.trim();
   const token = process.env.TWILIO_AUTH_TOKEN?.trim();
-  if (!sid || !token) return null;
-  return `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}`;
+  const vsid = process.env.TWILIO_VERIFY_SERVICE_SID?.trim();
+  if (sid && token && vsid) {
+    return { accountSid: sid, authToken: token, verifyServiceSid: vsid };
+  }
+
+  return null;
 }
 
 function parseTwilioJson(text: string): Record<string, unknown> {
@@ -31,19 +72,19 @@ function parseTwilioJson(text: string): Record<string, unknown> {
 export async function sendVerification(
   e164Phone: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const serviceSid = process.env.TWILIO_VERIFY_SERVICE_SID?.trim();
-  const auth = twilioBasicAuthHeader();
-  if (!serviceSid || !auth) {
+  const creds = await getTwilioCreds();
+  if (!creds) {
     return {
       ok: false,
-      error: "SMS is not configured (Twilio environment variables).",
+      error: "SMS is not configured (Twilio credentials missing).",
     };
   }
   if (!e164Phone.startsWith("+")) {
     return { ok: false, error: "Invalid phone format." };
   }
 
-  const url = `https://verify.twilio.com/v2/Services/${encodeURIComponent(serviceSid)}/Verifications`;
+  const auth = `Basic ${Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString("base64")}`;
+  const url = `https://verify.twilio.com/v2/Services/${encodeURIComponent(creds.verifyServiceSid)}/Verifications`;
 
   try {
     const res = await fetch(url, {
@@ -52,18 +93,14 @@ export async function sendVerification(
         Authorization: auth,
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({
-        To: e164Phone,
-        Channel: "sms",
-      }).toString(),
+      body: new URLSearchParams({ To: e164Phone, Channel: "sms" }).toString(),
     });
 
     const text = await res.text();
     if (!res.ok) {
       console.error("[sendVerification] Twilio API error", {
         status: res.status,
-        statusText: res.statusText,
-        body: text,
+        body: text.slice(0, 300),
       });
       return { ok: false, error: "Could not send SMS. Try again." };
     }
@@ -82,19 +119,16 @@ export async function checkVerification(
   e164Phone: string,
   code: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const serviceSid = process.env.TWILIO_VERIFY_SERVICE_SID?.trim();
-  const auth = twilioBasicAuthHeader();
-  if (!serviceSid || !auth) {
-    return {
-      ok: false,
-      error: "server_misconfigured",
-    };
+  const creds = await getTwilioCreds();
+  if (!creds) {
+    return { ok: false, error: "server_misconfigured" };
   }
   if (!e164Phone.startsWith("+")) {
     return { ok: false, error: "invalid_phone" };
   }
 
-  const url = `https://verify.twilio.com/v2/Services/${encodeURIComponent(serviceSid)}/VerificationCheck`;
+  const auth = `Basic ${Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString("base64")}`;
+  const url = `https://verify.twilio.com/v2/Services/${encodeURIComponent(creds.verifyServiceSid)}/VerificationCheck`;
 
   try {
     const res = await fetch(url, {
@@ -103,10 +137,7 @@ export async function checkVerification(
         Authorization: auth,
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({
-        To: e164Phone,
-        Code: code,
-      }).toString(),
+      body: new URLSearchParams({ To: e164Phone, Code: code }).toString(),
     });
 
     const text = await res.text();
@@ -127,7 +158,6 @@ export async function checkVerification(
       return { ok: true };
     }
 
-    /* Wrong code often returns 200 + pending / canceled */
     return { ok: false, error: "invalid_code" };
   } catch (e) {
     console.error("[checkVerification]", e);

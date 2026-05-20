@@ -77,7 +77,7 @@ export default defineConfig({
     // be reused as-is — restart it via `npm run dev:test` if demo flags are
     // needed (see .env.test.local.example).
     command:
-      "NEXT_PUBLIC_DEMO_OTP=true DEMO_OTP=true NAILIQ_TEST_BYPASS_SLUG_PIN=1 npm run dev",
+      "NEXT_PUBLIC_DEMO_OTP=true DEMO_OTP=true NAILIQ_TEST_BYPASS_SLUG_PIN=1 AI_PREFILL_E2E_MOCK=services npm run dev",
     url: "http://localhost:3000",
     // In CI we pre-start `next dev` in the workflow and gate the job on
     // a 30s wait-on health check (see .github/workflows/e2e.yml). The

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 /**
  * Auto commit + push after debounced file changes (dev safe mode).
  * Watches the repo; ignores .next, node_modules, .git, logs.
@@ -15,7 +16,6 @@ let isPushing = false;
 let pendingReschedule = false;
 
 function log(msg) {
-  // eslint-disable-next-line no-console
   console.log(msg);
 }
 
@@ -119,7 +119,6 @@ function doPush() {
     });
     execSync("git push", { stdio: "inherit", cwd: ROOT });
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.error(err?.message || err);
   } finally {
     isPushing = false;
@@ -152,7 +151,7 @@ const watcher = chokidar.watch(ROOT, {
   awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
 });
 
-watcher.on("all", (event, filePath) => {
+watcher.on("all", (event) => {
   if (event !== "add" && event !== "addDir" && event !== "change" && event !== "unlink" && event !== "unlinkDir") {
     return;
   }
@@ -165,6 +164,5 @@ watcher
     log("Watching changes...");
   })
   .on("error", (err) => {
-    // eslint-disable-next-line no-console
     console.error("Watcher error:", err);
   });

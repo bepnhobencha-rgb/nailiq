@@ -323,6 +323,8 @@ export type UserMessages = {
     services: string;
     staff: string;
     walkinQueue: string;
+    noShowProtection: string;
+    reviews: string;
     messages: string;
     reports: string;
     marketing: string;
@@ -482,6 +484,19 @@ export type UserMessages = {
       ctaLater: string;
       /** Success bubble shown for 3s after a successful save. */
       successMessage: string;
+    };
+    emptySetup: {
+      title: string;
+      subtitle: string;
+    };
+    emptyShare: {
+      readyTitle: string;
+      readySubtitle: string;
+      copyButton: string;
+      copiedButton: string;
+      openButton: string;
+      qrButton: string;
+      qrModalTitle: string;
     };
   };
   salonDashboard: {
@@ -655,6 +670,15 @@ export type UserMessages = {
       descriptionOff: string;
       errorGeneric: string;
     };
+    /** SMS OTP phone verification toggle. */
+    phoneOtp: {
+      sectionTitle: string;
+      toggleLabel: string;
+      descriptionOn: string;
+      descriptionOff: string;
+      cost: string;
+      errorGeneric: string;
+    };
   };
   /** Aria label for the setup-wizard category dropdown.
    *
@@ -789,6 +813,44 @@ export type UserMessages = {
       nail_tech: string;
     };
   };
+  /** AI Prefill Setup Wizard — import services from menu photo */
+  aiPrefill: {
+    /** Banner shown on Services page when list is empty */
+    bannerTitle: string;
+    bannerSubtitle: string;
+    bannerCta: string;
+    /** Step 1: pick input method */
+    step1Title: string;
+    uploadCard: string;
+    uploadCardSub: string;
+    urlCard: string;
+    urlCardSub: string;
+    manualCard: string;
+    manualCardSub: string;
+    urlPlaceholder: string;
+    analyzeButton: string;
+    /** Step 2: AI processing */
+    processingTitle: string;
+    processingSub: string;
+    /** Step 3: review */
+    reviewTitle: string;
+    reviewSub: string;
+    selectAll: string;
+    deselectAll: string;
+    priceLabel: string;
+    durationLabel: string;
+    importButton: string;
+    importButtonN: string;
+    manualFallback: string;
+    /** Error messages */
+    errorVisionFailed: string;
+    errorNoServices: string;
+    errorPlanLimit: string;
+    errorPayloadTooLarge: string;
+    errorInvalidUrl: string;
+    /** Success */
+    successToast: string;
+  };
   /** `/dashboard/[slug]/center` — operational receptionist workspace */
   receptionist: {
     title: string;
@@ -882,6 +944,8 @@ export type UserMessages = {
       sortLabel: string;
       sortFifo: string;
       sortLongestWait: string;
+      sortCustom: string;
+      avgWait: (n: number) => string;
       priorityHigh: string;
       priorityMedium: string;
       priorityLow: string;
@@ -1834,6 +1898,8 @@ export const userEn: UserMessages = {
     services: "Services",
     staff: "Staff",
     walkinQueue: "Walk-in Queue",
+    noShowProtection: "No-Show Protection",
+    reviews: "Reviews",
     messages: "Messages",
     reports: "Reports",
     marketing: "Retention",
@@ -1958,6 +2024,19 @@ export const userEn: UserMessages = {
       ctaAdd: "Add email",
       ctaLater: "Maybe later",
       successMessage: "✓ Email saved! You're protected.",
+    },
+    emptySetup: {
+      title: "Set up your salon",
+      subtitle: "Complete these steps to start accepting bookings",
+    },
+    emptyShare: {
+      readyTitle: "Your booking page is live!",
+      readySubtitle: "Share your booking link with customers to receive your first booking",
+      copyButton: "Copy link",
+      copiedButton: "Copied!",
+      openButton: "Open page",
+      qrButton: "QR Code",
+      qrModalTitle: "Booking QR Code",
     },
   },
   salonDashboard: {
@@ -2123,6 +2202,16 @@ export const userEn: UserMessages = {
         "All walk-ins enter the queue first for receptionist review.",
       errorGeneric: "Could not save. Try again.",
     },
+    phoneOtp: {
+      sectionTitle: "Phone verification (SMS OTP)",
+      toggleLabel: "Require SMS code to confirm booking",
+      descriptionOn:
+        "Customers must verify their phone with a 6-digit SMS code before booking is confirmed. Reduces no-shows and fake numbers. ~$0.05 per verification via Twilio Verify.",
+      descriptionOff:
+        "Phone number is collected but not verified by SMS. Turn on to reduce fake bookings.",
+      cost: "Requires Twilio Verify configured in environment.",
+      errorGeneric: "Could not save. Try again.",
+    },
   },
   serviceCategory: {
     pickerLabel: "Category",
@@ -2223,6 +2312,37 @@ export const userEn: UserMessages = {
       nail_tech: "Nail tech",
     },
   },
+  aiPrefill: {
+    bannerTitle: "Import your menu in seconds",
+    bannerSubtitle: "Take a photo of your price list and AI will fill in your services automatically.",
+    bannerCta: "Import from photo",
+    step1Title: "How would you like to add your services?",
+    uploadCard: "Upload menu photo",
+    uploadCardSub: "Photo of your price list, wall menu, or price sheet",
+    urlCard: "Paste image link",
+    urlCardSub: "Link to a photo of your menu (Facebook, website, etc.)",
+    manualCard: "Enter manually",
+    manualCardSub: "I'll type my services in one by one",
+    urlPlaceholder: "https://...",
+    analyzeButton: "Read menu",
+    processingTitle: "Reading your menu…",
+    processingSub: "AI is extracting your services. This takes a few seconds.",
+    reviewTitle: "Review extracted services",
+    reviewSub: "Select the services you'd like to import. You can edit prices and durations.",
+    selectAll: "Select all",
+    deselectAll: "Deselect all",
+    priceLabel: "Price",
+    durationLabel: "Min",
+    importButton: "Import services",
+    importButtonN: "Import {n} services",
+    manualFallback: "Enter manually instead",
+    errorVisionFailed: "Couldn't read the menu. Please try a clearer photo or enter manually.",
+    errorNoServices: "No services found in this image. Try a closer photo of the price list.",
+    errorPlanLimit: "You've reached your plan's service limit.",
+    errorPayloadTooLarge: "Image is too large. Please resize to under 4MB and try again.",
+    errorInvalidUrl: "Invalid image URL. Please check the link and try again.",
+    successToast: "Services imported successfully!",
+  },
   receptionist: {
     title: "Front desk",
     loadingDay: "Loading day…",
@@ -2296,6 +2416,8 @@ export const userEn: UserMessages = {
       sortLabel: "Sort",
       sortFifo: "First in",
       sortLongestWait: "Longest wait",
+      sortCustom: "Custom order",
+      avgWait: (n: number) => `Avg wait · ${n} min`,
       priorityHigh: "High",
       priorityMedium: "Medium",
       priorityLow: "Low",

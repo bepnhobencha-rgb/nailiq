@@ -153,13 +153,14 @@ export function BookingDetailDrawer({
     onClose();
   }, [onClose]);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- ARCHITECTURE_LOCK: exit edit mode + reset phone reveal when drawer closes */
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- exit edit mode when drawer closes
     if (!open) {
       setEditMode(false);
       setPhoneRevealed(false);
     }
   }, [open]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- exit edit mode + re-mask when drawer rebinds to a different booking

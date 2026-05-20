@@ -31,6 +31,11 @@ export type SuperadminNavItem = {
   phaseLabel?: string;
   /** Roles permitted to navigate to this section. */
   allowedRoles: readonly SuperAdminRole[];
+  /**
+   * When true, the item is completely hidden from the sidebar for MVP.
+   * Routes and pages still exist and are accessible via direct URL.
+   */
+  mvpHidden?: boolean;
 };
 
 const ALL_ROLES: readonly SuperAdminRole[] = SUPERADMIN_ROLES;
@@ -73,6 +78,7 @@ export const SUPERADMIN_NAV: readonly SuperadminNavItem[] = [
     href: "/superadmin/analytics",
     phaseLabel: "Coming Phase 3",
     allowedRoles: ALL_ROLES,
+    mvpHidden: true,
   },
   {
     key: "ai",
@@ -80,6 +86,7 @@ export const SUPERADMIN_NAV: readonly SuperadminNavItem[] = [
     href: "/superadmin/ai",
     phaseLabel: "Coming Phase 3",
     allowedRoles: ["founder", "ai_admin"],
+    mvpHidden: true,
   },
   {
     key: "billing",
@@ -87,6 +94,7 @@ export const SUPERADMIN_NAV: readonly SuperadminNavItem[] = [
     href: "/superadmin/billing",
     phaseLabel: "Coming Phase 2",
     allowedRoles: ["founder", "billing_admin"],
+    mvpHidden: true,
   },
   {
     key: "security",
@@ -94,12 +102,12 @@ export const SUPERADMIN_NAV: readonly SuperadminNavItem[] = [
     href: "/superadmin/security",
     phaseLabel: "Coming Phase 2",
     allowedRoles: ["founder", "ops_admin"],
+    mvpHidden: true,
   },
   {
     key: "settings",
     label: "Settings",
     href: "/superadmin/settings",
-    phaseLabel: "Coming Phase 1F",
     allowedRoles: ALL_ROLES,
   },
 ];

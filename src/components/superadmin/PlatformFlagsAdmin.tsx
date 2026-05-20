@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { cn } from "@/shared/lib/cn";
 import { updatePlatformFlag } from "@/shared/superadmin/superadminActions";
 import {
@@ -96,7 +96,13 @@ function PlatformFlagRow({
   const [enabled, setEnabled] = useState(initialEnabled);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [savedAt, setSavedAt] = useState<number | null>(null);
+  // Replace savedAt + Date.now() render call with a boolean that auto-clears via timer
+  const [showSaved, setShowSaved] = useState(false);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+  }, []);
 
   const onToggle = (next: boolean) => {
     if (descriptor.danger && next) {
@@ -116,7 +122,9 @@ function PlatformFlagRow({
           setError(r.error);
           return;
         }
-        setSavedAt(Date.now());
+        setShowSaved(true);
+        if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+        savedTimerRef.current = setTimeout(() => setShowSaved(false), 2400);
       })();
     });
   };
@@ -171,7 +179,7 @@ function PlatformFlagRow({
         <div className="mt-2 min-h-4 text-[11px]">
           {error ? (
             <span className="text-nq-error">Save failed: {error}</span>
-          ) : savedAt && Date.now() - savedAt < 2400 ? (
+          ) : showSaved ? (
             <span className="text-nq-success">Saved ✓</span>
           ) : null}
         </div>

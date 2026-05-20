@@ -23,6 +23,7 @@ export function BookingFlowTimePanel({
   stepTransition,
   clientName,
   clientPhone,
+  clientEmail,
   waitlistSubmitting,
   waitlistSlotJoined,
   waitlistContactInvalid,
@@ -30,6 +31,7 @@ export function BookingFlowTimePanel({
   error,
   onClientNameChange,
   onClientPhoneChange,
+  onClientEmailChange,
   onWaitlistSubmit,
   onSelectSlot,
   onBack,
@@ -46,6 +48,7 @@ export function BookingFlowTimePanel({
   stepTransition: { duration: number; ease: [number, number, number, number] };
   clientName: string;
   clientPhone: string;
+  clientEmail: string;
   waitlistSubmitting: boolean;
   waitlistSlotJoined: boolean;
   waitlistContactInvalid: boolean;
@@ -53,6 +56,7 @@ export function BookingFlowTimePanel({
   error: string | null;
   onClientNameChange: (v: string) => void;
   onClientPhoneChange: (v: string) => void;
+  onClientEmailChange: (v: string) => void;
   onWaitlistSubmit: () => void;
   onSelectSlot: (slot: string) => void;
   onBack: () => void;
@@ -156,6 +160,25 @@ export function BookingFlowTimePanel({
                       value={clientPhone}
                       onChange={(e) => onClientPhoneChange(e.target.value)}
                       className="nq-booking-field"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="booking-waitlist-email"
+                      className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
+                    >
+                      {t.clientEmailLabel}
+                    </label>
+                    <input
+                      id="booking-waitlist-email"
+                      type="email"
+                      name="waitlistClientEmail"
+                      autoComplete="email"
+                      inputMode="email"
+                      value={clientEmail}
+                      onChange={(e) => onClientEmailChange(e.target.value)}
+                      className="nq-booking-field"
+                      placeholder={t.clientEmailHint ?? ""}
                     />
                   </div>
                 </div>

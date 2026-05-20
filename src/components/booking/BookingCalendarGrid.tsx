@@ -113,16 +113,21 @@ export function BookingCalendarGrid({
   useEffect(() => {
     if (!selectedDate) return;
     const candidate = startOfMonth(selectedDate);
-    if (candidate.getTime() !== viewMonth.getTime()) {
+    // Use functional updater so viewMonth is NOT a dep — having it in deps caused
+    // clicking "Next Month" to immediately reset back to selectedDate's month:
+    // click Next→June, effect fires (viewMonth changed), candidate=May, setViewMonth(May).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- functional updater avoids cascade; this is intentional derived-state sync
+    setViewMonth((current) => {
+      if (candidate.getTime() === current.getTime()) return current;
       if (
         candidate.getTime() >= minMonth.getTime() &&
         candidate.getTime() <= maxMonth.getTime()
       ) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- pull viewMonth back into range when selectedDate jumps
-        setViewMonth(candidate);
+        return candidate;
       }
-    }
-  }, [selectedDate, viewMonth, minMonth, maxMonth]);
+      return current;
+    });
+  }, [selectedDate, minMonth, maxMonth]);
 
   const daysInView = useMemo(() => {
     const out: Date[] = [];
@@ -193,6 +198,7 @@ export function BookingCalendarGrid({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dayClosed is a render-time function whose inputs (openingHoursRaw, closedDateYmdSet) are already in deps
   }, [
     salonId,
     openingHoursRaw,

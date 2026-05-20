@@ -131,6 +131,7 @@ export function ContactForm() {
             id="contact-name"
             type="text"
             autoComplete="name"
+            required
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={100}
@@ -168,6 +169,7 @@ export function ContactForm() {
             id="contact-email"
             type="email"
             autoComplete="email"
+            required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             maxLength={254}
@@ -222,6 +224,7 @@ export function ContactForm() {
           </label>
           <textarea
             id="contact-message"
+            required
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             maxLength={4000}

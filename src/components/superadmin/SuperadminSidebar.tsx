@@ -38,6 +38,7 @@ export function SuperadminSidebar({ role }: Props) {
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(COLLAPSE_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR hydration: read localStorage once on mount to restore persisted collapse state
       if (stored === "1") setCollapsed(true);
     } catch {
       // localStorage unavailable (private mode / SSR-only env) — ignore.
@@ -99,7 +100,7 @@ export function SuperadminSidebar({ role }: Props) {
       </header>
 
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-2 py-3">
-        {SUPERADMIN_NAV.map((item) => (
+        {SUPERADMIN_NAV.filter((item) => !item.mvpHidden).map((item) => (
           <SidebarItem
             key={item.key}
             item={item}

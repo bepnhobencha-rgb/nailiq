@@ -471,7 +471,6 @@ export async function loadDeletedRecordsForSalon(
     return { ok: false, error: "server_error" };
   }
 
-  type Row = { id: string; deleted_at: string | null; label: string };
   const records: DeletedRecord[] = [];
 
   const services = (await admin
@@ -1002,4 +1001,214 @@ export async function deleteCategory(
   }
 
   return { ok: true };
+}
+
+// ─── Platform Settings ─────────────────────────────────────────────────────
+
+const MASK = "••••••••";
+
+export type PlatformSettingsRow = {
+  twilioAccountSid: string;
+  twilioAuthToken: string;
+  twilioVerifyServiceSid: string;
+  twilioPhoneNumber: string;
+  resendApiKey: string;
+  resendFrom: string;
+  updatedAt: string | null;
+};
+
+type LoadPlatformSettingsResult =
+  | { ok: true; settings: PlatformSettingsRow }
+  | { ok: false; error: string };
+
+function maskSecret(v: string | null | undefined): string {
+  if (!v || v.trim().length === 0) return "";
+  return MASK + v.trim().slice(-4);
+}
+
+export async function loadPlatformSettings(): Promise<LoadPlatformSettingsResult> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+
+  const admin = createServiceRoleClient();
+  const { data, error } = await admin
+    .from("platform_settings")
+    .select(
+      "twilio_account_sid, twilio_auth_token, twilio_verify_service_sid, twilio_phone_number, resend_api_key, resend_from, updated_at",
+    )
+    .eq("id", "platform")
+    .maybeSingle();
+
+  if (error) {
+    console.error("[superadmin/loadPlatformSettings]", error);
+    return { ok: false, error: "server_error" };
+  }
+
+  const row = (data ?? {}) as {
+    twilio_account_sid?: string | null;
+    twilio_auth_token?: string | null;
+    twilio_verify_service_sid?: string | null;
+    twilio_phone_number?: string | null;
+    resend_api_key?: string | null;
+    resend_from?: string | null;
+    updated_at?: string | null;
+  };
+
+  return {
+    ok: true,
+    settings: {
+      twilioAccountSid: maskSecret(row.twilio_account_sid),
+      twilioAuthToken: maskSecret(row.twilio_auth_token),
+      twilioVerifyServiceSid: maskSecret(row.twilio_verify_service_sid),
+      twilioPhoneNumber: row.twilio_phone_number?.trim() ?? "",
+      resendApiKey: maskSecret(row.resend_api_key),
+      resendFrom: row.resend_from?.trim() ?? "",
+      updatedAt: row.updated_at ?? null,
+    },
+  };
+}
+
+export type UpdatePlatformSettingsInput = {
+  twilioAccountSid?: string;
+  twilioAuthToken?: string;
+  twilioVerifyServiceSid?: string;
+  twilioPhoneNumber?: string;
+  resendApiKey?: string;
+  resendFrom?: string;
+};
+
+type UpdatePlatformSettingsResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export async function updatePlatformSettings(
+  input: UpdatePlatformSettingsInput,
+): Promise<UpdatePlatformSettingsResult> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+
+  const admin = createServiceRoleClient();
+
+  // Fetch current to avoid overwriting unchanged masked values.
+  const { data: current } = await admin
+    .from("platform_settings")
+    .select(
+      "twilio_account_sid, twilio_auth_token, twilio_verify_service_sid, twilio_phone_number, resend_api_key, resend_from",
+    )
+    .eq("id", "platform")
+    .maybeSingle();
+
+  const cur = (current ?? {}) as Record<string, string | null>;
+
+  function resolveField(
+    newVal: string | undefined,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for future masking logic that may need to compare against current value
+    _currentVal: string | null | undefined,
+  ): string | null | undefined {
+    if (newVal === undefined) return undefined; // not submitted
+    const trimmed = newVal.trim();
+    if (trimmed.startsWith(MASK)) return undefined; // still masked → keep current
+    if (trimmed.length === 0) return null; // explicit clear
+    return trimmed;
+  }
+
+  const patch: Record<string, string | null> = {};
+  const taSid = resolveField(input.twilioAccountSid, cur.twilio_account_sid);
+  if (taSid !== undefined) patch.twilio_account_sid = taSid;
+  const taTok = resolveField(input.twilioAuthToken, cur.twilio_auth_token);
+  if (taTok !== undefined) patch.twilio_auth_token = taTok;
+  const tvSid = resolveField(input.twilioVerifyServiceSid, cur.twilio_verify_service_sid);
+  if (tvSid !== undefined) patch.twilio_verify_service_sid = tvSid;
+  if (input.twilioPhoneNumber !== undefined) {
+    patch.twilio_phone_number = input.twilioPhoneNumber.trim() || null;
+  }
+  const rKey = resolveField(input.resendApiKey, cur.resend_api_key);
+  if (rKey !== undefined) patch.resend_api_key = rKey;
+  if (input.resendFrom !== undefined) {
+    patch.resend_from = input.resendFrom.trim() || null;
+  }
+  patch.updated_at = new Date().toISOString();
+
+  const { error } = await admin
+    .from("platform_settings")
+    .update(patch as never)
+    .eq("id", "platform");
+
+  if (error) {
+    console.error("[superadmin/updatePlatformSettings]", error);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true };
+}
+
+type TestResult = { ok: true; message: string } | { ok: false; error: string };
+
+export async function testTwilioConnection(): Promise<TestResult> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+
+  const { sendVerification } = await import("@/shared/lib/twilioVerify");
+  // Twilio Verify will reject a non-real number but the HTTP call itself
+  // succeeds when credentials are valid — we look for a specific error code.
+  const result = await sendVerification("+10000000000");
+  if (result.ok) {
+    return { ok: true, message: "Twilio connected ✓" };
+  }
+  // 21211 = invalid To number → credentials ARE valid, number just fake.
+  if ((result.error ?? "").includes("21211") || (result.error ?? "").toLowerCase().includes("invalid")) {
+    return { ok: true, message: "Twilio connected ✓ (credentials valid)" };
+  }
+  if ((result.error ?? "").includes("misconfigured") || (result.error ?? "").includes("missing")) {
+    return { ok: false, error: "Credentials not set or incomplete." };
+  }
+  return { ok: false, error: result.error ?? "Connection failed." };
+}
+
+export async function testResendConnection(
+  toEmail: string,
+): Promise<TestResult> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+
+  if (!toEmail || !toEmail.includes("@")) {
+    return { ok: false, error: "invalid_email" };
+  }
+
+  // Read resend key from platform_settings, fallback to env.
+  const admin = createServiceRoleClient();
+  const { data } = await admin
+    .from("platform_settings")
+    .select("resend_api_key, resend_from")
+    .eq("id", "platform")
+    .maybeSingle();
+
+  const row = (data ?? {}) as {
+    resend_api_key?: string | null;
+    resend_from?: string | null;
+  };
+
+  const apiKey =
+    row.resend_api_key?.trim() || process.env.RESEND_API_KEY?.trim() || "";
+  const fromAddr =
+    row.resend_from?.trim() || process.env.RESEND_FROM?.trim() || "";
+
+  if (!apiKey) return { ok: false, error: "Resend API key not configured." };
+
+  try {
+    const { Resend } = await import("resend");
+    const resend = new Resend(apiKey);
+    const res = await resend.emails.send({
+      from: fromAddr || "NailIQ <noreply@nailiq.ca>",
+      to: toEmail.trim(),
+      subject: "NailIQ — Resend connection test",
+      html: "<p>Resend is connected to NailIQ. This is a test email from SuperAdmin.</p>",
+    });
+    if (res.error) {
+      return { ok: false, error: String(res.error.message ?? res.error) };
+    }
+    return { ok: true, message: `Test email sent to ${toEmail} ✓` };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
 }

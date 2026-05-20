@@ -119,6 +119,7 @@ export function AddEmailBanner({
     }
     setConfirmedEmail(trimmed);
     setSavedState(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t.emailInvalid and t.saveFailed are message strings that don't change within a session
   }, [emailInput, salonSlug]);
 
   if (savedState && confirmedEmail) {

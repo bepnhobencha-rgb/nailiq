@@ -231,6 +231,7 @@ export function ServicesSetupPanel({
       );
       refresh();
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- formLabels and tLabels.serviceSaved are message strings that don't change within a session
     [formLabels.descriptionGeneratedToast, refresh, slug],
   );
 
@@ -266,6 +267,7 @@ export function ServicesSetupPanel({
       setToast({ variant: "success", message: tLabels.serviceRemoved });
       refresh();
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tLabels.serviceRemoved is a message string that doesn't change within a session
     [refresh, setupErrors, slug],
   );
 
@@ -375,7 +377,7 @@ export function ServicesSetupPanel({
     refresh,
     setupErrors.serviceLimitReached,
     slug,
-  ]);
+  ]); // eslint-disable-line react-hooks/exhaustive-deps -- formLabels.descriptionGeneratedToast and tLabels.serviceSaved are message strings that don't change within a session
 
   return (
     <div className="flex flex-col gap-4">
@@ -386,6 +388,30 @@ export function ServicesSetupPanel({
           {formError}
         </p>
       ) : null}
+
+      {/* AI import banner — shown when service list is empty */}
+      {rows.length === 0 && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-nq-primary/40 bg-nq-primary/[0.05] px-4 py-4">
+          <div className="flex items-start gap-3">
+            <span aria-hidden className="text-2xl">✨</span>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-nq-foreground">
+                {messages.aiPrefill.bannerTitle}
+              </p>
+              <p className="mt-0.5 text-sm text-nq-muted">
+                {messages.aiPrefill.bannerSubtitle}
+              </p>
+            </div>
+          </div>
+          <Link
+            href={`/dashboard/${encodeURIComponent(slug)}/setup/ai-prefill`}
+            className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-nq-primary px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/50"
+          >
+            {messages.aiPrefill.bannerCta}
+          </Link>
+        </div>
+      )}
+
       <ul className="flex flex-col gap-3">
         {rows.map((row) => (
           <li

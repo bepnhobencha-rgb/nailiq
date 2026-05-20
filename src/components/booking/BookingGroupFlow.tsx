@@ -742,6 +742,7 @@ export function BookingGroupFlow({
   // `scheduling` and advance the phase at 10s + 20s. Always reset
   // to `normal` when scheduling flips false (result arrived or
   // user navigated away).
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional reset to normal before starting timers */
   useEffect(() => {
     if (!scheduling) {
       setLatencyPhase("normal");
@@ -758,6 +759,7 @@ export function BookingGroupFlow({
       window.clearTimeout(t20);
     };
   }, [scheduling]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // FIX 11 (Task #04-A) — clear cached arrangements when group
   // size changes. `applySize` mutates `members.length`; without
@@ -767,6 +769,7 @@ export function BookingGroupFlow({
   // doesn't match the new group size. First firing on mount is a
   // no-op (scheduleResult already null).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional clear when group size changes; avoids stale N-arrangement
     setScheduleResult(null);
   }, [members.length]);
 
@@ -778,6 +781,7 @@ export function BookingGroupFlow({
   // otherwise schedule a one-shot timer for the remaining window.
   useEffect(() => {
     if (step !== 5 || arrangementSelectedAt === null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset when not on step 5
       setArrangementStale(false);
       return;
     }
@@ -795,6 +799,7 @@ export function BookingGroupFlow({
   // whenever the user enters or leaves step 5 so the banner
   // appears once per dwell, not as a persistent state across the
   // whole flow.
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional reset when leaving step 5 and before idle timer */
   useEffect(() => {
     if (step !== 5) {
       setSessionWarning(false);
@@ -804,6 +809,7 @@ export function BookingGroupFlow({
     const t = window.setTimeout(() => setSessionWarning(true), SESSION_WARNING_MS);
     return () => window.clearTimeout(t);
   }, [step]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Task #04-C FIX 01 — pre-submit slot availability probe. On
   // step 5 mount (or when the user picks a different arrangement
@@ -818,6 +824,7 @@ export function BookingGroupFlow({
   // the probe.
   useEffect(() => {
     if (step !== 5) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset when leaving step 5
       setSlotJustTaken(false);
       return;
     }

@@ -585,6 +585,7 @@ export type Database = {
           p_service_id: string
           p_source: string
           p_staff_id: string
+          p_client_email?: string | null
         }
         Returns: {
           id: string

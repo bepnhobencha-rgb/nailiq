@@ -77,6 +77,7 @@ export function UserLanguageProvider({
   useEffect(() => {
     const stored = readStoredLanguage();
     if (stored && stored !== language) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR hydration: localStorage wins over cookie after first paint
       setLanguageState(stored);
     }
     // Run once on mount — server-resolved initialLanguage is authoritative

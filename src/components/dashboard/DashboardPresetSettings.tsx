@@ -32,11 +32,13 @@ export function DashboardPresetSettings({
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional sync when parent prop changes (server re-fetch) */
   useEffect(() => {
     setPreset(initialPreset);
     setError(null);
     setPendingPreset(null);
   }, [initialPreset]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const choose = (next: PresetKey) => {
     if (!canEdit || isPending || next === preset) return;

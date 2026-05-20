@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/Button";
 import { SaveButton, type SaveButtonStatus } from "@/components/ui/SaveButton";
 import { SetupToast, type SetupToastPayload } from "@/components/ui/Toast";
 import {
@@ -53,16 +54,26 @@ function nthWeekdayOfMonth(
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-/** P1.11 — typical Vietnamese nail-salon hours preset.
- * 10:00–19:00 Mon–Sat, closed Sun. Owners can still tweak afterwards. */
-const NAIL_SHOP_PRESET: OpeningHoursWeek = {
-  mon: { open: "10:00", close: "19:00", closed: false },
-  tue: { open: "10:00", close: "19:00", closed: false },
-  wed: { open: "10:00", close: "19:00", closed: false },
-  thu: { open: "10:00", close: "19:00", closed: false },
-  fri: { open: "10:00", close: "19:00", closed: false },
-  sat: { open: "10:00", close: "19:00", closed: false },
-  sun: { open: "10:00", close: "19:00", closed: true },
+// Mon–Fri 9–7, Sat 10–5, Sun closed. Most common schedule for Canadian nail salons.
+const PRESET_STANDARD: OpeningHoursWeek = {
+  mon: { open: "09:00", close: "19:00", closed: false },
+  tue: { open: "09:00", close: "19:00", closed: false },
+  wed: { open: "09:00", close: "19:00", closed: false },
+  thu: { open: "09:00", close: "19:00", closed: false },
+  fri: { open: "09:00", close: "19:00", closed: false },
+  sat: { open: "10:00", close: "17:00", closed: false },
+  sun: { open: "09:00", close: "19:00", closed: true },
+};
+
+// 7 days 9–7, no days off.
+const PRESET_7_DAYS: OpeningHoursWeek = {
+  mon: { open: "09:00", close: "19:00", closed: false },
+  tue: { open: "09:00", close: "19:00", closed: false },
+  wed: { open: "09:00", close: "19:00", closed: false },
+  thu: { open: "09:00", close: "19:00", closed: false },
+  fri: { open: "09:00", close: "19:00", closed: false },
+  sat: { open: "09:00", close: "19:00", closed: false },
+  sun: { open: "09:00", close: "19:00", closed: false },
 };
 
 const TOAST_GENERIC = "✗ Could not save.";
@@ -196,46 +207,33 @@ export function HoursSetupPanel({
         className="flex flex-wrap items-center gap-2"
         data-testid="hours-shortcuts"
       >
-        <button
-          type="button"
-          data-testid="hours-preset-nail-shop"
+        <Button
+          size="sm"
+          variant="primary"
+          data-testid="hours-preset-standard"
           disabled={saveStatus === "saving"}
-          onClick={() => {
-            // P1.11 — overwrite the editor (not the saved row) so the
-            // owner still sees the existing Save button + can review
-            // before persisting. Doesn't auto-save; matches the rest
-            // of this panel's "edit then Save all" model.
-            setHours(NAIL_SHOP_PRESET);
-          }}
-          className="inline-flex min-h-9 items-center rounded-full border border-nq-primary/45 bg-nq-primary/10 px-3 py-1 text-xs font-semibold text-nq-primary hover:bg-nq-primary/15 disabled:opacity-50"
+          onClick={() => setHours(PRESET_STANDARD)}
         >
-          ⚡ Giờ tiệm nail phổ biến · 10:00–19:00, đóng CN
-        </button>
-        <button
-          type="button"
-          data-testid="hours-apply-monday-to-all"
+          Tiệm chuẩn · T2–T6 9–7, T7 10–5
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          data-testid="hours-preset-7days"
           disabled={saveStatus === "saving"}
-          onClick={() => {
-            // P1.11 — copy Monday's open/close + closed flag to every
-            // other day. Most salons run the same hours Mon–Sat, so
-            // this saves 6× clicking through individual day pickers.
-            setHours((prev) => {
-              const mon = prev.mon;
-              return {
-                mon,
-                tue: { ...mon },
-                wed: { ...mon },
-                thu: { ...mon },
-                fri: { ...mon },
-                sat: { ...mon },
-                sun: { ...mon },
-              };
-            });
-          }}
-          className="inline-flex min-h-9 items-center rounded-full border border-nq-border/60 bg-nq-surface/60 px-3 py-1 text-xs font-medium text-nq-foreground hover:bg-nq-surface disabled:opacity-50"
+          onClick={() => setHours(PRESET_7_DAYS)}
         >
-          📋 Áp dụng cho tất cả ngày · Apply Monday to all
-        </button>
+          Tuần 7 ngày · 9–7
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          data-testid="hours-preset-custom"
+          disabled={saveStatus === "saving"}
+          onClick={() => setHours(defaultOpeningHoursWeek())}
+        >
+          Tự chọn
+        </Button>
       </div>
       {error ? (
         <p className="rounded-xl border border-nq-error/40 bg-nq-error/10 px-4 py-3 text-sm text-nq-error">
