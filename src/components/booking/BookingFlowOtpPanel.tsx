@@ -24,7 +24,8 @@ export function BookingFlowOtpPanel({
   shopSlug,
   clientPhone,
   stepDir,
-  reducedMotion,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- prop kept for API consistency with other BookingFlow panels; not needed by OTP panel
+  reducedMotion: _reducedMotion,
   stepTransition,
   onVerified,
   onBack,

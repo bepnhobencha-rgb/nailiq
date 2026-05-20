@@ -265,6 +265,7 @@ export function SalonOwnerDashboard({
         void supabase.removeChannel(channel);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- data and td.newBookingToast are intentionally omitted; adding them would cause infinite Realtime subscription churn
   }, [salonIdForRealtime, refresh, data?.demoMode]);
 
   const viewData: SalonOwnerDashboardViewPayload | null = useMemo(() => {

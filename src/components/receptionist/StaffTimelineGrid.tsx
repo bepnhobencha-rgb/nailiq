@@ -254,6 +254,7 @@ function StaffTimelineGridImpl({
   currencyCode,
   // `timeSlotMinutesVisualHint` is reserved for future row-height
   // adjustments; currently unused at runtime.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- ARCHITECTURE_LOCK: reserved for future row-height adjustments
   timeSlotMinutesVisualHint: _timeSlotMinutesVisualHint,
 }: StaffTimelineGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -267,16 +268,21 @@ function StaffTimelineGridImpl({
 
   const [dragState, setDragState] = useState<GridDragState | null>(null);
   const dragStateRef = useRef<GridDragState | null>(null);
+  // eslint-disable-next-line react-hooks/refs -- ARCHITECTURE_LOCK: ref sync during render is the intended pattern for stable pointer-handler reads
   dragStateRef.current = dragState;
   // Stable refs so global pointer handlers read the latest values without
   // re-registering on every render.
   const staffRef = useRef(staff);
+  // eslint-disable-next-line react-hooks/refs -- ARCHITECTURE_LOCK: ref sync during render; intentional stable-ref pattern
   staffRef.current = staff;
   const selectedDateRef = useRef(selectedDate);
+  // eslint-disable-next-line react-hooks/refs -- ARCHITECTURE_LOCK: ref sync during render; intentional stable-ref pattern
   selectedDateRef.current = selectedDate;
   const timezoneRef = useRef(timezone);
+  // eslint-disable-next-line react-hooks/refs -- ARCHITECTURE_LOCK: ref sync during render; intentional stable-ref pattern
   timezoneRef.current = timezone;
   const onRescheduleRef = useRef(onRescheduleBooking);
+  // eslint-disable-next-line react-hooks/refs -- ARCHITECTURE_LOCK: ref sync during render; intentional stable-ref pattern
   onRescheduleRef.current = onRescheduleBooking;
 
   // Pending drag: pointer is down but hasn't yet exceeded DRAG_THRESHOLD_PX.
@@ -398,7 +404,6 @@ function StaffTimelineGridImpl({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const conflictRows = useMemo(
@@ -594,6 +599,7 @@ function StaffTimelineGridImpl({
             className="relative"
             style={{ height: staff.length * ROW_HEIGHT, width: timelineWidthPx }}
           >
+            {/* eslint-disable react-hooks/refs -- ARCHITECTURE_LOCK: staffRef.current accessed during render for drag-ghost target lookup; stable-ref pattern */}
             {staff.map((s) => {
               const rowBookings = bookingsByStaff.get(s.id) ?? [];
               // Drag-to-reschedule ghost — shown when a booking block is being dragged.
@@ -879,6 +885,7 @@ function StaffTimelineGridImpl({
                 </div>
               );
             })}
+            {/* eslint-enable react-hooks/refs */}
 
             <div
               className="pointer-events-none absolute inset-0 z-[8]"

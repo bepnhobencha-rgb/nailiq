@@ -65,11 +65,13 @@ export function DashboardModulesSettings({
   // bloat the initial scan of the panel.
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional sync when parent prop changes (server re-fetch) */
   useEffect(() => {
     setModules(initialModules);
     setBaseline(initialModules);
     setError(null);
   }, [initialModules]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const dirty = useMemo(
     () =>

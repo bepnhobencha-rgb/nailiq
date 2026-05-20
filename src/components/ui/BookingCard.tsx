@@ -121,7 +121,8 @@ export function BookingCard({
   const showLatePulse = isLate || status === "late";
   const ariaLabel = `${customerName} - ${serviceName} - ${statusLabels[status]}`;
 
-  const handleClick = (_: ReactMouseEvent<HTMLDivElement>) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- handler receives event but only checks interactivity; event object not needed
+  const handleClick = (_evt: ReactMouseEvent<HTMLDivElement>) => {
     if (interactive) onClick?.();
   };
 

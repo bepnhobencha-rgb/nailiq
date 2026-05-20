@@ -471,7 +471,6 @@ export async function loadDeletedRecordsForSalon(
     return { ok: false, error: "server_error" };
   }
 
-  type Row = { id: string; deleted_at: string | null; label: string };
   const records: DeletedRecord[] = [];
 
   const services = (await admin
@@ -1103,7 +1102,8 @@ export async function updatePlatformSettings(
 
   function resolveField(
     newVal: string | undefined,
-    currentVal: string | null | undefined,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for future masking logic that may need to compare against current value
+    _currentVal: string | null | undefined,
   ): string | null | undefined {
     if (newVal === undefined) return undefined; // not submitted
     const trimmed = newVal.trim();

@@ -29,6 +29,7 @@ export function BookingLanguageToggle({
     // ~1 year expiry; SameSite=Lax is enough for first-party reads
     // on the same origin. Cookie is non-HTTP-only by design so the
     // client tier can read it for SSR hydration consistency.
+    // eslint-disable-next-line react-hooks/immutability -- intentional: writing a cookie is a side-effect in a user event handler, not during render
     document.cookie = `nq-booking-lang=${lang}; Path=/; Max-Age=${60 * 60 * 24 * 365}; SameSite=Lax`;
     startTransition(() => {
       router.refresh();

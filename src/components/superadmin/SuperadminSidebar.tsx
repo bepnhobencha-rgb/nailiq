@@ -38,6 +38,7 @@ export function SuperadminSidebar({ role }: Props) {
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(COLLAPSE_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR hydration: read localStorage once on mount to restore persisted collapse state
       if (stored === "1") setCollapsed(true);
     } catch {
       // localStorage unavailable (private mode / SSR-only env) — ignore.

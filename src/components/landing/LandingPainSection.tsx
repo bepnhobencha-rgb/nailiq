@@ -139,6 +139,7 @@ function StatNumber({ stat, reduce }: { stat: Stat; reduce: boolean }) {
     const duration = 1100;
     const start = performance.now();
     let raf = 0;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset before starting animation RAF loop
     setShown(0);
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / duration);

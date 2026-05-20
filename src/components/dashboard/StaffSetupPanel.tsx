@@ -166,6 +166,7 @@ export function StaffSetupPanel({
       setToast({ variant: "success", message: tLabels.staffSaved });
       refresh();
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tLabels.staffSaved is a message string that doesn't change within a session
     [refresh, slug],
   );
 
@@ -198,6 +199,7 @@ export function StaffSetupPanel({
       setToast({ variant: "success", message: tLabels.staffRemoved });
       refresh();
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tLabels.staffRemoved is a message string that doesn't change within a session
     [refresh, setupErrors, slug],
   );
 
@@ -247,6 +249,7 @@ export function StaffSetupPanel({
     setDraftName("");
     setDraftRole("nail_tech");
     refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setupErrors.staffLimitReached and tLabels.staffSaved are message strings that don't change within a session
   }, [
     clearAddStatusTimer,
     draftName,
@@ -412,8 +415,10 @@ function StaffRowFields({
   row,
   services,
   initialServiceIds,
-  capabilityLabel,
-  capabilityHint,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- reserved for future capability label display; kept in props for API compatibility
+  capabilityLabel: _capabilityLabel,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- reserved for future capability hint display; kept in props for API compatibility
+  capabilityHint: _capabilityHint,
   capabilityEmpty,
   disabled,
   confirmingDelete,

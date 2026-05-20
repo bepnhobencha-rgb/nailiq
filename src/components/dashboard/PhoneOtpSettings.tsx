@@ -27,10 +27,12 @@ export function PhoneOtpSettings({
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional sync when parent prop changes (server re-fetch) */
   useEffect(() => {
     setEnabled(initialValue);
     setError(null);
   }, [initialValue]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const onToggle = (next: boolean) => {
     if (!canEdit || isPending) return;

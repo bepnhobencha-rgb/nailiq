@@ -217,6 +217,7 @@ export function QueueEntryCard({
 
       {/* Hero wait number — the dispatch-board centerpiece. */}
       {showWaitTime ? (() => {
+        // eslint-disable-next-line react-hooks/purity -- ARCHITECTURE_LOCK: Date.now() fallback is intentional; nowIso is preferred but may be absent
         const nowMs = nowIso ? Date.parse(nowIso) : Date.now();
         const holdMs = softHoldUntilIso ? Date.parse(softHoldUntilIso) : NaN;
         const isHeld = Number.isFinite(holdMs) && holdMs > nowMs;

@@ -1,13 +1,11 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useId, useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { createClient } from "@/shared/lib/supabase/client";
-import { resolvePostAuthRedirect } from "@/shared/auth/resolvePostAuthRedirect";
 
 type Mode = "login" | "register";
 
@@ -48,7 +46,6 @@ export function SocialAuthButtons({
   // EN/VI strings on `/register` for VI-locale browsers.
   const { language } = useUserLanguage();
   const t = useMemo(() => getUserMessages(language).auth, [language]);
-  const router = useRouter();
 
   // In "compact" layout the email form starts collapsed; in "open" it's
   // always visible (the "Other options" toggle is suppressed).

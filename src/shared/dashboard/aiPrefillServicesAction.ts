@@ -3,8 +3,6 @@
 import { z } from "zod";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import {
-  canAddService,
-  parseSubscriptionPlan,
   getEffectivePlanLimits,
 } from "@/shared/lib/subscriptionPlans";
 

@@ -100,14 +100,17 @@ export function BrandColorSettings({
   const [isLogoProcessing, setIsLogoProcessing] = useState(false);
   const [isScreenshotProcessing, setIsScreenshotProcessing] = useState(false);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional sync when parent prop changes (server re-fetch) */
   useEffect(() => {
     setColor(safeInitial);
     setHexDraft(safeInitial);
     setSavedColor(safeInitial);
     setError(null);
   }, [safeInitial]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional sync when parent prop changes (server re-fetch)
     setThemeMode(initialThemeMode);
   }, [initialThemeMode]);
 

@@ -139,6 +139,7 @@ export function DashboardSidebar({
   // Auto-close when the user collapses the sidebar — the trigger
   // disappears and the dropdown would become an orphan otherwise.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional derived sync: hide orphaned dropdown when sidebar collapses
     if (collapsed && switcherOpen) setSwitcherOpen(false);
   }, [collapsed, switcherOpen]);
 

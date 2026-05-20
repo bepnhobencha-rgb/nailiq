@@ -50,6 +50,7 @@ export function CustomerWaitLinkModal({
 
   useEffect(() => {
     if (open) closeBtnRef.current?.focus();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ARCHITECTURE_LOCK: reset copy state when modal opens/url changes
     setCopied(false);
   }, [open, url]);
 

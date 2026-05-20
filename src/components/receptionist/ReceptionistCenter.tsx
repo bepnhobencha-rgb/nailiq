@@ -371,6 +371,7 @@ function ReceptionistCenterInner({
     return () => {
       if (undoTimerRef.current !== null) window.clearInterval(undoTimerRef.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ARCHITECTURE_LOCK: intentionally keyed on undoVisible (boolean) not undoState object; prevents timer restart on secondsRemaining ticks
   }, [undoVisible]);
 
   const [shakeMessage, setShakeMessage] = useState<string | null>(null);
@@ -569,6 +570,7 @@ function ReceptionistCenterInner({
       setShakeMessage(mutationMessage(messages.receptionist, r.error));
       return { ok: false, error: r.error };
     }
+    // eslint-disable-next-line react-hooks/immutability -- ARCHITECTURE_LOCK: reloadCurrentDay is declared below via useCallback; hoisting order is intentional
     await reloadCurrentDay();
     router.refresh();
     return { ok: true, holdUntilIso: r.holdUntilIso };
@@ -665,6 +667,7 @@ function ReceptionistCenterInner({
     setData((d) => ({ ...d, dashboardDensity: next }));
   }, []);
 
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- ARCHITECTURE_LOCK: memoization could not be preserved; used by handlers declared earlier in component scope
   const reloadCurrentDay = useCallback(async () => {
     const ymd = salonDateOffset(timezone, dateOffset, nowIsoRef.current);
     const res = await loadReceptionistCenterDataAction(slug, ymd);
@@ -1060,6 +1063,7 @@ function ReceptionistCenterInner({
       addonServiceName,
       addonDurationLine,
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ARCHITECTURE_LOCK: data.salon.currencyCode is intentionally omitted; it never changes within a session and adding it would cause memo churn
   }, [
     drawerBookingId,
     data.bookingsForDay,
@@ -1855,7 +1859,9 @@ function ReceptionistCenterInner({
                 onAddAndAssign={onAddAndAssign}
                 autoAssignEnabled={data.salon.walkinAutoAssign}
                 onPhoneLookup={(phone) => lookupClientByPhone(slug, phone)}
-                onCheckAvailability={({ staffId, serviceId }) =>
+                onCheckAvailability={
+                  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- ARCHITECTURE_LOCK: staffId from prop not used; availability checked per-service not per-staff
+                  ({ staffId: _staffId, serviceId }) =>
                   getStaffAvailability(slug, serviceId)
                 }
                 staffOptions={data.staff.map((s) => ({

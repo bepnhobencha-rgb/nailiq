@@ -76,6 +76,7 @@ export function Modal({
   }, [onClose]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR portal: document.body unavailable on server; must set after hydration
     setContainer(document.body);
   }, []);
 

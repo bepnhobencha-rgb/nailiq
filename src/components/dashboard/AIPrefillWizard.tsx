@@ -11,7 +11,6 @@ import {
   type ExtractedService,
 } from "@/shared/dashboard/aiPrefillServicesAction";
 import { getUserMessages } from "@/shared/i18n/user";
-import type { UserLanguage } from "@/shared/i18n/user/types";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 type Step = "pick" | "loading" | "review";

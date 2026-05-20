@@ -8,7 +8,7 @@ import { loadReceptionistCenterDataAction } from "@/shared/dashboard/loadRecepti
 import type { ReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
 import type { ReceptionistMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
-import { formatInSalonTz, salonToday } from "@/shared/lib/salonTime";
+import { formatInSalonTz } from "@/shared/lib/salonTime";
 
 /**
  * 7-column read-only week-overview grid for the Receptionist Center.
@@ -113,6 +113,7 @@ export function WeekView({
 
   useEffect(() => {
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ARCHITECTURE_LOCK: optimistic loading state before async fetch
     setDays(
       Object.fromEntries(ymds.map((y) => [y, { kind: "loading" } as DayState])),
     );

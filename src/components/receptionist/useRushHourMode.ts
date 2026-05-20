@@ -61,6 +61,7 @@ export function useRushHourMode(signals: RushHourSignals): RushHourState {
       signals.queueLength < RUSH_QUEUE_EXIT &&
       signals.overloadedStaffCount === 0;
     if (calm && dismissed) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- ARCHITECTURE_LOCK: auto-reset dismissed state when rush subsides
       setDismissed(false);
     }
   }, [signals.queueLength, signals.overloadedStaffCount, dismissed]);

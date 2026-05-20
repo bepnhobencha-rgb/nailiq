@@ -231,6 +231,7 @@ export function ServicesSetupPanel({
       );
       refresh();
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- formLabels and tLabels.serviceSaved are message strings that don't change within a session
     [formLabels.descriptionGeneratedToast, refresh, slug],
   );
 
@@ -266,6 +267,7 @@ export function ServicesSetupPanel({
       setToast({ variant: "success", message: tLabels.serviceRemoved });
       refresh();
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tLabels.serviceRemoved is a message string that doesn't change within a session
     [refresh, setupErrors, slug],
   );
 
@@ -375,7 +377,7 @@ export function ServicesSetupPanel({
     refresh,
     setupErrors.serviceLimitReached,
     slug,
-  ]);
+  ]); // eslint-disable-line react-hooks/exhaustive-deps -- formLabels.descriptionGeneratedToast and tLabels.serviceSaved are message strings that don't change within a session
 
   return (
     <div className="flex flex-col gap-4">

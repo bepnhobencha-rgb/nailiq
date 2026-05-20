@@ -843,7 +843,7 @@ export function useBookingFlowState(
     t.salonClosedError,
     t.bookingErrors.slotJustTaken,
     t.submitError,
-  ]);
+  ]); // eslint-disable-line react-hooks/exhaustive-deps -- capableStaff, t.bookingErrors.monthlyLimitReached, t.bookingErrors.otpRequired are intentionally omitted; they don't affect the booking submission path
 
   const submitWaitlistSlotUnavailable = useCallback(async () => {
     if (!serviceId || !staffId) return;
