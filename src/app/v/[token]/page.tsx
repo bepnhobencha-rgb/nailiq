@@ -57,7 +57,7 @@ export default async function PhotoViewPage({ params }: Props) {
       bookings (
         client_name,
         start_time_utc,
-        services ( name ),
+        services!bookings_service_id_fkey ( name ),
         staff ( name ),
         salon_id
       )
