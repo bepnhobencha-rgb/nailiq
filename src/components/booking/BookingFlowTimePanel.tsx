@@ -17,6 +17,7 @@ export function BookingFlowTimePanel({
   timeSlots,
   timeSlot,
   slotsLoading,
+  popularSlotLabels = [],
   timezoneAbbr,
   stepDir,
   reducedMotion,
@@ -41,6 +42,7 @@ export function BookingFlowTimePanel({
   timeSlots: readonly TimeSlot[];
   timeSlot: string | null;
   slotsLoading: boolean;
+  popularSlotLabels?: string[];
   /** Short tz token, e.g. "PDT" or "GMT+7". Empty string hides the label. */
   timezoneAbbr: string;
   stepDir: BookingMotionDir;
@@ -207,6 +209,7 @@ export function BookingFlowTimePanel({
             {timeSlots.map((slot) => {
               const selected = timeSlot === slot.label;
               const disabled = !slot.available;
+              const popular = !disabled && popularSlotLabels.includes(slot.label);
               return (
                 <motion.button
                   key={slot.label}
@@ -222,14 +225,18 @@ export function BookingFlowTimePanel({
                   aria-pressed={selected}
                   aria-disabled={disabled}
                   aria-label={
-                    disabled ? `${slot.label} (not available)` : slot.label
+                    disabled
+                      ? `${slot.label} (not available)`
+                      : popular
+                        ? `${slot.label} (popular)`
+                        : slot.label
                   }
                   disabled={disabled}
                   onClick={() => {
                     if (!disabled) onSelectSlot(slot.label);
                   }}
                   className={cn(
-                    "nq-booking-glass min-h-11 rounded-2xl px-3 py-3 text-center text-sm font-medium tracking-tight sm:min-h-[3rem] sm:text-[15px]",
+                    "nq-booking-glass relative min-h-11 rounded-2xl px-3 py-3 text-center text-sm font-medium tracking-tight sm:min-h-[3rem] sm:text-[15px]",
                     !selected && !disabled && "nq-booking-tile-interactive",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--booking-bg)]",
                     selected
@@ -239,6 +246,11 @@ export function BookingFlowTimePanel({
                         : "border border-[var(--booking-border)] text-[var(--booking-text)] hover:border-[var(--booking-border)]",
                   )}
                 >
+                  {popular && !selected && (
+                    <span className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full bg-[var(--salon-primary)] px-1.5 py-px text-[10px] font-semibold leading-tight text-[var(--booking-bg)] whitespace-nowrap">
+                      {t.popularBadge}
+                    </span>
+                  )}
                   {slot.label}
                 </motion.button>
               );

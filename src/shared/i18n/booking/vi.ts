@@ -277,4 +277,13 @@ export const bookingVi: BookingMessages = {
     groupTomorrow: "Ngày mai",
     groupNoAlternatives: "Không tìm được lịch. Vui lòng thử ngày khác.",
   },
+  chat: {
+    trigger: "Hỏi AI",
+    heading: "Trợ lý AI",
+    placeholder: "Hỏi về dịch vụ, giờ mở cửa, giá…",
+    send: "Gửi",
+    typingIndicator: "Đang xử lý…",
+    errorFallback: "Xin lỗi, không kết nối được. Vui lòng thử lại.",
+    disclaimer: "Trợ lý AI — để đặt lịch, dùng form bên trên.",
+  },
 };

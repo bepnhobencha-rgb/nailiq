@@ -16,6 +16,7 @@ import {
 import { formatSalonDisplayName } from "@/shared/lib/salonDisplay";
 import { BookingDocumentEn } from "./BookingDocumentEn";
 import { BookingLanguageToggle } from "@/components/booking/BookingLanguageToggle";
+import { BookingChatWidget } from "@/components/booking/BookingChatWidget";
 
 /** Avoid stale static segments for salons created after deploy. */
 export const dynamic = "force-dynamic";
@@ -242,6 +243,11 @@ async function PublicBookingRouteBody({
             </BookingFlowErrorBoundary>
           </div>
         </main>
+
+        {/* P1.4 — AI chat widget; only renders when ANTHROPIC_API_KEY is set */}
+        {process.env.ANTHROPIC_API_KEY ? (
+          <BookingChatWidget salonId={load.salon.id} t={t} />
+        ) : null}
       </div>
     </>
   );

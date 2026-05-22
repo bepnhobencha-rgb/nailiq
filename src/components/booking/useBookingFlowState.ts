@@ -98,6 +98,7 @@ export function useBookingFlowState(
   const [timeSlot, setTimeSlot] = useState<string | null>(null);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
+  const [popularSlotLabels, setPopularSlotLabels] = useState<string[]>([]);
 
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
@@ -292,6 +293,24 @@ export function useBookingFlowState(
     serviceId,
     service,
   ]);
+
+  useEffect(() => {
+    if (step !== "time" || !serviceId) return;
+    let cancelled = false;
+    void fetch(
+      `/api/booking/slot-ranking?salon_id=${encodeURIComponent(salon.id)}&service_id=${encodeURIComponent(serviceId)}`,
+    )
+      .then((r) => r.json() as Promise<{ popularLabels?: string[] }>)
+      .then((json) => {
+        if (!cancelled) setPopularSlotLabels(json.popularLabels ?? []);
+      })
+      .catch(() => {
+        /* non-critical — silently ignore */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [step, salon.id, serviceId]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset when key inputs change
@@ -1019,6 +1038,7 @@ export function useBookingFlowState(
     timeSlot,
     timeSlots,
     slotsLoading,
+    popularSlotLabels,
     clientName,
     clientPhone,
     clientEmail,

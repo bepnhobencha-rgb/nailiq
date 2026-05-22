@@ -416,6 +416,15 @@ export const bookingEn = {
     groupNoAlternatives:
       "No available slots found. Please try another date.",
   },
+  chat: {
+    trigger: "Ask AI",
+    heading: "AI Assistant",
+    placeholder: "Ask about services, hours, pricing…",
+    send: "Send",
+    typingIndicator: "Thinking…",
+    errorFallback: "Sorry, I couldn't connect. Please try again.",
+    disclaimer: "AI assistant — for bookings, use the form above.",
+  },
 };
 
 // P0.1 — keep the literal-type info for callers that want
