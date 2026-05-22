@@ -469,6 +469,7 @@ export const userVi: UserMessages = {
     staff: "Nhân viên",
     walkinQueue: "Hàng chờ",
     noShowProtection: "Chống No-Show",
+    photos: "Ảnh",
     reviews: "Đánh giá",
     messages: "Tin nhắn",
     reports: "Báo cáo",

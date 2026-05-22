@@ -324,6 +324,7 @@ export type UserMessages = {
     staff: string;
     walkinQueue: string;
     noShowProtection: string;
+    photos: string;
     reviews: string;
     messages: string;
     reports: string;
@@ -1901,6 +1902,7 @@ export const userEn: UserMessages = {
     staff: "Staff",
     walkinQueue: "Walk-in Queue",
     noShowProtection: "No-Show Protection",
+    photos: "Photos",
     reviews: "Reviews",
     messages: "Messages",
     reports: "Reports",

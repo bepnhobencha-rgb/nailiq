@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Calendar,
+  Camera,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -240,6 +241,14 @@ export function DashboardSidebar({
             hidden: subscriptionPlan === "free",
           },
           {
+            key: "photos",
+            label: t.photos,
+            href: `${dashRoot}/photos`,
+            icon: Camera,
+            match: (p) => p.startsWith(`${dashRoot}/photos`),
+            hidden: subscriptionPlan === "free",
+          },
+          {
             key: "no-show-protection",
             label: t.noShowProtection,
             href: `${dashRoot}/no-show-protection`,
@@ -292,6 +301,7 @@ export function DashboardSidebar({
       t.messagesSoonBadge,
       t.noShowProtection,
       t.reports,
+      t.photos,
       t.reviews,
       t.services,
       t.settings,
