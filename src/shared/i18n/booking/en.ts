@@ -80,7 +80,27 @@ export const bookingEn = {
   summaryAddOn: "Add-on",
   summaryServicePrice: "Service price",
   summaryAddonPrice: "Add-on price",
+  summaryDiscount: "Discount",
   summaryTotal: "Total",
+  voucherLabel: "Promo code",
+  voucherPlaceholder: "Enter code",
+  voucherApply: "Apply",
+  voucherRemove: "Remove",
+  /** `{code}` replaced at runtime. */
+  voucherApplied: "Code {code} applied!",
+  voucherErrors: {
+    invalid: "This code is not valid.",
+    exhausted: "This code has already been used.",
+    notYours: "This code is not linked to your phone number.",
+    belowMinSpend: "Minimum spend of {amount} required.",
+    generic: "Could not apply code. Please try again.",
+  },
+  /** Optional reference image upload on the Info step. */
+  refImageLabel: "Inspiration image (optional)",
+  refImageHelp: "Upload a photo of nails you'd like as a reference",
+  refImageUploading: "Uploading…",
+  refImageDone: "Image uploaded",
+  refImageRemove: "Remove",
   /** Structured booking error copy for confirm step / retries. Public booking stays English-only. */
   bookingErrors: {
     slotJustTaken:

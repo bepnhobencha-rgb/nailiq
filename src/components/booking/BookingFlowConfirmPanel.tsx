@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "@/shared/lib/motionClient";
 import { Button } from "@/components/ui/Button";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
@@ -16,6 +17,13 @@ import {
   type BookingMotionDir,
 } from "@/components/booking/bookingMotion";
 import { cn } from "@/shared/lib/cn";
+
+export type AppliedVoucher = {
+  voucher_id: string;
+  code: string;
+  discount_cents: number;
+  final_price_cents: number;
+};
 
 export function BookingFlowConfirmPanel({
   t,
@@ -35,9 +43,13 @@ export function BookingFlowConfirmPanel({
   reducedMotion,
   stepTransition,
   currency,
+  salonId,
+  appliedVoucher,
   onSelectAddonId,
   onBack,
   onConfirm,
+  onApplyVoucher,
+  onRemoveVoucher,
 }: {
   t: BookingMessages;
   shopLabel: string;
@@ -53,6 +65,11 @@ export function BookingFlowConfirmPanel({
   error: string | null;
   submitting: boolean;
   stepDir: BookingMotionDir;
+  /** Salon UUID — needed to call /api/vouchers/validate. */
+  salonId: string;
+  appliedVoucher: AppliedVoucher | null;
+  onApplyVoucher: (code: string, totalCents: number) => Promise<{ error?: string }>;
+  onRemoveVoucher: () => void;
   reducedMotion: boolean;
   stepTransition: { duration: number; ease: [number, number, number, number] };
   /** Salon's display currency. Drives the receipt total formatting. */
@@ -61,6 +78,10 @@ export function BookingFlowConfirmPanel({
   onBack: () => void;
   onConfirm: () => void | Promise<void>;
 }) {
+  const [voucherInput, setVoucherInput] = useState("");
+  const [voucherError, setVoucherError] = useState<string | null>(null);
+  const [voucherLoading, setVoucherLoading] = useState(false);
+
   const customerRows = [
     { label: t.summaryClientName, value: clientName.trim() || "—" },
     { label: t.summaryClientPhone, value: clientPhone.trim() || "—" },
@@ -74,8 +95,12 @@ export function BookingFlowConfirmPanel({
       ? upsellCandidates.find((s) => s.id === selectedAddonId)
       : undefined;
 
-  const totalCents =
+  const baseTotalCents =
     (service.priceCents ?? 0) + (selectedAddOn?.priceCents ?? 0);
+
+  const totalCents = appliedVoucher
+    ? appliedVoucher.final_price_cents
+    : baseTotalCents;
 
   const totalMinutes =
     (service.totalMinutes || 0) + (selectedAddOn?.totalMinutes ?? 0);
@@ -100,6 +125,21 @@ export function BookingFlowConfirmPanel({
       })()
     : null;
 
+  async function handleApply() {
+    const code = voucherInput.trim().toUpperCase();
+    if (!code) return;
+    setVoucherError(null);
+    setVoucherLoading(true);
+    const result = await onApplyVoucher(code, baseTotalCents);
+    setVoucherLoading(false);
+    if (result.error) {
+      const errors = t.voucherErrors as Record<string, string>;
+      setVoucherError(errors[result.error] ?? errors.generic ?? result.error);
+    } else {
+      setVoucherInput("");
+    }
+  }
+
   const pricingLines = [
     {
       label: t.summaryServicePrice,
@@ -109,6 +149,14 @@ export function BookingFlowConfirmPanel({
         "—",
     },
     ...(addonRow ? [addonRow] : []),
+    ...(appliedVoucher
+      ? [
+          {
+            label: `${t.summaryDiscount} (${appliedVoucher.code})`,
+            value: `–${formatBookingPriceReceipt(appliedVoucher.discount_cents, currency)}`,
+          },
+        ]
+      : []),
     {
       label: t.summaryTotal,
       value: formatBookingPriceReceipt(totalCents, currency),
@@ -149,6 +197,48 @@ export function BookingFlowConfirmPanel({
             pricingLines={pricingLines}
             customerRows={customerRows}
           />
+        </div>
+
+        {/* Voucher code input */}
+        <div className="mt-5 shrink-0">
+          {appliedVoucher ? (
+            <div className="flex items-center justify-between rounded-xl border border-[var(--salon-primary)]/40 bg-[color-mix(in_srgb,var(--salon-primary)_10%,transparent)] px-4 py-3">
+              <p className="text-sm font-medium text-[var(--booking-text)]">
+                {(t.voucherApplied as string).replace("{code}", appliedVoucher.code)}
+              </p>
+              <button
+                type="button"
+                onClick={() => { onRemoveVoucher(); setVoucherError(null); }}
+                className="ml-3 shrink-0 text-xs text-[var(--booking-text-muted)] underline underline-offset-2"
+              >
+                {t.voucherRemove}
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={voucherInput}
+                onChange={(e) => { setVoucherInput(e.target.value.toUpperCase()); setVoucherError(null); }}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleApply(); } }}
+                placeholder={t.voucherPlaceholder}
+                maxLength={32}
+                className="nq-booking-glass h-12 min-w-0 flex-1 rounded-xl border border-[var(--booking-border)] bg-[var(--booking-bg-input)] px-3 text-sm text-[var(--booking-text)] placeholder:text-[var(--booking-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--salon-primary)]/40"
+                aria-label={t.voucherLabel}
+              />
+              <button
+                type="button"
+                disabled={!voucherInput.trim() || voucherLoading}
+                onClick={() => void handleApply()}
+                className="h-12 shrink-0 rounded-xl border border-[var(--booking-border)] bg-[var(--booking-bg-input)] px-4 text-sm font-medium text-[var(--booking-text)] transition-colors hover:bg-[var(--booking-bg-input)] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {voucherLoading ? "…" : t.voucherApply}
+              </button>
+            </div>
+          )}
+          {voucherError && (
+            <p className="mt-1.5 text-xs text-nq-error" role="alert">{voucherError}</p>
+          )}
         </div>
 
         {upsellCandidates.length > 0 ? (() => {

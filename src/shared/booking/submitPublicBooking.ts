@@ -41,6 +41,10 @@ export type BookingParams = {
    *  with a fake-success when it's non-empty so no row is written
    *  and the bot doesn't learn it was detected. */
   clientWebsite?: string;
+  /** Voucher to redeem after booking is confirmed (fire-and-forget). */
+  voucherRedemption?: { voucher_id: string; discount_cents: number } | null;
+  /** Reference inspiration image path in Supabase Storage (fire-and-forget). */
+  referenceImagePath?: string | null;
 };
 
 export type BookingResult = {
@@ -744,6 +748,67 @@ export async function submitPublicBooking(
     } catch (e) {
       console.error("[submitPublicBooking] booking-email dispatch failed", e);
     }
+  }
+
+  // Fire-and-forget: redeem voucher
+  if (params.voucherRedemption?.voucher_id && bookingId) {
+    void (async () => {
+      try {
+        const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+        await fetch(`${appUrl}/api/vouchers/redeem`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            voucher_id: params.voucherRedemption!.voucher_id,
+            salon_id: String(salon.id),
+            client_phone: phoneOk.digits,
+            booking_id: bookingId,
+            original_price_cents: totalPriceCents + (params.voucherRedemption!.discount_cents ?? 0),
+            discount_cents: params.voucherRedemption!.discount_cents,
+          }),
+        });
+      } catch (e) {
+        console.error("[submitPublicBooking] voucher redeem dispatch failed", e);
+      }
+    })();
+  }
+
+  // Fire-and-forget: SMS confirmation
+  void (async () => {
+    try {
+      const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+      await fetch(`${appUrl}/api/booking/sms-confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookingId,
+          salonId: String(salon.id),
+          clientPhone: phoneOk.digits,
+          clientName: nameTrimmed,
+          serviceName: service.name as string,
+          staffName: resolvedStaffName,
+          startTimeUtc: startLocal.toISOString(),
+        }),
+      });
+    } catch (e) {
+      console.error("[submitPublicBooking] sms-confirm dispatch failed", e);
+    }
+  })();
+
+  // Fire-and-forget: store reference image path on booking
+  if (params.referenceImagePath && bookingId) {
+    void (async () => {
+      try {
+        const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+        await fetch(`${appUrl}/api/booking/set-ref-image`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bookingId, refPath: params.referenceImagePath }),
+        });
+      } catch (e) {
+        console.error("[submitPublicBooking] set-ref-image dispatch failed", e);
+      }
+    })();
   }
 
   return {

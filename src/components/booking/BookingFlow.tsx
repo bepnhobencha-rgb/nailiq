@@ -203,6 +203,9 @@ export function BookingFlow({
             clientEmail={flow.clientEmail}
             clientNotes={flow.clientNotes}
             clientWebsite={flow.clientWebsite}
+            salonId={salon.id}
+            referenceImagePath={flow.referenceImagePath}
+            referenceImagePreview={flow.referenceImagePreview}
             error={flow.error}
             nameError={flow.infoNameError}
             phoneError={flow.infoPhoneError}
@@ -215,6 +218,7 @@ export function BookingFlow({
             onClientEmailChange={flow.setClientEmail}
             onClientNotesChange={flow.setClientNotes}
             onClientWebsiteChange={flow.setClientWebsite}
+            onReferenceImageChange={flow.setReferenceImage}
             onClientNameBlur={flow.handleInfoNameBlur}
             onClientPhoneBlur={flow.handleInfoPhoneBlur}
             onClientEmailBlur={flow.handleInfoEmailBlur}
@@ -260,9 +264,13 @@ export function BookingFlow({
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}
             currency={salon.currencyCode}
+            salonId={salon.id}
+            appliedVoucher={flow.appliedVoucher}
             onSelectAddonId={flow.setSelectedAddonId}
             onBack={flow.backToInfo}
             onConfirm={() => void flow.onConfirm()}
+            onApplyVoucher={flow.handleApplyVoucher}
+            onRemoveVoucher={flow.handleRemoveVoucher}
           />
         ) : null}
       </AnimatePresence>

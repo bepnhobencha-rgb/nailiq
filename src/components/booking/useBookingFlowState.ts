@@ -118,6 +118,17 @@ export function useBookingFlowState(
   const [upsellGapMinutes, setUpsellGapMinutes] = useState<number>(0);
 
   const [otpSessionId, setOtpSessionId] = useState<string | null>(null);
+
+  type AppliedVoucher = {
+    voucher_id: string;
+    code: string;
+    discount_cents: number;
+    final_price_cents: number;
+  };
+  const [appliedVoucher, setAppliedVoucher] = useState<AppliedVoucher | null>(null);
+  const [referenceImagePath, setReferenceImagePath] = useState<string | null>(null);
+  const [referenceImagePreview, setReferenceImagePreview] = useState<string | null>(null);
+
   const [submitting, setSubmitting] = useState(false);
   const [waitlistSubmitting, setWaitlistSubmitting] = useState(false);
   const [waitlistSlotJoined, setWaitlistSlotJoined] = useState(false);
@@ -706,6 +717,10 @@ export function useBookingFlowState(
         // a non-empty value triggers a silent fake-success on the
         // server so the bot doesn't learn it was detected.
         clientWebsite,
+        voucherRedemption: appliedVoucher
+          ? { voucher_id: appliedVoucher.voucher_id, discount_cents: appliedVoucher.discount_cents }
+          : undefined,
+        referenceImagePath: referenceImagePath ?? undefined,
       });
       setBookingResult({
         bookingId: result.bookingId,
@@ -952,6 +967,48 @@ export function useBookingFlowState(
     setInfoPhoneError(null);
   }, [phoneOtpEnabled]);
 
+  async function handleApplyVoucher(
+    code: string,
+    totalCents: number,
+  ): Promise<{ error?: string }> {
+    try {
+      const res = await fetch("/api/vouchers/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          salon_id: salon.id,
+          code,
+          client_phone: clientPhone,
+          price_cents: totalCents,
+        }),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        error?: string;
+        voucher_id?: string;
+        code?: string;
+        discount_cents?: number;
+        final_price_cents?: number;
+      };
+      if (!data.ok || !data.voucher_id) {
+        return { error: data.error ?? "generic" };
+      }
+      setAppliedVoucher({
+        voucher_id: data.voucher_id,
+        code: data.code ?? code,
+        discount_cents: data.discount_cents ?? 0,
+        final_price_cents: data.final_price_cents ?? totalCents,
+      });
+      return {};
+    } catch {
+      return { error: "generic" };
+    }
+  }
+
+  function handleRemoveVoucher() {
+    setAppliedVoucher(null);
+  }
+
   return {
     shopLabel,
     step,
@@ -999,6 +1056,15 @@ export function useBookingFlowState(
     setSelectedAddonId,
     setError,
     otpSessionId,
+    appliedVoucher,
+    handleApplyVoucher,
+    handleRemoveVoucher,
+    referenceImagePath,
+    referenceImagePreview,
+    setReferenceImage: (path: string | null, preview: string | null) => {
+      setReferenceImagePath(path);
+      setReferenceImagePreview(preview);
+    },
     goServiceNext,
     goStaffNext,
     goDateNext,

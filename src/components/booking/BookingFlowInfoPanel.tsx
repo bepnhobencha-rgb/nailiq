@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "@/shared/lib/motionClient";
 import { Button } from "@/components/ui/Button";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
@@ -20,6 +20,9 @@ export function BookingFlowInfoPanel({
   clientEmail,
   clientNotes,
   clientWebsite,
+  salonId,
+  referenceImagePath,
+  referenceImagePreview,
   error,
   nameError,
   phoneError,
@@ -32,6 +35,7 @@ export function BookingFlowInfoPanel({
   onClientEmailChange,
   onClientNotesChange,
   onClientWebsiteChange,
+  onReferenceImageChange,
   onClientNameBlur,
   onClientPhoneBlur,
   onClientEmailBlur,
@@ -47,6 +51,12 @@ export function BookingFlowInfoPanel({
    *  every input in the form will populate this; `submitPublicBooking`
    *  short-circuits with a silent fake-success when it's non-empty. */
   clientWebsite: string;
+  /** Salon UUID — used for ref-upload path. */
+  salonId: string;
+  /** Storage path returned after successful upload. */
+  referenceImagePath: string | null;
+  /** Local object URL for preview before upload. */
+  referenceImagePreview: string | null;
   error: string | null;
   nameError: string | null;
   phoneError: string | null;
@@ -59,6 +69,8 @@ export function BookingFlowInfoPanel({
   onClientEmailChange: (v: string) => void;
   onClientNotesChange: (v: string) => void;
   onClientWebsiteChange: (v: string) => void;
+  /** Called with the uploaded ref_path (or null to remove). */
+  onReferenceImageChange: (refPath: string | null, preview: string | null) => void;
   onClientNameBlur: () => void;
   onClientPhoneBlur: () => void;
   onClientEmailBlur: () => void;
@@ -68,6 +80,9 @@ export function BookingFlowInfoPanel({
   const nameRef = useRef<HTMLInputElement | null>(null);
   const phoneRef = useRef<HTMLInputElement | null>(null);
   const emailRef = useRef<HTMLInputElement | null>(null);
+  const refFileRef = useRef<HTMLInputElement | null>(null);
+  const [refUploading, setRefUploading] = useState(false);
+  const [refError, setRefError] = useState<string | null>(null);
 
   // B1 (QA 2026-05-13) — local phone validity gate. The parent runs
   // `validateGuestPhone` on blur and sets `phoneError`, but a user
@@ -96,6 +111,40 @@ export function BookingFlowInfoPanel({
       target.scrollIntoView({ block: "center", behavior: "smooth" });
     }
   }, [nameError, phoneError, emailError]);
+
+  async function handleRefFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setRefError(null);
+    setRefUploading(true);
+    const preview = URL.createObjectURL(file);
+    const form = new FormData();
+    form.append("file", file);
+    form.append("salon_id", salonId);
+    try {
+      const res = await fetch("/api/booking/ref-upload", { method: "POST", body: form });
+      const data = (await res.json()) as { ref_path?: string; error?: string };
+      if (!res.ok || !data.ref_path) {
+        setRefError(data.error ?? "upload_failed");
+        URL.revokeObjectURL(preview);
+      } else {
+        onReferenceImageChange(data.ref_path, preview);
+      }
+    } catch {
+      setRefError("upload_failed");
+      URL.revokeObjectURL(preview);
+    } finally {
+      setRefUploading(false);
+      if (refFileRef.current) refFileRef.current.value = "";
+    }
+  }
+
+  function handleRemoveRef() {
+    if (referenceImagePreview) URL.revokeObjectURL(referenceImagePreview);
+    onReferenceImageChange(null, null);
+    setRefError(null);
+  }
+
   return (
     <motion.section
       key="info"
@@ -249,6 +298,47 @@ export function BookingFlowInfoPanel({
             className="nq-booking-field min-h-[5.5rem] resize-y py-3"
           />
         </div>
+
+        {/* Reference / inspiration image — optional */}
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-medium text-[var(--booking-text)]">
+            {t.refImageLabel}
+          </p>
+          <p className="text-xs text-[var(--booking-text-muted)]">{t.refImageHelp}</p>
+          {referenceImagePath && referenceImagePreview ? (
+            <div className="relative w-32 h-32 rounded-xl overflow-hidden border border-[var(--booking-border)]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={referenceImagePreview} alt="Reference" className="h-full w-full object-cover" />
+              <button
+                type="button"
+                onClick={handleRemoveRef}
+                className="absolute top-1 right-1 rounded-full bg-black/60 px-2 py-0.5 text-[10px] text-white"
+              >
+                {t.refImageRemove}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={refUploading}
+              onClick={() => refFileRef.current?.click()}
+              className="flex h-20 w-32 items-center justify-center rounded-xl border-2 border-dashed border-[var(--booking-border)] text-xs text-[var(--booking-text-muted)] disabled:opacity-50"
+            >
+              {refUploading ? t.refImageUploading : "📎 Upload"}
+            </button>
+          )}
+          <input
+            ref={refFileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => void handleRefFileChange(e)}
+          />
+          {refError && (
+            <p className="text-xs text-nq-error">{refError === "file_too_large" ? "Max 5 MB" : "Upload failed. Please try again."}</p>
+          )}
+        </div>
+
         {/*
          * Task #09-11 — honeypot. Hidden three ways (off-screen, no
          * display, tabIndex -1, aria-hidden) so screen readers and
