@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@/components/ui/Button";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
@@ -267,10 +268,22 @@ export function BookingFlowDonePanel({
             </span>
           </div>
         </div>
-        <p className="mt-5 border-t border-[var(--booking-border)] pt-4 text-sm text-[var(--booking-text-muted)]">
-          <span className="text-[var(--booking-text-muted)]">{t.bookingReferenceLabel}: </span>
-          <span className="font-mono text-[var(--salon-primary)]">{refLabel}</span>
-        </p>
+        <div className="mt-5 flex items-center justify-between gap-4 border-t border-[var(--booking-border)] pt-4">
+          <p className="text-sm text-[var(--booking-text-muted)]">
+            <span>{t.bookingReferenceLabel}: </span>
+            <span className="font-mono text-[var(--salon-primary)]">{refLabel}</span>
+          </p>
+          {/* QR encodes booking reference for front-desk scan */}
+          <div className="shrink-0 rounded-lg bg-white p-1.5">
+            <QRCodeSVG
+              value={refLabel}
+              size={56}
+              bgColor="#ffffff"
+              fgColor="#0b0c10"
+              level="M"
+            />
+          </div>
+        </div>
       </div>
 
       {shareHint || calendarHint ? (
