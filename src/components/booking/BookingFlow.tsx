@@ -2,7 +2,7 @@
 
 import { AnimatePresence, useReducedMotion } from "@/shared/lib/motionClient";
 import { useMemo } from "react";
-import type { BookingServiceItem } from "@/shared/booking/catalog";
+import type { BookingComboItem, BookingServiceItem } from "@/shared/booking/catalog";
 import type { ServiceCategorySummary } from "@/shared/booking/loadServiceCategories";
 import type {
   BookingSalonMeta,
@@ -32,6 +32,7 @@ type BookingFlowProps = {
   t: BookingMessages;
   shopSlug: string;
   services: readonly BookingServiceItem[];
+  combos: readonly BookingComboItem[];
   staff: readonly BookingStaffItem[];
   salon: BookingSalonMeta;
   capabilityRows: { staff_id: string; service_id: string }[] | null;
@@ -42,6 +43,7 @@ export function BookingFlow({
   t,
   shopSlug,
   services,
+  combos,
   staff,
   salon,
   capabilityRows,
@@ -52,6 +54,7 @@ export function BookingFlow({
     t,
     shopSlug,
     services,
+    combos,
     staff,
     salon,
     capabilityRows,
@@ -128,6 +131,7 @@ export function BookingFlow({
           <BookingFlowServicePanel
             t={t}
             services={services}
+            combos={combos}
             serviceId={flow.serviceId}
             error={flow.serviceError}
             stepDir={flow.stepDir}
@@ -135,6 +139,8 @@ export function BookingFlow({
             stepTransition={stepTransition}
             categories={categories}
             onSelectService={flow.setServiceId}
+            onSelectCombo={flow.setSelectedCombo}
+            selectedComboId={flow.selectedComboId}
             onNext={flow.goServiceNext}
           />
         ) : null}

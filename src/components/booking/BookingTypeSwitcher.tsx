@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import type { BookingServiceItem } from "@/shared/booking/catalog";
+import type { BookingComboItem, BookingServiceItem } from "@/shared/booking/catalog";
 import type { ServiceCategorySummary } from "@/shared/booking/loadServiceCategories";
 import type {
   BookingSalonMeta,
@@ -36,6 +36,7 @@ export function BookingTypeSwitcher({
   t,
   shopSlug,
   services,
+  combos,
   staff,
   salon,
   capabilityRows,
@@ -44,6 +45,7 @@ export function BookingTypeSwitcher({
   t: BookingMessages;
   shopSlug: string;
   services: readonly BookingServiceItem[];
+  combos: readonly BookingComboItem[];
   staff: readonly BookingStaffItem[];
   salon: BookingSalonMeta;
   capabilityRows: { staff_id: string; service_id: string }[] | null;
@@ -96,6 +98,7 @@ export function BookingTypeSwitcher({
         t={t}
         shopSlug={shopSlug}
         services={services}
+        combos={combos}
         staff={staff}
         salon={salon}
         capabilityRows={capabilityRows}
@@ -154,6 +157,7 @@ export function BookingTypeSwitcher({
           t={t}
           shopSlug={shopSlug}
           services={services}
+          combos={combos}
           staff={staff}
           salon={salon}
           capabilityRows={capabilityRows}

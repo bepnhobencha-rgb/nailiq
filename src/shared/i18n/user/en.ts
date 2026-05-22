@@ -325,6 +325,7 @@ export type UserMessages = {
     walkinQueue: string;
     noShowProtection: string;
     photos: string;
+    combos: string;
     reviews: string;
     messages: string;
     reports: string;
@@ -1903,6 +1904,7 @@ export const userEn: UserMessages = {
     walkinQueue: "Walk-in Queue",
     noShowProtection: "No-Show Protection",
     photos: "Photos",
+    combos: "Bundles",
     reviews: "Reviews",
     messages: "Messages",
     reports: "Reports",

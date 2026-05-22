@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getServiceById,
+  type BookingComboItem,
   type BookingServiceItem,
 } from "@/shared/booking/catalog";
 import {
@@ -69,6 +70,7 @@ export function useBookingFlowState(
   t: BookingMessages,
   shopSlug: string,
   services: readonly BookingServiceItem[],
+  combos: readonly BookingComboItem[],
   staff: readonly BookingStaffItem[],
   salon: BookingSalonMeta,
   capabilityRows: { staff_id: string; service_id: string }[] | null,
@@ -99,6 +101,7 @@ export function useBookingFlowState(
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [popularSlotLabels, setPopularSlotLabels] = useState<string[]>([]);
+  const [selectedCombo, setSelectedComboState] = useState<BookingComboItem | null>(null);
 
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
@@ -150,7 +153,19 @@ export function useBookingFlowState(
 
   const confettiFiredRef = useRef(false);
 
-  const service = serviceId ? getServiceById(services, serviceId) : undefined;
+  const baseService = serviceId ? getServiceById(services, serviceId) : undefined;
+  // When a combo is selected, override the base service's duration and price
+  // so slot blocking and pricing reflect the combo, not just the first component.
+  const service = baseService && selectedCombo
+    ? {
+        ...baseService,
+        totalMinutes: selectedCombo.durationMinutes,
+        durationMinutes: selectedCombo.durationMinutes,
+        priceCents: selectedCombo.priceCents,
+        priceDisplay: null,
+        name: selectedCombo.name,
+      }
+    : baseService;
 
   /** Staff filtered to those capable of the currently selected service.
    *  When no service is picked yet we show the full list (step 1 hasn't gated anything). */
@@ -486,6 +501,15 @@ export function useBookingFlowState(
 
   const setServiceIdAndClearError = useCallback((id: string) => {
     setServiceId(id);
+    setSelectedComboState(null);
+    setServiceError(null);
+  }, []);
+
+  const setSelectedCombo = useCallback((combo: BookingComboItem) => {
+    // Use first service as the FK anchor; duration/price come from the combo
+    const primaryServiceId = combo.serviceIds[0] ?? null;
+    if (primaryServiceId) setServiceId(primaryServiceId);
+    setSelectedComboState(combo);
     setServiceError(null);
   }, []);
 
@@ -740,6 +764,9 @@ export function useBookingFlowState(
           ? { voucher_id: appliedVoucher.voucher_id, discount_cents: appliedVoucher.discount_cents }
           : undefined,
         referenceImagePath: referenceImagePath ?? undefined,
+        comboOverride: selectedCombo
+          ? { comboId: selectedCombo.id, durationMinutes: selectedCombo.durationMinutes, priceCents: selectedCombo.priceCents }
+          : undefined,
       });
       setBookingResult({
         bookingId: result.bookingId,
@@ -1039,6 +1066,8 @@ export function useBookingFlowState(
     timeSlots,
     slotsLoading,
     popularSlotLabels,
+    selectedCombo,
+    selectedComboId: selectedCombo?.id ?? null,
     clientName,
     clientPhone,
     clientEmail,
@@ -1062,6 +1091,7 @@ export function useBookingFlowState(
     confirmTimeLabel,
     guestContactInvalid,
     setServiceId: setServiceIdAndClearError,
+    setSelectedCombo,
     setStaffId,
     setSelectedDate: selectDateIfChanged,
     setTimeSlot,

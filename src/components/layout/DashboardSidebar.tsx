@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Calendar,
   Camera,
+  Package,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -249,6 +250,13 @@ export function DashboardSidebar({
             hidden: subscriptionPlan === "free",
           },
           {
+            key: "combos",
+            label: t.combos,
+            href: `${dashRoot}/combos`,
+            icon: Package,
+            match: (p) => p.startsWith(`${dashRoot}/combos`),
+          },
+          {
             key: "no-show-protection",
             label: t.noShowProtection,
             href: `${dashRoot}/no-show-protection`,
@@ -302,6 +310,7 @@ export function DashboardSidebar({
       t.noShowProtection,
       t.reports,
       t.photos,
+      t.combos,
       t.reviews,
       t.services,
       t.settings,

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "@/shared/lib/motionClient";
-import type { BookingServiceItem } from "@/shared/booking/catalog";
+import type { BookingComboItem, BookingServiceItem } from "@/shared/booking/catalog";
 import type { ServiceCategorySummary } from "@/shared/booking/loadServiceCategories";
 import type { ServiceCategory } from "@/shared/booking/serviceCategory";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
@@ -94,18 +94,23 @@ function initialOpenSet(groups: ReadonlyArray<{ category: ServiceCategory }>) {
 export function BookingFlowServicePanel({
   t,
   services,
+  combos = [],
   serviceId,
+  selectedComboId,
   error,
   stepDir,
   reducedMotion,
   stepTransition,
   categories,
   onSelectService,
+  onSelectCombo,
   onNext,
 }: {
   t: BookingMessages;
   services: readonly BookingServiceItem[];
+  combos?: readonly BookingComboItem[];
   serviceId: string | null;
+  selectedComboId?: string | null;
   error: string | null;
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
@@ -115,6 +120,7 @@ export function BookingFlowServicePanel({
    *  orphan-bucket fallback. */
   categories: readonly ServiceCategorySummary[];
   onSelectService: (id: string) => void;
+  onSelectCombo?: (combo: BookingComboItem) => void;
   onNext: () => void;
 }) {
   // Group by category for accordion rendering. If the salon hasn't
@@ -335,6 +341,68 @@ export function BookingFlowServicePanel({
       >
         {t.stepServiceHeading}
       </h2>
+
+      {/* Combo bundles section — only shown when the salon has active combos */}
+      {combos.length > 0 ? (
+        <div className="mt-5 space-y-2.5 lg:mt-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--booking-text-muted)]">
+            Bundles
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {combos.map((combo) => {
+              const selected = selectedComboId === combo.id;
+              const dollars = (combo.priceCents / 100).toFixed(0);
+              const savings = combo.discountCents > 0
+                ? `Save $${(combo.discountCents / 100).toFixed(0)}`
+                : null;
+              return (
+                <button
+                  key={combo.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => onSelectCombo?.(combo)}
+                  className={cn(
+                    "nq-booking-glass relative rounded-2xl border px-4 py-3.5 text-left",
+                    !selected && "nq-booking-tile-interactive",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--booking-bg)]",
+                    selected
+                      ? "border-[var(--salon-primary)] shadow-[var(--shadow-nq-tile-selected)]"
+                      : "border-[var(--booking-border)]",
+                  )}
+                >
+                  {savings ? (
+                    <span className="absolute -top-2 right-3 rounded-full bg-[var(--salon-primary)] px-2 py-px text-[10px] font-bold text-[var(--booking-bg)]">
+                      {savings}
+                    </span>
+                  ) : null}
+                  <p className="text-sm font-semibold text-[var(--booking-text)]">
+                    {combo.name}
+                  </p>
+                  {combo.description ? (
+                    <p className="mt-0.5 text-[12px] text-[var(--booking-text-muted)] line-clamp-2">
+                      {combo.description}
+                    </p>
+                  ) : null}
+                  <div className="mt-2 flex items-center gap-2 text-[12px] text-[var(--booking-text-muted)]">
+                    <span>{combo.durationMinutes} min</span>
+                    {combo.priceCents > 0 ? (
+                      <>
+                        <span aria-hidden>·</span>
+                        <span className="font-semibold text-[var(--salon-primary)]">${dollars}</span>
+                      </>
+                    ) : null}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <div className="border-t border-[var(--booking-border)] pt-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--booking-text-muted)]">
+              Individual Services
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       {flatLayout ? (
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:mt-8 lg:grid-cols-3 lg:gap-6 lg:gap-y-7">

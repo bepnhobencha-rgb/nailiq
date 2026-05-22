@@ -45,6 +45,12 @@ export type BookingParams = {
   voucherRedemption?: { voucher_id: string; discount_cents: number } | null;
   /** Reference inspiration image path in Supabase Storage (fire-and-forget). */
   referenceImagePath?: string | null;
+  /** Combo bundle selected by the customer — overrides service duration and price. */
+  comboOverride?: {
+    comboId: string;
+    durationMinutes: number;
+    priceCents: number;
+  } | null;
 };
 
 export type BookingResult = {
@@ -141,6 +147,7 @@ export async function submitPublicBooking(
     clientPhone,
     clientNotes = "",
     addonServiceId = null,
+    comboOverride = null,
   } = params;
 
   const bookingScope = Sentry.getCurrentScope();
@@ -316,9 +323,9 @@ export async function submitPublicBooking(
     throw new Error("cannot_book_past");
   }
 
-  const mainBlockMin =
-    (Number(service.duration_minutes) || 0) +
-    (Number(service.buffer_minutes) || 0);
+  const mainBlockMin = comboOverride
+    ? comboOverride.durationMinutes
+    : (Number(service.duration_minutes) || 0) + (Number(service.buffer_minutes) || 0);
 
   let addonBlockMin = 0;
   let addonRow: {
@@ -375,8 +382,11 @@ export async function submitPublicBooking(
     throw new Error("outside_opening_hours");
   }
 
-  const priceSnapshot =
-    service.price_cents != null ? Number(service.price_cents) : null;
+  const priceSnapshot = comboOverride
+    ? comboOverride.priceCents
+    : service.price_cents != null
+      ? Number(service.price_cents)
+      : null;
   const addonPriceSnapshot =
     addonRow?.price_cents != null ? addonRow.price_cents : null;
 
@@ -794,6 +804,14 @@ export async function submitPublicBooking(
       console.error("[submitPublicBooking] sms-confirm dispatch failed", e);
     }
   })();
+
+  // Fire-and-forget: tag booking with combo ID for analytics
+  if (comboOverride?.comboId && bookingId) {
+    void supabase
+      .from("bookings")
+      .update({ service_combo_id: comboOverride.comboId } as never)
+      .eq("id", bookingId);
+  }
 
   // Fire-and-forget: store reference image path on booking
   if (params.referenceImagePath && bookingId) {

@@ -26,6 +26,20 @@ export type BookingServiceItem = {
   isFeatured: boolean;
 };
 
+export type BookingComboItem = {
+  id: string;
+  name: string;
+  description: string | null;
+  /** IDs of component services, ordered. */
+  serviceIds: string[];
+  /** Custom bundle price (may be less than sum of components). */
+  priceCents: number;
+  /** Advertised savings vs. booking each service separately. */
+  discountCents: number;
+  /** Total blocked duration in minutes for slot calculations. */
+  durationMinutes: number;
+};
+
 export function getServiceById(
   services: readonly BookingServiceItem[],
   id: string,

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import * as Sentry from "@sentry/nextjs";
-import type { BookingServiceItem } from "@/shared/booking/catalog";
+import type { BookingComboItem, BookingServiceItem } from "@/shared/booking/catalog";
 import { formatBookingPrice } from "@/shared/booking/formatBookingPrice";
 import { getSalonBySlug } from "@/shared/booking/getSalonBySlug";
 import { parseServiceCategory } from "@/shared/booking/serviceCategory";
@@ -53,6 +53,8 @@ export type BookingLoadData = {
   /** Exact `salons.slug` from DB — pass to BookingFlow/submit lookups. */
   canonicalSlug: string;
   services: BookingServiceItem[];
+  /** Active combo bundles for this salon. Empty when none defined. */
+  combos: BookingComboItem[];
   staff: BookingStaffItem[];
   /** Per-staff service whitelist. `null` = salon has no rows → all-capable fallback. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
@@ -203,9 +205,37 @@ export async function loadBookingServicesForSalonSlug(
     }
   }
 
+  const { data: comboRows } = await client
+    .from("service_combos" as never)
+    .select("id, name, description, service_ids, price_cents, discount_cents, duration_minutes")
+    .eq("salon_id", salonId)
+    .eq("is_active", true)
+    .order("position", { ascending: true });
+
+  const combos: BookingComboItem[] = (
+    (comboRows ?? []) as {
+      id: string;
+      name: string;
+      description?: string | null;
+      service_ids?: string[];
+      price_cents?: number;
+      discount_cents?: number;
+      duration_minutes?: number;
+    }[]
+  ).map((c) => ({
+    id: c.id,
+    name: c.name,
+    description: c.description ?? null,
+    serviceIds: Array.isArray(c.service_ids) ? c.service_ids.map(String) : [],
+    priceCents: Number(c.price_cents) || 0,
+    discountCents: Number(c.discount_cents) || 0,
+    durationMinutes: Number(c.duration_minutes) || 60,
+  }));
+
   return {
     canonicalSlug,
     services,
+    combos,
     staff,
     capabilityRows,
     salon: {
