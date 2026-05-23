@@ -171,6 +171,14 @@ export interface ReceptionistCenterData {
      * context. */
     group_id: string | null;
     group_size: number | null;
+    /** Smart verification method used (none/otp/deposit/vip_skip). Null = old bookings. */
+    verification_method: string | null;
+    /** When SMS confirmation was sent to this customer. Null = not sent or failed. */
+    sms_confirmation_sent_at: string | null;
+    /** Non-null when SMS failed — reception should see warning badge. */
+    sms_confirmation_failed_at: string | null;
+    /** No-show risk score 0-100. Higher = more likely to no-show. */
+    no_show_risk_score: number | null;
   }>;
   /** Per-staff service whitelist for this salon. `null` = no rows → all-capable fallback. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
@@ -551,6 +559,10 @@ export async function loadReceptionistCenterData(
       addon_price_cents,
       group_id,
       group_size,
+      verification_method,
+      sms_confirmation_sent_at,
+      sms_confirmation_failed_at,
+      no_show_risk_score,
       services!bookings_service_id_fkey ( name, duration_minutes, buffer_minutes ),
       addon:services!bookings_addon_service_id_fkey ( name, duration_minutes, buffer_minutes )
     `,
@@ -848,6 +860,21 @@ export async function loadReceptionistCenterData(
           : null,
       group_size: (() => {
         const v = (row as { group_size?: unknown }).group_size;
+        if (v == null) return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      })(),
+      verification_method: (row as { verification_method?: unknown }).verification_method != null
+        ? String((row as { verification_method?: unknown }).verification_method)
+        : null,
+      sms_confirmation_sent_at: (row as { sms_confirmation_sent_at?: unknown }).sms_confirmation_sent_at != null
+        ? String((row as { sms_confirmation_sent_at?: unknown }).sms_confirmation_sent_at)
+        : null,
+      sms_confirmation_failed_at: (row as { sms_confirmation_failed_at?: unknown }).sms_confirmation_failed_at != null
+        ? String((row as { sms_confirmation_failed_at?: unknown }).sms_confirmation_failed_at)
+        : null,
+      no_show_risk_score: (() => {
+        const v = (row as { no_show_risk_score?: unknown }).no_show_risk_score;
         if (v == null) return null;
         const n = Number(v);
         return Number.isFinite(n) ? n : null;

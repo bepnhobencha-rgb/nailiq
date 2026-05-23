@@ -6,7 +6,7 @@ import type {
 
 /** Matches `loadSalonOwnerDashboard` / client hydrate fetch. */
 export const DASHBOARD_BOOKING_SELECT =
-  "id, client_name, client_phone, client_notes, start_time_utc, status, source, price_cents, services!bookings_service_id_fkey ( name, price_cents ), staff ( name )";
+  "id, client_name, client_phone, client_notes, start_time_utc, status, source, price_cents, verification_method, sms_confirmation_sent_at, sms_confirmation_failed_at, no_show_risk_score, services!bookings_service_id_fkey ( name, price_cents ), staff ( name )";
 
 const ALL_VALID_STATUSES: BookingStatus[] = [
   "pending",
@@ -30,6 +30,10 @@ export type BookingRowDb = {
   status: string;
   source?: string | null;
   price_cents: number | null;
+  verification_method?: string | null;
+  sms_confirmation_sent_at?: string | null;
+  sms_confirmation_failed_at?: string | null;
+  no_show_risk_score?: number | null;
   services: ServiceJoinRow | ServiceJoinRow[] | null;
   staff: StaffJoinRow | StaffJoinRow[] | null;
 };
@@ -72,5 +76,9 @@ export function mapDashboardBookingRow(row: BookingRowDb): SalonDashboardBooking
     service_name: svc?.name ?? "—",
     staff_name: st?.name?.trim() ? String(st.name).trim() : null,
     price_cents: Number(price),
+    verification_method: row.verification_method ?? null,
+    sms_confirmation_sent_at: row.sms_confirmation_sent_at ?? null,
+    sms_confirmation_failed_at: row.sms_confirmation_failed_at ?? null,
+    no_show_risk_score: row.no_show_risk_score != null ? Number(row.no_show_risk_score) : null,
   };
 }

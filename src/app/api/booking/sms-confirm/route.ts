@@ -1,5 +1,5 @@
 // POST /api/booking/sms-confirm
-// Fire-and-forget after booking creation. Sends a bilingual confirmation SMS.
+// Sends bilingual confirmation SMS and tracks delivery status on the booking row.
 // Checks customer_preferences for preferred language; defaults to Vietnamese.
 
 import { NextResponse } from "next/server";
@@ -84,5 +84,18 @@ export async function POST(req: Request) {
 
   const result = await sendSmsReminder(clientPhone, message);
 
-  return NextResponse.json({ ok: result.ok });
+  // Track delivery on the booking row (non-blocking — don't fail the response)
+  void db
+    .from("bookings")
+    .update(
+      result.ok
+        ? { sms_confirmation_sent_at: new Date().toISOString() }
+        : {
+            sms_confirmation_failed_at: new Date().toISOString(),
+            sms_confirmation_error: result.error ?? "unknown",
+          },
+    )
+    .eq("id", bookingId);
+
+  return NextResponse.json({ ok: result.ok, error: result.error });
 }

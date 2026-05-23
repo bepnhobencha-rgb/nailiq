@@ -56,9 +56,17 @@ export type BookingFlowStep =
   | "date"
   | "time"
   | "info"
+  | "verify"
   | "otp"
   | "confirm"
   | "done";
+
+export type VerificationAction =
+  | "none"
+  | "otp_optional"
+  | "otp_required"
+  | "deposit_required"
+  | "deposit_or_otp";
 
 function normalizeNoon(d: Date): Date {
   const x = new Date(d);
@@ -122,6 +130,8 @@ export function useBookingFlowState(
   const [upsellGapMinutes, setUpsellGapMinutes] = useState<number>(0);
 
   const [otpSessionId, setOtpSessionId] = useState<string | null>(null);
+  const [verificationAction, setVerificationAction] = useState<VerificationAction>("none");
+  const [verificationLoading, setVerificationLoading] = useState(false);
 
   type AppliedVoucher = {
     voucher_id: string;
@@ -593,18 +603,15 @@ export function useBookingFlowState(
 
     setError(null);
     setStepDir(1);
-    if (phoneOtpEnabled) {
-      // Reset any prior session when the user re-enters info.
-      setOtpSessionId(null);
-      setStep("otp");
-    } else {
-      setStep("confirm");
-    }
+    // Always go through "verify" — it auto-routes to otp/confirm based on risk
+    setOtpSessionId(null);
+    setVerificationAction("none");
+    setStep("verify");
   }, [
     clientName,
     clientPhone,
     clientEmail,
-    phoneOtpEnabled,
+    phoneOtpEnabled, // eslint-disable-line react-hooks/exhaustive-deps -- kept for API compat, verify step handles routing
     t.bookingErrors.invalidEmail,
     t.bookingErrors.nameRequired,
     t.bookingErrors.nameTooShort,
@@ -614,16 +621,41 @@ export function useBookingFlowState(
     t.bookingErrors.phoneRequired,
   ]);
 
+  // Called by BookingFlowVerifyPanel when decision is fetched
+  const goVerifyDecided = useCallback(
+    (action: VerificationAction) => {
+      setVerificationAction(action);
+      setStepDir(1);
+      if (action === "none") {
+        setStep("confirm");
+      } else if (action === "otp_optional" || action === "otp_required") {
+        setStep("otp");
+      } else {
+        // deposit_required / deposit_or_otp — fall back to OTP until Stripe deposit UI is built
+        setStep("otp");
+      }
+    },
+    [],
+  );
+
+  // Customer skipped optional OTP — proceed to confirm unverified
+  const goSkipOtp = useCallback(() => {
+    setOtpSessionId(null);
+    setStepDir(1);
+    setStep("confirm");
+  }, []);
+
   const goOtpNext = useCallback((sessionId: string) => {
     setOtpSessionId(sessionId);
     setStepDir(1);
     setStep("confirm");
   }, []);
 
-  // OTP panel "Back" → returns to info step.
+  // OTP panel "Back" → returns to verify step (which auto-navigated to otp)
   const backFromOtpToInfo = useCallback(() => {
     setStepDir(-1);
     setStep("info");
+    setVerificationAction("none");
     setError(null);
     setInfoNameError(null);
     setInfoPhoneError(null);
@@ -640,6 +672,8 @@ export function useBookingFlowState(
     setClientWebsite("");
     setSelectedAddonId(null);
     setOtpSessionId(null);
+    setVerificationAction("none");
+    setVerificationLoading(false);
     setServiceId(null);
     setStaffId(BOOKING_ANY_STAFF_ID);
     setSelectedDate(normalizeNoon(new Date()));
@@ -766,6 +800,10 @@ export function useBookingFlowState(
         referenceImagePath: referenceImagePath ?? undefined,
         comboOverride: selectedCombo
           ? { comboId: selectedCombo.id, durationMinutes: selectedCombo.durationMinutes, priceCents: selectedCombo.priceCents }
+          : undefined,
+        verificationMethod:
+          verificationAction === "none" ? "none"
+          : otpSessionId ? "otp"
           : undefined,
       });
       setBookingResult({
@@ -1001,9 +1039,8 @@ export function useBookingFlowState(
 
   const backToInfo = useCallback(() => {
     setStepDir(-1);
-    // When OTP is enabled, confirm → otp → info (two steps back for confirm).
-    // When OTP is disabled, confirm → info directly.
-    if (phoneOtpEnabled) {
+    // confirm → otp/verify → info: always go back two steps through verify
+    if (verificationAction !== "none") {
       setStep("otp");
     } else {
       setStep("info");
@@ -1011,7 +1048,7 @@ export function useBookingFlowState(
     setError(null);
     setInfoNameError(null);
     setInfoPhoneError(null);
-  }, [phoneOtpEnabled]);
+  }, [verificationAction]);
 
   async function handleApplyVoucher(
     code: string,
@@ -1106,6 +1143,9 @@ export function useBookingFlowState(
     setSelectedAddonId,
     setError,
     otpSessionId,
+    verificationAction,
+    verificationLoading,
+    setVerificationLoading,
     appliedVoucher,
     handleApplyVoucher,
     handleRemoveVoucher,
@@ -1120,6 +1160,8 @@ export function useBookingFlowState(
     goDateNext,
     goTimeNext,
     goInfoNext,
+    goVerifyDecided,
+    goSkipOtp,
     goOtpNext,
     resetAfterDone,
     handleAddToCalendar,

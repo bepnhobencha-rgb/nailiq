@@ -45,6 +45,8 @@ export type BookingParams = {
   voucherRedemption?: { voucher_id: string; discount_cents: number } | null;
   /** Reference inspiration image path in Supabase Storage (fire-and-forget). */
   referenceImagePath?: string | null;
+  /** Smart verification method used for this booking (from verify-decision flow). */
+  verificationMethod?: "none" | "otp" | "deposit" | "vip_skip" | null;
   /** Combo bundle selected by the customer — overrides service duration and price. */
   comboOverride?: {
     comboId: string;
@@ -783,27 +785,36 @@ export async function submitPublicBooking(
     })();
   }
 
-  // Fire-and-forget: SMS confirmation
-  void (async () => {
-    try {
-      const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
-      await fetch(`${appUrl}/api/booking/sms-confirm`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bookingId,
-          salonId: String(salon.id),
-          clientPhone: phoneOk.digits,
-          clientName: nameTrimmed,
-          serviceName: service.name as string,
-          staffName: resolvedStaffName,
-          startTimeUtc: startLocal.toISOString(),
-        }),
-      });
-    } catch (e) {
-      console.error("[submitPublicBooking] sms-confirm dispatch failed", e);
-    }
-  })();
+  // Awaited SMS confirmation — tracks sent_at / failed_at on the booking row
+  try {
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+    await fetch(`${appUrl}/api/booking/sms-confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bookingId,
+        salonId: String(salon.id),
+        clientPhone: phoneOk.digits,
+        clientName: nameTrimmed,
+        serviceName: service.name as string,
+        staffName: resolvedStaffName,
+        startTimeUtc: startLocal.toISOString(),
+      }),
+    });
+  } catch (e) {
+    console.error("[submitPublicBooking] sms-confirm dispatch failed", e);
+  }
+
+  // Record verification method on booking (smart verification audit trail)
+  if (params.verificationMethod && bookingId) {
+    void supabase
+      .from("bookings")
+      .update({
+        verification_method: params.verificationMethod,
+        verification_completed_at: new Date().toISOString(),
+      } as never)
+      .eq("id", bookingId);
+  }
 
   // Fire-and-forget: tag booking with combo ID for analytics
   if (comboOverride?.comboId && bookingId) {

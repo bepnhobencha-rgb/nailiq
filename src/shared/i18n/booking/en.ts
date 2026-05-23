@@ -135,6 +135,9 @@ export const bookingEn = {
   otpVerifying: "Verifying…",
   otpSending: "Sending…",
   otpVerified: "Phone verified ✓",
+  otpSkip: "Skip",
+  otpOptionalHint: "Verifying your phone helps reduce no-shows (optional)",
+  verifyingBooking: "Checking booking…",
   clientNameLabel: "Your name",
   clientPhoneLabel: "Phone number",
   /** Placeholder for contact step — NANP Canadian example; guests may enter any valid E.164. */

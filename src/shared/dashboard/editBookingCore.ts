@@ -378,6 +378,6 @@ export async function performEditBooking(
 
   return {
     ok: true,
-    updated: mapDashboardBookingRow(row as BookingRowDb),
+    updated: mapDashboardBookingRow(row as unknown as BookingRowDb),
   };
 }

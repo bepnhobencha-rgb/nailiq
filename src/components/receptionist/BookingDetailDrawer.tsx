@@ -44,6 +44,12 @@ export type BookingDetailDrawerModel = {
   addonServiceName: string | null;
   /** Add-on duration line (e.g. "30 minutes"); null when no add-on. */
   addonDurationLine: string | null;
+  /** Smart verification method recorded on booking. */
+  verificationMethod: string | null;
+  /** Non-null when SMS confirmation failed — show warning badge. */
+  smsFailedAt: string | null;
+  /** No-show risk score 0-100. */
+  noShowRiskScore: number | null;
 };
 
 export interface BookingDetailDrawerProps {
@@ -374,6 +380,32 @@ export function BookingDetailDrawer({
                 {copy.sectionStatus}
               </p>
               <p className="font-medium text-nq-foreground">{model.statusLabel}</p>
+
+              {/* Verification + SMS badges */}
+              {(model.smsFailedAt || model.verificationMethod || (model.noShowRiskScore != null && model.noShowRiskScore >= 70)) ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {model.smsFailedAt ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-400">
+                      ⚠ SMS không gửi được
+                    </span>
+                  ) : null}
+                  {model.verificationMethod === "otp" ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400">
+                      ✓ Đã verify OTP
+                    </span>
+                  ) : null}
+                  {model.verificationMethod === "deposit" ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400">
+                      💰 Đã đặt cọc
+                    </span>
+                  ) : null}
+                  {model.noShowRiskScore != null && model.noShowRiskScore >= 70 && !model.verificationMethod ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-red-400/40 bg-red-400/10 px-2 py-0.5 text-[11px] font-medium text-red-400">
+                      ⚠ Rủi ro cao chưa verify ({model.noShowRiskScore})
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
             </section>
 
             <section className="space-y-1 border-t border-nq-muted/15 pt-4">

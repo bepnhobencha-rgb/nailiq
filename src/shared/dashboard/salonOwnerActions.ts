@@ -932,3 +932,39 @@ export async function updatePhoneOtpEnabled(
 
   return { ok: true, phoneOtpEnabled: enabled };
 }
+
+export type BookingVerificationMode =
+  | "never"
+  | "auto"
+  | "always_otp"
+  | "always_deposit"
+  | "deposit_first";
+
+export async function updateBookingVerificationMode(
+  slug: string,
+  mode: BookingVerificationMode,
+): Promise<{ ok: boolean; error?: string }> {
+  const VALID_MODES: BookingVerificationMode[] = [
+    "never", "auto", "always_otp", "always_deposit", "deposit_first",
+  ];
+  if (!VALID_MODES.includes(mode)) return { ok: false, error: "invalid_mode" };
+
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+
+  const { error: upErr } = await ctx.supabase
+    .from("salons")
+    .update({ booking_verification_mode: mode } as never)
+    .eq("id", ctx.salon.id);
+
+  if (upErr) {
+    console.error("[updateBookingVerificationMode]", upErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true };
+}

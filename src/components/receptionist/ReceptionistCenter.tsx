@@ -1062,6 +1062,9 @@ function ReceptionistCenterInner({
       priceLine,
       addonServiceName,
       addonDurationLine,
+      verificationMethod: b.verification_method ?? null,
+      smsFailedAt: b.sms_confirmation_failed_at ?? null,
+      noShowRiskScore: b.no_show_risk_score ?? null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ARCHITECTURE_LOCK: data.salon.currencyCode is intentionally omitted; it never changes within a session and adding it would cause memo churn
   }, [
@@ -1993,6 +1996,10 @@ function ReceptionistCenterInner({
                   addon_duration_minutes: openDrawerBooking.addon_duration_minutes,
                   addon_buffer_minutes: openDrawerBooking.addon_buffer_minutes,
                   addon_price_cents: openDrawerBooking.addon_price_cents,
+                  verification_method: openDrawerBooking.verification_method ?? null,
+                  sms_confirmation_sent_at: openDrawerBooking.sms_confirmation_sent_at ?? null,
+                  sms_confirmation_failed_at: openDrawerBooking.sms_confirmation_failed_at ?? null,
+                  no_show_risk_score: openDrawerBooking.no_show_risk_score ?? null,
                 },
                 staff: data.staff.map((s) => ({ id: s.id, name: s.name })),
                 services: data.services.map((s) => ({

@@ -14,6 +14,7 @@ import { DashboardPresetSettings } from "@/components/dashboard/DashboardPresetS
 import { BrandColorSettings } from "@/components/dashboard/BrandColorSettings";
 import { WalkinAutoAssignSettings } from "@/components/dashboard/WalkinAutoAssignSettings";
 import { PhoneOtpSettings } from "@/components/dashboard/PhoneOtpSettings";
+import { BookingVerificationSettings } from "@/components/dashboard/BookingVerificationSettings";
 import { PricingPanel } from "@/components/dashboard/PricingPanel";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
@@ -39,6 +40,7 @@ export function SalonSettingsHub({
   themeMode,
   walkinAutoAssign,
   phoneOtpEnabled,
+  bookingVerificationMode,
   remindersEnabled,
   reminder24hEnabled,
   reminder3hEnabled,
@@ -59,6 +61,7 @@ export function SalonSettingsHub({
   reminder24hEnabled: boolean;
   reminder3hEnabled: boolean;
   smsRemindersEnabled: boolean;
+  bookingVerificationMode?: string;
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -350,6 +353,12 @@ export function SalonSettingsHub({
                   slug={slug}
                   initialValue={phoneOtpEnabled}
                   canEdit={canEditDashboardModules}
+                />
+                <BookingVerificationSettings
+                  slug={slug}
+                  initialMode={(bookingVerificationMode as "never" | "auto" | "always_otp" | "always_deposit" | "deposit_first") ?? "never"}
+                  canEdit={canEditDashboardModules}
+                  plan={subscriptionPlan as "free" | "pro" | "studio" | "enterprise"}
                 />
               </div>
             )}

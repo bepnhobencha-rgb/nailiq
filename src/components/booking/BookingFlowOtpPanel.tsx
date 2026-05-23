@@ -27,7 +27,9 @@ export function BookingFlowOtpPanel({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- prop kept for API consistency with other BookingFlow panels; not needed by OTP panel
   reducedMotion: _reducedMotion,
   stepTransition,
+  isOptional,
   onVerified,
+  onSkip,
   onBack,
 }: {
   t: BookingMessages;
@@ -36,7 +38,11 @@ export function BookingFlowOtpPanel({
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
   stepTransition: { duration: number; ease: [number, number, number, number] };
+  /** When true, shows a "Skip" button — risk is medium, verification encouraged but not required. */
+  isOptional?: boolean;
   onVerified: (sessionId: string) => void;
+  /** Called when customer skips optional OTP — booking proceeds unverified. */
+  onSkip?: () => void;
   onBack: () => void;
 }) {
   const [code, setCode] = useState("");
@@ -210,7 +216,21 @@ export function BookingFlowOtpPanel({
           >
             {isSending ? t.otpSending : resendLabel}
           </button>
+          {isOptional && onSkip ? (
+            <button
+              type="button"
+              onClick={onSkip}
+              className="text-sm text-nq-muted underline-offset-2 hover:underline"
+            >
+              {t.otpSkip ?? "Bỏ qua"}
+            </button>
+          ) : null}
         </div>
+        {isOptional ? (
+          <p className="text-xs text-nq-muted/70">
+            {t.otpOptionalHint ?? "Xác thực OTP giúp giảm rủi ro không đến (không bắt buộc)"}
+          </p>
+        ) : null}
 
         {error ? null : null}
 

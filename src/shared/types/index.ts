@@ -53,4 +53,12 @@ export type SalonDashboardBooking = {
   /** Assigned staff display name when present. */
   staff_name: string | null;
   price_cents: number;
+  /** Smart verification method used for this booking. */
+  verification_method: string | null;
+  /** When SMS confirmation was sent. Null = not sent or failed. */
+  sms_confirmation_sent_at: string | null;
+  /** When SMS confirmation failed. Non-null = reception should see warning. */
+  sms_confirmation_failed_at: string | null;
+  /** No-show risk score 0-100 (higher = riskier). */
+  no_show_risk_score: number | null;
 };

@@ -18,6 +18,7 @@ import { BookingFlowOtpPanel } from "@/components/booking/BookingFlowOtpPanel";
 import { BookingFlowServicePanel } from "@/components/booking/BookingFlowServicePanel";
 import { BookingFlowStaffPanel } from "@/components/booking/BookingFlowStaffPanel";
 import { BookingFlowTimePanel } from "@/components/booking/BookingFlowTimePanel";
+import { BookingFlowVerifyPanel } from "@/components/booking/BookingFlowVerifyPanel";
 import {
   BookingStepper,
   type BookingWizardStep,
@@ -92,11 +93,9 @@ export function BookingFlow({
   );
 
   const wizardStep: BookingWizardStep =
-    flow.step === "done" || flow.step === "otp"
-      ? flow.step === "done"
-        ? "confirm"
-        : "info"
-      : flow.step;
+    flow.step === "done" ? "confirm"
+    : flow.step === "otp" || flow.step === "verify" ? "info"
+    : flow.step;
 
   if (flow.step === "done" && flow.bookingResult) {
     return (
@@ -233,6 +232,19 @@ export function BookingFlow({
             onNext={flow.goInfoNext}
           />
         ) : null}
+        {flow.step === "verify" ? (
+          <BookingFlowVerifyPanel
+            t={t}
+            salonId={salon.id}
+            clientPhone={flow.clientPhone}
+            serviceIds={flow.service ? [flow.service.id] : []}
+            subtotalCents={flow.service?.priceCents ?? 0}
+            stepDir={flow.stepDir}
+            reducedMotion={Boolean(reducedMotion)}
+            stepTransition={stepTransition}
+            onDecided={flow.goVerifyDecided}
+          />
+        ) : null}
         {flow.step === "otp" ? (
           <BookingFlowOtpPanel
             t={t}
@@ -241,7 +253,9 @@ export function BookingFlow({
             stepDir={flow.stepDir}
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}
+            isOptional={flow.verificationAction === "otp_optional"}
             onVerified={flow.goOtpNext}
+            onSkip={flow.verificationAction === "otp_optional" ? flow.goSkipOtp : undefined}
             onBack={flow.backFromOtpToInfo}
           />
         ) : null}
