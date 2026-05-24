@@ -813,7 +813,7 @@ export const userVi: UserMessages = {
     staffCannotPerformService:
       "Nhân viên này chưa được gán để làm dịch vụ đó.",
     staffLimitReached:
-      "Gói miễn phí cho phép 3 thợ. Nâng cấp lên Pro để có 10.",
+      "Gói miễn phí cho phép 1 thợ. Nâng cấp lên Pro để không giới hạn.",
     serviceLimitReached:
       "Gói miễn phí cho phép 10 dịch vụ. Nâng cấp lên Pro để có 50.",
     upgradeCta: "Nâng cấp gói",

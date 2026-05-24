@@ -387,7 +387,7 @@ export function StaffSetupPanel({
             }}
             idleLabel={tLabels.addStaff}
             savedLabel="✓ Saved"
-            disabled={addSaveStatus === "saving" || !draftName.trim()}
+            disabled={addSaveStatus === "saving" || atStaffLimit || !draftName.trim()}
             className="min-h-11 w-full"
           />
         </div>
