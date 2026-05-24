@@ -94,10 +94,11 @@ test.describe("Returning owner", () => {
     const otp = await getLatestOtp(normalizedDigits(TEST_PHONE));
     expect(otp).toBeTruthy();
 
-    const otpInputs = page.locator('input[maxlength="1"]');
-    for (let i = 0; i < 6; i++) {
-      await otpInputs.nth(i).fill(otp[i]!);
-    }
+    // Use keyboard.type after focusing first input — page.fill() uses CDP
+    // which bypasses React's synthetic onChange on WebKit (digits state stays
+    // empty → button disabled → submit never fires).
+    await page.locator('input[maxlength="1"]').first().click();
+    await page.keyboard.type(otp);
     await page.getByRole("button", { name: "Confirm" }).click();
 
     await expect(page).toHaveURL(new RegExp(`dashboard/${slug}`), {

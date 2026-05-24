@@ -91,7 +91,10 @@ export function LoginVerifyPageClient({ demoMode: _demoMode }: Props) {
         if (res.next === "dashboard") {
           // Phase 1 multi-role login: senior / nail_tech land on /center,
           // owner stays on the dashboard root.
-          router.push(dashboardPathForRole(res.slug, res.role));
+          // Use location.assign (full navigation) so the demo-slug cookie set
+          // by the server action is guaranteed to reach the next request —
+          // router.push does a client-side prefetch that races the Set-Cookie.
+          window.location.assign(dashboardPathForRole(res.slug, res.role));
           return;
         }
         if (res.next === "picker") {

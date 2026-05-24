@@ -77,9 +77,11 @@ test.describe("Booking Flow — Phone OTP", () => {
       page.getByText(/xác thực|verify|verification/i).first(),
     ).toBeVisible({ timeout: 10_000 });
 
-    // Enter demo code
-    await page.locator("#otp-code").waitFor({ state: "visible", timeout: 10_000 });
-    await page.fill("#otp-code", OTP_DEMO_CODE);
+    // Wait until OTP is auto-sent (input disabled={!sent} until the send API resolves).
+    // fillReactInput triggers React onChange on WebKit (page.fill uses CDP which
+    // bypasses React's patched value getter).
+    await expect(page.locator("#otp-code")).toBeEnabled({ timeout: 15_000 });
+    await fillReactInput(page.locator("#otp-code"), OTP_DEMO_CODE);
 
     // Click verify button
     await page.getByRole("button", { name: /xác thực|verify/i }).last().click();
@@ -94,17 +96,17 @@ test.describe("Booking Flow — Phone OTP", () => {
     await walkToInfoStep(page);
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    await page.locator("#otp-code").waitFor({ state: "visible", timeout: 10_000 });
+    await expect(page.locator("#otp-code")).toBeEnabled({ timeout: 15_000 });
 
     // Enter wrong code
-    await page.fill("#otp-code", "999999");
+    await fillReactInput(page.locator("#otp-code"), "999999");
     await page.getByRole("button", { name: /xác thực|verify/i }).last().click();
 
     // Error should appear
     await expect(page.locator('[role="alert"]')).toBeVisible({ timeout: 8_000 });
 
     // Fix with correct demo code
-    await page.fill("#otp-code", OTP_DEMO_CODE);
+    await fillReactInput(page.locator("#otp-code"), OTP_DEMO_CODE);
     await page.getByRole("button", { name: /xác thực|verify/i }).last().click();
 
     await expect(
@@ -116,7 +118,7 @@ test.describe("Booking Flow — Phone OTP", () => {
     await walkToInfoStep(page);
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    await page.locator("#otp-code").waitFor({ state: "visible", timeout: 10_000 });
+    await expect(page.locator("#otp-code")).toBeEnabled({ timeout: 15_000 });
 
     // Click Back
     await page.getByRole("button", { name: /← back|back/i }).click();
@@ -132,8 +134,8 @@ test.describe("Booking Flow — Phone OTP", () => {
     await page.getByRole("button", { name: "Continue" }).first().click();
 
     // OTP step
-    await page.locator("#otp-code").waitFor({ state: "visible", timeout: 10_000 });
-    await page.fill("#otp-code", OTP_DEMO_CODE);
+    await expect(page.locator("#otp-code")).toBeEnabled({ timeout: 15_000 });
+    await fillReactInput(page.locator("#otp-code"), OTP_DEMO_CODE);
     await page.getByRole("button", { name: /xác thực|verify/i }).last().click();
 
     // Confirm step
