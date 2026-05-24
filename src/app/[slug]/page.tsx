@@ -27,6 +27,7 @@ const DESKTOP_BOOKING_AMBIENT_SRC =
 
 type PublicBookingPageProps = {
   params: Promise<{ slug: string }>;
+  searchParams?: Promise<{ preview?: string }>;
 };
 
 export async function generateMetadata({
@@ -262,19 +263,35 @@ async function PublicBookingRouteBody({
   );
 }
 
-export default function PublicBookingPage({ params }: PublicBookingPageProps) {
+export default async function PublicBookingPage({ params, searchParams }: PublicBookingPageProps) {
+  const sp = await searchParams;
+  const isPreview = sp?.preview === "true";
+
   return (
-    <Suspense
-      fallback={
-        <>
-          {/* Skeleton runs before language resolution; pick the VI
-              default so screen readers don't briefly mis-announce. */}
-          <BookingDocumentEn lang="vi" />
-          <SalonBookingSkeleton />
-        </>
-      }
-    >
-      <PublicBookingRouteBody paramsPromise={params} />
-    </Suspense>
+    <>
+      {isPreview && (
+        <div className="fixed top-0 inset-x-0 z-50 flex items-center justify-center gap-3 bg-[#D4AF37] py-2 px-4 text-black text-sm font-medium shadow-md">
+          <span>👁 Preview mode — trang này chưa công khai với khách</span>
+          <a
+            href={`/dashboard`}
+            className="underline hover:no-underline text-xs"
+          >
+            Quay lại editor
+          </a>
+        </div>
+      )}
+      <div className={isPreview ? "pt-10" : ""}>
+        <Suspense
+          fallback={
+            <>
+              <BookingDocumentEn lang="vi" />
+              <SalonBookingSkeleton />
+            </>
+          }
+        >
+          <PublicBookingRouteBody paramsPromise={params} />
+        </Suspense>
+      </div>
+    </>
   );
 }

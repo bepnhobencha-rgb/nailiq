@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef, useCallback } from "react";
 import { updateSectionContent } from "@/shared/dashboard/pageEditorActions";
+import { ImageUploadField } from "./ImageUploadField";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -62,16 +63,13 @@ export function AboutEditor({ slug, sectionId, content, onContentUpdate }: Edito
           onChange={e => handleChange({ body: e.target.value })}
         />
       </div>
-      <div>
-        <label className={labelClass}>URL ảnh</label>
-        <input
-          type="text"
-          className={inputClass}
-          value={typeof content.image_url === "string" ? content.image_url : ""}
-          placeholder="https://..."
-          onChange={e => handleChange({ image_url: e.target.value || null })}
-        />
-      </div>
+      <ImageUploadField
+        slug={slug}
+        type="about"
+        label="Ảnh"
+        value={typeof content.image_url === "string" ? content.image_url : ""}
+        onChange={(url) => handleChange({ image_url: url })}
+      />
       <div>
         <label className={labelClass}>Bố cục</label>
         <select

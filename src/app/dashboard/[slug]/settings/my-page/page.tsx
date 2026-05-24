@@ -43,12 +43,22 @@ export default async function MyPageEditorPage({ params }: PageProps) {
           <h1 className="text-2xl font-semibold text-white">My Page</h1>
           <p className="text-sm text-[#a1a1aa] mt-1">Quản lý nội dung trang đặt lịch công khai</p>
         </div>
-        <a
-          href={`/dashboard/${slug}/import`}
-          className="shrink-0 px-4 py-2 text-sm font-medium rounded-lg border border-[#D4AF37]/40 text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-colors"
-        >
-          Import from website
-        </a>
+        <div className="flex gap-2 shrink-0">
+          <a
+            href={`/${slug}?preview=true`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-4 py-2 text-sm font-medium rounded-lg border border-white/10 text-[#a1a1aa] hover:text-white hover:border-white/20 transition-colors"
+          >
+            Preview
+          </a>
+          <a
+            href={`/dashboard/${slug}/import`}
+            className="px-4 py-2 text-sm font-medium rounded-lg border border-[#D4AF37]/40 text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-colors"
+          >
+            Import from website
+          </a>
+        </div>
       </div>
       <PageEditorPanel
         slug={slug}

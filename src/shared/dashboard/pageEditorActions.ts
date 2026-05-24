@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export async function updateSectionContent(
   slug: string,
@@ -69,4 +70,37 @@ export async function updateSectionOrder(
   }
 
   return { ok: true };
+}
+
+export async function uploadSectionImage(
+  slug: string,
+  formData: FormData,
+): Promise<{ ok: boolean; url?: string; error?: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+
+  const file = formData.get("file") as File | null;
+  const type = (formData.get("type") as string | null) ?? "section";
+
+  if (!file || file.size === 0) return { ok: false, error: "no_file" };
+  if (file.size > 5 * 1024 * 1024) return { ok: false, error: "file_too_large" };
+
+  const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+  if (!allowed.includes(file.type)) return { ok: false, error: "invalid_type" };
+
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+  const path = `${ctx.salon.id}/sections/${type}-${Date.now()}.${ext}`;
+
+  const db = createServiceRoleClient();
+  const { error } = await db.storage
+    .from("salon-imports")
+    .upload(path, file, { contentType: file.type, upsert: true });
+
+  if (error) {
+    console.error("[uploadSectionImage]", error);
+    return { ok: false, error: error.message };
+  }
+
+  const { data } = db.storage.from("salon-imports").getPublicUrl(path);
+  return { ok: true, url: data.publicUrl };
 }

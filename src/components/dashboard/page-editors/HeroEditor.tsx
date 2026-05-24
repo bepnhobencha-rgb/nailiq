@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef, useCallback } from "react";
 import { updateSectionContent } from "@/shared/dashboard/pageEditorActions";
+import { ImageUploadField } from "./ImageUploadField";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -70,16 +71,13 @@ export function HeroEditor({ slug, sectionId, content, onContentUpdate }: Editor
           onChange={e => handleChange({ cta_text: e.target.value })}
         />
       </div>
-      <div>
-        <label className={labelClass}>URL ảnh nền</label>
-        <input
-          type="text"
-          className={inputClass}
-          value={typeof content.bg_image_url === "string" ? content.bg_image_url : ""}
-          placeholder="https://..."
-          onChange={e => handleChange({ bg_image_url: e.target.value || null })}
-        />
-      </div>
+      <ImageUploadField
+        slug={slug}
+        type="hero"
+        label="Ảnh nền"
+        value={typeof content.bg_image_url === "string" ? content.bg_image_url : ""}
+        onChange={(url) => handleChange({ bg_image_url: url })}
+      />
     </div>
   );
 }

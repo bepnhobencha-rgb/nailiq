@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useCallback } from "react";
-import { Plus, X } from "lucide-react";
-import { updateSectionContent } from "@/shared/dashboard/pageEditorActions";
+import { Plus, X, Upload } from "lucide-react";
+import { updateSectionContent, uploadSectionImage } from "@/shared/dashboard/pageEditorActions";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -26,7 +26,10 @@ function parseImages(raw: unknown): GalleryImage[] {
 
 export function GalleryEditor({ slug, sectionId, content, onContentUpdate }: EditorProps) {
   const [status, setStatus] = useState<SaveStatus>("idle");
+  const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingUploadIdx = useRef<number | null>(null);
   const images = parseImages(content.images);
 
   const save = useCallback(async (newContent: Record<string, unknown>) => {
@@ -49,11 +52,34 @@ export function GalleryEditor({ slug, sectionId, content, onContentUpdate }: Edi
   }
 
   function handleAddImage() {
+    if (images.length >= 12) return;
     handleChange({ images: [...images, { url: "" }] });
   }
 
   function handleRemoveImage(idx: number) {
     handleChange({ images: images.filter((_, i) => i !== idx) });
+  }
+
+  function triggerUpload(idx: number) {
+    pendingUploadIdx.current = idx;
+    fileInputRef.current?.click();
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    const idx = pendingUploadIdx.current;
+    if (!file || idx === null) return;
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setUploadingIdx(idx);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("type", `gallery-${idx}`);
+    const result = await uploadSectionImage(slug, fd);
+    setUploadingIdx(null);
+    if (result.ok && result.url) {
+      const newImages = images.map((img, i) => i === idx ? { ...img, url: result.url! } : img);
+      handleChange({ images: newImages });
+    }
   }
 
   return (
@@ -91,6 +117,10 @@ export function GalleryEditor({ slug, sectionId, content, onContentUpdate }: Edi
         <div className="flex flex-col gap-2">
           {images.map((img, idx) => (
             <div key={idx} className="flex items-center gap-2">
+              {img.url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={img.url} alt="" className="h-10 w-14 rounded object-cover border border-white/10 shrink-0" />
+              )}
               <input
                 type="text"
                 className={inputClass}
@@ -100,6 +130,15 @@ export function GalleryEditor({ slug, sectionId, content, onContentUpdate }: Edi
               />
               <button
                 type="button"
+                disabled={uploadingIdx === idx}
+                onClick={() => triggerUpload(idx)}
+                className="shrink-0 text-[#a1a1aa]/60 hover:text-[#d4af37] transition-colors disabled:opacity-40"
+                title="Upload"
+              >
+                {uploadingIdx === idx ? <span className="text-xs">…</span> : <Upload size={13} />}
+              </button>
+              <button
+                type="button"
                 className="shrink-0 text-[#a1a1aa]/60 hover:text-red-400 transition-colors"
                 onClick={() => handleRemoveImage(idx)}
               >
@@ -107,16 +146,24 @@ export function GalleryEditor({ slug, sectionId, content, onContentUpdate }: Edi
               </button>
             </div>
           ))}
-          <button
-            type="button"
-            className="flex items-center gap-1.5 text-xs text-[#d4af37] hover:text-[#d4af37]/80 transition-colors mt-1"
-            onClick={handleAddImage}
-          >
-            <Plus size={13} />
-            Thêm ảnh
-          </button>
+          {images.length < 12 && (
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-xs text-[#d4af37] hover:text-[#d4af37]/80 transition-colors mt-1"
+              onClick={handleAddImage}
+            >
+              <Plus size={13} />
+              Thêm ảnh{images.length > 0 ? ` (${images.length}/12)` : ""}
+            </button>
+          )}
         </div>
-        <p className="text-xs text-[#a1a1aa]/60 italic mt-2">Tải ảnh lên — nhập URL ảnh</p>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="hidden"
+          onChange={handleFileChange}
+        />
       </div>
     </div>
   );
