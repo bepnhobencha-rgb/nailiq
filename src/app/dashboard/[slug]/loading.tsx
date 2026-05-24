@@ -5,8 +5,8 @@ export default function SalonDashboardLoading() {
   return (
     <ResponsiveShell>
       <div
+        role="status"
         className="mx-auto min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-6 sm:pt-8"
-        aria-busy
         aria-label="Loading dashboard"
       >
         <div className="mb-6 space-y-2">

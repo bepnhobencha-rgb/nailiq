@@ -6,6 +6,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
   NAILQ_DEMO_SLUG_COOKIE,
   NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
+  NAILQ_DEMO_SLUG_COOKIE_SECURE,
 } from "@/shared/lib/demoDashboardCookie";
 import { DEMO_SALON_SLUG, isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import { slugifySalonName } from "@/shared/lib/slugifySalonName";
@@ -177,7 +178,7 @@ export async function completeSalonRegistration(
         maxAge: NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
         httpOnly: true,
         sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
+        secure: NAILQ_DEMO_SLUG_COOKIE_SECURE,
       });
 
       return {

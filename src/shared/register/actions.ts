@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import {
   NAILQ_DEMO_SLUG_COOKIE,
   NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
+  NAILQ_DEMO_SLUG_COOKIE_SECURE,
 } from "@/shared/lib/demoDashboardCookie";
 import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import {
@@ -522,7 +523,7 @@ export async function verifyRegisterOtp(
         maxAge: NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
         httpOnly: true,
         sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
+        secure: NAILQ_DEMO_SLUG_COOKIE_SECURE,
       });
       if (registerFlowDebugEnabled()) {
         console.log("verifyRegisterOtp returning owner → dashboard", {
