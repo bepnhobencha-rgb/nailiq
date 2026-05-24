@@ -176,6 +176,8 @@ jobs:
     # them on push-to-main where the baseline-update flag is meaningful.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     timeout-minutes: 30
+    permissions:
+      contents: write
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
@@ -187,8 +189,11 @@ jobs:
       SENTRY_AUTH_TOKEN: ""
       NEXT_PUBLIC_DEMO_OTP: "true"
       DEMO_OTP: "true"
+      NAILIQ_TEST_BYPASS_SLUG_PIN: "1"
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -196,6 +201,17 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium webkit
       - run: npm run build
+      - name: Start production server & verify it boots within 30s
+        run: |
+          mkdir -p tmp
+          nohup npx next start > tmp/next-server.log 2>&1 &
+          echo "$!" > tmp/next-server.pid
+          npx --yes wait-on http://localhost:3000 --timeout 30000 --interval 500 || {
+            echo "::error::Server did not respond on http://localhost:3000 within 30s"
+            tail -n 200 tmp/next-server.log || true
+            exit 1
+          }
+          echo "::notice::Production server up for visual tests"
       - name: Detect snapshot-update intent
         id: snap
         run: |
@@ -207,6 +223,19 @@ jobs:
           fi
       - name: Run visual tests
         run: npx playwright test e2e/visual ${{ steps.snap.outputs.flag }} --reporter=list,html
+      - name: Commit updated Linux snapshots back to main
+        if: steps.snap.outputs.flag != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add e2e/visual/visual-regression.spec.ts-snapshots/
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(visual): update Linux snapshot baselines [skip ci]"
+            git push origin HEAD:main
+            echo "::notice::Committed updated Linux snapshots to main"
+          else
+            echo "::notice::No snapshot changes detected"
+          fi
       - name: Upload visual diff artifacts
         if: failure()
         uses: actions/upload-artifact@v4
@@ -215,13 +244,6 @@ jobs:
           path: |
             playwright-report/
             test-results/
-          retention-days: 14
-      - name: Upload updated snapshots
-        if: success() && steps.snap.outputs.flag != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: updated-snapshots
-          path: e2e/visual/__screenshots__/
           retention-days: 14
 
   ai-triage:
