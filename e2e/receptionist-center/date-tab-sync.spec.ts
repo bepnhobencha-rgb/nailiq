@@ -39,6 +39,12 @@ test.describe("date-tab-sync", () => {
       page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker }),
     ).toBeVisible({ timeout: 15_000 });
 
+    // On mobile the queue is a slide-over drawer; close it so the date switcher is clickable
+    const backdrop1 = page.getByTestId("queue-panel-backdrop");
+    if ((await backdrop1.count()) > 0) {
+      await backdrop1.click({ force: true });
+    }
+
     await page.getByTestId("date-switcher-yesterday").click();
     await expect(page.getByTestId("walkin-queue-sidebar")).toHaveCount(0);
     await expect(page.getByTestId("status-pill")).toHaveCount(0);
@@ -56,6 +62,12 @@ test.describe("date-tab-sync", () => {
     await expect(
       page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker }),
     ).toBeVisible({ timeout: 15_000 });
+
+    // On mobile the queue is a slide-over drawer; close it so the date switcher is clickable
+    const backdrop2 = page.getByTestId("queue-panel-backdrop");
+    if ((await backdrop2.count()) > 0) {
+      await backdrop2.click({ force: true });
+    }
 
     await page.getByTestId("date-switcher-yesterday").click();
     await expect(page.getByTestId("walkin-queue-sidebar")).toHaveCount(0);
