@@ -214,8 +214,10 @@ jobs:
           echo "::notice::Production server up for visual tests"
       - name: Detect snapshot-update intent
         id: snap
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
-          if echo "${{ github.event.head_commit.message }}" | grep -qiF "[update-snapshots]"; then
+          if echo "$COMMIT_MSG" | grep -qiF "[update-snapshots]"; then
             echo "flag=--update-snapshots" >> "$GITHUB_OUTPUT"
             echo "::notice::Commit message contains [update-snapshots] — refreshing visual baselines"
           else
