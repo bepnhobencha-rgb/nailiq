@@ -13,6 +13,7 @@ import { DashboardModulesSettings } from "@/components/dashboard/DashboardModule
 import { DashboardPresetSettings } from "@/components/dashboard/DashboardPresetSettings";
 import { BrandColorSettings } from "@/components/dashboard/BrandColorSettings";
 import { WalkinAutoAssignSettings } from "@/components/dashboard/WalkinAutoAssignSettings";
+import { QueueDisplayModeSettings } from "@/components/dashboard/QueueDisplayModeSettings";
 import { PhoneOtpSettings } from "@/components/dashboard/PhoneOtpSettings";
 import { BookingVerificationSettings } from "@/components/dashboard/BookingVerificationSettings";
 import { PricingPanel } from "@/components/dashboard/PricingPanel";
@@ -39,6 +40,7 @@ export function SalonSettingsHub({
   brandColor,
   themeMode,
   walkinAutoAssign,
+  queueDisplayMode,
   phoneOtpEnabled,
   bookingVerificationMode,
   remindersEnabled,
@@ -56,6 +58,7 @@ export function SalonSettingsHub({
   brandColor: string;
   themeMode: "dark" | "light";
   walkinAutoAssign: boolean;
+  queueDisplayMode: "simple" | "full";
   phoneOtpEnabled: boolean;
   remindersEnabled: boolean;
   reminder24hEnabled: boolean;
@@ -347,6 +350,11 @@ export function SalonSettingsHub({
                 <WalkinAutoAssignSettings
                   slug={slug}
                   initialValue={walkinAutoAssign}
+                  canEdit={canEditDashboardModules}
+                />
+                <QueueDisplayModeSettings
+                  slug={slug}
+                  initialValue={queueDisplayMode}
                   canEdit={canEditDashboardModules}
                 />
                 <PhoneOtpSettings

@@ -42,6 +42,8 @@ export interface ReceptionistCenterData {
      * receptionist's "Assign immediately" path is hidden — every
      * walk-in lands in the queue first. */
     walkinAutoAssign: boolean;
+    /** `salons.queue_display_mode`. 'simple' hides noise fields on queue cards. */
+    queueDisplayMode: "simple" | "full";
   };
   staff: Array<{
     id: string;
@@ -437,6 +439,7 @@ export async function loadReceptionistCenterData(
     dashboard_density?: unknown;
     currency_code?: unknown;
     walkin_auto_assign?: unknown;
+    queue_display_mode?: unknown;
   };
   let salonData: SalonShape | null;
   if (deps?.preFetchedSalon) {
@@ -458,7 +461,7 @@ export async function loadReceptionistCenterData(
         // currency_code + walkin_auto_assign added by recent migrations
         // (20260512000000 / 20260511100000) — not in auto-generated
         // types yet, hence the `as never` cast on the SELECT string.
-        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign" as never,
+        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode" as never,
       )
       .eq("id", ctx.salon.id)
       .maybeSingle();
@@ -481,6 +484,7 @@ export async function loadReceptionistCenterData(
     timezone: salonData.timezone.trim(),
     currencyCode: parseCurrency(salonData.currency_code),
     walkinAutoAssign: salonData.walkin_auto_assign === false ? false : true,
+    queueDisplayMode: (salonData.queue_display_mode === "simple" ? "simple" : "full") as "simple" | "full",
   };
 
   const rawDashboardModules = parseDashboardModules(

@@ -1553,6 +1553,7 @@ export type Database = {
           superadmin_locked_at: string | null
           theme_mode: string | null
           timezone: string
+          queue_display_mode: string
           walkin_auto_assign: boolean
         }
         Insert: {
@@ -1589,6 +1590,7 @@ export type Database = {
           sms_reminders_enabled?: boolean
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          queue_display_mode?: string
           subscription_current_period_end?: string | null
           subscription_plan?: string
           subscription_status?: string
@@ -1631,6 +1633,7 @@ export type Database = {
           sms_reminders_enabled?: boolean
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          queue_display_mode?: string
           subscription_current_period_end?: string | null
           subscription_plan?: string
           subscription_status?: string

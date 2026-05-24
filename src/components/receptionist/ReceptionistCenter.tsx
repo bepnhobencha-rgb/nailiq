@@ -1889,6 +1889,7 @@ function ReceptionistCenterInner({
                 showWaitTime={modules.wait_time}
                 showVipIndicator={modules.vip_indicators}
                 compact={effectiveDensity === "simple"}
+                queueDisplayMode={data.salon.queueDisplayMode}
                 popularServiceIds={data.popularServiceIds}
                 popularServicesLabel={rcMessages.popularServices.label}
                 labels={{

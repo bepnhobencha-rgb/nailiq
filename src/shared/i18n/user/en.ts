@@ -674,6 +674,15 @@ export type UserMessages = {
       descriptionOff: string;
       errorGeneric: string;
     };
+    /** Queue display mode toggle (salons.queue_display_mode). */
+    queueDisplayMode: {
+      sectionTitle: string;
+      labelFull: string;
+      labelSimple: string;
+      descriptionFull: string;
+      descriptionSimple: string;
+      errorGeneric: string;
+    };
     /** SMS OTP phone verification toggle. */
     phoneOtp: {
       sectionTitle: string;
@@ -2207,6 +2216,16 @@ export const userEn: UserMessages = {
         "Walk-ins are assigned directly to the timeline when staff is free. Faster.",
       descriptionOff:
         "All walk-ins enter the queue first for receptionist review.",
+      errorGeneric: "Could not save. Try again.",
+    },
+    queueDisplayMode: {
+      sectionTitle: "Queue card view",
+      labelFull: "Full",
+      labelSimple: "Simple",
+      descriptionFull:
+        "Show all details: priority, party size, staff dispatch, and request tags.",
+      descriptionSimple:
+        "Small salons: hide priority, party size, and request tags. Keep wait time and actions.",
       errorGeneric: "Could not save. Try again.",
     },
     phoneOtp: {

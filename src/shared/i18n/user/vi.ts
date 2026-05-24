@@ -778,6 +778,16 @@ export const userVi: UserMessages = {
         "Mọi khách walk-in vào hàng chờ trước để lễ tân kiểm soát thủ công.",
       errorGeneric: "Không lưu được. Vui lòng thử lại.",
     },
+    queueDisplayMode: {
+      sectionTitle: "Hiển thị thẻ hàng chờ",
+      labelFull: "Đầy đủ",
+      labelSimple: "Gọn",
+      descriptionFull:
+        "Hiện tất cả chi tiết: ưu tiên, số người, thợ được yêu cầu, và nhãn.",
+      descriptionSimple:
+        "Tiệm nhỏ: ẩn ưu tiên, số người, và nhãn yêu cầu. Giữ thời gian chờ và nút thao tác.",
+      errorGeneric: "Không lưu được. Vui lòng thử lại.",
+    },
     phoneOtp: {
       sectionTitle: "Xác thực số điện thoại (OTP)",
       toggleLabel: "Yêu cầu mã SMS trước khi đặt lịch",

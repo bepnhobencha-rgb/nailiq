@@ -176,6 +176,8 @@ export interface WalkinQueueSidebarProps {
   showVipIndicator?: boolean;
   /** Compact mode (density=simple): each card shows only position + name + service. */
   compact?: boolean;
+  /** Salon-level queue display mode (salons.queue_display_mode). */
+  queueDisplayMode?: "simple" | "full";
   /**
    * Popular service ids derived from today's bookings (server-side, in
    * `loadReceptionistCenterData`). Rendered as shortcut chips above the
@@ -250,6 +252,7 @@ export function WalkinQueueSidebar({
   showWaitTime = true,
   showVipIndicator = true,
   compact = false,
+  queueDisplayMode = "full",
   popularServiceIds,
   popularServicesLabel,
   currency,
@@ -543,6 +546,7 @@ export function WalkinQueueSidebar({
                       nowIso={nowIso}
                       isAssigning={assigningThis}
                       compact={compact}
+                      displayMode={queueDisplayMode}
                       labels={{
                         waitHeroSuffix: labels.waitHeroSuffix,
                         vipAria: labels.vipAria,

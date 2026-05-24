@@ -110,6 +110,10 @@ export type QueueEntryCardProps = {
   dragHandle?: ReactNode;
   /** Compact mode (density=simple): position + name + service only — hides wait hero, badges, tags, and secondary actions. */
   compact?: boolean;
+  /** Salon-level queue display mode. 'simple' hides priority badge, party size,
+   *  staff dispatch line, heart-line, and request tags while keeping the wait hero.
+   *  Defaults to 'full'. */
+  displayMode?: "simple" | "full";
 };
 
 export function QueueEntryCard({
@@ -137,7 +141,9 @@ export function QueueEntryCard({
   actions,
   dragHandle,
   compact = false,
+  displayMode = "full",
 }: QueueEntryCardProps) {
+  const isSimple = displayMode === "simple";
   const isUrgentByWait = showWaitTime && waitMinutes >= WAIT_WARNING_MIN;
   const isDangerByWait = showWaitTime && waitMinutes >= WAIT_DANGER_MIN;
   const showSourceChip =
@@ -145,7 +151,7 @@ export function QueueEntryCard({
     source !== undefined &&
     (source !== "vip" || showVipIndicator);
   const tags = requestTags ?? [];
-  const showParty = typeof partySize === "number" && partySize > 1;
+  const showParty = !isSimple && typeof partySize === "number" && partySize > 1;
   const priorityLabel: Record<QueuePriority, string> = {
     high: labels.priorityHigh,
     medium: labels.priorityMedium,
@@ -212,7 +218,7 @@ export function QueueEntryCard({
             <span className="truncate text-sm font-semibold text-nq-foreground">
               {customerName}
             </span>
-            {priority ? (
+            {priority && !isSimple ? (
               <Badge
                 size="sm"
                 state="default"
@@ -307,8 +313,8 @@ export function QueueEntryCard({
         </p>
       )}
 
-      {/* Staff dispatch line: name + ready-around. */}
-      {requestedStaffName || requestedStaffReadyClock ? (
+      {/* Staff dispatch line: name + ready-around. Hidden in simple mode. */}
+      {!isSimple && (requestedStaffName || requestedStaffReadyClock) ? (
         <p
           data-testid="queue-staff-dispatch"
           className="mt-2 flex items-center justify-between gap-2 text-[11px] text-nq-muted"
@@ -334,7 +340,7 @@ export function QueueEntryCard({
         </p>
       ) : null}
 
-      {staffRequestedByClient ? (
+      {staffRequestedByClient && !isSimple ? (
         <p
           data-testid="queue-requested-by-client"
           className="mt-1 text-[11px] font-medium text-rose-600"
@@ -344,7 +350,7 @@ export function QueueEntryCard({
         </p>
       ) : null}
 
-      {showSourceChip || tags.length > 0 ? (
+      {showSourceChip || (!isSimple && tags.length > 0) ? (
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           {showSourceChip && source ? (
             <QueueChip
@@ -356,14 +362,14 @@ export function QueueEntryCard({
               }
             />
           ) : null}
-          {tags.map((tag, idx) => (
+          {!isSimple ? tags.map((tag, idx) => (
             <QueueChip
               key={`${tag}-${idx}`}
               type="request"
               size="sm"
               label={tag}
             />
-          ))}
+          )) : null}
         </div>
       ) : null}
 

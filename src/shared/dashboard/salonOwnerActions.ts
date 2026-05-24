@@ -901,6 +901,38 @@ export async function updateWalkinAutoAssign(
   return { ok: true, walkinAutoAssign: enabled };
 }
 
+type UpdateQueueDisplayModeResult =
+  | { ok: true; queueDisplayMode: "simple" | "full" }
+  | { ok: false; error: string };
+
+export async function updateQueueDisplayMode(
+  slug: string,
+  mode: "simple" | "full",
+): Promise<UpdateQueueDisplayModeResult> {
+  if (mode !== "simple" && mode !== "full") {
+    return { ok: false, error: "server_error" };
+  }
+
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+
+  const { error: upErr } = await ctx.supabase
+    .from("salons")
+    .update({ queue_display_mode: mode } as never)
+    .eq("id", ctx.salon.id);
+
+  if (upErr) {
+    console.error("[updateQueueDisplayMode]", upErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true, queueDisplayMode: mode };
+}
+
 type UpdatePhoneOtpResult =
   | { ok: true; phoneOtpEnabled: boolean }
   | { ok: false; error: string };
