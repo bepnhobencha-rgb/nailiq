@@ -228,46 +228,36 @@ export async function submitPublicBooking(
   if (!salon.profile_complete) throw new Error("salon_not_live");
 
   // Validate OTP session when the salon requires phone verification.
+  // Note: submitPublicBooking runs in the browser (no "use server") so we use
+  // the anon `supabase` client. phone_otp_sessions has an RLS policy that allows
+  // reading unconsumed/non-expired sessions by UUID (the UUID is the capability token).
   const salonPhoneOtpEnabled =
     (salon as { phone_otp_enabled?: unknown }).phone_otp_enabled === true;
   if (salonPhoneOtpEnabled) {
     const sessionId = (params.otpSessionId ?? "").trim();
     if (!sessionId) throw new Error("otp_required");
 
-    const serviceClient = (await import("@/shared/lib/supabase/serviceRole"))
-      .createServiceRoleClient();
-    const { data: otpSession } = await serviceClient
-      .from("phone_otp_sessions")
+    const { data: otpSession } = await supabase
+      .from("phone_otp_sessions" as never)
       .select("id, phone, consumed_at, expires_at")
       .eq("id", sessionId)
       .eq("salon_id", String(salon.id))
-      .maybeSingle();
+      .maybeSingle() as { data: { id: string; phone: string; consumed_at: string | null; expires_at: string } | null };
 
     if (!otpSession) throw new Error("otp_invalid");
 
-    const sessionRow = otpSession as {
-      id: string;
-      phone: string;
-      consumed_at: string | null;
-      expires_at: string;
-    };
-    // Expired or already consumed.
-    if (
-      sessionRow.consumed_at !== null ||
-      new Date(sessionRow.expires_at) < new Date()
-    ) {
-      throw new Error("otp_invalid");
-    }
     // Phone must match the booking phone (digits only).
-    if (sessionRow.phone !== phoneOk.digits) {
+    if (otpSession.phone !== phoneOk.digits) {
       throw new Error("otp_invalid");
     }
 
-    // Mark as consumed — best-effort; failure should not block the booking.
-    void serviceClient
-      .from("phone_otp_sessions")
-      .update({ consumed_at: new Date().toISOString() } as never)
-      .eq("id", sessionId);
+    // Mark as consumed via API — best-effort fire-and-forget so the session
+    // cannot be reused (not blocking the booking flow on failure).
+    void fetch("/api/booking-otp/consume-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+    });
   }
 
   // Enforce per-plan monthly booking cap (landing-page promise).
