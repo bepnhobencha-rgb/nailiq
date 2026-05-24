@@ -111,8 +111,9 @@ export function StaffSetupPanel({
 
   const refresh = useCallback(() => router.refresh(), [router]);
 
-  // Mirrors ServicesSetupPanel — disables the Add button + lights up
-  // the at-limit banner while any save is in flight.
+  // Row-level saving (pendingId) blocks the row's own Save/Remove buttons,
+  // but must NOT block the Add form — that form has independent state and
+  // its own addSaveStatus guard below.
   const isMutating = pendingId !== null || addSaveStatus === "saving";
   const atStaffLimit =
     Number.isFinite(maxStaff) && rows.length >= maxStaff;
@@ -386,7 +387,7 @@ export function StaffSetupPanel({
             }}
             idleLabel={tLabels.addStaff}
             savedLabel="✓ Saved"
-            disabled={isMutating || atStaffLimit || !draftName.trim()}
+            disabled={addSaveStatus === "saving" || atStaffLimit || !draftName.trim()}
             className="min-h-11 w-full"
           />
         </div>
