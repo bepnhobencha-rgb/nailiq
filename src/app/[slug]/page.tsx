@@ -48,9 +48,17 @@ export async function generateMetadata({
     };
   }
   const name = resolved.load.salon.name || resolved.normalizedSlug;
+  const canonicalUrl = `https://nailiq.ca/${slug}`;
   return {
     title: `Book ${name}`,
     description: `Book nail and beauty appointments at ${name}. English-only guest experience on NailIQ.`,
+    alternates: {
+      canonical: canonicalUrl,
+      languages: {
+        en: canonicalUrl,
+        vi: canonicalUrl,
+      },
+    },
   };
 }
 

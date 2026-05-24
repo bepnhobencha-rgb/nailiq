@@ -69,7 +69,7 @@ export async function GET(req: Request) {
 
   const baseSelect = `id, salon_id, client_name, client_email, client_phone, start_time_utc,
     reminder_24h_sent_at, reminder_3h_sent_at,
-    services(name), staff(name),
+    services!bookings_service_id_fkey(name), staff(name),
     salons(name, slug, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled)`;
 
   // Fetch both email-eligible AND SMS-eligible bookings (no email filter here).
