@@ -17,6 +17,7 @@ import { formatSalonDisplayName } from "@/shared/lib/salonDisplay";
 import { BookingDocumentEn } from "./BookingDocumentEn";
 import { BookingLanguageToggle } from "@/components/booking/BookingLanguageToggle";
 import { BookingChatWidget } from "@/components/booking/BookingChatWidget";
+import { getSalonLocalBusinessJsonLd } from "@/shared/seo/jsonLd";
 
 /** Avoid stale static segments for salons created after deploy. */
 export const dynamic = "force-dynamic";
@@ -150,9 +151,22 @@ async function PublicBookingRouteBody({
     "--shadow-nq-tile-selected": `0 0 0 1px ${load.salon.brandColor}, 0 18px 50px -20px rgba(0, 0, 0, 0.55), 0 0 40px -8px color-mix(in srgb, ${load.salon.brandColor} 35%, transparent)`,
   } as React.CSSProperties;
 
+  const localBusinessSchema = getSalonLocalBusinessJsonLd({
+    slug: normalizedSlug,
+    name: load.salon.name,
+    description: load.salon.description,
+    address: load.salon.address,
+    phone: load.salon.salonPhone,
+    timezone: load.salon.timezone,
+  });
+
   if (!load.salon.acceptingBookings) {
     return (
       <>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessSchema) }}
+        />
         <BookingDocumentEn lang={lang} />
         <div
           className="relative min-h-dvh px-4 py-10 pb-safe sm:px-6 lg:px-8"
@@ -170,6 +184,10 @@ async function PublicBookingRouteBody({
 
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessSchema) }}
+      />
       {/* QA re-test follow-up — the prop was missing on this branch
           so `<html lang>` defaulted to "vi" forever even after the
           user flipped to EN, which throws screen readers into
