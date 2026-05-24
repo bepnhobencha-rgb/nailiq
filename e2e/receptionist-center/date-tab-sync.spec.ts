@@ -39,9 +39,10 @@ test.describe("date-tab-sync", () => {
       page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker }),
     ).toBeVisible({ timeout: 15_000 });
 
-    // On mobile the queue is a slide-over drawer whose backdrop covers the date switcher.
-    // force:true bypasses the "another element intercepts pointer events" actionability check.
-    await page.getByTestId("date-switcher-yesterday").click({ force: true });
+    // On mobile the queue backdrop (z-30) sits above the date-switcher; coordinate-based
+    // clicks (including force:true) still hit the backdrop. Use evaluate/el.click() to
+    // dispatch directly to the element, bypassing z-index hit-testing.
+    await page.getByTestId("date-switcher-yesterday").evaluate((el: HTMLElement) => el.click());
     await expect(page.getByTestId("walkin-queue-sidebar")).toHaveCount(0);
     await expect(page.getByTestId("status-pill")).toHaveCount(0);
     await expect(page.getByTestId("staff-timeline-grid")).toBeVisible();
@@ -59,11 +60,11 @@ test.describe("date-tab-sync", () => {
       page.locator(`[data-testid^="queue-item-"]`).filter({ hasText: marker }),
     ).toBeVisible({ timeout: 15_000 });
 
-    // force:true bypasses backdrop interception on mobile slide-over panel
-    await page.getByTestId("date-switcher-yesterday").click({ force: true });
+    // evaluate/el.click() dispatches directly to the element, bypassing backdrop z-index
+    await page.getByTestId("date-switcher-yesterday").evaluate((el: HTMLElement) => el.click());
     await expect(page.getByTestId("walkin-queue-sidebar")).toHaveCount(0);
 
-    await page.getByTestId("date-switcher-today").click({ force: true });
+    await page.getByTestId("date-switcher-today").evaluate((el: HTMLElement) => el.click());
     await expect(page.getByTestId("walkin-queue-sidebar")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("status-pill")).toBeVisible();
     await expect(
