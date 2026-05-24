@@ -526,13 +526,26 @@ export async function gotoReceptionistCenter(
     state: "attached",
     timeout: 45_000,
   });
-  await page.getByTestId("staff-timeline-grid").waitFor({
+  // `.first()` — same streaming-hydration race as `receptionist-center-loaded`
+  // above: the grid can briefly appear twice (SSR placeholder + hydrated copy).
+  await page.getByTestId("staff-timeline-grid").first().waitFor({
     state: "visible",
     timeout: 45_000,
   });
   if (opts?.expectWalkinQueue !== false) {
     await page.getByTestId("walkin-add-form").waitFor({ state: "visible", timeout: 45_000 });
   }
+  // Gate on BookingDetailDrawer's portal mounting. The portal is created
+  // inside a useEffect (portalEl = document.body), which only runs after
+  // React hydration. The SSR pass renders null (portalEl is null on the
+  // server), so "attached" for this testid is a reliable signal that
+  // client-side effects have fired and the page is fully interactive.
+  // Without this wait, tests on mobile can click booking blocks before
+  // React event handlers are registered, causing the drawer to never open.
+  await page.getByTestId("booking-detail-drawer").waitFor({
+    state: "attached",
+    timeout: 30_000,
+  });
 }
 
 /** 10-digit test phone satisfying `validateGuestPhone` / public booking rules. */

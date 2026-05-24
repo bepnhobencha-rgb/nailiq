@@ -405,14 +405,16 @@
 
 @layer base {
   html {
-    overflow-x: hidden;
+    /* clip prevents horizontal scroll without creating a scroll container,
+       so position:fixed children are still relative to the viewport. */
+    overflow-x: clip;
   }
 
   body {
     background: var(--color-nq-bg);
     color: var(--color-nq-foreground);
     font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
-    overflow-x: hidden;
+    overflow-x: clip;
     min-height: 100dvh;
     padding-bottom: env(safe-area-inset-bottom, 0);
   }
