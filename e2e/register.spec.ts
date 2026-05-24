@@ -84,8 +84,9 @@ test.describe("Returning owner", () => {
     await page.fill('input[type="tel"]', TEST_PHONE);
     await page.click('button:has-text("Send code")');
 
-    // Demo OTP modal appears; dismiss it and navigate to verify page.
-    await page.waitForTimeout(800);
+    // Demo OTP modal appears; wait for it to be visible before dismissing
+    // (waitForTimeout(800) is too short on slow mobile WebKit CI runners).
+    await page.getByRole("button", { name: "Enter code" }).waitFor({ state: "visible", timeout: 10_000 });
     await page.getByRole("button", { name: "Enter code" }).click();
     await expect(page).toHaveURL(/login\/verify/);
 

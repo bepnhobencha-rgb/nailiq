@@ -155,7 +155,9 @@ test.describe("No-Show — Waitlist Auto-Fill", () => {
 
   test("invalid claim token shows slot unavailable page", async ({ page }) => {
     await page.goto("/booking/waitlist-claim?token=00000000-0000-0000-0000-000000000000");
-    await expect(page.getByText(/unavailable|already been claimed|invalid/i)).toBeVisible({
+    // The page renders both a heading and a detail paragraph that match the
+    // regex; use .first() to target only the heading and avoid strict-mode violations.
+    await expect(page.getByText(/unavailable|already been claimed|invalid/i).first()).toBeVisible({
       timeout: 10_000,
     });
   });

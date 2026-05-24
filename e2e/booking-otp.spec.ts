@@ -4,6 +4,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
+import { fillReactInput } from "./receptionist-center/helpers";
 
 const OTP_DEMO_CODE = "000000";
 
@@ -61,9 +62,10 @@ test.describe("Booking Flow — Phone OTP", () => {
     await page.locator('[data-testid="time-slot"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    // Fill info form
-    await page.fill('input[name="clientName"]', "OTP Test Client");
-    await page.fill('input[name="clientPhone"]', "6045559999");
+    // Fill info form — use native setter so React's controlled onChange fires.
+    // page.fill() uses CDP which bypasses React's patched value getter.
+    await fillReactInput(page.locator('input[name="clientName"]'), "OTP Test Client");
+    await fillReactInput(page.locator('input[name="clientPhone"]'), "6045559999");
   }
 
   test("OTP step appears after info and accepts demo code", async ({ page }) => {
