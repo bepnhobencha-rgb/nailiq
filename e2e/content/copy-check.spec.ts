@@ -138,6 +138,19 @@ test.describe("Copy & i18n live-render check", () => {
           window.scrollTo({ top: document.body.scrollHeight, behavior: "instant" }),
         );
 
+        // Wait for the localStorage-driven language hydration to settle.
+        // The UserLanguageContext reads localStorage in a useEffect after
+        // first render; on slow mobile JIT the re-render may not have
+        // committed by the time networkidle fires. Poll until the h1Gold
+        // text from the correct locale appears in the DOM.
+        const h1GoldText = messages.landing.hero.h1Gold;
+        await page.waitForFunction(
+          (expected: string) =>
+            (document.body.textContent ?? "").includes(expected),
+          h1GoldText,
+          { timeout: 10_000 },
+        );
+
         // Use textContent (not innerText) so we capture text from opacity:0
         // animated elements that haven't fully transitioned yet.
         const visibleText = await page.evaluate(() => {

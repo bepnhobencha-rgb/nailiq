@@ -44,13 +44,8 @@ export function evaluateDeposit(input: DepositInput): DepositDecision {
     explanation: "No deposit required",
   };
 
-  // VIP always exempt — highest priority
-  if (isVip) return noRequired;
-
-  // Owner explicit waive
-  if (ownerOverride === "waive") return noRequired;
-
-  // Owner explicit require
+  // Owner explicit override takes precedence over everything (including VIP status).
+  // "require" forces a deposit even for VIPs; "waive" skips deposit for everyone.
   if (ownerOverride === "require") {
     return {
       required: true,
@@ -59,6 +54,11 @@ export function evaluateDeposit(input: DepositInput): DepositDecision {
       explanation: "Deposit required by owner rule",
     };
   }
+
+  if (ownerOverride === "waive") return noRequired;
+
+  // VIP always exempt — second-highest priority (after owner override)
+  if (isVip) return noRequired;
 
   // Previous no-show: require 50% deposit
   if (previousNoShowCount > 0) {

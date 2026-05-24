@@ -28,16 +28,43 @@ async function scrollToBottom(page: Page) {
 
 test.describe("Landing page → register funnel", () => {
   test.describe("Navbar CTAs", () => {
+    /**
+     * Opens the mobile hamburger menu when the desktop nav links are hidden
+     * (narrow viewport). On desktop viewports, does nothing.
+     */
+    async function openMobileMenuIfNeeded(page: Page) {
+      const hamburger = page.getByRole("button", { name: /open menu/i });
+      if (await hamburger.isVisible()) {
+        await hamburger.click();
+        // Brief settle so the slide-down animation completes before clicking a link.
+        await page.waitForTimeout(200);
+      }
+    }
+
     test("Sign In link navigates to /login", async ({ page }) => {
       await gotoLanding(page);
-      await page.getByTestId("nav-sign-in").click();
+      await openMobileMenuIfNeeded(page);
+
+      // Desktop: nav-sign-in; mobile: nav-mobile-sign-in (revealed after hamburger).
+      const desktopLink = page.getByTestId("nav-sign-in");
+      const mobileLink  = page.getByTestId("nav-mobile-sign-in");
+      const link = await desktopLink.isVisible() ? desktopLink : mobileLink;
+      await link.click();
+
       await expect(page).toHaveURL(/\/login/);
       await expect(page).not.toHaveURL(/error/);
     });
 
     test("Try Free button navigates to /register", async ({ page }) => {
       await gotoLanding(page);
-      await page.getByTestId("nav-try-free").click();
+      await openMobileMenuIfNeeded(page);
+
+      // Desktop: nav-try-free; mobile: nav-mobile-try-free.
+      const desktopBtn = page.getByTestId("nav-try-free");
+      const mobileBtn  = page.getByTestId("nav-mobile-try-free");
+      const btn = await desktopBtn.isVisible() ? desktopBtn : mobileBtn;
+      await btn.click();
+
       await expect(page).toHaveURL(/\/register/);
       await expect(
         page.getByRole("heading", { name: /sign in or sign up/i }),

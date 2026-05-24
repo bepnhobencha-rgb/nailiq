@@ -16,6 +16,9 @@ test.describe("Booking Flow — Phone OTP", () => {
       name: "E2E OTP Salon",
       phone: "16045550001",
       phone_otp_enabled: true,
+      // always_otp ensures the verify-decision RPC routes every booking through
+      // the OTP step regardless of risk score (needed for predictable E2E tests).
+      booking_verification_mode: "always_otp",
     });
     testSlug = slug;
   });

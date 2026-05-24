@@ -35,7 +35,7 @@ BEGIN
 
   UPDATE booking_waitlist_entries
   SET status = 'claimed', claimed_at = now()
-  WHERE id = v_id;
+  WHERE booking_waitlist_entries.id = v_id;
 
   RETURN QUERY SELECT v_id, v_name, v_phone, v_email;
 END;

@@ -82,6 +82,11 @@ export async function seedTestSalon(opts?: {
   /** `salons.salon_phone` — public line for reschedule CTA; omit or null for none. */
   salon_phone?: string | null;
   phone_otp_enabled?: boolean;
+  /**
+   * `salons.booking_verification_mode` — controls whether OTP / deposit friction is
+   * applied. Defaults to 'never' (no friction). Set to 'always_otp' for OTP tests.
+   */
+  booking_verification_mode?: "never" | "always_otp" | "auto" | "always_deposit" | "deposit_first";
 }) {
   const phone = opts?.phone ?? "15550001111";
   const slug = opts?.slug ?? "e2e-test-salon";
@@ -104,6 +109,7 @@ export async function seedTestSalon(opts?: {
             ? null
             : String(opts.salon_phone).trim() || null,
       phone_otp_enabled: opts?.phone_otp_enabled ?? false,
+      booking_verification_mode: opts?.booking_verification_mode ?? "never",
     })
     .select("id")
     .single();

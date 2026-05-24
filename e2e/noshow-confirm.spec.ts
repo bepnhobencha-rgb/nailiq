@@ -82,14 +82,18 @@ test.describe("No-Show — One-Tap Confirm", () => {
     await page.goto(`/booking/confirm?token=${tokenId}`);
     await page.waitForLoadState("networkidle");
 
-    // Try again
+    // Try again — token is now used, page renders "Link Unavailable" heading +
+    // an error message. Use the h1 heading as the anchor to avoid strict-mode
+    // violations when multiple elements contain the same substring.
     await page.goto(`/booking/confirm?token=${tokenId}`);
-    await expect(page.getByText(/link.*used|expired|unavailable/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("heading", { name: /link unavailable/i }).first()).toBeVisible({ timeout: 10_000 });
   });
 
   test("missing token shows error", async ({ page }) => {
     await page.goto("/booking/confirm");
-    await expect(page.getByText(/invalid|unavailable/i)).toBeVisible({ timeout: 10_000 });
+    // "Link Unavailable" h1 is the authoritative signal — avoids strict-mode
+    // violations from matching both the heading and the detail paragraph.
+    await expect(page.getByRole("heading", { name: /link unavailable/i }).first()).toBeVisible({ timeout: 10_000 });
   });
 
   test("mobile confirm flow", async ({ page }) => {
