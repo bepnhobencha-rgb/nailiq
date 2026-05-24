@@ -129,6 +129,8 @@ export function SalonSettingsHub({
     { href: `${base}/address`, label: t.sectionAddress },
   ];
 
+  const myPageHref = `/dashboard/${encodeURIComponent(slug)}/settings/my-page`;
+
   return (
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 sm:pt-6">
@@ -185,6 +187,15 @@ export function SalonSettingsHub({
             </li>
           ))}
         </ul>
+
+        {/* ── My Page ─────────────────────────────────────────── */}
+        <Link
+          href={myPageHref}
+          className="mt-2 flex min-h-[3.25rem] touch-manipulation items-center justify-between gap-4 rounded-2xl border border-[#d4af37]/30 bg-[#d4af37]/5 px-4 py-3 text-base font-medium text-[#d4af37] ring-1 ring-inset ring-[#d4af37]/10 transition-colors hover:border-[#d4af37]/50 hover:bg-[#d4af37]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37]/45"
+        >
+          <span>My Page</span>
+          <span className="shrink-0" aria-hidden>→</span>
+        </Link>
 
         {/* ── Email verification ──────────────────────────────── */}
         <section
