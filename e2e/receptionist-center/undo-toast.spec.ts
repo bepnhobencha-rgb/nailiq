@@ -5,7 +5,7 @@ import {
   cleanReceptionistData,
   clickAssignSlot,
   gotoReceptionistCenter,
-  RECEPTIONIST_E2E_SLUG,
+  rcSlug,
   seedReceptionistCenterFixture,
   seedWalkin,
   testClientNameMarker,
@@ -14,16 +14,16 @@ import {
 
 let fx: ReceptionistCenterFixture;
 
-test.beforeAll(async () => {
-  fx = await seedReceptionistCenterFixture();
+test.beforeAll(async ({}, testInfo) => {
+  fx = await seedReceptionistCenterFixture(rcSlug(testInfo.project.name));
 });
 
 test.beforeEach(async () => {
   await cleanReceptionistData(fx.salonId);
 });
 
-test.afterAll(async () => {
-  await cleanupTestSalon(RECEPTIONIST_E2E_SLUG);
+test.afterAll(async ({}, testInfo) => {
+  await cleanupTestSalon(rcSlug(testInfo.project.name));
 });
 
 test.describe("Undo toast", () => {

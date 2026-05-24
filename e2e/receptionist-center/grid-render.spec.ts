@@ -9,7 +9,7 @@ import {
   getBookingRow,
   gotoReceptionistCenter,
   moveMouseToAssignSlot,
-  RECEPTIONIST_E2E_SLUG,
+  rcSlug,
   seedDeskBooking,
   seedReceptionistCenterFixture,
   testClientNameMarker,
@@ -23,16 +23,16 @@ function isoHm(h: number, m: number): string {
   return new Date(Date.UTC(y, mo - 1, d, h, m, 0)).toISOString();
 }
 
-test.beforeAll(async () => {
-  fx = await seedReceptionistCenterFixture();
+test.beforeAll(async ({}, testInfo) => {
+  fx = await seedReceptionistCenterFixture(rcSlug(testInfo.project.name));
 });
 
 test.beforeEach(async () => {
   await cleanReceptionistData(fx.salonId);
 });
 
-test.afterAll(async () => {
-  await cleanupTestSalon(RECEPTIONIST_E2E_SLUG);
+test.afterAll(async ({}, testInfo) => {
+  await cleanupTestSalon(rcSlug(testInfo.project.name));
 });
 
 test.describe("Receptionist grid render + ghost", () => {

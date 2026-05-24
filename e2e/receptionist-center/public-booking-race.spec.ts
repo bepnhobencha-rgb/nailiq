@@ -17,7 +17,7 @@ import {
   getBookingRow,
   fillWalkinGuestContact,
   gotoReceptionistCenter,
-  RECEPTIONIST_E2E_SLUG,
+  rcSlug,
   seedDeskBooking,
   seedReceptionistCenterFixture,
   seedWalkin,
@@ -135,8 +135,8 @@ function rpcShowsSlotConflict(
   return false;
 }
 
-test.beforeAll(async () => {
-  fx = await seedReceptionistCenterFixture();
+test.beforeAll(async ({}, testInfo) => {
+  fx = await seedReceptionistCenterFixture(rcSlug(testInfo.project.name));
 });
 
 test.beforeEach(async () => {
@@ -147,8 +147,8 @@ test.afterEach(async () => {
   await cleanReceptionistData(fx.salonId);
 });
 
-test.afterAll(async () => {
-  await cleanupTestSalon(RECEPTIONIST_E2E_SLUG);
+test.afterAll(async ({}, testInfo) => {
+  await cleanupTestSalon(rcSlug(testInfo.project.name));
 });
 
 test.describe("race-1: walk-in assigned then public RPC same slot", () => {

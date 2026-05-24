@@ -17,6 +17,13 @@ export const supabaseAdmin = createClient(supabaseUrl, serviceKey);
 /** Stable slug for Receptionist Center e2e — full teardown via `cleanupTestSalon` after suites. */
 export const RECEPTIONIST_E2E_SLUG = "e2e-receptionist-center";
 
+/** Returns the E2E salon slug scoped to the current Playwright project.
+ * Chromium and mobile run concurrently and must not share the same salon
+ * or one project's afterAll cleanup will delete the other's active fixture. */
+export function rcSlug(project: string): string {
+  return project === "mobile" ? "e2e-rc-mobile" : "e2e-rc-desktop";
+}
+
 export function testClientNameMarker(): string {
   /** Letters + digits only — matches guest `isValidCustomerName` whitelist. */
   return `Te2eGuest${Date.now()}${Math.floor(Math.random() * 1e9)}`;
