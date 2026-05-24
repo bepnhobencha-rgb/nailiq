@@ -535,14 +535,15 @@ export async function gotoReceptionistCenter(
   if (opts?.expectWalkinQueue !== false) {
     await page.getByTestId("walkin-add-form").waitFor({ state: "visible", timeout: 45_000 });
   }
-  // Gate on BookingDetailDrawer's portal mounting. The portal is created
-  // inside a useEffect (portalEl = document.body), which only runs after
-  // React hydration. The SSR pass renders null (portalEl is null on the
-  // server), so "attached" for this testid is a reliable signal that
-  // client-side effects have fired and the page is fully interactive.
-  // Without this wait, tests on mobile can click booking blocks before
-  // React event handlers are registered, causing the drawer to never open.
-  await page.getByTestId("booking-detail-drawer").waitFor({
+  // Gate on React hydration completing. `rc-hydrated` is rendered by
+  // ReceptionistCenter inside a useEffect (useState false → true), so it
+  // only appears in the DOM after the first client-side effect fires.
+  // SSR renders nothing (useState starts false on server), making this a
+  // reliable hydration-complete signal in the main React tree.
+  // We avoid using BookingDetailDrawer's portal for this because Playwright
+  // WebKit skips elements inside aria-hidden/inert containers (the drawer
+  // wraps its content in inert={!open} when closed).
+  await page.getByTestId("rc-hydrated").waitFor({
     state: "attached",
     timeout: 30_000,
   });

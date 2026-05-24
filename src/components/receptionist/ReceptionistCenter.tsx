@@ -343,6 +343,14 @@ function ReceptionistCenterInner({
 
   const [drawerBookingId, setDrawerBookingId] = useState<string | null>(null);
 
+  // E2E hydration signal: renders only after the first client-side effect,
+  // confirming React has fully hydrated and all event handlers are registered.
+  // Used by gotoReceptionistCenter in e2e/receptionist-center/helpers.ts.
+  const [rcHydrated, setRcHydrated] = useState(false);
+  useEffect(() => {
+    setRcHydrated(true);
+  }, []);
+
   const [undoState, setUndoState] = useState<UndoToastState | null>(null);
   const undoTimerRef = useRef<number | null>(null);
 
@@ -1351,6 +1359,8 @@ function ReceptionistCenterInner({
           rush.active && "[&_[data-rush-fade]]:opacity-50",
         )}
       >
+        {/* Hydration signal for E2E: only rendered after React useEffect fires. */}
+        {rcHydrated && <span data-testid="rc-hydrated" aria-hidden="true" style={{ display: "none" }} />}
         {bookingLimitStatus && !bookingLimitStatus.isUnlimited ? (
           <div className="shrink-0 border-b border-nq-border/30 px-[var(--pad-nq-section-mobile)] py-2 md:px-6">
             <div className="mx-auto w-full max-w-[var(--max-nq-desktop)]">
