@@ -247,8 +247,7 @@ async function buildSalon(
   if (extracted.brand_color?.match(/^#[0-9a-fA-F]{6}$/)) {
     salonPatch["brand_color"] = extracted.brand_color;
   }
-  if (logoUrl) salonPatch["logo_url"] = logoUrl;
-  if (heroUrl) salonPatch["hero_image_url"] = heroUrl;
+  // logo_url / hero_image_url do not exist on salons — images go into page sections below
 
   if (Object.keys(salonPatch).length > 0) {
     await db.from("salons").update(salonPatch).eq("id", salonId);
@@ -262,7 +261,15 @@ async function buildSalon(
     seen.add(key);
 
     const validCategories = ["manicure", "pedicure", "acrylic", "gel", "dip_powder", "waxing", "other"];
-    const category = validCategories.includes(svc.category) ? svc.category : "other";
+    // Normalise common Claude variants (gel_manicure → gel, dip → dip_powder, etc.)
+    const normalised = svc.category
+      .replace("gel_manicure", "gel")
+      .replace("gel_pedicure", "gel")
+      .replace(/^dip$/, "dip_powder")
+      .replace("nail_art", "other")
+      .replace("eyebrow", "waxing")
+      .replace("threading", "waxing");
+    const category = validCategories.includes(normalised) ? normalised : "other";
 
     await db.from("services").insert({
       salon_id: salonId,
