@@ -26,7 +26,7 @@ export default async function StaffPhotoPage({ params }: Props) {
   const { data: booking } = await supabase
     .from("bookings")
     .select(
-      "id, status, salon_id, client_name, client_phone, services(name), staff(name)",
+      "id, status, salon_id, client_name, client_phone, services!bookings_service_id_fkey(name), staff(name)",
     )
     .eq("id", bookingId)
     .is("deleted_at", null)

@@ -61,7 +61,7 @@ export async function loadNoShowDashboard(slug: string): Promise<{
     supabase
       .from("bookings" as never)
       .select(`id, client_name, start_time_utc, deposit_status, no_show_risk_score,
-               services(name), staff(name)`)
+               services!bookings_service_id_fkey(name), staff(name)`)
       .eq("salon_id", salonId)
       .in("status", ["pending", "confirmed"])
       .gte("start_time_utc", now)
