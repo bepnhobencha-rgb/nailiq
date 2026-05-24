@@ -39,6 +39,7 @@ jobs:
               e2e/accessibility
               e2e/booking-conflict.spec.ts
               e2e/booking-errors.spec.ts
+              e2e/booking-otp.spec.ts
               e2e/booking-security.spec.ts
               e2e/booking-validation.spec.ts
               e2e/booking.spec.ts
@@ -46,7 +47,12 @@ jobs:
               e2e/dashboard.spec.ts
               e2e/group-booking
               e2e/landing-funnel.spec.ts
+              e2e/noshow-confirm.spec.ts
+              e2e/noshow-deposit.spec.ts
+              e2e/noshow-reschedule.spec.ts
+              e2e/noshow-waitlist.spec.ts
               e2e/register.spec.ts
+              e2e/setup-ai-prefill.spec.ts
               e2e/superadmin
           # Shard 2: ALL receptionist-center specs in ONE shard.
           # RECEPTIONIST_E2E_SLUG is shared across spec files — they all call
@@ -71,6 +77,9 @@ jobs:
       # Allows demo cookie with non-"demo-salon" slugs so E2E fixtures can
       # use arbitrary test slugs. NEVER set on Vercel production.
       NAILIQ_TEST_BYPASS_SLUG_PIN: "1"
+      # Short-circuits the Anthropic Vision call in aiPrefillServicesAction
+      # so setup-ai-prefill E2E specs work without an API key.
+      AI_PREFILL_E2E_MOCK: "services"
       # Align Node.js process timezone with the Playwright browser
       # (timezoneId: "America/Los_Angeles" in playwright.config.ts).
       # Without this, new Date(y, mo, d, h, m) in test helpers creates

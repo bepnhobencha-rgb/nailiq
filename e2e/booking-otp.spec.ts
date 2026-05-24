@@ -27,24 +27,36 @@ test.describe("Booking Flow — Phone OTP", () => {
   async function walkToInfoStep(page: import("@playwright/test").Page) {
     await page.goto(`/${testSlug}`);
 
-    await page.locator('[data-testid="service-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page
+      .locator('[data-testid="service-tile-select"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator('[data-testid="service-tile-select"]').first().click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
+    await page
+      .locator('[data-testid="staff-item"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="staff-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page
       .locator('[data-testid="date-day"]:not([disabled])')
       .nth(1)
+      .waitFor({ state: "visible", timeout: 15_000 });
+    await page
+      .locator('[data-testid="date-day"]:not([disabled])')
+      .nth(1)
       .click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page
       .locator('[data-testid="time-slot"]')
       .first()
       .waitFor({ state: "visible", timeout: 20_000 });
     await page.locator('[data-testid="time-slot"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     // Fill info form
     await page.fill('input[name="clientName"]', "OTP Test Client");
@@ -53,7 +65,7 @@ test.describe("Booking Flow — Phone OTP", () => {
 
   test("OTP step appears after info and accepts demo code", async ({ page }) => {
     await walkToInfoStep(page);
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     // Should be on OTP step — heading must mention verification / phone
     await expect(
@@ -75,7 +87,7 @@ test.describe("Booking Flow — Phone OTP", () => {
 
   test("Wrong code shows error, correct code proceeds", async ({ page }) => {
     await walkToInfoStep(page);
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page.locator("#otp-code").waitFor({ state: "visible", timeout: 10_000 });
 
@@ -97,7 +109,7 @@ test.describe("Booking Flow — Phone OTP", () => {
 
   test("Back button from OTP returns to info step", async ({ page }) => {
     await walkToInfoStep(page);
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page.locator("#otp-code").waitFor({ state: "visible", timeout: 10_000 });
 
@@ -112,7 +124,7 @@ test.describe("Booking Flow — Phone OTP", () => {
 
   test("Full booking completes after OTP verification", async ({ page }) => {
     await walkToInfoStep(page);
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     // OTP step
     await page.locator("#otp-code").waitFor({ state: "visible", timeout: 10_000 });

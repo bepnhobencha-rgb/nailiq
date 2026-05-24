@@ -81,15 +81,34 @@ async function setSalonRow(slug: string, patch: Record<string, unknown>) {
 
 async function navigateToTimeStep(page: Page, slug: string) {
   await page.goto(`/${slug}`);
-  await page.locator('[data-testid="service-item"]').first().click();
-  await page.getByRole("button", { name: "Continue" }).click();
+  // Target the inner select button directly; clicking the outer service-item
+  // div is unreliable on narrow (mobile) viewports where the hit-test center
+  // may not land on the button.
+  await page
+    .locator('[data-testid="service-tile-select"]')
+    .first()
+    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator('[data-testid="service-tile-select"]').first().click();
+  // .first() avoids strict-mode violations during the 0.18s AnimatePresence
+  // window where both the exiting and entering panels are in the DOM.
+  await page.getByRole("button", { name: "Continue" }).first().click();
+  // Wait for the staff panel to animate in before interacting.
+  await page
+    .locator('[data-testid="staff-item"]')
+    .first()
+    .waitFor({ state: "visible", timeout: 15_000 });
   await page.locator('[data-testid="staff-item"]').first().click();
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue" }).first().click();
+  // Wait for the date calendar to animate in before interacting.
+  await page
+    .locator('[data-testid="date-day"]:not([disabled])')
+    .nth(1)
+    .waitFor({ state: "visible", timeout: 15_000 });
   await page
     .locator('[data-testid="date-day"]:not([disabled])')
     .nth(1)
     .click();
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue" }).first().click();
   await page
     .locator('[data-testid="time-slot"]')
     .first()
@@ -99,7 +118,7 @@ async function navigateToTimeStep(page: Page, slug: string) {
 async function navigateToInfoStep(page: Page, slug: string) {
   await navigateToTimeStep(page, slug);
   await page.locator('[data-testid="time-slot"]').first().click();
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue" }).first().click();
   await expect(page.getByTestId("booking-info-name")).toBeVisible();
 }
 
@@ -121,7 +140,7 @@ async function navigateToConfirmStep(
       await notes.first().fill(opts.notes);
     }
   }
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue" }).first().click();
   await expect(
     page.getByRole("button", { name: "Confirm booking" }),
   ).toBeVisible({ timeout: 12_000 });
@@ -181,21 +200,29 @@ test.describe("Booking error scenarios — /[slug]", () => {
     // read data-ymd from the selected date cell BEFORE leaving the date step
     // (date-day elements are removed from the DOM once the time panel mounts).
     await page.goto(`/${PRIMARY_SLUG}`);
-    await page.locator('[data-testid="service-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page
+      .locator('[data-testid="service-tile-select"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator('[data-testid="service-tile-select"]').first().click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
+    await page
+      .locator('[data-testid="staff-item"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="staff-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
     const pickedDateBtn = page
       .locator('[data-testid="date-day"]:not([disabled])')
       .nth(1);
-    await pickedDateBtn.waitFor({ state: "visible", timeout: 10_000 });
+    await pickedDateBtn.waitFor({ state: "visible", timeout: 15_000 });
     const ymd = (await pickedDateBtn.getAttribute("data-ymd")) ?? null;
     if (!ymd) {
       test.skip(true, "date-day cells did not expose a data-ymd attribute");
       return;
     }
     await pickedDateBtn.click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
     await page
       .locator('[data-testid="time-slot"]')
       .first()
@@ -321,11 +348,24 @@ test.describe("Booking error scenarios — /[slug]", () => {
     });
 
     await page.goto(`/${PRIMARY_SLUG}`);
-    await page.locator('[data-testid="service-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page
+      .locator('[data-testid="service-tile-select"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator('[data-testid="service-tile-select"]').first().click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
+    await page
+      .locator('[data-testid="staff-item"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="staff-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
+    // Wait for calendar to render before inspecting specific date cells.
+    await page
+      .locator('[data-testid="date-day"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 15_000 });
     const dayBtn = page.locator(
       `[data-testid="date-day"][data-ymd="${ymd}"]`,
     );
@@ -334,7 +374,7 @@ test.describe("Booking error scenarios — /[slug]", () => {
       return;
     }
     await dayBtn.first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
     await page
       .locator('[data-testid="time-slot"]')
       .first()
@@ -365,10 +405,17 @@ test.describe("Booking error scenarios — /[slug]", () => {
     page,
   }) => {
     await page.goto(`/${PRIMARY_SLUG}`);
-    await page.locator('[data-testid="service-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page
+      .locator('[data-testid="service-tile-select"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator('[data-testid="service-tile-select"]').first().click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
+    await page
+      .locator('[data-testid="any-staff-option"]')
+      .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="any-staff-option"]').click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     const pastCells = page.locator('[data-testid="date-day"][data-past="true"]');
     const count = await pastCells.count();
@@ -418,10 +465,17 @@ test.describe("Booking error scenarios — /[slug]", () => {
     });
 
     await page.goto(`/${PRIMARY_SLUG}`);
-    await page.locator('[data-testid="service-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page
+      .locator('[data-testid="service-tile-select"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator('[data-testid="service-tile-select"]').first().click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
+    await page
+      .locator('[data-testid="any-staff-option"]')
+      .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="any-staff-option"]').click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     const cell = page.locator(
       `[data-testid="date-day"][data-ymd="${ymd}"]`,
@@ -473,10 +527,16 @@ test.describe("Booking error scenarios — /[slug]", () => {
     expect(otherIds.length).toBeGreaterThan(0);
 
     await page.goto(`/${PRIMARY_SLUG}`);
-    await page.locator('[data-testid="service-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page
+      .locator('[data-testid="service-tile-select"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator('[data-testid="service-tile-select"]').first().click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     const staffItems = page.locator('[data-testid="staff-item"]');
+    // Wait for staff panel to animate in before inspecting items.
+    await staffItems.first().waitFor({ state: "visible", timeout: 15_000 });
     const renderedIds: string[] = [];
     const n = await staffItems.count();
     for (let i = 0; i < n; i += 1) {
@@ -578,12 +638,16 @@ test.describe("Booking error scenarios — /[slug]", () => {
     page,
   }) => {
     await page.goto(`/${PRIMARY_SLUG}`);
-    await page.locator('[data-testid="service-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page
+      .locator('[data-testid="service-tile-select"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator('[data-testid="service-tile-select"]').first().click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
     await page
       .locator('[data-testid="staff-item"]')
       .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+      .waitFor({ state: "visible", timeout: 15_000 });
     await expect(
       page.getByRole("button", { name: "Continue" }),
     ).toBeDisabled();

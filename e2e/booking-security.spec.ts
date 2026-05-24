@@ -22,27 +22,39 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
 
     await page.goto(`/${slug}`);
 
-    await page.locator('[data-testid="service-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page
+      .locator('[data-testid="service-tile-select"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator('[data-testid="service-tile-select"]').first().click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
+    await page
+      .locator('[data-testid="staff-item"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="staff-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
+    await page
+      .locator('[data-testid="date-day"]:not([disabled])')
+      .nth(1)
+      .waitFor({ state: "visible", timeout: 15_000 });
     await page
       .locator('[data-testid="date-day"]:not([disabled])')
       .nth(1)
       .click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page
       .locator('[data-testid="time-slot"]')
       .first()
       .waitFor({ state: "visible", timeout: 20_000 });
     await page.locator('[data-testid="time-slot"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     const guestPhone = "6045551234";
     await page.fill('input[name="clientName"]', "Security Test Guest");
     await page.fill('input[name="clientPhone"]', guestPhone);
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
     await page.getByRole("button", { name: "Confirm booking" }).click();
 
     await expect(
@@ -72,26 +84,38 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
 
     await page.goto(`/${slug}`);
 
-    await page.locator('[data-testid="service-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page
+      .locator('[data-testid="service-tile-select"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator('[data-testid="service-tile-select"]').first().click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
+    await page
+      .locator('[data-testid="staff-item"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="staff-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
+    await page
+      .locator('[data-testid="date-day"]:not([disabled])')
+      .nth(1)
+      .waitFor({ state: "visible", timeout: 15_000 });
     await page
       .locator('[data-testid="date-day"]:not([disabled])')
       .nth(1)
       .click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page
       .locator('[data-testid="time-slot"]')
       .first()
       .waitFor({ state: "visible", timeout: 20_000 });
     await page.locator('[data-testid="time-slot"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page.fill('input[name="clientName"]', "Security Test Guest");
     await page.fill('input[name="clientPhone"]', "6049876543");
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
     await page.getByRole("button", { name: "Confirm booking" }).click();
 
     await expect(
@@ -104,21 +128,33 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
 
 async function navigateToBookingInfoStep(page: Page, testSlug: string) {
   await page.goto(`/${testSlug}`);
-  await page.locator('[data-testid="service-item"]').first().click();
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page
+    .locator('[data-testid="service-tile-select"]')
+    .first()
+    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator('[data-testid="service-tile-select"]').first().click();
+  await page.getByRole("button", { name: "Continue" }).first().click();
+  await page
+    .locator('[data-testid="staff-item"]')
+    .first()
+    .waitFor({ state: "visible", timeout: 15_000 });
   await page.locator('[data-testid="staff-item"]').first().click();
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue" }).first().click();
+  await page
+    .locator('[data-testid="date-day"]:not([disabled])')
+    .nth(1)
+    .waitFor({ state: "visible", timeout: 15_000 });
   await page
     .locator('[data-testid="date-day"]:not([disabled])')
     .nth(1)
     .click();
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue" }).first().click();
   await page
     .locator('[data-testid="time-slot"]')
     .first()
     .waitFor({ state: "visible", timeout: 20_000 });
   await page.locator('[data-testid="time-slot"]').first().click();
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue" }).first().click();
 
   await expect(page.getByTestId("booking-info-name")).toBeVisible();
 }
@@ -159,7 +195,7 @@ test.describe("Guest name — XSS / charset guard", () => {
     await navigateToBookingInfoStep(page, slug);
     await page.getByTestId("booking-info-name").fill("Nguyễn Thị Mai");
     await page.getByTestId("booking-info-phone").fill("6045551234");
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     await expect(
       page.getByRole("button", { name: "Confirm booking" }),

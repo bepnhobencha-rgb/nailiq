@@ -21,28 +21,40 @@ test.describe("Booking Flow", () => {
   test("Complete booking end-to-end", async ({ page }) => {
     await page.goto(`/${testSlug}`);
 
-    await page.locator('[data-testid="service-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page
+      .locator('[data-testid="service-tile-select"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator('[data-testid="service-tile-select"]').first().click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
+    await page
+      .locator('[data-testid="staff-item"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="staff-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page
       .locator('[data-testid="date-day"]:not([disabled])')
       .nth(1)
+      .waitFor({ state: "visible", timeout: 15_000 });
+    await page
+      .locator('[data-testid="date-day"]:not([disabled])')
+      .nth(1)
       .click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page
       .locator('[data-testid="time-slot"]')
       .first()
       .waitFor({ state: "visible", timeout: 20_000 });
     await page.locator('[data-testid="time-slot"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page.fill('input[name="clientName"]', "Test Client");
     await page.fill('input[name="clientPhone"]', "6045551234");
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page.getByRole("button", { name: "Confirm booking" }).click();
 
@@ -55,16 +67,28 @@ test.describe("Booking Flow", () => {
   test("Time step lists slots for a future day", async ({ page }) => {
     await page.goto(`/${testSlug}`);
 
-    await page.locator('[data-testid="service-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page
+      .locator('[data-testid="service-tile-select"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator('[data-testid="service-tile-select"]').first().click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
+    await page
+      .locator('[data-testid="staff-item"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="staff-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page
       .locator('[data-testid="date-day"]:not([disabled])')
       .nth(1)
+      .waitFor({ state: "visible", timeout: 15_000 });
+    await page
+      .locator('[data-testid="date-day"]:not([disabled])')
+      .nth(1)
       .click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     const slots = page.locator('[data-testid="time-slot"]');
     await expect(slots.first()).toBeVisible({ timeout: 20_000 });
@@ -77,10 +101,17 @@ test.describe("Booking Flow", () => {
   test("Calendar shows today and selectable days", async ({ page }) => {
     await page.goto(`/${testSlug}`);
 
-    await page.locator('[data-testid="service-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page
+      .locator('[data-testid="service-tile-select"]')
+      .first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator('[data-testid="service-tile-select"]').first().click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
+    await page
+      .locator('[data-testid="any-staff-option"]')
+      .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="any-staff-option"]').click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     await expect(page.locator('[data-testid="date-today"]')).toBeVisible();
     await expect(

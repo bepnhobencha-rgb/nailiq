@@ -4,21 +4,33 @@ import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
 
 async function navigateToBookingInfo(page: Page, testSlug: string) {
   await page.goto(`/${testSlug}`);
-  await page.locator('[data-testid="service-item"]').first().click();
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page
+    .locator('[data-testid="service-tile-select"]')
+    .first()
+    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator('[data-testid="service-tile-select"]').first().click();
+  await page.getByRole("button", { name: "Continue" }).first().click();
 
+  await page
+    .locator('[data-testid="staff-item"]')
+    .first()
+    .waitFor({ state: "visible", timeout: 15_000 });
   await page.locator('[data-testid="staff-item"]').first().click();
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue" }).first().click();
 
+  await page
+    .locator('[data-testid="date-day"]:not([disabled])')
+    .nth(1)
+    .waitFor({ state: "visible", timeout: 15_000 });
   await page.locator('[data-testid="date-day"]:not([disabled])').nth(1).click();
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue" }).first().click();
 
   await page
     .locator('[data-testid="time-slot"]')
     .first()
     .waitFor({ state: "visible", timeout: 20_000 });
   await page.locator('[data-testid="time-slot"]').first().click();
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue" }).first().click();
 
   await expect(page.getByTestId("booking-info-phone")).toBeVisible();
 }
@@ -81,7 +93,7 @@ test.describe("Booking validation — info step", () => {
     await expect(page.getByTestId("booking-info-name-error")).toHaveCount(0);
 
     await expect(page.getByRole("button", { name: "Continue" })).toBeEnabled();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Continue" }).first().click();
 
     await expect(page.getByRole("button", { name: "Confirm booking" })).toBeVisible({
       timeout: 12_000,
