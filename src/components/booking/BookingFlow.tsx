@@ -1,7 +1,9 @@
 "use client";
 
 import { AnimatePresence, useReducedMotion } from "@/shared/lib/motionClient";
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { getClientLoyaltyCardByPhone } from "@/shared/loyalty/loyaltyActions";
+import type { LoyaltyCard, LoyaltyProgram } from "@/shared/loyalty/types";
 import type { BookingComboItem, BookingServiceItem } from "@/shared/booking/catalog";
 import type { ServiceCategorySummary } from "@/shared/booking/loadServiceCategories";
 import type {
@@ -62,6 +64,19 @@ export function BookingFlow({
     salon.phoneOtpEnabled,
   );
 
+  const [loyaltyCard, setLoyaltyCard] = useState<LoyaltyCard | null>(null);
+  const [loyaltyProgram, setLoyaltyProgram] = useState<LoyaltyProgram | null>(null);
+
+  useEffect(() => {
+    if (flow.step !== "done" || !flow.clientPhone.trim()) return;
+    void getClientLoyaltyCardByPhone(salon.id, flow.clientPhone.trim()).then(
+      ({ card, program }) => {
+        setLoyaltyCard(card);
+        setLoyaltyProgram(program);
+      },
+    );
+  }, [flow.step, flow.clientPhone, salon.id]);
+
   const closedDateYmdSet = useMemo(
     () => parseBookingClosedDateSet(salon.booking_closed_dates),
     [salon.booking_closed_dates],
@@ -118,6 +133,8 @@ export function BookingFlow({
         currency={salon.currencyCode}
         onAddToCalendar={flow.handleAddToCalendar}
         onBookAnother={flow.resetAfterDone}
+        loyaltyCard={loyaltyCard}
+        loyaltyProgram={loyaltyProgram}
       />
     );
   }

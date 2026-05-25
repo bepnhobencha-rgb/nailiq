@@ -12,6 +12,7 @@ import {
   isValidPhoneE164,
 } from "@/shared/lib/phoneFormat";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
+import { StampCard } from "@/components/loyalty/StampCard";
 import { getPublicStaffDisplayName } from "@/shared/booking/publicStaffDisplay";
 import { formatBookingPrice } from "@/shared/booking/formatBookingPrice";
 import type { Currency } from "@/shared/lib/currencyFormat";
@@ -36,6 +37,8 @@ export function BookingFlowDonePanel({
   currency,
   onAddToCalendar,
   onBookAnother,
+  loyaltyCard,
+  loyaltyProgram,
 }: {
   t: BookingMessages;
   shopLabel: string;
@@ -57,6 +60,8 @@ export function BookingFlowDonePanel({
   /** Fires the .ics download. Returns true if the click was dispatched. */
   onAddToCalendar: () => boolean;
   onBookAnother: () => void;
+  loyaltyCard?: { stamps_current: number; rewards_earned: number; rewards_redeemed: number } | null;
+  loyaltyProgram?: { stamps_required: number; color: string; name: string; reward_type: string; reward_percent_off: number | null; reward_amount_off_cents: number | null } | null;
 }) {
   const refLabel = formatNailiqBookingRef(bookingId);
   const [shareHint, setShareHint] = useState<string | null>(null);
@@ -285,6 +290,41 @@ export function BookingFlowDonePanel({
           </div>
         </div>
       </div>
+
+      {loyaltyCard && loyaltyProgram ? (() => {
+        const remaining = Math.max(0, loyaltyProgram.stamps_required - loyaltyCard.stamps_current);
+        const rewardLabel = (() => {
+          if (loyaltyProgram.reward_type === "percent_off" && loyaltyProgram.reward_percent_off)
+            return `${loyaltyProgram.reward_percent_off}% off`;
+          if (loyaltyProgram.reward_type === "amount_off" && loyaltyProgram.reward_amount_off_cents)
+            return `$${(loyaltyProgram.reward_amount_off_cents / 100).toFixed(0)} off`;
+          return "free service";
+        })();
+        return (
+          <div className="nq-booking-glass rounded-[1.35rem] px-5 py-4 space-y-3">
+            <p className="text-sm font-semibold text-[var(--booking-text)]">
+              🎁 Loyalty Rewards — {loyaltyCard.stamps_current}/{loyaltyProgram.stamps_required} stamps
+            </p>
+            <StampCard
+              current={loyaltyCard.stamps_current}
+              required={loyaltyProgram.stamps_required}
+              color={loyaltyProgram.color}
+              programName={loyaltyProgram.name}
+              rewardLabel={rewardLabel}
+              compact
+            />
+            {remaining > 0 ? (
+              <p className="text-xs text-[var(--booking-text-muted)]">
+                {remaining} more visit{remaining !== 1 ? "s" : ""} = {rewardLabel}!
+              </p>
+            ) : (
+              <p className="text-xs font-semibold text-[var(--salon-primary)]">
+                🎉 Reward earned — mention this at your next visit!
+              </p>
+            )}
+          </div>
+        );
+      })() : null}
 
       {shareHint || calendarHint ? (
         <p

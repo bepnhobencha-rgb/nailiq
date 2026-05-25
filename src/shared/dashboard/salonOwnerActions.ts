@@ -430,7 +430,7 @@ export async function updateBookingStatus(
 
   const { data: row, error: fetchErr } = await supabase
     .from("bookings")
-    .select("id, status, salon_id")
+    .select("id, status, salon_id, client_phone")
     .eq("id", bookingId)
     .maybeSingle();
 
@@ -487,12 +487,18 @@ export async function updateBookingStatus(
     payload: { from: cur, to: nextStatus },
   });
 
-  // Auto review request (Pro+). Fire-and-forget — silently no-ops if
-  // the plan doesn't qualify, the booking has no client_email, or a
-  // review row already exists (idempotent on booking_id). Errors are
-  // logged but never surface to the operator action result.
   if (nextStatus === "completed") {
+    // Auto review request (Pro+) — fire-and-forget.
     void sendReviewRequest(bookingId);
+
+    // Auto loyalty voucher — if trigger set rewards_earned > rewards_redeemed,
+    // issue the voucher from app layer (fire-and-forget).
+    const clientPhone = String((row as { client_phone?: unknown }).client_phone ?? "").trim();
+    if (clientPhone) {
+      void import("@/shared/loyalty/loyaltyActions").then(({ issueLoyaltyVoucherIfEarned }) =>
+        issueLoyaltyVoucherIfEarned(salon.id, clientPhone),
+      );
+    }
   }
 
   return { ok: true };

@@ -10,6 +10,7 @@ import { SalonOwnerStatsSection } from "@/components/dashboard/SalonOwnerStatsSe
 import { SalonOwnerTodayBookings } from "@/components/dashboard/SalonOwnerTodayBookings";
 import { SalonOwnerDashboardSkeleton } from "@/components/dashboard/SalonOwnerDashboardSkeleton";
 import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
+import { LoyaltyDashboardWidget } from "@/components/dashboard/LoyaltyDashboardWidget";
 import type { SalonOwnerDashboardViewPayload } from "@/components/dashboard/salonDashboardFormat";
 import { getUserMessages } from "@/shared/i18n/user";
 import { maskPhoneDigits } from "@/shared/lib/maskPhone";
@@ -226,6 +227,8 @@ export function SalonOwnerDashboardMain({
       ) : (
         <>
           <SalonOwnerStatsSection data={data} language={language} />
+
+          <LoyaltyDashboardWidget slug={slug} />
 
           <SalonOwnerTodayBookings
             items={data.today}
