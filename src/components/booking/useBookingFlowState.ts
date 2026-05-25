@@ -573,6 +573,80 @@ export function useBookingFlowState(
     setStep("info");
   }, []);
 
+  // Voice full-flow: skip info/verify/otp, submit directly when voice has all 5 fields.
+  // Falls back to goTimeNextDirect if name/phone are missing or invalid.
+  const goVoiceSubmitDirect = useCallback(async (slot: string) => {
+    if (!serviceId) { goTimeNextDirect(slot); return; }
+    const name = clientName.trim();
+    const phone = clientPhone.trim();
+    if (!name || name.length < 2 || !validateGuestPhone(phone).ok) {
+      goTimeNextDirect(slot);
+      return;
+    }
+    setTimeSlot(slot);
+    setSubmitting(true);
+    setStepDir(1);
+    setStep("confirm");
+    try {
+      const result = await submitPublicBooking({
+        shopSlug,
+        serviceId,
+        timeSlot: slot,
+        bookingDateYmd: bookingDateYmdFromLocalDate(selectedDate),
+        staffId: staffId ?? BOOKING_ANY_STAFF_ID,
+        clientName: name,
+        clientPhone: phone,
+        clientEmail: clientEmail.trim() || null,
+        clientNotes: clientNotes.trim(),
+        verificationMethod: "none",
+      });
+      setBookingResult({
+        bookingId: result.bookingId,
+        startTimeUtc: result.startTimeUtc,
+        endTimeUtc: result.endTimeUtc,
+        staffName: result.staffName,
+        addonServiceName: result.addonServiceName,
+        addonPriceCents: result.addonPriceCents,
+        price_cents: result.price_cents,
+      });
+      setStepDir(1);
+      setStep("done");
+      void fireBookingConfetti();
+    } catch (err) {
+      setSubmitting(false);
+      if (err instanceof BookingConflictError) {
+        setStepDir(-1);
+        setStep("time");
+        setError(t.bookingErrors.slotJustTaken);
+      } else if (err instanceof Error && err.message === "cannot_book_past") {
+        setError(t.pastTimeError);
+        setStep("time");
+      } else if (err instanceof Error && (err.message === "outside_opening_hours" || err.message === "salon_closed_day")) {
+        setError(err.message === "salon_closed_day" ? t.salonClosedError : t.outsideHoursError);
+        setStep("time");
+      } else if (err instanceof Error && err.message === "invalid_phone") {
+        setError(t.bookingErrors.invalidPhone);
+        setStep("info");
+      } else if (err instanceof Error && err.message === "invalid_name_chars") {
+        setError(t.bookingErrors.invalidNameChars);
+        setStep("info");
+      } else {
+        Sentry.captureException(err instanceof Error ? err : new Error(String(err)), {
+          tags: { "salon.slug": shopSlug, "booking.flow": "voice_submit_direct" },
+        });
+        setError(t.submitError);
+        setStep("info");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }, [ // eslint-disable-line react-hooks/exhaustive-deps -- goTimeNextDirect is stable
+    shopSlug, serviceId, staffId, selectedDate, clientName, clientPhone, clientEmail, clientNotes,
+    goTimeNextDirect, t.bookingErrors.slotJustTaken, t.bookingErrors.invalidPhone,
+    t.bookingErrors.invalidNameChars, t.pastTimeError, t.salonClosedError,
+    t.outsideHoursError, t.submitError,
+  ]);
+
   const goInfoNext = useCallback(() => {
     const nameTrim = clientName.trim();
     const phoneTrim = clientPhone.trim();
@@ -1170,6 +1244,7 @@ export function useBookingFlowState(
     goDateNext,
     goTimeNext,
     goTimeNextDirect,
+    goVoiceSubmitDirect,
     goInfoNext,
     goVerifyDecided,
     goSkipOtp,

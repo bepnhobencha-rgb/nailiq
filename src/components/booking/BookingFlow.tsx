@@ -119,6 +119,8 @@ export function BookingFlow({
 
   // Pending time hint from voice — matched against slots once they load
   const pendingSlotHint = useRef<string | null>(null);
+  // When true, matching the slot triggers goVoiceSubmitDirect instead of goTimeNextDirect
+  const pendingVoiceAutoSubmit = useRef(false);
 
   const handleVoiceFill = useCallback((result: VoiceParseResult) => {
     if (result.serviceId) flow.setServiceId(result.serviceId);
@@ -144,6 +146,9 @@ export function BookingFlow({
     // Store timeHint to match against slots once loaded
     if (result.timeHint) pendingSlotHint.current = result.timeHint;
 
+    // When voice provides name + phone, skip manual info/verify steps and auto-submit
+    pendingVoiceAutoSubmit.current = !!(result.clientName && result.clientPhone);
+
     // Jump straight to time step (React 18 batches all setStep calls — last one wins = "time")
     flow.goServiceNext();
     flow.goStaffNext();
@@ -152,7 +157,7 @@ export function BookingFlow({
   }, [flow.setServiceId, flow.setStaffId, flow.setClientName, flow.setClientPhone,
       flow.setSelectedDate, flow.goServiceNext, flow.goStaffNext, flow.goDateNext]);
 
-  // Once slots load at the time step, auto-match hint and advance to info
+  // Once slots load at the time step, auto-match hint and advance
   useEffect(() => {
     const hint = pendingSlotHint.current;
     if (!hint || flow.step !== "time" || flow.slotsLoading || flow.timeSlots.length === 0) return;
@@ -160,8 +165,14 @@ export function BookingFlow({
     const normalized = normalizeVoiceTimeHint(hint);
     const match = flow.timeSlots.find((s) => s.available && s.label === normalized);
     if (match) {
-      flow.goTimeNextDirect(match.label);
+      if (pendingVoiceAutoSubmit.current) {
+        pendingVoiceAutoSubmit.current = false;
+        void flow.goVoiceSubmitDirect(match.label);
+      } else {
+        flow.goTimeNextDirect(match.label);
+      }
     } else {
+      pendingVoiceAutoSubmit.current = false;
       // Slot unavailable — stay on time step, show inline error
       flow.setError(t.voice.slotNotFound.replace("{time}", normalized));
     }

@@ -17,7 +17,7 @@ type Props = {
   onDone?: (result: VoiceParseResult) => void;
 };
 
-type ChatStep = "service" | "date" | "time" | null;
+type ChatStep = "service" | "date" | "time" | "name" | "phone" | null;
 
 type State =
   | { kind: "idle" }
@@ -79,10 +79,12 @@ function determineStep(filled: Partial<VoiceParseResult>): ChatStep {
   if (!filled.serviceId && !filled.serviceName) return "service";
   if (!filled.dateHint) return "date";
   if (!filled.timeHint) return "time";
+  if (!filled.clientName) return "name";
+  if (!filled.clientPhone) return "phone";
   return null;
 }
 
-function getNextPrompt(step: "service" | "date" | "time", justSelected: string, lang: "en" | "vi"): string {
+function getNextPrompt(step: Exclude<ChatStep, null>, justSelected: string, lang: "en" | "vi"): string {
   if (step === "service") {
     return lang === "vi"
       ? `Bạn muốn đặt dịch vụ gì ạ?`
@@ -93,9 +95,19 @@ function getNextPrompt(step: "service" | "date" | "time", justSelected: string, 
       ? `${justSelected} — lựa chọn tuyệt vời! Bạn muốn đặt vào ngày nào ạ?`
       : `${justSelected} — lovely choice! What day works for you?`;
   }
+  if (step === "time") {
+    return lang === "vi"
+      ? `Được rồi! Bạn muốn đến lúc mấy giờ ạ?`
+      : `Perfect! And what time would you like?`;
+  }
+  if (step === "name") {
+    return lang === "vi"
+      ? `Cho em hỏi tên của bạn là gì ạ?`
+      : `Great! May I have your name please?`;
+  }
   return lang === "vi"
-    ? `Được rồi! Bạn muốn đến lúc mấy giờ ạ?`
-    : `Perfect! And what time would you like?`;
+    ? `Và số điện thoại của bạn ạ?`
+    : `And your phone number please?`;
 }
 
 function getDoneMessage(filled: Partial<VoiceParseResult>, lang: "en" | "vi"): string {
@@ -103,8 +115,8 @@ function getDoneMessage(filled: Partial<VoiceParseResult>, lang: "en" | "vi"): s
   const date = filled.dateHint ?? "";
   const time = filled.timeHint ?? "";
   return lang === "vi"
-    ? `Tuyệt vời! Em đã đặt ${service} vào ${date} lúc ${time} cho bạn rồi ạ!`
-    : `You're all set! I've got your ${service} booked for ${date} at ${time}. See you then!`;
+    ? `Tuyệt vời! Em đã đặt ${service} vào ${date} lúc ${time} cho bạn rồi ạ. Đang xác nhận lịch hẹn…`
+    : `You're all set! I've got your ${service} booked for ${date} at ${time}. Confirming your booking now!`;
 }
 
 const QUICK_DATES_EN = ["Today", "Tomorrow", "This Saturday", "This Sunday"];
