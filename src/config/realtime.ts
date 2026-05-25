@@ -25,6 +25,12 @@ export const REALTIME_CONFIG = {
   },
   /** Temperature for AI responses */
   temperature: 0.7,
+  /**
+   * Safe mode: disable all tools so the session reduces to connect+listen+speak only.
+   * Set NEXT_PUBLIC_VOICE_SAFE_MODE=1 to activate.
+   * Use this to stabilize the raw WebRTC connection before debugging tool schemas.
+   */
+  safeMode: process.env.NEXT_PUBLIC_VOICE_SAFE_MODE === "1",
 } as const;
 
 /** Validate at runtime — call once at startup before serving voice routes */

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRealtimeVoice, type VoiceCallStatus, type LatencySnapshot } from "@/hooks/useRealtimeVoice";
+import { REALTIME_CONFIG } from "@/config/realtime";
 import type { BookingResult } from "@/shared/booking/submitPublicBooking";
 
 type Props = {
@@ -248,6 +249,11 @@ export function RealtimeVoiceCall({ shopSlug, language, onBookingConfirmed }: Pr
             <span className="text-[12px] font-semibold uppercase tracking-wider text-white/60">
               {statusLabel(status, language)}
             </span>
+            {REALTIME_CONFIG.safeMode && (
+              <span className="text-[9px] bg-amber-500/20 text-amber-400/70 px-1.5 py-0.5 rounded font-mono">
+                SAFE MODE
+              </span>
+            )}
           </div>
 
           {/* Latency badge + close */}
@@ -335,11 +341,18 @@ export function RealtimeVoiceCall({ shopSlug, language, onBookingConfirmed }: Pr
           </p>
         )}
 
-        {/* Error: other */}
-        {isError && !isMicDenied && !isMicNotFound && !isMicInUse && !isInsecure && errorMessage && (
-          <p className="text-center text-[12px] text-red-400/90">
-            {isVi ? "Kết nối thất bại. Vui lòng thử lại." : "Connection failed. Please try again."}
-          </p>
+        {/* Error: other — show real error detail for debugging */}
+        {isError && !isMicDenied && !isMicNotFound && !isMicInUse && !isInsecure && (
+          <div className="text-center space-y-1">
+            <p className="text-[12px] text-red-400/90">
+              {isVi ? "Kết nối thất bại. Vui lòng thử lại." : "Connection failed. Please try again."}
+            </p>
+            {errorMessage && errorMessage !== "connection_failed" && (
+              <p className="text-[10px] text-white/35 font-mono break-all px-2">
+                {errorMessage}
+              </p>
+            )}
+          </div>
         )}
 
         {/* Confirmed summary */}

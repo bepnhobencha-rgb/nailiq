@@ -216,12 +216,16 @@ export function useRealtimeVoice(params: {
   // ── Main event dispatcher ────────────────────────────────────────────────────
   const handleEvent = useCallback(
     (event: RealtimeEvent) => {
+      // Log every event for full observability — filter by [voice-event] in DevTools
+      console.debug("[voice-event]", event.type, event);
+
       switch (event.type) {
         case "session.created":
-          // Session established — send config and trigger greeting
+          console.info("[voice-connect] session_created");
           break;
 
         case "session.updated":
+          console.info("[voice-connect] session_updated — AI ready, greeting triggered");
           setStatus("ready");
           // Trigger initial greeting once after config is applied
           if (!hasGreetedRef.current) {
@@ -289,9 +293,11 @@ export function useRealtimeVoice(params: {
           break;
 
         case "error": {
-          const errObj = event.error as { message?: string } | undefined;
-          console.error("[voice] Realtime error:", errObj);
-          setErrorMessage(errObj?.message ?? "Voice connection error");
+          const errObj = event.error as { code?: string; type?: string; message?: string } | undefined;
+          console.error("[voice-error] realtime_error", errObj);
+          // Surface the real OpenAI error — includes model/tool/schema rejection details
+          const detail = [errObj?.type, errObj?.code, errObj?.message].filter(Boolean).join(" | ") || "voice_error";
+          setErrorMessage(detail);
           setStatus("error");
           break;
         }
@@ -328,12 +334,11 @@ export function useRealtimeVoice(params: {
         throw Object.assign(new Error("no_media_devices"), { name: "NoMediaDevices" });
       }
 
-      // Log env info for debugging
-      console.info("[voice] start", {
-        secureContext: window.isSecureContext,
-        ua: navigator.userAgent.slice(0, 80),
-        lang: language,
+      console.info("[voice-connect] click_start", {
         salon: shopSlugRef.current,
+        lang: language,
+        safeMode: REALTIME_CONFIG.safeMode,
+        ua: navigator.userAgent.slice(0, 80),
       });
 
       // Phase 1: Microphone
@@ -343,11 +348,27 @@ export function useRealtimeVoice(params: {
       micStreamRef.current = micStream;
       const [micTrack] = micStream.getAudioTracks();
       if (micTrack) micTrackRef.current = micTrack;
+      console.info("[voice-connect] mic_granted", { tracks: micStream.getAudioTracks().length });
 
       // Phase 2: OpenAI SDP exchange
       setStatus("connecting_openai");
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
+      console.info("[voice-connect] peer_created");
+
+      // ICE / connection state watchers — critical for diagnosing transport failures
+      pc.oniceconnectionstatechange = () => {
+        console.info("[voice-connect] ice_state →", pc.iceConnectionState);
+      };
+      pc.onconnectionstatechange = () => {
+        console.info("[voice-connect] pc_state →", pc.connectionState);
+        if (pc.connectionState === "failed") {
+          console.error("[voice-error] peer_connection_failed");
+          setErrorMessage("connection_failed");
+          setStatus("error");
+          cleanupRefs();
+        }
+      };
 
       // 3. AI audio output → <audio> element
       const audioEl = new Audio();
@@ -365,6 +386,7 @@ export function useRealtimeVoice(params: {
       // 5. Data channel for Realtime events
       const dc = pc.createDataChannel("oai-events");
       dcRef.current = dc;
+      console.info("[voice-connect] data_channel_created");
 
       dc.onmessage = (e: MessageEvent) => {
         try {
@@ -372,10 +394,23 @@ export function useRealtimeVoice(params: {
         } catch { /* ignore malformed */ }
       };
 
+      dc.onerror = (e) => {
+        console.error("[voice-error] data_channel_error", e);
+      };
+
       dc.onopen = () => {
-        // Push session config (instructions, voice, tools) via data channel
+        console.info("[voice-connect] data_channel_open");
         const cfg = sessionConfigRef.current;
         if (cfg) {
+          // Safe mode: send empty tools to isolate connection from tool schema issues
+          const tools = REALTIME_CONFIG.safeMode ? [] : cfg.tools;
+          const toolChoice = REALTIME_CONFIG.safeMode ? "none" : "auto";
+          console.info("[voice-connect] session_update_sent", {
+            voice: cfg.voice,
+            toolCount: tools.length,
+            safeMode: REALTIME_CONFIG.safeMode,
+            transcriptionModel: REALTIME_CONFIG.transcriptionModel,
+          });
           sendEvent({
             type: "session.update",
             session: {
@@ -391,16 +426,22 @@ export function useRealtimeVoice(params: {
                 prefix_padding_ms: REALTIME_CONFIG.vad.prefixPaddingMs,
                 silence_duration_ms: REALTIME_CONFIG.vad.silenceDurationMs,
               },
-              tools: cfg.tools,
-              tool_choice: "auto",
+              tools,
+              tool_choice: toolChoice,
               temperature: 0.7,
             },
           });
+        } else {
+          console.warn("[voice-connect] dc opened but session config missing — session.update skipped");
         }
         setStatus("ready");
       };
 
       dc.onclose = () => {
+        console.info("[voice-connect] data_channel_closed", {
+          iceState: pcRef.current?.iceConnectionState,
+          pcState: pcRef.current?.connectionState,
+        });
         if (!confirmedRef.current) setStatus("ended");
       };
 
@@ -408,6 +449,7 @@ export function useRealtimeVoice(params: {
       setStatus("connecting_dc");
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
+      console.info("[voice-connect] sdp_offer_created", { bytes: offer.sdp?.length ?? 0 });
 
       // Server-proxied SDP exchange with OpenAI
       const sdpRes = await fetch("/api/voice/sdp", {
@@ -421,8 +463,8 @@ export function useRealtimeVoice(params: {
       });
 
       if (!sdpRes.ok) {
-        const err = await sdpRes.json().catch(() => ({})) as { error?: string; detail?: string };
-        console.error("[voice] SDP exchange failed:", err);
+        const err = await sdpRes.json().catch(() => ({})) as { error?: string; detail?: string; openai_status?: number };
+        console.error("[voice-error] sdp_exchange_failed", err);
         throw new Error(err.error ?? "sdp_exchange_failed");
       }
 
@@ -430,11 +472,13 @@ export function useRealtimeVoice(params: {
         sdp_answer: string;
         session_config: SessionConfig;
       };
+      console.info("[voice-connect] sdp_answer_received", { bytes: sdp_answer.length });
 
       // Store config for dc.onopen (may fire shortly after setRemoteDescription)
       sessionConfigRef.current = session_config;
 
       await pc.setRemoteDescription({ type: "answer", sdp: sdp_answer });
+      console.info("[voice-connect] remote_desc_set — waiting for ICE + data channel");
 
       // Connection established — dc.onopen fires when ICE completes
     } catch (err) {
