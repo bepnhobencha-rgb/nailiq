@@ -146,14 +146,31 @@ export async function POST(req: NextRequest) {
     // ── Phase: openai SDP exchange ──────────────────────────────────────────
     phase = "openai_fetch";
     const openaiUrl = `${REALTIME_CONFIG.sdpEndpoint}?model=${REALTIME_CONFIG.model}`;
-    console.info(`[voice/sdp] → OpenAI: ${openaiUrl} sdp_bytes=${sdp_offer.length}`);
+
+    // GA WebRTC SDP headers — ONLY these three. No OpenAI-Beta header.
+    // OpenAI-Beta: realtime=v1 MUST NOT be present — it triggers beta_api_shape_disabled.
+    const outgoingHeaders: Record<string, string> = {
+      "Authorization": `Bearer ${apiKey.slice(0, 8)}…`,  // log prefix only — never log full key
+      "Content-Type": "application/sdp",
+    };
+
+    console.info(
+      `[voice/sdp] → OpenAI fetch config:` +
+      `\n  url:          ${openaiUrl}` +
+      `\n  method:       POST` +
+      `\n  content-type: application/sdp` +
+      `\n  headers:      ${JSON.stringify(Object.keys(outgoingHeaders))}` +
+      `\n  sdp_bytes:    ${sdp_offer.length}` +
+      `\n  sdp_starts:   "${sdp_offer.slice(0, 60).replace(/\r\n/g, "\\r\\n")}"`,
+    );
 
     let openaiRes: Response;
     try {
       openaiRes = await fetch(openaiUrl, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          // GA only: Authorization + Content-Type. Nothing else.
+          "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/sdp",
         },
         body: sdp_offer,

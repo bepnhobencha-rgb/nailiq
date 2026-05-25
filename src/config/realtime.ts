@@ -1,17 +1,28 @@
 /**
  * Single source of truth for OpenAI Realtime Voice config.
  *
- * DO NOT hardcode model/voice/endpoint elsewhere — import from here.
- * To override in production set OPENAI_REALTIME_MODEL / OPENAI_REALTIME_VOICE
- * in Vercel env vars. Defaults below are the last confirmed working GA values.
+ * GA WebRTC SDP pattern:
+ *   POST https://api.openai.com/v1/realtime?model=<model>
+ *   Authorization: Bearer <key>
+ *   Content-Type: application/sdp
+ *   Body: raw SDP offer string
+ *
+ * Valid GA models (as of 2025):
+ *   gpt-4o-realtime-preview-2024-12-17   ← pinned stable version
+ *   gpt-4o-realtime-preview              ← latest alias
+ *   gpt-4o-mini-realtime-preview-2024-12-17
+ *
+ * DO NOT add OpenAI-Beta: realtime=v1 header — that is the OLD beta API.
+ * DO NOT use /v1/realtime/calls or FormData — those endpoints do not exist.
+ * DO NOT use model names that are not in the list above.
  */
 
 export const REALTIME_CONFIG = {
-  /** GA model confirmed working — do not change without testing first */
-  model: process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2025-08-28",
+  /** GA model — pinned to stable dated version */
+  model: process.env.OPENAI_REALTIME_MODEL ?? "gpt-4o-realtime-preview-2024-12-17",
   /** GA voice — must be one of: alloy, ash, ballad, coral, echo, sage, shimmer, verse */
   voice: process.env.OPENAI_REALTIME_VOICE ?? "shimmer",
-  /** Transcription model for input audio — must be "whisper-1" (only valid value for GA) */
+  /** Transcription model for input audio — whisper-1 is the only valid value */
   transcriptionModel: "whisper-1",
   /** WebRTC SDP base endpoint — model is appended as ?model= query param */
   sdpEndpoint: "https://api.openai.com/v1/realtime",
@@ -28,7 +39,6 @@ export const REALTIME_CONFIG = {
   /**
    * Safe mode: disable all tools so the session reduces to connect+listen+speak only.
    * Set NEXT_PUBLIC_VOICE_SAFE_MODE=1 to activate.
-   * Use this to stabilize the raw WebRTC connection before debugging tool schemas.
    */
   safeMode: process.env.NEXT_PUBLIC_VOICE_SAFE_MODE === "1",
 } as const;
@@ -42,19 +52,6 @@ export function validateRealtimeConfig(): void {
   }
   if (!voice || voice.trim() === "") {
     throw new Error("[realtime-config] voice is empty");
-  }
-
-  // Warn about known bad values that have caused regressions
-  const KNOWN_BAD_MODELS = [
-    "gpt-4o-realtime-preview",
-    "gpt-4o-realtime-preview-2024-12-17",
-    "gpt-realtime-2",
-  ];
-  if (KNOWN_BAD_MODELS.includes(model)) {
-    console.warn(
-      `[realtime-config] WARNING: model="${model}" is a deprecated preview/beta name that caused 404s. ` +
-      `Use OPENAI_REALTIME_MODEL env var to override or update the default in src/config/realtime.ts.`,
-    );
   }
 
   console.info(
