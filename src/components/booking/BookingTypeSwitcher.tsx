@@ -11,6 +11,7 @@ import type {
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { BookingFlow } from "@/components/booking/BookingFlow";
 import { BookingGroupFlow } from "@/components/booking/BookingGroupFlow";
+import { RealtimeVoiceCall } from "@/components/booking/RealtimeVoiceCall";
 import { cn } from "@/shared/lib/cn";
 
 /** QA round-2: group bookings need at least N distinct staff free at
@@ -41,6 +42,7 @@ export function BookingTypeSwitcher({
   salon,
   capabilityRows,
   categories,
+  language = "en",
 }: {
   t: BookingMessages;
   shopSlug: string;
@@ -50,6 +52,7 @@ export function BookingTypeSwitcher({
   salon: BookingSalonMeta;
   capabilityRows: { staff_id: string; service_id: string }[] | null;
   categories: readonly ServiceCategorySummary[];
+  language?: "en" | "vi";
 }) {
   // P2.3 — initialize from ?mode= so language switch (which reloads
   // the page) doesn't drop the user back to individual.
@@ -94,21 +97,27 @@ export function BookingTypeSwitcher({
   // experience for these salons.
   if (!groupEnabled) {
     return (
-      <BookingFlow
-        t={t}
-        shopSlug={shopSlug}
-        services={services}
-        combos={combos}
-        staff={staff}
-        salon={salon}
-        capabilityRows={capabilityRows}
-        categories={categories}
-      />
+      <div className="space-y-4">
+        <RealtimeVoiceCall shopSlug={shopSlug} language={language} />
+        <BookingFlow
+          t={t}
+          shopSlug={shopSlug}
+          services={services}
+          combos={combos}
+          staff={staff}
+          salon={salon}
+          capabilityRows={capabilityRows}
+          categories={categories}
+          language={language}
+        />
+      </div>
     );
   }
 
   return (
-    <div className="mt-6" data-testid="booking-type-switcher-root">
+    <div className="mt-6 space-y-4" data-testid="booking-type-switcher-root">
+      <RealtimeVoiceCall shopSlug={shopSlug} language={language} />
+
       {/* Heading + pill stacked. Was previously an inline-flex pill
           on its own line with no heading — easy to miss on first
           paint. Promoted to a small section so it's clearly part of
@@ -162,6 +171,7 @@ export function BookingTypeSwitcher({
           salon={salon}
           capabilityRows={capabilityRows}
           categories={categories}
+          language={language}
         />
       ) : (
         <BookingGroupFlow

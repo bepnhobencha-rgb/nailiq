@@ -1,0 +1,386 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRealtimeVoice, type VoiceCallStatus } from "@/hooks/useRealtimeVoice";
+import type { BookingResult } from "@/shared/booking/submitPublicBooking";
+
+type Props = {
+  shopSlug: string;
+  language: "en" | "vi";
+  onBookingConfirmed?: (booking: BookingResult) => void;
+};
+
+// ─── Status helpers ───────────────────────────────────────────────────────────
+
+function statusLabel(s: VoiceCallStatus, lang: "en" | "vi"): string {
+  const vi = lang === "vi";
+  const map: Record<VoiceCallStatus, string> = {
+    idle:         vi ? "Đặt lịch bằng giọng nói" : "Book with Voice AI",
+    connecting:   vi ? "Đang kết nối…"            : "Connecting…",
+    ready:        vi ? "Đang nghe…"               : "Listening…",
+    listening:    vi ? "Đang nghe…"               : "Listening…",
+    thinking:     vi ? "Đang xử lý…"              : "Processing…",
+    speaking:     vi ? "AI đang nói"              : "AI Speaking",
+    tool_calling: vi ? "Đang kiểm tra lịch…"      : "Checking availability…",
+    confirmed:    vi ? "Đặt lịch thành công! ✓"   : "Booking Confirmed! ✓",
+    ended:        vi ? "Cuộc gọi đã kết thúc"     : "Call Ended",
+    error:        vi ? "Đã có lỗi"                : "Error",
+  };
+  return map[s];
+}
+
+// ─── Animations ───────────────────────────────────────────────────────────────
+
+function PulseRing({ color = "var(--salon-primary,#d4af37)" }: { color?: string }) {
+  return (
+    <span className="absolute inset-0 rounded-full animate-ping opacity-30"
+      style={{ backgroundColor: color }} />
+  );
+}
+
+function SpeakingBars() {
+  const bars = [
+    { h: 0.4, dur: 500 }, { h: 0.7, dur: 380 }, { h: 1.0, dur: 300 },
+    { h: 0.85, dur: 360 }, { h: 0.55, dur: 440 }, { h: 0.35, dur: 520 },
+  ];
+  return (
+    <>
+      <style>{`
+        @keyframes voiceBar {
+          0%   { transform: scaleY(0.2); }
+          100% { transform: scaleY(1); }
+        }
+      `}</style>
+      <div className="flex items-center justify-center gap-[3px]" style={{ height: 28 }}>
+        {bars.map((b, i) => (
+          <span key={i} style={{
+            display: "inline-block", width: 3,
+            height: Math.round(28 * b.h),
+            borderRadius: 2,
+            background: "var(--salon-primary,#d4af37)",
+            transformOrigin: "center",
+            animation: `voiceBar ${b.dur}ms ease-in-out ${i * 60}ms infinite alternate`,
+          }} />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function ThinkingDots() {
+  return (
+    <>
+      <style>{`
+        @keyframes dot { 0%,80%,100% { opacity:.25;transform:translateY(0) } 40% { opacity:1;transform:translateY(-4px) } }
+      `}</style>
+      <div className="flex gap-1.5 items-center justify-center" style={{ height: 28 }}>
+        {[0, 150, 300].map((d) => (
+          <span key={d} style={{
+            width: 7, height: 7, borderRadius: "50%",
+            background: "var(--salon-primary,#d4af37)",
+            display: "inline-block",
+            animation: `dot 1s ease-in-out ${d}ms infinite`,
+          }} />
+        ))}
+      </div>
+    </>
+  );
+}
+
+// ─── Message feed ──────────────────────────────────────────────────────────────
+
+function MessageFeed({ messages, aiMessage, userTranscript, lang }: {
+  messages: { role: "user" | "assistant"; text: string; timestamp: number }[];
+  aiMessage: string;
+  userTranscript: string;
+  lang: "en" | "vi";
+}) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, aiMessage, userTranscript]);
+
+  return (
+    <div className="h-40 overflow-y-auto flex flex-col gap-2 px-1 text-[13px]">
+      {messages.map((m, i) => (
+        <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+          <div className={`rounded-2xl px-3 py-1.5 max-w-[85%] leading-snug ${
+            m.role === "user"
+              ? "bg-white/12 text-white/85"
+              : "bg-[var(--salon-primary,#d4af37)]/15 text-white/90"
+          }`}>
+            {m.text}
+          </div>
+        </div>
+      ))}
+      {/* Live AI transcript */}
+      {aiMessage && !messages.find(m => m.role === "assistant" && m.text === aiMessage) && (
+        <div className="flex justify-start">
+          <div className="rounded-2xl px-3 py-1.5 max-w-[85%] bg-[var(--salon-primary,#d4af37)]/10 text-white/60 italic leading-snug">
+            {aiMessage}<span className="animate-pulse">▋</span>
+          </div>
+        </div>
+      )}
+      {/* Live user transcript */}
+      {userTranscript && (
+        <div className="flex justify-end">
+          <div className="rounded-2xl px-3 py-1.5 max-w-[85%] bg-white/8 text-white/50 italic leading-snug">
+            {userTranscript}…
+          </div>
+        </div>
+      )}
+      <div ref={bottomRef} />
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export function RealtimeVoiceCall({ shopSlug, language, onBookingConfirmed }: Props) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const {
+    status, userTranscript, aiMessage, messages,
+    confirmedBooking, errorMessage, isMuted,
+    start, end, toggleMute,
+  } = useRealtimeVoice({
+    shopSlug,
+    language,
+    onConfirmed: onBookingConfirmed,
+  });
+
+  const isVi = language === "vi";
+  const isActive = status !== "idle" && status !== "ended" && status !== "error";
+  const isError = status === "error";
+  const isDone = status === "confirmed";
+
+  const handleStart = useCallback(async () => {
+    setIsOpen(true);
+    await start();
+  }, [start]);
+
+  const handleEnd = useCallback(() => {
+    end();
+    if (isDone) {
+      // Keep open on confirmed to show summary
+      return;
+    }
+    setTimeout(() => setIsOpen(false), 400);
+  }, [end, isDone]);
+
+  // Auto-close after confirmed + 8s
+  useEffect(() => {
+    if (status !== "confirmed") return;
+    const id = setTimeout(() => setIsOpen(false), 8_000);
+    return () => clearTimeout(id);
+  }, [status]);
+
+  // Entry button (collapsed state)
+  if (!isOpen) {
+    return (
+      <button
+        type="button"
+        onClick={handleStart}
+        className="group w-full flex items-center gap-3 rounded-2xl border border-[var(--salon-primary,#d4af37)]/25 bg-[var(--salon-primary,#d4af37)]/5 px-5 py-4 text-left transition-all hover:border-[var(--salon-primary,#d4af37)]/50 hover:bg-[var(--salon-primary,#d4af37)]/10"
+      >
+        <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+          style={{ background: "var(--salon-primary,#d4af37)" }}>
+          <PhoneIcon className="h-5 w-5 text-black" />
+        </span>
+        <div>
+          <p className="text-[14px] font-semibold text-white/90">
+            {isVi ? "Gọi đặt lịch với AI" : "Book with AI Voice"}
+          </p>
+          <p className="text-[11px] text-white/45 mt-0.5">
+            {isVi ? "Nói chuyện tự nhiên — AI xử lý tất cả" : "Just talk — AI handles everything"}
+          </p>
+        </div>
+        <span className="ml-auto text-[11px] font-medium text-[var(--salon-primary,#d4af37)]/70 group-hover:text-[var(--salon-primary,#d4af37)]">
+          {isVi ? "Gọi ngay →" : "Start →"}
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-[var(--salon-primary,#d4af37)]/25 bg-black/50 backdrop-blur-md">
+      {/* Gold gradient top line */}
+      <div className="absolute left-0 right-0 top-0 h-px"
+        style={{ background: "linear-gradient(90deg,transparent,var(--salon-primary,#d4af37) 50%,transparent)" }} />
+
+      <div className="p-5 space-y-4">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            {/* Status dot */}
+            <span className={`relative flex h-2.5 w-2.5 rounded-full ${
+              isError ? "bg-red-500"
+              : isDone ? "bg-green-400"
+              : isActive ? "bg-[var(--salon-primary,#d4af37)]"
+              : "bg-white/30"
+            }`}>
+              {isActive && !isDone && (
+                <span className="absolute inset-0 animate-ping rounded-full opacity-50"
+                  style={{ backgroundColor: "var(--salon-primary,#d4af37)" }} />
+              )}
+            </span>
+            <span className="text-[12px] font-semibold uppercase tracking-wider text-white/60">
+              {statusLabel(status, language)}
+            </span>
+          </div>
+
+          {/* Close / end call */}
+          {!isDone && (
+            <button type="button" onClick={handleEnd}
+              className="text-[11px] text-white/30 hover:text-white/60 transition-colors">
+              {isActive ? (isVi ? "Cúp máy" : "End") : "✕"}
+            </button>
+          )}
+        </div>
+
+        {/* Central animation */}
+        <div className="flex justify-center py-1">
+          {status === "connecting" && (
+            <div className="h-8 w-8 rounded-full border-2 border-t-transparent animate-spin"
+              style={{ borderColor: "var(--salon-primary,#d4af37)", borderTopColor: "transparent" }} />
+          )}
+          {(status === "ready" || status === "listening") && (
+            <div className="relative flex h-14 w-14 items-center justify-center rounded-full"
+              style={{ background: "var(--salon-primary,#d4af37)22" }}>
+              <PulseRing />
+              <MicIcon className="h-6 w-6 text-[var(--salon-primary,#d4af37)]" />
+            </div>
+          )}
+          {status === "speaking" && <SpeakingBars />}
+          {(status === "thinking" || status === "tool_calling") && <ThinkingDots />}
+          {isDone && (
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-500/20">
+              <CheckIcon className="h-7 w-7 text-green-400" />
+            </div>
+          )}
+          {isError && (
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-500/20">
+              <span className="text-2xl">⚠</span>
+            </div>
+          )}
+        </div>
+
+        {/* Error message */}
+        {isError && errorMessage && (
+          <p className="text-center text-[12px] text-red-400/90">{errorMessage}</p>
+        )}
+
+        {/* Confirmed summary */}
+        {isDone && confirmedBooking && (
+          <div className="rounded-xl border border-green-500/25 bg-green-500/8 px-4 py-3 space-y-1 text-center">
+            <p className="text-[13px] font-semibold text-green-400">
+              {isVi ? "✓ Đặt lịch thành công!" : "✓ Booking Confirmed!"}
+            </p>
+            <p className="text-[11px] text-white/55">
+              {new Date(confirmedBooking.startTimeUtc).toLocaleString(isVi ? "vi-VN" : "en-US", {
+                weekday: "short", month: "short", day: "numeric",
+                hour: "numeric", minute: "2-digit",
+              })}
+              {confirmedBooking.staffName ? ` · ${confirmedBooking.staffName}` : ""}
+            </p>
+          </div>
+        )}
+
+        {/* Conversation transcript */}
+        {messages.length > 0 || aiMessage || userTranscript ? (
+          <MessageFeed messages={messages} aiMessage={aiMessage}
+            userTranscript={userTranscript} lang={language} />
+        ) : status === "ready" ? (
+          <p className="text-center text-[12px] text-white/35 py-2">
+            {isVi
+              ? "Nói tên dịch vụ bạn muốn đặt…"
+              : "Say the service you'd like to book…"}
+          </p>
+        ) : null}
+
+        {/* Controls: mute / end */}
+        {isActive && !isDone && (
+          <div className="flex items-center justify-center gap-3 pt-1">
+            <button
+              type="button"
+              onClick={toggleMute}
+              className={`flex items-center gap-1.5 rounded-full border px-4 py-2 text-[12px] font-medium transition-all ${
+                isMuted
+                  ? "border-red-500/50 bg-red-500/15 text-red-400"
+                  : "border-white/15 bg-white/6 text-white/60 hover:bg-white/10"
+              }`}
+            >
+              {isMuted ? <MicOffIcon className="h-3.5 w-3.5" /> : <MicIcon className="h-3.5 w-3.5" />}
+              {isMuted ? (isVi ? "Đã tắt mic" : "Muted") : (isVi ? "Đang nghe" : "Live")}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleEnd}
+              className="flex items-center gap-1.5 rounded-full border border-red-500/40 bg-red-500/15 px-4 py-2 text-[12px] font-medium text-red-400 hover:bg-red-500/25 transition-all"
+            >
+              <PhoneOffIcon className="h-3.5 w-3.5" />
+              {isVi ? "Cúp máy" : "End Call"}
+            </button>
+          </div>
+        )}
+
+        {/* Retry on error */}
+        {isError && (
+          <button type="button" onClick={handleStart}
+            className="w-full rounded-full bg-[var(--salon-primary,#d4af37)]/15 py-2.5 text-[12px] font-semibold text-[var(--salon-primary,#d4af37)] hover:bg-[var(--salon-primary,#d4af37)]/25 transition-all">
+            {isVi ? "Thử lại" : "Try Again"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Icons ────────────────────────────────────────────────────────────────────
+
+function PhoneIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+      strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.67A2 2 0 012 1h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 8.49a16 16 0 006.6 6.6l1.86-1.34a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" />
+    </svg>
+  );
+}
+
+function PhoneOffIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+      strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M10.68 13.31a16 16 0 003.41 2.6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07" />
+      <path d="M6.2 4.72A19.79 19.79 0 012 2M1 1l22 22" />
+    </svg>
+  );
+}
+
+function MicIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+      strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 2a3 3 0 00-3 3v7a3 3 0 006 0V5a3 3 0 00-3-3z" />
+      <path d="M19 10v2a7 7 0 01-14 0v-2M12 19v3" />
+    </svg>
+  );
+}
+
+function MicOffIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+      strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M1 1l22 22M9 9v3a3 3 0 005.12 2.12M15 9.34V5a3 3 0 00-5.94-.6" />
+      <path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23M12 19v3" />
+    </svg>
+  );
+}
+
+function CheckIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
+      strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
