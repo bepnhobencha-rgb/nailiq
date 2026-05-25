@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Calendar,
   Camera,
+  Gift,
   Package,
   ChevronLeft,
   ChevronRight,
@@ -242,6 +243,14 @@ export function DashboardSidebar({
             hidden: subscriptionPlan === "free",
           },
           {
+            key: "loyalty",
+            label: t.loyalty,
+            href: `${dashRoot}/setup/loyalty`,
+            icon: Gift,
+            match: (p) => p.startsWith(`${dashRoot}/setup/loyalty`),
+            hidden: subscriptionPlan !== "premium",
+          },
+          {
             key: "photos",
             label: t.photos,
             href: `${dashRoot}/photos`,
@@ -304,6 +313,7 @@ export function DashboardSidebar({
       t.calendar,
       t.clients,
       t.frontDesk,
+      t.loyalty,
       t.marketing,
       t.messages,
       t.messagesSoonBadge,

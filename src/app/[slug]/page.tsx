@@ -276,6 +276,15 @@ async function PublicBookingRouteBody({
         {process.env.ANTHROPIC_API_KEY ? (
           <BookingChatWidget salonId={load.salon.id} t={t} />
         ) : null}
+
+        <div className="mx-auto w-full max-w-[1200px] px-4 pb-8 text-center sm:px-6 lg:px-8">
+          <a
+            href={`/${normalizedSlug}/gift`}
+            className="inline-flex items-center gap-1.5 text-sm text-[var(--booking-text-muted)] hover:text-[var(--salon-primary)] transition-colors"
+          >
+            🎁 {t.giftCardPageLink}
+          </a>
+        </div>
       </div>
     </>
   );

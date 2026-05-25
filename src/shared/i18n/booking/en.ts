@@ -64,6 +64,7 @@ export const bookingEn = {
   /** `{phone}` = the salon's public phone number, formatted via `formatPhone`. */
   manageBookingCall: "Need to reschedule? Call us: {phone}",
   doneCta: "Book another",
+  giftCardPageLink: "Buy a Gift Card",
   submitError: "Could not complete booking. Please try again.",
   summaryShop: "Salon",
   summaryService: "Service",

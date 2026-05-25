@@ -333,6 +333,7 @@ export type UserMessages = {
     settings: string;
     /** Quick-action button at the bottom of the nav rail. */
     quickAddWalkin: string;
+    loyalty: string;
     /** Static placeholder badge for the disabled Messages row. */
     messagesSoonBadge: string;
     collapseSidebar: string;
@@ -1759,7 +1760,7 @@ export const userEn: UserMessages = {
           features: [
             "Everything in Pro",
             "AI Review Defense (1-click approve)",
-            "Loyalty program & Gift Cards (coming soon)",
+            "Loyalty stamp cards & Gift Cards",
             "Staff performance reports",
             "CRM & client history",
             "SMS marketing (100 msgs/month)",
@@ -1925,6 +1926,7 @@ export const userEn: UserMessages = {
     expandSidebar: "Expand sidebar",
     primaryNav: "Primary navigation",
     switchSalon: "Switch salon",
+    loyalty: "Loyalty & Gifts",
   },
   login: {
     title: "Sign in",

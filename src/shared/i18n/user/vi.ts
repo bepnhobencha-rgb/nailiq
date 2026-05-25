@@ -315,7 +315,7 @@ export const userVi: UserMessages = {
           features: [
             "Tất cả gói Pro",
             "AI phản hồi review (duyệt 1 chạm)",
-            "Loyalty & Thẻ quà tặng (sắp ra mắt)",
+            "Loyalty & Thẻ quà tặng",
             "Báo cáo hiệu suất thợ",
             "CRM & lịch sử khách",
             "SMS marketing (100 tin/tháng)",
@@ -482,6 +482,7 @@ export const userVi: UserMessages = {
     expandSidebar: "Mở rộng",
     primaryNav: "Điều hướng chính",
     switchSalon: "Chuyển tiệm",
+    loyalty: "Loyalty & Quà tặng",
   },
   login: {
     title: "Đăng nhập",

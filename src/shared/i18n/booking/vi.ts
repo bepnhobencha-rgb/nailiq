@@ -62,6 +62,7 @@ export const bookingVi: BookingMessages = {
   shareBookingCopied: "Đã sao chép — dán vào tin nhắn hoặc Zalo.",
   manageBookingCall: "Cần đổi giờ? Gọi tiệm: {phone}",
   doneCta: "Đặt thêm lịch",
+  giftCardPageLink: "Mua thẻ quà tặng",
   submitError: "Không hoàn tất được đặt lịch. Vui lòng thử lại.",
   summaryShop: "Tiệm",
   summaryService: "Dịch vụ",
