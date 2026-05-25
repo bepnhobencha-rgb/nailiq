@@ -24,14 +24,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     );
     const { data } = await supabase
       .from("salons")
-      .select("slug, updated_at")
+      .select("slug, created_at")
       .is("archived_at", null)
       .eq("profile_complete", true);
 
     if (data) {
-      salonRoutes = data.map((salon: { slug: string; updated_at: string | null }) => ({
+      salonRoutes = data.map((salon: { slug: string; created_at: string | null }) => ({
         url: `${base}/${salon.slug}`,
-        lastModified: salon.updated_at ? new Date(salon.updated_at) : now,
+        lastModified: salon.created_at ? new Date(salon.created_at) : now,
         changeFrequency: "weekly" as const,
         priority: 0.9,
       }));
