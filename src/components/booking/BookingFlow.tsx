@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, useReducedMotion } from "@/shared/lib/motionClient";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { getClientLoyaltyCardByPhone } from "@/shared/loyalty/loyaltyActions";
 import type { LoyaltyCard, LoyaltyProgram } from "@/shared/loyalty/types";
 import type { BookingComboItem, BookingServiceItem } from "@/shared/booking/catalog";
@@ -30,6 +30,54 @@ import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDa
 import { formatBookingPriceReceipt } from "@/shared/booking/formatBookingPrice";
 import { salonTimezoneAbbreviation } from "@/shared/lib/salonTime";
 import { useBookingFlowState } from "@/components/booking/useBookingFlowState";
+import { VoiceBookingButton } from "@/components/booking/VoiceBookingButton";
+import type { VoiceParseResult } from "@/app/api/booking/voice-parse/route";
+
+// Resolve a voice dateHint string to a concrete Date (noon local time)
+function resolveVoiceDateHint(hint: string): Date | null {
+  const lower = hint.toLowerCase();
+  const today = new Date();
+  const norm = (d: Date) => { d.setHours(12, 0, 0, 0); return d; };
+
+  if (lower.includes("today") || lower.includes("hôm nay") || lower.includes("hom nay")) {
+    return norm(new Date(today));
+  }
+  if (lower.includes("tomorrow") || lower.includes("ngày mai") || lower.includes("ngay mai")) {
+    const d = new Date(today); d.setDate(d.getDate() + 1); return norm(d);
+  }
+  if (lower.includes("saturday") || lower.includes("thứ bảy") || lower.includes("thu bay")) {
+    const d = new Date(today);
+    const diff = (6 - d.getDay() + 7) % 7 || 7;
+    d.setDate(d.getDate() + diff); return norm(d);
+  }
+  if (lower.includes("sunday") || lower.includes("chủ nhật") || lower.includes("chu nhat")) {
+    const d = new Date(today);
+    const diff = (7 - d.getDay()) % 7 || 7;
+    d.setDate(d.getDate() + diff); return norm(d);
+  }
+  return null;
+}
+
+// Normalize voice timeHint to match slot label format: "2:00 PM"
+function normalizeVoiceTimeHint(hint: string): string {
+  const h12 = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i.exec(hint.trim());
+  if (h12) {
+    const h = parseInt(h12[1]!, 10);
+    const m = parseInt(h12[2] ?? "0", 10);
+    const period = h12[3]!.toUpperCase();
+    return `${h}:${m.toString().padStart(2, "0")} ${period}`;
+  }
+  const h24 = /^(\d{1,2}):(\d{2})$/.exec(hint.trim());
+  if (h24) {
+    let h = parseInt(h24[1]!, 10);
+    const m = parseInt(h24[2]!, 10);
+    const period = h >= 12 ? "PM" : "AM";
+    if (h > 12) h -= 12;
+    else if (h === 0) h = 12;
+    return `${h}:${m.toString().padStart(2, "0")} ${period}`;
+  }
+  return hint; // already normalized (e.g. "2:00 PM" from chip)
+}
 
 type BookingFlowProps = {
   t: BookingMessages;
@@ -40,6 +88,7 @@ type BookingFlowProps = {
   salon: BookingSalonMeta;
   capabilityRows: { staff_id: string; service_id: string }[] | null;
   categories: readonly ServiceCategorySummary[];
+  language?: "en" | "vi";
 };
 
 export function BookingFlow({
@@ -51,6 +100,7 @@ export function BookingFlow({
   salon,
   capabilityRows,
   categories,
+  language = "en",
 }: BookingFlowProps) {
   const reducedMotion = useReducedMotion();
   const flow = useBookingFlowState(
@@ -66,6 +116,57 @@ export function BookingFlow({
 
   const [loyaltyCard, setLoyaltyCard] = useState<LoyaltyCard | null>(null);
   const [loyaltyProgram, setLoyaltyProgram] = useState<LoyaltyProgram | null>(null);
+
+  // Pending time hint from voice — matched against slots once they load
+  const pendingSlotHint = useRef<string | null>(null);
+
+  const handleVoiceFill = useCallback((result: VoiceParseResult) => {
+    if (result.serviceId) flow.setServiceId(result.serviceId);
+    if (result.staffId) flow.setStaffId(result.staffId);
+    if (result.clientName) flow.setClientName(result.clientName);
+    if (result.clientPhone) flow.setClientPhone(result.clientPhone);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- flow setters are stable
+  }, [flow.setServiceId, flow.setStaffId, flow.setClientName, flow.setClientPhone]);
+
+  const handleVoiceDone = useCallback((result: VoiceParseResult) => {
+    // Fill all known fields
+    if (result.serviceId) flow.setServiceId(result.serviceId);
+    if (result.staffId) flow.setStaffId(result.staffId);
+    if (result.clientName) flow.setClientName(result.clientName);
+    if (result.clientPhone) flow.setClientPhone(result.clientPhone);
+
+    // Resolve dateHint → Date
+    if (result.dateHint) {
+      const date = resolveVoiceDateHint(result.dateHint);
+      if (date) flow.setSelectedDate(date);
+    }
+
+    // Store timeHint to match against slots once loaded
+    if (result.timeHint) pendingSlotHint.current = result.timeHint;
+
+    // Jump straight to time step (React 18 batches all setStep calls — last one wins = "time")
+    flow.goServiceNext();
+    flow.goStaffNext();
+    flow.goDateNext();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- flow go* are stable callbacks
+  }, [flow.setServiceId, flow.setStaffId, flow.setClientName, flow.setClientPhone,
+      flow.setSelectedDate, flow.goServiceNext, flow.goStaffNext, flow.goDateNext]);
+
+  // Once slots load at the time step, auto-match hint and advance to info
+  useEffect(() => {
+    const hint = pendingSlotHint.current;
+    if (!hint || flow.step !== "time" || flow.slotsLoading || flow.timeSlots.length === 0) return;
+    pendingSlotHint.current = null;
+    const normalized = normalizeVoiceTimeHint(hint);
+    const match = flow.timeSlots.find((s) => s.available && s.label === normalized);
+    if (match) {
+      flow.goTimeNextDirect(match.label);
+    } else {
+      // Slot unavailable — stay on time step, show inline error
+      flow.setError(t.voice.slotNotFound.replace("{time}", normalized));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: runs when slots arrive
+  }, [flow.step, flow.slotsLoading, flow.timeSlots]);
 
   useEffect(() => {
     if (flow.step !== "done" || !flow.clientPhone.trim()) return;
@@ -139,9 +240,24 @@ export function BookingFlow({
     );
   }
 
+  const showVoice =
+    flow.step === "service" || flow.step === "staff";
+
   return (
     <div className="mt-8 w-full">
       <BookingStepper activeStep={wizardStep} t={t} />
+      {showVoice ? (
+        <div className="mb-4 mt-2">
+          <VoiceBookingButton
+            t={t}
+            services={services}
+            staff={staff}
+            language={language}
+            onFill={handleVoiceFill}
+            onDone={handleVoiceDone}
+          />
+        </div>
+      ) : null}
       <AnimatePresence mode="wait" custom={flow.stepDir}>
         {flow.step === "service" ? (
           <BookingFlowServicePanel

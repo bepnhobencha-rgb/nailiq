@@ -429,6 +429,27 @@ export const bookingEn = {
     errorFallback: "Sorry, I couldn't connect. Please try again.",
     disclaimer: "AI assistant — for bookings, use the form above.",
   },
+  voice: {
+    tapToSpeak: "Speak to book",
+    listening: "Listening…",
+    speakNow: "Tell us what you'd like — e.g. 'Manicure with Jenny next Friday'",
+    done: "Done",
+    processing: "Understanding your request…",
+    matched: "✓ Got it",
+    noMatch: "Couldn't understand — please try again or book manually.",
+    parseError: "Something went wrong. Please try again.",
+    micPermissionDenied: "Microphone access denied. Please allow it in your browser settings.",
+    micError: "Couldn't start recording. Please try again.",
+    notSupported: "Voice input isn't supported in this browser.",
+    /** iPhone / Safari fallback: keyboard dictation */
+    textInputHint: "Tap 🎤 on your keyboard to dictate, or just type:",
+    textInputPlaceholder: "e.g. Manicure with Jenny next Friday at 2pm",
+    textSubmit: "Search",
+    chatGreeting: "Hello! Thank you for calling. How can I help you today?",
+    chatSpeaking: "Speaking…",
+    chatCancel: "Cancel",
+    slotNotFound: "{time} isn't available — please pick another time below.",
+  },
 };
 
 // P0.1 — keep the literal-type info for callers that want

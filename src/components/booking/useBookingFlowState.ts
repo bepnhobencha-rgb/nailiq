@@ -563,6 +563,16 @@ export function useBookingFlowState(
     setStep("info");
   }, [timeSlot]);
 
+  // Voice auto-fill: set slot + advance to info in one batch (bypasses guard safely)
+  const goTimeNextDirect = useCallback((slot: string) => {
+    setTimeSlot(slot);
+    setStepDir(1);
+    setError(null);
+    setInfoNameError(null);
+    setInfoPhoneError(null);
+    setStep("info");
+  }, []);
+
   const goInfoNext = useCallback(() => {
     const nameTrim = clientName.trim();
     const phoneTrim = clientPhone.trim();
@@ -1159,6 +1169,7 @@ export function useBookingFlowState(
     goStaffNext,
     goDateNext,
     goTimeNext,
+    goTimeNextDirect,
     goInfoNext,
     goVerifyDecided,
     goSkipOtp,

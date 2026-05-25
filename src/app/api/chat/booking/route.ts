@@ -53,12 +53,17 @@ export async function POST(req: NextRequest) {
     .eq("id", salonId)
     .maybeSingle();
 
+  // Match the public booking page's service loader: the `services` table
+  // has no `is_active` column (soft-delete uses `deleted_at`), and no
+  // `currency` column. The previous query (.eq("is_active", true) + select
+  // currency) errored silently, so the AI never received the service list
+  // and deflected every pricing question to "call the salon".
   const { data: services } = await db
     .from("services")
-    .select("name, duration_minutes, price_cents, currency")
+    .select("name, duration_minutes, price_cents")
     .eq("salon_id", salonId)
-    .eq("is_active", true)
-    .order("position")
+    .is("deleted_at", null)
+    .order("name", { ascending: true })
     .limit(30);
 
   const salonName = salon?.name ?? "this salon";
