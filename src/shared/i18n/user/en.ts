@@ -1754,7 +1754,7 @@ export const userEn: UserMessages = {
         {
           id: "studio",
           name: "Studio",
-          price: "$89",
+          price: "$99",
           badge: "Best Value",
           features: [
             "Everything in Pro",

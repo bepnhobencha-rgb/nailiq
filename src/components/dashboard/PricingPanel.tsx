@@ -39,7 +39,7 @@ const PLAN_KEYS: SubscriptionPlan[] = ["free", "pro", "premium"];
 
 const PLAN_PRICE: Record<SubscriptionPlan, string> = {
   free: "$0",
-  pro: "$49",
+  pro: "$39",
   premium: "$99",
 };
 

@@ -310,7 +310,7 @@ export const userVi: UserMessages = {
         {
           id: "studio",
           name: "Studio",
-          price: "$89",
+          price: "$99",
           badge: "Tốt nhất",
           features: [
             "Tất cả gói Pro",
