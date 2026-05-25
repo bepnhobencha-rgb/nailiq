@@ -417,9 +417,23 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
       });
 
       if (!sdpRes.ok) {
-        const err = await sdpRes.json().catch(() => ({})) as { error?: string; detail?: string; openai_status?: number };
-        logEvent("system", "sdp.error", err);
-        throw new Error(err.error ?? "sdp_exchange_failed");
+        // Capture everything: raw text first so we never lose the body
+        const rawBody = await sdpRes.text();
+        let parsedBody: unknown = null;
+        try { parsedBody = JSON.parse(rawBody); } catch { /* keep null — body may not be JSON */ }
+        const sdpErrPayload = {
+          http_status: sdpRes.status,
+          http_status_text: sdpRes.statusText,
+          raw_body: rawBody,
+          parsed: parsedBody,
+          proxy_endpoint: "/api/voice/sdp",
+          openai_endpoint: REALTIME_CONFIG.sdpEndpoint,
+          model: REALTIME_CONFIG.model,
+          voice: REALTIME_CONFIG.voice,
+        };
+        logEvent("system", "sdp.error", sdpErrPayload);
+        const errorCode = (parsedBody as { error?: string } | null)?.error ?? "sdp_exchange_failed";
+        throw Object.assign(new Error(errorCode), { _sdpDetail: sdpErrPayload });
       }
 
       const { sdp_answer, session_config } = await sdpRes.json() as { sdp_answer: string; session_config: SessionConfig };
@@ -432,6 +446,8 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
     } catch (err) {
       const errName = err instanceof DOMException ? err.name : (err instanceof Error ? (err as { name?: string }).name ?? "" : "");
       const errMsg = err instanceof Error ? err.message : "unknown";
+      const stack = err instanceof Error ? err.stack : undefined;
+      const sdpDetail = (err as { _sdpDetail?: unknown })._sdpDetail;
       const code =
         errName === "NotAllowedError" ? "mic_denied"
         : errName === "NotFoundError" ? "mic_not_found"
@@ -439,7 +455,14 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
         : errMsg === "insecure_context" ? "insecure_context"
         : errMsg === "salon_not_found" ? "salon_not_found"
         : errMsg;
-      logEvent("system", "connect.error", { code, errName, errMsg });
+      logEvent("system", "connect.error", {
+        code,
+        errName,
+        errMsg,
+        stack,
+        sdpDetail,        // full SDP error payload attached if this was a SDP failure
+        raw_err: String(err),
+      });
       setErrorMessage(code);
       setStatus("error");
       cleanupRefs();

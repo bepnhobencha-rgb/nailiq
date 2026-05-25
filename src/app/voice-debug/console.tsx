@@ -309,18 +309,40 @@ export function VoiceDebugConsole() {
 
         {/* Event detail */}
         <div className="bg-neutral-900 border border-neutral-800 rounded-lg flex flex-col overflow-hidden">
-          <div className="px-3 py-2 border-b border-neutral-800 shrink-0">
-            <span className="text-xs text-neutral-500 font-mono uppercase tracking-widest">Event Detail</span>
+          <div className="px-3 py-2 border-b border-neutral-800 shrink-0 space-y-0.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-neutral-500 font-mono uppercase tracking-widest">Event Detail</span>
+              {selectedEvent && (
+                <button
+                  onClick={() => navigator.clipboard.writeText(JSON.stringify(selectedEvent, null, 2))}
+                  className="text-[10px] text-neutral-600 hover:text-neutral-300 font-mono"
+                >
+                  copy
+                </button>
+              )}
+            </div>
             {selectedEvent && (
-              <span className={`ml-2 text-xs font-mono ${DIR_COLOR[selectedEvent.direction]}`}>
+              <div className={`text-[10px] font-mono ${DIR_COLOR[selectedEvent.direction]}`}>
                 {selectedEvent.type}
-              </span>
+                <span className="text-neutral-600 ml-2">{relMs(selectedEvent.relMs)}</span>
+                <span className="text-neutral-600 ml-2">{new Date(selectedEvent.ts).toISOString()}</span>
+              </div>
             )}
           </div>
           <div className="flex-1 overflow-auto p-2">
             {selectedEvent ? (
               <pre className="text-[10px] text-neutral-300 font-mono whitespace-pre-wrap break-all">
-                {JSON.stringify(selectedEvent.payload, null, 2)}
+                {(() => {
+                  const p = selectedEvent.payload;
+                  if (p === null || p === undefined) return "(no payload)";
+                  if (typeof p === "string") return p;
+                  try {
+                    const s = JSON.stringify(p, null, 2);
+                    return s === "{}" ? "(empty object — payload may be an Error; see raw_err field)" : s;
+                  } catch {
+                    return String(p);
+                  }
+                })()}
               </pre>
             ) : (
               <p className="text-neutral-700 text-xs font-mono p-2">Click an event to inspect</p>
