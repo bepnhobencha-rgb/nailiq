@@ -34,7 +34,7 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
         `
         id, salon_id, staff_id, service_id, client_email, client_phone,
         start_time_utc,
-        salons!inner ( id, name, slug, subscription_plan, plan_override, feature_flags, timezone ),
+        salons!inner ( id, name, slug, subscription_plan, plan_override, feature_flags, timezone, google_review_url, sms_reminders_enabled ),
         services ( name ),
         staff ( name )
       `,
@@ -55,6 +55,8 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
       plan_override: string | null;
       feature_flags: Record<string, unknown> | null;
       timezone: string | null;
+      google_review_url?: string | null;
+      sms_reminders_enabled?: boolean | null;
     };
     const salonRaw = (row as unknown as { salons: Salon | Salon[] | null })
       .salons;
@@ -139,6 +141,11 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
       process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
     const reviewUrl = `${siteUrl.replace(/\/$/, "")}/reviews/${token}`;
     const salonName = (salon.name ?? "").trim() || salon.slug;
+    const googleReviewUrl =
+      typeof salon.google_review_url === "string" &&
+      salon.google_review_url.trim().length > 0
+        ? salon.google_review_url.trim()
+        : undefined;
 
     try {
       const res = await resend.emails.send({
@@ -150,6 +157,7 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
           serviceName,
           staffName,
           reviewUrl,
+          googleReviewUrl,
         }),
       });
       if (res.error) {
@@ -157,6 +165,38 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
       }
     } catch (e) {
       console.error("[sendReviewRequest] resend threw", e);
+    }
+
+    // SMS channel — send if salon has sms_reminders_enabled + booking has phone
+    const smsEnabled = salon.sms_reminders_enabled === true;
+    const clientPhone =
+      typeof (row as { client_phone?: string | null }).client_phone === "string"
+        ? String((row as { client_phone: string }).client_phone).trim()
+        : "";
+
+    if (smsEnabled && clientPhone) {
+      const toE164 = clientPhone.startsWith("+")
+        ? clientPhone
+        : `+${clientPhone}`;
+      const smsBody = `Cảm ơn bạn đã ghé ${salonName}! Đánh giá dịch vụ (30 giây): ${reviewUrl} · Reply STOP to opt out.`;
+      const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+      const { sendSmsReminder } = await import("@/shared/lib/twilioSms");
+      const { logNotification } = await import("@/shared/lib/notificationLog");
+      const smsResult = await sendSmsReminder(toE164, smsBody, { statusCallbackUrl: `${SITE_URL}/api/twilio/status` });
+      if (!smsResult.ok) {
+        console.error("[sendReviewRequest] SMS failed", smsResult.error);
+      }
+      void logNotification({
+        bookingId,
+        salonId: salon.id,
+        notificationType: "review_request",
+        channel: "sms",
+        clientPhone: toE164,
+        messageSid: smsResult.messageSid,
+        bodyPreview: smsBody,
+        ok: smsResult.ok,
+        errorMessage: smsResult.error,
+      });
     }
   } catch (e) {
     console.error("[sendReviewRequest] unexpected", e);
@@ -168,14 +208,31 @@ function buildEmailHtml(input: {
   serviceName: string;
   staffName: string;
   reviewUrl: string;
+  googleReviewUrl?: string;
 }): string {
-  const { salonName, serviceName, staffName, reviewUrl } = input;
+  const { salonName, serviceName, staffName, reviewUrl, googleReviewUrl } = input;
   const serviceLine = serviceName
     ? `<p style="margin: 0 0 8px 0;">Dịch vụ: <strong>${escapeHtml(serviceName)}</strong></p>`
     : "";
   const staffLine = staffName
     ? `<p style="margin: 0 0 8px 0;">Thợ: <strong>${escapeHtml(staffName)}</strong></p>`
     : "";
+
+  const ctaBlock = googleReviewUrl
+    ? `
+      <p style="margin: 24px 0 12px 0;">
+        <a href="${googleReviewUrl}" style="display: inline-block; background: #d4af37; color: #111; padding: 12px 24px; border-radius: 999px; text-decoration: none; font-weight: 600;">⭐ Đánh giá 5 sao trên Google</a>
+      </p>
+      <p style="margin: 0 0 0 0;">
+        <a href="${reviewUrl}" style="display: inline-block; background: transparent; color: #555; border: 1px solid #ccc; padding: 10px 20px; border-radius: 999px; text-decoration: none; font-size: 13px;">Đánh giá trên NailIQ</a>
+      </p>
+    `
+    : `
+      <p style="margin: 24px 0;">
+        <a href="${reviewUrl}" style="display: inline-block; background: #d4af37; color: #111; padding: 12px 24px; border-radius: 999px; text-decoration: none; font-weight: 600;">Đánh giá dịch vụ</a>
+      </p>
+    `;
+
   return `
     <!doctype html>
     <html><body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #111;">
@@ -183,10 +240,8 @@ function buildEmailHtml(input: {
       <p style="margin: 0 0 16px 0;">Chúng tôi rất vui được phục vụ bạn hôm nay. Nếu bạn có vài phút, vui lòng chia sẻ trải nghiệm.</p>
       ${serviceLine}
       ${staffLine}
-      <p style="margin: 24px 0;">
-        <a href="${reviewUrl}" style="display: inline-block; background: #d4af37; color: #111; padding: 12px 24px; border-radius: 999px; text-decoration: none; font-weight: 600;">Đánh giá dịch vụ</a>
-      </p>
-      <p style="font-size: 12px; color: #666; margin: 24px 0 0 0;">Link này chỉ dành cho bạn — vui lòng không chia sẻ. Hết hạn sau 30 ngày.</p>
+      ${ctaBlock}
+      <p style="font-size: 12px; color: #666; margin: 24px 0 0 0;">Link NailIQ chỉ dành cho bạn — vui lòng không chia sẻ. Hết hạn sau 30 ngày.</p>
     </body></html>
   `.trim();
 }

@@ -58,7 +58,9 @@ async function getTwilioSmsCreds(): Promise<{
 export async function sendSmsReminder(
   toE164: string,
   body: string,
-): Promise<{ ok: boolean; error?: string }> {
+  /** Optional: pass `statusCallbackUrl` so Twilio POSTs delivery receipts. */
+  opts?: { statusCallbackUrl?: string },
+): Promise<{ ok: boolean; messageSid?: string; error?: string }> {
   const creds = await getTwilioSmsCreds();
   if (!creds) {
     return { ok: false, error: "twilio_not_configured" };
@@ -69,6 +71,15 @@ export async function sendSmsReminder(
   ).toString("base64")}`;
   const url = `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(creds.accountSid)}/Messages.json`;
 
+  const params: Record<string, string> = {
+    From: creds.fromPhone,
+    To:   toE164,
+    Body: body,
+  };
+  if (opts?.statusCallbackUrl) {
+    params.StatusCallback = opts.statusCallbackUrl;
+  }
+
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -76,11 +87,7 @@ export async function sendSmsReminder(
         Authorization: auth,
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({
-        From: creds.fromPhone,
-        To:   toE164,
-        Body: body,
-      }).toString(),
+      body: new URLSearchParams(params).toString(),
     });
 
     if (!res.ok) {
@@ -89,7 +96,8 @@ export async function sendSmsReminder(
       return { ok: false, error: `twilio_${res.status}` };
     }
 
-    return { ok: true };
+    const json = await res.json() as { sid?: string };
+    return { ok: true, messageSid: json.sid };
   } catch (e) {
     console.error("[sendSmsReminder]", e);
     return { ok: false, error: String(e) };

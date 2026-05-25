@@ -3,6 +3,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { generateReminderToken } from "@/shared/noshow/generateReminderToken";
 import { sendReminderEmail } from "@/shared/noshow/sendReminderEmail";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
+import { logNotification } from "@/shared/lib/notificationLog";
 
 /** Vercel Cron calls this route every 15 minutes with the CRON_SECRET header. */
 export const runtime = "nodejs";
@@ -130,9 +131,21 @@ export async function GET(req: Request) {
       const confirmUrl = `${SITE_URL}/booking/confirm?token=${token.id}`;
       const toE164 = `+${booking.client_phone}`;
       const body   = buildSmsBody(booking, reminderType, confirmUrl);
-      const result = await sendSmsReminder(toE164, body);
+      const statusCallbackUrl = `${SITE_URL}/api/twilio/status`;
+      const result = await sendSmsReminder(toE164, body, { statusCallbackUrl });
       if (result.ok) anySuccess = true;
       else errors++;
+      void logNotification({
+        bookingId: booking.id,
+        salonId: booking.salon_id,
+        notificationType: reminderType === "24h" ? "reminder_24h" : "reminder_3h",
+        channel: "sms",
+        clientPhone: toE164,
+        messageSid: result.messageSid,
+        bodyPreview: body,
+        ok: result.ok,
+        errorMessage: result.error,
+      });
     }
 
     if (!anySuccess) return;

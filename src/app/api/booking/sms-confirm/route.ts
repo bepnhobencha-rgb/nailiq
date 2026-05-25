@@ -4,6 +4,7 @@
 
 import { NextResponse } from "next/server";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
+import { logNotification } from "@/shared/lib/notificationLog";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export const dynamic = "force-dynamic";
@@ -82,9 +83,11 @@ export async function POST(req: Request) {
       ? `✅ Booked! ${serviceName}${staff} at ${salonName} · ${dateStr}. Reply STOP to opt out.`
       : `✅ Đã đặt lịch! ${serviceName} tại ${salonName} · ${dateStr}. Nhắn STOP để huỷ nhận tin.`;
 
-  const result = await sendSmsReminder(clientPhone, message);
+  const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+  const statusCallbackUrl = `${SITE_URL}/api/twilio/status`;
+  const result = await sendSmsReminder(clientPhone, message, { statusCallbackUrl });
 
-  // Track delivery on the booking row (non-blocking — don't fail the response)
+  // Track on bookings row (legacy columns kept for now)
   void db
     .from("bookings")
     .update(
@@ -96,6 +99,19 @@ export async function POST(req: Request) {
           },
     )
     .eq("id", bookingId);
+
+  // Log to central notifications table
+  void logNotification({
+    bookingId,
+    salonId,
+    notificationType: "booking_confirmation",
+    channel: "sms",
+    clientPhone,
+    messageSid: result.messageSid,
+    bodyPreview: message,
+    ok: result.ok,
+    errorMessage: result.error,
+  });
 
   return NextResponse.json({ ok: result.ok, error: result.error });
 }
