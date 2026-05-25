@@ -268,7 +268,8 @@ export function useRealtimeVoice(params: {
         }
 
         case "response.done":
-          if (status !== "confirmed" && status !== "ended" && status !== "error") {
+          // Use confirmedRef (not status from closure) to avoid stale-closure false resets
+          if (!confirmedRef.current) {
             setStatus("ready");
           }
           break;
@@ -293,7 +294,7 @@ export function useRealtimeVoice(params: {
         }
       }
     },
-    [status, handleToolCall, appendMessage, sendEvent],
+    [handleToolCall, appendMessage, sendEvent],
   );
 
   // ── Connect (GA flow: server-proxied SDP exchange) ───────────────────────────

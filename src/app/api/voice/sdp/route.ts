@@ -4,9 +4,10 @@ import { buildVoiceSystemPrompt } from "@/shared/voice/buildSystemPrompt";
 import { VOICE_TOOLS } from "@/shared/voice/tools";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
-const REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2";
-const REALTIME_VOICE = process.env.OPENAI_REALTIME_VOICE ?? "marin";
+const REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL ?? "gpt-4o-realtime-preview-2024-12-17";
+const REALTIME_VOICE = process.env.OPENAI_REALTIME_VOICE ?? "coral";
 
 export async function POST(req: NextRequest) {
   const t0 = Date.now();
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest) {
     voice: REALTIME_VOICE,
     input_audio_format: "pcm16",
     output_audio_format: "pcm16",
-    input_audio_transcription: { model: "gpt-realtime-whisper" },
+    input_audio_transcription: { model: "whisper-1" },
     turn_detection: {
       type: "server_vad",
       threshold: 0.45,
