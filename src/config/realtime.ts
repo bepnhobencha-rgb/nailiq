@@ -13,8 +13,8 @@ export const REALTIME_CONFIG = {
   voice: process.env.OPENAI_REALTIME_VOICE ?? "marin",
   /** Transcription model for input audio — must be "whisper-1" (only valid value for GA) */
   transcriptionModel: "whisper-1",
-  /** WebRTC SDP endpoint */
-  sdpEndpoint: "https://api.openai.com/v1/realtime/calls",
+  /** WebRTC SDP base endpoint — model is appended as ?model= query param */
+  sdpEndpoint: "https://api.openai.com/v1/realtime",
   /** Transport layer */
   transport: "webrtc",
   /** VAD settings */

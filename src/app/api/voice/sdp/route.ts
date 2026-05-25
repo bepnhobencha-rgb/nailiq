@@ -84,39 +84,20 @@ export async function POST(req: NextRequest) {
     today,
   });
 
-  const sessionPayload = {
-    type: "realtime",
-    model: REALTIME_CONFIG.model,
-    modalities: ["audio", "text"],
-    instructions,
-    voice: REALTIME_CONFIG.voice,
-    input_audio_format: "pcm16",
-    output_audio_format: "pcm16",
-    input_audio_transcription: { model: REALTIME_CONFIG.transcriptionModel },
-    turn_detection: {
-      type: "server_vad",
-      threshold: REALTIME_CONFIG.vad.threshold,
-      prefix_padding_ms: REALTIME_CONFIG.vad.prefixPaddingMs,
-      silence_duration_ms: REALTIME_CONFIG.vad.silenceDurationMs,
-    },
-    tools: VOICE_TOOLS,
-    tool_choice: "auto",
-    temperature: REALTIME_CONFIG.temperature,
-  };
-
+  // GA WebRTC SDP pattern: POST /v1/realtime?model=... with raw SDP body
+  // NOT /v1/realtime/calls FormData — that endpoint does not exist
+  const openaiUrl = `${REALTIME_CONFIG.sdpEndpoint}?model=${REALTIME_CONFIG.model}`;
   console.info(
-    `[voice/sdp] forwarding SDP → ${REALTIME_CONFIG.sdpEndpoint} ` +
-    `model=${REALTIME_CONFIG.model} sdp_bytes=${sdp_offer.length}`,
+    `[voice/sdp] forwarding SDP → ${openaiUrl} sdp_bytes=${sdp_offer.length}`,
   );
 
-  const form = new FormData();
-  form.append("sdp", sdp_offer);
-  form.append("session", JSON.stringify(sessionPayload));
-
-  const openaiRes = await fetch(REALTIME_CONFIG.sdpEndpoint, {
+  const openaiRes = await fetch(openaiUrl, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/sdp",
+    },
+    body: sdp_offer,
   });
 
   const latencyMs = Date.now() - t0;
