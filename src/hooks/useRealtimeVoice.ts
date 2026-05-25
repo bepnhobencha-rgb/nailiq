@@ -290,7 +290,23 @@ export function useRealtimeVoice(params: {
     setUserTranscript("");
 
     try {
-      // 1. Microphone
+      // 1. Pre-flight checks (before touching any API)
+      if (!window.isSecureContext) {
+        throw Object.assign(new Error("insecure_context"), { name: "InsecureContext" });
+      }
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw Object.assign(new Error("no_media_devices"), { name: "NoMediaDevices" });
+      }
+
+      // Log env info for debugging
+      console.info("[voice] start", {
+        secureContext: window.isSecureContext,
+        ua: navigator.userAgent.slice(0, 80),
+        lang: language,
+        salon: shopSlugRef.current,
+      });
+
+      // 2. Microphone
       const micStream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 24000 },
       });
@@ -390,15 +406,27 @@ export function useRealtimeVoice(params: {
 
       // Connection established — dc.onopen fires when ICE completes
     } catch (err) {
-      console.error("[voice] connect error:", err);
-      const msg = err instanceof Error ? err.message : "unknown";
-      setErrorMessage(
-        msg.includes("Permission") || msg.includes("NotAllowed")
-          ? "Microphone access denied."
-          : msg === "salon_not_found"
-          ? "Salon not found."
-          : "Connection failed. Please try again.",
-      );
+      const errName = err instanceof DOMException ? err.name : (err instanceof Error ? (err as { name?: string }).name ?? "" : "");
+      const errMsg = err instanceof Error ? err.message : "unknown";
+      console.error("[voice] connect error", { name: errName, message: errMsg });
+
+      // Use short error codes — UI maps these to human-readable text + instructions
+      const code =
+        errName === "NotAllowedError" || errName === "PermissionDeniedError"
+          ? "mic_denied"
+          : errName === "NotFoundError" || errName === "DevicesNotFoundError"
+          ? "mic_not_found"
+          : errName === "NotReadableError" || errName === "TrackStartError"
+          ? "mic_in_use"
+          : errName === "InsecureContext" || errMsg === "insecure_context"
+          ? "insecure_context"
+          : errName === "NoMediaDevices" || errMsg === "no_media_devices"
+          ? "no_media_devices"
+          : errMsg === "salon_not_found"
+          ? "salon_not_found"
+          : "connection_failed";
+
+      setErrorMessage(code);
       setStatus("error");
       cleanupRefs();
     }

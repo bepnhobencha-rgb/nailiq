@@ -151,6 +151,10 @@ export function RealtimeVoiceCall({ shopSlug, language, onBookingConfirmed }: Pr
   const isActive = status !== "idle" && status !== "ended" && status !== "error";
   const isError = status === "error";
   const isDone = status === "confirmed";
+  const isMicDenied = isError && errorMessage === "mic_denied";
+  const isMicNotFound = isError && errorMessage === "mic_not_found";
+  const isMicInUse = isError && errorMessage === "mic_in_use";
+  const isInsecure = isError && (errorMessage === "insecure_context" || errorMessage === "no_media_devices");
 
   const handleStart = useCallback(async () => {
     setIsOpen(true);
@@ -263,9 +267,50 @@ export function RealtimeVoiceCall({ shopSlug, language, onBookingConfirmed }: Pr
           )}
         </div>
 
-        {/* Error message */}
-        {isError && errorMessage && (
-          <p className="text-center text-[12px] text-red-400/90">{errorMessage}</p>
+        {/* Error: mic denied */}
+        {isMicDenied && (
+          <div className="rounded-xl border border-amber-500/25 bg-amber-500/8 px-4 py-3 space-y-2">
+            <p className="text-[13px] font-semibold text-amber-400 text-center">
+              {isVi ? "Microphone bị chặn" : "Microphone Blocked"}
+            </p>
+            <p className="text-[11px] text-white/55 text-center leading-relaxed">
+              {isVi
+                ? "Vui lòng cho phép microphone trong cài đặt trình duyệt, sau đó thử lại."
+                : "Please allow microphone access in your browser settings, then try again."}
+            </p>
+            <div className="text-[10px] text-white/35 space-y-0.5">
+              <p>Chrome: {isVi ? "Bấm ổ khóa 🔒 trên thanh địa chỉ → Microphone → Allow" : "Click 🔒 in address bar → Microphone → Allow"}</p>
+              <p>Safari: {isVi ? "Safari → Settings → Websites → Microphone → Allow" : "Safari → Settings → Websites → Microphone → Allow"}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Error: mic not found */}
+        {isMicNotFound && (
+          <p className="text-center text-[12px] text-red-400/90">
+            {isVi ? "Không tìm thấy microphone. Vui lòng kết nối microphone và thử lại." : "No microphone found. Please connect a microphone and try again."}
+          </p>
+        )}
+
+        {/* Error: mic in use by another app */}
+        {isMicInUse && (
+          <p className="text-center text-[12px] text-red-400/90">
+            {isVi ? "Microphone đang được dùng bởi ứng dụng khác. Vui lòng đóng và thử lại." : "Microphone is in use by another app. Close it and try again."}
+          </p>
+        )}
+
+        {/* Error: insecure context / no mediaDevices */}
+        {isInsecure && (
+          <p className="text-center text-[12px] text-red-400/90">
+            {isVi ? "Tính năng này yêu cầu kết nối HTTPS." : "Voice requires a secure (HTTPS) connection."}
+          </p>
+        )}
+
+        {/* Error: other */}
+        {isError && !isMicDenied && !isMicNotFound && !isMicInUse && !isInsecure && errorMessage && (
+          <p className="text-center text-[12px] text-red-400/90">
+            {isVi ? "Kết nối thất bại. Vui lòng thử lại." : "Connection failed. Please try again."}
+          </p>
         )}
 
         {/* Confirmed summary */}
@@ -323,12 +368,26 @@ export function RealtimeVoiceCall({ shopSlug, language, onBookingConfirmed }: Pr
           </div>
         )}
 
-        {/* Retry on error */}
+        {/* Retry + text fallback */}
         {isError && (
-          <button type="button" onClick={handleStart}
-            className="w-full rounded-full bg-[var(--salon-primary,#d4af37)]/15 py-2.5 text-[12px] font-semibold text-[var(--salon-primary,#d4af37)] hover:bg-[var(--salon-primary,#d4af37)]/25 transition-all">
-            {isVi ? "Thử lại" : "Try Again"}
-          </button>
+          <div className="space-y-2">
+            {!isMicDenied && (
+              <button type="button" onClick={handleStart}
+                className="w-full rounded-full bg-[var(--salon-primary,#d4af37)]/15 py-2.5 text-[12px] font-semibold text-[var(--salon-primary,#d4af37)] hover:bg-[var(--salon-primary,#d4af37)]/25 transition-all">
+                {isVi ? "Thử lại" : "Try Again"}
+              </button>
+            )}
+            {isMicDenied && (
+              <button type="button" onClick={handleStart}
+                className="w-full rounded-full bg-[var(--salon-primary,#d4af37)]/15 py-2.5 text-[12px] font-semibold text-[var(--salon-primary,#d4af37)] hover:bg-[var(--salon-primary,#d4af37)]/25 transition-all">
+                {isVi ? "Thử lại sau khi cho phép mic" : "Retry After Allowing Mic"}
+              </button>
+            )}
+            <button type="button" onClick={() => { setIsOpen(false); }}
+              className="w-full py-1.5 text-[11px] text-white/30 hover:text-white/50 transition-colors">
+              {isVi ? "Dùng form đặt lịch thay thế ↓" : "Use text booking instead ↓"}
+            </button>
+          </div>
         )}
       </div>
     </div>
