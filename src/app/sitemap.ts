@@ -1,6 +1,8 @@
 import type { MetadataRoute } from "next";
+import { createClient } from "@supabase/supabase-js";
 import { getSiteUrl } from "@/shared/seo/site";
-import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+
+export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = getSiteUrl();
@@ -16,7 +18,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   let salonRoutes: MetadataRoute.Sitemap = [];
   try {
-    const supabase = createServiceRoleClient();
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    );
     const { data } = await supabase
       .from("salons")
       .select("slug, updated_at")
@@ -24,7 +29,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .eq("profile_complete", true);
 
     if (data) {
-      salonRoutes = data.map((salon) => ({
+      salonRoutes = data.map((salon: { slug: string; updated_at: string | null }) => ({
         url: `${base}/${salon.slug}`,
         lastModified: salon.updated_at ? new Date(salon.updated_at) : now,
         changeFrequency: "weekly" as const,

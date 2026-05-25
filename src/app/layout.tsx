@@ -73,11 +73,14 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
-  ...(process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION && {
-    verification: {
-      google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
-    },
-  }),
+  verification: {
+    // Env var wins (lets preview/staging use a different token); falls back to
+    // the production Search Console token so the meta tag ships even if the
+    // Vercel env var is unset. This value is public (it appears in page HTML).
+    google:
+      process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION ??
+      "7_QuJd5ZC1ZjvHCU5Y2YFSEmZWiFB6cSds4QIoktcig",
+  },
 };
 
 export default async function RootLayout({
