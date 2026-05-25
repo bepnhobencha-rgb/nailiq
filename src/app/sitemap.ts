@@ -21,7 +21,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .from("salons")
       .select("slug, updated_at")
       .is("archived_at", null)
-      .eq("accepting_bookings", true);
+      .eq("profile_complete", true);
 
     if (data) {
       salonRoutes = data.map((salon) => ({
