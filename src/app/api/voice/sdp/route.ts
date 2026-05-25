@@ -60,68 +60,88 @@ export async function POST(req: NextRequest) {
       `sdp_offer_bytes=${sdp_offer.length}`,
     );
 
-    // ── Phase: supabase lookup ──────────────────────────────────────────────
-    phase = "supabase_lookup";
-    const supabase = createServiceRoleClient();
+    // ── Phase: salon config ─────────────────────────────────────────────────
+    // DEMO bypass: skip Supabase entirely when salon_slug === "demo" or
+    // NEXT_PUBLIC_VOICE_DEBUG=1. Used to isolate WebRTC/SDP without DB deps.
+    const isDemo =
+      salon_slug === "demo" ||
+      process.env.NEXT_PUBLIC_VOICE_DEBUG === "1";
 
-    const { data: salon, error: salonErr } = await supabase
-      .from("salons")
-      .select("id, name, timezone")
-      .eq("slug", salon_slug)
-      .maybeSingle();
+    let instructions: string;
+    let salonName = salon_slug;
+    let salonTimezone = "America/Vancouver";
 
-    if (salonErr) {
-      console.error("[voice/sdp] supabase salon query error:", salonErr);
-      return NextResponse.json(
-        { error: "supabase_error", detail: salonErr.message },
-        { status: 500 },
-      );
+    if (isDemo) {
+      phase = "demo_bypass";
+      console.info("[voice/sdp] DEMO mode — skipping Supabase, using stub config");
+      instructions =
+        "You are a helpful nail salon receptionist assistant for a demo salon. " +
+        "You can answer questions about nail services and help with appointment scheduling. " +
+        "This is a demo/debug session — no real booking will be made.";
+    } else {
+      // ── Phase: supabase lookup ────────────────────────────────────────────
+      phase = "supabase_lookup";
+      const supabase = createServiceRoleClient();
+
+      const { data: salon, error: salonErr } = await supabase
+        .from("salons")
+        .select("id, name, timezone")
+        .eq("slug", salon_slug)
+        .maybeSingle();
+
+      if (salonErr) {
+        console.error("[voice/sdp] supabase salon query error:", salonErr);
+        return NextResponse.json(
+          { error: "supabase_error", detail: salonErr.message },
+          { status: 500 },
+        );
+      }
+
+      if (!salon) {
+        console.error(`[voice/sdp] salon not found: ${salon_slug}`);
+        return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+      }
+
+      // ── Phase: supabase services+staff ──────────────────────────────────
+      phase = "supabase_services_staff";
+      const [{ data: services, error: svcErr }, { data: staff, error: staffErr }] = await Promise.all([
+        supabase
+          .from("services")
+          .select("id, name, duration_minutes, price_cents")
+          .eq("salon_id", salon.id)
+          .is("deleted_at", null)
+          .order("name"),
+        supabase
+          .from("staff")
+          .select("id, name")
+          .eq("salon_id", salon.id)
+          .is("deleted_at", null)
+          .eq("status", "active")
+          .order("name"),
+      ]);
+
+      if (svcErr) console.warn("[voice/sdp] services query error:", svcErr.message);
+      if (staffErr) console.warn("[voice/sdp] staff query error:", staffErr.message);
+
+      // ── Phase: build system prompt ────────────────────────────────────────
+      phase = "build_prompt";
+      salonName = (salon.name as string) || salon_slug;
+      salonTimezone = (salon.timezone as string) || "America/Vancouver";
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: salonTimezone });
+
+      instructions = buildVoiceSystemPrompt({
+        salonName,
+        salonSlug: salon_slug,
+        services: (services ?? []) as {
+          id: string; name: string; name_vn?: string | null;
+          duration_minutes: number | null; price_cents: number | null;
+        }[],
+        staff: (staff ?? []) as { id: string; name: string }[],
+        language,
+        timezone: salonTimezone,
+        today,
+      });
     }
-
-    if (!salon) {
-      console.error(`[voice/sdp] salon not found: ${salon_slug}`);
-      return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
-    }
-
-    // ── Phase: supabase services+staff ──────────────────────────────────────
-    phase = "supabase_services_staff";
-    const [{ data: services, error: svcErr }, { data: staff, error: staffErr }] = await Promise.all([
-      supabase
-        .from("services")
-        .select("id, name, duration_minutes, price_cents")
-        .eq("salon_id", salon.id)
-        .is("deleted_at", null)
-        .order("name"),
-      supabase
-        .from("staff")
-        .select("id, name")
-        .eq("salon_id", salon.id)
-        .is("deleted_at", null)
-        .eq("status", "active")
-        .order("name"),
-    ]);
-
-    if (svcErr) console.warn("[voice/sdp] services query error:", svcErr.message);
-    if (staffErr) console.warn("[voice/sdp] staff query error:", staffErr.message);
-
-    // ── Phase: build system prompt ──────────────────────────────────────────
-    phase = "build_prompt";
-    const today = new Date().toLocaleDateString("en-CA", {
-      timeZone: (salon.timezone as string) ?? "America/Vancouver",
-    });
-
-    const instructions = buildVoiceSystemPrompt({
-      salonName: (salon.name as string) || salon_slug,
-      salonSlug: salon_slug,
-      services: (services ?? []) as {
-        id: string; name: string; name_vn?: string | null;
-        duration_minutes: number | null; price_cents: number | null;
-      }[],
-      staff: (staff ?? []) as { id: string; name: string }[],
-      language,
-      timezone: (salon.timezone as string) || "America/Vancouver",
-      today,
-    });
 
     // ── Phase: openai SDP exchange ──────────────────────────────────────────
     phase = "openai_fetch";
@@ -236,12 +256,12 @@ export async function POST(req: NextRequest) {
       session_config: {
         instructions,
         voice: REALTIME_CONFIG.voice,
-        tools: VOICE_TOOLS,
+        tools: isDemo ? [] : VOICE_TOOLS,
       },
       salon: {
-        name: salon.name,
+        name: salonName,
         slug: salon_slug,
-        timezone: salon.timezone,
+        timezone: salonTimezone,
       },
     });
 
