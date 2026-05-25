@@ -5,9 +5,8 @@ import { VOICE_TOOLS } from "@/shared/voice/tools";
 
 export const runtime = "nodejs";
 
-// GA model — dated for stability
-const REALTIME_MODEL = "gpt-realtime-2025-08-28";
-const REALTIME_VOICE = "shimmer";
+const REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2";
+const REALTIME_VOICE = process.env.OPENAI_REALTIME_VOICE ?? "marin";
 
 export async function POST(req: NextRequest) {
   const t0 = Date.now();
@@ -80,17 +79,21 @@ export async function POST(req: NextRequest) {
     today,
   });
 
-  // Forward SDP offer to OpenAI GA Realtime endpoint
-  const openaiUrl = `https://api.openai.com/v1/realtime?model=${REALTIME_MODEL}`;
-  console.log(`[voice/sdp] forwarding SDP to OpenAI model=${REALTIME_MODEL} sdp_bytes=${sdp_offer.length}`);
+  // Forward SDP offer to OpenAI GA Realtime API via /v1/realtime/calls (FormData)
+  console.log(`[voice/sdp] forwarding SDP to OpenAI model=${REALTIME_MODEL} voice=${REALTIME_VOICE} sdp_bytes=${sdp_offer.length}`);
 
-  const openaiRes = await fetch(openaiUrl, {
+  const form = new FormData();
+  form.append("sdp", sdp_offer);
+  form.append("session", JSON.stringify({
+    type: "realtime",
+    model: REALTIME_MODEL,
+    audio: { output: { voice: REALTIME_VOICE } },
+  }));
+
+  const openaiRes = await fetch("https://api.openai.com/v1/realtime/calls", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/sdp",
-    },
-    body: sdp_offer,
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
   });
 
   const latencyMs = Date.now() - t0;
