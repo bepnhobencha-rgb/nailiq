@@ -101,6 +101,7 @@ export function getSalonLocalBusinessJsonLd({
     "@id": `${pageUrl}/#salon`,
     name,
     url: pageUrl,
+    priceRange: "$$",
     ...(description && { description }),
     ...(address && {
       address: {
