@@ -80,15 +80,33 @@ export async function POST(req: NextRequest) {
   });
 
   // Forward SDP offer to OpenAI GA Realtime API via /v1/realtime/calls (FormData)
+  // Full session config baked in here so the model has instructions + tools from the first frame.
+  // session.update sent later via data channel is a safety net only.
   console.log(`[voice/sdp] forwarding SDP to OpenAI model=${REALTIME_MODEL} voice=${REALTIME_VOICE} sdp_bytes=${sdp_offer.length}`);
+
+  const sessionPayload = {
+    type: "realtime",
+    model: REALTIME_MODEL,
+    modalities: ["audio", "text"],
+    instructions,
+    voice: REALTIME_VOICE,
+    input_audio_format: "pcm16",
+    output_audio_format: "pcm16",
+    input_audio_transcription: { model: "gpt-realtime-whisper" },
+    turn_detection: {
+      type: "server_vad",
+      threshold: 0.45,
+      prefix_padding_ms: 200,
+      silence_duration_ms: 700,
+    },
+    tools: VOICE_TOOLS,
+    tool_choice: "auto",
+    temperature: 0.7,
+  };
 
   const form = new FormData();
   form.append("sdp", sdp_offer);
-  form.append("session", JSON.stringify({
-    type: "realtime",
-    model: REALTIME_MODEL,
-    audio: { output: { voice: REALTIME_VOICE } },
-  }));
+  form.append("session", JSON.stringify(sessionPayload));
 
   const openaiRes = await fetch("https://api.openai.com/v1/realtime/calls", {
     method: "POST",
