@@ -30,7 +30,6 @@ import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDa
 import { formatBookingPriceReceipt } from "@/shared/booking/formatBookingPrice";
 import { salonTimezoneAbbreviation } from "@/shared/lib/salonTime";
 import { useBookingFlowState } from "@/components/booking/useBookingFlowState";
-import { VoiceBookingButton } from "@/components/booking/VoiceBookingButton";
 import type { VoiceParseResult } from "@/shared/types/booking";
 
 // Resolve a voice dateHint string to a concrete Date (noon local time)
@@ -251,24 +250,9 @@ export function BookingFlow({
     );
   }
 
-  const showVoice =
-    flow.step === "service" || flow.step === "staff";
-
   return (
     <div className="mt-8 w-full">
       <BookingStepper activeStep={wizardStep} t={t} />
-      {showVoice ? (
-        <div className="mb-4 mt-2">
-          <VoiceBookingButton
-            t={t}
-            services={services}
-            staff={staff}
-            language={language}
-            onFill={handleVoiceFill}
-            onDone={handleVoiceDone}
-          />
-        </div>
-      ) : null}
       <AnimatePresence mode="wait" custom={flow.stepDir}>
         {flow.step === "service" ? (
           <BookingFlowServicePanel

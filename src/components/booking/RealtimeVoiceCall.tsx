@@ -15,16 +15,18 @@ type Props = {
 function statusLabel(s: VoiceCallStatus, lang: "en" | "vi"): string {
   const vi = lang === "vi";
   const map: Record<VoiceCallStatus, string> = {
-    idle:         vi ? "Đặt lịch bằng giọng nói" : "Book with Voice AI",
-    connecting:   vi ? "Đang kết nối…"            : "Connecting…",
-    ready:        vi ? "Đang nghe…"               : "Listening…",
-    listening:    vi ? "Đang nghe…"               : "Listening…",
-    thinking:     vi ? "Đang xử lý…"              : "Processing…",
-    speaking:     vi ? "AI đang nói"              : "AI Speaking",
-    tool_calling: vi ? "Đang kiểm tra lịch…"      : "Checking availability…",
-    confirmed:    vi ? "Đặt lịch thành công! ✓"   : "Booking Confirmed! ✓",
-    ended:        vi ? "Cuộc gọi đã kết thúc"     : "Call Ended",
-    error:        vi ? "Đã có lỗi"                : "Error",
+    idle:              vi ? "Đặt lịch bằng giọng nói"  : "Book with Voice AI",
+    connecting_mic:    vi ? "Đang kết nối mic…"         : "Preparing microphone…",
+    connecting_openai: vi ? "Đang kết nối AI…"          : "Connecting to AI…",
+    connecting_dc:     vi ? "Đang khởi động phiên…"     : "Starting voice session…",
+    ready:             vi ? "Đang nghe…"                : "Listening…",
+    listening:         vi ? "Đang nghe…"                : "Listening…",
+    thinking:          vi ? "Đang xử lý…"               : "Processing…",
+    speaking:          vi ? "AI đang nói"               : "AI Speaking",
+    tool_calling:      vi ? "Đang kiểm tra lịch…"       : "Checking availability…",
+    confirmed:         vi ? "Đặt lịch thành công! ✓"    : "Booking Confirmed! ✓",
+    ended:             vi ? "Cuộc gọi đã kết thúc"      : "Call Ended",
+    error:             vi ? "Đã có lỗi"                 : "Error",
   };
   return map[s];
 }
@@ -164,6 +166,7 @@ export function RealtimeVoiceCall({ shopSlug, language, onBookingConfirmed }: Pr
   });
 
   const isVi = language === "vi";
+  const isConnecting = status === "connecting_mic" || status === "connecting_openai" || status === "connecting_dc";
   const isActive = status !== "idle" && status !== "ended" && status !== "error";
   const isError = status === "error";
   const isDone = status === "confirmed";
@@ -261,9 +264,16 @@ export function RealtimeVoiceCall({ shopSlug, language, onBookingConfirmed }: Pr
 
         {/* Central animation */}
         <div className="flex justify-center py-1">
-          {status === "connecting" && (
-            <div className="h-8 w-8 rounded-full border-2 border-t-transparent animate-spin"
-              style={{ borderColor: "var(--salon-primary,#d4af37)", borderTopColor: "transparent" }} />
+          {isConnecting && (
+            <div className="flex flex-col items-center gap-2">
+              <div className="h-8 w-8 rounded-full border-2 border-t-transparent animate-spin"
+                style={{ borderColor: "var(--salon-primary,#d4af37)", borderTopColor: "transparent" }} />
+              <span className="text-[10px] text-white/40">
+                {status === "connecting_mic"    ? (isVi ? "1/3 · Mic"         : "1/3 · Mic")         : null}
+                {status === "connecting_openai" ? (isVi ? "2/3 · Kết nối AI"  : "2/3 · AI")          : null}
+                {status === "connecting_dc"     ? (isVi ? "3/3 · Phiên voice" : "3/3 · Voice session"): null}
+              </span>
+            </div>
           )}
           {(status === "ready" || status === "listening") && (
             <div className="relative flex h-14 w-14 items-center justify-center rounded-full"

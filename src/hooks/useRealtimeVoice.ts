@@ -6,12 +6,15 @@ import {
   type BookingResult,
 } from "@/shared/booking/submitPublicBooking";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
+import { REALTIME_CONFIG } from "@/config/realtime";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type VoiceCallStatus =
   | "idle"
-  | "connecting"
+  | "connecting_mic"      // acquiring microphone permission
+  | "connecting_openai"   // SDP exchange with OpenAI
+  | "connecting_dc"       // waiting for data channel / ICE
   | "ready"
   | "listening"
   | "thinking"
@@ -298,6 +301,9 @@ export function useRealtimeVoice(params: {
   );
 
   // ── Connect (GA flow: server-proxied SDP exchange) ───────────────────────────
+  const isConnecting = (s: VoiceCallStatus) =>
+    s === "connecting_mic" || s === "connecting_openai" || s === "connecting_dc";
+
   const start = useCallback(async () => {
     if (status !== "idle" && status !== "ended" && status !== "error") return;
 
@@ -307,7 +313,7 @@ export function useRealtimeVoice(params: {
     speechStartedAtRef.current = null;
     speechStoppedAtRef.current = null;
     firstAudioDeltaRef.current = false;
-    setStatus("connecting");
+    setStatus("connecting_mic");
     setErrorMessage(null);
     setMessages([]);
     setBookingProgress({});
@@ -333,7 +339,7 @@ export function useRealtimeVoice(params: {
         salon: shopSlugRef.current,
       });
 
-      // 2. Microphone
+      // Phase 1: Microphone
       const micStream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 24000 },
       });
@@ -341,7 +347,8 @@ export function useRealtimeVoice(params: {
       const [micTrack] = micStream.getAudioTracks();
       if (micTrack) micTrackRef.current = micTrack;
 
-      // 2. Peer connection
+      // Phase 2: OpenAI SDP exchange
+      setStatus("connecting_openai");
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
 
@@ -380,12 +387,12 @@ export function useRealtimeVoice(params: {
               voice: cfg.voice,
               input_audio_format: "pcm16",
               output_audio_format: "pcm16",
-              input_audio_transcription: { model: "gpt-realtime-whisper" },
+              input_audio_transcription: { model: REALTIME_CONFIG.transcriptionModel },
               turn_detection: {
                 type: "server_vad",
-                threshold: 0.45,
-                prefix_padding_ms: 200,
-                silence_duration_ms: 700,
+                threshold: REALTIME_CONFIG.vad.threshold,
+                prefix_padding_ms: REALTIME_CONFIG.vad.prefixPaddingMs,
+                silence_duration_ms: REALTIME_CONFIG.vad.silenceDurationMs,
               },
               tools: cfg.tools,
               tool_choice: "auto",
@@ -400,11 +407,12 @@ export function useRealtimeVoice(params: {
         if (!confirmedRef.current) setStatus("ended");
       };
 
-      // 6. Create SDP offer
+      // Phase 3: ICE + data channel
+      setStatus("connecting_dc");
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // 7. Server-proxied SDP exchange with OpenAI GA Realtime API
+      // Server-proxied SDP exchange with OpenAI
       const sdpRes = await fetch("/api/voice/sdp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

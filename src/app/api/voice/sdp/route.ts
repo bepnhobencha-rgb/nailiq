@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { buildVoiceSystemPrompt } from "@/shared/voice/buildSystemPrompt";
 import { VOICE_TOOLS } from "@/shared/voice/tools";
+import { REALTIME_CONFIG, validateRealtimeConfig } from "@/config/realtime";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL ?? "gpt-4o-realtime-preview-2024-12-17";
-const REALTIME_VOICE = process.env.OPENAI_REALTIME_VOICE ?? "coral";
+// Validate config at module load — fails fast on bad values
+validateRealtimeConfig();
 
 export async function POST(req: NextRequest) {
   const t0 = Date.now();
@@ -32,7 +33,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "missing_params" }, { status: 400 });
   }
 
-  console.log(`[voice/sdp] request started: salon=${salon_slug} lang=${language}`);
+  console.info(
+    `[voice/sdp] request: salon=${salon_slug} lang=${language} ` +
+    `model=${REALTIME_CONFIG.model} voice=${REALTIME_CONFIG.voice}`,
+  );
 
   const supabase = createServiceRoleClient();
 
@@ -80,36 +84,36 @@ export async function POST(req: NextRequest) {
     today,
   });
 
-  // Forward SDP offer to OpenAI GA Realtime API via /v1/realtime/calls (FormData)
-  // Full session config baked in here so the model has instructions + tools from the first frame.
-  // session.update sent later via data channel is a safety net only.
-  console.log(`[voice/sdp] forwarding SDP to OpenAI model=${REALTIME_MODEL} voice=${REALTIME_VOICE} sdp_bytes=${sdp_offer.length}`);
-
   const sessionPayload = {
     type: "realtime",
-    model: REALTIME_MODEL,
+    model: REALTIME_CONFIG.model,
     modalities: ["audio", "text"],
     instructions,
-    voice: REALTIME_VOICE,
+    voice: REALTIME_CONFIG.voice,
     input_audio_format: "pcm16",
     output_audio_format: "pcm16",
-    input_audio_transcription: { model: "whisper-1" },
+    input_audio_transcription: { model: REALTIME_CONFIG.transcriptionModel },
     turn_detection: {
       type: "server_vad",
-      threshold: 0.45,
-      prefix_padding_ms: 200,
-      silence_duration_ms: 700,
+      threshold: REALTIME_CONFIG.vad.threshold,
+      prefix_padding_ms: REALTIME_CONFIG.vad.prefixPaddingMs,
+      silence_duration_ms: REALTIME_CONFIG.vad.silenceDurationMs,
     },
     tools: VOICE_TOOLS,
     tool_choice: "auto",
-    temperature: 0.7,
+    temperature: REALTIME_CONFIG.temperature,
   };
+
+  console.info(
+    `[voice/sdp] forwarding SDP → ${REALTIME_CONFIG.sdpEndpoint} ` +
+    `model=${REALTIME_CONFIG.model} sdp_bytes=${sdp_offer.length}`,
+  );
 
   const form = new FormData();
   form.append("sdp", sdp_offer);
   form.append("session", JSON.stringify(sessionPayload));
 
-  const openaiRes = await fetch("https://api.openai.com/v1/realtime/calls", {
+  const openaiRes = await fetch(REALTIME_CONFIG.sdpEndpoint, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}` },
     body: form,
@@ -119,21 +123,32 @@ export async function POST(req: NextRequest) {
 
   if (!openaiRes.ok) {
     const errBody = await openaiRes.text();
-    console.error(`[voice/sdp] OpenAI error status=${openaiRes.status} latency=${latencyMs}ms body=${errBody}`);
+    console.error(
+      `[voice/sdp] OpenAI error: status=${openaiRes.status} latency=${latencyMs}ms ` +
+      `model=${REALTIME_CONFIG.model} endpoint=${REALTIME_CONFIG.sdpEndpoint} ` +
+      `body=${errBody}`,
+    );
     return NextResponse.json(
-      { error: "webrtc_connect_failed", openai_status: openaiRes.status, detail: errBody },
-      { status: 502 }
+      {
+        error: "webrtc_connect_failed",
+        openai_status: openaiRes.status,
+        detail: errBody,
+        model_used: REALTIME_CONFIG.model,
+      },
+      { status: 502 },
     );
   }
 
   const sdp_answer = await openaiRes.text();
-  console.log(`[voice/sdp] SDP exchange ok status=200 latency=${latencyMs}ms answer_bytes=${sdp_answer.length}`);
+  console.info(
+    `[voice/sdp] SDP exchange ok: latency=${latencyMs}ms answer_bytes=${sdp_answer.length}`,
+  );
 
   return NextResponse.json({
     sdp_answer,
     session_config: {
       instructions,
-      voice: REALTIME_VOICE,
+      voice: REALTIME_CONFIG.voice,
       tools: VOICE_TOOLS,
     },
     salon: {
