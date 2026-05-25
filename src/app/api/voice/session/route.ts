@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4o-realtime-preview-2024-12-17",
+      model: "gpt-4o-realtime-preview",
       voice: "shimmer", // warm female voice — works well for both EN and VI
       modalities: ["audio", "text"],
       instructions,
@@ -93,8 +93,7 @@ export async function POST(req: NextRequest) {
   if (!openaiRes.ok) {
     const body = await openaiRes.text();
     console.error("[voice/session] OpenAI error:", openaiRes.status, body);
-    // Expose detail in non-prod or return as debug field
-    return NextResponse.json({ error: "openai_session_failed", detail: body, status_code: openaiRes.status }, { status: 502 });
+    return NextResponse.json({ error: "openai_session_failed" }, { status: 502 });
   }
 
   const session = (await openaiRes.json()) as {
