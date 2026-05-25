@@ -409,6 +409,7 @@ export function SalonOwnerDashboard({
           copied={copied}
           onCopy={onCopy}
           language={language}
+          slug={slug}
         />
       </ResponsiveShell>
     );

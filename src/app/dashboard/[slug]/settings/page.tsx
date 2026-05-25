@@ -28,7 +28,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -56,6 +56,8 @@ export default async function SalonSettingsPage({ params }: Props) {
         reminder_24h_enabled?: unknown;
         reminder_3h_enabled?: unknown;
         sms_reminders_enabled?: unknown;
+        booking_verification_mode?: unknown;
+        google_review_url?: unknown;
       }
     | null;
 
@@ -84,6 +86,14 @@ export default async function SalonSettingsPage({ params }: Props) {
   const reminder24hEnabled = row?.reminder_24h_enabled !== false;
   const reminder3hEnabled = row?.reminder_3h_enabled !== false;
   const smsRemindersEnabled = row?.sms_reminders_enabled === true;
+  const googleReviewUrl =
+    typeof row?.google_review_url === "string" && row.google_review_url.trim().length > 0
+      ? row.google_review_url.trim()
+      : null;
+  const bookingVerificationMode =
+    typeof row?.booking_verification_mode === "string"
+      ? row.booking_verification_mode
+      : undefined;
 
   return (
     <SalonSettingsHub
@@ -103,6 +113,8 @@ export default async function SalonSettingsPage({ params }: Props) {
       reminder24hEnabled={reminder24hEnabled}
       reminder3hEnabled={reminder3hEnabled}
       smsRemindersEnabled={smsRemindersEnabled}
+      bookingVerificationMode={bookingVerificationMode}
+      googleReviewUrl={googleReviewUrl}
     />
   );
 }

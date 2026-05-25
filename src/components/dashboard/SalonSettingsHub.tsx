@@ -17,6 +17,7 @@ import { QueueDisplayModeSettings } from "@/components/dashboard/QueueDisplayMod
 import { PhoneOtpSettings } from "@/components/dashboard/PhoneOtpSettings";
 import { BookingVerificationSettings } from "@/components/dashboard/BookingVerificationSettings";
 import { PricingPanel } from "@/components/dashboard/PricingPanel";
+import { GoogleReviewSettings } from "@/components/dashboard/GoogleReviewSettings";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
@@ -47,6 +48,7 @@ export function SalonSettingsHub({
   reminder24hEnabled,
   reminder3hEnabled,
   smsRemindersEnabled,
+  googleReviewUrl,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -65,6 +67,7 @@ export function SalonSettingsHub({
   reminder3hEnabled: boolean;
   smsRemindersEnabled: boolean;
   bookingVerificationMode?: string;
+  googleReviewUrl: string | null;
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -327,6 +330,14 @@ export function SalonSettingsHub({
               </div>
             )}
           </section>
+        ) : null}
+
+        {/* ── Google Review URL ───────────────────────────────── */}
+        {canEditDashboardModules ? (
+          <GoogleReviewSettings
+            slug={slug}
+            initialValue={googleReviewUrl ?? ""}
+          />
         ) : null}
 
         {/* ── Pricing ─────────────────────────────────────────── */}

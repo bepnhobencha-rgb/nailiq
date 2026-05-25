@@ -526,15 +526,22 @@ export type Database = {
           idempotency_key: string | null
           joined_queue_at: string | null
           no_show_risk_score: number | null
+          otp_session_id: string | null
           party_size: number | null
           price_cents: number | null
+          reconfirm_sent_at: string | null
+          reference_image_path: string | null
           reminder_24h_sent_at: string | null
           reminder_3h_sent_at: string | null
           rescheduled_at: string | null
           rescheduled_by: string | null
           rescheduled_from_time_utc: string | null
           salon_id: string
+          service_combo_id: string | null
           service_id: string
+          sms_confirmation_error: string | null
+          sms_confirmation_failed_at: string | null
+          sms_confirmation_sent_at: string | null
           soft_hold_until: string | null
           source: string
           staff_id: string | null
@@ -543,6 +550,8 @@ export type Database = {
           start_time_utc: string | null
           started_at: string | null
           status: string
+          verification_completed_at: string | null
+          verification_method: string | null
           walkin_priority: string | null
           walkin_request_tags: Json | null
           walkin_source: string | null
@@ -568,15 +577,22 @@ export type Database = {
           idempotency_key?: string | null
           joined_queue_at?: string | null
           no_show_risk_score?: number | null
+          otp_session_id?: string | null
           party_size?: number | null
           price_cents?: number | null
+          reconfirm_sent_at?: string | null
+          reference_image_path?: string | null
           reminder_24h_sent_at?: string | null
           reminder_3h_sent_at?: string | null
           rescheduled_at?: string | null
           rescheduled_by?: string | null
           rescheduled_from_time_utc?: string | null
           salon_id: string
+          service_combo_id?: string | null
           service_id: string
+          sms_confirmation_error?: string | null
+          sms_confirmation_failed_at?: string | null
+          sms_confirmation_sent_at?: string | null
           soft_hold_until?: string | null
           source?: string
           staff_id?: string | null
@@ -585,6 +601,8 @@ export type Database = {
           start_time_utc?: string | null
           started_at?: string | null
           status?: string
+          verification_completed_at?: string | null
+          verification_method?: string | null
           walkin_priority?: string | null
           walkin_request_tags?: Json | null
           walkin_source?: string | null
@@ -610,15 +628,22 @@ export type Database = {
           idempotency_key?: string | null
           joined_queue_at?: string | null
           no_show_risk_score?: number | null
+          otp_session_id?: string | null
           party_size?: number | null
           price_cents?: number | null
+          reconfirm_sent_at?: string | null
+          reference_image_path?: string | null
           reminder_24h_sent_at?: string | null
           reminder_3h_sent_at?: string | null
           rescheduled_at?: string | null
           rescheduled_by?: string | null
           rescheduled_from_time_utc?: string | null
           salon_id?: string
+          service_combo_id?: string | null
           service_id?: string
+          sms_confirmation_error?: string | null
+          sms_confirmation_failed_at?: string | null
+          sms_confirmation_sent_at?: string | null
           soft_hold_until?: string | null
           source?: string
           staff_id?: string | null
@@ -627,6 +652,8 @@ export type Database = {
           start_time_utc?: string | null
           started_at?: string | null
           status?: string
+          verification_completed_at?: string | null
+          verification_method?: string | null
           walkin_priority?: string | null
           walkin_request_tags?: Json | null
           walkin_source?: string | null
@@ -640,10 +667,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "bookings_otp_session_id_fkey"
+            columns: ["otp_session_id"]
+            isOneToOne: false
+            referencedRelation: "phone_otp_sessions"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "bookings_salon_id_fkey"
             columns: ["salon_id"]
             isOneToOne: false
             referencedRelation: "salons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_service_combo_id_fkey"
+            columns: ["service_combo_id"]
+            isOneToOne: false
+            referencedRelation: "service_combos"
             referencedColumns: ["id"]
           },
           {
@@ -998,6 +1039,203 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "email_verification_tokens_salon_id_fkey"
+            columns: ["salon_id"]
+            isOneToOne: false
+            referencedRelation: "salons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      loyalty_cards: {
+        Row: {
+          client_phone: string
+          client_profile_id: string | null
+          created_at: string
+          id: string
+          last_stamp_at: string | null
+          program_id: string
+          rewards_earned: number
+          rewards_redeemed: number
+          salon_id: string
+          stamps_current: number
+          stamps_lifetime: number
+          updated_at: string
+        }
+        Insert: {
+          client_phone: string
+          client_profile_id?: string | null
+          created_at?: string
+          id?: string
+          last_stamp_at?: string | null
+          program_id: string
+          rewards_earned?: number
+          rewards_redeemed?: number
+          salon_id: string
+          stamps_current?: number
+          stamps_lifetime?: number
+          updated_at?: string
+        }
+        Update: {
+          client_phone?: string
+          client_profile_id?: string | null
+          created_at?: string
+          id?: string
+          last_stamp_at?: string | null
+          program_id?: string
+          rewards_earned?: number
+          rewards_redeemed?: number
+          salon_id?: string
+          stamps_current?: number
+          stamps_lifetime?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_cards_client_profile_id_fkey"
+            columns: ["client_profile_id"]
+            isOneToOne: false
+            referencedRelation: "client_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_cards_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_programs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_cards_salon_id_fkey"
+            columns: ["salon_id"]
+            isOneToOne: false
+            referencedRelation: "salons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      loyalty_programs: {
+        Row: {
+          color: string | null
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          min_spend_cents: number
+          name: string
+          reward_amount_off_cents: number | null
+          reward_percent_off: number | null
+          reward_service_id: string | null
+          reward_type: string
+          salon_id: string
+          stamps_per_visit: number
+          stamps_required: number
+          updated_at: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          min_spend_cents?: number
+          name?: string
+          reward_amount_off_cents?: number | null
+          reward_percent_off?: number | null
+          reward_service_id?: string | null
+          reward_type?: string
+          salon_id: string
+          stamps_per_visit?: number
+          stamps_required?: number
+          updated_at?: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          min_spend_cents?: number
+          name?: string
+          reward_amount_off_cents?: number | null
+          reward_percent_off?: number | null
+          reward_service_id?: string | null
+          reward_type?: string
+          salon_id?: string
+          stamps_per_visit?: number
+          stamps_required?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_programs_reward_service_id_fkey"
+            columns: ["reward_service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_programs_salon_id_fkey"
+            columns: ["salon_id"]
+            isOneToOne: true
+            referencedRelation: "salons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      loyalty_stamp_events: {
+        Row: {
+          actor_user_id: string | null
+          booking_id: string | null
+          card_id: string
+          created_at: string
+          event_type: string
+          id: string
+          note: string | null
+          salon_id: string
+          stamps_after: number
+          stamps_delta: number
+        }
+        Insert: {
+          actor_user_id?: string | null
+          booking_id?: string | null
+          card_id: string
+          created_at?: string
+          event_type: string
+          id?: string
+          note?: string | null
+          salon_id: string
+          stamps_after: number
+          stamps_delta: number
+        }
+        Update: {
+          actor_user_id?: string | null
+          booking_id?: string | null
+          card_id?: string
+          created_at?: string
+          event_type?: string
+          id?: string
+          note?: string | null
+          salon_id?: string
+          stamps_after?: number
+          stamps_delta?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_stamp_events_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_stamp_events_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_cards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_stamp_events_salon_id_fkey"
             columns: ["salon_id"]
             isOneToOne: false
             referencedRelation: "salons"
@@ -1512,12 +1750,57 @@ export type Database = {
           },
         ]
       }
+      salon_page_sections: {
+        Row: {
+          content: Json
+          created_at: string
+          id: string
+          is_visible: boolean
+          salon_id: string
+          sort_order: number
+          title: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          content?: Json
+          created_at?: string
+          id?: string
+          is_visible?: boolean
+          salon_id: string
+          sort_order?: number
+          title?: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          content?: Json
+          created_at?: string
+          id?: string
+          is_visible?: boolean
+          salon_id?: string
+          sort_order?: number
+          title?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "salon_page_sections_salon_id_fkey"
+            columns: ["salon_id"]
+            isOneToOne: false
+            referencedRelation: "salons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       salons: {
         Row: {
           address: string | null
           admin_notes: string | null
           archived_at: string | null
           booking_closed_dates: Json
+          booking_verification_mode: string
           brand_color: string | null
           contact_email: string | null
           created_at: string | null
@@ -1525,11 +1808,13 @@ export type Database = {
           dashboard_density: string
           dashboard_modules: Json
           dashboard_preset: string
+          deposit_default_amount_cents: number | null
           deposit_high_value_cents: number
           description: string | null
           email: string | null
           email_verified: boolean | null
           feature_flags: Json
+          google_review_url: string | null
           id: string
           is_beta: boolean
           name: string
@@ -1538,6 +1823,7 @@ export type Database = {
           phone_otp_enabled: boolean
           plan_override: string | null
           profile_complete: boolean | null
+          queue_display_mode: string
           reminder_24h_enabled: boolean
           reminder_3h_enabled: boolean
           reminders_enabled: boolean
@@ -1553,7 +1839,8 @@ export type Database = {
           superadmin_locked_at: string | null
           theme_mode: string | null
           timezone: string
-          queue_display_mode: string
+          verification_risk_threshold_deposit: number
+          verification_risk_threshold_otp: number
           walkin_auto_assign: boolean
         }
         Insert: {
@@ -1561,6 +1848,7 @@ export type Database = {
           admin_notes?: string | null
           archived_at?: string | null
           booking_closed_dates?: Json
+          booking_verification_mode?: string
           brand_color?: string | null
           contact_email?: string | null
           created_at?: string | null
@@ -1568,11 +1856,13 @@ export type Database = {
           dashboard_density?: string
           dashboard_modules?: Json
           dashboard_preset?: string
+          deposit_default_amount_cents?: number | null
           deposit_high_value_cents?: number
           description?: string | null
           email?: string | null
           email_verified?: boolean | null
           feature_flags?: Json
+          google_review_url?: string | null
           id?: string
           is_beta?: boolean
           name: string
@@ -1581,6 +1871,7 @@ export type Database = {
           phone_otp_enabled?: boolean
           plan_override?: string | null
           profile_complete?: boolean | null
+          queue_display_mode?: string
           reminder_24h_enabled?: boolean
           reminder_3h_enabled?: boolean
           reminders_enabled?: boolean
@@ -1590,13 +1881,14 @@ export type Database = {
           sms_reminders_enabled?: boolean
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
-          queue_display_mode?: string
           subscription_current_period_end?: string | null
           subscription_plan?: string
           subscription_status?: string
           superadmin_locked_at?: string | null
           theme_mode?: string | null
           timezone?: string
+          verification_risk_threshold_deposit?: number
+          verification_risk_threshold_otp?: number
           walkin_auto_assign?: boolean
         }
         Update: {
@@ -1604,6 +1896,7 @@ export type Database = {
           admin_notes?: string | null
           archived_at?: string | null
           booking_closed_dates?: Json
+          booking_verification_mode?: string
           brand_color?: string | null
           contact_email?: string | null
           created_at?: string | null
@@ -1611,11 +1904,13 @@ export type Database = {
           dashboard_density?: string
           dashboard_modules?: Json
           dashboard_preset?: string
+          deposit_default_amount_cents?: number | null
           deposit_high_value_cents?: number
           description?: string | null
           email?: string | null
           email_verified?: boolean | null
           feature_flags?: Json
+          google_review_url?: string | null
           id?: string
           is_beta?: boolean
           name?: string
@@ -1624,6 +1919,7 @@ export type Database = {
           phone_otp_enabled?: boolean
           plan_override?: string | null
           profile_complete?: boolean | null
+          queue_display_mode?: string
           reminder_24h_enabled?: boolean
           reminder_3h_enabled?: boolean
           reminders_enabled?: boolean
@@ -1633,13 +1929,14 @@ export type Database = {
           sms_reminders_enabled?: boolean
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
-          queue_display_mode?: string
           subscription_current_period_end?: string | null
           subscription_plan?: string
           subscription_status?: string
           superadmin_locked_at?: string | null
           theme_mode?: string | null
           timezone?: string
+          verification_risk_threshold_deposit?: number
+          verification_risk_threshold_otp?: number
           walkin_auto_assign?: boolean
         }
         Relationships: []
@@ -1673,6 +1970,59 @@ export type Database = {
           sort_order?: number | null
         }
         Relationships: []
+      }
+      service_combos: {
+        Row: {
+          created_at: string
+          description: string | null
+          discount_cents: number
+          duration_minutes: number
+          id: string
+          is_active: boolean
+          name: string
+          position: number
+          price_cents: number
+          salon_id: string
+          service_ids: string[]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          discount_cents?: number
+          duration_minutes?: number
+          id?: string
+          is_active?: boolean
+          name: string
+          position?: number
+          price_cents?: number
+          salon_id: string
+          service_ids?: string[]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          discount_cents?: number
+          duration_minutes?: number
+          id?: string
+          is_active?: boolean
+          name?: string
+          position?: number
+          price_cents?: number
+          salon_id?: string
+          service_ids?: string[]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_combos_salon_id_fkey"
+            columns: ["salon_id"]
+            isOneToOne: false
+            referencedRelation: "salons"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       services: {
         Row: {
@@ -1941,6 +2291,11 @@ export type Database = {
           created_by_user_id: string | null
           expires_at: string
           free_service_id: string | null
+          gift_card_from_name: string | null
+          gift_card_message: string | null
+          gift_card_purchaser_phone: string | null
+          gift_card_stripe_payment_intent_id: string | null
+          gift_card_value_cents: number | null
           id: string
           kind: string
           max_uses: number
@@ -1964,6 +2319,11 @@ export type Database = {
           created_by_user_id?: string | null
           expires_at: string
           free_service_id?: string | null
+          gift_card_from_name?: string | null
+          gift_card_message?: string | null
+          gift_card_purchaser_phone?: string | null
+          gift_card_stripe_payment_intent_id?: string | null
+          gift_card_value_cents?: number | null
           id?: string
           kind: string
           max_uses?: number
@@ -1987,6 +2347,11 @@ export type Database = {
           created_by_user_id?: string | null
           expires_at?: string
           free_service_id?: string | null
+          gift_card_from_name?: string | null
+          gift_card_message?: string | null
+          gift_card_purchaser_phone?: string | null
+          gift_card_stripe_payment_intent_id?: string | null
+          gift_card_value_cents?: number | null
           id?: string
           kind?: string
           max_uses?: number
@@ -2016,6 +2381,50 @@ export type Database = {
           },
           {
             foreignKeyName: "vouchers_salon_id_fkey"
+            columns: ["salon_id"]
+            isOneToOne: false
+            referencedRelation: "salons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      website_import_jobs: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          id: string
+          progress: number
+          result: Json | null
+          salon_id: string
+          source_url: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          progress?: number
+          result?: Json | null
+          salon_id: string
+          source_url: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          progress?: number
+          result?: Json | null
+          salon_id?: string
+          source_url?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "website_import_jobs_salon_id_fkey"
             columns: ["salon_id"]
             isOneToOne: false
             referencedRelation: "salons"
@@ -2058,6 +2467,14 @@ export type Database = {
           id: string
         }[]
       }
+      compute_no_show_risk: {
+        Args: {
+          p_no_show_count: number
+          p_subtotal_cents: number
+          p_visit_count: number
+        }
+        Returns: number
+      }
       confirm_booking_as_customer: {
         Args: { p_token_id: string }
         Returns: {
@@ -2068,6 +2485,10 @@ export type Database = {
           staff_name: string
           start_utc: string
         }[]
+      }
+      confirm_booking_with_otp: {
+        Args: { p_booking_id: string; p_otp_session_id: string }
+        Returns: Json
       }
       create_public_booking: {
         Args: {
@@ -2102,6 +2523,24 @@ export type Database = {
         Returns: {
           id: string
         }[]
+      }
+      create_referral_code: {
+        Args: {
+          p_referee_reward?: number
+          p_referrer_phone: string
+          p_referrer_reward?: number
+          p_salon_id: string
+        }
+        Returns: Json
+      }
+      determine_booking_verification: {
+        Args: {
+          p_client_phone: string
+          p_salon_id: string
+          p_service_ids: string[]
+          p_subtotal_cents: number
+        }
+        Returns: Json
       }
       get_salon_queue: {
         Args: { p_salon_id: string }
@@ -2148,6 +2587,10 @@ export type Database = {
       salon_has_staff_services: {
         Args: { p_salon_id: string }
         Returns: boolean
+      }
+      seed_default_page_sections: {
+        Args: { p_salon_id: string }
+        Returns: undefined
       }
       update_queue_entry_status: {
         Args: { p_assigned_staff_id?: string; p_id: string; p_status: string }
