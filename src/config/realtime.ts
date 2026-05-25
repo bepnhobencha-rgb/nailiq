@@ -9,8 +9,8 @@
 export const REALTIME_CONFIG = {
   /** GA model confirmed working — do not change without testing first */
   model: process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2025-08-28",
-  /** GA voice confirmed working */
-  voice: process.env.OPENAI_REALTIME_VOICE ?? "marin",
+  /** GA voice — must be one of: alloy, ash, ballad, coral, echo, sage, shimmer, verse */
+  voice: process.env.OPENAI_REALTIME_VOICE ?? "shimmer",
   /** Transcription model for input audio — must be "whisper-1" (only valid value for GA) */
   transcriptionModel: "whisper-1",
   /** WebRTC SDP base endpoint — model is appended as ?model= query param */
