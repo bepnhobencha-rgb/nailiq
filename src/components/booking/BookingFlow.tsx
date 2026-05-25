@@ -31,7 +31,7 @@ import { formatBookingPriceReceipt } from "@/shared/booking/formatBookingPrice";
 import { salonTimezoneAbbreviation } from "@/shared/lib/salonTime";
 import { useBookingFlowState } from "@/components/booking/useBookingFlowState";
 import { VoiceBookingButton } from "@/components/booking/VoiceBookingButton";
-import type { VoiceParseResult } from "@/app/api/booking/voice-parse/route";
+import type { VoiceParseResult } from "@/shared/types/booking";
 
 // Resolve a voice dateHint string to a concrete Date (noon local time)
 function resolveVoiceDateHint(hint: string): Date | null {

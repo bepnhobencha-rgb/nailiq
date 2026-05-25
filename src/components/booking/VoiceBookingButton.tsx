@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { VoiceParseResult } from "@/app/api/booking/voice-parse/route";
-import type { VoiceChatMessage, VoiceChatResponse } from "@/app/api/booking/voice-chat/route";
+import type { VoiceParseResult, VoiceChatMessage, VoiceChatResponse } from "@/shared/types/booking";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 
 type ServiceItem = { id: string; name: string };

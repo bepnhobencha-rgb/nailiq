@@ -1,19 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-
-export type VerificationAction =
-  | "none"
-  | "otp_optional"
-  | "otp_required"
-  | "deposit_required"
-  | "deposit_or_otp";
-
-export type VerifyDecisionResponse = {
-  action: VerificationAction;
-  risk_score: number;
-  deposit_amount_cents: number;
-  reason: string;
-};
+import type { VerifyDecisionResponse } from "@/shared/types/booking";
+export type { VerificationAction, VerifyDecisionResponse } from "@/shared/types/booking";
 
 export async function POST(req: NextRequest) {
   try {

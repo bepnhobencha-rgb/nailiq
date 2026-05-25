@@ -1,24 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import type { VoiceChatMessage, VoiceChatResponse } from "@/shared/types/booking";
+export type { VoiceChatMessage, VoiceChatResponse } from "@/shared/types/booking";
 
 const client = new Anthropic();
-
-export type VoiceChatMessage = { role: "user" | "assistant"; content: string };
-
-export type VoiceChatResponse = {
-  reply: string;
-  fill: {
-    serviceId: string | null;
-    serviceName: string | null;
-    staffId: string | null;
-    staffName: string | null;
-    dateHint: string | null;
-    timeHint: string | null;
-    clientName: string | null;
-    clientPhone: string | null;
-  };
-  done: boolean;
-};
 
 export async function POST(req: NextRequest) {
   if (!process.env.ANTHROPIC_API_KEY) {

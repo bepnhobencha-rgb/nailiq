@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+export type { VoiceParseResult } from "@/shared/types/booking";
 
 let client: Anthropic | null = null;
 function getClient(): Anthropic | null {
@@ -18,16 +19,7 @@ function getClient(): Anthropic | null {
 type ServiceItem = { id: string; name: string };
 type StaffItem = { id: string; name: string };
 
-export type VoiceParseResult = {
-  serviceId: string | null;
-  serviceName: string | null;
-  staffId: string | null;
-  staffName: string | null;
-  dateHint: string | null;
-  timeHint: string | null;
-  clientName: string | null;
-  clientPhone: string | null;
-};
+import type { VoiceParseResult } from "@/shared/types/booking";
 
 export async function POST(req: NextRequest) {
   const ai = getClient();

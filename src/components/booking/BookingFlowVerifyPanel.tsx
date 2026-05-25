@@ -5,7 +5,7 @@ import { motion } from "@/shared/lib/motionClient";
 import { bookingStepVariants, type BookingMotionDir } from "@/components/booking/bookingMotion";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import type { VerificationAction } from "@/components/booking/useBookingFlowState";
-import type { VerifyDecisionResponse } from "@/app/api/booking/verify-decision/route";
+import type { VerifyDecisionResponse } from "@/shared/types/booking";
 
 type Props = {
   t: BookingMessages;
