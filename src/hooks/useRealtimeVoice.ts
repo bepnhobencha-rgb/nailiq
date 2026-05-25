@@ -467,7 +467,10 @@ export function useRealtimeVoice(params: {
 
   // ── Disconnect ───────────────────────────────────────────────────────────────
   const cleanupRefs = useCallback(() => {
-    dcRef.current?.close();
+    if (dcRef.current) {
+      dcRef.current.onclose = null; // prevent onclose from overwriting error/ended status
+      dcRef.current.close();
+    }
     pcRef.current?.close();
     micStreamRef.current?.getTracks().forEach((t) => t.stop());
     if (audioElRef.current) {
