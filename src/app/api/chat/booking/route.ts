@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
   // and deflected every pricing question to "call the salon".
   const { data: services } = await db
     .from("services")
-    .select("name, duration_minutes, price_cents")
+    .select("name, duration_minutes, buffer_minutes, price_cents")
     .eq("salon_id", salonId)
     .is("deleted_at", null)
     .order("name", { ascending: true })
@@ -71,7 +71,9 @@ export async function POST(req: NextRequest) {
   const serviceList = (services ?? [])
     .map((s) => {
       const price = s.price_cents ? `$${(s.price_cents / 100).toFixed(0)}` : "";
-      return `- ${s.name}${s.duration_minutes ? ` (${s.duration_minutes} min)` : ""}${price ? ` — ${price}` : ""}`;
+      // Match the booking page, which shows service time + buffer (totalMinutes).
+      const mins = (Number(s.duration_minutes) || 0) + (Number(s.buffer_minutes) || 0);
+      return `- ${s.name}${mins ? ` (${mins} min)` : ""}${price ? ` — ${price}` : ""}`;
     })
     .join("\n");
 
@@ -89,6 +91,7 @@ Services:
 ${serviceList || "Contact the salon for service details."}
 
 Guidelines:
+- Always reply in the same language the customer writes in (Vietnamese or English)
 - For booking, direct customers to use the booking form on this page
 - Keep answers short (2-3 sentences max unless listing services)
 - If unsure, suggest calling the salon`;
