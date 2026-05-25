@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
   if (!openaiRes.ok) {
     const body = await openaiRes.text();
     console.error("[voice/session] OpenAI error:", openaiRes.status, body);
-    return NextResponse.json({ error: "openai_session_failed" }, { status: 502 });
+    return NextResponse.json({ error: "openai_session_failed", detail: body, http: openaiRes.status }, { status: 502 });
   }
 
   const session = (await openaiRes.json()) as {
