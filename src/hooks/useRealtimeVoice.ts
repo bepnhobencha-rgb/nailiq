@@ -301,9 +301,6 @@ export function useRealtimeVoice(params: {
   );
 
   // ── Connect (GA flow: server-proxied SDP exchange) ───────────────────────────
-  const isConnecting = (s: VoiceCallStatus) =>
-    s === "connecting_mic" || s === "connecting_openai" || s === "connecting_dc";
-
   const start = useCallback(async () => {
     if (status !== "idle" && status !== "ended" && status !== "error") return;
 
