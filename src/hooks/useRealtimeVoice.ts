@@ -38,6 +38,11 @@ export type BookingProgress = {
   customerPhone?: string;
 };
 
+export type LatencySnapshot = {
+  responseMs: number | null;   // speech_stopped → first audio delta
+  sttMs: number | null;        // speech_started → transcription completed
+};
+
 export type UseRealtimeVoiceReturn = {
   status: VoiceCallStatus;
   userTranscript: string;
@@ -47,6 +52,7 @@ export type UseRealtimeVoiceReturn = {
   confirmedBooking: BookingResult | null;
   errorMessage: string | null;
   isMuted: boolean;
+  latency: LatencySnapshot;
   start: () => Promise<void>;
   end: () => void;
   toggleMute: () => void;
@@ -80,6 +86,7 @@ export function useRealtimeVoice(params: {
   const [confirmedBooking, setConfirmedBooking] = useState<BookingResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [latency, setLatency] = useState<LatencySnapshot>({ responseMs: null, sttMs: null });
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
@@ -89,6 +96,9 @@ export function useRealtimeVoice(params: {
   const confirmedRef = useRef(false);
   const sessionConfigRef = useRef<SessionConfig | null>(null);
   const hasGreetedRef = useRef(false);
+  const speechStartedAtRef = useRef<number | null>(null);
+  const speechStoppedAtRef = useRef<number | null>(null);
+  const firstAudioDeltaRef = useRef(false);
 
   const shopSlugRef = useRef(shopSlug);
   useEffect(() => { shopSlugRef.current = shopSlug; }, [shopSlug]);
@@ -218,11 +228,14 @@ export function useRealtimeVoice(params: {
           break;
 
         case "input_audio_buffer.speech_started":
+          speechStartedAtRef.current = Date.now();
+          firstAudioDeltaRef.current = false;
           setStatus("listening");
           setUserTranscript("");
           break;
 
         case "input_audio_buffer.speech_stopped":
+          speechStoppedAtRef.current = Date.now();
           setStatus("thinking");
           break;
 
@@ -230,10 +243,19 @@ export function useRealtimeVoice(params: {
           const transcript = String(event.transcript ?? "");
           setUserTranscript(transcript);
           if (transcript.trim()) appendMessage("user", transcript);
+          if (speechStartedAtRef.current) {
+            setLatency((prev) => ({ ...prev, sttMs: Date.now() - speechStartedAtRef.current! }));
+          }
           break;
         }
 
         case "response.audio_transcript.delta":
+          if (!firstAudioDeltaRef.current) {
+            firstAudioDeltaRef.current = true;
+            if (speechStoppedAtRef.current) {
+              setLatency((prev) => ({ ...prev, responseMs: Date.now() - speechStoppedAtRef.current! }));
+            }
+          }
           setStatus("speaking");
           setAiMessage((prev) => prev + String(event.delta ?? ""));
           break;
@@ -281,6 +303,9 @@ export function useRealtimeVoice(params: {
     confirmedRef.current = false;
     hasGreetedRef.current = false;
     sessionConfigRef.current = null;
+    speechStartedAtRef.current = null;
+    speechStoppedAtRef.current = null;
+    firstAudioDeltaRef.current = false;
     setStatus("connecting");
     setErrorMessage(null);
     setMessages([]);
@@ -288,6 +313,7 @@ export function useRealtimeVoice(params: {
     setConfirmedBooking(null);
     setAiMessage("");
     setUserTranscript("");
+    setLatency({ responseMs: null, sttMs: null });
 
     try {
       // 1. Pre-flight checks (before touching any API)
@@ -467,6 +493,7 @@ export function useRealtimeVoice(params: {
   return {
     status, userTranscript, aiMessage, messages,
     bookingProgress, confirmedBooking, errorMessage, isMuted,
+    latency,
     start, end, toggleMute,
   };
 }

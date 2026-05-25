@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRealtimeVoice, type VoiceCallStatus } from "@/hooks/useRealtimeVoice";
+import { useRealtimeVoice, type VoiceCallStatus, type LatencySnapshot } from "@/hooks/useRealtimeVoice";
 import type { BookingResult } from "@/shared/booking/submitPublicBooking";
 
 type Props = {
@@ -89,17 +89,17 @@ function ThinkingDots() {
 
 // ─── Message feed ──────────────────────────────────────────────────────────────
 
-function MessageFeed({ messages, aiMessage, userTranscript, lang }: {
+function MessageFeed({ messages, aiMessage, userTranscript, isStreaming }: {
   messages: { role: "user" | "assistant"; text: string; timestamp: number }[];
   aiMessage: string;
   userTranscript: string;
-  lang: "en" | "vi";
+  isStreaming: boolean;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, aiMessage, userTranscript]);
 
   return (
-    <div className="h-40 overflow-y-auto flex flex-col gap-2 px-1 text-[13px]">
+    <div className="min-h-[80px] max-h-[200px] overflow-y-auto flex flex-col gap-2 px-1 text-[13px]">
       {messages.map((m, i) => (
         <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
           <div className={`rounded-2xl px-3 py-1.5 max-w-[85%] leading-snug ${
@@ -111,23 +111,39 @@ function MessageFeed({ messages, aiMessage, userTranscript, lang }: {
           </div>
         </div>
       ))}
-      {/* Live AI transcript */}
-      {aiMessage && !messages.find(m => m.role === "assistant" && m.text === aiMessage) && (
+      {/* Live AI streaming bubble */}
+      {isStreaming && aiMessage && (
         <div className="flex justify-start">
-          <div className="rounded-2xl px-3 py-1.5 max-w-[85%] bg-[var(--salon-primary,#d4af37)]/10 text-white/60 italic leading-snug">
-            {aiMessage}<span className="animate-pulse">▋</span>
+          <div className="rounded-2xl px-3 py-1.5 max-w-[85%] bg-[var(--salon-primary,#d4af37)]/10 text-white/65 leading-snug">
+            {aiMessage}<span className="inline-block w-[2px] h-[13px] ml-0.5 align-text-bottom bg-[var(--salon-primary,#d4af37)]/60 animate-pulse" />
           </div>
         </div>
       )}
-      {/* Live user transcript */}
+      {/* Live user transcript while speaking */}
       {userTranscript && (
         <div className="flex justify-end">
-          <div className="rounded-2xl px-3 py-1.5 max-w-[85%] bg-white/8 text-white/50 italic leading-snug">
+          <div className="rounded-2xl px-3 py-1.5 max-w-[85%] bg-white/8 text-white/45 italic leading-snug">
             {userTranscript}…
           </div>
         </div>
       )}
       <div ref={bottomRef} />
+    </div>
+  );
+}
+
+// ─── Latency badge ────────────────────────────────────────────────────────────
+
+function LatencyBadge({ latency }: { latency: LatencySnapshot }) {
+  const { responseMs, sttMs } = latency;
+  if (responseMs === null) return null;
+
+  const color = responseMs < 500 ? "text-green-400/70" : responseMs < 900 ? "text-amber-400/70" : "text-red-400/70";
+  return (
+    <div className={`flex items-center gap-1.5 text-[10px] font-mono ${color}`} title="response latency (speech end → first audio)">
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-current opacity-70" />
+      <span>~{responseMs}ms</span>
+      {sttMs !== null && <span className="text-white/25">· STT {sttMs}ms</span>}
     </div>
   );
 }
@@ -139,7 +155,7 @@ export function RealtimeVoiceCall({ shopSlug, language, onBookingConfirmed }: Pr
 
   const {
     status, userTranscript, aiMessage, messages,
-    confirmedBooking, errorMessage, isMuted,
+    confirmedBooking, errorMessage, isMuted, latency,
     start, end, toggleMute,
   } = useRealtimeVoice({
     shopSlug,
@@ -231,13 +247,16 @@ export function RealtimeVoiceCall({ shopSlug, language, onBookingConfirmed }: Pr
             </span>
           </div>
 
-          {/* Close / end call */}
-          {!isDone && (
-            <button type="button" onClick={handleEnd}
-              className="text-[11px] text-white/30 hover:text-white/60 transition-colors">
-              {isActive ? (isVi ? "Cúp máy" : "End") : "✕"}
-            </button>
-          )}
+          {/* Latency badge + close */}
+          <div className="flex items-center gap-3">
+            <LatencyBadge latency={latency} />
+            {!isDone && (
+              <button type="button" onClick={handleEnd}
+                className="text-[11px] text-white/30 hover:text-white/60 transition-colors">
+                {isActive ? (isVi ? "Cúp máy" : "End") : "✕"}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Central animation */}
@@ -331,8 +350,12 @@ export function RealtimeVoiceCall({ shopSlug, language, onBookingConfirmed }: Pr
 
         {/* Conversation transcript */}
         {messages.length > 0 || aiMessage || userTranscript ? (
-          <MessageFeed messages={messages} aiMessage={aiMessage}
-            userTranscript={userTranscript} lang={language} />
+          <MessageFeed
+            messages={messages}
+            aiMessage={aiMessage}
+            userTranscript={userTranscript}
+            isStreaming={status === "speaking"}
+          />
         ) : status === "ready" ? (
           <p className="text-center text-[12px] text-white/35 py-2">
             {isVi
