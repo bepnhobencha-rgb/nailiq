@@ -21,7 +21,12 @@ export function getSiteUrl(): string {
     ? sansSlash
     : `https://${sansSlash}`;
   try {
-    return new URL(withScheme).origin;
+    const url = new URL(withScheme);
+    // www is the canonical host: the apex (nailiq.ca) 301-redirects to
+    // www.nailiq.ca, so normalize here. Otherwise canonical/sitemap/JSON-LD
+    // would point at a URL that immediately redirects, which weakens indexing.
+    if (url.hostname === "nailiq.ca") url.hostname = "www.nailiq.ca";
+    return url.origin;
   } catch {
     return DEFAULT_SITE_URL;
   }
