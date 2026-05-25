@@ -1,25 +1,22 @@
 /**
  * Single source of truth for OpenAI Realtime Voice config.
  *
- * GA WebRTC SDP pattern:
- *   POST https://api.openai.com/v1/realtime?model=<model>
+ * DO NOT hardcode model/voice elsewhere — import REALTIME_CONFIG from here.
+ *
+ * GA WebRTC SDP pattern (CONFIRMED WORKING):
+ *   POST https://api.openai.com/v1/realtime?model=gpt-realtime-2025-08-28
  *   Authorization: Bearer <key>
  *   Content-Type: application/sdp
  *   Body: raw SDP offer string
+ *   NO OpenAI-Beta header — that header triggers beta_api_shape_disabled
  *
- * Valid GA models (as of 2025):
- *   gpt-4o-realtime-preview-2024-12-17   ← pinned stable version
- *   gpt-4o-realtime-preview              ← latest alias
- *   gpt-4o-mini-realtime-preview-2024-12-17
- *
- * DO NOT add OpenAI-Beta: realtime=v1 header — that is the OLD beta API.
- * DO NOT use /v1/realtime/calls or FormData — those endpoints do not exist.
- * DO NOT use model names that are not in the list above.
+ * To override in production set OPENAI_REALTIME_MODEL / OPENAI_REALTIME_VOICE
+ * in Vercel env vars.
  */
 
 export const REALTIME_CONFIG = {
-  /** GA model — pinned to stable dated version */
-  model: process.env.OPENAI_REALTIME_MODEL ?? "gpt-4o-realtime-preview-2024-12-17",
+  /** GA model — confirmed working. Override via OPENAI_REALTIME_MODEL env var. */
+  model: process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2025-08-28",
   /** GA voice — must be one of: alloy, ash, ballad, coral, echo, sage, shimmer, verse */
   voice: process.env.OPENAI_REALTIME_VOICE ?? "shimmer",
   /** Transcription model for input audio — whisper-1 is the only valid value */
