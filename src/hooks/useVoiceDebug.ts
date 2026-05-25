@@ -4,6 +4,31 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { REALTIME_CONFIG } from "@/config/realtime";
 import { VOICE_TOOLS } from "@/shared/voice/tools";
 
+// ─── Error serialization ────────────────────────────────────────────────────
+// JSON.stringify(new Error("x")) === "{}" — always use this instead.
+
+function serializeError(err: unknown): Record<string, unknown> {
+  if (err instanceof Error) {
+    const base: Record<string, unknown> = {
+      name: err.name,
+      message: err.message,
+      stack: err.stack ?? null,
+      cause: err.cause != null ? serializeError(err.cause) : null,
+    };
+    // Capture any custom properties attached to the Error (e.g. _sdpPayload)
+    for (const key of Object.getOwnPropertyNames(err)) {
+      if (!(key in base)) {
+        base[key] = (err as unknown as Record<string, unknown>)[key];
+      }
+    }
+    return base;
+  }
+  if (typeof err === "object" && err !== null) {
+    return err as Record<string, unknown>;
+  }
+  return { raw: String(err) };
+}
+
 // ─── Types ─────────────────────────────────────────────────────────────────
 
 export type DebugMode = "safe" | "tool" | "full";
@@ -417,23 +442,36 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
       });
 
       if (!sdpRes.ok) {
-        // Capture everything: raw text first so we never lose the body
+        // Read raw text FIRST — never lose the body even if JSON parse fails
         const rawBody = await sdpRes.text();
-        let parsedBody: unknown = null;
-        try { parsedBody = JSON.parse(rawBody); } catch { /* keep null — body may not be JSON */ }
-        const sdpErrPayload = {
+        let parsedBody: Record<string, unknown> | null = null;
+        try { parsedBody = JSON.parse(rawBody) as Record<string, unknown>; } catch { /* non-JSON body */ }
+        const sdpErrPayload: Record<string, unknown> = {
+          // HTTP layer
           http_status: sdpRes.status,
           http_status_text: sdpRes.statusText,
+          // Full response body — raw (never truncated) + parsed if JSON
           raw_body: rawBody,
-          parsed: parsedBody,
+          parsed_body: parsedBody,
+          // What OpenAI said (inside the proxy's JSON envelope)
+          openai_status: parsedBody?.openai_status ?? null,
+          openai_detail: parsedBody?.detail ?? null,
+          openai_error_code: parsedBody?.error ?? null,
+          model_used: parsedBody?.model_used ?? REALTIME_CONFIG.model,
+          // Request context
           proxy_endpoint: "/api/voice/sdp",
           openai_endpoint: REALTIME_CONFIG.sdpEndpoint,
           model: REALTIME_CONFIG.model,
           voice: REALTIME_CONFIG.voice,
+          request_salon: shopSlug,
+          request_language: language,
+          sdp_offer_bytes: offer.sdp?.length ?? 0,
         };
         logEvent("system", "sdp.error", sdpErrPayload);
-        const errorCode = (parsedBody as { error?: string } | null)?.error ?? "sdp_exchange_failed";
-        throw Object.assign(new Error(errorCode), { _sdpDetail: sdpErrPayload });
+        const errorCode = String(parsedBody?.error ?? "sdp_exchange_failed");
+        const thrown = new Error(errorCode);
+        (thrown as unknown as Record<string, unknown>)._sdpPayload = sdpErrPayload;
+        throw thrown;
       }
 
       const { sdp_answer, session_config } = await sdpRes.json() as { sdp_answer: string; session_config: SessionConfig };
@@ -444,10 +482,11 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
       logEvent("system", "sdp.complete", {});
 
     } catch (err) {
-      const errName = err instanceof DOMException ? err.name : (err instanceof Error ? (err as { name?: string }).name ?? "" : "");
-      const errMsg = err instanceof Error ? err.message : "unknown";
-      const stack = err instanceof Error ? err.stack : undefined;
-      const sdpDetail = (err as { _sdpDetail?: unknown })._sdpDetail;
+      const serialized = serializeError(err);
+      const errName = String(serialized.name ?? "");
+      const errMsg = String(serialized.message ?? "unknown");
+      // _sdpPayload is attached by the throw above — surface it at top level
+      const sdpPayload = (err as Record<string, unknown>)._sdpPayload ?? null;
       const code =
         errName === "NotAllowedError" ? "mic_denied"
         : errName === "NotFoundError" ? "mic_not_found"
@@ -457,11 +496,14 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
         : errMsg;
       logEvent("system", "connect.error", {
         code,
-        errName,
-        errMsg,
-        stack,
-        sdpDetail,        // full SDP error payload attached if this was a SDP failure
-        raw_err: String(err),
+        // Full serialized error — never {}
+        error: serialized,
+        // SDP failure context promoted to top level for quick scanning
+        sdp_http_status: (sdpPayload as Record<string, unknown> | null)?.http_status ?? null,
+        sdp_raw_body: (sdpPayload as Record<string, unknown> | null)?.raw_body ?? null,
+        sdp_openai_detail: (sdpPayload as Record<string, unknown> | null)?.openai_detail ?? null,
+        sdp_model: (sdpPayload as Record<string, unknown> | null)?.model ?? null,
+        sdp_payload: sdpPayload,
       });
       setErrorMessage(code);
       setStatus("error");

@@ -7,6 +7,41 @@ import { BUILT_IN_TESTS } from "./regression-tests";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+// JSON.stringify(new Error("x")) === "{}" — never use it directly on unknown values
+function renderPayload(p: unknown): string {
+  if (p === null || p === undefined) return "(null)";
+  if (typeof p === "string") return p || "(empty string)";
+  if (p instanceof Error) {
+    // Error objects — serialize manually
+    return JSON.stringify({
+      name: p.name,
+      message: p.message,
+      stack: p.stack ?? null,
+      cause: p.cause ?? null,
+    }, null, 2);
+  }
+  if (typeof p !== "object") return String(p);
+  try {
+    const s = JSON.stringify(p, null, 2);
+    if (!s || s === "{}") {
+      // Object exists but nothing survived stringify — enumerate keys manually
+      const keys = [
+        ...Object.keys(p as object),
+        ...Object.getOwnPropertyNames(p as object),
+      ];
+      if (keys.length === 0) return `(empty object)\nprototype: ${Object.getPrototypeOf(p as object)?.constructor?.name ?? "Object"}\nraw: ${String(p)}`;
+      const manual: Record<string, string> = {};
+      for (const k of [...new Set(keys)]) {
+        try { manual[k] = String((p as Record<string, unknown>)[k]); } catch { manual[k] = "(unreadable)"; }
+      }
+      return `// Note: normal stringify returned {} — enumerated manually:\n${JSON.stringify(manual, null, 2)}`;
+    }
+    return s;
+  } catch (e) {
+    return `(stringify failed: ${String(e)})\nraw: ${String(p)}`;
+  }
+}
+
 const STATUS_COLOR: Record<string, string> = {
   idle: "text-neutral-500",
   connecting_mic: "text-yellow-400",
@@ -332,17 +367,7 @@ export function VoiceDebugConsole() {
           <div className="flex-1 overflow-auto p-2">
             {selectedEvent ? (
               <pre className="text-[10px] text-neutral-300 font-mono whitespace-pre-wrap break-all">
-                {(() => {
-                  const p = selectedEvent.payload;
-                  if (p === null || p === undefined) return "(no payload)";
-                  if (typeof p === "string") return p;
-                  try {
-                    const s = JSON.stringify(p, null, 2);
-                    return s === "{}" ? "(empty object — payload may be an Error; see raw_err field)" : s;
-                  } catch {
-                    return String(p);
-                  }
-                })()}
+                {renderPayload(selectedEvent.payload)}
               </pre>
             ) : (
               <p className="text-neutral-700 text-xs font-mono p-2">Click an event to inspect</p>
