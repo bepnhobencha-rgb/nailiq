@@ -40,8 +40,8 @@ export type BookingProgress = {
 
 export type UseRealtimeVoiceReturn = {
   status: VoiceCallStatus;
-  userTranscript: string;        // live in-progress user speech
-  aiMessage: string;             // current/last AI message text
+  userTranscript: string;
+  aiMessage: string;
   messages: ConversationMessage[];
   bookingProgress: BookingProgress;
   confirmedBooking: BookingResult | null;
@@ -55,6 +55,12 @@ export type UseRealtimeVoiceReturn = {
 type RealtimeEvent = {
   type: string;
   [key: string]: unknown;
+};
+
+type SessionConfig = {
+  instructions: string;
+  voice: string;
+  tools: unknown[];
 };
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -81,8 +87,9 @@ export function useRealtimeVoice(params: {
   const micStreamRef = useRef<MediaStream | null>(null);
   const micTrackRef = useRef<MediaStreamTrack | null>(null);
   const confirmedRef = useRef(false);
+  const sessionConfigRef = useRef<SessionConfig | null>(null);
+  const hasGreetedRef = useRef(false);
 
-  // Stable ref so closures always see latest shopSlug
   const shopSlugRef = useRef(shopSlug);
   useEffect(() => { shopSlugRef.current = shopSlug; }, [shopSlug]);
 
@@ -126,12 +133,8 @@ export function useRealtimeVoice(params: {
 
         else if (name === "confirm_booking") {
           const {
-            service_id,
-            date,
-            time_slot,
-            staff_id,
-            customer_name,
-            customer_phone,
+            service_id, date, time_slot, staff_id,
+            customer_name, customer_phone,
           } = args as {
             service_id: string;
             date: string;
@@ -184,7 +187,6 @@ export function useRealtimeVoice(params: {
         output = { error: "tool_execution_failed" };
       }
 
-      // Return result to OpenAI
       sendEvent({
         type: "conversation.item.create",
         item: {
@@ -203,12 +205,19 @@ export function useRealtimeVoice(params: {
     (event: RealtimeEvent) => {
       switch (event.type) {
         case "session.created":
+          // Session established — send config and trigger greeting
+          break;
+
         case "session.updated":
           setStatus("ready");
+          // Trigger initial greeting once after config is applied
+          if (!hasGreetedRef.current) {
+            hasGreetedRef.current = true;
+            sendEvent({ type: "response.create" });
+          }
           break;
 
         case "input_audio_buffer.speech_started":
-          // User started talking — interruption
           setStatus("listening");
           setUserTranscript("");
           break;
@@ -243,7 +252,6 @@ export function useRealtimeVoice(params: {
           break;
 
         case "response.cancelled":
-          // Interrupted — stay in ready/listening
           break;
 
         case "response.function_call_arguments.done":
@@ -263,14 +271,16 @@ export function useRealtimeVoice(params: {
         }
       }
     },
-    [status, handleToolCall, appendMessage],
+    [status, handleToolCall, appendMessage, sendEvent],
   );
 
-  // ── Connect ──────────────────────────────────────────────────────────────────
+  // ── Connect (GA flow: server-proxied SDP exchange) ───────────────────────────
   const start = useCallback(async () => {
     if (status !== "idle" && status !== "ended" && status !== "error") return;
 
     confirmedRef.current = false;
+    hasGreetedRef.current = false;
+    sessionConfigRef.current = null;
     setStatus("connecting");
     setErrorMessage(null);
     setMessages([]);
@@ -280,18 +290,7 @@ export function useRealtimeVoice(params: {
     setUserTranscript("");
 
     try {
-      // 1. Ephemeral key from server
-      const sessionRes = await fetch("/api/voice/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ salon_slug: shopSlugRef.current, language }),
-      });
-      if (!sessionRes.ok) throw new Error("session_failed");
-      const { client_secret } = (await sessionRes.json()) as {
-        client_secret: { value: string };
-      };
-
-      // 2. Microphone
+      // 1. Microphone
       const micStream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 24000 },
       });
@@ -299,11 +298,11 @@ export function useRealtimeVoice(params: {
       const [micTrack] = micStream.getAudioTracks();
       if (micTrack) micTrackRef.current = micTrack;
 
-      // 3. Peer connection
+      // 2. Peer connection
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
 
-      // 4. AI audio output → <audio> element
+      // 3. AI audio output → <audio> element
       const audioEl = new Audio();
       audioEl.autoplay = true;
       audioElRef.current = audioEl;
@@ -313,56 +312,98 @@ export function useRealtimeVoice(params: {
         }
       };
 
-      // 5. Add mic track
+      // 4. Add mic track
       if (micTrack) pc.addTrack(micTrack, micStream);
 
-      // 6. Data channel for Realtime events
+      // 5. Data channel for Realtime events
       const dc = pc.createDataChannel("oai-events");
       dcRef.current = dc;
+
       dc.onmessage = (e: MessageEvent) => {
         try {
           handleEvent(JSON.parse(e.data as string) as RealtimeEvent);
         } catch { /* ignore malformed */ }
       };
-      dc.onopen = () => setStatus("ready");
+
+      dc.onopen = () => {
+        // Push session config (instructions, voice, tools) via data channel
+        const cfg = sessionConfigRef.current;
+        if (cfg) {
+          sendEvent({
+            type: "session.update",
+            session: {
+              modalities: ["audio", "text"],
+              instructions: cfg.instructions,
+              voice: cfg.voice,
+              input_audio_format: "pcm16",
+              output_audio_format: "pcm16",
+              input_audio_transcription: { model: "gpt-realtime-whisper" },
+              turn_detection: {
+                type: "server_vad",
+                threshold: 0.45,
+                prefix_padding_ms: 200,
+                silence_duration_ms: 700,
+              },
+              tools: cfg.tools,
+              tool_choice: "auto",
+              temperature: 0.7,
+            },
+          });
+        }
+        setStatus("ready");
+      };
+
       dc.onclose = () => {
         if (!confirmedRef.current) setStatus("ended");
       };
 
-      // 7. SDP offer → OpenAI Realtime endpoint
+      // 6. Create SDP offer
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      const sdpRes = await fetch(
-        "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${client_secret.value}`,
-            "Content-Type": "application/sdp",
-          },
-          body: offer.sdp,
-        },
-      );
+      // 7. Server-proxied SDP exchange with OpenAI GA Realtime API
+      const sdpRes = await fetch("/api/voice/sdp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          salon_slug: shopSlugRef.current,
+          language,
+          sdp_offer: offer.sdp,
+        }),
+      });
 
-      if (!sdpRes.ok) throw new Error("webrtc_connect_failed");
-      const answerSdp = await sdpRes.text();
-      await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+      if (!sdpRes.ok) {
+        const err = await sdpRes.json().catch(() => ({})) as { error?: string; detail?: string };
+        console.error("[voice] SDP exchange failed:", err);
+        throw new Error(err.error ?? "sdp_exchange_failed");
+      }
 
-      // Connection established — setStatus("ready") fires from dc.onopen
+      const { sdp_answer, session_config } = (await sdpRes.json()) as {
+        sdp_answer: string;
+        session_config: SessionConfig;
+      };
+
+      // Store config for dc.onopen (may fire shortly after setRemoteDescription)
+      sessionConfigRef.current = session_config;
+
+      await pc.setRemoteDescription({ type: "answer", sdp: sdp_answer });
+
+      // Connection established — dc.onopen fires when ICE completes
     } catch (err) {
       console.error("[voice] connect error:", err);
+      const msg = err instanceof Error ? err.message : "unknown";
       setErrorMessage(
-        err instanceof Error && err.message === "session_failed"
-          ? "Could not start voice session."
-          : err instanceof Error && err.message.includes("Permission")
+        msg.includes("Permission") || msg.includes("NotAllowed")
           ? "Microphone access denied."
+          : msg === "salon_not_found"
+          ? "Salon not found."
           : "Connection failed. Please try again.",
       );
       setStatus("error");
       cleanupRefs();
     }
-  }, [status, language, handleEvent]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, language, handleEvent, sendEvent]);
 
   // ── Disconnect ───────────────────────────────────────────────────────────────
   const cleanupRefs = useCallback(() => {
@@ -393,20 +434,11 @@ export function useRealtimeVoice(params: {
     setIsMuted(!track.enabled);
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => () => cleanupRefs(), [cleanupRefs]);
 
   return {
-    status,
-    userTranscript,
-    aiMessage,
-    messages,
-    bookingProgress,
-    confirmedBooking,
-    errorMessage,
-    isMuted,
-    start,
-    end,
-    toggleMute,
+    status, userTranscript, aiMessage, messages,
+    bookingProgress, confirmedBooking, errorMessage, isMuted,
+    start, end, toggleMute,
   };
 }

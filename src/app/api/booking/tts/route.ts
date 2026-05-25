@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
-// ElevenLabs — Elli voice: young, cute, energetic female (~18-20 yo)
-const ELEVENLABS_VOICE_ID = "MF3mGyEYCl7XYWbV9V6O";
-const ELEVENLABS_MODEL = "eleven_turbo_v2_5"; // low-latency model
+// ElevenLabs — Sarah voice (premium, multi-lingual)
+const ELEVENLABS_VOICE_ID = "EXAVITQu4vr4xnSDxMaL"; // Sarah — stable professional voice
+const ELEVENLABS_MODEL = "eleven_turbo_v2"; // turbo_v2_5 deprecated → turbo_v2
 
 export async function POST(req: NextRequest) {
   const { text } = (await req.json()) as {
@@ -40,17 +40,17 @@ export async function POST(req: NextRequest) {
         },
       );
 
-      if (!res.ok) throw new Error(`elevenlabs_error: ${res.status}`);
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        console.error(`[TTS] ElevenLabs failed status=${res.status} voice=${ELEVENLABS_VOICE_ID} model=${ELEVENLABS_MODEL}:`, detail);
+        throw new Error(`elevenlabs_${res.status}`);
+      }
       const audioBuffer = await res.arrayBuffer();
-
       return new Response(audioBuffer, {
-        headers: {
-          "Content-Type": "audio/mpeg",
-          "Cache-Control": "no-store",
-        },
+        headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" },
       });
     } catch (err) {
-      console.error("[TTS] ElevenLabs failed, falling back to OpenAI:", err);
+      console.error("[TTS] ElevenLabs failed, falling back to OpenAI TTS:", err);
     }
   }
 
