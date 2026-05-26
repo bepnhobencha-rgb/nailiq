@@ -84,11 +84,10 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         const body = await sessRes.json().catch(() => ({})) as Record<string, string>;
         throw new Error(body.error ?? `session_init_${sessRes.status}`);
       }
-      const { ephemeralKey, model: realtimeModel, sessionId, voice } = await sessRes.json() as {
-        ephemeralKey:  string;
-        model:         string;
-        sessionId:     string | null;
-        voice:         string;
+      const { ephemeralKey, sessionId, voice } = await sessRes.json() as {
+        ephemeralKey: string;
+        sessionId:    string | null;
+        voice:        string;
       };
       sessionIdRef.current = sessionId;
 
@@ -181,27 +180,22 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         }));
       };
 
-      // 4. SDP exchange directly with OpenAI — ek_... token is designed for client-side use
+      // 4. SDP exchange via server proxy (OpenAI SDP endpoint blocks CORS)
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      const sdpRes = await fetch(
-        `https://api.openai.com/v1/realtime?model=${encodeURIComponent(realtimeModel)}`,
-        {
-          method:  "POST",
-          headers: {
-            "Authorization": `Bearer ${ephemeralKey}`,
-            "Content-Type":  "application/sdp",
-          },
-          body: offer.sdp,
-        },
-      );
+      const sdpRes = await fetch("/api/voice/sdp", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ sdp_offer: offer.sdp, ephemeralKey }),
+      });
       if (!sdpRes.ok) {
-        const errText = await sdpRes.text().catch(() => "");
-        throw new Error(`sdp_${sdpRes.status}: ${errText.slice(0, 300)}`);
+        const b = await sdpRes.json().catch(() => ({})) as Record<string, unknown>;
+        console.error("[voice/sdp] full error:", JSON.stringify(b, null, 2));
+        throw new Error(`sdp_${b.openai_status ?? sdpRes.status}: ${String(b.openai_body ?? b.error ?? "").slice(0, 300)}`);
       }
-      const sdpAnswer = await sdpRes.text();
-      await pc.setRemoteDescription({ type: "answer", sdp: sdpAnswer });
+      const { sdp_answer } = await sdpRes.json() as { sdp_answer: string };
+      await pc.setRemoteDescription({ type: "answer", sdp: sdp_answer });
 
     } catch (err) {
       const msg   = err instanceof Error ? err.message : String(err);
