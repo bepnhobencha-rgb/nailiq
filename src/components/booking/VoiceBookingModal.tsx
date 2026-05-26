@@ -21,32 +21,63 @@ type Status =
 
 type Transcript = { role: "ai" | "user"; text: string };
 
+// PCM16 helpers for WebSocket audio
+function float32ToPCM16(float32: Float32Array): ArrayBuffer {
+  const buf = new ArrayBuffer(float32.length * 2);
+  const view = new DataView(buf);
+  for (let i = 0; i < float32.length; i++) {
+    const s = Math.max(-1, Math.min(1, float32[i]!));
+    view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return buf;
+}
+
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
+  return btoa(bin);
+}
+
+function base64ToFloat32(b64: string): Float32Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const int16 = new Int16Array(bytes.buffer);
+  const float32 = new Float32Array(int16.length);
+  for (let i = 0; i < int16.length; i++) float32[i] = int16[i]! / 32768;
+  return float32;
+}
+
 export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Props) {
   const [status, setStatus]         = useState<Status>("idle");
   const [error, setError]           = useState<string | null>(null);
   const [transcript, setTranscript] = useState<Transcript[]>([]);
   const [durationSec, setDuration]  = useState(0);
 
-  const pcRef         = useRef<RTCPeerConnection | null>(null);
-  const dcRef         = useRef<RTCDataChannel | null>(null);
-  const streamRef     = useRef<MediaStream | null>(null);
-  const audioRef      = useRef<HTMLAudioElement | null>(null);
-  const sessionIdRef  = useRef<string | null>(null);
-  const timerRef      = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startTsRef    = useRef<number>(0);
-  const statusRef     = useRef<Status>("idle");
+  const wsRef          = useRef<WebSocket | null>(null);
+  const audioCtxRef    = useRef<AudioContext | null>(null);
+  const streamRef      = useRef<MediaStream | null>(null);
+  const processorRef   = useRef<ScriptProcessorNode | null>(null);
+  const sessionIdRef   = useRef<string | null>(null);
+  const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startTsRef     = useRef<number>(0);
+  const statusRef      = useRef<Status>("idle");
+  const nextPlayRef    = useRef<number>(0);
 
   const v = t.voice;
 
   const cleanup = useCallback(() => {
-    try { dcRef.current?.close(); }    catch { /* ignore */ }
-    try { pcRef.current?.close(); }    catch { /* ignore */ }
+    try { processorRef.current?.disconnect(); } catch { /* ignore */ }
+    try { wsRef.current?.close(); }             catch { /* ignore */ }
+    try { audioCtxRef.current?.close(); }       catch { /* ignore */ }
     streamRef.current?.getTracks().forEach((t) => t.stop());
-    if (audioRef.current) { audioRef.current.srcObject = null; audioRef.current.pause(); }
     if (timerRef.current) clearInterval(timerRef.current);
-    dcRef.current   = null;
-    pcRef.current   = null;
-    streamRef.current = null;
+    wsRef.current      = null;
+    audioCtxRef.current = null;
+    processorRef.current = null;
+    streamRef.current  = null;
+    nextPlayRef.current = 0;
   }, []);
 
   const endSession = useCallback(async (finalStatus: "completed" | "abandoned" | "failed") => {
@@ -66,6 +97,91 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       }).catch(() => null);
     }
   }, [cleanup, transcript]);
+
+  const handleRealtimeEvent = useCallback((
+    ev: Record<string, unknown>,
+    salonSlug: string,
+    sessionId: string | null,
+  ) => {
+    const type = ev.type as string;
+
+    if (type === "session.created" || type === "session.updated") {
+      // Session is active — mark connected
+      if (statusRef.current === "connecting") {
+        statusRef.current = "connected";
+        setStatus("connected");
+        startTsRef.current = Date.now();
+        timerRef.current = setInterval(() => {
+          setDuration(Math.round((Date.now() - startTsRef.current) / 1000));
+        }, 1000);
+      }
+    }
+
+    if (type === "response.audio.delta") {
+      const delta = ev.delta as string | undefined;
+      if (!delta || !audioCtxRef.current) return;
+      const ctx = audioCtxRef.current;
+      const float32 = base64ToFloat32(delta);
+      const buf = ctx.createBuffer(1, float32.length, 24000);
+      buf.getChannelData(0).set(float32);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      const when = Math.max(ctx.currentTime, nextPlayRef.current);
+      src.start(when);
+      nextPlayRef.current = when + buf.duration;
+    }
+
+    if (type === "response.audio_transcript.done") {
+      const text = ev.transcript as string | undefined;
+      if (text) setTranscript((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === "ai" && last.text === text) return prev;
+        return [...prev, { role: "ai" as const, text }];
+      });
+    }
+
+    if (type === "conversation.item.created") {
+      const item = ev.item as { role?: string; content?: { text?: string }[] } | undefined;
+      if (item?.role === "user") {
+        const text = item.content?.find((c) => c.text)?.text ?? "";
+        if (text) setTranscript((prev) => [...prev, { role: "user", text }]);
+      }
+    }
+
+    if (type === "response.function_call_arguments.done") {
+      const name    = ev.name    as string | undefined;
+      const call_id = ev.call_id as string | undefined;
+      if (!name || !call_id) return;
+      let args: Record<string, unknown> = {};
+      try { args = JSON.parse(ev.arguments as string ?? "{}") as Record<string, unknown>; } catch { /* ignore */ }
+
+      fetch("/api/voice/tool", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ toolName: name, toolArgs: args, salonSlug, sessionId }),
+      })
+        .then((r) => r.json())
+        .then((result) => {
+          wsRef.current?.send(JSON.stringify({
+            type: "conversation.item.create",
+            item: { type: "function_call_output", call_id, output: JSON.stringify(result) },
+          }));
+          wsRef.current?.send(JSON.stringify({ type: "response.create" }));
+        })
+        .catch((err: unknown) => {
+          wsRef.current?.send(JSON.stringify({
+            type: "conversation.item.create",
+            item: { type: "function_call_output", call_id, output: JSON.stringify({ error: String(err) }) },
+          }));
+          wsRef.current?.send(JSON.stringify({ type: "response.create" }));
+        });
+    }
+
+    if (type === "error") {
+      console.error("[voice/ws] server error:", ev);
+    }
+  }, []);
 
   const start = useCallback(async () => {
     if (statusRef.current !== "idle" && statusRef.current !== "error") return;
@@ -98,72 +214,23 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
         throw new Error("insecure_context");
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 24000 },
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      // 3. WebRTC peer connection
+      // 3. AudioContext for mic capture + playback
       statusRef.current = "connecting";
       setStatus("connecting");
-      const pc = new RTCPeerConnection();
-      pcRef.current = pc;
+      const audioCtx = new AudioContext({ sampleRate: 24000 });
+      audioCtxRef.current = audioCtx;
 
-      pc.onconnectionstatechange = () => {
-        if (pc.connectionState === "failed") {
-          setError("connection_failed");
-          statusRef.current = "error";
-          setStatus("error");
-          cleanup();
-        }
-      };
+      // 4. Open WebSocket directly to OpenAI with ek_... as subprotocol auth
+      const wsUrl = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(realtimeModel)}`;
+      const ws = new WebSocket(wsUrl, ["realtime", `openai-insecure-api-key.${ephemeralKey}`]);
+      wsRef.current = ws;
 
-      // Remote audio
-      const audioEl = new Audio();
-      audioEl.autoplay = true;
-      audioRef.current = audioEl;
-      pc.ontrack = (e) => { if (audioEl.srcObject !== e.streams[0]) audioEl.srcObject = e.streams[0] ?? null; };
-
-      // Mic track
-      const [micTrack] = stream.getAudioTracks();
-      if (micTrack) pc.addTrack(micTrack, stream);
-
-      // Data channel for events
-      const dc = pc.createDataChannel("oai-events");
-      dcRef.current = dc;
-
-      dc.onmessage = (e: MessageEvent) => {
-        try {
-          const ev = JSON.parse(e.data as string) as {
-            type: string;
-            item?: { content?: { text?: string }[]; role?: string };
-            transcript?: string;
-            delta?: string;
-            name?: string;
-            arguments?: string;
-            call_id?: string;
-          };
-          handleRealtimeEvent(ev, dc, shopSlug, sessionId);
-        } catch { /* malformed */ }
-      };
-
-      dc.onclose = () => {
-        if (statusRef.current === "connected") {
-          statusRef.current = "ended";
-          setStatus("ended");
-        }
-      };
-
-      dc.onopen = () => {
-        statusRef.current = "connected";
-        setStatus("connected");
-        startTsRef.current = Date.now();
-        timerRef.current = setInterval(() => {
-          setDuration(Math.round((Date.now() - startTsRef.current) / 1000));
-        }, 1000);
-
-        // Configure session with voice + transcription
-        dc.send(JSON.stringify({
+      ws.onopen = () => {
+        // Configure session
+        ws.send(JSON.stringify({
           type: "session.update",
           session: {
             voice,
@@ -179,38 +246,59 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             },
           },
         }));
+
+        // Start streaming mic audio
+        const source    = audioCtx.createMediaStreamSource(stream);
+        const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+        processorRef.current = processor;
+        source.connect(processor);
+        processor.connect(audioCtx.destination);
+        processor.onaudioprocess = (e) => {
+          if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+          const pcm  = e.inputBuffer.getChannelData(0);
+          const buf  = float32ToPCM16(pcm);
+          const b64  = arrayBufferToBase64(buf);
+          wsRef.current.send(JSON.stringify({ type: "input_audio_buffer.append", audio: b64 }));
+        };
       };
 
-      // 4. SDP exchange directly with OpenAI (ek_... is designed for client-side use)
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+      ws.onmessage = (e: MessageEvent) => {
+        try {
+          const ev = JSON.parse(e.data as string) as Record<string, unknown>;
+          handleRealtimeEvent(ev, shopSlug, sessionId);
+        } catch { /* malformed */ }
+      };
 
-      const sdpRes = await fetch(
-        `https://api.openai.com/v1/realtime?model=${encodeURIComponent(realtimeModel)}`,
-        {
-          method:  "POST",
-          headers: {
-            "Authorization": `Bearer ${ephemeralKey}`,
-            "Content-Type":  "application/sdp",
-          },
-          body: offer.sdp,
-        },
-      );
-      if (!sdpRes.ok) {
-        const errText = await sdpRes.text().catch(() => "");
-        throw new Error(`sdp_${sdpRes.status}: ${errText.slice(0, 300)}`);
-      }
-      const sdpAnswer = await sdpRes.text();
-      await pc.setRemoteDescription({ type: "answer", sdp: sdpAnswer });
+      ws.onerror = () => {
+        if (statusRef.current !== "ended") {
+          setError("connection_failed");
+          statusRef.current = "error";
+          setStatus("error");
+          cleanup();
+        }
+      };
+
+      ws.onclose = (e) => {
+        if (statusRef.current === "connected") {
+          if (e.code !== 1000) {
+            setError(`connection_closed_${e.code}`);
+            statusRef.current = "error";
+            setStatus("error");
+          } else {
+            statusRef.current = "ended";
+            setStatus("ended");
+          }
+        }
+      };
 
     } catch (err) {
-      const msg   = err instanceof Error ? err.message : String(err);
-      const name  = err instanceof Error ? err.name   : "";
-      const code  =
-        name === "NotAllowedError"   ? v.micPermissionDenied
-        : name === "NotFoundError"   ? v.micError
-        : msg === "insecure_context" ? v.notSupported
-        : msg === "voice_not_enabled"? "Voice AI is not enabled for this salon."
+      const msg  = err instanceof Error ? err.message : String(err);
+      const name = err instanceof Error ? err.name   : "";
+      const code =
+        name === "NotAllowedError"    ? v.micPermissionDenied
+        : name === "NotFoundError"    ? v.micError
+        : msg === "insecure_context"  ? v.notSupported
+        : msg === "voice_not_enabled" ? "Voice AI is not enabled for this salon."
         : msg === "session_limit_reached" ? "Voice sessions limit reached for this month."
         : msg;
       setError(code);
@@ -218,72 +306,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       setStatus("error");
       cleanup();
     }
-  }, [shopSlug, language, v, cleanup]);
-
-  // Accumulate transcript entries from data channel events
-  function handleRealtimeEvent(
-    ev: {
-      type: string;
-      item?: { content?: { text?: string }[]; role?: string };
-      transcript?: string;
-      delta?: string;
-      name?: string;
-      arguments?: string;
-      call_id?: string;
-    },
-    dc: RTCDataChannel,
-    salonSlug: string,
-    sessionId: string | null,
-  ) {
-    if (ev.type === "conversation.item.created" && ev.item) {
-      const role = ev.item.role === "user" ? "user" : "ai";
-      const text = ev.item.content?.find((c) => c.text)?.text ?? "";
-      if (text) setTranscript((prev) => [...prev, { role, text }]);
-    }
-
-    if (ev.type === "response.audio_transcript.done" && ev.transcript) {
-      setTranscript((prev) => {
-        const last = prev[prev.length - 1];
-        if (last?.role === "ai" && last.text === ev.transcript) return prev;
-        return [...prev, { role: "ai" as const, text: ev.transcript! }];
-      });
-    }
-
-    // Server-side tool execution
-    if (ev.type === "response.function_call_arguments.done" && ev.name && ev.call_id) {
-      let args: Record<string, unknown> = {};
-      try { args = JSON.parse(ev.arguments ?? "{}") as Record<string, unknown>; } catch { /* ignore */ }
-
-      fetch("/api/voice/tool", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ toolName: ev.name, toolArgs: args, salonSlug, sessionId }),
-      })
-        .then((r) => r.json())
-        .then((result) => {
-          dc.send(JSON.stringify({
-            type:    "conversation.item.create",
-            item: {
-              type:    "function_call_output",
-              call_id: ev.call_id,
-              output:  JSON.stringify(result),
-            },
-          }));
-          dc.send(JSON.stringify({ type: "response.create" }));
-        })
-        .catch((err: unknown) => {
-          dc.send(JSON.stringify({
-            type: "conversation.item.create",
-            item: {
-              type:    "function_call_output",
-              call_id: ev.call_id,
-              output:  JSON.stringify({ error: String(err) }),
-            },
-          }));
-          dc.send(JSON.stringify({ type: "response.create" }));
-        });
-    }
-  }
+  }, [shopSlug, language, v, cleanup, handleRealtimeEvent]);
 
   const handleStop = useCallback(async () => {
     statusRef.current = "ended";
@@ -297,7 +320,6 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     onClose();
   }, [endSession, cleanup, onClose]);
 
-  // Auto-start when modal opens
   useEffect(() => {
     void start();
     return () => { void endSession("abandoned"); };
