@@ -255,8 +255,8 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             type:              "realtime",
             output_modalities: ["audio"],
             audio: {
-              input:  { format: "pcm16", turn_detection: { type: "semantic_vad", interrupt_response: true } },
-              output: { format: "pcm16", voice },
+              input:  { format: { type: "pcm16" }, turn_detection: { type: "semantic_vad", interrupt_response: true } },
+              output: { format: { type: "pcm16" }, voice },
             },
           },
         }));
