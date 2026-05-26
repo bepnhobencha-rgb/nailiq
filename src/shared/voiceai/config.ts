@@ -1,9 +1,10 @@
-/** Voice AI configuration constants — gpt-4o-realtime-preview GA */
+/** Voice AI configuration constants — gpt-realtime-2 GA */
 
-export const VOICE_MODEL = "gpt-4o-realtime-preview";
+export const VOICE_MODEL = "gpt-realtime-2";
 
-export const OPENAI_SESSIONS_URL = "https://api.openai.com/v1/realtime/sessions";
-export const OPENAI_SDP_URL      = "https://api.openai.com/v1/realtime";
+/** GA endpoint for minting ephemeral client secrets (ek_...) */
+export const OPENAI_CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets";
+export const OPENAI_SDP_URL            = "https://api.openai.com/v1/realtime";
 
 export const DEFAULT_VAD = {
   type:                "server_vad",

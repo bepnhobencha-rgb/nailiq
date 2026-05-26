@@ -5,9 +5,8 @@ import { buildSystemPrompt } from "@/shared/voiceai/buildSystemPrompt";
 import { REALTIME_TOOLS } from "@/shared/voiceai/realtimeTools";
 import {
   VOICE_MODEL,
-  OPENAI_SESSIONS_URL,
+  OPENAI_CLIENT_SECRETS_URL,
   DEFAULT_VAD,
-  REASONING_EFFORT_MAP,
   SESSION_TTL_SECONDS,
   type SupportedLanguage,
 } from "@/shared/voiceai/config";
@@ -58,29 +57,34 @@ export async function POST(req: NextRequest) {
   const ctx = await loadSalonContext(salonSlug);
   if (!ctx) return NextResponse.json({ error: "context_load_failed" }, { status: 500 });
 
-  const instructions  = buildSystemPrompt(ctx, language);
-  const voice         = ctx.personaVoice;
-  const effortRaw     = ctx.reasoningEffort;
-  const effort        = REASONING_EFFORT_MAP[effortRaw] ?? "low";
+  const instructions = buildSystemPrompt(ctx, language);
+  const voice        = ctx.personaVoice;
 
-  // Create OpenAI Realtime session
-  const sessionBody = {
-    model:        VOICE_MODEL,
-    voice,
-    instructions,
-    tools:        [...REALTIME_TOOLS],
-    input_audio_transcription: { model: "whisper-1" },
-    turn_detection: DEFAULT_VAD,
-    // reasoning_effort only applies to o-series models
-    ...(VOICE_MODEL.startsWith("o") ? { reasoning_effort: effort } : {}),
+  // GA Realtime API: POST /v1/realtime/client_secrets
+  // session config nested inside `session` key; response has `value` (the ek_... token)
+  const clientSecretBody = {
+    expires_after: { anchor: "created_at", seconds: SESSION_TTL_SECONDS },
+    session: {
+      type:         "realtime",
+      model:        VOICE_MODEL,
+      instructions,
+      tools:        [...REALTIME_TOOLS],
+      audio: {
+        input: {
+          transcription: { model: "gpt-4o-mini-transcribe" },
+          turn_detection: DEFAULT_VAD,
+        },
+        output: { voice },
+      },
+    },
   };
 
   let oaiRes: Response;
   try {
-    oaiRes = await fetch(OPENAI_SESSIONS_URL, {
+    oaiRes = await fetch(OPENAI_CLIENT_SECRETS_URL, {
       method:  "POST",
       headers: { "Authorization": `Bearer ${oaiKey}`, "Content-Type": "application/json" },
-      body:    JSON.stringify(sessionBody),
+      body:    JSON.stringify(clientSecretBody),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -95,16 +99,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let parsed: { id?: string; client_secret?: { value?: string; expires_at?: number } };
+  let parsed: { value?: string; expires_at?: number; session?: { id?: string } };
   try {
     parsed = JSON.parse(oaiBody) as typeof parsed;
   } catch {
     return NextResponse.json({ error: "openai_parse_failed", raw: oaiBody }, { status: 502 });
   }
 
-  const openaiSessionId = parsed.id;
-  const ephemeralKey    = parsed.client_secret?.value;
-  if (!ephemeralKey || !openaiSessionId) {
+  const ephemeralKey    = parsed.value;
+  const openaiSessionId = parsed.session?.id;
+  if (!ephemeralKey) {
     return NextResponse.json({ error: "missing_ephemeral_key", raw: oaiBody }, { status: 502 });
   }
 
@@ -120,7 +124,7 @@ export async function POST(req: NextRequest) {
       .from("voice_ai_sessions")
       .insert({
         salon_id:          salon.id,
-        openai_session_id: openaiSessionId,
+        openai_session_id: openaiSessionId ?? null,
         status:            "active",
         language,
       })
@@ -132,8 +136,8 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ephemeralKey,
     sessionId:       sessionRow?.id ?? null,
-    expiresAt:       parsed.client_secret?.expires_at ?? Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
-    openaiSessionId,
+    expiresAt:       parsed.expires_at ?? Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
+    openaiSessionId: openaiSessionId ?? null,
     voice,
   });
 }
