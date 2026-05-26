@@ -61,21 +61,19 @@ export async function POST(req: NextRequest) {
   const voice        = ctx.personaVoice;
 
   // GA Realtime API: POST /v1/realtime/client_secrets
-  // session config nested inside `session` key; response has `value` (the ek_... token)
+  // Session fields must be flat (Realtime session object format), not nested under audio.*
   const clientSecretBody = {
     expires_after: { anchor: "created_at", seconds: SESSION_TTL_SECONDS },
     session: {
-      type:         "realtime",
-      model:        VOICE_MODEL,
+      model:                     VOICE_MODEL,
+      modalities:                ["audio", "text"],
       instructions,
-      tools:        [...REALTIME_TOOLS],
-      audio: {
-        input: {
-          transcription: { model: "gpt-4o-mini-transcribe" },
-          turn_detection: DEFAULT_VAD,
-        },
-        output: { voice },
-      },
+      voice,
+      input_audio_format:        "pcm16",
+      output_audio_format:       "pcm16",
+      input_audio_transcription: { model: "whisper-1" },
+      turn_detection:            DEFAULT_VAD,
+      tools:                     [...REALTIME_TOOLS],
     },
   };
 

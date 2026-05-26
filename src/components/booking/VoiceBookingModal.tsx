@@ -200,11 +200,10 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         const body = await sessRes.json().catch(() => ({})) as Record<string, string>;
         throw new Error(body.error ?? `session_init_${sessRes.status}`);
       }
-      const { ephemeralKey, model: realtimeModel, sessionId, voice } = await sessRes.json() as {
+      const { ephemeralKey, model: realtimeModel, sessionId } = await sessRes.json() as {
         ephemeralKey:  string;
         model:         string;
         sessionId:     string | null;
-        voice:         string;
       };
       sessionIdRef.current = sessionId;
 
@@ -229,25 +228,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       wsRef.current = ws;
 
       ws.onopen = () => {
-        // Configure session
-        ws.send(JSON.stringify({
-          type: "session.update",
-          session: {
-            voice,
-            modalities:                ["audio", "text"],
-            input_audio_format:        "pcm16",
-            output_audio_format:       "pcm16",
-            input_audio_transcription: { model: "gpt-4o-mini-transcribe" },
-            turn_detection: {
-              type:                "server_vad",
-              threshold:           0.45,
-              prefix_padding_ms:   200,
-              silence_duration_ms: 700,
-            },
-          },
-        }));
-
-        // Start streaming mic audio
+        // Session was fully configured server-side via client_secrets — just start streaming
         const source    = audioCtx.createMediaStreamSource(stream);
         const processor = audioCtx.createScriptProcessor(4096, 1, 1);
         processorRef.current = processor;
