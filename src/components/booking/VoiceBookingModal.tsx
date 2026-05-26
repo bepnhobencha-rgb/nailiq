@@ -124,9 +124,8 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       }
     }
 
-    if (type === "response.audio.delta") {
+    if (type === "response.output_audio.delta" || type === "response.audio.delta") {
       const delta = ev.delta as string | undefined;
-      console.log("[voice/ws] audio delta received, length:", delta?.length ?? 0);
       if (!delta || !audioCtxRef.current) return;
       void audioCtxRef.current.resume();
       const ctx = audioCtxRef.current;
@@ -158,12 +157,21 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       }
     }
 
-    if (type === "response.function_call_arguments.done") {
-      const name    = ev.name    as string | undefined;
-      const call_id = ev.call_id as string | undefined;
+    // Handle function calls — gpt-realtime-2 may use output_ prefix or item.done
+    const isFunctionCallDone =
+      type === "response.function_call_arguments.done" ||
+      type === "response.output_function_call_arguments.done" ||
+      (type === "response.output_item.done" && (ev.item as { type?: string } | undefined)?.type === "function_call");
+
+    if (isFunctionCallDone) {
+      // Normalise: item.done wraps args differently
+      const item = ev.item as { name?: string; call_id?: string; arguments?: string } | undefined;
+      const name    = (ev.name    as string | undefined) ?? item?.name;
+      const call_id = (ev.call_id as string | undefined) ?? item?.call_id;
+      const rawArgs = (ev.arguments as string | undefined) ?? item?.arguments ?? "{}";
       if (!name || !call_id) return;
       let args: Record<string, unknown> = {};
-      try { args = JSON.parse(ev.arguments as string ?? "{}") as Record<string, unknown>; } catch { /* ignore */ }
+      try { args = JSON.parse(rawArgs) as Record<string, unknown>; } catch { /* ignore */ }
 
       fetch("/api/voice/tool", {
         method:  "POST",
