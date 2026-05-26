@@ -135,6 +135,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     ephemeralKey,
+    model:           VOICE_MODEL,
     sessionId:       sessionRow?.id ?? null,
     expiresAt:       parsed.expires_at ?? Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
     openaiSessionId: openaiSessionId ?? null,
