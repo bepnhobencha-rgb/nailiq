@@ -69,9 +69,9 @@ export async function POST(req: NextRequest) {
     voice,
     instructions,
     tools:        [...REALTIME_TOOLS],
-    input_audio_transcription: { model: "gpt-4o-mini-transcribe" },
+    input_audio_transcription: { model: "whisper-1" },
     turn_detection: DEFAULT_VAD,
-    // reasoning_effort only applies to o-series models — ignore for gpt-realtime-2
+    // reasoning_effort only applies to o-series models
     ...(VOICE_MODEL.startsWith("o") ? { reasoning_effort: effort } : {}),
   };
 
