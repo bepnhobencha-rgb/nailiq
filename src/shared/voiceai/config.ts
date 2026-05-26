@@ -1,6 +1,7 @@
 /** Voice AI configuration constants */
 
-export const VOICE_MODEL = "gpt-4o-realtime-preview";
+// gpt-4o-realtime-preview* removed 2026-05-07; GA successor is gpt-realtime-2
+export const VOICE_MODEL = "gpt-realtime-2";
 
 /** GA endpoint for minting ephemeral client secrets (ek_...) */
 export const OPENAI_CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets";
