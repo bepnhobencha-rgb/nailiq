@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
   if (!res.ok || !body.trim()) {
     const resHeaders: Record<string, string> = {};
     res.headers.forEach((v, k) => { resHeaders[k] = v; });
+    console.error("[voice/sdp] exchange failed", { status: res.status, body, url, model: VOICE_MODEL });
     return NextResponse.json(
       { error: "sdp_exchange_failed", openai_status: res.status, openai_body: body, openai_headers: resHeaders, model: VOICE_MODEL, url },
       { status: 502 },
