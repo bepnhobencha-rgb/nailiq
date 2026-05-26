@@ -1,32 +1,25 @@
 /**
- * GA WebRTC pattern — server creates an ephemeral key, client does SDP directly.
+ * GA WebRTC pattern — server mints ephemeral key, client does SDP directly.
  *
  * Flow:
- *   1. Client calls POST /api/voice/session → gets ephemeral_key
+ *   1. POST /api/voice/session → ephemeral_key (ek_...)
  *   2. Client creates RTCPeerConnection + SDP offer
- *   3. Client POSTs SDP offer directly to OpenAI:
- *        POST https://api.openai.com/v1/realtime?model=...
- *        Authorization: Bearer <ephemeral_key>   ← NOT the main API key
- *        Content-Type: application/sdp
- *   4. Client receives SDP answer + sets remote description
- *   5. Data channel opens → session is live
- *
- * Server-proxy SDP (the old /api/voice/sdp route) used the main API key and
- * triggers beta_api_shape_disabled. This ephemeral-key approach is the
- * documented GA pattern per the OpenAI SDK.
+ *   3. Client POSTs SDP to https://api.openai.com/v1/realtime?model=...
+ *      with Authorization: Bearer <ephemeral_key>
+ *   4. SDP answer received → setRemoteDescription
+ *   5. Data channel opens → session.update → live
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { buildVoiceSystemPrompt } from "@/shared/voice/buildSystemPrompt";
 import { VOICE_TOOLS } from "@/shared/voice/tools";
-import { REALTIME_CONFIG, validateRealtimeConfig } from "@/config/realtime";
+import { REALTIME_CONFIG } from "@/config/realtime";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-validateRealtimeConfig();
+const SESSIONS_ENDPOINT = "https://api.openai.com/v1/realtime/sessions";
 
 function serializeException(err: unknown): Record<string, unknown> {
   if (err instanceof Error) {
@@ -66,10 +59,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "missing_salon_slug" }, { status: 400 });
     }
 
-    console.info(
-      `[voice/session] request: salon=${salon_slug} lang=${language} model=${REALTIME_CONFIG.model}`,
-    );
-
     // ── Salon config ──────────────────────────────────────────────────────────
     const isDemo =
       salon_slug === "demo" ||
@@ -82,7 +71,6 @@ export async function POST(req: NextRequest) {
 
     if (isDemo) {
       phase = "demo_bypass";
-      console.info("[voice/session] DEMO mode — skipping Supabase");
       instructions =
         "You are a helpful nail salon receptionist for a demo salon. " +
         "Answer questions about nail services and help with appointment scheduling. " +
@@ -144,47 +132,75 @@ export async function POST(req: NextRequest) {
       tools = VOICE_TOOLS;
     }
 
-    // ── Create ephemeral token via OpenAI SDK ─────────────────────────────────
+    // ── Mint ephemeral token — raw fetch, minimal GA payload ──────────────────
     phase = "create_ephemeral_token";
 
-    const openai = new OpenAI({ apiKey });
-
-    // GA ephemeral session payload — minimal valid fields only.
-    // DO NOT include beta-era fields: modalities, input_audio_format,
-    // output_audio_format, input_audio_transcription — those go in
+    // Start with the absolute minimum: just model.
+    // All other config (voice, instructions, tools, etc.) is sent via
     // session.update after the data channel opens.
     const sessionPayload = {
-      type: "realtime",
-      model: REALTIME_CONFIG.model as string,
-      instructions,
-      voice: REALTIME_CONFIG.voice as string,
-      turn_detection: {
-        type: "server_vad",
-        threshold: REALTIME_CONFIG.vad.threshold,
-        prefix_padding_ms: REALTIME_CONFIG.vad.prefixPaddingMs,
-        silence_duration_ms: REALTIME_CONFIG.vad.silenceDurationMs,
-      },
-      tools: (tools as unknown) as unknown[],
-      tool_choice: tools.length > 0 ? "auto" : "none",
-      temperature: REALTIME_CONFIG.temperature,
+      model: REALTIME_CONFIG.model,
     };
 
-    console.info("[voice/session] ephemeral session payload", JSON.stringify(sessionPayload, null, 2));
+    console.info("[voice/session] POST", SESSIONS_ENDPOINT, JSON.stringify(sessionPayload));
 
-    const session = await openai.realtime.clientSecrets.create({
-      session: sessionPayload as unknown as Parameters<typeof openai.realtime.clientSecrets.create>[0]["session"],
+    const openaiRes = await fetch(SESSIONS_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(sessionPayload),
     });
+
+    const rawBody = await openaiRes.text();
+    console.info(
+      `[voice/session] OpenAI response: status=${openaiRes.status} body=${rawBody}`,
+    );
+
+    if (!openaiRes.ok) {
+      return NextResponse.json(
+        {
+          error: "session_create_failed",
+          openai_status: openaiRes.status,
+          openai_body: rawBody,
+          payload_sent: sessionPayload,
+          phase,
+        },
+        { status: 502 },
+      );
+    }
+
+    const data = JSON.parse(rawBody) as {
+      client_secret?: { value?: string; expires_at?: number };
+      id?: string;
+      expires_at?: number;
+    };
+
+    // GA response shape: { client_secret: { value: "ek_...", expires_at: ... } }
+    const ephemeral_key = data.client_secret?.value;
+    const expires_at = data.client_secret?.expires_at ?? data.expires_at;
+
+    if (!ephemeral_key) {
+      return NextResponse.json(
+        {
+          error: "no_ephemeral_key",
+          openai_response: data,
+          phase,
+        },
+        { status: 502 },
+      );
+    }
 
     const latencyMs = Date.now() - t0;
     console.info(
-      `[voice/session] ephemeral key created: expires_at=${session.expires_at} latency=${latencyMs}ms`,
+      `[voice/session] ephemeral key minted: expires_at=${expires_at} latency=${latencyMs}ms`,
     );
 
     return NextResponse.json({
-      // Ephemeral key — client uses this for SDP exchange directly with OpenAI
-      ephemeral_key: session.value,
-      expires_at: session.expires_at,
-      // Config the client needs for session.update after DC opens
+      ephemeral_key,
+      expires_at,
+      // Client uses this for session.update after data channel opens
       session_config: {
         model: REALTIME_CONFIG.model,
         voice: REALTIME_CONFIG.voice,
