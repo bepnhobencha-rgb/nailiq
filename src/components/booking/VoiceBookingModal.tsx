@@ -250,6 +250,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         ws.send(JSON.stringify({
           type: "session.update",
           session: {
+            type:                "realtime",
             modalities:          ["audio", "text"],
             input_audio_format:  "pcm16",
             output_audio_format: "pcm16",
