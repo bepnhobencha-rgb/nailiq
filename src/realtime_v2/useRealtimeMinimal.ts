@@ -184,12 +184,28 @@ export function useRealtimeMinimal(): UseRealtimeMinimalReturn {
 
       if (!sdpRes.ok) {
         const rawBody = await sdpRes.text();
-        let parsed: unknown;
-        try { parsed = JSON.parse(rawBody); } catch { parsed = rawBody; }
-        addLog("sdp.error", {
-          http_status: sdpRes.status,
-          body: parsed,
-        });
+        let parsed: Record<string, unknown> | null = null;
+        try { parsed = JSON.parse(rawBody) as Record<string, unknown>; } catch { /* non-JSON */ }
+
+        const sdpErrorPayload = {
+          // proxy response
+          proxy_http_status:  sdpRes.status,
+          proxy_http_text:    sdpRes.statusText,
+          proxy_endpoint:     "/api/realtime/sdp",
+          proxy_raw_body:     rawBody,
+          // openai fields forwarded by proxy
+          openai_status:      parsed?.openai_status  ?? null,
+          openai_body:        parsed?.openai_body    ?? null,
+          openai_headers:     parsed?.openai_headers ?? null,
+          openai_model:       parsed?.model          ?? REALTIME_MODEL,
+          openai_url:         parsed?.url            ?? null,
+          // request context
+          sdp_offer_bytes:    offer.sdp?.length ?? 0,
+          model:              REALTIME_MODEL,
+        };
+
+        console.error("[RealtimeV2][SDP_ERROR]", sdpErrorPayload);
+        addLog("sdp.error", sdpErrorPayload);
         throw new Error(`sdp_exchange_failed:${sdpRes.status}`);
       }
 
