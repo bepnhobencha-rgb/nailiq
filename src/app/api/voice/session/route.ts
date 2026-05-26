@@ -19,7 +19,8 @@ import { REALTIME_CONFIG } from "@/config/realtime";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const SESSIONS_ENDPOINT = "https://api.openai.com/v1/realtime/sessions";
+// GA endpoint for minting ephemeral keys — NOT /v1/realtime/sessions (that's the beta path)
+const CLIENT_SECRETS_ENDPOINT = "https://api.openai.com/v1/realtime/client_secrets";
 
 function serializeException(err: unknown): Record<string, unknown> {
   if (err instanceof Error) {
@@ -132,19 +133,22 @@ export async function POST(req: NextRequest) {
       tools = VOICE_TOOLS;
     }
 
-    // ── Mint ephemeral token — raw fetch, minimal GA payload ──────────────────
+    // ── Mint ephemeral token via GA endpoint ──────────────────────────────────
     phase = "create_ephemeral_token";
 
-    // Start with the absolute minimum: just model.
-    // All other config (voice, instructions, tools, etc.) is sent via
-    // session.update after the data channel opens.
+    // GA endpoint: POST /v1/realtime/client_secrets
+    // Payload:   { session: { type: "realtime", model: "..." } }
+    // Response:  { value: "ek_...", expires_at: ..., session: {...} }
     const sessionPayload = {
-      model: REALTIME_CONFIG.model,
+      session: {
+        type: "realtime",
+        model: REALTIME_CONFIG.model,
+      },
     };
 
-    console.info("[voice/session] POST", SESSIONS_ENDPOINT, JSON.stringify(sessionPayload));
+    console.info("[voice/session] POST", CLIENT_SECRETS_ENDPOINT, JSON.stringify(sessionPayload));
 
-    const openaiRes = await fetch(SESSIONS_ENDPOINT, {
+    const openaiRes = await fetch(CLIENT_SECRETS_ENDPOINT, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
@@ -172,14 +176,14 @@ export async function POST(req: NextRequest) {
     }
 
     const data = JSON.parse(rawBody) as {
-      client_secret?: { value?: string; expires_at?: number };
-      id?: string;
+      value?: string;       // ephemeral key "ek_..."
       expires_at?: number;
+      session?: unknown;
     };
 
-    // GA response shape: { client_secret: { value: "ek_...", expires_at: ... } }
-    const ephemeral_key = data.client_secret?.value;
-    const expires_at = data.client_secret?.expires_at ?? data.expires_at;
+    // GA response shape: { value: "ek_...", expires_at: ..., session: {...} }
+    const ephemeral_key = data.value;
+    const expires_at = data.expires_at;
 
     if (!ephemeral_key) {
       return NextResponse.json(
