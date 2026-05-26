@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let parsed: { value?: string; expires_at?: number; session?: { id?: string } };
+  let parsed: { value?: string; expires_at?: number; session?: { id?: string; model?: string } };
   try {
     parsed = JSON.parse(oaiBody) as typeof parsed;
   } catch {
@@ -108,6 +108,8 @@ export async function POST(req: NextRequest) {
 
   const ephemeralKey    = parsed.value;
   const openaiSessionId = parsed.session?.id;
+  // Use the model OpenAI resolved — may differ from the alias we requested
+  const resolvedModel   = parsed.session?.model ?? VOICE_MODEL;
   if (!ephemeralKey) {
     return NextResponse.json({ error: "missing_ephemeral_key", raw: oaiBody }, { status: 502 });
   }
@@ -135,7 +137,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     ephemeralKey,
-    model:           VOICE_MODEL,
+    model:           resolvedModel,
     sessionId:       sessionRow?.id ?? null,
     expiresAt:       parsed.expires_at ?? Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
     openaiSessionId: openaiSessionId ?? null,
