@@ -214,10 +214,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         const body = await sessRes.json().catch(() => ({})) as Record<string, string>;
         throw new Error(body.error ?? `session_init_${sessRes.status}`);
       }
-      const { ephemeralKey, model: realtimeModel, sessionId } = await sessRes.json() as {
+      const { ephemeralKey, model: realtimeModel, sessionId, voice } = await sessRes.json() as {
         ephemeralKey:  string;
         model:         string;
         sessionId:     string | null;
+        voice:         string;
       };
       sessionIdRef.current = sessionId;
 
@@ -247,7 +248,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
 
         // Ensure audio modalities + formats are set — client_secrets nested
         // audio.* schema may not carry these through for gpt-realtime-2
-        // gpt-realtime-2 GA schema: output_modalities + audio.input/output nested
+        // Set all audio config here — client_secrets only carries instructions/tools/model
         ws.send(JSON.stringify({
           type: "session.update",
           session: {
@@ -255,7 +256,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             output_modalities: ["audio"],
             audio: {
               input:  { format: "pcm16", turn_detection: { type: "semantic_vad", interrupt_response: true } },
-              output: { format: "pcm16" },
+              output: { format: "pcm16", voice },
             },
           },
         }));
