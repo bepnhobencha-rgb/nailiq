@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useVoiceDebug } from "@/hooks/useVoiceDebug";
-import type { DebugMode, LoggedEvent, RegressionResult } from "@/hooks/useVoiceDebug";
+import { useVoiceDebug } from "@/hooks/useVoiceDebug.legacy";
+import type { DebugMode, LoggedEvent, RegressionResult } from "@/hooks/useVoiceDebug.legacy";
 import { BUILT_IN_TESTS } from "./regression-tests";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

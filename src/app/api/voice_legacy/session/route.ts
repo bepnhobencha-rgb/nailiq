@@ -6,7 +6,7 @@ import { VOICE_TOOLS } from "@/shared/voice/tools";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const OPENAI_SESSIONS_URL = "https://api.openai.com/v1/realtime/sessions";
+const OPENAI_CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets";
 const REALTIME_MODEL    = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2025-08-28";
 const REALTIME_VOICE    = process.env.OPENAI_REALTIME_VOICE ?? "shimmer";
 
@@ -58,11 +58,11 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Mint ephemeral token ──────────────────────────────────────────────────
-  // GA endpoint: POST /v1/realtime/sessions — minimal payload only
+  // GA endpoint: POST /v1/realtime/client_secrets — response: { value, expires_at, session }
   const payload = { model: REALTIME_MODEL };
-  console.info("[voice/session] POST", OPENAI_SESSIONS_URL, JSON.stringify(payload));
+  console.info("[voice/session] POST", OPENAI_CLIENT_SECRETS_URL, JSON.stringify(payload));
 
-  const res = await fetch(OPENAI_SESSIONS_URL, {
+  const res = await fetch(OPENAI_CLIENT_SECRETS_URL, {
     method: "POST",
     headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -78,13 +78,13 @@ export async function POST(req: NextRequest) {
   }
 
   const data = JSON.parse(raw) as {
-    id?: string;
-    client_secret?: { value?: string; expires_at?: number };
+    value?: string;
     expires_at?: number;
+    session?: unknown;
   };
 
-  const ephemeral_key = data.client_secret?.value;
-  const expires_at    = data.client_secret?.expires_at ?? data.expires_at;
+  const ephemeral_key = data.value;
+  const expires_at    = data.expires_at;
 
   if (!ephemeral_key) {
     return NextResponse.json({ error: "no_ephemeral_key", openai_response: data }, { status: 502 });

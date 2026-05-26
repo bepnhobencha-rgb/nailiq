@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRealtimeVoice, type VoiceCallStatus, type LatencySnapshot } from "@/hooks/useRealtimeVoice";
+import { useRealtimeVoice, type VoiceCallStatus, type LatencySnapshot } from "@/hooks/useRealtimeVoice.legacy";
 import type { BookingResult } from "@/shared/booking/submitPublicBooking";
 
 type Props = {

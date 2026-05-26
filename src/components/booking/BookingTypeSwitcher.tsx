@@ -11,7 +11,7 @@ import type {
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { BookingFlow } from "@/components/booking/BookingFlow";
 import { BookingGroupFlow } from "@/components/booking/BookingGroupFlow";
-import { RealtimeVoiceCall } from "@/components/booking/RealtimeVoiceCall";
+import { RealtimeVoiceCall } from "@/components/booking/RealtimeVoiceCall.legacy";
 import { cn } from "@/shared/lib/cn";
 
 /** QA round-2: group bookings need at least N distinct staff free at

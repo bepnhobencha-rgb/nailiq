@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { REALTIME_MODEL, REALTIME_VOICE, REALTIME_TRANSCRIPTION_MODEL, REALTIME_VAD } from "@/config/realtime";
+import { REALTIME_MODEL, REALTIME_VOICE, REALTIME_TRANSCRIPTION_MODEL, REALTIME_VAD } from "@/config/realtime.legacy";
 import { VOICE_TOOLS } from "@/shared/voice/tools";
 
 // ─── Error serialization ────────────────────────────────────────────────────

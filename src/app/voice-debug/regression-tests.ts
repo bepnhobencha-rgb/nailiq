@@ -1,4 +1,4 @@
-import type { RegressionTest } from "@/hooks/useVoiceDebug";
+import type { RegressionTest } from "@/hooks/useVoiceDebug.legacy";
 
 export const BUILT_IN_TESTS: RegressionTest[] = [
   // ── Slot lookup tests ────────────────────────────────────────────────────

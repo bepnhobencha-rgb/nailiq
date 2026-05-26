@@ -6,7 +6,7 @@ import {
   type BookingResult,
 } from "@/shared/booking/submitPublicBooking";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
-import { REALTIME_MODEL, REALTIME_VOICE, REALTIME_TRANSCRIPTION_MODEL, REALTIME_VAD } from "@/config/realtime";
+import { REALTIME_MODEL, REALTIME_VOICE, REALTIME_TRANSCRIPTION_MODEL, REALTIME_VAD } from "@/config/realtime.legacy";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
