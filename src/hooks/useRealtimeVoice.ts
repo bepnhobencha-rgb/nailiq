@@ -470,27 +470,29 @@ export function useRealtimeVoice(params: {
       await pc.setLocalDescription(offer);
       console.info("[voice-connect] sdp_offer_created", { bytes: offer.sdp?.length ?? 0 });
 
-      // Phase 3b: SDP exchange directly with OpenAI using ephemeral key
-      const openaiSdpUrl = `https://api.openai.com/v1/realtime?model=${REALTIME_CONFIG.model}`;
-      console.info("[voice-connect] sdp_exchange_start", { endpoint: openaiSdpUrl, key_type: "ephemeral" });
-      const sdpRes = await fetch(openaiSdpUrl, {
+      // Phase 3b: SDP exchange via server proxy — browser CORS blocks direct
+      // application/sdp fetch to api.openai.com; server forwards using ephemeral key.
+      console.info("[voice-connect] sdp_exchange_start", { proxy: "/api/voice/sdp", model: REALTIME_CONFIG.model });
+      const sdpRes = await fetch("/api/voice/sdp", {
         method: "POST",
-        headers: {
-          "Authorization": `Bearer ${ephemeral_key}`,
-          "Content-Type": "application/sdp",
-        },
-        body: offer.sdp,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ephemeral_key, sdp_offer: offer.sdp }),
       });
 
       if (!sdpRes.ok) {
         const rawBody = await sdpRes.text();
         let parsedErr: Record<string, unknown> = {};
         try { parsedErr = JSON.parse(rawBody) as Record<string, unknown>; } catch { /* non-JSON */ }
-        console.error("[voice-error] sdp_exchange_failed", { status: sdpRes.status, body: rawBody });
-        throw new Error(String((parsedErr?.error as Record<string, unknown>)?.code ?? parsedErr?.error ?? "sdp_exchange_failed"));
+        console.error("[voice-error] sdp_exchange_failed", {
+          status: sdpRes.status,
+          error: parsedErr.error,
+          openai_status: parsedErr.openai_status,
+          openai_body: parsedErr.openai_body,
+        });
+        throw new Error(String(parsedErr?.error ?? "sdp_exchange_failed"));
       }
 
-      const sdp_answer = await sdpRes.text();
+      const { sdp_answer } = await sdpRes.json() as { sdp_answer: string };
       console.info("[voice-connect] sdp_answer_received", { bytes: sdp_answer.length });
 
       await pc.setRemoteDescription({ type: "answer", sdp: sdp_answer });

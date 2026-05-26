@@ -476,48 +476,46 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
       await pc.setLocalDescription(offer);
       logEvent("system", "sdp.offer", { bytes: offer.sdp?.length ?? 0 });
 
-      const openaiSdpUrl = `${REALTIME_CONFIG.sdpEndpoint}?model=${REALTIME_CONFIG.model}`;
-      logEvent("system", "sdp.exchange", { endpoint: openaiSdpUrl, model: REALTIME_CONFIG.model, key_type: "ephemeral" });
+      // Proxy SDP through our server — browser can't fetch application/sdp
+      // directly to api.openai.com (CORS preflight blocked).
+      logEvent("system", "sdp.exchange", {
+        proxy: "/api/voice/sdp",
+        openai_endpoint: `${REALTIME_CONFIG.sdpEndpoint}?model=${REALTIME_CONFIG.model}`,
+        model: REALTIME_CONFIG.model,
+        key_type: "ephemeral",
+        sdp_bytes: offer.sdp?.length ?? 0,
+      });
 
-      const sdpRes = await fetch(openaiSdpUrl, {
+      const sdpRes = await fetch("/api/voice/sdp", {
         method: "POST",
-        headers: {
-          "Authorization": `Bearer ${ephemeral_key}`,
-          "Content-Type": "application/sdp",
-        },
-        body: offer.sdp,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ephemeral_key, sdp_offer: offer.sdp }),
       });
 
       if (!sdpRes.ok) {
         const rawBody = await sdpRes.text();
         let parsedBody: Record<string, unknown> | null = null;
-        try { parsedBody = JSON.parse(rawBody) as Record<string, unknown>; } catch { /* non-JSON body */ }
+        try { parsedBody = JSON.parse(rawBody) as Record<string, unknown>; } catch { /* non-JSON */ }
         const sdpErrPayload: Record<string, unknown> = {
           http_status: sdpRes.status,
           http_status_text: sdpRes.statusText,
           raw_body: rawBody,
           parsed_body: parsedBody,
-          openai_error: parsedBody?.error ?? null,
-          model_used: REALTIME_CONFIG.model,
-          openai_endpoint: openaiSdpUrl,
-          key_type: "ephemeral",
-          request_salon: shopSlug,
-          request_language: language,
+          openai_status: parsedBody?.openai_status ?? null,
+          openai_body: parsedBody?.openai_body ?? null,
+          model: REALTIME_CONFIG.model,
+          proxy_endpoint: "/api/voice/sdp",
           sdp_offer_bytes: offer.sdp?.length ?? 0,
         };
         logEvent("system", "sdp.error", sdpErrPayload);
-        const errorCode = String(
-          (parsedBody?.error as Record<string, unknown>)?.code
-          ?? parsedBody?.error
-          ?? "sdp_exchange_failed"
-        );
+        const errorCode = String(parsedBody?.error ?? "sdp_exchange_failed");
         const thrown = new Error(errorCode);
         (thrown as unknown as Record<string, unknown>)._sdpPayload = sdpErrPayload;
         throw thrown;
       }
 
-      const sdp_answer = await sdpRes.text();
-      logEvent("system", "sdp.answer", { bytes: sdp_answer.length, content_type: sdpRes.headers.get("content-type") });
+      const { sdp_answer } = await sdpRes.json() as { sdp_answer: string };
+      logEvent("system", "sdp.answer", { bytes: sdp_answer.length });
 
       await pc.setRemoteDescription({ type: "answer", sdp: sdp_answer });
       logEvent("system", "sdp.complete", {});
