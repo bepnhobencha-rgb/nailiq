@@ -179,7 +179,13 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     }
 
     if (type === "error") {
-      console.error("[voice/ws] server error:", ev);
+      const errObj = ev.error as { code?: string; message?: string; type?: string } | undefined;
+      const msg = errObj?.message ?? errObj?.code ?? errObj?.type ?? JSON.stringify(ev);
+      console.error("[voice/ws] server error full:", JSON.stringify(ev));
+      setError(msg);
+      statusRef.current = "error";
+      setStatus("error");
+      cleanup();
     }
   }, []);
 
