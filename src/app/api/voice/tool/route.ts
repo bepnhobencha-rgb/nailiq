@@ -53,7 +53,7 @@ async function handleGetAvailableSlots(
   // Load salon + service + staff
   const { data: salon } = await supabase
     .from("salons")
-    .select("id, hours, closed_dates")
+    .select("id, opening_hours, booking_closed_dates")
     .eq("slug", salonSlug)
     .single();
   if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
@@ -89,7 +89,9 @@ async function handleGetAvailableSlots(
   });
 
   // Check opening hours are parseable
-  const week = parseOpeningHours(salon.hours);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const salonAny = salon as any;
+  const week = parseOpeningHours(salonAny.opening_hours);
   if (!week) return NextResponse.json({ slots: [], reason: "invalid_hours_config" });
 
   const staffList = (staffRows ?? []).map((s) => ({
@@ -99,7 +101,7 @@ async function handleGetAvailableSlots(
   }));
 
   const slots = computeTimeSlots({
-    openingHoursRaw:        salon.hours,
+    openingHoursRaw:        salonAny.opening_hours,
     selectedDate,
     staffId:                staffId === "any" ? BOOKING_ANY_STAFF_ID : staffId,
     staffList,
@@ -132,7 +134,7 @@ async function handleConfirmBooking(
   // Load salon
   const { data: salon } = await supabase
     .from("salons")
-    .select("id, timezone, hours, closed_dates")
+    .select("id, timezone, opening_hours, booking_closed_dates")
     .eq("slug", salonSlug)
     .single();
   if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });

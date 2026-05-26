@@ -26,7 +26,7 @@ export async function loadSalonContext(salonSlug: string): Promise<SalonVoiceCon
 
   const { data: salon } = await supabase
     .from("salons")
-    .select("id, name, timezone, address, hours, voice_ai_persona_name, voice_ai_persona_voice, voice_ai_reasoning_effort")
+    .select("id, name, timezone, address, opening_hours, voice_ai_persona_name, voice_ai_persona_voice, voice_ai_reasoning_effort")
     .eq("slug", salonSlug)
     .single();
 
@@ -60,7 +60,7 @@ export async function loadSalonContext(salonSlug: string): Promise<SalonVoiceCon
     personaName:     s.voice_ai_persona_name      ?? "Lily",
     personaVoice:    s.voice_ai_persona_voice      ?? "marin",
     reasoningEffort: s.voice_ai_reasoning_effort   ?? "low",
-    businessHours:   salon.hours,
+    businessHours:   s.opening_hours,
     services: (services ?? []).map((svc) => ({
       id:           svc.id,
       name:         svc.name,
