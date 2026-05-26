@@ -106,7 +106,6 @@ export type UseVoiceDebugReturn = {
 };
 
 type RealtimeEvent = { type: string; [key: string]: unknown };
-type SessionConfig = { instructions: string; voice: string; tools: unknown[] };
 
 // ─── Hook ──────────────────────────────────────────────────────────────────
 
@@ -127,7 +126,6 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
   const dcRef = useRef<RTCDataChannel | null>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
-  const sessionConfigRef = useRef<SessionConfig | null>(null);
   const confirmedRef = useRef(false);
   const hasGreetedRef = useRef(false);
   const sessionStartRef = useRef<number>(0);
@@ -320,7 +318,6 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
     speechStartedAtRef.current = null;
     speechStoppedAtRef.current = null;
     firstAudioDeltaRef.current = false;
-    sessionConfigRef.current = null;
     sessionExportRef.current = {
       id: sessionIdRef.current,
       mode: modeRef.current,
@@ -351,47 +348,8 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
       micStreamRef.current = micStream;
       logEvent("system", "mic.granted", { tracks: micStream.getAudioTracks().length });
 
-      // ── Step 1: Get ephemeral key from our server ──────────────────────────
+      // ── Set up WebRTC peer connection ──────────────────────────────────────
       setStatus("connecting_openai");
-      logEvent("system", "session.request", { salon: shopSlug, language, model: REALTIME_MODEL });
-
-      const sessionRes = await fetch("/api/voice/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ salon_slug: shopSlug, language }),
-      });
-
-      if (!sessionRes.ok) {
-        const rawBody = await sessionRes.text();
-        let parsedBody: Record<string, unknown> | null = null;
-        try { parsedBody = JSON.parse(rawBody) as Record<string, unknown>; } catch { /* non-JSON */ }
-        const sessionErrPayload: Record<string, unknown> = {
-          http_status: sessionRes.status,
-          http_status_text: sessionRes.statusText,
-          raw_body: rawBody,
-          parsed_body: parsedBody,
-          error_code: parsedBody?.error ?? "session_create_failed",
-          endpoint: "/api/voice/session",
-          model: REALTIME_MODEL,
-          request_salon: shopSlug,
-          request_language: language,
-        };
-        logEvent("system", "session.error", sessionErrPayload);
-        const thrown = new Error(String(parsedBody?.error ?? "session_create_failed"));
-        (thrown as unknown as Record<string, unknown>)._sessionPayload = sessionErrPayload;
-        throw thrown;
-      }
-
-      const { ephemeral_key, expires_at, session_config, salon } = await sessionRes.json() as {
-        ephemeral_key: string;
-        expires_at: number;
-        session_config: SessionConfig;
-        salon: { name: string; slug: string; timezone: string };
-      };
-      logEvent("system", "session.ready", { expires_at, salon: salon.name, model: REALTIME_MODEL, key_prefix: ephemeral_key.slice(0, 8) + "…" });
-      sessionConfigRef.current = session_config;
-
-      // ── Step 2: Set up WebRTC peer connection ──────────────────────────────
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
 
@@ -430,15 +388,13 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
         logEvent("system", "dc.open", {});
         updateConnStats();
 
-        const cfg = sessionConfigRef.current;
-        const tools = modeRef.current === "safe" ? [] : (cfg?.tools ?? []);
+        const tools = modeRef.current === "safe" ? [] : VOICE_TOOLS;
         const toolChoice = modeRef.current === "safe" ? "none" : "auto";
-        const sessionUpdate = {
+        sendEvent({
           type: "session.update",
           session: {
             modalities: ["audio", "text"],
-            instructions: cfg?.instructions ?? "You are a helpful assistant.",
-            voice: cfg?.voice ?? REALTIME_VOICE,
+            voice: REALTIME_VOICE,
             input_audio_format: "pcm16",
             output_audio_format: "pcm16",
             input_audio_transcription: { model: REALTIME_TRANSCRIPTION_MODEL },
@@ -452,8 +408,7 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
             tool_choice: toolChoice,
             temperature: 0.7,
           },
-        };
-        sendEvent(sessionUpdate);
+        });
         setStatus("ready");
       };
 
@@ -470,26 +425,24 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
         if (!confirmedRef.current) setStatus("ended");
       };
 
-      // ── Step 3: SDP exchange directly with OpenAI using ephemeral key ──────
+      // ── SDP exchange via server proxy ──────────────────────────────────────
       setStatus("connecting_dc");
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       logEvent("system", "sdp.offer", { bytes: offer.sdp?.length ?? 0 });
 
-      // Proxy SDP through our server — browser can't fetch application/sdp
-      // directly to api.openai.com (CORS preflight blocked).
       logEvent("system", "sdp.exchange", {
         proxy: "/api/voice/sdp",
-        openai_endpoint: `${`https://api.openai.com/v1/realtime`}?model=${REALTIME_MODEL}`,
+        openai_endpoint: `https://api.openai.com/v1/realtime?model=${REALTIME_MODEL}`,
         model: REALTIME_MODEL,
-        key_type: "ephemeral",
+        key_type: "main_api_key",
         sdp_bytes: offer.sdp?.length ?? 0,
       });
 
       const sdpRes = await fetch("/api/voice/sdp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ephemeral_key, sdp_offer: offer.sdp }),
+        body: JSON.stringify({ sdp_offer: offer.sdp }),
       });
 
       if (!sdpRes.ok) {
@@ -524,25 +477,20 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
       const serialized = serializeError(err);
       const errName = String(serialized.name ?? "");
       const errMsg = String(serialized.message ?? "unknown");
-      const sdpPayload = (err as Record<string, unknown>)._sdpPayload ?? null;
-      const sessionPayload = (err as Record<string, unknown>)._sessionPayload ?? null;
-      const anyPayload = (sdpPayload ?? sessionPayload) as Record<string, unknown> | null;
+      const sdpPayload = (err as Record<string, unknown>)._sdpPayload as Record<string, unknown> | null ?? null;
       const code =
         errName === "NotAllowedError" ? "mic_denied"
         : errName === "NotFoundError" ? "mic_not_found"
         : errName === "NotReadableError" ? "mic_in_use"
         : errMsg === "insecure_context" ? "insecure_context"
-        : errMsg === "salon_not_found" ? "salon_not_found"
         : errMsg;
       logEvent("system", "connect.error", {
         code,
         error: serialized,
-        http_status: anyPayload?.http_status ?? null,
-        raw_body: anyPayload?.raw_body ?? null,
-        openai_error: anyPayload?.openai_error ?? null,
-        model: anyPayload?.model ?? REALTIME_MODEL,
+        http_status: sdpPayload?.http_status ?? null,
+        raw_body: sdpPayload?.raw_body ?? null,
+        model: REALTIME_MODEL,
         sdp_payload: sdpPayload,
-        session_payload: sessionPayload,
       });
       setErrorMessage(code);
       setStatus("error");

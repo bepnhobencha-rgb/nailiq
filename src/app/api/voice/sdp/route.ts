@@ -4,27 +4,25 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const REALTIME_MODEL   = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2025-08-28";
-const OPENAI_SDP_HOST  = "api.openai.com";
-const OPENAI_SDP_PATH  = `/v1/realtime?model=${REALTIME_MODEL}`;
+const MODEL    = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2025-08-28";
+const SDP_HOST = "api.openai.com";
+const SDP_PATH = `/v1/realtime?model=${MODEL}`;
 
-/** Raw HTTPS POST — bypasses all fetch wrappers. Sends exactly the headers provided. */
 function rawPost(
   host: string, path: string,
-  headers: Record<string, string>,
+  reqHeaders: Record<string, string>,
   body: string,
 ): Promise<{ status: number; headers: Record<string, string>; body: string }> {
   return new Promise((resolve, reject) => {
     const req = https.request(
       {
         hostname: host, port: 443, path, method: "POST",
-        headers: { ...headers, "Content-Length": String(Buffer.byteLength(body, "utf8")) },
+        headers: { ...reqHeaders, "Content-Length": String(Buffer.byteLength(body, "utf8")) },
       },
       (res) => {
         const h: Record<string, string> = {};
         for (const [k, v] of Object.entries(res.headers)) {
-          if (typeof v === "string") h[k] = v;
-          else if (Array.isArray(v))  h[k] = v.join(", ");
+          h[k] = Array.isArray(v) ? v.join(", ") : (v ?? "");
         }
         const chunks: Buffer[] = [];
         res.on("data", (c: Buffer) => chunks.push(c));
@@ -38,32 +36,34 @@ function rawPost(
 }
 
 export async function POST(req: NextRequest) {
-  let ephemeral_key: string, sdp_offer: string;
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return NextResponse.json({ error: "no_openai_key" }, { status: 503 });
+
+  let sdp_offer: string;
   try {
-    ({ ephemeral_key, sdp_offer } = await req.json() as { ephemeral_key: string; sdp_offer: string });
+    ({ sdp_offer } = await req.json() as { sdp_offer: string });
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
-  if (!ephemeral_key || !sdp_offer) {
-    return NextResponse.json({ error: "missing_params" }, { status: 400 });
-  }
+  if (!sdp_offer?.trim()) return NextResponse.json({ error: "missing_sdp_offer" }, { status: 400 });
 
-  // Only these two headers. Nothing else.
-  const headers = {
-    "Authorization": `Bearer ${ephemeral_key}`,
+  // Exactly two headers — nothing else.
+  const outgoing = {
+    "Authorization": `Bearer ${apiKey}`,
     "Content-Type":  "application/sdp",
   };
 
   console.info("[voice/sdp] →", {
-    host: OPENAI_SDP_HOST, path: OPENAI_SDP_PATH,
-    header_keys: Object.keys(headers),
-    key_prefix: ephemeral_key.slice(0, 8) + "…",
+    url: `https://${SDP_HOST}${SDP_PATH}`,
+    header_keys: Object.keys(outgoing),
+    key_prefix: apiKey.slice(0, 8) + "…",
     sdp_bytes: sdp_offer.length,
+    sdp_preview: sdp_offer.slice(0, 200).replace(/\r\n/g, "↵"),
   });
 
   let result: Awaited<ReturnType<typeof rawPost>>;
   try {
-    result = await rawPost(OPENAI_SDP_HOST, OPENAI_SDP_PATH, headers, sdp_offer);
+    result = await rawPost(SDP_HOST, SDP_PATH, outgoing, sdp_offer);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[voice/sdp] network error:", msg);
@@ -74,16 +74,17 @@ export async function POST(req: NextRequest) {
     status: result.status,
     content_type: result.headers["content-type"],
     location: result.headers["location"],
+    body_bytes: result.body.length,
     body_preview: result.body.slice(0, 300),
   });
 
   if (result.status < 200 || result.status >= 300) {
     return NextResponse.json({
-      error:          "sdp_exchange_failed",
+      error: "sdp_exchange_failed",
       openai_status:  result.status,
       openai_headers: result.headers,
       openai_body:    result.body,
-      model:          REALTIME_MODEL,
+      model:          MODEL,
     }, { status: 502 });
   }
 
