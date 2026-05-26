@@ -1,48 +1,60 @@
-import https from "https";
+// Use Node.js built-in http2 module directly.
+// Reason: https.request uses HTTP/1.1. OpenAI's GA SDP endpoint appears
+// to require HTTP/2. http2 is also unaffected by Next.js ISR patching
+// or Sentry's withSentryConfig global fetch hook (sentry-trace, baggage).
+import http2 from "node:http2";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime    = "nodejs";
 export const maxDuration = 30;
 
-const MODEL = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2025-08-28";
-const HOST  = "api.openai.com";
-const PATH  = `/v1/realtime?model=${MODEL}`;
+const MODEL    = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2025-08-28";
+const ENDPOINT = `https://api.openai.com/v1/realtime?model=${MODEL}`;
+const HOST     = "https://api.openai.com";
+const PATH     = `/v1/realtime?model=${MODEL}`;
 
-// Raw https.request — bypasses Next.js fetch instrumentation AND Sentry's
-// global fetch patch (withSentryConfig adds sentry-trace + baggage headers
-// to every fetch call, which can corrupt the SDP request).
-function rawPost(
-  host: string,
+function http2Post(
   path: string,
-  reqHeaders: Record<string, string>,
+  headers: Record<string, string>,
   body: string,
 ): Promise<{ status: number; headers: Record<string, string>; body: string }> {
   return new Promise((resolve, reject) => {
-    const req = https.request(
-      {
-        hostname: host,
-        port: 443,
-        path,
-        method: "POST",
-        headers: {
-          ...reqHeaders,
-          "Content-Length": String(Buffer.byteLength(body, "utf8")),
-        },
-      },
-      (res) => {
-        const h: Record<string, string> = {};
-        for (const [k, v] of Object.entries(res.headers)) {
-          h[k] = Array.isArray(v) ? v.join(", ") : (v ?? "");
+    const client = http2.connect(HOST);
+    client.on("error", reject);
+
+    const outHeaders: http2.OutgoingHttpHeaders = {
+      ":method":  "POST",
+      ":path":    path,
+      ":scheme":  "https",
+      ":authority": "api.openai.com",
+      ...headers,
+      "content-length": String(Buffer.byteLength(body, "utf8")),
+    };
+
+    const req = client.request(outHeaders);
+
+    req.on("error", (err) => { client.close(); reject(err); });
+
+    const chunks: Buffer[] = [];
+    let status = 0;
+    const resHeaders: Record<string, string> = {};
+
+    req.on("response", (h) => {
+      status = Number(h[":status"] ?? 0);
+      for (const [k, v] of Object.entries(h)) {
+        if (!k.startsWith(":")) {
+          resHeaders[k] = Array.isArray(v) ? v.join(", ") : String(v ?? "");
         }
-        const chunks: Buffer[] = [];
-        res.on("data", (c: Buffer) => chunks.push(c));
-        res.on("end", () =>
-          resolve({ status: res.statusCode ?? 0, headers: h, body: Buffer.concat(chunks).toString("utf8") }),
-        );
-      },
-    );
-    req.on("error", reject);
-    req.write(body);
+      }
+    });
+
+    req.on("data", (c: Buffer) => chunks.push(c));
+    req.on("end", () => {
+      client.close();
+      resolve({ status, headers: resHeaders, body: Buffer.concat(chunks).toString("utf8") });
+    });
+
+    req.write(body, "utf8");
     req.end();
   });
 }
@@ -63,53 +75,50 @@ export async function POST(req: NextRequest) {
   if (!sdp_offer?.trim()) return NextResponse.json({ error: "missing_sdp_offer" }, { status: 400 });
 
   // Exactly two headers. Nothing else.
-  const outgoing = {
-    "Authorization": `Bearer ${apiKey}`,
-    "Content-Type":  "application/sdp",
+  const headers = {
+    "authorization": `Bearer ${apiKey}`,
+    "content-type":  "application/sdp",
   };
 
-  const fullUrl = `https://${HOST}${PATH}`;
-  console.info("[realtime/sdp] →", {
-    url:         fullUrl,
-    header_keys: Object.keys(outgoing),
-    key_prefix:  apiKey.slice(0, 8) + "…",
-    sdp_bytes:   sdp_offer.length,
-    sdp_preview: sdp_offer.slice(0, 200).replace(/\r\n/g, "↵"),
+  console.log("[realtime/sdp] → URL:", ENDPOINT);
+  console.log("[realtime/sdp] → headers:", {
+    authorization: `Bearer ${apiKey.slice(0, 8)}…`,
+    "content-type": headers["content-type"],
   });
+  console.log("[realtime/sdp] → typeof body:", typeof sdp_offer);
+  console.log("[realtime/sdp] → body (first 100):", sdp_offer.slice(0, 100));
 
-  let result: Awaited<ReturnType<typeof rawPost>>;
+  let result: Awaited<ReturnType<typeof http2Post>>;
   try {
-    result = await rawPost(HOST, PATH, outgoing, sdp_offer);
+    result = await http2Post(PATH, headers, sdp_offer);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[realtime/sdp] network_error:", msg);
     return NextResponse.json({ error: "network_error", detail: msg }, { status: 502 });
   }
 
-  console.info("[realtime/sdp] ←", {
-    status:        result.status,
-    content_type:  result.headers["content-type"],
-    location:      result.headers["location"],
-    body_bytes:    result.body.length,
-    body_preview:  result.body.slice(0, 200),
-  });
+  console.log("[realtime/sdp] ← status:", result.status);
+  console.log("[realtime/sdp] ← content-type:", result.headers["content-type"]);
+  console.log("[realtime/sdp] ← location:", result.headers["location"]);
+  console.log("[realtime/sdp] ← body (first 200):", result.body.slice(0, 200));
 
   if (result.status < 200 || result.status >= 300) {
-    return NextResponse.json({
+    const payload = {
       error:          "sdp_exchange_failed",
       openai_status:  result.status,
       openai_headers: result.headers,
       openai_body:    result.body,
       model:          MODEL,
-      url:            fullUrl,
-    }, { status: 502 });
+      url:            ENDPOINT,
+    };
+    console.error("[realtime/sdp] openai error:", payload);
+    return NextResponse.json(payload, { status: 502 });
   }
 
   if (!result.body.trim()) {
-    return NextResponse.json({
-      error: "empty_sdp_answer", openai_status: result.status,
-    }, { status: 502 });
+    return NextResponse.json({ error: "empty_sdp_answer", openai_status: result.status }, { status: 502 });
   }
 
+  console.log("[realtime/sdp] ✓ sdp_answer bytes:", result.body.length);
   return NextResponse.json({ sdp_answer: result.body });
 }
