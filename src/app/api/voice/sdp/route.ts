@@ -1,12 +1,12 @@
 /**
  * SDP proxy — receives the client's SDP offer + ephemeral key,
- * forwards to OpenAI server-side (avoids browser CORS on application/sdp),
- * returns the SDP answer.
+ * forwards to OpenAI using Node.js native https.request (bypasses all
+ * fetch wrappers including Next.js cache patch and Sentry tracing).
  *
- * Auth: uses the short-lived ephemeral key minted by /api/voice/session,
- * NOT the main OPENAI_API_KEY.  The main key never touches this route.
+ * Auth: ephemeral key minted by /api/voice/session.  Main key never used here.
  */
 
+import https from "https";
 import { NextRequest, NextResponse } from "next/server";
 import { REALTIME_CONFIG } from "@/config/realtime";
 
@@ -23,6 +23,47 @@ function serializeException(err: unknown): Record<string, unknown> {
     };
   }
   return { exception_raw: String(err) };
+}
+
+/** Low-level HTTPS POST — sends EXACTLY the headers provided, nothing else. */
+function httpsPost(
+  url: string,
+  headers: Record<string, string>,
+  body: string,
+): Promise<{ status: number; headers: Record<string, string | string[]>; body: string }> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const req = https.request(
+      {
+        hostname: parsed.hostname,
+        port: parsed.port || 443,
+        path: parsed.pathname + parsed.search,
+        method: "POST",
+        headers: {
+          ...headers,
+          "Content-Length": Buffer.byteLength(body, "utf8").toString(),
+        },
+      },
+      (res) => {
+        const respHeaders: Record<string, string | string[]> = {};
+        for (const [k, v] of Object.entries(res.headers)) {
+          if (v !== undefined) respHeaders[k] = v;
+        }
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () =>
+          resolve({
+            status: res.statusCode ?? 0,
+            headers: respHeaders,
+            body: Buffer.concat(chunks).toString("utf8"),
+          }),
+        );
+      },
+    );
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -48,62 +89,51 @@ export async function POST(req: NextRequest) {
     phase = "sdp_exchange";
     const openaiUrl = `${REALTIME_CONFIG.sdpEndpoint}?model=${REALTIME_CONFIG.model}`;
 
-    // Explicit header object — nothing hidden, no defaults, nothing from SDK
+    // Only these two headers — nothing else.
     const outgoingHeaders: Record<string, string> = {
       "Authorization": `Bearer ${ephemeral_key}`,
       "Content-Type": "application/sdp",
     };
 
-    console.info("[voice/sdp] request →", {
+    console.info("[voice/sdp] https.request →", {
       url: openaiUrl,
-      method: "POST",
-      headers: { ...outgoingHeaders, Authorization: `Bearer ${ephemeral_key.slice(0, 8)}…` },
+      header_keys: Object.keys(outgoingHeaders),
+      key_prefix: ephemeral_key.slice(0, 8) + "…",
       key_length: ephemeral_key.length,
       sdp_bytes: sdp_offer.length,
-      sdp_preview: sdp_offer.slice(0, 200).replace(/\r\n/g, "↵"),
+      sdp_preview: sdp_offer.slice(0, 120).replace(/\r\n/g, "↵"),
     });
 
-    let openaiRes: Response;
+    let result: Awaited<ReturnType<typeof httpsPost>>;
     try {
-      openaiRes = await fetch(openaiUrl, {
-        method: "POST",
-        headers: outgoingHeaders,
-        body: sdp_offer,
-        cache: "no-store",
-      });
-    } catch (fetchErr) {
-      const serialized = serializeException(fetchErr);
-      console.error("[voice/sdp] fetch threw (network-level):", serialized);
+      result = await httpsPost(openaiUrl, outgoingHeaders, sdp_offer);
+    } catch (netErr) {
+      const serialized = serializeException(netErr);
+      console.error("[voice/sdp] network error:", serialized);
       return NextResponse.json(
-        { error: "sdp_fetch_threw", openai_url: openaiUrl, ...serialized },
+        { error: "sdp_network_error", openai_url: openaiUrl, ...serialized },
         { status: 502 },
       );
     }
 
-    const rawBody = await openaiRes.text();
     const latencyMs = Date.now() - t0;
-
-    // Log every response header for diagnosis
-    const responseHeaders: Record<string, string> = {};
-    openaiRes.headers.forEach((v, k) => { responseHeaders[k] = v; });
-
     console.info("[voice/sdp] response ←", {
-      status: openaiRes.status,
-      statusText: openaiRes.statusText,
-      headers: responseHeaders,
-      body_bytes: rawBody.length,
-      body_preview: rawBody.slice(0, 500),
+      status: result.status,
+      header_keys: Object.keys(result.headers),
+      location: result.headers["location"] ?? null,
+      content_type: result.headers["content-type"] ?? null,
+      body_bytes: result.body.length,
+      body_preview: result.body.slice(0, 400),
       latency_ms: latencyMs,
     });
 
-    if (!openaiRes.ok) {
+    if (result.status < 200 || result.status >= 300) {
       return NextResponse.json(
         {
           error: "sdp_exchange_failed",
-          openai_status: openaiRes.status,
-          openai_status_text: openaiRes.statusText,
-          openai_headers: responseHeaders,
-          openai_body: rawBody,          // FULL body — never truncated
+          openai_status: result.status,
+          openai_headers: result.headers,
+          openai_body: result.body,
           model: REALTIME_CONFIG.model,
           endpoint: openaiUrl,
           key_prefix: ephemeral_key.slice(0, 8) + "…",
@@ -114,14 +144,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!rawBody.trim()) {
+    if (!result.body.trim()) {
       return NextResponse.json(
-        { error: "empty_sdp_answer", openai_status: openaiRes.status },
+        { error: "empty_sdp_answer", openai_status: result.status },
         { status: 502 },
       );
     }
 
-    return NextResponse.json({ sdp_answer: rawBody });
+    return NextResponse.json({ sdp_answer: result.body });
 
   } catch (err) {
     const serialized = serializeException(err);
