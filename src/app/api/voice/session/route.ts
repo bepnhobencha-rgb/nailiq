@@ -146,27 +146,36 @@ export async function POST(req: NextRequest) {
 
     // ── Create ephemeral token via OpenAI SDK ─────────────────────────────────
     phase = "create_ephemeral_token";
-    console.info(`[voice/session] creating ephemeral key via /v1/realtime/client_secrets`);
 
     const openai = new OpenAI({ apiKey });
 
+    const sessionPayload = {
+      type: "realtime",                          // required by GA API
+      model: REALTIME_CONFIG.model as string,
+      modalities: ["audio", "text"],
+      instructions,
+      voice: REALTIME_CONFIG.voice as string,
+      turn_detection: {
+        type: "server_vad",
+        threshold: REALTIME_CONFIG.vad.threshold,
+        prefix_padding_ms: REALTIME_CONFIG.vad.prefixPaddingMs,
+        silence_duration_ms: REALTIME_CONFIG.vad.silenceDurationMs,
+      },
+      tools: (tools as unknown) as unknown[],
+      tool_choice: tools.length > 0 ? "auto" : "none",
+      temperature: REALTIME_CONFIG.temperature,
+    };
+
+    console.info("[voice/session] creating ephemeral key", {
+      type: sessionPayload.type,
+      model: sessionPayload.model,
+      voice: sessionPayload.voice,
+      tool_count: tools.length,
+      endpoint: "/v1/realtime/client_secrets",
+    });
+
     const session = await openai.realtime.clientSecrets.create({
-      session: {
-        model: REALTIME_CONFIG.model as string,
-        modalities: ["audio", "text"],
-        instructions,
-        voice: REALTIME_CONFIG.voice as string,
-        turn_detection: {
-          type: "server_vad",
-          threshold: REALTIME_CONFIG.vad.threshold,
-          prefix_padding_ms: REALTIME_CONFIG.vad.prefixPaddingMs,
-          silence_duration_ms: REALTIME_CONFIG.vad.silenceDurationMs,
-        },
-        tools: (tools as unknown) as unknown[],
-        tool_choice: tools.length > 0 ? "auto" : "none",
-        temperature: REALTIME_CONFIG.temperature,
-        // input_audio_transcription is configured via session.update after DC opens
-      } as unknown as Parameters<typeof openai.realtime.clientSecrets.create>[0]["session"],
+      session: sessionPayload as unknown as Parameters<typeof openai.realtime.clientSecrets.create>[0]["session"],
     });
 
     const latencyMs = Date.now() - t0;
