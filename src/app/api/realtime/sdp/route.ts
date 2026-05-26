@@ -64,8 +64,10 @@ function h2post(
 // ── Step 1: mint ephemeral token ───────────────────────────────────────────────
 
 async function mintEphemeralKey(apiKey: string): Promise<string> {
-  const path = "/v1/realtime/client_secrets";
-  const body = JSON.stringify({ model: MODEL });
+  // Model goes in the query string — same pattern as the SDP endpoint.
+  // The request body must be empty; sending { model } causes "unknown_parameter".
+  const path = `/v1/realtime/client_secrets?model=${encodeURIComponent(MODEL)}`;
+  const body = "";
 
   console.log("[realtime/sdp] minting ephemeral key →", { path, model: MODEL });
 
