@@ -11,7 +11,6 @@ import type {
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { BookingFlow } from "@/components/booking/BookingFlow";
 import { BookingGroupFlow } from "@/components/booking/BookingGroupFlow";
-import { RealtimeVoiceCall } from "@/components/booking/RealtimeVoiceCall.legacy";
 import { cn } from "@/shared/lib/cn";
 
 /** QA round-2: group bookings need at least N distinct staff free at
@@ -98,7 +97,6 @@ export function BookingTypeSwitcher({
   if (!groupEnabled) {
     return (
       <div className="space-y-4">
-        <RealtimeVoiceCall shopSlug={shopSlug} language={language} />
         <BookingFlow
           t={t}
           shopSlug={shopSlug}
@@ -116,8 +114,6 @@ export function BookingTypeSwitcher({
 
   return (
     <div className="mt-6 space-y-4" data-testid="booking-type-switcher-root">
-      <RealtimeVoiceCall shopSlug={shopSlug} language={language} />
-
       {/* Heading + pill stacked. Was previously an inline-flex pill
           on its own line with no heading — easy to miss on first
           paint. Promoted to a small section so it's clearly part of

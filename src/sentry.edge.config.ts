@@ -11,4 +11,5 @@ const dsn =
 Sentry.init({
   dsn: dsn || undefined,
   tracesSampleRate: process.env.NODE_ENV === "development" ? 1.0 : 0.2,
+  tracePropagationTargets: [/^(?!.*api\.openai\.com).*/],
 });
