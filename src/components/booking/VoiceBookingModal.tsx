@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
+import { REALTIME_TOOLS } from "@/shared/voiceai/realtimeTools";
 
 type Props = {
   t: BookingMessages;
@@ -248,12 +249,14 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
 
         // Ensure audio modalities + formats are set — client_secrets nested
         // audio.* schema may not carry these through for gpt-realtime-2
-        // Set all audio config here — client_secrets only carries instructions/tools/model
+        // Set audio config + tools — client_secrets minimal body may not propagate tools
         ws.send(JSON.stringify({
           type: "session.update",
           session: {
             type:              "realtime",
             output_modalities: ["audio"],
+            tools:             [...REALTIME_TOOLS],
+            tool_choice:       "auto",
             audio: {
               input:  { format: { type: "audio/pcm", rate: 24000 }, turn_detection: { type: "semantic_vad", interrupt_response: true } },
               output: { format: { type: "audio/pcm", rate: 24000 }, voice },
@@ -283,6 +286,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       ws.onmessage = (e: MessageEvent) => {
         try {
           const ev = JSON.parse(e.data as string) as Record<string, unknown>;
+          const t = ev.type as string;
+          // Log every event type to discover gpt-realtime-2 event names
+          if (!t.startsWith("input_audio") && t !== "response.audio.delta") {
+            console.log("[voice/ws] event:", t, t.includes("function") || t.includes("tool") ? JSON.stringify(ev) : "");
+          }
           handleRealtimeEvent(ev, shopSlug, sessionId);
         } catch { /* malformed */ }
       };
