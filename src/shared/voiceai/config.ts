@@ -1,6 +1,6 @@
-/** Voice AI configuration constants — gpt-realtime-2 GA */
+/** Voice AI configuration constants */
 
-export const VOICE_MODEL = "gpt-realtime-2";
+export const VOICE_MODEL = "gpt-4o-realtime-preview";
 
 /** GA endpoint for minting ephemeral client secrets (ek_...) */
 export const OPENAI_CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets";
