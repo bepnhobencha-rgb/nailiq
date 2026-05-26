@@ -3,6 +3,8 @@
 import { useCallback, useRef, useState } from "react";
 import { REALTIME_MODEL, REALTIME_VOICE, REALTIME_TRANSCRIPTION_MODEL, REALTIME_VAD } from "./realtime.constants";
 
+console.log("REALTIME MODEL (frontend):", REALTIME_MODEL);
+
 export type MinimalStatus =
   | "idle" | "mic" | "connecting" | "connected" | "error" | "ended";
 

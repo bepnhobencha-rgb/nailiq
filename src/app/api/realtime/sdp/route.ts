@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime    = "nodejs";
 export const maxDuration = 30;
 
-const MODEL = process.env.OPENAI_REALTIME_MODEL ?? "gpt-4o-realtime-preview";
+const MODEL = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2025-08-28";
+console.log("REALTIME MODEL (server):", MODEL);
 
 export async function POST(req: NextRequest) {
   // ── SENTINEL — confirms this file is the live route ───────────────────────
