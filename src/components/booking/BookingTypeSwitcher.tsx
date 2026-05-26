@@ -11,6 +11,7 @@ import type {
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { BookingFlow } from "@/components/booking/BookingFlow";
 import { BookingGroupFlow } from "@/components/booking/BookingGroupFlow";
+import { VoiceBookingButton } from "@/components/booking/VoiceBookingButton";
 import { cn } from "@/shared/lib/cn";
 
 /** QA round-2: group bookings need at least N distinct staff free at
@@ -42,6 +43,7 @@ export function BookingTypeSwitcher({
   capabilityRows,
   categories,
   language = "en",
+  voiceAiEnabled = false,
 }: {
   t: BookingMessages;
   shopSlug: string;
@@ -52,6 +54,7 @@ export function BookingTypeSwitcher({
   capabilityRows: { staff_id: string; service_id: string }[] | null;
   categories: readonly ServiceCategorySummary[];
   language?: "en" | "vi";
+  voiceAiEnabled?: boolean;
 }) {
   // P2.3 — initialize from ?mode= so language switch (which reloads
   // the page) doesn't drop the user back to individual.
@@ -97,6 +100,9 @@ export function BookingTypeSwitcher({
   if (!groupEnabled) {
     return (
       <div className="space-y-4">
+        {voiceAiEnabled && (
+          <VoiceBookingButton t={t} shopSlug={shopSlug} language={language} />
+        )}
         <BookingFlow
           t={t}
           shopSlug={shopSlug}
@@ -114,6 +120,9 @@ export function BookingTypeSwitcher({
 
   return (
     <div className="mt-6 space-y-4" data-testid="booking-type-switcher-root">
+      {voiceAiEnabled && (
+        <VoiceBookingButton t={t} shopSlug={shopSlug} language={language} />
+      )}
       {/* Heading + pill stacked. Was previously an inline-flex pill
           on its own line with no heading — easy to miss on first
           paint. Promoted to a small section so it's clearly part of

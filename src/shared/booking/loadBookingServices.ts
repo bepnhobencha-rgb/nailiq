@@ -47,6 +47,8 @@ export type BookingSalonMeta = {
   /** When true, the booking flow shows an SMS OTP step to verify the
    *  customer's phone before confirming. Driven by `salons.phone_otp_enabled`. */
   phoneOtpEnabled: boolean;
+  /** When true, the Voice AI booking button is shown on the public booking page. */
+  voiceAiEnabled: boolean;
 };
 
 export type BookingLoadData = {
@@ -287,6 +289,8 @@ export async function loadBookingServicesForSalonSlug(
       })(),
       phoneOtpEnabled:
         (salon as { phone_otp_enabled?: unknown }).phone_otp_enabled === true,
+      voiceAiEnabled:
+        (salon as { voice_ai_enabled?: unknown }).voice_ai_enabled === true,
     },
   };
 }

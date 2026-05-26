@@ -1306,3 +1306,51 @@ export async function getDashboardWriteClient(slug: string): Promise<
     supabase,
   };
 }
+
+export type VoiceAiSettingsInput = {
+  voice_ai_enabled:          boolean;
+  voice_ai_persona_name:     string;
+  voice_ai_persona_voice:    string;
+  voice_ai_reasoning_effort: string;
+};
+
+export async function updateVoiceAiSettings(
+  slug: string,
+  input: VoiceAiSettingsInput,
+): Promise<{ ok: true } | { error: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { error: "unauthorized" };
+  if (ctx.role !== "owner") return { error: "owner_only" };
+
+  const VALID_VOICES = [
+    "alloy", "ash", "ballad", "cedar", "coral",
+    "echo", "fable", "marin", "nova", "onyx",
+    "sage", "shimmer", "verse",
+  ] as const;
+  const VALID_EFFORTS = ["minimal", "low", "medium", "high", "xhigh"] as const;
+
+  const voice = VALID_VOICES.includes(input.voice_ai_persona_voice as (typeof VALID_VOICES)[number])
+    ? input.voice_ai_persona_voice
+    : "marin";
+  const effort = VALID_EFFORTS.includes(input.voice_ai_reasoning_effort as (typeof VALID_EFFORTS)[number])
+    ? input.voice_ai_reasoning_effort
+    : "low";
+  const personaName = input.voice_ai_persona_name.trim().slice(0, 40) || "Lily";
+
+  const { error } = await ctx.supabase
+    .from("salons")
+    .update({
+      voice_ai_enabled:          input.voice_ai_enabled,
+      voice_ai_persona_name:     personaName,
+      voice_ai_persona_voice:    voice,
+      voice_ai_reasoning_effort: effort,
+    } as never)
+    .eq("id", ctx.salon.id);
+
+  if (error) {
+    Sentry.captureException(error, { tags: { action: "updateVoiceAiSettings", "salon.slug": slug } });
+    return { error: error.message };
+  }
+
+  return { ok: true };
+}
