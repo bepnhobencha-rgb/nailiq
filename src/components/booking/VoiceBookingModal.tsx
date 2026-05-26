@@ -20,6 +20,8 @@ type Status =
   | "ended"
   | "error";
 
+type AiActivity = "idle" | "speaking" | "thinking";
+
 type Transcript = { role: "ai" | "user"; text: string };
 
 // PCM16 helpers for WebSocket audio
@@ -52,6 +54,7 @@ function base64ToFloat32(b64: string): Float32Array {
 
 export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Props) {
   const [status, setStatus]         = useState<Status>("idle");
+  const [aiActivity, setAiActivity] = useState<AiActivity>("idle");
   const [error, setError]           = useState<string | null>(null);
   const [transcript, setTranscript] = useState<Transcript[]>([]);
   const [durationSec, setDuration]  = useState(0);
@@ -123,6 +126,10 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         wsRef.current?.send(JSON.stringify({ type: "response.create" }));
       }
     }
+
+    if (type === "response.created") setAiActivity("thinking");
+    if (type === "response.output_audio.delta" || type === "response.audio.delta") setAiActivity("speaking");
+    if (type === "response.done") setAiActivity("idle");
 
     if (type === "response.output_audio.delta" || type === "response.audio.delta") {
       const delta = ev.delta as string | undefined;
@@ -329,11 +336,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       const msg  = err instanceof Error ? err.message : String(err);
       const name = err instanceof Error ? err.name   : "";
       const code =
-        name === "NotAllowedError"    ? v.micPermissionDenied
-        : name === "NotFoundError"    ? v.micError
-        : msg === "insecure_context"  ? v.notSupported
-        : msg === "voice_not_enabled" ? "Voice AI is not enabled for this salon."
-        : msg === "session_limit_reached" ? "Voice sessions limit reached for this month."
+        name === "NotAllowedError"        ? v.micPermissionDenied
+        : name === "NotFoundError"        ? v.micError
+        : msg === "insecure_context"      ? v.notSupported
+        : msg === "voice_not_enabled"     ? v.voiceNotEnabled
+        : msg === "session_limit_reached" ? v.sessionLimitReached
         : msg;
       setError(code);
       statusRef.current = "error";
@@ -362,12 +369,16 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
 
   const formatDuration = (sec: number) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
 
+  const isListening = status === "connected" && aiActivity === "idle";
+  const isSpeaking  = status === "connected" && aiActivity === "speaking";
+  const isThinking  = status === "connected" && aiActivity === "thinking";
+
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Voice booking"
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-center"
+      aria-label={v.tapToSpeak}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center"
     >
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-zinc-900">
         {/* Header */}
@@ -377,7 +388,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             type="button"
             onClick={() => void handleClose()}
             className="rounded-full p-1.5 text-[var(--booking-text-muted)] hover:bg-[var(--booking-bg-card)] transition-colors"
-            aria-label="Close"
+            aria-label={v.close}
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -388,15 +399,28 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         {/* Status indicator */}
         <div className="mb-4 flex flex-col items-center justify-center gap-3 py-4">
           <div className={[
-            "flex h-20 w-20 items-center justify-center rounded-full transition-all",
-            status === "connected"   ? "bg-green-100 shadow-lg shadow-green-200 animate-pulse" : "",
-            status === "error"       ? "bg-red-100"   : "",
-            status === "ended"       ? "bg-zinc-100"  : "",
+            "flex h-20 w-20 items-center justify-center rounded-full transition-all duration-300",
+            isListening                    ? "bg-green-100 shadow-lg shadow-green-200 animate-pulse" : "",
+            isSpeaking                     ? "bg-blue-100 shadow-lg shadow-blue-200 animate-pulse" : "",
+            isThinking                     ? "bg-amber-100" : "",
+            status === "error"             ? "bg-red-100" : "",
+            status === "ended"             ? "bg-zinc-100" : "",
             !["connected","error","ended"].includes(status) ? "bg-[var(--booking-bg-card)]" : "",
           ].join(" ")}>
-            {status === "connected" ? (
-              <svg className="h-10 w-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {status === "connected" && !isSpeaking ? (
+              /* Listening / thinking mic icon */
+              <svg className={["h-10 w-10", isThinking ? "text-amber-500" : "text-green-600"].join(" ")} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+              </svg>
+            ) : isSpeaking ? (
+              /* Speaker wave icon */
+              <svg className="h-10 w-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.536 8.464a5 5 0 010 7.072M12 6v12m-3.536-9.536a5 5 0 000 7.072M19.07 4.93a10 10 0 010 14.14" />
+              </svg>
+            ) : status === "ended" ? (
+              /* Checkmark */
+              <svg className="h-10 w-10 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
               </svg>
             ) : status === "error" ? (
               <svg className="h-10 w-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -408,22 +432,28 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
           </div>
 
           <p className="text-sm font-medium text-[var(--booking-text)]">
-            {status === "session_init" ? "Connecting…"
-             : status === "mic_request"  ? "Requesting microphone…"
-             : status === "connecting"   ? "Setting up connection…"
-             : status === "connected"    ? `${v.listening} ${formatDuration(durationSec)}`
-             : status === "ended"        ? v.done
-             : status === "error"        ? (error ?? "Error")
+            {status === "session_init" ? v.connecting
+             : status === "mic_request"  ? v.micRequest
+             : status === "connecting"   ? v.settingUp
+             : isSpeaking               ? v.aiSpeaking
+             : isThinking               ? v.processing
+             : status === "connected"   ? `${v.listening} ${formatDuration(durationSec)}`
+             : status === "ended"       ? v.ended
+             : status === "error"       ? (error ?? "Error")
              : ""}
           </p>
         </div>
 
-        {/* Transcript */}
+        {/* Transcript — two-way: AI + user speech */}
         {transcript.length > 0 && (
-          <div className="mb-4 max-h-40 space-y-2 overflow-y-auto rounded-xl bg-[var(--booking-bg-card)] p-3 text-sm">
+          <div className="mb-4 max-h-40 space-y-1.5 overflow-y-auto rounded-xl bg-[var(--booking-bg-card)] p-3 text-sm">
             {transcript.map((entry, i) => (
-              <p key={i} className={entry.role === "ai" ? "text-[var(--booking-text)]" : "text-[var(--booking-text-muted)] italic"}>
-                <span className="font-semibold">{entry.role === "ai" ? "AI: " : "You: "}</span>
+              <p key={i} className={entry.role === "ai"
+                ? "text-[var(--booking-text)]"
+                : "text-[var(--booking-text-muted)] italic"}>
+                <span className="font-semibold">
+                  {entry.role === "ai" ? `${v.aiLabel}: ` : `${v.youLabel}: `}
+                </span>
                 {entry.text}
               </p>
             ))}
@@ -438,7 +468,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
               onClick={() => void handleStop()}
               className="flex-1 rounded-xl bg-red-500 py-3 text-sm font-semibold text-white hover:bg-red-600 transition-colors"
             >
-              End Call
+              {v.endCall}
             </button>
           )}
           {status === "error" && (
@@ -447,16 +477,18 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
               onClick={() => { statusRef.current = "idle"; setStatus("idle"); void start(); }}
               className="flex-1 rounded-xl bg-[var(--salon-primary)] py-3 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
             >
-              Try Again
+              {v.tryAgain}
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => void handleClose()}
-            className="flex-1 rounded-xl border border-[var(--booking-border)] py-3 text-sm font-semibold text-[var(--booking-text)] hover:bg-[var(--booking-bg-card)] transition-colors"
-          >
-            {status === "ended" ? "Close" : "Cancel"}
-          </button>
+          {status !== "connected" && (
+            <button
+              type="button"
+              onClick={() => void handleClose()}
+              className="flex-1 rounded-xl border border-[var(--booking-border)] py-3 text-sm font-semibold text-[var(--booking-text)] hover:bg-[var(--booking-bg-card)] transition-colors"
+            >
+              {status === "ended" ? v.close : v.cancel}
+            </button>
+          )}
         </div>
       </div>
     </div>
