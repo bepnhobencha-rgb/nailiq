@@ -350,8 +350,27 @@ export function useRealtimeVoice(params: {
       if (micTrack) micTrackRef.current = micTrack;
       console.info("[voice-connect] mic_granted", { tracks: micStream.getAudioTracks().length });
 
-      // Phase 2: OpenAI SDP exchange
+      // Phase 2a: Get ephemeral key from server
       setStatus("connecting_openai");
+      console.info("[voice-connect] fetching_ephemeral_key", { salon: shopSlugRef.current, language });
+      const sessionRes = await fetch("/api/voice/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ salon_slug: shopSlugRef.current, language }),
+      });
+      if (!sessionRes.ok) {
+        const errBody = await sessionRes.json().catch(() => ({})) as { error?: string };
+        console.error("[voice-error] session_create_failed", { status: sessionRes.status, error: errBody.error });
+        throw new Error(errBody.error ?? "session_create_failed");
+      }
+      const { ephemeral_key, session_config: sessionCfg } = await sessionRes.json() as {
+        ephemeral_key: string;
+        session_config: SessionConfig;
+      };
+      console.info("[voice-connect] ephemeral_key_received", { key_prefix: ephemeral_key.slice(0, 8) + "…" });
+      sessionConfigRef.current = sessionCfg;
+
+      // Phase 2b: WebRTC peer connection
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
       console.info("[voice-connect] peer_created");
@@ -451,31 +470,28 @@ export function useRealtimeVoice(params: {
       await pc.setLocalDescription(offer);
       console.info("[voice-connect] sdp_offer_created", { bytes: offer.sdp?.length ?? 0 });
 
-      // Server-proxied SDP exchange with OpenAI
-      const sdpRes = await fetch("/api/voice/sdp", {
+      // Phase 3b: SDP exchange directly with OpenAI using ephemeral key
+      const openaiSdpUrl = `https://api.openai.com/v1/realtime?model=${REALTIME_CONFIG.model}`;
+      console.info("[voice-connect] sdp_exchange_start", { endpoint: openaiSdpUrl, key_type: "ephemeral" });
+      const sdpRes = await fetch(openaiSdpUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          salon_slug: shopSlugRef.current,
-          language,
-          sdp_offer: offer.sdp,
-        }),
+        headers: {
+          "Authorization": `Bearer ${ephemeral_key}`,
+          "Content-Type": "application/sdp",
+        },
+        body: offer.sdp,
       });
 
       if (!sdpRes.ok) {
-        const err = await sdpRes.json().catch(() => ({})) as { error?: string; detail?: string; openai_status?: number };
-        console.error("[voice-error] sdp_exchange_failed", err);
-        throw new Error(err.error ?? "sdp_exchange_failed");
+        const rawBody = await sdpRes.text();
+        let parsedErr: Record<string, unknown> = {};
+        try { parsedErr = JSON.parse(rawBody) as Record<string, unknown>; } catch { /* non-JSON */ }
+        console.error("[voice-error] sdp_exchange_failed", { status: sdpRes.status, body: rawBody });
+        throw new Error(String((parsedErr?.error as Record<string, unknown>)?.code ?? parsedErr?.error ?? "sdp_exchange_failed"));
       }
 
-      const { sdp_answer, session_config } = (await sdpRes.json()) as {
-        sdp_answer: string;
-        session_config: SessionConfig;
-      };
+      const sdp_answer = await sdpRes.text();
       console.info("[voice-connect] sdp_answer_received", { bytes: sdp_answer.length });
-
-      // Store config for dc.onopen (may fire shortly after setRemoteDescription)
-      sessionConfigRef.current = session_config;
 
       await pc.setRemoteDescription({ type: "answer", sdp: sdp_answer });
       console.info("[voice-connect] remote_desc_set — waiting for ICE + data channel");

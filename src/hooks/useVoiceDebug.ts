@@ -351,7 +351,47 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
       micStreamRef.current = micStream;
       logEvent("system", "mic.granted", { tracks: micStream.getAudioTracks().length });
 
+      // ── Step 1: Get ephemeral key from our server ──────────────────────────
       setStatus("connecting_openai");
+      logEvent("system", "session.request", { salon: shopSlug, language, model: REALTIME_CONFIG.model });
+
+      const sessionRes = await fetch("/api/voice/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ salon_slug: shopSlug, language }),
+      });
+
+      if (!sessionRes.ok) {
+        const rawBody = await sessionRes.text();
+        let parsedBody: Record<string, unknown> | null = null;
+        try { parsedBody = JSON.parse(rawBody) as Record<string, unknown>; } catch { /* non-JSON */ }
+        const sessionErrPayload: Record<string, unknown> = {
+          http_status: sessionRes.status,
+          http_status_text: sessionRes.statusText,
+          raw_body: rawBody,
+          parsed_body: parsedBody,
+          error_code: parsedBody?.error ?? "session_create_failed",
+          endpoint: "/api/voice/session",
+          model: REALTIME_CONFIG.model,
+          request_salon: shopSlug,
+          request_language: language,
+        };
+        logEvent("system", "session.error", sessionErrPayload);
+        const thrown = new Error(String(parsedBody?.error ?? "session_create_failed"));
+        (thrown as unknown as Record<string, unknown>)._sessionPayload = sessionErrPayload;
+        throw thrown;
+      }
+
+      const { ephemeral_key, expires_at, session_config, salon } = await sessionRes.json() as {
+        ephemeral_key: string;
+        expires_at: number;
+        session_config: SessionConfig;
+        salon: { name: string; slug: string; timezone: string };
+      };
+      logEvent("system", "session.ready", { expires_at, salon: salon.name, model: REALTIME_CONFIG.model, key_prefix: ephemeral_key.slice(0, 8) + "…" });
+      sessionConfigRef.current = session_config;
+
+      // ── Step 2: Set up WebRTC peer connection ──────────────────────────────
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
 
@@ -430,53 +470,54 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
         if (!confirmedRef.current) setStatus("ended");
       };
 
+      // ── Step 3: SDP exchange directly with OpenAI using ephemeral key ──────
       setStatus("connecting_dc");
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       logEvent("system", "sdp.offer", { bytes: offer.sdp?.length ?? 0 });
 
-      const sdpRes = await fetch("/api/voice/sdp", {
+      const openaiSdpUrl = `${REALTIME_CONFIG.sdpEndpoint}?model=${REALTIME_CONFIG.model}`;
+      logEvent("system", "sdp.exchange", { endpoint: openaiSdpUrl, model: REALTIME_CONFIG.model, key_type: "ephemeral" });
+
+      const sdpRes = await fetch(openaiSdpUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ salon_slug: shopSlug, language, sdp_offer: offer.sdp }),
+        headers: {
+          "Authorization": `Bearer ${ephemeral_key}`,
+          "Content-Type": "application/sdp",
+        },
+        body: offer.sdp,
       });
 
       if (!sdpRes.ok) {
-        // Read raw text FIRST — never lose the body even if JSON parse fails
         const rawBody = await sdpRes.text();
         let parsedBody: Record<string, unknown> | null = null;
         try { parsedBody = JSON.parse(rawBody) as Record<string, unknown>; } catch { /* non-JSON body */ }
         const sdpErrPayload: Record<string, unknown> = {
-          // HTTP layer
           http_status: sdpRes.status,
           http_status_text: sdpRes.statusText,
-          // Full response body — raw (never truncated) + parsed if JSON
           raw_body: rawBody,
           parsed_body: parsedBody,
-          // What OpenAI said (inside the proxy's JSON envelope)
-          openai_status: parsedBody?.openai_status ?? null,
-          openai_detail: parsedBody?.detail ?? null,
-          openai_error_code: parsedBody?.error ?? null,
-          model_used: parsedBody?.model_used ?? REALTIME_CONFIG.model,
-          // Request context
-          proxy_endpoint: "/api/voice/sdp",
-          openai_endpoint: REALTIME_CONFIG.sdpEndpoint,
-          model: REALTIME_CONFIG.model,
-          voice: REALTIME_CONFIG.voice,
+          openai_error: parsedBody?.error ?? null,
+          model_used: REALTIME_CONFIG.model,
+          openai_endpoint: openaiSdpUrl,
+          key_type: "ephemeral",
           request_salon: shopSlug,
           request_language: language,
           sdp_offer_bytes: offer.sdp?.length ?? 0,
         };
         logEvent("system", "sdp.error", sdpErrPayload);
-        const errorCode = String(parsedBody?.error ?? "sdp_exchange_failed");
+        const errorCode = String(
+          (parsedBody?.error as Record<string, unknown>)?.code
+          ?? parsedBody?.error
+          ?? "sdp_exchange_failed"
+        );
         const thrown = new Error(errorCode);
         (thrown as unknown as Record<string, unknown>)._sdpPayload = sdpErrPayload;
         throw thrown;
       }
 
-      const { sdp_answer, session_config } = await sdpRes.json() as { sdp_answer: string; session_config: SessionConfig };
-      logEvent("system", "sdp.answer", { bytes: sdp_answer.length });
-      sessionConfigRef.current = session_config;
+      const sdp_answer = await sdpRes.text();
+      logEvent("system", "sdp.answer", { bytes: sdp_answer.length, content_type: sdpRes.headers.get("content-type") });
 
       await pc.setRemoteDescription({ type: "answer", sdp: sdp_answer });
       logEvent("system", "sdp.complete", {});
@@ -485,8 +526,9 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
       const serialized = serializeError(err);
       const errName = String(serialized.name ?? "");
       const errMsg = String(serialized.message ?? "unknown");
-      // _sdpPayload is attached by the throw above — surface it at top level
       const sdpPayload = (err as Record<string, unknown>)._sdpPayload ?? null;
+      const sessionPayload = (err as Record<string, unknown>)._sessionPayload ?? null;
+      const anyPayload = (sdpPayload ?? sessionPayload) as Record<string, unknown> | null;
       const code =
         errName === "NotAllowedError" ? "mic_denied"
         : errName === "NotFoundError" ? "mic_not_found"
@@ -496,14 +538,13 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
         : errMsg;
       logEvent("system", "connect.error", {
         code,
-        // Full serialized error — never {}
         error: serialized,
-        // SDP failure context promoted to top level for quick scanning
-        sdp_http_status: (sdpPayload as Record<string, unknown> | null)?.http_status ?? null,
-        sdp_raw_body: (sdpPayload as Record<string, unknown> | null)?.raw_body ?? null,
-        sdp_openai_detail: (sdpPayload as Record<string, unknown> | null)?.openai_detail ?? null,
-        sdp_model: (sdpPayload as Record<string, unknown> | null)?.model ?? null,
+        http_status: anyPayload?.http_status ?? null,
+        raw_body: anyPayload?.raw_body ?? null,
+        openai_error: anyPayload?.openai_error ?? null,
+        model: anyPayload?.model ?? REALTIME_CONFIG.model,
         sdp_payload: sdpPayload,
+        session_payload: sessionPayload,
       });
       setErrorMessage(code);
       setStatus("error");
