@@ -140,7 +140,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       nextPlayRef.current = when + buf.duration;
     }
 
-    if (type === "response.audio_transcript.done") {
+    if (type === "response.output_audio_transcript.done" || type === "response.audio_transcript.done") {
       const text = ev.transcript as string | undefined;
       if (text) setTranscript((prev) => {
         const last = prev[prev.length - 1];
@@ -247,18 +247,15 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
 
         // Ensure audio modalities + formats are set — client_secrets nested
         // audio.* schema may not carry these through for gpt-realtime-2
+        // gpt-realtime-2 GA schema: output_modalities + audio.input/output nested
         ws.send(JSON.stringify({
           type: "session.update",
           session: {
-            type:                "realtime",
-            modalities:          ["audio", "text"],
-            input_audio_format:  "pcm16",
-            output_audio_format: "pcm16",
-            turn_detection: {
-              type:                "server_vad",
-              threshold:           0.45,
-              prefix_padding_ms:   200,
-              silence_duration_ms: 700,
+            type:              "realtime",
+            output_modalities: ["audio"],
+            audio: {
+              input:  { format: "pcm16", turn_detection: { type: "semantic_vad", interrupt_response: true } },
+              output: { format: "pcm16" },
             },
           },
         }));

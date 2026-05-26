@@ -7,11 +7,10 @@ export const VOICE_MODEL = "gpt-realtime-2";
 export const OPENAI_CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets";
 export const OPENAI_SDP_URL            = "https://api.openai.com/v1/realtime";
 
+// gpt-realtime-2 uses semantic_vad (replaces server_vad with threshold/padding)
 export const DEFAULT_VAD = {
-  type:                "server_vad",
-  threshold:           0.45,
-  prefix_padding_ms:   200,
-  silence_duration_ms: 700,
+  type:               "semantic_vad",
+  interrupt_response: true,
 } as const;
 
 export const SUPPORTED_VOICES = [

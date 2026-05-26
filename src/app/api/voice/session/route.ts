@@ -60,21 +60,26 @@ export async function POST(req: NextRequest) {
   const instructions = buildSystemPrompt(ctx, language);
   const voice        = ctx.personaVoice;
 
-  // GA Realtime API: POST /v1/realtime/client_secrets
-  // client_secrets uses a nested audio.input/output schema (different from WebSocket session.update)
+  // gpt-realtime-2 GA schema: output_modalities + audio.input/output nested format
   const clientSecretBody = {
     expires_after: { anchor: "created_at", seconds: SESSION_TTL_SECONDS },
     session: {
-      type:         "realtime",
-      model:        VOICE_MODEL,
+      type:              "realtime",
+      model:             VOICE_MODEL,
       instructions,
-      tools:        [...REALTIME_TOOLS],
+      tools:             [...REALTIME_TOOLS],
+      tool_choice:       "auto",
+      output_modalities: ["audio"],
       audio: {
         input: {
-          transcription: { model: "gpt-4o-mini-transcribe" },
+          format:         "pcm16",
+          transcription:  { model: "gpt-4o-mini-transcribe" },
           turn_detection: DEFAULT_VAD,
         },
-        output: { voice },
+        output: {
+          format: "pcm16",
+          voice,
+        },
       },
     },
   };
