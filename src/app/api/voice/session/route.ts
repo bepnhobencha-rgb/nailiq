@@ -149,10 +149,13 @@ export async function POST(req: NextRequest) {
 
     const openai = new OpenAI({ apiKey });
 
+    // GA ephemeral session payload — minimal valid fields only.
+    // DO NOT include beta-era fields: modalities, input_audio_format,
+    // output_audio_format, input_audio_transcription — those go in
+    // session.update after the data channel opens.
     const sessionPayload = {
-      type: "realtime",                          // required by GA API
+      type: "realtime",
       model: REALTIME_CONFIG.model as string,
-      modalities: ["audio", "text"],
       instructions,
       voice: REALTIME_CONFIG.voice as string,
       turn_detection: {
@@ -166,13 +169,7 @@ export async function POST(req: NextRequest) {
       temperature: REALTIME_CONFIG.temperature,
     };
 
-    console.info("[voice/session] creating ephemeral key", {
-      type: sessionPayload.type,
-      model: sessionPayload.model,
-      voice: sessionPayload.voice,
-      tool_count: tools.length,
-      endpoint: "/v1/realtime/client_secrets",
-    });
+    console.info("[voice/session] ephemeral session payload", JSON.stringify(sessionPayload, null, 2));
 
     const session = await openai.realtime.clientSecrets.create({
       session: sessionPayload as unknown as Parameters<typeof openai.realtime.clientSecrets.create>[0]["session"],
