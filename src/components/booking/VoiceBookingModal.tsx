@@ -24,6 +24,19 @@ type AiActivity = "idle" | "speaking" | "thinking";
 
 type Transcript = { role: "ai" | "user"; text: string };
 
+type BookingResult = {
+  bookingId: string | null;
+  serviceName: string;
+  date: string;
+  timeSlot: string;
+  customerName: string;
+};
+
+// Silence / timeout policy
+const SILENCE_REPROMPT_MS  = 15_000;  // 15 s of user silence → nudge AI
+const SILENCE_MAX_NUDGES   = 2;       // after 2 nudges with no speech → auto-end
+const TOTAL_CALL_LIMIT_SEC = 300;     // 5-min hard cap regardless of activity
+
 // PCM16 helpers for WebSocket audio
 function float32ToPCM16(float32: Float32Array): ArrayBuffer {
   const buf = new ArrayBuffer(float32.length * 2);
@@ -53,21 +66,32 @@ function base64ToFloat32(b64: string): Float32Array {
 }
 
 export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Props) {
-  const [status, setStatus]         = useState<Status>("idle");
-  const [aiActivity, setAiActivity] = useState<AiActivity>("idle");
-  const [error, setError]           = useState<string | null>(null);
-  const [transcript, setTranscript] = useState<Transcript[]>([]);
-  const [durationSec, setDuration]  = useState(0);
+  const [status, setStatus]               = useState<Status>("idle");
+  const [aiActivity, setAiActivity]       = useState<AiActivity>("idle");
+  const [error, setError]                 = useState<string | null>(null);
+  const [transcript, setTranscript]       = useState<Transcript[]>([]);
+  const [durationSec, setDuration]        = useState(0);
+  const [bookingResult, setBookingResult] = useState<BookingResult | null>(null);
 
-  const wsRef          = useRef<WebSocket | null>(null);
-  const audioCtxRef    = useRef<AudioContext | null>(null);
-  const streamRef      = useRef<MediaStream | null>(null);
-  const processorRef   = useRef<ScriptProcessorNode | null>(null);
-  const sessionIdRef   = useRef<string | null>(null);
-  const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startTsRef     = useRef<number>(0);
-  const statusRef      = useRef<Status>("idle");
-  const nextPlayRef    = useRef<number>(0);
+  const wsRef               = useRef<WebSocket | null>(null);
+  const audioCtxRef         = useRef<AudioContext | null>(null);
+  const streamRef           = useRef<MediaStream | null>(null);
+  const processorRef        = useRef<ScriptProcessorNode | null>(null);
+  const sessionIdRef        = useRef<string | null>(null);
+  const timerRef            = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startTsRef          = useRef<number>(0);
+  const statusRef           = useRef<Status>("idle");
+  const nextPlayRef         = useRef<number>(0);
+  // Tracks call_ids already dispatched — prevents duplicate tool calls when
+  // both response.output_function_call_arguments.done AND response.done fire.
+  const processedCallIdsRef = useRef<Set<string>>(new Set());
+
+  // Silence / inactivity tracking (all refs — safe to use in async callbacks)
+  const silenceTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const repromptCountRef = useRef(0);
+  const aiActiveRef      = useRef(false);   // true while AI is thinking/speaking
+  // Stable function stored in ref to avoid stale-closure issues in timer callbacks
+  const scheduleNudgeRef = useRef<() => void>(() => undefined);
 
   const v = t.voice;
 
@@ -75,13 +99,18 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     try { processorRef.current?.disconnect(); } catch { /* ignore */ }
     try { wsRef.current?.close(); }             catch { /* ignore */ }
     try { audioCtxRef.current?.close(); }       catch { /* ignore */ }
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    if (timerRef.current) clearInterval(timerRef.current);
-    wsRef.current      = null;
-    audioCtxRef.current = null;
-    processorRef.current = null;
-    streamRef.current  = null;
-    nextPlayRef.current = 0;
+    streamRef.current?.getTracks().forEach((tr) => tr.stop());
+    if (timerRef.current)        clearInterval(timerRef.current);
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    wsRef.current             = null;
+    audioCtxRef.current       = null;
+    processorRef.current      = null;
+    streamRef.current         = null;
+    nextPlayRef.current       = 0;
+    silenceTimerRef.current   = null;
+    aiActiveRef.current       = false;
+    repromptCountRef.current  = 0;
+    processedCallIdsRef.current.clear();
   }, []);
 
   const endSession = useCallback(async (finalStatus: "completed" | "abandoned" | "failed") => {
@@ -102,12 +131,91 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     }
   }, [cleanup, transcript]);
 
+  // Keep scheduleNudgeRef up-to-date whenever endSession changes identity
+  useEffect(() => {
+    scheduleNudgeRef.current = () => {
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = setTimeout(() => {
+        if (statusRef.current !== "connected") return;
+        // AI became active while we were waiting — postpone
+        if (aiActiveRef.current) { scheduleNudgeRef.current(); return; }
+
+        repromptCountRef.current += 1;
+
+        if (repromptCountRef.current > SILENCE_MAX_NUDGES) {
+          // Customer unresponsive — end gracefully
+          statusRef.current = "ended";
+          setStatus("ended");
+          void endSession("abandoned");
+          return;
+        }
+
+        // Nudge AI to re-engage (per-response instruction override, no fake user message)
+        wsRef.current?.send(JSON.stringify({
+          type: "response.create",
+          response: {
+            instructions:
+              "The customer has not spoken in a while. Briefly and warmly check if they are still there. " +
+              "If second check, gently suggest they can call back or book manually.",
+          },
+        }));
+        // Reschedule for next check
+        scheduleNudgeRef.current();
+      }, SILENCE_REPROMPT_MS);
+    };
+  }, [endSession]);
+
   const handleRealtimeEvent = useCallback((
     ev: Record<string, unknown>,
     salonSlug: string,
     sessionId: string | null,
   ) => {
     const type = ev.type as string;
+
+    // ── Tool-call dispatcher ─────────────────────────────────────────────────
+    // Deduped via processedCallIdsRef so calling from both the streaming event
+    // (response.output_function_call_arguments.done / response.output_item.done)
+    // AND from response.done is safe — only the first wins.
+    const dispatchFunctionCall = (callId: string, fnName: string, rawArgs: string) => {
+      if (processedCallIdsRef.current.has(callId)) return;
+      processedCallIdsRef.current.add(callId);
+
+      let args: Record<string, unknown> = {};
+      try { args = JSON.parse(rawArgs) as Record<string, unknown>; } catch { /* ignore */ }
+
+      fetch("/api/voice/tool", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ toolName: fnName, toolArgs: args, salonSlug, sessionId }),
+      })
+        .then((r) => r.json())
+        .then((result: unknown) => {
+          const res = result as Record<string, unknown>;
+          // Surface booking confirmation in the UI immediately
+          if (fnName === "confirm_booking" && res.success) {
+            setBookingResult({
+              bookingId:    (res.bookingId    as string | null) ?? null,
+              serviceName:  (res.serviceName  as string) ?? "",
+              date:         (res.date         as string) ?? "",
+              timeSlot:     (res.timeSlot     as string) ?? "",
+              customerName: (res.customerName as string) ?? "",
+            });
+          }
+          // Return result to the model so it can speak the confirmation
+          wsRef.current?.send(JSON.stringify({
+            type: "conversation.item.create",
+            item: { type: "function_call_output", call_id: callId, output: JSON.stringify(result) },
+          }));
+          wsRef.current?.send(JSON.stringify({ type: "response.create" }));
+        })
+        .catch((err: unknown) => {
+          wsRef.current?.send(JSON.stringify({
+            type: "conversation.item.create",
+            item: { type: "function_call_output", call_id: callId, output: JSON.stringify({ error: String(err) }) },
+          }));
+          wsRef.current?.send(JSON.stringify({ type: "response.create" }));
+        });
+    };
 
     if (type === "session.created") {
       // session.created fires immediately on connect; wait for session.updated
@@ -127,10 +235,59 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       }
     }
 
-    if (type === "response.created") setAiActivity("thinking");
-    if (type === "response.output_audio.delta" || type === "response.audio.delta") setAiActivity("speaking");
-    if (type === "response.done") setAiActivity("idle");
+    // AI activity — keep ref + state in sync, drive silence timer
+    if (type === "response.created") {
+      aiActiveRef.current = true;
+      setAiActivity("thinking");
+      // AI is now active — pause silence watch
+      if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
+    }
+    if (type === "response.output_audio.delta" || type === "response.audio.delta") {
+      aiActiveRef.current = true;
+      setAiActivity("speaking");
+    }
 
+    if (type === "response.done") {
+      aiActiveRef.current = false;
+      setAiActivity("idle");
+
+      // ── Belt-and-suspenders: extract any function calls from the response
+      // output array.  Streaming events (response.output_function_call_arguments
+      // .done, response.output_item.done) should have fired first, so
+      // processedCallIdsRef deduplication makes this a safe no-op in that case.
+      // But if those events were missed (new model, rate-limit, etc.) this
+      // catches them.
+      const resp = ev.response as {
+        output?: Array<{ type?: string; call_id?: string; name?: string; arguments?: string }>;
+      } | undefined;
+      let hasPendingFunctionCall = false;
+      for (const item of resp?.output ?? []) {
+        if (item.type === "function_call" && item.call_id && item.name) {
+          // If already dispatched by the streaming event, processedCallIdsRef
+          // prevents a second dispatch.  If not yet dispatched (streaming event
+          // was missed) this is the first — and real — dispatch.
+          if (!processedCallIdsRef.current.has(item.call_id)) {
+            hasPendingFunctionCall = true;
+          }
+          dispatchFunctionCall(item.call_id, item.name, item.arguments ?? "{}");
+        }
+      }
+
+      // Only start the user-silence timer when there are no pending tool calls.
+      // The tool result will trigger a new response.create → response.created
+      // → the cycle restarts naturally.
+      if (!hasPendingFunctionCall && statusRef.current === "connected") {
+        scheduleNudgeRef.current();
+      }
+    }
+
+    // User started speaking — reset silence tracker
+    if (type === "input_audio_buffer.speech_started") {
+      repromptCountRef.current = 0;
+      if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
+    }
+
+    // ── Audio playback ───────────────────────────────────────────────────────
     if (type === "response.output_audio.delta" || type === "response.audio.delta") {
       const delta = ev.delta as string | undefined;
       if (!delta || !audioCtxRef.current) return;
@@ -147,6 +304,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       nextPlayRef.current = when + buf.duration;
     }
 
+    // ── Transcripts ──────────────────────────────────────────────────────────
     if (type === "response.output_audio_transcript.done" || type === "response.audio_transcript.done") {
       const text = ev.transcript as string | undefined;
       if (text) setTranscript((prev) => {
@@ -156,68 +314,68 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       });
     }
 
+    // User speech transcript — fires when input audio transcription is available
+    if (type === "conversation.item.input_audio_transcription.completed") {
+      const text = ev.transcript as string | undefined;
+      if (text) setTranscript((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === "user" && last.text === text) return prev;
+        return [...prev, { role: "user" as const, text }];
+      });
+    }
+
+    // Fallback: conversation.item.created for text-role user messages
     if (type === "conversation.item.created") {
       const item = ev.item as { role?: string; content?: { text?: string }[] } | undefined;
       if (item?.role === "user") {
         const text = item.content?.find((c) => c.text)?.text ?? "";
-        if (text) setTranscript((prev) => [...prev, { role: "user", text }]);
+        if (text) setTranscript((prev) => {
+          const last = prev[prev.length - 1];
+          if (last?.role === "user" && last.text === text) return prev;
+          return [...prev, { role: "user", text }];
+        });
       }
     }
 
-    // Handle function calls — gpt-realtime-2 may use output_ prefix or item.done
+    // ── Streaming function-call events ────────────────────────────────────────
+    // gpt-realtime-2 GA uses response.output_function_call_arguments.done;
+    // older preview used response.function_call_arguments.done;
+    // response.output_item.done wraps completed items including function calls.
     const isFunctionCallDone =
       type === "response.function_call_arguments.done" ||
       type === "response.output_function_call_arguments.done" ||
       (type === "response.output_item.done" && (ev.item as { type?: string } | undefined)?.type === "function_call");
 
     if (isFunctionCallDone) {
-      // Normalise: item.done wraps args differently
-      const item = ev.item as { name?: string; call_id?: string; arguments?: string } | undefined;
-      const name    = (ev.name    as string | undefined) ?? item?.name;
-      const call_id = (ev.call_id as string | undefined) ?? item?.call_id;
+      const item    = ev.item as { name?: string; call_id?: string; arguments?: string } | undefined;
+      const fnName  = (ev.name     as string | undefined) ?? item?.name;
+      const callId  = (ev.call_id  as string | undefined) ?? item?.call_id;
       const rawArgs = (ev.arguments as string | undefined) ?? item?.arguments ?? "{}";
-      if (!name || !call_id) return;
-      let args: Record<string, unknown> = {};
-      try { args = JSON.parse(rawArgs) as Record<string, unknown>; } catch { /* ignore */ }
-
-      fetch("/api/voice/tool", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ toolName: name, toolArgs: args, salonSlug, sessionId }),
-      })
-        .then((r) => r.json())
-        .then((result) => {
-          wsRef.current?.send(JSON.stringify({
-            type: "conversation.item.create",
-            item: { type: "function_call_output", call_id, output: JSON.stringify(result) },
-          }));
-          wsRef.current?.send(JSON.stringify({ type: "response.create" }));
-        })
-        .catch((err: unknown) => {
-          wsRef.current?.send(JSON.stringify({
-            type: "conversation.item.create",
-            item: { type: "function_call_output", call_id, output: JSON.stringify({ error: String(err) }) },
-          }));
-          wsRef.current?.send(JSON.stringify({ type: "response.create" }));
-        });
+      if (fnName && callId) {
+        dispatchFunctionCall(callId, fnName, rawArgs);
+      }
     }
 
     if (type === "error") {
       const errObj = ev.error as { code?: string; message?: string; type?: string } | undefined;
       const msg = errObj?.message ?? errObj?.code ?? errObj?.type ?? JSON.stringify(ev);
-      console.error("[voice/ws] server error full:", JSON.stringify(ev));
+      console.error("[voice/ws] server error:", JSON.stringify(ev));
       setError(msg);
       statusRef.current = "error";
       setStatus("error");
       cleanup();
     }
-  }, []);
+  }, [cleanup]);  // eslint-disable-line react-hooks/exhaustive-deps
+  // Note: setBookingResult is a stable React setter; wsRef/processedCallIdsRef
+  // are stable refs. dispatchFunctionCall is defined inside the callback and
+  // captures those correctly. Adding them to deps would cause infinite re-renders.
 
   const start = useCallback(async () => {
     if (statusRef.current !== "idle" && statusRef.current !== "error") return;
     statusRef.current = "session_init";
     setStatus("session_init");
     setError(null);
+    setBookingResult(null);
 
     try {
       // 1. Get ephemeral key + session from server
@@ -262,9 +420,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         // Resume AudioContext (Chrome may suspend it until a user gesture)
         void audioCtx.resume();
 
-        // Ensure audio modalities + formats are set — client_secrets nested
-        // audio.* schema may not carry these through for gpt-realtime-2
-        // Set audio config + tools — client_secrets minimal body may not propagate tools
+        // Configure session: audio format, VAD, tools, voice
         ws.send(JSON.stringify({
           type: "session.update",
           session: {
@@ -273,13 +429,19 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             tools:             [...REALTIME_TOOLS],
             tool_choice:       "auto",
             audio: {
-              input:  { format: { type: "audio/pcm", rate: 24000 }, turn_detection: { type: "semantic_vad", interrupt_response: true } },
-              output: { format: { type: "audio/pcm", rate: 24000 }, voice },
+              input: {
+                format:         { type: "audio/pcm", rate: 24000 },
+                turn_detection: { type: "semantic_vad", interrupt_response: true },
+              },
+              output: {
+                format: { type: "audio/pcm", rate: 24000 },
+                voice,
+              },
             },
           },
         }));
 
-        // Capture mic: route through a muted gain so ScriptProcessor fires
+        // Capture mic: route through a muted gain node so ScriptProcessor fires
         // without echoing mic audio back to the speakers
         const source    = audioCtx.createMediaStreamSource(stream);
         const processor = audioCtx.createScriptProcessor(4096, 1, 1);
@@ -300,14 +462,24 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
 
       ws.onmessage = (e: MessageEvent) => {
         try {
-          const ev = JSON.parse(e.data as string) as Record<string, unknown>;
-          const t = ev.type as string;
-          // Log every event type to discover gpt-realtime-2 event names
-          if (!t.startsWith("input_audio") && t !== "response.audio.delta") {
-            console.log("[voice/ws] event:", t, t.includes("function") || t.includes("tool") ? JSON.stringify(ev) : "");
+          const ev     = JSON.parse(e.data as string) as Record<string, unknown>;
+          const evType = ev.type as string;
+          // Suppress only high-frequency audio streaming noise
+          const isAudioStream =
+            evType === "response.audio.delta" ||
+            evType === "response.output_audio.delta" ||
+            evType.startsWith("input_audio_buffer");
+          if (!isAudioStream) {
+            // Full JSON for events that may carry function call data
+            const wantFull =
+              evType.includes("function") ||
+              evType.includes("tool")     ||
+              evType.includes("item")     ||
+              evType === "response.done";
+            console.log("[voice/ws]", evType, wantFull ? JSON.stringify(ev) : "");
           }
           handleRealtimeEvent(ev, shopSlug, sessionId);
-        } catch { /* malformed */ }
+        } catch { /* malformed frame */ }
       };
 
       ws.onerror = () => {
@@ -367,6 +539,13 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 5-min hard cap — auto-end regardless of activity
+  useEffect(() => {
+    if (status === "connected" && durationSec >= TOTAL_CALL_LIMIT_SEC) {
+      void handleStop();
+    }
+  }, [durationSec, status, handleStop]);
+
   const formatDuration = (sec: number) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
 
   const isListening = status === "connected" && aiActivity === "idle";
@@ -404,7 +583,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             isSpeaking                     ? "bg-blue-100 shadow-lg shadow-blue-200 animate-pulse" : "",
             isThinking                     ? "bg-amber-100" : "",
             status === "error"             ? "bg-red-100" : "",
-            status === "ended"             ? "bg-zinc-100" : "",
+            status === "ended"             ? (bookingResult ? "bg-green-100" : "bg-zinc-100") : "",
             !["connected","error","ended"].includes(status) ? "bg-[var(--booking-bg-card)]" : "",
           ].join(" ")}>
             {status === "connected" && !isSpeaking ? (
@@ -417,8 +596,13 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
               <svg className="h-10 w-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.536 8.464a5 5 0 010 7.072M12 6v12m-3.536-9.536a5 5 0 000 7.072M19.07 4.93a10 10 0 010 14.14" />
               </svg>
+            ) : status === "ended" && bookingResult ? (
+              /* Booking success checkmark */
+              <svg className="h-10 w-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
+              </svg>
             ) : status === "ended" ? (
-              /* Checkmark */
+              /* Plain ended checkmark */
               <svg className="h-10 w-10 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
               </svg>
@@ -438,14 +622,29 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
              : isSpeaking               ? v.aiSpeaking
              : isThinking               ? v.processing
              : status === "connected"   ? `${v.listening} ${formatDuration(durationSec)}`
+             : status === "ended" && bookingResult ? v.bookingConfirmed
              : status === "ended"       ? v.ended
              : status === "error"       ? (error ?? "Error")
              : ""}
           </p>
         </div>
 
+        {/* Booking confirmation card — shown when confirm_booking succeeded */}
+        {bookingResult && (
+          <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-950">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">
+              {v.bookingConfirmed}
+            </p>
+            <p className="text-sm font-semibold text-[var(--booking-text)]">{bookingResult.serviceName}</p>
+            <p className="text-sm text-[var(--booking-text-muted)]">
+              {bookingResult.date} · {bookingResult.timeSlot}
+            </p>
+            <p className="text-sm text-[var(--booking-text-muted)]">{bookingResult.customerName}</p>
+          </div>
+        )}
+
         {/* Transcript — two-way: AI + user speech */}
-        {transcript.length > 0 && (
+        {transcript.length > 0 && !bookingResult && (
           <div className="mb-4 max-h-40 space-y-1.5 overflow-y-auto rounded-xl bg-[var(--booking-bg-card)] p-3 text-sm">
             {transcript.map((entry, i) => (
               <p key={i} className={entry.role === "ai"

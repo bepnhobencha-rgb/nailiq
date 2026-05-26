@@ -462,6 +462,7 @@ export const bookingEn = {
     chatSpeaking: "Speaking…",
     chatCancel: "Cancel",
     slotNotFound: "{time} isn't available — please pick another time below.",
+    bookingConfirmed: "Booking confirmed!",
   },
 };
 

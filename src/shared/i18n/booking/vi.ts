@@ -322,5 +322,6 @@ export const bookingVi: BookingMessages = {
     chatSpeaking: "Đang nói…",
     chatCancel: "Hủy",
     slotNotFound: "{time} không còn chỗ trống — vui lòng chọn giờ khác bên dưới.",
+    bookingConfirmed: "Đã đặt lịch thành công!",
   },
 };
