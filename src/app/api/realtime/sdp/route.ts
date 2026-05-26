@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime    = "nodejs";
 export const maxDuration = 30;
 
-const MODEL    = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2025-08-28";
+const MODEL    = process.env.OPENAI_REALTIME_MODEL ?? "gpt-4o-realtime-preview";
 const OAI_HOST = "https://api.openai.com";
 
 // ── HTTP/2 POST helper ─────────────────────────────────────────────────────────
@@ -77,8 +77,8 @@ async function mintEphemeralKey(apiKey: string): Promise<string> {
   }, body);
 
   console.log("[realtime/sdp] client_secrets ←", {
-    status:       result.status,
-    body_preview: result.body.slice(0, 200),
+    status:    result.status,
+    body_full: result.body,   // full response — shows model, expires_at, session
   });
 
   if (result.status < 200 || result.status >= 300) {
@@ -88,7 +88,13 @@ async function mintEphemeralKey(apiKey: string): Promise<string> {
     );
   }
 
-  const data = JSON.parse(result.body) as { value?: string };
+  const data = JSON.parse(result.body) as { value?: string; expires_at?: number; session?: unknown };
+  console.log("[realtime/sdp] ephemeral key parsed:", {
+    key_prefix: data.value ? data.value.slice(0, 8) + "…" : "MISSING",
+    expires_at: data.expires_at,
+    session:    data.session,
+  });
+
   if (!data.value) {
     throw Object.assign(
       new Error("ephemeral_key_missing"),
@@ -96,7 +102,6 @@ async function mintEphemeralKey(apiKey: string): Promise<string> {
     );
   }
 
-  console.log("[realtime/sdp] ephemeral key:", data.value.slice(0, 8) + "…");
   return data.value;
 }
 
