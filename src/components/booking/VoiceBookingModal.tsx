@@ -105,8 +105,12 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   ) => {
     const type = ev.type as string;
 
-    if (type === "session.created" || type === "session.updated") {
-      // Session is active — mark connected
+    if (type === "session.created") {
+      // session.created fires immediately on connect; wait for session.updated
+      // (triggered by our session.update) before marking connected + greeting
+    }
+
+    if (type === "session.updated") {
       if (statusRef.current === "connecting") {
         statusRef.current = "connected";
         setStatus("connected");
@@ -114,12 +118,16 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         timerRef.current = setInterval(() => {
           setDuration(Math.round((Date.now() - startTsRef.current) / 1000));
         }, 1000);
+        // Prompt AI to speak first
+        wsRef.current?.send(JSON.stringify({ type: "response.create" }));
       }
     }
 
     if (type === "response.audio.delta") {
       const delta = ev.delta as string | undefined;
+      console.log("[voice/ws] audio delta received, length:", delta?.length ?? 0);
       if (!delta || !audioCtxRef.current) return;
+      void audioCtxRef.current.resume();
       const ctx = audioCtxRef.current;
       const float32 = base64ToFloat32(delta);
       const buf = ctx.createBuffer(1, float32.length, 24000);
@@ -234,17 +242,41 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       wsRef.current = ws;
 
       ws.onopen = () => {
-        // Session was fully configured server-side via client_secrets — just start streaming
+        // Resume AudioContext (Chrome may suspend it until a user gesture)
+        void audioCtx.resume();
+
+        // Ensure audio modalities + formats are set — client_secrets nested
+        // audio.* schema may not carry these through for gpt-realtime-2
+        ws.send(JSON.stringify({
+          type: "session.update",
+          session: {
+            modalities:          ["audio", "text"],
+            input_audio_format:  "pcm16",
+            output_audio_format: "pcm16",
+            turn_detection: {
+              type:                "server_vad",
+              threshold:           0.45,
+              prefix_padding_ms:   200,
+              silence_duration_ms: 700,
+            },
+          },
+        }));
+
+        // Capture mic: route through a muted gain so ScriptProcessor fires
+        // without echoing mic audio back to the speakers
         const source    = audioCtx.createMediaStreamSource(stream);
         const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+        const muteGain  = audioCtx.createGain();
+        muteGain.gain.value = 0;
         processorRef.current = processor;
         source.connect(processor);
-        processor.connect(audioCtx.destination);
+        processor.connect(muteGain);
+        muteGain.connect(audioCtx.destination);
         processor.onaudioprocess = (e) => {
           if (wsRef.current?.readyState !== WebSocket.OPEN) return;
-          const pcm  = e.inputBuffer.getChannelData(0);
-          const buf  = float32ToPCM16(pcm);
-          const b64  = arrayBufferToBase64(buf);
+          const pcm = e.inputBuffer.getChannelData(0);
+          const buf = float32ToPCM16(pcm);
+          const b64 = arrayBufferToBase64(buf);
           wsRef.current.send(JSON.stringify({ type: "input_audio_buffer.append", audio: b64 }));
         };
       };
