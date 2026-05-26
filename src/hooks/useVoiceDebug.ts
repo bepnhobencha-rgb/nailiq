@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { REALTIME_CONFIG } from "@/config/realtime";
+import { REALTIME_MODEL, REALTIME_VOICE, REALTIME_TRANSCRIPTION_MODEL, REALTIME_VAD } from "@/config/realtime";
 import { VOICE_TOOLS } from "@/shared/voice/tools";
 
 // ─── Error serialization ────────────────────────────────────────────────────
@@ -339,7 +339,7 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
     setUserTranscript("");
     setConnectionStats({ ice: null, pc: null, dc: null, signaling: null });
 
-    logEvent("system", "session.start", { mode: modeRef.current, shopSlug, language, model: REALTIME_CONFIG.model, voice: REALTIME_CONFIG.voice });
+    logEvent("system", "session.start", { mode: modeRef.current, shopSlug, language, model: REALTIME_MODEL, voice: REALTIME_VOICE });
 
     try {
       if (!window.isSecureContext) throw Object.assign(new Error("insecure_context"), { name: "InsecureContext" });
@@ -353,7 +353,7 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
 
       // ── Step 1: Get ephemeral key from our server ──────────────────────────
       setStatus("connecting_openai");
-      logEvent("system", "session.request", { salon: shopSlug, language, model: REALTIME_CONFIG.model });
+      logEvent("system", "session.request", { salon: shopSlug, language, model: REALTIME_MODEL });
 
       const sessionRes = await fetch("/api/voice/session", {
         method: "POST",
@@ -372,7 +372,7 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
           parsed_body: parsedBody,
           error_code: parsedBody?.error ?? "session_create_failed",
           endpoint: "/api/voice/session",
-          model: REALTIME_CONFIG.model,
+          model: REALTIME_MODEL,
           request_salon: shopSlug,
           request_language: language,
         };
@@ -388,7 +388,7 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
         session_config: SessionConfig;
         salon: { name: string; slug: string; timezone: string };
       };
-      logEvent("system", "session.ready", { expires_at, salon: salon.name, model: REALTIME_CONFIG.model, key_prefix: ephemeral_key.slice(0, 8) + "…" });
+      logEvent("system", "session.ready", { expires_at, salon: salon.name, model: REALTIME_MODEL, key_prefix: ephemeral_key.slice(0, 8) + "…" });
       sessionConfigRef.current = session_config;
 
       // ── Step 2: Set up WebRTC peer connection ──────────────────────────────
@@ -438,15 +438,15 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
           session: {
             modalities: ["audio", "text"],
             instructions: cfg?.instructions ?? "You are a helpful assistant.",
-            voice: cfg?.voice ?? REALTIME_CONFIG.voice,
+            voice: cfg?.voice ?? REALTIME_VOICE,
             input_audio_format: "pcm16",
             output_audio_format: "pcm16",
-            input_audio_transcription: { model: REALTIME_CONFIG.transcriptionModel },
+            input_audio_transcription: { model: REALTIME_TRANSCRIPTION_MODEL },
             turn_detection: {
               type: "server_vad",
-              threshold: REALTIME_CONFIG.vad.threshold,
-              prefix_padding_ms: REALTIME_CONFIG.vad.prefixPaddingMs,
-              silence_duration_ms: REALTIME_CONFIG.vad.silenceDurationMs,
+              threshold: REALTIME_VAD.threshold,
+              prefix_padding_ms: REALTIME_VAD.prefixPaddingMs,
+              silence_duration_ms: REALTIME_VAD.silenceDurationMs,
             },
             tools,
             tool_choice: toolChoice,
@@ -480,8 +480,8 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
       // directly to api.openai.com (CORS preflight blocked).
       logEvent("system", "sdp.exchange", {
         proxy: "/api/voice/sdp",
-        openai_endpoint: `${REALTIME_CONFIG.sdpEndpoint}?model=${REALTIME_CONFIG.model}`,
-        model: REALTIME_CONFIG.model,
+        openai_endpoint: `${`https://api.openai.com/v1/realtime`}?model=${REALTIME_MODEL}`,
+        model: REALTIME_MODEL,
         key_type: "ephemeral",
         sdp_bytes: offer.sdp?.length ?? 0,
       });
@@ -503,7 +503,7 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
           parsed_body: parsedBody,
           openai_status: parsedBody?.openai_status ?? null,
           openai_body: parsedBody?.openai_body ?? null,
-          model: REALTIME_CONFIG.model,
+          model: REALTIME_MODEL,
           proxy_endpoint: "/api/voice/sdp",
           sdp_offer_bytes: offer.sdp?.length ?? 0,
         };
@@ -540,7 +540,7 @@ export function useVoiceDebug(): UseVoiceDebugReturn {
         http_status: anyPayload?.http_status ?? null,
         raw_body: anyPayload?.raw_body ?? null,
         openai_error: anyPayload?.openai_error ?? null,
-        model: anyPayload?.model ?? REALTIME_CONFIG.model,
+        model: anyPayload?.model ?? REALTIME_MODEL,
         sdp_payload: sdpPayload,
         session_payload: sessionPayload,
       });

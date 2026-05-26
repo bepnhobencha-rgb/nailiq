@@ -6,7 +6,7 @@ import {
   type BookingResult,
 } from "@/shared/booking/submitPublicBooking";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
-import { REALTIME_CONFIG } from "@/config/realtime";
+import { REALTIME_MODEL, REALTIME_VOICE, REALTIME_TRANSCRIPTION_MODEL, REALTIME_VAD } from "@/config/realtime";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -337,7 +337,7 @@ export function useRealtimeVoice(params: {
       console.info("[voice-connect] click_start", {
         salon: shopSlugRef.current,
         lang: language,
-        safeMode: REALTIME_CONFIG.safeMode,
+        safeMode: false,
         ua: navigator.userAgent.slice(0, 80),
       });
 
@@ -422,13 +422,13 @@ export function useRealtimeVoice(params: {
         const cfg = sessionConfigRef.current;
         if (cfg) {
           // Safe mode: send empty tools to isolate connection from tool schema issues
-          const tools = REALTIME_CONFIG.safeMode ? [] : cfg.tools;
-          const toolChoice = REALTIME_CONFIG.safeMode ? "none" : "auto";
+          const tools = false ? [] : cfg.tools;
+          const toolChoice = false ? "none" : "auto";
           console.info("[voice-connect] session_update_sent", {
             voice: cfg.voice,
             toolCount: tools.length,
-            safeMode: REALTIME_CONFIG.safeMode,
-            transcriptionModel: REALTIME_CONFIG.transcriptionModel,
+            safeMode: false,
+            transcriptionModel: REALTIME_TRANSCRIPTION_MODEL,
           });
           sendEvent({
             type: "session.update",
@@ -438,12 +438,12 @@ export function useRealtimeVoice(params: {
               voice: cfg.voice,
               input_audio_format: "pcm16",
               output_audio_format: "pcm16",
-              input_audio_transcription: { model: REALTIME_CONFIG.transcriptionModel },
+              input_audio_transcription: { model: REALTIME_TRANSCRIPTION_MODEL },
               turn_detection: {
                 type: "server_vad",
-                threshold: REALTIME_CONFIG.vad.threshold,
-                prefix_padding_ms: REALTIME_CONFIG.vad.prefixPaddingMs,
-                silence_duration_ms: REALTIME_CONFIG.vad.silenceDurationMs,
+                threshold: REALTIME_VAD.threshold,
+                prefix_padding_ms: REALTIME_VAD.prefixPaddingMs,
+                silence_duration_ms: REALTIME_VAD.silenceDurationMs,
               },
               tools,
               tool_choice: toolChoice,
@@ -472,7 +472,7 @@ export function useRealtimeVoice(params: {
 
       // Phase 3b: SDP exchange via server proxy — browser CORS blocks direct
       // application/sdp fetch to api.openai.com; server forwards using ephemeral key.
-      console.info("[voice-connect] sdp_exchange_start", { proxy: "/api/voice/sdp", model: REALTIME_CONFIG.model });
+      console.info("[voice-connect] sdp_exchange_start", { proxy: "/api/voice/sdp", model: REALTIME_MODEL });
       const sdpRes = await fetch("/api/voice/sdp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
