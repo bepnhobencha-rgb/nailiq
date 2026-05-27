@@ -82,6 +82,9 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   const startTsRef          = useRef<number>(0);
   const statusRef           = useRef<Status>("idle");
   const nextPlayRef         = useRef<number>(0);
+  // Shared output gain node — all AI audio chunks route through this so we
+  // can boost volume to match media-playback level (fixes iOS quiet audio).
+  const outputGainRef       = useRef<GainNode | null>(null);
   // Tracks call_ids already dispatched — prevents duplicate tool calls when
   // both response.output_function_call_arguments.done AND response.done fire.
   const processedCallIdsRef = useRef<Set<string>>(new Set());
@@ -105,6 +108,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     wsRef.current             = null;
     audioCtxRef.current       = null;
     processorRef.current      = null;
+    outputGainRef.current     = null;
     streamRef.current         = null;
     nextPlayRef.current       = 0;
     silenceTimerRef.current   = null;
@@ -299,13 +303,15 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       const delta = ev.delta as string | undefined;
       if (!delta || !audioCtxRef.current) return;
       void audioCtxRef.current.resume();
-      const ctx = audioCtxRef.current;
+      const ctx  = audioCtxRef.current;
+      // Route through outputGainRef (2× boost) if available, else direct.
+      const dest = outputGainRef.current ?? ctx.destination;
       const float32 = base64ToFloat32(delta);
       const buf = ctx.createBuffer(1, float32.length, 24000);
       buf.getChannelData(0).set(float32);
       const src = ctx.createBufferSource();
       src.buffer = buf;
-      src.connect(ctx.destination);
+      src.connect(dest);
       const when = Math.max(ctx.currentTime, nextPlayRef.current);
       src.start(when);
       nextPlayRef.current = when + buf.duration;
@@ -415,8 +421,26 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       // 3. AudioContext for mic capture + playback
       statusRef.current = "connecting";
       setStatus("connecting");
+
+      // iOS 17+: set audio session to 'playback' so audio routes through the
+      // loudspeaker at media-playback volume (same channel as YouTube/Spotify).
+      // Without this, iOS uses the 'default' session which is much quieter and
+      // may route through the earpiece instead of the speaker.
+      try {
+        const nav = navigator as unknown as { audioSession?: { type: string } };
+        if (nav.audioSession) nav.audioSession.type = "playback";
+      } catch { /* unsupported — no-op */ }
+
       const audioCtx = new AudioContext({ sampleRate: 24000 });
       audioCtxRef.current = audioCtx;
+
+      // Output gain node — all AI audio chunks connect here before destination.
+      // 2.0 = double amplitude (~+6 dB) so the voice feels as loud as a media
+      // app even on devices where Web Audio runs at reduced volume by default.
+      const outputGain = audioCtx.createGain();
+      outputGain.gain.value = 2.0;
+      outputGain.connect(audioCtx.destination);
+      outputGainRef.current = outputGain;
 
       // 4. Open WebSocket directly to OpenAI with ek_... as subprotocol auth
       const wsUrl = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(realtimeModel)}`;
