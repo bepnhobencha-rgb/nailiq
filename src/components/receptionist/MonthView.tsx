@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { Card } from "@/components/ui/Card";
-import { loadReceptionistCenterDataAction } from "@/shared/dashboard/loadReceptionistCenterDataAction";
-import type { ReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
+import {
+  getBookingsForRangeAction,
+  type CalendarBooking,
+} from "@/shared/dashboard/getBookingsForRangeAction";
 import type { ReceptionistMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
 import { formatInSalonTz } from "@/shared/lib/salonTime";
@@ -12,18 +14,22 @@ import { formatInSalonTz } from "@/shared/lib/salonTime";
 /**
  * Read-only month-calendar grid for the Receptionist Center.
  *
+ * Data: fetches the entire month in a SINGLE `getBookingsForRangeAction` call
+ * (one auth round-trip + one range query). Previous naïve implementation would
+ * have fired ~31 parallel `loadReceptionistCenterDataAction` calls.
+ *
  * Layout: standard Mon–Sun 7-column calendar (6-week rows max).
  * Greyed-out cells from prev/next month are shown for context but
- * carry no bookings. Each in-month day shows up to 3 booking chips;
- * "+N more" overflow indicator when there are more.
+ * carry no bookings. Each in-month day shows up to 3 booking chips
+ * colour-coded by status; "+N more" overflow indicator when there are more.
  *
  * Clicking a booking chip → `onBookingClick(bookingId, ymd)` so the
- * parent can load that day and open the BookingDetailDrawer.
+ * parent loads that day and opens BookingDetailDrawer.
  * Clicking a day number → `onDayClick(ymd)` to flip back to Day view.
  */
 
 const TOP_BOOKINGS_PER_DAY = 3;
-const DAY_FETCH_TIMEOUT_MS = 20_000;
+const RANGE_FETCH_TIMEOUT_MS = 20_000;
 
 // ─── Date helpers ────────────────────────────────────────────────────────────
 
@@ -92,7 +98,7 @@ function buildMonthGrid(firstYmd: string): Array<{ ymd: string; inMonth: boolean
 
 type DayState =
   | { kind: "loading" }
-  | { kind: "ok"; bookings: ReceptionistCenterData["bookingsForDay"] }
+  | { kind: "ok"; bookings: CalendarBooking[] }
   | { kind: "error" };
 
 export interface MonthViewProps {
@@ -133,11 +139,18 @@ export function MonthView({
 }: MonthViewProps) {
   const cells = useMemo(() => buildMonthGrid(firstYmd), [firstYmd]);
 
-  // Only fetch in-month days.
+  // In-month YMDs for the loading state initialisation and fallback error mapping.
   const inMonthYmds = useMemo(
     () => cells.filter((c) => c.inMonth).map((c) => c.ymd),
     [cells],
   );
+
+  // Last day of the month — used as the inclusive end of the range query.
+  const lastYmd = useMemo(() => {
+    const d = ymdToLocalDate(firstYmd);
+    d.setMonth(d.getMonth() + 1, 0); // day 0 of next month = last day of this month
+    return localDateToYmd(d);
+  }, [firstYmd]);
 
   const [days, setDays] = useState<Record<string, DayState>>({});
 
@@ -150,48 +163,45 @@ export function MonthView({
       ),
     );
 
+    // Single range call — 1 round-trip for all ~28-31 days of the month.
     const withTimeout = <T,>(p: Promise<T>): Promise<T> =>
       Promise.race([
         p,
         new Promise<T>((_, reject) =>
-          setTimeout(() => reject(new Error("timeout")), DAY_FETCH_TIMEOUT_MS),
+          setTimeout(() => reject(new Error("timeout")), RANGE_FETCH_TIMEOUT_MS),
         ),
       ]);
 
-    void Promise.allSettled(
-      inMonthYmds.map(async (ymd) => {
-        const res = await withTimeout(loadReceptionistCenterDataAction(slug, ymd));
-        return { ymd, res };
-      }),
-    ).then((settled) => {
-      if (cancelled) return;
-      const next: Record<string, DayState> = {};
-      for (const result of settled) {
-        if (result.status === "fulfilled") {
-          const { ymd, res } = result.value;
-          next[ymd] = res.ok
-            ? { kind: "ok", bookings: res.data.bookingsForDay }
-            : { kind: "error" };
-        } else {
-          for (const ymd of inMonthYmds) {
-            if (!(ymd in next)) next[ymd] = { kind: "error" };
-          }
+    void withTimeout(getBookingsForRangeAction(slug, firstYmd, lastYmd))
+      .then((res) => {
+        if (cancelled) return;
+        if (!res.ok) {
+          setDays(
+            Object.fromEntries(
+              inMonthYmds.map((y) => [y, { kind: "error" } as DayState]),
+            ),
+          );
+          return;
         }
-      }
-      setDays(next);
-    }).catch(() => {
-      if (cancelled) return;
-      setDays(
-        Object.fromEntries(
-          inMonthYmds.map((y) => [y, { kind: "error" } as DayState]),
-        ),
-      );
-    });
+        const next: Record<string, DayState> = {};
+        for (const ymd of inMonthYmds) {
+          next[ymd] = { kind: "ok", bookings: res.days[ymd] ?? [] };
+        }
+        setDays(next);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDays(
+          Object.fromEntries(
+            inMonthYmds.map((y) => [y, { kind: "error" } as DayState]),
+          ),
+        );
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [slug, inMonthYmds]);
+  }, [slug, firstYmd, lastYmd, inMonthYmds]);
 
   const monthLabel = useMemo(() => {
     const d = ymdToLocalDate(firstYmd);
@@ -335,26 +345,20 @@ function MonthDayBookings({
   openBookingAria,
   onBookingClick,
 }: {
-  bookings: ReceptionistCenterData["bookingsForDay"];
+  bookings: CalendarBooking[];
   timezone: string;
   moreLabel: string;
   openBookingAria: string;
   onBookingClick: (bookingId: string) => void;
 }) {
+  // Bookings already filtered + sorted by getBookingsForRangeAction;
+  // re-sort defensively in case the response arrives out of order.
   const sorted = useMemo(() => {
-    return [...bookings]
-      .filter(
-        (b) =>
-          b.status === "pending" ||
-          b.status === "confirmed" ||
-          b.status === "in_progress" ||
-          b.status === "completed",
-      )
-      .sort((a, b) => {
-        const am = Date.parse(a.start_time_utc);
-        const bm = Date.parse(b.start_time_utc);
-        return (Number.isFinite(am) ? am : 0) - (Number.isFinite(bm) ? bm : 0);
-      });
+    return [...bookings].sort((a, b) => {
+      const am = Date.parse(a.start_time_utc);
+      const bm = Date.parse(b.start_time_utc);
+      return (Number.isFinite(am) ? am : 0) - (Number.isFinite(bm) ? bm : 0);
+    });
   }, [bookings]);
 
   const visible = sorted.slice(0, TOP_BOOKINGS_PER_DAY);

@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
-import { loadReceptionistCenterDataAction } from "@/shared/dashboard/loadReceptionistCenterDataAction";
-import type { ReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
+import {
+  getBookingsForRangeAction,
+  type CalendarBooking,
+} from "@/shared/dashboard/getBookingsForRangeAction";
 import type { ReceptionistMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
 import { formatInSalonTz } from "@/shared/lib/salonTime";
@@ -13,23 +15,25 @@ import { formatInSalonTz } from "@/shared/lib/salonTime";
 /**
  * 7-column read-only week-overview grid for the Receptionist Center.
  *
- * Data: loads 7 days in parallel via the existing
- * `loadReceptionistCenterDataAction` server action — accepts the cost of
- * 7 round-trips for now to avoid introducing a new server action / RPC
- * dedicated to a week range. Per `DASHBOARD_LAYOUT_RULES.md` §3 the
- * three-zone layout is locked for the live desk; the week view sits
- * **alongside** it as a different operational job (planning glance, not
- * intake), so we don't try to retrofit the staff×timeline geometry.
+ * Data: fetches ALL 7 days in a SINGLE `getBookingsForRangeAction` call
+ * (one auth round-trip + one range query hitting idx_bookings_calendar_range).
+ * Previous implementation fired 7 parallel `loadReceptionistCenterDataAction`
+ * calls each loading full salon data; this is ~7× faster for week view.
+ *
+ * Per `DASHBOARD_LAYOUT_RULES.md` §3 the three-zone layout is locked for
+ * the live desk; the week view sits **alongside** it as a different
+ * operational job (planning glance, not intake).
  *
  * Read-only by design: no drag, no create — receptionists switch back
  * to the Day view to act on a slot. Click a day column → the parent
- * switches to Day view for that date.
+ * switches to Day view for that date. Click a booking chip → parent
+ * opens BookingDetailDrawer.
  */
 
 const TOP_BOOKINGS_PER_DAY = 3;
 const DAYS_PER_WEEK = 7;
-/** Per-day fetch timeout (ms). Server action default is 5 min; 20 s is enough for any real load. */
-const DAY_FETCH_TIMEOUT_MS = 20_000;
+/** Range fetch timeout (ms). Single round-trip for 7 days. */
+const RANGE_FETCH_TIMEOUT_MS = 20_000;
 
 /** YYYY-MM-DD → Date at local midnight (no tz drift; consumers pass salon-local YMDs). */
 function ymdToLocalDate(ymd: string): Date {
@@ -74,10 +78,7 @@ export function shiftWeek(mondayYmd: string, weeks: number): string {
 
 type DayState =
   | { kind: "loading" }
-  | {
-      kind: "ok";
-      bookings: ReceptionistCenterData["bookingsForDay"];
-    }
+  | { kind: "ok"; bookings: CalendarBooking[] }
   | { kind: "error" };
 
 export interface WeekViewProps {
@@ -116,52 +117,50 @@ export function WeekView({
 
   useEffect(() => {
     let cancelled = false;
+    const sundayYmd = ymds[ymds.length - 1] ?? mondayYmd;
+
     // eslint-disable-next-line react-hooks/set-state-in-effect -- ARCHITECTURE_LOCK: optimistic loading state before async fetch
     setDays(
       Object.fromEntries(ymds.map((y) => [y, { kind: "loading" } as DayState])),
     );
 
+    // Single range call (1 auth + 1 booking query for all 7 days)
+    // instead of 7 parallel loadReceptionistCenterDataAction calls.
     const withTimeout = <T,>(p: Promise<T>): Promise<T> =>
       Promise.race([
         p,
         new Promise<T>((_, reject) =>
-          setTimeout(() => reject(new Error("timeout")), DAY_FETCH_TIMEOUT_MS),
+          setTimeout(() => reject(new Error("timeout")), RANGE_FETCH_TIMEOUT_MS),
         ),
       ]);
 
-    // allSettled so a single hanging/throwing day doesn't block the rest,
-    // and errors are surfaced per-column rather than swallowing the whole batch.
-    void Promise.allSettled(
-      ymds.map(async (ymd) => {
-        const res = await withTimeout(loadReceptionistCenterDataAction(slug, ymd));
-        return { ymd, res };
-      }),
-    ).then((settled) => {
-      if (cancelled) return;
-      const next: Record<string, DayState> = {};
-      for (const result of settled) {
-        if (result.status === "fulfilled") {
-          const { ymd, res } = result.value;
-          next[ymd] = res.ok
-            ? { kind: "ok", bookings: res.data.bookingsForDay }
-            : { kind: "error" };
-        } else {
-          // Promise rejected — mark all still-loading ymds as error
-          for (const ymd of ymds) {
-            if (!(ymd in next)) next[ymd] = { kind: "error" };
-          }
+    void withTimeout(getBookingsForRangeAction(slug, mondayYmd, sundayYmd))
+      .then((res) => {
+        if (cancelled) return;
+        if (!res.ok) {
+          setDays(
+            Object.fromEntries(ymds.map((y) => [y, { kind: "error" } as DayState])),
+          );
+          return;
         }
-      }
-      setDays(next);
-    }).catch(() => {
-      if (cancelled) return;
-      setDays(Object.fromEntries(ymds.map((y) => [y, { kind: "error" } as DayState])));
-    });
+        // Map server result → per-day state. Days with 0 bookings → empty ok.
+        const next: Record<string, DayState> = {};
+        for (const ymd of ymds) {
+          next[ymd] = { kind: "ok", bookings: res.days[ymd] ?? [] };
+        }
+        setDays(next);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDays(
+          Object.fromEntries(ymds.map((y) => [y, { kind: "error" } as DayState])),
+        );
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [slug, ymds]);
+  }, [slug, mondayYmd, ymds]);
 
   /** Range label "Mon 5 – Sun 11" — uses local date math, no tz dependence
    *  beyond what the YMDs already encode. Using the salon timezone for the
@@ -329,7 +328,7 @@ function DayColumnContent({
   openBookingAria,
   onBookingClick,
 }: {
-  bookings: ReceptionistCenterData["bookingsForDay"];
+  bookings: CalendarBooking[];
   timezone: string;
   moreLabel: string;
   emptyLabel: string;

@@ -70,6 +70,30 @@ export const REALTIME_TOOLS = [
   },
   {
     type: "function" as const,
+    name: "cancel_booking",
+    description:
+      "Cancel an existing booking. " +
+      "ALWAYS confirm with the customer before calling this — read back the booking details and ask them to confirm. " +
+      "If the customer just booked in this session, use the booking_id from confirm_booking. " +
+      "If it's a new session, call find_booking first to get the booking_id. " +
+      "After cancelling, wish them goodbye and invite them to rebook anytime.",
+    parameters: {
+      type: "object" as const,
+      properties: {
+        booking_id: {
+          type: "string",
+          description: "The ID of the booking to cancel.",
+        },
+        reason: {
+          type: "string",
+          description: "Short reason the customer gave for cancelling, e.g. 'customer request', 'schedule conflict'. Optional.",
+        },
+      },
+      required: ["booking_id"],
+    },
+  },
+  {
+    type: "function" as const,
     name: "reschedule_booking",
     description:
       "Reschedule an EXISTING booking to a new date and time. " +

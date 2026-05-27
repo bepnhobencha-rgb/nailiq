@@ -37,6 +37,9 @@ export async function POST(req: NextRequest) {
   if (toolName === "find_booking") {
     return handleFindBooking(supabase, salonSlug, toolArgs);
   }
+  if (toolName === "cancel_booking") {
+    return handleCancelBooking(supabase, salonSlug, toolArgs, body.sessionId ?? null);
+  }
   if (toolName === "reschedule_booking") {
     return handleRescheduleBooking(supabase, salonSlug, toolArgs, body.sessionId ?? null);
   }
@@ -275,6 +278,97 @@ async function handleConfirmBooking(
     timeSlot,
     customerName,
     customerPhone,
+  });
+}
+
+// ─── cancel_booking ──────────────────────────────────────────────────────────
+// Cancel an existing booking by setting status = 'cancelled'.
+async function handleCancelBooking(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  salonSlug: string,
+  args: Record<string, unknown>,
+  sessionId: string | null,
+) {
+  const bookingId = args.booking_id as string | undefined;
+  const reason    = (args.reason as string | undefined) ?? "customer_request";
+
+  if (!bookingId) {
+    return NextResponse.json({ error: "missing_booking_id" }, { status: 400 });
+  }
+
+  // Load salon → verify booking belongs to this salon
+  const { data: salon } = await supabase
+    .from("salons")
+    .select("id, timezone")
+    .eq("slug", salonSlug)
+    .single();
+  if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+
+  // Load booking
+  const { data: booking } = await supabase
+    .from("bookings")
+    .select("id, salon_id, status, client_name, client_phone, start_time_utc, service_id, services(name)")
+    .eq("id", bookingId)
+    .eq("salon_id", salon.id)
+    .single();
+
+  if (!booking) return NextResponse.json({ error: "booking_not_found" }, { status: 404 });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const bk = booking as any as {
+    id: string; status: string; client_name: string;
+    start_time_utc: string;
+    services: { name: string } | { name: string }[] | null;
+  };
+  const serviceName = Array.isArray(bk.services)
+    ? (bk.services[0]?.name ?? "Unknown")
+    : (bk.services?.name ?? "Unknown");
+
+  if (bk.status === "cancelled") {
+    return NextResponse.json({ error: "already_cancelled" }, { status: 409 });
+  }
+
+  // Format the booking time for the confirmation message
+  const tz = (salon as { timezone?: string }).timezone ?? "America/Los_Angeles";
+  const localTime = new Date(bk.start_time_utc).toLocaleString("en-US", {
+    timeZone:  tz,
+    weekday:   "short",
+    month:     "short",
+    day:       "numeric",
+    hour:      "numeric",
+    minute:    "2-digit",
+    hour12:    true,
+  });
+
+  // UPDATE status → cancelled
+  const { error: updateErr } = await supabase
+    .from("bookings")
+    .update({ status: "cancelled" })
+    .eq("id", bookingId);
+
+  if (updateErr) {
+    console.error("[voice/cancel_booking] update error:", updateErr);
+    return NextResponse.json({ error: "cancel_failed", detail: updateErr.message }, { status: 500 });
+  }
+
+  // Update voice session (best-effort)
+  if (sessionId) {
+    try {
+      await supabase
+        .from("voice_ai_sessions")
+        .update({ status: "completed" })
+        .eq("id", sessionId);
+    } catch { /* best-effort */ }
+  }
+
+  return NextResponse.json({
+    success:     true,
+    bookingId,
+    serviceName,
+    dateTime:    localTime,
+    clientName:  bk.client_name,
+    reason,
+    message:     "Lịch hẹn đã được hủy thành công.",
   });
 }
 
