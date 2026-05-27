@@ -467,23 +467,34 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         //
         // instructions is returned by /api/voice/session and reinforced here
         // so the model always has the booking rules (belt-and-suspenders).
+        // gpt-realtime-2 uses a nested audio config format.
+        // Fields confirmed valid: type, output_modalities, instructions, tools,
+        // tool_choice, audio.input.format, audio.input.turn_detection,
+        // audio.output.format, audio.output.voice.
+        // Note: function_call items are separate from output_modalities —
+        // tools fire regardless of whether "text" is in output_modalities.
         ws.send(JSON.stringify({
           type: "session.update",
           session: {
-            type:         "realtime",           // ← required by gpt-realtime-2
-            modalities:   ["text", "audio"],    // "text" required for function call args
+            type:              "realtime",
+            output_modalities: ["audio"],
             ...(instructions ? { instructions } : {}),
-            tools:        [...REALTIME_TOOLS],
-            tool_choice:  "auto",
-            voice,
-            input_audio_format:  "pcm16",
-            output_audio_format: "pcm16",
-            input_audio_transcription: { model: "whisper-1" },
-            turn_detection: {
-              type:               "semantic_vad",
-              eagerness:          "auto",
-              create_response:    true,
-              interrupt_response: true,
+            tools:             [...REALTIME_TOOLS],
+            tool_choice:       "auto",
+            audio: {
+              input: {
+                format:         { type: "audio/pcm", rate: 24000 },
+                turn_detection: {
+                  type:               "semantic_vad",
+                  eagerness:          "auto",
+                  create_response:    true,
+                  interrupt_response: true,
+                },
+              },
+              output: {
+                format: { type: "audio/pcm", rate: 24000 },
+                voice,
+              },
             },
           },
         }));
