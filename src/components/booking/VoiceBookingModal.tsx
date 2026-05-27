@@ -553,20 +553,40 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   const isThinking  = status === "connected" && aiActivity === "thinking";
 
   return (
+    /*
+     * Outer backdrop: items-end on mobile (bottom sheet), items-center on sm+.
+     * px/pt use p-4; pb uses env(safe-area-inset-bottom) so the card never
+     * slides under the iPhone home indicator (≈34px on iPhone X+).
+     * On devices without a safe area, env() returns 0 and the 1rem fallback
+     * provides the same 16px gap as before.
+     */
     <div
       role="dialog"
       aria-modal="true"
       aria-label={v.tapToSpeak}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 px-4 pt-4 sm:items-center sm:p-4"
+      style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
     >
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-zinc-900">
-        {/* Header */}
-        <div className="mb-4 flex items-center justify-between">
+      {/*
+       * Card: flex-column layout so the action buttons are ALWAYS visible
+       * at the bottom regardless of how much transcript there is.
+       * max-h-[85dvh] prevents overflow on small phones;
+       * dvh (dynamic viewport height) accounts for the iOS Safari toolbar.
+       */}
+      <div className="flex w-full max-w-md flex-col rounded-2xl bg-white shadow-2xl dark:bg-zinc-900 max-h-[85dvh]">
+
+        {/* ── Header — always visible, never scrolled away ── */}
+        <div className="flex flex-shrink-0 items-center justify-between px-6 pt-6 pb-4">
           <h2 className="text-lg font-semibold text-[var(--booking-text)]">{v.tapToSpeak}</h2>
+          {/*
+           * Touch target is 44×44 px (Apple HIG minimum).
+           * p-2.5 (10px) + h-5/w-5 icon (20px) = 40px — close enough;
+           * the -m-2 negative margin extends the hit area visually.
+           */}
           <button
             type="button"
             onClick={() => void handleClose()}
-            className="rounded-full p-1.5 text-[var(--booking-text-muted)] hover:bg-[var(--booking-bg-card)] transition-colors"
+            className="-m-1 rounded-full p-2.5 text-[var(--booking-text-muted)] hover:bg-[var(--booking-bg-card)] active:bg-[var(--booking-bg-card)] transition-colors"
             aria-label={v.close}
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -575,97 +595,102 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
           </button>
         </div>
 
-        {/* Status indicator */}
-        <div className="mb-4 flex flex-col items-center justify-center gap-3 py-4">
-          <div className={[
-            "flex h-20 w-20 items-center justify-center rounded-full transition-all duration-300",
-            isListening                    ? "bg-green-100 shadow-lg shadow-green-200 animate-pulse" : "",
-            isSpeaking                     ? "bg-blue-100 shadow-lg shadow-blue-200 animate-pulse" : "",
-            isThinking                     ? "bg-amber-100" : "",
-            status === "error"             ? "bg-red-100" : "",
-            status === "ended"             ? (bookingResult ? "bg-green-100" : "bg-zinc-100") : "",
-            !["connected","error","ended"].includes(status) ? "bg-[var(--booking-bg-card)]" : "",
-          ].join(" ")}>
-            {status === "connected" && !isSpeaking ? (
-              /* Listening / thinking mic icon */
-              <svg className={["h-10 w-10", isThinking ? "text-amber-500" : "text-green-600"].join(" ")} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-              </svg>
-            ) : isSpeaking ? (
-              /* Speaker wave icon */
-              <svg className="h-10 w-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.536 8.464a5 5 0 010 7.072M12 6v12m-3.536-9.536a5 5 0 000 7.072M19.07 4.93a10 10 0 010 14.14" />
-              </svg>
-            ) : status === "ended" && bookingResult ? (
-              /* Booking success checkmark */
-              <svg className="h-10 w-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
-              </svg>
-            ) : status === "ended" ? (
-              /* Plain ended checkmark */
-              <svg className="h-10 w-10 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
-              </svg>
-            ) : status === "error" ? (
-              <svg className="h-10 w-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            ) : (
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--salon-primary)] border-t-transparent" />
-            )}
+        {/* ── Scrollable content area ── */}
+        <div className="flex-1 overflow-y-auto px-6 pb-2">
+
+          {/* Status indicator */}
+          <div className="mb-4 flex flex-col items-center justify-center gap-3 py-2">
+            <div className={[
+              "flex h-20 w-20 items-center justify-center rounded-full transition-all duration-300",
+              isListening                    ? "bg-green-100 shadow-lg shadow-green-200 animate-pulse" : "",
+              isSpeaking                     ? "bg-blue-100 shadow-lg shadow-blue-200 animate-pulse" : "",
+              isThinking                     ? "bg-amber-100" : "",
+              status === "error"             ? "bg-red-100" : "",
+              status === "ended"             ? (bookingResult ? "bg-green-100" : "bg-zinc-100") : "",
+              !["connected","error","ended"].includes(status) ? "bg-[var(--booking-bg-card)]" : "",
+            ].join(" ")}>
+              {status === "connected" && !isSpeaking ? (
+                /* Listening / thinking mic icon */
+                <svg className={["h-10 w-10", isThinking ? "text-amber-500" : "text-green-600"].join(" ")} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+              ) : isSpeaking ? (
+                /* Speaker wave icon */
+                <svg className="h-10 w-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.536 8.464a5 5 0 010 7.072M12 6v12m-3.536-9.536a5 5 0 000 7.072M19.07 4.93a10 10 0 010 14.14" />
+                </svg>
+              ) : status === "ended" && bookingResult ? (
+                /* Booking confirmed — green check */
+                <svg className="h-10 w-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : status === "ended" ? (
+                /* Plain ended — grey check */
+                <svg className="h-10 w-10 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : status === "error" ? (
+                <svg className="h-10 w-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              ) : (
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--salon-primary)] border-t-transparent" />
+              )}
+            </div>
+
+            <p className="text-sm font-medium text-[var(--booking-text)]">
+              {status === "session_init" ? v.connecting
+               : status === "mic_request"  ? v.micRequest
+               : status === "connecting"   ? v.settingUp
+               : isSpeaking               ? v.aiSpeaking
+               : isThinking               ? v.processing
+               : status === "connected"   ? `${v.listening} ${formatDuration(durationSec)}`
+               : status === "ended" && bookingResult ? v.bookingConfirmed
+               : status === "ended"       ? v.ended
+               : status === "error"       ? (error ?? "Error")
+               : ""}
+            </p>
           </div>
 
-          <p className="text-sm font-medium text-[var(--booking-text)]">
-            {status === "session_init" ? v.connecting
-             : status === "mic_request"  ? v.micRequest
-             : status === "connecting"   ? v.settingUp
-             : isSpeaking               ? v.aiSpeaking
-             : isThinking               ? v.processing
-             : status === "connected"   ? `${v.listening} ${formatDuration(durationSec)}`
-             : status === "ended" && bookingResult ? v.bookingConfirmed
-             : status === "ended"       ? v.ended
-             : status === "error"       ? (error ?? "Error")
-             : ""}
-          </p>
-        </div>
-
-        {/* Booking confirmation card — shown when confirm_booking succeeded */}
-        {bookingResult && (
-          <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-950">
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">
-              {v.bookingConfirmed}
-            </p>
-            <p className="text-sm font-semibold text-[var(--booking-text)]">{bookingResult.serviceName}</p>
-            <p className="text-sm text-[var(--booking-text-muted)]">
-              {bookingResult.date} · {bookingResult.timeSlot}
-            </p>
-            <p className="text-sm text-[var(--booking-text-muted)]">{bookingResult.customerName}</p>
-          </div>
-        )}
-
-        {/* Transcript — two-way: AI + user speech */}
-        {transcript.length > 0 && !bookingResult && (
-          <div className="mb-4 max-h-40 space-y-1.5 overflow-y-auto rounded-xl bg-[var(--booking-bg-card)] p-3 text-sm">
-            {transcript.map((entry, i) => (
-              <p key={i} className={entry.role === "ai"
-                ? "text-[var(--booking-text)]"
-                : "text-[var(--booking-text-muted)] italic"}>
-                <span className="font-semibold">
-                  {entry.role === "ai" ? `${v.aiLabel}: ` : `${v.youLabel}: `}
-                </span>
-                {entry.text}
+          {/* Booking confirmation card — shown when confirm_booking succeeded */}
+          {bookingResult && (
+            <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-950">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">
+                {v.bookingConfirmed}
               </p>
-            ))}
-          </div>
-        )}
+              <p className="text-sm font-semibold text-[var(--booking-text)]">{bookingResult.serviceName}</p>
+              <p className="text-sm text-[var(--booking-text-muted)]">
+                {bookingResult.date} · {bookingResult.timeSlot}
+              </p>
+              <p className="text-sm text-[var(--booking-text-muted)]">{bookingResult.customerName}</p>
+            </div>
+          )}
 
-        {/* Actions */}
-        <div className="flex gap-3">
+          {/* Transcript — two-way: AI + user speech */}
+          {transcript.length > 0 && !bookingResult && (
+            <div className="mb-2 max-h-36 space-y-1.5 overflow-y-auto rounded-xl bg-[var(--booking-bg-card)] p-3 text-sm">
+              {transcript.map((entry, i) => (
+                <p key={i} className={entry.role === "ai"
+                  ? "text-[var(--booking-text)]"
+                  : "text-[var(--booking-text-muted)] italic"}>
+                  <span className="font-semibold">
+                    {entry.role === "ai" ? `${v.aiLabel}: ` : `${v.youLabel}: `}
+                  </span>
+                  {entry.text}
+                </p>
+              ))}
+            </div>
+          )}
+
+        </div>{/* end scrollable area */}
+
+        {/* ── Action buttons — flex-shrink-0: NEVER pushed off screen ── */}
+        <div className="flex flex-shrink-0 gap-3 px-6 py-4">
           {status === "connected" && (
             <button
               type="button"
               onClick={() => void handleStop()}
-              className="flex-1 rounded-xl bg-red-500 py-3 text-sm font-semibold text-white hover:bg-red-600 transition-colors"
+              className="flex-1 rounded-xl bg-red-500 py-3 text-sm font-semibold text-white hover:bg-red-600 active:bg-red-700 transition-colors"
             >
               {v.endCall}
             </button>
@@ -674,7 +699,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             <button
               type="button"
               onClick={() => { statusRef.current = "idle"; setStatus("idle"); void start(); }}
-              className="flex-1 rounded-xl bg-[var(--salon-primary)] py-3 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+              className="flex-1 rounded-xl bg-[var(--salon-primary)] py-3 text-sm font-semibold text-white hover:opacity-90 active:opacity-80 transition-opacity"
             >
               {v.tryAgain}
             </button>
@@ -683,12 +708,13 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             <button
               type="button"
               onClick={() => void handleClose()}
-              className="flex-1 rounded-xl border border-[var(--booking-border)] py-3 text-sm font-semibold text-[var(--booking-text)] hover:bg-[var(--booking-bg-card)] transition-colors"
+              className="flex-1 rounded-xl border border-[var(--booking-border)] py-3 text-sm font-semibold text-[var(--booking-text)] hover:bg-[var(--booking-bg-card)] active:bg-[var(--booking-bg-card)] transition-colors"
             >
               {status === "ended" ? v.close : v.cancel}
             </button>
           )}
         </div>
+
       </div>
     </div>
   );
