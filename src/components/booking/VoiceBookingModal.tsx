@@ -452,27 +452,39 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         // Resume AudioContext (Chrome may suspend it until a user gesture)
         void audioCtx.resume();
 
-        // Configure session: audio format, VAD, tools, voice, and (re)confirm instructions.
-        // instructions is returned by /api/voice/session and reinforced here so the
-        // model always has the booking rules even if the session.create embedding was
-        // overwritten by OpenAI's session initialization.
+        // Configure session for gpt-realtime-2.
+        //
+        // IMPORTANT — modalities must include "text":
+        //   Function call arguments are TEXT output. If only "audio" is listed,
+        //   the model cannot emit function call argument items and tools silently
+        //   never fire. Always use ["text", "audio"] for tool-enabled sessions.
+        //
+        // IMPORTANT — create_response: true in turn_detection:
+        //   Without this, semantic_vad detects end-of-speech but does NOT
+        //   automatically trigger a new model response. The user would say
+        //   "đồng ý" and nothing would happen. Defaults are not reliable
+        //   across model versions — always set explicitly.
+        //
+        // instructions is returned by /api/voice/session and reinforced here
+        // so the model always has the booking rules (belt-and-suspenders).
         ws.send(JSON.stringify({
           type: "session.update",
           session: {
-            type:              "realtime",
-            output_modalities: ["audio"],
+            modalities:   ["text", "audio"],   // "text" required for function call args
             ...(instructions ? { instructions } : {}),
-            tools:             [...REALTIME_TOOLS],
-            tool_choice:       "auto",
-            audio: {
-              input: {
-                format:         { type: "audio/pcm", rate: 24000 },
-                turn_detection: { type: "semantic_vad", interrupt_response: true },
-              },
-              output: {
-                format: { type: "audio/pcm", rate: 24000 },
-                voice,
-              },
+            tools:        [...REALTIME_TOOLS],
+            tool_choice:  "auto",
+            voice,
+            input_audio_format:  "pcm16",
+            output_audio_format: "pcm16",
+            // Enable user-speech transcription so conversation.item.input_audio_transcription
+            // events fire and we can show what the user said
+            input_audio_transcription: { model: "whisper-1" },
+            turn_detection: {
+              type:               "semantic_vad",
+              eagerness:          "auto",
+              create_response:    true,   // ← auto-trigger AI response after user speech
+              interrupt_response: true,   // ← user can interrupt AI mid-sentence
             },
           },
         }));
