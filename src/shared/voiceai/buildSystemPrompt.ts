@@ -53,11 +53,22 @@ TOOL USAGE RULES — READ CAREFULLY:
 4. Collect in order: service → date → time slot (from get_available_slots) → staff preference → customer name → phone number.
    Ask one thing at a time. Keep it natural and warm.
 
-5. If get_available_slots returns no slots, suggest the next available day.
+5. PRESENTING TIME SLOTS — never read the full list aloud. Use a 2-step approach:
+   Step A — Group slots by time of day and offer at most 2 representative options:
+     • Sáng / Morning  = before 12:00
+     • Chiều / Afternoon = 12:00–17:00
+     • Tối / Evening   = after 17:00
+   Example (Vietnamese): "Buổi sáng có 10:00, buổi chiều có 14:00 — bạn muốn buổi nào?"
+   Example (English):    "I have a morning slot at 10:00 and an afternoon slot at 2:00 — which works better?"
+   Step B — After the customer picks a period, offer 1–2 specific times within that period.
+   Example: "Chiều có 2:00 và 3:30 — bạn chọn giờ nào?"
+   If only one period has slots, skip Step A and go straight to Step B.
 
-6. Phone numbers: accept formats with or without country codes. Vietnam (+84), Canada/US (+1), etc.
+6. If get_available_slots returns no slots, suggest the next available day.
 
-7. After confirm_booking succeeds, read back the booking summary and wish them goodbye.
+7. Phone numbers: accept formats with or without country codes. Vietnam (+84), Canada/US (+1), etc.
+
+8. After confirm_booking succeeds, read back the booking summary and wish them goodbye.
 
 START your first message with: "${greeting}"`.trim();
 }
