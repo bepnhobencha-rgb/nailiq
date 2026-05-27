@@ -180,6 +180,8 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       if (processedCallIdsRef.current.has(callId)) return;
       processedCallIdsRef.current.add(callId);
 
+      console.log(`[voice/tool] ▶ dispatching ${fnName}`, { callId, rawArgs });
+
       let args: Record<string, unknown> = {};
       try { args = JSON.parse(rawArgs) as Record<string, unknown>; } catch { /* ignore */ }
 
@@ -188,8 +190,12 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ toolName: fnName, toolArgs: args, salonSlug, sessionId }),
       })
-        .then((r) => r.json())
+        .then((r) => {
+          console.log(`[voice/tool] ◀ ${fnName} HTTP ${r.status}`);
+          return r.json();
+        })
         .then((result: unknown) => {
+          console.log(`[voice/tool] ✓ ${fnName} result:`, JSON.stringify(result));
           const res = result as Record<string, unknown>;
           // Surface booking confirmation in the UI immediately
           if (fnName === "confirm_booking" && res.success) {
@@ -209,6 +215,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
           wsRef.current?.send(JSON.stringify({ type: "response.create" }));
         })
         .catch((err: unknown) => {
+          console.error(`[voice/tool] ✗ ${fnName} fetch error:`, err);
           wsRef.current?.send(JSON.stringify({
             type: "conversation.item.create",
             item: { type: "function_call_output", call_id: callId, output: JSON.stringify({ error: String(err) }) },
@@ -470,12 +477,13 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             evType === "response.output_audio.delta" ||
             evType.startsWith("input_audio_buffer");
           if (!isAudioStream) {
-            // Full JSON for events that may carry function call data
+            // Always log full JSON for diagnostic events
             const wantFull =
               evType.includes("function") ||
               evType.includes("tool")     ||
               evType.includes("item")     ||
-              evType === "response.done";
+              evType === "response.done"  ||
+              evType === "session.updated";   // ← see if tools were accepted
             console.log("[voice/ws]", evType, wantFull ? JSON.stringify(ev) : "");
           }
           handleRealtimeEvent(ev, shopSlug, sessionId);

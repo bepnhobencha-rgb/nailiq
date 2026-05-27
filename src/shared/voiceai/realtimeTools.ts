@@ -32,9 +32,10 @@ export const REALTIME_TOOLS = [
     type: "function" as const,
     name: "confirm_booking",
     description:
-      "Create the booking after the customer has explicitly confirmed all details. " +
-      "ONLY call after the customer says yes, đồng ý, confirm, or an unambiguous affirmative. " +
-      "Never call speculatively.",
+      "Saves the appointment to the booking system. " +
+      "This MUST be called to actually create the booking — verbal confirmation alone does NOT save it. " +
+      "Call immediately when the customer agrees: yes / ok / sure / đồng ý / được / vâng / ừ / xác nhận / đặt luôn. " +
+      "Never skip this tool — if you do not call it, no booking is created in the system.",
     parameters: {
       type: "object" as const,
       properties: {
