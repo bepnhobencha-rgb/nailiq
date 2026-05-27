@@ -401,11 +401,12 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         const body = await sessRes.json().catch(() => ({})) as Record<string, string>;
         throw new Error(body.error ?? `session_init_${sessRes.status}`);
       }
-      const { ephemeralKey, model: realtimeModel, sessionId, voice } = await sessRes.json() as {
+      const { ephemeralKey, model: realtimeModel, sessionId, voice, instructions } = await sessRes.json() as {
         ephemeralKey:  string;
         model:         string;
         sessionId:     string | null;
         voice:         string;
+        instructions?: string;
       };
       sessionIdRef.current = sessionId;
 
@@ -451,12 +452,16 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         // Resume AudioContext (Chrome may suspend it until a user gesture)
         void audioCtx.resume();
 
-        // Configure session: audio format, VAD, tools, voice
+        // Configure session: audio format, VAD, tools, voice, and (re)confirm instructions.
+        // instructions is returned by /api/voice/session and reinforced here so the
+        // model always has the booking rules even if the session.create embedding was
+        // overwritten by OpenAI's session initialization.
         ws.send(JSON.stringify({
           type: "session.update",
           session: {
             type:              "realtime",
             output_modalities: ["audio"],
+            ...(instructions ? { instructions } : {}),
             tools:             [...REALTIME_TOOLS],
             tool_choice:       "auto",
             audio: {

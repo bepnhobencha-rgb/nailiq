@@ -135,5 +135,6 @@ export async function POST(req: NextRequest) {
     expiresAt:       parsed.expires_at ?? Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
     openaiSessionId: openaiSessionId ?? null,
     voice,
+    instructions,   // returned so the client can reinforce them in session.update
   });
 }
