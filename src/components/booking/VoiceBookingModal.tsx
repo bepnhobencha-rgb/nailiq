@@ -77,13 +77,14 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   const audioCtxRef         = useRef<AudioContext | null>(null);
   const streamRef           = useRef<MediaStream | null>(null);
   const processorRef        = useRef<ScriptProcessorNode | null>(null);
+  const audioElementRef     = useRef<HTMLAudioElement | null>(null);
   const sessionIdRef        = useRef<string | null>(null);
   const timerRef            = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTsRef          = useRef<number>(0);
   const statusRef           = useRef<Status>("idle");
   const nextPlayRef         = useRef<number>(0);
-  // Shared output gain node — all AI audio chunks route through this so we
-  // can boost volume to match media-playback level (fixes iOS quiet audio).
+  // Shared output gain node — AI audio chunks route through GainNode →
+  // MediaStreamDestination → <audio> element (media volume channel).
   const outputGainRef       = useRef<GainNode | null>(null);
   // Tracks call_ids already dispatched — prevents duplicate tool calls when
   // both response.output_function_call_arguments.done AND response.done fire.
@@ -105,6 +106,12 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     streamRef.current?.getTracks().forEach((tr) => tr.stop());
     if (timerRef.current)        clearInterval(timerRef.current);
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    // Stop the <audio> element and release the media stream
+    if (audioElementRef.current) {
+      audioElementRef.current.pause();
+      audioElementRef.current.srcObject = null;
+      audioElementRef.current = null;
+    }
     wsRef.current             = null;
     audioCtxRef.current       = null;
     processorRef.current      = null;
@@ -423,25 +430,43 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       statusRef.current = "connecting";
       setStatus("connecting");
 
-      // iOS 17+: set audio session to 'playback' so audio routes through the
-      // loudspeaker at media-playback volume (same channel as YouTube/Spotify).
-      // Without this, iOS uses the 'default' session which is much quieter and
-      // may route through the earpiece instead of the speaker.
-      try {
-        const nav = navigator as unknown as { audioSession?: { type: string } };
-        if (nav.audioSession) nav.audioSession.type = "playback";
-      } catch { /* unsupported — no-op */ }
+      // ── Audio output: route through <audio> element for media-level volume ──
+      //
+      // Problem: Web Audio API AudioContext uses the "call/default" volume
+      // channel on mobile — much quieter than YouTube/Spotify which use the
+      // "media" channel. navigator.audioSession.type='playback' fixes this on
+      // iOS 17+ only; Android doesn't support that API at all.
+      //
+      // Solution (works on all platforms):
+      //   GainNode → MediaStreamDestination → <audio>.srcObject → media channel
+      //
+      // The <audio> element is treated by iOS and Android as media playback
+      // (same priority as YouTube), so it uses the media volume slider
+      // automatically — no OS-specific API needed.
 
       const audioCtx = new AudioContext({ sampleRate: 24000 });
       audioCtxRef.current = audioCtx;
 
-      // Output gain node — all AI audio chunks connect here before destination.
-      // 2.0 = double amplitude (~+6 dB) so the voice feels as loud as a media
-      // app even on devices where Web Audio runs at reduced volume by default.
+      // GainNode: slight boost in case media volume is lowered by the user
       const outputGain = audioCtx.createGain();
-      outputGain.gain.value = 2.0;
-      outputGain.connect(audioCtx.destination);
+      outputGain.gain.value = 1.2;
+
+      // Route to MediaStreamDestination (bridges Web Audio → HTMLMediaElement)
+      const mediaStreamDest = audioCtx.createMediaStreamDestination();
+      outputGain.connect(mediaStreamDest);
       outputGainRef.current = outputGain;
+
+      // <audio> element plays the media stream on the media volume channel
+      const audioEl = new Audio();
+      audioEl.srcObject = mediaStreamDest.stream;
+      audioEl.autoplay  = true;
+      audioElementRef.current = audioEl;
+      // Start playback — must be called after a user gesture (button tap already happened)
+      audioEl.play().catch(() => {
+        // Fallback: connect directly to AudioContext destination if autoplay blocked
+        outputGain.disconnect(mediaStreamDest);
+        outputGain.connect(audioCtx.destination);
+      });
 
       // 4. Open WebSocket directly to OpenAI with ek_... as subprotocol auth
       const wsUrl = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(realtimeModel)}`;
