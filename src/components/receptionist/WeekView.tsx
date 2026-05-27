@@ -91,6 +91,8 @@ export interface WeekViewProps {
   messages: ReceptionistMessages["weekView"];
   /** Tap a day header → parent flips to Day view for that date. */
   onDayClick: (ymd: string) => void;
+  /** Tap a booking card → parent opens the detail drawer. */
+  onBookingClick?: (bookingId: string, ymd: string) => void;
   /** Week navigation handlers. */
   onPrevWeek: () => void;
   onThisWeek: () => void;
@@ -104,6 +106,7 @@ export function WeekView({
   todayYmd,
   messages,
   onDayClick,
+  onBookingClick,
   onPrevWeek,
   onThisWeek,
   onNextWeek,
@@ -299,6 +302,12 @@ export function WeekView({
                       moreLabel={messages.moreCount}
                       emptyLabel={messages.emptyDay}
                       countLabel={messages.bookingCount}
+                      openBookingAria={messages.openBookingAria}
+                      onBookingClick={
+                        onBookingClick
+                          ? (id) => onBookingClick(id, ymd)
+                          : undefined
+                      }
                     />
                   ) : null}
                 </Card>
@@ -317,12 +326,16 @@ function DayColumnContent({
   moreLabel,
   emptyLabel,
   countLabel,
+  openBookingAria,
+  onBookingClick,
 }: {
   bookings: ReceptionistCenterData["bookingsForDay"];
   timezone: string;
   moreLabel: string;
   emptyLabel: string;
   countLabel: string;
+  openBookingAria: string;
+  onBookingClick?: (bookingId: string) => void;
 }) {
   const sorted = useMemo(() => {
     return [...bookings].sort((a, b) => {
@@ -346,9 +359,17 @@ function DayColumnContent({
       ) : null}
 
       {visible.map((b) => (
-        <div
+        <button
           key={b.id}
-          className="rounded-md border border-nq-border/50 bg-nq-surface/60 px-1.5 py-1 text-[11px] text-nq-foreground"
+          type="button"
+          aria-label={openBookingAria.replace("{client}", b.client_name)}
+          onClick={onBookingClick ? () => onBookingClick(b.id) : undefined}
+          className={cn(
+            "w-full rounded-md border border-nq-border/50 bg-nq-surface/60 px-1.5 py-1 text-left text-[11px] text-nq-foreground",
+            onBookingClick
+              ? "cursor-pointer transition-colors hover:border-nq-primary/40 hover:bg-nq-primary/8 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-nq-primary/40"
+              : "cursor-default",
+          )}
         >
           <p className="truncate font-medium">
             {formatInSalonTz(b.start_time_utc, timezone, "shortTime")}{" "}
@@ -357,7 +378,7 @@ function DayColumnContent({
             </span>
           </p>
           <p className="truncate text-nq-muted">{b.service_name}</p>
-        </div>
+        </button>
       ))}
 
       {more > 0 ? (

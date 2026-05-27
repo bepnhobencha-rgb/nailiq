@@ -54,6 +54,7 @@ import { TVModeView } from "./TVModeView";
 import { UndoToast } from "./UndoToast";
 import { WalkinQueueSidebar, type QueueItem } from "./WalkinQueueSidebar";
 import { WeekView, mondayYmdOf, shiftWeek } from "./WeekView";
+import { MonthView, firstOfMonth, shiftMonth } from "./MonthView";
 import type {
   LoadReceptionistCenterError,
   LoadReceptionistCenterResult,
@@ -280,23 +281,28 @@ function ReceptionistCenterInner({
 
   const [dateOffset, setDateOffset] = useState<-1 | 0 | 1>(0);
 
-  // View mode (Day | Week). Resolution order on mount:
-  //   1. `?view=week` / `?view=day` URL param wins (sidebar Calendar tab
-  //      links here with `?view=week` — we honour the deep link verbatim
-  //      AND persist it so a reload from the same URL keeps the choice).
+  // View mode (Day | Week | Month). Resolution order on mount:
+  //   1. `?view=week` / `?view=day` / `?view=month` URL param wins (sidebar
+  //      Calendar tab links here with `?view=week` — we honour the deep link
+  //      verbatim AND persist it so a reload from the same URL keeps the choice).
   //   2. localStorage `nailiq-view-mode` from a prior session.
-  //   3. Default `day` — the live operational job is the day grid; week
-  //      is a planning glance.
+  //   3. Default `day` — the live operational job is the day grid; week/month
+  //      are planning glances.
   // SSR-safe: state starts at `day`; the URL/localStorage sync runs in
   // an effect after mount.
   const urlViewParam = searchParams?.get("view") ?? null;
-  const [viewMode, setViewMode] = useState<"day" | "week">("day");
+  const [viewMode, setViewMode] = useState<"day" | "week" | "month">("day");
   useEffect(() => {
     if (typeof window === "undefined") return;
     /* eslint-disable react-hooks/set-state-in-effect -- one-shot hydration from URL or localStorage */
     if (urlViewParam === "week") {
       setViewMode("week");
       window.localStorage.setItem("nailiq-view-mode", "week");
+      return;
+    }
+    if (urlViewParam === "month") {
+      setViewMode("month");
+      window.localStorage.setItem("nailiq-view-mode", "month");
       return;
     }
     if (urlViewParam === "day") {
@@ -306,9 +312,10 @@ function ReceptionistCenterInner({
     }
     const stored = window.localStorage.getItem("nailiq-view-mode");
     if (stored === "week") setViewMode("week");
+    else if (stored === "month") setViewMode("month");
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [urlViewParam]);
-  const onChangeViewMode = useCallback((next: "day" | "week") => {
+  const onChangeViewMode = useCallback((next: "day" | "week" | "month") => {
     setViewMode(next);
     if (typeof window !== "undefined") {
       window.localStorage.setItem("nailiq-view-mode", next);
@@ -322,6 +329,14 @@ function ReceptionistCenterInner({
     [initialOk.salon.timezone],
   );
   const [weekMondayYmd, setWeekMondayYmd] = useState(initialMondayYmd);
+
+  // Month-view anchor (YYYY-MM-01 of the visible month). Starts on the
+  // current month so first paint is always the present month.
+  const initialMonthFirstYmd = useMemo(
+    () => firstOfMonth(salonToday(initialOk.salon.timezone)),
+    [initialOk.salon.timezone],
+  );
+  const [monthFirstYmd, setMonthFirstYmd] = useState(initialMonthFirstYmd);
 
   useEffect(() => {
     const tz = data.salon.timezone;
@@ -685,6 +700,26 @@ function ReceptionistCenterInner({
       setShakeMessage(loadErrorCopy(messages.receptionist, res.error));
     }
   }, [slug, timezone, dateOffset, messages.receptionist]);
+
+  /**
+   * Called when a booking chip is clicked from Week or Month view.
+   * Loads that day's data (so the drawer's `openDrawerBooking` lookup
+   * finds the booking in `data.bookingsForDay`), then opens the drawer.
+   */
+  const onBookingClickFromCalendar = useCallback(
+    async (bookingId: string, ymd: string) => {
+      setDayLoading(true);
+      const res = await loadReceptionistCenterDataAction(slug, ymd);
+      setDayLoading(false);
+      if (res.ok) {
+        setData(res.data);
+        setDrawerBookingId(bookingId);
+      } else {
+        setShakeMessage(loadErrorCopy(messages.receptionist, res.error));
+      }
+    },
+    [slug, messages.receptionist],
+  );
 
   const onWalkinAssignSlot = async (staffId: string, slotStartUtc: string) => {
     const assignBookingId = assigningWalkinId;
@@ -1507,7 +1542,7 @@ function ReceptionistCenterInner({
                 data-rush-fade
                 className="inline-flex overflow-hidden rounded-md border border-nq-border bg-nq-surface text-xs font-medium"
               >
-                {(["day", "week"] as const).map((mode) => {
+                {(["day", "week", "month"] as const).map((mode) => {
                   const active = viewMode === mode;
                   return (
                     <button
@@ -1686,7 +1721,46 @@ function ReceptionistCenterInner({
           </div>
         ) : null}
 
-        {viewMode === "week" ? (
+        {viewMode === "month" ? (
+          <MonthView
+            slug={slug}
+            firstYmd={monthFirstYmd}
+            timezone={timezone}
+            todayYmd={salonToday(timezone, nowIso)}
+            messages={rcMessages.monthView}
+            onDayClick={(ymd) => {
+              // Switch to Day view for the tapped date.
+              onChangeViewMode("day");
+              const tz = timezone;
+              const today = salonToday(tz, nowIso);
+              const yesterday = salonDateOffset(tz, -1, nowIso);
+              const tomorrow = salonDateOffset(tz, 1, nowIso);
+              if (ymd === today) {
+                void onDateSwitchChange(0);
+              } else if (ymd === yesterday) {
+                void onDateSwitchChange(-1);
+              } else if (ymd === tomorrow) {
+                void onDateSwitchChange(1);
+              } else {
+                void (async () => {
+                  setDayLoading(true);
+                  const res = await loadReceptionistCenterDataAction(slug, ymd);
+                  setDayLoading(false);
+                  if (res.ok) setData(res.data);
+                  else setShakeMessage(loadErrorCopy(rcMessages, res.error));
+                })();
+              }
+            }}
+            onBookingClick={(bookingId, ymd) =>
+              void onBookingClickFromCalendar(bookingId, ymd)
+            }
+            onPrevMonth={() => setMonthFirstYmd((m) => shiftMonth(m, -1))}
+            onThisMonth={() =>
+              setMonthFirstYmd(firstOfMonth(salonToday(timezone, nowIso)))
+            }
+            onNextMonth={() => setMonthFirstYmd((m) => shiftMonth(m, 1))}
+          />
+        ) : viewMode === "week" ? (
           <WeekView
             slug={slug}
             mondayYmd={weekMondayYmd}
@@ -1723,6 +1797,9 @@ function ReceptionistCenterInner({
                 })();
               }
             }}
+            onBookingClick={(bookingId, ymd) =>
+              void onBookingClickFromCalendar(bookingId, ymd)
+            }
             onPrevWeek={() => setWeekMondayYmd((m) => shiftWeek(m, -1))}
             onThisWeek={() =>
               setWeekMondayYmd(mondayYmdOf(salonToday(timezone, nowIso)))

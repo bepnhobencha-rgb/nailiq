@@ -1282,10 +1282,11 @@ export type UserMessages = {
       message: string;
       retryButton: string;
     };
-    /** Day/Week view toggle in the top bar. */
+    /** Day/Week/Month view toggle in the top bar. */
     viewMode: {
       day: string;
       week: string;
+      month: string;
       ariaLabel: string;
     };
     /** Read-only week-overview grid. */
@@ -1303,6 +1304,24 @@ export type UserMessages = {
       moreCount: string;
       /** Aria label template for the day-header button. `{date}` = "Mon 9". */
       openDayAria: string;
+      /** Aria label for a clickable booking card. `{client}` = client name. */
+      openBookingAria: string;
+    };
+    /** Read-only month-overview calendar grid. */
+    monthView: {
+      title: string;
+      prevMonth: string;
+      thisMonth: string;
+      nextMonth: string;
+      loading: string;
+      dayError: string;
+      emptyDay: string;
+      /** "{n} bookings" — count badge per day. */
+      bookingCount: string;
+      /** "+{n} more" — overflow indicator. */
+      moreCount: string;
+      /** Aria label for a clickable booking card. `{client}` = client name. */
+      openBookingAria: string;
     };
     /** Client profiles panel + page (`/dashboard/[slug]/clients`). */
     clientProfiles: {
@@ -2742,6 +2761,7 @@ export const userEn: UserMessages = {
     viewMode: {
       day: "Day",
       week: "Week",
+      month: "Month",
       ariaLabel: "View mode",
     },
     weekView: {
@@ -2755,6 +2775,19 @@ export const userEn: UserMessages = {
       bookingCount: "{n} bookings",
       moreCount: "+{n} more",
       openDayAria: "Open day view for {date}",
+      openBookingAria: "View booking for {client}",
+    },
+    monthView: {
+      title: "Month",
+      prevMonth: "Prev",
+      thisMonth: "This month",
+      nextMonth: "Next",
+      loading: "Loading…",
+      dayError: "Error",
+      emptyDay: "No bookings",
+      bookingCount: "{n} bookings",
+      moreCount: "+{n} more",
+      openBookingAria: "View booking for {client}",
     },
     clientProfiles: {
       pageTitle: "Clients",

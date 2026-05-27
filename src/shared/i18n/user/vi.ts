@@ -1296,6 +1296,7 @@ export const userVi: UserMessages = {
     viewMode: {
       day: "Ngày",
       week: "Tuần",
+      month: "Tháng",
       ariaLabel: "Chế độ xem",
     },
     weekView: {
@@ -1309,6 +1310,19 @@ export const userVi: UserMessages = {
       bookingCount: "{n} lịch",
       moreCount: "+{n} nữa",
       openDayAria: "Mở chế độ ngày cho {date}",
+      openBookingAria: "Xem lịch của {client}",
+    },
+    monthView: {
+      title: "Tháng",
+      prevMonth: "Trước",
+      thisMonth: "Tháng này",
+      nextMonth: "Sau",
+      loading: "Đang tải…",
+      dayError: "Lỗi",
+      emptyDay: "Trống",
+      bookingCount: "{n} lịch",
+      moreCount: "+{n} nữa",
+      openBookingAria: "Xem lịch của {client}",
     },
     clientProfiles: {
       pageTitle: "Khách hàng",
