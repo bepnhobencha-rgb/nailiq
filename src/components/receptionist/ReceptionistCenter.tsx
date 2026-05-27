@@ -55,6 +55,7 @@ import { UndoToast } from "./UndoToast";
 import { WalkinQueueSidebar, type QueueItem } from "./WalkinQueueSidebar";
 import { WeekView, mondayYmdOf, shiftWeek } from "./WeekView";
 import { MonthView, firstOfMonth, shiftMonth } from "./MonthView";
+import type { BookingsRangeHint } from "@/shared/dashboard/getBookingsForRangeAction";
 import type {
   LoadReceptionistCenterError,
   LoadReceptionistCenterResult,
@@ -671,6 +672,22 @@ function ReceptionistCenterInner({
 
   const timezone = data.salon.timezone;
   const isViewingToday = data.selectedDate === salonToday(timezone, nowIso);
+
+  /**
+   * Pre-resolved hint for WeekView / MonthView.
+   * Lets getBookingsForRangeAction skip the 3-call getDashboardWriteClient
+   * chain (getUser → salon_members → salons) and instead run the membership
+   * check and the bookings query in parallel — cutting ~2 round-trips per
+   * week/month navigation event.
+   */
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- data.salon.id and timezone are stable refs (come from the same immutable salon row)
+  const calendarHint = useMemo<BookingsRangeHint>(
+    () => ({ salonId: data.salon.id, timezone }),
+    // Re-memoize only when the salon id or timezone actually changes
+    // (should never happen mid-session, but guards against future hot-reload).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data.salon.id, timezone],
+  );
   const modules = data.dashboardModules;
   // Rush mode forces density to "simple" so the desk renders with
   // the highest-contrast / lowest-noise rhythm. We override the
@@ -1728,6 +1745,7 @@ function ReceptionistCenterInner({
             timezone={timezone}
             todayYmd={salonToday(timezone, nowIso)}
             messages={rcMessages.monthView}
+            hint={calendarHint}
             onDayClick={(ymd) => {
               // Switch to Day view for the tapped date.
               onChangeViewMode("day");
@@ -1767,6 +1785,7 @@ function ReceptionistCenterInner({
             timezone={timezone}
             todayYmd={salonToday(timezone, nowIso)}
             messages={rcMessages.weekView}
+            hint={calendarHint}
             onDayClick={(ymd) => {
               // Tapping a day flips back to Day view and (when the day
               // is yesterday/today/tomorrow) slots into the existing

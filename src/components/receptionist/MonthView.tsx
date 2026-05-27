@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import {
   getBookingsForRangeAction,
   type CalendarBooking,
+  type BookingsRangeHint,
 } from "@/shared/dashboard/getBookingsForRangeAction";
 import type { ReceptionistMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
@@ -118,6 +119,14 @@ export interface MonthViewProps {
   onPrevMonth: () => void;
   onThisMonth: () => void;
   onNextMonth: () => void;
+  /**
+   * Pre-resolved context from the SSR parent — enables the fast-path in
+   * `getBookingsForRangeAction` that skips the 3-call auth chain and instead
+   * runs membership-check + bookings-query in parallel. Without this, every
+   * prev/next-month click makes 4 sequential Supabase round-trips (~250ms);
+   * with it, only 2 (~120ms).
+   */
+  hint?: BookingsRangeHint;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -136,6 +145,7 @@ export function MonthView({
   onPrevMonth,
   onThisMonth,
   onNextMonth,
+  hint,
 }: MonthViewProps) {
   const cells = useMemo(() => buildMonthGrid(firstYmd), [firstYmd]);
 
@@ -172,7 +182,7 @@ export function MonthView({
         ),
       ]);
 
-    void withTimeout(getBookingsForRangeAction(slug, firstYmd, lastYmd))
+    void withTimeout(getBookingsForRangeAction(slug, firstYmd, lastYmd, hint))
       .then((res) => {
         if (cancelled) return;
         if (!res.ok) {
@@ -201,7 +211,7 @@ export function MonthView({
     return () => {
       cancelled = true;
     };
-  }, [slug, firstYmd, lastYmd, inMonthYmds]);
+  }, [slug, firstYmd, lastYmd, inMonthYmds, hint]);
 
   const monthLabel = useMemo(() => {
     const d = ymdToLocalDate(firstYmd);

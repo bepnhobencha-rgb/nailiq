@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import {
   getBookingsForRangeAction,
   type CalendarBooking,
+  type BookingsRangeHint,
 } from "@/shared/dashboard/getBookingsForRangeAction";
 import type { ReceptionistMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
@@ -98,6 +99,14 @@ export interface WeekViewProps {
   onPrevWeek: () => void;
   onThisWeek: () => void;
   onNextWeek: () => void;
+  /**
+   * Pre-resolved context from the SSR parent — enables the fast-path in
+   * `getBookingsForRangeAction` that skips the 3-call auth chain and instead
+   * runs membership-check + bookings-query in parallel. Without this, every
+   * prev/next-week click makes 4 sequential Supabase round-trips (~250ms);
+   * with it, only 2 (~120ms).
+   */
+  hint?: BookingsRangeHint;
 }
 
 export function WeekView({
@@ -111,6 +120,7 @@ export function WeekView({
   onPrevWeek,
   onThisWeek,
   onNextWeek,
+  hint,
 }: WeekViewProps) {
   const ymds = useMemo(() => weekYmds(mondayYmd), [mondayYmd]);
   const [days, setDays] = useState<Record<string, DayState>>({});
@@ -134,7 +144,7 @@ export function WeekView({
         ),
       ]);
 
-    void withTimeout(getBookingsForRangeAction(slug, mondayYmd, sundayYmd))
+    void withTimeout(getBookingsForRangeAction(slug, mondayYmd, sundayYmd, hint))
       .then((res) => {
         if (cancelled) return;
         if (!res.ok) {
@@ -160,7 +170,7 @@ export function WeekView({
     return () => {
       cancelled = true;
     };
-  }, [slug, mondayYmd, ymds]);
+  }, [slug, mondayYmd, ymds, hint]);
 
   /** Range label "Mon 5 – Sun 11" — uses local date math, no tz dependence
    *  beyond what the YMDs already encode. Using the salon timezone for the
