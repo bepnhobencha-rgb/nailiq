@@ -72,24 +72,32 @@ export const REALTIME_TOOLS = [
     type: "function" as const,
     name: "cancel_booking",
     description:
-      "Cancel an existing booking. " +
-      "ALWAYS confirm with the customer before calling this — read back the booking details and ask them to confirm. " +
-      "If the customer just booked in this session, use the booking_id from confirm_booking. " +
-      "If it's a new session, call find_booking first to get the booking_id. " +
-      "After cancelling, wish them goodbye and invite them to rebook anytime.",
+      "Cancel an existing booking. Provide EITHER booking_id OR customer_phone — not both needed.\n\n" +
+      "MODE A — booking_id provided: Cancels immediately. Use this when you already have the booking_id " +
+      "(from confirm_booking this session, or from a previous cancel_booking call that returned confirmation_required). " +
+      "ALWAYS read back the booking details and get verbal confirmation from the customer BEFORE calling with booking_id.\n\n" +
+      "MODE B — customer_phone provided (no booking_id): Looks up upcoming bookings by phone WITHOUT cancelling. " +
+      "Returns booking details with confirmation_required: true. Use this in new sessions when you don't have a booking_id. " +
+      "After getting the result: read back the booking, ask customer to confirm, then call again with booking_id to execute.\n\n" +
+      "After a successful cancellation: thank them warmly and invite them to rebook anytime.",
     parameters: {
       type: "object" as const,
       properties: {
         booking_id: {
           type: "string",
-          description: "The ID of the booking to cancel.",
+          description: "UUID of the booking to cancel. Required to actually execute the cancellation. Omit to use phone lookup mode instead.",
+        },
+        customer_phone: {
+          type: "string",
+          description: "Customer's phone number. Used in MODE B (new session, no booking_id yet) to look up their upcoming bookings. The result will include the booking_id to use in the follow-up call.",
         },
         reason: {
           type: "string",
           description: "Short reason the customer gave for cancelling, e.g. 'customer request', 'schedule conflict'. Optional.",
         },
       },
-      required: ["booking_id"],
+      // At least one of booking_id or customer_phone is required; enforced server-side.
+      required: [],
     },
   },
   {

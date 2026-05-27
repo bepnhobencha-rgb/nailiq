@@ -283,20 +283,34 @@ async function handleConfirmBooking(
 
 // ─── cancel_booking ──────────────────────────────────────────────────────────
 // Cancel an existing booking by setting status = 'cancelled'.
+//
+// Two input modes:
+//   A) booking_id provided  → cancel immediately (trust that AI already confirmed verbally)
+//   B) customer_phone only  → phone lookup mode: find upcoming booking(s) and return
+//      details WITHOUT cancelling (confirmation_required: true). AI must read back
+//      the booking to the customer, get verbal OK, then call again with booking_id.
+//
+// This eliminates the "AI skips find_booking → passes phone as booking_id" bug.
 async function handleCancelBooking(
   supabase: ReturnType<typeof createServiceRoleClient>,
   salonSlug: string,
   args: Record<string, unknown>,
   sessionId: string | null,
 ) {
-  const bookingId = args.booking_id as string | undefined;
-  const reason    = (args.reason as string | undefined) ?? "customer_request";
+  const bookingId     = args.booking_id     as string | undefined;
+  const customerPhone = args.customer_phone as string | undefined;
+  const reason        = (args.reason as string | undefined) ?? "customer_request";
 
-  if (!bookingId) {
-    return NextResponse.json({ error: "missing_booking_id" }, { status: 400 });
+  // At least one of booking_id or customer_phone is required.
+  if (!bookingId && !customerPhone) {
+    return NextResponse.json(
+      { error: "missing_booking_id_or_phone",
+        hint: "Provide booking_id (if known) or customer_phone to look up the booking." },
+      { status: 400 },
+    );
   }
 
-  // Load salon → verify booking belongs to this salon
+  // Load salon → needed for both paths
   const { data: salon } = await supabase
     .from("salons")
     .select("id, timezone")
@@ -304,11 +318,65 @@ async function handleCancelBooking(
     .single();
   if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
 
-  // Load booking
+  const tz = (salon as { timezone?: string }).timezone ?? "America/Los_Angeles";
+
+  // ── Path B: phone lookup (no booking_id yet) ────────────────────────────────
+  if (!bookingId && customerPhone) {
+    const digits = customerPhone.replace(/\D/g, "");
+    const last9  = digits.slice(-9);
+    const now    = new Date().toISOString();
+
+    const { data: phoneRows } = await supabase
+      .from("bookings")
+      .select("id, client_name, start_time_utc, status, services!bookings_service_id_fkey(name)")
+      .eq("salon_id", salon.id)
+      .ilike("client_phone", `%${last9}`)
+      .gte("start_time_utc", now)
+      .neq("status", "cancelled")
+      .order("start_time_utc", { ascending: true })
+      .limit(3);
+
+    if (!phoneRows || phoneRows.length === 0) {
+      return NextResponse.json({
+        error:   "booking_not_found",
+        message: "Không tìm thấy lịch hẹn nào sắp tới cho số điện thoại này.",
+      }, { status: 404 });
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const formatRow = (r: Record<string, any>) => {
+      const svcRaw = r.services as { name?: string } | { name?: string }[] | null;
+      const svcName = (Array.isArray(svcRaw) ? svcRaw[0]?.name : svcRaw?.name) ?? "Unknown";
+      const localTime = new Date(r.start_time_utc as string).toLocaleString("en-US", {
+        timeZone: tz, weekday: "short", month: "short", day: "numeric",
+        hour: "numeric", minute: "2-digit", hour12: true,
+      });
+      return { booking_id: r.id, service_name: svcName, date_time: localTime, status: r.status, client_name: r.client_name };
+    };
+
+    if (phoneRows.length > 1) {
+      // Multiple bookings — return all; AI must ask customer which to cancel
+      return NextResponse.json({
+        confirmation_required: true,
+        multiple_bookings:     true,
+        bookings:              phoneRows.map(formatRow),
+        hint: "Multiple upcoming bookings found. Read them back to the customer, ask which one to cancel, then call cancel_booking(booking_id) with their choice.",
+      });
+    }
+
+    // Exactly one booking — return for verbal confirmation before cancelling
+    return NextResponse.json({
+      confirmation_required: true,
+      booking:               formatRow(phoneRows[0]!),
+      hint: "Read this booking back to the customer and ask them to confirm cancellation. Then call cancel_booking(booking_id) with the booking_id above to execute.",
+    });
+  }
+
+  // ── Path A: booking_id provided → cancel immediately ────────────────────────
   const { data: booking } = await supabase
     .from("bookings")
-    .select("id, salon_id, status, client_name, client_phone, start_time_utc, service_id, services(name)")
-    .eq("id", bookingId)
+    .select("id, salon_id, status, client_name, start_time_utc, services!bookings_service_id_fkey(name)")
+    .eq("id", bookingId!)
     .eq("salon_id", salon.id)
     .single();
 
@@ -328,23 +396,16 @@ async function handleCancelBooking(
     return NextResponse.json({ error: "already_cancelled" }, { status: 409 });
   }
 
-  // Format the booking time for the confirmation message
-  const tz = (salon as { timezone?: string }).timezone ?? "America/Los_Angeles";
   const localTime = new Date(bk.start_time_utc).toLocaleString("en-US", {
-    timeZone:  tz,
-    weekday:   "short",
-    month:     "short",
-    day:       "numeric",
-    hour:      "numeric",
-    minute:    "2-digit",
-    hour12:    true,
+    timeZone: tz, weekday: "short", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true,
   });
 
   // UPDATE status → cancelled
   const { error: updateErr } = await supabase
     .from("bookings")
     .update({ status: "cancelled" })
-    .eq("id", bookingId);
+    .eq("id", bookingId!);
 
   if (updateErr) {
     console.error("[voice/cancel_booking] update error:", updateErr);
@@ -392,39 +453,22 @@ async function handleFindBooking(
     .single();
   if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
 
-  // Match on digits only (strips +84, +1, spaces, dashes, etc.)
+  // Match on last 9 digits — handles +84, +1, spaces, dashes, etc.
   const digits = customerPhone.replace(/\D/g, "");
-  const last9  = digits.slice(-9);  // last 9 digits match across country codes
+  const last9  = digits.slice(-9);
 
   const now = new Date().toISOString();
-  const { data: rows } = await supabase
-    .from("bookings")
-    .select("id, start_time_utc, end_time_utc, status, client_name, service_id, services(name)")
-    .eq("salon_id", salon.id)
-    .gte("start_time_utc", now)
-    .neq("status", "cancelled")
-    .order("start_time_utc", { ascending: true })
-    .limit(5);
 
-  // Filter by phone digits client-side (Supabase doesn't support regex on encrypted fields)
-  const matched = (rows ?? []).filter((r) => {
-    // client_phone is stored as digits-only in the DB (see handleConfirmBooking)
-    // so direct suffix match works
-    return true; // we fetch all upcoming and filter by phone below
-  });
-
-  // Re-query with phone filter
+  // Single query: phone suffix match on upcoming non-cancelled bookings
   const { data: phoneRows } = await supabase
     .from("bookings")
-    .select("id, start_time_utc, end_time_utc, status, client_name, service_id, services(name)")
+    .select("id, start_time_utc, end_time_utc, status, client_name, services!bookings_service_id_fkey(name)")
     .eq("salon_id", salon.id)
     .ilike("client_phone", `%${last9}`)
     .gte("start_time_utc", now)
     .neq("status", "cancelled")
     .order("start_time_utc", { ascending: true })
     .limit(3);
-
-  void matched; // unused, replaced by phoneRows
 
   if (!phoneRows || phoneRows.length === 0) {
     return NextResponse.json({
@@ -437,18 +481,15 @@ async function handleFindBooking(
   const formatted = phoneRows.map((b) => {
     const start = new Date(b.start_time_utc as string);
     const localStr = start.toLocaleString("en-US", {
-      timeZone:  tz,
-      weekday:   "short",
-      month:     "short",
-      day:       "numeric",
-      hour:      "numeric",
-      minute:    "2-digit",
-      hour12:    true,
+      timeZone: tz, weekday: "short", month: "short", day: "numeric",
+      hour: "numeric", minute: "2-digit", hour12: true,
     });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const svcRaw = (b as any).services as { name?: string } | { name?: string }[] | null;
+    const svcName = (Array.isArray(svcRaw) ? svcRaw[0]?.name : svcRaw?.name) ?? "Unknown service";
     return {
       booking_id:   b.id,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      service_name: (b.services as any)?.name ?? "Unknown service",
+      service_name: svcName,
       date_time:    localStr,
       status:       b.status,
       client_name:  b.client_name,
