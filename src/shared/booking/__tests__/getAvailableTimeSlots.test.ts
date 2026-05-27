@@ -40,7 +40,9 @@ const STAFF = [{ id: "s1", name: "Jenny", job_role: "nail_tech" }] as const;
 const FUTURE_DATE = new Date(2030, 4, 5);
 const NOW_MS = new Date(2030, 4, 4, 12, 0, 0, 0).getTime();
 
-test("close=19:00 service=55min → last slot is 6:00 PM (NOT 6:30 PM)", () => {
+// ─── Phase 1: 15-min grid ────────────────────────────────────────────────────
+
+test("close=19:00 service=55min → last slot is 6:00 PM (NOT 6:15 PM or later)", () => {
   const slots = computeTimeSlots({
     openingHoursRaw: HOURS_9_TO_19,
     selectedDate: FUTURE_DATE,
@@ -52,11 +54,14 @@ test("close=19:00 service=55min → last slot is 6:00 PM (NOT 6:30 PM)", () => {
   });
 
   const labels = slots.map((s) => s.label);
-  // Last slot 6:00 PM → end 6:55 PM ≤ close 7:00 PM
+  // 6:00 PM + 55 min = 6:55 PM ≤ 7:00 PM → included
   if (!labels.includes("6:00 PM")) {
     throw new Error(`expected 6:00 PM in slots; got: ${labels.join(", ")}`);
   }
-  // 6:30 PM → end 7:25 PM > close 7:00 PM, must be excluded
+  // 6:15 PM + 55 min = 7:10 PM > 7:00 PM → excluded
+  if (labels.includes("6:15 PM")) {
+    throw new Error(`6:15 PM should NOT be a slot (service runs past close); got: ${labels.join(", ")}`);
+  }
   if (labels.includes("6:30 PM")) {
     throw new Error(`6:30 PM should NOT be a slot; got: ${labels.join(", ")}`);
   }
@@ -74,9 +79,34 @@ test("close=19:00 service=30min → last slot is 6:30 PM", () => {
   });
 
   const labels = slots.map((s) => s.label);
+  // 6:30 PM + 30 min = 7:00 PM ≤ 7:00 PM → included
   if (!labels.includes("6:30 PM")) {
     throw new Error(`expected 6:30 PM in slots; got: ${labels.join(", ")}`);
   }
+  // 6:45 PM + 30 min = 7:15 PM > 7:00 PM → excluded
+  if (labels.includes("6:45 PM")) {
+    throw new Error(`6:45 PM should NOT be a slot; got: ${labels.join(", ")}`);
+  }
+});
+
+test("15-min grid: slots at :00, :15, :30, :45 boundaries", () => {
+  const slots = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: BOOKING_ANY_STAFF_ID,
+    staffList: STAFF,
+    serviceDurationMinutes: 30,
+    occupancy: [],
+    nowMs: NOW_MS,
+  });
+
+  const labels = slots.map((s) => s.label);
+  // All four 15-min boundary slots in the 9:00 AM hour must be present
+  if (!labels.includes("9:00 AM"))  throw new Error("expected 9:00 AM");
+  if (!labels.includes("9:15 AM"))  throw new Error("expected 9:15 AM");
+  if (!labels.includes("9:30 AM"))  throw new Error("expected 9:30 AM");
+  if (!labels.includes("9:45 AM"))  throw new Error("expected 9:45 AM");
+  if (!labels.includes("10:00 AM")) throw new Error("expected 10:00 AM");
 });
 
 test("booked slot is returned with available=false (not hidden)", () => {
@@ -190,15 +220,182 @@ test("today + past time → past slots filtered out (still hidden)", () => {
       `9:00 AM should be hidden when 'now' is 2:00 PM same day; got: ${labels.join(", ")}`,
     );
   }
-  // 2:30 PM (within 15-min buffer of 2:00 PM) also filtered
-  if (labels.includes("2:00 PM") || labels.includes("2:15 PM")) {
-    throw new Error(`slots within 15min lead buffer should be hidden`);
+  // 2:00 PM is within the 15-min lead buffer (now=14:00, buffer=15min → cutoff=14:15)
+  // → filtered because 14:00 < 14:15 (strict <)
+  if (labels.includes("2:00 PM")) {
+    throw new Error(`2:00 PM should be hidden (within buffer); got: ${labels.join(", ")}`);
   }
-  // 2:30 PM exactly is inside lead buffer (now=14:00, buffer=15m → 14:15 cutoff;
-  // 14:30 ≥ 14:15 → kept); 2:30 PM should remain
+  // 2:15 PM: slotStart (14:15) < nowMs+buffer (14:15) → false → NOT filtered → visible
+  // 2:30 PM: clearly past the buffer → visible
   if (!labels.includes("2:30 PM")) {
-    throw new Error(`expected 2:30 PM (after lead buffer) in slots`);
+    throw new Error(`expected 2:30 PM (after lead buffer) in slots; got: ${labels.join(", ")}`);
   }
+});
+
+// ─── Phase 2: anchor slots ────────────────────────────────────────────────────
+
+test("anchor: 50-min service at 10:00 injects 10:50 AM slot (not on 15-min grid)", () => {
+  // Booking 10:00–10:50. With 15-min grid, the next grid slot after the booking
+  // would be 11:00. Phase 2 should inject 10:50 so the next customer can start
+  // immediately with zero dead time.
+  const occStart = new Date(2030, 4, 5, 10, 0, 0, 0);
+  const occEnd   = new Date(2030, 4, 5, 10, 50, 0, 0);
+
+  const slots = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: "s1",
+    staffList: STAFF,
+    serviceDurationMinutes: 30,  // new customer books a 30-min service
+    occupancy: [
+      {
+        staff_id: "s1",
+        start_time_utc: occStart.toISOString(),
+        end_time_utc: occEnd.toISOString(),
+      },
+    ],
+    nowMs: NOW_MS,
+  });
+
+  const labels = slots.map((s) => s.label);
+
+  // 10:50 AM is NOT on the 15-min grid (:00/:15/:30/:45) but should be injected
+  if (!labels.includes("10:50 AM")) {
+    throw new Error(
+      `expected anchor slot 10:50 AM (exact booking end); got: ${labels.join(", ")}`,
+    );
+  }
+
+  // The 10:50 anchor must be available (service 10:50–11:20 doesn't overlap 10:00–10:50)
+  const anchor = slots.find((s) => s.label === "10:50 AM");
+  assertEqual(anchor?.available, true, "10:50 AM anchor should be available");
+
+  // 10:45 AM is on the 15-min grid but overlaps 10:00–10:50 → still in list, blocked
+  const blocked = slots.find((s) => s.label === "10:45 AM");
+  if (!blocked) throw new Error("expected 10:45 AM in slots (disabled)");
+  assertEqual(blocked.available, false, "10:45 AM overlaps existing booking → unavailable");
+
+  // Slots are in chronological order (anchor inserted in the right position)
+  const anchorIdx  = labels.indexOf("10:50 AM");
+  const elevenIdx  = labels.indexOf("11:00 AM");
+  if (anchorIdx === -1 || elevenIdx === -1) throw new Error("missing expected slots");
+  if (anchorIdx >= elevenIdx) {
+    throw new Error(`10:50 AM (idx ${anchorIdx}) should come before 11:00 AM (idx ${elevenIdx})`);
+  }
+});
+
+test("anchor: 45-min Pedicure at 12:00 → 12:45 PM available (user's exact scenario)", () => {
+  // This is the exact case the user reported:
+  // Client A: Pedicure at 12:00, duration 45 min → end 12:45.
+  // With SLOT_STEP=30, the 12:30 slot (12:30–13:15) overlapped → blocked,
+  // and the next available was 13:00 (15 min gap).
+  // With SLOT_STEP=15, 12:45 falls on the grid (:00/:15/:30/:45) so it
+  // appears naturally from Phase 1 — no anchor needed.
+  const occStart = new Date(2030, 4, 5, 12, 0, 0, 0);
+  const occEnd   = new Date(2030, 4, 5, 12, 45, 0, 0);
+
+  const slots = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: "s1",
+    staffList: STAFF,
+    serviceDurationMinutes: 30,
+    occupancy: [
+      {
+        staff_id: "s1",
+        start_time_utc: occStart.toISOString(),
+        end_time_utc: occEnd.toISOString(),
+      },
+    ],
+    nowMs: NOW_MS,
+  });
+
+  const labels = slots.map((s) => s.label);
+
+  // 12:45 PM is on the 15-min grid and free (12:45–13:15 vs 12:00–12:45 → no overlap)
+  if (!labels.includes("12:45 PM")) {
+    throw new Error(
+      `expected 12:45 PM to be available; got: ${labels.join(", ")}`,
+    );
+  }
+  const slot1245 = slots.find((s) => s.label === "12:45 PM");
+  assertEqual(slot1245?.available, true, "12:45 PM should be available");
+
+  // 12:30 PM overlaps 12:00–12:45 → blocked (in list but disabled)
+  const slot1230 = slots.find((s) => s.label === "12:30 PM");
+  if (!slot1230) throw new Error("expected 12:30 PM in slots");
+  assertEqual(slot1230.available, false, "12:30 PM should be blocked (overlaps 12:00–12:45)");
+});
+
+test("anchor: not injected when service doesn't fit before close", () => {
+  // Hours 9:00–13:00, 55-min service. Booking at 11:55 ends at 12:50.
+  // 12:50 + 55 min = 13:45 > 13:00 close → anchor NOT injected.
+  const narrowHours = {
+    ...HOURS_9_TO_19,
+    sun: { open: "09:00", close: "13:00", closed: false },
+  };
+  const occStart = new Date(2030, 4, 5, 11, 55, 0, 0);
+  const occEnd   = new Date(2030, 4, 5, 12, 50, 0, 0);
+
+  const slots = computeTimeSlots({
+    openingHoursRaw: narrowHours,
+    selectedDate: FUTURE_DATE, // Sunday
+    staffId: "s1",
+    staffList: STAFF,
+    serviceDurationMinutes: 55,
+    occupancy: [
+      {
+        staff_id: "s1",
+        start_time_utc: occStart.toISOString(),
+        end_time_utc: occEnd.toISOString(),
+      },
+    ],
+    nowMs: NOW_MS,
+  });
+
+  const labels = slots.map((s) => s.label);
+  if (labels.includes("12:50 PM")) {
+    throw new Error(
+      `12:50 PM anchor should NOT be injected (55-min service would run past 1:00 PM close); got: ${labels.join(", ")}`,
+    );
+  }
+});
+
+test("anchor: slots are chronologically sorted after injection", () => {
+  // Two non-standard bookings: 10:00–10:20 and 11:00–11:35.
+  // Anchors at 10:20 and 11:35 should both appear in the correct position.
+  const occ1Start = new Date(2030, 4, 5, 10, 0, 0, 0);
+  const occ1End   = new Date(2030, 4, 5, 10, 20, 0, 0);
+  const occ2Start = new Date(2030, 4, 5, 11, 0, 0, 0);
+  const occ2End   = new Date(2030, 4, 5, 11, 35, 0, 0);
+
+  const slots = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: "s1",
+    staffList: STAFF,
+    serviceDurationMinutes: 15,
+    occupancy: [
+      { staff_id: "s1", start_time_utc: occ1Start.toISOString(), end_time_utc: occ1End.toISOString() },
+      { staff_id: "s1", start_time_utc: occ2Start.toISOString(), end_time_utc: occ2End.toISOString() },
+    ],
+    nowMs: NOW_MS,
+  });
+
+  const labels = slots.map((s) => s.label);
+
+  // Both anchors must be present and available
+  if (!labels.includes("10:20 AM")) throw new Error("expected anchor 10:20 AM");
+  if (!labels.includes("11:35 AM")) throw new Error("expected anchor 11:35 AM");
+
+  const idx1020 = labels.indexOf("10:20 AM");
+  const idx1030 = labels.indexOf("10:30 AM");
+  const idx1135 = labels.indexOf("11:35 AM");
+  const idx1145 = labels.indexOf("11:45 AM");
+
+  // Anchors must appear before the next regular grid slot
+  if (idx1020 >= idx1030) throw new Error(`10:20 should come before 10:30`);
+  if (idx1135 >= idx1145) throw new Error(`11:35 should come before 11:45`);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);
