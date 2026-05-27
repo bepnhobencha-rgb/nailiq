@@ -1,12 +1,14 @@
 "use client";
 
+import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 
+import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import {
   getBookingsForRangeAction,
-  type CalendarBooking,
   type BookingsRangeHint,
+  type CalendarBooking,
 } from "@/shared/dashboard/getBookingsForRangeAction";
 import type { ReceptionistMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
@@ -15,18 +17,15 @@ import { formatInSalonTz } from "@/shared/lib/salonTime";
 /**
  * Read-only month-calendar grid for the Receptionist Center.
  *
- * Data: fetches the entire month in a SINGLE `getBookingsForRangeAction` call
- * (one auth round-trip + one range query). Previous naïve implementation would
- * have fired ~31 parallel `loadReceptionistCenterDataAction` calls.
+ * UX — two-level drill-down (no view switch required):
+ *   1. Click a day cell → calendar grid compresses; day-detail panel slides in
+ *      from the right (Framer Motion spring). Panel lists all bookings for
+ *      that day with time, client, service, and status.
+ *   2. Click a booking in the panel → `onBookingClick` opens the drawer.
+ *   3. "Full day view" button in the panel → `onDayClick` switches to Day view.
  *
- * Layout: standard Mon–Sun 7-column calendar (6-week rows max).
- * Greyed-out cells from prev/next month are shown for context but
- * carry no bookings. Each in-month day shows up to 3 booking chips
- * colour-coded by status; "+N more" overflow indicator when there are more.
- *
- * Clicking a booking chip → `onBookingClick(bookingId, ymd)` so the
- * parent loads that day and opens BookingDetailDrawer.
- * Clicking a day number → `onDayClick(ymd)` to flip back to Day view.
+ * Data: single `getBookingsForRangeAction` call per month (fast-path when
+ * `hint` is provided — membership check + bookings query run in parallel).
  */
 
 const TOP_BOOKINGS_PER_DAY = 3;
@@ -95,6 +94,16 @@ function buildMonthGrid(firstYmd: string): Array<{ ymd: string; inMonth: boolean
   return cells;
 }
 
+/** Long date label for the panel header, e.g. "Tuesday, 27 May". */
+function formatDayLabel(ymd: string): string {
+  const d = ymdToLocalDate(ymd);
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(d);
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type DayState =
@@ -129,10 +138,15 @@ export interface MonthViewProps {
   hint?: BookingsRangeHint;
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 /** Weekday header labels Mon–Sun (short). */
 const WEEKDAY_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+const PANEL_SPRING = { type: "spring", damping: 26, stiffness: 300 } as const;
+const LAYOUT_SPRING = { type: "spring", damping: 30, stiffness: 280 } as const;
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export function MonthView({
   slug,
@@ -163,6 +177,14 @@ export function MonthView({
   }, [firstYmd]);
 
   const [days, setDays] = useState<Record<string, DayState>>({});
+
+  // Currently selected day for the detail panel. Cleared when month changes.
+  const [selectedYmd, setSelectedYmd] = useState<string | null>(null);
+
+  // Close panel when navigating to a different month.
+  useEffect(() => {
+    setSelectedYmd(null);
+  }, [firstYmd]);
 
   useEffect(() => {
     let cancelled = false;
@@ -221,12 +243,15 @@ export function MonthView({
     }).format(d);
   }, [firstYmd]);
 
+  const panelOpen = selectedYmd !== null;
+  const panelState = selectedYmd ? (days[selectedYmd] ?? { kind: "loading" as const }) : null;
+
   return (
     <div
       data-testid="month-view"
       className="mx-auto flex w-full flex-col gap-3 px-[var(--pad-nq-section-mobile)] py-4 md:px-6"
     >
-      {/* Navigation header */}
+      {/* ── Navigation header ───────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
@@ -264,85 +289,298 @@ export function MonthView({
         </div>
       </div>
 
-      {/* Weekday column headers */}
-      <div className="grid grid-cols-7 gap-1 text-center">
-        {WEEKDAY_HEADERS.map((h) => (
-          <div
-            key={h}
-            className="text-[10px] font-semibold uppercase tracking-wide text-nq-muted"
-          >
-            {h}
+      {/* ── Main area: calendar + detail panel ──────────────────────────── */}
+      <div className="flex items-start gap-3 overflow-x-hidden">
+
+        {/* Calendar grid — motion.div with layout so it smoothly shrinks
+            when the detail panel slides in next to it.                    */}
+        <motion.div
+          layout
+          transition={LAYOUT_SPRING}
+          className="min-w-0 flex-1"
+        >
+          {/* Weekday column headers */}
+          <div className="mb-1 grid grid-cols-7 gap-1 text-center">
+            {WEEKDAY_HEADERS.map((h) => (
+              <div
+                key={h}
+                className="text-[10px] font-semibold uppercase tracking-wide text-nq-muted"
+              >
+                {h}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      {/* Calendar grid */}
-      <div className="grid grid-cols-7 gap-1">
-        {cells.map(({ ymd, inMonth }) => {
-          const isToday = ymd === todayYmd;
-          const state = inMonth ? (days[ymd] ?? { kind: "loading" as const }) : null;
-          const dayNum = ymdToLocalDate(ymd).getDate();
+          {/* Day cells */}
+          <div className="grid grid-cols-7 gap-1">
+            {cells.map(({ ymd, inMonth }) => {
+              const isToday = ymd === todayYmd;
+              const isSelected = ymd === selectedYmd;
+              const state = inMonth ? (days[ymd] ?? { kind: "loading" as const }) : null;
+              const dayNum = ymdToLocalDate(ymd).getDate();
 
-          return (
-            <Card
-              key={ymd}
-              variant={isToday ? "elevated" : "default"}
-              padding="none"
-              className={cn(
-                "min-h-[6rem] overflow-hidden",
-                !inMonth && "opacity-30",
-                isToday && "ring-1 ring-nq-primary/45",
-              )}
-            >
-              {/* Day number — clickable if in-month */}
-              <div className="flex items-center justify-between border-b border-nq-border/30 px-1.5 py-1">
-                {inMonth ? (
-                  <button
-                    type="button"
-                    onClick={() => onDayClick(ymd)}
-                    className={cn(
-                      "inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-xs font-semibold tabular-nums transition-colors",
-                      isToday
-                        ? "bg-nq-primary text-nq-bg"
-                        : "text-nq-foreground hover:bg-nq-primary/15 hover:text-nq-primary",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/40",
-                    )}
-                    aria-label={`Open day view for ${ymd}`}
-                  >
-                    {dayNum}
-                  </button>
-                ) : (
-                  <span className="px-1 text-xs font-semibold tabular-nums text-nq-muted">
-                    {dayNum}
-                  </span>
-                )}
-              </div>
-
-              {/* Booking content */}
-              <div className="flex flex-col gap-0.5 p-1">
-                {!inMonth ? null : state?.kind === "loading" ? (
-                  <div className="flex justify-center py-2">
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-nq-muted/50" />
+              return (
+                <Card
+                  key={ymd}
+                  variant={isToday ? "elevated" : "default"}
+                  padding="none"
+                  className={cn(
+                    "min-h-[5.5rem] overflow-hidden transition-shadow",
+                    !inMonth && "pointer-events-none opacity-25",
+                    isToday && "ring-1 ring-nq-primary/45",
+                    isSelected && "ring-2 ring-nq-primary shadow-md",
+                    inMonth && !isSelected && "cursor-pointer hover:ring-1 hover:ring-nq-primary/30",
+                  )}
+                  // Click anywhere on the day cell → open detail panel
+                  onClick={inMonth ? () => {
+                    setSelectedYmd((prev) => prev === ymd ? null : ymd);
+                  } : undefined}
+                  role={inMonth ? "button" : undefined}
+                  aria-pressed={isSelected ? true : undefined}
+                  aria-label={inMonth ? `View bookings for ${ymd}` : undefined}
+                >
+                  {/* Day number header */}
+                  <div className="flex items-center justify-between border-b border-nq-border/30 px-1.5 py-1">
+                    <span
+                      className={cn(
+                        "inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-xs font-semibold tabular-nums",
+                        isToday
+                          ? "bg-nq-primary text-nq-bg"
+                          : isSelected
+                            ? "bg-nq-primary/20 text-nq-primary"
+                            : "text-nq-foreground",
+                      )}
+                    >
+                      {dayNum}
+                    </span>
                   </div>
-                ) : state?.kind === "error" ? (
-                  <p className="text-center text-[10px] text-nq-error">
-                    {messages.dayError}
-                  </p>
-                ) : state?.kind === "ok" ? (
-                  <MonthDayBookings
-                    bookings={state.bookings}
-                    timezone={timezone}
-                    moreLabel={messages.moreCount}
-                    openBookingAria={messages.openBookingAria}
-                    onBookingClick={(id) => onBookingClick(id, ymd)}
-                  />
-                ) : null}
-              </div>
-            </Card>
-          );
-        })}
+
+                  {/* Booking chips */}
+                  <div className="flex flex-col gap-0.5 p-1">
+                    {!inMonth ? null : state?.kind === "loading" ? (
+                      <div className="flex justify-center py-2">
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-nq-muted/50" />
+                      </div>
+                    ) : state?.kind === "error" ? (
+                      <p className="text-center text-[10px] text-nq-error">
+                        {messages.dayError}
+                      </p>
+                    ) : state?.kind === "ok" ? (
+                      <MonthDayBookings
+                        bookings={state.bookings}
+                        timezone={timezone}
+                        moreLabel={messages.moreCount}
+                        openBookingAria={messages.openBookingAria}
+                        // Stop propagation so clicking a chip doesn't also
+                        // toggle the selected-day state.
+                        onBookingClick={(id) => {
+                          onBookingClick(id, ymd);
+                        }}
+                      />
+                    ) : null}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </motion.div>
+
+        {/* ── Day detail panel — slides in from right ──────────────────── */}
+        <AnimatePresence>
+          {panelOpen && selectedYmd && (
+            <motion.div
+              key="day-detail-panel"
+              initial={{ x: "100%", opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: "100%", opacity: 0 }}
+              transition={PANEL_SPRING}
+              className="w-72 shrink-0 md:w-80"
+              data-testid="month-view-day-panel"
+            >
+              <DayDetailPanel
+                ymd={selectedYmd}
+                timezone={timezone}
+                state={panelState ?? { kind: "loading" }}
+                messages={messages}
+                onClose={() => setSelectedYmd(null)}
+                onBookingClick={(id) => onBookingClick(id, selectedYmd)}
+                onOpenDayView={() => {
+                  setSelectedYmd(null);
+                  onDayClick(selectedYmd);
+                }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+// ─── DayDetailPanel ───────────────────────────────────────────────────────────
+
+function statusVariant(
+  status: string,
+): "success" | "info" | "warning" | "default" {
+  if (status === "in_progress") return "success";
+  if (status === "confirmed") return "info";
+  if (status === "pending") return "warning";
+  return "default";
+}
+
+function DayDetailPanel({
+  ymd,
+  timezone,
+  state,
+  messages,
+  onClose,
+  onBookingClick,
+  onOpenDayView,
+}: {
+  ymd: string;
+  timezone: string;
+  state: DayState;
+  messages: ReceptionistMessages["monthView"];
+  onClose: () => void;
+  onBookingClick: (bookingId: string) => void;
+  onOpenDayView: () => void;
+}) {
+  const sorted = useMemo(() => {
+    if (state.kind !== "ok") return [];
+    return [...state.bookings].sort((a, b) => {
+      const am = Date.parse(a.start_time_utc);
+      const bm = Date.parse(b.start_time_utc);
+      return (Number.isFinite(am) ? am : 0) - (Number.isFinite(bm) ? bm : 0);
+    });
+  }, [state]);
+
+  // Status summary counts
+  const counts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const b of sorted) {
+      c[b.status] = (c[b.status] ?? 0) + 1;
+    }
+    return c;
+  }, [sorted]);
+
+  const dayLabel = formatDayLabel(ymd);
+
+  return (
+    <Card
+      variant="elevated"
+      padding="none"
+      className="flex h-full flex-col overflow-hidden shadow-lg ring-1 ring-nq-primary/20"
+    >
+      {/* Panel header */}
+      <div className="flex items-start justify-between border-b border-nq-border/40 px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
+            {sorted.length} {sorted.length === 1 ? "booking" : "bookings"}
+          </p>
+          <p className="mt-0.5 truncate text-sm font-semibold text-nq-foreground">
+            {dayLabel}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={messages.closeDayPanel}
+          className="ml-2 mt-0.5 shrink-0 rounded-md p-1 text-nq-muted transition-colors hover:bg-nq-border/40 hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/40"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Status summary chips */}
+      {state.kind === "ok" && Object.keys(counts).length > 0 && (
+        <div className="flex flex-wrap gap-1.5 border-b border-nq-border/30 px-4 py-2">
+          {Object.entries(counts).map(([status, count]) => (
+            <Badge
+              key={status}
+              variant={statusVariant(status)}
+              state="subtle"
+              size="sm"
+            >
+              {count} {messages.statusNames[status] ?? status}
+            </Badge>
+          ))}
+        </div>
+      )}
+
+      {/* Booking list */}
+      <div className="flex-1 overflow-y-auto">
+        {state.kind === "loading" ? (
+          <div className="flex items-center justify-center py-10">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-nq-primary/30 border-t-nq-primary" />
+          </div>
+        ) : state.kind === "error" ? (
+          <p className="px-4 py-6 text-center text-sm text-nq-error">
+            {messages.dayError}
+          </p>
+        ) : sorted.length === 0 ? (
+          <p className="px-4 py-8 text-center text-sm italic text-nq-muted">
+            {messages.panelEmpty}
+          </p>
+        ) : (
+          <ul className="divide-y divide-nq-border/20">
+            {sorted.map((b) => (
+              <motion.li
+                key={b.id}
+                whileHover={{ backgroundColor: "var(--color-nq-primary-5, rgba(99,102,241,0.05))" }}
+                transition={{ duration: 0.15 }}
+              >
+                <button
+                  type="button"
+                  aria-label={messages.openBookingAria.replace("{client}", b.client_name)}
+                  onClick={() => onBookingClick(b.id)}
+                  className="group flex w-full items-start gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-nq-primary/40"
+                >
+                  {/* Time pill */}
+                  <div className="shrink-0 rounded-md bg-nq-surface px-2 py-1 text-center ring-1 ring-nq-border/50">
+                    <p className="text-[11px] font-semibold tabular-nums leading-none text-nq-foreground">
+                      {formatInSalonTz(b.start_time_utc, timezone, "shortTime")}
+                    </p>
+                  </div>
+
+                  {/* Booking info */}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-nq-foreground group-hover:text-nq-primary">
+                      {b.client_name || "—"}
+                    </p>
+                    <p className="truncate text-xs text-nq-muted">
+                      {b.service_name || "—"}
+                    </p>
+                  </div>
+
+                  {/* Status badge */}
+                  <Badge
+                    variant={statusVariant(b.status)}
+                    state="subtle"
+                    size="sm"
+                    className="shrink-0"
+                  >
+                    {messages.statusNames[b.status] ?? b.status}
+                  </Badge>
+                </button>
+              </motion.li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Footer — link to full day view */}
+      <div className="border-t border-nq-border/40 px-4 py-3">
+        <button
+          type="button"
+          onClick={onOpenDayView}
+          className="w-full rounded-md border border-nq-primary/40 bg-nq-primary/8 px-3 py-2 text-xs font-medium text-nq-primary transition-colors hover:bg-nq-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/40"
+        >
+          {messages.openDayView}
+        </button>
+      </div>
+    </Card>
   );
 }
 
@@ -381,7 +619,11 @@ function MonthDayBookings({
           key={b.id}
           type="button"
           aria-label={openBookingAria.replace("{client}", b.client_name)}
-          onClick={() => onBookingClick(b.id)}
+          onClick={(e) => {
+            // Prevent the day-cell onClick from toggling the panel.
+            e.stopPropagation();
+            onBookingClick(b.id);
+          }}
           className={cn(
             "w-full rounded px-1 py-0.5 text-left text-[10px] leading-tight",
             "truncate transition-colors",

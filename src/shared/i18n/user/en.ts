@@ -1322,6 +1322,17 @@ export type UserMessages = {
       moreCount: string;
       /** Aria label for a clickable booking card. `{client}` = client name. */
       openBookingAria: string;
+      // ── Day-detail split panel ──────────────────────────────────────────────
+      /** Close button label/aria for the day-detail panel. */
+      closeDayPanel: string;
+      /** Button that switches from month view to full day view. */
+      openDayView: string;
+      /** Empty state inside the day-detail panel. */
+      panelEmpty: string;
+      /** Loading state inside the day-detail panel. */
+      panelLoading: string;
+      /** Status labels used by booking chips in the day-detail panel. */
+      statusNames: Partial<Record<string, string>>;
     };
     /** Client profiles panel + page (`/dashboard/[slug]/clients`). */
     clientProfiles: {
@@ -2788,6 +2799,16 @@ export const userEn: UserMessages = {
       bookingCount: "{n} bookings",
       moreCount: "+{n} more",
       openBookingAria: "View booking for {client}",
+      closeDayPanel: "Close",
+      openDayView: "Full day view →",
+      panelEmpty: "No bookings this day",
+      panelLoading: "Loading…",
+      statusNames: {
+        pending: "Pending",
+        confirmed: "Confirmed",
+        in_progress: "In progress",
+        completed: "Done",
+      },
     },
     clientProfiles: {
       pageTitle: "Clients",

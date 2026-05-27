@@ -1323,6 +1323,16 @@ export const userVi: UserMessages = {
       bookingCount: "{n} lịch",
       moreCount: "+{n} nữa",
       openBookingAria: "Xem lịch của {client}",
+      closeDayPanel: "Đóng",
+      openDayView: "Xem ngày đầy đủ →",
+      panelEmpty: "Không có lịch hẹn",
+      panelLoading: "Đang tải…",
+      statusNames: {
+        pending: "Chờ xác nhận",
+        confirmed: "Đã xác nhận",
+        in_progress: "Đang làm",
+        completed: "Xong",
+      },
     },
     clientProfiles: {
       pageTitle: "Khách hàng",
