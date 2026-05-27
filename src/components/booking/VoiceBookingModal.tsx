@@ -470,21 +470,20 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         ws.send(JSON.stringify({
           type: "session.update",
           session: {
-            modalities:   ["text", "audio"],   // "text" required for function call args
+            type:         "realtime",           // ← required by gpt-realtime-2
+            modalities:   ["text", "audio"],    // "text" required for function call args
             ...(instructions ? { instructions } : {}),
             tools:        [...REALTIME_TOOLS],
             tool_choice:  "auto",
             voice,
             input_audio_format:  "pcm16",
             output_audio_format: "pcm16",
-            // Enable user-speech transcription so conversation.item.input_audio_transcription
-            // events fire and we can show what the user said
             input_audio_transcription: { model: "whisper-1" },
             turn_detection: {
               type:               "semantic_vad",
               eagerness:          "auto",
-              create_response:    true,   // ← auto-trigger AI response after user speech
-              interrupt_response: true,   // ← user can interrupt AI mid-sentence
+              create_response:    true,
+              interrupt_response: true,
             },
           },
         }));
