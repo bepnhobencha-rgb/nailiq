@@ -34,6 +34,12 @@ export async function POST(req: NextRequest) {
   if (toolName === "confirm_booking") {
     return handleConfirmBooking(supabase, salonSlug, toolArgs, body.sessionId ?? null);
   }
+  if (toolName === "find_booking") {
+    return handleFindBooking(supabase, salonSlug, toolArgs);
+  }
+  if (toolName === "reschedule_booking") {
+    return handleRescheduleBooking(supabase, salonSlug, toolArgs, body.sessionId ?? null);
+  }
 
   return NextResponse.json({ error: "unknown_tool", toolName }, { status: 400 });
 }
@@ -269,5 +275,223 @@ async function handleConfirmBooking(
     timeSlot,
     customerName,
     customerPhone,
+  });
+}
+
+// ─── find_booking ────────────────────────────────────────────────────────────
+// Look up upcoming bookings for a customer by phone number.
+// Used when the customer wants to reschedule in a new session.
+async function handleFindBooking(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  salonSlug: string,
+  args: Record<string, unknown>,
+) {
+  const customerPhone = args.customer_phone as string | undefined;
+  if (!customerPhone) {
+    return NextResponse.json({ error: "missing_customer_phone" }, { status: 400 });
+  }
+
+  const { data: salon } = await supabase
+    .from("salons")
+    .select("id, timezone")
+    .eq("slug", salonSlug)
+    .single();
+  if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+
+  // Match on digits only (strips +84, +1, spaces, dashes, etc.)
+  const digits = customerPhone.replace(/\D/g, "");
+  const last9  = digits.slice(-9);  // last 9 digits match across country codes
+
+  const now = new Date().toISOString();
+  const { data: rows } = await supabase
+    .from("bookings")
+    .select("id, start_time_utc, end_time_utc, status, client_name, service_id, services(name)")
+    .eq("salon_id", salon.id)
+    .gte("start_time_utc", now)
+    .neq("status", "cancelled")
+    .order("start_time_utc", { ascending: true })
+    .limit(5);
+
+  // Filter by phone digits client-side (Supabase doesn't support regex on encrypted fields)
+  const matched = (rows ?? []).filter((r) => {
+    // client_phone is stored as digits-only in the DB (see handleConfirmBooking)
+    // so direct suffix match works
+    return true; // we fetch all upcoming and filter by phone below
+  });
+
+  // Re-query with phone filter
+  const { data: phoneRows } = await supabase
+    .from("bookings")
+    .select("id, start_time_utc, end_time_utc, status, client_name, service_id, services(name)")
+    .eq("salon_id", salon.id)
+    .ilike("client_phone", `%${last9}`)
+    .gte("start_time_utc", now)
+    .neq("status", "cancelled")
+    .order("start_time_utc", { ascending: true })
+    .limit(3);
+
+  void matched; // unused, replaced by phoneRows
+
+  if (!phoneRows || phoneRows.length === 0) {
+    return NextResponse.json({
+      bookings: [],
+      message:  "Không tìm thấy lịch hẹn nào sắp tới cho số điện thoại này.",
+    });
+  }
+
+  const tz = (salon as { timezone?: string }).timezone ?? "America/Los_Angeles";
+  const formatted = phoneRows.map((b) => {
+    const start = new Date(b.start_time_utc as string);
+    const localStr = start.toLocaleString("en-US", {
+      timeZone:  tz,
+      weekday:   "short",
+      month:     "short",
+      day:       "numeric",
+      hour:      "numeric",
+      minute:    "2-digit",
+      hour12:    true,
+    });
+    return {
+      booking_id:   b.id,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      service_name: (b.services as any)?.name ?? "Unknown service",
+      date_time:    localStr,
+      status:       b.status,
+      client_name:  b.client_name,
+    };
+  });
+
+  return NextResponse.json({ bookings: formatted });
+}
+
+// ─── reschedule_booking ──────────────────────────────────────────────────────
+// UPDATE an existing booking to a new date/time.
+// Preserves booking_id, history, and deposits.
+async function handleRescheduleBooking(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  salonSlug: string,
+  args: Record<string, unknown>,
+  sessionId: string | null,
+) {
+  const bookingId  = args.booking_id    as string | undefined;
+  const newDate    = args.new_date      as string | undefined;  // YYYY-MM-DD
+  const newSlot    = args.new_time_slot as string | undefined;  // "3:00 PM"
+  const staffArg   = args.staff_id      as string | undefined;
+
+  if (!bookingId || !newDate || !newSlot || !staffArg) {
+    return NextResponse.json({ error: "missing_required_fields" }, { status: 400 });
+  }
+
+  // Load salon
+  const { data: salon } = await supabase
+    .from("salons")
+    .select("id, timezone")
+    .eq("slug", salonSlug)
+    .single();
+  if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+
+  // Load existing booking — verify it belongs to this salon
+  const { data: booking } = await supabase
+    .from("bookings")
+    .select("id, salon_id, service_id, staff_id, start_time_utc, end_time_utc, status, client_name, client_phone")
+    .eq("id", bookingId)
+    .eq("salon_id", salon.id)
+    .single();
+
+  if (!booking) return NextResponse.json({ error: "booking_not_found" }, { status: 404 });
+  if ((booking as { status: string }).status === "cancelled") {
+    return NextResponse.json({ error: "booking_already_cancelled" }, { status: 409 });
+  }
+
+  // Load service for duration
+  const { data: service } = await supabase
+    .from("services")
+    .select("id, name, duration_minutes")
+    .eq("id", (booking as { service_id: string }).service_id)
+    .single();
+  if (!service) return NextResponse.json({ error: "service_not_found" }, { status: 404 });
+
+  // Resolve staff: keep same if "any" or "same", else use provided ID
+  const currentStaffId = (booking as { staff_id: string | null }).staff_id;
+  let resolvedStaffId = currentStaffId;
+  if (staffArg !== "any" && staffArg !== "same" && staffArg !== BOOKING_ANY_STAFF_ID) {
+    resolvedStaffId = staffArg;
+  }
+
+  // Convert new date + time slot → UTC (DST-safe)
+  const timezone = (salon as { timezone?: string }).timezone ?? "America/Los_Angeles";
+  const slotMins = parseSlotLabelToMinutes(newSlot);
+  if (slotMins === null) {
+    return NextResponse.json({ error: "invalid_time_slot_format", received: newSlot }, { status: 400 });
+  }
+  const svc = service as { duration_minutes: number; name: string };
+  const endMins = slotMins + svc.duration_minutes;
+
+  let newStartUtc: string;
+  let newEndUtc: string;
+  try {
+    newStartUtc = salonWallTimeToUtcIso(newDate, slotMins, timezone);
+    newEndUtc   = salonWallTimeToUtcIso(newDate, endMins,  timezone);
+  } catch (e) {
+    return NextResponse.json({ error: "time_conversion_failed", detail: String(e) }, { status: 400 });
+  }
+
+  // Conflict check — exclude THIS booking from the check
+  // (its current slot will be freed when we move it)
+  const { data: conflicts } = await supabase
+    .from("bookings")
+    .select("id")
+    .eq("salon_id", salon.id)
+    .eq("staff_id", resolvedStaffId ?? "")
+    .neq("id", bookingId)
+    .not("status", "in", `("cancelled","waiting")`)
+    .lt("start_time_utc", newEndUtc)
+    .gt("end_time_utc", newStartUtc)
+    .limit(1);
+
+  if (conflicts && conflicts.length > 0) {
+    return NextResponse.json({
+      error:   "slot_conflict",
+      message: "Khung giờ mới không còn trống. Vui lòng chọn giờ khác.",
+    }, { status: 409 });
+  }
+
+  // UPDATE booking — preserve ID, history, deposits
+  const oldStart = (booking as { start_time_utc: string }).start_time_utc;
+  const { error: updateErr } = await supabase
+    .from("bookings")
+    .update({
+      start_time_utc:            newStartUtc,
+      end_time_utc:              newEndUtc,
+      ...(resolvedStaffId ? { staff_id: resolvedStaffId } : {}),
+      rescheduled_from_time_utc: oldStart,
+      rescheduled_at:            new Date().toISOString(),
+      rescheduled_by:            "voice",
+    })
+    .eq("id", bookingId);
+
+  if (updateErr) {
+    console.error("[voice/reschedule_booking] update error:", updateErr);
+    return NextResponse.json({ error: "reschedule_failed", detail: updateErr.message }, { status: 500 });
+  }
+
+  // Update voice session if we have one
+  if (sessionId) {
+    try {
+      await supabase
+        .from("voice_ai_sessions")
+        .update({ booking_id: bookingId })
+        .eq("id", sessionId);
+    } catch { /* best-effort */ }
+  }
+
+  return NextResponse.json({
+    success:     true,
+    bookingId,
+    serviceName: svc.name,
+    newDate,
+    newTimeSlot: newSlot,
+    clientName:  (booking as { client_name: string }).client_name,
+    message:     "Lịch hẹn đã được dời thành công. Booking ID giữ nguyên.",
   });
 }
