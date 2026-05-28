@@ -93,7 +93,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   // Silence / inactivity tracking (all refs — safe to use in async callbacks)
   const silenceTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const repromptCountRef = useRef(0);
-  const aiActiveRef      = useRef(false);   // true while AI is thinking/speaking
+  const aiActiveRef           = useRef(false);   // true while AI is thinking/speaking
+  /** ms timestamp until which mic input is suppressed after AI stops speaking.
+   *  Prevents the mic from picking up the tail end of the speaker output and
+   *  triggering a new VAD speech_started → echo loop. */
+  const postSpeechCooldownRef = useRef(0);
   // Stable function stored in ref to avoid stale-closure issues in timer callbacks
   const scheduleNudgeRef = useRef<() => void>(() => undefined);
 
@@ -267,6 +271,9 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
 
     if (type === "response.done") {
       aiActiveRef.current = false;
+      // 400 ms cooldown: suppresses mic input long enough for speaker audio to
+      // decay so the VAD doesn't immediately re-fire on the tail of our own output.
+      postSpeechCooldownRef.current = Date.now() + 400;
       setAiActivity("idle");
 
       // ── Belt-and-suspenders: extract any function calls from the response
@@ -553,6 +560,10 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         muteGain.connect(audioCtx.destination);
         processor.onaudioprocess = (e) => {
           if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+          // Suppress mic while AI is speaking or within the post-speech cooldown
+          // window — prevents the VAD from hearing the AI's own output through
+          // the speakers and triggering an echo loop.
+          if (aiActiveRef.current || Date.now() < postSpeechCooldownRef.current) return;
           const pcm = e.inputBuffer.getChannelData(0);
           const buf = float32ToPCM16(pcm);
           const b64 = arrayBufferToBase64(buf);
