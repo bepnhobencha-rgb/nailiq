@@ -86,7 +86,7 @@ export async function loadAllSalons(): Promise<LoadAllSalonsResult> {
   const { data, error } = (await admin
     .from("salons")
     .select(
-      "id, slug, name, phone, subscription_plan, plan_override, feature_flags, is_beta, admin_notes, created_at" as never,
+      "id, slug, name, phone, subscription_plan, plan_override, feature_flags, is_beta, admin_notes, created_at, voice_ai_enabled" as never,
     )
     .order("created_at", { ascending: false })) as {
     data:
@@ -101,6 +101,7 @@ export async function loadAllSalons(): Promise<LoadAllSalonsResult> {
           is_beta?: boolean | null;
           admin_notes?: string | null;
           created_at?: string | null;
+          voice_ai_enabled?: boolean | null;
         }>
       | null;
     error: unknown;
@@ -157,6 +158,7 @@ export async function loadAllSalons(): Promise<LoadAllSalonsResult> {
           : null,
       created_at: row.created_at ?? null,
       bookings_this_month: monthlyCounts.get(id) ?? 0,
+      voice_ai_enabled: Boolean(row.voice_ai_enabled),
     };
   });
 
@@ -202,7 +204,7 @@ export async function loadSalonDetail(
   const { data: row, error } = (await admin
     .from("salons")
     .select(
-      "id, slug, name, phone, subscription_plan, plan_override, feature_flags, is_beta, admin_notes, created_at, timezone, currency_code, brand_color, theme_mode" as never,
+      "id, slug, name, phone, subscription_plan, plan_override, feature_flags, is_beta, admin_notes, created_at, timezone, currency_code, brand_color, theme_mode, voice_ai_enabled" as never,
     )
     .eq("id", id)
     .maybeSingle()) as {
@@ -222,6 +224,7 @@ export async function loadSalonDetail(
           currency_code?: string | null;
           brand_color?: string | null;
           theme_mode?: string | null;
+          voice_ai_enabled?: boolean | null;
         }
       | null;
     error: unknown;
@@ -337,6 +340,7 @@ export async function loadSalonDetail(
       typeof lastBookingData?.created_at === "string"
         ? lastBookingData.created_at
         : null,
+    voice_ai_enabled: Boolean(row.voice_ai_enabled),
   };
 
   return { ok: true, salon: detail };
@@ -410,6 +414,10 @@ export async function updateSalonFlags(
       ...normalizeFeatureFlags(patch.featureFlags),
     };
     update.feature_flags = merged;
+  }
+
+  if ("voiceAiEnabled" in patch && typeof patch.voiceAiEnabled === "boolean") {
+    update.voice_ai_enabled = patch.voiceAiEnabled;
   }
 
   if (Object.keys(update).length === 0) {

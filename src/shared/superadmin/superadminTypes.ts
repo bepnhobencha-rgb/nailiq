@@ -299,6 +299,8 @@ export type SuperAdminSalonRow = {
   is_beta: boolean;
   admin_notes: string | null;
   created_at: string | null;
+  /** Voice AI feature gate — toggled per-salon by SuperAdmin. */
+  voice_ai_enabled: boolean;
   /** Bookings whose `start_time_utc` falls in the current calendar
    * month (UTC). Excludes status='cancelled' since those represent
    * voided traffic, not real demand. */
@@ -351,6 +353,7 @@ export type UpdateSalonFlagsInput = {
   featureFlags?: SuperAdminFeatureFlags;
   isBeta?: boolean;
   adminNotes?: string | null;
+  voiceAiEnabled?: boolean;
 };
 
 export type UpdateSalonFlagsResult =

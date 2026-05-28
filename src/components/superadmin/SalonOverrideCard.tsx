@@ -55,6 +55,7 @@ type Draft = {
   featureFlags: SuperAdminFeatureFlags;
   isBeta: boolean;
   adminNotes: string;
+  voiceAiEnabled: boolean;
 };
 
 function draftFromSalon(salon: SuperAdminSalonRow): Draft {
@@ -63,6 +64,7 @@ function draftFromSalon(salon: SuperAdminSalonRow): Draft {
     featureFlags: { ...salon.feature_flags },
     isBeta: salon.is_beta,
     adminNotes: salon.admin_notes ?? "",
+    voiceAiEnabled: salon.voice_ai_enabled,
   };
 }
 
@@ -86,6 +88,7 @@ export function SalonOverrideCard({
         featureFlags: draft.featureFlags,
         isBeta: draft.isBeta,
         adminNotes: draft.adminNotes,
+        voiceAiEnabled: draft.voiceAiEnabled,
       });
       if (!result.ok) {
         setError(result.error);
@@ -160,6 +163,31 @@ export function SalonOverrideCard({
               )}
             />
             {draft.isBeta ? "ON" : "OFF"}
+          </button>
+        </label>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-nq-muted">Voice AI (Lily)</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={draft.voiceAiEnabled}
+            onClick={() => setDraft((d) => ({ ...d, voiceAiEnabled: !d.voiceAiEnabled }))}
+            className={cn(
+              "self-start inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-semibold transition-colors",
+              draft.voiceAiEnabled
+                ? "border-emerald-500/45 bg-emerald-500/15 text-emerald-400"
+                : "border-nq-border/50 bg-nq-surface/40 text-nq-muted hover:bg-nq-surface/60",
+            )}
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "inline-block h-2 w-2 rounded-full",
+                draft.voiceAiEnabled ? "bg-emerald-400" : "bg-nq-muted/60",
+              )}
+            />
+            {draft.voiceAiEnabled ? "ON" : "OFF"}
           </button>
         </label>
       </div>
