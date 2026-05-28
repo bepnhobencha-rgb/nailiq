@@ -513,16 +513,10 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             ...(instructions ? { instructions } : {}),
             tools:             [...REALTIME_TOOLS],
             tool_choice:       "auto",
-            // Belt-and-suspenders: turn_detection at top level in case the
-            // server ignores the nested audio.input.turn_detection position.
-            // create_response: true is critical — without it semantic_vad
-            // detects end-of-speech but does NOT trigger a model response.
-            turn_detection: {
-              type:               "semantic_vad",
-              eagerness:          "auto",
-              create_response:    true,
-              interrupt_response: true,
-            },
+            // gpt-realtime-2 does NOT accept turn_detection at the top level
+            // of session — the field was rejected with "Unknown parameter:
+            // 'session.turn_detection'" (2026-05-28). Turn detection is
+            // configured exclusively via audio.input.turn_detection below.
             // Top-level transcription field for standard OpenAI Realtime API
             // compatibility (gpt-4o-realtime-preview style fallback).
             input_audio_transcription: { model: "whisper-1" },

@@ -291,6 +291,11 @@ export const bookingVi: BookingMessages = {
     groupTryDifferentDate: "Thử ngày khác",
     groupTomorrow: "Ngày mai",
     groupNoAlternatives: "Không tìm được lịch. Vui lòng thử ngày khác.",
+    /** Phase 2 — Party Link share box on the success panel. */
+    partyLinkShare: "Chia sẻ với nhóm",
+    partyLinkHint: "Gửi đường dẫn này để mọi người xác nhận lịch của mình.",
+    partyLinkCopy: "Sao chép",
+    partyLinkCopied: "Đã sao chép!",
   },
   chat: {
     trigger: "Hỏi AI",

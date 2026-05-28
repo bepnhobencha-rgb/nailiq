@@ -21,6 +21,7 @@ import {
   type GroupBookingMember,
   type GroupBookingResult,
 } from "@/shared/booking/submitGroupBooking";
+import { createPartyLink } from "@/shared/booking/partyLinkActions";
 import { checkGroupSlotsAvailable } from "@/shared/booking/checkGroupSlotsAvailable";
 import {
   buildCapabilityMap,
@@ -216,6 +217,8 @@ export function BookingGroupFlow({
     groupId: string;
     bookingIds: string[];
   } | null>(null);
+  /** Party Link URL — set asynchronously after submitGroupBooking succeeds. */
+  const [partyLinkUrl, setPartyLinkUrl] = useState<string | null>(null);
 
   // FIX 09 (Task #04-A) — idempotency key MUST be stable across
   // retries within the same browser session, otherwise a network
@@ -626,6 +629,28 @@ export function BookingGroupFlow({
         // state — the URL change is purely a history-stack hygiene
         // tweak.
         router.replace(pathname);
+
+        // Phase 2 — generate Party Link in the background so the
+        // success panel can display the shareable URL.  Non-blocking:
+        // if the call fails the success panel renders without the
+        // link (no crash, no UX regression).
+        const arrangement = scheduleResult?.arrangements[selectedArrangementIdx];
+        if (arrangement) {
+          const groupStartUtcIso = new Date(arrangement.groupStartMs).toISOString();
+          createPartyLink({
+            groupId: res.groupId,
+            salonId: salon.id,
+            bookingIds: res.bookingIds,
+            mode: syncMode,
+            groupStartUtcIso,
+            baseUrl:
+              typeof window !== "undefined" ? window.location.origin : "",
+          }).then((linkResult) => {
+            if (linkResult.ok) setPartyLinkUrl(linkResult.url);
+          }).catch(() => {
+            // Non-critical — success panel still works without the party link.
+          });
+        }
         return;
       }
       if (res.reason === "slot_conflict") {
@@ -900,6 +925,7 @@ export function BookingGroupFlow({
         scheduleResult={scheduleResult}
         selectedArrangementIdx={selectedArrangementIdx}
         date={date}
+        partyLinkUrl={partyLinkUrl}
       />
     );
   }
@@ -2847,6 +2873,7 @@ function SuccessPanel({
   scheduleResult,
   selectedArrangementIdx,
   date,
+  partyLinkUrl,
 }: {
   t: BookingMessages;
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
@@ -2860,6 +2887,9 @@ function SuccessPanel({
    *  arrangement assignments so success works even if scheduleResult
    *  was already cleared. */
   date: string;
+  /** Phase 2 — shareable party link URL, set asynchronously.
+   *  null while the createPartyLink call is in flight or if it failed. */
+  partyLinkUrl: string | null;
 }) {
   const arrangement =
     scheduleResult && scheduleResult.ok
@@ -2900,8 +2930,63 @@ function SuccessPanel({
           })}
         </ul>
       ) : null}
+
+      {/* Party Link share section — shown once the async call resolves */}
+      {partyLinkUrl ? (
+        <PartyLinkShareBox url={partyLinkUrl} groupCopy={groupCopy} />
+      ) : null}
+
       {t ? null : null}
     </section>
+  );
+}
+
+// ─── PartyLinkShareBox ────────────────────────────────────────────
+
+function PartyLinkShareBox({
+  url,
+  groupCopy,
+}: {
+  url: string;
+  groupCopy: NonNullable<BookingMessages["groupBooking"]>;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    void navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div
+      data-testid="party-link-share"
+      className="mt-6 rounded-xl border border-[var(--booking-border)] bg-[var(--booking-bg)] p-4 text-left"
+    >
+      <p className="text-sm font-semibold" style={{ color: "var(--booking-text)" }}>
+        {groupCopy.partyLinkShare ?? "Share with your group"}
+      </p>
+      <p className="mt-0.5 text-xs text-[var(--booking-text-muted)]">
+        {groupCopy.partyLinkHint ??
+          "Send this link so everyone can confirm their slot."}
+      </p>
+      <div className="mt-3 flex items-center gap-2">
+        <input
+          readOnly
+          value={url}
+          aria-label="Party link URL"
+          className="flex-1 rounded-lg border border-[var(--booking-border)] bg-[var(--booking-bg-card)] px-3 py-2 text-xs text-[var(--booking-text-muted)] focus:outline-none"
+          onFocus={(e) => e.currentTarget.select()}
+        />
+        <button
+          onClick={handleCopy}
+          className="shrink-0 rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-gray-700 transition-colors"
+        >
+          {copied ? (groupCopy.partyLinkCopied ?? "Copied!") : (groupCopy.partyLinkCopy ?? "Copy")}
+        </button>
+      </div>
+    </div>
   );
 }
 

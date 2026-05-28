@@ -435,6 +435,11 @@ export const bookingEn = {
      *  `no_slots` AND every sub-query returned null/timed out. */
     groupNoAlternatives:
       "No available slots found. Please try another date.",
+    /** Phase 2 — Party Link share box on the success panel. */
+    partyLinkShare: "Share with your group",
+    partyLinkHint: "Send this link so everyone can confirm their slot.",
+    partyLinkCopy: "Copy",
+    partyLinkCopied: "Copied!",
   },
   chat: {
     trigger: "Ask AI",
