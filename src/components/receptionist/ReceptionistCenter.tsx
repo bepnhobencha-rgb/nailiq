@@ -104,6 +104,8 @@ import {
 } from "@/shared/dashboard/dashboardDensity";
 import type { BookingStatus } from "@/shared/types";
 import { BookingLimitBanner } from "@/components/dashboard/BookingLimitBanner";
+import { PartyCardPanel } from "@/components/receptionist/PartyCardPanel";
+import type { PartyCard } from "@/shared/dashboard/loadPartyCardsAction";
 
 export type ReceptionistCenterProps = {
   slug: string;
@@ -114,6 +116,8 @@ export type ReceptionistCenterProps = {
   /** Free-tier monthly booking-cap status. `null` if the loader
    *  couldn't fetch it (transient error — banner stays hidden). */
   bookingLimitStatus?: import("@/shared/dashboard/loadBookingLimitStatus").BookingLimitStatus | null;
+  /** Party cards for today + 7 days. Empty array if none or service-role key unavailable. */
+  partyCards?: PartyCard[];
 };
 
 function loadErrorCopy(
@@ -239,11 +243,13 @@ function ReceptionistCenterInner({
   initialOk,
   viewerRole,
   bookingLimitStatus,
+  partyCards,
 }: {
   slug: string;
   initialOk: ReceptionistCenterData;
   viewerRole: SalonMemberRole;
   bookingLimitStatus: import("@/shared/dashboard/loadBookingLimitStatus").BookingLimitStatus | null;
+  partyCards: PartyCard[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1716,6 +1722,17 @@ function ReceptionistCenterInner({
           />
         ) : null}
 
+        {/* Party Card Panel — upcoming group bookings with party links.
+            Rendered as a shrink-0 strip so the three-zone grid below
+            adjusts its height automatically. Hidden when no cards. */}
+        {partyCards.length > 0 && (
+          <PartyCardPanel
+            initialCards={partyCards}
+            slug={slug}
+            currencyCode={data.salon.currencyCode}
+          />
+        )}
+
         {modules.alerts && isSetupIncomplete ? (
           <div
             data-testid="setup-incomplete-banner"
@@ -2138,6 +2155,7 @@ export function ReceptionistCenter({
   initialResult,
   viewerRole,
   bookingLimitStatus,
+  partyCards,
 }: ReceptionistCenterProps) {
   if (!initialResult.ok) {
     return <ReceptionistGateError code={initialResult.error} />;
@@ -2148,6 +2166,7 @@ export function ReceptionistCenter({
       initialOk={initialResult.data}
       viewerRole={viewerRole}
       bookingLimitStatus={bookingLimitStatus ?? null}
+      partyCards={partyCards ?? []}
     />
   );
 }

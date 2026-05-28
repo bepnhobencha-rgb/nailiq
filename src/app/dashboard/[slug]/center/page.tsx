@@ -4,6 +4,7 @@ import { ReceptionistCenter } from "@/components/receptionist/ReceptionistCenter
 import { ReceptionistErrorBoundary } from "@/components/receptionist/ReceptionistErrorBoundary";
 import { loadBookingLimitStatus } from "@/shared/dashboard/loadBookingLimitStatus";
 import { loadReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
+import { loadPartyCardsAction } from "@/shared/dashboard/loadPartyCardsAction";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { userEn } from "@/shared/i18n/user";
 import { salonToday } from "@/shared/lib/salonTime";
@@ -48,11 +49,12 @@ export default async function ReceptionistCenterPage({
   const dateOk = typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date);
   const targetDate = dateOk ? date : salonToday(tz);
 
-  const [initialResult, limitResult] = await Promise.all([
+  const [initialResult, limitResult, partyCardsResult] = await Promise.all([
     loadReceptionistCenterData(slug, targetDate, {
       preFetchedSalon: ctx.salon,
     }),
     loadBookingLimitStatus(slug),
+    loadPartyCardsAction(slug),
   ]);
   const bookingLimitStatus = limitResult.ok ? limitResult.status : null;
 
@@ -75,6 +77,7 @@ export default async function ReceptionistCenterPage({
         initialResult={initialResult}
         viewerRole={ctx.role}
         bookingLimitStatus={bookingLimitStatus}
+        partyCards={partyCardsResult.ok ? partyCardsResult.cards : []}
       />
     </ReceptionistErrorBoundary>
   );
