@@ -513,9 +513,27 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             ...(instructions ? { instructions } : {}),
             tools:             [...REALTIME_TOOLS],
             tool_choice:       "auto",
+            // Belt-and-suspenders: turn_detection at top level in case the
+            // server ignores the nested audio.input.turn_detection position.
+            // create_response: true is critical — without it semantic_vad
+            // detects end-of-speech but does NOT trigger a model response.
+            turn_detection: {
+              type:               "semantic_vad",
+              eagerness:          "auto",
+              create_response:    true,
+              interrupt_response: true,
+            },
+            // Top-level transcription field for standard OpenAI Realtime API
+            // compatibility (gpt-4o-realtime-preview style fallback).
+            input_audio_transcription: { model: "whisper-1" },
             audio: {
               input: {
                 format:         { type: "audio/pcm", rate: 24000 },
+                // Nested transcription field for gpt-realtime-2 format.
+                // Without this the model hears the user but the transcript
+                // never shows the user's words (conversation.item.input_audio_
+                // transcription.completed never fires).
+                transcription:  { model: "whisper-1" },
                 turn_detection: {
                   type:               "semantic_vad",
                   eagerness:          "auto",
@@ -554,11 +572,12 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         try {
           const ev     = JSON.parse(e.data as string) as Record<string, unknown>;
           const evType = ev.type as string;
-          // Suppress only high-frequency audio streaming noise
+          // Suppress only high-frequency audio streaming noise (not VAD events)
           const isAudioStream =
             evType === "response.audio.delta" ||
             evType === "response.output_audio.delta" ||
-            evType.startsWith("input_audio_buffer");
+            evType === "input_audio_buffer.appended" ||
+            evType === "input_audio_buffer.append";
           if (!isAudioStream) {
             // Always log full JSON for diagnostic events
             const wantFull =
@@ -567,6 +586,8 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
               evType.includes("item")     ||
               evType === "response.done"  ||
               evType === "session.updated";   // ← see if tools were accepted
+            // speech_started / speech_stopped are lightweight — always log them
+            // so VAD detection problems are visible in DevTools
             console.log("[voice/ws]", evType, wantFull ? JSON.stringify(ev) : "");
           }
           handleRealtimeEvent(ev, shopSlug, sessionId);
