@@ -86,6 +86,10 @@ export async function POST(req: NextRequest) {
 
   const oaiBody = await oaiRes.text();
   if (!oaiRes.ok) {
+    // Surface rate-limit errors explicitly so the client can show a friendly message
+    if (oaiRes.status === 429) {
+      return NextResponse.json({ error: "openai_rate_limit" }, { status: 429 });
+    }
     return NextResponse.json(
       { error: "openai_session_failed", openai_status: oaiRes.status, openai_body: oaiBody },
       { status: 502 },

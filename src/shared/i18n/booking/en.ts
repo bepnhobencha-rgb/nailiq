@@ -432,7 +432,7 @@ export const bookingEn = {
   voice: {
     tapToSpeak: "Speak to book",
     listening: "Listening…",
-    aiSpeaking: "AI speaking…",
+    aiSpeaking: "Lily speaking…",
     speakNow: "Tell us what you'd like — e.g. 'Manicure with Jenny next Friday'",
     done: "Done",
     ended: "Call ended",
@@ -448,12 +448,13 @@ export const bookingEn = {
     notSupported: "Voice input isn't supported in this browser.",
     voiceNotEnabled: "Voice booking is not enabled for this salon.",
     sessionLimitReached: "Voice session limit reached for this month.",
+    openaiRateLimit: "Lily is currently busy — please try again in a moment or book manually below.",
     endCall: "End Call",
     cancel: "Cancel",
     close: "Close",
     tryAgain: "Try Again",
     youLabel: "You",
-    aiLabel: "AI",
+    aiLabel: "Lily",
     /** iPhone / Safari fallback: keyboard dictation */
     textInputHint: "Tap 🎤 on your keyboard to dictate, or just type:",
     textInputPlaceholder: "e.g. Manicure with Jenny next Friday at 2pm",

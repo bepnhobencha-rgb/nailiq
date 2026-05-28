@@ -378,9 +378,16 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
 
     if (type === "error") {
       const errObj = ev.error as { code?: string; message?: string; type?: string } | undefined;
-      const msg = errObj?.message ?? errObj?.code ?? errObj?.type ?? JSON.stringify(ev);
       console.error("[voice/ws] server error:", JSON.stringify(ev));
-      setError(msg);
+      // Map known OpenAI error codes to user-friendly messages
+      const isRateLimit =
+        errObj?.type === "rate_limit_error" ||
+        errObj?.code === "rate_limit_exceeded" ||
+        errObj?.code === "token_limit_exceeded";
+      const msg = isRateLimit
+        ? "openai_rate_limit"
+        : (errObj?.message ?? errObj?.code ?? errObj?.type ?? JSON.stringify(ev));
+      setError(isRateLimit ? v.openaiRateLimit : msg);
       statusRef.current = "error";
       setStatus("error");
       cleanup();
@@ -597,6 +604,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         : msg === "insecure_context"      ? v.notSupported
         : msg === "voice_not_enabled"     ? v.voiceNotEnabled
         : msg === "session_limit_reached" ? v.sessionLimitReached
+        : msg === "openai_rate_limit"     ? v.openaiRateLimit
         : msg;
       setError(code);
       statusRef.current = "error";
@@ -657,7 +665,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
        * max-h-[85dvh] prevents overflow on small phones;
        * dvh (dynamic viewport height) accounts for the iOS Safari toolbar.
        */}
-      <div className="flex w-full max-w-md flex-col rounded-2xl bg-white shadow-2xl dark:bg-zinc-900 max-h-[85dvh]">
+      <div className="flex w-full max-w-md flex-col rounded-2xl bg-[var(--booking-bg-card)] shadow-2xl max-h-[85dvh]">
 
         {/* ── Header — always visible, never scrolled away ── */}
         <div className="flex flex-shrink-0 items-center justify-between px-6 pt-6 pb-4">
@@ -670,7 +678,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
           <button
             type="button"
             onClick={() => void handleClose()}
-            className="-m-1 rounded-full p-2.5 text-[var(--booking-text-muted)] hover:bg-[var(--booking-bg-card)] active:bg-[var(--booking-bg-card)] transition-colors"
+            className="-m-1 rounded-full p-2.5 text-[var(--booking-text-muted)] hover:bg-[var(--booking-bg-input)] active:bg-[var(--booking-bg-input)] transition-colors"
             aria-label={v.close}
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -691,7 +699,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
               isThinking                     ? "bg-amber-100" : "",
               status === "error"             ? "bg-red-100" : "",
               status === "ended"             ? (bookingResult ? "bg-green-100" : "bg-zinc-100") : "",
-              !["connected","error","ended"].includes(status) ? "bg-[var(--booking-bg-card)]" : "",
+              !["connected","error","ended"].includes(status) ? "bg-[var(--booking-bg-input)]" : "",
             ].join(" ")}>
               {status === "connected" && !isSpeaking ? (
                 /* Listening / thinking mic icon */
@@ -752,7 +760,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
 
           {/* Transcript — two-way: AI + user speech */}
           {transcript.length > 0 && !bookingResult && (
-            <div className="mb-2 max-h-36 space-y-1.5 overflow-y-auto rounded-xl bg-[var(--booking-bg-card)] p-3 text-sm">
+            <div className="mb-2 max-h-36 space-y-1.5 overflow-y-auto rounded-xl bg-[var(--booking-bg-input)] p-3 text-sm">
               {transcript.map((entry, i) => (
                 <p key={i} className={entry.role === "ai"
                   ? "text-[var(--booking-text)]"
@@ -792,7 +800,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             <button
               type="button"
               onClick={() => void handleClose()}
-              className="flex-1 rounded-xl border border-[var(--booking-border)] py-3 text-sm font-semibold text-[var(--booking-text)] hover:bg-[var(--booking-bg-card)] active:bg-[var(--booking-bg-card)] transition-colors"
+              className="flex-1 rounded-xl border border-[var(--booking-border)] py-3 text-sm font-semibold text-[var(--booking-text)] hover:bg-[var(--booking-bg-input)] active:bg-[var(--booking-bg-input)] transition-colors"
             >
               {status === "ended" ? v.close : v.cancel}
             </button>

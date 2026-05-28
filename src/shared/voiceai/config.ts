@@ -32,4 +32,4 @@ export const REASONING_EFFORT_MAP: Record<string, "low" | "medium" | "high"> = {
   xhigh:   "high",
 };
 
-export const SESSION_TTL_SECONDS = 90;
+export const SESSION_TTL_SECONDS = 300;

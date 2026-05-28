@@ -211,17 +211,11 @@ export function BookingFlowTimePanel({
               const disabled = !slot.available;
               const popular = !disabled && popularSlotLabels.includes(slot.label);
               return (
-                <motion.button
+                <button
                   key={slot.label}
                   type="button"
                   data-testid="time-slot"
                   data-available={slot.available}
-                  whileTap={disabled ? undefined : { scale: 0.99 }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 420,
-                    damping: 28,
-                  }}
                   aria-pressed={selected}
                   aria-disabled={disabled}
                   aria-label={
@@ -236,7 +230,7 @@ export function BookingFlowTimePanel({
                     if (!disabled) onSelectSlot(slot.label);
                   }}
                   className={cn(
-                    "nq-booking-glass relative min-h-11 rounded-2xl px-3 py-3 text-center text-sm font-medium tracking-tight sm:min-h-[3rem] sm:text-[15px]",
+                    "nq-booking-glass relative min-h-11 rounded-2xl px-3 py-3 text-center text-sm font-medium tracking-tight transition-transform duration-75 motion-safe:active:scale-[0.99] sm:min-h-[3rem] sm:text-[15px]",
                     !selected && !disabled && "nq-booking-tile-interactive",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--booking-bg)]",
                     selected
@@ -252,7 +246,7 @@ export function BookingFlowTimePanel({
                     </span>
                   )}
                   {slot.label}
-                </motion.button>
+                </button>
               );
             })}
           </div>
