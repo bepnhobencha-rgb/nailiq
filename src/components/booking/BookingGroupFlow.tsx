@@ -14,6 +14,7 @@ import {
   type GroupArrangement,
   type GroupArrivalPreference,
   type GroupSmartScheduleResult,
+  type GroupSyncMode,
 } from "@/shared/booking/loadGroupSmartSchedule";
 import {
   submitGroupBooking,
@@ -182,6 +183,11 @@ export function BookingGroupFlow({
     blankMember(),
   ]);
   const [date, setDate] = useState("");
+  /** Phase 1 sync mode: arrive together (default) or finish together. */
+  const [syncMode, setSyncMode] = useState<GroupSyncMode>("sync_start");
+  /** Target finish time HH:MM (24h, salon-local) — only used when
+   *  syncMode === "sync_finish". */
+  const [finishTime, setFinishTime] = useState("");
   const [arrivalKind, setArrivalKind] = useState<
     GroupArrivalPreference["kind"]
   >("morning");
@@ -425,8 +431,14 @@ export function BookingGroupFlow({
       // on Chromium.
       else if (!isYearInRange(date)) errs.add("date");
       if (isSelectedDayClosed) errs.add("closed");
-      if (arrivalKind === "specific" && specificTime.length === 0) {
-        errs.add("time");
+      if (syncMode === "sync_finish") {
+        // Finish-together mode: a target finish time is required.
+        if (finishTime.length === 0) errs.add("finishTime");
+      } else {
+        // Arrive-together mode: specific arrival requires a time.
+        if (arrivalKind === "specific" && specificTime.length === 0) {
+          errs.add("time");
+        }
       }
       if (errs.size > 0) {
         setStepErrors(errs);
@@ -498,6 +510,10 @@ export function BookingGroupFlow({
           serviceId: m.serviceId,
           preferredStaffId: m.preferredStaffId,
         })),
+        // Phase 1: pass sync mode + finish time so the scheduler
+        // can compute arrangements where everyone finishes together.
+        mode: syncMode,
+        finishTime: syncMode === "sync_finish" ? finishTime : undefined,
       });
       setScheduleResult(res);
       // Auto-pick first option = arrangement selection. Stamp the
@@ -945,6 +961,8 @@ export function BookingGroupFlow({
           t={t}
           groupCopy={groupCopy}
           date={date}
+          syncMode={syncMode}
+          finishTime={finishTime}
           arrivalKind={arrivalKind}
           specificTime={specificTime}
           isSelectedDayClosed={isSelectedDayClosed}
@@ -957,6 +975,16 @@ export function BookingGroupFlow({
           onDateChange={(v) => {
             setDate(v);
             setStepErrors(new Set());
+            setScheduleResult(null);
+          }}
+          onSyncModeChange={(m) => {
+            setSyncMode(m);
+            setFinishTime(""); // reset finish time when mode changes
+            setScheduleResult(null);
+            setStepErrors(new Set());
+          }}
+          onFinishTimeChange={(v) => {
+            setFinishTime(v);
             setScheduleResult(null);
           }}
           onArrivalKindChange={(k) => {
@@ -984,6 +1012,7 @@ export function BookingGroupFlow({
           currencyCode={salon.currencyCode}
           date={date}
           timezone={salon.timezone}
+          syncMode={syncMode}
           onSelect={(idx) => {
             setSelectedArrangementIdx(idx);
             // FIX 03 — explicit pick re-stamps the timestamp.
@@ -1517,6 +1546,8 @@ function DateArrivalStep({
   t,
   groupCopy,
   date,
+  syncMode,
+  finishTime,
   arrivalKind,
   specificTime,
   isSelectedDayClosed,
@@ -1527,6 +1558,8 @@ function DateArrivalStep({
   staff,
   serviceTotalMinutes,
   onDateChange,
+  onSyncModeChange,
+  onFinishTimeChange,
   onArrivalKindChange,
   onSpecificTimeChange,
   onBack,
@@ -1535,6 +1568,11 @@ function DateArrivalStep({
   t: BookingMessages;
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
   date: string;
+  /** Phase 1 sync mode — "sync_start" (arrive together) or
+   *  "sync_finish" (finish together). */
+  syncMode: GroupSyncMode;
+  /** Salon-local HH:MM finish time; only relevant in sync_finish mode. */
+  finishTime: string;
   arrivalKind: GroupArrivalPreference["kind"];
   specificTime: string;
   isSelectedDayClosed: boolean;
@@ -1547,6 +1585,8 @@ function DateArrivalStep({
    *  0 when no member has picked a service yet. */
   serviceTotalMinutes: number;
   onDateChange: (v: string) => void;
+  onSyncModeChange: (m: GroupSyncMode) => void;
+  onFinishTimeChange: (v: string) => void;
   onArrivalKindChange: (k: GroupArrivalPreference["kind"]) => void;
   onSpecificTimeChange: (v: string) => void;
   onBack: () => void;
@@ -1626,84 +1666,180 @@ function DateArrivalStep({
         ) : null}
       </div>
 
-      <fieldset>
+      {/* ── Phase 1: sync-mode toggle ─────────────────────────────
+          Placed before the arrival/finish inputs so the customer
+          declares intent ("arrive together" vs "finish together")
+          before picking a time. */}
+      <fieldset data-testid="group-sync-mode">
         <legend className="mb-2 block text-base font-semibold">
-          {groupCopy.arrivalQuestion ?? "When would you like to arrive?"}
+          {groupCopy.syncModeQuestion ?? "How should your group plan together?"}
         </legend>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {ARRIVAL_PRESETS.map((k) => {
-            const label =
-              k === "morning"
-                ? groupCopy.arrivalMorning ?? "Morning"
-                : k === "afternoon"
-                  ? groupCopy.arrivalAfternoon ?? "Afternoon"
-                  : groupCopy.arrivalEvening ?? "Evening";
-            const emoji =
-              k === "morning" ? "🌅" : k === "afternoon" ? "☀️" : "🌆";
-            const active = arrivalKind === k;
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              {
+                mode: "sync_start" as const,
+                label: groupCopy.syncStart ?? "🚶 Arrive together",
+                hint: groupCopy.syncStartHint ?? "Everyone starts around the same time",
+                testid: "group-sync-start",
+              },
+              {
+                mode: "sync_finish" as const,
+                label: groupCopy.syncFinish ?? "🏁 Finish together",
+                hint: groupCopy.syncFinishHint ?? "Everyone is done at the same time",
+                testid: "group-sync-finish",
+              },
+            ] as const
+          ).map(({ mode, label, hint, testid }) => {
+            const active = syncMode === mode;
             return (
               <button
-                key={k}
+                key={mode}
                 type="button"
                 role="radio"
                 aria-checked={active}
-                data-testid={`group-arrival-${k}`}
-                onClick={() => onArrivalKindChange(k)}
+                data-testid={testid}
+                onClick={() => onSyncModeChange(mode)}
                 className={cn(
-                  "min-h-12 rounded-xl border px-4 py-2 text-left text-sm font-medium transition-colors",
+                  "flex min-h-14 flex-col items-start rounded-xl border px-4 py-3 text-left text-sm font-medium transition-colors",
                   active
                     ? "border-[var(--salon-primary)] bg-[var(--salon-primary)]/10 text-[var(--booking-text)]"
                     : "border-[var(--booking-border)] bg-[var(--booking-bg-input)] text-[var(--booking-text-muted)]",
                 )}
               >
-                <span className="mr-2" aria-hidden>
-                  {emoji}
+                <span className="font-semibold">{label}</span>
+                <span
+                  className={cn(
+                    "mt-0.5 text-xs",
+                    active
+                      ? "text-[var(--booking-text-muted)]"
+                      : "text-[var(--booking-text-muted)]/70",
+                  )}
+                >
+                  {hint}
                 </span>
-                {label}
               </button>
             );
           })}
-          <button
-            type="button"
-            role="radio"
-            aria-checked={arrivalKind === "specific"}
-            data-testid="group-arrival-specific"
-            onClick={() => onArrivalKindChange("specific")}
-            className={cn(
-              "min-h-12 rounded-xl border px-4 py-2 text-left text-sm font-medium transition-colors sm:col-span-2",
-              arrivalKind === "specific"
-                ? "border-[var(--salon-primary)] bg-[var(--salon-primary)]/10 text-[var(--booking-text)]"
-                : "border-[var(--booking-border)] bg-[var(--booking-bg-input)] text-[var(--booking-text-muted)]",
-            )}
-          >
-            <span className="mr-2" aria-hidden>
-              🕐
-            </span>
-            {groupCopy.arrivalSpecific ?? "Specific time"}
-          </button>
         </div>
-        {arrivalKind === "specific" ? (
-          <div className="mt-3">
-            <input
-              type="time"
-              step={300}
-              value={specificTime}
-              aria-invalid={stepErrors.has("time") || undefined}
-              onChange={(e) => onSpecificTimeChange(e.target.value)}
-              className={cn(
-                "nq-booking-field tabular-nums",
-                stepErrors.has("time") && "border-nq-error/50",
-              )}
-              data-testid="group-specific-time"
-            />
-            {stepErrors.has("time") ? (
-              <p role="alert" className="mt-1 text-xs text-nq-error">
-                {groupCopy.sharedScheduleRequired ?? "Please pick a time."}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
       </fieldset>
+
+      {/* ── Finish-together: target finish time input ──────────── */}
+      {syncMode === "sync_finish" ? (
+        <div data-testid="group-finish-time-section">
+          <label
+            htmlFor="group-finish-time-input"
+            className="mb-1 block text-base font-semibold"
+          >
+            {groupCopy.finishTimeLabel ?? "Finish by (target time)"}
+          </label>
+          {groupCopy.finishTimeHint ? (
+            <p className="mb-2 text-xs text-[var(--booking-text-muted)]">
+              {groupCopy.finishTimeHint}
+            </p>
+          ) : null}
+          <input
+            id="group-finish-time-input"
+            type="time"
+            step={900} // 15-min grid
+            value={finishTime}
+            aria-invalid={stepErrors.has("finishTime") || undefined}
+            onChange={(e) => onFinishTimeChange(e.target.value)}
+            className={cn(
+              "nq-booking-field tabular-nums",
+              stepErrors.has("finishTime") && "border-nq-error/50",
+            )}
+            data-testid="group-finish-time"
+          />
+          {stepErrors.has("finishTime") ? (
+            <p role="alert" className="mt-1 text-xs text-nq-error">
+              {groupCopy.finishTimeRequired ?? "Please set a target finish time."}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* ── Arrive-together: arrival window pills ─────────────── */}
+      {syncMode === "sync_start" ? (
+        <fieldset>
+          <legend className="mb-2 block text-base font-semibold">
+            {groupCopy.arrivalQuestion ?? "When would you like to arrive?"}
+          </legend>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {ARRIVAL_PRESETS.map((k) => {
+              const label =
+                k === "morning"
+                  ? groupCopy.arrivalMorning ?? "Morning"
+                  : k === "afternoon"
+                    ? groupCopy.arrivalAfternoon ?? "Afternoon"
+                    : groupCopy.arrivalEvening ?? "Evening";
+              const emoji =
+                k === "morning" ? "🌅" : k === "afternoon" ? "☀️" : "🌆";
+              const active = arrivalKind === k;
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  data-testid={`group-arrival-${k}`}
+                  onClick={() => onArrivalKindChange(k)}
+                  className={cn(
+                    "min-h-12 rounded-xl border px-4 py-2 text-left text-sm font-medium transition-colors",
+                    active
+                      ? "border-[var(--salon-primary)] bg-[var(--salon-primary)]/10 text-[var(--booking-text)]"
+                      : "border-[var(--booking-border)] bg-[var(--booking-bg-input)] text-[var(--booking-text-muted)]",
+                  )}
+                >
+                  <span className="mr-2" aria-hidden>
+                    {emoji}
+                  </span>
+                  {label}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={arrivalKind === "specific"}
+              data-testid="group-arrival-specific"
+              onClick={() => onArrivalKindChange("specific")}
+              className={cn(
+                "min-h-12 rounded-xl border px-4 py-2 text-left text-sm font-medium transition-colors sm:col-span-2",
+                arrivalKind === "specific"
+                  ? "border-[var(--salon-primary)] bg-[var(--salon-primary)]/10 text-[var(--booking-text)]"
+                  : "border-[var(--booking-border)] bg-[var(--booking-bg-input)] text-[var(--booking-text-muted)]",
+              )}
+            >
+              <span className="mr-2" aria-hidden>
+                🕐
+              </span>
+              {groupCopy.arrivalSpecific ?? "Specific time"}
+            </button>
+          </div>
+          {arrivalKind === "specific" ? (
+            <div className="mt-3">
+              <input
+                type="time"
+                step={300}
+                value={specificTime}
+                aria-invalid={stepErrors.has("time") || undefined}
+                onChange={(e) => onSpecificTimeChange(e.target.value)}
+                className={cn(
+                  "nq-booking-field tabular-nums",
+                  stepErrors.has("time") && "border-nq-error/50",
+                )}
+                data-testid="group-specific-time"
+              />
+              {stepErrors.has("time") ? (
+                <p role="alert" className="mt-1 text-xs text-nq-error">
+                  {groupCopy.sharedScheduleRequired ?? "Please pick a time."}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </fieldset>
+      ) : null}
 
       <StickyFooter leftLabel={null} leftValue={null}>
         <Button
@@ -1720,8 +1856,13 @@ function DateArrivalStep({
           // Same pattern as the step-5 Confirm CTA (BUG 2): block
           // the click before it can fire instead of allowing a
           // click-then-error round-trip. Empty date OR a closed-day
-          // selection both gate the user here.
-          disabled={isSelectedDayClosed || date.length === 0}
+          // selection both gate the user here. sync_finish also
+          // requires a target finish time before proceeding.
+          disabled={
+            isSelectedDayClosed ||
+            date.length === 0 ||
+            (syncMode === "sync_finish" && finishTime.length === 0)
+          }
           data-testid="group-date-next"
         >
           {t.next}
@@ -1743,6 +1884,7 @@ function ArrangementStep({
   currencyCode,
   date,
   timezone,
+  syncMode,
   onSelect,
   onRetry,
   onBack,
@@ -1766,6 +1908,8 @@ function ArrangementStep({
   date: string;
   /** FIX 06 — quick-pick labels resolve to salon-local weekdays. */
   timezone: string;
+  /** Phase 1: sync mode, forwarded to ArrangementCard for label copy. */
+  syncMode: GroupSyncMode;
   onSelect: (i: number) => void;
   onRetry: () => void;
   onBack: () => void;
@@ -1838,6 +1982,7 @@ function ArrangementStep({
               arrangement={arr}
               currencyCode={currencyCode}
               selected={idx === selectedIdx}
+              syncMode={syncMode}
               onSelect={() => onSelect(idx)}
             />
           ))}
@@ -1876,6 +2021,7 @@ function ArrangementCard({
   arrangement,
   currencyCode,
   selected,
+  syncMode,
   onSelect,
 }: {
   t: BookingMessages;
@@ -1883,14 +2029,25 @@ function ArrangementCard({
   arrangement: GroupArrangement;
   currencyCode: BookingSalonMeta["currencyCode"];
   selected: boolean;
+  /** Phase 1: changes the heading copy for sync_finish mode. */
+  syncMode: GroupSyncMode;
   onSelect: () => void;
 }) {
+  // In sync_finish mode all members end at the same time so the
+  // "within 15 / 30 min start-spread" qualifier is meaningless.
+  // Use dedicated copy keys instead.
   const heading =
-    arrangement.kind === "best"
-      ? groupCopy.schedulingBest ?? "Best ✨"
-      : arrangement.kind === "alternative"
-        ? groupCopy.schedulingAlt ?? "Alternative"
-        : groupCopy.schedulingEarly ?? "Earliest";
+    syncMode === "sync_finish"
+      ? arrangement.kind === "best"
+        ? groupCopy.schedulingFinishBest ?? "On time ✨"
+        : arrangement.kind === "alternative"
+          ? groupCopy.schedulingFinishAlt ?? "Alternative time 🔄"
+          : groupCopy.schedulingFinishEarly ?? "Earliest possible ⚡"
+      : arrangement.kind === "best"
+        ? groupCopy.schedulingBest ?? "Best ✨"
+        : arrangement.kind === "alternative"
+          ? groupCopy.schedulingAlt ?? "Alternative"
+          : groupCopy.schedulingEarly ?? "Earliest";
   const icon =
     arrangement.kind === "best"
       ? "✨"

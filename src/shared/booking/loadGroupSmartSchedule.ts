@@ -90,12 +90,27 @@ export type GroupSmartScheduleMemberInput = {
   preferredStaffId: string | null;
 };
 
+/** Scheduling synchronisation preference for group bookings.
+ *  "sync_start": all members arrive and start at the same anchor time
+ *               (the original and still-default behaviour).
+ *  "sync_finish": all members finish at the same target time; each
+ *                 member's start is computed as
+ *                 targetFinishMs − service.totalMinutes × 60_000.
+ *                 Longer services therefore start earlier. */
+export type GroupSyncMode = "sync_start" | "sync_finish";
+
 export type GroupSmartScheduleParams = {
   shopSlug: string;
   /** YYYY-MM-DD in salon-local time. */
   date: string;
   arrivalPref: GroupArrivalPreference;
   members: GroupSmartScheduleMemberInput[];
+  /** "sync_start" (default) = arrive together; "sync_finish" = finish
+   *  together.  Backward-compatible: omitting defaults to sync_start.  */
+  mode?: GroupSyncMode;
+  /** Required when mode === "sync_finish".  Salon-local HH:MM (24h) of
+   *  the desired finish time.  arrivalPref is ignored in this mode. */
+  finishTime?: string;
 };
 
 export type GroupArrangementAssignment = {
@@ -487,6 +502,83 @@ function tryStaggeredArrangement(
   return { assignments: out };
 }
 
+/**
+ * Sync-finish assignment: ALL members end at exactly `targetFinishMs`.
+ * Member i starts at `targetFinishMs − member_i.totalMinutes × 60_000`.
+ * Longer services start earlier — they are processed first so the
+ * hardest-to-fill (earliest-start) slots are locked before shorter ones.
+ * Returns null if any member's start would fall before `dayOpenMs` or
+ * no capable, free staff can be found.
+ */
+function tryFinishAlignedArrangement(
+  targetFinishMs: number,
+  dayOpenMs: number,
+  members: ResolvedMember[],
+  staff: readonly StaffRow[],
+  staffById: Map<string, StaffRow>,
+  capability: StaffCapabilityMap,
+  existing: ExistingBooking[],
+  respectPreferred: boolean,
+): { assignments: Array<{ memberIdx: number; staffId: string; startMs: number; endMs: number }> } | null {
+  // Compute per-member start times and validate against dayOpen.
+  const slots = members.map((m) => ({
+    m,
+    startMs: targetFinishMs - m.totalMinutes * 60_000,
+    endMs: targetFinishMs,
+  }));
+  for (const s of slots) {
+    if (s.startMs < dayOpenMs) return null;
+  }
+
+  // Sort: preferred-staff members first (hard constraint), then by earliest
+  // start (= longest service) so we fill the tightest slots first.
+  const order = slots
+    .map((s) => s)
+    .sort((a, b) => {
+      const ap = a.m.preferredStaffId != null ? 0 : 1;
+      const bp = b.m.preferredStaffId != null ? 0 : 1;
+      if (ap !== bp) return ap - bp;
+      return a.startMs - b.startMs; // earliest start first
+    });
+
+  const soft = new Map<string, Array<{ startMs: number; endMs: number }>>();
+  const out: Array<{ memberIdx: number; staffId: string; startMs: number; endMs: number }> = [];
+
+  for (const slot of order) {
+    const { m, startMs, endMs } = slot;
+    const candidateOrder: string[] = [];
+    if (m.preferredStaffId != null) {
+      candidateOrder.push(m.preferredStaffId);
+      if (!respectPreferred) {
+        for (const s of staff) {
+          if (s.id !== m.preferredStaffId) candidateOrder.push(s.id);
+        }
+      }
+    } else {
+      for (const s of staff) candidateOrder.push(s.id);
+    }
+
+    let pickedStaff: string | null = null;
+    for (const sid of candidateOrder) {
+      const row = staffById.get(sid);
+      if (!row) continue;
+      if (!isStaffCapableForService(capability, sid, m.serviceId)) continue;
+      if (!staffIsFree(sid, startMs, endMs, existing, soft)) continue;
+      pickedStaff = sid;
+      break;
+    }
+    if (pickedStaff === null) return null;
+
+    const bucket = soft.get(pickedStaff) ?? [];
+    bucket.push({ startMs, endMs });
+    soft.set(pickedStaff, bucket);
+    out.push({ memberIdx: m.index, staffId: pickedStaff, startMs, endMs });
+  }
+
+  out.sort((a, b) => a.memberIdx - b.memberIdx);
+  return { assignments: out };
+}
+
 function buildArrangement(
   kind: GroupArrangement["kind"],
   raw: { assignments: Array<{ memberIdx: number; staffId: string; startMs: number; endMs: number }> },
@@ -620,9 +712,12 @@ export async function loadGroupSmartSchedule(
     return { ok: false, reason: "salon_closed" };
   }
 
-  // 4. Resolve arrival window ----------------------------------------
-  const window = windowForArrival(params.arrivalPref, dayHours);
-  if (!window) {
+  // 4. Resolve arrival window (sync_start only) ---------------------
+  const isSyncFinish = params.mode === "sync_finish";
+  const window = isSyncFinish
+    ? null
+    : windowForArrival(params.arrivalPref, dayHours);
+  if (!isSyncFinish && !window) {
     // Specific-time outside opening hours / morning window after
     // close — empty alternatives because we haven't loaded staff
     // or bookings yet and can't responsibly suggest a split or
@@ -781,21 +876,64 @@ export async function loadGroupSmartSchedule(
   }
 
   // 10. Slot scan ----------------------------------------------------
-  // Task #05 — pure-search extracted into `findArrangementsInWindow`
-  // so the alternatives sub-queries (split + earlier-today) can
-  // reuse the loaded staff / capability / existing-bookings ctx
-  // without re-fetching from the DB.
-  const arrangements = findArrangementsInWindow({
-    date: params.date,
-    timezone,
-    window,
-    closeMin: hmToMinutes(dayHours.close) ?? 0,
-    resolvedMembers,
-    staffList,
-    staffById,
-    capability,
-    existing,
-  });
+  // Branch on sync mode: sync_finish uses a different search engine
+  // that anchors on the finish time rather than the start time.
+  // Task #05 — pure-search functions are extracted so the alternatives
+  // sub-queries can reuse the loaded staff / capability / existing-
+  // bookings ctx without re-fetching from the DB.
+  let arrangements: GroupArrangement[];
+
+  if (isSyncFinish) {
+    // ── sync_finish path ─────────────────────────────────────────
+    // Parse the customer's desired finish time and convert to UTC ms.
+    const finishMinutes = hmToMinutes(params.finishTime ?? "");
+    if (finishMinutes === null) {
+      // No finish time or invalid format — surface as no_slots so
+      // the UI can show the "Try another time" back-out CTA.
+      return {
+        ok: false,
+        reason: "no_slots",
+        timezone,
+        alternatives: { splitOption: null, nextAvailableDate: null, earlierToday: null },
+      };
+    }
+    const openMin = hmToMinutes(dayHours.open) ?? 0;
+    const closeMin = hmToMinutes(dayHours.close) ?? 0;
+    const dayOpenMs = Date.parse(
+      salonWallTimeToUtcIso(params.date, openMin, timezone),
+    );
+    const targetFinishMs = Date.parse(
+      salonWallTimeToUtcIso(params.date, finishMinutes, timezone),
+    );
+    const dayCloseMs = Date.parse(
+      salonWallTimeToUtcIso(params.date, closeMin, timezone),
+    );
+    arrangements = findFinishArrangementsInWindow({
+      targetFinishMs,
+      dayOpenMs,
+      dayCloseMs,
+      date: params.date,
+      timezone,
+      resolvedMembers,
+      staffList,
+      staffById,
+      capability,
+      existing,
+    });
+  } else {
+    // ── sync_start path (original) ───────────────────────────────
+    arrangements = findArrangementsInWindow({
+      date: params.date,
+      timezone,
+      window: window!,
+      closeMin: hmToMinutes(dayHours.close) ?? 0,
+      resolvedMembers,
+      staffList,
+      staffById,
+      capability,
+      existing,
+    });
+  }
 
   if (arrangements.length === 0) {
     // Task #05 — instead of dead-ending the user, compute up to
@@ -804,10 +942,12 @@ export async function loadGroupSmartSchedule(
     // days), earlier-today (cross-window flip). Each races a 5 s
     // budget — whichever return inside the budget are surfaced.
     //
-    // The recursion guard skips alternatives when we ARE the
-    // next-date sub-query (otherwise each candidate day would
-    // fire its own fan-out → exponential blow-up).
-    const alternatives = _opts.skipAlternatives
+    // Phase 1: alternatives are only computed for sync_start; in
+    // sync_finish mode the user should adjust their finish time or
+    // switch mode. The recursion guard also skips alternatives when
+    // we ARE the next-date sub-query (prevents exponential fan-out).
+    const skipAlts = _opts.skipAlternatives || isSyncFinish;
+    const alternatives = skipAlts
       ? { splitOption: null, nextAvailableDate: null, earlierToday: null }
       : await computeAlternatives({
           supabase,
@@ -817,13 +957,15 @@ export async function loadGroupSmartSchedule(
           timezone,
           arrivalPref: params.arrivalPref,
           dayHours,
-          window,
+          window: window!,
           resolvedMembers,
           staffList,
           staffById,
           capability,
           existing,
           rawMembers: params.members,
+          mode: params.mode,
+          finishTime: params.finishTime,
         });
     return { ok: false, reason: "no_slots", timezone, alternatives };
   }
@@ -982,6 +1124,143 @@ function findArrangementsInWindow(
   return arrangements;
 }
 
+// ─── Sync-finish slot scan ───────────────────────────────────────
+
+type FinishArrangementsCtx = {
+  /** UTC ms of the desired finish time selected by the customer. */
+  targetFinishMs: number;
+  /** UTC ms of the salon's opening time (first valid start). */
+  dayOpenMs: number;
+  /** UTC ms of the salon's closing time (last valid finish). */
+  dayCloseMs: number;
+  date: string;
+  timezone: string;
+  resolvedMembers: ResolvedMember[];
+  staffList: StaffRow[];
+  staffById: Map<string, StaffRow>;
+  capability: StaffCapabilityMap;
+  existing: ExistingBooking[];
+};
+
+/**
+ * Sync-finish search: all members end at the same target finish time.
+ * Iterates candidate finish times and returns up to three arrangements:
+ *
+ *   1. BEST         — finish time closest to targetFinishMs, preferred
+ *                     staff respected.
+ *   2. ALTERNATIVE  — next-closest different finish time, preferred
+ *                     staff respected.
+ *   3. EARLIEST     — chronologically first valid finish time (ignores
+ *                     preferred-staff so "just get me in" works).
+ *
+ * Unlike sync-start, spread is not used as a quality gate here — every
+ * member ends at the same time so the "spread" (range of start times)
+ * is simply the difference in service durations, which the customer
+ * already accepted when picking their services.
+ */
+function findFinishArrangementsInWindow(
+  ctx: FinishArrangementsCtx,
+): GroupArrangement[] {
+  const maxMemberMin = ctx.resolvedMembers.reduce(
+    (acc, m) => Math.max(acc, m.totalMinutes),
+    0,
+  );
+  if (maxMemberMin === 0) return [];
+
+  // The earliest valid finish is when the longest service starts at dayOpen.
+  const earliestFinish = ctx.dayOpenMs + maxMemberMin * 60_000;
+  if (ctx.dayCloseMs <= earliestFinish) return [];
+
+  // Generate all candidate finish times within [earliestFinish, dayCloseMs].
+  const allFinishMs: number[] = [];
+  for (
+    let ms = earliestFinish;
+    ms <= ctx.dayCloseMs;
+    ms += SLOT_STEP_MIN * 60_000
+  ) {
+    allFinishMs.push(ms);
+  }
+  if (allFinishMs.length === 0) return [];
+
+  // Sort a copy by distance from the target for best + alternative search.
+  const byDistance = allFinishMs
+    .slice()
+    .sort(
+      (a, b) =>
+        Math.abs(a - ctx.targetFinishMs) - Math.abs(b - ctx.targetFinishMs),
+    );
+
+  let bestArrangement: GroupArrangement | null = null;
+  let altArrangement: GroupArrangement | null = null;
+
+  for (const finishMs of byDistance) {
+    if (bestArrangement && altArrangement) break;
+    const result = tryFinishAlignedArrangement(
+      finishMs,
+      ctx.dayOpenMs,
+      ctx.resolvedMembers,
+      ctx.staffList,
+      ctx.staffById,
+      ctx.capability,
+      ctx.existing,
+      /* respectPreferred */ true,
+    );
+    if (!result) continue;
+    if (!bestArrangement) {
+      bestArrangement = buildArrangement(
+        "best",
+        result,
+        ctx.resolvedMembers,
+        ctx.staffById,
+        ctx.timezone,
+      );
+    } else if (finishMs !== bestArrangement.groupEndMs) {
+      // Different finish time → a genuine second option.
+      altArrangement = buildArrangement(
+        "alternative",
+        result,
+        ctx.resolvedMembers,
+        ctx.staffById,
+        ctx.timezone,
+      );
+    }
+  }
+
+  // Earliest: chronologically first finish time, ignore preferred staff.
+  let earliestArrangement: GroupArrangement | null = null;
+  for (const finishMs of allFinishMs) {
+    const result = tryFinishAlignedArrangement(
+      finishMs,
+      ctx.dayOpenMs,
+      ctx.resolvedMembers,
+      ctx.staffList,
+      ctx.staffById,
+      ctx.capability,
+      ctx.existing,
+      /* respectPreferred */ false,
+    );
+    if (!result) continue;
+    const arr = buildArrangement(
+      "earliest",
+      result,
+      ctx.resolvedMembers,
+      ctx.staffById,
+      ctx.timezone,
+    );
+    // Only include when it's distinct from best (different finish time).
+    if (!bestArrangement || arr.groupEndMs !== bestArrangement.groupEndMs) {
+      earliestArrangement = arr;
+    }
+    break; // found chronologically earliest
+  }
+
+  const arrangements: GroupArrangement[] = [];
+  if (bestArrangement) arrangements.push(bestArrangement);
+  if (altArrangement) arrangements.push(altArrangement);
+  if (earliestArrangement) arrangements.push(earliestArrangement);
+  return arrangements;
+}
+
 // ─── Smart alternatives (Task #05) ──────────────────────────────
 // Sub-queries run in parallel against a per-query 5 s budget so
 // the user sees alternatives within the same loading impression
@@ -1007,6 +1286,10 @@ type AlternativesCtx = {
    *  needed to re-call `loadGroupSmartSchedule` for the
    *  next-date sub-query without losing preferred-staff info. */
   rawMembers: GroupSmartScheduleMemberInput[];
+  /** Forwarded from params so next-date sub-queries use the same mode. */
+  mode?: GroupSyncMode;
+  /** Forwarded from params for next-date sub-queries in sync_finish mode. */
+  finishTime?: string;
 };
 
 function withTimeout<T>(
@@ -1207,6 +1490,10 @@ async function computeNextAvailableDate(
         date: ymd,
         arrivalPref: ctx.arrivalPref,
         members: ctx.rawMembers,
+        // Forward mode + finishTime so sync_finish next-date probes
+        // still target the same finish preference.
+        mode: ctx.mode,
+        finishTime: ctx.finishTime,
       },
       // Recursion guard — without this each candidate day would
       // fire its own next-date fan-out (5 × 5 = 25 probes per

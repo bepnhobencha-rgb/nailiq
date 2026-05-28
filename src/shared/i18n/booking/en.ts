@@ -264,6 +264,17 @@ export const bookingEn = {
      * 5-step flow: size → per-member service/staff → date & arrival
      * window → AI-generated 3-option arrangement → confirm. New keys
      * below; legacy keys above kept for receptionist-side reuse. */
+    /** Step 3 — sync-mode toggle (arrive-together vs finish-together). */
+    syncModeQuestion: "How should your group plan together?",
+    syncStart: "🚶 Arrive together",
+    syncStartHint: "Everyone starts around the same time",
+    syncFinish: "🏁 Finish together",
+    syncFinishHint: "Everyone is done at the same time",
+    /** Time input label that appears when sync_finish is chosen. */
+    finishTimeLabel: "Finish by (target time)",
+    finishTimeHint: "The whole group will be done by this time",
+    /** Validation error when user proceeds without setting a finish time. */
+    finishTimeRequired: "Please set a target finish time.",
     /** Step 3 — arrival-window heading. */
     arrivalQuestion: "When would you like to arrive?",
     arrivalMorning: "Morning · 9 AM – 12 PM",
@@ -274,6 +285,11 @@ export const bookingEn = {
     schedulingBest: "Best — everyone within 15 min",
     schedulingAlt: "Alternative — within 30 min",
     schedulingEarly: "Earliest available",
+    /** Step 4 cards — sync_finish mode labels (replace the ≤15/≤30 min
+     *  start-spread copy which is meaningless when everyone ENDS together). */
+    schedulingFinishBest: "On time ✨",
+    schedulingFinishAlt: "Alternative time 🔄",
+    schedulingFinishEarly: "Earliest possible ⚡",
     /** Recommended badge on the BEST card. */
     schedulingRecommended: "Recommended",
     /** Per-card "Finishes at {time}" footer line. */
