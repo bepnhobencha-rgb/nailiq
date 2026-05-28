@@ -441,6 +441,47 @@ export const bookingEn = {
     partyLinkCopy: "Copy",
     partyLinkCopied: "Copied!",
   },
+
+  /** Strings used on the public /party/[token] page. */
+  partyPage: {
+    /** Page header */
+    invited: "You're invited!",
+    groupBookingAt: "Group booking at",
+    /** Sync mode labels */
+    modeStart: "Everyone starts together",
+    modeFinish: "Everyone finishes together",
+    /** Expired banner */
+    expiredBanner: "This party link has expired. Please ask the organiser to share a new one.",
+    /** Slot card */
+    claimed: "Claimed",
+    claimBtn: "This is me",
+    cancelBtn: "Cancel",
+    expiredLabel: "Expired",
+    /** Claim form */
+    formNameLabel: "Your name",
+    formNamePlaceholder: "e.g. Sarah",
+    formPhoneLabel: "Phone number",
+    formPhonePlaceholder: "+1 604 555 0123",
+    formPhoneHint: "Include your country code (e.g. +1 for Canada/US, +84 for Vietnam).",
+    formReminderLabel: "Send me a reminder before my appointment",
+    formSubmit: "Confirm my slot",
+    formSubmitting: "Claiming…",
+    /** Error messages */
+    errNameRequired: "Please enter your name.",
+    errPhoneRequired: "Please enter your phone number.",
+    errAlreadyClaimed: "This slot was just claimed by someone else. Refresh to see who got it.",
+    errExpired: "This party link has expired. Ask the organiser for a new one.",
+    errNotFound: "This party link no longer exists.",
+    errInvalidInput: "Please check your name and phone number (include country code, e.g. +1 604…).",
+    errGeneric: "Something went wrong. Please try again.",
+    /** Not-found / expired full-page states */
+    notFoundTitle: "Link not found",
+    notFoundBody: "This party link doesn't exist or may have already expired. Ask the organiser to resend it.",
+    expiredTitle: "Link expired",
+    expiredBody: "This party link has passed its 24-hour window. Ask the organiser to share a new booking.",
+    /** Footer */
+    poweredBy: "Powered by",
+  },
   chat: {
     trigger: "Ask AI",
     heading: "AI Assistant",

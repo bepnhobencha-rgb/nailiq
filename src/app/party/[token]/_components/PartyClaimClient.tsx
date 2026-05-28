@@ -14,8 +14,16 @@
 import { useState, useTransition } from "react";
 import { claimPartySlot } from "@/shared/booking/partyLinkActions";
 import type { PartyLinkPageData, PartyLinkSlot } from "@/shared/booking/partyLinkActions";
+import type { bookingEn } from "@/shared/i18n/booking/en";
 
-export default function PartyClaimClient({ data }: { data: PartyLinkPageData }) {
+type PartyPageT = (typeof bookingEn)["partyPage"];
+
+interface Props {
+  data: PartyLinkPageData;
+  t: PartyPageT;
+}
+
+export default function PartyClaimClient({ data, t }: Props) {
   const [slots, setSlots] = useState<PartyLinkSlot[]>(data.slots);
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
 
@@ -36,6 +44,7 @@ export default function PartyClaimClient({ data }: { data: PartyLinkPageData }) 
           slot={slot}
           token={data.token}
           expired={data.expired}
+          t={t}
           expanded={expandedClaimId === slot.claimId}
           onExpand={() =>
             setExpandedClaimId((prev) => (prev === slot.claimId ? null : slot.claimId))
@@ -45,7 +54,7 @@ export default function PartyClaimClient({ data }: { data: PartyLinkPageData }) 
       ))}
 
       <p className="pt-2 text-center text-xs text-gray-400">
-        Powered by{" "}
+        {t.poweredBy}{" "}
         <span className="font-semibold text-gray-600">NailIQ</span>
       </p>
     </div>
@@ -58,6 +67,7 @@ function SlotCard({
   slot,
   token,
   expired,
+  t,
   expanded,
   onExpand,
   onClaimed,
@@ -65,6 +75,7 @@ function SlotCard({
   slot: PartyLinkSlot;
   token: string;
   expired: boolean;
+  t: PartyPageT;
   expanded: boolean;
   onExpand: () => void;
   onClaimed: (claimId: string, name: string) => void;
@@ -85,16 +96,16 @@ function SlotCard({
         {slot.claimed ? (
           <div className="flex items-center gap-1.5 text-emerald-600">
             <span className="text-lg">✓</span>
-            <span className="text-sm font-medium">{slot.claimedByName ?? "Claimed"}</span>
+            <span className="text-sm font-medium">{slot.claimedByName ?? t.claimed}</span>
           </div>
         ) : expired ? (
-          <span className="text-xs text-gray-400 italic">Expired</span>
+          <span className="text-xs text-gray-400 italic">{t.expiredLabel}</span>
         ) : (
           <button
             onClick={onExpand}
             className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-700 transition-colors"
           >
-            {expanded ? "Cancel" : "This is me"}
+            {expanded ? t.cancelBtn : t.claimBtn}
           </button>
         )}
       </div>
@@ -104,6 +115,7 @@ function SlotCard({
         <ClaimForm
           token={token}
           claimId={slot.claimId}
+          t={t}
           onClaimed={(name) => onClaimed(slot.claimId, name)}
         />
       )}
@@ -116,10 +128,12 @@ function SlotCard({
 function ClaimForm({
   token,
   claimId,
+  t,
   onClaimed,
 }: {
   token: string;
   claimId: string;
+  t: PartyPageT;
   onClaimed: (name: string) => void;
 }) {
   const [name, setName] = useState("");
@@ -135,8 +149,8 @@ function ClaimForm({
     const nameTrim = name.trim();
     const phoneTrim = phone.trim();
 
-    if (!nameTrim) { setError("Please enter your name."); return; }
-    if (!phoneTrim) { setError("Please enter your phone number."); return; }
+    if (!nameTrim) { setError(t.errNameRequired); return; }
+    if (!phoneTrim) { setError(t.errPhoneRequired); return; }
 
     startTransition(async () => {
       const result = await claimPartySlot({
@@ -154,19 +168,19 @@ function ClaimForm({
 
       switch (result.reason) {
         case "already_claimed":
-          setError("This slot was just claimed by someone else. Refresh to see who got it.");
+          setError(t.errAlreadyClaimed);
           break;
         case "expired":
-          setError("This party link has expired. Ask the organiser for a new one.");
+          setError(t.errExpired);
           break;
         case "not_found":
-          setError("This party link no longer exists.");
+          setError(t.errNotFound);
           break;
         case "invalid_input":
-          setError("Please check your name and phone number (include country code, e.g. +1 604…).");
+          setError(t.errInvalidInput);
           break;
         default:
-          setError("Something went wrong. Please try again.");
+          setError(t.errGeneric);
       }
     });
   }
@@ -178,13 +192,13 @@ function ClaimForm({
     >
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">
-          Your name
+          {t.formNameLabel}
         </label>
         <input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. Sarah"
+          placeholder={t.formNamePlaceholder}
           maxLength={100}
           required
           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
@@ -193,19 +207,17 @@ function ClaimForm({
 
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">
-          Phone number
+          {t.formPhoneLabel}
         </label>
         <input
           type="tel"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
-          placeholder="+1 604 555 0123"
+          placeholder={t.formPhonePlaceholder}
           required
           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
         />
-        <p className="mt-1 text-xs text-gray-400">
-          Include your country code (e.g. +1 for Canada/US, +84 for Vietnam).
-        </p>
+        <p className="mt-1 text-xs text-gray-400">{t.formPhoneHint}</p>
       </div>
 
       <label className="flex items-start gap-2 cursor-pointer">
@@ -215,9 +227,7 @@ function ClaimForm({
           onChange={(e) => setReminder(e.target.checked)}
           className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
         />
-        <span className="text-xs text-gray-600">
-          Send me a reminder before my appointment
-        </span>
+        <span className="text-xs text-gray-600">{t.formReminderLabel}</span>
       </label>
 
       {error && (
@@ -229,7 +239,7 @@ function ClaimForm({
         disabled={isPending}
         className="w-full rounded-lg bg-gray-900 py-2.5 text-sm font-semibold text-white hover:bg-gray-700 disabled:opacity-60 transition-colors"
       >
-        {isPending ? "Claiming…" : "Confirm my slot"}
+        {isPending ? t.formSubmitting : t.formSubmit}
       </button>
     </form>
   );
