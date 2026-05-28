@@ -108,6 +108,14 @@ export async function createPartyLink(params: {
   try {
     db = createServiceRoleClient();
   } catch (err) {
+    if (process.env.NODE_ENV !== "production") {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[nailiq] createPartyLink: service-role client unavailable — Party Link will NOT be created.\n" +
+          "  The booking success screen still works; only the share box is missing.\n" +
+          "  Set SUPABASE_SERVICE_ROLE_KEY in .env.local for end-to-end local testing.",
+      );
+    }
     Sentry.captureException(err, { extra: { groupId } });
     return { ok: false, reason: "server_error" };
   }
@@ -214,6 +222,13 @@ export async function loadPartyLinkPage(
   try {
     db = createServiceRoleClient();
   } catch (err) {
+    if (process.env.NODE_ENV !== "production") {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[nailiq] loadPartyLinkPage: service-role client unavailable — /party/[token] will show 404.\n" +
+          "  Set SUPABASE_SERVICE_ROLE_KEY in .env.local for end-to-end local testing.",
+      );
+    }
     Sentry.captureException(err);
     return null;
   }
