@@ -252,8 +252,7 @@ export async function loadPartyLinkPage(
 
   if (linkErr || !link) return null;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const salon = (link.salons as any) as { name: string; timezone: string } | null;
+  const salon = link.salons as unknown as { name: string; timezone: string } | null;
   if (!salon) return null;
 
   const expired = new Date(link.expires_at) < new Date();
@@ -283,8 +282,7 @@ export async function loadPartyLinkPage(
   // Build slot objects — safe, no phone exposure.
   const tz = salon.timezone || "UTC";
   const slots: PartyLinkSlot[] = claims.map((c) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const booking = (c.bookings as any) as {
+    const booking = c.bookings as unknown as {
       start_time_utc: string | null;
       end_time_utc: string | null;
       services: { name: string } | null;
@@ -314,8 +312,7 @@ export async function loadPartyLinkPage(
   const validStarts = slots.map((s) => s.startUtcIso).filter(Boolean);
   const validEnds = claims
     .map((c) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const b = (c.bookings as any) as { end_time_utc: string | null } | null;
+      const b = c.bookings as unknown as { end_time_utc: string | null } | null;
       return b?.end_time_utc ?? "";
     })
     .filter(Boolean);
@@ -382,8 +379,7 @@ export async function claimPartySlot(params: {
     return { ok: false, reason: "server_error" };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = data as any;
+  const result = data as Record<string, unknown>;
   if (!result?.success) {
     const code = result?.code as string | undefined;
     if (code === "not_found") return { ok: false, reason: "not_found" };

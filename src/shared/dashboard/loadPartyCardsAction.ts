@@ -120,8 +120,7 @@ export async function loadPartyCardsAction(
   // 5. Filter to date window and group by party_link_id.
   const claimsByLink = new Map<string, RawClaim[]>();
   for (const raw of claims) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const b = (raw.bookings as any) as { start_time_utc: string | null } | null;
+    const b = raw.bookings as unknown as { start_time_utc: string | null } | null;
     const startIso = b?.start_time_utc;
     if (!startIso) continue;
 
@@ -137,8 +136,7 @@ export async function loadPartyCardsAction(
       booking_id: raw.booking_id,
       member_name: raw.member_name,
       claimed_at: raw.claimed_at,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      bookings: (raw.bookings as any) as RawClaim["bookings"],
+      bookings: raw.bookings as unknown as RawClaim["bookings"],
     });
     claimsByLink.set(raw.party_link_id, list);
   }

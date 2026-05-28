@@ -274,6 +274,72 @@ export type Database = {
           },
         ]
       }
+      booking_notifications: {
+        Row: {
+          body_preview: string | null
+          booking_id: string | null
+          channel: string
+          client_phone: string | null
+          created_at: string
+          delivered_at: string | null
+          error_message: string | null
+          failed_at: string | null
+          id: string
+          notification_type: string
+          salon_id: string
+          sent_at: string
+          status: string
+          twilio_message_sid: string | null
+        }
+        Insert: {
+          body_preview?: string | null
+          booking_id?: string | null
+          channel?: string
+          client_phone?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          error_message?: string | null
+          failed_at?: string | null
+          id?: string
+          notification_type: string
+          salon_id: string
+          sent_at?: string
+          status?: string
+          twilio_message_sid?: string | null
+        }
+        Update: {
+          body_preview?: string | null
+          booking_id?: string | null
+          channel?: string
+          client_phone?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          error_message?: string | null
+          failed_at?: string | null
+          id?: string
+          notification_type?: string
+          salon_id?: string
+          sent_at?: string
+          status?: string
+          twilio_message_sid?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_notifications_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_notifications_salon_id_fkey"
+            columns: ["salon_id"]
+            isOneToOne: false
+            referencedRelation: "salons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       booking_photos: {
         Row: {
           ai_detected_colors: string[] | null
@@ -1267,6 +1333,92 @@ export type Database = {
         }
         Relationships: []
       }
+      party_link_claims: {
+        Row: {
+          booking_id: string
+          claimed_at: string | null
+          created_at: string
+          id: string
+          member_name: string | null
+          member_phone: string | null
+          party_link_id: string
+          reminder_opted_in: boolean
+        }
+        Insert: {
+          booking_id: string
+          claimed_at?: string | null
+          created_at?: string
+          id?: string
+          member_name?: string | null
+          member_phone?: string | null
+          party_link_id: string
+          reminder_opted_in?: boolean
+        }
+        Update: {
+          booking_id?: string
+          claimed_at?: string | null
+          created_at?: string
+          id?: string
+          member_name?: string | null
+          member_phone?: string | null
+          party_link_id?: string
+          reminder_opted_in?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "party_link_claims_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: true
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "party_link_claims_party_link_id_fkey"
+            columns: ["party_link_id"]
+            isOneToOne: false
+            referencedRelation: "party_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      party_links: {
+        Row: {
+          created_at: string
+          expires_at: string
+          group_id: string
+          id: string
+          mode: string
+          salon_id: string
+          token: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          group_id: string
+          id?: string
+          mode?: string
+          salon_id: string
+          token: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          group_id?: string
+          id?: string
+          mode?: string
+          salon_id?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "party_links_salon_id_fkey"
+            columns: ["salon_id"]
+            isOneToOne: false
+            referencedRelation: "salons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       phone_otp_sessions: {
         Row: {
           consumed_at: string | null
@@ -1841,6 +1993,13 @@ export type Database = {
           timezone: string
           verification_risk_threshold_deposit: number
           verification_risk_threshold_otp: number
+          voice_ai_enabled: boolean
+          voice_ai_persona_name: string
+          voice_ai_persona_voice: string
+          voice_ai_reasoning_effort: string
+          voice_ai_sessions_limit: number
+          voice_ai_sessions_reset_at: string
+          voice_ai_sessions_this_month: number
           walkin_auto_assign: boolean
         }
         Insert: {
@@ -1889,6 +2048,13 @@ export type Database = {
           timezone?: string
           verification_risk_threshold_deposit?: number
           verification_risk_threshold_otp?: number
+          voice_ai_enabled?: boolean
+          voice_ai_persona_name?: string
+          voice_ai_persona_voice?: string
+          voice_ai_reasoning_effort?: string
+          voice_ai_sessions_limit?: number
+          voice_ai_sessions_reset_at?: string
+          voice_ai_sessions_this_month?: number
           walkin_auto_assign?: boolean
         }
         Update: {
@@ -1937,6 +2103,13 @@ export type Database = {
           timezone?: string
           verification_risk_threshold_deposit?: number
           verification_risk_threshold_otp?: number
+          voice_ai_enabled?: boolean
+          voice_ai_persona_name?: string
+          voice_ai_persona_voice?: string
+          voice_ai_reasoning_effort?: string
+          voice_ai_sessions_limit?: number
+          voice_ai_sessions_reset_at?: string
+          voice_ai_sessions_this_month?: number
           walkin_auto_assign?: boolean
         }
         Relationships: []
@@ -2218,6 +2391,84 @@ export type Database = {
         }
         Relationships: []
       }
+      voice_ai_sessions: {
+        Row: {
+          booking_id: string | null
+          client_name: string | null
+          client_phone: string | null
+          created_at: string
+          duration_seconds: number
+          ended_at: string | null
+          error_message: string | null
+          estimated_cost_usd: number | null
+          id: string
+          language: string
+          openai_session_id: string | null
+          salon_id: string
+          service_changed: boolean | null
+          started_at: string
+          status: string
+          time_changed: boolean | null
+          transcript: Json
+          upsell_accepted: boolean | null
+        }
+        Insert: {
+          booking_id?: string | null
+          client_name?: string | null
+          client_phone?: string | null
+          created_at?: string
+          duration_seconds?: number
+          ended_at?: string | null
+          error_message?: string | null
+          estimated_cost_usd?: number | null
+          id?: string
+          language?: string
+          openai_session_id?: string | null
+          salon_id: string
+          service_changed?: boolean | null
+          started_at?: string
+          status?: string
+          time_changed?: boolean | null
+          transcript?: Json
+          upsell_accepted?: boolean | null
+        }
+        Update: {
+          booking_id?: string | null
+          client_name?: string | null
+          client_phone?: string | null
+          created_at?: string
+          duration_seconds?: number
+          ended_at?: string | null
+          error_message?: string | null
+          estimated_cost_usd?: number | null
+          id?: string
+          language?: string
+          openai_session_id?: string | null
+          salon_id?: string
+          service_changed?: boolean | null
+          started_at?: string
+          status?: string
+          time_changed?: boolean | null
+          transcript?: Json
+          upsell_accepted?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_ai_sessions_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voice_ai_sessions_salon_id_fkey"
+            columns: ["salon_id"]
+            isOneToOne: false
+            referencedRelation: "salons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       voucher_redemptions: {
         Row: {
           booking_id: string | null
@@ -2458,6 +2709,16 @@ export type Database = {
         }[]
       }
       check_group_slots_available: { Args: { p_slots: Json }; Returns: Json }
+      claim_party_slot: {
+        Args: {
+          p_claim_id: string
+          p_member_name: string
+          p_member_phone: string
+          p_reminder_opted_in: boolean
+          p_token: string
+        }
+        Returns: Json
+      }
       claim_waitlist_slot: {
         Args: { p_claim_token: string }
         Returns: {
@@ -2559,6 +2820,10 @@ export type Database = {
           service_name: string
           status: string
         }[]
+      }
+      increment_voice_session_if_under_limit: {
+        Args: { p_salon_id: string }
+        Returns: boolean
       }
       insert_group_bookings: { Args: { p_bookings: Json }; Returns: Json }
       public_booking_occupancy_for_range: {
