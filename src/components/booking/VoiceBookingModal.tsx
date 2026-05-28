@@ -513,13 +513,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             ...(instructions ? { instructions } : {}),
             tools:             [...REALTIME_TOOLS],
             tool_choice:       "auto",
-            // gpt-realtime-2 does NOT accept turn_detection at the top level
-            // of session — the field was rejected with "Unknown parameter:
-            // 'session.turn_detection'" (2026-05-28). Turn detection is
-            // configured exclusively via audio.input.turn_detection below.
-            // Top-level transcription field for standard OpenAI Realtime API
-            // compatibility (gpt-4o-realtime-preview style fallback).
-            input_audio_transcription: { model: "whisper-1" },
+            // gpt-realtime-2 does NOT accept top-level session fields that
+            // gpt-4o-realtime-preview used:
+            //   - session.turn_detection          → rejected 2026-05-28
+            //   - session.input_audio_transcription → rejected 2026-05-28
+            // Both are configured exclusively via audio.input.* below.
             audio: {
               input: {
                 format:         { type: "audio/pcm", rate: 24000 },
