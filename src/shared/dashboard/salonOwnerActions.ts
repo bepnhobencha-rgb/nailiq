@@ -858,6 +858,46 @@ export async function updateSalonThemeMode(
   return { ok: true, themeMode };
 }
 
+/* ─────────────────── Voice AI persona name ─────────────────── */
+
+export type UpdateVoiceAiPersonaNameResult =
+  | { ok: true; personaName: string }
+  | { ok: false; error: "unauthorized" | "forbidden" | "invalid_name" | "server_error" };
+
+/**
+ * Owner-only: updates `salons.voice_ai_persona_name`.
+ * Max 40 chars, letters/spaces/hyphens only so the name is safe to
+ * embed in a spoken system prompt.
+ */
+export async function updateVoiceAiPersonaName(
+  slug: string,
+  name: string,
+): Promise<UpdateVoiceAiPersonaNameResult> {
+  const trimmed = name.trim().slice(0, 40);
+  if (!trimmed || !/^[\p{L}\p{M}\s\-'.]+$/u.test(trimmed)) {
+    return { ok: false, error: "invalid_name" };
+  }
+
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+
+  const { error: upErr } = await ctx.supabase
+    .from("salons")
+    .update({ voice_ai_persona_name: trimmed } as never)
+    .eq("id", ctx.salon.id);
+
+  if (upErr) {
+    console.error("[updateVoiceAiPersonaName]", upErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true, personaName: trimmed };
+}
+
 /* ───────────── Walk-in auto-assign toggle (PR #107) ───────────── */
 
 export type UpdateWalkinAutoAssignResult =

@@ -28,7 +28,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, voice_ai_enabled, voice_ai_persona_name",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -58,6 +58,8 @@ export default async function SalonSettingsPage({ params }: Props) {
         sms_reminders_enabled?: unknown;
         booking_verification_mode?: unknown;
         google_review_url?: unknown;
+        voice_ai_enabled?: unknown;
+        voice_ai_persona_name?: unknown;
       }
     | null;
 
@@ -90,6 +92,11 @@ export default async function SalonSettingsPage({ params }: Props) {
     typeof row?.google_review_url === "string" && row.google_review_url.trim().length > 0
       ? row.google_review_url.trim()
       : null;
+  const voiceAiEnabled = row?.voice_ai_enabled === true;
+  const voiceAiPersonaName =
+    typeof row?.voice_ai_persona_name === "string" && row.voice_ai_persona_name.trim().length > 0
+      ? row.voice_ai_persona_name.trim()
+      : "Lily";
   const bookingVerificationMode =
     typeof row?.booking_verification_mode === "string"
       ? row.booking_verification_mode
@@ -115,6 +122,8 @@ export default async function SalonSettingsPage({ params }: Props) {
       smsRemindersEnabled={smsRemindersEnabled}
       bookingVerificationMode={bookingVerificationMode}
       googleReviewUrl={googleReviewUrl}
+      voiceAiEnabled={voiceAiEnabled}
+      voiceAiPersonaName={voiceAiPersonaName}
     />
   );
 }

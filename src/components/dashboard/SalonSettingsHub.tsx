@@ -18,6 +18,7 @@ import { PhoneOtpSettings } from "@/components/dashboard/PhoneOtpSettings";
 import { BookingVerificationSettings } from "@/components/dashboard/BookingVerificationSettings";
 import { PricingPanel } from "@/components/dashboard/PricingPanel";
 import { GoogleReviewSettings } from "@/components/dashboard/GoogleReviewSettings";
+import { VoiceAiSettings } from "@/components/dashboard/VoiceAiSettings";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
@@ -49,6 +50,8 @@ export function SalonSettingsHub({
   reminder3hEnabled,
   smsRemindersEnabled,
   googleReviewUrl,
+  voiceAiEnabled,
+  voiceAiPersonaName,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -68,6 +71,8 @@ export function SalonSettingsHub({
   smsRemindersEnabled: boolean;
   bookingVerificationMode?: string;
   googleReviewUrl: string | null;
+  voiceAiEnabled: boolean;
+  voiceAiPersonaName: string;
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -337,6 +342,14 @@ export function SalonSettingsHub({
           <GoogleReviewSettings
             slug={slug}
             initialValue={googleReviewUrl ?? ""}
+          />
+        ) : null}
+
+        {/* ── Voice AI persona name (chỉ hiện khi voice AI được bật) ── */}
+        {canEditDashboardModules && voiceAiEnabled ? (
+          <VoiceAiSettings
+            slug={slug}
+            initialName={voiceAiPersonaName}
           />
         ) : null}
 
