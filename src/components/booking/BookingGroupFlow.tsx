@@ -986,6 +986,7 @@ export function BookingGroupFlow({
           onFinishTimeChange={(v) => {
             setFinishTime(v);
             setScheduleResult(null);
+            setStepErrors(new Set());
           }}
           onArrivalKindChange={(k) => {
             setArrivalKind(k);

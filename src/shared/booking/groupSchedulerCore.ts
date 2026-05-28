@@ -1,0 +1,468 @@
+/**
+ * Pure scheduling engine for group bookings — no Supabase, no Next.js
+ * server context, fully synchronous.
+ *
+ * Exported and imported by:
+ *   - `loadGroupSmartSchedule.ts` (the "use server" orchestrator)
+ *   - unit tests in `__tests__/groupSmartSchedule.test.ts`
+ *
+ * Nothing in this file may be async or depend on server-only modules.
+ */
+
+import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
+import {
+  isStaffCapableForService,
+  type StaffCapabilityMap,
+} from "@/shared/booking/staffCapability";
+import { formatInSalonTz } from "@/shared/lib/salonTime";
+
+// ─── Shared types ────────────────────────────────────────────────
+
+export type GroupArrangementAssignment = {
+  /** 0-indexed position from the input `members[]`. */
+  memberIndex: number;
+  staffId: string;
+  staffName: string;
+  /** UTC ISO start of this member's appointment. */
+  startUtcIso: string;
+  /** UTC ISO end (inclusive of buffer). */
+  endUtcIso: string;
+  /** Salon-local wall-time "9:30 AM" for the BEST/EARLIEST card. */
+  startDisplay: string;
+  endDisplay: string;
+  /** Total minutes including buffer. */
+  durationMinutes: number;
+  priceCents: number | null;
+  /** Echoed for UI rendering — same value as input.name. */
+  memberName: string;
+  serviceName: string;
+};
+
+export type GroupArrangement = {
+  kind: "best" | "alternative" | "earliest";
+  /** Earliest start across the arrangement (UTC ms). */
+  groupStartMs: number;
+  /** Latest end across the arrangement (UTC ms). */
+  groupEndMs: number;
+  groupStartDisplay: string;
+  groupEndDisplay: string;
+  /** Total spread in minutes between earliest and latest start. */
+  spreadMinutes: number;
+  /** Sum of priceCents across members. `null` if any service is
+   *  unpriced (mixed-price catalog). */
+  totalCents: number | null;
+  assignments: GroupArrangementAssignment[];
+};
+
+// ─── Internal types ──────────────────────────────────────────────
+
+export type ResolvedMember = {
+  /** Input index. */
+  index: number;
+  name: string;
+  serviceId: string;
+  serviceName: string;
+  /** Total minutes (duration + buffer) for occupancy math. */
+  totalMinutes: number;
+  priceCents: number | null;
+  preferredStaffId: string | null;
+};
+
+export type StaffRow = { id: string; name: string };
+
+export type ExistingBooking = {
+  staffId: string;
+  startMs: number;
+  endMs: number;
+};
+
+export type FinishArrangementsCtx = {
+  /** UTC ms of the desired finish time selected by the customer. */
+  targetFinishMs: number;
+  /** UTC ms of the salon's opening time (first valid start). */
+  dayOpenMs: number;
+  /** UTC ms of the salon's closing time (last valid finish). */
+  dayCloseMs: number;
+  date: string;
+  timezone: string;
+  resolvedMembers: ResolvedMember[];
+  staffList: StaffRow[];
+  staffById: Map<string, StaffRow>;
+  capability: StaffCapabilityMap;
+  existing: ExistingBooking[];
+};
+
+// ─── Constants ───────────────────────────────────────────────────
+
+export const SLOT_STEP_MIN = 15;
+
+// ─── Helpers ─────────────────────────────────────────────────────
+
+/**
+ * Check whether `staffId` is free for `[startMs, endMs)` against
+ * existing bookings + an in-arrangement "soft" reservations map.
+ */
+export function staffIsFree(
+  staffId: string,
+  startMs: number,
+  endMs: number,
+  existing: ExistingBooking[],
+  softReservations: Map<string, Array<{ startMs: number; endMs: number }>>,
+): boolean {
+  for (const b of existing) {
+    if (b.staffId !== staffId) continue;
+    if (intervalsOverlapMs(startMs, endMs, b.startMs, b.endMs)) return false;
+  }
+  const soft = softReservations.get(staffId);
+  if (soft) {
+    for (const s of soft) {
+      if (intervalsOverlapMs(startMs, endMs, s.startMs, s.endMs)) return false;
+    }
+  }
+  return true;
+}
+
+// ─── Core assignment functions ───────────────────────────────────
+
+/**
+ * Assign each member to a staff at the given anchor (all members
+ * start at `anchorMs`). Returns the assignments or `null` if the
+ * combination is infeasible. `respectPreferred` controls whether a
+ * member with a non-null `preferredStaffId` may fall back to any
+ * other capable staff.
+ */
+export function tryAlignedArrangement(
+  anchorMs: number,
+  members: ResolvedMember[],
+  staff: readonly StaffRow[],
+  staffById: Map<string, StaffRow>,
+  capability: StaffCapabilityMap,
+  existing: ExistingBooking[],
+  respectPreferred: boolean,
+): { assignments: Array<{ memberIdx: number; staffId: string; startMs: number; endMs: number }> } | null {
+  // Members with explicit preferred staff go first — they're the
+  // hard constraint. Members with "any" pick second so they can
+  // fill whichever staff are left.
+  const order = members
+    .map((m, i) => ({ m, i }))
+    .sort((a, b) => {
+      const ap = a.m.preferredStaffId != null ? 0 : 1;
+      const bp = b.m.preferredStaffId != null ? 0 : 1;
+      return ap - bp;
+    });
+
+  const soft = new Map<string, Array<{ startMs: number; endMs: number }>>();
+  const out: Array<{ memberIdx: number; staffId: string; startMs: number; endMs: number }> = [];
+
+  for (const entry of order) {
+    const m = entry.m;
+    const startMs = anchorMs;
+    const endMs = anchorMs + m.totalMinutes * 60_000;
+
+    const candidateOrder: string[] = [];
+    if (m.preferredStaffId != null) {
+      candidateOrder.push(m.preferredStaffId);
+      if (!respectPreferred) {
+        for (const s of staff) {
+          if (s.id !== m.preferredStaffId) candidateOrder.push(s.id);
+        }
+      }
+    } else {
+      for (const s of staff) candidateOrder.push(s.id);
+    }
+
+    let pickedStaff: string | null = null;
+    for (const sid of candidateOrder) {
+      const row = staffById.get(sid);
+      if (!row) continue;
+      if (!isStaffCapableForService(capability, sid, m.serviceId)) continue;
+      if (!staffIsFree(sid, startMs, endMs, existing, soft)) continue;
+      pickedStaff = sid;
+      break;
+    }
+
+    if (pickedStaff === null) return null;
+    const bucket = soft.get(pickedStaff) ?? [];
+    bucket.push({ startMs, endMs });
+    soft.set(pickedStaff, bucket);
+    out.push({ memberIdx: m.index, staffId: pickedStaff, startMs, endMs });
+  }
+
+  // Re-sort to the original member order so callers can index by
+  // memberIndex naturally.
+  out.sort((a, b) => a.memberIdx - b.memberIdx);
+  return { assignments: out };
+}
+
+/**
+ * Sync-finish assignment: ALL members end at exactly `targetFinishMs`.
+ * Member i starts at `targetFinishMs − member_i.totalMinutes × 60_000`.
+ * Longer services start earlier — they are processed first so the
+ * hardest-to-fill (earliest-start) slots are locked before shorter ones.
+ * Returns null if any member's start would fall before `dayOpenMs` or
+ * no capable, free staff can be found.
+ */
+export function tryFinishAlignedArrangement(
+  targetFinishMs: number,
+  dayOpenMs: number,
+  members: ResolvedMember[],
+  staff: readonly StaffRow[],
+  staffById: Map<string, StaffRow>,
+  capability: StaffCapabilityMap,
+  existing: ExistingBooking[],
+  respectPreferred: boolean,
+): { assignments: Array<{ memberIdx: number; staffId: string; startMs: number; endMs: number }> } | null {
+  // Compute per-member start times and validate against dayOpen.
+  const slots = members.map((m) => ({
+    m,
+    startMs: targetFinishMs - m.totalMinutes * 60_000,
+    endMs: targetFinishMs,
+  }));
+  for (const s of slots) {
+    if (s.startMs < dayOpenMs) return null;
+  }
+
+  // Sort: preferred-staff members first (hard constraint), then by earliest
+  // start (= longest service) so we fill the tightest slots first.
+  const order = slots.slice().sort((a, b) => {
+    const ap = a.m.preferredStaffId != null ? 0 : 1;
+    const bp = b.m.preferredStaffId != null ? 0 : 1;
+    if (ap !== bp) return ap - bp;
+    return a.startMs - b.startMs; // earliest start first
+  });
+
+  const soft = new Map<string, Array<{ startMs: number; endMs: number }>>();
+  const out: Array<{ memberIdx: number; staffId: string; startMs: number; endMs: number }> = [];
+
+  for (const slot of order) {
+    const { m, startMs, endMs } = slot;
+    const candidateOrder: string[] = [];
+    if (m.preferredStaffId != null) {
+      candidateOrder.push(m.preferredStaffId);
+      if (!respectPreferred) {
+        for (const s of staff) {
+          if (s.id !== m.preferredStaffId) candidateOrder.push(s.id);
+        }
+      }
+    } else {
+      for (const s of staff) candidateOrder.push(s.id);
+    }
+
+    let pickedStaff: string | null = null;
+    for (const sid of candidateOrder) {
+      const row = staffById.get(sid);
+      if (!row) continue;
+      if (!isStaffCapableForService(capability, sid, m.serviceId)) continue;
+      if (!staffIsFree(sid, startMs, endMs, existing, soft)) continue;
+      pickedStaff = sid;
+      break;
+    }
+    if (pickedStaff === null) return null;
+
+    const bucket = soft.get(pickedStaff) ?? [];
+    bucket.push({ startMs, endMs });
+    soft.set(pickedStaff, bucket);
+    out.push({ memberIdx: m.index, staffId: pickedStaff, startMs, endMs });
+  }
+
+  out.sort((a, b) => a.memberIdx - b.memberIdx);
+  return { assignments: out };
+}
+
+// ─── Arrangement builder ─────────────────────────────────────────
+
+export function buildArrangement(
+  kind: GroupArrangement["kind"],
+  raw: { assignments: Array<{ memberIdx: number; staffId: string; startMs: number; endMs: number }> },
+  members: ResolvedMember[],
+  staffById: Map<string, StaffRow>,
+  timezone: string,
+): GroupArrangement {
+  let groupStartMs = Number.POSITIVE_INFINITY;
+  let groupEndMs = Number.NEGATIVE_INFINITY;
+  const assignments: GroupArrangementAssignment[] = raw.assignments.map((a) => {
+    const m = members[a.memberIdx];
+    const staff = staffById.get(a.staffId);
+    const startIso = new Date(a.startMs).toISOString();
+    const endIso = new Date(a.endMs).toISOString();
+    if (a.startMs < groupStartMs) groupStartMs = a.startMs;
+    if (a.endMs > groupEndMs) groupEndMs = a.endMs;
+    return {
+      memberIndex: a.memberIdx,
+      staffId: a.staffId,
+      staffName: staff?.name ?? "",
+      startUtcIso: startIso,
+      endUtcIso: endIso,
+      startDisplay: formatInSalonTz(startIso, timezone, "shortTime"),
+      endDisplay: formatInSalonTz(endIso, timezone, "shortTime"),
+      durationMinutes: m.totalMinutes,
+      priceCents: m.priceCents,
+      memberName: m.name,
+      serviceName: m.serviceName,
+    };
+  });
+
+  // Span: latest start - earliest start.
+  let minStart = Number.POSITIVE_INFINITY;
+  let maxStart = Number.NEGATIVE_INFINITY;
+  for (const a of raw.assignments) {
+    if (a.startMs < minStart) minStart = a.startMs;
+    if (a.startMs > maxStart) maxStart = a.startMs;
+  }
+  const spreadMinutes = Math.round((maxStart - minStart) / 60_000);
+
+  // Total cents — null if ANY member has unpriced service so we
+  // don't lie about partial sums.
+  let totalCents: number | null = 0;
+  for (const m of members) {
+    if (m.priceCents == null) {
+      totalCents = null;
+      break;
+    }
+    totalCents = (totalCents ?? 0) + m.priceCents;
+  }
+
+  const groupStartIso = new Date(groupStartMs).toISOString();
+  const groupEndIso = new Date(groupEndMs).toISOString();
+  return {
+    kind,
+    groupStartMs,
+    groupEndMs,
+    groupStartDisplay: formatInSalonTz(groupStartIso, timezone, "shortTime"),
+    groupEndDisplay: formatInSalonTz(groupEndIso, timezone, "shortTime"),
+    spreadMinutes,
+    totalCents,
+    assignments,
+  };
+}
+
+// ─── Sync-finish slot scan ───────────────────────────────────────
+
+/**
+ * Sync-finish search: all members end at the same target finish time.
+ * Iterates candidate finish times and returns up to three arrangements:
+ *
+ *   1. BEST         — finish time closest to targetFinishMs, preferred
+ *                     staff respected.
+ *   2. ALTERNATIVE  — next-closest different finish time, preferred
+ *                     staff respected.
+ *   3. EARLIEST     — chronologically first valid finish time (ignores
+ *                     preferred-staff so "just get me in" works).
+ *
+ * Unlike sync-start, spread is not used as a quality gate here — every
+ * member ends at the same time so the "spread" (range of start times)
+ * is simply the difference in service durations, which the customer
+ * already accepted when picking their services.
+ */
+export function findFinishArrangementsInWindow(
+  ctx: FinishArrangementsCtx,
+): GroupArrangement[] {
+  const maxMemberMin = ctx.resolvedMembers.reduce(
+    (acc, m) => Math.max(acc, m.totalMinutes),
+    0,
+  );
+  if (maxMemberMin === 0) return [];
+
+  // The earliest valid finish is when the longest service starts at dayOpen.
+  const earliestFinish = ctx.dayOpenMs + maxMemberMin * 60_000;
+  if (ctx.dayCloseMs <= earliestFinish) return [];
+
+  // Generate all candidate finish times within [earliestFinish, dayCloseMs].
+  const allFinishMs: number[] = [];
+  for (
+    let ms = earliestFinish;
+    ms <= ctx.dayCloseMs;
+    ms += SLOT_STEP_MIN * 60_000
+  ) {
+    allFinishMs.push(ms);
+  }
+  if (allFinishMs.length === 0) return [];
+
+  // Sort a copy by distance from the target for best + alternative search.
+  const byDistance = allFinishMs
+    .slice()
+    .sort(
+      (a, b) =>
+        Math.abs(a - ctx.targetFinishMs) - Math.abs(b - ctx.targetFinishMs),
+    );
+
+  let bestArrangement: GroupArrangement | null = null;
+  let altArrangement: GroupArrangement | null = null;
+
+  for (const finishMs of byDistance) {
+    if (bestArrangement && altArrangement) break;
+    const result = tryFinishAlignedArrangement(
+      finishMs,
+      ctx.dayOpenMs,
+      ctx.resolvedMembers,
+      ctx.staffList,
+      ctx.staffById,
+      ctx.capability,
+      ctx.existing,
+      /* respectPreferred */ true,
+    );
+    if (!result) continue;
+    if (!bestArrangement) {
+      bestArrangement = buildArrangement(
+        "best",
+        result,
+        ctx.resolvedMembers,
+        ctx.staffById,
+        ctx.timezone,
+      );
+    } else if (finishMs !== bestArrangement.groupEndMs) {
+      // Different finish time → a genuine second option.
+      altArrangement = buildArrangement(
+        "alternative",
+        result,
+        ctx.resolvedMembers,
+        ctx.staffById,
+        ctx.timezone,
+      );
+    }
+  }
+
+  // Earliest: chronologically first finish time, ignore preferred staff.
+  let earliestArrangement: GroupArrangement | null = null;
+  for (const finishMs of allFinishMs) {
+    const result = tryFinishAlignedArrangement(
+      finishMs,
+      ctx.dayOpenMs,
+      ctx.resolvedMembers,
+      ctx.staffList,
+      ctx.staffById,
+      ctx.capability,
+      ctx.existing,
+      /* respectPreferred */ false,
+    );
+    if (!result) continue;
+    const arr = buildArrangement(
+      "earliest",
+      result,
+      ctx.resolvedMembers,
+      ctx.staffById,
+      ctx.timezone,
+    );
+    // Only include when it's distinct from best (different finish time OR
+    // different staff assignments — respectPreferred=false may yield a
+    // different crew at the same time, which is still a distinct option).
+    if (
+      !bestArrangement ||
+      arr.groupEndMs !== bestArrangement.groupEndMs ||
+      arr.assignments.some(
+        (a, i) =>
+          bestArrangement!.assignments[i] &&
+          a.staffId !== bestArrangement!.assignments[i].staffId,
+      )
+    ) {
+      earliestArrangement = arr;
+    }
+    break; // found chronologically earliest
+  }
+
+  const arrangements: GroupArrangement[] = [];
+  if (bestArrangement) arrangements.push(bestArrangement);
+  if (altArrangement) arrangements.push(altArrangement);
+  if (earliestArrangement) arrangements.push(earliestArrangement);
+  return arrangements;
+}
