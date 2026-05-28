@@ -199,10 +199,11 @@ export async function submitGroupBooking(
   }
 
   // 1. Surface-level validation -------------------------------------
-  // QA P1.G5: raised cap 4 → 8 (wedding parties, family groups).
-  // DB function enforces the same range; this client-side check
-  // gives a faster reject before the RPC round-trip.
-  if (!Array.isArray(params.members) || params.members.length < 2 || params.members.length > 8) {
+  // Dynamic capacity: cap raised to GROUP_MAX_SIZE (20) to match the
+  // DB RPC and the UI formula `Math.min(activeStaffCount, 20)`. The
+  // effective limit is still the salon's active-staff count, enforced
+  // by the scheduler; this check is just an absolute safety fence.
+  if (!Array.isArray(params.members) || params.members.length < 2 || params.members.length > 20) {
     return fail("invalid_group_size");
   }
   if (typeof params.idempotencyKey !== "string" || params.idempotencyKey.trim().length === 0) {

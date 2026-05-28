@@ -13,14 +13,16 @@ import { BookingFlow } from "@/components/booking/BookingFlow";
 import { BookingGroupFlow } from "@/components/booking/BookingGroupFlow";
 import { VoiceBookingButton } from "@/components/booking/VoiceBookingButton";
 import { cn } from "@/shared/lib/cn";
+import { GROUP_MAX_SIZE } from "@/shared/config/constants";
 
-/** QA round-2: group bookings need at least N distinct staff free at
- * the same time. The picker is capped at 6 (anything bigger is rare
- * and stresses the salon layout); the real cap is whichever is
- * smaller — the salon's active-staff count, or 6. A salon with only
- * one stylist physically can't host a group booking, so the toggle
- * vanishes entirely below this threshold. */
-const HARD_GROUP_CAP = 6;
+/**
+ * Dynamic capacity: the effective group-size cap is whichever is
+ * smaller — the salon's active-staff count, or the absolute safety
+ * ceiling in `GROUP_MAX_SIZE` (20). This means a 10-staff salon
+ * allows 10-person groups; a 3-staff salon is limited to 3.
+ * A salon with only 1 active staff can't host a group booking, so
+ * the toggle vanishes entirely below MIN_GROUP_SIZE.
+ */
 const MIN_GROUP_SIZE = 2;
 
 /**
@@ -80,7 +82,10 @@ export function BookingTypeSwitcher({
   // already pre-filtered to `status='active'` upstream in
   // `loadBookingServicesForSalonSlug`, so .length is the count.
   const activeStaffCount = staff.length;
-  const maxGroupSize = Math.min(activeStaffCount, HARD_GROUP_CAP);
+  // Dynamic capacity: no arbitrary cap — the salon's staff count is
+  // the real constraint. GROUP_MAX_SIZE (20) is just a safety ceiling
+  // for very large salons; typical salons will hit their staff limit first.
+  const maxGroupSize = Math.min(activeStaffCount, GROUP_MAX_SIZE);
   const groupEnabled = maxGroupSize >= MIN_GROUP_SIZE;
 
   // Defensive fallback — older deployed booking i18n bundles (before

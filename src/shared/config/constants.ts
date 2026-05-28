@@ -62,15 +62,19 @@ export const WALKIN_GROUP_BUFFER_MS = 30 * 60 * 1000;
 export const SCHEDULER_TIMEOUT_MS = 20 * 1000;
 
 /**
- * Hard cap on group size at the UI layer. The DB
- * `insert_group_bookings` RPC accepts 2–8 (`20260512300000` raised
- * the cap to 8), but the booking-page pill grid + capacity
- * checks treat 6 as the practical maximum — anything larger
- * stresses both salon layout and the scheduler's combinatorial
- * search. Per-salon effective cap is
- * `Math.min(activeStaffCount, GROUP_MAX_SIZE)`.
+ * Absolute safety ceiling for group size. The *effective* cap is
+ * `Math.min(activeStaffCount, GROUP_MAX_SIZE)` — a salon with 3
+ * active staff can host at most a 3-person group regardless of this
+ * constant. This value is therefore just an upper guard rail for
+ * very large salons; it is NOT an arbitrary business constraint.
+ *
+ * DB `insert_group_bookings` RPC enforces the same range
+ * (`20260527000000_group_booking_dynamic_capacity` raised the RPC cap
+ * to 20 in lock-step with this constant). Raises the previous
+ * hardcoded ceiling of 6 (UI) / 8 (DB) to a single shared value of
+ * 20 so a 15-staff nail bar can still accommodate large parties.
  */
-export const GROUP_MAX_SIZE = 6;
+export const GROUP_MAX_SIZE = 20;
 
 /**
  * Task #05 — smart-alternatives "next available date" sub-query
