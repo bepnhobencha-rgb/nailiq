@@ -1,4 +1,13 @@
-import parsePhoneNumberFromString from "libphonenumber-js";
+// Using the /core entry with an explicit `import` for metadata avoids a tsx
+// test-runner incompatibility: tsx wraps CJS `require("*.json")` in
+// `{ default: ... }`, which breaks libphonenumber-js/min's internal
+// `require('../metadata.min.json')` call (metadata ends up undefined).
+// ES-module `import` correctly unwraps the default export in all environments
+// (tsx, Next.js bundler, Node.js native ESM).
+// `parsePhoneNumberFromString` (the default export) returns undefined on bad
+// input; `parsePhoneNumber` throws ParseError.  We want silent failure.
+import _parseCore from "libphonenumber-js/core";
+import _metadata from "libphonenumber-js/metadata.min.json";
 import { normalizedPhoneDigits } from "@/shared/lib/phoneFormat";
 
 /** Default region for ambiguous local input (e.g. "6041234567" → +16041234567). CA-first market, expanding to US. */
@@ -26,7 +35,8 @@ export type GuestPhoneValidation =
 export function validateGuestPhone(input: string): GuestPhoneValidation {
   const trimmed = input.trim();
   if (!trimmed) return { ok: false };
-  const parsed = parsePhoneNumberFromString(trimmed, DEFAULT_COUNTRY);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parsed = _parseCore(trimmed, DEFAULT_COUNTRY, _metadata as any);
   if (!parsed || !parsed.isValid()) {
     return { ok: false };
   }
