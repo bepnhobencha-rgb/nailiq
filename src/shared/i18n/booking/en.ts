@@ -169,6 +169,10 @@ export const bookingEn = {
   serviceDurationFlexible: "Flexible",
   /** Minute suffix on service tiles, e.g. "45 min" */
   minuteSuffixShort: "min",
+  /** Smart Gap-Free Scheduling pill (Phase 5): slot perfectly fills a gap. */
+  slotBestFit: "Best fit",
+  /** Smart Gap-Free Scheduling pill (Phase 5): slot is a strong back-to-back match. */
+  slotRecommended: "Recommended",
   /** Small badge rendered on `services.is_popular === true` tiles. */
   popularBadge: "Popular",
   /** Small badge rendered on `services.is_featured === true` tiles. */

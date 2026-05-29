@@ -221,9 +221,13 @@ export function BookingFlowTimePanel({
                   aria-label={
                     disabled
                       ? `${slot.label} (not available)`
-                      : popular
-                        ? `${slot.label} (popular)`
-                        : slot.label
+                      : slot.scoringLabel === "best_fit"
+                        ? `${slot.label} (${t.slotBestFit})`
+                        : slot.scoringLabel === "recommended"
+                          ? `${slot.label} (${t.slotRecommended})`
+                          : popular
+                            ? `${slot.label} (popular)`
+                            : slot.label
                   }
                   disabled={disabled}
                   onClick={() => {
@@ -240,7 +244,25 @@ export function BookingFlowTimePanel({
                         : "border border-[var(--booking-border)] text-[var(--booking-text)] hover:border-[var(--booking-border)]",
                   )}
                 >
-                  {popular && !selected && (
+                  {/* Phase 5 — Smart Gap-Free Scheduling labels.
+                      Priority: scoringLabel > popular (both are "good slot" signals). */}
+                  {slot.scoringLabel === "best_fit" && !selected && (
+                    <span
+                      data-testid="slot-label-best-fit"
+                      className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full bg-[var(--salon-primary)] px-1.5 py-px text-[10px] font-semibold leading-tight text-[var(--booking-bg)] whitespace-nowrap"
+                    >
+                      ⭐ {t.slotBestFit}
+                    </span>
+                  )}
+                  {slot.scoringLabel === "recommended" && !selected && (
+                    <span
+                      data-testid="slot-label-recommended"
+                      className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full border border-[var(--salon-primary)]/40 bg-[var(--salon-primary)]/10 px-1.5 py-px text-[10px] font-semibold leading-tight text-[var(--salon-primary)] whitespace-nowrap"
+                    >
+                      {t.slotRecommended}
+                    </span>
+                  )}
+                  {!slot.scoringLabel && popular && !selected && (
                     <span className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full bg-[var(--salon-primary)] px-1.5 py-px text-[10px] font-semibold leading-tight text-[var(--booking-bg)] whitespace-nowrap">
                       {t.popularBadge}
                     </span>

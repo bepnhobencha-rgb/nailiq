@@ -153,6 +153,8 @@ export const bookingVi: BookingMessages = {
     "Chọn trước khi xác nhận để gộp chung với lịch đặt.",
   serviceDurationFlexible: "Linh hoạt",
   minuteSuffixShort: "phút",
+  slotBestFit: "Phù hợp nhất",
+  slotRecommended: "Gợi ý",
   popularBadge: "Phổ biến",
   featuredBadge: "Nổi bật",
   categoryToggleAria: "Mở/đóng dịch vụ {category}",

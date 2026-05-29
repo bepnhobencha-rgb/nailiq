@@ -6,6 +6,7 @@ import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import { dayKeyFromLocalDate } from "@/shared/booking/dayKeyFromDate";
 import { hmToMinutes } from "@/shared/booking/hmToMinutes";
 import { bookingDateYmdFromLocalDate } from "@/shared/booking/bookingConfirmLabels";
+import { scoreSlot, type SlotScoringLabel } from "@/shared/booking/slotScoring";
 
 /**
  * Slot grid resolution in minutes.
@@ -26,11 +27,23 @@ const BOOKING_BUFFER_MS = 15 * 60 * 1000;
  * opening-hours range but already booked across all selectable staff, so the
  * UI renders it as disabled (visible but un-clickable). Past-time slots are
  * still hidden — they're noise rather than information.
+ *
+ * Phase 5 — Smart Gap-Free Scheduling adds optional scoring fields:
+ *   `score`        — numeric priority (0 = neutral, higher = better fit).
+ *   `scoringLabel` — UI hint: "best_fit" | "recommended" | null.
+ * Both are undefined when shortestServiceMinutes is not provided.
  */
 export type TimeSlot = {
   label: string;
   available: boolean;
+  /** Numeric smart-scheduling score ≥ 0. 0 = neutral. Phase 5. */
+  score?: number;
+  /** UI label for smart scheduling. null = no label. Phase 5. */
+  scoringLabel?: SlotScoringLabel;
 };
+
+// Re-export so callers only need one import.
+export type { SlotScoringLabel } from "@/shared/booking/slotScoring";
 
 function localDayBounds(d: Date): { start: Date; end: Date } {
   const start = new Date(d);
@@ -63,6 +76,13 @@ export type GetAvailableTimeSlotsParams = {
   serviceDurationMinutes: number;
   /** Salon-specific YYYY-MM-DD closures (holidays). */
   closedDateYmdSet?: ReadonlySet<string>;
+  /**
+   * Phase 5 — Smart Gap-Free Scheduling.
+   * Shortest bookable service duration in minutes for this salon.
+   * Used to detect dead gaps (unusable slivers of time the salon can't fill).
+   * Omit (or pass 0) to skip the dead-gap penalty and scoring entirely.
+   */
+  shortestServiceMinutes?: number;
 };
 
 /**
@@ -101,6 +121,12 @@ export function computeTimeSlots(args: {
   nowMs: number;
   /** Salon-specific YYYY-MM-DD closures (holidays). */
   closedDateYmdSet?: ReadonlySet<string>;
+  /**
+   * Phase 5 — Smart Gap-Free Scheduling.
+   * Shortest bookable service duration in minutes for this salon.
+   * Omit or pass 0 to return slots without scoring (backward-compatible).
+   */
+  shortestServiceMinutes?: number;
 }): TimeSlot[] {
   const {
     openingHoursRaw,
@@ -111,6 +137,7 @@ export function computeTimeSlots(args: {
     occupancy,
     nowMs,
     closedDateYmdSet,
+    shortestServiceMinutes,
   } = args;
 
   const durationMin = Math.max(1, Math.round(Number(serviceDurationMinutes) || 1));
@@ -257,10 +284,50 @@ export function computeTimeSlots(args: {
     slotMap.set(slotStartMs, { label: formatSlotLabel(slotStart), available: true });
   }
 
-  // Sort by start time and return as an array.
-  return [...slotMap.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([, slot]) => slot);
+  // ── Phase 5: Smart Gap-Free Scoring ──────────────────────────────────────
+  // Score each available slot based on gap-fill quality, then sort:
+  //   1. Available slots: descending by score, then ascending by start time.
+  //   2. Unavailable slots: ascending by start time (chronological, end of list).
+  //
+  // When shortestServiceMinutes is 0 or omitted, all scores are 0 and
+  // the order is identical to the pre-Phase-5 chronological order — fully
+  // backward-compatible.
+  const shortestServiceMs = Math.max(0, (shortestServiceMinutes ?? 0) * 60_000);
+
+  // occIntervals already has { staffId, startMs, endMs } — pass directly.
+  const scored = [...slotMap.entries()].map(([startMs, slot]) => {
+    if (!slot.available || shortestServiceMs === 0) {
+      // Skip scoring for unavailable slots or when no shortest-service provided.
+      return { startMs, slot: { ...slot, score: 0, scoringLabel: null as SlotScoringLabel } };
+    }
+    const slotEndMs = startMs + durationMs;
+    const { score, scoringLabel } = scoreSlot(
+      startMs,
+      slotEndMs,
+      staffId,
+      staffList,
+      occIntervals,
+      shortestServiceMs,
+    );
+    return { startMs, slot: { ...slot, score, scoringLabel } };
+  });
+
+  // Sort: available slots by score desc then chronological; unavailable slots
+  // stay chronological at the end.
+  scored.sort((a, b) => {
+    const aAvail = a.slot.available ? 1 : 0;
+    const bAvail = b.slot.available ? 1 : 0;
+    if (aAvail !== bAvail) return bAvail - aAvail; // available first
+    if (aAvail === 1) {
+      // Both available — sort by score desc, then startMs asc.
+      const scoreDiff = (b.slot.score ?? 0) - (a.slot.score ?? 0);
+      if (scoreDiff !== 0) return scoreDiff;
+    }
+    // Equal score (or both unavailable) — chronological.
+    return a.startMs - b.startMs;
+  });
+
+  return scored.map(({ slot }) => slot);
 }
 
 export async function getAvailableTimeSlots(
@@ -274,6 +341,7 @@ export async function getAvailableTimeSlots(
     staffList,
     serviceDurationMinutes,
     closedDateYmdSet,
+    shortestServiceMinutes,
   } = params;
 
   const week = parseOpeningHours(openingHoursRaw);
@@ -310,6 +378,7 @@ export async function getAvailableTimeSlots(
     occupancy,
     nowMs: Date.now(),
     closedDateYmdSet,
+    shortestServiceMinutes,
   });
 }
 

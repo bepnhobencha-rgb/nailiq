@@ -98,6 +98,18 @@ export function useBookingFlowState(
     [salon.booking_closed_dates],
   );
 
+  /**
+   * Phase 5 — Smart Gap-Free Scheduling.
+   * Shortest bookable service duration across all salon services.
+   * Used to detect dead gaps in slot scoring.
+   */
+  const shortestServiceMinutes = useMemo(() => {
+    const durations = services
+      .map((s) => s.totalMinutes)
+      .filter((d) => d > 0);
+    return durations.length > 0 ? Math.min(...durations) : 0;
+  }, [services]);
+
   const [step, setStep] = useState<BookingFlowStep>("service");
   const [stepDir, setStepDir] = useState<1 | -1>(1);
   const [serviceId, setServiceId] = useState<string | null>(null);
@@ -298,6 +310,7 @@ export function useBookingFlowState(
       staffList: capableStaff,
       serviceDurationMinutes: service.totalMinutes,
       closedDateYmdSet,
+      shortestServiceMinutes,
     }).then((slots) => {
       if (cancelled) return;
       setTimeSlots(slots);
@@ -317,6 +330,7 @@ export function useBookingFlowState(
     capableStaff,
     serviceId,
     service,
+    shortestServiceMinutes,
   ]);
 
   useEffect(() => {
@@ -916,6 +930,7 @@ export function useBookingFlowState(
             staffList: capableStaff,
             serviceDurationMinutes: service.totalMinutes,
             closedDateYmdSet,
+            shortestServiceMinutes,
           }).then((slots) => {
             setTimeSlots(slots);
             setSlotsLoading(false);

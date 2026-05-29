@@ -398,5 +398,262 @@ test("anchor: slots are chronologically sorted after injection", () => {
   if (idx1135 >= idx1145) throw new Error(`11:35 should come before 11:45`);
 });
 
+// ─── Phase 5: Smart Gap-Free Scheduling integration ─────────────────────────
+
+test("Phase 5: perfect gap fill slot gets score 100 and label best_fit", () => {
+  // Bookings: 9:00–9:45 and 10:30–11:15. New service: 45 min.
+  // Slot 9:45 is a perfect gap fill.
+  const occStart1 = new Date(2030, 4, 5, 9,  0, 0, 0);
+  const occEnd1   = new Date(2030, 4, 5, 9, 45, 0, 0);
+  const occStart2 = new Date(2030, 4, 5, 10, 30, 0, 0);
+  const occEnd2   = new Date(2030, 4, 5, 11, 15, 0, 0);
+
+  const slots = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: "s1",
+    staffList: STAFF,
+    serviceDurationMinutes: 45,
+    occupancy: [
+      { staff_id: "s1", start_time_utc: occStart1.toISOString(), end_time_utc: occEnd1.toISOString() },
+      { staff_id: "s1", start_time_utc: occStart2.toISOString(), end_time_utc: occEnd2.toISOString() },
+    ],
+    nowMs: NOW_MS,
+    shortestServiceMinutes: 30,
+  });
+
+  const bestFit = slots.find((s) => s.label === "9:45 AM");
+  if (!bestFit) throw new Error("expected 9:45 AM in slots");
+  assertEqual(bestFit.scoringLabel, "best_fit", "9:45 AM should be best_fit");
+  assertEqual(bestFit.score, 100, "perfect gap fill should score 100");
+});
+
+test("Phase 5: back-to-back slot gets score 80 and label recommended", () => {
+  // Booking: 9:00–9:45. New service: 30 min. Slot 9:45 is back-to-back after.
+  const occStart = new Date(2030, 4, 5,  9,  0, 0, 0);
+  const occEnd   = new Date(2030, 4, 5,  9, 45, 0, 0);
+
+  const slots = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: "s1",
+    staffList: STAFF,
+    serviceDurationMinutes: 30,
+    occupancy: [
+      { staff_id: "s1", start_time_utc: occStart.toISOString(), end_time_utc: occEnd.toISOString() },
+    ],
+    nowMs: NOW_MS,
+    shortestServiceMinutes: 30,
+  });
+
+  const b2b = slots.find((s) => s.label === "9:45 AM");
+  if (!b2b) throw new Error("expected 9:45 AM in slots");
+  assertEqual(b2b.scoringLabel, "recommended", "9:45 AM (back-to-back) should be recommended");
+  assertEqual(b2b.score, 80);
+});
+
+test("Phase 5: dead gap penalty — slot score reduced (label cleared)", () => {
+  // B2B after (80) + right dead gap → penalty → score < 80 → label null.
+  // Bookings: 9:00–9:45, and 10:50–11:30 (creates 20-min gap after 9:45–10:30 slot).
+  const occStart1 = new Date(2030, 4, 5,  9,  0, 0, 0);
+  const occEnd1   = new Date(2030, 4, 5,  9, 45, 0, 0);
+  const occStart2 = new Date(2030, 4, 5, 10, 50, 0, 0);
+  const occEnd2   = new Date(2030, 4, 5, 11, 30, 0, 0);
+
+  const slots = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: "s1",
+    staffList: STAFF,
+    serviceDurationMinutes: 45,   // slot: 9:45–10:30
+    occupancy: [
+      { staff_id: "s1", start_time_utc: occStart1.toISOString(), end_time_utc: occEnd1.toISOString() },
+      { staff_id: "s1", start_time_utc: occStart2.toISOString(), end_time_utc: occEnd2.toISOString() },
+    ],
+    nowMs: NOW_MS,
+    shortestServiceMinutes: 30,
+  });
+
+  const penalised = slots.find((s) => s.label === "9:45 AM");
+  if (!penalised) throw new Error("expected 9:45 AM in slots");
+  if ((penalised.score ?? 0) >= 80) {
+    throw new Error(`expected score < 80 after dead-gap penalty; got ${penalised.score}`);
+  }
+  assertEqual(penalised.scoringLabel, null, "label should be cleared after penalty drops score below 80");
+});
+
+test("Phase 5: neutral slots get score 0 with no label", () => {
+  // No bookings at all — all slots are neutral.
+  const slots = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: "s1",
+    staffList: STAFF,
+    serviceDurationMinutes: 30,
+    occupancy: [],
+    nowMs: NOW_MS,
+    shortestServiceMinutes: 30,
+  });
+
+  for (const s of slots) {
+    if (s.available && ((s.score ?? 0) !== 0 || s.scoringLabel !== null)) {
+      throw new Error(
+        `expected neutral score/label on ${s.label}; got score=${s.score}, label=${s.scoringLabel}`,
+      );
+    }
+  }
+});
+
+test("Phase 5: neutral slots sort chronologically (score 0 + chronological tiebreaker)", () => {
+  // No bookings → all neutral → must stay in time order.
+  const slots = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: "s1",
+    staffList: STAFF,
+    serviceDurationMinutes: 30,
+    occupancy: [],
+    nowMs: NOW_MS,
+    shortestServiceMinutes: 30,
+  }).filter((s) => s.available);
+
+  for (let i = 1; i < slots.length; i++) {
+    const a = slots[i - 1].label;
+    const b = slots[i].label;
+    // Parse hours from "9:00 AM" style labels for comparison.
+    const toMin = (label: string): number => {
+      const [time, ampm] = label.split(" ");
+      const [h, m] = time.split(":").map(Number);
+      const h24 = ampm === "PM" && h !== 12 ? h + 12 : ampm === "AM" && h === 12 ? 0 : h;
+      return h24 * 60 + m;
+    };
+    if (toMin(a) >= toMin(b)) {
+      throw new Error(`neutral slots should be chronological: ${a} >= ${b}`);
+    }
+  }
+});
+
+test("Phase 5: best_fit slot sorts BEFORE lower-scored slots", () => {
+  // 9:45 AM is a perfect gap fill (score 100). 9:00 AM and 11:00 AM are neutral.
+  // After Phase 5 sorting, 9:45 should appear FIRST in the available list.
+  const occStart1 = new Date(2030, 4, 5,  9,  0, 0, 0);
+  const occEnd1   = new Date(2030, 4, 5,  9, 45, 0, 0);
+  const occStart2 = new Date(2030, 4, 5, 10, 30, 0, 0);
+  const occEnd2   = new Date(2030, 4, 5, 11, 15, 0, 0);
+
+  const slots = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: "s1",
+    staffList: STAFF,
+    serviceDurationMinutes: 45,
+    occupancy: [
+      { staff_id: "s1", start_time_utc: occStart1.toISOString(), end_time_utc: occEnd1.toISOString() },
+      { staff_id: "s1", start_time_utc: occStart2.toISOString(), end_time_utc: occEnd2.toISOString() },
+    ],
+    nowMs: NOW_MS,
+    shortestServiceMinutes: 30,
+  });
+
+  const available = slots.filter((s) => s.available);
+  if (available.length === 0) throw new Error("no available slots");
+  assertEqual(available[0].label, "9:45 AM", "9:45 AM (best_fit) should be first");
+  assertEqual(available[0].scoringLabel, "best_fit");
+});
+
+test("Phase 5: valid slots not removed — all slots present (available + disabled)", () => {
+  // With or without scoring, every generated slot must still be in the result.
+  const before = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: BOOKING_ANY_STAFF_ID,
+    staffList: STAFF,
+    serviceDurationMinutes: 30,
+    occupancy: [],
+    nowMs: NOW_MS,
+    // No scoring
+  });
+
+  const after = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: BOOKING_ANY_STAFF_ID,
+    staffList: STAFF,
+    serviceDurationMinutes: 30,
+    occupancy: [],
+    nowMs: NOW_MS,
+    shortestServiceMinutes: 30, // With scoring enabled
+  });
+
+  assertEqual(before.length, after.length, "scoring must not add or remove slots");
+  const beforeLabels = new Set(before.map((s) => s.label));
+  for (const s of after) {
+    if (!beforeLabels.has(s.label)) {
+      throw new Error(`scoring introduced extra slot: ${s.label}`);
+    }
+  }
+});
+
+test("Phase 5: unavailable slots come after available slots in sorted output", () => {
+  // One booking occupies 10:00 AM. With scoring, unavailable slots go last.
+  const occStart = new Date(2030, 4, 5, 10, 0, 0, 0);
+  const occEnd   = new Date(2030, 4, 5, 10, 45, 0, 0);
+
+  const slots = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: "s1",
+    staffList: STAFF,
+    serviceDurationMinutes: 45,
+    occupancy: [
+      { staff_id: "s1", start_time_utc: occStart.toISOString(), end_time_utc: occEnd.toISOString() },
+    ],
+    nowMs: NOW_MS,
+    shortestServiceMinutes: 30,
+  });
+
+  // Find last available and first unavailable in the sorted output.
+  const lastAvailIdx = [...slots].reduce(
+    (max, s, i) => (s.available ? i : max), -1,
+  );
+  const firstUnavailIdx = slots.findIndex((s) => !s.available);
+
+  if (firstUnavailIdx !== -1 && lastAvailIdx !== -1) {
+    if (firstUnavailIdx < lastAvailIdx) {
+      throw new Error(
+        `unavailable slot at idx ${firstUnavailIdx} appears before last available at idx ${lastAvailIdx}`,
+      );
+    }
+  }
+});
+
+test("Phase 5: no scoring when shortestServiceMinutes omitted (backward compat)", () => {
+  // Omitting shortestServiceMinutes should produce score=0 and no labels.
+  const occStart = new Date(2030, 4, 5, 9, 0, 0, 0);
+  const occEnd   = new Date(2030, 4, 5, 9, 45, 0, 0);
+
+  const slots = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: "s1",
+    staffList: STAFF,
+    serviceDurationMinutes: 30,
+    occupancy: [
+      { staff_id: "s1", start_time_utc: occStart.toISOString(), end_time_utc: occEnd.toISOString() },
+    ],
+    nowMs: NOW_MS,
+    // shortestServiceMinutes omitted intentionally
+  });
+
+  for (const s of slots) {
+    if (s.scoringLabel !== null && s.scoringLabel !== undefined) {
+      throw new Error(`expected no scoring label when shortestServiceMinutes omitted; got ${s.scoringLabel} on ${s.label}`);
+    }
+    if ((s.score ?? 0) !== 0) {
+      throw new Error(`expected score 0 when shortestServiceMinutes omitted; got ${s.score} on ${s.label}`);
+    }
+  }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);
