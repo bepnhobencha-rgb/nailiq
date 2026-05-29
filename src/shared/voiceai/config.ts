@@ -10,7 +10,10 @@ export const OPENAI_SDP_URL            = "https://api.openai.com/v1/realtime";
 // gpt-realtime-2 uses semantic_vad (replaces server_vad with threshold/padding)
 export const DEFAULT_VAD = {
   type:               "semantic_vad",
-  interrupt_response: true,
+  eagerness:          "low",
+  create_response:    true,
+  // false: prevents self-interruption when speaker echo triggers VAD.
+  interrupt_response: false,
 } as const;
 
 export const SUPPORTED_VOICES = [

@@ -691,11 +691,15 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
                   // "low" eagerness: VAD waits for a longer natural pause before
                   // treating speech as finished. "auto" was too sensitive — after
                   // the guest answered a question the model would fire a new
-                  // response before they had finished speaking, creating an
-                  // overlapping-speech / continuous-talking loop.
+                  // response before they had finished speaking.
                   eagerness:          "low",
                   create_response:    true,
-                  interrupt_response: true,
+                  // false: prevents the model from interrupting its own in-flight
+                  // response. Without this, speaker echo picked up by the mic can
+                  // cause the VAD to fire a second response.create while the
+                  // greeting is still playing — the new response would cut off
+                  // the greeting and start talking immediately (double-speech bug).
+                  interrupt_response: false,
                 },
               },
               output: {
