@@ -35,4 +35,4 @@ export const REASONING_EFFORT_MAP: Record<string, "low" | "medium" | "high"> = {
   xhigh:   "high",
 };
 
-export const SESSION_TTL_SECONDS = 300;
+export const SESSION_TTL_SECONDS = 1800; // 30 min — matches the max OpenAI ephemeral-key TTL

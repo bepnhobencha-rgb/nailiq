@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { REALTIME_TOOLS } from "@/shared/voiceai/realtimeTools";
+import { SESSION_TTL_SECONDS } from "@/shared/voiceai/config";
 
 type Props = {
   t: BookingMessages;
@@ -35,7 +36,7 @@ type BookingResult = {
 // Silence / timeout policy
 const SILENCE_REPROMPT_MS  = 15_000;  // 15 s of user silence → nudge AI
 const SILENCE_MAX_NUDGES   = 2;       // after 2 nudges with no speech → auto-end
-const TOTAL_CALL_LIMIT_SEC = 300;     // 5-min hard cap regardless of activity
+const TOTAL_CALL_LIMIT_SEC = 1800;    // 30-min hard cap (matches SESSION_TTL_SECONDS)
 
 // PCM16 helpers for WebSocket audio
 function float32ToPCM16(float32: Float32Array): ArrayBuffer {
@@ -147,17 +148,31 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   /** Voice name (e.g. "marin") — stored so every response.create can include it,
    *  locking the voice per-response and preventing random voice drift. */
   const voiceRef          = useRef<string>("marin");
+  /** Renewal timer fires at T−60 s to swap in a fresh 30-min ephemeral key. */
+  const renewTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** True while a new WebSocket is being negotiated — guards old WS onclose. */
+  const isRenewingRef     = useRef(false);
+  /** Shown as a spinner (↻) on the timer while key renewal is in progress. */
+  const [isRenewing, setIsRenewing] = useState(false);
+  /** Live copy of transcript for the renewal closure (avoids stale state). */
+  const transcriptRef     = useRef<Transcript[]>([]);
+  /** Stable renewal function — updated via useEffect so it always has fresh deps. */
+  const performRenewalRef = useRef<() => Promise<void>>(async () => Promise.resolve());
 
   const v = t.voice;
+
+  // Keep transcriptRef in sync so the renewal closure always sees current turns
+  useEffect(() => { transcriptRef.current = transcript; }, [transcript]);
 
   const cleanup = useCallback(() => {
     try { processorRef.current?.disconnect(); } catch { /* ignore */ }
     try { wsRef.current?.close(); }             catch { /* ignore */ }
     try { audioCtxRef.current?.close(); }       catch { /* ignore */ }
     streamRef.current?.getTracks().forEach((tr) => tr.stop());
-    if (timerRef.current)         clearInterval(timerRef.current);
-    if (silenceTimerRef.current)  clearTimeout(silenceTimerRef.current);
+    if (timerRef.current)          clearInterval(timerRef.current);
+    if (silenceTimerRef.current)   clearTimeout(silenceTimerRef.current);
     if (typingIntervalRef.current) { clearInterval(typingIntervalRef.current); typingIntervalRef.current = null; }
+    if (renewTimerRef.current)     { clearTimeout(renewTimerRef.current); renewTimerRef.current = null; }
     // Stop the <audio> element and release the media stream
     if (audioElementRef.current) {
       audioElementRef.current.pause();
@@ -174,6 +189,8 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     aiActiveRef.current       = false;
     repromptCountRef.current  = 0;
     processedCallIdsRef.current.clear();
+    isRenewingRef.current = false;
+    setIsRenewing(false);
   }, []);
 
   const endSession = useCallback(async (finalStatus: "completed" | "abandoned" | "failed") => {
@@ -534,6 +551,159 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   // are stable refs. dispatchFunctionCall is defined inside the callback and
   // captures those correctly. Adding them to deps would cause infinite re-renders.
 
+  // ── Session auto-renewal ────────────────────────────────────────────────────
+  // OpenAI ephemeral keys last SESSION_TTL_SECONDS (1800 s = 30 min).
+  // At T−60 s we prefetch a new key, open a new WebSocket with identical audio
+  // config, inject the last 8 transcript turns as context, then atomically swap
+  // wsRef so the mic ScriptProcessor transparently routes to the new connection.
+  // The old WS is closed gracefully (code 1000); isRenewingRef prevents its
+  // onclose from misreporting the session as dropped.
+  // Defined AFTER handleRealtimeEvent to avoid TypeScript forward-reference error.
+  useEffect(() => {
+    performRenewalRef.current = async () => {
+      if (statusRef.current !== "connected" || isRenewingRef.current) return;
+      isRenewingRef.current = true;
+      setIsRenewing(true);
+      console.log("[voice/renew] fetching new session key…");
+
+      try {
+        const sessRes = await fetch("/api/voice/session", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ salonSlug: shopSlug, language }),
+        });
+        if (!sessRes.ok || statusRef.current !== "connected") {
+          isRenewingRef.current = false; setIsRenewing(false); return;
+        }
+        const { ephemeralKey: newKey, model: newModel, expiresAt: newExpiresAtRaw } =
+          await sessRes.json() as { ephemeralKey: string; model: string; expiresAt?: number };
+        if (statusRef.current !== "connected") {
+          isRenewingRef.current = false; setIsRenewing(false); return;
+        }
+
+        const newWsUrl = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(newModel)}`;
+        const newWs = new WebSocket(newWsUrl, ["realtime", `openai-insecure-api-key.${newKey}`]);
+        console.log("[voice/renew] new WS opening…");
+
+        newWs.onopen = () => {
+          // Inject recent conversation turns so the model can continue naturally
+          const recent  = transcriptRef.current.slice(-8);
+          const ctxNote = recent.length > 0
+            ? `\n\n[SESSION_RENEWED] Continue naturally without mentioning the renewal. Recent exchange:\n${
+                recent.map((e) => `${e.role === "ai" ? "AI" : "Customer"}: ${e.text}`).join("\n")
+              }`
+            : "\n\n[SESSION_RENEWED] Continue naturally.";
+
+          newWs.send(JSON.stringify({
+            type: "session.update",
+            session: {
+              type:              "realtime",
+              output_modalities: ["audio"],
+              instructions:      `${instructionsRef.current ?? ""}${ctxNote}`,
+              tools:             [...REALTIME_TOOLS],
+              tool_choice:       "auto",
+              audio: {
+                input: {
+                  format:          { type: "audio/pcm", rate: 24000 },
+                  transcription:   { model: "gpt-realtime-whisper" },
+                  noise_reduction: { type: "far_field" },
+                  turn_detection:  {
+                    type:               "semantic_vad",
+                    eagerness:          "low",
+                    create_response:    true,
+                    interrupt_response: false,
+                  },
+                },
+                output: { format: { type: "audio/pcm", rate: 24000 }, voice: voiceRef.current },
+              },
+            },
+          }));
+        };
+
+        newWs.onmessage = (e: MessageEvent) => {
+          try {
+            const ev     = JSON.parse(e.data as string) as Record<string, unknown>;
+            const evType = ev.type as string;
+
+            // session.updated on the new WS → complete the atomic swap
+            if (evType === "session.updated" && isRenewingRef.current) {
+              console.log("[voice/renew] new session ready — swapping WebSocket");
+              const oldWs = wsRef.current;
+              wsRef.current = newWs;
+
+              // Wire full ongoing handlers onto the new WS
+              newWs.onmessage = (evt: MessageEvent) => {
+                try {
+                  const parsed = JSON.parse(evt.data as string) as Record<string, unknown>;
+                  const t      = parsed.type as string;
+                  const noisy  =
+                    t === "response.audio.delta" || t === "response.output_audio.delta" ||
+                    t === "input_audio_buffer.appended" || t === "input_audio_buffer.append";
+                  if (!noisy) {
+                    const wantFull =
+                      t.includes("function") || t.includes("tool") || t.includes("item") ||
+                      t === "response.done"  || t === "session.updated";
+                    console.log("[voice/ws]", t, wantFull ? JSON.stringify(parsed) : "");
+                  }
+                  handleRealtimeEvent(parsed, shopSlug, sessionIdRef.current);
+                } catch {}
+              };
+              newWs.onerror = () => {
+                if (statusRef.current !== "ended") {
+                  setError("connection_failed");
+                  statusRef.current = "error";
+                  setStatus("error");
+                  cleanup();
+                }
+              };
+              newWs.onclose = (evt) => {
+                if (isRenewingRef.current) return; // another renewal in progress
+                if (statusRef.current === "connected") {
+                  if (evt.code !== 1000) {
+                    setError(`connection_closed_${evt.code}`);
+                    statusRef.current = "error";
+                    setStatus("error");
+                  } else {
+                    statusRef.current = "ended";
+                    setStatus("ended");
+                  }
+                }
+              };
+
+              // Gracefully close old WS; isRenewingRef prevents its onclose from triggering error
+              setTimeout(() => { try { oldWs?.close(1000, "renewed"); } catch {} }, 200);
+
+              isRenewingRef.current = false;
+              setIsRenewing(false);
+
+              // Schedule the NEXT renewal for this new key
+              const nextExpiresAtMs = (newExpiresAtRaw ?? (Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS)) * 1000;
+              const nextDelay = nextExpiresAtMs - 60_000 - Date.now();
+              if (nextDelay > 0) {
+                renewTimerRef.current = setTimeout(() => { void performRenewalRef.current(); }, nextDelay);
+              }
+              return;
+            }
+
+            // Before swap completes, forward other events normally
+            handleRealtimeEvent(ev, shopSlug, sessionIdRef.current);
+          } catch {}
+        };
+
+        newWs.onerror = () => {
+          console.error("[voice/renew] new WS error — renewal aborted");
+          isRenewingRef.current = false;
+          setIsRenewing(false);
+        };
+
+      } catch (err) {
+        console.error("[voice/renew] renewal failed:", err);
+        isRenewingRef.current = false;
+        setIsRenewing(false);
+      }
+    };
+  }, [shopSlug, language, handleRealtimeEvent, cleanup]);  // eslint-disable-line react-hooks/exhaustive-deps
+
   const start = useCallback(async () => {
     if (statusRef.current !== "idle" && statusRef.current !== "error") return;
     statusRef.current = "session_init";
@@ -552,12 +722,13 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         const body = await sessRes.json().catch(() => ({})) as Record<string, string>;
         throw new Error(body.error ?? `session_init_${sessRes.status}`);
       }
-      const { ephemeralKey, model: realtimeModel, sessionId, voice, instructions } = await sessRes.json() as {
+      const { ephemeralKey, model: realtimeModel, sessionId, voice, instructions, expiresAt: expiresAtRaw } = await sessRes.json() as {
         ephemeralKey:  string;
         model:         string;
         sessionId:     string | null;
         voice:         string;
         instructions?: string;
+        expiresAt?:    number;
       };
       sessionIdRef.current    = sessionId;
       // Store instructions, language, and voice so downstream response.create
@@ -566,6 +737,16 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       instructionsRef.current = instructions ?? null;
       sessionLangRef.current  = language;
       voiceRef.current        = voice;
+
+      // Schedule session renewal at T−60 s so the WebSocket never expires mid-call.
+      // expiresAtRaw is a Unix timestamp (seconds) from the session API.
+      // Without this the connection drops after SESSION_TTL_SECONDS with no warning.
+      const expiresAtMs = (expiresAtRaw ?? (Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS)) * 1000;
+      const renewDelay  = expiresAtMs - 60_000 - Date.now();
+      if (renewDelay > 0) {
+        if (renewTimerRef.current) clearTimeout(renewTimerRef.current);
+        renewTimerRef.current = setTimeout(() => { void performRenewalRef.current(); }, renewDelay);
+      }
 
       // 2. Request microphone
       statusRef.current = "mic_request";
@@ -770,6 +951,8 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       };
 
       ws.onclose = (e) => {
+        // During renewal the old WS is explicitly closed (code 1000) — not an error.
+        if (isRenewingRef.current) return;
         if (statusRef.current === "connected") {
           if (e.code !== 1000) {
             setError(`connection_closed_${e.code}`);
@@ -923,7 +1106,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
                : status === "connecting"   ? v.settingUp
                : isSpeaking               ? v.aiSpeaking
                : isThinking               ? v.processing
-               : status === "connected"   ? `${v.listening} ${formatDuration(durationSec)}`
+               : status === "connected"   ? `${v.listening} ${formatDuration(durationSec)}${isRenewing ? " ↻" : ""}`
                : status === "ended" && bookingResult ? v.bookingConfirmed
                : status === "ended"       ? v.ended
                : status === "error"       ? (error ?? "Error")
