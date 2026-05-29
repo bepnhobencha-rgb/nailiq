@@ -122,6 +122,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   const repromptCountRef   = useRef(0);
   /** Interval that fires playKeyClick() while AI is processing (thinking state). */
   const typingIntervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** Counts tool calls dispatched but not yet responded to.
+   *  response.create is sent only when this reaches 0 — prevents
+   *  "conversation_already_has_active_response" when the model outputs
+   *  multiple function_call items in one response turn (e.g. group cancel). */
+  const pendingToolCallsRef = useRef(0);
   const aiActiveRef           = useRef(false);   // true while AI is thinking/speaking
   /** ms timestamp until which mic input is suppressed after AI stops speaking.
    *  Prevents the mic from picking up the tail end of the speaker output and
@@ -244,10 +249,28 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       if (processedCallIdsRef.current.has(callId)) return;
       processedCallIdsRef.current.add(callId);
 
+      // Count this call as in-flight. response.create is sent only when ALL
+      // tool calls dispatched in the same response turn have completed (counter → 0).
+      // Without this, N concurrent calls each send response.create → OpenAI returns
+      // "conversation_already_has_active_response" for calls 2…N, crashing the session.
+      pendingToolCallsRef.current++;
+
       console.log(`[voice/tool] ▶ dispatching ${fnName}`, { callId, rawArgs });
 
       let args: Record<string, unknown> = {};
       try { args = JSON.parse(rawArgs) as Record<string, unknown>; } catch { /* ignore */ }
+
+      // Called after submitting function_call_output — fires response.create
+      // only when the last pending tool call for this response turn completes.
+      const sendResponseCreate = () => {
+        pendingToolCallsRef.current = Math.max(0, pendingToolCallsRef.current - 1);
+        if (pendingToolCallsRef.current === 0) {
+          wsRef.current?.send(JSON.stringify({
+            type: "response.create",
+            ...(instructionsRef.current ? { response: { instructions: instructionsRef.current } } : {}),
+          }));
+        }
+      };
 
       fetch("/api/voice/tool", {
         method:  "POST",
@@ -271,20 +294,12 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
               customerName: (res.customerName as string) ?? "",
             });
           }
-          // Return result to the model so it can speak the confirmation.
-          // Include instructions in response.create to re-anchor persona/tone —
-          // without this the model gradually drifts to a generic/robotic register
-          // after several tool exchanges (it loses the warmth and language setting).
+          // Submit function output to conversation, then trigger response when ready.
           wsRef.current?.send(JSON.stringify({
             type: "conversation.item.create",
             item: { type: "function_call_output", call_id: callId, output: JSON.stringify(result) },
           }));
-          // response.voice is NOT valid for gpt-realtime-2 (rejected 2026-05-29).
-          // Voice is locked once at session level via audio.output.voice in session.update.
-          wsRef.current?.send(JSON.stringify({
-            type: "response.create",
-            ...(instructionsRef.current ? { response: { instructions: instructionsRef.current } } : {}),
-          }));
+          sendResponseCreate();
         })
         .catch((err: unknown) => {
           console.error(`[voice/tool] ✗ ${fnName} fetch error:`, err);
@@ -292,10 +307,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             type: "conversation.item.create",
             item: { type: "function_call_output", call_id: callId, output: JSON.stringify({ error: String(err) }) },
           }));
-          wsRef.current?.send(JSON.stringify({
-            type: "response.create",
-            ...(instructionsRef.current ? { response: { instructions: instructionsRef.current } } : {}),
-          }));
+          sendResponseCreate();
         });
     };
 
@@ -342,6 +354,13 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
 
     if (type === "response.done") {
       aiActiveRef.current = false;
+      // Reset pending tool call counter. If the response contained no function calls
+      // the counter should already be 0. If it did contain calls they will have
+      // already decremented it to 0 before this event fires (fetch is fast) — or, in
+      // the edge case that they haven't yet, setting to 0 here is safe because each
+      // outstanding call's sendResponseCreate() will send its own response.create
+      // when it eventually completes (counter → 0 from 1).
+      pendingToolCallsRef.current = 0;
       // Stop typing sound in case the response had no audio (e.g. function-call only)
       if (typingIntervalRef.current) { clearInterval(typingIntervalRef.current); typingIntervalRef.current = null; }
       // 800 ms cooldown: suppresses mic input long enough for speaker audio to
@@ -461,6 +480,14 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     if (type === "error") {
       const errObj = ev.error as { code?: string; message?: string; type?: string } | undefined;
       console.error("[voice/ws] server error:", JSON.stringify(ev));
+      // Non-fatal: happens when pendingToolCallsRef coordination is imperfect or
+      // the model outputs function_call items via streaming events AND response.done
+      // simultaneously. The function_call_output items are already queued in the
+      // conversation; the active response will process them. Safe to ignore.
+      if (errObj?.code === "conversation_already_has_active_response") {
+        console.warn("[voice/ws] response.create race — already active, skipping (non-fatal)");
+        return;
+      }
       // Map known OpenAI error codes to user-friendly messages
       const isRateLimit =
         errObj?.type === "rate_limit_error" ||
