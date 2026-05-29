@@ -377,15 +377,17 @@ async function handleCancelBooking(
     const last9  = digits.slice(-9);
     const now    = new Date().toISOString();
 
+    // Limit 20 — group bookings create one row per member (8-person group = 8 rows).
+    // Old limit of 3 caused "only 3 cancelled out of 8" for group bookings.
     const { data: phoneRows } = await supabase
       .from("bookings")
-      .select("id, client_name, start_time_utc, status, services!bookings_service_id_fkey(name)")
+      .select("id, group_id, client_name, start_time_utc, status, services!bookings_service_id_fkey(name)")
       .eq("salon_id", salon.id)
       .ilike("client_phone", `%${last9}`)
       .gte("start_time_utc", now)
       .neq("status", "cancelled")
       .order("start_time_utc", { ascending: true })
-      .limit(3);
+      .limit(20);
 
     if (!phoneRows || phoneRows.length === 0) {
       return NextResponse.json({
@@ -402,31 +404,91 @@ async function handleCancelBooking(
         timeZone: tz, weekday: "short", month: "short", day: "numeric",
         hour: "numeric", minute: "2-digit", hour12: true,
       });
-      return { booking_id: r.id, service_name: svcName, date_time: localTime, status: r.status, client_name: r.client_name };
+      return {
+        booking_id:  r.id as string,
+        group_id:    (r.group_id as string | null) ?? null,
+        service_name: svcName,
+        date_time:   localTime,
+        status:      r.status as string,
+        client_name: r.client_name as string,
+      };
     };
 
-    if (phoneRows.length > 1) {
-      // Multiple bookings — return all; AI must ask customer which to cancel
+    const rows = phoneRows.map(formatRow);
+
+    // Detect group bookings: all rows sharing the same non-null group_id
+    const firstGroupId = rows[0]?.group_id ?? null;
+    const allSameGroup = firstGroupId !== null && rows.every((r) => r.group_id === firstGroupId);
+
+    if (allSameGroup) {
+      // All found bookings belong to one group — offer to cancel the whole group at once.
+      // Cancel by group_id so any members who were already partly cancelled are included.
+      return NextResponse.json({
+        confirmation_required: true,
+        is_group_booking:      true,
+        group_id:              firstGroupId,
+        group_size:            rows.length,
+        bookings:              rows,
+        hint: `This is a GROUP booking of ${rows.length} people sharing the same timeslot. ` +
+              `Read back the group details (date, time, services) and ask: "Bạn muốn huỷ cả nhóm ${rows.length} người không?" ` +
+              `On confirmation: call cancel_booking with group_id="${firstGroupId}" (not a booking_id) to cancel ALL members at once.`,
+      });
+    }
+
+    if (rows.length > 1) {
+      // Multiple independent bookings — AI must ask which to cancel
       return NextResponse.json({
         confirmation_required: true,
         multiple_bookings:     true,
-        bookings:              phoneRows.map(formatRow),
+        bookings:              rows,
         hint: "Multiple upcoming bookings found. Read them back to the customer, ask which one to cancel, then call cancel_booking(booking_id) with their choice.",
       });
     }
 
-    // Exactly one booking — return for verbal confirmation before cancelling
+    // Exactly one individual booking — return for verbal confirmation before cancelling
     return NextResponse.json({
       confirmation_required: true,
-      booking:               formatRow(phoneRows[0]!),
+      booking:               rows[0]!,
       hint: "Read this booking back to the customer and ask them to confirm cancellation. Then call cancel_booking(booking_id) with the booking_id above to execute.",
+    });
+  }
+
+  // ── Path A: group_id provided → cancel ALL bookings in the group ────────────
+  const groupIdArg = args.group_id as string | undefined;
+  if (!bookingId && groupIdArg) {
+    const { data: groupRows, error: grpErr } = await supabase
+      .from("bookings")
+      .select("id, status")
+      .eq("salon_id", salon.id)
+      .eq("group_id", groupIdArg)
+      .neq("status", "cancelled");
+
+    if (grpErr || !groupRows || groupRows.length === 0) {
+      return NextResponse.json({ error: "group_not_found_or_already_cancelled" }, { status: 404 });
+    }
+
+    const ids = groupRows.map((r) => r.id as string);
+    const { error: cancelErr } = await supabase
+      .from("bookings")
+      .update({ status: "cancelled" })
+      .in("id", ids);
+
+    if (cancelErr) {
+      return NextResponse.json({ error: "cancel_failed", detail: cancelErr.message }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      success:        true,
+      cancelled_count: ids.length,
+      group_id:        groupIdArg,
+      message: `Đã huỷ thành công ${ids.length} lịch trong nhóm.`,
     });
   }
 
   // ── Path A: booking_id provided → cancel immediately ────────────────────────
   const { data: booking } = await supabase
     .from("bookings")
-    .select("id, salon_id, status, client_name, start_time_utc, services!bookings_service_id_fkey(name)")
+    .select("id, salon_id, status, client_name, group_id, start_time_utc, services!bookings_service_id_fkey(name)")
     .eq("id", bookingId!)
     .eq("salon_id", salon.id)
     .single();

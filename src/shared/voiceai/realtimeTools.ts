@@ -72,31 +72,36 @@ export const REALTIME_TOOLS = [
     type: "function" as const,
     name: "cancel_booking",
     description:
-      "Cancel an existing booking. Provide EITHER booking_id OR customer_phone — not both needed.\n\n" +
-      "MODE A — booking_id provided: Cancels immediately. Use this when you already have the booking_id " +
-      "(from confirm_booking this session, or from a previous cancel_booking call that returned confirmation_required). " +
-      "ALWAYS read back the booking details and get verbal confirmation from the customer BEFORE calling with booking_id.\n\n" +
-      "MODE B — customer_phone provided (no booking_id): Looks up upcoming bookings by phone WITHOUT cancelling. " +
-      "Returns booking details with confirmation_required: true. Use this in new sessions when you don't have a booking_id. " +
-      "After getting the result: read back the booking, ask customer to confirm, then call again with booking_id to execute.\n\n" +
+      "Cancel an existing booking. Provide ONE of: booking_id, group_id, or customer_phone.\n\n" +
+      "MODE A — booking_id provided: Cancels a single booking immediately. Use when you already have the booking_id.\n\n" +
+      "MODE GROUP — group_id provided: Cancels ALL bookings in a group at once. Use when the phone lookup " +
+      "returns is_group_booking: true and the customer confirms they want to cancel the whole group. " +
+      "Pass the group_id from the lookup result — do NOT pass individual booking_ids for group cancellation.\n\n" +
+      "MODE B — customer_phone provided (no booking_id/group_id): Looks up upcoming bookings WITHOUT cancelling. " +
+      "Returns booking details with confirmation_required: true. Read back the booking, get verbal OK, " +
+      "then call again with booking_id (individual) or group_id (group) to execute.\n\n" +
+      "ALWAYS get verbal confirmation from the customer BEFORE passing booking_id or group_id.\n" +
       "After a successful cancellation: thank them warmly and invite them to rebook anytime.",
     parameters: {
       type: "object" as const,
       properties: {
         booking_id: {
           type: "string",
-          description: "UUID of the booking to cancel. Required to actually execute the cancellation. Omit to use phone lookup mode instead.",
+          description: "UUID of a single booking to cancel. Use for individual bookings only.",
+        },
+        group_id: {
+          type: "string",
+          description: "UUID of a group booking to cancel ALL members at once. Use when is_group_booking: true in the phone lookup result.",
         },
         customer_phone: {
           type: "string",
-          description: "Customer's phone number. Used in MODE B (new session, no booking_id yet) to look up their upcoming bookings. The result will include the booking_id to use in the follow-up call.",
+          description: "Customer's phone number for lookup mode. Returns booking details without cancelling.",
         },
         reason: {
           type: "string",
-          description: "Short reason the customer gave for cancelling, e.g. 'customer request', 'schedule conflict'. Optional.",
+          description: "Short reason the customer gave for cancelling. Optional.",
         },
       },
-      // At least one of booking_id or customer_phone is required; enforced server-side.
       required: [],
     },
   },
