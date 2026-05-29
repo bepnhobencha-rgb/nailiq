@@ -344,14 +344,15 @@ export const bookingVi: BookingMessages = {
 
     needToChange: "Cần thay đổi gì không?",
     changeRequestHint: "Gửi yêu cầu và tiệm sẽ xem xét.",
-    changeServiceBtn: "Đổi dịch vụ",
-    changeStaffBtn: "Chọn thợ ưa thích",
+    changeServiceBtn: "Yêu cầu đổi dịch vụ",
+    changeStaffBtn: "Yêu cầu chọn thợ",
     addNoteBtn: "Nhắn tin cho tiệm",
     changeRequestNotePlaceholder: "vd. Tôi muốn kiểu móng hoặc màu khác…",
     changeRequestSubmit: "Gửi yêu cầu",
     changeRequestSubmitting: "Đang gửi…",
-    changeRequestSuccess: "Đã gửi yêu cầu! Tiệm sẽ liên hệ bạn sớm.",
+    changeRequestSuccess: "Yêu cầu của bạn đã được gửi đến tiệm.",
     changeRequestErrGeneric: "Không thể gửi yêu cầu. Vui lòng thử lại.",
+    changeRequestClose: "Đóng",
   },
   chat: {
     trigger: "Hỏi AI",

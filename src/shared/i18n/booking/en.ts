@@ -455,7 +455,7 @@ export const bookingEn = {
     /** Expired banner */
     expiredBanner: "This party link has expired. Please ask the organiser to share a new one.",
     /** Slot card */
-    claimed: "Claimed",
+    claimed: "Confirmed",
     claimBtn: "This is me",
     cancelBtn: "Cancel",
     expiredLabel: "Expired",
@@ -498,14 +498,15 @@ export const bookingEn = {
     /** Part E — change request section shown after claiming. */
     needToChange: "Need to change something?",
     changeRequestHint: "Submit a request and the salon will review it.",
-    changeServiceBtn: "Change service",
-    changeStaffBtn: "Preferred staff",
-    addNoteBtn: "Note to salon",
+    changeServiceBtn: "Request service change",
+    changeStaffBtn: "Request preferred staff",
+    addNoteBtn: "Message salon",
     changeRequestNotePlaceholder: "e.g. I'd prefer a different design or nail colour…",
     changeRequestSubmit: "Submit request",
     changeRequestSubmitting: "Submitting…",
-    changeRequestSuccess: "Request sent! The salon will be in touch.",
+    changeRequestSuccess: "Your request has been sent to the salon.",
     changeRequestErrGeneric: "Couldn't submit request. Please try again.",
+    changeRequestClose: "Close",
   },
   chat: {
     trigger: "Ask AI",
