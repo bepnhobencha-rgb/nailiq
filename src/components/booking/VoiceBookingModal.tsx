@@ -607,11 +607,10 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         // Note: function_call items are separate from output_modalities —
         // tools fire regardless of whether "text" is in output_modalities.
         //
-        // VOICE LOCKING — voice is set in TWO places (belt-and-suspenders):
-        //   1. session.voice (top-level, standard SDK field)
-        //   2. session.audio.output.voice (gpt-realtime-2 nested format)
-        // Without the top-level field, OpenAI may ignore the nested value and
-        // pick a random default voice → causes "old/young" voice inconsistency.
+        // VOICE — gpt-realtime-2 uses ONLY the nested audio.output.voice format.
+        // session.voice (top-level) is NOT valid for this model → rejected with
+        // "unknown_parameter" error (confirmed 2026-05-29). Voice is locked via
+        // audio.output.voice below and reinforced per-response in response.create.
         // temperature: 0.8 is the recommended value for audio models (range 0.6–1.2).
         // Setting it explicitly prevents implicit defaults from varying between
         // model versions and keeps voice character consistent throughout the call.
@@ -620,7 +619,6 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
           session: {
             type:              "realtime",
             output_modalities: ["text", "audio"],
-            voice,             // top-level — standard SDK field, must be here
             temperature:       0.8,
             ...(instructions ? { instructions } : {}),
             tools:             [...REALTIME_TOOLS],
