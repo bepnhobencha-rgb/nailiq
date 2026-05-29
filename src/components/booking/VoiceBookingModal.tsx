@@ -685,7 +685,8 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
                 // Without this the model hears the user but the transcript
                 // never shows the user's words (conversation.item.input_audio_
                 // transcription.completed never fires).
-                transcription:  { model: "whisper-1" },
+                transcription:  { model: "gpt-realtime-whisper" },
+                noise_reduction: { type: "far_field" },
                 turn_detection: {
                   type:               "semantic_vad",
                   // "low" eagerness: VAD waits for a longer natural pause before
