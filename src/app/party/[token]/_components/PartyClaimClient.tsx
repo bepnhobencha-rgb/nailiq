@@ -108,6 +108,14 @@ function SlotCard({
     setEditOpen(false);
   }
 
+  /** Called by ClaimForm on success — updates local displayName immediately
+   *  (useState does not re-initialize from prop changes, so we must set it
+   *  here rather than relying on the parent's setSlots propagation). */
+  function handleClaimedHere(name: string) {
+    setDisplayName(name);
+    onClaimed(slot.claimId, name);
+  }
+
   return (
     <div
       data-testid={`party-slot-card-${slot.claimId}`}
@@ -148,7 +156,7 @@ function SlotCard({
           token={token}
           claimId={slot.claimId}
           t={t}
-          onClaimed={(name) => onClaimed(slot.claimId, name)}
+          onClaimed={handleClaimedHere}
         />
       )}
 

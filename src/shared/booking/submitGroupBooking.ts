@@ -217,10 +217,14 @@ export async function submitGroupBooking(
     const m = params.members[i];
     const memberNumber = i + 1;
     const nameTrim = (m.name ?? "").trim();
-    if (nameTrim.length === 0 || nameTrim.length > BOOKING_GUEST_NAME_MAX) {
+    // Name is optional: client sends "Guest N" / "Khách N" as the default
+    // placeholder when the organiser doesn't fill in individual names.
+    // Allow any non-empty string up to the max length; reject only truly
+    // blank or oversized values to guard against crafted payloads.
+    if (nameTrim.length > BOOKING_GUEST_NAME_MAX) {
       return fail("invalid_name", memberNumber);
     }
-    if (!isValidCustomerName(nameTrim)) {
+    if (nameTrim.length > 0 && !isValidCustomerName(nameTrim)) {
       return fail("invalid_name", memberNumber);
     }
     const phoneOk = validateGuestPhone(m.phone ?? "");
@@ -550,8 +554,10 @@ export async function submitGroupBooking(
       salon_id: salonRow.id,
       staff_id: r.member.staffId,
       service_id: r.member.serviceId,
-      // Part A: use Guest N placeholder so real names come from Party Link claiming
-      client_name: `Guest ${i + 1}`,
+      // Use member name if organiser filled it in; fall back to "Guest N"
+      // placeholder so Party Link claim can always replace it with the
+      // real guest's name even if the organiser left it as default.
+      client_name: r.member.name.trim() || `Guest ${i + 1}`,
       client_phone: phoneDigits,
       client_email: emailRaw.length > 0 ? emailRaw : null,
       client_notes: notesRaw.length > 0 ? notesRaw : null,

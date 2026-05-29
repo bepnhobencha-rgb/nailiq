@@ -100,8 +100,8 @@ type MemberDraft = {
   preferredStaffId: string | null;
 };
 
-function blankMember(): MemberDraft {
-  return { name: "", serviceId: "", preferredStaffId: null };
+function blankMember(index = 0, guestLabel = "Guest"): MemberDraft {
+  return { name: `${guestLabel} ${index + 1}`, serviceId: "", preferredStaffId: null };
 }
 
 /**
@@ -179,10 +179,10 @@ export function BookingGroupFlow({
   // ── Wizard state (hoisted; preserves on back-nav) ──────────────
   const [step, setStep] = useState<Step>(1);
   const [size, setSize] = useState(2);
-  const [members, setMembers] = useState<MemberDraft[]>(() => [
-    blankMember(),
-    blankMember(),
-  ]);
+  const [members, setMembers] = useState<MemberDraft[]>(() => {
+    const lbl = t?.groupBooking?.groupGuestLabel ?? "Guest";
+    return [blankMember(0, lbl), blankMember(1, lbl)];
+  });
   const [date, setDate] = useState("");
   /** Phase 1 sync mode: arrive together (default) or finish together. */
   const [syncMode, setSyncMode] = useState<GroupSyncMode>("sync_start");
@@ -361,11 +361,12 @@ export function BookingGroupFlow({
   // ── Helpers ────────────────────────────────────────────────────
   function applySize(n: number) {
     const clamped = Math.max(2, Math.min(maxGroupSize, Math.round(n)));
+    const lbl = groupCopy?.groupGuestLabel ?? "Guest";
     setSize(clamped);
     setMembers((prev) => {
       const next: MemberDraft[] = [];
       for (let i = 0; i < clamped; i++) {
-        next.push(prev[i] ?? blankMember());
+        next.push(prev[i] ?? blankMember(i, lbl));
       }
       return next;
     });
@@ -416,7 +417,7 @@ export function BookingGroupFlow({
     if (step === 2 && target !== 2) {
       const errs = new Set<string>();
       members.forEach((m, i) => {
-        if (m.name.trim().length === 0) errs.add(`m${i}.name`);
+        // Name is optional — default Guest placeholder is used if empty.
         if (!m.serviceId) errs.add(`m${i}.service`);
       });
       if (errs.size > 0) {
@@ -599,8 +600,9 @@ export function BookingGroupFlow({
           const hh = parts.find((p) => p.type === "hour")?.value ?? "00";
           const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
           const time24 = `${hh}:${mm}`;
+          const guestLbl = groupCopy?.groupGuestLabel ?? "Guest";
           return {
-            name: draft.name.trim(),
+            name: draft.name.trim() || `${guestLbl} ${a.memberIndex + 1}`,
             phone: primaryPhone,
             email: primaryEmail.trim() || undefined,
             serviceId: draft.serviceId,
@@ -1414,12 +1416,18 @@ function ServiceStaffStep({
             staff={staff}
             capability={capability}
             isDuplicateStaff={duplicateStaffIdx.has(i)}
-            nameError={stepErrors.has(`m${i}.name`)}
+            nameError={false}
             serviceError={stepErrors.has(`m${i}.service`)}
             onChange={(patch) => onPatchMember(i, patch)}
           />
         ))}
       </div>
+
+      {groupCopy.partyLinkMemberHint ? (
+        <p className="text-xs text-[var(--booking-text-muted)]">
+          {groupCopy.partyLinkMemberHint}
+        </p>
+      ) : null}
 
       <StickyFooter
         leftLabel={groupCopy.totalLabel ?? "Total"}
@@ -1498,24 +1506,17 @@ function MemberCard({
             id={`group-member-${index}-name-input`}
             type="text"
             autoComplete="name"
-            placeholder={t.clientNameLabel}
+            placeholder={`${groupCopy.groupGuestLabel ?? "Guest"} ${index + 1}`}
             value={member.name}
             maxLength={100}
-            aria-invalid={nameError || undefined}
             onChange={(e) => onChange({ name: e.target.value })}
             className={cn(
               "nq-booking-field",
               member.name.trim().length > 0 &&
                 "font-medium text-[var(--booking-text)]",
-              nameError && "border-nq-error/50",
             )}
             data-testid={`group-member-${index}-name`}
           />
-          {nameError ? (
-            <p role="alert" className="mt-1 text-xs text-nq-error">
-              {t.bookingErrors.nameRequired}
-            </p>
-          ) : null}
         </div>
 
         <div>

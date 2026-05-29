@@ -65,6 +65,33 @@ function base64ToFloat32(b64: string): Float32Array {
   return float32;
 }
 
+/**
+ * Synthesise a single soft keyboard-key click through the Web Audio graph.
+ * Duration ≈ 25 ms; gain 0.10 — audible but doesn't compete with speech.
+ * Called on a repeating interval while the AI is "thinking" (response.created
+ * → first response.output_audio.delta) to give audio feedback that the system
+ * is processing.
+ */
+function playKeyClick(ctx: AudioContext): void {
+  try {
+    const len = Math.floor(ctx.sampleRate * 0.025); // 25 ms of samples
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d   = buf.getChannelData(0);
+    // White-noise burst with a sharp exponential decay — "click" envelope
+    const decay = ctx.sampleRate * 0.004; // time constant ≈ 4 ms
+    for (let i = 0; i < len; i++) {
+      d[i] = (Math.random() * 2 - 1) * Math.exp(-i / decay);
+    }
+    const src  = ctx.createBufferSource();
+    src.buffer = buf;
+    const gain = ctx.createGain();
+    gain.gain.value = 0.10;
+    src.connect(gain);
+    gain.connect(ctx.destination);
+    src.start();
+  } catch { /* AudioContext may be suspended or closed — silently ignore */ }
+}
+
 export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Props) {
   const [status, setStatus]               = useState<Status>("idle");
   const [aiActivity, setAiActivity]       = useState<AiActivity>("idle");
@@ -91,8 +118,10 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   const processedCallIdsRef = useRef<Set<string>>(new Set());
 
   // Silence / inactivity tracking (all refs — safe to use in async callbacks)
-  const silenceTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const repromptCountRef = useRef(0);
+  const silenceTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const repromptCountRef   = useRef(0);
+  /** Interval that fires playKeyClick() while AI is processing (thinking state). */
+  const typingIntervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
   const aiActiveRef           = useRef(false);   // true while AI is thinking/speaking
   /** ms timestamp until which mic input is suppressed after AI stops speaking.
    *  Prevents the mic from picking up the tail end of the speaker output and
@@ -100,6 +129,15 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   const postSpeechCooldownRef = useRef(0);
   // Stable function stored in ref to avoid stale-closure issues in timer callbacks
   const scheduleNudgeRef = useRef<() => void>(() => undefined);
+  /** Full system-prompt instructions stored so response.create calls after tool
+   *  results can re-anchor the persona/tone. Without this, the model drifts to
+   *  a generic/robotic register after several tool exchanges. */
+  const instructionsRef   = useRef<string | null>(null);
+  /** Session language — needed by the silence nudge so it stays in-language. */
+  const sessionLangRef    = useRef<"en" | "vi">("vi");
+  /** Voice name (e.g. "marin") — stored so every response.create can include it,
+   *  locking the voice per-response and preventing random voice drift. */
+  const voiceRef          = useRef<string>("marin");
 
   const v = t.voice;
 
@@ -108,8 +146,9 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     try { wsRef.current?.close(); }             catch { /* ignore */ }
     try { audioCtxRef.current?.close(); }       catch { /* ignore */ }
     streamRef.current?.getTracks().forEach((tr) => tr.stop());
-    if (timerRef.current)        clearInterval(timerRef.current);
-    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    if (timerRef.current)         clearInterval(timerRef.current);
+    if (silenceTimerRef.current)  clearTimeout(silenceTimerRef.current);
+    if (typingIntervalRef.current) { clearInterval(typingIntervalRef.current); typingIntervalRef.current = null; }
     // Stop the <audio> element and release the media stream
     if (audioElementRef.current) {
       audioElementRef.current.pause();
@@ -165,14 +204,24 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
           return;
         }
 
-        // Nudge AI to re-engage (per-response instruction override, no fake user message)
+        // Nudge AI to re-engage (per-response instruction override, no fake user message).
+        // Always include the full session instructions so the nudge stays in-persona
+        // and in the correct language (without this, the model reverts to English even
+        // in a Vietnamese session and loses the warmth/tone of the configured persona).
+        const isVi   = sessionLangRef.current === "vi";
+        const nudge  = repromptCountRef.current === 1
+          ? (isVi
+              ? "Khách chưa nói gì một lúc. Hãy hỏi nhẹ nhàng xem họ còn đó không, bằng tiếng Việt."
+              : "The customer has not spoken for a while. Gently check if they are still there.")
+          : (isVi
+              ? "Đây là lần nhắc thứ hai. Hãy đề nghị khách gọi lại sau hoặc đặt lịch trực tiếp, bằng tiếng Việt."
+              : "This is the second check. Gently suggest they can call back later or book manually.");
+        const nudgeInstructions = instructionsRef.current
+          ? `${instructionsRef.current}\n\n[CURRENT TASK]: ${nudge}`
+          : nudge;
         wsRef.current?.send(JSON.stringify({
           type: "response.create",
-          response: {
-            instructions:
-              "The customer has not spoken in a while. Briefly and warmly check if they are still there. " +
-              "If second check, gently suggest they can call back or book manually.",
-          },
+          response: { instructions: nudgeInstructions },
         }));
         // Reschedule for next check
         scheduleNudgeRef.current();
@@ -222,12 +271,23 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
               customerName: (res.customerName as string) ?? "",
             });
           }
-          // Return result to the model so it can speak the confirmation
+          // Return result to the model so it can speak the confirmation.
+          // Include instructions in response.create to re-anchor persona/tone —
+          // without this the model gradually drifts to a generic/robotic register
+          // after several tool exchanges (it loses the warmth and language setting).
           wsRef.current?.send(JSON.stringify({
             type: "conversation.item.create",
             item: { type: "function_call_output", call_id: callId, output: JSON.stringify(result) },
           }));
-          wsRef.current?.send(JSON.stringify({ type: "response.create" }));
+          wsRef.current?.send(JSON.stringify({
+            type: "response.create",
+            response: {
+              ...(instructionsRef.current ? { instructions: instructionsRef.current } : {}),
+              // Lock voice per-response — prevents the model from drifting to a
+              // different voice character (age, warmth) after tool exchanges.
+              voice: voiceRef.current,
+            },
+          }));
         })
         .catch((err: unknown) => {
           console.error(`[voice/tool] ✗ ${fnName} fetch error:`, err);
@@ -235,7 +295,13 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             type: "conversation.item.create",
             item: { type: "function_call_output", call_id: callId, output: JSON.stringify({ error: String(err) }) },
           }));
-          wsRef.current?.send(JSON.stringify({ type: "response.create" }));
+          wsRef.current?.send(JSON.stringify({
+            type: "response.create",
+            response: {
+              ...(instructionsRef.current ? { instructions: instructionsRef.current } : {}),
+              voice: voiceRef.current,
+            },
+          }));
         });
     };
 
@@ -263,17 +329,32 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       setAiActivity("thinking");
       // AI is now active — pause silence watch
       if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
+      // Typing sound: fire a key-click every 100–130 ms while the model thinks.
+      // Cleared as soon as the first audio chunk arrives (response.output_audio.delta).
+      if (!typingIntervalRef.current && audioCtxRef.current) {
+        const ctx = audioCtxRef.current;
+        const intervalMs = 100 + Math.floor(Math.random() * 30); // 100–129 ms
+        typingIntervalRef.current = setInterval(() => {
+          if (ctx.state !== "closed") playKeyClick(ctx);
+        }, intervalMs);
+      }
     }
     if (type === "response.output_audio.delta" || type === "response.audio.delta") {
       aiActiveRef.current = true;
       setAiActivity("speaking");
+      // First audio chunk arrived — stop typing sound immediately
+      if (typingIntervalRef.current) { clearInterval(typingIntervalRef.current); typingIntervalRef.current = null; }
     }
 
     if (type === "response.done") {
       aiActiveRef.current = false;
-      // 400 ms cooldown: suppresses mic input long enough for speaker audio to
+      // Stop typing sound in case the response had no audio (e.g. function-call only)
+      if (typingIntervalRef.current) { clearInterval(typingIntervalRef.current); typingIntervalRef.current = null; }
+      // 800 ms cooldown: suppresses mic input long enough for speaker audio to
       // decay so the VAD doesn't immediately re-fire on the tail of our own output.
-      postSpeechCooldownRef.current = Date.now() + 400;
+      // Increased from 400 ms — 400 ms was too short on slower devices / networks
+      // where audio playback decays slowly, causing the VAD to re-trigger.
+      postSpeechCooldownRef.current = Date.now() + 800;
       setAiActivity("idle");
 
       // ── Belt-and-suspenders: extract any function calls from the response
@@ -429,7 +510,13 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         voice:         string;
         instructions?: string;
       };
-      sessionIdRef.current = sessionId;
+      sessionIdRef.current    = sessionId;
+      // Store instructions, language, and voice so downstream response.create
+      // calls can re-anchor the persona AND lock the voice after each tool
+      // exchange (prevents both tone drift and voice age/character variation).
+      instructionsRef.current = instructions ?? null;
+      sessionLangRef.current  = language;
+      voiceRef.current        = voice;
 
       // 2. Request microphone
       statusRef.current = "mic_request";
@@ -437,7 +524,14 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
         throw new Error("insecure_context");
       }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl:  true,
+          sampleRate:       24000,
+        },
+      });
       streamRef.current = stream;
 
       // 3. AudioContext for mic capture + playback
@@ -512,11 +606,22 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         // audio.output.format, audio.output.voice.
         // Note: function_call items are separate from output_modalities —
         // tools fire regardless of whether "text" is in output_modalities.
+        //
+        // VOICE LOCKING — voice is set in TWO places (belt-and-suspenders):
+        //   1. session.voice (top-level, standard SDK field)
+        //   2. session.audio.output.voice (gpt-realtime-2 nested format)
+        // Without the top-level field, OpenAI may ignore the nested value and
+        // pick a random default voice → causes "old/young" voice inconsistency.
+        // temperature: 0.8 is the recommended value for audio models (range 0.6–1.2).
+        // Setting it explicitly prevents implicit defaults from varying between
+        // model versions and keeps voice character consistent throughout the call.
         ws.send(JSON.stringify({
           type: "session.update",
           session: {
             type:              "realtime",
-            output_modalities: ["audio"],
+            output_modalities: ["text", "audio"],
+            voice,             // top-level — standard SDK field, must be here
+            temperature:       0.8,
             ...(instructions ? { instructions } : {}),
             tools:             [...REALTIME_TOOLS],
             tool_choice:       "auto",
@@ -535,14 +640,19 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
                 transcription:  { model: "whisper-1" },
                 turn_detection: {
                   type:               "semantic_vad",
-                  eagerness:          "auto",
+                  // "low" eagerness: VAD waits for a longer natural pause before
+                  // treating speech as finished. "auto" was too sensitive — after
+                  // the guest answered a question the model would fire a new
+                  // response before they had finished speaking, creating an
+                  // overlapping-speech / continuous-talking loop.
+                  eagerness:          "low",
                   create_response:    true,
                   interrupt_response: true,
                 },
               },
               output: {
                 format: { type: "audio/pcm", rate: 24000 },
-                voice,
+                voice,  // keep nested format for gpt-realtime-2 compatibility
               },
             },
           },

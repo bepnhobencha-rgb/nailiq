@@ -197,6 +197,12 @@ export const bookingEn = {
     group: "Group 👥",
     sizeHeading: "How many people?",
     personLabel: "Person {n}",
+    /** Default placeholder name for group members before the invited
+     *  guest claims their slot via Party Link. Format: "{label} {n}" */
+    groupGuestLabel: "Guest",
+    /** Helper text shown below the member form in step 2. */
+    partyLinkMemberHint:
+      "Guests can update their own details later through the Party Link.",
     primaryContactHeading: "Primary contact",
     primaryContactHint:
       "We'll send the confirmation to this phone. Each person can add their own phone below if they want their own reminder.",

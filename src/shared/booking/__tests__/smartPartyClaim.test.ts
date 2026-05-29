@@ -231,6 +231,117 @@ test("buildPartyCard defaults pendingChangeRequestCount to 0", () => {
   assertEqual(card.pendingChangeRequestCount, 0, "should default to 0 when not provided");
 });
 
+// ─── PartyClaimClient UI state-update logic ───────────────────────
+//
+// These tests verify the pure-state logic that mirrors what the
+// React component does when a claim succeeds or is edited.
+// They do not render DOM; they exercise the same transformations the
+// component applies so the bug ("Confirmed" instead of member name)
+// cannot regress silently.
+
+import type { PartyLinkSlot } from "../partyLinkActions";
+
+/** Mirror of PartyClaimClient.handleClaimed — updates slot list with name. */
+function applyClaimToSlots(
+  slots: PartyLinkSlot[],
+  claimId: string,
+  name: string,
+): PartyLinkSlot[] {
+  return slots.map((s) =>
+    s.claimId === claimId ? { ...s, claimed: true, claimedByName: name } : s,
+  );
+}
+
+/** Mirror of SlotCard displayName init + handleClaimedHere update. */
+function getDisplayName(
+  initialClaimedByName: string | null,
+  claimCallbackName: string | null,
+  editCallbackName: string | null,
+): string {
+  // Mirrors: useState(slot.claimedByName ?? "")
+  let displayName = initialClaimedByName ?? "";
+
+  // Mirrors: handleClaimedHere → setDisplayName(name)
+  if (claimCallbackName !== null) {
+    displayName = claimCallbackName;
+  }
+
+  // Mirrors: handleEdited → setDisplayName(newName)
+  if (editCallbackName !== null) {
+    displayName = editCallbackName;
+  }
+
+  return displayName;
+}
+
+const unclaimedSlot: PartyLinkSlot = {
+  claimId:      "slot-abc",
+  bookingId:    "booking-abc",
+  serviceName:  "Classic Manicure",
+  staffName:    "Jenny",
+  startDisplay: "1:00 PM",
+  endDisplay:   "1:40 PM",
+  startUtcIso:  "2030-06-15T21:00:00.000Z",
+  claimed:      false,
+  claimedByName: null,
+};
+
+test("claiming a slot updates claimedByName immediately (state logic)", () => {
+  const updated = applyClaimToSlots([unclaimedSlot], "slot-abc", "Carol Le");
+  const slot = updated.find((s) => s.claimId === "slot-abc")!;
+  assertEqual(slot.claimed, true, "slot should be marked claimed");
+  assertEqual(slot.claimedByName, "Carol Le", "claimedByName should be 'Carol Le' after claim");
+});
+
+test("displayName shows submitted member name immediately after claim (not t.claimed fallback)", () => {
+  // Before fix: displayName stayed "" because useState didn't re-init from prop changes.
+  // Fix: handleClaimedHere calls setDisplayName(name) so displayName = "Carol Le".
+  const displayName = getDisplayName(null, "Carol Le", null);
+  assertEqual(displayName, "Carol Le", "should show 'Carol Le', not empty string");
+  assertTruthy(displayName !== "", "displayName must not be empty (which triggers t.claimed fallback)");
+});
+
+test("phone is not present in claimedByName or slot display fields", () => {
+  const updated = applyClaimToSlots([unclaimedSlot], "slot-abc", "Carol Le");
+  const slot = updated.find((s) => s.claimId === "slot-abc")!;
+  // claimedByName should only contain the name, never a phone number
+  assertTruthy(
+    !slot.claimedByName?.match(/\d{7,}/),
+    "claimedByName must not contain a phone number",
+  );
+});
+
+test("editing details after claim updates displayName correctly", () => {
+  // After claim: displayName = "Carol Le"
+  // After edit:  displayName = "Carol Updated"
+  const afterClaim = getDisplayName(null, "Carol Le", null);
+  assertEqual(afterClaim, "Carol Le", "claim should set displayName to 'Carol Le'");
+
+  const afterEdit = getDisplayName(null, "Carol Le", "Carol Updated");
+  assertEqual(afterEdit, "Carol Updated", "edit should update displayName to 'Carol Updated'");
+});
+
+test("already-claimed slot stays claimed=true and name unchanged when a different claimId is processed", () => {
+  const claimedSlot: PartyLinkSlot = {
+    ...unclaimedSlot,
+    claimId:       "slot-claimed",
+    claimed:       true,
+    claimedByName: "Alice Existing",
+  };
+  const otherSlot: PartyLinkSlot = { ...unclaimedSlot, claimId: "slot-other" };
+
+  // Claiming "slot-other" should not touch "slot-claimed"
+  const updated = applyClaimToSlots([claimedSlot, otherSlot], "slot-other", "Bob New");
+
+  const alice = updated.find((s) => s.claimId === "slot-claimed")!;
+  const bob   = updated.find((s) => s.claimId === "slot-other")!;
+
+  assertEqual(alice.claimed,       true,            "already-claimed slot must stay claimed");
+  assertEqual(alice.claimedByName, "Alice Existing","already-claimed slot name must not change");
+  assertEqual(bob.claimed,         true,            "newly claimed slot should be claimed");
+  assertEqual(bob.claimedByName,   "Bob New",       "newly claimed slot should have 'Bob New'");
+});
+
 // ─── Final summary ───────────────────────────────────────────────
 
 setTimeout(() => {

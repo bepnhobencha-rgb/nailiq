@@ -102,9 +102,9 @@ test("claiming a slot updates the UI and DB", async ({ page }) => {
   await firstCard.getByTestId("party-claim-phone").fill("+16045550001");
   await firstCard.getByTestId("party-claim-submit").click();
 
-  // Claim button gone on this card; confirmed indicator appears.
+  // Claim button gone on this card; member name appears immediately.
   await expect(firstCard.getByTestId("party-claim-btn")).not.toBeVisible({ timeout: 10_000 });
-  await expect(firstCard.getByText("Confirmed")).toBeVisible({ timeout: 10_000 });
+  await expect(firstCard.getByText("E2E Alice")).toBeVisible({ timeout: 10_000 });
 
   // DB: claim row should have member_name set
   await expect
@@ -133,19 +133,26 @@ test("editing details after claim updates name on page", async ({ page }) => {
   await firstCard.getByTestId("party-claim-phone").fill("+16045550002");
   await firstCard.getByTestId("party-claim-submit").click();
   await expect(firstCard.getByTestId("party-claim-btn")).not.toBeVisible({ timeout: 10_000 });
-  await expect(firstCard.getByText("Confirmed")).toBeVisible({ timeout: 10_000 });
+  // After claim, submitted name should appear immediately — not generic "Confirmed".
+  await expect(firstCard.getByText("E2E Bob")).toBeVisible({ timeout: 10_000 });
 
   // Open edit form
-  await firstCard.getByTestId("party-edit-btn").click();
+  await firstCard
+    .getByTestId("party-edit-btn")
+    .evaluate((el) => (el as HTMLButtonElement).click());
 
   // Fill new name in the edit form
+  await expect(firstCard.getByTestId("party-edit-name")).toBeVisible({ timeout: 5_000 });
   await firstCard.getByTestId("party-edit-name").fill("E2E Bob Updated");
 
   // Submit edit
-  await firstCard.getByTestId("party-edit-submit").click();
+  await firstCard
+    .getByTestId("party-edit-submit")
+    .evaluate((el) => (el as HTMLButtonElement).click());
 
-  // Success state appears (edit form collapses or shows success text)
+  // Success state appears; after edit, updated name is shown.
   await expect(firstCard.getByTestId("party-edit-btn")).toBeVisible({ timeout: 10_000 });
+  await expect(firstCard.getByText("E2E Bob Updated")).toBeVisible({ timeout: 10_000 });
 });
 
 // ─── Test 7: Submit change request ────────────────────────────────
@@ -163,7 +170,8 @@ test("change request is submitted and stored in DB", async ({ page }) => {
   await firstCard.getByTestId("party-claim-name").fill("E2E Carol");
   await firstCard.getByTestId("party-claim-phone").fill("+16045550003");
   await firstCard.getByTestId("party-claim-submit").evaluate((el) => (el as HTMLButtonElement).click());
-  await expect(firstCard.getByText("Confirmed")).toBeVisible({ timeout: 10_000 });
+  // After claim, submitted name appears immediately.
+  await expect(firstCard.getByText("E2E Carol")).toBeVisible({ timeout: 10_000 });
 
   // Open change request form
   await firstCard

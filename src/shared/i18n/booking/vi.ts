@@ -167,6 +167,9 @@ export const bookingVi: BookingMessages = {
     group: "Nhóm 👥",
     sizeHeading: "Nhóm mấy người?",
     personLabel: "Người {n}",
+    groupGuestLabel: "Khách",
+    partyLinkMemberHint:
+      "Người được mời có thể tự cập nhật thông tin qua Party Link.",
     primaryContactHeading: "Liên hệ chính",
     primaryContactHint:
       "Chúng tôi sẽ gửi xác nhận đến số này. Mỗi người có thể thêm số riêng bên dưới nếu muốn nhận nhắc lịch riêng.",

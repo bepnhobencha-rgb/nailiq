@@ -31,7 +31,7 @@ test.describe("Group booking — validation errors", () => {
     await cleanupTestSalon(SLUG);
   });
 
-  test("step 2: missing name + missing service → aria-invalid + step blocks", async ({
+  test("step 2: missing service → aria-invalid on service + step blocks", async ({
     page,
   }) => {
     await gotoGroupFlow(page, SLUG);
@@ -42,15 +42,15 @@ test.describe("Group booking — validation errors", () => {
       .getByTestId("group-step-service-panel")
       .waitFor({ state: "visible" });
 
-    // Click Continue without filling anything.
+    // Click Continue without selecting services (names have Guest N defaults).
     await page.getByTestId("group-service-next").click();
 
-    // Still on step 2 (the panel didn't unmount).
+    // Still on step 2 (the panel didn't unmount — service is still required).
     await expect(page.getByTestId("group-step-service-panel")).toBeVisible();
 
-    // aria-invalid="true" on every offending field. Person 1 + 2
-    // both empty → 4 invalid markers (2 names + 2 services).
-    await expect(page.getByTestId("group-member-0-name")).toHaveAttribute(
+    // Service fields should show aria-invalid. Name fields are optional
+    // (pre-filled with "Guest N" placeholder) and must NOT show as invalid.
+    await expect(page.getByTestId("group-member-0-name")).not.toHaveAttribute(
       "aria-invalid",
       "true",
     );
@@ -58,7 +58,7 @@ test.describe("Group booking — validation errors", () => {
       "aria-invalid",
       "true",
     );
-    await expect(page.getByTestId("group-member-1-name")).toHaveAttribute(
+    await expect(page.getByTestId("group-member-1-name")).not.toHaveAttribute(
       "aria-invalid",
       "true",
     );
@@ -67,8 +67,7 @@ test.describe("Group booking — validation errors", () => {
       "true",
     );
 
-    // role="alert" message visible — at least one per card, locale
-    // independent regex (Vietnamese "vui lòng" or English "please").
+    // Service-required alerts visible (one per card).
     const alerts = page.getByRole("alert");
     expect(await alerts.count()).toBeGreaterThanOrEqual(2);
   });
