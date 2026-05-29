@@ -3004,6 +3004,7 @@ function PartyLinkShareBox({
       </p>
       <div className="mt-3 flex items-center gap-2">
         <input
+          data-testid="party-link-url"
           readOnly
           value={url}
           aria-label="Party link URL"
@@ -3011,6 +3012,7 @@ function PartyLinkShareBox({
           onFocus={(e) => e.currentTarget.select()}
         />
         <button
+          data-testid="party-link-copy-btn"
           onClick={handleCopy}
           className="shrink-0 rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-gray-700 transition-colors"
         >

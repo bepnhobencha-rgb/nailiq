@@ -109,7 +109,10 @@ function SlotCard({
   }
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+    <div
+      data-testid={`party-slot-card-${slot.claimId}`}
+      className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden"
+    >
       {/* Slot summary row */}
       <div className="flex items-center justify-between p-4">
         <div>
@@ -130,6 +133,7 @@ function SlotCard({
           <span className="text-xs text-gray-400 italic">{t.expiredLabel}</span>
         ) : (
           <button
+            data-testid="party-claim-btn"
             onClick={onExpand}
             className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700 transition-colors"
           >
@@ -153,6 +157,7 @@ function SlotCard({
         <div className="border-t border-gray-100 px-4 py-3 space-y-2">
           {/* Edit my details */}
           <button
+            data-testid="party-edit-btn"
             onClick={() => { setEditOpen((v) => !v); setChangeOpen(false); }}
             className="w-full text-left text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors flex items-center gap-1.5 py-1"
           >
@@ -174,6 +179,7 @@ function SlotCard({
           {/* Need to change something? */}
           {!editOpen && (
             <button
+              data-testid="party-change-req-btn"
               onClick={() => setChangeOpen((v) => !v)}
               className="w-full text-left text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors flex items-center gap-1.5 py-1"
             >
@@ -260,6 +266,7 @@ function ClaimForm({
           {t.formNameLabel}
         </label>
         <input
+          data-testid="party-claim-name"
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -275,6 +282,7 @@ function ClaimForm({
           {t.formPhoneLabel}
         </label>
         <input
+          data-testid="party-claim-phone"
           type="tel"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
@@ -296,10 +304,11 @@ function ClaimForm({
       </label>
 
       {error && (
-        <p className="text-xs text-red-600 font-medium">{error}</p>
+        <p data-testid="party-claim-error" className="text-xs text-red-600 font-medium">{error}</p>
       )}
 
       <button
+        data-testid="party-claim-submit"
         type="submit"
         disabled={isPending}
         className="w-full rounded-lg bg-gray-900 py-2.5 text-sm font-semibold text-white hover:bg-gray-700 disabled:opacity-60 transition-colors"
@@ -386,6 +395,7 @@ function EditDetailsForm({
           {t.formNameLabel}
         </label>
         <input
+          data-testid="party-edit-name"
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -424,6 +434,7 @@ function EditDetailsForm({
 
       <div className="flex gap-2">
         <button
+          data-testid="party-edit-submit"
           type="submit"
           disabled={isPending}
           className="flex-1 rounded-lg bg-gray-900 py-2.5 text-sm font-semibold text-white hover:bg-gray-700 disabled:opacity-60 transition-colors"
@@ -495,7 +506,7 @@ function ChangeRequestForm({
   if (success) {
     return (
       <div className="space-y-2 pt-1">
-        <p className="text-sm text-emerald-600 font-medium">✓ {t.changeRequestSuccess}</p>
+        <p data-testid="party-change-req-success" className="text-sm text-emerald-600 font-medium">✓ {t.changeRequestSuccess}</p>
         <button
           type="button"
           onClick={onClose}
@@ -545,6 +556,7 @@ function ChangeRequestForm({
 
       <div className="flex gap-2">
         <button
+          data-testid="party-change-req-submit"
           type="submit"
           disabled={isPending || !selectedType}
           className="flex-1 rounded-lg bg-gray-900 py-2.5 text-sm font-semibold text-white hover:bg-gray-700 disabled:opacity-60 transition-colors"

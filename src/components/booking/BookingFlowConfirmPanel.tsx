@@ -304,6 +304,7 @@ export function BookingFlowConfirmPanel({
           </Button>
           <LuxuryBookingCta
             className="lg:min-w-[14rem]"
+            data-testid="confirm-booking-btn"
             disabled={submitting}
             onClick={onConfirm}
           >
