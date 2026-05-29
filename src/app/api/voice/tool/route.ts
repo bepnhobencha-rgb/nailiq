@@ -379,9 +379,10 @@ async function handleCancelBooking(
 
     // Limit 20 — group bookings create one row per member (8-person group = 8 rows).
     // Old limit of 3 caused "only 3 cancelled out of 8" for group bookings.
+    // Include staff join so AI can read individual member slots for partial cancellation.
     const { data: phoneRows } = await supabase
       .from("bookings")
-      .select("id, group_id, client_name, start_time_utc, status, services!bookings_service_id_fkey(name)")
+      .select("id, group_id, client_name, start_time_utc, status, services!bookings_service_id_fkey(name), staff!bookings_staff_id_fkey(name)")
       .eq("salon_id", salon.id)
       .ilike("client_phone", `%${last9}`)
       .gte("start_time_utc", now)
@@ -398,19 +399,23 @@ async function handleCancelBooking(
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const formatRow = (r: Record<string, any>) => {
-      const svcRaw = r.services as { name?: string } | { name?: string }[] | null;
+      const svcRaw  = r.services as { name?: string } | { name?: string }[] | null;
       const svcName = (Array.isArray(svcRaw) ? svcRaw[0]?.name : svcRaw?.name) ?? "Unknown";
+      // Staff join returns a single object (many-to-one FK)
+      const staffRaw  = r.staff as { name?: string } | null;
+      const staffName = staffRaw?.name ?? null;
       const localTime = new Date(r.start_time_utc as string).toLocaleString("en-US", {
         timeZone: tz, weekday: "short", month: "short", day: "numeric",
         hour: "numeric", minute: "2-digit", hour12: true,
       });
       return {
-        booking_id:  r.id as string,
-        group_id:    (r.group_id as string | null) ?? null,
+        booking_id:   r.id as string,
+        group_id:     (r.group_id as string | null) ?? null,
         service_name: svcName,
-        date_time:   localTime,
-        status:      r.status as string,
-        client_name: r.client_name as string,
+        staff_name:   staffName,
+        date_time:    localTime,
+        status:       r.status as string,
+        client_name:  r.client_name as string,
       };
     };
 
@@ -421,17 +426,22 @@ async function handleCancelBooking(
     const allSameGroup = firstGroupId !== null && rows.every((r) => r.group_id === firstGroupId);
 
     if (allSameGroup) {
-      // All found bookings belong to one group — offer to cancel the whole group at once.
-      // Cancel by group_id so any members who were already partly cancelled are included.
+      // Group booking — let the customer choose full or partial cancellation.
+      // Each row in `bookings` includes service_name, staff_name, date_time so the
+      // AI can read individual member slots for partial cancellation.
       return NextResponse.json({
         confirmation_required: true,
         is_group_booking:      true,
         group_id:              firstGroupId,
         group_size:            rows.length,
         bookings:              rows,
-        hint: `This is a GROUP booking of ${rows.length} people sharing the same timeslot. ` +
-              `Read back the group details (date, time, services) and ask: "Bạn muốn huỷ cả nhóm ${rows.length} người không?" ` +
-              `On confirmation: call cancel_booking with group_id="${firstGroupId}" (not a booking_id) to cancel ALL members at once.`,
+        hint:
+          `GROUP BOOKING of ${rows.length} people. ` +
+          `STEP 1 — Ask: "Bạn muốn huỷ cả nhóm ${rows.length} người, hay chỉ một số người?" ` +
+          `FULL CANCEL: call cancel_booking with group_id="${firstGroupId}" — cancels all ${rows.length} at once. ` +
+          `PARTIAL CANCEL: read each member's slot (e.g. "Guest 1: Pedicure lúc 12:00 với Jenny"), ` +
+          `ask which ones to cancel, then call cancel_booking(booking_id) for each confirmed cancellation individually. ` +
+          `After partial cancel: confirm total cancelled (e.g. "Đã huỷ 2 người. ${rows.length - 2} người còn lại giữ nguyên lịch.").`,
       });
     }
 

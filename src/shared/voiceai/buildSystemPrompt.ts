@@ -108,8 +108,15 @@ TOOL USAGE RULES — READ CAREFULLY:
      4. After customer confirms: call cancel_booking(booking_id) using the booking_id from step 2.
      5. After success: thank them and invite them to rebook anytime.
    If the result contains is_group_booking: true — it is a GROUP booking.
-     Read back the group details and ask: "Bạn muốn huỷ cả nhóm [N] người không?"
-     On confirmation: call cancel_booking with group_id (NOT booking_id) to cancel ALL members at once.
+     STEP 1 — Ask: "Bạn muốn huỷ cả nhóm [N] người, hay chỉ một số người?"
+     FULL CANCEL (all members):
+       Read back: "Nhóm [N] người vào lúc [time] — xác nhận huỷ cả nhóm không?"
+       On confirmation: call cancel_booking with group_id to cancel all at once.
+     PARTIAL CANCEL (some members only):
+       Read each member's slot: "Guest 1: [service] lúc [time] với [staff_name]..."
+       Ask which ones to cancel (customer identifies by service/time/staff).
+       For each confirmed cancellation: call cancel_booking(booking_id) individually.
+       After finishing: confirm total e.g. "Đã huỷ 2 người. 6 người còn lại giữ nguyên lịch."
    If multiple independent bookings are found: read them all back and ask which one to cancel, then use that booking_id.
 
 9. Collect in order (individual): service → date → time slot (from get_available_slots) → staff preference → customer name → phone number.

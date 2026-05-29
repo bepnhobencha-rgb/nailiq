@@ -73,15 +73,17 @@ export const REALTIME_TOOLS = [
     name: "cancel_booking",
     description:
       "Cancel an existing booking. Provide ONE of: booking_id, group_id, or customer_phone.\n\n" +
-      "MODE A — booking_id provided: Cancels a single booking immediately. Use when you already have the booking_id.\n\n" +
-      "MODE GROUP — group_id provided: Cancels ALL bookings in a group at once. Use when the phone lookup " +
-      "returns is_group_booking: true and the customer confirms they want to cancel the whole group. " +
-      "Pass the group_id from the lookup result — do NOT pass individual booking_ids for group cancellation.\n\n" +
+      "MODE A — booking_id provided: Cancels a single booking immediately. " +
+      "Use for individual bookings OR for partial group cancellation (one member at a time).\n\n" +
+      "MODE GROUP — group_id provided: Cancels ALL bookings in a group at once. " +
+      "Use only when the customer confirms they want to cancel the WHOLE group.\n\n" +
       "MODE B — customer_phone provided (no booking_id/group_id): Looks up upcoming bookings WITHOUT cancelling. " +
-      "Returns booking details with confirmation_required: true. Read back the booking, get verbal OK, " +
-      "then call again with booking_id (individual) or group_id (group) to execute.\n\n" +
-      "ALWAYS get verbal confirmation from the customer BEFORE passing booking_id or group_id.\n" +
-      "After a successful cancellation: thank them warmly and invite them to rebook anytime.",
+      "Returns booking details with confirmation_required: true.\n" +
+      "If is_group_booking: true → ask 'Huỷ cả nhóm hay chỉ một số người?' BEFORE deciding which mode to use next:\n" +
+      "  • Whole group → call again with group_id\n" +
+      "  • Partial → read each member slot, get confirmation, call again with booking_id for each person to cancel.\n\n" +
+      "ALWAYS get verbal confirmation BEFORE passing booking_id or group_id.\n" +
+      "After cancellation: thank them and invite to rebook. For partial: confirm count e.g. 'Đã huỷ 2 người, 6 người còn lại giữ nguyên.'",
     parameters: {
       type: "object" as const,
       properties: {
