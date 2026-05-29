@@ -1,9 +1,28 @@
+import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { computeTimeSlots } from "@/shared/booking/getAvailableTimeSlots";
-import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
+import { parseOpeningHours, type DayKey, type OpeningHoursWeek } from "@/shared/dashboard/openingHoursDefaults";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
-import { salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+import { formatInSalonTz, salonDayRangeUtc, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+import {
+  tryAlignedArrangement,
+  tryFinishAlignedArrangement,
+  buildArrangement,
+  findFinishArrangementsInWindow,
+  SLOT_STEP_MIN,
+  type GroupArrangement,
+  type ResolvedMember,
+  type StaffRow,
+  type ExistingBooking,
+} from "@/shared/booking/groupSchedulerCore";
+import {
+  buildCapabilityMap,
+  type StaffCapabilityMap,
+} from "@/shared/booking/staffCapability";
+import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import { createPartyLink } from "@/shared/booking/partyLinkActions";
+import type { GroupSyncMode } from "@/shared/booking/loadGroupSmartSchedule";
 
 export const runtime     = "nodejs";
 export const maxDuration = 30;
@@ -42,6 +61,12 @@ export async function POST(req: NextRequest) {
   }
   if (toolName === "reschedule_booking") {
     return handleRescheduleBooking(supabase, salonSlug, toolArgs, body.sessionId ?? null);
+  }
+  if (toolName === "get_group_available_slots") {
+    return handleGetGroupAvailableSlots(supabase, salonSlug, toolArgs);
+  }
+  if (toolName === "confirm_group_booking") {
+    return handleConfirmGroupBooking(supabase, salonSlug, toolArgs, body.sessionId ?? null, req);
   }
 
   return NextResponse.json({ error: "unknown_tool", toolName }, { status: 400 });
@@ -628,5 +653,579 @@ async function handleRescheduleBooking(
     newTimeSlot: newSlot,
     clientName:  (booking as { client_name: string }).client_name,
     message:     "Lịch hẹn đã được dời thành công. Booking ID giữ nguyên.",
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GROUP BOOKING TOOLS
+// ═══════════════════════════════════════════════════════════════════
+
+// ─── Shared helpers ──────────────────────────────────────────────
+
+/** Parse "HH:MM" (24-hour) → minutes from midnight.  Returns null if malformed. */
+function parseHm24(hm: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hm.trim());
+  if (!m) return null;
+  const h = parseInt(m[1]!, 10);
+  const min = parseInt(m[2]!, 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/** UTC ms → salon-local "HH:MM" (24h) string. */
+function utcMsToSalonHm24(ms: number, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour:     "2-digit",
+    minute:   "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(ms));
+  const hh = parts.find((p) => p.type === "hour")?.value   ?? "00";
+  const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
+  return `${hh}:${mm}`;
+}
+
+/** Return the weekday key ("mon"…"sun") for a YYYY-MM-DD date. */
+const DAY_KEYS_BY_IDX: readonly DayKey[] = ["sun","mon","tue","wed","thu","fri","sat"];
+function dayKeyForYmd(ymd: string): DayKey | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!m) return null;
+  const idx = new Date(Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!)).getUTCDay();
+  return DAY_KEYS_BY_IDX[idx] ?? null;
+}
+
+// ─── Shared context loader ───────────────────────────────────────
+
+type ServiceInfo = {
+  id:        string;
+  name:      string;
+  totalMin:  number;   // duration + buffer
+  priceCents: number | null;
+};
+
+type GroupCtx = {
+  salonId:         string;
+  timezone:        string;
+  openingWeek:     OpeningHoursWeek;
+  dayHours:        { open: string; close: string; closed: boolean };
+  resolvedMembers: ResolvedMember[];
+  staffList:       StaffRow[];
+  staffById:       Map<string, StaffRow>;
+  capability:      StaffCapabilityMap;
+  existing:        ExistingBooking[];
+  serviceById:     Map<string, ServiceInfo>;
+};
+
+/**
+ * Loads and validates everything a group scheduler call needs:
+ * salon, services, staff, capability map, and existing occupancy for `dateYmd`.
+ * Returns a structured error string if anything is missing/invalid.
+ */
+async function loadGroupCtx(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  salonSlug: string,
+  serviceAssignments: { service_id: string; count: number }[],
+  dateYmd: string,
+): Promise<GroupCtx | { error: string; status: number }> {
+  // 1. Salon
+  const { data: salonRaw } = await supabase
+    .from("salons")
+    .select("id, timezone, opening_hours")
+    .eq("slug", salonSlug)
+    .single();
+  if (!salonRaw) return { error: "salon_not_found", status: 404 };
+  const salon = salonRaw as unknown as { id: string; timezone?: string; opening_hours?: unknown };
+  const timezone = (typeof salon.timezone === "string" && salon.timezone.trim())
+    ? salon.timezone.trim()
+    : "America/Vancouver";
+
+  // 2. Opening hours
+  const openingWeek = parseOpeningHours(salon.opening_hours);
+  if (!openingWeek) return { error: "invalid_opening_hours", status: 400 };
+  const dayKey = dayKeyForYmd(dateYmd);
+  const dayHours = dayKey ? openingWeek[dayKey] : null;
+  if (!dayHours || dayHours.closed) return { error: "salon_closed_on_this_day", status: 409 };
+
+  // 3. Expand service_assignments → flat service-id list (validates counts)
+  const expandedServiceIds: string[] = [];
+  for (const { service_id, count } of serviceAssignments) {
+    if (!service_id || typeof count !== "number" || count < 1 || !Number.isInteger(count)) {
+      return { error: "invalid_service_assignment: service_id required and count must be integer ≥ 1", status: 400 };
+    }
+    for (let i = 0; i < count; i++) expandedServiceIds.push(service_id);
+  }
+  const totalMembers = expandedServiceIds.length;
+  if (totalMembers < 2 || totalMembers > 20) {
+    return { error: "group_size_must_be_2_to_20", status: 400 };
+  }
+
+  // 4. Load services
+  const uniqueIds = [...new Set(expandedServiceIds)];
+  const { data: svcRows } = await supabase
+    .from("services")
+    .select("id, name, duration_minutes, buffer_minutes, price_cents")
+    .in("id", uniqueIds)
+    .eq("salon_id", salon.id)
+    .is("deleted_at", null);
+
+  const serviceById = new Map<string, ServiceInfo>();
+  for (const r of svcRows ?? []) {
+    serviceById.set(String(r.id), {
+      id:         String(r.id),
+      name:       String(r.name ?? ""),
+      totalMin:   (Number(r.duration_minutes) || 0) + (Number(r.buffer_minutes) || 0),
+      priceCents: r.price_cents != null ? Number(r.price_cents) : null,
+    });
+  }
+  for (const id of uniqueIds) {
+    if (!serviceById.has(id)) return { error: `service_not_found: ${id}`, status: 404 };
+  }
+
+  // 5. Build resolvedMembers (no preferred staff in voice group flow)
+  const resolvedMembers: ResolvedMember[] = expandedServiceIds.map((svcId, i) => {
+    const svc = serviceById.get(svcId)!;
+    return {
+      index:           i,
+      name:            `Guest ${i + 1}`,
+      serviceId:       svcId,
+      serviceName:     svc.name,
+      totalMinutes:    svc.totalMin,
+      priceCents:      svc.priceCents,
+      preferredStaffId: null,
+    };
+  });
+
+  // 6. Staff
+  const { data: staffRows } = await supabase
+    .from("staff")
+    .select("id, name")
+    .eq("salon_id", salon.id)
+    .eq("status", "active")
+    .is("deleted_at", null);
+  const staffList: StaffRow[] = (staffRows ?? []).map((s) => ({
+    id:   String(s.id),
+    name: String(s.name ?? ""),
+  }));
+  if (staffList.length < totalMembers) {
+    return {
+      error: `not_enough_staff: group needs ${totalMembers} members but only ${staffList.length} staff available`,
+      status: 409,
+    };
+  }
+  const staffById = new Map<string, StaffRow>();
+  for (const s of staffList) staffById.set(s.id, s);
+
+  // 7. Staff capability
+  const { data: capRows } = await supabase
+    .from("staff_services")
+    .select("staff_id, service_id")
+    .in("staff_id", staffList.map((s) => s.id));
+  const capability: StaffCapabilityMap =
+    capRows && capRows.length > 0
+      ? buildCapabilityMap(capRows.map((r) => ({ staff_id: String(r.staff_id), service_id: String(r.service_id) })))
+      : null; // null = all staff can do all services (backward-compat)
+
+  // 8. Existing bookings for the day
+  const { startUtc, endUtc } = salonDayRangeUtc(dateYmd, timezone);
+  const { data: occRows } = await supabase.rpc("public_booking_occupancy_for_range", {
+    p_salon_id: salon.id,
+    p_start:    startUtc,
+    p_end:      endUtc,
+  });
+  const existing: ExistingBooking[] = ((occRows ?? []) as Array<{
+    staff_id: string;
+    start_time_utc: string;
+    end_time_utc: string;
+  }>).flatMap((row) => {
+    if (!row.staff_id) return [];
+    const startMs = Date.parse(row.start_time_utc);
+    const endMs   = Date.parse(row.end_time_utc);
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return [];
+    return [{ staffId: String(row.staff_id), startMs, endMs }];
+  });
+
+  return {
+    salonId:         String(salon.id),
+    timezone,
+    openingWeek,
+    dayHours,
+    resolvedMembers,
+    staffList,
+    staffById,
+    capability,
+    existing,
+    serviceById,
+  };
+}
+
+// ─── get_group_available_slots ───────────────────────────────────
+
+/**
+ * Return up to 3 voice-friendly group arrangements around `target_time`.
+ * For sync_start: scans ±90 min around target, returns start-aligned options.
+ * For sync_finish: delegates to findFinishArrangementsInWindow.
+ */
+async function handleGetGroupAvailableSlots(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  salonSlug: string,
+  args: Record<string, unknown>,
+) {
+  // 1. Parse args
+  const serviceAssignments = args.service_assignments as { service_id: string; count: number }[] | undefined;
+  const dateYmd   = args.date        as string | undefined;
+  const mode      = ((args.mode as string | undefined) ?? "sync_start") as GroupSyncMode;
+  const targetRaw = args.target_time as string | undefined;
+
+  if (!Array.isArray(serviceAssignments) || serviceAssignments.length === 0) {
+    return NextResponse.json({ error: "missing_service_assignments" }, { status: 400 });
+  }
+  if (!dateYmd || !/^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) {
+    return NextResponse.json({ error: "invalid_date: expected YYYY-MM-DD" }, { status: 400 });
+  }
+  if (!targetRaw) {
+    return NextResponse.json({ error: "missing_target_time: expected HH:MM (24h)" }, { status: 400 });
+  }
+  const targetMin = parseHm24(targetRaw);
+  if (targetMin === null) {
+    return NextResponse.json({ error: "invalid_target_time: expected HH:MM format like 14:00" }, { status: 400 });
+  }
+
+  // 2. Load scheduling context
+  const ctxOrErr = await loadGroupCtx(supabase, salonSlug, serviceAssignments, dateYmd);
+  if ("error" in ctxOrErr) {
+    return NextResponse.json({ error: ctxOrErr.error }, { status: ctxOrErr.status });
+  }
+  const ctx = ctxOrErr;
+
+  const openMin  = parseHm24(ctx.dayHours.open)  ?? 0;
+  const closeMin = parseHm24(ctx.dayHours.close) ?? 0;
+
+  // 3. Find arrangements
+  let arrangements: GroupArrangement[] = [];
+
+  if (mode === "sync_finish") {
+    // Use the finish-aligned search from core
+    const finishMs  = Date.parse(salonWallTimeToUtcIso(dateYmd, targetMin, ctx.timezone));
+    const dayOpenMs = Date.parse(salonWallTimeToUtcIso(dateYmd, openMin,   ctx.timezone));
+    const dayCloseMs = Date.parse(salonWallTimeToUtcIso(dateYmd, closeMin, ctx.timezone));
+    arrangements = findFinishArrangementsInWindow({
+      targetFinishMs:  finishMs,
+      dayOpenMs,
+      dayCloseMs,
+      date:            dateYmd,
+      timezone:        ctx.timezone,
+      resolvedMembers: ctx.resolvedMembers,
+      staffList:       ctx.staffList,
+      staffById:       ctx.staffById,
+      capability:      ctx.capability,
+      existing:        ctx.existing,
+    });
+  } else {
+    // sync_start: scan ±90 min around target_time, collect up to 3 distinct arrangements
+    const SEARCH_RADIUS_MIN = 90;
+    const winStart = Math.max(openMin, targetMin - SEARCH_RADIUS_MIN);
+    const winEnd   = Math.min(closeMin, targetMin + SEARCH_RADIUS_MIN);
+    const maxMemberMin = ctx.resolvedMembers.reduce((acc, m) => Math.max(acc, m.totalMinutes), 0);
+
+    for (let mm = winStart; mm <= winEnd && arrangements.length < 3; mm += SLOT_STEP_MIN) {
+      const anchorMs  = Date.parse(salonWallTimeToUtcIso(dateYmd, mm, ctx.timezone));
+      const dayCloseMs = Date.parse(salonWallTimeToUtcIso(dateYmd, closeMin, ctx.timezone));
+      // Skip anchors where the longest service would go past closing
+      if (Number.isFinite(dayCloseMs) && anchorMs + maxMemberMin * 60_000 > dayCloseMs) continue;
+      const result = tryAlignedArrangement(
+        anchorMs,
+        ctx.resolvedMembers,
+        ctx.staffList,
+        ctx.staffById,
+        ctx.capability,
+        ctx.existing,
+        false, // voice doesn't enforce preferred staff
+      );
+      if (!result) continue;
+      const arr = buildArrangement("best", result, ctx.resolvedMembers, ctx.staffById, ctx.timezone);
+      // Deduplicate by group start time
+      if (!arrangements.some((a) => a.groupStartMs === arr.groupStartMs)) {
+        arrangements.push(arr);
+      }
+    }
+  }
+
+  if (arrangements.length === 0) {
+    return NextResponse.json({
+      slots:        [],
+      count:        0,
+      date:         dateYmd,
+      mode,
+      totalMembers: ctx.resolvedMembers.length,
+      message:      "No group slots available at the requested time. Please try a different time or date.",
+    });
+  }
+
+  // 4. Format for voice — never read individual assignments aloud
+  const totalMembers = ctx.resolvedMembers.length;
+  const voiceArrangements = arrangements.map((arr, i) => {
+    // The AI will say "Option 1: everyone arrives at 10:00 AM, done by 11:30 AM"
+    const startTime = utcMsToSalonHm24(arr.groupStartMs, ctx.timezone);
+    const endTime   = utcMsToSalonHm24(arr.groupEndMs,   ctx.timezone);
+    const summary =
+      mode === "sync_finish"
+        ? `${totalMembers} people finish together at ${arr.groupEndDisplay}. Services start as early as ${arr.groupStartDisplay}.`
+        : `${totalMembers} people arrive and start together at ${arr.groupStartDisplay}, done by ${arr.groupEndDisplay}.`;
+    return {
+      index:            i,
+      startDisplay:     arr.groupStartDisplay,
+      endDisplay:       arr.groupEndDisplay,
+      startTime,  // HH:MM 24h — pass back in confirm_group_booking
+      endTime,
+      summary,
+    };
+  });
+
+  return NextResponse.json({
+    arrangements: voiceArrangements,
+    count:        voiceArrangements.length,
+    date:         dateYmd,
+    mode,
+    totalMembers,
+    hint:         "Present at most 2 options to the customer. Say the time clearly. When confirmed, call confirm_group_booking.",
+  });
+}
+
+// ─── confirm_group_booking ───────────────────────────────────────
+
+/**
+ * Re-runs the scheduler at the chosen time, inserts group bookings via the
+ * insert_group_bookings RPC, creates a Party Link, and returns success data.
+ */
+async function handleConfirmGroupBooking(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  salonSlug: string,
+  args: Record<string, unknown>,
+  sessionId: string | null,
+  req: NextRequest,
+) {
+  // 1. Parse args
+  const serviceAssignments = args.service_assignments as { service_id: string; count: number }[] | undefined;
+  const dateYmd         = args.date           as string | undefined;
+  const chosenTime      = args.time           as string | undefined;   // HH:MM 24h
+  const mode            = ((args.mode as string | undefined) ?? "sync_start") as GroupSyncMode;
+  const organizerName   = args.organizer_name  as string | undefined;
+  const organizerPhone  = args.organizer_phone as string | undefined;
+
+  if (!Array.isArray(serviceAssignments) || serviceAssignments.length === 0) {
+    return NextResponse.json({ error: "missing_service_assignments" }, { status: 400 });
+  }
+  if (!dateYmd || !/^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) {
+    return NextResponse.json({ error: "invalid_date" }, { status: 400 });
+  }
+  if (!chosenTime) {
+    return NextResponse.json({ error: "missing_time: pass the chosen HH:MM from get_group_available_slots" }, { status: 400 });
+  }
+  const chosenMin = parseHm24(chosenTime);
+  if (chosenMin === null) {
+    return NextResponse.json({ error: "invalid_time: expected HH:MM (24h)" }, { status: 400 });
+  }
+  if (!organizerName?.trim()) {
+    return NextResponse.json({ error: "missing_organizer_name" }, { status: 400 });
+  }
+  if (!organizerPhone?.trim()) {
+    return NextResponse.json({ error: "missing_organizer_phone" }, { status: 400 });
+  }
+
+  // 2. Validate phone
+  const phoneResult = validateGuestPhone(organizerPhone.trim());
+  if (!phoneResult.ok) {
+    return NextResponse.json({ error: "invalid_organizer_phone", detail: "Phone number format not recognised." }, { status: 400 });
+  }
+  const phoneDigits = phoneResult.digits;
+
+  // 3. Load scheduling context (same as get_group_available_slots)
+  const ctxOrErr = await loadGroupCtx(supabase, salonSlug, serviceAssignments, dateYmd);
+  if ("error" in ctxOrErr) {
+    return NextResponse.json({ error: ctxOrErr.error }, { status: ctxOrErr.status });
+  }
+  const ctx = ctxOrErr;
+
+  // 4. Re-run scheduler at the chosen anchor to get concrete staff assignments
+  //    (Ensures we pick up any bookings created since get_group_available_slots was called)
+  const anchorMs   = Date.parse(salonWallTimeToUtcIso(dateYmd, chosenMin, ctx.timezone));
+  const openMin    = parseHm24(ctx.dayHours.open)  ?? 0;
+  const closeMin   = parseHm24(ctx.dayHours.close) ?? 0;
+  const dayOpenMs  = Date.parse(salonWallTimeToUtcIso(dateYmd, openMin,  ctx.timezone));
+  const dayCloseMs = Date.parse(salonWallTimeToUtcIso(dateYmd, closeMin, ctx.timezone));
+
+  let assignmentResult: ReturnType<typeof tryAlignedArrangement> | null = null;
+  let finalArrangement: GroupArrangement | null = null;
+
+  if (mode === "sync_finish") {
+    // For sync_finish the chosen time is the finish time
+    const finishResults = findFinishArrangementsInWindow({
+      targetFinishMs:  anchorMs,
+      dayOpenMs,
+      dayCloseMs,
+      date:            dateYmd,
+      timezone:        ctx.timezone,
+      resolvedMembers: ctx.resolvedMembers,
+      staffList:       ctx.staffList,
+      staffById:       ctx.staffById,
+      capability:      ctx.capability,
+      existing:        ctx.existing,
+    });
+    if (finishResults.length === 0) {
+      return NextResponse.json({
+        ok:     false,
+        reason: "slot_no_longer_available",
+        message: "The requested group time is no longer available. Please call get_group_available_slots again to find the next available slot.",
+      }, { status: 409 });
+    }
+    finalArrangement = finishResults[0]!;
+    // Build a minimal assignmentResult from the arrangement
+    assignmentResult = {
+      assignments: finalArrangement.assignments.map((a) => ({
+        memberIdx: a.memberIndex,
+        staffId:   a.staffId,
+        startMs:   Date.parse(a.startUtcIso),
+        endMs:     Date.parse(a.endUtcIso),
+      })),
+    };
+  } else {
+    // sync_start: try at exact anchor
+    assignmentResult = tryAlignedArrangement(
+      anchorMs,
+      ctx.resolvedMembers,
+      ctx.staffList,
+      ctx.staffById,
+      ctx.capability,
+      ctx.existing,
+      false,
+    );
+    if (!assignmentResult) {
+      return NextResponse.json({
+        ok:     false,
+        reason: "slot_no_longer_available",
+        message: "The requested group time is no longer available. Please call get_group_available_slots again to find the next available slot.",
+      }, { status: 409 });
+    }
+    finalArrangement = buildArrangement("best", assignmentResult, ctx.resolvedMembers, ctx.staffById, ctx.timezone);
+  }
+
+  // 5. Build the insert_group_bookings payload
+  //    All members get the organizer's name + phone (voice doesn't collect each member's info).
+  const idempotencyKey = crypto.randomUUID();
+  const insertPayload = assignmentResult.assignments.map((a, idx) => {
+    const member = ctx.resolvedMembers.find((m) => m.index === a.memberIdx) ?? ctx.resolvedMembers[idx]!;
+    const svc    = ctx.serviceById.get(member.serviceId)!;
+    return {
+      salon_id:                  ctx.salonId,
+      staff_id:                  a.staffId,
+      service_id:                member.serviceId,
+      client_name:               organizerName!.trim(),
+      client_phone:              phoneDigits,
+      client_email:              null,
+      client_notes:              "Voice group booking",
+      start_time_utc:            new Date(a.startMs).toISOString(),
+      end_time_utc:              new Date(a.endMs).toISOString(),
+      price_cents:               svc.priceCents,
+      staff_requested_by_client: false,
+      idempotency_key:           idempotencyKey,
+    };
+  });
+
+  // 6. Atomic insert via RPC
+  const { data: rpcData, error: rpcErr } = await supabase.rpc("insert_group_bookings", {
+    p_bookings: insertPayload,
+  });
+
+  if (rpcErr) {
+    console.error("[voice/confirm_group_booking] RPC error:", rpcErr);
+    const e = rpcErr as { code?: string; message?: string };
+    if (e.code === "23P01") {
+      return NextResponse.json({
+        ok:     false,
+        reason: "slot_conflict",
+        message: "A booking conflict occurred. Please call get_group_available_slots again to find fresh availability.",
+      }, { status: 409 });
+    }
+    if (e.code === "23505") {
+      return NextResponse.json({ ok: false, reason: "duplicate_submission" }, { status: 409 });
+    }
+    return NextResponse.json({ error: "group_booking_failed", detail: e.message }, { status: 500 });
+  }
+
+  const result = rpcData as { success?: boolean; code?: string; group_id?: string; booking_ids?: string[] } | null;
+  if (!result?.success) {
+    const code = result?.code ?? "unknown";
+    if (code === "slot_conflict") {
+      return NextResponse.json({
+        ok:     false,
+        reason: "slot_conflict",
+        message: "A booking conflict occurred. Please call get_group_available_slots again.",
+      }, { status: 409 });
+    }
+    if (code === "duplicate_submission") {
+      return NextResponse.json({ ok: false, reason: "duplicate_submission" }, { status: 409 });
+    }
+    return NextResponse.json({ error: "group_booking_failed", code }, { status: 500 });
+  }
+
+  const groupId    = result.group_id!;
+  const bookingIds = (result.booking_ids ?? []).map(String);
+
+  // 7. Stamp source = "voice" on all created bookings (best-effort)
+  if (bookingIds.length > 0) {
+    try {
+      await supabase
+        .from("bookings")
+        .update({ source: "voice" })
+        .in("id", bookingIds);
+    } catch { /* best-effort */ }
+  }
+
+  // 8. Create Party Link (best-effort — failure doesn't break the booking)
+  let partyLinkUrl: string | null = null;
+  try {
+    const baseUrl = new URL(req.url).origin;
+    const groupStartUtcIso = new Date(finalArrangement.groupStartMs).toISOString();
+    const linkResult = await createPartyLink({
+      groupId,
+      salonId:         ctx.salonId,
+      bookingIds,
+      mode,
+      groupStartUtcIso,
+      baseUrl,
+    });
+    if (linkResult.ok) partyLinkUrl = linkResult.url;
+  } catch {
+    // Party Link creation failing must not break the group booking confirmation.
+    console.warn("[voice/confirm_group_booking] Party Link creation failed (non-fatal).");
+  }
+
+  // 9. Link to voice_ai_session (best-effort)
+  if (sessionId) {
+    try {
+      await supabase
+        .from("voice_ai_sessions")
+        .update({ status: "completed" })
+        .eq("id", sessionId);
+    } catch { /* best-effort */ }
+  }
+
+  return NextResponse.json({
+    ok:                true,
+    groupId,
+    bookingIds,
+    partyLinkUrl,
+    groupStartDisplay: finalArrangement.groupStartDisplay,
+    groupEndDisplay:   finalArrangement.groupEndDisplay,
+    groupStartTime:    utcMsToSalonHm24(finalArrangement.groupStartMs, ctx.timezone),
+    groupEndTime:      utcMsToSalonHm24(finalArrangement.groupEndMs,   ctx.timezone),
+    date:              dateYmd,
+    totalMembers:      ctx.resolvedMembers.length,
+    organizerName:     organizerName!.trim(),
+    message:           partyLinkUrl
+      ? `Group booking confirmed for ${ctx.resolvedMembers.length} people. Party link is ready to share.`
+      : `Group booking confirmed for ${ctx.resolvedMembers.length} people.`,
+    hint:
+      "Do NOT read individual staff assignments aloud. Tell the customer the group start time, end time, and that the party link will be shared with the group organizer.",
   });
 }

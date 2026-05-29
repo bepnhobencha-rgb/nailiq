@@ -132,6 +132,112 @@ export const REALTIME_TOOLS = [
       required: ["booking_id", "new_date", "new_time_slot", "staff_id"],
     },
   },
+  // ─── Group booking tools ──────────────────────────────────────────
+  {
+    type: "function" as const,
+    name: "get_group_available_slots",
+    description:
+      "Get available time arrangements for a GROUP booking (2 or more people). " +
+      "ALWAYS call this — never use get_available_slots for group bookings. " +
+      "Returns 1–3 voice-friendly time options the customer can choose from. " +
+      "Ask the customer how many people and what services, then call this tool. " +
+      "Do NOT collect each person's name — only total count per service type.",
+    parameters: {
+      type: "object" as const,
+      properties: {
+        service_assignments: {
+          type: "array",
+          description:
+            "List of service types and how many people want each. " +
+            "E.g. [{service_id: 'abc', count: 3}, {service_id: 'def', count: 2}]",
+          items: {
+            type: "object",
+            properties: {
+              service_id: { type: "string", description: "Service ID from the services list in context." },
+              count:      { type: "number", description: "Number of people wanting this service (must be ≥ 1)." },
+            },
+            required: ["service_id", "count"],
+          },
+        },
+        date: {
+          type: "string",
+          description:
+            "Date in YYYY-MM-DD format. Resolve relative expressions " +
+            "(today, tomorrow, this Saturday, ngày mai, thứ bảy...) using today's date from context.",
+        },
+        mode: {
+          type: "string",
+          enum: ["sync_start", "sync_finish"],
+          description:
+            "Arrival preference: " +
+            "'sync_start' = everyone arrives and starts together (default if customer is unsure); " +
+            "'sync_finish' = everyone finishes at the same time. " +
+            "Ask: 'Do you want everyone to arrive together, or finish at the same time?'",
+        },
+        target_time: {
+          type: "string",
+          description:
+            "Desired time in HH:MM (24-hour) format in the salon's local timezone. " +
+            "For sync_start: the preferred arrival time (e.g. '14:00' for 2 PM). " +
+            "For sync_finish: the desired finish time. " +
+            "Convert from customer's natural language: '2 PM' → '14:00', '10:30 AM' → '10:30'.",
+        },
+      },
+      required: ["service_assignments", "date", "target_time"],
+    },
+  },
+  {
+    type: "function" as const,
+    name: "confirm_group_booking",
+    description:
+      "Confirm and save a group booking after the customer agrees to a specific time slot. " +
+      "MUST be called to actually create the group booking — verbal agreement alone does nothing. " +
+      "Trigger words: yes / ok / sure / đồng ý / được / vâng / ừ / xác nhận / đặt luôn / đặt đi. " +
+      "After success: tell the customer their party link will be sent separately — " +
+      "do NOT read out each person's individual assignment over voice. " +
+      "Just say the group start time, end time, and that a party link is ready for sharing.",
+    parameters: {
+      type: "object" as const,
+      properties: {
+        service_assignments: {
+          type: "array",
+          description: "Same service_assignments used in get_group_available_slots.",
+          items: {
+            type: "object",
+            properties: {
+              service_id: { type: "string" },
+              count:      { type: "number" },
+            },
+            required: ["service_id", "count"],
+          },
+        },
+        date: {
+          type: "string",
+          description: "Date in YYYY-MM-DD format.",
+        },
+        time: {
+          type: "string",
+          description:
+            "The chosen group start time in HH:MM (24-hour) format — taken from get_group_available_slots result. " +
+            "For sync_finish mode, this is the desired finish time.",
+        },
+        mode: {
+          type: "string",
+          enum: ["sync_start", "sync_finish"],
+          description: "Same mode used in get_group_available_slots.",
+        },
+        organizer_name: {
+          type: "string",
+          description: "Full name of the person calling to organize the group booking.",
+        },
+        organizer_phone: {
+          type: "string",
+          description: "Phone number of the organizer, including country code if provided.",
+        },
+      },
+      required: ["service_assignments", "date", "time", "mode", "organizer_name", "organizer_phone"],
+    },
+  },
 ] as const;
 
 export type RealtimeTool = (typeof REALTIME_TOOLS)[number];
