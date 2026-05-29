@@ -245,6 +245,25 @@ export const REALTIME_TOOLS = [
       required: ["service_assignments", "date", "time", "mode", "organizer_name", "organizer_phone"],
     },
   },
+  // ─── Call control ─────────────────────────────────────────────────────────
+  {
+    type: "function" as const,
+    name: "end_call",
+    description:
+      "End the voice call gracefully. " +
+      "ALWAYS say your farewell sentence FIRST, THEN call this tool — never call it before speaking. " +
+      "Call end_call when:\n" +
+      "• Customer says goodbye / tạm biệt / bye / cảm ơn tạm biệt / thôi tôi cúp máy / xong rồi\n" +
+      "• After confirm_booking / confirm_group_booking success and you have read the booking summary\n" +
+      "• After cancel_booking success and you have thanked the customer\n" +
+      "• After reschedule_booking success and you have confirmed the new time\n" +
+      "• Customer says no further help needed",
+    parameters: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
 ] as const;
 
 export type RealtimeTool = (typeof REALTIME_TOOLS)[number];

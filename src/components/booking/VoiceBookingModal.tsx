@@ -133,7 +133,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
    *  triggering a new VAD speech_started → echo loop. */
   const postSpeechCooldownRef = useRef(0);
   // Stable function stored in ref to avoid stale-closure issues in timer callbacks
-  const scheduleNudgeRef = useRef<() => void>(() => undefined);
+  const scheduleNudgeRef  = useRef<() => void>(() => undefined);
+  /** Called (after a 3-second delay) when the AI invokes the end_call tool.
+   *  Kept in a ref so dispatchFunctionCall (inside handleRealtimeEvent) can
+   *  access the latest endSession without a stale closure. */
+  const hangupAfterDelayRef = useRef<(() => void) | null>(null);
   /** Full system-prompt instructions stored so response.create calls after tool
    *  results can re-anchor the persona/tone. Without this, the model drifts to
    *  a generic/robotic register after several tool exchanges. */
@@ -189,6 +193,16 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       }).catch(() => null);
     }
   }, [cleanup, transcript]);
+
+  // Keep hangupAfterDelayRef up-to-date whenever endSession changes identity
+  useEffect(() => {
+    hangupAfterDelayRef.current = () => {
+      if (statusRef.current !== "connected") return;
+      statusRef.current = "ended";
+      setStatus("ended");
+      void endSession("completed");
+    };
+  }, [endSession]);
 
   // Keep scheduleNudgeRef up-to-date whenever endSession changes identity
   useEffect(() => {
@@ -259,6 +273,21 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
 
       let args: Record<string, unknown> = {};
       try { args = JSON.parse(rawArgs) as Record<string, unknown>; } catch { /* ignore */ }
+
+      // ── end_call: handled entirely client-side, no server round-trip needed ──
+      // The AI calls this after its farewell sentence. We send a success response
+      // back into the conversation (so the model knows it was accepted), then
+      // wait 3 seconds for the farewell audio to finish before closing the session.
+      if (fnName === "end_call") {
+        wsRef.current?.send(JSON.stringify({
+          type: "conversation.item.create",
+          item: { type: "function_call_output", call_id: callId, output: JSON.stringify({ success: true }) },
+        }));
+        pendingToolCallsRef.current = Math.max(0, pendingToolCallsRef.current - 1);
+        // 3 s delay gives the AI time to finish speaking the farewell audio
+        setTimeout(() => { hangupAfterDelayRef.current?.(); }, 3000);
+        return;
+      }
 
       // Called after submitting function_call_output — fires response.create
       // only when the last pending tool call for this response turn completes.
@@ -354,13 +383,12 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
 
     if (type === "response.done") {
       aiActiveRef.current = false;
-      // Reset pending tool call counter. If the response contained no function calls
-      // the counter should already be 0. If it did contain calls they will have
-      // already decremented it to 0 before this event fires (fetch is fast) — or, in
-      // the edge case that they haven't yet, setting to 0 here is safe because each
-      // outstanding call's sendResponseCreate() will send its own response.create
-      // when it eventually completes (counter → 0 from 1).
-      pendingToolCallsRef.current = 0;
+      // NOTE: do NOT reset pendingToolCallsRef here.
+      // Tool fetches dispatched from streaming events may still be in-flight when
+      // response.done fires. Resetting to 0 would cause each completing fetch to
+      // see counter=0 and send its own response.create → race condition.
+      // The counter decrements naturally in sendResponseCreate() as each fetch
+      // completes, and response.create is sent only when it reaches 0.
       // Stop typing sound in case the response had no audio (e.g. function-call only)
       if (typingIntervalRef.current) { clearInterval(typingIntervalRef.current); typingIntervalRef.current = null; }
       // 800 ms cooldown: suppresses mic input long enough for speaker audio to
