@@ -28,10 +28,14 @@ export const runtime     = "nodejs";
 export const maxDuration = 30;
 
 type ToolCallBody = {
-  toolName:    string;
-  toolArgs:    Record<string, unknown>;
+  // Primary field names used by the WebRTC client handler.
+  toolName?:   string;
+  toolArgs?:   Record<string, unknown>;
+  salonSlug?:  string;
   sessionId?:  string;
-  salonSlug:   string;
+  // Alternate field names accepted from external / direct API callers.
+  toolInput?:  Record<string, unknown>;
+  salonId?:    string;
 };
 
 export async function POST(req: NextRequest) {
@@ -42,34 +46,55 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
 
-  const { toolName, toolArgs, salonSlug } = body;
+  // Accept both field name conventions so the route is robust to
+  // WebRTC client calls (toolArgs / salonSlug) and direct API calls
+  // (toolInput / salonId).
+  const toolName  = body.toolName;
+  const toolArgs  = body.toolArgs ?? body.toolInput ?? {};
+  const salonSlug = body.salonSlug ?? body.salonId;
+  const sessionId = body.sessionId ?? null;
+
+  if (!toolName)  return NextResponse.json({ error: "missing_tool_name"  }, { status: 400 });
   if (!salonSlug) return NextResponse.json({ error: "missing_salon_slug" }, { status: 400 });
 
-  const supabase = createServiceRoleClient();
-
-  if (toolName === "get_available_slots") {
-    return handleGetAvailableSlots(supabase, salonSlug, toolArgs);
-  }
-  if (toolName === "confirm_booking") {
-    return handleConfirmBooking(supabase, salonSlug, toolArgs, body.sessionId ?? null);
-  }
-  if (toolName === "find_booking") {
-    return handleFindBooking(supabase, salonSlug, toolArgs);
-  }
-  if (toolName === "cancel_booking") {
-    return handleCancelBooking(supabase, salonSlug, toolArgs, body.sessionId ?? null);
-  }
-  if (toolName === "reschedule_booking") {
-    return handleRescheduleBooking(supabase, salonSlug, toolArgs, body.sessionId ?? null);
-  }
-  if (toolName === "get_group_available_slots") {
-    return handleGetGroupAvailableSlots(supabase, salonSlug, toolArgs);
-  }
-  if (toolName === "confirm_group_booking") {
-    return handleConfirmGroupBooking(supabase, salonSlug, toolArgs, body.sessionId ?? null, req);
+  let supabase: ReturnType<typeof createServiceRoleClient>;
+  try {
+    supabase = createServiceRoleClient();
+  } catch {
+    return NextResponse.json({ error: "service_unavailable" }, { status: 503 });
   }
 
-  return NextResponse.json({ error: "unknown_tool", toolName }, { status: 400 });
+  try {
+    if (toolName === "get_available_slots") {
+      return handleGetAvailableSlots(supabase, salonSlug, toolArgs);
+    }
+    if (toolName === "confirm_booking") {
+      return handleConfirmBooking(supabase, salonSlug, toolArgs, sessionId);
+    }
+    if (toolName === "find_booking") {
+      return handleFindBooking(supabase, salonSlug, toolArgs);
+    }
+    if (toolName === "cancel_booking") {
+      return handleCancelBooking(supabase, salonSlug, toolArgs, sessionId);
+    }
+    if (toolName === "reschedule_booking") {
+      return handleRescheduleBooking(supabase, salonSlug, toolArgs, sessionId);
+    }
+    if (toolName === "get_group_available_slots") {
+      return handleGetGroupAvailableSlots(supabase, salonSlug, toolArgs);
+    }
+    if (toolName === "confirm_group_booking") {
+      return handleConfirmGroupBooking(supabase, salonSlug, toolArgs, sessionId, req);
+    }
+
+    return NextResponse.json({ error: "unknown_tool", toolName }, { status: 400 });
+  } catch (err) {
+    console.error("[voice/tool] unhandled error in", toolName, err);
+    return NextResponse.json(
+      { error: "internal_error", detail: err instanceof Error ? err.message : String(err) },
+      { status: 500 },
+    );
+  }
 }
 
 async function handleGetAvailableSlots(
