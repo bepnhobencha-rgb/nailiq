@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { getAvailableTimeSlots } from "@/shared/booking/getAvailableTimeSlots";
+import { computeTimeSlots } from "@/shared/booking/getAvailableTimeSlots";
+import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
+import { salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 
 type QueryParams = {
   token?: string;
@@ -18,6 +20,10 @@ export async function GET(req: Request) {
   if (!params.token || !params.date) {
     return NextResponse.json({ error: "missing_params" }, { status: 400 });
   }
+
+  const dateYmd = params.date;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateYmd);
+  if (!m) return NextResponse.json({ error: "invalid_date_format" }, { status: 400 });
 
   const supabase = createServiceRoleClient();
 
@@ -46,14 +52,14 @@ export async function GET(req: Request) {
   } | null;
   if (!b) return NextResponse.json({ error: "booking_not_found" }, { status: 404 });
 
-  // Load salon + service data
+  // Load salon + service data (include timezone for correct slot computation)
   const [{ data: salon }, { data: service }, { data: staffRows }] = await Promise.all([
-    supabase.from("salons" as never).select("opening_hours, booking_closed_dates").eq("id", b.salon_id).maybeSingle(),
+    supabase.from("salons" as never).select("timezone, opening_hours, booking_closed_dates").eq("id", b.salon_id).maybeSingle(),
     supabase.from("services" as never).select("duration_minutes").eq("id", b.service_id).maybeSingle(),
-    supabase.from("staff" as never).select("id, name").eq("salon_id", b.salon_id).is("deleted_at" as never, null),
+    supabase.from("staff" as never).select("id, name, job_role").eq("salon_id", b.salon_id).eq("status" as never, "active").is("deleted_at" as never, null),
   ]);
 
-  const salonRow = salon as { opening_hours: unknown; booking_closed_dates?: unknown } | null;
+  const salonRow = salon as { timezone?: string; opening_hours: unknown; booking_closed_dates?: unknown } | null;
   const serviceRow = service as { duration_minutes: number } | null;
   if (!salonRow || !serviceRow) {
     return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
@@ -65,16 +71,55 @@ export async function GET(req: Request) {
     job_role: String(r.job_role ?? ""),
   }));
 
-  const selectedDate = new Date(params.date + "T12:00:00");
+  // ── Timezone-aware slot computation ─────────────────────────────────────────
+  // This route runs server-side (Vercel = UTC). computeTimeSlots uses
+  // setHours(0,0,0,0) = UTC midnight as base. For non-UTC salons (e.g. UTC-7),
+  // all slot timestamps would be 7 h too early → past-time filter is wrong.
+  //
+  // Fix: same fake-UTC-frame technique as voice/tool/route.ts
+  //   tzOffsetMs  = salonMidnightUtc − utcMidnight
+  //   nowMs       = Date.now() − tzOffsetMs
+  //   occupancy   = each timestamp shifted by −tzOffsetMs
+  //
+  // This aligns all comparisons inside computeTimeSlots to salon local time.
+  // ────────────────────────────────────────────────────────────────────────────
+  const timezone = salonRow.timezone ?? "America/Vancouver";
 
-  const slots = await getAvailableTimeSlots({
-    salonId: b.salon_id,
-    openingHoursRaw: salonRow.opening_hours,
+  const salonMidnightUtcMs = Date.parse(salonWallTimeToUtcIso(dateYmd, 0, timezone));
+  const utcMidnightMs = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const tzOffsetMs = salonMidnightUtcMs - utcMidnightMs;
+
+  // Occupancy query: cover the full salon local day (midnight → midnight+24 h)
+  const dayStart = new Date(salonMidnightUtcMs);
+  const dayEnd   = new Date(salonMidnightUtcMs + 24 * 60 * 60 * 1000 - 1);
+
+  const { data: occData } = await supabase.rpc("public_booking_occupancy_for_range", {
+    p_salon_id: b.salon_id,
+    p_start:    dayStart.toISOString(),
+    p_end:      dayEnd.toISOString(),
+  });
+
+  // Shift occupancy into fake-UTC frame
+  type OccRow = { staff_id: string; start_time_utc: string; end_time_utc: string };
+  const adjustedOccupancy: OccRow[] = (occData ?? []).map((row: OccRow) => ({
+    staff_id:       row.staff_id,
+    start_time_utc: new Date(Date.parse(row.start_time_utc) - tzOffsetMs).toISOString(),
+    end_time_utc:   new Date(Date.parse(row.end_time_utc)   - tzOffsetMs).toISOString(),
+  }));
+
+  // selectedDate: noon UTC on the requested day → correct calendar day in UTC
+  // (avoids DST boundary issues with T00:00:00)
+  const selectedDate = new Date(dateYmd + "T12:00:00Z");
+
+  const slots = computeTimeSlots({
+    openingHoursRaw:        salonRow.opening_hours,
     selectedDate,
-    staffId: b.staff_id ?? "any",
-    staffList: allStaff,
+    staffId:                b.staff_id ?? BOOKING_ANY_STAFF_ID,
+    staffList:              allStaff,
     serviceDurationMinutes: Number(serviceRow.duration_minutes),
-    closedDateYmdSet: new Set<string>(),
+    occupancy:              adjustedOccupancy,
+    nowMs:                  Date.now() - tzOffsetMs,
+    closedDateYmdSet:       new Set<string>(),
   });
 
   return NextResponse.json({
