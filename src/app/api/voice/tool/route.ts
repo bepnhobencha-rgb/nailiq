@@ -201,19 +201,24 @@ async function handleConfirmBooking(
 
   // ── 3. Resolve "any" staff → first available active staff member ─────────────
   let resolvedStaffId: string | null = null;
+  let resolvedStaffName: string | null = null;
   if (staffId !== "any" && staffId !== BOOKING_ANY_STAFF_ID) {
     resolvedStaffId = staffId;
+    const { data: staffRow } = await supabase
+      .from("staff").select("id, name").eq("id", staffId).single();
+    resolvedStaffName = staffRow?.name ?? null;
   } else {
     const { data: firstStaff } = await supabase
       .from("staff")
-      .select("id")
+      .select("id, name")
       .eq("salon_id", salon.id)
       .eq("status", "active")
       .is("deleted_at", null)
       .order("created_at", { ascending: true })
       .limit(1)
       .single();
-    resolvedStaffId = firstStaff?.id ?? null;
+    resolvedStaffId   = firstStaff?.id   ?? null;
+    resolvedStaffName = firstStaff?.name ?? null;
   }
   if (!resolvedStaffId) {
     return NextResponse.json({ error: "no_staff_available" }, { status: 409 });
@@ -293,6 +298,27 @@ async function handleConfirmBooking(
         .update({ booking_id: bookingId, status: "completed" })
         .eq("id", sessionId);
     } catch { /* best-effort */ }
+  }
+
+  // ── 8. Send SMS confirmation (fire-and-forget, same as submitPublicBooking) ──
+  // Voice bookings skipped this step — customer received no confirmation SMS.
+  if (bookingId) {
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+    fetch(`${appUrl}/api/booking/sms-confirm`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bookingId,
+        salonId:      String(salon.id),
+        clientPhone:  customerPhone,
+        clientName:   customerName,
+        serviceName:  (service as { name: string }).name,
+        staffName:    resolvedStaffName ?? undefined,
+        startTimeUtc: startUtcIso,
+      }),
+    }).catch((e: unknown) => {
+      console.error("[voice/confirm_booking] sms-confirm dispatch failed", e);
+    });
   }
 
   return NextResponse.json({

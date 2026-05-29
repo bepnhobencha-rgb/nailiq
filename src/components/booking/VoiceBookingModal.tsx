@@ -871,17 +871,27 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             </p>
           </div>
 
-          {/* Booking confirmation card — shown when confirm_booking succeeded */}
+          {/* Booking confirmation card — shown immediately when confirm_booking
+               succeeds, even while the call is still active (AI reads back summary).
+               SMS is sent server-side at the same moment. */}
           {bookingResult && (
             <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-950">
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">
-                {v.bookingConfirmed}
-              </p>
+              <div className="mb-2 flex items-center gap-2">
+                <svg className="h-4 w-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <p className="text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">
+                  {v.bookingConfirmed}
+                </p>
+              </div>
               <p className="text-sm font-semibold text-[var(--booking-text)]">{bookingResult.serviceName}</p>
               <p className="text-sm text-[var(--booking-text-muted)]">
                 {bookingResult.date} · {bookingResult.timeSlot}
               </p>
               <p className="text-sm text-[var(--booking-text-muted)]">{bookingResult.customerName}</p>
+              <p className="mt-2 text-xs text-green-600 dark:text-green-400">
+                📱 {language === "vi" ? "Tin nhắn xác nhận đã được gửi" : "Confirmation SMS sent"}
+              </p>
             </div>
           )}
 
