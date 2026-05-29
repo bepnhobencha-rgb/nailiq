@@ -279,14 +279,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             type: "conversation.item.create",
             item: { type: "function_call_output", call_id: callId, output: JSON.stringify(result) },
           }));
+          // response.voice is NOT valid for gpt-realtime-2 (rejected 2026-05-29).
+          // Voice is locked once at session level via audio.output.voice in session.update.
           wsRef.current?.send(JSON.stringify({
             type: "response.create",
-            response: {
-              ...(instructionsRef.current ? { instructions: instructionsRef.current } : {}),
-              // Lock voice per-response — prevents the model from drifting to a
-              // different voice character (age, warmth) after tool exchanges.
-              voice: voiceRef.current,
-            },
+            ...(instructionsRef.current ? { response: { instructions: instructionsRef.current } } : {}),
           }));
         })
         .catch((err: unknown) => {
@@ -297,10 +294,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
           }));
           wsRef.current?.send(JSON.stringify({
             type: "response.create",
-            response: {
-              ...(instructionsRef.current ? { instructions: instructionsRef.current } : {}),
-              voice: voiceRef.current,
-            },
+            ...(instructionsRef.current ? { response: { instructions: instructionsRef.current } } : {}),
           }));
         });
     };
