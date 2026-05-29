@@ -587,11 +587,6 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
 
         // Configure session for gpt-realtime-2.
         //
-        // IMPORTANT — modalities must include "text":
-        //   Function call arguments are TEXT output. If only "audio" is listed,
-        //   the model cannot emit function call argument items and tools silently
-        //   never fire. Always use ["text", "audio"] for tool-enabled sessions.
-        //
         // IMPORTANT — create_response: true in turn_detection:
         //   Without this, semantic_vad detects end-of-speech but does NOT
         //   automatically trigger a new model response. The user would say
@@ -607,19 +602,28 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         // Note: function_call items are separate from output_modalities —
         // tools fire regardless of whether "text" is in output_modalities.
         //
-        // IMPORTANT — gpt-realtime-2 session.update schema is STRICT:
-        // Only the fields below are accepted. Any other top-level field triggers
-        // "unknown_parameter" and kills the session. Confirmed rejected fields:
-        //   - session.voice        → rejected 2026-05-29 (use audio.output.voice)
-        //   - session.temperature  → rejected 2026-05-29 (not supported on this model)
-        //   - session.turn_detection          → rejected 2026-05-28
-        //   - session.input_audio_transcription → rejected 2026-05-28
-        // Voice is locked exclusively via audio.output.voice (nested format).
+        // ── gpt-realtime-2 session.update: CONFIRMED VALID FIELDS ──────────────
+        //
+        // ONLY these top-level fields are accepted (others → "unknown_parameter"):
+        //   type, output_modalities, instructions, tools, tool_choice, audio.*
+        //
+        // Confirmed REJECTED top-level fields (do not add back):
+        //   session.voice        → rejected 2026-05-29  (use audio.output.voice)
+        //   session.temperature  → rejected 2026-05-29  (not supported)
+        //   session.turn_detection          → rejected 2026-05-28
+        //   session.input_audio_transcription → rejected 2026-05-28
+        //
+        // output_modalities: gpt-realtime-2 supports ONLY ["audio"] or ["text"].
+        //   ["text","audio"] combined → "invalid_value" error (rejected 2026-05-29).
+        //   Use ["audio"] for voice sessions. Function/tool calls are a SEPARATE
+        //   output type (function_call items) and fire independently of modalities —
+        //   they are NOT affected by omitting "text" from output_modalities.
+        //   (gpt-4o-realtime-preview supported ["text","audio"] — gpt-realtime-2 does not.)
         ws.send(JSON.stringify({
           type: "session.update",
           session: {
             type:              "realtime",
-            output_modalities: ["text", "audio"],
+            output_modalities: ["audio"],
             ...(instructions ? { instructions } : {}),
             tools:             [...REALTIME_TOOLS],
             tool_choice:       "auto",
