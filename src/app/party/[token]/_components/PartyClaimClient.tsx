@@ -419,6 +419,7 @@ function EditDetailsForm({
           {t.formPhoneLabel}
         </label>
         <input
+          data-testid="party-edit-phone"
           type="tel"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}

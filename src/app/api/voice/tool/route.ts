@@ -85,10 +85,10 @@ async function handleGetAvailableSlots(
     return NextResponse.json({ error: "missing_required_args: service_id, date" }, { status: 400 });
   }
 
-  // Load salon + service + staff
+  // Load salon + service + staff (timezone required for correct slot filtering)
   const { data: salon } = await supabase
     .from("salons")
-    .select("id, opening_hours, booking_closed_dates")
+    .select("id, timezone, opening_hours, booking_closed_dates")
     .eq("slug", salonSlug)
     .single();
   if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
@@ -113,9 +113,44 @@ async function handleGetAvailableSlots(
   if (!m) return NextResponse.json({ error: "invalid_date_format" }, { status: 400 });
   const selectedDate = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
 
-  // Load occupancy for the day
-  const dayStart = new Date(selectedDate); dayStart.setHours(0, 0, 0, 0);
-  const dayEnd   = new Date(selectedDate); dayEnd.setHours(23, 59, 59, 999);
+  // ── Timezone-aware slot computation ──────────────────────────────────────────
+  //
+  // Problem: Vercel runs in UTC. computeTimeSlots uses `setHours(0,0,0,0)` which
+  // gives UTC midnight as the base. For a Vancouver (UTC-7) salon:
+  //   • Server's "10:00 AM" slot = UTC midnight + 600 min = 10:00 UTC
+  //   • Actual 10:00 AM PDT                                = 17:00 UTC
+  // This causes the past-time filter and conflict check to use the wrong times.
+  // Example: at 15:36 PDT (22:36 UTC) all salon slots (10:00–19:00 UTC) look
+  // "past" and the AI says "no slots today" even with 4 hours remaining.
+  //
+  // Fix: compute the offset between salon local midnight and UTC midnight,
+  // then shift nowMs and occupancy timestamps by that offset so all comparisons
+  // inside computeTimeSlots use a consistent "local fake-UTC" frame.
+  //
+  // tzOffsetMs  = salonMidnightUtc - utcMidnight
+  //   UTC-7:  07:00 UTC - 00:00 UTC = +7h   (25 200 000 ms)
+  //   UTC+7:  17:00 UTC of prev day - 00:00 UTC of day = -7h (−25 200 000 ms)
+  //
+  // adjustedNowMs    = Date.now() − tzOffsetMs
+  // adjustedOccupancy = occupancy shifted by −tzOffsetMs
+  //
+  // In the fake frame, slot "10:00 AM" (10:00 UTC fake) matches a booking at
+  // 10:00 AM local (17:00 UTC real) shifted to 10:00 UTC fake. Overlap checks
+  // and the past-time guard all produce correct results.
+  // ─────────────────────────────────────────────────────────────────────────────
+  const timezone = (salon as { timezone?: string }).timezone ?? "America/Los_Angeles";
+
+  // Salon's local midnight expressed in UTC (DST-safe via binary-search Intl)
+  const salonMidnightUtcMs = Date.parse(salonWallTimeToUtcIso(dateYmd, 0, timezone));
+  // UTC midnight of the same calendar date (what setHours(0,0,0,0) gives on the server)
+  const utcMidnightMs = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  // How many ms ahead salon midnight is vs UTC midnight (+7h for UTC-7, −7h for UTC+7)
+  const tzOffsetMs = salonMidnightUtcMs - utcMidnightMs;
+
+  // Occupancy query: cover the full salon local day (midnight → midnight+24 h)
+  // to capture bookings that spill into the next UTC day (e.g. 6 PM PDT = 01:00 UTC+1).
+  const dayStart = new Date(salonMidnightUtcMs);
+  const dayEnd   = new Date(salonMidnightUtcMs + 24 * 60 * 60 * 1000 - 1);
 
   const { data: occData } = await supabase.rpc("public_booking_occupancy_for_range", {
     p_salon_id: salon.id,
@@ -135,14 +170,24 @@ async function handleGetAvailableSlots(
     job_role: s.job_role,
   }));
 
+  // Shift occupancy timestamps into fake-UTC frame so conflict detection is correct.
+  type OccRow = { staff_id: string; start_time_utc: string; end_time_utc: string };
+  const adjustedOccupancy: OccRow[] = (occData ?? []).map((row: OccRow) => ({
+    staff_id:       row.staff_id,
+    start_time_utc: new Date(Date.parse(row.start_time_utc) - tzOffsetMs).toISOString(),
+    end_time_utc:   new Date(Date.parse(row.end_time_utc)   - tzOffsetMs).toISOString(),
+  }));
+
   const slots = computeTimeSlots({
     openingHoursRaw:        salonAny.opening_hours,
     selectedDate,
     staffId:                staffId === "any" ? BOOKING_ANY_STAFF_ID : staffId,
     staffList,
     serviceDurationMinutes: service.duration_minutes,
-    occupancy:              (occData ?? []) as { staff_id: string; start_time_utc: string; end_time_utc: string }[],
-    nowMs:                  Date.now(),
+    occupancy:              adjustedOccupancy,
+    // Shift nowMs into the same fake-UTC frame so the past-time filter
+    // correctly hides slots that are already past in the salon's local timezone.
+    nowMs:                  Date.now() - tzOffsetMs,
   });
 
   const available = slots.filter((s) => s.available).map((s) => s.label);

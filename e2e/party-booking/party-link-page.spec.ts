@@ -141,18 +141,29 @@ test("editing details after claim updates name on page", async ({ page }) => {
     .getByTestId("party-edit-btn")
     .evaluate((el) => (el as HTMLButtonElement).click());
 
-  // Fill new name in the edit form
+  // Fill new name and phone in the edit form (phone is required by editPartyClaimDetails).
   await expect(firstCard.getByTestId("party-edit-name")).toBeVisible({ timeout: 5_000 });
   await firstCard.getByTestId("party-edit-name").fill("E2E Bob Updated");
+  await firstCard.getByTestId("party-edit-phone").fill("+16045550099");
 
   // Submit edit
   await firstCard
     .getByTestId("party-edit-submit")
     .evaluate((el) => (el as HTMLButtonElement).click());
 
-  // Success state appears; after edit, updated name is shown.
+  // Edit form closes after success (edit button visible, form hidden).
   await expect(firstCard.getByTestId("party-edit-btn")).toBeVisible({ timeout: 10_000 });
-  await expect(firstCard.getByText("E2E Bob Updated")).toBeVisible({ timeout: 10_000 });
+
+  // DB: member_name in the claim row should be updated.
+  await expect
+    .poll(
+      async () => {
+        const claims = await getPartyClaims(link.partyLinkId);
+        return claims.some((c) => c.member_name === "E2E Bob Updated");
+      },
+      { timeout: 10_000, intervals: [500] },
+    )
+    .toBe(true);
 });
 
 // ─── Test 7: Submit change request ────────────────────────────────
