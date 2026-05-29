@@ -440,6 +440,8 @@ export const bookingEn = {
     partyLinkHint: "Send this link so everyone can confirm their slot.",
     partyLinkCopy: "Copy",
     partyLinkCopied: "Copied!",
+    partyLinkUnavailable:
+      "Party Link could not be generated. Your booking is confirmed — share it manually.",
   },
 
   /** Strings used on the public /party/[token] page. */
@@ -481,6 +483,29 @@ export const bookingEn = {
     expiredBody: "This party link has passed its 24-hour window. Ask the organiser to share a new booking.",
     /** Footer */
     poweredBy: "Powered by",
+
+    /** Part C — "Edit my details" section shown after claiming. */
+    editMyDetails: "Edit my details",
+    editDetailsHeading: "Update your details",
+    editDetailsSave: "Save changes",
+    editDetailsSaving: "Saving…",
+    editDetailsSuccess: "Details updated!",
+    editDetailsCancel: "Cancel",
+    editDetailsErrName: "Please enter your name.",
+    editDetailsErrPhone: "Please check your phone number (include country code).",
+    editDetailsErrGeneric: "Couldn't update details. Please try again.",
+
+    /** Part E — change request section shown after claiming. */
+    needToChange: "Need to change something?",
+    changeRequestHint: "Submit a request and the salon will review it.",
+    changeServiceBtn: "Change service",
+    changeStaffBtn: "Preferred staff",
+    addNoteBtn: "Note to salon",
+    changeRequestNotePlaceholder: "e.g. I'd prefer a different design or nail colour…",
+    changeRequestSubmit: "Submit request",
+    changeRequestSubmitting: "Submitting…",
+    changeRequestSuccess: "Request sent! The salon will be in touch.",
+    changeRequestErrGeneric: "Couldn't submit request. Please try again.",
   },
   chat: {
     trigger: "Ask AI",

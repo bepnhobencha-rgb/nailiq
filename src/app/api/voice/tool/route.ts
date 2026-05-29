@@ -1110,7 +1110,7 @@ async function handleConfirmGroupBooking(
   }
 
   // 5. Build the insert_group_bookings payload
-  //    All members get the organizer's name + phone (voice doesn't collect each member's info).
+  //    Part A: use Guest N placeholders — real names come from Party Link claiming.
   const idempotencyKey = crypto.randomUUID();
   const insertPayload = assignmentResult.assignments.map((a, idx) => {
     const member = ctx.resolvedMembers.find((m) => m.index === a.memberIdx) ?? ctx.resolvedMembers[idx]!;
@@ -1119,7 +1119,7 @@ async function handleConfirmGroupBooking(
       salon_id:                  ctx.salonId,
       staff_id:                  a.staffId,
       service_id:                member.serviceId,
-      client_name:               organizerName!.trim(),
+      client_name:               `Guest ${idx + 1}`,
       client_phone:              phoneDigits,
       client_email:              null,
       client_notes:              "Voice group booking",
@@ -1193,6 +1193,8 @@ async function handleConfirmGroupBooking(
       mode,
       groupStartUtcIso,
       baseUrl,
+      organizerName:   organizerName!.trim(),
+      organizerPhone:  phoneDigits,
     });
     if (linkResult.ok) partyLinkUrl = linkResult.url;
   } catch {

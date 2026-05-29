@@ -1724,14 +1724,14 @@ function ReceptionistCenterInner({
 
         {/* Party Card Panel — upcoming group bookings with party links.
             Rendered as a shrink-0 strip so the three-zone grid below
-            adjusts its height automatically. Hidden when no cards. */}
-        {partyCards.length > 0 && (
-          <PartyCardPanel
-            initialCards={partyCards}
-            slug={slug}
-            currencyCode={data.salon.currencyCode}
-          />
-        )}
+            adjusts its height automatically. Always mounted so its own
+            empty state is reachable and the refresh control can surface
+            newly-created party cards without a full page reload. */}
+        <PartyCardPanel
+          initialCards={partyCards}
+          slug={slug}
+          currencyCode={data.salon.currencyCode}
+        />
 
         {modules.alerts && isSetupIncomplete ? (
           <div

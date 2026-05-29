@@ -78,6 +78,16 @@ export type ClaimPartySlotResult =
   | { ok: true }
   | { ok: false; reason: "not_found" | "expired" | "already_claimed" | "invalid_input" | "server_error" };
 
+export type EditPartyClaimResult =
+  | { ok: true }
+  | { ok: false; reason: "not_found" | "expired" | "not_claimed" | "invalid_input" | "server_error" };
+
+export type SubmitPartyChangeResult =
+  | { ok: true; changeRequestId: string }
+  | { ok: false; reason: "not_found" | "expired" | "not_claimed" | "invalid_input" | "server_error" };
+
+export type PartyChangeRequestType = "service_change" | "staff_preference" | "note";
+
 // ─── createPartyLink ─────────────────────────────────────────────
 
 /**
@@ -97,8 +107,12 @@ export async function createPartyLink(params: {
   groupStartUtcIso: string;
   /** Base URL of the deployment, e.g. "https://nailiq.ca". */
   baseUrl: string;
+  /** Name of the person who organised the group booking (optional). */
+  organizerName?: string;
+  /** Normalised phone digits of the organiser (optional). */
+  organizerPhone?: string;
 }): Promise<CreatePartyLinkResult> {
-  const { groupId, salonId, bookingIds, mode, groupStartUtcIso, baseUrl } = params;
+  const { groupId, salonId, bookingIds, mode, groupStartUtcIso, baseUrl, organizerName, organizerPhone } = params;
 
   if (!groupId || !salonId || !Array.isArray(bookingIds) || bookingIds.length < 2) {
     return { ok: false, reason: "invalid_input" };
@@ -155,11 +169,13 @@ export async function createPartyLink(params: {
     const { data: link, error: insertErr } = await db
       .from("party_links")
       .insert({
-        group_id: groupId,
-        salon_id: salonId,
-        token: candidate,
+        group_id:        groupId,
+        salon_id:        salonId,
+        token:           candidate,
         mode,
-        expires_at: expiresAt,
+        expires_at:      expiresAt,
+        organizer_name:  organizerName?.trim() || null,
+        organizer_phone: organizerPhone?.trim() || null,
       })
       .select("id")
       .single();
@@ -389,4 +405,140 @@ export async function claimPartySlot(params: {
   }
 
   return { ok: true };
+}
+
+// ─── editPartyClaimDetails ────────────────────────────────────────
+
+/**
+ * Lets a member update their name, phone, and reminder preference
+ * after they have already claimed their slot.
+ * Delegates atomicity to the update_party_claim_details SECURITY DEFINER RPC,
+ * which also propagates the name change to bookings.client_name.
+ */
+export async function editPartyClaimDetails(params: {
+  token: string;
+  claimId: string;
+  memberName: string;
+  memberPhone: string;
+  reminderOptedIn: boolean;
+}): Promise<EditPartyClaimResult> {
+  const { token, claimId, memberName, memberPhone, reminderOptedIn } = params;
+
+  // Input validation — client-side mirrors these but server always re-checks.
+  const nameTrim = memberName.trim();
+  if (!nameTrim || nameTrim.length > BOOKING_GUEST_NAME_MAX || !isValidCustomerName(nameTrim)) {
+    return { ok: false, reason: "invalid_input" };
+  }
+
+  const phoneResult = validateGuestPhone(memberPhone);
+  if (!phoneResult.ok) {
+    return { ok: false, reason: "invalid_input" };
+  }
+
+  const db = createServiceRoleClient();
+
+  const { data, error } = await db.rpc("update_party_claim_details", {
+    p_token:             token,
+    p_claim_id:          claimId,
+    p_member_name:       nameTrim,
+    p_member_phone:      phoneResult.digits,
+    p_reminder_opted_in: reminderOptedIn,
+  });
+
+  if (error) {
+    Sentry.captureException(error, { extra: { token, claimId } });
+    return { ok: false, reason: "server_error" };
+  }
+
+  const result = data as Record<string, unknown>;
+  if (!result?.success) {
+    const code = result?.code as string | undefined;
+    if (code === "not_found")    return { ok: false, reason: "not_found" };
+    if (code === "expired")      return { ok: false, reason: "expired" };
+    if (code === "not_claimed")  return { ok: false, reason: "not_claimed" };
+    return { ok: false, reason: "server_error" };
+  }
+
+  return { ok: true };
+}
+
+// ─── submitPartyChangeRequest ─────────────────────────────────────
+
+/**
+ * Submits a change request on behalf of a group booking member.
+ * The request is queued as 'pending' for salon staff to review.
+ *
+ * Security contract:
+ *   - token must belong to a non-expired party link.
+ *   - claimId must belong to that link AND be claimed (only a real
+ *     member who confirmed their slot can request a change).
+ *   - Phone numbers are NOT collected here; the claim row is the link.
+ *   - Service-role client used for all writes.
+ */
+export async function submitPartyChangeRequest(params: {
+  token: string;
+  claimId: string;
+  bookingId: string;
+  requestType: PartyChangeRequestType;
+  note?: string;
+}): Promise<SubmitPartyChangeResult> {
+  const { token, claimId, bookingId, requestType, note } = params;
+
+  if (!token || token.length < 8) return { ok: false, reason: "not_found" };
+  if (!claimId || !bookingId)      return { ok: false, reason: "invalid_input" };
+  if (!["service_change", "staff_preference", "note"].includes(requestType)) {
+    return { ok: false, reason: "invalid_input" };
+  }
+
+  const noteTrim = (note ?? "").trim().slice(0, 500);
+
+  let db: ReturnType<typeof createServiceRoleClient>;
+  try {
+    db = createServiceRoleClient();
+  } catch (err) {
+    Sentry.captureException(err);
+    return { ok: false, reason: "server_error" };
+  }
+
+  // Validate token is active and claim belongs to it.
+  const { data: link, error: linkErr } = await db
+    .from("party_links")
+    .select("id, expires_at")
+    .eq("token", token)
+    .single();
+
+  if (linkErr || !link) return { ok: false, reason: "not_found" };
+  if (new Date(link.expires_at) < new Date()) return { ok: false, reason: "expired" };
+
+  const { data: claim, error: claimErr } = await db
+    .from("party_link_claims")
+    .select("id, claimed_at")
+    .eq("id", claimId)
+    .eq("party_link_id", link.id)
+    .single();
+
+  if (claimErr || !claim) return { ok: false, reason: "not_found" };
+  if (!claim.claimed_at)  return { ok: false, reason: "not_claimed" };
+
+  // Insert the change request.
+  const { data: inserted, error: insertErr } = await db
+    .from("party_link_change_requests")
+    .insert({
+      party_link_id: link.id,
+      booking_id:    bookingId,
+      claim_id:      claimId,
+      request_type:  requestType,
+      note:          noteTrim.length > 0 ? noteTrim : null,
+    })
+    .select("id")
+    .single();
+
+  if (insertErr || !inserted) {
+    Sentry.captureException(insertErr ?? new Error("submitPartyChangeRequest: no id returned"), {
+      extra: { token, claimId, bookingId, requestType },
+    });
+    return { ok: false, reason: "server_error" };
+  }
+
+  return { ok: true, changeRequestId: inserted.id };
 }

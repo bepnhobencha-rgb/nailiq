@@ -48,6 +48,8 @@ export type PartyCard = {
    */
   estimatedRevenueCents: number | null;
   slots: PartyCardSlot[];
+  /** Number of pending change requests from guests (Part F). 0 when none. */
+  pendingChangeRequestCount: number;
 };
 
 export type RawClaim = {
@@ -95,6 +97,7 @@ export function buildPartyCard(
   claims: RawClaim[],
   tz: string,
   now: Date,
+  pendingChangeRequestCount = 0,
 ): PartyCard {
   const expired = new Date(partyLink.expires_at) < now;
 
@@ -136,7 +139,9 @@ export function buildPartyCard(
     };
   });
 
-  const groupStartIso = startIsos.reduce((a, b) => (a < b ? a : b), "");
+  const groupStartIso = startIsos.length > 0
+    ? startIsos.reduce((a, b) => (a < b ? a : b))
+    : "";
   const groupEndIso = endIsos.reduce((a, b) => (a > b ? a : b), "");
 
   return {
@@ -161,5 +166,6 @@ export function buildPartyCard(
     estimatedRevenueCents:
       allPricesKnown && slots.length > 0 ? totalRevenueCents : null,
     slots,
+    pendingChangeRequestCount,
   };
 }

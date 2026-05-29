@@ -541,7 +541,7 @@ export async function submitGroupBooking(
   // of the exact same payload hits the partial UNIQUE on member 1
   // and the function returns `duplicate_submission`.
   const idem = params.idempotencyKey;
-  const payload = resolved.map((r) => {
+  const payload = resolved.map((r, i) => {
     const phoneOk = validateGuestPhone(r.member.phone);
     const phoneDigits = phoneOk.ok ? phoneOk.digits : r.member.phone;
     const emailRaw = (r.member.email ?? "").trim();
@@ -550,7 +550,8 @@ export async function submitGroupBooking(
       salon_id: salonRow.id,
       staff_id: r.member.staffId,
       service_id: r.member.serviceId,
-      client_name: r.member.name.trim(),
+      // Part A: use Guest N placeholder so real names come from Party Link claiming
+      client_name: `Guest ${i + 1}`,
       client_phone: phoneDigits,
       client_email: emailRaw.length > 0 ? emailRaw : null,
       client_notes: notesRaw.length > 0 ? notesRaw : null,

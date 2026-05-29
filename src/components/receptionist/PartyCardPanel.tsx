@@ -195,6 +195,14 @@ function PartyCardItem({
               {MODE_LABEL[card.mode] ?? card.mode}
             </span>
           )}
+          {card.pendingChangeRequestCount > 0 && (
+            <span
+              data-testid={`party-card-change-requests-${card.groupId}`}
+              className="rounded bg-amber-400/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600"
+            >
+              {card.pendingChangeRequestCount} change{card.pendingChangeRequestCount !== 1 ? "s" : ""} requested
+            </span>
+          )}
         </div>
       </div>
 
@@ -203,6 +211,14 @@ function PartyCardItem({
         <div className="flex items-center justify-between text-[11px]">
           <span className="text-nq-muted">
             {card.claimedCount}/{card.totalSlots} confirmed
+            {card.pendingCount > 0 && (
+              <span
+                data-testid={`party-card-pending-${card.groupId}`}
+                className="text-amber-400"
+              >
+                {" · "}{card.pendingCount} pending
+              </span>
+            )}
           </span>
           {card.estimatedRevenueCents != null && (
             <span

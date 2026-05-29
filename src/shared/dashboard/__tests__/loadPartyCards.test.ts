@@ -318,6 +318,95 @@ test("PartyCard token matches the party link token", () => {
   assertEqual(card.token, token, "token matches");
 });
 
+// ─── groupStartDisplay is never "—" when claims have start times ─────
+// Regression test for the groupStartIso reduce bug (initial value ""
+// always won the min comparison, making groupStartDisplay always "—").
+
+test("groupStartDisplay shows earliest slot start, not '—'", () => {
+  const link = makeLink();
+  const claims = [
+    makeClaim({ start: "2026-06-01T17:00:00Z" }),
+    makeClaim({ start: "2026-06-01T17:40:00Z" }),
+  ];
+  const card = buildPartyCard(link, claims, TZ, NOW);
+  assertTrue(
+    card.groupStartDisplay !== "—",
+    `groupStartDisplay should not be '—', got: '${card.groupStartDisplay}'`,
+  );
+});
+
+test("groupStartDisplay reflects the earliest slot across all claims", () => {
+  const link = makeLink();
+  const claims = [
+    makeClaim({ start: "2026-06-01T18:00:00Z" }),
+    makeClaim({ start: "2026-06-01T17:00:00Z" }),
+    makeClaim({ start: "2026-06-01T19:00:00Z" }),
+  ];
+  const card = buildPartyCard(link, claims, TZ, NOW);
+  // 17:00 UTC = 10:00 AM Vancouver (PDT, UTC-7)
+  const cardEarliest = buildPartyCard(
+    link,
+    [makeClaim({ start: "2026-06-01T17:00:00Z" })],
+    TZ,
+    NOW,
+  );
+  assertEqual(
+    card.groupStartDisplay,
+    cardEarliest.groupStartDisplay,
+    "groupStartDisplay must equal display of the earliest start",
+  );
+});
+
+test("groupEndDisplay shows latest slot end", () => {
+  const link = makeLink();
+  const claims = [
+    makeClaim({ start: "2026-06-01T17:00:00Z", end: "2026-06-01T17:40:00Z" }),
+    makeClaim({ start: "2026-06-01T18:00:00Z", end: "2026-06-01T19:00:00Z" }),
+  ];
+  const card = buildPartyCard(link, claims, TZ, NOW);
+  assertTrue(
+    card.groupEndDisplay !== "—",
+    `groupEndDisplay should not be '—', got: '${card.groupEndDisplay}'`,
+  );
+  const cardLatest = buildPartyCard(
+    link,
+    [makeClaim({ start: "2026-06-01T18:00:00Z", end: "2026-06-01T19:00:00Z" })],
+    TZ,
+    NOW,
+  );
+  assertEqual(
+    card.groupEndDisplay,
+    cardLatest.groupEndDisplay,
+    "groupEndDisplay must equal display of the latest end",
+  );
+});
+
+test("buildPartyCard with no claims returns empty groupStartDisplay", () => {
+  const link = makeLink();
+  const card = buildPartyCard(link, [], TZ, NOW);
+  assertEqual(card.groupStartDisplay, "—", "empty claims → groupStartDisplay is '—'");
+  assertEqual(card.groupEndDisplay, "—", "empty claims → groupEndDisplay is '—'");
+});
+
+// ─── Party Card appears when party_links row exists ───────────────
+// Structural test: loadPartyCardsAction only shows groups that have
+// a party_links row. This test verifies that buildPartyCard produces
+// a card (not null/undefined) when given a valid party link + claims.
+
+test("buildPartyCard returns a valid card when party link and claims exist", () => {
+  const link = makeLink();
+  const claims = [
+    makeClaim({ start: "2026-06-01T17:00:00Z", member_name: "Alice", claimed_at: new Date().toISOString() }),
+    makeClaim({ start: "2026-06-01T17:40:00Z", member_name: null, claimed_at: null }),
+  ];
+  const card = buildPartyCard(link, claims, TZ, NOW);
+  assertNotNull(card, "card must not be null");
+  assertEqual(card.totalSlots, 2);
+  assertEqual(card.claimedCount, 1);
+  assertEqual(card.pendingCount, 1);
+  assertTrue(card.partyLinkId === PARTY_LINK_ID, "partyLinkId must match");
+});
+
 // ─── Summary ─────────────────────────────────────────────────────
 
 setTimeout(() => {

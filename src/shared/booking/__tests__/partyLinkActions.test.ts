@@ -197,6 +197,48 @@ test("PARTY_LINK_TTL_MS is exactly 24 hours", () => {
   );
 });
 
+// ─── createPartyLink failure does not crash booking success ───────
+// These tests verify the guard clauses that prevent Party Link
+// creation from blocking or crashing the booking confirmation.
+
+test("createPartyLink with empty bookingIds returns ok:false (not a throw)", async () => {
+  let threw = false;
+  let result: Awaited<ReturnType<typeof createPartyLink>> | null = null;
+  try {
+    result = await createPartyLink({ ...validParams, bookingIds: [] });
+  } catch {
+    threw = true;
+  }
+  assertTruthy(!threw, "createPartyLink must not throw on invalid input");
+  assertTruthy(result !== null, "must return a result object");
+  if (result) assertEqual(result.ok, false, "invalid bookingIds → ok:false");
+});
+
+test("createPartyLink with single bookingId returns ok:false (not a throw)", async () => {
+  let threw = false;
+  let result: Awaited<ReturnType<typeof createPartyLink>> | null = null;
+  try {
+    result = await createPartyLink({
+      ...validParams,
+      bookingIds: [crypto.randomUUID()],
+    });
+  } catch {
+    threw = true;
+  }
+  assertTruthy(!threw, "createPartyLink must not throw on single bookingId");
+  if (result) assertEqual(result.ok, false);
+});
+
+test("createPartyLink ok:false reason is a string (UI can display it)", async () => {
+  const res = await createPartyLink({ ...validParams, bookingIds: [] });
+  if (!res.ok) {
+    assertTruthy(
+      typeof res.reason === "string" && res.reason.length > 0,
+      "reason should be a non-empty string",
+    );
+  }
+});
+
 // ─── Summary ─────────────────────────────────────────────────────
 // Give async tests a tick to resolve before printing summary.
 setTimeout(() => {

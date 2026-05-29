@@ -141,12 +141,30 @@ export async function loadPartyCardsAction(
     claimsByLink.set(raw.party_link_id, list);
   }
 
-  // 6. Build a PartyCard per group, sorted by group start time.
+  // 6. Fetch pending change request counts per party link (Part F).
+  const changeReqCountMap = new Map<string, number>();
+  const { data: changeReqs } = await db
+    .from("party_link_change_requests")
+    .select("party_link_id")
+    .in("party_link_id", partyLinkIds)
+    .eq("status", "pending");
+
+  if (changeReqs) {
+    for (const row of changeReqs) {
+      changeReqCountMap.set(
+        row.party_link_id,
+        (changeReqCountMap.get(row.party_link_id) ?? 0) + 1,
+      );
+    }
+  }
+
+  // 7. Build a PartyCard per group, sorted by group start time.
   const cards: PartyCard[] = [];
   for (const [partyLinkId, linkClaims] of claimsByLink) {
     const pl = partyLinkMap.get(partyLinkId);
     if (!pl || linkClaims.length === 0) continue;
-    cards.push(buildPartyCard(pl, linkClaims, tz, now));
+    const pendingCount = changeReqCountMap.get(partyLinkId) ?? 0;
+    cards.push(buildPartyCard(pl, linkClaims, tz, now, pendingCount));
   }
 
   cards.sort((a, b) => a.groupStartUtcIso.localeCompare(b.groupStartUtcIso));

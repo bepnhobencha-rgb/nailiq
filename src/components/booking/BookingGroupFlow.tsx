@@ -219,6 +219,8 @@ export function BookingGroupFlow({
   } | null>(null);
   /** Party Link URL — set asynchronously after submitGroupBooking succeeds. */
   const [partyLinkUrl, setPartyLinkUrl] = useState<string | null>(null);
+  /** True when Party Link creation failed (non-blocking — booking is still confirmed). */
+  const [partyLinkFailed, setPartyLinkFailed] = useState(false);
 
   // FIX 09 (Task #04-A) — idempotency key MUST be stable across
   // retries within the same browser session, otherwise a network
@@ -645,10 +647,28 @@ export function BookingGroupFlow({
             groupStartUtcIso,
             baseUrl:
               typeof window !== "undefined" ? window.location.origin : "",
+            organizerName:  members[0]?.name.trim() || undefined,
+            organizerPhone: primaryPhone.trim() || undefined,
           }).then((linkResult) => {
-            if (linkResult.ok) setPartyLinkUrl(linkResult.url);
-          }).catch(() => {
-            // Non-critical — success panel still works without the party link.
+            if (linkResult.ok) {
+              setPartyLinkUrl(linkResult.url);
+            } else {
+              if (process.env.NODE_ENV !== "production") {
+                // eslint-disable-next-line no-console
+                console.warn(
+                  "[nailiq] createPartyLink returned ok:false — reason:",
+                  linkResult.reason,
+                  "\nIf reason is 'server_error', check that SUPABASE_SERVICE_ROLE_KEY is set in .env.local.",
+                );
+              }
+              setPartyLinkFailed(true);
+            }
+          }).catch((err: unknown) => {
+            if (process.env.NODE_ENV !== "production") {
+              // eslint-disable-next-line no-console
+              console.warn("[nailiq] createPartyLink threw unexpectedly:", err);
+            }
+            setPartyLinkFailed(true);
           });
         }
         return;
@@ -926,6 +946,7 @@ export function BookingGroupFlow({
         selectedArrangementIdx={selectedArrangementIdx}
         date={date}
         partyLinkUrl={partyLinkUrl}
+        partyLinkFailed={partyLinkFailed}
       />
     );
   }
@@ -2874,6 +2895,7 @@ function SuccessPanel({
   selectedArrangementIdx,
   date,
   partyLinkUrl,
+  partyLinkFailed,
 }: {
   t: BookingMessages;
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
@@ -2890,6 +2912,8 @@ function SuccessPanel({
   /** Phase 2 — shareable party link URL, set asynchronously.
    *  null while the createPartyLink call is in flight or if it failed. */
   partyLinkUrl: string | null;
+  /** True when createPartyLink returned ok:false or threw — triggers non-blocking warning. */
+  partyLinkFailed: boolean;
 }) {
   const arrangement =
     scheduleResult && scheduleResult.ok
@@ -2934,6 +2958,13 @@ function SuccessPanel({
       {/* Party Link share section — shown once the async call resolves */}
       {partyLinkUrl ? (
         <PartyLinkShareBox url={partyLinkUrl} groupCopy={groupCopy} />
+      ) : partyLinkFailed ? (
+        <p
+          data-testid="party-link-warning"
+          className="mt-4 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-400"
+        >
+          {groupCopy.partyLinkUnavailable}
+        </p>
       ) : null}
 
       {t ? null : null}

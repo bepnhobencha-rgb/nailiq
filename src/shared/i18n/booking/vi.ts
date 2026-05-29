@@ -296,6 +296,8 @@ export const bookingVi: BookingMessages = {
     partyLinkHint: "Gửi đường dẫn này để mọi người xác nhận lịch của mình.",
     partyLinkCopy: "Sao chép",
     partyLinkCopied: "Đã sao chép!",
+    partyLinkUnavailable:
+      "Không thể tạo Party Link. Lịch hẹn của bạn đã được xác nhận — hãy chia sẻ thủ công.",
   },
 
   /** Strings used on the public /party/[token] page. */
@@ -329,6 +331,27 @@ export const bookingVi: BookingMessages = {
     expiredTitle: "Đường dẫn hết hạn",
     expiredBody: "Đường dẫn này đã quá 24 giờ. Vui lòng nhờ người tổ chức chia sẻ lịch đặt mới.",
     poweredBy: "Được cung cấp bởi",
+
+    editMyDetails: "Chỉnh sửa thông tin",
+    editDetailsHeading: "Cập nhật thông tin của bạn",
+    editDetailsSave: "Lưu thay đổi",
+    editDetailsSaving: "Đang lưu…",
+    editDetailsSuccess: "Đã cập nhật thông tin!",
+    editDetailsCancel: "Huỷ",
+    editDetailsErrName: "Vui lòng nhập tên của bạn.",
+    editDetailsErrPhone: "Vui lòng kiểm tra số điện thoại (kèm mã quốc gia).",
+    editDetailsErrGeneric: "Không thể cập nhật thông tin. Vui lòng thử lại.",
+
+    needToChange: "Cần thay đổi gì không?",
+    changeRequestHint: "Gửi yêu cầu và tiệm sẽ xem xét.",
+    changeServiceBtn: "Đổi dịch vụ",
+    changeStaffBtn: "Chọn thợ ưa thích",
+    addNoteBtn: "Nhắn tin cho tiệm",
+    changeRequestNotePlaceholder: "vd. Tôi muốn kiểu móng hoặc màu khác…",
+    changeRequestSubmit: "Gửi yêu cầu",
+    changeRequestSubmitting: "Đang gửi…",
+    changeRequestSuccess: "Đã gửi yêu cầu! Tiệm sẽ liên hệ bạn sớm.",
+    changeRequestErrGeneric: "Không thể gửi yêu cầu. Vui lòng thử lại.",
   },
   chat: {
     trigger: "Hỏi AI",
