@@ -476,6 +476,14 @@ export const bookingEn = {
     expiredLabel: "Expired",
     /** Phase 6 — wave section heading on large split-group party links. */
     waveLabel: "Wave",
+    /** UI polish — invitation subtext, wave summary, claim-form intro. */
+    invitedSubtext: "Confirm your spot in 30 seconds.",
+    wavesBadge: "{count} waves",
+    waveExplain: "Your group is split into waves so the salon can serve everyone smoothly.",
+    waveGuestCount: "{count} guests",
+    guestWord: "Guest",
+    claimFormTitle: "Confirm this spot is yours",
+    claimFormSubtext: "Enter your name and phone so the salon can send reminders.",
     /** Claim form */
     formNameLabel: "Your name",
     formNamePlaceholder: "e.g. Sarah",
