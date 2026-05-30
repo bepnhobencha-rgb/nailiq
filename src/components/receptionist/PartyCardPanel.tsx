@@ -253,8 +253,8 @@ function PartyCardItem({
       {/* Slot rows */}
       {slotsOpen && (
         <ul className="border-t border-nq-border/30 px-3 py-2 space-y-1.5" role="list">
-          {card.slots.map((slot, idx) => (
-            <SlotRow key={slot.claimId} slot={slot} index={idx} />
+          {card.slots.map((slot) => (
+            <SlotRow key={slot.claimId} slot={slot} />
           ))}
         </ul>
       )}
@@ -281,7 +281,7 @@ function PartyCardItem({
 
 // ─── Slot Row ─────────────────────────────────────────────────────
 
-function SlotRow({ slot, index }: { slot: PartyCardSlot; index: number }) {
+function SlotRow({ slot }: { slot: PartyCardSlot }) {
   return (
     <li
       data-testid={`party-slot-${slot.claimId}`}
@@ -290,7 +290,7 @@ function SlotRow({ slot, index }: { slot: PartyCardSlot; index: number }) {
       <StatusBadge status={slot.claimed ? "confirmed" : "pending"} />
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium text-nq-foreground">
-          {slot.memberName ?? `Guest ${index + 1}`}
+          {slot.memberName ?? slot.guestLabel}
         </p>
         <p className="truncate text-nq-muted">
           {slot.serviceName} · {slot.staffName}

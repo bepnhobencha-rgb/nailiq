@@ -54,6 +54,13 @@ export type PartyLinkSlot = {
   claimed: boolean;
   /** Name of the person who claimed it, or null if unclaimed. */
   claimedByName: string | null;
+  /**
+   * Booking-level placeholder name from bookings.client_name.
+   * For voice group bookings this is "Guest 1", "Guest 2", etc.
+   * Shown on unclaimed slots so the party link displays the group roster
+   * before anyone claims.  Replaced by claimedByName once claimed.
+   */
+  guestLabel: string;
 };
 
 export type PartyLinkPageData = {
@@ -285,6 +292,7 @@ export async function loadPartyLinkPage(
       bookings (
         start_time_utc,
         end_time_utc,
+        client_name,
         services!bookings_service_id_fkey ( name ),
         staff!bookings_staff_id_fkey ( name )
       )
@@ -297,10 +305,11 @@ export async function loadPartyLinkPage(
 
   // Build slot objects — safe, no phone exposure.
   const tz = salon.timezone || "UTC";
-  const slots: PartyLinkSlot[] = claims.map((c) => {
+  const slots: PartyLinkSlot[] = claims.map((c, i) => {
     const booking = c.bookings as unknown as {
       start_time_utc: string | null;
       end_time_utc: string | null;
+      client_name: string | null;
       services: { name: string } | null;
       staff: { name: string } | null;
     } | null;
@@ -318,6 +327,10 @@ export async function loadPartyLinkPage(
       startUtcIso: startIso,
       claimed: c.claimed_at !== null,
       claimedByName: c.member_name ?? null,
+      // bookings.client_name is "Guest N" for voice group bookings and the
+      // organiser-supplied (or defaulted) name for web group bookings.
+      // Falls back to a derived label only when the DB value is missing.
+      guestLabel: booking?.client_name?.trim() || `Guest ${i + 1}`,
     };
   });
 

@@ -26,9 +26,13 @@ type AiActivity = "idle" | "speaking" | "thinking";
 type Transcript = { role: "ai" | "user"; text: string };
 
 type BookingResult = {
+  /** Discriminates the card style and header copy. */
+  action: "booked" | "rescheduled" | "cancelled";
   bookingId: string | null;
   serviceName: string;
+  /** For booked/rescheduled: YYYY-MM-DD date.  For cancelled: full formatted date+time string. */
   date: string;
+  /** Slot label, e.g. "3:00 PM".  Empty for cancelled (date already includes time). */
   timeSlot: string;
   customerName: string;
 };
@@ -330,14 +334,47 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         .then((result: unknown) => {
           console.log(`[voice/tool] ✓ ${fnName} result:`, JSON.stringify(result));
           const res = result as Record<string, unknown>;
-          // Surface booking confirmation in the UI immediately
+          // Surface action result in the UI immediately (card shows while AI is still talking)
           if (fnName === "confirm_booking" && res.success) {
             setBookingResult({
+              action:       "booked",
               bookingId:    (res.bookingId    as string | null) ?? null,
               serviceName:  (res.serviceName  as string) ?? "",
               date:         (res.date         as string) ?? "",
               timeSlot:     (res.timeSlot     as string) ?? "",
               customerName: (res.customerName as string) ?? "",
+            });
+          }
+          if (fnName === "confirm_group_booking" && res.ok === true) {
+            const n = (res.totalMembers as number | undefined) ?? "?";
+            setBookingResult({
+              action:       "booked",
+              bookingId:    (res.groupId      as string | null) ?? null,
+              serviceName:  language === "vi" ? `Nhóm (${n} người)` : `Group (${n} people)`,
+              date:         (res.date         as string) ?? "",
+              timeSlot:     (res.groupStartDisplay as string) ?? "",
+              customerName: (res.organizerName as string) ?? "",
+            });
+          }
+          if (fnName === "reschedule_booking" && res.success) {
+            setBookingResult({
+              action:       "rescheduled",
+              bookingId:    (res.bookingId    as string | null) ?? null,
+              serviceName:  (res.serviceName  as string) ?? "",
+              date:         (res.newDate      as string) ?? "",
+              timeSlot:     (res.newTimeSlot  as string) ?? "",
+              customerName: (res.clientName   as string) ?? "",
+            });
+          }
+          if (fnName === "cancel_booking" && res.success) {
+            setBookingResult({
+              action:       "cancelled",
+              bookingId:    (res.bookingId    as string | null) ?? null,
+              serviceName:  (res.serviceName  as string) ?? "",
+              // cancel_booking returns a pre-formatted local dateTime string
+              date:         (res.dateTime     as string) ?? "",
+              timeSlot:     "",
+              customerName: (res.clientName   as string) ?? "",
             });
           }
           // Submit function output to conversation, then trigger response when ready.
@@ -1107,6 +1144,8 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
                : isSpeaking               ? v.aiSpeaking
                : isThinking               ? v.processing
                : status === "connected"   ? `${v.listening} ${formatDuration(durationSec)}${isRenewing ? " ↻" : ""}`
+               : status === "ended" && bookingResult?.action === "rescheduled" ? v.bookingRescheduled
+               : status === "ended" && bookingResult?.action === "cancelled"   ? v.bookingCancelled
                : status === "ended" && bookingResult ? v.bookingConfirmed
                : status === "ended"       ? v.ended
                : status === "error"       ? (error ?? "Error")
@@ -1114,29 +1153,75 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             </p>
           </div>
 
-          {/* Booking confirmation card — shown immediately when confirm_booking
-               succeeds, even while the call is still active (AI reads back summary).
-               SMS is sent server-side at the same moment. */}
-          {bookingResult && (
-            <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-950">
-              <div className="mb-2 flex items-center gap-2">
-                <svg className="h-4 w-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                <p className="text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">
-                  {v.bookingConfirmed}
+          {/* Action result card — shown as soon as the server confirms the action,
+               even while the AI is still reading back the summary.
+               Style and copy branch on action type:
+                 booked/rescheduled → green (success)
+                 cancelled          → amber (neutral success) */}
+          {bookingResult && (() => {
+            const isCancelled   = bookingResult.action === "cancelled";
+            const isRescheduled = bookingResult.action === "rescheduled";
+            const headerLabel   = isCancelled   ? v.bookingCancelled
+                                : isRescheduled ? v.bookingRescheduled
+                                :                 v.bookingConfirmed;
+            const accentColor   = isCancelled
+              ? "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950"
+              : "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950";
+            const iconColor     = isCancelled ? "text-amber-500" : "text-green-600";
+            const labelColor    = isCancelled
+              ? "text-amber-700 dark:text-amber-400"
+              : "text-green-700 dark:text-green-400";
+            const footerColor   = isCancelled ? "text-amber-600 dark:text-amber-400" : "text-green-600 dark:text-green-400";
+
+            return (
+              <div className={`mb-4 rounded-xl border p-4 ${accentColor}`}>
+                <div className="mb-2 flex items-center gap-2">
+                  {isCancelled ? (
+                    /* Calendar-X icon for cancellations */
+                    <svg className={`h-4 w-4 ${iconColor}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 13l2 2 2-2m0 0l-2-2-2 2" />
+                    </svg>
+                  ) : isRescheduled ? (
+                    /* Calendar-check icon for reschedules */
+                    <svg className={`h-4 w-4 ${iconColor}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13l2 2 4-4" />
+                    </svg>
+                  ) : (
+                    /* Standard checkmark for new bookings */
+                    <svg className={`h-4 w-4 ${iconColor}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                  <p className={`text-xs font-semibold uppercase tracking-wide ${labelColor}`}>
+                    {headerLabel}
+                  </p>
+                </div>
+
+                <p className="text-sm font-semibold text-[var(--booking-text)]">{bookingResult.serviceName}</p>
+                <p className="text-sm text-[var(--booking-text-muted)]">
+                  {bookingResult.timeSlot
+                    ? `${bookingResult.date} · ${bookingResult.timeSlot}`
+                    : bookingResult.date}
+                </p>
+                {bookingResult.customerName && (
+                  <p className="text-sm text-[var(--booking-text-muted)]">{bookingResult.customerName}</p>
+                )}
+
+                {/* Footer note: SMS only for new bookings; rescheduled/cancelled get action note */}
+                <p className={`mt-2 text-xs ${footerColor}`}>
+                  {isCancelled
+                    ? (language === "vi" ? "✓ Lịch hẹn đã được huỷ" : "✓ Appointment removed from schedule")
+                    : isRescheduled
+                      ? (language === "vi" ? "📅 Lịch hẹn đã được cập nhật" : "📅 Schedule updated")
+                      : (language === "vi" ? "📱 Tin nhắn xác nhận đã được gửi" : "📱 Confirmation SMS sent")}
                 </p>
               </div>
-              <p className="text-sm font-semibold text-[var(--booking-text)]">{bookingResult.serviceName}</p>
-              <p className="text-sm text-[var(--booking-text-muted)]">
-                {bookingResult.date} · {bookingResult.timeSlot}
-              </p>
-              <p className="text-sm text-[var(--booking-text-muted)]">{bookingResult.customerName}</p>
-              <p className="mt-2 text-xs text-green-600 dark:text-green-400">
-                📱 {language === "vi" ? "Tin nhắn xác nhận đã được gửi" : "Confirmation SMS sent"}
-              </p>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Transcript — two-way: AI + user speech */}
           {transcript.length > 0 && !bookingResult && (

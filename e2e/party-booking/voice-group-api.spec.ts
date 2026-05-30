@@ -252,3 +252,113 @@ test("bookings created by voice confirm_group_booking have source=voice", async 
   const allVoice = (bookings ?? []).every((b) => b.source === "voice");
   expect(allVoice, "all voice bookings should have source='voice'").toBe(true);
 });
+
+// ─── Test 10e: bookings have Guest N names, NOT organizer name ────
+
+test("voice confirm_group_booking stores Guest N placeholders, not organizer name", async ({
+  request,
+  baseURL,
+}) => {
+  const { serviceIds } = salon;
+  const organizerName = "Voice Placeholder Test";
+  const dateYmd = nextOpenDateYmd(6);
+
+  const res = await request.post(`${baseURL}/api/voice/tool`, {
+    data: {
+      toolName: "confirm_group_booking",
+      toolArgs: {
+        service_assignments: [
+          { service_id: serviceIds[0], count: 1 },
+          { service_id: serviceIds[1] ?? serviceIds[0], count: 1 },
+        ],
+        date: dateYmd,
+        time: "13:00",
+        mode: "sync_start",
+        organizer_name: organizerName,
+        organizer_phone: "+16045559003",
+      },
+      salonSlug: SLUG,
+    },
+  });
+
+  if (res.status() === 409) {
+    console.warn("[voice-group-api] 409 conflict — skipping placeholder check.");
+    return;
+  }
+  expect(res.status()).toBe(200);
+
+  const body = await res.json();
+  const groupId: string | undefined = body?.groupId ?? body?.group_id;
+  if (!groupId) return;
+
+  // All bookings in the group must have "Guest N" client_name, NOT the organizer name.
+  const { data: bookings } = await supabase
+    .from("bookings")
+    .select("client_name")
+    .eq("group_id", groupId);
+
+  const names = (bookings ?? []).map((b) => String(b.client_name ?? ""));
+  expect(names.length, "should have at least 2 booking rows").toBeGreaterThanOrEqual(2);
+
+  for (let i = 0; i < names.length; i++) {
+    expect(
+      names[i],
+      `booking[${i}] should be "Guest ${i + 1}", got "${names[i]}"`,
+    ).toMatch(/^Guest \d+$/);
+    expect(
+      names[i],
+      `booking[${i}] client_name must not be the organizer name`,
+    ).not.toBe(organizerName);
+  }
+});
+
+// ─── Test 10f: 3-person voice booking creates Guest 1–Guest 3 ─────
+
+test("3-person voice group booking creates Guest 1, Guest 2, Guest 3", async ({
+  request,
+  baseURL,
+}) => {
+  const { serviceIds } = salon;
+  const dateYmd = nextOpenDateYmd(7);
+
+  const res = await request.post(`${baseURL}/api/voice/tool`, {
+    data: {
+      toolName: "confirm_group_booking",
+      toolArgs: {
+        service_assignments: [
+          { service_id: serviceIds[0], count: 2 },
+          { service_id: serviceIds[1] ?? serviceIds[0], count: 1 },
+        ],
+        date: dateYmd,
+        time: "14:00",
+        mode: "sync_start",
+        organizer_name: "Voice 3Person Test",
+        organizer_phone: "+16045559004",
+      },
+      salonSlug: SLUG,
+    },
+  });
+
+  if (res.status() === 409) {
+    console.warn("[voice-group-api] 409 conflict — skipping 3-person check.");
+    return;
+  }
+  if (res.status() !== 200) return; // Graceful: skip if salon doesn't support 3 concurrent
+
+  const body = await res.json();
+  const groupId: string | undefined = body?.groupId ?? body?.group_id;
+  if (!groupId) return;
+
+  const { data: bookings } = await supabase
+    .from("bookings")
+    .select("client_name")
+    .eq("group_id", groupId)
+    .order("created_at");
+
+  const names = (bookings ?? []).map((b) => String(b.client_name ?? ""));
+  expect(names.length, "3-person group should have 3 booking rows").toBe(3);
+
+  names.forEach((name, i) => {
+    expect(name, `booking[${i}] should be "Guest ${i + 1}"`).toBe(`Guest ${i + 1}`);
+  });
+});

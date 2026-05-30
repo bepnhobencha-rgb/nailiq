@@ -215,3 +215,50 @@ test("change request is submitted and stored in DB", async ({ page }) => {
     )
     .toBe(true);
 });
+
+// ─── Test 8: Unclaimed slots show Guest N placeholder ─────────────
+
+test("unclaimed slots show Guest N placeholder on party link page", async ({ page }) => {
+  await gotoPartyLinkPage(page, link.token);
+
+  // Both slots should show a [data-testid="party-guest-label"] element
+  // since neither slot is claimed in a fresh seeded link.
+  const guestLabels = page.locator('[data-testid="party-guest-label"]');
+  await expect(guestLabels).toHaveCount(2, { timeout: 10_000 });
+
+  // Labels must match "Guest N" pattern (seeded helper sets client_name = "Guest N")
+  const text0 = await guestLabels.nth(0).textContent();
+  const text1 = await guestLabels.nth(1).textContent();
+  expect(text0).toMatch(/guest\s*\d+/i);
+  expect(text1).toMatch(/guest\s*\d+/i);
+
+  // They must not be the same label (each slot gets its own number)
+  expect(text0).not.toBe(text1);
+});
+
+// ─── Test 9: Claiming replaces Guest label with member name ───────
+
+test("claiming a slot replaces Guest placeholder with member name", async ({ page }) => {
+  await gotoPartyLinkPage(page, link.token);
+
+  const firstCard = page.locator('[data-testid^="party-slot-card-"]').first();
+
+  // Unclaimed: guest label is visible before claiming
+  await expect(firstCard.locator('[data-testid="party-guest-label"]')).toBeVisible({
+    timeout: 10_000,
+  });
+
+  // Claim the slot
+  await firstCard
+    .getByTestId("party-claim-btn")
+    .evaluate((el) => (el as HTMLButtonElement).click());
+  await firstCard.getByTestId("party-claim-name").fill("E2E Dana");
+  await firstCard.getByTestId("party-claim-phone").fill("+16045550004");
+  await firstCard.getByTestId("party-claim-submit").click();
+
+  // After claiming: member name visible, guest label gone
+  await expect(firstCard.getByText("E2E Dana")).toBeVisible({ timeout: 10_000 });
+  await expect(
+    firstCard.locator('[data-testid="party-guest-label"]'),
+  ).not.toBeVisible({ timeout: 10_000 });
+});

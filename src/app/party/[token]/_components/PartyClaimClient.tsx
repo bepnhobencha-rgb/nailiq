@@ -140,13 +140,21 @@ function SlotCard({
         ) : expired ? (
           <span className="text-xs text-gray-400 italic">{t.expiredLabel}</span>
         ) : (
-          <button
-            data-testid="party-claim-btn"
-            onClick={onExpand}
-            className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700 transition-colors"
-          >
-            {expanded ? t.cancelBtn : t.claimBtn}
-          </button>
+          <div className="flex flex-col items-end gap-1.5">
+            <span
+              data-testid="party-guest-label"
+              className="text-xs font-medium text-gray-400"
+            >
+              {slot.guestLabel}
+            </span>
+            <button
+              data-testid="party-claim-btn"
+              onClick={onExpand}
+              className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700 transition-colors"
+            >
+              {expanded ? t.cancelBtn : t.claimBtn}
+            </button>
+          </div>
         )}
       </div>
 

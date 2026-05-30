@@ -15,6 +15,12 @@ export type PartyCardSlot = {
   bookingId: string;
   /** Name entered by the guest when claiming — null if unclaimed. */
   memberName: string | null;
+  /**
+   * Booking-level placeholder name from bookings.client_name.
+   * For voice bookings this is "Guest 1", "Guest 2", etc.
+   * Use this as the display label when memberName is null (unclaimed).
+   */
+  guestLabel: string;
   serviceName: string;
   staffName: string;
   /** Salon-local display time, e.g. "9:30 AM". */
@@ -62,6 +68,8 @@ export type RawClaim = {
     start_time_utc: string | null;
     end_time_utc: string | null;
     price_cents: number | null;
+    /** Placeholder name stored on the booking row (e.g. "Guest 3" for voice bookings). */
+    client_name: string | null;
     services: { name: string } | null;
     staff: { name: string } | null;
   } | null;
@@ -112,7 +120,7 @@ export function buildPartyCard(
   const startIsos: string[] = [];
   const endIsos: string[] = [];
 
-  const slots: PartyCardSlot[] = sorted.map((c) => {
+  const slots: PartyCardSlot[] = sorted.map((c, idx) => {
     const b = c.bookings;
     const startIso = b?.start_time_utc ?? "";
     const endIso = b?.end_time_utc ?? "";
@@ -130,6 +138,9 @@ export function buildPartyCard(
       claimId: c.id,
       bookingId: c.booking_id,
       memberName: c.member_name ?? null,
+      // Use the DB value (e.g. "Guest 3" for voice bookings) so the label
+      // matches exactly what was assigned, regardless of sort order.
+      guestLabel: b?.client_name?.trim() || `Guest ${idx + 1}`,
       serviceName: b?.services?.name ?? "—",
       staffName: b?.staff?.name ?? "—",
       startDisplay: startIso ? formatInSalonTz(startIso, tz, "shortTime") : "—",

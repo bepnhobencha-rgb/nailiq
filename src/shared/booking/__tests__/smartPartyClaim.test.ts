@@ -201,6 +201,7 @@ const rawClaims: RawClaim[] = [
       start_time_utc: new Date(Date.now() + 3600 * 1000).toISOString(),
       end_time_utc:   new Date(Date.now() + 5400 * 1000).toISOString(),
       price_cents:    5000,
+      client_name:    "Guest 1",
       services:       { name: "Pedicure" },
       staff:          { name: "Jenny" },
     },
@@ -215,6 +216,7 @@ const rawClaims: RawClaim[] = [
       start_time_utc: new Date(Date.now() + 3600 * 1000).toISOString(),
       end_time_utc:   new Date(Date.now() + 5400 * 1000).toISOString(),
       price_cents:    4500,
+      client_name:    "Guest 2",
       services:       { name: "Manicure" },
       staff:          { name: "Lily" },
     },
@@ -284,6 +286,7 @@ const unclaimedSlot: PartyLinkSlot = {
   startUtcIso:  "2030-06-15T21:00:00.000Z",
   claimed:      false,
   claimedByName: null,
+  guestLabel:   "Guest 1",
 };
 
 test("claiming a slot updates claimedByName immediately (state logic)", () => {

@@ -562,6 +562,8 @@ export const bookingEn = {
     chatCancel: "Cancel",
     slotNotFound: "{time} isn't available — please pick another time below.",
     bookingConfirmed: "Booking confirmed!",
+    bookingRescheduled: "Booking rescheduled!",
+    bookingCancelled: "Booking cancelled",
   },
 };
 

@@ -127,3 +127,41 @@ test("Party Card shows change-request indicator after a change request is submit
     page.getByTestId(`party-card-change-requests-${link.groupId}`),
   ).toBeVisible({ timeout: 10_000 });
 });
+
+// ─── Test 8d: Slot list shows Guest N for unclaimed, real name for claimed ─
+
+test("Party Card slot list shows Guest placeholder for unclaimed and real name for claimed", async ({
+  page,
+  baseURL,
+}) => {
+  await gotoPartyDashboard(page, SLUG, baseURL!);
+
+  // Open the panel
+  const toggle = page.getByTestId("party-card-panel-toggle");
+  await expect(toggle).toBeVisible({ timeout: 15_000 });
+  const expanded = await toggle.getAttribute("aria-expanded");
+  if (expanded !== "true") {
+    await toggle.evaluate((el) => (el as HTMLButtonElement).click());
+  }
+
+  // Open the slot list for our group
+  const card = page.getByTestId(`party-card-${link.groupId}`);
+  await expect(card).toBeVisible({ timeout: 10_000 });
+
+  // Click the slots toggle to expand the slot list
+  const slotsToggle = card.locator("button").filter({ hasText: /slot/i }).first();
+  await slotsToggle.evaluate((el) => (el as HTMLButtonElement).click());
+
+  // The slot that was pre-claimed (index 0) should show "E2E Confirmed"
+  // The unclaimed slot (index 1) should show "Guest 2" (seeded as client_name="Guest 2")
+  const slot0 = page.getByTestId(`party-slot-${link.claimIds[0]}`);
+  const slot1 = page.getByTestId(`party-slot-${link.claimIds[1]}`);
+  await expect(slot0).toBeVisible({ timeout: 10_000 });
+  await expect(slot1).toBeVisible({ timeout: 10_000 });
+
+  // Claimed slot: shows the member's real name
+  await expect(slot0.getByText("E2E Confirmed")).toBeVisible();
+
+  // Unclaimed slot: shows "Guest N" placeholder from bookings.client_name
+  await expect(slot1.getByText(/^Guest \d+$/)).toBeVisible();
+});

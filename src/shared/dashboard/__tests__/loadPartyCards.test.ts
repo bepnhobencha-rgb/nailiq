@@ -101,6 +101,7 @@ function makeClaim(overrides: {
   member_name?: string | null;
   claimed_at?: string | null;
   price_cents?: number | null;
+  client_name?: string | null;
   start?: string;
   end?: string;
   service?: string;
@@ -118,6 +119,7 @@ function makeClaim(overrides: {
       start_time_utc: start,
       end_time_utc: end,
       price_cents: overrides.price_cents !== undefined ? overrides.price_cents : 2500,
+      client_name: overrides.client_name ?? "Guest 1",
       services: { name: overrides.service ?? "Classic Manicure" },
       staff: { name: overrides.staff ?? "Liam" },
     },
