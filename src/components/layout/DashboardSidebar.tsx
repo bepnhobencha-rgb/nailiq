@@ -454,8 +454,11 @@ export function DashboardSidebar({
             {/* Quick action sits inside the insight section so the
                 separator before Settings naturally wraps both the
                 insight rows AND the +Walk-in button. In Basic Mode the
-                insight section is hidden, so it moves under "live". */}
-            {section.key === quickAddSectionKey ? (
+                insight section is hidden, so it would move under "live" —
+                but the Basic header already shows a primary "+ Walk-in",
+                so we drop the sidebar duplicate in Basic Mode (DoD #4:
+                no duplicate + Walk-in). Balanced/Advanced keep it. */}
+            {section.key === quickAddSectionKey && !basicMode ? (
               <QuickAddWalkinButton
                 slug={slug}
                 collapsed={collapsed}
