@@ -1636,7 +1636,7 @@ function ReceptionistCenterInner({
                   ← {rcMessages.navOwnerDashboard}
                 </Link>
                 <h1 className="truncate text-lg font-semibold text-nq-foreground md:text-xl">
-                  {rcMessages.title}
+                  {basicModeActive ? rcMessages.basicMode.pageTitle : rcMessages.title}
                 </h1>
               </div>
               <p className="truncate text-xs text-nq-muted md:text-sm">{data.salon.name}</p>
