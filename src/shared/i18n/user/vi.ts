@@ -974,7 +974,7 @@ export const userVi: UserMessages = {
     kpiBar: {
       waiting: "Đang chờ",
       avgWait: "Chờ trung bình",
-      avgWaitEmpty: "Không có hàng",
+      avgWaitEmpty: "Không có hàng chờ",
       inService: "Đang phục vụ",
       comingUp: "Sắp tới (30p)",
       overdue: "Quá giờ",

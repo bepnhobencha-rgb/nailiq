@@ -1,7 +1,7 @@
 "use client";
 
 import * as Sentry from "@sentry/nextjs";
-import { Plus, Users, X as CloseIcon } from "lucide-react";
+import { Users, X as CloseIcon } from "lucide-react";
 
 /**
  * ReceptionistCenter — performance notes
@@ -1684,7 +1684,6 @@ function ReceptionistCenterInner({
                 <Button
                   variant="primary"
                   size="sm"
-                  leftIcon={<Plus className="h-4 w-4" aria-hidden />}
                   data-testid="header-add-walkin"
                   onClick={() => setQueuePanelOpen(true)}
                 >
