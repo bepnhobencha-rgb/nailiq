@@ -115,6 +115,8 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   const startTsRef          = useRef<number>(0);
   const statusRef           = useRef<Status>("idle");
   const nextPlayRef         = useRef<number>(0);
+  /** All AudioBufferSourceNodes currently scheduled/playing — flushed on barge-in. */
+  const activeSourceNodesRef = useRef<AudioBufferSourceNode[]>([]);
   // Shared output gain node — AI audio chunks route through GainNode →
   // MediaStreamDestination → <audio> element (media volume channel).
   const outputGainRef       = useRef<GainNode | null>(null);
@@ -189,6 +191,8 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     outputGainRef.current     = null;
     streamRef.current         = null;
     nextPlayRef.current       = 0;
+    activeSourceNodesRef.current.forEach((n) => { try { n.stop(); } catch { /* already stopped */ } });
+    activeSourceNodesRef.current = [];
     silenceTimerRef.current   = null;
     aiActiveRef.current       = false;
     repromptCountRef.current  = 0;
@@ -482,10 +486,36 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       }
     }
 
-    // User started speaking — reset silence tracker
+    // User started speaking — reset silence tracker + barge-in flush
     if (type === "input_audio_buffer.speech_started") {
       repromptCountRef.current = 0;
       if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
+
+      // Barge-in: if the customer speaks while Lily is talking, immediately
+      // stop all queued audio so Lily goes silent right away.
+      // (OpenAI will cancel the in-flight response because interrupt_response=true.)
+      if (aiActiveRef.current) {
+        const nodes = activeSourceNodesRef.current.slice();
+        activeSourceNodesRef.current = [];
+        nodes.forEach((n) => { try { n.stop(); } catch { /* already stopped */ } });
+        if (audioCtxRef.current) nextPlayRef.current = audioCtxRef.current.currentTime;
+        if (typingIntervalRef.current) { clearInterval(typingIntervalRef.current); typingIntervalRef.current = null; }
+        aiActiveRef.current = false;
+        setAiActivity("idle");
+      }
+    }
+
+    // OpenAI cancelled the in-flight response (triggered by barge-in or error).
+    // Reset AI state without the echo cooldown — customer is already speaking.
+    if (type === "response.cancelled") {
+      aiActiveRef.current = false;
+      setAiActivity("idle");
+      if (typingIntervalRef.current) { clearInterval(typingIntervalRef.current); typingIntervalRef.current = null; }
+      // Drain any nodes left over (belt-and-suspenders, speech_started should have cleared them)
+      const nodes = activeSourceNodesRef.current.slice();
+      activeSourceNodesRef.current = [];
+      nodes.forEach((n) => { try { n.stop(); } catch { /* ok */ } });
+      if (audioCtxRef.current) nextPlayRef.current = audioCtxRef.current.currentTime;
     }
 
     // ── Audio playback ───────────────────────────────────────────────────────
@@ -505,6 +535,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       const when = Math.max(ctx.currentTime, nextPlayRef.current);
       src.start(when);
       nextPlayRef.current = when + buf.duration;
+      // Track so we can flush instantly when the customer interrupts (barge-in).
+      activeSourceNodesRef.current.push(src);
+      src.addEventListener("ended", () => {
+        activeSourceNodesRef.current = activeSourceNodesRef.current.filter((n) => n !== src);
+      });
     }
 
     // ── Transcripts ──────────────────────────────────────────────────────────
@@ -648,7 +683,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
                     type:               "semantic_vad",
                     eagerness:          "low",
                     create_response:    true,
-                    interrupt_response: false,
+                    interrupt_response: true,
                   },
                 },
                 output: { format: { type: "audio/pcm", rate: 24000 }, voice: voiceRef.current },
@@ -918,7 +953,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
                   // cause the VAD to fire a second response.create while the
                   // greeting is still playing — the new response would cut off
                   // the greeting and start talking immediately (double-speech bug).
-                  interrupt_response: false,
+                  interrupt_response: true,
                 },
               },
               output: {
@@ -941,10 +976,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         muteGain.connect(audioCtx.destination);
         processor.onaudioprocess = (e) => {
           if (wsRef.current?.readyState !== WebSocket.OPEN) return;
-          // Suppress mic while AI is speaking or within the post-speech cooldown
-          // window — prevents the VAD from hearing the AI's own output through
-          // the speakers and triggering an echo loop.
-          if (aiActiveRef.current || Date.now() < postSpeechCooldownRef.current) return;
+          // Short cooldown after Lily finishes speaking: lets speaker audio decay
+          // so the VAD doesn't immediately re-fire on the acoustic tail.
+          // We do NOT suppress while AI is active — that would block barge-in.
+          // Browser echoCancellation + far_field noise reduction handle echo instead.
+          if (Date.now() < postSpeechCooldownRef.current) return;
           const pcm = e.inputBuffer.getChannelData(0);
           const buf = float32ToPCM16(pcm);
           const b64 = arrayBufferToBase64(buf);

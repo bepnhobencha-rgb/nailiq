@@ -12,8 +12,9 @@ export const DEFAULT_VAD = {
   type:               "semantic_vad",
   eagerness:          "low",
   create_response:    true,
-  // false: prevents self-interruption when speaker echo triggers VAD.
-  interrupt_response: false,
+  // true: allows the customer to interrupt Lily mid-sentence.
+  // Browser echoCancellation + far_field noise reduction prevent self-interruption.
+  interrupt_response: true,
 } as const;
 
 export const SUPPORTED_VOICES = [
