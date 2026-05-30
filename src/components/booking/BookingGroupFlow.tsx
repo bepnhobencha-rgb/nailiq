@@ -609,6 +609,8 @@ export function BookingGroupFlow({
             staffId: a.staffId,
             date,
             time: time24,
+            // Phase 6.1 — carry the wave so submit persists wave_number per row.
+            waveNumber: a.waveNumber,
           };
         });
 
@@ -2014,6 +2016,21 @@ function ArrangementStep({
         <SchedulingTimeout groupCopy={groupCopy} onBack={onBack} />
       ) : null}
 
+      {/* Phase 6.1 — sync_finish large group can't fit: suggest Arrive together. */}
+      {!scheduling &&
+      scheduleResult &&
+      !scheduleResult.ok &&
+      scheduleResult.reason === "no_slots" &&
+      scheduleResult.largeGroupFinishUnsupported ? (
+        <p
+          data-testid="group-wave-finish-unsupported"
+          className="rounded-xl bg-amber-400/10 p-3 text-sm text-amber-700"
+        >
+          {groupCopy.waveFinishUnsupported ??
+            "Finish together is not available for this large group. Try Arrive together or another time."}
+        </p>
+      ) : null}
+
       {!scheduling && scheduleResult && !scheduleResult.ok ? (
         <EmptyState
           reason={scheduleResult.reason}
@@ -2100,8 +2117,13 @@ function ArrangementCard({
   // In sync_finish mode all members end at the same time so the
   // "within 15 / 30 min start-spread" qualifier is meaningless.
   // Use dedicated copy keys instead.
-  const heading =
-    syncMode === "sync_finish"
+  // Phase 6.1 — wave (large-group split) gets its own heading + icon.
+  const heading = arrangement.isWaveBooking
+    ? (groupCopy.waveSplitLabel ?? "Split into {count} waves").replace(
+        "{count}",
+        String(arrangement.waveCount),
+      )
+    : syncMode === "sync_finish"
       ? arrangement.kind === "best"
         ? groupCopy.schedulingFinishBest ?? "On time ✨"
         : arrangement.kind === "alternative"
@@ -2112,8 +2134,9 @@ function ArrangementCard({
         : arrangement.kind === "alternative"
           ? groupCopy.schedulingAlt ?? "Alternative"
           : groupCopy.schedulingEarly ?? "Earliest";
-  const icon =
-    arrangement.kind === "best"
+  const icon = arrangement.isWaveBooking
+    ? "🌊"
+    : arrangement.kind === "best"
       ? "✨"
       : arrangement.kind === "alternative"
         ? "🔄"
@@ -2148,6 +2171,25 @@ function ArrangementCard({
       <p className="mt-1 text-xs text-[var(--booking-text-muted)]">
         {arrangement.groupStartDisplay} → {arrangement.groupEndDisplay}
       </p>
+      {arrangement.isWaveBooking && (
+        <div
+          data-testid="group-wave-breakdown"
+          className="mt-2 space-y-1 rounded-xl bg-[var(--booking-bg-input)] p-3"
+        >
+          {arrangement.waves.map((w) => (
+            <p
+              key={w.waveNumber}
+              data-testid={`group-wave-${w.waveNumber}`}
+              className="text-xs text-[var(--booking-text)]"
+            >
+              {(groupCopy.waveLineLabel ?? "Wave {n}: {count} guests at {time}")
+                .replace("{n}", String(w.waveNumber))
+                .replace("{count}", String(w.memberCount))
+                .replace("{time}", w.startDisplay)}
+            </p>
+          ))}
+        </div>
+      )}
       <ul className="mt-3 space-y-1.5 text-sm">
         {arrangement.assignments.map((a) => (
           <li

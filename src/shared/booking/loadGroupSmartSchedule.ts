@@ -72,11 +72,14 @@ import {
 } from "@/shared/lib/salonTime";
 import {
   buildArrangement,
+  buildWaveArrangement,
   findFinishArrangementsInWindow,
+  MAX_WAVES,
   SLOT_STEP_MIN,
   staffIsFree,
   tryAlignedArrangement,
   tryFinishAlignedArrangement,
+  tryWaveArrangement,
   type ExistingBooking,
   type FinishArrangementsCtx,
   type GroupArrangement,
@@ -216,6 +219,10 @@ export type GroupSmartScheduleResult =
        *  non-null member. All three can be null on a truly empty
        *  salon (closed + no future bookable days). */
       alternatives: GroupAlternatives;
+      /** Phase 6.1 — true when mode is sync_finish AND the group is larger than
+       *  the available staff (finish-together can't fit a big group). The UI
+       *  shows "try Arrive together" instead of generic no-slots. */
+      largeGroupFinishUnsupported?: boolean;
     }
   | {
       ok: false;
@@ -541,22 +548,32 @@ export async function loadGroupSmartSchedule(
     id: String(s.id),
     name: String(s.name ?? ""),
   }));
-  if (staffList.length < resolvedMembers.length) {
-    // Not enough physical staff to host this group on ANY day —
-    // staff roster is the same across dates, so next-date is
-    // hopeless. Same logic excludes split (split needs even more
-    // staff capacity) and earlier-today (window is irrelevant
-    // when no day can host the group).
+  if (staffList.length === 0) {
+    // No active staff at all → nothing can be scheduled on any day.
     return {
       ok: false,
       reason: "no_slots",
       timezone,
-      alternatives: {
-        splitOption: null,
-        nextAvailableDate: null,
-        earlierToday: null,
-      },
+      alternatives: { splitOption: null, nextAvailableDate: null, earlierToday: null },
     };
+  }
+  // Phase 6.1: a group LARGER than the simultaneous staff count is no longer
+  // hopeless — Arrive-together wave booking serves it across up to MAX_WAVES
+  // waves (handled at the slot-scan fallback below). Bail early only when even
+  // waves can't help: sync_finish (no finish-together waves this phase), or the
+  // group exceeds what MAX_WAVES waves could ever seat.
+  if (resolvedMembers.length > staffList.length) {
+    const beyondWaveCapacity = resolvedMembers.length > staffList.length * MAX_WAVES;
+    if (isSyncFinish || beyondWaveCapacity) {
+      return {
+        ok: false,
+        reason: "no_slots",
+        timezone,
+        alternatives: { splitOption: null, nextAvailableDate: null, earlierToday: null },
+        largeGroupFinishUnsupported: isSyncFinish,
+      };
+    }
+    // else: fall through — the sync_start wave fallback runs after the scan.
   }
   const staffById = new Map<string, StaffRow>();
   for (const s of staffList) staffById.set(s.id, s);
@@ -667,6 +684,25 @@ export async function loadGroupSmartSchedule(
   }
 
   if (arrangements.length === 0) {
+    // ── Phase 6.1: wave fallback (sync_start / Arrive together only) ──────────
+    // The whole group can't start together at the requested window → offer a
+    // multi-wave split (wave 1 at the window's earliest time, later waves after)
+    // instead of dead-ending. Reuses the Phase 6 wave scheduler unchanged.
+    if (!isSyncFinish && window) {
+      const closeMinForWave = hmToMinutes(dayHours.close) ?? 0;
+      const waveAnchorMs = Date.parse(salonWallTimeToUtcIso(params.date, window.startMin, timezone));
+      const waveCloseMs  = Date.parse(salonWallTimeToUtcIso(params.date, closeMinForWave, timezone));
+      const waveRaw = tryWaveArrangement(
+        waveAnchorMs, resolvedMembers, staffList, staffById, capability, existing, waveCloseMs,
+      );
+      if (waveRaw && waveRaw.assignments.length === resolvedMembers.length) {
+        const waveArr = buildWaveArrangement(waveRaw, resolvedMembers, staffById, timezone);
+        if (waveArr.isWaveBooking) {
+          return { ok: true, arrangements: [waveArr], timezone };
+        }
+      }
+    }
+
     // Task #05 — instead of dead-ending the user, compute up to
     // three alternative paths in parallel: split (N-1 now + 1
     // later same day), next-available-date (next 5 salon-local
@@ -698,7 +734,12 @@ export async function loadGroupSmartSchedule(
           mode: params.mode,
           finishTime: params.finishTime,
         });
-    return { ok: false, reason: "no_slots", timezone, alternatives };
+    // Phase 6.1: sync_finish + group larger than staff → finish-together can't
+    // fit; the UI surfaces a "try Arrive together" message rather than generic
+    // no-slots. (Arrive-together waves are offered via the sync_start path above.)
+    const largeGroupFinishUnsupported =
+      isSyncFinish && resolvedMembers.length > staffList.length;
+    return { ok: false, reason: "no_slots", timezone, alternatives, largeGroupFinishUnsupported };
   }
 
   return { ok: true, arrangements, timezone };

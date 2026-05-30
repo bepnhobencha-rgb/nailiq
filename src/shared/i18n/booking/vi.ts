@@ -237,6 +237,10 @@ export const bookingVi: BookingMessages = {
     schedulingFinishAlt: "Giờ khác 🔄",
     schedulingFinishEarly: "Sớm nhất có thể ⚡",
     schedulingRecommended: "Đề xuất",
+    waveSplitLabel: "Chia thành {count} đợt",
+    waveLineLabel: "Đợt {n}: {count} khách lúc {time}",
+    waveFinishUnsupported:
+      "Không thể xếp 'kết thúc cùng lúc' cho nhóm lớn này. Hãy thử 'đến cùng lúc' hoặc chọn giờ khác.",
     schedulingFinish: "Kết thúc lúc {time}",
     schedulingNoSlots:
       "Không còn lịch trống trong khoảng giờ này. Vui lòng chọn giờ khác hoặc ngày khác.",

@@ -65,11 +65,17 @@ async function completeGroupFlow(
   await page.getByTestId("group-step-date-panel").waitFor({ state: "visible" });
   if (opts.syncFinish) {
     // Switch to "Finish together" before picking the date.
-    const finishToggle = page.getByTestId("sync-mode-sync_finish");
-    if (await finishToggle.isVisible()) await finishToggle.click();
+    const finishToggle = page.getByTestId("group-sync-finish");
+    await finishToggle.waitFor({ state: "visible" });
+    await finishToggle.click();
   }
   await pickDateInCalendar(page, nextOpenDateYmd());
-  await page.getByTestId("group-arrival-afternoon").click();
+  if (opts.syncFinish) {
+    // Finish mode shows a target finish-time input instead of arrival windows.
+    await page.getByTestId("group-finish-time").fill("16:00");
+  } else {
+    await page.getByTestId("group-arrival-afternoon").click();
+  }
   await page.getByTestId("group-date-next").click();
 
   // STEP 4 — AI arrangement (scheduler RPC)

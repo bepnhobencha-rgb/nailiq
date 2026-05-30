@@ -14,6 +14,7 @@ import { BookingGroupFlow } from "@/components/booking/BookingGroupFlow";
 import { VoiceBookingButton } from "@/components/booking/VoiceBookingButton";
 import { cn } from "@/shared/lib/cn";
 import { GROUP_MAX_SIZE } from "@/shared/config/constants";
+import { MAX_WAVES } from "@/shared/booking/groupSchedulerCore";
 
 /**
  * Dynamic capacity: the effective group-size cap is whichever is
@@ -82,10 +83,16 @@ export function BookingTypeSwitcher({
   // already pre-filtered to `status='active'` upstream in
   // `loadBookingServicesForSalonSlug`, so .length is the count.
   const activeStaffCount = staff.length;
-  // Dynamic capacity: no arbitrary cap — the salon's staff count is
-  // the real constraint. GROUP_MAX_SIZE (20) is just a safety ceiling
-  // for very large salons; typical salons will hit their staff limit first.
-  const maxGroupSize = Math.min(activeStaffCount, GROUP_MAX_SIZE);
+  // Phase 6.1 — Wave Booking lets a group exceed the simultaneous staff count:
+  // the scheduler splits it across up to MAX_WAVES sequential time waves. So the
+  // selectable size is staffCount × MAX_WAVES (what waves can realistically
+  // serve), bounded by the GROUP_MAX_SIZE (20) safety ceiling. A 0-staff salon
+  // still can't take groups. Groups that fit at once behave exactly as before;
+  // only larger groups (previously unselectable) now get the wave option.
+  const maxGroupSize =
+    activeStaffCount === 0
+      ? 0
+      : Math.min(activeStaffCount * MAX_WAVES, GROUP_MAX_SIZE);
   const groupEnabled = maxGroupSize >= MIN_GROUP_SIZE;
 
   // Defensive fallback — older deployed booking i18n bundles (before

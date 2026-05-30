@@ -60,6 +60,8 @@ export type GroupBookingMember = {
   date: string;
   /** HH:MM (24h) in salon-local time. */
   time: string;
+  /** Phase 6.1 — wave this member belongs to (1 for normal bookings). */
+  waveNumber?: number;
 };
 
 export type GroupBookingParams = {
@@ -564,6 +566,7 @@ export async function submitGroupBooking(
       start_time_utc: r.startUtcIso,
       end_time_utc: r.endUtcIso,
       price_cents: r.priceCents,
+      wave_number: r.member.waveNumber ?? 1,
       staff_requested_by_client: true,
       idempotency_key: idem,
     };

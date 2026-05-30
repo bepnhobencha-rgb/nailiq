@@ -302,6 +302,11 @@ export const bookingEn = {
     schedulingFinishEarly: "Earliest possible ⚡",
     /** Recommended badge on the BEST card. */
     schedulingRecommended: "Recommended",
+    /** Phase 6.1 — wave booking (large group split across time). */
+    waveSplitLabel: "Split into {count} waves",
+    waveLineLabel: "Wave {n}: {count} guests at {time}",
+    waveFinishUnsupported:
+      "Finish together is not available for this large group. Try Arrive together or another time.",
     /** Per-card "Finishes at {time}" footer line. */
     schedulingFinish: "Finishes at {time}",
     /** Empty-state copy when the scheduler returns zero arrangements. */
