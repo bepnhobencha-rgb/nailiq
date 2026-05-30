@@ -224,6 +224,8 @@ type UndoToastState = {
   headline: string;
   detailLine: string;
   secondsRemaining: number;
+  /** "assign" = undo walkin assignment; "cancel" = undo booking cancel */
+  type: "assign" | "cancel";
 };
 
 function ReceptionistGateError({ code }: { code: LoadReceptionistCenterError }) {
@@ -795,6 +797,7 @@ function ReceptionistCenterInner({
       headline,
       detailLine,
       secondsRemaining: 5,
+      type: "assign",
     });
     await reloadCurrentDay();
     router.refresh();
@@ -817,6 +820,26 @@ function ReceptionistCenterInner({
     await reloadCurrentDay();
     router.refresh();
   };
+
+  const undoCancel = async () => {
+    if (!undoState) return;
+    const res = await restoreCancelledBooking(slug, {
+      salonId: data.salon.id,
+      bookingId: undoState.bookingId,
+    });
+    if (!res.ok) {
+      setShakeMessage(
+        res.error === "slot_conflict" || res.error === "booking_in_past"
+          ? messages.receptionist.undo.cancelUndoFailed
+          : mutationMessage(messages.receptionist, res.error),
+      );
+    }
+    setUndoState(null);
+    await reloadCurrentDay();
+    router.refresh();
+  };
+
+  const onUndoToastUndo = undoState?.type === "cancel" ? undoCancel : undoAssign;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1317,8 +1340,6 @@ function ReceptionistCenterInner({
       !(b.status === "pending" || b.status === "confirmed" || b.status === "in_progress")
     )
       return;
-    const d = messages.receptionist.drawer;
-    if (!window.confirm(d.cancelConfirm(b.client_name))) return;
 
     setDrawerBusy(true);
     try {
@@ -1326,12 +1347,27 @@ function ReceptionistCenterInner({
         salonId: data.salon.id,
         bookingId: id,
       });
-      if (!r.ok)
+      if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
-      else {
+      } else {
+        // Close drawer and reload grid first so booking disappears
         setDrawerBookingId(null);
         await reloadCurrentDay();
         router.refresh();
+
+        // Show undo toast — user can restore within 8s
+        const u = messages.receptionist.undo;
+        const startLabel = b.start_time_utc
+          ? formatInSalonTz(b.start_time_utc, timezone, "time")
+          : "";
+        const svcName = b.service_name?.trim() || messages.receptionist.drawer.none;
+        setUndoState({
+          bookingId: id,
+          headline: `${u.cancelledPrefix} ${b.client_name.trim()}`,
+          detailLine: [startLabel, svcName].filter(Boolean).join(" · "),
+          secondsRemaining: 8,
+          type: "cancel",
+        });
       }
     } finally {
       setDrawerBusy(false);
@@ -2128,7 +2164,7 @@ function ReceptionistCenterInner({
         secondsRemaining={undoState?.secondsRemaining ?? 0}
         showCountdown
         labelUndo={rcMessages.undo.undo}
-        onUndo={() => void undoAssign()}
+        onUndo={() => void onUndoToastUndo()}
         onDismiss={() => setUndoState(null)}
       />
 

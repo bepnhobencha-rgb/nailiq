@@ -1136,6 +1136,8 @@ export const userVi: UserMessages = {
       undoFailed: "Đã bắt đầu phục vụ — không hoàn tác được.",
       assignedPrefix: "Đã xếp:",
       assignedMiddle: "→",
+      cancelledPrefix: "Đã huỷ lịch:",
+      cancelUndoFailed: "Không thể hoàn tác — lịch hẹn đã qua hoặc thợ vừa có lịch mới.",
     },
     drawer: {
       title: "Lịch hẹn",
