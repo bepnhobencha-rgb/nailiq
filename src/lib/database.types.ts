@@ -287,7 +287,7 @@ export type Database = {
           id: string
           notification_type: string
           salon_id: string
-          sent_at: string
+          sent_at: string | null
           status: string
           twilio_message_sid: string | null
         }
@@ -303,7 +303,7 @@ export type Database = {
           id?: string
           notification_type: string
           salon_id: string
-          sent_at?: string
+          sent_at?: string | null
           status?: string
           twilio_message_sid?: string | null
         }
@@ -319,7 +319,7 @@ export type Database = {
           id?: string
           notification_type?: string
           salon_id?: string
-          sent_at?: string
+          sent_at?: string | null
           status?: string
           twilio_message_sid?: string | null
         }
