@@ -960,6 +960,26 @@ export const userVi: UserMessages = {
       updated: (label: string) => `Đã đổi mật độ sang ${label}`,
       updateFailed: "Không đổi được mật độ. Thử lại sau.",
     },
+    basicMode: {
+      toggle: "Cơ bản",
+      toggleOnAria: "Chuyển sang Chế độ Cơ bản — bảng tiếp tân gọn",
+      toggleOffAria: "Thoát Chế độ Cơ bản — về bảng đầy đủ",
+      nextActionHeading: "Việc cần làm",
+      alertsHeading: "Cần chú ý",
+      finishOverdue: (n: number) =>
+        n === 1 ? "1 lịch đang trễ giờ — xử lý hoặc gia hạn" : `${n} lịch đang trễ giờ — xử lý hoặc gia hạn`,
+      assignWalkin: (name: string) => `Xếp khách chờ: ${name}`,
+      assignWalkinGeneric: "Xếp khách chờ tiếp theo",
+      prepareNext: (n: number) =>
+        n === 1 ? "1 khách sắp đến (30 phút tới)" : `${n} khách sắp đến (30 phút tới)`,
+      allClear: "Mọi thứ ổn định — không có việc gấp",
+      alertOverdue: (n: number) =>
+        n === 1 ? "1 lịch trễ giờ" : `${n} lịch trễ giờ`,
+      alertSmsFailed: (n: number) =>
+        n === 1 ? "1 SMS xác nhận thất bại" : `${n} SMS xác nhận thất bại`,
+      alertSetupIncomplete: "Chưa hoàn tất thiết lập — thêm dịch vụ & thợ",
+      alertLongWait: (n: number) => `Chờ trung bình ${n} phút`,
+    },
     roleBadge: {
       ownerView: "Chủ tiệm",
       nailTechView: "Thợ",

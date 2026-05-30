@@ -900,6 +900,23 @@ export type UserMessages = {
       /** Toast on failure (any error). */
       updateFailed: string;
     };
+    /** Basic Mode — Front Desk Cockpit (per-device view toggle). */
+    basicMode: {
+      toggle: string;
+      toggleOnAria: string;
+      toggleOffAria: string;
+      nextActionHeading: string;
+      alertsHeading: string;
+      finishOverdue: (n: number) => string;
+      assignWalkin: (name: string) => string;
+      assignWalkinGeneric: string;
+      prepareNext: (n: number) => string;
+      allClear: string;
+      alertOverdue: (n: number) => string;
+      alertSmsFailed: (n: number) => string;
+      alertSetupIncomplete: string;
+      alertLongWait: (n: number) => string;
+    };
     /** Role-adaptive top-bar labels. */
     roleBadge: {
       ownerView: string;
@@ -2438,6 +2455,26 @@ export const userEn: UserMessages = {
       ariaLabel: "Dashboard density — Simple, Balanced, or Pro",
       updated: (label: string) => `Density set to ${label}`,
       updateFailed: "Could not change density. Try again shortly.",
+    },
+    basicMode: {
+      toggle: "Basic",
+      toggleOnAria: "Switch to Basic Mode — simplified front-desk cockpit",
+      toggleOffAria: "Exit Basic Mode — back to the full board",
+      nextActionHeading: "Next action",
+      alertsHeading: "Needs attention",
+      finishOverdue: (n: number) =>
+        n === 1 ? "1 booking is overdue — wrap up or extend" : `${n} bookings overdue — wrap up or extend`,
+      assignWalkin: (name: string) => `Seat next walk-in: ${name}`,
+      assignWalkinGeneric: "Seat the next waiting walk-in",
+      prepareNext: (n: number) =>
+        n === 1 ? "1 guest arriving in the next 30 min" : `${n} guests arriving in the next 30 min`,
+      allClear: "All caught up — nothing urgent",
+      alertOverdue: (n: number) =>
+        n === 1 ? "1 booking overdue" : `${n} bookings overdue`,
+      alertSmsFailed: (n: number) =>
+        n === 1 ? "1 confirmation SMS failed" : `${n} confirmation SMS failed`,
+      alertSetupIncomplete: "Setup incomplete — add services & staff",
+      alertLongWait: (n: number) => `Average wait ${n} min`,
     },
     roleBadge: {
       ownerView: "Owner view",

@@ -49,6 +49,12 @@ import { ConnectionBanner, type ConnectionState } from "./ConnectionBanner";
 import { DateSwitcher } from "./DateSwitcher";
 import { DensitySlider } from "./DensitySlider";
 import { KPIBar } from "./KPIBar";
+import { BasicCockpit } from "./BasicCockpit";
+import { useBasicMode } from "@/shared/dashboard/useBasicMode";
+import type {
+  CockpitInputs,
+  CockpitLabels,
+} from "@/shared/dashboard/basicModeCockpit";
 import { StaffTimelineGrid, type GridBooking } from "./StaffTimelineGrid";
 import { StatusPill } from "./StatusPill";
 import { TVModeView } from "./TVModeView";
@@ -685,6 +691,12 @@ function ReceptionistCenterInner({
 
   const timezone = data.salon.timezone;
   const isViewingToday = data.selectedDate === salonToday(timezone, nowIso);
+
+  // ── Basic Mode (per-device Front Desk Cockpit) ──────────────────
+  // Lightweight view toggle (localStorage). Default off → Balanced/Advanced
+  // views are unchanged for everyone who never opts in. Only active on the
+  // live "today + day" board where the cockpit's now-semantics make sense.
+  const { basicMode, toggleBasicMode } = useBasicMode();
 
   /**
    * Pre-resolved hint for WeekView / MonthView.
@@ -1411,6 +1423,38 @@ function ReceptionistCenterInner({
   const isSetupIncomplete =
     data.services.length === 0 || data.staff.length === 0;
 
+  // ── Basic Mode cockpit data (deterministic; display-only) ───────
+  const basicModeActive = basicMode && isViewingToday && viewMode === "day";
+  const cockpitInputs: CockpitInputs = {
+    waitingCount: data.kpiSnapshot.waitingCount,
+    inProgressCount: data.kpiSnapshot.inProgressCount,
+    comingUpCount: data.kpiSnapshot.comingUpCount,
+    overdueCount: data.kpiSnapshot.overdueCount,
+    avgWaitMinutes: data.kpiSnapshot.avgWaitMinutes,
+    firstWaitingName: data.walkinQueue[0]?.client_name?.trim() || null,
+    smsFailedCount: data.bookingsForDay.filter(
+      (b) =>
+        b.sms_confirmation_failed_at != null && b.status !== "cancelled",
+    ).length,
+    isSetupIncomplete,
+  };
+  const cockpitLabels: CockpitLabels = {
+    finishOverdue: rcMessages.basicMode.finishOverdue,
+    assignWalkin: rcMessages.basicMode.assignWalkin,
+    assignWalkinGeneric: rcMessages.basicMode.assignWalkinGeneric,
+    prepareNext: rcMessages.basicMode.prepareNext,
+    allClear: rcMessages.basicMode.allClear,
+    alertOverdue: rcMessages.basicMode.alertOverdue,
+    alertSmsFailed: rcMessages.basicMode.alertSmsFailed,
+    alertSetupIncomplete: rcMessages.basicMode.alertSetupIncomplete,
+    alertLongWait: rcMessages.basicMode.alertLongWait,
+  };
+  // Party strip is hidden in Basic Mode unless a card genuinely needs action
+  // (a guest submitted a change request awaiting staff review).
+  const hasActionableParty = (partyCards ?? []).some(
+    (c) => c.pendingChangeRequestCount > 0,
+  );
+
   const setupCtaPath =
     data.services.length === 0
       ? `/dashboard/${encodeURIComponent(slug)}/setup/services`
@@ -1623,7 +1667,35 @@ function ReceptionistCenterInner({
                * per PERMISSION_MATRIX §3 to give senior write access
                * to a personal density.
                */}
-              {viewerRole !== "nail_tech" ? (
+              {/* Basic Mode toggle — per-device front-desk cockpit. Shown
+                  on the live day board for every role (it's a personal view
+                  preference, not a salon-wide setting). */}
+              {isViewingToday && viewMode === "day" ? (
+                <button
+                  type="button"
+                  data-testid="basic-mode-toggle"
+                  aria-pressed={basicMode}
+                  aria-label={
+                    basicMode
+                      ? rcMessages.basicMode.toggleOffAria
+                      : rcMessages.basicMode.toggleOnAria
+                  }
+                  onClick={toggleBasicMode}
+                  data-rush-fade
+                  className={cn(
+                    "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                    basicMode
+                      ? "border-nq-primary bg-nq-primary/15 text-nq-primary"
+                      : "border-nq-border bg-nq-surface text-nq-muted hover:text-nq-foreground",
+                  )}
+                >
+                  {rcMessages.basicMode.toggle}
+                </button>
+              ) : null}
+              {/* Density slider is hidden in Basic Mode — Basic Mode is the
+                  simplified view, so the density control would be redundant
+                  clutter. Reappears when Basic Mode is off. */}
+              {viewerRole !== "nail_tech" && !basicModeActive ? (
                 <span data-rush-fade>
                   <DensitySlider
                     slug={slug}
@@ -1809,7 +1881,28 @@ function ReceptionistCenterInner({
          * "now" semantics (Coming up 30m, Overdue, Next available) so
          * historical/future date views must not pretend they are live.
          */}
-        {isViewingToday && modules.kpi_bar ? (
+        {basicModeActive ? (
+          /* Basic Mode replaces the full KPI band with the Front Desk
+             Cockpit: Critical Alerts (max 2) + Next Action + 4-card Now Bar.
+             Revenue / avg-wait / next-available clutter is intentionally
+             dropped here (still available in the full Balanced/Advanced view). */
+          <BasicCockpit
+            snapshot={data.kpiSnapshot}
+            inputs={cockpitInputs}
+            labels={cockpitLabels}
+            nowBar={{
+              waiting: rcMessages.kpiBar.waiting,
+              inService: rcMessages.kpiBar.inService,
+              comingUp: rcMessages.kpiBar.comingUp,
+              overdue: rcMessages.kpiBar.overdue,
+            }}
+            headings={{
+              nextAction: rcMessages.basicMode.nextActionHeading,
+              alerts: rcMessages.basicMode.alertsHeading,
+            }}
+            isLoading={dayLoading}
+          />
+        ) : isViewingToday && modules.kpi_bar ? (
           <KPIBar
             snapshot={data.kpiSnapshot}
             // Revenue tile composes the salon module gate AND a role
@@ -1830,12 +1923,16 @@ function ReceptionistCenterInner({
             Rendered as a shrink-0 strip so the three-zone grid below
             adjusts its height automatically. Always mounted so its own
             empty state is reachable and the refresh control can surface
-            newly-created party cards without a full page reload. */}
-        <PartyCardPanel
-          initialCards={partyCards}
-          slug={slug}
-          currencyCode={data.salon.currencyCode}
-        />
+            newly-created party cards without a full page reload.
+            Basic Mode hides the strip unless a card needs action (a pending
+            guest change request) to keep the cockpit calm. */}
+        {basicModeActive && !hasActionableParty ? null : (
+          <PartyCardPanel
+            initialCards={partyCards}
+            slug={slug}
+            currencyCode={data.salon.currencyCode}
+          />
+        )}
 
         {modules.alerts && isSetupIncomplete ? (
           <div
