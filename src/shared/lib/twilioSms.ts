@@ -7,6 +7,8 @@
  * plus TWILIO_PHONE_NUMBER (the sender number in E.164, e.g. "+17785550100").
  */
 
+import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+
 async function getTwilioSmsCreds(): Promise<{
   accountSid: string;
   authToken: string;
@@ -51,8 +53,25 @@ async function getTwilioSmsCreds(): Promise<{
 }
 
 /**
+ * Normalise any accepted phone form (+country, bare NANP, formatted) to strict
+ * E.164 (`+<digits>`) for the Twilio `To` field.  Twilio rejects/mis-routes
+ * numbers that lack the leading `+`, and historically callers passed digits-only
+ * ("16045551234") or the raw string the voice AI captured — neither is E.164.
+ *
+ * Reuses the battle-tested libphonenumber parse from `validateGuestPhone`
+ * (default region CA) so behaviour matches the booking-storage path exactly.
+ * Returns null when the number can't be validated (e.g. bare Vietnamese local
+ * "0905123456" with no country code) — the caller treats that as a send failure.
+ */
+export function normaliseToE164(raw: string): string | null {
+  const v = validateGuestPhone(raw);
+  return v.ok ? `+${v.digits}` : null;
+}
+
+/**
  * Send an outbound SMS reminder.
- * @param toE164 - recipient in E.164 format, e.g. "+16045559000"
+ * @param toE164 - recipient phone; any accepted form (+country / bare NANP /
+ *                 formatted) is normalised to strict E.164 before sending.
  * @param body   - message text (keep under 160 chars to avoid split)
  */
 export async function sendSmsReminder(
@@ -66,6 +85,14 @@ export async function sendSmsReminder(
     return { ok: false, error: "twilio_not_configured" };
   }
 
+  // Normalise the recipient to E.164 — Twilio needs the leading "+".
+  const recipient = normaliseToE164(toE164);
+  if (!recipient) {
+    // Don't log the full number (PII) — only that normalisation failed.
+    console.error("[sendSmsReminder] invalid recipient phone, cannot send (not E.164-normalisable)");
+    return { ok: false, error: "invalid_phone" };
+  }
+
   const auth = `Basic ${Buffer.from(
     `${creds.accountSid}:${creds.authToken}`,
   ).toString("base64")}`;
@@ -73,7 +100,7 @@ export async function sendSmsReminder(
 
   const params: Record<string, string> = {
     From: creds.fromPhone,
-    To:   toE164,
+    To:   recipient,
     Body: body,
   };
   if (opts?.statusCallbackUrl) {

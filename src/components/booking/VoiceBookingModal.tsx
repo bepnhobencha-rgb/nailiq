@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { REALTIME_TOOLS } from "@/shared/voiceai/realtimeTools";
 import { SESSION_TTL_SECONDS } from "@/shared/voiceai/config";
+import { bookingResultFooterNote } from "./bookingResultFooter";
 
 type Props = {
   t: BookingMessages;
@@ -35,6 +36,10 @@ type BookingResult = {
   /** Slot label, e.g. "3:00 PM".  Empty for cancelled (date already includes time). */
   timeSlot: string;
   customerName: string;
+  /** Whether the backend confirmed the confirmation SMS was actually sent.
+   *  Only `true` when the send succeeded. Drives the footer copy so the UI
+   *  never claims "SMS sent" when it wasn't (disabled / not configured / failed). */
+  smsSent?: boolean;
 };
 
 // Silence / timeout policy
@@ -135,6 +140,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
    *  multiple function_call items in one response turn (e.g. group cancel). */
   const pendingToolCallsRef = useRef(0);
   const aiActiveRef           = useRef(false);   // true while AI is thinking/speaking
+  /** Set to true the moment the customer barges in (speech_started fires while AI
+   *  is producing audio). Drops all in-transit audio delta chunks so queued speech
+   *  doesn't bleed through after the flush. Cleared when the cancelled response
+   *  acknowledges the interruption (response.cancelled / response.done w/ cancelled). */
+  const bargeInActiveRef      = useRef(false);
   /** ms timestamp until which mic input is suppressed after AI stops speaking.
    *  Prevents the mic from picking up the tail end of the speaker output and
    *  triggering a new VAD speech_started → echo loop. */
@@ -195,6 +205,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     activeSourceNodesRef.current = [];
     silenceTimerRef.current   = null;
     aiActiveRef.current       = false;
+    bargeInActiveRef.current  = false;
     repromptCountRef.current  = 0;
     processedCallIdsRef.current.clear();
     isRenewingRef.current = false;
@@ -347,6 +358,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
               date:         (res.date         as string) ?? "",
               timeSlot:     (res.timeSlot     as string) ?? "",
               customerName: (res.customerName as string) ?? "",
+              smsSent:      res.smsSent === true,
             });
           }
           if (fnName === "confirm_group_booking" && res.ok === true) {
@@ -358,6 +370,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
               date:         (res.date         as string) ?? "",
               timeSlot:     (res.groupStartDisplay as string) ?? "",
               customerName: (res.organizerName as string) ?? "",
+              smsSent:      res.smsSent === true,
             });
           }
           if (fnName === "reschedule_booking" && res.success) {
@@ -441,20 +454,41 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
 
     if (type === "response.done") {
       aiActiveRef.current = false;
-      // NOTE: do NOT reset pendingToolCallsRef here.
+      if (typingIntervalRef.current) { clearInterval(typingIntervalRef.current); typingIntervalRef.current = null; }
+      setAiActivity("idle");
+
+      // Detect whether this response.done belongs to a barge-in cancellation.
+      const respStatus = (ev.response as { status?: string } | undefined)?.status;
+      const wasCancelled = respStatus === "cancelled" || respStatus === "canceled";
+
+      if (wasCancelled) {
+        // The response was cancelled because the customer interrupted.
+        // DO NOT set the post-speech cooldown — the customer is already speaking
+        // and suppressing the mic right now would prevent Lily from hearing them.
+        // Also clear bargeInActiveRef so audio from the NEXT response can play.
+        bargeInActiveRef.current = false;
+        // Reset pending tool calls so the next response.create isn't blocked.
+        // Any tool-call fetches in-flight from the cancelled response are already
+        // orphaned (the conversation item they produce would be stale); resetting
+        // here lets the new user turn start a fresh response cycle.
+        pendingToolCallsRef.current = 0;
+        // NOTE: do NOT schedule a nudge — the customer is actively speaking.
+        return;
+      }
+
+      // Normal (non-cancelled) response.done path:
+      // NOTE: do NOT reset pendingToolCallsRef here for the normal case.
       // Tool fetches dispatched from streaming events may still be in-flight when
       // response.done fires. Resetting to 0 would cause each completing fetch to
       // see counter=0 and send its own response.create → race condition.
       // The counter decrements naturally in sendResponseCreate() as each fetch
       // completes, and response.create is sent only when it reaches 0.
-      // Stop typing sound in case the response had no audio (e.g. function-call only)
-      if (typingIntervalRef.current) { clearInterval(typingIntervalRef.current); typingIntervalRef.current = null; }
+
       // 800 ms cooldown: suppresses mic input long enough for speaker audio to
       // decay so the VAD doesn't immediately re-fire on the tail of our own output.
       // Increased from 400 ms — 400 ms was too short on slower devices / networks
       // where audio playback decays slowly, causing the VAD to re-trigger.
       postSpeechCooldownRef.current = Date.now() + 800;
-      setAiActivity("idle");
 
       // ── Belt-and-suspenders: extract any function calls from the response
       // output array.  Streaming events (response.output_function_call_arguments
@@ -491,18 +525,34 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       repromptCountRef.current = 0;
       if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
 
-      // Barge-in: if the customer speaks while Lily is talking, immediately
-      // stop all queued audio so Lily goes silent right away.
-      // (OpenAI will cancel the in-flight response because interrupt_response=true.)
-      if (aiActiveRef.current) {
-        const nodes = activeSourceNodesRef.current.slice();
-        activeSourceNodesRef.current = [];
-        nodes.forEach((n) => { try { n.stop(); } catch { /* already stopped */ } });
-        if (audioCtxRef.current) nextPlayRef.current = audioCtxRef.current.currentTime;
-        if (typingIntervalRef.current) { clearInterval(typingIntervalRef.current); typingIntervalRef.current = null; }
-        aiActiveRef.current = false;
-        setAiActivity("idle");
-      }
+      // Barge-in: ALWAYS flush queued audio the moment the customer speaks,
+      // regardless of aiActiveRef state.  aiActiveRef is set to false by
+      // response.done BEFORE all queued BufferSourceNodes have finished playing
+      // (the "tail" period), so guarding on it caused Lily to keep talking for
+      // up to 2–3 seconds after the barge-in event fired.
+      //
+      // 1. Mark barge-in active — audio output handler will drop any chunks
+      //    still in-transit over the WebSocket (avoids re-scheduling deleted nodes).
+      bargeInActiveRef.current = true;
+
+      // 2. Immediately stop all scheduled AudioBufferSourceNodes.
+      const nodes = activeSourceNodesRef.current.slice();
+      activeSourceNodesRef.current = [];
+      nodes.forEach((n) => { try { n.stop(); } catch { /* already stopped */ } });
+      if (audioCtxRef.current) nextPlayRef.current = audioCtxRef.current.currentTime;
+
+      // 3. Kill the typing-sound interval.
+      if (typingIntervalRef.current) { clearInterval(typingIntervalRef.current); typingIntervalRef.current = null; }
+
+      // 4. Reset AI activity state so the UI shows "idle".
+      aiActiveRef.current = false;
+      setAiActivity("idle");
+
+      // 5. Tell the OpenAI server to cancel the current response immediately.
+      //    interrupt_response=true handles this server-side via VAD, but sending
+      //    an explicit response.cancel is belt-and-suspenders for gpt-realtime-2
+      //    and ensures the server also stops generating tokens right away.
+      wsRef.current?.send(JSON.stringify({ type: "response.cancel" }));
     }
 
     // OpenAI cancelled the in-flight response (triggered by barge-in or error).
@@ -516,12 +566,21 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       activeSourceNodesRef.current = [];
       nodes.forEach((n) => { try { n.stop(); } catch { /* ok */ } });
       if (audioCtxRef.current) nextPlayRef.current = audioCtxRef.current.currentTime;
+      // Clear barge-in gate so audio from the next response can play normally.
+      bargeInActiveRef.current = false;
+      // Reset pending tool calls — cancelled response tools are orphaned.
+      pendingToolCallsRef.current = 0;
     }
 
     // ── Audio playback ───────────────────────────────────────────────────────
     if (type === "response.output_audio.delta" || type === "response.audio.delta") {
       const delta = ev.delta as string | undefined;
       if (!delta || !audioCtxRef.current) return;
+      // Drop chunks that arrive AFTER a barge-in.  The WebSocket delivers events
+      // asynchronously — even after we flush the audio queue there may be several
+      // hundred milliseconds of delta packets already in-transit.  Scheduling them
+      // would cause Lily to briefly resume speaking after the interruption.
+      if (bargeInActiveRef.current) return;
       void audioCtxRef.current.resume();
       const ctx  = audioCtxRef.current;
       // Route through outputGainRef (2× boost) if available, else direct.
@@ -1247,13 +1306,16 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
                   <p className="text-sm text-[var(--booking-text-muted)]">{bookingResult.customerName}</p>
                 )}
 
-                {/* Footer note: SMS only for new bookings; rescheduled/cancelled get action note */}
+                {/* Footer note: SMS only for new bookings; rescheduled/cancelled get action note.
+                    For new bookings, the SMS line is TRUTHFUL — it only claims "sent" when the
+                    backend confirmed delivery to the provider (bookingResult.smsSent === true).
+                    Otherwise (disabled / not configured / failed) it shows a neutral message.
+                    Logic lives in bookingResultFooterNote() so it can be unit-tested. */}
                 <p className={`mt-2 text-xs ${footerColor}`}>
-                  {isCancelled
-                    ? (language === "vi" ? "✓ Lịch hẹn đã được huỷ" : "✓ Appointment removed from schedule")
-                    : isRescheduled
-                      ? (language === "vi" ? "📅 Lịch hẹn đã được cập nhật" : "📅 Schedule updated")
-                      : (language === "vi" ? "📱 Tin nhắn xác nhận đã được gửi" : "📱 Confirmation SMS sent")}
+                  {bookingResultFooterNote(
+                    { action: bookingResult.action, smsSent: bookingResult.smsSent },
+                    language,
+                  )}
                 </p>
               </div>
             );

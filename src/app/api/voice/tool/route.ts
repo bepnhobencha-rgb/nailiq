@@ -370,25 +370,37 @@ async function handleConfirmBooking(
     } catch { /* best-effort */ }
   }
 
-  // ── 8. Send SMS confirmation (fire-and-forget, same as submitPublicBooking) ──
-  // Voice bookings skipped this step — customer received no confirmation SMS.
+  // ── 8. Send SMS confirmation — AWAITED so we can report the real result ──────
+  //  Previously fire-and-forget: the UI claimed "SMS sent" even when the send
+  //  failed or Twilio wasn't configured. We now await the result and surface an
+  //  accurate `smsSent` boolean. SMS failure never fails the booking.
+  let smsSent = false;
   if (bookingId) {
-    const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
-    fetch(`${appUrl}/api/booking/sms-confirm`, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        bookingId,
-        salonId:      String(salon.id),
-        clientPhone:  customerPhone,
-        clientName:   customerName,
-        serviceName:  (service as { name: string }).name,
-        staffName:    resolvedStaffName ?? undefined,
-        startTimeUtc: startUtcIso,
-      }),
-    }).catch((e: unknown) => {
+    try {
+      const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+      const smsRes = await fetch(`${appUrl}/api/booking/sms-confirm`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookingId,
+          salonId:      String(salon.id),
+          clientPhone:  customerPhone,
+          clientName:   customerName,
+          serviceName:  (service as { name: string }).name,
+          staffName:    resolvedStaffName ?? undefined,
+          startTimeUtc: startUtcIso,
+        }),
+      });
+      const smsJson = await smsRes.json().catch(() => ({})) as { ok?: boolean; error?: string };
+      smsSent = smsRes.ok && smsJson.ok === true;
+      if (!smsSent) {
+        // Log the reason (no PII / secrets) so failures are diagnosable.
+        console.warn("[voice/confirm_booking] confirmation SMS not sent:", smsJson.error ?? `http_${smsRes.status}`);
+      }
+    } catch (e: unknown) {
       console.error("[voice/confirm_booking] sms-confirm dispatch failed", e);
-    });
+      smsSent = false;
+    }
   }
 
   return NextResponse.json({
@@ -399,6 +411,7 @@ async function handleConfirmBooking(
     timeSlot,
     customerName,
     customerPhone,
+    smsSent,
   });
 }
 
@@ -1380,21 +1393,57 @@ async function handleConfirmGroupBooking(
     } catch { /* best-effort */ }
   }
 
+  // 10. Send ONE confirmation SMS to the ORGANIZER — AWAITED so we report the
+  //     real result. Previously group bookings sent NO SMS at all, yet the UI
+  //     claimed "SMS sent". We mirror the individual-booking confirmation: a
+  //     single SMS to the organizer (the only person whose phone we collected).
+  //     Guests have placeholder names/no phones, so they are never messaged here.
+  //     SMS failure never fails the booking.
+  const totalMembers = ctx.resolvedMembers.length;
+  let smsSent = false;
+  const firstBookingId = bookingIds[0] ?? null;
+  if (firstBookingId) {
+    try {
+      const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+      const smsRes = await fetch(`${appUrl}/api/booking/sms-confirm`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookingId:    firstBookingId,
+          salonId:      ctx.salonId,
+          clientPhone:  phoneDigits,
+          clientName:   organizerName!.trim(),
+          serviceName:  `Group of ${totalMembers}`,
+          startTimeUtc: new Date(finalArrangement.groupStartMs).toISOString(),
+        }),
+      });
+      const smsJson = await smsRes.json().catch(() => ({})) as { ok?: boolean; error?: string };
+      smsSent = smsRes.ok && smsJson.ok === true;
+      if (!smsSent) {
+        console.warn("[voice/confirm_group_booking] confirmation SMS not sent:", smsJson.error ?? `http_${smsRes.status}`);
+      }
+    } catch (e: unknown) {
+      console.error("[voice/confirm_group_booking] sms-confirm dispatch failed", e);
+      smsSent = false;
+    }
+  }
+
   return NextResponse.json({
     ok:                true,
     groupId,
     bookingIds,
     partyLinkUrl,
+    smsSent,
     groupStartDisplay: finalArrangement.groupStartDisplay,
     groupEndDisplay:   finalArrangement.groupEndDisplay,
     groupStartTime:    utcMsToSalonHm24(finalArrangement.groupStartMs, ctx.timezone),
     groupEndTime:      utcMsToSalonHm24(finalArrangement.groupEndMs,   ctx.timezone),
     date:              dateYmd,
-    totalMembers:      ctx.resolvedMembers.length,
+    totalMembers,
     organizerName:     organizerName!.trim(),
     message:           partyLinkUrl
-      ? `Group booking confirmed for ${ctx.resolvedMembers.length} people. Party link is ready to share.`
-      : `Group booking confirmed for ${ctx.resolvedMembers.length} people.`,
+      ? `Group booking confirmed for ${totalMembers} people. Party link is ready to share.`
+      : `Group booking confirmed for ${totalMembers} people.`,
     hint:
       "Do NOT read individual staff assignments aloud. Tell the customer the group start time, end time, and that the party link will be shared with the group organizer.",
   });
