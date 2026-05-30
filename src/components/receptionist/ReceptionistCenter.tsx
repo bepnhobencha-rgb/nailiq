@@ -1425,12 +1425,35 @@ function ReceptionistCenterInner({
 
   // ── Basic Mode cockpit data (deterministic; display-only) ───────
   const basicModeActive = basicMode && isViewingToday && viewMode === "day";
+
+  // Available staff (operational, not a risk state) — used by the Now Bar
+  // "Available staff" card (shows a name) and the walk-in nudge.
+  const availableStaffList = data.staff.filter((s) => s.status === "available");
+  const availableStaffCount = availableStaffList.length;
+  const availableStaffName = availableStaffList[0]?.name?.trim() || null;
+
+  // Longest CURRENT wait among queued guests (minutes) — drives the long-wait
+  // Next Action + Critical Alert. Computed from queue join times vs "now".
+  const nowMsForWait = Date.parse(nowIso);
+  const longestWaitMinutes = (() => {
+    let max: number | null = null;
+    for (const q of data.walkinQueue) {
+      const joined = q.joined_queue_at ? Date.parse(q.joined_queue_at) : NaN;
+      if (!Number.isFinite(joined)) continue;
+      const mins = Math.floor((nowMsForWait - joined) / 60_000);
+      if (mins > (max ?? -1)) max = mins;
+    }
+    return max;
+  })();
+
   const cockpitInputs: CockpitInputs = {
     waitingCount: data.kpiSnapshot.waitingCount,
     inProgressCount: data.kpiSnapshot.inProgressCount,
     comingUpCount: data.kpiSnapshot.comingUpCount,
     overdueCount: data.kpiSnapshot.overdueCount,
-    avgWaitMinutes: data.kpiSnapshot.avgWaitMinutes,
+    longestWaitMinutes,
+    availableStaffCount,
+    availableStaffName,
     firstWaitingName: data.walkinQueue[0]?.client_name?.trim() || null,
     smsFailedCount: data.bookingsForDay.filter(
       (b) =>
@@ -1443,20 +1466,34 @@ function ReceptionistCenterInner({
     isSetupIncomplete,
   };
   const cockpitLabels: CockpitLabels = {
+    longWaitGuest: rcMessages.basicMode.longWaitGuest,
     finishOverdue: rcMessages.basicMode.finishOverdue,
-    assignWalkin: rcMessages.basicMode.assignWalkin,
-    assignWalkinGeneric: rcMessages.basicMode.assignWalkinGeneric,
+    assignWaiting: rcMessages.basicMode.assignWaiting,
+    assignWaitingNamed: rcMessages.basicMode.assignWaitingNamed,
     prepareNext: rcMessages.basicMode.prepareNext,
+    partyPending: rcMessages.basicMode.partyPending,
+    suggestWalkin: rcMessages.basicMode.suggestWalkin,
+    actionOpenQueue: rcMessages.basicMode.actionOpenQueue,
+    actionAddWalkin: rcMessages.basicMode.actionAddWalkin,
+    actionOpenParty: rcMessages.basicMode.actionOpenParty,
     alertOverdue: rcMessages.basicMode.alertOverdue,
+    alertLongWait: rcMessages.basicMode.alertLongWait,
+    alertNoStaffForWaiting: rcMessages.basicMode.alertNoStaffForWaiting,
     alertSmsFailed: rcMessages.basicMode.alertSmsFailed,
     alertPartyChange: rcMessages.basicMode.alertPartyChange,
-    alertLongWait: rcMessages.basicMode.alertLongWait,
     alertSetupIncomplete: rcMessages.basicMode.alertSetupIncomplete,
   };
-  // Available-staff count for the Now Bar (operational, not a risk state).
-  const availableStaffCount = data.staff.filter(
-    (s) => s.status === "available",
-  ).length;
+  // Cockpit action button handler. Queue + walk-in open the queue slide-over
+  // (the walk-in form lives inside it); party scrolls the party strip into view.
+  const onCockpitAction = (target: import("@/shared/dashboard/basicModeCockpit").CockpitActionTarget) => {
+    if (target === "open_party") {
+      document
+        .getElementById("party-strip")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    setQueuePanelOpen(true);
+  };
   // Party strip is hidden in Basic Mode unless a card genuinely needs action
   // (a guest submitted a change request awaiting staff review).
   const hasActionableParty = (partyCards ?? []).some(
@@ -1898,17 +1935,21 @@ function ReceptionistCenterInner({
             snapshot={data.kpiSnapshot}
             inputs={cockpitInputs}
             labels={cockpitLabels}
-            availableStaffCount={availableStaffCount}
             nowBar={{
               waiting: rcMessages.kpiBar.waiting,
               inService: rcMessages.kpiBar.inService,
               upcoming: rcMessages.kpiBar.comingUp,
               availableStaff: rcMessages.basicMode.nowAvailableStaff,
+              noOneWaiting: rcMessages.basicMode.nowNoOneWaiting,
+              noStaffAvailable: rcMessages.basicMode.nowNoStaffAvailable,
             }}
             headings={{
               nextAction: rcMessages.basicMode.nextActionHeading,
               alerts: rcMessages.basicMode.alertsHeading,
+              moreIssues: rcMessages.basicMode.moreIssues,
             }}
+            onAction={onCockpitAction}
+            onOpenQueue={() => setQueuePanelOpen(true)}
             isLoading={dayLoading}
           />
         ) : isViewingToday && modules.kpi_bar ? (
@@ -1936,11 +1977,13 @@ function ReceptionistCenterInner({
             Basic Mode hides the strip unless a card needs action (a pending
             guest change request) to keep the cockpit calm. */}
         {basicModeActive && !hasActionableParty ? null : (
-          <PartyCardPanel
-            initialCards={partyCards}
-            slug={slug}
-            currencyCode={data.salon.currencyCode}
-          />
+          <div id="party-strip">
+            <PartyCardPanel
+              initialCards={partyCards}
+              slug={slug}
+              currencyCode={data.salon.currencyCode}
+            />
+          </div>
         )}
 
         {modules.alerts && isSetupIncomplete ? (

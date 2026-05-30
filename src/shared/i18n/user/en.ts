@@ -905,19 +905,34 @@ export type UserMessages = {
       toggle: string;
       toggleOnAria: string;
       toggleOffAria: string;
+      /** Page title shown in Basic Mode header. */
+      pageTitle: string;
       nextActionHeading: string;
       alertsHeading: string;
+      moreIssues: (n: number) => string;
+      // Next Action texts
+      longWaitGuest: (n: number) => string;
       finishOverdue: (n: number) => string;
-      assignWalkin: (name: string) => string;
-      assignWalkinGeneric: string;
+      assignWaiting: (n: number) => string;
+      assignWaitingNamed: (name: string) => string;
       prepareNext: (n: number) => string;
+      partyPending: (n: number) => string;
+      suggestWalkin: (name: string) => string;
+      // Action button labels
+      actionOpenQueue: string;
+      actionAddWalkin: string;
+      actionOpenParty: string;
+      // Critical alert texts
       alertOverdue: (n: number) => string;
+      alertLongWait: (n: number) => string;
+      alertNoStaffForWaiting: string;
       alertSmsFailed: (n: number) => string;
       alertPartyChange: (n: number) => string;
-      alertLongWait: (n: number) => string;
       alertSetupIncomplete: string;
-      /** Now Bar tile label for currently-available staff count. */
+      // Now Bar
       nowAvailableStaff: string;
+      nowNoOneWaiting: string;
+      nowNoStaffAvailable: string;
     };
     /** Role-adaptive top-bar labels. */
     roleBadge: {
@@ -2462,23 +2477,39 @@ export const userEn: UserMessages = {
       toggle: "Basic",
       toggleOnAria: "Switch to Basic Mode — simplified front-desk cockpit",
       toggleOffAria: "Exit Basic Mode — back to the full board",
+      pageTitle: "Receptionist",
       nextActionHeading: "Next action",
       alertsHeading: "Needs attention",
+      moreIssues: (n: number) => `+${n} more issue${n === 1 ? "" : "s"}`,
+      longWaitGuest: (n: number) => `1 guest has waited over ${n} min`,
       finishOverdue: (n: number) =>
         n === 1 ? "1 booking is overdue — wrap up or extend" : `${n} bookings overdue — wrap up or extend`,
-      assignWalkin: (name: string) => `Seat next walk-in: ${name}`,
-      assignWalkinGeneric: "Seat the next waiting walk-in",
+      assignWaiting: (n: number) =>
+        n === 1
+          ? "1 guest is waiting. Assign them to an available staff member."
+          : `${n} guests are waiting. Assign the next guest to an available staff member.`,
+      assignWaitingNamed: (name: string) =>
+        `${name} is waiting. Assign them to an available staff member.`,
       prepareNext: (n: number) =>
         n === 1 ? "1 guest arriving in the next 30 min" : `${n} guests arriving in the next 30 min`,
+      partyPending: (n: number) =>
+        n === 1 ? "1 party guest has not confirmed" : `${n} party guests have not confirmed`,
+      suggestWalkin: (name: string) => `${name} is available. You can add a walk-in.`,
+      actionOpenQueue: "Open queue",
+      actionAddWalkin: "+ Walk-in",
+      actionOpenParty: "Open party bookings",
       alertOverdue: (n: number) =>
         n === 1 ? "1 booking overdue" : `${n} bookings overdue`,
+      alertLongWait: (n: number) => `Guest waiting over ${n} min`,
+      alertNoStaffForWaiting: "Guests waiting — no staff available",
       alertSmsFailed: (n: number) =>
         n === 1 ? "1 confirmation SMS failed" : `${n} confirmation SMS failed`,
       alertPartyChange: (n: number) =>
-        n === 1 ? "1 group change request" : `${n} group change requests`,
-      alertLongWait: (n: number) => `Average wait ${n} min`,
+        n === 1 ? "Group booking needs attention: 1 guest pending" : `Group booking needs attention: ${n} guests pending`,
       alertSetupIncomplete: "Setup incomplete — add services & staff",
       nowAvailableStaff: "Available staff",
+      nowNoOneWaiting: "No one waiting",
+      nowNoStaffAvailable: "None",
     },
     roleBadge: {
       ownerView: "Owner view",

@@ -964,23 +964,39 @@ export const userVi: UserMessages = {
       toggle: "Cơ bản",
       toggleOnAria: "Chuyển sang Chế độ Cơ bản — bảng tiếp tân gọn",
       toggleOffAria: "Thoát Chế độ Cơ bản — về bảng đầy đủ",
+      pageTitle: "Lễ tân",
       nextActionHeading: "Việc cần làm",
       alertsHeading: "Cần chú ý",
+      moreIssues: (n: number) => `+${n} vấn đề khác`,
+      longWaitGuest: (n: number) => `1 khách đã chờ hơn ${n} phút`,
       finishOverdue: (n: number) =>
         n === 1 ? "1 lịch đang trễ giờ — xử lý hoặc gia hạn" : `${n} lịch đang trễ giờ — xử lý hoặc gia hạn`,
-      assignWalkin: (name: string) => `Xếp khách chờ: ${name}`,
-      assignWalkinGeneric: "Xếp khách chờ tiếp theo",
+      assignWaiting: (n: number) =>
+        n === 1
+          ? "1 khách đang chờ. Gán cho thợ sẵn sàng."
+          : `${n} khách đang chờ. Gán khách tiếp theo cho thợ sẵn sàng.`,
+      assignWaitingNamed: (name: string) =>
+        `${name} đang chờ. Gán cho thợ sẵn sàng.`,
       prepareNext: (n: number) =>
         n === 1 ? "1 khách sắp đến (30 phút tới)" : `${n} khách sắp đến (30 phút tới)`,
+      partyPending: (n: number) =>
+        n === 1 ? "1 khách nhóm chưa xác nhận" : `${n} khách nhóm chưa xác nhận`,
+      suggestWalkin: (name: string) => `${name} đang sẵn sàng. Có thể nhận khách walk-in.`,
+      actionOpenQueue: "Mở hàng chờ",
+      actionAddWalkin: "+ Walk-in",
+      actionOpenParty: "Mở booking nhóm",
       alertOverdue: (n: number) =>
         n === 1 ? "1 lịch trễ giờ" : `${n} lịch trễ giờ`,
+      alertLongWait: (n: number) => `Khách chờ hơn ${n} phút`,
+      alertNoStaffForWaiting: "Có khách chờ — không có thợ rảnh",
       alertSmsFailed: (n: number) =>
         n === 1 ? "1 SMS xác nhận thất bại" : `${n} SMS xác nhận thất bại`,
       alertPartyChange: (n: number) =>
-        n === 1 ? "1 yêu cầu đổi lịch nhóm" : `${n} yêu cầu đổi lịch nhóm`,
-      alertLongWait: (n: number) => `Chờ trung bình ${n} phút`,
+        n === 1 ? "Booking nhóm cần chú ý: 1 khách chưa xác nhận" : `Booking nhóm cần chú ý: ${n} khách chưa xác nhận`,
       alertSetupIncomplete: "Chưa hoàn tất thiết lập — thêm dịch vụ & thợ",
-      nowAvailableStaff: "Thợ rảnh",
+      nowAvailableStaff: "Thợ sẵn sàng",
+      nowNoOneWaiting: "Không có khách chờ",
+      nowNoStaffAvailable: "Không có",
     },
     roleBadge: {
       ownerView: "Chủ tiệm",

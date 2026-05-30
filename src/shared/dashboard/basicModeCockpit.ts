@@ -5,16 +5,27 @@
  * of the existing board — it reorganizes what's shown for fast scanning. It
  * does NOT change booking logic, status, scheduling, or any salon-level config.
  *
- * These helpers compute the deterministic Next Action and the Critical Alerts
- * from the already-loaded snapshot + booking data. No randomness, no time-of-
- * day heuristics beyond the counts the server already derived — same inputs
- * always yield the same output (Part: "Next Action card, deterministic only").
+ * These helpers compute the deterministic Next Action + Critical Alerts from
+ * already-loaded snapshot/booking data. No randomness, no LLM, no new queries —
+ * same inputs always yield the same output. Thresholds come from
+ * receptionistBasicModeConfig (safe defaults, future Admin-overridable).
  */
 
+import {
+  RECEPTIONIST_BASIC_MODE_CONFIG,
+  type ReceptionistBasicModeConfig,
+} from "./receptionistBasicModeConfig";
+
+/** Where a Next Action / alert button takes the receptionist. */
+export type CockpitActionTarget = "open_queue" | "add_walkin" | "open_party";
+
 export type NextActionKind =
+  | "long_wait"
   | "finish_overdue"
-  | "assign_walkin"
-  | "prepare_next";
+  | "assign_waiting"
+  | "prepare_next"
+  | "party_pending"
+  | "suggest_walkin";
 
 export type NextAction = {
   kind: NextActionKind;
@@ -22,17 +33,24 @@ export type NextAction = {
   text: string;
   /** Status accent for the card. */
   tone: "danger" | "warning" | "info";
+  /** Action button target + label; null = informational card (no button). */
+  action: { target: CockpitActionTarget; label: string } | null;
 };
 
+export type CriticalAlertKey =
+  | "overdue"
+  | "long_wait"
+  | "no_staff_for_waiting"
+  | "sms_failed"
+  | "party_change"
+  | "setup_incomplete";
+
 export type CriticalAlert = {
-  key:
-    | "overdue"
-    | "sms_failed"
-    | "party_change"
-    | "long_wait"
-    | "setup_incomplete";
+  key: CriticalAlertKey;
   text: string;
   tone: "danger" | "warning";
+  /** Optional action button target; null = no button. */
+  action: { target: CockpitActionTarget; label: string } | null;
 };
 
 /** Inputs the cockpit needs — all already computed elsewhere (no new queries). */
@@ -41,7 +59,12 @@ export type CockpitInputs = {
   inProgressCount: number;
   comingUpCount: number;
   overdueCount: number;
-  avgWaitMinutes: number | null;
+  /** Longest CURRENT wait among queued guests (minutes); null when queue empty. */
+  longestWaitMinutes: number | null;
+  /** Count of staff currently available (status === "available"). */
+  availableStaffCount: number;
+  /** Name of an available staff member (for Now Bar + walk-in nudge). */
+  availableStaffName: string | null;
   /** Name of the first waiting walk-in (FIFO), for the assign action. */
   firstWaitingName: string | null;
   /** Count of today's bookings whose confirmation SMS failed. */
@@ -53,66 +76,136 @@ export type CockpitInputs = {
 
 /** Localized copy — caller passes the i18n bundle so this stays pure. */
 export type CockpitLabels = {
+  // Next Action texts
+  longWaitGuest: (n: number) => string;
   finishOverdue: (n: number) => string;
-  assignWalkin: (name: string) => string;
-  assignWalkinGeneric: string;
+  assignWaiting: (n: number) => string;
+  assignWaitingNamed: (name: string) => string;
   prepareNext: (n: number) => string;
+  partyPending: (n: number) => string;
+  suggestWalkin: (name: string) => string;
+  // Action button labels
+  actionOpenQueue: string;
+  actionAddWalkin: string;
+  actionOpenParty: string;
+  // Critical alert texts
   alertOverdue: (n: number) => string;
+  alertLongWait: (n: number) => string;
+  alertNoStaffForWaiting: string;
   alertSmsFailed: (n: number) => string;
   alertPartyChange: (n: number) => string;
-  alertLongWait: (n: number) => string;
   alertSetupIncomplete: string;
 };
 
-const LONG_WAIT_MINUTES = 20;
-const MAX_ALERTS = 2;
-
 /**
  * Deterministic Next Action — single highest-priority operational nudge.
- * Priority (risk-first): overdue → waiting walk-in → arriving soon.
- * Returns `null` when there is no useful action (the card is hidden — an
- * "all clear" message is informational, not an action, so we don't show it).
+ *
+ * Priority (per approved 12/10 spec):
+ *   1. long-wait guest         2. late/overdue booking
+ *   3. waiting + available     4. upcoming within window
+ *   5. pending party guests    6. available staff + no queue → suggest walk-in
+ *
+ * Returns null when there's no useful action (the card hides — an "all clear"
+ * message is informational, not an action, so we never show one).
  */
 export function computeNextAction(
   i: CockpitInputs,
   labels: CockpitLabels,
+  config: ReceptionistBasicModeConfig = RECEPTIONIST_BASIC_MODE_CONFIG,
 ): NextAction | null {
+  const openQueue = { target: "open_queue" as const, label: labels.actionOpenQueue };
+  const addWalkin = { target: "add_walkin" as const, label: labels.actionAddWalkin };
+  const openParty = { target: "open_party" as const, label: labels.actionOpenParty };
+
+  // 1. Long-wait guest — highest operational risk.
+  if (
+    i.longestWaitMinutes !== null &&
+    i.longestWaitMinutes > config.longWaitThresholdMinutes
+  ) {
+    return {
+      kind: "long_wait",
+      text: labels.longWaitGuest(i.longestWaitMinutes),
+      tone: "danger",
+      action: openQueue,
+    };
+  }
+
+  // 2. Late / overdue booking.
   if (i.overdueCount > 0) {
     return {
       kind: "finish_overdue",
       text: labels.finishOverdue(i.overdueCount),
       tone: "danger",
+      action: openQueue,
     };
   }
+
+  // 3. Waiting guest + available staff → assign.
   if (i.waitingCount > 0) {
     return {
-      kind: "assign_walkin",
+      kind: "assign_waiting",
       text: i.firstWaitingName
-        ? labels.assignWalkin(i.firstWaitingName)
-        : labels.assignWalkinGeneric,
+        ? labels.assignWaitingNamed(i.firstWaitingName)
+        : labels.assignWaiting(i.waitingCount),
       tone: "warning",
+      action: openQueue,
     };
   }
+
+  // 4. Upcoming booking within the window — informational (no fake nav).
   if (i.comingUpCount > 0) {
     return {
       kind: "prepare_next",
       text: labels.prepareNext(i.comingUpCount),
       tone: "info",
+      action: null,
     };
   }
+
+  // 5. Pending party guests / change requests.
+  if (i.pendingPartyChangeCount > 0) {
+    return {
+      kind: "party_pending",
+      text: labels.partyPending(i.pendingPartyChangeCount),
+      tone: "warning",
+      action: openParty,
+    };
+  }
+
+  // 6. Available staff + empty queue → suggest a walk-in.
+  if (i.availableStaffName && i.waitingCount === 0) {
+    return {
+      kind: "suggest_walkin",
+      text: labels.suggestWalkin(i.availableStaffName),
+      tone: "info",
+      action: addWalkin,
+    };
+  }
+
   return null;
 }
 
+export type CriticalAlertsResult = {
+  /** Shown alerts (capped at config.maxBasicCriticalAlerts). */
+  shown: CriticalAlert[];
+  /** Count of additional alerts collapsed into the "+N more" indicator. */
+  overflowCount: number;
+};
+
 /**
- * Critical Alerts — at most 2, risk-first ordering. Never hides operational
- * risk: overdue + SMS-failed always rank above softer signals. If more than
- * two conditions hold, only the top two by severity are shown (the cap keeps
- * the basic board calm; lower-severity items remain visible in the full view).
+ * Critical Alerts — risk-first, capped at config.maxBasicCriticalAlerts.
+ * Never hides operational risk: the highest-severity items win the cap, and
+ * anything beyond it is surfaced as a "+N more issues" indicator (not dropped
+ * silently). Returns an empty list when there's no issue (area hides).
  */
 export function computeCriticalAlerts(
   i: CockpitInputs,
   labels: CockpitLabels,
-): CriticalAlert[] {
+  config: ReceptionistBasicModeConfig = RECEPTIONIST_BASIC_MODE_CONFIG,
+): CriticalAlertsResult {
+  const openQueue = { target: "open_queue" as const, label: labels.actionOpenQueue };
+  const openParty = { target: "open_party" as const, label: labels.actionOpenParty };
+
   const all: CriticalAlert[] = [];
 
   if (i.overdueCount > 0) {
@@ -120,13 +213,27 @@ export function computeCriticalAlerts(
       key: "overdue",
       text: labels.alertOverdue(i.overdueCount),
       tone: "danger",
+      action: openQueue,
     });
   }
-  if (i.smsFailedCount > 0) {
+  if (
+    i.longestWaitMinutes !== null &&
+    i.longestWaitMinutes > config.longWaitThresholdMinutes
+  ) {
     all.push({
-      key: "sms_failed",
-      text: labels.alertSmsFailed(i.smsFailedCount),
+      key: "long_wait",
+      text: labels.alertLongWait(i.longestWaitMinutes),
+      tone: "danger",
+      action: openQueue,
+    });
+  }
+  // Waiting guests but zero available staff — a true bottleneck.
+  if (i.waitingCount > 0 && i.availableStaffCount === 0) {
+    all.push({
+      key: "no_staff_for_waiting",
+      text: labels.alertNoStaffForWaiting,
       tone: "warning",
+      action: openQueue,
     });
   }
   if (i.pendingPartyChangeCount > 0) {
@@ -134,13 +241,15 @@ export function computeCriticalAlerts(
       key: "party_change",
       text: labels.alertPartyChange(i.pendingPartyChangeCount),
       tone: "warning",
+      action: openParty,
     });
   }
-  if (i.avgWaitMinutes !== null && i.avgWaitMinutes > LONG_WAIT_MINUTES) {
+  if (i.smsFailedCount > 0) {
     all.push({
-      key: "long_wait",
-      text: labels.alertLongWait(i.avgWaitMinutes),
+      key: "sms_failed",
+      text: labels.alertSmsFailed(i.smsFailedCount),
       tone: "warning",
+      action: null,
     });
   }
   if (i.isSetupIncomplete) {
@@ -148,8 +257,13 @@ export function computeCriticalAlerts(
       key: "setup_incomplete",
       text: labels.alertSetupIncomplete,
       tone: "warning",
+      action: null,
     });
   }
 
-  return all.slice(0, MAX_ALERTS);
+  const cap = config.maxBasicCriticalAlerts;
+  return {
+    shown: all.slice(0, cap),
+    overflowCount: Math.max(0, all.length - cap),
+  };
 }

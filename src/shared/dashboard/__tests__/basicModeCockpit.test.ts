@@ -1,6 +1,6 @@
 /**
  * Unit tests for Basic Mode cockpit logic (deterministic Next Action +
- * Critical Alerts).
+ * Critical Alerts, config-driven).
  *
  * Run: npx tsx src/shared/dashboard/__tests__/basicModeCockpit.test.ts
  */
@@ -32,14 +32,21 @@ function assertEqual(actual: unknown, expected: unknown, msg?: string) {
 }
 
 const labels: CockpitLabels = {
+  longWaitGuest: (n) => `longwait:${n}`,
   finishOverdue: (n) => `overdue:${n}`,
-  assignWalkin: (name) => `assign:${name}`,
-  assignWalkinGeneric: "assign:generic",
+  assignWaiting: (n) => `assignN:${n}`,
+  assignWaitingNamed: (name) => `assign:${name}`,
   prepareNext: (n) => `prepare:${n}`,
+  partyPending: (n) => `party:${n}`,
+  suggestWalkin: (name) => `suggest:${name}`,
+  actionOpenQueue: "OpenQueue",
+  actionAddWalkin: "+Walkin",
+  actionOpenParty: "OpenParty",
   alertOverdue: (n) => `a-overdue:${n}`,
+  alertLongWait: (n) => `a-longwait:${n}`,
+  alertNoStaffForWaiting: "a-nostaff",
   alertSmsFailed: (n) => `a-sms:${n}`,
   alertPartyChange: (n) => `a-party:${n}`,
-  alertLongWait: (n) => `a-wait:${n}`,
   alertSetupIncomplete: "a-setup",
 };
 
@@ -48,7 +55,9 @@ const base: CockpitInputs = {
   inProgressCount: 0,
   comingUpCount: 0,
   overdueCount: 0,
-  avgWaitMinutes: null,
+  longestWaitMinutes: null,
+  availableStaffCount: 0,
+  availableStaffName: null,
   firstWaitingName: null,
   smsFailedCount: 0,
   pendingPartyChangeCount: 0,
@@ -57,37 +66,53 @@ const base: CockpitInputs = {
 
 // ── Next Action priority (risk-first, deterministic) ────────────
 
-test("overdue wins over everything", () => {
+test("long-wait guest is the top priority", () => {
   const a = computeNextAction(
-    { ...base, overdueCount: 2, waitingCount: 3, comingUpCount: 4 },
+    { ...base, longestWaitMinutes: 15, overdueCount: 2, waitingCount: 3 },
     labels,
   );
-  assertEqual(a?.kind, "finish_overdue");
-  assertEqual(a?.text, "overdue:2");
-  assertEqual(a?.tone, "danger");
+  assertEqual(a?.kind, "long_wait");
+  assertEqual(a?.text, "longwait:15");
+  assertEqual(a?.action?.target, "open_queue");
 });
 
-test("waiting walk-in wins when no overdue (uses first name)", () => {
-  const a = computeNextAction(
-    { ...base, waitingCount: 2, firstWaitingName: "Mai", comingUpCount: 5 },
-    labels,
-  );
-  assertEqual(a?.kind, "assign_walkin");
+test("long-wait does NOT trigger at/below threshold (default 10)", () => {
+  const a = computeNextAction({ ...base, longestWaitMinutes: 10, comingUpCount: 1 }, labels);
+  assertEqual(a?.kind, "prepare_next");
+});
+
+test("overdue wins when no long-wait", () => {
+  const a = computeNextAction({ ...base, overdueCount: 1, waitingCount: 2 }, labels);
+  assertEqual(a?.kind, "finish_overdue");
+  assertEqual(a?.action?.target, "open_queue");
+});
+
+test("waiting guest (named) when no overdue", () => {
+  const a = computeNextAction({ ...base, waitingCount: 2, firstWaitingName: "Mai" }, labels);
+  assertEqual(a?.kind, "assign_waiting");
   assertEqual(a?.text, "assign:Mai");
 });
 
-test("waiting walk-in falls back to generic without a name", () => {
-  const a = computeNextAction({ ...base, waitingCount: 1 }, labels);
-  assertEqual(a?.text, "assign:generic");
-});
-
-test("coming up wins when no overdue + no waiting", () => {
+test("upcoming is informational (no action button)", () => {
   const a = computeNextAction({ ...base, comingUpCount: 3 }, labels);
   assertEqual(a?.kind, "prepare_next");
-  assertEqual(a?.text, "prepare:3");
+  assertEqual(a?.action, null);
 });
 
-test("returns null (hidden) when nothing pending — no 'all clear' filler", () => {
+test("party pending after upcoming", () => {
+  const a = computeNextAction({ ...base, pendingPartyChangeCount: 3 }, labels);
+  assertEqual(a?.kind, "party_pending");
+  assertEqual(a?.action?.target, "open_party");
+});
+
+test("available staff + empty queue → suggest walk-in", () => {
+  const a = computeNextAction({ ...base, availableStaffName: "Anna" }, labels);
+  assertEqual(a?.kind, "suggest_walkin");
+  assertEqual(a?.text, "suggest:Anna");
+  assertEqual(a?.action?.target, "add_walkin");
+});
+
+test("returns null when nothing useful — no 'all clear' filler", () => {
   assertEqual(computeNextAction(base, labels), null);
 });
 
@@ -96,51 +121,43 @@ test("deterministic — same input twice yields identical output", () => {
   assertEqual(computeNextAction(input, labels), computeNextAction(input, labels));
 });
 
-// ── Critical Alerts (max 2, risk-first) ─────────────────────────
+// ── Critical Alerts (max 2 + overflow, risk-first) ──────────────
 
-test("no alerts when all clear", () => {
-  assertEqual(computeCriticalAlerts(base, labels), []);
+test("no alerts when all clear → empty + zero overflow", () => {
+  assertEqual(computeCriticalAlerts(base, labels), { shown: [], overflowCount: 0 });
 });
 
-test("overdue + sms_failed are the top two (drops softer signals)", () => {
-  const alerts = computeCriticalAlerts(
+test("overdue + long-wait are the top two; rest overflow", () => {
+  const r = computeCriticalAlerts(
     {
       ...base,
       overdueCount: 1,
-      smsFailedCount: 2,
+      longestWaitMinutes: 20,
+      pendingPartyChangeCount: 2,
+      smsFailedCount: 1,
       isSetupIncomplete: true,
-      avgWaitMinutes: 40,
     },
     labels,
   );
-  assertEqual(alerts.length, 2, "capped at 2");
-  assertEqual(alerts[0]!.key, "overdue");
-  assertEqual(alerts[1]!.key, "sms_failed");
+  assertEqual(r.shown.length, 2, "capped at 2");
+  assertEqual(r.shown[0]!.key, "overdue");
+  assertEqual(r.shown[1]!.key, "long_wait");
+  assertEqual(r.overflowCount, 3, "3 collapsed into +N");
 });
 
-test("never exceeds 2 alerts", () => {
-  const alerts = computeCriticalAlerts(
-    { ...base, smsFailedCount: 1, isSetupIncomplete: true, avgWaitMinutes: 30 },
+test("no-staff-for-waiting bottleneck surfaces as alert", () => {
+  const r = computeCriticalAlerts(
+    { ...base, waitingCount: 2, availableStaffCount: 0 },
     labels,
   );
-  assertEqual(alerts.length, 2);
+  assertEqual(r.shown.length, 1);
+  assertEqual(r.shown[0]!.key, "no_staff_for_waiting");
 });
 
-test("party change request surfaces as a critical alert", () => {
-  const alerts = computeCriticalAlerts(
-    { ...base, pendingPartyChangeCount: 2 },
-    labels,
-  );
-  assertEqual(alerts.length, 1);
-  assertEqual(alerts[0]!.key, "party_change");
-  assertEqual(alerts[0]!.text, "a-party:2");
-});
-
-test("long wait only triggers above threshold", () => {
-  assertEqual(computeCriticalAlerts({ ...base, avgWaitMinutes: 20 }, labels), []);
-  const over = computeCriticalAlerts({ ...base, avgWaitMinutes: 21 }, labels);
-  assertEqual(over.length, 1);
-  assertEqual(over[0]!.key, "long_wait");
+test("party change request surfaces as alert with open_party action", () => {
+  const r = computeCriticalAlerts({ ...base, pendingPartyChangeCount: 2 }, labels);
+  assertEqual(r.shown[0]!.key, "party_change");
+  assertEqual(r.shown[0]!.action?.target, "open_party");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);
