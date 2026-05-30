@@ -1038,28 +1038,55 @@ function computeKpiSnapshot(args: {
       ? Math.round(waitTotalMs / waitSampleCount / 60_000)
       : null;
 
-  // Next available staff: per-staff max(end_time_utc) over `in_progress`,
-  // floored to "now" (a free staff is free **now**, not negative-minutes).
+  // Next available staff: earliest-free considering in_progress bookings.
+  // Tiebreak for staff all free at nowMs: prefer the one whose next
+  // confirmed/pending booking starts latest (most availability window).
+  // This fixes the bug where Liam (first by created_at) always won even
+  // when Jenny/Mai had no bookings at all today.
   let nextAvailableStaff: ReceptionistCenterData["kpiSnapshot"]["nextAvailableStaff"] =
     null;
   if (staff.length > 0) {
     let earliestFreeMs = Number.POSITIVE_INFINITY;
     let earliestStaffName: string | null = null;
+    // Latest next-booking start among "free now" staff — higher = more available
+    let tiebreakNextBookingMs = -1;
+
     for (const s of staff) {
+      // How long until this staff is free (from in_progress bookings)
       let staffMaxEndMs = 0;
+      // When is their next upcoming confirmed/pending booking (for tiebreak)
+      let nextBookingStartMs = Number.POSITIVE_INFINITY;
+
       for (const b of bookingsForDay) {
-        if (b.status !== "in_progress" || b.staff_id !== s.id) continue;
-        const endMs = Date.parse(b.end_time_utc);
-        if (Number.isFinite(endMs) && endMs > staffMaxEndMs) {
-          staffMaxEndMs = endMs;
+        if (b.staff_id !== s.id) continue;
+        if (b.status === "in_progress") {
+          const endMs = Date.parse(b.end_time_utc);
+          if (Number.isFinite(endMs) && endMs > staffMaxEndMs) staffMaxEndMs = endMs;
+        }
+        if (b.status === "confirmed" || b.status === "pending") {
+          const startMs = Date.parse(b.start_time_utc);
+          if (Number.isFinite(startMs) && startMs > nowMs && startMs < nextBookingStartMs) {
+            nextBookingStartMs = startMs;
+          }
         }
       }
+
       const freeMs = Math.max(staffMaxEndMs, nowMs);
-      if (freeMs < earliestFreeMs) {
+
+      const isBetter =
+        freeMs < earliestFreeMs ||
+        // Tiebreak: both free now → prefer staff with later next booking (longer window)
+        (freeMs === earliestFreeMs &&
+          freeMs === nowMs &&
+          nextBookingStartMs > tiebreakNextBookingMs);
+
+      if (isBetter) {
         earliestFreeMs = freeMs;
         earliestStaffName = s.name;
+        tiebreakNextBookingMs = nextBookingStartMs;
       }
     }
+
     if (earliestStaffName !== null && Number.isFinite(earliestFreeMs)) {
       nextAvailableStaff = {
         name: earliestStaffName,
