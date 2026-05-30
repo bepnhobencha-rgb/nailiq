@@ -922,6 +922,7 @@ export type UserMessages = {
     kpiBar: {
       waiting: string;
       avgWait: string;
+      avgWaitEmpty: string;
       inService: string;
       comingUp: string;
       overdue: string;
@@ -996,6 +997,8 @@ export type UserMessages = {
         openLink: string;
         closeAria: string;
       };
+      /** Short CTA in the header bar to open the add-walk-in panel. */
+      addWalkinCta: string;
       addForm: {
         namePlaceholder: string;
         phonePlaceholder: string;
@@ -2450,6 +2453,7 @@ export const userEn: UserMessages = {
     kpiBar: {
       waiting: "Waiting",
       avgWait: "Avg wait",
+      avgWaitEmpty: "No queue",
       inService: "In service",
       comingUp: "Coming up (30m)",
       overdue: "Overdue",
@@ -2470,6 +2474,7 @@ export const userEn: UserMessages = {
       title: "Walk-in queue",
       toggleShort: "Queue",
       closePanel: "Close queue panel",
+      addWalkinCta: "+ Walk-in",
       emptyMessage: "No walk-ins queued. Use the form above to add.",
       cancelButton: "Remove",
       assignButton: "Assign",

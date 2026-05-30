@@ -974,6 +974,7 @@ export const userVi: UserMessages = {
     kpiBar: {
       waiting: "Đang chờ",
       avgWait: "Chờ trung bình",
+      avgWaitEmpty: "Không có hàng",
       inService: "Đang phục vụ",
       comingUp: "Sắp tới (30p)",
       overdue: "Quá giờ",
@@ -994,6 +995,7 @@ export const userVi: UserMessages = {
       title: "Hàng walk-in",
       toggleShort: "Hàng chờ",
       closePanel: "Đóng panel hàng chờ",
+      addWalkinCta: "+ Walk-in",
       emptyMessage: "Chưa có khách xếp hàng. Thêm ở form phía trên.",
       cancelButton: "Bỏ",
       assignButton: "Xếp chỗ",

@@ -1,7 +1,7 @@
 "use client";
 
 import * as Sentry from "@sentry/nextjs";
-import { Users, X as CloseIcon } from "lucide-react";
+import { Plus, Users, X as CloseIcon } from "lucide-react";
 
 /**
  * ReceptionistCenter — performance notes
@@ -41,6 +41,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { createClient } from "@/shared/lib/supabase/client";
 import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
 import { BookingDetailDrawer, type BookingDetailDrawerModel } from "./BookingDetailDrawer";
@@ -1139,6 +1140,7 @@ function ReceptionistCenterInner({
       clientNotes: b.client_notes ?? null,
       serviceName: b.service_name,
       staffName,
+      status: b.status,
       statusLabel: bookingStatusLabel(messages, b.status),
       sourceLabel,
       // Reuse the timeline-chip flag — same server-derived signal,
@@ -1666,6 +1668,29 @@ function ReceptionistCenterInner({
                   );
                 })}
               </div>
+              {/*
+               * Prominent "+ Walk-in" CTA (P1 desk feedback: the queue
+               * toggle alone wasn't an obvious "add a walk-in" entry).
+               * Gold primary = the single high-commitment forward action
+               * in the desk header (COLOR_TOKENS §6). Opens the queue
+               * slide-over, which renders the quick-add form at its top.
+               * Gated to the surfaces where adding is actually possible:
+               * today's day view with the queue + quick-add modules on.
+               */}
+              {isViewingToday &&
+              viewMode === "day" &&
+              modules.queue_panel &&
+              modules.quick_add ? (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  leftIcon={<Plus className="h-4 w-4" aria-hidden />}
+                  data-testid="header-add-walkin"
+                  onClick={() => setQueuePanelOpen(true)}
+                >
+                  {rcMessages.queue.addWalkinCta}
+                </Button>
+              ) : null}
               {/*
                * Walk-in queue slide-over toggle. See
                * DASHBOARD_LAYOUT_RULES §11.3. Hidden when the queue

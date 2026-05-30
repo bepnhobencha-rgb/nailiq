@@ -74,18 +74,20 @@ export const DENSITY_CONFIG: Record<DensityLevel, DensityConfig> = {
     timeSlotMinutes: 40,
   },
   // Balanced: client name + service name. Time stays on the timeline
-  // axis; price stays a Pro-only signal.
+  // axis; price stays a Pro-only signal. Floor raised 44→52px so a
+  // two-line client name clears the service line (P0 name-wrap fix).
   balanced: {
-    bookingBlockMinHeight: 44,
+    bookingBlockMinHeight: 52,
     showMetaLine: true,
     showTimeRangeInBlock: false,
     showPriceInBlock: false,
     timeSlotMinutes: 30,
   },
   // Pro: client name + service + time range (price gated on
-  // `revenue_today` desk module).
+  // `revenue_today` desk module). Floor raised 36→44px to give a
+  // two-line client name room even in the densest mode (P0 name-wrap fix).
   pro: {
-    bookingBlockMinHeight: 36,
+    bookingBlockMinHeight: 44,
     showMetaLine: true,
     showTimeRangeInBlock: true,
     showPriceInBlock: true,

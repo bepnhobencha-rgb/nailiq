@@ -9,7 +9,7 @@ import { motion, useReducedMotion } from "@/shared/lib/motionClient";
  * Booking timeline cell.
  *
  * Layout (`COMPONENT_RULES.md` §2 — `BookingCard`-aligned scan order):
- *   1. Customer name (semibold, truncate)
+ *   1. Customer name (semibold, wraps to 2 lines — never truncated)
  *   2. Service name (xs muted, truncate)
  *   3. Time range + price (xs tabular-nums)
  *
@@ -77,8 +77,8 @@ export interface BookingBlockProps {
   showTimeRange?: boolean;
   /**
    * Density-driven minimum height (px). Visual override only — schedule
-   * math is unchanged. Default `min-h-11` (44px) tailwind class still
-   * wins when this is omitted.
+   * math is unchanged. Default 52px floor (`min-h-[3.25rem]`) still wins
+   * when this is omitted — sized for a two-line client name.
    */
   minHeightPx?: number;
   /** When false, drops walk-in left accent (`vip_indicators` uses walk-in lane styling). */
@@ -224,13 +224,14 @@ export function BookingBlock(props: BookingBlockProps) {
     isVip || hasNotes || hasStaffRequest || isLate || hasDesign || isGroup;
 
   // When density supplies an explicit min-height, the inline `style` on
-  // the wrapper takes precedence over the default `min-h-11` tailwind
-  // class — keeps Simple density blocks chunkier (56px) while Pro
-  // tightens to 36px without breaking the timeline math.
+  // the wrapper takes precedence over the default 52px floor — sized so a
+  // two-line client name (P0: names must never truncate) clears the block
+  // padding. Density still drives the grid floor (Simple 56px, Balanced
+  // 52px, Pro 44px) without breaking the timeline math.
   const isDraggable = !!onPointerDown && (status === "pending" || status === "confirmed");
   const commonClass = cn(
     "absolute top-1.5 bottom-1.5 rounded-lg px-2.5 py-1.5 text-left shadow-none transition-[transform,box-shadow,opacity] duration-[var(--duration-nq-fast)] ease-[var(--ease-nq-out)] motion-safe:hover:-translate-y-px motion-safe:hover:shadow-nq-card",
-    minHeightPx === undefined && "min-h-11",
+    minHeightPx === undefined && "min-h-[3.25rem]",
     styles.root,
     isWalkin && showWalkinAccent && "border-l-[3px] border-nq-primary",
     isCompleted && "opacity-70",
@@ -264,7 +265,7 @@ export function BookingBlock(props: BookingBlockProps) {
 
       <div className="relative flex min-w-0 gap-2">
         <div className="flex min-w-0 flex-1 flex-col">
-          <p className="truncate text-sm font-semibold leading-tight">
+          <p className="line-clamp-2 break-words text-sm font-semibold leading-tight">
             {clientName}
           </p>
           {showMetaLine ? (

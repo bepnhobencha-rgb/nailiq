@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { Badge, type BadgeVariant } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import type { UserMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
@@ -10,9 +11,34 @@ import {
   canEditBooking as roleAllowsEditBooking,
   type SalonMemberRole,
 } from "@/shared/lib/salonMemberRole";
-import type { SalonDashboardBooking } from "@/shared/types";
+import type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
 
 import { EditBookingForm, type EditBookingFormBooking } from "./EditBookingForm";
+
+/**
+ * Booking status → Badge variant, per the locked status palette in
+ * `COLOR_TOKENS.md` §5. Mirrors the timeline-block hues (`BookingBlock`)
+ * so a booking's status reads the same in the grid and in this detail
+ * panel (P2: color-coding consistent across both surfaces). Badge has no
+ * orange/slate variant, so `waiting` borrows the warning (amber) family
+ * and `cancelled` the neutral (slate-ish) family — safe here because the
+ * drawer shows exactly one booking's status, always paired with its text
+ * label (`COLOR_TOKENS.md` §7: never hue-only encoding).
+ */
+function statusBadgeVariant(status: BookingStatus): BadgeVariant {
+  switch (status) {
+    case "confirmed":
+      return "info"; // cool blue — committed timehold
+    case "in_progress":
+      return "success"; // green — active chair time
+    case "pending":
+    case "waiting":
+      return "warning"; // amber — needs attention / motion
+    case "completed":
+    case "cancelled":
+      return "neutral"; // low-arousal muted / slate
+  }
+}
 
 /** Precomputed presentation values built by `ReceptionistCenter` so this leaf stays dumb. */
 export type BookingDetailDrawerModel = {
@@ -28,6 +54,10 @@ export type BookingDetailDrawerModel = {
   clientNotes: string | null;
   serviceName: string;
   staffName: string;
+  /** Raw booking status — drives the color-coded status Badge (P2:
+   * status color must read consistently across the timeline + this
+   * panel). The localized text lives in `statusLabel`. */
+  status: BookingStatus;
   statusLabel: string;
   sourceLabel: string;
   /** When true, render a "Khách yêu cầu thợ này" line under the
@@ -386,7 +416,15 @@ export function BookingDetailDrawer({
               <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
                 {copy.sectionStatus}
               </p>
-              <p className="font-medium text-nq-foreground">{model.statusLabel}</p>
+              <div className="mt-0.5">
+                <Badge
+                  variant={statusBadgeVariant(model.status)}
+                  size="md"
+                  data-testid="booking-drawer-status-badge"
+                >
+                  {model.statusLabel}
+                </Badge>
+              </div>
 
               {/* Verification + SMS badges */}
               {(model.smsFailedAt || model.verificationMethod || (model.noShowRiskScore != null && model.noShowRiskScore >= 70)) ? (

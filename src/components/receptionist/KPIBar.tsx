@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 
 import { KPIWidget, type KPIStatus } from "@/components/ui/KPIWidget";
+import { cn } from "@/shared/lib/cn";
 import {
   formatCurrency,
   type Currency,
@@ -60,6 +61,8 @@ type Tile = {
   label: string;
   value: string | number;
   status: KPIStatus;
+  /** Keep the value on one line (Revenue — long currency amounts). */
+  valueNoWrap?: boolean;
 };
 
 export function KPIBar({
@@ -80,11 +83,20 @@ export function KPIBar({
         snapshot.waitingCount > WAITING_DANGER_THRESHOLD ? "danger" : "default",
     });
 
+    // Avg wait shows "—" only as a genuine unknown (guests are queued but
+    // none seated yet, so there's no sample). When the queue is actually
+    // empty, show a friendly "no queue" instead of a bare dash that scans
+    // as broken / no-data.
     const avg = snapshot.avgWaitMinutes;
     out.push({
       key: "avg-wait",
       label: messages.avgWait,
-      value: avg === null ? messages.emptyDash : messages.minutesShort(avg),
+      value:
+        avg !== null
+          ? messages.minutesShort(avg)
+          : snapshot.waitingCount === 0
+            ? messages.avgWaitEmpty
+            : messages.emptyDash,
       status:
         avg !== null && avg > AVG_WAIT_WARNING_MINUTES ? "warning" : "default",
     });
@@ -138,6 +150,8 @@ export function KPIBar({
             ? messages.emptyDash
             : (formatCurrency(cents, currencyCode) ?? messages.emptyDash),
         status: "default",
+        // Large VND amounts must render in full, not wrap / clip.
+        valueNoWrap: true,
       });
     }
 
@@ -160,12 +174,18 @@ export function KPIBar({
           <div
             key={tile.key}
             data-testid={`kpi-tile-${tile.key}`}
-            className="min-w-40 shrink-0 first:pl-0 last:pr-0"
+            className={cn(
+              "shrink-0 first:pl-0 last:pr-0",
+              // Revenue gets extra room so the label + a long currency
+              // value (especially VND) sit comfortably without clipping.
+              tile.key === "revenue" ? "min-w-48" : "min-w-40",
+            )}
           >
             <KPIWidget
               label={tile.label}
               value={tile.value}
               status={tile.status}
+              valueNoWrap={tile.valueNoWrap}
               isLoading={isLoading}
             />
           </div>

@@ -60,6 +60,13 @@ export type KPIWidgetProps = {
   isLoading?: boolean;
   icon?: ReactNode;
   className?: string;
+  /**
+   * Keep the value on a single line (no wrapping). Tiles are typically
+   * `shrink-0` in a scroll strip, so the cell grows to fit rather than
+   * clipping — used for the Revenue tile so long currency amounts (e.g.
+   * VND in the millions) show in full instead of wrapping/clipping.
+   */
+  valueNoWrap?: boolean;
 };
 
 export function KPIWidget({
@@ -71,6 +78,7 @@ export function KPIWidget({
   isLoading = false,
   icon,
   className,
+  valueNoWrap = false,
 }: KPIWidgetProps) {
   if (isLoading) {
     return (
@@ -120,6 +128,7 @@ export function KPIWidget({
           <div
             className={cn(
               "text-2xl font-semibold leading-tight tabular-nums",
+              valueNoWrap && "whitespace-nowrap",
               valueColors[status],
             )}
           >
