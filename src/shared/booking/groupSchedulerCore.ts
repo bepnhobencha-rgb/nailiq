@@ -36,6 +36,21 @@ export type GroupArrangementAssignment = {
   /** Echoed for UI rendering — same value as input.name. */
   memberName: string;
   serviceName: string;
+  /** Wave this member belongs to. 1 for normal (single-wave) bookings;
+   *  2, 3 … for later waves of a large group split across time (Phase 6). */
+  waveNumber: number;
+};
+
+/** Per-wave roll-up for UI / voice summaries (Phase 6 Wave Booking). */
+export type WaveSummary = {
+  waveNumber: number;
+  /** Earliest start in this wave (UTC ms). */
+  startMs: number;
+  /** Latest end in this wave (UTC ms). */
+  endMs: number;
+  startDisplay: string;
+  endDisplay: string;
+  memberCount: number;
 };
 
 export type GroupArrangement = {
@@ -52,6 +67,16 @@ export type GroupArrangement = {
    *  unpriced (mixed-price catalog). */
   totalCents: number | null;
   assignments: GroupArrangementAssignment[];
+  /** True when the group was split across multiple time waves because it could
+   *  not be served simultaneously (Phase 6). False for normal arrangements. */
+  isWaveBooking: boolean;
+  /** Number of waves. 1 for normal (non-wave) arrangements. */
+  waveCount: number;
+  /** Per-wave roll-up (always length === waveCount; single entry when normal). */
+  waves: WaveSummary[];
+  /** Plain-English one-liner for UI / voice, e.g.
+   *  "Split into 2 waves: 6 guests at 2:00 PM and 4 guests at 3:15 PM." */
+  summary: string;
 };
 
 // ─── Internal types ──────────────────────────────────────────────
@@ -95,6 +120,13 @@ export type FinishArrangementsCtx = {
 // ─── Constants ───────────────────────────────────────────────────
 
 export const SLOT_STEP_MIN = 15;
+
+/** Phase 6 — gap inserted between the end of one wave and the start of the next
+ *  so staff have a buffer to reset between back-to-back guests. */
+export const WAVE_BUFFER_MIN = 15;
+
+/** Safety ceiling on wave count so a pathological input can't loop forever. */
+export const MAX_WAVES = 6;
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -299,6 +331,7 @@ export function buildArrangement(
       priceCents: m.priceCents,
       memberName: m.name,
       serviceName: m.serviceName,
+      waveNumber: 1,
     };
   });
 
@@ -324,15 +357,260 @@ export function buildArrangement(
 
   const groupStartIso = new Date(groupStartMs).toISOString();
   const groupEndIso = new Date(groupEndMs).toISOString();
+  const groupStartDisplay = formatInSalonTz(groupStartIso, timezone, "shortTime");
+  const groupEndDisplay = formatInSalonTz(groupEndIso, timezone, "shortTime");
   return {
     kind,
     groupStartMs,
     groupEndMs,
-    groupStartDisplay: formatInSalonTz(groupStartIso, timezone, "shortTime"),
-    groupEndDisplay: formatInSalonTz(groupEndIso, timezone, "shortTime"),
+    groupStartDisplay,
+    groupEndDisplay,
     spreadMinutes,
     totalCents,
     assignments,
+    // Normal arrangement = one wave.
+    isWaveBooking: false,
+    waveCount: 1,
+    waves: [
+      {
+        waveNumber: 1,
+        startMs: groupStartMs,
+        endMs: groupEndMs,
+        startDisplay: groupStartDisplay,
+        endDisplay: groupEndDisplay,
+        memberCount: assignments.length,
+      },
+    ],
+    summary: `${assignments.length} ${assignments.length === 1 ? "guest" : "guests"} at ${groupStartDisplay}.`,
+  };
+}
+
+// ─── Wave scheduling (Phase 6 — sync_start only) ─────────────────
+
+export type WaveRawAssignment = {
+  memberIdx: number;
+  staffId: string;
+  startMs: number;
+  endMs: number;
+  waveNumber: number;
+};
+
+/**
+ * Wave fallback for sync_start large groups. Call this ONLY after
+ * `tryAlignedArrangement` returns null (the whole group can't start at once
+ * because capacity is exceeded) — never as a replacement for it.
+ *
+ * Greedy fill: wave 1 starts at `anchorMs` and seats as many members as there
+ * are capable, free staff. Whoever is left forms wave 2, starting at
+ * (wave 1's latest end + `waveBufferMin`); repeat until everyone is seated.
+ *
+ * Each wave reuses the existing capability + `staffIsFree` checks. Earlier waves
+ * are appended to a private occupancy copy so the same staff is never
+ * double-booked — and because later waves start strictly after earlier ones end
+ * (+ buffer), their intervals never overlap.
+ *
+ * Returns null when the group can't be served even across waves (a service no
+ * active staff can do, or it can't fit before close).
+ */
+export function tryWaveArrangement(
+  anchorMs: number,
+  members: ResolvedMember[],
+  staff: readonly StaffRow[],
+  staffById: Map<string, StaffRow>,
+  capability: StaffCapabilityMap,
+  existing: ExistingBooking[],
+  dayCloseMs: number,
+  opts?: { waveBufferMin?: number; maxWaves?: number },
+): { assignments: WaveRawAssignment[] } | null {
+  const waveBufferMin = opts?.waveBufferMin ?? WAVE_BUFFER_MIN;
+  const maxWaves = opts?.maxWaves ?? MAX_WAVES;
+
+  // Private occupancy copy — earlier waves get appended so later waves see them.
+  const occupancy: ExistingBooking[] = existing.slice();
+  const out: WaveRawAssignment[] = [];
+
+  let remaining = members.slice();
+  let waveNumber = 1;
+  let waveStartMs = anchorMs;
+
+  while (remaining.length > 0) {
+    if (waveNumber > maxWaves) return null;
+
+    // Preferred-staff members first (hard constraint), mirroring tryAlignedArrangement.
+    const order = remaining
+      .map((m, i) => ({ m, i }))
+      .sort((a, b) => {
+        const ap = a.m.preferredStaffId != null ? 0 : 1;
+        const bp = b.m.preferredStaffId != null ? 0 : 1;
+        return ap - bp;
+      })
+      .map((e) => e.m);
+
+    const soft = new Map<string, Array<{ startMs: number; endMs: number }>>();
+    const thisWave: Array<{ staffId: string; startMs: number; endMs: number }> = [];
+    const stillRemaining: ResolvedMember[] = [];
+    let waveMaxEndMs = waveStartMs;
+
+    for (const m of order) {
+      const startMs = waveStartMs;
+      const endMs = waveStartMs + m.totalMinutes * 60_000;
+      // Doesn't fit before close at this wave time → defer to a later attempt
+      // (a later wave is even later, so it won't fit either, but the no-progress
+      // guard below turns that into a clean null rather than an infinite loop).
+      if (endMs > dayCloseMs) {
+        stillRemaining.push(m);
+        continue;
+      }
+
+      const candidateOrder: string[] = [];
+      if (m.preferredStaffId != null) {
+        candidateOrder.push(m.preferredStaffId);
+        for (const s of staff) if (s.id !== m.preferredStaffId) candidateOrder.push(s.id);
+      } else {
+        for (const s of staff) candidateOrder.push(s.id);
+      }
+
+      let picked: string | null = null;
+      for (const sid of candidateOrder) {
+        if (!staffById.get(sid)) continue;
+        if (!isStaffCapableForService(capability, sid, m.serviceId)) continue;
+        if (!staffIsFree(sid, startMs, endMs, occupancy, soft)) continue;
+        picked = sid;
+        break;
+      }
+      if (picked === null) {
+        stillRemaining.push(m);
+        continue;
+      }
+
+      const bucket = soft.get(picked) ?? [];
+      bucket.push({ startMs, endMs });
+      soft.set(picked, bucket);
+      out.push({ memberIdx: m.index, staffId: picked, startMs, endMs, waveNumber });
+      thisWave.push({ staffId: picked, startMs, endMs });
+      if (endMs > waveMaxEndMs) waveMaxEndMs = endMs;
+    }
+
+    // No member could be seated this wave → unservable (prevents infinite loop).
+    if (thisWave.length === 0) return null;
+
+    // Commit this wave so later waves never reuse a busy interval.
+    for (const a of thisWave) occupancy.push({ staffId: a.staffId, startMs: a.startMs, endMs: a.endMs });
+
+    remaining = stillRemaining;
+    if (remaining.length === 0) break;
+
+    waveStartMs = waveMaxEndMs + waveBufferMin * 60_000;
+    waveNumber++;
+  }
+
+  out.sort((a, b) => a.waveNumber - b.waveNumber || a.memberIdx - b.memberIdx);
+  return { assignments: out };
+}
+
+/** Joins per-wave phrases naturally: "A and B" / "A, B, and C". */
+function joinWavePhrases(parts: string[]): string {
+  if (parts.length <= 1) return parts.join("");
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
+}
+
+/**
+ * Builds a wave-aware GroupArrangement from raw wave assignments. The
+ * assignments span multiple start times (one cluster per wave); each carries its
+ * waveNumber, and `waves[]` rolls them up for UI / voice. `isWaveBooking` is true
+ * whenever there is more than one wave.
+ */
+export function buildWaveArrangement(
+  raw: { assignments: WaveRawAssignment[] },
+  members: ResolvedMember[],
+  staffById: Map<string, StaffRow>,
+  timezone: string,
+): GroupArrangement {
+  let groupStartMs = Number.POSITIVE_INFINITY;
+  let groupEndMs = Number.NEGATIVE_INFINITY;
+
+  const assignments: GroupArrangementAssignment[] = raw.assignments.map((a) => {
+    const m = members[a.memberIdx];
+    const staff = staffById.get(a.staffId);
+    const startIso = new Date(a.startMs).toISOString();
+    const endIso = new Date(a.endMs).toISOString();
+    if (a.startMs < groupStartMs) groupStartMs = a.startMs;
+    if (a.endMs > groupEndMs) groupEndMs = a.endMs;
+    return {
+      memberIndex: a.memberIdx,
+      staffId: a.staffId,
+      staffName: staff?.name ?? "",
+      startUtcIso: startIso,
+      endUtcIso: endIso,
+      startDisplay: formatInSalonTz(startIso, timezone, "shortTime"),
+      endDisplay: formatInSalonTz(endIso, timezone, "shortTime"),
+      durationMinutes: m.totalMinutes,
+      priceCents: m.priceCents,
+      memberName: m.name,
+      serviceName: m.serviceName,
+      waveNumber: a.waveNumber,
+    };
+  });
+
+  // Roll up per wave.
+  const waveNumbers = [...new Set(raw.assignments.map((a) => a.waveNumber))].sort((x, y) => x - y);
+  const waves: WaveSummary[] = waveNumbers.map((wn) => {
+    const inWave = raw.assignments.filter((a) => a.waveNumber === wn);
+    let ws = Number.POSITIVE_INFINITY;
+    let we = Number.NEGATIVE_INFINITY;
+    for (const a of inWave) {
+      if (a.startMs < ws) ws = a.startMs;
+      if (a.endMs > we) we = a.endMs;
+    }
+    const wsIso = new Date(ws).toISOString();
+    const weIso = new Date(we).toISOString();
+    return {
+      waveNumber: wn,
+      startMs: ws,
+      endMs: we,
+      startDisplay: formatInSalonTz(wsIso, timezone, "shortTime"),
+      endDisplay: formatInSalonTz(weIso, timezone, "shortTime"),
+      memberCount: inWave.length,
+    };
+  });
+
+  const waveCount = waves.length;
+  const isWaveBooking = waveCount > 1;
+
+  let totalCents: number | null = 0;
+  for (const m of members) {
+    if (m.priceCents == null) {
+      totalCents = null;
+      break;
+    }
+    totalCents = (totalCents ?? 0) + m.priceCents;
+  }
+
+  const groupStartIso = new Date(groupStartMs).toISOString();
+  const groupEndIso = new Date(groupEndMs).toISOString();
+  const groupStartDisplay = formatInSalonTz(groupStartIso, timezone, "shortTime");
+  const groupEndDisplay = formatInSalonTz(groupEndIso, timezone, "shortTime");
+
+  const summary = isWaveBooking
+    ? `Split into ${waveCount} waves: ${joinWavePhrases(
+        waves.map((w) => `${w.memberCount} ${w.memberCount === 1 ? "guest" : "guests"} at ${w.startDisplay}`),
+      )}.`
+    : `${assignments.length} ${assignments.length === 1 ? "guest" : "guests"} at ${groupStartDisplay}.`;
+
+  return {
+    kind: "best",
+    groupStartMs,
+    groupEndMs,
+    groupStartDisplay,
+    groupEndDisplay,
+    spreadMinutes: Math.round((groupEndMs - groupStartMs) / 60_000),
+    totalCents,
+    assignments,
+    isWaveBooking,
+    waveCount,
+    waves,
+    summary,
   };
 }
 

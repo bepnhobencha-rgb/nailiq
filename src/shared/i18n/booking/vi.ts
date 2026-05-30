@@ -316,6 +316,7 @@ export const bookingVi: BookingMessages = {
     claimBtn: "Đây là tôi",
     cancelBtn: "Huỷ",
     expiredLabel: "Hết hạn",
+    waveLabel: "Đợt",
     formNameLabel: "Tên của bạn",
     formNamePlaceholder: "vd. Hương",
     formPhoneLabel: "Số điện thoại",

@@ -29,6 +29,8 @@ export type PartyCardSlot = {
   /** ISO UTC start (for sorting / expiry math). */
   startUtcIso: string;
   claimed: boolean;
+  /** Wave this slot belongs to (Phase 6). 1 for normal groups. */
+  waveNumber: number;
 };
 
 export type PartyCard = {
@@ -56,6 +58,9 @@ export type PartyCard = {
   slots: PartyCardSlot[];
   /** Number of pending change requests from guests (Part F). 0 when none. */
   pendingChangeRequestCount: number;
+  /** Number of distinct waves (Phase 6). 1 for normal groups; >1 → show a
+   *  "N waves" badge and group the slot list by wave. */
+  waveCount: number;
 };
 
 export type RawClaim = {
@@ -70,6 +75,8 @@ export type RawClaim = {
     price_cents: number | null;
     /** Placeholder name stored on the booking row (e.g. "Guest 3" for voice bookings). */
     client_name: string | null;
+    /** Wave this booking belongs to (Phase 6). */
+    wave_number: number | null;
     services: { name: string } | null;
     staff: { name: string } | null;
   } | null;
@@ -147,8 +154,11 @@ export function buildPartyCard(
       endDisplay: endIso ? formatInSalonTz(endIso, tz, "shortTime") : "—",
       startUtcIso: startIso,
       claimed: c.claimed_at !== null,
+      waveNumber: b?.wave_number ?? 1,
     };
   });
+
+  const waveCount = new Set(slots.map((s) => s.waveNumber)).size;
 
   const groupStartIso = startIsos.length > 0
     ? startIsos.reduce((a, b) => (a < b ? a : b))
@@ -178,5 +188,6 @@ export function buildPartyCard(
       allPricesKnown && slots.length > 0 ? totalRevenueCents : null,
     slots,
     pendingChangeRequestCount,
+    waveCount,
   };
 }

@@ -469,6 +469,8 @@ export const bookingEn = {
     claimBtn: "This is me",
     cancelBtn: "Cancel",
     expiredLabel: "Expired",
+    /** Phase 6 — wave section heading on large split-group party links. */
+    waveLabel: "Wave",
     /** Claim form */
     formNameLabel: "Your name",
     formNamePlaceholder: "e.g. Sarah",

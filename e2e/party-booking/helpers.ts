@@ -39,6 +39,8 @@ export type SeedPartyLinkOpts = {
   slotCount?: number;
   /** Hours from now until the group starts. Default 3. */
   hoursFromNow?: number;
+  /** Phase 6: wave_number per slot index (e.g. [1,1,1,2,2]). Defaults to all 1. */
+  wavePlan?: number[];
   /**
    * If set, pre-claims the first slot in the DB so tests that need a
    * claimed slot don't have to run through the UI claim flow.
@@ -67,26 +69,43 @@ export async function seedPartyLink(opts: SeedPartyLinkOpts): Promise<SeededPart
     mode = "sync_start",
     slotCount = 2,
     hoursFromNow = 3,
+    wavePlan,
   } = opts;
 
   const groupId = crypto.randomUUID();
   const startMs = Date.now() + hoursFromNow * 3600_000;
   const bookingIds: string[] = [];
 
-  // Insert one booking per slot — stagger start times by 5 minutes.
+  // Insert one booking per slot. Without a wavePlan, stagger by 5 min (legacy).
+  // With a wavePlan, lay each wave out in its own 60-min block and assign distinct
+  // staff WITHIN a wave, so the bookings_no_overlap exclusion constraint holds.
+  const perWaveCount = new Map<number, number>();
   for (let i = 0; i < slotCount; i++) {
-    const slotStart = new Date(startMs + i * 5 * 60_000).toISOString();
-    const slotEnd = new Date(startMs + i * 5 * 60_000 + 45 * 60_000).toISOString();
+    const wave = wavePlan?.[i] ?? 1;
+    let slotStartMs: number;
+    let staffId: string;
+    if (wavePlan) {
+      const posInWave = perWaveCount.get(wave) ?? 0;
+      perWaveCount.set(wave, posInWave + 1);
+      slotStartMs = startMs + (wave - 1) * 60 * 60_000; // 45-min service + 15-min buffer
+      staffId = staffIds[posInWave % staffIds.length];
+    } else {
+      slotStartMs = startMs + i * 5 * 60_000;
+      staffId = staffIds[i % staffIds.length];
+    }
+    const slotStart = new Date(slotStartMs).toISOString();
+    const slotEnd = new Date(slotStartMs + 45 * 60_000).toISOString();
 
     const { data: booking, error: bErr } = await supabase
       .from("bookings")
       .insert({
         salon_id: salonId,
         group_id: groupId,
-        staff_id: staffIds[i % staffIds.length],
+        staff_id: staffId,
         service_id: serviceIds[i % serviceIds.length],
         client_name: `Guest ${i + 1}`,
         client_phone: `1555000000${i}`,
+        wave_number: wave,
         start_time_utc: slotStart,
         end_time_utc: slotEnd,
         status: "confirmed",

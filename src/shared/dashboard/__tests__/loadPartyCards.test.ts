@@ -106,6 +106,7 @@ function makeClaim(overrides: {
   end?: string;
   service?: string;
   staff?: string;
+  wave_number?: number;
 } = {}): RawClaim {
   const start = overrides.start ?? "2026-06-01T17:00:00Z";
   const end = overrides.end ?? "2026-06-01T17:40:00Z";
@@ -120,6 +121,7 @@ function makeClaim(overrides: {
       end_time_utc: end,
       price_cents: overrides.price_cents !== undefined ? overrides.price_cents : 2500,
       client_name: overrides.client_name ?? "Guest 1",
+      wave_number: overrides.wave_number ?? 1,
       services: { name: overrides.service ?? "Classic Manicure" },
       staff: { name: overrides.staff ?? "Liam" },
     },

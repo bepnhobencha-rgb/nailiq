@@ -52,23 +52,45 @@ export default function PartyClaimClient({ data, t }: Props) {
     setMyClaimedId(claimId);
   }
 
+  const renderSlot = (slot: PartyLinkSlot) => (
+    <SlotCard
+      key={slot.claimId}
+      slot={slot}
+      token={data.token}
+      expired={data.expired}
+      t={t}
+      expanded={expandedClaimId === slot.claimId}
+      isMySlot={myClaimedId === slot.claimId}
+      onExpand={() =>
+        setExpandedClaimId((prev) => (prev === slot.claimId ? null : slot.claimId))
+      }
+      onClaimed={handleClaimed}
+    />
+  );
+
+  // Phase 6 — group by wave. Single-wave groups render exactly as before.
+  const waveNumbers = [...new Set(slots.map((s) => s.waveNumber))].sort((a, b) => a - b);
+  const isMultiWave = waveNumbers.length > 1;
+
   return (
     <div className="space-y-3">
-      {slots.map((slot) => (
-        <SlotCard
-          key={slot.claimId}
-          slot={slot}
-          token={data.token}
-          expired={data.expired}
-          t={t}
-          expanded={expandedClaimId === slot.claimId}
-          isMySlot={myClaimedId === slot.claimId}
-          onExpand={() =>
-            setExpandedClaimId((prev) => (prev === slot.claimId ? null : slot.claimId))
-          }
-          onClaimed={handleClaimed}
-        />
-      ))}
+      {isMultiWave
+        ? waveNumbers.map((wn) => {
+            const waveSlots = slots.filter((s) => s.waveNumber === wn);
+            const waveStart = waveSlots[0]?.startDisplay ?? "";
+            return (
+              <section key={wn} data-testid={`party-wave-${wn}`} className="space-y-3">
+                <div className="flex items-center gap-2 pt-2">
+                  <span className="rounded-full bg-[var(--booking-accent,#7c3aed)] px-2.5 py-0.5 text-xs font-semibold text-white">
+                    {t.waveLabel} {wn}
+                  </span>
+                  {waveStart && <span className="text-xs text-gray-500">· {waveStart}</span>}
+                </div>
+                {waveSlots.map(renderSlot)}
+              </section>
+            );
+          })
+        : slots.map(renderSlot)}
 
       <p className="pt-2 text-center text-xs text-gray-400">
         {t.poweredBy}{" "}

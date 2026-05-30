@@ -165,3 +165,41 @@ test("Party Card slot list shows Guest placeholder for unclaimed and real name f
   // Unclaimed slot: shows "Guest N" placeholder from bookings.client_name
   await expect(slot1.getByText(/^Guest \d+$/)).toBeVisible();
 });
+
+// ─── Test 8e: Party Card shows wave badge + grouped wave slots (Phase 6) ─
+
+test("Party Card shows a wave badge and groups slots by wave for a split group", async ({
+  page,
+  baseURL,
+}) => {
+  // Seed a 5-slot group split across 2 waves (3 in wave 1, 2 in wave 2).
+  const waveLink = await seedPartyLink({
+    salonId: salon.salonId,
+    staffIds: salon.staffIds,
+    serviceIds: salon.serviceIds,
+    slotCount: 5,
+    // Far from the beforeAll link (hoursFromNow 2) to avoid staff-time overlap.
+    hoursFromNow: 5,
+    wavePlan: [1, 1, 1, 2, 2],
+  });
+
+  await gotoPartyDashboard(page, SLUG, baseURL!);
+
+  const toggle = page.getByTestId("party-card-panel-toggle");
+  await expect(toggle).toBeVisible({ timeout: 15_000 });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.evaluate((el) => (el as HTMLButtonElement).click());
+  }
+
+  const card = page.getByTestId(`party-card-${waveLink.groupId}`);
+  await expect(card).toBeVisible({ timeout: 10_000 });
+
+  // "2 waves" badge in the card header.
+  await expect(page.getByTestId(`party-card-waves-${waveLink.groupId}`)).toBeVisible();
+
+  // Expand the slot list and assert both wave section headers render.
+  const slotsToggle = card.locator("button").filter({ hasText: /slot/i }).first();
+  await slotsToggle.evaluate((el) => (el as HTMLButtonElement).click());
+  await expect(page.getByTestId(`party-card-wave-${waveLink.groupId}-1`)).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId(`party-card-wave-${waveLink.groupId}-2`)).toBeVisible();
+});

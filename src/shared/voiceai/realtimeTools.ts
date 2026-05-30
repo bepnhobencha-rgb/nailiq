@@ -148,7 +148,12 @@ export const REALTIME_TOOLS = [
       "ALWAYS call this — never use get_available_slots for group bookings. " +
       "Returns 1–3 voice-friendly time options the customer can choose from. " +
       "Ask the customer how many people and what services, then call this tool. " +
-      "Do NOT collect each person's name — only total count per service type.",
+      "Do NOT collect each person's name — only total count per service type. " +
+      "If the result has isWaveOption: true, the party is larger than the staff " +
+      "available at once, so it is split into WAVES (see the `waves` array): explain " +
+      "simply, e.g. \"Your party is larger than the staff free at that time, so I found " +
+      "a 2-wave option: 6 guests at 2:00 PM and 4 guests at 3:15 PM — does that work?\" " +
+      "Read only the wave start times and counts; never list individual people.",
     parameters: {
       type: "object" as const,
       properties: {

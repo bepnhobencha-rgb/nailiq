@@ -203,6 +203,14 @@ function PartyCardItem({
               {card.pendingChangeRequestCount} change{card.pendingChangeRequestCount !== 1 ? "s" : ""} requested
             </span>
           )}
+          {card.waveCount > 1 && (
+            <span
+              data-testid={`party-card-waves-${card.groupId}`}
+              className="rounded bg-nq-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-nq-primary"
+            >
+              {card.waveCount} waves
+            </span>
+          )}
         </div>
       </div>
 
@@ -253,9 +261,22 @@ function PartyCardItem({
       {/* Slot rows */}
       {slotsOpen && (
         <ul className="border-t border-nq-border/30 px-3 py-2 space-y-1.5" role="list">
-          {card.slots.map((slot) => (
-            <SlotRow key={slot.claimId} slot={slot} />
-          ))}
+          {card.waveCount > 1
+            ? [...new Set(card.slots.map((s) => s.waveNumber))]
+                .sort((a, b) => a - b)
+                .flatMap((wn) => [
+                  <li
+                    key={`wave-${wn}`}
+                    data-testid={`party-card-wave-${card.groupId}-${wn}`}
+                    className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-nq-muted"
+                  >
+                    Wave {wn}
+                  </li>,
+                  ...card.slots
+                    .filter((s) => s.waveNumber === wn)
+                    .map((slot) => <SlotRow key={slot.claimId} slot={slot} />),
+                ])
+            : card.slots.map((slot) => <SlotRow key={slot.claimId} slot={slot} />)}
         </ul>
       )}
 

@@ -103,6 +103,7 @@ export async function loadPartyCardsAction(
         end_time_utc,
         price_cents,
         client_name,
+        wave_number,
         services!bookings_service_id_fkey ( name ),
         staff!bookings_staff_id_fkey ( name )
       )

@@ -1028,6 +1028,8 @@ function computeSplitOption(ctx: AlternativesCtx): GroupAlternatives["splitOptio
         priceCents: lateMember.priceCents,
         memberName: lateMember.name,
         serviceName: lateMember.serviceName,
+        // Existing web "late member" split is unrelated to Phase 6 wave booking.
+        waveNumber: 1,
       };
       const combinedAssignments: GroupArrangementAssignment[] = [
         ...mainArrangement.assignments,

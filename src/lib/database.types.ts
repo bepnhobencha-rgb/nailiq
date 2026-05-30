@@ -621,6 +621,7 @@ export type Database = {
           walkin_priority: string | null
           walkin_request_tags: Json | null
           walkin_source: string | null
+          wave_number: number
         }
         Insert: {
           addon_price_cents?: number | null
@@ -672,6 +673,7 @@ export type Database = {
           walkin_priority?: string | null
           walkin_request_tags?: Json | null
           walkin_source?: string | null
+          wave_number?: number
         }
         Update: {
           addon_price_cents?: number | null
@@ -723,6 +725,7 @@ export type Database = {
           walkin_priority?: string | null
           walkin_request_tags?: Json | null
           walkin_source?: string | null
+          wave_number?: number
         }
         Relationships: [
           {

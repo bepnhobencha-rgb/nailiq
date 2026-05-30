@@ -1142,6 +1142,21 @@ export function BookingGroupFlow({
               spreadMinutes,
               totalCents,
               assignments: split.assignments,
+              // Phase 6 fields — the existing web "smart split" is not a wave
+              // booking; defaults keep the success screen rendering unchanged.
+              isWaveBooking: false,
+              waveCount: 1,
+              waves: [
+                {
+                  waveNumber: 1,
+                  startMs: groupStartMs,
+                  endMs: groupEndMs,
+                  startDisplay,
+                  endDisplay,
+                  memberCount: split.assignments.length,
+                },
+              ],
+              summary: "",
             };
             setScheduleResult({
               ok: true,

@@ -61,6 +61,9 @@ export type PartyLinkSlot = {
    * before anyone claims.  Replaced by claimedByName once claimed.
    */
   guestLabel: string;
+  /** Which wave this slot belongs to (Phase 6). 1 for normal group bookings;
+   *  2, 3 … for later waves of a large group split across time. */
+  waveNumber: number;
 };
 
 export type PartyLinkPageData = {
@@ -293,6 +296,7 @@ export async function loadPartyLinkPage(
         start_time_utc,
         end_time_utc,
         client_name,
+        wave_number,
         services!bookings_service_id_fkey ( name ),
         staff!bookings_staff_id_fkey ( name )
       )
@@ -310,6 +314,7 @@ export async function loadPartyLinkPage(
       start_time_utc: string | null;
       end_time_utc: string | null;
       client_name: string | null;
+      wave_number: number | null;
       services: { name: string } | null;
       staff: { name: string } | null;
     } | null;
@@ -331,6 +336,7 @@ export async function loadPartyLinkPage(
       // organiser-supplied (or defaulted) name for web group bookings.
       // Falls back to a derived label only when the DB value is missing.
       guestLabel: booking?.client_name?.trim() || `Guest ${i + 1}`,
+      waveNumber: booking?.wave_number ?? 1,
     };
   });
 
