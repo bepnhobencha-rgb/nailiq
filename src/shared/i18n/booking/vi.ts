@@ -349,6 +349,17 @@ export const bookingVi: BookingMessages = {
     expiredBody: "Đường dẫn này đã quá 24 giờ. Vui lòng nhờ người tổ chức chia sẻ lịch đặt mới.",
     poweredBy: "Được cung cấp bởi",
 
+    /** Phase 6.2 — Party Guest Passport */
+    claimBtnSpot: "Đây là chỗ của tôi",
+    phonePrivacyNote: "🔒 Số điện thoại chỉ dùng cho lịch hẹn này và không hiển thị cho người khác.",
+    formPhoneLabelReminder: "Số điện thoại nhận nhắc lịch",
+    personalPassTitle: "Vé cá nhân của bạn",
+    arrivalNote: "Vui lòng đến sớm 5 phút.",
+    waveNoteTemplate: "Bạn đang ở {waveLabel}. Bạn không cần đến cùng đợt khác trừ khi muốn đi cùng nhóm.",
+    addToCalendarBtn: "Thêm vào lịch",
+    groupProgressLabel: "{confirmed}/{total} đã xác nhận",
+    groupProgressPending: "Còn {pending} chưa xác nhận",
+
     editMyDetails: "Chỉnh sửa thông tin",
     editDetailsHeading: "Cập nhật thông tin của bạn",
     editDetailsSave: "Lưu thay đổi",

@@ -48,8 +48,10 @@ export type PartyLinkSlot = {
   /** Salon-local wall-time display, e.g. "9:30 AM". */
   startDisplay: string;
   endDisplay: string;
-  /** ISO UTC start (for sorting). */
+  /** ISO UTC start (for sorting + ICS generation). */
   startUtcIso: string;
+  /** ISO UTC end (for ICS generation). */
+  endUtcIso: string;
   /** true if this slot has already been claimed by someone. */
   claimed: boolean;
   /** Name of the person who claimed it, or null if unclaimed. */
@@ -78,6 +80,14 @@ export type PartyLinkPageData = {
   mode: GroupSyncMode;
   slots: PartyLinkSlot[];
   expired: boolean;
+  /** Phase 6.2 — resolved per-salon config with safe defaults. */
+  partyConfig: {
+    showGroupProgress: boolean;
+    showAddToCalendar: boolean;
+    showPrivacyNote: boolean;
+    showArrivalNote: boolean;
+    requirePhone: boolean;
+  };
 };
 
 export type CreatePartyLinkResult =
@@ -269,7 +279,8 @@ export async function loadPartyLinkPage(
       expires_at,
       salons (
         name,
-        timezone
+        timezone,
+        party_config
       )
     `,
     )
@@ -278,7 +289,11 @@ export async function loadPartyLinkPage(
 
   if (linkErr || !link) return null;
 
-  const salon = link.salons as unknown as { name: string; timezone: string } | null;
+  const salon = link.salons as unknown as {
+    name: string;
+    timezone: string;
+    party_config: Record<string, unknown> | null;
+  } | null;
   if (!salon) return null;
 
   const expired = new Date(link.expires_at) < new Date();
@@ -330,6 +345,7 @@ export async function loadPartyLinkPage(
       startDisplay: startIso ? formatInSalonTz(startIso, tz, "shortTime") : "—",
       endDisplay: endIso ? formatInSalonTz(endIso, tz, "shortTime") : "—",
       startUtcIso: startIso,
+      endUtcIso: endIso,
       claimed: c.claimed_at !== null,
       claimedByName: c.member_name ?? null,
       // bookings.client_name is "Guest N" for voice group bookings and the
@@ -361,6 +377,16 @@ export async function loadPartyLinkPage(
     ? formatInSalonTz(groupStartIso, tz, "date")
     : "";
 
+  // Resolve party config with safe defaults (no secret data exposed).
+  const cfg = salon.party_config ?? {};
+  const partyConfig = {
+    showGroupProgress:  cfg.show_group_progress  !== false,
+    showAddToCalendar:  cfg.show_add_to_calendar !== false,
+    showPrivacyNote:    cfg.show_privacy_note    !== false,
+    showArrivalNote:    cfg.show_arrival_note    !== false,
+    requirePhone:       cfg.require_phone        !== false,
+  };
+
   return {
     token,
     salonName: salon.name,
@@ -370,6 +396,7 @@ export async function loadPartyLinkPage(
     mode: link.mode as GroupSyncMode,
     slots,
     expired,
+    partyConfig,
   };
 }
 

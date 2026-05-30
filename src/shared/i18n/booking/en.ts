@@ -509,6 +509,17 @@ export const bookingEn = {
     /** Footer */
     poweredBy: "Powered by",
 
+    /** Phase 6.2 — Party Guest Passport */
+    claimBtnSpot: "This is my spot",
+    phonePrivacyNote: "🔒 Your phone number is only used for this appointment and is not shown to other guests.",
+    formPhoneLabelReminder: "Reminder phone number",
+    personalPassTitle: "Your Personal Pass",
+    arrivalNote: "Please arrive 5 minutes early.",
+    waveNoteTemplate: "You are in {waveLabel}. You don't need to arrive with the other wave unless you want to join your group.",
+    addToCalendarBtn: "Add to Calendar",
+    groupProgressLabel: "{confirmed} of {total} confirmed",
+    groupProgressPending: "{pending} still pending",
+
     /** Part C — "Edit my details" section shown after claiming. */
     editMyDetails: "Edit my details",
     editDetailsHeading: "Update your details",

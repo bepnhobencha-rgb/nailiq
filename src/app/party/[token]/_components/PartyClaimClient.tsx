@@ -60,11 +60,181 @@ function CheckCircle({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
+// ─── ICS generation (Add to Calendar) ────────────────────────────
+function buildIcsContent({
+  title,
+  startUtcIso,
+  endUtcIso,
+  description,
+  location,
+}: {
+  title: string;
+  startUtcIso: string;
+  endUtcIso: string;
+  description: string;
+  location?: string;
+}): string {
+  const fmt = (iso: string) => iso.replace(/[-:]/g, "").replace(/\.\d+/, "").replace("Z", "") + "Z";
+  const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+  const uid = `nailiq-${Date.now()}@nailiq.ca`;
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//NailIQ//Party Guest Passport//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:${uid}`,
+    `DTSTART:${fmt(startUtcIso)}`,
+    `DTEND:${fmt(endUtcIso)}`,
+    `SUMMARY:${esc(title)}`,
+    `DESCRIPTION:${esc(description)}`,
+    location ? `LOCATION:${esc(location)}` : "",
+    "STATUS:CONFIRMED",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].filter(Boolean).join("\r\n");
+}
+
+function AddToCalendarButton({
+  slot,
+  salonName,
+  t,
+}: {
+  slot: PartyLinkSlot;
+  salonName: string;
+  t: PartyPageT;
+}) {
+  function handleClick() {
+    if (!slot.startUtcIso || !slot.endUtcIso) return;
+    const title = `${slot.serviceName} at ${salonName}`;
+    const description = `${slot.serviceName} with ${slot.staffName} at ${salonName}.`;
+    const ics = buildIcsContent({ title, startUtcIso: slot.startUtcIso, endUtcIso: slot.endUtcIso, description, location: salonName });
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "appointment.ics";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <button
+      type="button"
+      data-testid="party-add-to-calendar"
+      onClick={handleClick}
+      className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#d9cdb9] bg-white py-2.5 text-sm font-medium text-[#6b6155] transition-colors hover:bg-[#f6f1ea]"
+    >
+      <span aria-hidden>📅</span>
+      {t.addToCalendarBtn}
+    </button>
+  );
+}
+
+// ─── Group progress bar ────────────────────────────────────────────
+function GroupProgress({ slots, t }: { slots: PartyLinkSlot[]; t: PartyPageT }) {
+  const total = slots.length;
+  const confirmed = slots.filter((s) => s.claimed).length;
+  const pending = total - confirmed;
+  const pct = total > 0 ? Math.round((confirmed / total) * 100) : 0;
+
+  return (
+    <div data-testid="party-group-progress" className="rounded-2xl border border-[#ece3d5] bg-white px-5 py-4 shadow-[0_1px_3px_rgba(120,90,50,0.05)]">
+      <div className="mb-2 flex items-baseline justify-between">
+        <span className="text-sm font-semibold text-[#2c2620]">
+          {t.groupProgressLabel.replace("{confirmed}", String(confirmed)).replace("{total}", String(total))}
+        </span>
+        {pending > 0 && (
+          <span className="text-xs text-[#a99e8c]">
+            {t.groupProgressPending.replace("{pending}", String(pending))}
+          </span>
+        )}
+      </div>
+      <div className="h-2 w-full overflow-hidden rounded-full bg-[#f0e7d8]">
+        <div
+          className="h-2 rounded-full bg-emerald-500 transition-all duration-500"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Personal Pass (shown after claim) ────────────────────────────
+function PersonalPass({
+  slot,
+  displayName,
+  salonName,
+  showAddToCalendar,
+  showArrivalNote,
+  t,
+}: {
+  slot: PartyLinkSlot;
+  displayName: string;
+  salonName: string;
+  showAddToCalendar: boolean;
+  showArrivalNote: boolean;
+  t: PartyPageT;
+}) {
+  const waveNote = slot.waveNumber > 1
+    ? t.waveNoteTemplate.replace("{waveLabel}", `${t.waveLabel} ${slot.waveNumber}`)
+    : null;
+
+  return (
+    <div
+      data-testid="party-personal-pass"
+      className="border-t border-[#f0e7d8] bg-gradient-to-b from-[#fcf9f4] to-[#f8f4ed] px-4 pb-4 pt-4"
+    >
+      {/* Pass header */}
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-base" aria-hidden>🎟️</span>
+        <p className="text-sm font-bold text-[#9c7b43]">{t.personalPassTitle}</p>
+      </div>
+
+      {/* Appointment details */}
+      <div className="rounded-xl border border-[#ece3d5] bg-white px-4 py-3 shadow-sm">
+        <p className="text-[15px] font-semibold text-[#2c2620]">{slot.serviceName}</p>
+        <p className="mt-1 text-xs text-[#857a6c]">{slot.staffName}</p>
+        <p className="mt-1 text-sm font-medium text-[#4a3f2f]">
+          {slot.startDisplay} – {slot.endDisplay}
+        </p>
+        {displayName && (
+          <div className="mt-2 flex items-center gap-1.5">
+            <CheckCircle className="h-4 w-4 text-emerald-500" />
+            <span className="text-xs font-semibold text-emerald-700">{displayName}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Wave note */}
+      {waveNote && (
+        <p className="mt-2.5 rounded-lg bg-[#f3e8d4] px-3 py-2 text-xs text-[#8a6a33]">
+          🌊 {waveNote}
+        </p>
+      )}
+
+      {/* Arrival note */}
+      {showArrivalNote && (
+        <p className="mt-2 text-xs text-[#857a6c]">⏰ {t.arrivalNote}</p>
+      )}
+
+      {/* Add to calendar */}
+      {showAddToCalendar && slot.startUtcIso && slot.endUtcIso && (
+        <div className="mt-3">
+          <AddToCalendarButton slot={slot} salonName={salonName} t={t} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PartyClaimClient({ data, t }: Props) {
   const [slots, setSlots] = useState<PartyLinkSlot[]>(data.slots);
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
-  /** claimId of the slot this browser session just claimed — unlocks Edit + Change sections. */
+  /** claimId of the slot this browser session just claimed — unlocks Personal Pass + Edit + Change. */
   const [myClaimedId, setMyClaimedId] = useState<string | null>(null);
+  const cfg = data.partyConfig;
 
   function handleClaimed(claimId: string, name: string) {
     setSlots((prev) =>
@@ -81,8 +251,10 @@ export default function PartyClaimClient({ data, t }: Props) {
       key={slot.claimId}
       slot={slot}
       token={data.token}
+      salonName={data.salonName}
       expired={data.expired}
       t={t}
+      partyConfig={cfg}
       expanded={expandedClaimId === slot.claimId}
       isMySlot={myClaimedId === slot.claimId}
       onExpand={() =>
@@ -98,6 +270,11 @@ export default function PartyClaimClient({ data, t }: Props) {
 
   return (
     <div className="space-y-4">
+      {/* Group progress (Part C) */}
+      {cfg.showGroupProgress && slots.length > 1 && (
+        <GroupProgress slots={slots} t={t} />
+      )}
+
       {isMultiWave
         ? waveNumbers.map((wn) => {
             const waveSlots = slots.filter((s) => s.waveNumber === wn);
@@ -135,8 +312,10 @@ export default function PartyClaimClient({ data, t }: Props) {
 function SlotCard({
   slot,
   token,
+  salonName,
   expired,
   t,
+  partyConfig,
   expanded,
   isMySlot,
   onExpand,
@@ -144,8 +323,10 @@ function SlotCard({
 }: {
   slot: PartyLinkSlot;
   token: string;
+  salonName: string;
   expired: boolean;
   t: PartyPageT;
+  partyConfig: PartyLinkPageData["partyConfig"];
   expanded: boolean;
   isMySlot: boolean;
   onExpand: () => void;
@@ -218,7 +399,7 @@ function SlotCard({
               onClick={onExpand}
               className={`${PRIMARY_BTN} px-4 py-2 text-sm`}
             >
-              {expanded ? t.cancelBtn : t.claimBtn}
+              {expanded ? t.cancelBtn : t.claimBtnSpot}
             </button>
           </div>
         )}
@@ -230,7 +411,20 @@ function SlotCard({
           token={token}
           claimId={slot.claimId}
           t={t}
+          partyConfig={partyConfig}
           onClaimed={handleClaimedHere}
+        />
+      )}
+
+      {/* Personal Pass — shown after claiming in this session */}
+      {slot.claimed && isMySlot && (
+        <PersonalPass
+          slot={slot}
+          displayName={displayName}
+          salonName={salonName}
+          showAddToCalendar={partyConfig.showAddToCalendar}
+          showArrivalNote={partyConfig.showArrivalNote}
+          t={t}
         />
       )}
 
@@ -291,11 +485,13 @@ function ClaimForm({
   token,
   claimId,
   t,
+  partyConfig,
   onClaimed,
 }: {
   token: string;
   claimId: string;
   t: PartyPageT;
+  partyConfig: PartyLinkPageData["partyConfig"];
   onClaimed: (name: string) => void;
 }) {
   const [name, setName] = useState("");
@@ -312,7 +508,7 @@ function ClaimForm({
     const phoneTrim = phone.trim();
 
     if (!nameTrim) { setError(t.errNameRequired); return; }
-    if (!phoneTrim) { setError(t.errPhoneRequired); return; }
+    if (partyConfig.requirePhone && !phoneTrim) { setError(t.errPhoneRequired); return; }
 
     startTransition(async () => {
       const result = await claimPartySlot({
@@ -366,7 +562,7 @@ function ClaimForm({
 
       <div>
         <label className="mb-1 block text-xs font-medium text-[#6b6155]">
-          {t.formPhoneLabel}
+          {t.formPhoneLabelReminder}
         </label>
         <input
           data-testid="party-claim-phone"
@@ -374,10 +570,13 @@ function ClaimForm({
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
           placeholder={t.formPhonePlaceholder}
-          required
+          required={partyConfig.requirePhone}
           className={INPUT_CLASS}
         />
         <p className="mt-1 text-xs text-[#a99e8c]">{t.formPhoneHint}</p>
+        {partyConfig.showPrivacyNote && (
+          <p className="mt-1.5 text-xs text-[#857a6c]">{t.phonePrivacyNote}</p>
+        )}
       </div>
 
       <label className="flex cursor-pointer items-start gap-2">

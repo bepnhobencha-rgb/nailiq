@@ -286,6 +286,7 @@ const unclaimedSlot: PartyLinkSlot = {
   startDisplay: "1:00 PM",
   endDisplay:   "1:40 PM",
   startUtcIso:  "2030-06-15T21:00:00.000Z",
+  endUtcIso:    "2030-06-15T21:40:00.000Z",
   claimed:      false,
   claimedByName: null,
   guestLabel:   "Guest 1",

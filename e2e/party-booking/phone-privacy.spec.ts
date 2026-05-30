@@ -84,7 +84,7 @@ test("claimed member name is visible but phone is not", async ({ page }) => {
 
   // Slot transitions to claimed state — member name appears immediately.
   await expect(firstCard.getByTestId("party-claim-btn")).not.toBeVisible({ timeout: 10_000 });
-  await expect(firstCard.getByText("PrivacyTest Alice")).toBeVisible({ timeout: 10_000 });
+  await expect(firstCard.getByText("PrivacyTest Alice").first()).toBeVisible({ timeout: 10_000 });
 
   // Phone is NOT in the page content after submit
   const html = await page.content();

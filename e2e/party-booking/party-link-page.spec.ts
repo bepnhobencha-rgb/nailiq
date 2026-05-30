@@ -104,7 +104,7 @@ test("claiming a slot updates the UI and DB", async ({ page }) => {
 
   // Claim button gone on this card; member name appears immediately.
   await expect(firstCard.getByTestId("party-claim-btn")).not.toBeVisible({ timeout: 10_000 });
-  await expect(firstCard.getByText("E2E Alice")).toBeVisible({ timeout: 10_000 });
+  await expect(firstCard.getByText("E2E Alice").first()).toBeVisible({ timeout: 10_000 });
 
   // DB: claim row should have member_name set
   await expect
@@ -134,7 +134,7 @@ test("editing details after claim updates name on page", async ({ page }) => {
   await firstCard.getByTestId("party-claim-submit").click();
   await expect(firstCard.getByTestId("party-claim-btn")).not.toBeVisible({ timeout: 10_000 });
   // After claim, submitted name should appear immediately — not generic "Confirmed".
-  await expect(firstCard.getByText("E2E Bob")).toBeVisible({ timeout: 10_000 });
+  await expect(firstCard.getByText("E2E Bob").first()).toBeVisible({ timeout: 10_000 });
 
   // Open edit form
   await firstCard
@@ -182,7 +182,7 @@ test("change request is submitted and stored in DB", async ({ page }) => {
   await firstCard.getByTestId("party-claim-phone").fill("+16045550003");
   await firstCard.getByTestId("party-claim-submit").evaluate((el) => (el as HTMLButtonElement).click());
   // After claim, submitted name appears immediately.
-  await expect(firstCard.getByText("E2E Carol")).toBeVisible({ timeout: 10_000 });
+  await expect(firstCard.getByText("E2E Carol").first()).toBeVisible({ timeout: 10_000 });
 
   // Open change request form
   await firstCard
@@ -257,8 +257,68 @@ test("claiming a slot replaces Guest placeholder with member name", async ({ pag
   await firstCard.getByTestId("party-claim-submit").click();
 
   // After claiming: member name visible, guest label gone
-  await expect(firstCard.getByText("E2E Dana")).toBeVisible({ timeout: 10_000 });
+  await expect(firstCard.getByText("E2E Dana").first()).toBeVisible({ timeout: 10_000 });
   await expect(
     firstCard.locator('[data-testid="party-guest-label"]'),
   ).not.toBeVisible({ timeout: 10_000 });
+});
+
+// ─── Phase 6.2 Tests ─────────────────────────────────────────────
+
+test("claim button shows new 'This is my spot' copy", async ({ page }) => {
+  await gotoPartyLinkPage(page, link.token);
+  const btn = page.getByTestId("party-claim-btn").first();
+  await expect(btn).toBeVisible({ timeout: 10_000 });
+  const text = await btn.textContent();
+  // Accepts EN "This is my spot" or VI "Đây là chỗ của tôi"
+  expect(text).toMatch(/my spot|chỗ của tôi/i);
+});
+
+test("claim form shows phone privacy note", async ({ page }) => {
+  await gotoPartyLinkPage(page, link.token);
+  const firstCard = page.locator('[data-testid^="party-slot-card-"]').first();
+  await firstCard.getByTestId("party-claim-btn").evaluate((el) => (el as HTMLButtonElement).click());
+  // Privacy note should appear after expanding form
+  await expect(firstCard.locator("text=/phone number|điện thoại/i").first()).toBeVisible({ timeout: 5_000 });
+});
+
+test("Personal Pass appears after claiming a slot", async ({ page }) => {
+  await gotoPartyLinkPage(page, link.token);
+  const firstCard = page.locator('[data-testid^="party-slot-card-"]').first();
+  await firstCard.getByTestId("party-claim-btn").evaluate((el) => (el as HTMLButtonElement).click());
+  await firstCard.getByTestId("party-claim-name").fill("E2E Passport");
+  await firstCard.getByTestId("party-claim-phone").fill("+16045550010");
+  await firstCard.getByTestId("party-claim-submit").click();
+  // Personal Pass should appear
+  await expect(page.getByTestId("party-personal-pass")).toBeVisible({ timeout: 10_000 });
+  // Member name visible in pass
+  await expect(page.getByTestId("party-personal-pass").getByText("E2E Passport")).toBeVisible({ timeout: 5_000 });
+});
+
+test("Add to Calendar button is present after claiming", async ({ page }) => {
+  await gotoPartyLinkPage(page, link.token);
+  const firstCard = page.locator('[data-testid^="party-slot-card-"]').first();
+  await firstCard.getByTestId("party-claim-btn").evaluate((el) => (el as HTMLButtonElement).click());
+  await firstCard.getByTestId("party-claim-name").fill("E2E Calendar");
+  await firstCard.getByTestId("party-claim-phone").fill("+16045550011");
+  await firstCard.getByTestId("party-claim-submit").click();
+  await expect(page.getByTestId("party-add-to-calendar")).toBeVisible({ timeout: 10_000 });
+});
+
+test("group progress bar is visible when group has multiple slots", async ({ page }) => {
+  await gotoPartyLinkPage(page, link.token);
+  await expect(page.getByTestId("party-group-progress")).toBeVisible({ timeout: 10_000 });
+});
+
+test("phone numbers are not in page HTML after claim", async ({ page }) => {
+  await gotoPartyLinkPage(page, link.token);
+  const firstCard = page.locator('[data-testid^="party-slot-card-"]').first();
+  await firstCard.getByTestId("party-claim-btn").evaluate((el) => (el as HTMLButtonElement).click());
+  await firstCard.getByTestId("party-claim-name").fill("E2E Privacy2");
+  await firstCard.getByTestId("party-claim-phone").fill("+16045550012");
+  await firstCard.getByTestId("party-claim-submit").click();
+  await expect(page.getByTestId("party-personal-pass")).toBeVisible({ timeout: 10_000 });
+  const html = await page.content();
+  // Phone must not appear in page HTML (only used server-side)
+  expect(html).not.toContain("16045550012");
 });
