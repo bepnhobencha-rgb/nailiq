@@ -78,7 +78,7 @@ export default async function PartyLinkPage({ params, searchParams }: Props) {
   }
 
   return (
-    <main className="min-h-screen bg-[#f9f5f2] py-10 px-4">
+    <main className="min-h-screen bg-[#f9f5f2] py-10 px-4 text-gray-900">
       <div className="mx-auto max-w-lg">
         {/* Header */}
         <div className="mb-6 text-center">
@@ -128,7 +128,7 @@ function PartyErrorPage({
   t: PartyPageT;
 }) {
   return (
-    <main className="min-h-screen bg-[#f9f5f2] flex items-center justify-center px-4">
+    <main className="min-h-screen bg-[#f9f5f2] flex items-center justify-center px-4 text-gray-900">
       <div className="text-center max-w-sm">
         <div className="text-4xl mb-4">💅</div>
         {reason === "not_found" ? (

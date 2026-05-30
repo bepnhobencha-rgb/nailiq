@@ -311,7 +311,7 @@ function ClaimForm({
           placeholder={t.formNamePlaceholder}
           maxLength={100}
           required
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900"
         />
       </div>
 
@@ -326,7 +326,7 @@ function ClaimForm({
           onChange={(e) => setPhone(e.target.value)}
           placeholder={t.formPhonePlaceholder}
           required
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900"
         />
         <p className="mt-1 text-xs text-gray-400">{t.formPhoneHint}</p>
       </div>
@@ -440,7 +440,7 @@ function EditDetailsForm({
           placeholder={t.formNamePlaceholder}
           maxLength={100}
           required
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900"
         />
       </div>
 
@@ -455,7 +455,7 @@ function EditDetailsForm({
           onChange={(e) => setPhone(e.target.value)}
           placeholder={t.formPhonePlaceholder}
           required
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900"
         />
       </div>
 
@@ -587,7 +587,7 @@ function ChangeRequestForm({
           placeholder={t.changeRequestNotePlaceholder}
           maxLength={500}
           rows={3}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none"
+          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none"
         />
       )}
 
