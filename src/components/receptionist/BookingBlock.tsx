@@ -129,6 +129,9 @@ export interface BookingBlockProps {
    * the 👥 marker in the icon stack so receptionists can identify
    * grouped bookings at a glance. */
   isGroup?: boolean;
+  /** Basic Mode: render the critical-icon cluster as a compact horizontal
+   * row (wraps) instead of a tall vertical stack. Same icons, cleaner. */
+  compactIcons?: boolean;
   /** Localized accessible labels for the icon stack (so VI/EN parity stays clean). */
   iconLabels?: {
     vip: string;
@@ -230,6 +233,7 @@ export function BookingBlock(props: BookingBlockProps) {
     hasStaffRequest = false,
     isLate = false,
     isGroup = false,
+    compactIcons = false,
     iconLabels = DEFAULT_ICON_LABELS,
     sourceLabelFull,
     currencyCode,
@@ -337,7 +341,12 @@ export function BookingBlock(props: BookingBlockProps) {
         {hasIcons ? (
           <div
             data-testid={`booking-block-icons-${bookingId}`}
-            className="flex shrink-0 flex-col items-center gap-1 pt-0.5 leading-none opacity-90"
+            className={cn(
+              "flex shrink-0 items-center gap-1 pt-0.5 leading-none opacity-90",
+              compactIcons
+                ? "max-w-16 flex-row flex-wrap justify-end"
+                : "flex-col",
+            )}
           >
             {sourceMeta ? (
               <sourceMeta.Icon
