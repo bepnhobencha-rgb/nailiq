@@ -74,13 +74,15 @@ export function BasicCockpit({
   onOpenQueue,
   isLoading = false,
 }: BasicCockpitProps) {
-  const nextAction = useMemo(
-    () => computeNextAction(inputs, labels),
-    [inputs, labels],
-  );
+  // Alerts first — Next Action dedupes against the shown alert keys so the
+  // same urgent issue never appears as both an alert and a Next Action.
   const alertsResult = useMemo(
     () => computeCriticalAlerts(inputs, labels),
     [inputs, labels],
+  );
+  const nextAction = useMemo(
+    () => computeNextAction(inputs, labels, alertsResult.shown.map((a) => a.key)),
+    [inputs, labels, alertsResult],
   );
 
   const availableStaffValue =

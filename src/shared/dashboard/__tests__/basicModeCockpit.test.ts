@@ -160,5 +160,37 @@ test("party change request surfaces as alert with open_party action", () => {
   assertEqual(r.shown[0]!.action?.target, "open_party");
 });
 
+// ── Dedupe: a shown Critical Alert suppresses the matching Next Action ──
+
+test("overdue shown as alert → Next Action does NOT duplicate it", () => {
+  const input = { ...base, overdueCount: 1 };
+  const alerts = computeCriticalAlerts(input, labels);
+  const action = computeNextAction(input, labels, alerts.shown.map((a) => a.key));
+  // Only the overdue issue exists → no non-duplicated action remains → hidden.
+  assertEqual(action, null);
+});
+
+test("long-wait shown as alert → Next Action falls through to next useful action", () => {
+  // Long-wait (alert) + an upcoming booking → Next Action skips long_wait and
+  // surfaces the non-duplicated 'prepare_next' instead.
+  const input = { ...base, longestWaitMinutes: 15, comingUpCount: 2 };
+  const alerts = computeCriticalAlerts(input, labels);
+  assertEqual(alerts.shown[0]!.key, "long_wait");
+  const action = computeNextAction(input, labels, alerts.shown.map((a) => a.key));
+  assertEqual(action?.kind, "prepare_next");
+});
+
+test("party alert → party_pending Next Action suppressed; walk-in surfaces", () => {
+  const input = { ...base, pendingPartyChangeCount: 2, availableStaffName: "Anna" };
+  const alerts = computeCriticalAlerts(input, labels);
+  const action = computeNextAction(input, labels, alerts.shown.map((a) => a.key));
+  assertEqual(action?.kind, "suggest_walkin");
+});
+
+test("no alert → Next Action is unaffected (back-compat default arg)", () => {
+  const a = computeNextAction({ ...base, availableStaffName: "Anna" }, labels);
+  assertEqual(a?.kind, "suggest_walkin");
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);

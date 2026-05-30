@@ -98,90 +98,109 @@ export type CockpitLabels = {
 };
 
 /**
- * Deterministic Next Action — single highest-priority operational nudge.
+ * Maps a Next Action kind to the Critical Alert key it would DUPLICATE.
+ * When that alert is already shown, the Next Action for the same issue is
+ * skipped (Critical Alert wins for urgent risk — see computeNextAction).
+ * null = no overlap (this action never duplicates an alert).
+ */
+const NEXT_ACTION_DUPLICATE_OF: Record<NextActionKind, CriticalAlertKey | null> = {
+  long_wait: "long_wait",
+  finish_overdue: "overdue",
+  // "X waiting, assign to staff" and the "waiting but no staff" alert are the
+  // same waiting situation with the same Open-queue button — dedupe it.
+  assign_waiting: "no_staff_for_waiting",
+  prepare_next: null,
+  party_pending: "party_change",
+  suggest_walkin: null,
+};
+
+/**
+ * Deterministic Next Action — single highest-priority NON-DUPLICATED action.
  *
  * Priority (per approved 12/10 spec):
  *   1. long-wait guest         2. late/overdue booking
  *   3. waiting + available     4. upcoming within window
  *   5. pending party guests    6. available staff + no queue → suggest walk-in
  *
- * Returns null when there's no useful action (the card hides — an "all clear"
- * message is informational, not an action, so we never show one).
+ * Dedupe rule: Critical Alerts own urgent risk. If a candidate action would
+ * duplicate an already-shown Critical Alert (same issue + same button), it is
+ * skipped and the next useful action is considered. Returns null when no
+ * useful, non-duplicated action remains (the card hides — no "all clear").
+ *
+ * @param shownAlertKeys Keys of the Critical Alerts currently rendered.
  */
 export function computeNextAction(
   i: CockpitInputs,
   labels: CockpitLabels,
+  shownAlertKeys: CriticalAlertKey[] = [],
   config: ReceptionistBasicModeConfig = RECEPTIONIST_BASIC_MODE_CONFIG,
 ): NextAction | null {
   const openQueue = { target: "open_queue" as const, label: labels.actionOpenQueue };
   const addWalkin = { target: "add_walkin" as const, label: labels.actionAddWalkin };
   const openParty = { target: "open_party" as const, label: labels.actionOpenParty };
+  const shown = new Set(shownAlertKeys);
 
-  // 1. Long-wait guest — highest operational risk.
-  if (
+  // Ordered candidates (highest priority first); null entries don't apply.
+  const candidates: Array<NextAction | null> = [
     i.longestWaitMinutes !== null &&
     i.longestWaitMinutes > config.longWaitThresholdMinutes
-  ) {
-    return {
-      kind: "long_wait",
-      text: labels.longWaitGuest(i.longestWaitMinutes),
-      tone: "danger",
-      action: openQueue,
-    };
-  }
+      ? {
+          kind: "long_wait",
+          text: labels.longWaitGuest(i.longestWaitMinutes),
+          tone: "danger",
+          action: openQueue,
+        }
+      : null,
+    i.overdueCount > 0
+      ? {
+          kind: "finish_overdue",
+          text: labels.finishOverdue(i.overdueCount),
+          tone: "danger",
+          action: openQueue,
+        }
+      : null,
+    i.waitingCount > 0
+      ? {
+          kind: "assign_waiting",
+          text: i.firstWaitingName
+            ? labels.assignWaitingNamed(i.firstWaitingName)
+            : labels.assignWaiting(i.waitingCount),
+          tone: "warning",
+          action: openQueue,
+        }
+      : null,
+    i.comingUpCount > 0
+      ? {
+          kind: "prepare_next",
+          text: labels.prepareNext(i.comingUpCount),
+          tone: "info",
+          action: null,
+        }
+      : null,
+    i.pendingPartyChangeCount > 0
+      ? {
+          kind: "party_pending",
+          text: labels.partyPending(i.pendingPartyChangeCount),
+          tone: "warning",
+          action: openParty,
+        }
+      : null,
+    i.availableStaffName && i.waitingCount === 0
+      ? {
+          kind: "suggest_walkin",
+          text: labels.suggestWalkin(i.availableStaffName),
+          tone: "info",
+          action: addWalkin,
+        }
+      : null,
+  ];
 
-  // 2. Late / overdue booking.
-  if (i.overdueCount > 0) {
-    return {
-      kind: "finish_overdue",
-      text: labels.finishOverdue(i.overdueCount),
-      tone: "danger",
-      action: openQueue,
-    };
+  for (const c of candidates) {
+    if (!c) continue;
+    const dup = NEXT_ACTION_DUPLICATE_OF[c.kind];
+    if (dup && shown.has(dup)) continue; // already a Critical Alert — skip
+    return c;
   }
-
-  // 3. Waiting guest + available staff → assign.
-  if (i.waitingCount > 0) {
-    return {
-      kind: "assign_waiting",
-      text: i.firstWaitingName
-        ? labels.assignWaitingNamed(i.firstWaitingName)
-        : labels.assignWaiting(i.waitingCount),
-      tone: "warning",
-      action: openQueue,
-    };
-  }
-
-  // 4. Upcoming booking within the window — informational (no fake nav).
-  if (i.comingUpCount > 0) {
-    return {
-      kind: "prepare_next",
-      text: labels.prepareNext(i.comingUpCount),
-      tone: "info",
-      action: null,
-    };
-  }
-
-  // 5. Pending party guests / change requests.
-  if (i.pendingPartyChangeCount > 0) {
-    return {
-      kind: "party_pending",
-      text: labels.partyPending(i.pendingPartyChangeCount),
-      tone: "warning",
-      action: openParty,
-    };
-  }
-
-  // 6. Available staff + empty queue → suggest a walk-in.
-  if (i.availableStaffName && i.waitingCount === 0) {
-    return {
-      kind: "suggest_walkin",
-      text: labels.suggestWalkin(i.availableStaffName),
-      tone: "info",
-      action: addWalkin,
-    };
-  }
-
   return null;
 }
 
