@@ -5,6 +5,7 @@ import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { REALTIME_TOOLS } from "@/shared/voiceai/realtimeTools";
 import { SESSION_TTL_SECONDS } from "@/shared/voiceai/config";
 import { bookingResultFooterNote } from "./bookingResultFooter";
+import { isNoActiveResponseError } from "./voiceErrorClassify";
 
 type Props = {
   t: BookingMessages;
@@ -525,34 +526,38 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       repromptCountRef.current = 0;
       if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
 
-      // Barge-in: ALWAYS flush queued audio the moment the customer speaks,
-      // regardless of aiActiveRef state.  aiActiveRef is set to false by
-      // response.done BEFORE all queued BufferSourceNodes have finished playing
-      // (the "tail" period), so guarding on it caused Lily to keep talking for
-      // up to 2–3 seconds after the barge-in event fired.
-      //
-      // 1. Mark barge-in active — audio output handler will drop any chunks
-      //    still in-transit over the WebSocket (avoids re-scheduling deleted nodes).
-      bargeInActiveRef.current = true;
+      // Capture whether a response is genuinely active BEFORE we reset state.
+      // aiActiveRef is true exactly while the server has an in-flight response
+      // (response.created → response.done). Only an active response can be
+      // cancelled; sending response.cancel otherwise returns the harmless
+      // "no active response found" error (which we'd previously surface as fatal).
+      const responseWasActive = aiActiveRef.current;
 
-      // 2. Immediately stop all scheduled AudioBufferSourceNodes.
+      // ALWAYS flush queued/playing audio the moment the customer speaks — this
+      // is safe whether or not a response is active. aiActiveRef flips to false on
+      // response.done BEFORE the queued BufferSourceNodes finish (the "tail"), so
+      // flushing unconditionally is what makes Lily go silent immediately.
       const nodes = activeSourceNodesRef.current.slice();
       activeSourceNodesRef.current = [];
       nodes.forEach((n) => { try { n.stop(); } catch { /* already stopped */ } });
       if (audioCtxRef.current) nextPlayRef.current = audioCtxRef.current.currentTime;
-
-      // 3. Kill the typing-sound interval.
       if (typingIntervalRef.current) { clearInterval(typingIntervalRef.current); typingIntervalRef.current = null; }
 
-      // 4. Reset AI activity state so the UI shows "idle".
-      aiActiveRef.current = false;
-      setAiActivity("idle");
-
-      // 5. Tell the OpenAI server to cancel the current response immediately.
-      //    interrupt_response=true handles this server-side via VAD, but sending
-      //    an explicit response.cancel is belt-and-suspenders for gpt-realtime-2
-      //    and ensures the server also stops generating tokens right away.
-      wsRef.current?.send(JSON.stringify({ type: "response.cancel" }));
+      if (responseWasActive) {
+        // Genuine barge-in: a response is mid-flight.
+        // 1. Raise the gate so in-transit audio chunks are dropped (see audio
+        //    handler). Only raised here — a stuck gate would mute the NEXT response.
+        bargeInActiveRef.current = true;
+        // 2. Mark idle in the UI.
+        aiActiveRef.current = false;
+        setAiActivity("idle");
+        // 3. Tell the server to cancel/truncate the active response immediately.
+        wsRef.current?.send(JSON.stringify({ type: "response.cancel" }));
+      }
+      // else: Lily already finished — nothing to cancel. We deliberately do NOT
+      // send response.cancel (avoids "no active response found") and do NOT raise
+      // the barge-in gate (no chunks are in transit; raising it would mute the
+      // next response). The audio flush above still silences any tail.
     }
 
     // OpenAI cancelled the in-flight response (triggered by barge-in or error).
@@ -655,6 +660,22 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
 
     if (type === "error") {
       const errObj = ev.error as { code?: string; message?: string; type?: string } | undefined;
+
+      // ── Benign: response.cancel hit a response that already finished ──────────
+      // Barge-in race — the customer spoke just as the response completed, so
+      // there was nothing left to cancel ("no active response found"). It is a
+      // no-op: never surface it, never tear down the session. Logged at warn in
+      // development only (requirement: keep it out of the user's face).
+      if (isNoActiveResponseError(errObj)) {
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("[voice/ws] response.cancel had no active response — harmless no-op");
+        }
+        // Safety net: clear the barge-in gate so the next response isn't muted if
+        // the cancel was sent during the response.done race.
+        bargeInActiveRef.current = false;
+        return;
+      }
+
       console.error("[voice/ws] server error:", JSON.stringify(ev));
       // Non-fatal: happens when pendingToolCallsRef coordination is imperfect or
       // the model outputs function_call items via streaming events AND response.done
