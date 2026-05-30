@@ -14,6 +14,7 @@ import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import {
   canCancelBooking,
   canEditBooking,
+  canUndoCancel,
 } from "@/shared/lib/salonMemberRole";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
@@ -709,6 +710,87 @@ export type {
   EditBookingInput,
   EditBookingResult,
 } from "./editBookingCore";
+
+/**
+ * Restore a cancelled booking back to "confirmed".
+ * Guards:
+ *   - Only owner / senior (canUndoCancel)
+ *   - Booking must be cancelled (not already active)
+ *   - start_time_utc must still be in the future (≥ now + 1 min)
+ *   - No active booking conflict for the same staff at that time
+ */
+export async function restoreCancelledBooking(
+  slug: string,
+  input: { salonId: string; bookingId: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (!canUndoCancel(ctx.role)) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+
+  const bookingId = String(input.bookingId ?? "").trim();
+  if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+
+  const supabase = ctx.supabase;
+
+  // Load the cancelled booking
+  const { data: booking } = await supabase
+    .from("bookings")
+    .select("id, status, staff_id, start_time_utc, end_time_utc, salon_id")
+    .eq("id", bookingId)
+    .eq("salon_id", ctx.salon.id)
+    .eq("status", "cancelled")
+    .maybeSingle();
+
+  if (!booking) return fail("invalid_state");
+
+  // Must be in the future
+  const nowMs = Date.now();
+  const startMs = new Date(booking.start_time_utc).getTime();
+  if (startMs < nowMs + 60_000) return fail("booking_in_past");
+
+  // Check no active conflict for this staff at this time
+  if (booking.staff_id) {
+    const { data: conflicts } = await supabase
+      .from("bookings")
+      .select("id")
+      .eq("staff_id", booking.staff_id)
+      .not("status", "in", '("cancelled","waiting")')
+      .lt("start_time_utc", booking.end_time_utc)
+      .gt("end_time_utc", booking.start_time_utc)
+      .neq("id", bookingId)
+      .limit(1);
+
+    if (conflicts && conflicts.length > 0) return fail("slot_conflict");
+  }
+
+  // Restore to confirmed
+  const { data: updated, error: upErr } = await supabase
+    .from("bookings")
+    .update({ status: "confirmed" })
+    .eq("id", bookingId)
+    .eq("salon_id", ctx.salon.id)
+    .eq("status", "cancelled")
+    .select("id")
+    .maybeSingle();
+
+  if (upErr) {
+    console.error("[restoreCancelledBooking]", upErr);
+    return fail("server_error");
+  }
+  if (!updated?.id) return fail("invalid_state");
+
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "booking_restored",
+    payload: { reason: "desk_restore" },
+  });
+
+  return { ok: true };
+}
 
 /** Desk / grid: reschedule/adjust slots for pending | confirmed only (see `performEditBooking`). */
 export async function editBooking(

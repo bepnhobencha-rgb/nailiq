@@ -105,6 +105,12 @@ export interface BookingDetailDrawerProps {
     busy: boolean;
     onPress: () => void | Promise<void>;
   };
+  /** Restore a cancelled booking back to confirmed (owner / senior only). */
+  restoreAction?: {
+    label: string;
+    busy: boolean;
+    onPress: () => void | Promise<void>;
+  };
   /** Inline edit (pending | confirmed); optional so presentational tests can omit. */
   deskEdit?: {
     slug: string;
@@ -139,6 +145,7 @@ export function BookingDetailDrawer({
   offlineEditDisabledHint,
   primaryAction,
   cancelAction,
+  restoreAction,
   deskEdit,
 }: BookingDetailDrawerProps) {
   const [editMode, setEditMode] = useState(false);
@@ -505,6 +512,20 @@ export function BookingDetailDrawer({
                         onClick={() => void cancelAction.onPress()}
                       >
                         {cancelAction.label}
+                      </Button>
+                    ) : null}
+                    {restoreAction !== undefined ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        loading={restoreAction.busy}
+                        data-testid="drawer-restore-booking"
+                        disabled={isOffline}
+                        title={isOffline ? offlineEditDisabledHint : undefined}
+                        className="w-full sm:w-full"
+                        onClick={() => void restoreAction.onPress()}
+                      >
+                        {restoreAction.label}
                       </Button>
                     ) : null}
                   </>

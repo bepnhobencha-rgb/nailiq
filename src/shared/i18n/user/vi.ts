@@ -1154,8 +1154,13 @@ export const userVi: UserMessages = {
       markComplete: "Đánh dấu hoàn thành",
       cancelBooking: "Hủy lịch",
       editBooking: "Sửa",
+      restoreBooking: "Khôi phục lịch",
       cancelConfirm: (clientName: string) =>
         `Hủy lịch của ${clientName.trim() ? clientName.trim() : "khách này"}?`,
+      restoreConfirm: (clientName: string) =>
+        `Khôi phục lịch của ${clientName.trim() ? clientName.trim() : "khách này"}?`,
+      restoreConflict: "Không thể khôi phục — khung giờ này đã có thợ khác.",
+      restorePast: "Không thể khôi phục — lịch hẹn đã qua.",
       none: "—",
       scheduleSection: "Giờ hẹn",
       statusSection: "Trạng thái",

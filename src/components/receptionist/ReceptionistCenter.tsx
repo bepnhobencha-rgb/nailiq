@@ -67,6 +67,7 @@ import {
   addWalkinToQueue,
   assignWalkinToSlot,
   cancelDeskBooking,
+  restoreCancelledBooking,
   cancelWaitingWalkin,
   undoWalkinAssignment,
 } from "@/shared/dashboard/receptionistActions";
@@ -93,6 +94,7 @@ import {
 import { logSalonRushEvent } from "@/shared/dashboard/rushHourEvent";
 import {
   canCancelBooking,
+  canUndoCancel,
   type SalonMemberRole,
 } from "@/shared/lib/salonMemberRole";
 import { formatInSalonTz, salonDateOffset, salonToday } from "@/shared/lib/salonTime";
@@ -1407,6 +1409,50 @@ function ReceptionistCenterInner({
         }
       : undefined;
 
+  const onDrawerRestoreBooking = async () => {
+    const id = drawerBookingId;
+    if (!id) return;
+    const b = data.bookingsForDay.find((x) => x.id === id);
+    if (!b || b.status !== "cancelled") return;
+    const d = messages.receptionist.drawer;
+    if (!window.confirm(d.restoreConfirm(b.client_name))) return;
+
+    setDrawerBusy(true);
+    try {
+      const r = await restoreCancelledBooking(slug, {
+        salonId: data.salon.id,
+        bookingId: id,
+      });
+      if (!r.ok) {
+        const msg =
+          r.error === "slot_conflict"
+            ? d.restoreConflict
+            : r.error === "booking_in_past"
+              ? d.restorePast
+              : mutationMessage(messages.receptionist, r.error);
+        setShakeMessage(msg);
+      } else {
+        setDrawerBookingId(null);
+        await reloadCurrentDay();
+        router.refresh();
+      }
+    } finally {
+      setDrawerBusy(false);
+    }
+  };
+
+  const drawerRestoreAction =
+    openDrawerBooking &&
+    canUndoCancel(viewerRole) &&
+    openDrawerBooking.status === "cancelled" &&
+    new Date(openDrawerBooking.start_time_utc).getTime() > Date.now() + 60_000
+      ? {
+          label: rcMessages.drawer.restoreBooking,
+          busy: drawerBusy,
+          onPress: () => void onDrawerRestoreBooking(),
+        }
+      : undefined;
+
   return (
     <>
       <div
@@ -2096,6 +2142,7 @@ function ReceptionistCenterInner({
         offlineEditDisabledHint={rcMessages.connection.offlineEditDisabled}
         primaryAction={drawerPrimaryAction}
         cancelAction={drawerCancelAction}
+        restoreAction={drawerRestoreAction}
         deskEdit={
           openDrawerBooking
             ? {
