@@ -1121,6 +1121,8 @@ export type UserMessages = {
       undoFailed: string;
       assignedPrefix: string;
       assignedMiddle: string;
+      cancelledPrefix: string;
+      cancelUndoFailed: string;
     };
     drawer: {
       title: string;
@@ -2613,6 +2615,8 @@ export const userEn: UserMessages = {
       undoFailed: "Service already started — undo is unavailable.",
       assignedPrefix: "Assigned:",
       assignedMiddle: "→",
+      cancelledPrefix: "Cancelled:",
+      cancelUndoFailed: "Cannot undo — appointment already past or staff just booked.",
     },
     drawer: {
       title: "Booking",
