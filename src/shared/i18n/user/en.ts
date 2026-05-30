@@ -1147,7 +1147,11 @@ export type UserMessages = {
       cancelBooking: string;
       /** Pending / confirmed: open inline edit form */
       editBooking: string;
+      restoreBooking: string;
       cancelConfirm: (clientName: string) => string;
+      restoreConfirm: (clientName: string) => string;
+      restoreConflict: string;
+      restorePast: string;
       none: string;
       scheduleSection: string;
       statusSection: string;
@@ -2629,8 +2633,13 @@ export const userEn: UserMessages = {
       markComplete: "Mark complete",
       cancelBooking: "Cancel booking",
       editBooking: "Edit",
+      restoreBooking: "Restore booking",
       cancelConfirm: (clientName: string) =>
         `Cancel booking for ${clientName.trim() ? clientName.trim() : "this guest"}?`,
+      restoreConfirm: (clientName: string) =>
+        `Restore booking for ${clientName.trim() ? clientName.trim() : "this guest"}?`,
+      restoreConflict: "Cannot restore — that time slot is now taken.",
+      restorePast: "Cannot restore — the appointment time has passed.",
       none: "—",
       scheduleSection: "Schedule",
       statusSection: "Status",
