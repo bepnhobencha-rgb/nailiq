@@ -933,6 +933,10 @@ export type UserMessages = {
       nowAvailableStaff: string;
       nowNoOneWaiting: string;
       nowNoStaffAvailable: string;
+      /** Now Bar "Upcoming" tile label (simpler than KPI "Coming up (30m)"). */
+      nowUpcoming: string;
+      /** Hover title clarifying the upcoming window. */
+      nowUpcomingTitle: string;
     };
     /** Role-adaptive top-bar labels. */
     roleBadge: {
@@ -2510,6 +2514,8 @@ export const userEn: UserMessages = {
       nowAvailableStaff: "Available staff",
       nowNoOneWaiting: "No one waiting",
       nowNoStaffAvailable: "None",
+      nowUpcoming: "Upcoming",
+      nowUpcomingTitle: "Arriving in the next 30 min",
     },
     roleBadge: {
       ownerView: "Owner view",

@@ -67,6 +67,12 @@ export type KPIWidgetProps = {
    * VND in the millions) show in full instead of wrapping/clipping.
    */
   valueNoWrap?: boolean;
+  /**
+   * Compact tier — smaller padding + value size for dense surfaces (the
+   * Basic Mode Now Bar). Default false keeps the standard KPI-bar size, so
+   * Balanced/Advanced are unaffected.
+   */
+  compact?: boolean;
 };
 
 export function KPIWidget({
@@ -79,6 +85,7 @@ export function KPIWidget({
   icon,
   className,
   valueNoWrap = false,
+  compact = false,
 }: KPIWidgetProps) {
   if (isLoading) {
     return (
@@ -114,20 +121,21 @@ export function KPIWidget({
   const trendColor = trend ? trendColors[trend] : "text-nq-muted";
 
   return (
-    <Card variant="elevated" padding="md" className={className}>
+    <Card variant="elevated" padding={compact ? "sm" : "md"} className={className}>
       <div className="flex items-start gap-3">
         {icon ? (
           <div className="shrink-0 text-nq-muted" aria-hidden>
             {icon}
           </div>
         ) : null}
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className={cn("flex min-w-0 flex-1 flex-col", compact ? "gap-0.5" : "gap-1")}>
           <div className="text-xs font-medium uppercase tracking-wide text-nq-muted">
             {label}
           </div>
           <div
             className={cn(
-              "text-2xl font-semibold leading-tight tabular-nums",
+              "font-semibold leading-tight tabular-nums",
+              compact ? "text-xl" : "text-2xl",
               valueNoWrap && "whitespace-nowrap",
               valueColors[status],
             )}

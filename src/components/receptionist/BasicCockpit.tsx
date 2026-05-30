@@ -45,6 +45,8 @@ export type BasicCockpitProps = {
     waiting: string;
     inService: string;
     upcoming: string;
+    /** Hover title on the Upcoming tile clarifying the 30-min window. */
+    upcomingTitle: string;
     availableStaff: string;
     /** Calm empty-state text for the Waiting tile when none are waiting. */
     noOneWaiting: string;
@@ -107,7 +109,7 @@ export function BasicCockpit({
                   key={a.key}
                   data-testid={`basic-alert-${a.key}`}
                   className={cn(
-                    "flex flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium text-nq-foreground",
+                    "flex flex-1 items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium text-nq-foreground",
                     a.tone === "danger"
                       ? "border-nq-error/50 bg-nq-error/15"
                       : "border-nq-warning/50 bg-nq-warning/15",
@@ -145,20 +147,21 @@ export function BasicCockpit({
           <div
             data-testid="basic-cockpit-next-action"
             className={cn(
-              "flex items-center gap-3 rounded-lg border px-3.5 py-2.5",
+              "flex items-center gap-3 rounded-lg border px-3.5 py-2",
               NEXT_ACTION_TONE[nextAction.tone] ?? NEXT_ACTION_TONE.info,
             )}
           >
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+            {/* Single-line feel: tiny inline heading + the action text on one row. */}
+            <div className="flex min-w-0 flex-1 items-baseline gap-2">
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-nq-muted">
                 {headings.nextAction}
-              </p>
-              <p
+              </span>
+              <span
                 data-testid={`basic-next-action-${nextAction.kind}`}
-                className="mt-0.5 text-sm font-semibold text-nq-foreground"
+                className="min-w-0 flex-1 truncate text-sm font-semibold text-nq-foreground"
               >
                 {nextAction.text}
-              </p>
+              </span>
             </div>
             {nextAction.action ? (
               <button
@@ -183,9 +186,10 @@ export function BasicCockpit({
             type="button"
             data-testid="basic-now-tile-waiting"
             onClick={onOpenQueue}
-            className="min-w-36 flex-1 shrink-0 rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/60"
+            className="min-w-32 flex-1 shrink-0 rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/60"
           >
             <KPIWidget
+              compact
               label={nowBar.waiting}
               value={
                 snapshot.waitingCount === 0
@@ -203,9 +207,10 @@ export function BasicCockpit({
 
           <div
             data-testid="basic-now-tile-in-service"
-            className="min-w-36 flex-1 shrink-0"
+            className="min-w-32 flex-1 shrink-0"
           >
             <KPIWidget
+              compact
               label={nowBar.inService}
               value={snapshot.inProgressCount}
               status="default"
@@ -215,9 +220,11 @@ export function BasicCockpit({
 
           <div
             data-testid="basic-now-tile-upcoming"
-            className="min-w-36 flex-1 shrink-0"
+            className="min-w-32 flex-1 shrink-0"
+            title={nowBar.upcomingTitle}
           >
             <KPIWidget
+              compact
               label={nowBar.upcoming}
               value={snapshot.comingUpCount}
               status="default"
@@ -227,9 +234,10 @@ export function BasicCockpit({
 
           <div
             data-testid="basic-now-tile-available-staff"
-            className="min-w-36 flex-1 shrink-0"
+            className="min-w-32 flex-1 shrink-0"
           >
             <KPIWidget
+              compact
               label={nowBar.availableStaff}
               value={availableStaffValue}
               status="default"

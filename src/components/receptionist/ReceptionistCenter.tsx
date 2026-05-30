@@ -1646,7 +1646,10 @@ function ReceptionistCenterInner({
               <p className="truncate text-xs text-nq-muted md:text-sm">{data.salon.name}</p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              {isViewingToday && modules.kpi_bar ? (
+              {/* Status pill duplicates the Now Bar's Waiting + In service
+                  counts, so it's hidden in Basic Mode. Balanced/Advanced
+                  keep it (no Now Bar there). */}
+              {isViewingToday && modules.kpi_bar && !basicModeActive ? (
                 <StatusPill
                   waitingCount={queueItems.length}
                   inProgressCount={inProgressToday}
@@ -1665,7 +1668,7 @@ function ReceptionistCenterInner({
                * decoration needed. Pairs colored Badge variant with
                * text label per COLOR_TOKENS §5 (no hue-only encoding).
                */}
-              {viewerRole === "owner" ? (
+              {viewerRole === "owner" && !basicModeActive ? (
                 <Badge
                   data-testid="role-badge-owner"
                   variant="info"
@@ -1947,7 +1950,8 @@ function ReceptionistCenterInner({
             nowBar={{
               waiting: rcMessages.kpiBar.waiting,
               inService: rcMessages.kpiBar.inService,
-              upcoming: rcMessages.kpiBar.comingUp,
+              upcoming: rcMessages.basicMode.nowUpcoming,
+              upcomingTitle: rcMessages.basicMode.nowUpcomingTitle,
               availableStaff: rcMessages.basicMode.nowAvailableStaff,
               noOneWaiting: rcMessages.basicMode.nowNoOneWaiting,
               noStaffAvailable: rcMessages.basicMode.nowNoStaffAvailable,

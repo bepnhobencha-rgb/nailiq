@@ -997,6 +997,8 @@ export const userVi: UserMessages = {
       nowAvailableStaff: "Thợ sẵn sàng",
       nowNoOneWaiting: "Không có khách chờ",
       nowNoStaffAvailable: "Không có",
+      nowUpcoming: "Sắp tới",
+      nowUpcomingTitle: "Đến trong 30 phút tới",
     },
     roleBadge: {
       ownerView: "Chủ tiệm",
