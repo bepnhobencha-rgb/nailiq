@@ -27,6 +27,7 @@ import {
 import { cn } from "@/shared/lib/cn";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { useBasicMode } from "@/shared/dashboard/useBasicMode";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
 import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 
@@ -83,6 +84,22 @@ type NavSection = {
 };
 
 /**
+ * Basic Mode nav allow-list: the minimal front-desk set per the approved
+ * cockpit spec — Live Board · Queue · Calendar · Customers · Settings.
+ * Owner/marketing items (reports, reviews, loyalty, photos, combos,
+ * messages, marketing) and tenant-config items (staff, services) are
+ * hidden in Basic Mode. The routes stay reachable by URL; only the rail
+ * is simplified. Balanced/Advanced (Basic Mode off) is unchanged.
+ */
+const BASIC_NAV_KEYS = new Set([
+  "front-desk",
+  "queue",
+  "calendar",
+  "clients",
+  "settings",
+]);
+
+/**
  * Persistent left rail for `/dashboard/[slug]/*`. Sits OUTSIDE the
  * Front Desk three-zone main content area — see DASHBOARD_LAYOUT_RULES
  * §9. Width transitions between 240px and 64px via the
@@ -105,6 +122,9 @@ export function DashboardSidebar({
   const messages = useMemo(() => getUserMessages(language), [language]);
   const t = messages.nav;
   const toggle = onToggleCollapsed;
+  // Basic Mode (per-device) simplifies the rail to the front-desk essentials.
+  // SSR-safe: starts off, hydrates from localStorage post-mount.
+  const { basicMode } = useBasicMode();
 
   const roleLabels = messages.chooseSalon.roleBadge;
 
@@ -332,6 +352,20 @@ export function DashboardSidebar({
     ],
   );
 
+  // Basic Mode: keep only the front-desk essentials; drop now-empty
+  // sections. The "+ Walk-in" quick action moves under the live section
+  // (the insight section it normally trails is hidden in Basic Mode).
+  const visibleSections = useMemo<NavSection[]>(() => {
+    if (!basicMode) return sections;
+    return sections
+      .map((s) => ({
+        ...s,
+        items: s.items.filter((i) => BASIC_NAV_KEYS.has(i.key)),
+      }))
+      .filter((s) => s.items.length > 0);
+  }, [sections, basicMode]);
+  const quickAddSectionKey = basicMode ? "live" : "insight";
+
   // Reference the prop so unused-var lint stays clean. messagesCount is
   // intentionally not surfaced in the new layout (Messages shows the
   // static "Soon" badge instead of a numeric count).
@@ -398,7 +432,7 @@ export function DashboardSidebar({
         className="flex-1 overflow-y-auto px-2 py-3"
         aria-label={t.primaryNav}
       >
-        {sections.map((section, sectionIdx) => (
+        {visibleSections.map((section, sectionIdx) => (
           <div key={section.key}>
             {sectionIdx > 0 ? (
               <div
@@ -419,8 +453,12 @@ export function DashboardSidebar({
             </ul>
             {/* Quick action sits inside the insight section so the
                 separator before Settings naturally wraps both the
-                insight rows AND the +Walk-in button. */}
-            {section.key === "insight" ? (
+                insight rows AND the +Walk-in button. In Basic Mode the
+                insight section is hidden, so it would move under "live" —
+                but the Basic header already shows a primary "+ Walk-in",
+                so we drop the sidebar duplicate in Basic Mode (DoD #4:
+                no duplicate + Walk-in). Balanced/Advanced keep it. */}
+            {section.key === quickAddSectionKey && !basicMode ? (
               <QuickAddWalkinButton
                 slug={slug}
                 collapsed={collapsed}

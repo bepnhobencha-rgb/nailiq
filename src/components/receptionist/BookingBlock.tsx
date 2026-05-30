@@ -1,9 +1,16 @@
 "use client";
 
+import { Star, Heart, Users, Palette } from "lucide-react";
+
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/shared/lib/cn";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { motion, useReducedMotion } from "@/shared/lib/motionClient";
+import { serviceShortName } from "@/shared/booking/serviceShortName";
+import {
+  bookingSourceIcon,
+  type BookingSourceLabels,
+} from "@/shared/booking/bookingSourceIcon";
 
 /**
  * Booking timeline cell.
@@ -15,13 +22,20 @@ import { motion, useReducedMotion } from "@/shared/lib/motionClient";
  *
  * Icon stack at the right edge (renders only when at least one flag is
  * true; column is hidden entirely otherwise so dense rows stay scannable
- * per `UX_PRINCIPLES.md` §2 rule 5):
- *   - ⭐ VIP        (`isVip`)
- *   - 📝 Notes      (`hasNotes`)
- *   - ❤️ Staff req. (`hasStaffRequest` — booking has a non-empty
- *     `staff_request_note`, e.g. "wants Tuong Vy")
- *   - ⚠ Late        (`isLate` overlay flag — see `STATE_MACHINE.md` §3+§5)
- *   - 🎨 Design     (`hasDesign`)
+ * per `UX_PRINCIPLES.md` §2 rule 5). P1 readability polish: Lucide icons
+ * (premium, consistent) replace emoji; source shows icon-only; the notes
+ * indicator is dropped from the compact block (notes live in the detail
+ * drawer) to keep the client/service/time text legible.
+ *   - source     (Mic/Globe/Phone/UserPlus/Calendar — `sourceChannel`)
+ *   - Star VIP   (`isVip`)
+ *   - Heart req. (`hasStaffRequest` — non-empty `staff_request_note`)
+ *   - Users grp. (`isGroup` — group / party / wave bookings share group_id)
+ *   - ⚠ Late      (`isLate` overlay flag — see `STATE_MACHINE.md` §3+§5)
+ *   - Palette     (`hasDesign`)
+ *
+ * The compact service line uses `serviceShortName()` (display-only); the
+ * block's `title` tooltip and the detail drawer always carry the full
+ * client name, full service name, and full source label.
  *
  * Late treatment uses a danger-pulse keyline ring around the block plus
  * a danger Badge in the icon stack — pair color with text label per
@@ -46,6 +60,13 @@ export interface BookingBlockProps {
   serviceName: string;
   status: "pending" | "confirmed" | "in_progress" | "completed";
   source: "appointment" | "walkin";
+  /**
+   * Raw source channel from `bookings.source` (e.g. "voice", "online",
+   * "phone", "walkin", "appointment"). Drives the compact source icon.
+   * Optional — falls back to `source` when omitted. Icon-only on the
+   * block; the full label appears in the tooltip + detail drawer.
+   */
+  sourceChannel?: string;
   startTimeLabel: string;
   /** Optional end-of-service label rendered as `start – end` on line 3. */
   endTimeLabel?: string;
@@ -116,9 +137,17 @@ export interface BookingBlockProps {
     design: string;
     /** Aria label for the heart shown when `hasStaffRequest` is true. */
     staffRequest: string;
-    /** Aria label for the 👥 marker shown when `isGroup` is true. */
+    /** Aria label for the group marker shown when `isGroup` is true. */
     group?: string;
+    /** Localized source labels for the compact source icon (a11y title). */
+    source?: BookingSourceLabels;
   };
+  /**
+   * Optional full source label for the hover tooltip (e.g. "Source: Walk-in").
+   * The detail drawer carries the authoritative source label; this is a
+   * lightweight scannability aid on hover.
+   */
+  sourceLabelFull?: string;
   /** Grid drag-and-drop — fires on pointerdown when dragging is enabled. */
   onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void;
   /** True while this block is being dragged — renders semi-transparent. */
@@ -184,6 +213,7 @@ export function BookingBlock(props: BookingBlockProps) {
     serviceName,
     status,
     source,
+    sourceChannel,
     startTimeLabel,
     endTimeLabel,
     priceCents,
@@ -196,12 +226,12 @@ export function BookingBlock(props: BookingBlockProps) {
     minHeightPx,
     showWalkinAccent = true,
     isVip = false,
-    hasNotes = false,
     hasDesign = false,
     hasStaffRequest = false,
     isLate = false,
     isGroup = false,
     iconLabels = DEFAULT_ICON_LABELS,
+    sourceLabelFull,
     currencyCode,
     onPointerDown,
     isDragging = false,
@@ -220,8 +250,27 @@ export function BookingBlock(props: BookingBlockProps) {
 
   const isWalkin = source === "walkin";
   const isCompleted = status === "completed";
+
+  // Compact service label (display-only); full name stays in the tooltip + drawer.
+  const serviceLabel = serviceShortName(serviceName);
+
+  // Source icon (icon-only on the block; full label in tooltip + drawer).
+  const sourceLabels = (iconLabels as { source?: BookingSourceLabels }).source;
+  const sourceMeta = bookingSourceIcon(sourceChannel ?? source, sourceLabels);
+
   const hasIcons =
-    isVip || hasNotes || hasStaffRequest || isLate || hasDesign || isGroup;
+    !!sourceMeta || isVip || hasStaffRequest || isLate || hasDesign || isGroup;
+
+  // Lightweight hover tooltip carrying the un-truncated essentials so the
+  // icon-only / short-name compaction never hides operational info.
+  const tooltipTitle = [
+    clientName,
+    serviceName,
+    sourceMeta ? `Source: ${sourceMeta.label}` : null,
+    sourceLabelFull && !sourceMeta ? sourceLabelFull : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   // When density supplies an explicit min-height, the inline `style` on
   // the wrapper takes precedence over the default 52px floor — sized so a
@@ -270,7 +319,7 @@ export function BookingBlock(props: BookingBlockProps) {
           </p>
           {showMetaLine ? (
             <p className={cn("truncate text-[11px] leading-snug", styles.meta)}>
-              {serviceName}
+              {serviceLabel}
             </p>
           ) : null}
           {showTimeRange ? (
@@ -288,35 +337,41 @@ export function BookingBlock(props: BookingBlockProps) {
         {hasIcons ? (
           <div
             data-testid={`booking-block-icons-${bookingId}`}
-            className="flex shrink-0 flex-col items-center gap-1 pt-0.5 text-sm leading-none"
+            className="flex shrink-0 flex-col items-center gap-1 pt-0.5 leading-none opacity-90"
           >
-            {isVip ? (
-              <span aria-label={iconLabels.vip} title={iconLabels.vip}>
-                ⭐
-              </span>
+            {sourceMeta ? (
+              <sourceMeta.Icon
+                size={13}
+                strokeWidth={2}
+                aria-label={sourceMeta.label}
+                data-testid={`booking-block-icon-source-${bookingId}`}
+              />
             ) : null}
-            {hasNotes ? (
-              <span aria-label={iconLabels.notes} title={iconLabels.notes}>
-                📝
-              </span>
+            {isVip ? (
+              <Star
+                size={13}
+                strokeWidth={2}
+                fill="currentColor"
+                aria-label={iconLabels.vip}
+                data-testid={`booking-block-icon-vip-${bookingId}`}
+              />
             ) : null}
             {hasStaffRequest ? (
-              <span
+              <Heart
+                size={13}
+                strokeWidth={2}
+                fill="currentColor"
                 aria-label={iconLabels.staffRequest}
-                title={iconLabels.staffRequest}
                 data-testid={`booking-block-icon-staff-request-${bookingId}`}
-              >
-                ❤️
-              </span>
+              />
             ) : null}
             {isGroup ? (
-              <span
+              <Users
+                size={13}
+                strokeWidth={2}
                 aria-label={iconLabels.group ?? "Group booking"}
-                title={iconLabels.group ?? "Group booking"}
                 data-testid={`booking-block-icon-group-${bookingId}`}
-              >
-                👥
-              </span>
+              />
             ) : null}
             {isLate ? (
               <motion.span
@@ -336,9 +391,12 @@ export function BookingBlock(props: BookingBlockProps) {
               </motion.span>
             ) : null}
             {hasDesign ? (
-              <span aria-label={iconLabels.design} title={iconLabels.design}>
-                🎨
-              </span>
+              <Palette
+                size={13}
+                strokeWidth={2}
+                aria-label={iconLabels.design}
+                data-testid={`booking-block-icon-design-${bookingId}`}
+              />
             ) : null}
           </div>
         ) : null}
@@ -353,6 +411,7 @@ export function BookingBlock(props: BookingBlockProps) {
         data-testid={`booking-block-${bookingId}`}
         className={cn(commonClass, "appearance-none border-0")}
         style={style}
+        title={tooltipTitle}
         aria-label={`Booking ${bookingId}: ${clientName}`}
         onClick={onClick}
         onPointerDown={onPointerDown}
@@ -366,6 +425,7 @@ export function BookingBlock(props: BookingBlockProps) {
     <div
       className={commonClass}
       style={style}
+      title={tooltipTitle}
       data-booking-id={bookingId}
       data-testid={`booking-block-${bookingId}`}
     >

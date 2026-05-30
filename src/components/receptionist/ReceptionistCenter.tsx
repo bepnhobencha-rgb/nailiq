@@ -49,6 +49,12 @@ import { ConnectionBanner, type ConnectionState } from "./ConnectionBanner";
 import { DateSwitcher } from "./DateSwitcher";
 import { DensitySlider } from "./DensitySlider";
 import { KPIBar } from "./KPIBar";
+import { BasicCockpit } from "./BasicCockpit";
+import { useBasicMode } from "@/shared/dashboard/useBasicMode";
+import type {
+  CockpitInputs,
+  CockpitLabels,
+} from "@/shared/dashboard/basicModeCockpit";
 import { StaffTimelineGrid, type GridBooking } from "./StaffTimelineGrid";
 import { StatusPill } from "./StatusPill";
 import { TVModeView } from "./TVModeView";
@@ -496,6 +502,7 @@ function ReceptionistCenterInner({
           service_id: b.service_id,
           status: b.status,
           source: b.source,
+          source_channel: b.source_channel,
           staff_id: b.staff_id,
           start_time_utc: b.start_time_utc,
           end_time_utc: b.end_time_utc,
@@ -684,6 +691,12 @@ function ReceptionistCenterInner({
 
   const timezone = data.salon.timezone;
   const isViewingToday = data.selectedDate === salonToday(timezone, nowIso);
+
+  // ── Basic Mode (per-device Front Desk Cockpit) ──────────────────
+  // Lightweight view toggle (localStorage). Default off → Balanced/Advanced
+  // views are unchanged for everyone who never opts in. Only active on the
+  // live "today + day" board where the cockpit's now-semantics make sense.
+  const { basicMode, toggleBasicMode } = useBasicMode();
 
   /**
    * Pre-resolved hint for WeekView / MonthView.
@@ -1410,6 +1423,83 @@ function ReceptionistCenterInner({
   const isSetupIncomplete =
     data.services.length === 0 || data.staff.length === 0;
 
+  // ── Basic Mode cockpit data (deterministic; display-only) ───────
+  const basicModeActive = basicMode && isViewingToday && viewMode === "day";
+
+  // Available staff (operational, not a risk state) — used by the Now Bar
+  // "Available staff" card (shows a name) and the walk-in nudge.
+  const availableStaffList = data.staff.filter((s) => s.status === "available");
+  const availableStaffCount = availableStaffList.length;
+  const availableStaffName = availableStaffList[0]?.name?.trim() || null;
+
+  // Longest CURRENT wait among queued guests (minutes) — drives the long-wait
+  // Next Action + Critical Alert. Computed from queue join times vs "now".
+  const nowMsForWait = Date.parse(nowIso);
+  const longestWaitMinutes = (() => {
+    let max: number | null = null;
+    for (const q of data.walkinQueue) {
+      const joined = q.joined_queue_at ? Date.parse(q.joined_queue_at) : NaN;
+      if (!Number.isFinite(joined)) continue;
+      const mins = Math.floor((nowMsForWait - joined) / 60_000);
+      if (mins > (max ?? -1)) max = mins;
+    }
+    return max;
+  })();
+
+  const cockpitInputs: CockpitInputs = {
+    waitingCount: data.kpiSnapshot.waitingCount,
+    inProgressCount: data.kpiSnapshot.inProgressCount,
+    comingUpCount: data.kpiSnapshot.comingUpCount,
+    overdueCount: data.kpiSnapshot.overdueCount,
+    longestWaitMinutes,
+    availableStaffCount,
+    availableStaffName,
+    firstWaitingName: data.walkinQueue[0]?.client_name?.trim() || null,
+    smsFailedCount: data.bookingsForDay.filter(
+      (b) =>
+        b.sms_confirmation_failed_at != null && b.status !== "cancelled",
+    ).length,
+    pendingPartyChangeCount: (partyCards ?? []).reduce(
+      (sum, c) => sum + (c.pendingChangeRequestCount ?? 0),
+      0,
+    ),
+    isSetupIncomplete,
+  };
+  const cockpitLabels: CockpitLabels = {
+    longWaitGuest: rcMessages.basicMode.longWaitGuest,
+    finishOverdue: rcMessages.basicMode.finishOverdue,
+    assignWaiting: rcMessages.basicMode.assignWaiting,
+    assignWaitingNamed: rcMessages.basicMode.assignWaitingNamed,
+    prepareNext: rcMessages.basicMode.prepareNext,
+    partyPending: rcMessages.basicMode.partyPending,
+    suggestWalkin: rcMessages.basicMode.suggestWalkin,
+    actionOpenQueue: rcMessages.basicMode.actionOpenQueue,
+    actionAddWalkin: rcMessages.basicMode.actionAddWalkin,
+    actionOpenParty: rcMessages.basicMode.actionOpenParty,
+    alertOverdue: rcMessages.basicMode.alertOverdue,
+    alertLongWait: rcMessages.basicMode.alertLongWait,
+    alertNoStaffForWaiting: rcMessages.basicMode.alertNoStaffForWaiting,
+    alertSmsFailed: rcMessages.basicMode.alertSmsFailed,
+    alertPartyChange: rcMessages.basicMode.alertPartyChange,
+    alertSetupIncomplete: rcMessages.basicMode.alertSetupIncomplete,
+  };
+  // Cockpit action button handler. Queue + walk-in open the queue slide-over
+  // (the walk-in form lives inside it); party scrolls the party strip into view.
+  const onCockpitAction = (target: import("@/shared/dashboard/basicModeCockpit").CockpitActionTarget) => {
+    if (target === "open_party") {
+      document
+        .getElementById("party-strip")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    setQueuePanelOpen(true);
+  };
+  // Party strip is hidden in Basic Mode unless a card genuinely needs action
+  // (a guest submitted a change request awaiting staff review).
+  const hasActionableParty = (partyCards ?? []).some(
+    (c) => c.pendingChangeRequestCount > 0,
+  );
+
   const setupCtaPath =
     data.services.length === 0
       ? `/dashboard/${encodeURIComponent(slug)}/setup/services`
@@ -1546,7 +1636,7 @@ function ReceptionistCenterInner({
                   ← {rcMessages.navOwnerDashboard}
                 </Link>
                 <h1 className="truncate text-lg font-semibold text-nq-foreground md:text-xl">
-                  {rcMessages.title}
+                  {basicModeActive ? rcMessages.basicMode.pageTitle : rcMessages.title}
                 </h1>
               </div>
               <p className="truncate text-xs text-nq-muted md:text-sm">{data.salon.name}</p>
@@ -1622,7 +1712,35 @@ function ReceptionistCenterInner({
                * per PERMISSION_MATRIX §3 to give senior write access
                * to a personal density.
                */}
-              {viewerRole !== "nail_tech" ? (
+              {/* Basic Mode toggle — per-device front-desk cockpit. Shown
+                  on the live day board for every role (it's a personal view
+                  preference, not a salon-wide setting). */}
+              {isViewingToday && viewMode === "day" ? (
+                <button
+                  type="button"
+                  data-testid="basic-mode-toggle"
+                  aria-pressed={basicMode}
+                  aria-label={
+                    basicMode
+                      ? rcMessages.basicMode.toggleOffAria
+                      : rcMessages.basicMode.toggleOnAria
+                  }
+                  onClick={toggleBasicMode}
+                  data-rush-fade
+                  className={cn(
+                    "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                    basicMode
+                      ? "border-nq-primary bg-nq-primary/15 text-nq-primary"
+                      : "border-nq-border bg-nq-surface text-nq-muted hover:text-nq-foreground",
+                  )}
+                >
+                  {rcMessages.basicMode.toggle}
+                </button>
+              ) : null}
+              {/* Density slider is hidden in Basic Mode — Basic Mode is the
+                  simplified view, so the density control would be redundant
+                  clutter. Reappears when Basic Mode is off. */}
+              {viewerRole !== "nail_tech" && !basicModeActive ? (
                 <span data-rush-fade>
                   <DensitySlider
                     slug={slug}
@@ -1808,7 +1926,33 @@ function ReceptionistCenterInner({
          * "now" semantics (Coming up 30m, Overdue, Next available) so
          * historical/future date views must not pretend they are live.
          */}
-        {isViewingToday && modules.kpi_bar ? (
+        {basicModeActive ? (
+          /* Basic Mode replaces the full KPI band with the Front Desk
+             Cockpit: Critical Alerts (max 2) + Next Action + 4-card Now Bar.
+             Revenue / avg-wait / next-available clutter is intentionally
+             dropped here (still available in the full Balanced/Advanced view). */
+          <BasicCockpit
+            snapshot={data.kpiSnapshot}
+            inputs={cockpitInputs}
+            labels={cockpitLabels}
+            nowBar={{
+              waiting: rcMessages.kpiBar.waiting,
+              inService: rcMessages.kpiBar.inService,
+              upcoming: rcMessages.kpiBar.comingUp,
+              availableStaff: rcMessages.basicMode.nowAvailableStaff,
+              noOneWaiting: rcMessages.basicMode.nowNoOneWaiting,
+              noStaffAvailable: rcMessages.basicMode.nowNoStaffAvailable,
+            }}
+            headings={{
+              nextAction: rcMessages.basicMode.nextActionHeading,
+              alerts: rcMessages.basicMode.alertsHeading,
+              moreIssues: rcMessages.basicMode.moreIssues,
+            }}
+            onAction={onCockpitAction}
+            onOpenQueue={() => setQueuePanelOpen(true)}
+            isLoading={dayLoading}
+          />
+        ) : isViewingToday && modules.kpi_bar ? (
           <KPIBar
             snapshot={data.kpiSnapshot}
             // Revenue tile composes the salon module gate AND a role
@@ -1829,12 +1973,18 @@ function ReceptionistCenterInner({
             Rendered as a shrink-0 strip so the three-zone grid below
             adjusts its height automatically. Always mounted so its own
             empty state is reachable and the refresh control can surface
-            newly-created party cards without a full page reload. */}
-        <PartyCardPanel
-          initialCards={partyCards}
-          slug={slug}
-          currencyCode={data.salon.currencyCode}
-        />
+            newly-created party cards without a full page reload.
+            Basic Mode hides the strip unless a card needs action (a pending
+            guest change request) to keep the cockpit calm. */}
+        {basicModeActive && !hasActionableParty ? null : (
+          <div id="party-strip">
+            <PartyCardPanel
+              initialCards={partyCards}
+              slug={slug}
+              currencyCode={data.salon.currencyCode}
+            />
+          </div>
+        )}
 
         {modules.alerts && isSetupIncomplete ? (
           <div
