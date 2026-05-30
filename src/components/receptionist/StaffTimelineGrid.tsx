@@ -59,6 +59,8 @@ export interface GridBooking {
   service_id: string;
   status: "pending" | "confirmed" | "in_progress" | "completed";
   source: "appointment" | "walkin";
+  /** Raw source channel for the compact source icon (e.g. "voice", "online"). */
+  source_channel?: string | null;
   staff_id: string;
   start_time_utc: string;
   end_time_utc: string;
@@ -804,6 +806,7 @@ function StaffTimelineGridImpl({
                           serviceName={b.service_name}
                           status={b.status}
                           source={b.source}
+                          sourceChannel={b.source_channel ?? b.source}
                           startTimeLabel={labels.formatTimeLabel(b.start_time_utc)}
                           endTimeLabel={labels.formatTimeLabel(b.end_time_utc)}
                           priceCents={b.price_cents}

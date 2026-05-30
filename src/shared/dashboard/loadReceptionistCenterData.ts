@@ -117,6 +117,9 @@ export interface ReceptionistCenterData {
     end_time_utc: string;
     status: BookingStatus;
     source: BookingSource;
+    /** Raw source channel ("voice" | "online" | "phone" | "walkin" |
+     * "appointment" | …) preserved for the compact source icon. */
+    source_channel: string | null;
     service_id: string;
     service_name: string;
     service_duration_minutes: number;
@@ -836,6 +839,13 @@ export async function loadReceptionistCenterData(
       end_time_utc: en,
       status,
       source,
+      // Raw source channel (e.g. "voice", "online", "phone") preserved for
+      // the compact source icon. `source` above is narrowed to walkin |
+      // appointment for the walk-in accent; this keeps the richer value.
+      source_channel:
+        typeof row.source === "string" && row.source.trim()
+          ? row.source.trim().toLowerCase()
+          : null,
       service_id: row.service_id,
       service_name: svc?.name ?? "—",
       service_duration_minutes: Number(svc?.duration_minutes ?? 0),

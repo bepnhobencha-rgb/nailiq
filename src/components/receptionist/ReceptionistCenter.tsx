@@ -496,6 +496,7 @@ function ReceptionistCenterInner({
           service_id: b.service_id,
           status: b.status,
           source: b.source,
+          source_channel: b.source_channel,
           staff_id: b.staff_id,
           start_time_utc: b.start_time_utc,
           end_time_utc: b.end_time_utc,
