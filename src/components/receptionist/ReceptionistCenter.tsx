@@ -68,6 +68,7 @@ import {
   assignWalkinToSlot,
   cancelDeskBooking,
   restoreCancelledBooking,
+  undoCancelBooking,
   cancelWaitingWalkin,
   undoWalkinAssignment,
 } from "@/shared/dashboard/receptionistActions";
@@ -823,16 +824,12 @@ function ReceptionistCenterInner({
 
   const undoCancel = async () => {
     if (!undoState) return;
-    const res = await restoreCancelledBooking(slug, {
+    const res = await undoCancelBooking(slug, {
       salonId: data.salon.id,
       bookingId: undoState.bookingId,
     });
     if (!res.ok) {
-      setShakeMessage(
-        res.error === "slot_conflict" || res.error === "booking_in_past"
-          ? messages.receptionist.undo.cancelUndoFailed
-          : mutationMessage(messages.receptionist, res.error),
-      );
+      setShakeMessage(mutationMessage(messages.receptionist, res.error));
     }
     setUndoState(null);
     await reloadCurrentDay();

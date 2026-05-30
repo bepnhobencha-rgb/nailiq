@@ -712,6 +712,51 @@ export type {
 } from "./editBookingCore";
 
 /**
+ * Immediate undo for the 8-second cancel toast.
+ * Skips the "must be in future" and conflict checks — the undo window is so
+ * short (≤ 8 s) that the slot cannot realistically be taken by someone else,
+ * and in_progress bookings that were cancelled already have a past start_time.
+ */
+export async function undoCancelBooking(
+  slug: string,
+  input: { salonId: string; bookingId: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (!canUndoCancel(ctx.role)) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+
+  const bookingId = String(input.bookingId ?? "").trim();
+  if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+
+  const { data: updated, error: upErr } = await ctx.supabase
+    .from("bookings")
+    .update({ status: "confirmed" })
+    .eq("id", bookingId)
+    .eq("salon_id", ctx.salon.id)
+    .eq("status", "cancelled")
+    .select("id")
+    .maybeSingle();
+
+  if (upErr) {
+    console.error("[undoCancelBooking]", upErr);
+    return fail("server_error");
+  }
+  if (!updated?.id) return fail("invalid_state");
+
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "booking_restored",
+    payload: { reason: "undo_cancel" },
+  });
+
+  return { ok: true };
+}
+
+/**
  * Restore a cancelled booking back to "confirmed".
  * Guards:
  *   - Only owner / senior (canUndoCancel)
