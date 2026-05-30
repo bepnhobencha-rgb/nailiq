@@ -10,6 +10,9 @@ import {
   tryFinishAlignedArrangement,
   buildArrangement,
   findFinishArrangementsInWindow,
+  tryWaveArrangement,
+  buildWaveArrangement,
+  type WaveRawAssignment,
   SLOT_STEP_MIN,
   type GroupArrangement,
   type ResolvedMember,
@@ -269,7 +272,10 @@ async function handleConfirmBooking(
     .single();
   if (!service) return NextResponse.json({ error: "service_not_found" }, { status: 404 });
 
-  // ── 3. Resolve "any" staff → first available active staff member ─────────────
+  // ── 3. Resolve staff ────────────────────────────────────────────────────────
+  // "any" → pick the first active staff who has NO conflicting booking at the
+  // requested slot. Picking unconditionally by created_at caused slot_conflict
+  // when that staff member was already booked, even if others were free.
   let resolvedStaffId: string | null = null;
   let resolvedStaffName: string | null = null;
   if (staffId !== "any" && staffId !== BOOKING_ANY_STAFF_ID) {
@@ -277,22 +283,8 @@ async function handleConfirmBooking(
     const { data: staffRow } = await supabase
       .from("staff").select("id, name").eq("id", staffId).single();
     resolvedStaffName = staffRow?.name ?? null;
-  } else {
-    const { data: firstStaff } = await supabase
-      .from("staff")
-      .select("id, name")
-      .eq("salon_id", salon.id)
-      .eq("status", "active")
-      .is("deleted_at", null)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .single();
-    resolvedStaffId   = firstStaff?.id   ?? null;
-    resolvedStaffName = firstStaff?.name ?? null;
   }
-  if (!resolvedStaffId) {
-    return NextResponse.json({ error: "no_staff_available" }, { status: 409 });
-  }
+  // "any" resolution deferred to after time conversion so we can check occupancy.
 
   // ── 4. Convert date (YYYY-MM-DD) + timeSlot ("2:00 PM") → UTC timestamps ────
   //  Uses salonWallTimeToUtcIso from salonTime.ts (DST-safe Intl binary search)
@@ -310,6 +302,37 @@ async function handleConfirmBooking(
     endUtcIso   = salonWallTimeToUtcIso(date, endMins,  timezone);
   } catch (e) {
     return NextResponse.json({ error: "time_conversion_failed", detail: String(e) }, { status: 400 });
+  }
+
+  // ── 4b. Resolve "any" staff → first active staff FREE at this specific slot ──
+  if (staffId === "any" || staffId === BOOKING_ANY_STAFF_ID) {
+    const { data: allStaff } = await supabase
+      .from("staff")
+      .select("id, name")
+      .eq("salon_id", salon.id)
+      .eq("status", "active")
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true });
+
+    // Find first staff who has no overlapping active booking at this time
+    for (const s of (allStaff ?? [])) {
+      const { data: conflicts } = await supabase
+        .from("bookings")
+        .select("id")
+        .eq("staff_id", s.id)
+        .not("status", "in", '("cancelled","waiting")')
+        .lt("start_time_utc", endUtcIso)
+        .gt("end_time_utc", startUtcIso)
+        .limit(1);
+      if (!conflicts || conflicts.length === 0) {
+        resolvedStaffId   = s.id;
+        resolvedStaffName = s.name;
+        break;
+      }
+    }
+    if (!resolvedStaffId) {
+      return NextResponse.json({ error: "no_staff_available" }, { status: 409 });
+    }
   }
 
   // ── 5. Call create_public_booking RPC with correct parameter names ───────────
@@ -987,11 +1010,11 @@ async function loadGroupCtx(
     id:   String(s.id),
     name: String(s.name ?? ""),
   }));
-  if (staffList.length < totalMembers) {
-    return {
-      error: `not_enough_staff: group needs ${totalMembers} members but only ${staffList.length} staff available`,
-      status: 409,
-    };
+  // Phase 6: a group LARGER than the staff count is no longer rejected here —
+  // the wave scheduler serves it across multiple time waves. Only reject when the
+  // salon has no active staff at all (nothing can be scheduled).
+  if (staffList.length === 0) {
+    return { error: "no_active_staff", status: 409 };
   }
   const staffById = new Map<string, StaffRow>();
   for (const s of staffList) staffById.set(s.id, s);
@@ -1131,6 +1154,65 @@ async function handleGetGroupAvailableSlots(
     }
   }
 
+  // ── Wave fallback (Phase 6, sync_start only) ──────────────────────────────
+  // No simultaneous arrangement exists in the ±90 window — the party is larger
+  // than the salon can serve at once. Offer a multi-wave split starting at the
+  // requested time instead of returning "no availability".
+  if (arrangements.length === 0 && mode === "sync_start") {
+    const anchorMs   = Date.parse(salonWallTimeToUtcIso(dateYmd, targetMin, ctx.timezone));
+    const dayCloseMs = Date.parse(salonWallTimeToUtcIso(dateYmd, closeMin,  ctx.timezone));
+    const waveRaw = tryWaveArrangement(
+      anchorMs, ctx.resolvedMembers, ctx.staffList, ctx.staffById,
+      ctx.capability, ctx.existing, dayCloseMs,
+    );
+    if (waveRaw && waveRaw.assignments.length === ctx.resolvedMembers.length) {
+      const waveArr = buildWaveArrangement(waveRaw, ctx.resolvedMembers, ctx.staffById, ctx.timezone);
+      if (waveArr.isWaveBooking) {
+        return NextResponse.json({
+          arrangements: [{
+            index:        0,
+            isWaveBooking: true,
+            waveCount:    waveArr.waveCount,
+            startDisplay: waveArr.groupStartDisplay,
+            endDisplay:   waveArr.groupEndDisplay,
+            startTime:    utcMsToSalonHm24(waveArr.groupStartMs, ctx.timezone), // pass back as `time`
+            waves:        waveArr.waves.map((w) => ({
+              waveNumber:   w.waveNumber,
+              startTime:    utcMsToSalonHm24(w.startMs, ctx.timezone),
+              startDisplay: w.startDisplay,
+              endDisplay:   w.endDisplay,
+              memberCount:  w.memberCount,
+            })),
+            summary:      waveArr.summary,
+          }],
+          count:        1,
+          date:         dateYmd,
+          mode,
+          totalMembers: ctx.resolvedMembers.length,
+          isWaveOption: true,
+          hint:
+            "WAVE option for a large group (more guests than available staff). Explain simply: " +
+            "the party is too big to all start together, so it's split into waves. Say the wave " +
+            "start times and counts (from `waves`). Do NOT read individual staff assignments. If the " +
+            "customer agrees, call confirm_group_booking with the SAME date and time (the wave-1 start).",
+        });
+      }
+    }
+  }
+
+  // ── sync_finish large group: waves not supported this phase ────────────────
+  if (arrangements.length === 0 && mode === "sync_finish") {
+    return NextResponse.json({
+      slots:        [],
+      count:        0,
+      date:         dateYmd,
+      mode,
+      totalMembers: ctx.resolvedMembers.length,
+      message:
+        "Finish together is not available for this large group. Try arrive together or a different time.",
+    });
+  }
+
   if (arrangements.length === 0) {
     return NextResponse.json({
       slots:        [],
@@ -1235,11 +1317,15 @@ async function handleConfirmGroupBooking(
   const dayOpenMs  = Date.parse(salonWallTimeToUtcIso(dateYmd, openMin,  ctx.timezone));
   const dayCloseMs = Date.parse(salonWallTimeToUtcIso(dateYmd, closeMin, ctx.timezone));
 
-  let assignmentResult: ReturnType<typeof tryAlignedArrangement> | null = null;
   let finalArrangement: GroupArrangement | null = null;
+  // Unified assignment list — each carries waveNumber (1 for normal bookings,
+  // 2/3… for later waves of a large group split across time).
+  let finalAssignments: WaveRawAssignment[] = [];
 
   if (mode === "sync_finish") {
-    // For sync_finish the chosen time is the finish time
+    // For sync_finish the chosen time is the finish time. Wave splitting is NOT
+    // supported for sync_finish this phase (get_group_available_slots already
+    // returns the "use arrive together" message for large finish-together groups).
     const finishResults = findFinishArrangementsInWindow({
       targetFinishMs:  anchorMs,
       dayOpenMs,
@@ -1260,18 +1346,16 @@ async function handleConfirmGroupBooking(
       }, { status: 409 });
     }
     finalArrangement = finishResults[0]!;
-    // Build a minimal assignmentResult from the arrangement
-    assignmentResult = {
-      assignments: finalArrangement.assignments.map((a) => ({
-        memberIdx: a.memberIndex,
-        staffId:   a.staffId,
-        startMs:   Date.parse(a.startUtcIso),
-        endMs:     Date.parse(a.endUtcIso),
-      })),
-    };
+    finalAssignments = finalArrangement.assignments.map((a) => ({
+      memberIdx:  a.memberIndex,
+      staffId:    a.staffId,
+      startMs:    Date.parse(a.startUtcIso),
+      endMs:      Date.parse(a.endUtcIso),
+      waveNumber: 1,
+    }));
   } else {
-    // sync_start: try at exact anchor
-    assignmentResult = tryAlignedArrangement(
+    // sync_start: try the whole group simultaneously first (unchanged behaviour).
+    const aligned = tryAlignedArrangement(
       anchorMs,
       ctx.resolvedMembers,
       ctx.staffList,
@@ -1280,20 +1364,36 @@ async function handleConfirmGroupBooking(
       ctx.existing,
       false,
     );
-    if (!assignmentResult) {
-      return NextResponse.json({
-        ok:     false,
-        reason: "slot_no_longer_available",
-        message: "The requested group time is no longer available. Please call get_group_available_slots again to find the next available slot.",
-      }, { status: 409 });
+    if (aligned) {
+      finalArrangement = buildArrangement("best", aligned, ctx.resolvedMembers, ctx.staffById, ctx.timezone);
+      finalAssignments = aligned.assignments.map((a) => ({ ...a, waveNumber: 1 }));
+    } else {
+      // Wave fallback (Phase 6): the group can't all start at once → split into waves.
+      const waveRaw = tryWaveArrangement(
+        anchorMs, ctx.resolvedMembers, ctx.staffList, ctx.staffById,
+        ctx.capability, ctx.existing, dayCloseMs,
+      );
+      if (waveRaw && waveRaw.assignments.length === ctx.resolvedMembers.length) {
+        finalArrangement = buildWaveArrangement(waveRaw, ctx.resolvedMembers, ctx.staffById, ctx.timezone);
+        finalAssignments = waveRaw.assignments;
+      } else {
+        return NextResponse.json({
+          ok:     false,
+          reason: "slot_no_longer_available",
+          message: "The requested group time is no longer available. Please call get_group_available_slots again to find the next available slot.",
+        }, { status: 409 });
+      }
     }
-    finalArrangement = buildArrangement("best", assignmentResult, ctx.resolvedMembers, ctx.staffById, ctx.timezone);
   }
 
   // 5. Build the insert_group_bookings payload
   //    Part A: use Guest N placeholders — real names come from Party Link claiming.
+  //    Guest numbering follows wave order so wave 1 = Guest 1…k, wave 2 = Guest k+1…
   const idempotencyKey = crypto.randomUUID();
-  const insertPayload = assignmentResult.assignments.map((a, idx) => {
+  const orderedAssignments = finalAssignments
+    .slice()
+    .sort((a, b) => a.waveNumber - b.waveNumber || a.memberIdx - b.memberIdx);
+  const insertPayload = orderedAssignments.map((a, idx) => {
     const member = ctx.resolvedMembers.find((m) => m.index === a.memberIdx) ?? ctx.resolvedMembers[idx]!;
     const svc    = ctx.serviceById.get(member.serviceId)!;
     return {
@@ -1307,6 +1407,7 @@ async function handleConfirmGroupBooking(
       start_time_utc:            new Date(a.startMs).toISOString(),
       end_time_utc:              new Date(a.endMs).toISOString(),
       price_cents:               svc.priceCents,
+      wave_number:               a.waveNumber,
       staff_requested_by_client: false,
       idempotency_key:           idempotencyKey,
     };
@@ -1434,6 +1535,15 @@ async function handleConfirmGroupBooking(
     bookingIds,
     partyLinkUrl,
     smsSent,
+    // Phase 6 wave info — true + waveCount>1 when the large group was split.
+    isWaveBooking:     finalArrangement.isWaveBooking,
+    waveCount:         finalArrangement.waveCount,
+    waves:             finalArrangement.waves.map((w) => ({
+      waveNumber:   w.waveNumber,
+      startDisplay: w.startDisplay,
+      endDisplay:   w.endDisplay,
+      memberCount:  w.memberCount,
+    })),
     groupStartDisplay: finalArrangement.groupStartDisplay,
     groupEndDisplay:   finalArrangement.groupEndDisplay,
     groupStartTime:    utcMsToSalonHm24(finalArrangement.groupStartMs, ctx.timezone),
@@ -1441,10 +1551,13 @@ async function handleConfirmGroupBooking(
     date:              dateYmd,
     totalMembers,
     organizerName:     organizerName!.trim(),
-    message:           partyLinkUrl
-      ? `Group booking confirmed for ${totalMembers} people. Party link is ready to share.`
-      : `Group booking confirmed for ${totalMembers} people.`,
-    hint:
-      "Do NOT read individual staff assignments aloud. Tell the customer the group start time, end time, and that the party link will be shared with the group organizer.",
+    message:           finalArrangement.isWaveBooking
+      ? `Group booking confirmed for ${totalMembers} people across ${finalArrangement.waveCount} waves. Party link is ready to share.`
+      : (partyLinkUrl
+          ? `Group booking confirmed for ${totalMembers} people. Party link is ready to share.`
+          : `Group booking confirmed for ${totalMembers} people.`),
+    hint: finalArrangement.isWaveBooking
+      ? "WAVE booking confirmed. Tell the organizer their group is split into waves (say each wave's start time and guest count from `waves`). Do NOT read individual staff assignments. Mention the party link will be shared."
+      : "Do NOT read individual staff assignments aloud. Tell the customer the group start time, end time, and that the party link will be shared with the group organizer.",
   });
 }
