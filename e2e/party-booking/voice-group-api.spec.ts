@@ -362,3 +362,178 @@ test("3-person voice group booking creates Guest 1, Guest 2, Guest 3", async ({
     expect(name, `booking[${i}] should be "Guest ${i + 1}"`).toBe(`Guest ${i + 1}`);
   });
 });
+
+// ─── Test 10g: 8-person voice booking creates Guest 1 through Guest 8 ─
+
+test("8-person voice group booking creates Guest 1 through Guest 8", async ({
+  request,
+  baseURL,
+}) => {
+  const { salonId, serviceIds } = salon;
+
+  // An 8-person sync_start group needs 8 distinct staff at the same time.
+  // The shared seed ships 3 staff, so add 5 more (each capable of every
+  // seeded service) just for this test.
+  const { data: newStaff, error: staffErr } = await supabase
+    .from("staff")
+    .insert(
+      [4, 5, 6, 7, 8].map((n) => ({
+        salon_id: salonId,
+        name: `Guest8 Staff ${n}`,
+        job_role: "nail_tech",
+      })),
+    )
+    .select("id");
+  expect(staffErr, "seeding extra staff should succeed").toBeFalsy();
+
+  const newStaffIds = (newStaff ?? []).map((s) => String(s.id));
+  const capRows = newStaffIds.flatMap((staff_id) =>
+    serviceIds.map((service_id) => ({ staff_id, service_id })),
+  );
+  if (capRows.length) await supabase.from("staff_services").insert(capRows);
+
+  const dateYmd = nextOpenDateYmd(9);
+  const res = await request.post(`${baseURL}/api/voice/tool`, {
+    data: {
+      toolName: "confirm_group_booking",
+      toolArgs: {
+        service_assignments: [
+          { service_id: serviceIds[0], count: 4 },
+          { service_id: serviceIds[1] ?? serviceIds[0], count: 4 },
+        ],
+        date: dateYmd,
+        time: "10:00",
+        mode: "sync_start",
+        organizer_name: "Lan",
+        organizer_phone: "+16045558888",
+      },
+      salonSlug: SLUG,
+    },
+  });
+
+  if (res.status() === 409) {
+    console.warn("[voice-group-api] 409 conflict — skipping 8-person check.");
+    return;
+  }
+  expect(res.status()).toBe(200);
+
+  const body = await res.json();
+  const groupId: string | undefined = body?.groupId ?? body?.group_id;
+  expect(groupId, "8-person booking should return a groupId").toBeTruthy();
+
+  const { data: bookings } = await supabase
+    .from("bookings")
+    .select("client_name")
+    .eq("group_id", groupId!);
+
+  const names = (bookings ?? []).map((b) => String(b.client_name ?? "")).sort();
+  const expected = Array.from({ length: 8 }, (_, i) => `Guest ${i + 1}`).sort();
+  expect(names, "should be exactly Guest 1..Guest 8, none repeated/organizer").toEqual(expected);
+  for (const n of names) {
+    expect(n, "no guest row may carry the organizer name").not.toBe("Lan");
+  }
+});
+
+// ─── Test 10h: organizer stored at party level, never as a guest name ─
+
+test("organizer name/phone stored on party_links, never as a guest client_name", async ({
+  request,
+  baseURL,
+}) => {
+  const { serviceIds } = salon;
+  const organizerName = "Lan";
+  const organizerPhoneDigits = "16045557000"; // validateGuestPhone strips the +
+  const dateYmd = nextOpenDateYmd(10);
+
+  const res = await request.post(`${baseURL}/api/voice/tool`, {
+    data: {
+      toolName: "confirm_group_booking",
+      toolArgs: {
+        service_assignments: [
+          { service_id: serviceIds[0], count: 1 },
+          { service_id: serviceIds[1] ?? serviceIds[0], count: 1 },
+        ],
+        date: dateYmd,
+        time: "11:00",
+        mode: "sync_start",
+        organizer_name: organizerName,
+        organizer_phone: "+1 604 555 7000",
+      },
+      salonSlug: SLUG,
+    },
+  });
+
+  if (res.status() === 409) {
+    console.warn("[voice-group-api] 409 conflict — skipping organizer-storage check.");
+    return;
+  }
+  expect(res.status()).toBe(200);
+  const body = await res.json();
+  const groupId: string | undefined = body?.groupId ?? body?.group_id;
+  if (!groupId) return;
+
+  // Organizer is stored on the party_links row (group/contact level).
+  const { data: link } = await supabase
+    .from("party_links")
+    .select("organizer_name, organizer_phone")
+    .eq("group_id", groupId)
+    .single();
+  expect(link?.organizer_name).toBe(organizerName);
+  expect(String(link?.organizer_phone ?? "")).toBe(organizerPhoneDigits);
+
+  // Organizer name never leaks into a guest booking row.
+  const { data: bookings } = await supabase
+    .from("bookings")
+    .select("client_name")
+    .eq("group_id", groupId);
+  for (const b of bookings ?? []) {
+    expect(String(b.client_name ?? "")).not.toBe(organizerName);
+    expect(String(b.client_name ?? "")).toMatch(/^Guest \d+$/);
+  }
+});
+
+// ─── Test 10i: organizer phone is NOT exposed on the public page ───
+
+test("organizer phone is not exposed on the public party link page", async ({
+  request,
+  baseURL,
+}) => {
+  const { serviceIds } = salon;
+  const phoneInput = "+16045556000";
+  const phoneDigits = "16045556000";
+  const dateYmd = nextOpenDateYmd(11);
+
+  const res = await request.post(`${baseURL}/api/voice/tool`, {
+    data: {
+      toolName: "confirm_group_booking",
+      toolArgs: {
+        service_assignments: [
+          { service_id: serviceIds[0], count: 1 },
+          { service_id: serviceIds[1] ?? serviceIds[0], count: 1 },
+        ],
+        date: dateYmd,
+        time: "12:00",
+        mode: "sync_start",
+        organizer_name: "Lan",
+        organizer_phone: phoneInput,
+      },
+      salonSlug: SLUG,
+    },
+  });
+
+  if (res.status() === 409) {
+    console.warn("[voice-group-api] 409 conflict — skipping phone-exposure check.");
+    return;
+  }
+  expect(res.status()).toBe(200);
+  const body = await res.json();
+  const partyLinkUrl: string | null = body?.partyLinkUrl ?? null;
+  expect(partyLinkUrl, "a party link URL should be returned").toBeTruthy();
+
+  // Fetch the public page HTML and assert the organizer phone never appears.
+  const pageRes = await request.get(partyLinkUrl!);
+  expect(pageRes.status()).toBe(200);
+  const html = await pageRes.text();
+  expect(html.includes(phoneDigits), "organizer phone digits must not appear in public HTML").toBe(false);
+  expect(html.includes(phoneInput), "organizer phone (formatted) must not appear in public HTML").toBe(false);
+});
