@@ -352,10 +352,17 @@ test("3-person voice group booking creates Guest 1, Guest 2, Guest 3", async ({
   const { data: bookings } = await supabase
     .from("bookings")
     .select("client_name")
-    .eq("group_id", groupId)
-    .order("created_at");
+    .eq("group_id", groupId);
 
-  const names = (bookings ?? []).map((b) => String(b.client_name ?? ""));
+  // All rows share the same created_at (same transaction) so ORDER BY created_at
+  // is non-deterministic. Sort numerically by Guest number instead.
+  const names = (bookings ?? [])
+    .map((b) => String(b.client_name ?? ""))
+    .sort((a, b) => {
+      const na = parseInt(a.replace("Guest ", ""), 10) || 0;
+      const nb = parseInt(b.replace("Guest ", ""), 10) || 0;
+      return na - nb;
+    });
   expect(names.length, "3-person group should have 3 booking rows").toBe(3);
 
   names.forEach((name, i) => {
