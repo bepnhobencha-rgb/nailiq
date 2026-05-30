@@ -14,19 +14,23 @@
 export type NextActionKind =
   | "finish_overdue"
   | "assign_walkin"
-  | "prepare_next"
-  | "all_clear";
+  | "prepare_next";
 
 export type NextAction = {
   kind: NextActionKind;
   /** Localized, ready-to-render text. */
   text: string;
   /** Status accent for the card. */
-  tone: "danger" | "warning" | "info" | "neutral";
+  tone: "danger" | "warning" | "info";
 };
 
 export type CriticalAlert = {
-  key: "overdue" | "sms_failed" | "setup_incomplete" | "long_wait";
+  key:
+    | "overdue"
+    | "sms_failed"
+    | "party_change"
+    | "long_wait"
+    | "setup_incomplete";
   text: string;
   tone: "danger" | "warning";
 };
@@ -42,6 +46,8 @@ export type CockpitInputs = {
   firstWaitingName: string | null;
   /** Count of today's bookings whose confirmation SMS failed. */
   smsFailedCount: number;
+  /** Pending party/group change requests awaiting staff review. */
+  pendingPartyChangeCount: number;
   isSetupIncomplete: boolean;
 };
 
@@ -51,11 +57,11 @@ export type CockpitLabels = {
   assignWalkin: (name: string) => string;
   assignWalkinGeneric: string;
   prepareNext: (n: number) => string;
-  allClear: string;
   alertOverdue: (n: number) => string;
   alertSmsFailed: (n: number) => string;
-  alertSetupIncomplete: string;
+  alertPartyChange: (n: number) => string;
   alertLongWait: (n: number) => string;
+  alertSetupIncomplete: string;
 };
 
 const LONG_WAIT_MINUTES = 20;
@@ -63,12 +69,14 @@ const MAX_ALERTS = 2;
 
 /**
  * Deterministic Next Action — single highest-priority operational nudge.
- * Priority (risk-first): overdue → waiting walk-in → arriving soon → all clear.
+ * Priority (risk-first): overdue → waiting walk-in → arriving soon.
+ * Returns `null` when there is no useful action (the card is hidden — an
+ * "all clear" message is informational, not an action, so we don't show it).
  */
 export function computeNextAction(
   i: CockpitInputs,
   labels: CockpitLabels,
-): NextAction {
+): NextAction | null {
   if (i.overdueCount > 0) {
     return {
       kind: "finish_overdue",
@@ -92,7 +100,7 @@ export function computeNextAction(
       tone: "info",
     };
   }
-  return { kind: "all_clear", text: labels.allClear, tone: "neutral" };
+  return null;
 }
 
 /**
@@ -121,10 +129,10 @@ export function computeCriticalAlerts(
       tone: "warning",
     });
   }
-  if (i.isSetupIncomplete) {
+  if (i.pendingPartyChangeCount > 0) {
     all.push({
-      key: "setup_incomplete",
-      text: labels.alertSetupIncomplete,
+      key: "party_change",
+      text: labels.alertPartyChange(i.pendingPartyChangeCount),
       tone: "warning",
     });
   }
@@ -132,6 +140,13 @@ export function computeCriticalAlerts(
     all.push({
       key: "long_wait",
       text: labels.alertLongWait(i.avgWaitMinutes),
+      tone: "warning",
+    });
+  }
+  if (i.isSetupIncomplete) {
+    all.push({
+      key: "setup_incomplete",
+      text: labels.alertSetupIncomplete,
       tone: "warning",
     });
   }

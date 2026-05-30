@@ -1436,6 +1436,10 @@ function ReceptionistCenterInner({
       (b) =>
         b.sms_confirmation_failed_at != null && b.status !== "cancelled",
     ).length,
+    pendingPartyChangeCount: (partyCards ?? []).reduce(
+      (sum, c) => sum + (c.pendingChangeRequestCount ?? 0),
+      0,
+    ),
     isSetupIncomplete,
   };
   const cockpitLabels: CockpitLabels = {
@@ -1443,12 +1447,16 @@ function ReceptionistCenterInner({
     assignWalkin: rcMessages.basicMode.assignWalkin,
     assignWalkinGeneric: rcMessages.basicMode.assignWalkinGeneric,
     prepareNext: rcMessages.basicMode.prepareNext,
-    allClear: rcMessages.basicMode.allClear,
     alertOverdue: rcMessages.basicMode.alertOverdue,
     alertSmsFailed: rcMessages.basicMode.alertSmsFailed,
-    alertSetupIncomplete: rcMessages.basicMode.alertSetupIncomplete,
+    alertPartyChange: rcMessages.basicMode.alertPartyChange,
     alertLongWait: rcMessages.basicMode.alertLongWait,
+    alertSetupIncomplete: rcMessages.basicMode.alertSetupIncomplete,
   };
+  // Available-staff count for the Now Bar (operational, not a risk state).
+  const availableStaffCount = data.staff.filter(
+    (s) => s.status === "available",
+  ).length;
   // Party strip is hidden in Basic Mode unless a card genuinely needs action
   // (a guest submitted a change request awaiting staff review).
   const hasActionableParty = (partyCards ?? []).some(
@@ -1890,11 +1898,12 @@ function ReceptionistCenterInner({
             snapshot={data.kpiSnapshot}
             inputs={cockpitInputs}
             labels={cockpitLabels}
+            availableStaffCount={availableStaffCount}
             nowBar={{
               waiting: rcMessages.kpiBar.waiting,
               inService: rcMessages.kpiBar.inService,
-              comingUp: rcMessages.kpiBar.comingUp,
-              overdue: rcMessages.kpiBar.overdue,
+              upcoming: rcMessages.kpiBar.comingUp,
+              availableStaff: rcMessages.basicMode.nowAvailableStaff,
             }}
             headings={{
               nextAction: rcMessages.basicMode.nextActionHeading,

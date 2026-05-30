@@ -972,13 +972,15 @@ export const userVi: UserMessages = {
       assignWalkinGeneric: "Xếp khách chờ tiếp theo",
       prepareNext: (n: number) =>
         n === 1 ? "1 khách sắp đến (30 phút tới)" : `${n} khách sắp đến (30 phút tới)`,
-      allClear: "Mọi thứ ổn định — không có việc gấp",
       alertOverdue: (n: number) =>
         n === 1 ? "1 lịch trễ giờ" : `${n} lịch trễ giờ`,
       alertSmsFailed: (n: number) =>
         n === 1 ? "1 SMS xác nhận thất bại" : `${n} SMS xác nhận thất bại`,
-      alertSetupIncomplete: "Chưa hoàn tất thiết lập — thêm dịch vụ & thợ",
+      alertPartyChange: (n: number) =>
+        n === 1 ? "1 yêu cầu đổi lịch nhóm" : `${n} yêu cầu đổi lịch nhóm`,
       alertLongWait: (n: number) => `Chờ trung bình ${n} phút`,
+      alertSetupIncomplete: "Chưa hoàn tất thiết lập — thêm dịch vụ & thợ",
+      nowAvailableStaff: "Thợ rảnh",
     },
     roleBadge: {
       ownerView: "Chủ tiệm",

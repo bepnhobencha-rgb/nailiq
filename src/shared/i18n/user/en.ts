@@ -911,11 +911,13 @@ export type UserMessages = {
       assignWalkin: (name: string) => string;
       assignWalkinGeneric: string;
       prepareNext: (n: number) => string;
-      allClear: string;
       alertOverdue: (n: number) => string;
       alertSmsFailed: (n: number) => string;
-      alertSetupIncomplete: string;
+      alertPartyChange: (n: number) => string;
       alertLongWait: (n: number) => string;
+      alertSetupIncomplete: string;
+      /** Now Bar tile label for currently-available staff count. */
+      nowAvailableStaff: string;
     };
     /** Role-adaptive top-bar labels. */
     roleBadge: {
@@ -2468,13 +2470,15 @@ export const userEn: UserMessages = {
       assignWalkinGeneric: "Seat the next waiting walk-in",
       prepareNext: (n: number) =>
         n === 1 ? "1 guest arriving in the next 30 min" : `${n} guests arriving in the next 30 min`,
-      allClear: "All caught up — nothing urgent",
       alertOverdue: (n: number) =>
         n === 1 ? "1 booking overdue" : `${n} bookings overdue`,
       alertSmsFailed: (n: number) =>
         n === 1 ? "1 confirmation SMS failed" : `${n} confirmation SMS failed`,
-      alertSetupIncomplete: "Setup incomplete — add services & staff",
+      alertPartyChange: (n: number) =>
+        n === 1 ? "1 group change request" : `${n} group change requests`,
       alertLongWait: (n: number) => `Average wait ${n} min`,
+      alertSetupIncomplete: "Setup incomplete — add services & staff",
+      nowAvailableStaff: "Available staff",
     },
     roleBadge: {
       ownerView: "Owner view",

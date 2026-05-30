@@ -17,10 +17,12 @@ import {
  * KPIBar when Basic Mode is on (today + day view). Three stacked pieces:
  *
  *   1. Critical Alerts  — max 2, risk-first; never hides operational risk.
- *   2. Next Action      — single deterministic nudge.
+ *   2. Next Action      — single deterministic nudge; hidden entirely when
+ *                         there is no useful action (no "all clear" filler).
  *   3. Now Bar          — exactly 4 scan cards (Waiting / In service /
- *                         Coming up / Overdue). No revenue / avg-wait /
- *                         next-available clutter.
+ *                         Upcoming / Available staff). Overdue is a RISK
+ *                         state → it lives in Critical Alerts, not here.
+ *                         No revenue / avg-wait clutter.
  *
  * Display-only; all counts come from the server snapshot. Balanced/Advanced
  * views never mount this — they keep the existing KPIBar untouched.
@@ -39,12 +41,14 @@ export type BasicCockpitProps = {
   snapshot: ReceptionistCenterData["kpiSnapshot"];
   inputs: CockpitInputs;
   labels: CockpitLabels;
-  /** Now Bar tile labels (reuses the kpiBar i18n bundle). */
+  /** Count of staff currently available (status === "available"). */
+  availableStaffCount: number;
+  /** Now Bar tile labels. */
   nowBar: {
     waiting: string;
     inService: string;
-    comingUp: string;
-    overdue: string;
+    upcoming: string;
+    availableStaff: string;
   };
   /** Section heading labels. */
   headings: {
@@ -58,6 +62,7 @@ export function BasicCockpit({
   snapshot,
   inputs,
   labels,
+  availableStaffCount,
   nowBar,
   headings,
   isLoading = false,
@@ -89,22 +94,19 @@ export function BasicCockpit({
         status: "default" as const,
       },
       {
-        key: "coming-up",
-        label: nowBar.comingUp,
+        key: "upcoming",
+        label: nowBar.upcoming,
         value: snapshot.comingUpCount,
         status: "default" as const,
       },
       {
-        key: "overdue",
-        label: nowBar.overdue,
-        value: snapshot.overdueCount,
-        status:
-          snapshot.overdueCount > 0
-            ? ("danger" as const)
-            : ("default" as const),
+        key: "available-staff",
+        label: nowBar.availableStaff,
+        value: availableStaffCount,
+        status: "default" as const,
       },
     ],
-    [snapshot, nowBar],
+    [snapshot, nowBar, availableStaffCount],
   );
 
   return (
@@ -140,24 +142,27 @@ export function BasicCockpit({
           </div>
         ) : null}
 
-        {/* Next Action — single deterministic card */}
-        <div
-          data-testid="basic-cockpit-next-action"
-          className={cn(
-            "rounded-lg border px-3.5 py-2.5",
-            TONE_CARD[nextAction.tone] ?? TONE_CARD.neutral,
-          )}
-        >
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
-            {headings.nextAction}
-          </p>
-          <p
-            data-testid={`basic-next-action-${nextAction.kind}`}
-            className="mt-0.5 text-sm font-semibold text-nq-foreground"
+        {/* Next Action — single deterministic card. Hidden entirely when
+            there is no useful action (no neutral "all clear" filler). */}
+        {nextAction ? (
+          <div
+            data-testid="basic-cockpit-next-action"
+            className={cn(
+              "rounded-lg border px-3.5 py-2.5",
+              TONE_CARD[nextAction.tone] ?? TONE_CARD.neutral,
+            )}
           >
-            {nextAction.text}
-          </p>
-        </div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+              {headings.nextAction}
+            </p>
+            <p
+              data-testid={`basic-next-action-${nextAction.kind}`}
+              className="mt-0.5 text-sm font-semibold text-nq-foreground"
+            >
+              {nextAction.text}
+            </p>
+          </div>
+        ) : null}
 
         {/* Now Bar — exactly 4 cards */}
         <div
