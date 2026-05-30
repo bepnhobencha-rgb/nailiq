@@ -1038,27 +1038,32 @@ function computeKpiSnapshot(args: {
       ? Math.round(waitTotalMs / waitSampleCount / 60_000)
       : null;
 
-  // Next available staff: earliest-free considering in_progress bookings.
-  // Tiebreak for staff all free at nowMs: prefer the one whose next
-  // confirmed/pending booking starts latest (most availability window).
-  // This fixes the bug where Liam (first by created_at) always won even
-  // when Jenny/Mai had no bookings at all today.
+  // Next available staff — 4-level sort when multiple staff are tied:
+  //   1. Earliest free (from in_progress end times)
+  //   2. Latest next upcoming confirmed/pending booking (longer free window)
+  //   3. Fewest total bookings today (lighter schedule = more available)
+  //   4. Name alphabetical (deterministic, avoids created_at bias)
+  // Fixes: Liam (first by created_at) always won even when Jenny/Mai had
+  // 0 bookings today — they should always beat a busier colleague.
   let nextAvailableStaff: ReceptionistCenterData["kpiSnapshot"]["nextAvailableStaff"] =
     null;
   if (staff.length > 0) {
-    let earliestFreeMs = Number.POSITIVE_INFINITY;
-    let earliestStaffName: string | null = null;
-    // Latest next-booking start among "free now" staff — higher = more available
-    let tiebreakNextBookingMs = -1;
+    type Candidate = {
+      name: string;
+      freeMs: number;
+      nextBookingStartMs: number;
+      totalBookings: number;
+    };
+    let best: Candidate | null = null;
 
     for (const s of staff) {
-      // How long until this staff is free (from in_progress bookings)
       let staffMaxEndMs = 0;
-      // When is their next upcoming confirmed/pending booking (for tiebreak)
       let nextBookingStartMs = Number.POSITIVE_INFINITY;
+      let totalBookings = 0;
 
       for (const b of bookingsForDay) {
         if (b.staff_id !== s.id) continue;
+        totalBookings++;
         if (b.status === "in_progress") {
           const endMs = Date.parse(b.end_time_utc);
           if (Number.isFinite(endMs) && endMs > staffMaxEndMs) staffMaxEndMs = endMs;
@@ -1072,28 +1077,32 @@ function computeKpiSnapshot(args: {
       }
 
       const freeMs = Math.max(staffMaxEndMs, nowMs);
+      const curr: Candidate = { name: s.name, freeMs, nextBookingStartMs, totalBookings };
 
-      const isBetter =
-        freeMs < earliestFreeMs ||
-        // Tiebreak: both free now → prefer staff with later next booking (longer window)
-        (freeMs === earliestFreeMs &&
-          freeMs === nowMs &&
-          nextBookingStartMs > tiebreakNextBookingMs);
+      if (!best) { best = curr; continue; }
 
-      if (isBetter) {
-        earliestFreeMs = freeMs;
-        earliestStaffName = s.name;
-        tiebreakNextBookingMs = nextBookingStartMs;
-      }
+      // 1. Earlier free wins
+      if (freeMs < best.freeMs) { best = curr; continue; }
+      if (freeMs > best.freeMs) continue;
+      // Tied on freeMs — apply secondary sorts only when both are "free now"
+      if (freeMs !== nowMs) continue;
+
+      // 2. Later next booking = longer free window
+      if (nextBookingStartMs > best.nextBookingStartMs) { best = curr; continue; }
+      if (nextBookingStartMs < best.nextBookingStartMs) continue;
+
+      // 3. Fewer total bookings today = lighter schedule
+      if (totalBookings < best.totalBookings) { best = curr; continue; }
+      if (totalBookings > best.totalBookings) continue;
+
+      // 4. Alphabetical name (deterministic)
+      if (s.name < best.name) best = curr;
     }
 
-    if (earliestStaffName !== null && Number.isFinite(earliestFreeMs)) {
+    if (best) {
       nextAvailableStaff = {
-        name: earliestStaffName,
-        minutesUntilFree: Math.max(
-          0,
-          Math.round((earliestFreeMs - nowMs) / 60_000),
-        ),
+        name: best.name,
+        minutesUntilFree: Math.max(0, Math.round((best.freeMs - nowMs) / 60_000)),
       };
     }
   }
