@@ -159,6 +159,10 @@ export interface StaffTimelineGridProps {
    * stable as density tightens.
    */
   timeSlotMinutesVisualHint?: 20 | 30 | 40;
+  /** Basic Mode: render booking-block critical icons as a compact
+   * horizontal cluster instead of a vertical stack. Default false
+   * (Balanced/Advanced keep the existing vertical stack). */
+  compactBookingIcons?: boolean;
 }
 
 function slotIndexToUtc(
@@ -254,6 +258,7 @@ function StaffTimelineGridImpl({
   showBookingTimeRange = true,
   bookingBlockMinHeightPx,
   currencyCode,
+  compactBookingIcons = false,
   // `timeSlotMinutesVisualHint` is reserved for future row-height
   // adjustments; currently unused at runtime.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- ARCHITECTURE_LOCK: reserved for future row-height adjustments
@@ -833,6 +838,7 @@ function StaffTimelineGridImpl({
                           hasDesign={b.has_design}
                           hasStaffRequest={b.has_staff_request}
                           isGroup={b.group_id != null}
+                          compactIcons={compactBookingIcons}
                           isLate={isLate}
                           iconLabels={labels.bookingIcon}
                           isDragging={isBeingDragged}

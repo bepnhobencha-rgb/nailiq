@@ -697,6 +697,10 @@ function ReceptionistCenterInner({
   // views are unchanged for everyone who never opts in. Only active on the
   // live "today + day" board where the cockpit's now-semantics make sense.
   const { basicMode, toggleBasicMode } = useBasicMode();
+  // Basic Mode never renders the heavy party-card strip by default — the
+  // actionable case surfaces as a compact cockpit alert. Clicking that
+  // alert's "Open party bookings" reveals the full cards on demand.
+  const [partyRevealed, setPartyRevealed] = useState(false);
 
   /**
    * Pre-resolved hint for WeekView / MonthView.
@@ -1487,18 +1491,18 @@ function ReceptionistCenterInner({
   // (the walk-in form lives inside it); party scrolls the party strip into view.
   const onCockpitAction = (target: import("@/shared/dashboard/basicModeCockpit").CockpitActionTarget) => {
     if (target === "open_party") {
-      document
-        .getElementById("party-strip")
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      // Reveal the full party cards on demand (hidden by default in Basic),
+      // then scroll to them after they mount.
+      setPartyRevealed(true);
+      setTimeout(() => {
+        document
+          .getElementById("party-strip")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
       return;
     }
     setQueuePanelOpen(true);
   };
-  // Party strip is hidden in Basic Mode unless a card genuinely needs action
-  // (a guest submitted a change request awaiting staff review).
-  const hasActionableParty = (partyCards ?? []).some(
-    (c) => c.pendingChangeRequestCount > 0,
-  );
 
   const setupCtaPath =
     data.services.length === 0
@@ -1756,7 +1760,11 @@ function ReceptionistCenterInner({
                   DASHBOARD_LAYOUT_RULES §3. Pair color with text label
                   per COLOR_TOKENS §5 — selected state uses the gold
                   family because this is a navigational commitment, not
-                  a status. */}
+                  a status.
+                  Basic Mode is a front-desk "today" view — the
+                  Day/Week/Month toggle is hidden there (Yesterday/Today/
+                  Tomorrow remains). Balanced/Advanced keep the toggle. */}
+              {basicModeActive ? null : (
               <div
                 role="tablist"
                 aria-label={rcMessages.viewMode.ariaLabel}
@@ -1786,6 +1794,7 @@ function ReceptionistCenterInner({
                   );
                 })}
               </div>
+              )}
               {/*
                * Prominent "+ Walk-in" CTA (P1 desk feedback: the queue
                * toggle alone wasn't an obvious "add a walk-in" entry).
@@ -1970,13 +1979,12 @@ function ReceptionistCenterInner({
         ) : null}
 
         {/* Party Card Panel — upcoming group bookings with party links.
-            Rendered as a shrink-0 strip so the three-zone grid below
-            adjusts its height automatically. Always mounted so its own
-            empty state is reachable and the refresh control can surface
-            newly-created party cards without a full page reload.
-            Basic Mode hides the strip unless a card needs action (a pending
-            guest change request) to keep the cockpit calm. */}
-        {basicModeActive && !hasActionableParty ? null : (
+            Balanced/Advanced always mount the full strip. Basic Mode keeps
+            the cockpit calm: the heavy card strip is NOT rendered — an
+            actionable party issue shows only as a compact cockpit alert,
+            and clicking its "Open party bookings" reveals the cards on
+            demand (partyRevealed). No actionable issue → no party section. */}
+        {basicModeActive && !partyRevealed ? null : (
           <div id="party-strip">
             <PartyCardPanel
               initialCards={partyCards}
@@ -2118,6 +2126,7 @@ function ReceptionistCenterInner({
             )}
           >
             <StaffTimelineGrid
+              compactBookingIcons={basicModeActive}
               staff={gridStaff}
               bookings={gridBookings}
               assigning={assignedSlot}
