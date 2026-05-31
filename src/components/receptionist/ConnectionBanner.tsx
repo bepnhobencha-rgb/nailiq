@@ -39,10 +39,23 @@ export interface ConnectionBannerProps {
   labels: {
     reconnecting: string;
     offline: string;
+    /** "Updated {time}" — when the data was last synced from the server. */
+    lastUpdated: (time: string) => string;
+    /** One-click recovery button label. */
+    reload: string;
   };
+  /** Pre-formatted salon-local time of the last successful sync. */
+  lastUpdatedLabel?: string | null;
+  /** Full page reload to re-sync every widget (grid + party cards). */
+  onReload?: () => void;
 }
 
-export function ConnectionBanner({ state, labels }: ConnectionBannerProps) {
+export function ConnectionBanner({
+  state,
+  labels,
+  lastUpdatedLabel,
+  onReload,
+}: ConnectionBannerProps) {
   const reduced = useReducedMotion();
 
   const visible = state === "reconnecting" || state === "offline";
@@ -70,7 +83,7 @@ export function ConnectionBanner({ state, labels }: ConnectionBannerProps) {
               : "border-nq-error/40 bg-nq-error/10",
           )}
         >
-          <div className="mx-auto flex w-full max-w-[var(--max-nq-desktop)] items-center justify-center">
+          <div className="mx-auto flex w-full max-w-[var(--max-nq-desktop)] flex-wrap items-center justify-center gap-x-3 gap-y-1">
             <motion.div
               initial={false}
               animate={
@@ -93,6 +106,38 @@ export function ConnectionBanner({ state, labels }: ConnectionBannerProps) {
                 {isReconnecting ? labels.reconnecting : labels.offline}
               </Badge>
             </motion.div>
+
+            {/* Last-updated timestamp — tells the receptionist how old the
+                board is while disconnected (no silent stale data). */}
+            {lastUpdatedLabel ? (
+              <span
+                data-testid="connection-last-updated"
+                className={cn(
+                  "text-xs font-medium",
+                  isReconnecting ? "text-nq-warning" : "text-nq-error",
+                )}
+              >
+                {labels.lastUpdated(lastUpdatedLabel)}
+              </span>
+            ) : null}
+
+            {/* One-click recovery — a full reload re-runs SSR so every widget
+                (timeline grid AND party cards) re-syncs together. */}
+            {onReload ? (
+              <button
+                type="button"
+                data-testid="connection-reload"
+                onClick={onReload}
+                className={cn(
+                  "rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors",
+                  isReconnecting
+                    ? "border-nq-warning/50 text-nq-warning hover:bg-nq-warning/15"
+                    : "border-nq-error/50 text-nq-error hover:bg-nq-error/15",
+                )}
+              >
+                {labels.reload}
+              </button>
+            ) : null}
           </div>
         </motion.div>
       ) : null}
