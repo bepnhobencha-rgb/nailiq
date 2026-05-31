@@ -11,6 +11,24 @@ if (!supabaseUrl?.trim() || !serviceKey?.trim()) {
 
 const supabase = createClient(supabaseUrl, serviceKey);
 
+// Public booking calendar (rewritten 2026-05-12) gates each selectable day cell
+// on `salons.opening_hours` via parseOpeningHours(): a NULL value parses to null
+// and BookingCalendarGrid then marks EVERY weekday closed — so the date step has
+// no clickable day and the whole public-booking suite times out waiting for
+// `[data-testid="date-day"]:not([disabled])`. Real salons get hours from the
+// setup wizard; direct-insert seeds must set them explicitly. Mirrors the
+// canonical DEFAULT_OPENING_HOURS_JSON (Mon–Sat 09:00–18:00 open, Sun closed —
+// the Sun-closed default is exactly what group-booking/no-slots.spec asserts).
+const SEED_OPENING_HOURS = {
+  mon: { open: "09:00", close: "18:00", closed: false },
+  tue: { open: "09:00", close: "18:00", closed: false },
+  wed: { open: "09:00", close: "18:00", closed: false },
+  thu: { open: "09:00", close: "18:00", closed: false },
+  fri: { open: "09:00", close: "18:00", closed: false },
+  sat: { open: "09:00", close: "18:00", closed: false },
+  sun: { open: "09:00", close: "18:00", closed: true },
+} as const;
+
 export async function getLatestOtp(phone: string): Promise<string> {
   const { data } = await supabase
     .from("otps")
@@ -101,6 +119,7 @@ export async function seedTestSalon(opts?: {
       name,
       phone,
       profile_complete: true,
+      opening_hours: SEED_OPENING_HOURS,
       setup_wizard_completed_at: new Date().toISOString(),
       salon_phone:
         opts?.salon_phone === undefined

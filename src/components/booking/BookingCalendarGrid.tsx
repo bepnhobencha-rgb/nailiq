@@ -104,15 +104,46 @@ export function BookingCalendarGrid({
   const minMonth = useMemo(() => startOfMonth(todayStart), [todayStart]);
   const maxMonth = useMemo(() => startOfMonth(windowEnd), [windowEnd]);
 
-  // View defaults to the selected date's month, or today's month if
-  // nothing is selected yet.
-  const [viewMonth, setViewMonth] = useState<Date>(() =>
-    startOfMonth(selectedDate ?? todayStart),
-  );
+  // First bookable month within the lead-time window: scan forward from today
+  // for a day that is open (weekly hours) AND not an exception-closure. Opening
+  // the calendar here — instead of always on today's month — prevents stranding
+  // the guest on an all-past month when the salon is viewed late in the month
+  // (e.g. the last day: every cell is past/closed and the next availability sits
+  // one "next month" click away, invisible). Falls back to the current month
+  // when the whole window is closed.
+  const firstAvailableMonth = useMemo(() => {
+    const week = parseOpeningHours(openingHoursRaw);
+    const cursor = new Date(todayStart);
+    while (cursor.getTime() <= windowEnd.getTime()) {
+      const cfg = week?.[dayKeyFromLocalDate(cursor)];
+      const openThatDay = !!cfg && !cfg.closed;
+      const exceptionClosed = closedDateYmdSet.has(
+        bookingDateYmdFromLocalDate(cursor),
+      );
+      if (openThatDay && !exceptionClosed) return startOfMonth(cursor);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return minMonth;
+  }, [openingHoursRaw, closedDateYmdSet, todayStart, windowEnd, minMonth]);
+
+  // View defaults to the selected date's month, or the first available month
+  // when nothing is selected yet — never earlier than availability.
+  const [viewMonth, setViewMonth] = useState<Date>(() => {
+    const base = startOfMonth(selectedDate ?? todayStart);
+    return base.getTime() < firstAvailableMonth.getTime()
+      ? firstAvailableMonth
+      : base;
+  });
 
   useEffect(() => {
     if (!selectedDate) return;
-    const candidate = startOfMonth(selectedDate);
+    const base = startOfMonth(selectedDate);
+    // Never sync to a month before the first available one — keeps a today-default
+    // selection from snapping the view back to an all-past current month.
+    const candidate =
+      base.getTime() < firstAvailableMonth.getTime()
+        ? firstAvailableMonth
+        : base;
     // Use functional updater so viewMonth is NOT a dep — having it in deps caused
     // clicking "Next Month" to immediately reset back to selectedDate's month:
     // click Next→June, effect fires (viewMonth changed), candidate=May, setViewMonth(May).
@@ -127,7 +158,7 @@ export function BookingCalendarGrid({
       }
       return current;
     });
-  }, [selectedDate, minMonth, maxMonth]);
+  }, [selectedDate, minMonth, maxMonth, firstAvailableMonth]);
 
   const daysInView = useMemo(() => {
     const out: Date[] = [];

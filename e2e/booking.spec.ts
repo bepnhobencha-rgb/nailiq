@@ -113,9 +113,24 @@ test.describe("Booking Flow", () => {
     await page.locator('[data-testid="any-staff-option"]').click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    await expect(page.locator('[data-testid="date-today"]')).toBeVisible();
+    // The calendar opens on the first month that has availability, so there is
+    // always at least one selectable day on arrival.
     await expect(
       page.locator('[data-testid="date-day"]:not([disabled])').first(),
     ).toBeVisible();
+    // "Today" carries its own marker (`date-today`). When today's month has no
+    // availability (today closed, or the last day of the month) the calendar
+    // opens on a later month, so today may be one or more months back. Step back
+    // until it appears or the prev-month control bottoms out — today is always
+    // reachable from the calendar even if it isn't the default view.
+    const todayCell = page.locator('[data-testid="date-today"]');
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (await todayCell.isVisible().catch(() => false)) break;
+      const prev = page.locator('[data-testid="calendar-prev-month"]');
+      if (!(await prev.isEnabled().catch(() => false))) break;
+      await prev.click();
+      await page.waitForTimeout(300);
+    }
+    await expect(todayCell).toBeVisible();
   });
 });
