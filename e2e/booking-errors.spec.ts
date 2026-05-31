@@ -99,15 +99,34 @@ async function navigateToTimeStep(page: Page, slug: string) {
     .waitFor({ state: "visible", timeout: 15_000 });
   await page.locator('[data-testid="staff-item"]').first().click();
   await page.getByRole("button", { name: "Continue" }).first().click();
-  // Wait for the date calendar to animate in before interacting.
+  // Wait for the date calendar to animate in, then pick a selectable day. The
+  // calendar opens on the first month with availability; late in the month a
+  // salon open every day can still leave the current view with only "today"
+  // (which renders as `date-today`, not `date-day`), so advance a month when no
+  // selectable `date-day` is present.
   await page
-    .locator('[data-testid="date-day"]:not([disabled])')
-    .nth(1)
+    .locator('[data-testid="calendar-grid"]')
     .waitFor({ state: "visible", timeout: 15_000 });
-  await page
+  const selectableDay = page
     .locator('[data-testid="date-day"]:not([disabled])')
-    .nth(1)
-    .click();
+    .first();
+  // Advance a month at a time until a selectable day shows. Wait for the day to
+  // actually appear (5s) before deciding to advance again — checking count
+  // immediately after a next-month click races React's re-render and overshoots,
+  // which kept the grid re-rendering (slot-hint stream) so the eventual click hit
+  // a detaching element.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      await selectableDay.waitFor({ state: "visible", timeout: 5_000 });
+      break;
+    } catch {
+      const next = page.locator('[data-testid="calendar-next-month"]');
+      if (!(await next.isEnabled().catch(() => false))) break;
+      await next.click();
+    }
+  }
+  await selectableDay.waitFor({ state: "visible", timeout: 15_000 });
+  await selectableDay.click();
   await page.getByRole("button", { name: "Continue" }).first().click();
   await page
     .locator('[data-testid="time-slot"]')
@@ -214,7 +233,7 @@ test.describe("Booking error scenarios — /[slug]", () => {
     await page.getByRole("button", { name: "Continue" }).first().click();
     const pickedDateBtn = page
       .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1);
+      .first();
     await pickedDateBtn.waitFor({ state: "visible", timeout: 15_000 });
     const ymd = (await pickedDateBtn.getAttribute("data-ymd")) ?? null;
     if (!ymd) {
@@ -314,7 +333,12 @@ test.describe("Booking error scenarios — /[slug]", () => {
     expect(successes.length).toBe(1);
     expect(failures.length).toBe(1);
     const code = failures[0]!.error?.code ?? "";
-    expect(["23P01", "23505"]).toContain(code);
+    // 23P01 = exclusion-constraint (GIST overlap), 23505 = unique-on-start.
+    // 40P01 = deadlock_detected: under truly concurrent inserts Postgres may
+    // resolve the race by aborting one transaction as a deadlock victim instead
+    // of raising the constraint — still exactly one survivor, the contract we
+    // care about, so it's an accepted rejection code (was an intermittent flake).
+    expect(["23P01", "23505", "40P01"]).toContain(code);
 
     await supabase.from("bookings").delete().eq("id", successes[0]!.data!.id);
   });
