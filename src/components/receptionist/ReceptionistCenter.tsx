@@ -1467,21 +1467,18 @@ function ReceptionistCenterInner({
     ? formatInSalonTz(firstOverdue.start_time_utc, timezone, "time")
     : null;
 
-  // Today's soonest party with UNCONFIRMED (unclaimed) guests — drives the
-  // clearer party alert ("Today {time} group: {name}/{n} not confirmed") and
-  // its focus-the-group action. Restricted to today so the "today" copy is
-  // accurate and operationally relevant for the front desk.
-  const todaySalonDate = formatInSalonTz(nowIso, timezone, "date");
+  // NEAREST UPCOMING party that needs attention — drives the clearer party
+  // alert ("{when} group: {name}/{n} not confirmed") and its focus-the-group
+  // action. "Actionable" = an unconfirmed (unclaimed) guest OR a pending guest
+  // change request. partyCards is loaded for today + 7 days and pre-sorted by
+  // start time, so the first non-expired actionable card is the soonest one
+  // (today's nearest first, else tomorrow / next upcoming). NOT today-only —
+  // an upcoming group with pending guests must still surface.
   const pendingPartyCard =
-    (partyCards ?? [])
-      .filter(
-        (c) =>
-          !c.expired &&
-          c.pendingCount > 0 &&
-          formatInSalonTz(c.groupStartUtcIso, timezone, "date") === todaySalonDate,
-      )
-      .sort((a, b) => a.groupStartUtcIso.localeCompare(b.groupStartUtcIso))[0] ??
-    null;
+    (partyCards ?? []).find(
+      (c) =>
+        !c.expired && (c.pendingCount > 0 || c.pendingChangeRequestCount > 0),
+    ) ?? null;
   const pendingPartyGroupId = pendingPartyCard?.groupId ?? null;
   const pendingPartyGuestName =
     pendingPartyCard && pendingPartyCard.pendingCount === 1
@@ -1490,6 +1487,30 @@ function ReceptionistCenterInner({
           return (slot?.memberName ?? slot?.guestLabel)?.trim() || null;
         })()
       : null;
+  // Day-relative localized "when" phrase: "hôm nay 5:00 PM" / "Today 5:00 PM",
+  // "ngày mai 10:00 AM", else "Sat, May 31 · 10:00 AM". Time uses the full
+  // "5:00 PM" form (not the compact card label) to match the alert copy spec.
+  const pendingPartyWhen = pendingPartyCard
+    ? (() => {
+        const groupYmd = salonToday(timezone, pendingPartyCard.groupStartUtcIso);
+        const timeLabel = formatInSalonTz(
+          pendingPartyCard.groupStartUtcIso,
+          timezone,
+          "time",
+        );
+        if (groupYmd === salonToday(timezone, nowIso)) {
+          return rcMessages.basicMode.partyWhenToday(timeLabel);
+        }
+        if (groupYmd === salonDateOffset(timezone, 1, nowIso)) {
+          return rcMessages.basicMode.partyWhenTomorrow(timeLabel);
+        }
+        // groupDateDisplay is already the short "Sat, May 31" form.
+        return rcMessages.basicMode.partyWhenOther(
+          pendingPartyCard.groupDateDisplay,
+          timeLabel,
+        );
+      })()
+    : null;
 
   const cockpitInputs: CockpitInputs = {
     waitingCount: data.kpiSnapshot.waitingCount,
@@ -1507,7 +1528,8 @@ function ReceptionistCenterInner({
         b.sms_confirmation_failed_at != null && b.status !== "cancelled",
     ).length,
     pendingPartyCount: pendingPartyCard?.pendingCount ?? 0,
-    pendingPartyGroupTime: pendingPartyCard?.groupStartDisplay ?? null,
+    pendingPartyChangeCount: pendingPartyCard?.pendingChangeRequestCount ?? 0,
+    pendingPartyWhen,
     pendingPartyGuestName,
     isSetupIncomplete,
   };
@@ -1519,6 +1541,7 @@ function ReceptionistCenterInner({
     prepareNext: rcMessages.basicMode.prepareNext,
     partyPendingNamed: rcMessages.basicMode.partyPendingNamed,
     partyPendingCount: rcMessages.basicMode.partyPendingCount,
+    partyPendingChanges: rcMessages.basicMode.partyPendingChanges,
     suggestWalkin: rcMessages.basicMode.suggestWalkin,
     actionOpenQueue: rcMessages.basicMode.actionOpenQueue,
     actionAddWalkin: rcMessages.basicMode.actionAddWalkin,

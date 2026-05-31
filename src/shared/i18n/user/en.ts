@@ -916,8 +916,13 @@ export type UserMessages = {
       assignWaiting: (n: number) => string;
       assignWaitingNamed: (name: string) => string;
       prepareNext: (n: number) => string;
-      partyPendingNamed: (time: string, name: string) => string;
-      partyPendingCount: (time: string, n: number) => string;
+      partyPendingNamed: (when: string, name: string) => string;
+      partyPendingCount: (when: string, n: number) => string;
+      partyPendingChanges: (when: string, n: number) => string;
+      /** Day-relative "when" prefixes for the party alert. */
+      partyWhenToday: (time: string) => string;
+      partyWhenTomorrow: (time: string) => string;
+      partyWhenOther: (date: string, time: string) => string;
       suggestWalkin: (name: string) => string;
       // Action button labels
       actionOpenQueue: string;
@@ -2520,10 +2525,17 @@ export const userEn: UserMessages = {
         `${name} is waiting. Assign them to an available staff member.`,
       prepareNext: (n: number) =>
         n === 1 ? "1 guest arriving in the next 30 min" : `${n} guests arriving in the next 30 min`,
-      partyPendingNamed: (time: string, name: string) =>
-        `Today ${time} group: ${name} has not confirmed`,
-      partyPendingCount: (time: string, n: number) =>
-        `Today ${time} group: ${n} guests pending`,
+      partyPendingNamed: (when: string, name: string) =>
+        `${when} group: ${name} has not confirmed`,
+      partyPendingCount: (when: string, n: number) =>
+        `${when} group: ${n} guests pending`,
+      partyPendingChanges: (when: string, n: number) =>
+        n === 1
+          ? `${when} group: 1 change request`
+          : `${when} group: ${n} change requests`,
+      partyWhenToday: (time: string) => `Today ${time}`,
+      partyWhenTomorrow: (time: string) => `Tomorrow ${time}`,
+      partyWhenOther: (date: string, time: string) => `${date} · ${time}`,
       suggestWalkin: (name: string) => `${name} is available. You can add a walk-in.`,
       actionOpenQueue: "Open queue",
       actionAddWalkin: "+ Walk-in",

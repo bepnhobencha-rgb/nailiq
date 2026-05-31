@@ -77,12 +77,18 @@ export type CockpitInputs = {
   /** Count of today's bookings whose confirmation SMS failed. */
   smsFailedCount: number;
   /**
-   * Unconfirmed (unclaimed) guests in TODAY's soonest party with pending
-   * guests — guests who haven't confirmed name/phone via the party link.
+   * Unconfirmed (unclaimed) guests in the NEAREST UPCOMING party that needs
+   * attention — guests who haven't confirmed name/phone via the party link.
    */
   pendingPartyCount: number;
-  /** That party's start-time label (e.g. "5:00 PM"); null when none. */
-  pendingPartyGroupTime: string | null;
+  /** Pending guest change requests on that same party (Part F). */
+  pendingPartyChangeCount: number;
+  /**
+   * Localized "when" phrase for that party, already day-relative + time —
+   * e.g. "hôm nay 5:00 PM" / "Today 5:00 PM", "ngày mai 10:00 AM",
+   * "Sat, May 31 · 10:00 AM". null when no party needs attention.
+   */
+  pendingPartyWhen: string | null;
   /** The single unconfirmed guest's name when exactly one is pending. */
   pendingPartyGuestName: string | null;
   isSetupIncomplete: boolean;
@@ -96,10 +102,12 @@ export type CockpitLabels = {
   assignWaiting: (n: number) => string;
   assignWaitingNamed: (name: string) => string;
   prepareNext: (n: number) => string;
-  /** "Today {time} group: {name} has not confirmed" (single pending). */
-  partyPendingNamed: (time: string, name: string) => string;
-  /** "Today {time} group: {n} guests pending" (multiple pending). */
-  partyPendingCount: (time: string, n: number) => string;
+  /** "{when} group: {name} has not confirmed" (single pending guest). */
+  partyPendingNamed: (when: string, name: string) => string;
+  /** "{when} group: {n} guests pending" (multiple pending guests). */
+  partyPendingCount: (when: string, n: number) => string;
+  /** "{when} group: {n} change request(s)" (no unconfirmed guests left). */
+  partyPendingChanges: (when: string, n: number) => string;
   suggestWalkin: (name: string) => string;
   // Action button labels
   actionOpenQueue: string;
@@ -115,6 +123,26 @@ export type CockpitLabels = {
   alertSmsFailed: (n: number) => string;
   alertSetupIncomplete: string;
 };
+
+/**
+ * Party alert/action copy for the nearest upcoming party that needs attention.
+ * Returns null when no party is actionable. Prefers the unconfirmed-guest copy
+ * (named when exactly one); falls back to change-request copy when every guest
+ * is confirmed but a change request is still pending. The "when" phrase carries
+ * the day-relative date + time, so the copy is never vague. No phone/email.
+ */
+function partyAlertText(i: CockpitInputs, labels: CockpitLabels): string | null {
+  if (!i.pendingPartyWhen) return null;
+  if (i.pendingPartyCount > 0) {
+    return i.pendingPartyCount === 1 && i.pendingPartyGuestName
+      ? labels.partyPendingNamed(i.pendingPartyWhen, i.pendingPartyGuestName)
+      : labels.partyPendingCount(i.pendingPartyWhen, i.pendingPartyCount);
+  }
+  if (i.pendingPartyChangeCount > 0) {
+    return labels.partyPendingChanges(i.pendingPartyWhen, i.pendingPartyChangeCount);
+  }
+  return null;
+}
 
 /**
  * Maps a Next Action kind to the Critical Alert key it would DUPLICATE.
@@ -200,13 +228,10 @@ export function computeNextAction(
           action: null,
         }
       : null,
-    i.pendingPartyCount > 0 && i.pendingPartyGroupTime
+    partyAlertText(i, labels)
       ? {
           kind: "party_pending",
-          text:
-            i.pendingPartyCount === 1 && i.pendingPartyGuestName
-              ? labels.partyPendingNamed(i.pendingPartyGroupTime, i.pendingPartyGuestName)
-              : labels.partyPendingCount(i.pendingPartyGroupTime, i.pendingPartyCount),
+          text: partyAlertText(i, labels)!,
           tone: "warning",
           action: openParty,
         }
@@ -287,13 +312,11 @@ export function computeCriticalAlerts(
       action: openQueue,
     });
   }
-  if (i.pendingPartyCount > 0 && i.pendingPartyGroupTime) {
+  const partyText = partyAlertText(i, labels);
+  if (partyText) {
     all.push({
       key: "party_change",
-      text:
-        i.pendingPartyCount === 1 && i.pendingPartyGuestName
-          ? labels.partyPendingNamed(i.pendingPartyGroupTime, i.pendingPartyGuestName)
-          : labels.partyPendingCount(i.pendingPartyGroupTime, i.pendingPartyCount),
+      text: partyText,
       tone: "warning",
       action: openParty,
     });

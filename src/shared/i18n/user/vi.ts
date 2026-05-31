@@ -979,10 +979,15 @@ export const userVi: UserMessages = {
         `${name} đang chờ. Gán cho thợ sẵn sàng.`,
       prepareNext: (n: number) =>
         n === 1 ? "1 khách sắp đến (30 phút tới)" : `${n} khách sắp đến (30 phút tới)`,
-      partyPendingNamed: (time: string, name: string) =>
-        `Nhóm hôm nay ${time}: ${name} chưa xác nhận`,
-      partyPendingCount: (time: string, n: number) =>
-        `Nhóm hôm nay ${time}: ${n} khách chưa xác nhận`,
+      partyPendingNamed: (when: string, name: string) =>
+        `Nhóm ${when}: ${name} chưa xác nhận`,
+      partyPendingCount: (when: string, n: number) =>
+        `Nhóm ${when}: ${n} khách chưa xác nhận`,
+      partyPendingChanges: (when: string, n: number) =>
+        `Nhóm ${when}: ${n} yêu cầu đổi`,
+      partyWhenToday: (time: string) => `hôm nay ${time}`,
+      partyWhenTomorrow: (time: string) => `ngày mai ${time}`,
+      partyWhenOther: (date: string, time: string) => `${date} · ${time}`,
       suggestWalkin: (name: string) => `${name} đang sẵn sàng. Có thể nhận khách walk-in.`,
       actionOpenQueue: "Mở hàng chờ",
       actionAddWalkin: "+ Walk-in",

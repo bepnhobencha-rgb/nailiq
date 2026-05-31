@@ -37,8 +37,9 @@ const labels: CockpitLabels = {
   assignWaiting: (n) => `assignN:${n}`,
   assignWaitingNamed: (name) => `assign:${name}`,
   prepareNext: (n) => `prepare:${n}`,
-  partyPendingNamed: (time, name) => `party-named:${time}:${name}`,
-  partyPendingCount: (time, n) => `party-count:${time}:${n}`,
+  partyPendingNamed: (when, name) => `party-named:${when}:${name}`,
+  partyPendingCount: (when, n) => `party-count:${when}:${n}`,
+  partyPendingChanges: (when, n) => `party-changes:${when}:${n}`,
   suggestWalkin: (name) => `suggest:${name}`,
   actionOpenQueue: "OpenQueue",
   actionAddWalkin: "+Walkin",
@@ -65,7 +66,8 @@ const base: CockpitInputs = {
   firstOverdueTimeLabel: null,
   smsFailedCount: 0,
   pendingPartyCount: 0,
-  pendingPartyGroupTime: null,
+  pendingPartyChangeCount: 0,
+  pendingPartyWhen: null,
   pendingPartyGuestName: null,
   isSetupIncomplete: false,
 };
@@ -121,25 +123,43 @@ test("upcoming is informational (no action button)", () => {
   assertEqual(a?.action, null);
 });
 
-test("party pending after upcoming (uses group time + count copy)", () => {
+test("party pending after upcoming (uses when + count copy)", () => {
   const a = computeNextAction(
-    { ...base, pendingPartyCount: 3, pendingPartyGroupTime: "5:00 PM" },
+    { ...base, pendingPartyCount: 3, pendingPartyWhen: "Today 5:00 PM" },
     labels,
   );
   assertEqual(a?.kind, "party_pending");
-  assertEqual(a?.text, "party-count:5:00 PM:3");
+  assertEqual(a?.text, "party-count:Today 5:00 PM:3");
   assertEqual(a?.action?.target, "open_party");
 });
 
 test("single party pending uses named copy", () => {
   const a = computeNextAction(
-    { ...base, pendingPartyCount: 1, pendingPartyGroupTime: "5:00 PM", pendingPartyGuestName: "Huy" },
+    { ...base, pendingPartyCount: 1, pendingPartyWhen: "Today 5:00 PM", pendingPartyGuestName: "Huy" },
     labels,
   );
-  assertEqual(a?.text, "party-named:5:00 PM:Huy");
+  assertEqual(a?.text, "party-named:Today 5:00 PM:Huy");
 });
 
-test("party pending without group time does NOT fire", () => {
+test("upcoming (not today) party still fires with its own 'when'", () => {
+  const a = computeNextAction(
+    { ...base, pendingPartyCount: 4, pendingPartyWhen: "Tomorrow 10:00 AM" },
+    labels,
+  );
+  assertEqual(a?.kind, "party_pending");
+  assertEqual(a?.text, "party-count:Tomorrow 10:00 AM:4");
+});
+
+test("party with only a pending CHANGE request (0 unconfirmed) still fires", () => {
+  const a = computeNextAction(
+    { ...base, pendingPartyChangeCount: 2, pendingPartyWhen: "Sat, May 31 · 10:00 AM" },
+    labels,
+  );
+  assertEqual(a?.kind, "party_pending");
+  assertEqual(a?.text, "party-changes:Sat, May 31 · 10:00 AM:2");
+});
+
+test("party pending without a 'when' phrase does NOT fire", () => {
   const a = computeNextAction({ ...base, pendingPartyCount: 2 }, labels);
   assertEqual(a, null);
 });
@@ -173,7 +193,7 @@ test("overdue + long-wait are the top two; rest overflow", () => {
       overdueCount: 1,
       longestWaitMinutes: 20,
       pendingPartyCount: 2,
-      pendingPartyGroupTime: "5:00 PM",
+      pendingPartyWhen: "Today 5:00 PM",
       smsFailedCount: 1,
       isSetupIncomplete: true,
     },
@@ -196,11 +216,11 @@ test("no-staff-for-waiting bottleneck surfaces as alert", () => {
 
 test("party pending surfaces as alert with open_party + named copy", () => {
   const r = computeCriticalAlerts(
-    { ...base, pendingPartyCount: 1, pendingPartyGroupTime: "5:00 PM", pendingPartyGuestName: "Huy" },
+    { ...base, pendingPartyCount: 1, pendingPartyWhen: "Today 5:00 PM", pendingPartyGuestName: "Huy" },
     labels,
   );
   assertEqual(r.shown[0]!.key, "party_change");
-  assertEqual(r.shown[0]!.text, "party-named:5:00 PM:Huy");
+  assertEqual(r.shown[0]!.text, "party-named:Today 5:00 PM:Huy");
   assertEqual(r.shown[0]!.action?.target, "open_party");
 });
 
@@ -228,7 +248,7 @@ test("party alert → party_pending Next Action suppressed; walk-in surfaces", (
   const input = {
     ...base,
     pendingPartyCount: 2,
-    pendingPartyGroupTime: "5:00 PM",
+    pendingPartyWhen: "Today 5:00 PM",
     availableStaffName: "Anna",
   };
   const alerts = computeCriticalAlerts(input, labels);
