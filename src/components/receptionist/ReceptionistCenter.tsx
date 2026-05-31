@@ -296,6 +296,7 @@ function ReceptionistCenterInner({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- sync local data when initialOk reloads from server
     setData({ ...initialOk, selectedDate: initialOk.selectedDate });
+    setLastSyncedIso(new Date().toISOString());
   }, [initialOk]);
 
   const [dateOffset, setDateOffset] = useState<-1 | 0 | 1>(0);
@@ -454,6 +455,26 @@ function ReceptionistCenterInner({
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("connected");
   const isOffline = connectionState !== "connected";
+
+  // Wall-clock of the last successful server sync (initial SSR load, then
+  // every fresh refetch). Surfaced in the disconnect banner as "last updated"
+  // so a receptionist on a stale board knows how old the data is. Only ever
+  // rendered inside ConnectionBanner, which is hidden while connected — so it
+  // never participates in hydration (no SSR/client mismatch).
+  const [lastSyncedIso, setLastSyncedIso] = useState(nowIso);
+  const markSynced = useCallback(() => {
+    setLastSyncedIso(new Date().toISOString());
+  }, []);
+
+  // Origin for guest wait-link buttons. Read AFTER mount (not during render):
+  // deriving it from `window.location.origin` inline made the server render ""
+  // (button hidden) while the client rendered the origin (button shown),
+  // throwing a React #418 hydration mismatch on any queued walk-in. Empty on
+  // the server + first client render (match), populated on mount.
+  const [originBaseUrl, setOriginBaseUrl] = useState("");
+  useEffect(() => {
+    setOriginBaseUrl(window.location.origin);
+  }, []);
 
   // Sound alerts (Web Audio, generated tones only). Hook is a no-op
   // when `dashboard_modules.sound_alerts` is off; honors browser
@@ -742,10 +763,11 @@ function ReceptionistCenterInner({
     const res = await loadReceptionistCenterDataAction(slug, ymd);
     if (res.ok) {
       setData(res.data);
+      markSynced();
     } else {
       setShakeMessage(loadErrorCopy(messages.receptionist, res.error));
     }
-  }, [slug, timezone, dateOffset, messages.receptionist]);
+  }, [slug, timezone, dateOffset, messages.receptionist, markSynced]);
 
   /**
    * Called when a booking chip is clicked from Week or Month view.
@@ -759,12 +781,13 @@ function ReceptionistCenterInner({
       setDayLoading(false);
       if (res.ok) {
         setData(res.data);
+        markSynced();
         setDrawerBookingId(bookingId);
       } else {
         setShakeMessage(loadErrorCopy(messages.receptionist, res.error));
       }
     },
-    [slug, messages.receptionist],
+    [slug, messages.receptionist, markSynced],
   );
 
   const onWalkinAssignSlot = async (staffId: string, slotStartUtc: string) => {
@@ -1231,6 +1254,7 @@ function ReceptionistCenterInner({
       return;
     }
     setData(res.data);
+    markSynced();
   };
 
   const onAddWalkin = async (input: {
@@ -1983,7 +2007,12 @@ function ReceptionistCenterInner({
          * band. Layout-stable: AnimatePresence handles enter/exit so
          * the timeline geometry settles without a hard jump.
          */}
-        <ConnectionBanner state={connectionState} labels={rcMessages.connection} />
+        <ConnectionBanner
+          state={connectionState}
+          labels={rcMessages.connection}
+          lastUpdatedLabel={formatInSalonTz(lastSyncedIso, timezone, "time")}
+          onReload={() => window.location.reload()}
+        />
 
         {/*
          * KPI band per `docs/DASHBOARD_LAYOUT_RULES.md` §5: top summary
@@ -2102,8 +2131,10 @@ function ReceptionistCenterInner({
                   setDayLoading(true);
                   const res = await loadReceptionistCenterDataAction(slug, ymd);
                   setDayLoading(false);
-                  if (res.ok) setData(res.data);
-                  else setShakeMessage(loadErrorCopy(rcMessages, res.error));
+                  if (res.ok) {
+                    setData(res.data);
+                    markSynced();
+                  } else setShakeMessage(loadErrorCopy(rcMessages, res.error));
                 })();
               }
             }}
@@ -2149,8 +2180,10 @@ function ReceptionistCenterInner({
                   setDayLoading(true);
                   const res = await loadReceptionistCenterDataAction(slug, ymd);
                   setDayLoading(false);
-                  if (res.ok) setData(res.data);
-                  else setShakeMessage(loadErrorCopy(rcMessages, res.error));
+                  if (res.ok) {
+                    setData(res.data);
+                    markSynced();
+                  } else setShakeMessage(loadErrorCopy(rcMessages, res.error));
                 })();
               }
             }}
@@ -2320,9 +2353,7 @@ function ReceptionistCenterInner({
                 onSetSoftHold={onSetSoftHold}
                 onClearSoftHold={onClearSoftHold}
                 rushMode={rush.active}
-                waitLinkBaseUrl={
-                  typeof window !== "undefined" ? window.location.origin : ""
-                }
+                waitLinkBaseUrl={originBaseUrl}
                 waitLinkSalonSlug={slug}
                 onCancelWalkin={onCancelWalkin}
                 onStartAssign={(id) => setAssigningWalkinId(id)}

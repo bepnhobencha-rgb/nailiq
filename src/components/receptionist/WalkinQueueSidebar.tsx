@@ -474,6 +474,11 @@ export function WalkinQueueSidebar({
             ) : null}
 
             <DndContext
+              // Stable id → dnd-kit's a11y announcer renders a deterministic
+              // `aria-describedby` ("DndDescribedBy-<id>") instead of an
+              // auto-incrementing counter that differs between SSR and client
+              // and triggers a React hydration attribute mismatch.
+              id="walkin-queue-dnd"
               sensors={sensors}
               collisionDetection={closestCenter}
               onDragStart={(e) => setDraggingId(String(e.active.id))}

@@ -1033,6 +1033,8 @@ export const userVi: UserMessages = {
       offline: "Mất kết nối — đang xem dữ liệu cũ",
       offlineAddDisabled: "Mất kết nối — không thêm walk-in được",
       offlineEditDisabled: "Mất kết nối — không sửa được lịch",
+      lastUpdated: (time: string) => `Cập nhật lúc ${time}`,
+      reload: "Tải lại",
     },
     soundUnlockHint: "Bấm vào trang để bật âm báo",
     kpiBar: {

@@ -977,6 +977,10 @@ export type UserMessages = {
       offlineAddDisabled: string;
       /** Inline hint in booking drawer footer when offline (edit/cancel/start blocked). */
       offlineEditDisabled: string;
+      /** "Updated {time}" — last successful server sync, shown while stale. */
+      lastUpdated: (time: string) => string;
+      /** One-click reload button in the disconnect banner. */
+      reload: string;
     };
     /** Hint shown next to top-bar icon when Web Audio is locked by autoplay policy. */
     soundUnlockHint: string;
@@ -2576,6 +2580,8 @@ export const userEn: UserMessages = {
       offline: "Offline — showing last known data",
       offlineAddDisabled: "Offline — cannot add walk-ins",
       offlineEditDisabled: "Offline — editing unavailable",
+      lastUpdated: (time: string) => `Updated ${time}`,
+      reload: "Reload",
     },
     soundUnlockHint: "Click anywhere to enable sound alerts",
     kpiBar: {

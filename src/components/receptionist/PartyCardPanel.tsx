@@ -65,52 +65,60 @@ export function PartyCardPanel({ initialCards, slug, currencyCode, labels }: Pro
       className="shrink-0 border-b border-nq-border/40 bg-nq-bg"
       aria-label="Group party bookings"
     >
-      {/* ── Collapse toggle ──────────────────────────────────────── */}
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
+      {/* ── Header row ────────────────────────────────────────────
+          A flex row (NOT a button) so the Refresh control is a SIBLING of
+          the collapse toggle, never nested inside it. Nesting a <button>
+          in a <button> is invalid HTML — the browser un-nests it on the
+          client, diverging from the SSR markup and throwing React #418
+          hydration mismatch on every load. */}
+      <div
         className={cn(
           "flex w-full items-center gap-2 px-[var(--pad-nq-section-mobile)] py-2 md:px-6",
-          "text-left text-xs font-medium transition-colors",
-          "hover:bg-nq-surface/60",
-          open ? "text-nq-primary" : "text-nq-muted",
+          "text-xs font-medium",
         )}
-        aria-expanded={open}
-        data-testid="party-card-panel-toggle"
       >
-        <span className="text-sm" aria-hidden>👥</span>
-        <span className="flex-1">
-          {todayCount > 0 ? labels.panelSummary(todayCount) : labels.panelEmpty}
-        </span>
-
-        {/* Refresh */}
+        {/* Collapse toggle — icon + summary + chevron */}
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleRefresh();
-          }}
+          onClick={() => setOpen((v) => !v)}
+          className={cn(
+            "flex flex-1 items-center gap-2 text-left transition-colors",
+            "hover:text-nq-foreground",
+            open ? "text-nq-primary" : "text-nq-muted",
+          )}
+          aria-expanded={open}
+          data-testid="party-card-panel-toggle"
+        >
+          <span className="text-sm" aria-hidden>👥</span>
+          <span className="flex-1">
+            {todayCount > 0 ? labels.panelSummary(todayCount) : labels.panelEmpty}
+          </span>
+          <span
+            className={cn(
+              "text-nq-muted transition-transform duration-[var(--duration-nq-base)]",
+              open && "rotate-180",
+            )}
+            aria-hidden
+          >
+            ▾
+          </span>
+        </button>
+
+        {/* Refresh — sibling of the toggle, not a descendant */}
+        <button
+          type="button"
+          onClick={handleRefresh}
           disabled={isPending}
           aria-label={labels.refresh}
+          data-testid="party-card-panel-refresh"
           className={cn(
-            "rounded p-0.5 text-nq-muted hover:text-nq-foreground transition-colors",
+            "shrink-0 rounded p-0.5 text-nq-muted hover:text-nq-foreground transition-colors",
             isPending && "animate-pulse",
           )}
         >
           ↺
         </button>
-
-        {/* Chevron */}
-        <span
-          className={cn(
-            "text-nq-muted transition-transform duration-[var(--duration-nq-base)]",
-            open && "rotate-180",
-          )}
-          aria-hidden
-        >
-          ▾
-        </span>
-      </button>
+      </div>
 
       {/* ── Card list ────────────────────────────────────────────── */}
       {open && (
