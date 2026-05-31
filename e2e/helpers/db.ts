@@ -93,6 +93,31 @@ export async function cleanupTestSalon(slug: string) {
   }
 }
 
+/**
+ * Remove a guest's `client_profiles` row by phone.
+ *
+ * `client_profiles` has NO `salon_id` (it's a cross-salon guest record keyed on
+ * a unique phone), so `cleanupTestSalon` cannot reach it. Completed bookings
+ * bump `visit_count`; once a reused test phone hits visit_count >= 5 with zero
+ * no-shows, `determine_booking_verification` returns action:"none"
+ * reason:"trusted_returning" and SKIPS the OTP step even for an `always_otp`
+ * salon — which silently broke the booking-otp E2E suite over time. Callers that
+ * reuse or assert on a specific guest phone must reset it here.
+ *
+ * Safe for fresh per-test phones: the only inbound FK is
+ * `loyalty_cards.client_profile_id` (ON DELETE NO ACTION), and a brand-new
+ * guest phone has no loyalty card, so the delete never violates it. Matches the
+ * digits-only form the verify-decision route normalises to
+ * (`client_phone.replace(/\D/g, "")`), plus a leading-1 variant in case a
+ * caller stored the 11-digit NANP form.
+ */
+export async function cleanupClientProfile(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+  if (!digits) return;
+  const variants = digits.length === 10 ? [digits, `1${digits}`] : [digits];
+  await supabase.from("client_profiles").delete().in("phone", variants);
+}
+
 export async function seedTestSalon(opts?: {
   phone?: string;
   slug?: string;
