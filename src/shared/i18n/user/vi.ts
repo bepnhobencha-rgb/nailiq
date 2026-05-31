@@ -979,8 +979,10 @@ export const userVi: UserMessages = {
         `${name} đang chờ. Gán cho thợ sẵn sàng.`,
       prepareNext: (n: number) =>
         n === 1 ? "1 khách sắp đến (30 phút tới)" : `${n} khách sắp đến (30 phút tới)`,
-      partyPending: (n: number) =>
-        n === 1 ? "1 khách nhóm chưa xác nhận" : `${n} khách nhóm chưa xác nhận`,
+      partyPendingNamed: (time: string, name: string) =>
+        `Nhóm hôm nay ${time}: ${name} chưa xác nhận`,
+      partyPendingCount: (time: string, n: number) =>
+        `Nhóm hôm nay ${time}: ${n} khách chưa xác nhận`,
       suggestWalkin: (name: string) => `${name} đang sẵn sàng. Có thể nhận khách walk-in.`,
       actionOpenQueue: "Mở hàng chờ",
       actionAddWalkin: "+ Walk-in",
@@ -994,14 +996,33 @@ export const userVi: UserMessages = {
       alertNoStaffForWaiting: "Có khách chờ — không có thợ rảnh",
       alertSmsFailed: (n: number) =>
         n === 1 ? "1 SMS xác nhận thất bại" : `${n} SMS xác nhận thất bại`,
-      alertPartyChange: (n: number) =>
-        n === 1 ? "Booking nhóm cần chú ý: 1 khách chưa xác nhận" : `Booking nhóm cần chú ý: ${n} khách chưa xác nhận`,
       alertSetupIncomplete: "Chưa hoàn tất thiết lập — thêm dịch vụ & thợ",
       nowAvailableStaff: "Thợ sẵn sàng",
       nowNoOneWaiting: "Không có khách chờ",
       nowNoStaffAvailable: "Không có",
       nowUpcoming: "Sắp tới",
       nowUpcomingTitle: "Đến trong 30 phút tới",
+    },
+    partyCard: {
+      panelSummary: (n: number) => `${n} booking nhóm · 7 ngày tới`,
+      panelEmpty: "Không có booking nhóm sắp tới",
+      emptyNext7: "Không có booking nhóm trong 7 ngày tới.",
+      refresh: "Tải lại thẻ nhóm",
+      arriveTogether: "Bắt đầu cùng lúc",
+      finishTogether: "Kết thúc cùng lúc",
+      changesRequested: (n: number) => `${n} yêu cầu đổi`,
+      wavesBadge: (n: number) => `${n} đợt`,
+      confirmedProgress: (claimed: number, total: number) =>
+        `${claimed}/${total} đã xác nhận`,
+      pendingSuffix: (n: number) => `${n} chưa xác nhận`,
+      pendingHelp: "Khách chưa xác nhận tên/số điện thoại qua link nhóm.",
+      slotsCount: (n: number) => `${n} chỗ`,
+      waveLabel: (n: number) => `Đợt ${n}`,
+      copyLink: "Sao chép link nhóm",
+      copied: "✓ Đã sao chép!",
+      statusConfirmed: "Đã xác nhận",
+      statusPending: "Chưa xác nhận",
+      statusExpired: "Hết hạn",
     },
     roleBadge: {
       ownerView: "Chủ tiệm",

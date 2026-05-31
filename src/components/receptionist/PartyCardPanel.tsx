@@ -20,20 +20,21 @@ import { loadPartyCardsAction, type PartyCard, type PartyCardSlot } from "@/shar
 import type { Currency } from "@/shared/lib/currencyFormat";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { cn } from "@/shared/lib/cn";
+import type { getUserMessages } from "@/shared/i18n/user";
+
+/** Localized strings for the party-card strip (EN/VI). */
+export type PartyCardLabels =
+  ReturnType<typeof getUserMessages>["receptionist"]["partyCard"];
 
 interface Props {
   /** Server-loaded initial data. Client-side refresh calls loadPartyCardsAction. */
   initialCards: PartyCard[];
   slug: string;
   currencyCode: Currency;
+  labels: PartyCardLabels;
 }
 
-const MODE_LABEL: Record<string, string> = {
-  sync_start: "Arrive together",
-  sync_finish: "Finish together",
-};
-
-export function PartyCardPanel({ initialCards, slug, currencyCode }: Props) {
+export function PartyCardPanel({ initialCards, slug, currencyCode, labels }: Props) {
   const [cards, setCards] = useState<PartyCard[]>(initialCards);
   const [open, setOpen] = useState(initialCards.length > 0);
   const [isPending, startTransition] = useTransition();
@@ -79,9 +80,7 @@ export function PartyCardPanel({ initialCards, slug, currencyCode }: Props) {
       >
         <span className="text-sm" aria-hidden>👥</span>
         <span className="flex-1">
-          {todayCount > 0
-            ? `${todayCount} group booking${todayCount !== 1 ? "s" : ""} · next 7 days`
-            : "No upcoming group bookings"}
+          {todayCount > 0 ? labels.panelSummary(todayCount) : labels.panelEmpty}
         </span>
 
         {/* Refresh */}
@@ -92,7 +91,7 @@ export function PartyCardPanel({ initialCards, slug, currencyCode }: Props) {
             handleRefresh();
           }}
           disabled={isPending}
-          aria-label="Refresh party cards"
+          aria-label={labels.refresh}
           className={cn(
             "rounded p-0.5 text-nq-muted hover:text-nq-foreground transition-colors",
             isPending && "animate-pulse",
@@ -123,7 +122,7 @@ export function PartyCardPanel({ initialCards, slug, currencyCode }: Props) {
         >
           {cards.length === 0 ? (
             <p className="py-4 text-center text-xs text-nq-muted">
-              No group bookings in the next 7 days.
+              {labels.emptyNext7}
             </p>
           ) : (
             <ul className="flex gap-3 pb-1" role="list">
@@ -132,6 +131,7 @@ export function PartyCardPanel({ initialCards, slug, currencyCode }: Props) {
                   <PartyCardItem
                     card={card}
                     currencyCode={currencyCode}
+                    labels={labels}
                     copyState={copyStates[card.token] ?? "idle"}
                     onCopy={() => {
                       const url =
@@ -156,11 +156,13 @@ export function PartyCardPanel({ initialCards, slug, currencyCode }: Props) {
 function PartyCardItem({
   card,
   currencyCode,
+  labels,
   copyState,
   onCopy,
 }: {
   card: PartyCard;
   currencyCode: Currency;
+  labels: PartyCardLabels;
   copyState: "idle" | "copied";
   onCopy: () => void;
 }) {
@@ -168,8 +170,10 @@ function PartyCardItem({
 
   return (
     <div
+      id={`party-card-${card.groupId}`}
       data-testid={`party-card-${card.groupId}`}
       className={cn(
+        "scroll-mt-4",
         "rounded-xl border bg-nq-surface text-nq-foreground",
         card.expired
           ? "border-nq-muted/20 opacity-60"
@@ -189,10 +193,12 @@ function PartyCardItem({
 
         <div className="flex shrink-0 flex-col items-end gap-1">
           {card.expired ? (
-            <StatusBadge status="expired" />
+            <StatusBadge status="expired" labels={labels} />
           ) : (
             <span className="rounded bg-nq-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-nq-primary">
-              {MODE_LABEL[card.mode] ?? card.mode}
+              {card.mode === "sync_finish"
+                ? labels.finishTogether
+                : labels.arriveTogether}
             </span>
           )}
           {card.pendingChangeRequestCount > 0 && (
@@ -200,7 +206,7 @@ function PartyCardItem({
               data-testid={`party-card-change-requests-${card.groupId}`}
               className="rounded bg-amber-400/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600"
             >
-              {card.pendingChangeRequestCount} change{card.pendingChangeRequestCount !== 1 ? "s" : ""} requested
+              {labels.changesRequested(card.pendingChangeRequestCount)}
             </span>
           )}
           {card.waveCount > 1 && (
@@ -208,7 +214,7 @@ function PartyCardItem({
               data-testid={`party-card-waves-${card.groupId}`}
               className="rounded bg-nq-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-nq-primary"
             >
-              {card.waveCount} waves
+              {labels.wavesBadge(card.waveCount)}
             </span>
           )}
         </div>
@@ -218,13 +224,14 @@ function PartyCardItem({
       <div className="mt-2 px-3">
         <div className="flex items-center justify-between text-[11px]">
           <span className="text-nq-muted">
-            {card.claimedCount}/{card.totalSlots} confirmed
+            {labels.confirmedProgress(card.claimedCount, card.totalSlots)}
             {card.pendingCount > 0 && (
               <span
                 data-testid={`party-card-pending-${card.groupId}`}
                 className="text-amber-400"
+                title={labels.pendingHelp}
               >
-                {" · "}{card.pendingCount} pending
+                {" · "}{labels.pendingSuffix(card.pendingCount)}
               </span>
             )}
           </span>
@@ -247,7 +254,7 @@ function PartyCardItem({
         className="mt-2 flex w-full items-center justify-between px-3 py-1.5 text-[11px] text-nq-muted hover:text-nq-foreground transition-colors"
         aria-expanded={slotsOpen}
       >
-        <span>{card.totalSlots} slot{card.totalSlots !== 1 ? "s" : ""}</span>
+        <span>{labels.slotsCount(card.totalSlots)}</span>
         <span
           className={cn(
             "transition-transform duration-[var(--duration-nq-base)]",
@@ -270,13 +277,13 @@ function PartyCardItem({
                     data-testid={`party-card-wave-${card.groupId}-${wn}`}
                     className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-nq-muted"
                   >
-                    Wave {wn}
+                    {labels.waveLabel(wn)}
                   </li>,
                   ...card.slots
                     .filter((s) => s.waveNumber === wn)
-                    .map((slot) => <SlotRow key={slot.claimId} slot={slot} />),
+                    .map((slot) => <SlotRow key={slot.claimId} slot={slot} labels={labels} />),
                 ])
-            : card.slots.map((slot) => <SlotRow key={slot.claimId} slot={slot} />)}
+            : card.slots.map((slot) => <SlotRow key={slot.claimId} slot={slot} labels={labels} />)}
         </ul>
       )}
 
@@ -293,7 +300,7 @@ function PartyCardItem({
               : "bg-nq-surface border border-nq-border/50 text-nq-muted hover:text-nq-foreground hover:border-nq-border",
           )}
         >
-          {copyState === "copied" ? "✓ Copied!" : "Copy party link"}
+          {copyState === "copied" ? labels.copied : labels.copyLink}
         </button>
       </div>
     </div>
@@ -302,13 +309,13 @@ function PartyCardItem({
 
 // ─── Slot Row ─────────────────────────────────────────────────────
 
-function SlotRow({ slot }: { slot: PartyCardSlot }) {
+function SlotRow({ slot, labels }: { slot: PartyCardSlot; labels: PartyCardLabels }) {
   return (
     <li
       data-testid={`party-slot-${slot.claimId}`}
       className="flex items-center gap-2 text-[11px]"
     >
-      <StatusBadge status={slot.claimed ? "confirmed" : "pending"} />
+      <StatusBadge status={slot.claimed ? "confirmed" : "pending"} labels={labels} />
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium text-nq-foreground">
           {slot.memberName ?? slot.guestLabel}
@@ -345,7 +352,13 @@ function ProgressBar({ value, max }: { value: number; max: number }) {
 
 // ─── Status Badge ────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: "confirmed" | "pending" | "expired" }) {
+function StatusBadge({
+  status,
+  labels,
+}: {
+  status: "confirmed" | "pending" | "expired";
+  labels: PartyCardLabels;
+}) {
   return (
     <span
       className={cn(
@@ -355,9 +368,9 @@ function StatusBadge({ status }: { status: "confirmed" | "pending" | "expired" }
         status === "expired"   && "bg-nq-muted/15 text-nq-muted",
       )}
     >
-      {status === "confirmed" ? "Confirmed"
-        : status === "pending" ? "Pending"
-        : "Expired"}
+      {status === "confirmed" ? labels.statusConfirmed
+        : status === "pending" ? labels.statusPending
+        : labels.statusExpired}
     </span>
   );
 }

@@ -37,7 +37,8 @@ const labels: CockpitLabels = {
   assignWaiting: (n) => `assignN:${n}`,
   assignWaitingNamed: (name) => `assign:${name}`,
   prepareNext: (n) => `prepare:${n}`,
-  partyPending: (n) => `party:${n}`,
+  partyPendingNamed: (time, name) => `party-named:${time}:${name}`,
+  partyPendingCount: (time, n) => `party-count:${time}:${n}`,
   suggestWalkin: (name) => `suggest:${name}`,
   actionOpenQueue: "OpenQueue",
   actionAddWalkin: "+Walkin",
@@ -48,7 +49,6 @@ const labels: CockpitLabels = {
   alertLongWait: (n) => `a-longwait:${n}`,
   alertNoStaffForWaiting: "a-nostaff",
   alertSmsFailed: (n) => `a-sms:${n}`,
-  alertPartyChange: (n) => `a-party:${n}`,
   alertSetupIncomplete: "a-setup",
 };
 
@@ -64,7 +64,9 @@ const base: CockpitInputs = {
   firstOverdueName: null,
   firstOverdueTimeLabel: null,
   smsFailedCount: 0,
-  pendingPartyChangeCount: 0,
+  pendingPartyCount: 0,
+  pendingPartyGroupTime: null,
+  pendingPartyGuestName: null,
   isSetupIncomplete: false,
 };
 
@@ -119,10 +121,27 @@ test("upcoming is informational (no action button)", () => {
   assertEqual(a?.action, null);
 });
 
-test("party pending after upcoming", () => {
-  const a = computeNextAction({ ...base, pendingPartyChangeCount: 3 }, labels);
+test("party pending after upcoming (uses group time + count copy)", () => {
+  const a = computeNextAction(
+    { ...base, pendingPartyCount: 3, pendingPartyGroupTime: "5:00 PM" },
+    labels,
+  );
   assertEqual(a?.kind, "party_pending");
+  assertEqual(a?.text, "party-count:5:00 PM:3");
   assertEqual(a?.action?.target, "open_party");
+});
+
+test("single party pending uses named copy", () => {
+  const a = computeNextAction(
+    { ...base, pendingPartyCount: 1, pendingPartyGroupTime: "5:00 PM", pendingPartyGuestName: "Huy" },
+    labels,
+  );
+  assertEqual(a?.text, "party-named:5:00 PM:Huy");
+});
+
+test("party pending without group time does NOT fire", () => {
+  const a = computeNextAction({ ...base, pendingPartyCount: 2 }, labels);
+  assertEqual(a, null);
 });
 
 test("available staff + empty queue → suggest walk-in", () => {
@@ -153,7 +172,8 @@ test("overdue + long-wait are the top two; rest overflow", () => {
       ...base,
       overdueCount: 1,
       longestWaitMinutes: 20,
-      pendingPartyChangeCount: 2,
+      pendingPartyCount: 2,
+      pendingPartyGroupTime: "5:00 PM",
       smsFailedCount: 1,
       isSetupIncomplete: true,
     },
@@ -174,9 +194,13 @@ test("no-staff-for-waiting bottleneck surfaces as alert", () => {
   assertEqual(r.shown[0]!.key, "no_staff_for_waiting");
 });
 
-test("party change request surfaces as alert with open_party action", () => {
-  const r = computeCriticalAlerts({ ...base, pendingPartyChangeCount: 2 }, labels);
+test("party pending surfaces as alert with open_party + named copy", () => {
+  const r = computeCriticalAlerts(
+    { ...base, pendingPartyCount: 1, pendingPartyGroupTime: "5:00 PM", pendingPartyGuestName: "Huy" },
+    labels,
+  );
   assertEqual(r.shown[0]!.key, "party_change");
+  assertEqual(r.shown[0]!.text, "party-named:5:00 PM:Huy");
   assertEqual(r.shown[0]!.action?.target, "open_party");
 });
 
@@ -201,7 +225,12 @@ test("long-wait shown as alert → Next Action falls through to next useful acti
 });
 
 test("party alert → party_pending Next Action suppressed; walk-in surfaces", () => {
-  const input = { ...base, pendingPartyChangeCount: 2, availableStaffName: "Anna" };
+  const input = {
+    ...base,
+    pendingPartyCount: 2,
+    pendingPartyGroupTime: "5:00 PM",
+    availableStaffName: "Anna",
+  };
   const alerts = computeCriticalAlerts(input, labels);
   const action = computeNextAction(input, labels, alerts.shown.map((a) => a.key));
   assertEqual(action?.kind, "suggest_walkin");
