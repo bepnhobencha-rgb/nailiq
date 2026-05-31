@@ -1215,6 +1215,7 @@ function ReceptionistCenterInner({
     return {
       title: d.title,
       closeAria: d.closeAria,
+      removedGuest: messages.receptionist.removedGuest,
       sectionGuest: messages.salonDashboard.client,
       sectionService: messages.salonDashboard.service,
       sectionStaff: messages.salonDashboard.salonStaffLabel,
@@ -2112,6 +2113,7 @@ function ReceptionistCenterInner({
             timezone={timezone}
             todayYmd={salonToday(timezone, nowIso)}
             messages={rcMessages.monthView}
+            removedGuest={rcMessages.removedGuest}
             hint={calendarHint}
             onDayClick={(ymd) => {
               // Switch to Day view for the tapped date.
@@ -2154,6 +2156,7 @@ function ReceptionistCenterInner({
             timezone={timezone}
             todayYmd={salonToday(timezone, nowIso)}
             messages={rcMessages.weekView}
+            removedGuest={rcMessages.removedGuest}
             hint={calendarHint}
             onDayClick={(ymd) => {
               // Tapping a day flips back to Day view and (when the day
@@ -2253,6 +2256,7 @@ function ReceptionistCenterInner({
                 conflictWith: rcMessages.grid.conflictWith,
                 overflowMessage: rcMessages.grid.overflowMessage,
                 bookingIcon: rcMessages.grid.bookingIcon,
+                removedGuest: rcMessages.removedGuest,
               }}
               showStaffPerformanceDetail={modules.staff_performance}
               showTimelineHeatmap={modules.timeline_heatmap}

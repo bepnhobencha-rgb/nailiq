@@ -11,6 +11,7 @@ import {
 } from "@/shared/dashboard/getBookingsForRangeAction";
 import type { ReceptionistMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
+import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import { formatInSalonTz } from "@/shared/lib/salonTime";
 
 /**
@@ -91,6 +92,8 @@ export interface WeekViewProps {
   /** Today (salon-local) so we can highlight the "today" column. */
   todayYmd: string;
   messages: ReceptionistMessages["weekView"];
+  /** Localized label for a redacted/removed customer ("[removed]" in DB). */
+  removedGuest: string;
   /** Tap a day header → parent flips to Day view for that date. */
   onDayClick: (ymd: string) => void;
   /** Tap a booking card → parent opens the detail drawer. */
@@ -115,6 +118,7 @@ export function WeekView({
   timezone,
   todayYmd,
   messages,
+  removedGuest,
   onDayClick,
   onBookingClick,
   onPrevWeek,
@@ -312,6 +316,7 @@ export function WeekView({
                       emptyLabel={messages.emptyDay}
                       countLabel={messages.bookingCount}
                       openBookingAria={messages.openBookingAria}
+                      removedGuest={removedGuest}
                       onBookingClick={
                         onBookingClick
                           ? (id) => onBookingClick(id, ymd)
@@ -336,6 +341,7 @@ function DayColumnContent({
   emptyLabel,
   countLabel,
   openBookingAria,
+  removedGuest,
   onBookingClick,
 }: {
   bookings: CalendarBooking[];
@@ -344,6 +350,7 @@ function DayColumnContent({
   emptyLabel: string;
   countLabel: string;
   openBookingAria: string;
+  removedGuest: string;
   onBookingClick?: (bookingId: string) => void;
 }) {
   const sorted = useMemo(() => {
@@ -371,7 +378,7 @@ function DayColumnContent({
         <button
           key={b.id}
           type="button"
-          aria-label={openBookingAria.replace("{client}", b.client_name)}
+          aria-label={openBookingAria.replace("{client}", displayCustomerName(b.client_name, removedGuest))}
           onClick={onBookingClick ? () => onBookingClick(b.id) : undefined}
           className={cn(
             "w-full rounded-md border border-nq-border/50 bg-nq-surface/60 px-1.5 py-1 text-left text-[11px] text-nq-foreground",
@@ -383,7 +390,7 @@ function DayColumnContent({
           <p className="truncate font-medium">
             {formatInSalonTz(b.start_time_utc, timezone, "shortTime")}{" "}
             <span className="font-normal text-nq-muted">
-              {b.client_name}
+              {displayCustomerName(b.client_name, removedGuest)}
             </span>
           </p>
           <p className="truncate text-nq-muted">{b.service_name}</p>

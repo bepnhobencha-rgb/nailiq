@@ -12,6 +12,7 @@ import {
 } from "@/shared/dashboard/getBookingsForRangeAction";
 import type { ReceptionistMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
+import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import { formatInSalonTz } from "@/shared/lib/salonTime";
 
 /**
@@ -120,6 +121,8 @@ export interface MonthViewProps {
   /** Today (salon-local) for highlighting. */
   todayYmd: string;
   messages: ReceptionistMessages["monthView"];
+  /** Localized label for a redacted/removed customer ("[removed]" in DB). */
+  removedGuest: string;
   /** Tap a day number → switch to Day view. */
   onDayClick: (ymd: string) => void;
   /** Tap a booking chip → open detail drawer. */
@@ -154,6 +157,7 @@ export function MonthView({
   timezone,
   todayYmd,
   messages,
+  removedGuest,
   onDayClick,
   onBookingClick,
   onPrevMonth,
@@ -371,6 +375,7 @@ export function MonthView({
                         timezone={timezone}
                         moreLabel={messages.moreCount}
                         openBookingAria={messages.openBookingAria}
+                        removedGuest={removedGuest}
                         // Stop propagation so clicking a chip doesn't also
                         // toggle the selected-day state.
                         onBookingClick={(id) => {
@@ -402,6 +407,7 @@ export function MonthView({
                 timezone={timezone}
                 state={panelState ?? { kind: "loading" }}
                 messages={messages}
+                removedGuest={removedGuest}
                 onClose={() => setSelectedYmd(null)}
                 onBookingClick={(id) => onBookingClick(id, selectedYmd)}
                 onOpenDayView={() => {
@@ -433,6 +439,7 @@ function DayDetailPanel({
   timezone,
   state,
   messages,
+  removedGuest,
   onClose,
   onBookingClick,
   onOpenDayView,
@@ -441,6 +448,7 @@ function DayDetailPanel({
   timezone: string;
   state: DayState;
   messages: ReceptionistMessages["monthView"];
+  removedGuest: string;
   onClose: () => void;
   onBookingClick: (bookingId: string) => void;
   onOpenDayView: () => void;
@@ -533,7 +541,7 @@ function DayDetailPanel({
               >
                 <button
                   type="button"
-                  aria-label={messages.openBookingAria.replace("{client}", b.client_name)}
+                  aria-label={messages.openBookingAria.replace("{client}", displayCustomerName(b.client_name, removedGuest))}
                   onClick={() => onBookingClick(b.id)}
                   className="group flex w-full items-start gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-nq-primary/40"
                 >
@@ -547,7 +555,7 @@ function DayDetailPanel({
                   {/* Booking info */}
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-nq-foreground group-hover:text-nq-primary">
-                      {b.client_name || "—"}
+                      {displayCustomerName(b.client_name, removedGuest) || "—"}
                     </p>
                     <p className="truncate text-xs text-nq-muted">
                       {b.service_name || "—"}
@@ -591,12 +599,14 @@ function MonthDayBookings({
   timezone,
   moreLabel,
   openBookingAria,
+  removedGuest,
   onBookingClick,
 }: {
   bookings: CalendarBooking[];
   timezone: string;
   moreLabel: string;
   openBookingAria: string;
+  removedGuest: string;
   onBookingClick: (bookingId: string) => void;
 }) {
   // Bookings already filtered + sorted by getBookingsForRangeAction;
@@ -618,7 +628,7 @@ function MonthDayBookings({
         <button
           key={b.id}
           type="button"
-          aria-label={openBookingAria.replace("{client}", b.client_name)}
+          aria-label={openBookingAria.replace("{client}", displayCustomerName(b.client_name, removedGuest))}
           onClick={(e) => {
             // Prevent the day-cell onClick from toggling the panel.
             e.stopPropagation();
@@ -640,7 +650,7 @@ function MonthDayBookings({
           <span className="font-medium tabular-nums">
             {formatInSalonTz(b.start_time_utc, timezone, "shortTime")}
           </span>{" "}
-          <span className="truncate">{b.client_name}</span>
+          <span className="truncate">{displayCustomerName(b.client_name, removedGuest)}</span>
         </button>
       ))}
 

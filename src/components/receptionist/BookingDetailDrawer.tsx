@@ -7,6 +7,7 @@ import { Badge, type BadgeVariant } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import type { UserMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
+import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import {
   canEditBooking as roleAllowsEditBooking,
   type SalonMemberRole,
@@ -89,6 +90,8 @@ export interface BookingDetailDrawerProps {
   copy: {
     title: string;
     closeAria: string;
+    /** Localized label for a redacted/removed customer ("[removed]" in DB). */
+    removedGuest: string;
     sectionGuest: string;
     sectionService: string;
     sectionStaff: string;
@@ -300,7 +303,7 @@ export function BookingDetailDrawer({
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
                   {copy.sectionGuest}
                 </p>
-                <p className="text-base font-semibold text-nq-foreground">{model.clientName}</p>
+                <p className="text-base font-semibold text-nq-foreground">{displayCustomerName(model.clientName, copy.removedGuest)}</p>
                 <p className="text-nq-muted">
                   <span className="text-nq-muted">{model.sourceLabel}</span>
                 </p>

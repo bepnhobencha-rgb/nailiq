@@ -17,6 +17,7 @@ import { NowLine } from "./NowLine";
 import { StaffAvatar, type StaffStatus } from "@/components/ui/StaffAvatar";
 import { checkBookingConflict, type ConflictCheckBooking } from "@/shared/lib/conflictCheck";
 import { cn } from "@/shared/lib/cn";
+import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import {
   salonNowMinutes,
   salonWallTimeToUtcIso,
@@ -109,6 +110,8 @@ export interface StaffTimelineGridProps {
     formatTimeLabel: (utc: string) => string;
     conflictWith: (clientName: string) => string;
     overflowMessage: string;
+    /** Localized label for a redacted/removed customer ("[removed]" in DB). */
+    removedGuest: string;
     /**
      * Localized icon-stack labels for the booking block. Optional —
      * defaults to English titles in `BookingBlock` when omitted.
@@ -807,7 +810,7 @@ function StaffTimelineGridImpl({
                         <BookingBlock
                           key={b.id}
                           bookingId={b.id}
-                          clientName={b.client_name}
+                          clientName={displayCustomerName(b.client_name, labels.removedGuest)}
                           serviceName={b.service_name}
                           status={b.status}
                           source={b.source}
