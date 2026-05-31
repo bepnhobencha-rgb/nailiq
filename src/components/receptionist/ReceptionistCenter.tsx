@@ -89,6 +89,7 @@ import { editBookingAction } from "@/shared/dashboard/editBookingAction";
 import { getUserMessages } from "@/shared/i18n/user";
 import { checkBookingConflict, type ConflictCheckBooking } from "@/shared/lib/conflictCheck";
 import { cn } from "@/shared/lib/cn";
+import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import { cleanPhone, formatPhone } from "@/shared/lib/phoneFormat";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { maskPhoneDigits } from "@/shared/lib/maskPhone";
@@ -1404,7 +1405,7 @@ function ReceptionistCenterInner({
         const svcName = b.service_name?.trim() || messages.receptionist.drawer.none;
         setUndoState({
           bookingId: id,
-          headline: `${u.cancelledPrefix} ${b.client_name.trim()}`,
+          headline: `${u.cancelledPrefix} ${displayCustomerName(b.client_name, messages.receptionist.removedGuest)}`,
           detailLine: [startLabel, svcName].filter(Boolean).join(" · "),
           secondsRemaining: 8,
           type: "cancel",
@@ -2374,6 +2375,7 @@ function ReceptionistCenterInner({
                 popularServicesLabel={rcMessages.popularServices.label}
                 labels={{
                   title: rcMessages.queue.title,
+                  removedGuest: rcMessages.removedGuest,
                   emptyMessage: rcMessages.queue.emptyMessage,
                   cancelButton: rcMessages.queue.cancelButton,
                   assignButton: rcMessages.queue.assignButton,

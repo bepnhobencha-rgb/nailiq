@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/Badge";
 import { StaffAvatar, type StaffStatus } from "@/components/ui/StaffAvatar";
 import { updateDashboardPreset } from "@/shared/dashboard/salonOwnerActions";
 import { cn } from "@/shared/lib/cn";
+import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import { minutesWaiting } from "@/shared/lib/queueUrgency";
 import { formatInSalonTz } from "@/shared/lib/salonTime";
 import type { ReceptionistMessages } from "@/shared/i18n/user";
@@ -168,7 +169,7 @@ export function TVModeView({
                   </p>
                   {current ? (
                     <p className="truncate text-lg leading-tight text-nq-foreground/85">
-                      <span className="font-medium">{current.client_name}</span>
+                      <span className="font-medium">{displayCustomerName(current.client_name, messages.removedGuest)}</span>
                       <span className="text-nq-muted"> · {current.service_name}</span>
                     </p>
                   ) : (

@@ -21,6 +21,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
 
 import { cn } from "@/shared/lib/cn";
+import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import { isWalkinUrgent, minutesWaiting } from "@/shared/lib/queueUrgency";
 import type {
   QueuePriority,
@@ -71,6 +72,8 @@ export interface WalkinQueueSidebarProps {
   labels: {
     title: string;
     addForm: WalkinAddFormProps["labels"];
+    /** Display label for a redacted/removed customer ("[removed]" in DB). */
+    removedGuest: string;
     emptyMessage: string;
     cancelButton: string;
     assignButton: string;
@@ -528,7 +531,7 @@ export function WalkinQueueSidebar({
 
                     <QueueEntryCard
                       position={idx + 1}
-                      customerName={item.client_name}
+                      customerName={displayCustomerName(item.client_name, labels.removedGuest)}
                       serviceName={item.service_name}
                       waitMinutes={waited}
                       serviceDurationMinutes={item.service_duration_minutes}
@@ -683,7 +686,7 @@ export function WalkinQueueSidebar({
           <CustomerWaitLinkModal
             open
             url={url}
-            customerName={target.client_name}
+            customerName={displayCustomerName(target.client_name, labels.removedGuest)}
             onClose={() => setWaitLinkOpenForId(null)}
             labels={labels.waitLinkModal}
           />
