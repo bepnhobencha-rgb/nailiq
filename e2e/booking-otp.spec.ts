@@ -3,15 +3,44 @@
  * Requires DEMO_OTP=true (set in .env.test.local) — uses magic code 000000.
  */
 import { test, expect } from "@playwright/test";
-import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
+import {
+  cleanupClientProfile,
+  cleanupTestSalon,
+  seedTestSalon,
+} from "./helpers/db";
 import { fillReactInput } from "./receptionist-center/helpers";
 
 const OTP_DEMO_CODE = "000000";
 
+/**
+ * Unique guest phone per test.
+ *
+ * Each test must arrive as a brand-new customer (visit_count 0) so the
+ * `always_otp` salon actually routes through OTP. A fixed phone accumulates
+ * `visit_count` across CI runs in the cross-salon `client_profiles` table;
+ * once it reaches >= 5 the RPC returns reason:"trusted_returning" and skips
+ * OTP. A per-test phone (combined with the afterEach `cleanupClientProfile`)
+ * keeps each run starting fresh and prevents the row from ever accumulating.
+ *
+ * Stays NANP-valid: area `604` + exchange `5xx` + 4 digits (both leading
+ * groups in 2-9, per normalizeNanpDigits).
+ */
+let otpPhoneSeq = 0;
+function uniqueOtpPhone(): string {
+  const n = (Date.now() + otpPhoneSeq++) % 1_000_000;
+  const exchange = 500 + (Math.floor(n / 10_000) % 100); // 500–599
+  const last4 = String(n % 10_000).padStart(4, "0");
+  return `604${exchange}${last4}`;
+}
+
 test.describe("Booking Flow — Phone OTP", () => {
   let testSlug: string;
+  let clientPhone: string;
 
   test.beforeEach(async () => {
+    clientPhone = uniqueOtpPhone();
+    // Defensive: clear any stale profile for this phone before the test runs.
+    await cleanupClientProfile(clientPhone);
     const { slug } = await seedTestSalon({
       slug: "e2e-otp-salon",
       name: "E2E OTP Salon",
@@ -26,6 +55,8 @@ test.describe("Booking Flow — Phone OTP", () => {
 
   test.afterEach(async () => {
     await cleanupTestSalon(testSlug);
+    // Remove the guest profile so visit_count never accumulates across runs.
+    await cleanupClientProfile(clientPhone);
   });
 
   async function walkToInfoStep(page: import("@playwright/test").Page) {
@@ -45,14 +76,29 @@ test.describe("Booking Flow — Phone OTP", () => {
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
+    // Robust date pick (mirrors PR #211): the calendar opens on the first month
+    // with availability, but late in the month the current view can hold only
+    // "today" (rendered as `date-today`, not `date-day`). Advance a month until
+    // a selectable `date-day` appears instead of assuming the default view has
+    // one — keeps the OTP suite deterministic on the last day of the month.
     await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
+      .locator('[data-testid="calendar-grid"]')
       .waitFor({ state: "visible", timeout: 15_000 });
-    await page
+    const selectableDay = page
       .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .click();
+      .first();
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        await selectableDay.waitFor({ state: "visible", timeout: 5_000 });
+        break;
+      } catch {
+        const next = page.locator('[data-testid="calendar-next-month"]');
+        if (!(await next.isEnabled().catch(() => false))) break;
+        await next.click();
+      }
+    }
+    await selectableDay.waitFor({ state: "visible", timeout: 15_000 });
+    await selectableDay.click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page
@@ -65,7 +111,7 @@ test.describe("Booking Flow — Phone OTP", () => {
     // Fill info form — use native setter so React's controlled onChange fires.
     // page.fill() uses CDP which bypasses React's patched value getter.
     await fillReactInput(page.locator('input[name="clientName"]'), "OTP Test Client");
-    await fillReactInput(page.locator('input[name="clientPhone"]'), "6045559999");
+    await fillReactInput(page.locator('input[name="clientPhone"]'), clientPhone);
   }
 
   test("OTP step appears after info and accepts demo code", async ({ page }) => {
