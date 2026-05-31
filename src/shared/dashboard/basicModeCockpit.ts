@@ -17,7 +17,11 @@ import {
 } from "./receptionistBasicModeConfig";
 
 /** Where a Next Action / alert button takes the receptionist. */
-export type CockpitActionTarget = "open_queue" | "add_walkin" | "open_party";
+export type CockpitActionTarget =
+  | "open_queue"
+  | "add_walkin"
+  | "open_party"
+  | "open_overdue";
 
 export type NextActionKind =
   | "long_wait"
@@ -67,6 +71,9 @@ export type CockpitInputs = {
   availableStaffName: string | null;
   /** Name of the first waiting walk-in (FIFO), for the assign action. */
   firstWaitingName: string | null;
+  /** First overdue booking's client name + start-time label (no phone). */
+  firstOverdueName: string | null;
+  firstOverdueTimeLabel: string | null;
   /** Count of today's bookings whose confirmation SMS failed. */
   smsFailedCount: number;
   /** Pending party/group change requests awaiting staff review. */
@@ -88,8 +95,11 @@ export type CockpitLabels = {
   actionOpenQueue: string;
   actionAddWalkin: string;
   actionOpenParty: string;
+  actionOpenBooking: string;
   // Critical alert texts
   alertOverdue: (n: number) => string;
+  /** Clearer single-overdue copy with customer + time (no phone). */
+  alertOverdueNamed: (name: string, time: string) => string;
   alertLongWait: (n: number) => string;
   alertNoStaffForWaiting: string;
   alertSmsFailed: (n: number) => string;
@@ -138,6 +148,7 @@ export function computeNextAction(
   const openQueue = { target: "open_queue" as const, label: labels.actionOpenQueue };
   const addWalkin = { target: "add_walkin" as const, label: labels.actionAddWalkin };
   const openParty = { target: "open_party" as const, label: labels.actionOpenParty };
+  const openBooking = { target: "open_overdue" as const, label: labels.actionOpenBooking };
   const shown = new Set(shownAlertKeys);
 
   // Ordered candidates (highest priority first); null entries don't apply.
@@ -154,9 +165,12 @@ export function computeNextAction(
     i.overdueCount > 0
       ? {
           kind: "finish_overdue",
-          text: labels.finishOverdue(i.overdueCount),
+          text:
+            i.overdueCount === 1 && i.firstOverdueName && i.firstOverdueTimeLabel
+              ? labels.alertOverdueNamed(i.firstOverdueName, i.firstOverdueTimeLabel)
+              : labels.finishOverdue(i.overdueCount),
           tone: "danger",
-          action: openQueue,
+          action: openBooking,
         }
       : null,
     i.waitingCount > 0
@@ -224,15 +238,21 @@ export function computeCriticalAlerts(
 ): CriticalAlertsResult {
   const openQueue = { target: "open_queue" as const, label: labels.actionOpenQueue };
   const openParty = { target: "open_party" as const, label: labels.actionOpenParty };
+  const openBooking = { target: "open_overdue" as const, label: labels.actionOpenBooking };
 
   const all: CriticalAlert[] = [];
 
   if (i.overdueCount > 0) {
     all.push({
       key: "overdue",
-      text: labels.alertOverdue(i.overdueCount),
+      // Overdue is an in-progress desk booking (not a queue item) → its action
+      // opens the booking, not the queue. Single overdue → name + time copy.
+      text:
+        i.overdueCount === 1 && i.firstOverdueName && i.firstOverdueTimeLabel
+          ? labels.alertOverdueNamed(i.firstOverdueName, i.firstOverdueTimeLabel)
+          : labels.alertOverdue(i.overdueCount),
       tone: "danger",
-      action: openQueue,
+      action: openBooking,
     });
   }
   if (

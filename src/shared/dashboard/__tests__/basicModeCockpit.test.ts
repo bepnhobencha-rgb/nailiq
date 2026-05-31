@@ -42,7 +42,9 @@ const labels: CockpitLabels = {
   actionOpenQueue: "OpenQueue",
   actionAddWalkin: "+Walkin",
   actionOpenParty: "OpenParty",
+  actionOpenBooking: "OpenBooking",
   alertOverdue: (n) => `a-overdue:${n}`,
+  alertOverdueNamed: (name, time) => `a-overdue-named:${name}:${time}`,
   alertLongWait: (n) => `a-longwait:${n}`,
   alertNoStaffForWaiting: "a-nostaff",
   alertSmsFailed: (n) => `a-sms:${n}`,
@@ -59,6 +61,8 @@ const base: CockpitInputs = {
   availableStaffCount: 0,
   availableStaffName: null,
   firstWaitingName: null,
+  firstOverdueName: null,
+  firstOverdueTimeLabel: null,
   smsFailedCount: 0,
   pendingPartyChangeCount: 0,
   isSetupIncomplete: false,
@@ -81,10 +85,26 @@ test("long-wait does NOT trigger at/below threshold (default 10)", () => {
   assertEqual(a?.kind, "prepare_next");
 });
 
-test("overdue wins when no long-wait", () => {
+test("overdue wins when no long-wait → opens the booking (not queue)", () => {
   const a = computeNextAction({ ...base, overdueCount: 1, waitingCount: 2 }, labels);
   assertEqual(a?.kind, "finish_overdue");
-  assertEqual(a?.action?.target, "open_queue");
+  assertEqual(a?.action?.target, "open_overdue");
+});
+
+test("single overdue uses named copy + open_overdue in alerts", () => {
+  const r = computeCriticalAlerts(
+    { ...base, overdueCount: 1, firstOverdueName: "Carol", firstOverdueTimeLabel: "3:00 PM" },
+    labels,
+  );
+  assertEqual(r.shown[0]!.key, "overdue");
+  assertEqual(r.shown[0]!.text, "a-overdue-named:Carol:3:00 PM");
+  assertEqual(r.shown[0]!.action?.target, "open_overdue");
+});
+
+test("multiple overdue uses count copy", () => {
+  const r = computeCriticalAlerts({ ...base, overdueCount: 3 }, labels);
+  assertEqual(r.shown[0]!.text, "a-overdue:3");
+  assertEqual(r.shown[0]!.action?.target, "open_overdue");
 });
 
 test("waiting guest (named) when no overdue", () => {
