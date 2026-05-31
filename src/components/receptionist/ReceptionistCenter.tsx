@@ -1467,6 +1467,30 @@ function ReceptionistCenterInner({
     ? formatInSalonTz(firstOverdue.start_time_utc, timezone, "time")
     : null;
 
+  // Today's soonest party with UNCONFIRMED (unclaimed) guests — drives the
+  // clearer party alert ("Today {time} group: {name}/{n} not confirmed") and
+  // its focus-the-group action. Restricted to today so the "today" copy is
+  // accurate and operationally relevant for the front desk.
+  const todaySalonDate = formatInSalonTz(nowIso, timezone, "date");
+  const pendingPartyCard =
+    (partyCards ?? [])
+      .filter(
+        (c) =>
+          !c.expired &&
+          c.pendingCount > 0 &&
+          formatInSalonTz(c.groupStartUtcIso, timezone, "date") === todaySalonDate,
+      )
+      .sort((a, b) => a.groupStartUtcIso.localeCompare(b.groupStartUtcIso))[0] ??
+    null;
+  const pendingPartyGroupId = pendingPartyCard?.groupId ?? null;
+  const pendingPartyGuestName =
+    pendingPartyCard && pendingPartyCard.pendingCount === 1
+      ? (() => {
+          const slot = pendingPartyCard.slots.find((s) => !s.claimed);
+          return (slot?.memberName ?? slot?.guestLabel)?.trim() || null;
+        })()
+      : null;
+
   const cockpitInputs: CockpitInputs = {
     waitingCount: data.kpiSnapshot.waitingCount,
     inProgressCount: data.kpiSnapshot.inProgressCount,
@@ -1482,10 +1506,9 @@ function ReceptionistCenterInner({
       (b) =>
         b.sms_confirmation_failed_at != null && b.status !== "cancelled",
     ).length,
-    pendingPartyChangeCount: (partyCards ?? []).reduce(
-      (sum, c) => sum + (c.pendingChangeRequestCount ?? 0),
-      0,
-    ),
+    pendingPartyCount: pendingPartyCard?.pendingCount ?? 0,
+    pendingPartyGroupTime: pendingPartyCard?.groupStartDisplay ?? null,
+    pendingPartyGuestName,
     isSetupIncomplete,
   };
   const cockpitLabels: CockpitLabels = {
@@ -1494,7 +1517,8 @@ function ReceptionistCenterInner({
     assignWaiting: rcMessages.basicMode.assignWaiting,
     assignWaitingNamed: rcMessages.basicMode.assignWaitingNamed,
     prepareNext: rcMessages.basicMode.prepareNext,
-    partyPending: rcMessages.basicMode.partyPending,
+    partyPendingNamed: rcMessages.basicMode.partyPendingNamed,
+    partyPendingCount: rcMessages.basicMode.partyPendingCount,
     suggestWalkin: rcMessages.basicMode.suggestWalkin,
     actionOpenQueue: rcMessages.basicMode.actionOpenQueue,
     actionAddWalkin: rcMessages.basicMode.actionAddWalkin,
@@ -1505,7 +1529,6 @@ function ReceptionistCenterInner({
     alertLongWait: rcMessages.basicMode.alertLongWait,
     alertNoStaffForWaiting: rcMessages.basicMode.alertNoStaffForWaiting,
     alertSmsFailed: rcMessages.basicMode.alertSmsFailed,
-    alertPartyChange: rcMessages.basicMode.alertPartyChange,
     alertSetupIncomplete: rcMessages.basicMode.alertSetupIncomplete,
   };
   // Cockpit action button handler. Queue + walk-in open the queue slide-over
@@ -1518,13 +1541,18 @@ function ReceptionistCenterInner({
       return;
     }
     if (target === "open_party") {
-      // Reveal the full party cards on demand (hidden by default in Basic),
-      // then scroll to them after they mount.
+      // Reveal the party cards on demand (hidden by default in Basic), then
+      // scroll/focus the SPECIFIC group the alert is about (falls back to the
+      // strip if the card anchor isn't found).
       setPartyRevealed(true);
       setTimeout(() => {
-        document
-          .getElementById("party-strip")
-          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        const card = pendingPartyGroupId
+          ? document.getElementById(`party-card-${pendingPartyGroupId}`)
+          : null;
+        (card ?? document.getElementById("party-strip"))?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
       }, 50);
       return;
     }
@@ -2021,6 +2049,7 @@ function ReceptionistCenterInner({
               initialCards={partyCards}
               slug={slug}
               currencyCode={data.salon.currencyCode}
+              labels={rcMessages.partyCard}
             />
           </div>
         )}

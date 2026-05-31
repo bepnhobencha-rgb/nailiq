@@ -76,8 +76,15 @@ export type CockpitInputs = {
   firstOverdueTimeLabel: string | null;
   /** Count of today's bookings whose confirmation SMS failed. */
   smsFailedCount: number;
-  /** Pending party/group change requests awaiting staff review. */
-  pendingPartyChangeCount: number;
+  /**
+   * Unconfirmed (unclaimed) guests in TODAY's soonest party with pending
+   * guests — guests who haven't confirmed name/phone via the party link.
+   */
+  pendingPartyCount: number;
+  /** That party's start-time label (e.g. "5:00 PM"); null when none. */
+  pendingPartyGroupTime: string | null;
+  /** The single unconfirmed guest's name when exactly one is pending. */
+  pendingPartyGuestName: string | null;
   isSetupIncomplete: boolean;
 };
 
@@ -89,7 +96,10 @@ export type CockpitLabels = {
   assignWaiting: (n: number) => string;
   assignWaitingNamed: (name: string) => string;
   prepareNext: (n: number) => string;
-  partyPending: (n: number) => string;
+  /** "Today {time} group: {name} has not confirmed" (single pending). */
+  partyPendingNamed: (time: string, name: string) => string;
+  /** "Today {time} group: {n} guests pending" (multiple pending). */
+  partyPendingCount: (time: string, n: number) => string;
   suggestWalkin: (name: string) => string;
   // Action button labels
   actionOpenQueue: string;
@@ -103,7 +113,6 @@ export type CockpitLabels = {
   alertLongWait: (n: number) => string;
   alertNoStaffForWaiting: string;
   alertSmsFailed: (n: number) => string;
-  alertPartyChange: (n: number) => string;
   alertSetupIncomplete: string;
 };
 
@@ -191,10 +200,13 @@ export function computeNextAction(
           action: null,
         }
       : null,
-    i.pendingPartyChangeCount > 0
+    i.pendingPartyCount > 0 && i.pendingPartyGroupTime
       ? {
           kind: "party_pending",
-          text: labels.partyPending(i.pendingPartyChangeCount),
+          text:
+            i.pendingPartyCount === 1 && i.pendingPartyGuestName
+              ? labels.partyPendingNamed(i.pendingPartyGroupTime, i.pendingPartyGuestName)
+              : labels.partyPendingCount(i.pendingPartyGroupTime, i.pendingPartyCount),
           tone: "warning",
           action: openParty,
         }
@@ -275,10 +287,13 @@ export function computeCriticalAlerts(
       action: openQueue,
     });
   }
-  if (i.pendingPartyChangeCount > 0) {
+  if (i.pendingPartyCount > 0 && i.pendingPartyGroupTime) {
     all.push({
       key: "party_change",
-      text: labels.alertPartyChange(i.pendingPartyChangeCount),
+      text:
+        i.pendingPartyCount === 1 && i.pendingPartyGuestName
+          ? labels.partyPendingNamed(i.pendingPartyGroupTime, i.pendingPartyGuestName)
+          : labels.partyPendingCount(i.pendingPartyGroupTime, i.pendingPartyCount),
       tone: "warning",
       action: openParty,
     });

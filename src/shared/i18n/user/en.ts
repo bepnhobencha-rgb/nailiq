@@ -916,7 +916,8 @@ export type UserMessages = {
       assignWaiting: (n: number) => string;
       assignWaitingNamed: (name: string) => string;
       prepareNext: (n: number) => string;
-      partyPending: (n: number) => string;
+      partyPendingNamed: (time: string, name: string) => string;
+      partyPendingCount: (time: string, n: number) => string;
       suggestWalkin: (name: string) => string;
       // Action button labels
       actionOpenQueue: string;
@@ -929,7 +930,6 @@ export type UserMessages = {
       alertLongWait: (n: number) => string;
       alertNoStaffForWaiting: string;
       alertSmsFailed: (n: number) => string;
-      alertPartyChange: (n: number) => string;
       alertSetupIncomplete: string;
       // Now Bar
       nowAvailableStaff: string;
@@ -939,6 +939,28 @@ export type UserMessages = {
       nowUpcoming: string;
       /** Hover title clarifying the upcoming window. */
       nowUpcomingTitle: string;
+    };
+    /** Party Card strip labels (shared across Basic/Balanced/Advanced). */
+    partyCard: {
+      panelSummary: (n: number) => string;
+      panelEmpty: string;
+      emptyNext7: string;
+      refresh: string;
+      arriveTogether: string;
+      finishTogether: string;
+      changesRequested: (n: number) => string;
+      wavesBadge: (n: number) => string;
+      confirmedProgress: (claimed: number, total: number) => string;
+      pendingSuffix: (n: number) => string;
+      /** Hover help explaining what "pending/not confirmed" means. */
+      pendingHelp: string;
+      slotsCount: (n: number) => string;
+      waveLabel: (n: number) => string;
+      copyLink: string;
+      copied: string;
+      statusConfirmed: string;
+      statusPending: string;
+      statusExpired: string;
     };
     /** Role-adaptive top-bar labels. */
     roleBadge: {
@@ -2498,8 +2520,10 @@ export const userEn: UserMessages = {
         `${name} is waiting. Assign them to an available staff member.`,
       prepareNext: (n: number) =>
         n === 1 ? "1 guest arriving in the next 30 min" : `${n} guests arriving in the next 30 min`,
-      partyPending: (n: number) =>
-        n === 1 ? "1 party guest has not confirmed" : `${n} party guests have not confirmed`,
+      partyPendingNamed: (time: string, name: string) =>
+        `Today ${time} group: ${name} has not confirmed`,
+      partyPendingCount: (time: string, n: number) =>
+        `Today ${time} group: ${n} guests pending`,
       suggestWalkin: (name: string) => `${name} is available. You can add a walk-in.`,
       actionOpenQueue: "Open queue",
       actionAddWalkin: "+ Walk-in",
@@ -2513,14 +2537,35 @@ export const userEn: UserMessages = {
       alertNoStaffForWaiting: "Guests waiting — no staff available",
       alertSmsFailed: (n: number) =>
         n === 1 ? "1 confirmation SMS failed" : `${n} confirmation SMS failed`,
-      alertPartyChange: (n: number) =>
-        n === 1 ? "Group booking needs attention: 1 guest pending" : `Group booking needs attention: ${n} guests pending`,
       alertSetupIncomplete: "Setup incomplete — add services & staff",
       nowAvailableStaff: "Available staff",
       nowNoOneWaiting: "No one waiting",
       nowNoStaffAvailable: "None",
       nowUpcoming: "Upcoming",
       nowUpcomingTitle: "Arriving in the next 30 min",
+    },
+    partyCard: {
+      panelSummary: (n: number) =>
+        `${n} group booking${n !== 1 ? "s" : ""} · next 7 days`,
+      panelEmpty: "No upcoming group bookings",
+      emptyNext7: "No group bookings in the next 7 days.",
+      refresh: "Refresh party cards",
+      arriveTogether: "Arrive together",
+      finishTogether: "Finish together",
+      changesRequested: (n: number) =>
+        `${n} change${n !== 1 ? "s" : ""} requested`,
+      wavesBadge: (n: number) => `${n} waves`,
+      confirmedProgress: (claimed: number, total: number) =>
+        `${claimed}/${total} confirmed`,
+      pendingSuffix: (n: number) => `${n} pending`,
+      pendingHelp: "Guests who haven't confirmed their name/phone via the group link.",
+      slotsCount: (n: number) => `${n} slot${n !== 1 ? "s" : ""}`,
+      waveLabel: (n: number) => `Wave ${n}`,
+      copyLink: "Copy group link",
+      copied: "✓ Copied!",
+      statusConfirmed: "Confirmed",
+      statusPending: "Pending",
+      statusExpired: "Expired",
     },
     roleBadge: {
       ownerView: "Owner view",
