@@ -922,8 +922,10 @@ export type UserMessages = {
       actionOpenQueue: string;
       actionAddWalkin: string;
       actionOpenParty: string;
+      actionOpenBooking: string;
       // Critical alert texts
       alertOverdue: (n: number) => string;
+      alertOverdueNamed: (name: string, time: string) => string;
       alertLongWait: (n: number) => string;
       alertNoStaffForWaiting: string;
       alertSmsFailed: (n: number) => string;
@@ -2502,8 +2504,11 @@ export const userEn: UserMessages = {
       actionOpenQueue: "Open queue",
       actionAddWalkin: "+ Walk-in",
       actionOpenParty: "Open party bookings",
+      actionOpenBooking: "Open booking",
       alertOverdue: (n: number) =>
         n === 1 ? "1 booking overdue" : `${n} bookings overdue`,
+      alertOverdueNamed: (name: string, time: string) =>
+        `${name} overdue · ${time}`,
       alertLongWait: (n: number) => `Guest waiting over ${n} min`,
       alertNoStaffForWaiting: "Guests waiting — no staff available",
       alertSmsFailed: (n: number) =>

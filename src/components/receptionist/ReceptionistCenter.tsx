@@ -1450,6 +1450,23 @@ function ReceptionistCenterInner({
     return max;
   })();
 
+  // Overdue desk bookings (in_progress past their end time). The earliest one
+  // is the target for the overdue alert's "Open booking" action + named copy.
+  const overdueBookings = data.bookingsForDay
+    .filter(
+      (b) =>
+        b.status === "in_progress" &&
+        b.end_time_utc != null &&
+        Date.parse(b.end_time_utc) < nowMsForWait,
+    )
+    .sort((a, b) => a.start_time_utc.localeCompare(b.start_time_utc));
+  const firstOverdue = overdueBookings[0] ?? null;
+  const firstOverdueId = firstOverdue?.id ?? null;
+  const firstOverdueName = firstOverdue?.client_name?.trim() || null;
+  const firstOverdueTimeLabel = firstOverdue
+    ? formatInSalonTz(firstOverdue.start_time_utc, timezone, "time")
+    : null;
+
   const cockpitInputs: CockpitInputs = {
     waitingCount: data.kpiSnapshot.waitingCount,
     inProgressCount: data.kpiSnapshot.inProgressCount,
@@ -1459,6 +1476,8 @@ function ReceptionistCenterInner({
     availableStaffCount,
     availableStaffName,
     firstWaitingName: data.walkinQueue[0]?.client_name?.trim() || null,
+    firstOverdueName,
+    firstOverdueTimeLabel,
     smsFailedCount: data.bookingsForDay.filter(
       (b) =>
         b.sms_confirmation_failed_at != null && b.status !== "cancelled",
@@ -1480,7 +1499,9 @@ function ReceptionistCenterInner({
     actionOpenQueue: rcMessages.basicMode.actionOpenQueue,
     actionAddWalkin: rcMessages.basicMode.actionAddWalkin,
     actionOpenParty: rcMessages.basicMode.actionOpenParty,
+    actionOpenBooking: rcMessages.basicMode.actionOpenBooking,
     alertOverdue: rcMessages.basicMode.alertOverdue,
+    alertOverdueNamed: rcMessages.basicMode.alertOverdueNamed,
     alertLongWait: rcMessages.basicMode.alertLongWait,
     alertNoStaffForWaiting: rcMessages.basicMode.alertNoStaffForWaiting,
     alertSmsFailed: rcMessages.basicMode.alertSmsFailed,
@@ -1488,8 +1509,14 @@ function ReceptionistCenterInner({
     alertSetupIncomplete: rcMessages.basicMode.alertSetupIncomplete,
   };
   // Cockpit action button handler. Queue + walk-in open the queue slide-over
-  // (the walk-in form lives inside it); party scrolls the party strip into view.
+  // (the walk-in form lives inside it); party scrolls the party strip into
+  // view; overdue opens the overdue booking's detail drawer (it's a desk
+  // booking, NOT a queue item — opening the queue here was the dead-click bug).
   const onCockpitAction = (target: import("@/shared/dashboard/basicModeCockpit").CockpitActionTarget) => {
+    if (target === "open_overdue") {
+      if (firstOverdueId) setDrawerBookingId(firstOverdueId);
+      return;
+    }
     if (target === "open_party") {
       // Reveal the full party cards on demand (hidden by default in Basic),
       // then scroll to them after they mount.
