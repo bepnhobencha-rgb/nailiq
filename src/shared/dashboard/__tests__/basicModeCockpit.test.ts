@@ -40,6 +40,7 @@ const labels: CockpitLabels = {
   partyPendingNamed: (when, name) => `party-named:${when}:${name}`,
   partyPendingCount: (when, n) => `party-count:${when}:${n}`,
   partyPendingChanges: (when, n) => `party-changes:${when}:${n}`,
+  partyWaveSuffix: (n) => ` · ${n} waves`,
   suggestWalkin: (name) => `suggest:${name}`,
   actionOpenQueue: "OpenQueue",
   actionAddWalkin: "+Walkin",
@@ -69,6 +70,7 @@ const base: CockpitInputs = {
   pendingPartyChangeCount: 0,
   pendingPartyWhen: null,
   pendingPartyGuestName: null,
+  pendingPartyWaveCount: 0,
   isSetupIncomplete: false,
 };
 
@@ -157,6 +159,27 @@ test("party with only a pending CHANGE request (0 unconfirmed) still fires", () 
   );
   assertEqual(a?.kind, "party_pending");
   assertEqual(a?.text, "party-changes:Sat, May 31 · 10:00 AM:2");
+});
+
+test("multi-wave party appends a '· N waves' suffix", () => {
+  const a = computeNextAction(
+    {
+      ...base,
+      pendingPartyCount: 12,
+      pendingPartyWhen: "Tomorrow 10:00 AM",
+      pendingPartyWaveCount: 2,
+    },
+    labels,
+  );
+  assertEqual(a?.text, "party-count:Tomorrow 10:00 AM:12 · 2 waves");
+});
+
+test("single-wave party has NO wave suffix", () => {
+  const a = computeNextAction(
+    { ...base, pendingPartyCount: 3, pendingPartyWhen: "Today 5:00 PM", pendingPartyWaveCount: 1 },
+    labels,
+  );
+  assertEqual(a?.text, "party-count:Today 5:00 PM:3");
 });
 
 test("party pending without a 'when' phrase does NOT fire", () => {

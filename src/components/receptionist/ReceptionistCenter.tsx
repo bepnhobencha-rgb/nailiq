@@ -1428,7 +1428,17 @@ function ReceptionistCenterInner({
     data.services.length === 0 || data.staff.length === 0;
 
   // ── Basic Mode cockpit data (deterministic; display-only) ───────
-  const basicModeActive = basicMode && isViewingToday && viewMode === "day";
+  // Two distinct flags so Basic stays Basic across Yesterday/Today/Tomorrow:
+  //  • basicChrome — the simplified front-desk chrome (Basic header, hidden
+  //    density/owner/view-toggle, party strip hidden by default, compact
+  //    booking icons). Applies to EVERY day-view date, not just today, so
+  //    switching the date tab no longer reverts the UI to the dense layout.
+  //  • basicCockpit — the LIVE Now Bar + Critical Alerts + Next Action. These
+  //    encode "right now" semantics (waiting, overdue, available staff), so
+  //    they only make sense for today. Yesterday/Tomorrow stay Basic but show
+  //    no live cockpit (the day's booking grid stands alone).
+  const basicChrome = basicMode && viewMode === "day";
+  const basicCockpit = basicChrome && isViewingToday;
 
   // Available staff (operational, not a risk state) — used by the Now Bar
   // "Available staff" card (shows a name) and the walk-in nudge.
@@ -1531,6 +1541,7 @@ function ReceptionistCenterInner({
     pendingPartyChangeCount: pendingPartyCard?.pendingChangeRequestCount ?? 0,
     pendingPartyWhen,
     pendingPartyGuestName,
+    pendingPartyWaveCount: pendingPartyCard?.waveCount ?? 0,
     isSetupIncomplete,
   };
   const cockpitLabels: CockpitLabels = {
@@ -1542,6 +1553,7 @@ function ReceptionistCenterInner({
     partyPendingNamed: rcMessages.basicMode.partyPendingNamed,
     partyPendingCount: rcMessages.basicMode.partyPendingCount,
     partyPendingChanges: rcMessages.basicMode.partyPendingChanges,
+    partyWaveSuffix: rcMessages.basicMode.partyWaveSuffix,
     suggestWalkin: rcMessages.basicMode.suggestWalkin,
     actionOpenQueue: rcMessages.basicMode.actionOpenQueue,
     actionAddWalkin: rcMessages.basicMode.actionAddWalkin,
@@ -1718,7 +1730,7 @@ function ReceptionistCenterInner({
                   ← {rcMessages.navOwnerDashboard}
                 </Link>
                 <h1 className="truncate text-lg font-semibold text-nq-foreground md:text-xl">
-                  {basicModeActive ? rcMessages.basicMode.pageTitle : rcMessages.title}
+                  {basicChrome ? rcMessages.basicMode.pageTitle : rcMessages.title}
                 </h1>
               </div>
               <p className="truncate text-xs text-nq-muted md:text-sm">{data.salon.name}</p>
@@ -1727,7 +1739,7 @@ function ReceptionistCenterInner({
               {/* Status pill duplicates the Now Bar's Waiting + In service
                   counts, so it's hidden in Basic Mode. Balanced/Advanced
                   keep it (no Now Bar there). */}
-              {isViewingToday && modules.kpi_bar && !basicModeActive ? (
+              {isViewingToday && modules.kpi_bar && !basicCockpit ? (
                 <StatusPill
                   waitingCount={queueItems.length}
                   inProgressCount={inProgressToday}
@@ -1746,7 +1758,7 @@ function ReceptionistCenterInner({
                * decoration needed. Pairs colored Badge variant with
                * text label per COLOR_TOKENS §5 (no hue-only encoding).
                */}
-              {viewerRole === "owner" && !basicModeActive ? (
+              {viewerRole === "owner" && !basicChrome ? (
                 <Badge
                   data-testid="role-badge-owner"
                   variant="info"
@@ -1797,10 +1809,11 @@ function ReceptionistCenterInner({
                * per PERMISSION_MATRIX §3 to give senior write access
                * to a personal density.
                */}
-              {/* Basic Mode toggle — per-device front-desk cockpit. Shown
-                  on the live day board for every role (it's a personal view
-                  preference, not a salon-wide setting). */}
-              {isViewingToday && viewMode === "day" ? (
+              {/* Basic Mode toggle — per-device front-desk cockpit. Shown on
+                  the day board for every role and every date tab (it's a
+                  personal view preference, not a salon-wide setting), so the
+                  receptionist can switch it off from Yesterday/Tomorrow too. */}
+              {viewMode === "day" ? (
                 <button
                   type="button"
                   data-testid="basic-mode-toggle"
@@ -1825,7 +1838,7 @@ function ReceptionistCenterInner({
               {/* Density slider is hidden in Basic Mode — Basic Mode is the
                   simplified view, so the density control would be redundant
                   clutter. Reappears when Basic Mode is off. */}
-              {viewerRole !== "nail_tech" && !basicModeActive ? (
+              {viewerRole !== "nail_tech" && !basicChrome ? (
                 <span data-rush-fade>
                   <DensitySlider
                     slug={slug}
@@ -1845,7 +1858,7 @@ function ReceptionistCenterInner({
                   Basic Mode is a front-desk "today" view — the
                   Day/Week/Month toggle is hidden there (Yesterday/Today/
                   Tomorrow remains). Balanced/Advanced keep the toggle. */}
-              {basicModeActive ? null : (
+              {basicChrome ? null : (
               <div
                 role="tablist"
                 aria-label={rcMessages.viewMode.ariaLabel}
@@ -2016,7 +2029,7 @@ function ReceptionistCenterInner({
          * "now" semantics (Coming up 30m, Overdue, Next available) so
          * historical/future date views must not pretend they are live.
          */}
-        {basicModeActive ? (
+        {basicCockpit ? (
           /* Basic Mode replaces the full KPI band with the Front Desk
              Cockpit: Critical Alerts (max 2) + Next Action + 4-card Now Bar.
              Revenue / avg-wait / next-available clutter is intentionally
@@ -2065,8 +2078,10 @@ function ReceptionistCenterInner({
             the cockpit calm: the heavy card strip is NOT rendered — an
             actionable party issue shows only as a compact cockpit alert,
             and clicking its "Open party bookings" reveals the cards on
-            demand (partyRevealed). No actionable issue → no party section. */}
-        {basicModeActive && !partyRevealed ? null : (
+            demand (partyRevealed). No actionable issue → no party section.
+            Hidden for every Basic date tab (not today-only) so Tomorrow stays
+            calm — the strip reveals from the today cockpit's party alert. */}
+        {basicChrome && !partyRevealed ? null : (
           <div id="party-strip">
             <PartyCardPanel
               initialCards={partyCards}
@@ -2209,7 +2224,7 @@ function ReceptionistCenterInner({
             )}
           >
             <StaffTimelineGrid
-              compactBookingIcons={basicModeActive}
+              compactBookingIcons={basicChrome}
               staff={gridStaff}
               bookings={gridBookings}
               assigning={assignedSlot}

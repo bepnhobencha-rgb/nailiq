@@ -919,6 +919,7 @@ export type UserMessages = {
       partyPendingNamed: (when: string, name: string) => string;
       partyPendingCount: (when: string, n: number) => string;
       partyPendingChanges: (when: string, n: number) => string;
+      partyWaveSuffix: (n: number) => string;
       /** Day-relative "when" prefixes for the party alert. */
       partyWhenToday: (time: string) => string;
       partyWhenTomorrow: (time: string) => string;
@@ -2533,6 +2534,7 @@ export const userEn: UserMessages = {
         n === 1
           ? `${when} group: 1 change request`
           : `${when} group: ${n} change requests`,
+      partyWaveSuffix: (n: number) => (n === 1 ? ` · 1 wave` : ` · ${n} waves`),
       partyWhenToday: (time: string) => `Today ${time}`,
       partyWhenTomorrow: (time: string) => `Tomorrow ${time}`,
       partyWhenOther: (date: string, time: string) => `${date} · ${time}`,

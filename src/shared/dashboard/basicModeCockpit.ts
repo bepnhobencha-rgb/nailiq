@@ -91,6 +91,8 @@ export type CockpitInputs = {
   pendingPartyWhen: string | null;
   /** The single unconfirmed guest's name when exactly one is pending. */
   pendingPartyGuestName: string | null;
+  /** Number of waves in that party; >1 appends a "· N waves" suffix. */
+  pendingPartyWaveCount: number;
   isSetupIncomplete: boolean;
 };
 
@@ -108,6 +110,8 @@ export type CockpitLabels = {
   partyPendingCount: (when: string, n: number) => string;
   /** "{when} group: {n} change request(s)" (no unconfirmed guests left). */
   partyPendingChanges: (when: string, n: number) => string;
+  /** " · {n} waves" suffix, appended to party copy when the group has >1 wave. */
+  partyWaveSuffix: (n: number) => string;
   suggestWalkin: (name: string) => string;
   // Action button labels
   actionOpenQueue: string;
@@ -133,15 +137,21 @@ export type CockpitLabels = {
  */
 function partyAlertText(i: CockpitInputs, labels: CockpitLabels): string | null {
   if (!i.pendingPartyWhen) return null;
+  let base: string | null = null;
   if (i.pendingPartyCount > 0) {
-    return i.pendingPartyCount === 1 && i.pendingPartyGuestName
-      ? labels.partyPendingNamed(i.pendingPartyWhen, i.pendingPartyGuestName)
-      : labels.partyPendingCount(i.pendingPartyWhen, i.pendingPartyCount);
+    base =
+      i.pendingPartyCount === 1 && i.pendingPartyGuestName
+        ? labels.partyPendingNamed(i.pendingPartyWhen, i.pendingPartyGuestName)
+        : labels.partyPendingCount(i.pendingPartyWhen, i.pendingPartyCount);
+  } else if (i.pendingPartyChangeCount > 0) {
+    base = labels.partyPendingChanges(i.pendingPartyWhen, i.pendingPartyChangeCount);
   }
-  if (i.pendingPartyChangeCount > 0) {
-    return labels.partyPendingChanges(i.pendingPartyWhen, i.pendingPartyChangeCount);
-  }
-  return null;
+  if (base === null) return null;
+  // Multi-wave groups append "· N waves" so the receptionist knows the group
+  // arrives in staggered waves (e.g. "… 12 khách chưa xác nhận · 2 đợt").
+  return i.pendingPartyWaveCount > 1
+    ? base + labels.partyWaveSuffix(i.pendingPartyWaveCount)
+    : base;
 }
 
 /**

@@ -985,6 +985,7 @@ export const userVi: UserMessages = {
         `Nhóm ${when}: ${n} khách chưa xác nhận`,
       partyPendingChanges: (when: string, n: number) =>
         `Nhóm ${when}: ${n} yêu cầu đổi`,
+      partyWaveSuffix: (n: number) => ` · ${n} đợt`,
       partyWhenToday: (time: string) => `hôm nay ${time}`,
       partyWhenTomorrow: (time: string) => `ngày mai ${time}`,
       partyWhenOther: (date: string, time: string) => `${date} · ${time}`,
