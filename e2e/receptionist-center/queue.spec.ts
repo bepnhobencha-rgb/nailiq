@@ -151,4 +151,55 @@ test.describe("Receptionist queue + assign", () => {
       await ctx2.close();
     }
   });
+
+  test("case 5: empty name blocks submit — error + focus, no queue item, no undo toast", async ({
+    page,
+  }) => {
+    await gotoReceptionistCenter(page, fx.slug);
+    await clickWalkinService(page, fx.serviceIds[0]!);
+    const queueItem = page.locator('[data-testid^="queue-item-"]');
+    const beforeCount = await queueItem.count();
+    await clickWalkinSubmit(page);
+
+    const form = page.getByTestId("walkin-add-form");
+    // Client validation blocks the submit: the required-name error is shown.
+    await expect(form.getByTestId("walkin-name-error")).toBeVisible();
+    // No success/undo toast — it stays hidden/inert (never opens on a blocked
+    // submit). The toast node is always mounted, so assert it's not active.
+    await expect(page.getByTestId("undo-toast")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    // No NEW walk-in created by the blocked submit.
+    await expect(queueItem).toHaveCount(beforeCount);
+    // (Focus returns to the name field via runSubmit's queueMicrotask focus —
+    // correct for real users; not asserted here because the helper's synthetic
+    // el.click() can't establish the focus context a real click does.)
+  });
+
+  test("case 6: double-click submit — only one walk-in created (in-flight guard)", async ({
+    page,
+  }) => {
+    await gotoReceptionistCenter(page, fx.slug);
+    const marker = testClientNameMarker();
+    await fillWalkinGuestContact(page, marker);
+    await clickWalkinService(page, fx.serviceIds[0]!);
+
+    // Two synchronous clicks in one tick — the in-flight ref must drop the
+    // 2nd before the button's `disabled={submitting}` has re-rendered.
+    const submit = page.locator('[data-testid="walkin-submit"]:not([disabled])');
+    await submit.waitFor({ state: "attached", timeout: 15_000 });
+    await submit.evaluate((el: HTMLElement) => {
+      el.click();
+      el.click();
+    });
+
+    await expect(
+      page.locator('[data-testid^="queue-item-"]').filter({ hasText: marker }),
+    ).toBeVisible({ timeout: 15_000 });
+    // Exactly one booking for this client — the 2nd click created nothing.
+    await expect
+      .poll(async () => countBookingsForClient(fx.salonId, marker))
+      .toBe(1);
+  });
 });

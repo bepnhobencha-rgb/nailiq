@@ -307,6 +307,12 @@ export function WalkinAddForm({
   // Refs (not state) so blur handlers see current value without stale closure issues.
   const nameTouchedRef = useRef(false);
   const phoneTouchedRef = useRef(false);
+  // Synchronous in-flight guard against double/multi-submit. The
+  // `submitting` state lags one render, so a same-tick double-click (or
+  // Enter + click) could fire two server calls before the button's
+  // `disabled={submitting}` applies. This ref blocks the 2nd call
+  // immediately — no duplicate POST.
+  const submittingRef = useRef(false);
 
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
@@ -581,6 +587,9 @@ export function WalkinAddForm({
   const runSubmit = useCallback(
     async (mode: "queue" | "immediate") => {
       if (disabled) return;
+      // Ignore duplicate submits while one is already in flight (sync ref;
+      // beats the batched `submitting` state, which lags a render).
+      if (submittingRef.current) return;
       // P1.2 — clicking submit counts as "intent to use the field",
       // so any per-field validators below should always render their
       // messages regardless of whether the user blurred first.
@@ -589,23 +598,28 @@ export function WalkinAddForm({
       const trimmedName = clientName.trim();
       if (trimmedName.length === 0) {
         setNameError(labels.nameRequired);
+        queueMicrotask(() => nameRef.current?.focus());
         return;
       }
       if (trimmedName.length > BOOKING_GUEST_NAME_MAX) {
         setNameError(labels.nameTooLong);
+        queueMicrotask(() => nameRef.current?.focus());
         return;
       }
       if (!isValidCustomerName(trimmedName)) {
         setNameError(labels.invalidNameChars);
+        queueMicrotask(() => nameRef.current?.focus());
         return;
       }
       const trimmedPhone = clientPhone.trim();
       if (trimmedPhone.length === 0) {
         setPhoneError(labels.phoneRequired);
+        queueMicrotask(() => phoneRef.current?.focus());
         return;
       }
       if (!validateGuestPhone(trimmedPhone).ok) {
         setPhoneError(labels.invalidPhone);
+        queueMicrotask(() => phoneRef.current?.focus());
         return;
       }
       if (selectedServiceId === null) {
@@ -636,6 +650,7 @@ export function WalkinAddForm({
       setNameError(null);
       setPhoneError(null);
 
+      submittingRef.current = true;
       setSubmitting(true);
       try {
         let result: { ok: boolean; error?: string };
@@ -680,6 +695,7 @@ export function WalkinAddForm({
           setErrorMessage(result.error ?? labels.errorRequired);
         }
       } finally {
+        submittingRef.current = false;
         setSubmitting(false);
       }
     },
@@ -790,7 +806,6 @@ export function WalkinAddForm({
   return (
     <form
       data-testid="walkin-add-form"
-      method="post"
       className={cn(
         "space-y-3 border-b border-nq-muted/20 pb-4",
         disabled && "opacity-55",
@@ -1326,8 +1341,20 @@ export function WalkinAddForm({
           !!nameError ||
           !!phoneError
         }
+        // Soft-disabled (still clickable) while required fields are missing,
+        // so a tap surfaces the validation error + focuses the field. Hard
+        // `disabled` above remains for submitting / offline / active errors.
+        aria-disabled={
+          formLocked ||
+          !!nameError ||
+          !!phoneError ||
+          clientName.trim().length === 0 ||
+          selectedServiceId === null
+            ? true
+            : undefined
+        }
         title={isOffline ? offlineDisabledHint : undefined}
-        className="w-full sm:w-full"
+        className="w-full sm:w-full aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
         data-testid="walkin-submit"
         data-walkin-mode={canAssignImmediately ? "immediate" : "queue"}
       >
