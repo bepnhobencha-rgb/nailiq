@@ -984,6 +984,8 @@ export type UserMessages = {
     };
     /** Hint shown next to top-bar icon when Web Audio is locked by autoplay policy. */
     soundUnlockHint: string;
+    /** Display label for a redacted/removed customer (raw name was "[removed]"). */
+    removedGuest: string;
     /** Top KPI band (gated by `dashboard_modules.kpi_bar`); revenue tile gated by `revenue_today`. */
     kpiBar: {
       waiting: string;
@@ -2584,6 +2586,7 @@ export const userEn: UserMessages = {
       reload: "Reload",
     },
     soundUnlockHint: "Click anywhere to enable sound alerts",
+    removedGuest: "Removed guest",
     kpiBar: {
       waiting: "Waiting",
       avgWait: "Avg wait",

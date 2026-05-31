@@ -318,7 +318,12 @@ export function BookingBlock(props: BookingBlockProps) {
 
       <div className="relative flex min-w-0 gap-2">
         <div className="flex min-w-0 flex-1 flex-col">
-          <p className="line-clamp-2 break-words text-sm font-semibold leading-tight">
+          {/* `break-words` removed: it split names mid-word in narrow cells
+              ("Liam (O…", "Gue…"). A 2-line clamp wraps at word boundaries
+              (multi-word names stay readable) and ellipsizes the 2nd line;
+              `[overflow-wrap:normal]` keeps single words from being chopped.
+              The full name is always in the tooltip (title) + detail drawer. */}
+          <p className="line-clamp-2 text-sm font-semibold leading-tight [overflow-wrap:normal]">
             {clientName}
           </p>
           {showMetaLine ? (

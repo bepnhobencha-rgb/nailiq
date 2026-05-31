@@ -1037,6 +1037,7 @@ export const userVi: UserMessages = {
       reload: "Tải lại",
     },
     soundUnlockHint: "Bấm vào trang để bật âm báo",
+    removedGuest: "Khách đã xoá",
     kpiBar: {
       waiting: "Đang chờ",
       avgWait: "Chờ trung bình",

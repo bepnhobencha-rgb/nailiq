@@ -89,6 +89,7 @@ import { editBookingAction } from "@/shared/dashboard/editBookingAction";
 import { getUserMessages } from "@/shared/i18n/user";
 import { checkBookingConflict, type ConflictCheckBooking } from "@/shared/lib/conflictCheck";
 import { cn } from "@/shared/lib/cn";
+import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import { cleanPhone, formatPhone } from "@/shared/lib/phoneFormat";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { maskPhoneDigits } from "@/shared/lib/maskPhone";
@@ -1215,6 +1216,7 @@ function ReceptionistCenterInner({
     return {
       title: d.title,
       closeAria: d.closeAria,
+      removedGuest: messages.receptionist.removedGuest,
       sectionGuest: messages.salonDashboard.client,
       sectionService: messages.salonDashboard.service,
       sectionStaff: messages.salonDashboard.salonStaffLabel,
@@ -1403,7 +1405,7 @@ function ReceptionistCenterInner({
         const svcName = b.service_name?.trim() || messages.receptionist.drawer.none;
         setUndoState({
           bookingId: id,
-          headline: `${u.cancelledPrefix} ${b.client_name.trim()}`,
+          headline: `${u.cancelledPrefix} ${displayCustomerName(b.client_name, messages.receptionist.removedGuest)}`,
           detailLine: [startLabel, svcName].filter(Boolean).join(" · "),
           secondsRemaining: 8,
           type: "cancel",
@@ -2112,6 +2114,7 @@ function ReceptionistCenterInner({
             timezone={timezone}
             todayYmd={salonToday(timezone, nowIso)}
             messages={rcMessages.monthView}
+            removedGuest={rcMessages.removedGuest}
             hint={calendarHint}
             onDayClick={(ymd) => {
               // Switch to Day view for the tapped date.
@@ -2154,6 +2157,7 @@ function ReceptionistCenterInner({
             timezone={timezone}
             todayYmd={salonToday(timezone, nowIso)}
             messages={rcMessages.weekView}
+            removedGuest={rcMessages.removedGuest}
             hint={calendarHint}
             onDayClick={(ymd) => {
               // Tapping a day flips back to Day view and (when the day
@@ -2253,6 +2257,7 @@ function ReceptionistCenterInner({
                 conflictWith: rcMessages.grid.conflictWith,
                 overflowMessage: rcMessages.grid.overflowMessage,
                 bookingIcon: rcMessages.grid.bookingIcon,
+                removedGuest: rcMessages.removedGuest,
               }}
               showStaffPerformanceDetail={modules.staff_performance}
               showTimelineHeatmap={modules.timeline_heatmap}
@@ -2370,6 +2375,7 @@ function ReceptionistCenterInner({
                 popularServicesLabel={rcMessages.popularServices.label}
                 labels={{
                   title: rcMessages.queue.title,
+                  removedGuest: rcMessages.removedGuest,
                   emptyMessage: rcMessages.queue.emptyMessage,
                   cancelButton: rcMessages.queue.cancelButton,
                   assignButton: rcMessages.queue.assignButton,
