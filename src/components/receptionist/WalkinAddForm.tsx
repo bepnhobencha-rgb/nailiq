@@ -511,6 +511,13 @@ export function WalkinAddForm({
     setTagDraft("");
     setLookup({ kind: "idle" });
     autoFilledForPhoneRef.current = null;
+    // Invalidate any in-flight phone lookup so a late-resolving result for the
+    // just-submitted phone can't re-`setClientName`/`setSelectedServiceId` onto
+    // the freshly-cleared form. The submitted walk-in upserts a client_profile
+    // for that phone, so a lookup started before reset would otherwise auto-fill
+    // the next blank form with the previous customer's name (and flake the
+    // queue reset E2E). Mirrors the availability seq bump below.
+    lookupRequestSeqRef.current += 1;
     setSelectedStaffId("");
     setAvailability({ kind: "idle" });
     availabilityRequestSeqRef.current += 1;
