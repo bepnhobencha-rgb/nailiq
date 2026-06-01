@@ -54,7 +54,7 @@ import { ACTIVE_GRID_STATUSES } from "@/shared/types";
  *  at the time of writing; the column itself exists. Here we read
  *  the value through `as { … }` casts at the call site instead. */
 const SALON_DASHBOARD_SELECT =
-  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code";
+  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, subscription_plan, plan_override, feature_flags, voice_ai_enabled";
 
 type SalonRow = {
   id: string;
@@ -79,6 +79,15 @@ type SalonRow = {
   dashboard_density: unknown | null;
   /** Currency token (CAD / USD / VND). Drives money formatting. */
   currency_code: unknown | null;
+  /* ── Release feature-flag inputs (PR1: loaded, not yet enforced) ──
+   * Loaded into the dashboard context so `isReleaseFeatureEnabled`
+   * (@/shared/features/featureRegistry) can resolve gating without a
+   * second round-trip. Optional/nullable — partial contexts resolve to
+   * registry defaults. No behavior change in PR1; consumed in PR2+. */
+  subscription_plan?: string | null;
+  plan_override?: string | null;
+  feature_flags?: unknown;
+  voice_ai_enabled?: boolean | null;
 };
 
 async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
@@ -267,6 +276,14 @@ async function getSalonIfMember(
       dashboard_preset: row.dashboard_preset ?? null,
       dashboard_density: row.dashboard_density ?? null,
       currency_code: row.currency_code ?? null,
+      // Release feature-flag inputs (PR1: carried in context, not yet enforced).
+      subscription_plan: row.subscription_plan ?? null,
+      plan_override: row.plan_override ?? null,
+      feature_flags: row.feature_flags ?? null,
+      voice_ai_enabled:
+        typeof row.voice_ai_enabled === "boolean"
+          ? row.voice_ai_enabled
+          : null,
     },
     role,
     viewerEmail,
