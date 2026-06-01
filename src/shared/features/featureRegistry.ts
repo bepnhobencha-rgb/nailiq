@@ -388,3 +388,98 @@ export function isReleaseFeatureEnabled(
 export function releaseFeatureDefault(key: ReleaseFeatureKey): boolean {
   return RELEASE_FEATURES[key].defaultOn;
 }
+
+/**
+ * UI grouping for the read-only SuperAdmin release-features panel.
+ *
+ * Distinct from the registry `phase` (base/beta) and the `group` taxonomy:
+ * features whose state is owned by an external store (`plan` billing or the
+ * dedicated `column`) are surfaced together so an operator sees at a glance
+ * that they are NOT controlled by the per-salon `feature_flags` jsonb.
+ *
+ *   - "base"        → Base-phase, registry/jsonb-sourced (default ON)
+ *   - "beta"        → Beta-phase, registry/jsonb-sourced (default OFF)
+ *   - "plan_column" → resolved from billing plan or the voice_ai column
+ */
+export type ReleaseFeatureUiGroup = "base" | "beta" | "plan_column";
+
+export function releaseFeatureUiGroup(
+  key: ReleaseFeatureKey,
+): ReleaseFeatureUiGroup {
+  const desc = RELEASE_FEATURES[key];
+  if (desc.source.kind === "plan" || desc.source.kind === "column") {
+    return "plan_column";
+  }
+  return desc.phase === "base" ? "base" : "beta";
+}
+
+/**
+ * Read-only resolution snapshot for one feature on one salon — everything the
+ * SuperAdmin panel needs to render a row without re-deriving anything.
+ *
+ * Pure: no I/O, no mutation. `overridden` is true when the salon's resolved
+ * state differs from the registry default (a per-salon flag, the voice column,
+ * a plan/plan_override, or a `feature_flags` billing override pushed it off the
+ * default). It is purely descriptive — this never writes anything.
+ */
+export type ReleaseFeatureResolution = {
+  key: ReleaseFeatureKey;
+  label: string;
+  description: string;
+  group: ReleaseFeatureDescriptor["group"];
+  phase: ReleasePhase;
+  uiGroup: ReleaseFeatureUiGroup;
+  /** Resolved ON/OFF for this salon (`isReleaseFeatureEnabled`). */
+  resolved: boolean;
+  /** Registry no-override default (Base → ON, Beta → OFF). */
+  defaultOn: boolean;
+  /** Where the resolver read the state from. */
+  source: FeatureSource["kind"];
+  /** True when `resolved` diverges from `defaultOn` for this salon. */
+  overridden: boolean;
+};
+
+/**
+ * Describe how a single release feature resolves for a given salon. Pure,
+ * read-only — wraps `isReleaseFeatureEnabled` and the registry descriptor into
+ * the shape the SuperAdmin read-only panel consumes.
+ */
+export function describeReleaseFeatureForSalon(
+  salon: ReleaseFeatureSalon,
+  key: ReleaseFeatureKey,
+): ReleaseFeatureResolution {
+  const desc = RELEASE_FEATURES[key];
+  const resolved = isReleaseFeatureEnabled(salon, key);
+  return {
+    key,
+    label: desc.label,
+    description: desc.description,
+    group: desc.group,
+    phase: desc.phase,
+    uiGroup: releaseFeatureUiGroup(key),
+    resolved,
+    defaultOn: desc.defaultOn,
+    source: desc.source.kind,
+    overridden: resolved !== desc.defaultOn,
+  };
+}
+
+/**
+ * Describe every release feature for a salon, grouped for the read-only panel
+ * into Base / Beta / Plan-Column. Order within each group follows
+ * `RELEASE_FEATURE_KEYS` (stable registry order).
+ */
+export function describeReleaseFeaturesForSalon(
+  salon: ReleaseFeatureSalon,
+): Record<ReleaseFeatureUiGroup, ReleaseFeatureResolution[]> {
+  const groups: Record<ReleaseFeatureUiGroup, ReleaseFeatureResolution[]> = {
+    base: [],
+    beta: [],
+    plan_column: [],
+  };
+  for (const key of RELEASE_FEATURE_KEYS) {
+    const row = describeReleaseFeatureForSalon(salon, key);
+    groups[row.uiGroup].push(row);
+  }
+  return groups;
+}

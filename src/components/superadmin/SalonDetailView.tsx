@@ -4,6 +4,7 @@ import { maskPhonePartial } from "@/shared/lib/maskPhone";
 import { DeletedRecordsSection } from "@/components/superadmin/DeletedRecordsSection";
 import { ImpersonateButton } from "@/components/superadmin/ImpersonateButton";
 import { SalonOverrideCard } from "@/components/superadmin/SalonOverrideCard";
+import { SalonReleaseFeaturesCard } from "@/components/superadmin/SalonReleaseFeaturesCard";
 import type { SuperAdminSalonDetail } from "@/shared/superadmin/superadminTypes";
 
 /**
@@ -17,7 +18,9 @@ import type { SuperAdminSalonDetail } from "@/shared/superadmin/superadminTypes"
  *   4. Stats grid: staff / services / bookings (this month + 7d)
  *   5. Overrides card (mutation surface — the only writes on this
  *      page, lifted out of the legacy SuperAdminPanel)
- *   6. Deleted records expander (soft-deleted services / staff)
+ *   6. Release features card (read-only resolved release-flag state —
+ *      no writes; mirrors `isReleaseFeatureEnabled` for this salon)
+ *   7. Deleted records expander (soft-deleted services / staff)
  *
  * Future (1E impersonation): a "Login as owner" CTA renders above
  * the overrides card. That slot is wired here so 1E only touches
@@ -52,6 +55,7 @@ export function SalonDetailView({
           salonName={salon.name || salon.slug}
         />
         <SalonOverrideCard salon={salon} />
+        <SalonReleaseFeaturesCard salon={salon} />
         <DeletedRecordsSection salonId={salon.id} />
       </div>
     </main>
