@@ -3,6 +3,7 @@
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { getEffectivePlan } from "@/shared/lib/subscriptionPlans";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import type { LoyaltyCard, LoyaltyProgram, LoyaltyStats } from "./types";
 
 type ActionResult<T = void> =
@@ -21,6 +22,13 @@ async function requirePremiumSalon(slug: string) {
     .maybeSingle();
 
   if (!salonRow) return { resolved: null, error: "not_found" as const };
+
+  // PR3 — release flag `loyalty` (Beta, default OFF → loyalty_enabled). Gate
+  // every loyalty mutation here, before the billing-plan check, so a disabled
+  // salon is refused regardless of plan. Release flag stays separate from plan.
+  if (!isReleaseFeatureEnabled(salonRow, "loyalty")) {
+    return { resolved: null, error: "feature_not_enabled" as const };
+  }
 
   const plan = getEffectivePlan({
     subscription_plan: (salonRow as { subscription_plan?: unknown }).subscription_plan as string | null,

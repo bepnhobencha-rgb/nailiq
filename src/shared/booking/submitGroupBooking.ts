@@ -13,6 +13,7 @@ import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { salonDayRangeUtc, salonToday, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 import { createClient } from "@/shared/lib/supabase/client";
 import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { hmToMinutes } from "@/shared/booking/hmToMinutes";
 import { dayKeyFromLocalDate } from "@/shared/booking/dayKeyFromDate";
 
@@ -100,6 +101,10 @@ export type GroupBookingResult =
         | "duplicate_submission"
         | "salon_paused"
         | "salon_not_found"
+        // PR3 — release flag `group_booking` is OFF for this salon.
+        // Defense-in-depth: PR2 already hides the group UI, but a direct
+        // server-action call must still be refused.
+        | "feature_not_enabled"
         | "salon_closed_day"
         | "invalid_input"
         | "invalid_group_size"
@@ -272,6 +277,12 @@ export async function submitGroupBooking(
     feature_flags?: Record<string, unknown> | null;
   };
   if (!salonRow.profile_complete) return fail("salon_paused");
+
+  // PR3 — release flag `group_booking` (Beta, default OFF). Refuse the
+  // mutation when disabled even though PR2 hides the UI (defense-in-depth).
+  if (!isReleaseFeatureEnabled(salonRow, "group_booking")) {
+    return fail("feature_not_enabled");
+  }
 
   // Plan-tier monthly cap. Group size is the count of new bookings
   // we'd insert, so pass it so a 7-person group can't sneak past a

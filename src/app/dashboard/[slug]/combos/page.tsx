@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { CombosPanel } from "@/components/dashboard/CombosPanel";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,26 @@ export default async function CombosPage({ params }: PageProps) {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) redirect("/register");
   const { supabase, salon } = ctx;
+
+  // PR3: release flag `combos` (Beta, registry-only, default OFF) gates the
+  // page. The combos route is not otherwise plan-gated, so fetch the flag
+  // inputs here and notFound() when disabled.
+  const { data: flagRow } = await supabase
+    .from("salons")
+    .select(
+      "subscription_plan, plan_override, feature_flags, voice_ai_enabled" as never,
+    )
+    .eq("id", salon.id)
+    .maybeSingle();
+  const flagFields = (flagRow ?? {}) as {
+    subscription_plan?: string | null;
+    plan_override?: string | null;
+    feature_flags?: Record<string, unknown> | null;
+    voice_ai_enabled?: boolean | null;
+  };
+  if (!isReleaseFeatureEnabled(flagFields, "combos")) {
+    notFound();
+  }
 
   const [{ data: combos }, { data: services }] = await Promise.all([
     supabase
