@@ -125,18 +125,29 @@ The full flag registry, override precedence, and key mapping are documented in
 keys so you know which store (`feature_flags` JSONB vs `voice_ai_enabled`
 column vs `plan_override`) each feature reads from.
 
-### 4.3 Release features (resolved) — read-only
+### 4.3 Release features — resolved state + editing
 
-Directly below the override card on the same salon page sits a **read-only**
-*Release features (resolved)* card. It has **no controls** — it just shows the
-effective state of every release surface for this salon so you can confirm what
-the overrides above actually resolve to. Each row shows the **resolved ON/OFF**,
-the registry **default**, a **source** badge (`jsonb` / `column` / `plan` /
-`registry`), and an **Override** badge when the salon diverges from the default.
-Rows are grouped **Base**, **Beta**, and **Plan / Column-controlled**.
+Directly below the override card on the same salon page sits the *Release
+features* card. Each row shows the **resolved ON/OFF**, the registry
+**default**, a **source** badge (`jsonb` / `column` / `plan` / `registry`), and
+an **Override** badge when the salon diverges from the default. Rows are grouped
+**Base**, **Beta**, and **Plan / Column-controlled**.
+
+**Editing (PR4b-1).** The 5 **jsonb-sourced** features —
+`receptionist_center`, `walkin_queue`, `group_booking`, `loyalty`,
+`advanced_reports` — have an inline **toggle** (force ON/OFF) and, when
+overridden, a **Reset to default** button that removes the override so the
+feature falls back to its registry default. Changes save immediately, write a
+`salon_flags_set` audit row, and the panel refreshes the resolved state. Every
+other source is **read-only** with an inline reason:
+
+- `ai_voice` (column) → edit via this page's Overrides card (Voice AI toggle).
+- `reviews` / `photos` (plan) → controlled by the billing plan.
+- registry-only features → no per-salon override yet.
 
 > Reminder shown on the card: *release flags control product visibility, not
-> billing.* To actually change a value, use the Overrides card above (§4.2).
+> billing.* The Overrides card (§4.2) still writes raw `feature_flags` keys; the
+> release card is the release-aware view of the same jsonb store.
 
 ---
 

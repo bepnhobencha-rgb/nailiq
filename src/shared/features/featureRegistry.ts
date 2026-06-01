@@ -483,3 +483,40 @@ export function describeReleaseFeaturesForSalon(
   }
   return groups;
 }
+
+/**
+ * The mapped `feature_flags` jsonb key a release feature is editable through,
+ * or null when the feature is NOT per-salon-editable via the release panel.
+ *
+ * Only `jsonb`-sourced features are editable (PR4b-1): their state lives in a
+ * boolean `feature_flags[flagKey]` that a SuperAdmin can set (true/false) or
+ * reset (remove the key → fall back to the registry default). `column`
+ * (voice), `plan` (billing), and `registry` (default-only) sources return null
+ * — they stay read-only here:
+ *   - column → editable elsewhere (Overrides / Voice AI), not the release panel,
+ *   - plan   → owned by billing; toggling would conflict with `hasFeature`,
+ *   - registry → no per-salon store yet (no migration in PR4b-1).
+ */
+export function releaseFeatureEditableFlagKey(
+  key: ReleaseFeatureKey,
+): string | null {
+  const source = RELEASE_FEATURES[key].source;
+  return source.kind === "jsonb" ? source.flagKey : null;
+}
+
+/** True when a release feature is per-salon-editable via the release panel. */
+export function isReleaseFeatureEditable(key: ReleaseFeatureKey): boolean {
+  return releaseFeatureEditableFlagKey(key) !== null;
+}
+
+/**
+ * Whitelist of editable `feature_flags` keys, derived from the registry (not a
+ * hand-maintained list). The mutation path validates set/unset requests
+ * against this set so only release-owned jsonb keys can be written/removed via
+ * the release panel — never a billing key or an unrelated SuperAdmin flag.
+ */
+export const EDITABLE_RELEASE_FLAG_KEYS: ReadonlySet<string> = new Set(
+  RELEASE_FEATURE_KEYS.map(releaseFeatureEditableFlagKey).filter(
+    (k): k is string => k !== null,
+  ),
+);

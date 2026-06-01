@@ -2,22 +2,38 @@ import { test, expect } from "@playwright/test";
 import { cleanupTestSalon, seedTestSalon } from "../helpers/db";
 import {
   cleanupTestSuperadmin,
+  getLatestAuditLog,
   loginAsSuperadmin,
   seedTestSuperadmin,
   type SeededSuperAdmin,
 } from "../helpers/superadmin";
 
 /**
- * Read-only SuperAdmin "Release features (resolved)" panel
- * (`SalonReleaseFeaturesCard`) on `/superadmin/salons/[salonId]`.
+ * SuperAdmin "Release features" panel (`SalonReleaseFeaturesCard`) on
+ * `/superadmin/salons/[salonId]`.
  *
- * Seeds a salon with two overrides that diverge from the registry defaults —
- * a Beta feature forced ON (`group_booking_enabled`) and a Base feature forced
- * OFF (`receptionist_center_enabled`) — then asserts the panel renders, carries
- * the "not billing" copy, shows the three groups, and surfaces an override
- * badge for the diverging features. This card has no write controls, so the
- * spec only reads — it never toggles anything.
+ * Two describes:
+ *   1. Display (PR4a) — seeds a salon with two overrides diverging from the
+ *      registry defaults, asserts the panel/copy/groups/override badges.
+ *   2. Editable controls (PR4b-1) — toggles a jsonb-sourced feature ON, asserts
+ *      resolved state + audit row, resets it to default, and confirms
+ *      plan/column sources stay read-only (no toggle).
  */
+
+/** Navigate to a salon detail page after settling the post-login redirect.
+ * loginAsSuperadmin resolves on the intermediate `/superadmin` URL which then
+ * client-redirects to `/superadmin/dashboard`; on the slower mobile project the
+ * redirect is still in flight when the next goto fires and Playwright aborts it
+ * ("interrupted by another navigation"). Wait for it to settle first. */
+async function gotoSalonDetail(
+  page: import("@playwright/test").Page,
+  salonId: string,
+) {
+  await page
+    .waitForURL(/\/superadmin\/dashboard(\/|$)/, { timeout: 30_000 })
+    .catch(() => {});
+  await page.goto(`/superadmin/salons/${salonId}`);
+}
 
 const SALON_SLUG = "e2e-release-features-panel";
 
@@ -101,5 +117,119 @@ test.describe("SuperAdmin · read-only salon release-features panel", () => {
     await expect(
       panel.getByTestId("release-override-public_booking"),
     ).toHaveCount(0);
+  });
+});
+
+const EDIT_SALON_SLUG = "e2e-release-features-editable";
+
+let editAdmin: SeededSuperAdmin;
+let editSalonId: string;
+
+test.describe("SuperAdmin · editable release-features controls (PR4b-1)", () => {
+  test.beforeAll(async () => {
+    editAdmin = await seedTestSuperadmin({ role: "founder" });
+    // Seed clean (no feature_flags overrides) so group_booking starts at its
+    // Beta default OFF — the toggle then drives it ON.
+    const seeded = await seedTestSalon({
+      slug: EDIT_SALON_SLUG,
+      name: "E2E Release Features Editable Salon",
+      phone: "15550008888",
+    });
+    editSalonId = seeded.salonId;
+  });
+
+  test.afterAll(async () => {
+    await cleanupTestSalon(EDIT_SALON_SLUG);
+    if (editAdmin) await cleanupTestSuperadmin(editAdmin.userId);
+  });
+
+  test("toggle a jsonb feature ON, audit it, reset to default; plan/column stay read-only", async ({
+    page,
+  }) => {
+    await loginAsSuperadmin(page, editAdmin);
+    await gotoSalonDetail(page, editSalonId);
+
+    const panel = page.getByTestId("superadmin-salon-release-features");
+    await expect(panel).toBeVisible();
+
+    const groupRow = panel.getByTestId("release-feature-group_booking");
+    const toggle = panel.getByTestId("release-toggle-group_booking");
+
+    // Starts at Beta default OFF, not overridden, with a toggle (editable).
+    await expect(groupRow).toHaveAttribute("data-resolved", "off");
+    await expect(groupRow).toHaveAttribute("data-editable", "true");
+    await expect(toggle).toBeVisible();
+    await expect(
+      panel.getByTestId("release-override-group_booking"),
+    ).toHaveCount(0);
+
+    // Read-only sources expose NO toggle.
+    await expect(
+      panel.getByTestId("release-toggle-reviews"),
+    ).toHaveCount(0); // plan-sourced
+    await expect(
+      panel.getByTestId("release-toggle-photos"),
+    ).toHaveCount(0); // plan-sourced
+    await expect(panel.getByTestId("release-toggle-ai_voice")).toHaveCount(0); // column
+    await expect(
+      panel.getByTestId("release-feature-ai_voice"),
+    ).toHaveAttribute("data-editable", "false");
+
+    // Toggle ON → resolved flips to ON + override badge appears (router.refresh).
+    await toggle.click();
+    await expect(groupRow).toHaveAttribute("data-resolved", "on", {
+      timeout: 15_000,
+    });
+    await expect(
+      panel.getByTestId("release-override-group_booking"),
+    ).toBeVisible();
+
+    // Audit row written with the new flag value.
+    await expect
+      .poll(
+        async () => {
+          const row = await getLatestAuditLog({
+            actorUserId: editAdmin.userId,
+            action: "salon_flags_set",
+          });
+          const flags = row?.after_jsonb?.feature_flags as
+            | Record<string, unknown>
+            | undefined;
+          return flags?.group_booking_enabled;
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+
+    // Reset to default → key removed, resolved returns to Beta default OFF,
+    // override badge disappears.
+    await panel.getByTestId("release-reset-group_booking").click();
+    await expect(groupRow).toHaveAttribute("data-resolved", "off", {
+      timeout: 15_000,
+    });
+    await expect(
+      panel.getByTestId("release-override-group_booking"),
+    ).toHaveCount(0);
+
+    // Reset audit row: the merged feature_flags no longer carries the key.
+    await expect
+      .poll(
+        async () => {
+          const row = await getLatestAuditLog({
+            actorUserId: editAdmin.userId,
+            action: "salon_flags_set",
+          });
+          const flags = (row?.after_jsonb?.feature_flags ?? {}) as Record<
+            string,
+            unknown
+          >;
+          return Object.prototype.hasOwnProperty.call(
+            flags,
+            "group_booking_enabled",
+          );
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(false);
   });
 });

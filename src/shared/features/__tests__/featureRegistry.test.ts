@@ -18,6 +18,9 @@ import {
   releaseFeatureUiGroup,
   describeReleaseFeatureForSalon,
   describeReleaseFeaturesForSalon,
+  releaseFeatureEditableFlagKey,
+  isReleaseFeatureEditable,
+  EDITABLE_RELEASE_FLAG_KEYS,
 } from "../featureRegistry";
 
 let pass = 0;
@@ -286,6 +289,77 @@ test("describeReleaseFeaturesForSalon: groups partition every key exactly once",
     ),
     "plan_column group is all plan/column-sourced",
   );
+});
+
+// ── PR4b editability: jsonb editable, others read-only ────────────────────
+test("isReleaseFeatureEditable true for exactly the 5 jsonb-sourced features", () => {
+  const editable = [
+    "receptionist_center",
+    "walkin_queue",
+    "group_booking",
+    "loyalty",
+    "advanced_reports",
+  ] as const;
+  for (const k of editable) {
+    eq(isReleaseFeatureEditable(k), true, `${k} should be editable`);
+  }
+  // Count: only these 5 are editable across the whole registry.
+  const editableCount = RELEASE_FEATURE_KEYS.filter(isReleaseFeatureEditable).length;
+  eq(editableCount, 5, "exactly 5 editable features");
+});
+
+test("isReleaseFeatureEditable false for column/plan/registry features", () => {
+  eq(isReleaseFeatureEditable("ai_voice"), false, "column (voice) not editable here");
+  eq(isReleaseFeatureEditable("reviews"), false, "plan (reviews) not editable");
+  eq(isReleaseFeatureEditable("photos"), false, "plan (photos) not editable");
+  for (const k of ["public_booking", "combos", "marketing", "tv_mode", "experimental_realtime"] as const) {
+    eq(isReleaseFeatureEditable(k), false, `${k} (registry) not editable`);
+  }
+});
+
+test("releaseFeatureEditableFlagKey maps each editable feature to its jsonb key", () => {
+  eq(releaseFeatureEditableFlagKey("receptionist_center"), "receptionist_center_enabled", "rc key");
+  eq(releaseFeatureEditableFlagKey("walkin_queue"), "walkin_queue_enabled", "walkin key");
+  eq(releaseFeatureEditableFlagKey("group_booking"), "group_booking_enabled", "group key");
+  eq(releaseFeatureEditableFlagKey("loyalty"), "loyalty_enabled", "loyalty key");
+  eq(releaseFeatureEditableFlagKey("advanced_reports"), "reports_enabled", "reports key");
+  eq(releaseFeatureEditableFlagKey("ai_voice"), null, "column → null");
+  eq(releaseFeatureEditableFlagKey("photos"), null, "plan → null");
+  eq(releaseFeatureEditableFlagKey("combos"), null, "registry → null");
+});
+
+test("EDITABLE_RELEASE_FLAG_KEYS contains exactly the 5 mapped jsonb keys", () => {
+  eq(EDITABLE_RELEASE_FLAG_KEYS.size, 5, "5 whitelisted keys");
+  for (const fk of [
+    "receptionist_center_enabled",
+    "walkin_queue_enabled",
+    "group_booking_enabled",
+    "loyalty_enabled",
+    "reports_enabled",
+  ]) {
+    assert(EDITABLE_RELEASE_FLAG_KEYS.has(fk), `whitelist has ${fk}`);
+  }
+  // A billing/unrelated key is NOT in the whitelist (reset can't strip it).
+  assert(!EDITABLE_RELEASE_FLAG_KEYS.has("photo_confirmation"), "no billing key");
+  assert(!EDITABLE_RELEASE_FLAG_KEYS.has("walkin_auto_assign"), "no unrelated flag");
+});
+
+test("reset semantics: removing the key yields the default, set-false does NOT", () => {
+  // Base jsonb feature (receptionist_center, default ON):
+  //   set false → resolves OFF (overridden); remove key → resolves ON (default).
+  const setFalse = describeReleaseFeatureForSalon(
+    { feature_flags: { receptionist_center_enabled: false } },
+    "receptionist_center",
+  );
+  eq(setFalse.resolved, false, "explicit false → OFF");
+  eq(setFalse.overridden, true, "explicit false diverges from default ON");
+  const reset = describeReleaseFeatureForSalon({ feature_flags: {} }, "receptionist_center");
+  eq(reset.resolved, true, "no key → default ON");
+  eq(reset.overridden, false, "no key → matches default");
+  // Beta jsonb feature (group_booking, default OFF): remove key → default OFF.
+  const betaReset = describeReleaseFeatureForSalon({ feature_flags: {} }, "group_booking");
+  eq(betaReset.resolved, false, "no key → Beta default OFF");
+  eq(betaReset.overridden, false, "no key → matches default");
 });
 
 console.log(`\nfeatureRegistry: ${pass} passed, ${fail} failed`);
