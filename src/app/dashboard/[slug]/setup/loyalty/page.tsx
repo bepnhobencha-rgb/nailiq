@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { getLoyaltyProgram } from "@/shared/loyalty/loyaltyActions";
 import { listGiftCards } from "@/shared/loyalty/giftCardActions";
 import { getEffectivePlan } from "@/shared/lib/subscriptionPlans";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { LoyaltySetupClient } from "@/components/dashboard/LoyaltySetupClient";
 
 export const dynamic = "force-dynamic";
@@ -28,10 +29,22 @@ export default async function LoyaltySetupPage({ params }: Props) {
     .eq("id", salon.id)
     .maybeSingle();
 
+  const planFields = (salonRow ?? {}) as {
+    subscription_plan?: string | null;
+    plan_override?: string | null;
+    feature_flags?: Record<string, unknown> | null;
+  };
+
+  // PR3: release flag `loyalty` (Beta, default OFF) gates the whole page.
+  // notFound() when disabled — direct-URL access is refused, not just hidden.
+  if (!isReleaseFeatureEnabled(planFields, "loyalty")) {
+    notFound();
+  }
+
   const plan = getEffectivePlan({
-    subscription_plan: (salonRow as { subscription_plan?: string } | null)?.subscription_plan ?? null,
-    plan_override: (salonRow as { plan_override?: string } | null)?.plan_override ?? null,
-    feature_flags: (salonRow as { feature_flags?: Record<string, unknown> } | null)?.feature_flags ?? null,
+    subscription_plan: planFields.subscription_plan ?? null,
+    plan_override: planFields.plan_override ?? null,
+    feature_flags: planFields.feature_flags ?? null,
   });
 
   const isPremium = plan === "premium";
