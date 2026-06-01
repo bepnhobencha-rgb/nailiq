@@ -124,13 +124,11 @@ Base feature **OFF**, set its key to `false`. Every change is audit-logged
 
 ---
 
-## Read-only resolved panel (PR4a)
+## Release features panel (PR4a display + PR4b-1 editing)
 
-`/superadmin/salons/[salonId]` renders a **read-only** "Release features
-(resolved)" card (`SalonReleaseFeaturesCard`) directly under the Overrides
-card. It does not add any controls — no toggles, no save, no reset — it only
-mirrors what `isReleaseFeatureEnabled` resolves for the salon so an operator
-can read the effective state without inferring it from the mutation card.
+`/superadmin/salons/[salonId]` renders a "Release features" card
+(`SalonReleaseFeaturesCard`) directly under the Overrides card. PR4a shipped it
+read-only; **PR4b-1** makes the **jsonb-sourced** features editable in place.
 
 Each row shows:
 
@@ -149,19 +147,45 @@ the last bucket collects features whose state is owned by an external store
 `feature_flags` jsonb. The card also carries the standing reminder that
 **release flags control product visibility, not billing**.
 
-The panel is driven by a pure, read-only helper:
+### Editing (PR4b-1)
+
+Only the **5 jsonb-sourced** release features are editable here —
+`receptionist_center`, `walkin_queue`, `group_booking`, `loyalty`,
+`advanced_reports`. Each editable row gets:
+
+- a **toggle** that sets the mapped `feature_flags` key true/false, and
+- a **"reset to default"** button (only when overridden) that **removes** the
+  key so the resolver falls back to the registry default (it does *not* set
+  `false`).
+
+Every other source stays **read-only** with an inline reason:
+
+| Source | Editable? | Why |
+| --- | --- | --- |
+| `jsonb` | ✅ toggle + reset | per-salon override in `feature_flags` |
+| `column` (`ai_voice`) | ❌ | edit via Overrides → Voice AI (no tri-state to reset) |
+| `plan` (`reviews`/`photos`) | ❌ | owned by billing — toggling would conflict with `hasFeature` |
+| `registry`-only | ❌ | no per-salon store yet (would need a new key; deferred, no migration) |
+
+Writes **reuse `updateSalonFlags`** (the same audited path as the Overrides
+card) — a toggle sends a `featureFlags` patch; a reset sends
+`featureFlagsUnset: [flagKey]`, whitelisted server-side against
+`EDITABLE_RELEASE_FLAG_KEYS` so it can only ever remove a release jsonb key,
+never a billing or unrelated flag. Each change writes a `salon_flags_set`
+audit row (before/after `feature_flags`). After a successful change the card
+calls `router.refresh()` so the resolved state never goes stale.
+
+The panel is driven by pure registry helpers:
 
 ```ts
 import {
-  describeReleaseFeatureForSalon,      // one feature → resolution snapshot
   describeReleaseFeaturesForSalon,     // all features, grouped Base/Beta/Plan-Column
+  releaseFeatureEditableFlagKey,       // jsonb flagKey, or null when read-only
+  EDITABLE_RELEASE_FLAG_KEYS,          // server-side unset whitelist
 } from "@/shared/features/featureRegistry";
-
-const row = describeReleaseFeatureForSalon(salon, "group_booking");
-// { resolved, defaultOn, source, overridden, uiGroup, ... }
 ```
 
-Both helpers are covered by the registry unit tests
+These helpers are covered by the registry unit tests
 ([`src/shared/features/__tests__/featureRegistry.test.ts`](../src/shared/features/__tests__/featureRegistry.test.ts))
 and the panel by an e2e spec
 ([`e2e/superadmin/salon-release-features.spec.ts`](../e2e/superadmin/salon-release-features.spec.ts)).
@@ -179,7 +203,8 @@ verified independently:
 | **PR2** | UI gating — hide sidebar / mobile-nav items when a feature is OFF. |
 | **PR3** | Route + server gating — beta routes `notFound()`; `requireFeature` guards server actions / API routes. |
 | **PR4a** | SuperAdmin **read-only** resolved panel — `SalonReleaseFeaturesCard` shows resolved/default/source/override per salon, grouped Base/Beta/Plan-Column. No new writes. |
-| **PR4b** | SuperAdmin write wiring — surface registry-only keys as editable controls (separate PR). |
+| **PR4b-1** | SuperAdmin **editable** controls for the 5 jsonb-sourced features — toggle + reset-to-default, reusing `updateSalonFlags`. column/plan/registry stay read-only. No migration. |
+| **PR4b-2/3** | (deferred) column `ai_voice` in-panel editing; registry-only → jsonb key mapping. |
 | **PR5** | E2E — toggle a Beta flag and assert nav hidden + route 404 + action blocked. |
 
 ### Adding a new feature flag

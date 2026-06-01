@@ -7,6 +7,7 @@ import {
   type SuperAdminRole,
 } from "@/shared/lib/superadmin";
 import { writeAuditLog } from "@/shared/superadmin/audit";
+import { EDITABLE_RELEASE_FLAG_KEYS } from "@/shared/features/featureRegistry";
 import {
   isPlatformFlagKey,
   isRestorableTable,
@@ -408,11 +409,26 @@ export async function updateSalonFlags(
     update.admin_notes = trimmed.length > 0 ? trimmed : null;
   }
 
-  if (patch.featureFlags) {
+  // feature_flags changes come from two surfaces that share this action:
+  //   - SalonOverrideCard: sends a `featureFlags` patch of raw boolean keys.
+  //   - SalonReleaseFeaturesCard (PR4b): sends a `featureFlags` patch to set a
+  //     mapped release key true/false, OR `featureFlagsUnset` to RESET a release
+  //     key to its registry default by removing it entirely.
+  // Both reduce to: merge the boolean patch over the existing flags, then strip
+  // any whitelisted release keys requested for removal. Only editable release
+  // jsonb keys may be removed — an unset of any other key is ignored, so reset
+  // can never strip a billing flag or an unrelated SuperAdmin flag.
+  const unsetKeys = Array.isArray(patch.featureFlagsUnset)
+    ? patch.featureFlagsUnset.filter((k) => EDITABLE_RELEASE_FLAG_KEYS.has(k))
+    : [];
+  if (patch.featureFlags || unsetKeys.length > 0) {
     const merged: SuperAdminFeatureFlags = {
       ...normalizeFeatureFlags(existing.feature_flags),
-      ...normalizeFeatureFlags(patch.featureFlags),
+      ...(patch.featureFlags ? normalizeFeatureFlags(patch.featureFlags) : {}),
     };
+    for (const key of unsetKeys) {
+      delete merged[key];
+    }
     update.feature_flags = merged;
   }
 

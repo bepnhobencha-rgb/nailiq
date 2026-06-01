@@ -351,6 +351,14 @@ export type LoadSalonDetailResult =
 export type UpdateSalonFlagsInput = {
   planOverride?: SuperAdminPlanOverride;
   featureFlags?: SuperAdminFeatureFlags;
+  /**
+   * Keys to REMOVE from `salons.feature_flags` (not set to null/false). Used by
+   * the release-features panel's "reset to default" — deleting the key makes
+   * the resolver fall back to the registry default. The action whitelists these
+   * against the editable release jsonb keys, so an unset can never strip an
+   * unrelated flag. Removal runs after the `featureFlags` merge.
+   */
+  featureFlagsUnset?: string[];
   isBeta?: boolean;
   adminNotes?: string | null;
   voiceAiEnabled?: boolean;
