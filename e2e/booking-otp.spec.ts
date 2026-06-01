@@ -148,8 +148,13 @@ test.describe("Booking Flow — Phone OTP", () => {
     await fillReactInput(page.locator("#otp-code"), "999999");
     await page.getByRole("button", { name: /xác thực|verify/i }).last().click();
 
-    // Error should appear
-    await expect(page.locator('[role="alert"]')).toBeVisible({ timeout: 8_000 });
+    // Error should appear. Scope to the OTP error text instead of [role="alert"]:
+    // the bare role selector also matches Next.js's global
+    // <div role="alert" id="__next-route-announcer__">, tripping Playwright
+    // strict mode (2 matches) intermittently — observed on the mobile project.
+    await expect(
+      page.getByText(/incorrect code|mã không đúng/i),
+    ).toBeVisible({ timeout: 8_000 });
 
     // Fix with correct demo code
     await fillReactInput(page.locator("#otp-code"), OTP_DEMO_CODE);
