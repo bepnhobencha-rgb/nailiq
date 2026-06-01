@@ -8,6 +8,7 @@ import { loadPartyCardsAction } from "@/shared/dashboard/loadPartyCardsAction";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { userEn } from "@/shared/i18n/user";
 import { salonToday } from "@/shared/lib/salonTime";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +63,25 @@ export default async function ReceptionistCenterPage({
     redirect("/register");
   }
 
+  // PR2: resolve Beta release flags that gate in-board surfaces (party-card
+  // strip → group_booking, TV preset → tv_mode). Server-resolved so the client
+  // component receives plain booleans.
+  const { data: flagRow } = await ctx.supabase
+    .from("salons")
+    .select(
+      "subscription_plan, plan_override, feature_flags, voice_ai_enabled" as never,
+    )
+    .eq("id", ctx.salon.id)
+    .maybeSingle();
+  const flagSalon = (flagRow ?? {}) as {
+    subscription_plan?: string | null;
+    plan_override?: string | null;
+    feature_flags?: unknown;
+    voice_ai_enabled?: boolean | null;
+  };
+  const groupBookingEnabled = isReleaseFeatureEnabled(flagSalon, "group_booking");
+  const tvModeEnabled = isReleaseFeatureEnabled(flagSalon, "tv_mode");
+
   // Error-boundary labels are sourced server-side from English (the
   // primary product language per UX_PRINCIPLES §7). The boundary
   // surface is rare; a follow-up can fold a client wrapper that
@@ -78,6 +98,8 @@ export default async function ReceptionistCenterPage({
         viewerRole={ctx.role}
         bookingLimitStatus={bookingLimitStatus}
         partyCards={partyCardsResult.ok ? partyCardsResult.cards : []}
+        groupBookingEnabled={groupBookingEnabled}
+        tvModeEnabled={tvModeEnabled}
       />
     </ReceptionistErrorBoundary>
   );

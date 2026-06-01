@@ -129,6 +129,13 @@ export type ReceptionistCenterProps = {
   bookingLimitStatus?: import("@/shared/dashboard/loadBookingLimitStatus").BookingLimitStatus | null;
   /** Party cards for today + 7 days. Empty array if none or service-role key unavailable. */
   partyCards?: PartyCard[];
+  /** Release flag `group_booking` (PR2). When false, the party-card strip is
+   *  not rendered. Defaults to `true` so callers that don't resolve the flag
+   *  are unaffected; the center page always passes the resolved value. */
+  groupBookingEnabled?: boolean;
+  /** Release flag `tv_mode` (PR2). When false, the TV-preset full-screen view
+   *  is not taken even if `dashboard_preset === "tv"`. Defaults to `true`. */
+  tvModeEnabled?: boolean;
 };
 
 function loadErrorCopy(
@@ -257,12 +264,16 @@ function ReceptionistCenterInner({
   viewerRole,
   bookingLimitStatus,
   partyCards,
+  groupBookingEnabled,
+  tvModeEnabled,
 }: {
   slug: string;
   initialOk: ReceptionistCenterData;
   viewerRole: SalonMemberRole;
   bookingLimitStatus: import("@/shared/dashboard/loadBookingLimitStatus").BookingLimitStatus | null;
   partyCards: PartyCard[];
+  groupBookingEnabled: boolean;
+  tvModeEnabled: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1422,7 +1433,9 @@ function ReceptionistCenterInner({
   // `DASHBOARD_LAYOUT_RULES.md` §3. Bypasses the three-zone shell
   // entirely; receptionists exit via the corner button which writes
   // `dashboard_preset = 'reception'` and reloads via realtime.
-  if (data.dashboardPreset === "tv") {
+  // Release flag `tv_mode` (PR2): when OFF, ignore the TV preset and fall
+  // through to the normal board (the surface is Beta / not yet GA).
+  if (tvModeEnabled && data.dashboardPreset === "tv") {
     return (
       <TVModeView
         slug={slug}
@@ -2074,7 +2087,9 @@ function ReceptionistCenterInner({
             actionable party issue shows only as a compact cockpit alert,
             and clicking its "Open party bookings" reveals the cards on
             demand (partyRevealed). No actionable issue → no party section. */}
-        {basicModeActive && !partyRevealed ? null : (
+        {/* Release flag `group_booking` (PR2): hide the party-card strip
+            entirely when group booking is disabled for this salon. */}
+        {!groupBookingEnabled || (basicModeActive && !partyRevealed) ? null : (
           <div id="party-strip">
             <PartyCardPanel
               initialCards={partyCards}
@@ -2516,6 +2531,8 @@ export function ReceptionistCenter({
   viewerRole,
   bookingLimitStatus,
   partyCards,
+  groupBookingEnabled = true,
+  tvModeEnabled = true,
 }: ReceptionistCenterProps) {
   if (!initialResult.ok) {
     return <ReceptionistGateError code={initialResult.error} />;
@@ -2527,6 +2544,8 @@ export function ReceptionistCenter({
       viewerRole={viewerRole}
       bookingLimitStatus={bookingLimitStatus ?? null}
       partyCards={partyCards ?? []}
+      groupBookingEnabled={groupBookingEnabled}
+      tvModeEnabled={tvModeEnabled}
     />
   );
 }

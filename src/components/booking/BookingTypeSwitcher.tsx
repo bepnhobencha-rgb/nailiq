@@ -47,6 +47,7 @@ export function BookingTypeSwitcher({
   categories,
   language = "en",
   voiceAiEnabled = false,
+  groupBookingEnabled = true,
 }: {
   t: BookingMessages;
   shopSlug: string;
@@ -58,6 +59,10 @@ export function BookingTypeSwitcher({
   categories: readonly ServiceCategorySummary[];
   language?: "en" | "vi";
   voiceAiEnabled?: boolean;
+  /** Release flag `group_booking` (PR2). When false, the Individual/Group
+   *  toggle is not shown and only the individual flow renders. Defaults to
+   *  `true` so callers that don't resolve the flag are unaffected. */
+  groupBookingEnabled?: boolean;
 }) {
   // P2.3 — initialize from ?mode= so language switch (which reloads
   // the page) doesn't drop the user back to individual.
@@ -93,7 +98,9 @@ export function BookingTypeSwitcher({
     activeStaffCount === 0
       ? 0
       : Math.min(activeStaffCount * MAX_WAVES, GROUP_MAX_SIZE);
-  const groupEnabled = maxGroupSize >= MIN_GROUP_SIZE;
+  // Group is available only when the salon has the capacity AND the
+  // `group_booking` release flag is enabled (PR2 — Beta, default OFF).
+  const groupEnabled = groupBookingEnabled && maxGroupSize >= MIN_GROUP_SIZE;
 
   // Defensive fallback — older deployed booking i18n bundles (before
   // PR #140 / #141) may not have the `groupBooking` namespace; if a

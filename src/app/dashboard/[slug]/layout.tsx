@@ -7,6 +7,11 @@ import { loadOwnerSalons } from "@/shared/dashboard/salonOwnerActions";
 import { expireImpersonationIfStale } from "@/shared/superadmin/impersonationActions";
 import { salonDayRangeUtc, salonToday } from "@/shared/lib/salonTime";
 import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
+import {
+  isReleaseFeatureEnabled,
+  BETA_FEATURE_KEYS,
+  type ReleaseFeatureKey,
+} from "@/shared/features/featureRegistry";
 
 type Props = {
   children: ReactNode;
@@ -105,12 +110,26 @@ export default async function DashboardSlugLayout({
 
   const { data: planRow } = await ctx.supabase
     .from("salons")
-    .select("subscription_plan, plan_override" as never)
+    .select(
+      "subscription_plan, plan_override, feature_flags, voice_ai_enabled" as never,
+    )
     .eq("id", ctx.salon.id)
     .maybeSingle();
-  const subscriptionPlan = parseSubscriptionPlan(
-    (planRow as { subscription_plan?: unknown } | null)?.subscription_plan,
-  );
+  const flagSalon = (planRow ?? {}) as {
+    subscription_plan?: string | null;
+    plan_override?: string | null;
+    feature_flags?: unknown;
+    voice_ai_enabled?: boolean | null;
+  };
+  const subscriptionPlan = parseSubscriptionPlan(flagSalon.subscription_plan);
+
+  // PR2: resolve Beta release-feature visibility server-side so the client
+  // sidebar/shell receive plain booleans (never the raw salon row). Base
+  // features are not gated, so only Beta keys are passed.
+  const releaseFeatures: Partial<Record<ReleaseFeatureKey, boolean>> = {};
+  for (const key of BETA_FEATURE_KEYS) {
+    releaseFeatures[key] = isReleaseFeatureEnabled(flagSalon, key);
+  }
 
   return (
     <>
@@ -123,6 +142,7 @@ export default async function DashboardSlugLayout({
         walkinQueueCount={walkinQueueCount}
         overdueCount={overdueCount}
         subscriptionPlan={subscriptionPlan}
+        releaseFeatures={releaseFeatures}
       >
         {children}
       </DashboardShell>

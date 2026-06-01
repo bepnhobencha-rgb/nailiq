@@ -130,6 +130,12 @@ export async function seedTestSalon(opts?: {
    * applied. Defaults to 'never' (no friction). Set to 'always_otp' for OTP tests.
    */
   booking_verification_mode?: "never" | "always_otp" | "auto" | "always_deposit" | "deposit_first";
+  /**
+   * `salons.feature_flags` JSONB overrides. PR2 gates Beta release features
+   * (e.g. group_booking) which default OFF — specs that exercise a Beta surface
+   * must enable its flag here, e.g. `{ group_booking_enabled: true }`.
+   */
+  feature_flags?: Record<string, boolean>;
 }) {
   const phone = opts?.phone ?? "15550001111";
   const slug = opts?.slug ?? "e2e-test-salon";
@@ -145,6 +151,7 @@ export async function seedTestSalon(opts?: {
       phone,
       profile_complete: true,
       opening_hours: SEED_OPENING_HOURS,
+      feature_flags: opts?.feature_flags ?? {},
       setup_wizard_completed_at: new Date().toISOString(),
       salon_phone:
         opts?.salon_phone === undefined

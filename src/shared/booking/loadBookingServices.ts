@@ -4,6 +4,7 @@ import type { BookingComboItem, BookingServiceItem } from "@/shared/booking/cata
 import { formatBookingPrice } from "@/shared/booking/formatBookingPrice";
 import { getSalonBySlug } from "@/shared/booking/getSalonBySlug";
 import { parseServiceCategory } from "@/shared/booking/serviceCategory";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { createClient } from "@/shared/lib/supabase/server";
 import { normalizeBrandColor } from "@/shared/lib/brandColor";
 import { parseCurrency, type Currency } from "@/shared/lib/currencyFormat";
@@ -49,6 +50,9 @@ export type BookingSalonMeta = {
   phoneOtpEnabled: boolean;
   /** When true, the Voice AI booking button is shown on the public booking page. */
   voiceAiEnabled: boolean;
+  /** Release flag `group_booking` (PR2). When false, the public booking page
+   *  hides the Individual/Group toggle and renders the individual flow only. */
+  groupBookingEnabled: boolean;
 };
 
 export type BookingLoadData = {
@@ -291,6 +295,18 @@ export async function loadBookingServicesForSalonSlug(
         (salon as { phone_otp_enabled?: unknown }).phone_otp_enabled === true,
       voiceAiEnabled:
         (salon as { voice_ai_enabled?: unknown }).voice_ai_enabled === true,
+      // Release flag `group_booking` (PR2). Resolved server-side from the
+      // salon's flags (getSalonBySlug uses select("*"), so the gating fields
+      // are present). Beta → default OFF unless SuperAdmin enables the flag.
+      groupBookingEnabled: isReleaseFeatureEnabled(
+        salon as {
+          subscription_plan?: string | null;
+          plan_override?: string | null;
+          feature_flags?: unknown;
+          voice_ai_enabled?: boolean | null;
+        },
+        "group_booking",
+      ),
     },
   };
 }

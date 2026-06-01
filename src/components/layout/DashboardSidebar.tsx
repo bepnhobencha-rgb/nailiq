@@ -30,6 +30,13 @@ import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { useBasicMode } from "@/shared/dashboard/useBasicMode";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
 import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
+import type { ReleaseFeatureKey } from "@/shared/features/featureRegistry";
+
+/** Server-resolved release-feature visibility map (PR2). Booleans only — the
+ *  registry/resolver runs server-side in the dashboard layout so this client
+ *  component never imports the raw salon row. Missing key → treated as its
+ *  registry default by the layout before it reaches here. */
+export type ReleaseFeatureMap = Partial<Record<ReleaseFeatureKey, boolean>>;
 
 type Props = {
   slug: string;
@@ -46,6 +53,9 @@ type Props = {
   salons?: OwnerSalonSummary[];
   /** Hides plan-gated items (e.g. Reviews) for free salons. */
   subscriptionPlan?: SubscriptionPlan;
+  /** Release-feature visibility (PR2). Beta nav items hide when their key is
+   *  false; Base items are not gated. See `featureRegistry`. */
+  releaseFeatures?: ReleaseFeatureMap;
   /**
    * Collapse state — owned by DashboardShell so a single hook instance
    * drives both the aside's `--nq-sidebar-w` CSS variable AND the
@@ -116,6 +126,7 @@ export function DashboardSidebar({
   collapsed,
   onToggleCollapsed,
   subscriptionPlan = "free",
+  releaseFeatures = {},
 }: Props) {
   const pathname = usePathname() ?? "";
   const { language } = useUserLanguage();
@@ -172,8 +183,13 @@ export function DashboardSidebar({
   // Sections render with thin separator dividers between them.
   // Settings sits in its OWN trailing section so it gets visually
   // pushed to the bottom (separator above) per the new info hierarchy.
-  const sections: NavSection[] = useMemo(
-    () => [
+  const sections: NavSection[] = useMemo(() => {
+    // Release-feature gate. A Beta nav item is hidden unless its mapped key is
+    // explicitly true in the server-resolved map. Base items are never passed
+    // here. `!== true` mirrors "Beta defaults OFF" for any omitted key.
+    const featureOff = (key: ReleaseFeatureKey): boolean =>
+      releaseFeatures[key] !== true;
+    return [
       // 1. Live operations — what the receptionist looks at right now.
       {
         key: "live",
@@ -253,6 +269,9 @@ export function DashboardSidebar({
             // prior BarChart2.
             icon: TrendingUp,
             match: (p) => p.startsWith(`${dashRoot}/reports`),
+            // Release flag: Reports is Beta (advanced_reports → reports_enabled),
+            // default OFF. Hidden unless SuperAdmin enables the flag.
+            hidden: featureOff("advanced_reports"),
           },
           {
             key: "reviews",
@@ -260,7 +279,9 @@ export function DashboardSidebar({
             href: `${dashRoot}/reviews`,
             icon: Star,
             match: (p) => p.startsWith(`${dashRoot}/reviews`),
-            hidden: subscriptionPlan === "free",
+            // Plan-sourced release flag (`reviews` → billing). Keeps the
+            // existing plan behavior — Pro+ see it, free does not.
+            hidden: featureOff("reviews"),
           },
           {
             key: "loyalty",
@@ -268,7 +289,8 @@ export function DashboardSidebar({
             href: `${dashRoot}/setup/loyalty`,
             icon: Gift,
             match: (p) => p.startsWith(`${dashRoot}/setup/loyalty`),
-            hidden: subscriptionPlan !== "premium",
+            // Release flag: Loyalty is Beta (loyalty_enabled), default OFF.
+            hidden: featureOff("loyalty"),
           },
           {
             key: "photos",
@@ -276,7 +298,9 @@ export function DashboardSidebar({
             href: `${dashRoot}/photos`,
             icon: Camera,
             match: (p) => p.startsWith(`${dashRoot}/photos`),
-            hidden: subscriptionPlan === "free",
+            // Plan-sourced release flag (`photos` → photo_confirmation). Keeps
+            // the existing plan behavior — Pro+ see it, free does not.
+            hidden: featureOff("photos"),
           },
           {
             key: "combos",
@@ -284,6 +308,8 @@ export function DashboardSidebar({
             href: `${dashRoot}/combos`,
             icon: Package,
             match: (p) => p.startsWith(`${dashRoot}/combos`),
+            // Release flag: Combos is Beta, default OFF.
+            hidden: featureOff("combos"),
           },
           {
             key: "no-show-protection",
@@ -310,7 +336,11 @@ export function DashboardSidebar({
             href: null,
             icon: Sparkles,
             match: () => false,
+            // Release flag: Marketing is Beta, default OFF. Hidden unless
+            // enabled; when enabled it still renders as a "Soon" placeholder
+            // (no href) until the surface ships.
             disabled: true,
+            hidden: featureOff("marketing"),
           },
         ],
       },
@@ -327,8 +357,8 @@ export function DashboardSidebar({
           },
         ],
       },
-    ],
-    [
+    ];
+  }, [
       dashRoot,
       t.calendar,
       t.clients,
@@ -349,6 +379,7 @@ export function DashboardSidebar({
       walkinQueueCount,
       overdueCount,
       subscriptionPlan,
+      releaseFeatures,
     ],
   );
 
