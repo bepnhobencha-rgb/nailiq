@@ -50,6 +50,13 @@ test.describe("Receptionist queue + assign", () => {
     const pill = page.getByTestId("status-pill");
     await expect(pill).toContainText(/\b1\b/);
     await expect(pill).toHaveAttribute("data-state", /^(calm|default|busy)$/);
+
+    // Queue item can appear via realtime before submit promise resolves; wait
+    // for form reset. The submit button swaps to its submitting label while the
+    // add-walkin server action is in flight and only restores `walkin-submit-label`
+    // once submitting flips back to false — the same tick the form clears its
+    // inputs. Gating on it avoids asserting the reset too early on a slow CI server.
+    await expect(page.getByTestId("walkin-submit-label")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("walkin-add-form").locator('input[type="text"]').first()).toHaveValue(
       "",
     );
