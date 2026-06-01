@@ -3,10 +3,11 @@ import { test, expect } from "@playwright/test";
 /**
  * Phase 1F audit-log viewer — E2E coverage.
  *
- * Today this file only covers the unauthenticated-redirect case
- * because there is no superadmin-auth helper in `e2e/helpers/` yet
- * (the broader superadmin surface lands across PRs without e2e
- * coverage; building the auth-helper is a follow-up).
+ * This file covers the unauthenticated-redirect case. The
+ * authenticated audit-log surface is exercised end-to-end in
+ * `feature-flag-toggle.spec.ts`, which uses the superadmin-auth helper
+ * (`e2e/helpers/superadmin.ts`) to log in, mutate a flag, and assert the
+ * resulting `platform_flag_set` rows render in the viewer with a diff.
  *
  * Pending coverage (tracked in PR body as out-of-scope follow-up):
  *   - Role gating: founder allowed, support_admin allowed,
