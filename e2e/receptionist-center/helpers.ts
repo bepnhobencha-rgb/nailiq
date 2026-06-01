@@ -175,6 +175,10 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
       // status-pill that several tests rely on. See dashboardPresets.ts.
       dashboard_preset: "rush_hour",
       walkin_auto_assign: false,
+      // PR2: group_booking is a Beta release flag (default OFF). The party-card
+      // strip is gated on it — enable so PartyCardPanel renders for the specs
+      // that assert on it (e.g. party-panel-no-nested-button).
+      feature_flags: { group_booking_enabled: true },
     } as never)
     .select("id")
     .single();

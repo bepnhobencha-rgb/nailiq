@@ -269,6 +269,7 @@ async function PublicBookingRouteBody({
                 categories={await loadServiceCategories()}
                 language={lang}
                 voiceAiEnabled={load.salon.voiceAiEnabled}
+                groupBookingEnabled={load.salon.groupBookingEnabled}
               />
             </BookingFlowErrorBoundary>
           </div>

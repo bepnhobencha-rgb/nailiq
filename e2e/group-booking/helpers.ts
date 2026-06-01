@@ -41,6 +41,9 @@ export async function seedGroupTestSalon(
     slug,
     name: "E2E Group Salon",
     phone: "15557776666",
+    // PR2: group_booking is a Beta release flag (default OFF). Enable it so the
+    // public Individual/Group toggle renders for these specs.
+    feature_flags: { group_booking_enabled: true },
   });
 
   // Standard seed inserted 1 staff (Jenny) + 1 service (Gel Manicure).

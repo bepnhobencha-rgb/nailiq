@@ -1,7 +1,10 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import {
+  DashboardSidebar,
+  type ReleaseFeatureMap,
+} from "@/components/layout/DashboardSidebar";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { useSidebarCollapsed } from "@/shared/lib/useSidebarCollapsed";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
@@ -25,6 +28,8 @@ type Props = {
   salons?: OwnerSalonSummary[];
   /** Controls plan-gated sidebar items (e.g. Reviews hidden for free). */
   subscriptionPlan?: SubscriptionPlan;
+  /** Server-resolved release-feature visibility for Beta nav items (PR2). */
+  releaseFeatures?: ReleaseFeatureMap;
 };
 
 /**
@@ -50,6 +55,7 @@ export function DashboardShell({
   messagesCount,
   salons,
   subscriptionPlan,
+  releaseFeatures,
 }: Props) {
   // Single hook instance owns the collapse state. We pass both the
   // value AND the toggle to DashboardSidebar so its toggle button
@@ -76,6 +82,7 @@ export function DashboardShell({
         collapsed={collapsed}
         onToggleCollapsed={toggle}
         subscriptionPlan={subscriptionPlan}
+        releaseFeatures={releaseFeatures}
       />
       <main
         // Padding-left tracks the sidebar width via the CSS variable.
