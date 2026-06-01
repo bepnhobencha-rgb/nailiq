@@ -52,6 +52,14 @@ test.describe("SuperAdmin · read-only salon release-features panel", () => {
     page,
   }) => {
     await loginAsSuperadmin(page, admin);
+    // loginAsSuperadmin resolves on the intermediate `/superadmin` URL, which
+    // then client-redirects to `/superadmin/dashboard`. On the slower mobile
+    // project the redirect is still in flight when the next goto fires, and
+    // Playwright aborts it ("interrupted by another navigation"). Wait for the
+    // redirect to settle before navigating to the salon detail page.
+    await page
+      .waitForURL(/\/superadmin\/dashboard(\/|$)/, { timeout: 30_000 })
+      .catch(() => {});
     await page.goto(`/superadmin/salons/${salonId}`);
 
     // Panel appears.
