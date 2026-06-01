@@ -124,6 +124,50 @@ Base feature **OFF**, set its key to `false`. Every change is audit-logged
 
 ---
 
+## Read-only resolved panel (PR4a)
+
+`/superadmin/salons/[salonId]` renders a **read-only** "Release features
+(resolved)" card (`SalonReleaseFeaturesCard`) directly under the Overrides
+card. It does not add any controls — no toggles, no save, no reset — it only
+mirrors what `isReleaseFeatureEnabled` resolves for the salon so an operator
+can read the effective state without inferring it from the mutation card.
+
+Each row shows:
+
+- **label / key** — the human label plus the registry key.
+- **resolved ON/OFF** — `isReleaseFeatureEnabled(salon, key)`.
+- **default ON/OFF** — the registry `defaultOn` (Base → ON, Beta → OFF).
+- **source badge** — `jsonb` · `column` · `plan` · `registry` (where the
+  resolver read the state from).
+- **override badge** — shown when the resolved state diverges from the default
+  for this salon (a `feature_flags` key, the voice column, or the plan pushed
+  it off the default).
+
+Rows are grouped into **Base**, **Beta**, and **Plan / Column-controlled** —
+the last bucket collects features whose state is owned by an external store
+(billing `plan` or the `voice_ai_enabled` column) rather than the per-salon
+`feature_flags` jsonb. The card also carries the standing reminder that
+**release flags control product visibility, not billing**.
+
+The panel is driven by a pure, read-only helper:
+
+```ts
+import {
+  describeReleaseFeatureForSalon,      // one feature → resolution snapshot
+  describeReleaseFeaturesForSalon,     // all features, grouped Base/Beta/Plan-Column
+} from "@/shared/features/featureRegistry";
+
+const row = describeReleaseFeatureForSalon(salon, "group_booking");
+// { resolved, defaultOn, source, overridden, uiGroup, ... }
+```
+
+Both helpers are covered by the registry unit tests
+([`src/shared/features/__tests__/featureRegistry.test.ts`](../src/shared/features/__tests__/featureRegistry.test.ts))
+and the panel by an e2e spec
+([`e2e/superadmin/salon-release-features.spec.ts`](../e2e/superadmin/salon-release-features.spec.ts)).
+
+---
+
 ## Rollout
 
 This is delivered as a sequence of small PRs so each layer can be reviewed and
@@ -134,7 +178,8 @@ verified independently:
 | **PR1 (this)** | Registry + resolver + dashboard-context flag inputs + docs + tests. No gating. |
 | **PR2** | UI gating — hide sidebar / mobile-nav items when a feature is OFF. |
 | **PR3** | Route + server gating — beta routes `notFound()`; `requireFeature` guards server actions / API routes. |
-| **PR4** | SuperAdmin wiring — surface registry-only keys, group Base (ON) vs Beta (OFF) in `SalonOverrideCard`. |
+| **PR4a** | SuperAdmin **read-only** resolved panel — `SalonReleaseFeaturesCard` shows resolved/default/source/override per salon, grouped Base/Beta/Plan-Column. No new writes. |
+| **PR4b** | SuperAdmin write wiring — surface registry-only keys as editable controls (separate PR). |
 | **PR5** | E2E — toggle a Beta flag and assert nav hidden + route 404 + action blocked. |
 
 ### Adding a new feature flag

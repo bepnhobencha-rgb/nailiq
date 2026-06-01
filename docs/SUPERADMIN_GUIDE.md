@@ -125,6 +125,19 @@ The full flag registry, override precedence, and key mapping are documented in
 keys so you know which store (`feature_flags` JSONB vs `voice_ai_enabled`
 column vs `plan_override`) each feature reads from.
 
+### 4.3 Release features (resolved) — read-only
+
+Directly below the override card on the same salon page sits a **read-only**
+*Release features (resolved)* card. It has **no controls** — it just shows the
+effective state of every release surface for this salon so you can confirm what
+the overrides above actually resolve to. Each row shows the **resolved ON/OFF**,
+the registry **default**, a **source** badge (`jsonb` / `column` / `plan` /
+`registry`), and an **Override** badge when the salon diverges from the default.
+Rows are grouped **Base**, **Beta**, and **Plan / Column-controlled**.
+
+> Reminder shown on the card: *release flags control product visibility, not
+> billing.* To actually change a value, use the Overrides card above (§4.2).
+
 ---
 
 ## 5. Reading the audit log
@@ -166,8 +179,14 @@ fails, impersonation **does not start** (fail-closed).
 
 ## 7. How this is tested
 
-- **Release-flag resolver** (unit): `src/shared/features/__tests__/featureRegistry.test.ts`
-  — run `npx tsx src/shared/features/__tests__/featureRegistry.test.ts`.
+- **Release-flag resolver + read-only panel helper** (unit):
+  `src/shared/features/__tests__/featureRegistry.test.ts` — run
+  `npx tsx src/shared/features/__tests__/featureRegistry.test.ts`. Covers the
+  resolver and `describeReleaseFeatureForSalon` / `describeReleaseFeaturesForSalon`.
+- **Read-only salon release-features panel** (e2e):
+  `e2e/superadmin/salon-release-features.spec.ts` — seeds a salon with two
+  overrides, logs in as a founder, and asserts the panel, groups, copy, and
+  override badges render.
 - **Per-salon route gating** (e2e): `e2e/feature-flags/route-gating.spec.ts`.
 - **Platform-flag toggle + audit trail** (e2e):
   `e2e/superadmin/feature-flag-toggle.spec.ts` — logs in as a seeded founder,
