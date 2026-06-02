@@ -312,18 +312,20 @@ export function computeTimeSlots(args: {
     return { startMs, slot: { ...slot, score, scoringLabel } };
   });
 
-  // Sort: available slots by score desc then chronological; unavailable slots
-  // stay chronological at the end.
+  // Sort: available slots first, unavailable slots last.
+  // Within each group, always CHRONOLOGICAL regardless of score.
+  //
+  // Rationale: score drives the "Gợi ý" badge only — it signals that
+  // a slot is back-to-back efficient for the salon, which is useful
+  // context but should not reorder the grid. Floating high-score slots
+  // to the top broke the customer's mental time model (11am appearing
+  // before 9am) and made it look like the system was steering them
+  // toward one specific time or staff member.
   scored.sort((a, b) => {
     const aAvail = a.slot.available ? 1 : 0;
     const bAvail = b.slot.available ? 1 : 0;
     if (aAvail !== bAvail) return bAvail - aAvail; // available first
-    if (aAvail === 1) {
-      // Both available — sort by score desc, then startMs asc.
-      const scoreDiff = (b.slot.score ?? 0) - (a.slot.score ?? 0);
-      if (scoreDiff !== 0) return scoreDiff;
-    }
-    // Equal score (or both unavailable) — chronological.
+    // Always chronological within each tier — score only affects the badge.
     return a.startMs - b.startMs;
   });
 
