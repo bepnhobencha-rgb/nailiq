@@ -105,6 +105,7 @@ export function BookingFlowServicePanel({
   onSelectService,
   onSelectCombo,
   onNext,
+  onBack,
 }: {
   t: BookingMessages;
   services: readonly BookingServiceItem[];
@@ -122,6 +123,8 @@ export function BookingFlowServicePanel({
   onSelectService: (id: string) => void;
   onSelectCombo?: (combo: BookingComboItem) => void;
   onNext: () => void;
+  /** Optional back handler — present when there's a step before service (e.g. the phone step). */
+  onBack?: () => void;
 }) {
   // Group by category for accordion rendering. If the salon hasn't
   // touched setup yet, every row is "other" — render a flat list with
@@ -497,7 +500,19 @@ export function BookingFlowServicePanel({
             {error}
           </p>
         ) : null}
-        <LuxuryBookingCta disabled={!serviceId} onClick={onNext}>{t.next}</LuxuryBookingCta>
+        <div className={cn("flex w-full items-center", onBack ? "justify-between" : "justify-end")}>
+          {onBack ? (
+            <button
+              type="button"
+              onClick={onBack}
+              className="text-sm text-[var(--booking-text-muted)] hover:text-[var(--booking-text)] transition-colors"
+              data-testid="booking-service-back"
+            >
+              ← {t.back}
+            </button>
+          ) : null}
+          <LuxuryBookingCta disabled={!serviceId} onClick={onNext}>{t.next}</LuxuryBookingCta>
+        </div>
       </div>
     </motion.section>
   );

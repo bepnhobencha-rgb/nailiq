@@ -17,6 +17,7 @@ import { BookingFlowDatePanel } from "@/components/booking/BookingFlowDatePanel"
 import { BookingFlowDonePanel } from "@/components/booking/BookingFlowDonePanel";
 import { BookingFlowInfoPanel } from "@/components/booking/BookingFlowInfoPanel";
 import { BookingFlowOtpPanel } from "@/components/booking/BookingFlowOtpPanel";
+import { BookingFlowPhonePanel } from "@/components/booking/BookingFlowPhonePanel";
 import { BookingFlowServicePanel } from "@/components/booking/BookingFlowServicePanel";
 import { BookingFlowStaffPanel } from "@/components/booking/BookingFlowStaffPanel";
 import { BookingFlowTimePanel } from "@/components/booking/BookingFlowTimePanel";
@@ -254,6 +255,21 @@ export function BookingFlow({
     <div className="mt-8 w-full">
       <BookingStepper activeStep={wizardStep} t={t} />
       <AnimatePresence mode="wait" custom={flow.stepDir}>
+        {flow.step === "phone" ? (
+          <BookingFlowPhonePanel
+            t={t}
+            language={language}
+            clientPhone={flow.clientPhone}
+            returningCustomer={flow.returningCustomer}
+            lookupLoading={flow.lookupLoading}
+            stepDir={flow.stepDir}
+            reducedMotion={Boolean(reducedMotion)}
+            stepTransition={stepTransition}
+            onClientPhoneChange={flow.setClientPhone}
+            onContinue={flow.onContinueFromPhone}
+            onRebook={flow.onRebook}
+          />
+        ) : null}
         {flow.step === "service" ? (
           <BookingFlowServicePanel
             t={t}
@@ -268,6 +284,7 @@ export function BookingFlow({
             onSelectService={flow.setServiceId}
             onSelectCombo={flow.setSelectedCombo}
             selectedComboId={flow.selectedComboId}
+            onBack={flow.backToPhone}
             onNext={flow.goServiceNext}
           />
         ) : null}
@@ -333,7 +350,6 @@ export function BookingFlow({
           <BookingFlowInfoPanel
             t={t}
             clientName={flow.clientName}
-            clientPhone={flow.clientPhone}
             clientEmail={flow.clientEmail}
             clientNotes={flow.clientNotes}
             clientWebsite={flow.clientWebsite}
@@ -342,19 +358,16 @@ export function BookingFlow({
             referenceImagePreview={flow.referenceImagePreview}
             error={flow.error}
             nameError={flow.infoNameError}
-            phoneError={flow.infoPhoneError}
             emailError={flow.infoEmailError}
             stepDir={flow.stepDir}
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}
             onClientNameChange={flow.setClientName}
-            onClientPhoneChange={flow.setClientPhone}
             onClientEmailChange={flow.setClientEmail}
             onClientNotesChange={flow.setClientNotes}
             onClientWebsiteChange={flow.setClientWebsite}
             onReferenceImageChange={flow.setReferenceImage}
             onClientNameBlur={flow.handleInfoNameBlur}
-            onClientPhoneBlur={flow.handleInfoPhoneBlur}
             onClientEmailBlur={flow.handleInfoEmailBlur}
             onBack={flow.backToTime}
             onNext={flow.goInfoNext}

@@ -10,7 +10,6 @@ import {
 } from "@/components/booking/bookingMotion";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
-import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { cn } from "@/shared/lib/cn";
 import type { ReturningCustomer } from "@/components/booking/useBookingFlowState";
 
@@ -24,7 +23,6 @@ function maskEmail(email: string): string {
 export function BookingFlowInfoPanel({
   t,
   clientName,
-  clientPhone,
   clientEmail,
   clientNotes,
   clientWebsite,
@@ -33,7 +31,6 @@ export function BookingFlowInfoPanel({
   referenceImagePreview,
   error,
   nameError,
-  phoneError,
   emailError,
   stepDir,
   reducedMotion,
@@ -45,20 +42,17 @@ export function BookingFlowInfoPanel({
   onDismissPreferredStaff,
   preferredStaffDismissed = false,
   onClientNameChange,
-  onClientPhoneChange,
   onClientEmailChange,
   onClientNotesChange,
   onClientWebsiteChange,
   onReferenceImageChange,
   onClientNameBlur,
-  onClientPhoneBlur,
   onClientEmailBlur,
   onBack,
   onNext,
 }: {
   t: BookingMessages;
   clientName: string;
-  clientPhone: string;
   clientEmail: string;
   clientNotes: string;
   /** Task #09-11 honeypot — never visible to humans. Bots autofilling
@@ -73,7 +67,6 @@ export function BookingFlowInfoPanel({
   referenceImagePreview: string | null;
   error: string | null;
   nameError: string | null;
-  phoneError: string | null;
   emailError: string | null;
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
@@ -91,52 +84,34 @@ export function BookingFlowInfoPanel({
   /** Whether the preferred staff suggestion has been dismissed this session */
   preferredStaffDismissed?: boolean;
   onClientNameChange: (v: string) => void;
-  onClientPhoneChange: (v: string) => void;
   onClientEmailChange: (v: string) => void;
   onClientNotesChange: (v: string) => void;
   onClientWebsiteChange: (v: string) => void;
   /** Called with the uploaded ref_path (or null to remove). */
   onReferenceImageChange: (refPath: string | null, preview: string | null) => void;
   onClientNameBlur: () => void;
-  onClientPhoneBlur: () => void;
   onClientEmailBlur: () => void;
   onBack: () => void;
   onNext: () => void;
 }) {
   const nameRef = useRef<HTMLInputElement | null>(null);
-  const phoneRef = useRef<HTMLInputElement | null>(null);
   const emailRef = useRef<HTMLInputElement | null>(null);
   const refFileRef = useRef<HTMLInputElement | null>(null);
   const [refUploading, setRefUploading] = useState(false);
   const [refError, setRefError] = useState<string | null>(null);
 
-  // B1 (QA 2026-05-13) — local phone validity gate. The parent runs
-  // `validateGuestPhone` on blur and sets `phoneError`, but a user
-  // typing "123" and clicking Continue WITHOUT blurring would slip
-  // past (phoneError stays null, blur fires after click). We
-  // re-derive validity on every render from the live phone string
-  // so Continue is gated on a digit count the server will actually
-  // accept — eliminates the "Continue succeeds, server rejects"
-  // round trip.
-  const phoneTrimmed = clientPhone.trim();
-  const phoneLocallyInvalid =
-    phoneTrimmed.length > 0 && !validateGuestPhone(phoneTrimmed).ok;
-  const effectivePhoneError =
-    phoneError ?? (phoneLocallyInvalid ? t.bookingErrors.invalidPhone : null);
   // Auto-focus the first invalid field after Continue surfaces an error.
   useEffect(() => {
     const target = nameError
       ? nameRef.current
-      : phoneError
-        ? phoneRef.current
-        : emailError
-          ? emailRef.current
-          : null;
+      : emailError
+        ? emailRef.current
+        : null;
     if (target) {
       target.focus({ preventScroll: false });
       target.scrollIntoView({ block: "center", behavior: "smooth" });
     }
-  }, [nameError, phoneError, emailError]);
+  }, [nameError, emailError]);
 
   async function handleRefFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -323,59 +298,6 @@ export function BookingFlowInfoPanel({
         </div>
         <div>
           <label
-            htmlFor="booking-info-phone"
-            className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
-          >
-            {t.clientPhoneLabel}
-          </label>
-          <p className="mb-2 text-xs text-[var(--booking-text-muted)]">
-            {t.clientPhoneHint}
-          </p>
-          <input
-            id="booking-info-phone"
-            ref={phoneRef}
-            type="tel"
-            name="clientPhone"
-            autoComplete="tel"
-            inputMode="tel"
-            value={clientPhone}
-            maxLength={24}
-            placeholder={t.clientPhonePlaceholder}
-            onChange={(e) => onClientPhoneChange(e.target.value)}
-            onBlur={() => {
-              void onClientPhoneBlur();
-            }}
-            className={cn(
-              "nq-booking-field",
-              effectivePhoneError && "border-nq-error/50",
-            )}
-            aria-invalid={Boolean(effectivePhoneError)}
-            data-testid="booking-info-phone"
-          />
-          {effectivePhoneError ? (
-            <p
-              className="mt-1 text-xs text-nq-error"
-              data-testid="booking-info-phone-error"
-              role="alert"
-            >
-              {effectivePhoneError}
-            </p>
-          ) : null}
-          {/* Phone lookup in-flight indicator — only shown while loading and no result yet */}
-          {lookupLoading && returningCustomer === null && (
-            <p
-              className="mt-1.5 flex gap-1 text-xs text-[var(--booking-text-muted)]"
-              aria-live="polite"
-              data-testid="phone-lookup-loading"
-            >
-              <span className="animate-pulse">●</span>
-              <span className="animate-pulse [animation-delay:150ms]">●</span>
-              <span className="animate-pulse [animation-delay:300ms]">●</span>
-            </p>
-          )}
-        </div>
-        <div>
-          <label
             htmlFor="booking-info-email"
             className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
           >
@@ -511,19 +433,12 @@ export function BookingFlowInfoPanel({
           {t.back}
         </Button>
         <div className="flex w-full justify-end sm:flex-1">
-          {/* P1.16 + B1 (QA 2026-05-13) — Continue is gated on:
-              - non-empty name
-              - non-empty phone
-              - phone passes `validateGuestPhone` (≥10 digits with
-                a valid country prefix). Previously a "123" entry
-                could slip through to Review and bounce off the
-                server's validator. */}
+          {/* Continue is gated on a non-empty name and no validation errors.
+              Phone was moved to the phone step — it is already validated before reaching here. */}
           <LuxuryBookingCta
             onClick={onNext}
             disabled={
               clientName.trim().length === 0 ||
-              phoneTrimmed.length === 0 ||
-              phoneLocallyInvalid ||
               Boolean(nameError)
             }
           >
