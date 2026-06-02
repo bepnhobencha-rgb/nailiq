@@ -1553,4 +1553,6 @@ export const userVi: UserMessages = {
         "Không bắt đầu được thanh toán. Vào Cài đặt → Thanh toán để thử lại.",
     },
   },
+  wixSlotTaken:
+    "Rất tiếc, khung giờ này vừa được đặt bởi khách khác. Vui lòng chọn giờ khác.",
 };

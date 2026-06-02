@@ -489,6 +489,36 @@ export async function submitPublicBooking(
     resolvedStaffName = String(chosen?.name ?? "");
   }
 
+  // Wix availability guard — only for Wix-connected salons with a mapped staff resource.
+  // Queries the server-side API route which uses WIX_API_KEY to call Wix Extended Bookings
+  // and detect overlapping active bookings created on Wix since the last 2-min cron poll.
+  // Fail-open: if the API call fails or times out, booking proceeds normally.
+  if (resolvedStaffId) {
+    try {
+      const wixCheckRes = await fetch("/api/booking/wix-conflict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          salonId: String(salon.id),
+          staffId: resolvedStaffId,
+          startTimeUtc: startLocal.toISOString(),
+          endTimeUtc: endLocal.toISOString(),
+        }),
+        signal: AbortSignal.timeout(5000), // 5s max — never stall the booking flow
+      });
+      if (wixCheckRes.ok) {
+        const wixCheckData = (await wixCheckRes.json()) as { conflict?: boolean };
+        if (wixCheckData.conflict === true) {
+          throw new BookingConflictError();
+        }
+      }
+    } catch (e) {
+      // Re-throw BookingConflictError — it is intentional.
+      if (e instanceof BookingConflictError) throw e;
+      // Any other error (network, timeout, parse failure) → fail open.
+    }
+  }
+
   const notesTrim = clientNotes.trim();
   const insertPayload = {
     salon_id: salon.id as string,

@@ -1565,6 +1565,10 @@ export type UserMessages = {
       upgradeError: string;
     };
   };
+  /** Shown when a NailIQ booking is blocked because the Wix-connected
+   *  staff resource already has an overlapping active booking on Wix
+   *  (created within the 2-minute polling window). */
+  wixSlotTaken: string;
 };
 
 export const userEn: UserMessages = {
@@ -3125,4 +3129,6 @@ export const userEn: UserMessages = {
         "Couldn't start checkout. Try again from Settings → Billing.",
     },
   },
+  wixSlotTaken:
+    "Sorry, this time slot was just booked by someone else. Please choose a different time.",
 };

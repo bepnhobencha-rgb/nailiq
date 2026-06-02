@@ -99,6 +99,7 @@ export const bookingVi: BookingMessages = {
   refImageRemove: "Xóa",
   bookingErrors: {
     slotJustTaken: "Khung giờ vừa có khách khác đặt. Vui lòng chọn giờ khác.",
+    wixSlotTaken: "Rất tiếc, khung giờ này vừa được đặt bởi khách khác. Vui lòng chọn giờ khác.",
     invalidPhone:
       "Số không hợp lệ — ví dụ +1 (604) 555-1234 hoặc +84 90 123 4567",
     phoneRequired: "Nhập số điện thoại của bạn.",
