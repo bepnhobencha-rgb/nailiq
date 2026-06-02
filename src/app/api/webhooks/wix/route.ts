@@ -1,16 +1,18 @@
 /**
  * Real-time Wix webhook handler.
  *
- * Supports two delivery paths:
+ * Supports two delivery shapes:
  *
- * A) Wix Custom App webhooks — sends `x-wix-signature` (RSA-SHA256) + `wix-site-id` header.
- *    Signature verified with WIX_WEBHOOK_PUBLIC_KEY env var.
+ * A) Wix Automations "Send HTTP request" — wraps the custom JSON body inside a
+ *    top-level `data` object and CANNOT send custom headers or a signature:
+ *      { "data": { "entityFqdn": "...", "slug": "created", "entityId": "...", "siteId": "..." } }
+ *    Identified/authorised by the `siteId` field inside the envelope.
  *
- * B) Wix Automations "Send HTTP request" — no custom headers allowed by Wix UI.
- *    Caller must include `siteId` in the JSON body instead.
- *    No signature verification (Automations cannot sign requests).
+ * B) Wix Custom App webhook (future) — sends top-level fields, a base64 booking
+ *    payload in `data` (a STRING), an `x-wix-signature` (RSA-SHA256) header, and
+ *    a `wix-site-id` header. Verified with WIX_WEBHOOK_PUBLIC_KEY.
  *
- * The cron /api/cron/wix-sync runs every minute as reliability fallback.
+ * The /api/cron/wix-sync cron runs every minute as a reliability fallback.
  */
 import "server-only";
 import { type NextRequest, NextResponse } from "next/server";
@@ -41,58 +43,66 @@ export async function GET() {
   return NextResponse.json({ ok: true, endpoint: "wix-webhook" });
 }
 
+/** Shape of a Wix booking event after the envelope is normalised. */
+interface NormalisedEvent {
+  entityFqdn: string;
+  slug: string;
+  entityId: string;
+  siteId: string | null;
+  encodedData?: string; // base64 booking JSON (Custom App only)
+}
+
+interface RawPayload {
+  entityFqdn?: string;
+  slug?: string;
+  entityId?: string;
+  siteId?: string;
+  // `data` is an OBJECT for Automations (the wrapped body) or a base64 STRING for Custom App.
+  data?: { entityFqdn?: string; slug?: string; entityId?: string; siteId?: string } | string;
+}
+
+/**
+ * Flatten either delivery shape into a single NormalisedEvent.
+ * - Automations: fields live under `data` (object).
+ * - Custom App: fields live at the top level; `data` is a base64 string.
+ */
+function normalise(body: RawPayload, headerSiteId: string | null): NormalisedEvent {
+  const envelope = body.data && typeof body.data === "object" ? body.data : body;
+  return {
+    entityFqdn: envelope.entityFqdn ?? body.entityFqdn ?? "",
+    slug: envelope.slug ?? body.slug ?? "",
+    entityId: envelope.entityId ?? body.entityId ?? "",
+    siteId: envelope.siteId ?? body.siteId ?? headerSiteId ?? null,
+    encodedData: typeof body.data === "string" ? body.data : undefined,
+  };
+}
+
 export async function POST(req: NextRequest) {
   const rawBody = Buffer.from(await req.arrayBuffer());
 
-  let body: WixWebhookPayload;
+  let body: RawPayload;
   try {
-    body = JSON.parse(rawBody.toString("utf-8")) as WixWebhookPayload;
+    body = JSON.parse(rawBody.toString("utf-8")) as RawPayload;
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
 
-  // --- 1. Auth: RSA signature (Custom App) or body siteId (Automations) ---
+  // --- 1. Authentication ---
+  // Path A (Custom App): RSA signature present → verify it.
+  // Path B (Automations): no signature → trust the siteId in the body envelope.
   const sig = req.headers.get("x-wix-signature");
   const publicKey = process.env["WIX_WEBHOOK_PUBLIC_KEY"];
-
-  if (sig) {
-    // Path A: Custom App — verify RSA signature
-    if (publicKey && !verifySignature(publicKey, rawBody, sig)) {
-      console.warn("[wix-webhook] RSA signature mismatch — rejected");
-      return NextResponse.json({ error: "invalid_signature" }, { status: 401 });
-    }
-    console.log("[wix-webhook] path=custom-app");
-  } else {
-    // Path B: Wix Automations — no signature possible; siteId in body is the identifier
-    if (!body.siteId) {
-      // TEMP DEBUG: persist raw body to webhook_id (cron does NOT touch this column,
-      // unlike last_error which the cron resets to null every minute).
-      try {
-        await looseServiceClient()
-          .from("wix_integrations")
-          .update({ webhook_id: `DEBUG: ${rawBody.toString("utf-8").slice(0, 2500)}` })
-          .eq("site_id", "bca289a2-f279-4a9a-a484-c036e5f78a34");
-      } catch { /* ignore debug write errors */ }
-      console.warn("[wix-webhook] no signature and no siteId — rejected. body=%s", JSON.stringify(body));
-      return NextResponse.json({ error: "missing_site_id" }, { status: 400 });
-    }
-    console.log("[wix-webhook] path=automations siteId=%s", body.siteId);
+  if (sig && publicKey && !verifySignature(publicKey, rawBody, sig)) {
+    console.warn("[wix-webhook] RSA signature mismatch — rejected");
+    return NextResponse.json({ error: "invalid_signature" }, { status: 401 });
   }
 
-  return handleEvent(req, body);
+  const evt = normalise(body, req.headers.get("wix-site-id"));
+  return handleEvent(evt);
 }
 
-interface WixWebhookPayload {
-  entityFqdn?: string;
-  slug?: string;
-  entityId?: string;
-  eventTime?: string;
-  data?: string;   // base64-encoded booking JSON (Custom App only)
-  siteId?: string; // Wix Automations fallback (no custom headers allowed)
-}
-
-async function handleEvent(req: NextRequest, body: WixWebhookPayload): Promise<NextResponse> {
-  const { entityFqdn = "", slug = "", entityId = "", data: encodedData, siteId: bodySiteId } = body;
+async function handleEvent(evt: NormalisedEvent): Promise<NextResponse> {
+  const { entityFqdn, slug, entityId, siteId, encodedData } = evt;
 
   // --- 2. Only handle booking events ---
   if (!entityFqdn.toLowerCase().includes("booking")) {
@@ -101,13 +111,11 @@ async function handleEvent(req: NextRequest, body: WixWebhookPayload): Promise<N
   if (!UPSERT_SLUGS.has(slug) && !CANCEL_SLUGS.has(slug)) {
     return NextResponse.json({ ok: true, skipped: `unhandled_slug:${slug}` });
   }
-
-  // --- 3. Resolve siteId: header (Custom App) → body fallback (Automations) ---
-  const siteId = req.headers.get("wix-site-id") ?? bodySiteId ?? null;
   if (!siteId) {
     return NextResponse.json({ error: "missing_site_id" }, { status: 400 });
   }
 
+  // --- 3. Resolve the salon ---
   const db = looseServiceClient();
   const { data: integration } = await db
     .from("wix_integrations")
@@ -117,7 +125,6 @@ async function handleEvent(req: NextRequest, body: WixWebhookPayload): Promise<N
     .maybeSingle();
 
   if (!integration) {
-    // Not our tenant — acknowledge and move on.
     return NextResponse.json({ ok: true, skipped: "unknown_site" });
   }
 
@@ -127,17 +134,17 @@ async function handleEvent(req: NextRequest, body: WixWebhookPayload): Promise<N
   // --- 4. Resolve the Wix booking object ---
   let wixBooking: WixBooking | null = null;
 
+  // Custom App path may embed the booking as base64; Automations only sends the id.
   if (encodedData) {
-    // Decode the base64 payload Wix embeds in the event.
     try {
       wixBooking = JSON.parse(Buffer.from(encodedData, "base64").toString("utf-8")) as WixBooking;
     } catch {
-      console.warn("[wix-webhook] failed to decode data field; will re-fetch");
+      console.warn("[wix-webhook] failed to decode base64 data; will re-fetch by id");
     }
   }
 
+  // Always fetch fresh by id when we only have the id (Automations) or decode failed.
   if (!wixBooking && entityId) {
-    // Fall back to a live API fetch for the freshest data.
     try {
       wixBooking = await getBooking(siteId, entityId);
     } catch (e) {
@@ -146,23 +153,27 @@ async function handleEvent(req: NextRequest, body: WixWebhookPayload): Promise<N
   }
 
   if (!wixBooking) {
-    // Cannot resolve the booking; return 200 so Wix does not retry endlessly.
     console.error("[wix-webhook] could not resolve booking", { siteId, entityId, slug });
     return NextResponse.json({ ok: false, reason: "booking_not_resolvable" });
   }
 
   // --- 5. Apply the event ---
   if (CANCEL_SLUGS.has(slug)) {
-    // Force the status on the decoded payload so processWixBookingEvent maps it to 'cancelled'.
+    // Force the status so processWixBookingEvent maps it to 'cancelled'.
     wixBooking = { ...wixBooking, status: "CANCELLED" };
   }
 
   try {
     const result = await processWixBookingEvent(salonId, wixBooking, autoApprove);
+    // Record real-time delivery so we can monitor webhook health vs polling fallback.
+    await db
+      .from("wix_integrations")
+      .update({ webhook_last_received_at: new Date().toISOString() })
+      .eq("site_id", siteId);
     console.log("[wix-webhook]", { slug, entityId, salonId, ...result });
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
-    // Return 500 so Wix retries — transient DB errors will resolve on retry.
+    // Return 500 so Wix (or the Automation) retries — transient DB errors resolve on retry.
     console.error("[wix-webhook] processWixBookingEvent error", e);
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
