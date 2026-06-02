@@ -58,9 +58,19 @@ export type ReturningCustomer = {
   visitCount: number;
   preferredStaffId: string | null;
   preferredStaffName: string | null;
+  lastBooking: {
+    serviceId: string;
+    serviceName: string;
+    staffId: string | null;
+    staffName: string | null;
+    dayOfWeek: number;
+    timeLabel: string;
+    lastVisitDate: string;
+  } | null;
 };
 
 export type BookingFlowStep =
+  | "phone"
   | "service"
   | "staff"
   | "date"
@@ -120,7 +130,7 @@ export function useBookingFlowState(
     return durations.length > 0 ? Math.min(...durations) : 0;
   }, [services]);
 
-  const [step, setStep] = useState<BookingFlowStep>("service");
+  const [step, setStep] = useState<BookingFlowStep>("phone");
   const [stepDir, setStepDir] = useState<1 | -1>(1);
   const [serviceId, setServiceId] = useState<string | null>(null);
   const [staffId, setStaffId] = useState<string | null>(null);
@@ -590,6 +600,43 @@ export function useBookingFlowState(
     return formatBookingSlotDisplay(selectedDate, timeSlot);
   }, [selectedDate, timeSlot]);
 
+  /** Advance from phone step to service step. */
+  const handleContinueFromPhone = useCallback(() => {
+    setStep("service");
+  }, []);
+
+  /**
+   * Pre-fills service/staff/date from the customer's last booking and jumps
+   * straight to the time step so they only need to pick a slot.
+   */
+  const handleRebook = useCallback(
+    (lb: NonNullable<ReturningCustomer["lastBooking"]>) => {
+      // Pre-fill service
+      setServiceId(lb.serviceId);
+      setSelectedComboState(null);
+      setServiceError(null);
+
+      // Pre-fill staff (null means any available staff)
+      setStaffId(lb.staffId ?? BOOKING_ANY_STAFF_ID);
+
+      // Pre-fill date: next occurrence of lb.dayOfWeek from tomorrow
+      const today = new Date();
+      const todayDay = today.getDay(); // 0=Sun
+      let daysAhead = lb.dayOfWeek - todayDay;
+      if (daysAhead <= 0) daysAhead += 7; // always at least 1 day ahead
+      const nextDate = new Date(today);
+      nextDate.setDate(today.getDate() + daysAhead);
+      nextDate.setHours(0, 0, 0, 0);
+      setSelectedDate(nextDate);
+      setTimeSlot(null);
+
+      // Jump to time step — user picks the specific slot (usual time will be visible)
+      setStepDir(1);
+      setStep("time");
+    },
+    [],
+  );
+
   const goServiceNext = useCallback(() => {
     if (!serviceId) {
       setServiceError(t.bookingErrors.serviceRequired);
@@ -838,7 +885,7 @@ export function useBookingFlowState(
 
   const resetAfterDone = useCallback(() => {
     setStepDir(1);
-    setStep("service");
+    setStep("phone");
     setBookingResult(null);
     setClientName("");
     setClientPhone("");
@@ -1189,6 +1236,11 @@ export function useBookingFlowState(
     t.waitlistError,
   ]);
 
+  const backToPhone = useCallback(() => {
+    setStepDir(-1);
+    setStep("phone");
+  }, []);
+
   const backToService = useCallback(() => {
     setStepDir(-1);
     setStep("service");
@@ -1345,12 +1397,16 @@ export function useBookingFlowState(
     handleAddToCalendar,
     onConfirm,
     submitWaitlistSlotUnavailable,
+    backToPhone,
     backToService,
     backToStaff,
     backToDate,
     backToTime,
     backToInfo,
     backFromOtpToInfo,
+    // Phone step handlers
+    onContinueFromPhone: handleContinueFromPhone,
+    onRebook: handleRebook,
     // Returning customer lookup
     returningCustomer,
     lookupLoading,

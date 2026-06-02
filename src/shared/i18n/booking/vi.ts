@@ -16,6 +16,7 @@ export const bookingVi: BookingMessages = {
   pageTitle: "Đặt lịch tại tiệm",
   pageSubtitle:
     "Chọn dịch vụ, thợ, ngày và giờ — sau đó nhập thông tin và xác nhận.",
+  breadcrumbPhone: "SĐT",
   breadcrumbServices: "Dịch vụ",
   breadcrumbStaff: "Thợ",
   breadcrumbDate: "Ngày",
@@ -392,6 +393,16 @@ export const bookingVi: BookingMessages = {
     errorFallback: "Xin lỗi, không kết nối được. Vui lòng thử lại.",
     disclaimer: "Trợ lý AI — để đặt lịch, dùng form bên trên.",
   },
+  /** Phone step — the new hero step 1 of the booking flow. */
+  phoneStepHeading: "Đặt lịch thật nhanh",
+  phoneStepSubheading: "Nhập số điện thoại để bắt đầu",
+  phoneStepNewCustomerHint: "Lần đầu đến tiệm? Vẫn nhập số để nhận nhắc nhở qua SMS.",
+  rebookHeading: "Đặt lại như lần trước?",
+  rebookNow: "Đặt lại ngay ⚡",
+  rebookChange: "Thay đổi",
+  /** `{name}` replaced at runtime — e.g. "với Jenny" */
+  rebookWith: "với {name}",
+  rebookAnyStaff: "Thợ bất kỳ",
   /** Returning-customer recognition strings (Info step phone lookup). */
   returningCustomer: {
     welcomeBack: "Chào mừng trở lại!",

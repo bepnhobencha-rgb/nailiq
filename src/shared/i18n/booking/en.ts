@@ -9,6 +9,7 @@ export const bookingEn = {
   pageSubtitle:
     "Choose service, staff, date, and time — then your details and review.",
   /** Desktop stepper labels */
+  breadcrumbPhone: "Phone",
   breadcrumbServices: "Services",
   breadcrumbStaff: "Staff",
   breadcrumbDate: "Date",
@@ -555,6 +556,16 @@ export const bookingEn = {
     errorFallback: "Sorry, I couldn't connect. Please try again.",
     disclaimer: "AI assistant — for bookings, use the form above.",
   },
+  /** Phone step — the new hero step 1 of the booking flow. */
+  phoneStepHeading: "Book your appointment",
+  phoneStepSubheading: "Enter your phone number to get started",
+  phoneStepNewCustomerHint: "First time? Still enter your number to receive SMS reminders.",
+  rebookHeading: "Rebook your usual?",
+  rebookNow: "Rebook now ⚡",
+  rebookChange: "Change",
+  /** `{name}` replaced at runtime — e.g. "with Jenny" */
+  rebookWith: "with {name}",
+  rebookAnyStaff: "Any available staff",
   /** Returning-customer recognition strings (Info step phone lookup). */
   returningCustomer: {
     welcomeBack: "Welcome back!",

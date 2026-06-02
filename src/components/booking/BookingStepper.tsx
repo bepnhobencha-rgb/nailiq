@@ -2,6 +2,7 @@ import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { cn } from "@/shared/lib/cn";
 
 export type BookingWizardStep =
+  | "phone"
   | "service"
   | "staff"
   | "date"
@@ -10,6 +11,7 @@ export type BookingWizardStep =
   | "confirm";
 
 const STEP_ORDER: BookingWizardStep[] = [
+  "phone",
   "service",
   "staff",
   "date",
@@ -26,6 +28,7 @@ export function BookingStepper({
   t: BookingMessages;
 }) {
   const labels: Record<BookingWizardStep, string> = {
+    phone: t.breadcrumbPhone,
     service: t.breadcrumbServices,
     staff: t.breadcrumbStaff,
     date: t.breadcrumbDate,
