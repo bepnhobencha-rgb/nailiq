@@ -33,7 +33,9 @@ export type WixBooking = {
 };
 
 function headers(siteId: string): HeadersInit {
-  const key = process.env.WIX_API_KEY;
+  // Strip any whitespace/newlines — pasting the key into a dashboard env field often line-wraps
+  // it, which would make `Authorization` an invalid HTTP header value. Wix keys contain none.
+  const key = (process.env.WIX_API_KEY ?? "").replace(/\s+/g, "");
   if (!key) throw new Error("WIX_API_KEY is not set");
   return { "Content-Type": "application/json", Authorization: key, "wix-site-id": siteId };
 }
