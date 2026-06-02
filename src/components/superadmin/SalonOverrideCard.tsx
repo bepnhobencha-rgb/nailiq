@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/shared/lib/cn";
 import { updateSalonFlags } from "@/shared/superadmin/superadminActions";
@@ -78,7 +77,6 @@ export function SalonOverrideCard({
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const router = useRouter();
 
   const onSave = useCallback(() => {
     setError(null);
@@ -97,7 +95,6 @@ export function SalonOverrideCard({
         return;
       }
       setSavedAt(Date.now());
-      router.refresh();
       window.setTimeout(() => {
         setSavedAt((cur) => (cur && Date.now() - cur >= 2400 ? null : cur));
       }, 2500);
