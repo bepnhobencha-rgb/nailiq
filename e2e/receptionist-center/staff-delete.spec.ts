@@ -6,8 +6,15 @@ import { DEFAULT_OPENING_HOURS_JSON } from "@/shared/dashboard/openingHoursDefau
 
 import { seedDeskBooking, supabaseAdmin } from "./helpers";
 
-/** Stable slug; torn down in afterAll. Row scoping: `li:has(input[value="${name}"])` (matches Task 3 setup pattern). */
-const E2E_STAFF_DELETE_SLUG = "e2e-staff-delete";
+// Append GITHUB_RUN_ID (or a local fallback) so parallel CI runs on different
+// PRs each get their own salon and cannot stomp each other's fixtures.
+const _RUN_SUFFIX =
+  process.env.GITHUB_RUN_ID ??
+  process.env.PLAYWRIGHT_WORKER_INDEX ??
+  String(Date.now()).slice(-6);
+
+/** Run-scoped slug; torn down in afterAll. Row scoping: `li:has(input[value="${name}"])` (matches Task 3 setup pattern). */
+const E2E_STAFF_DELETE_SLUG = `e2e-staff-delete-${_RUN_SUFFIX}`;
 const ANCHOR_NAME = "E2E_ST_ANCHOR";
 const NAME_BLOCK = "E2E_ST_BLOCK";
 const NAME_OK = "E2E_ST_OK";

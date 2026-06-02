@@ -17,11 +17,31 @@ export const supabaseAdmin = createClient(supabaseUrl, serviceKey);
 /** Stable slug for Receptionist Center e2e — full teardown via `cleanupTestSalon` after suites. */
 export const RECEPTIONIST_E2E_SLUG = "e2e-receptionist-center";
 
-/** Returns the E2E salon slug scoped to the current Playwright project.
+/**
+ * Suffix that isolates test salon slugs per CI run.
+ *
+ * GITHUB_RUN_ID is set automatically by GitHub Actions for every workflow run
+ * (e.g. "12345678"). Two PRs running simultaneously will have different run IDs
+ * and therefore different slugs → no cross-run salon stomping.
+ *
+ * Locally (no CI), we fall back to a short process-start timestamp so re-runs
+ * in the same terminal session also get unique slugs. The suffix is computed
+ * once at module load so every spec file in the same Playwright worker process
+ * shares the same value and the paired seed/cleanup calls match.
+ */
+const RUN_SUFFIX =
+  process.env.GITHUB_RUN_ID ??
+  process.env.PLAYWRIGHT_WORKER_INDEX ??
+  String(Date.now()).slice(-6);
+
+/** Returns the E2E salon slug scoped to the current Playwright project AND CI run.
  * Chromium and mobile run concurrently and must not share the same salon
- * or one project's afterAll cleanup will delete the other's active fixture. */
+ * or one project's afterAll cleanup will delete the other's active fixture.
+ * The run suffix prevents two parallel PR CI runs from sharing the same slug
+ * and deleting each other's fixtures. */
 export function rcSlug(project: string): string {
-  return project === "mobile" ? "e2e-rc-mobile" : "e2e-rc-desktop";
+  const base = project === "mobile" ? "e2e-rc-mobile" : "e2e-rc-desktop";
+  return `${base}-${RUN_SUFFIX}`;
 }
 
 export function testClientNameMarker(): string {
