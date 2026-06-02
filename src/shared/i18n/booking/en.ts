@@ -141,6 +141,8 @@ export const bookingEn = {
   verifyingBooking: "Checking booking…",
   clientNameLabel: "Your name",
   clientPhoneLabel: "Phone number",
+  /** Hint shown below the phone label — lets returning customers know their info will auto-fill. */
+  clientPhoneHint: "✨ Returning customer? Your info will load automatically.",
   /** Placeholder for contact step — NANP Canadian example; guests may enter any valid E.164. */
   clientPhonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
   clientEmailLabel: "Email (optional)",
