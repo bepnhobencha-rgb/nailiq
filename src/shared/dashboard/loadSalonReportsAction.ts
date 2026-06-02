@@ -1,6 +1,7 @@
 "use server";
 
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { salonDayRangeUtc, salonToday } from "@/shared/lib/salonTime";
 
@@ -53,7 +54,10 @@ export type StaffPerformanceRow = {
 
 export type LoadSalonReportsResult =
   | { ok: true; data: ReportsSnapshot }
-  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" };
+  | {
+      ok: false;
+      error: "unauthorized" | "forbidden" | "feature_not_enabled" | "server_error";
+    };
 
 const TOP_LIMIT = 5;
 
@@ -76,6 +80,14 @@ export async function loadSalonReports(
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
   if (resolved.role !== "owner") return { ok: false, error: "forbidden" };
+
+  // Release flag `advanced_reports` (Beta, default OFF). Refuse the load
+  // even though nav/route gating hides the surface (defense-in-depth).
+  // `resolved.salon` already carries feature_flags/plan fields, so the
+  // resolver returns the correct OFF state for Base salons.
+  if (!isReleaseFeatureEnabled(resolved.salon, "advanced_reports")) {
+    return { ok: false, error: "feature_not_enabled" };
+  }
 
   // Resolve the timezone for date math.
   const supabase = createServiceRoleClient();

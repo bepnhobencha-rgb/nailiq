@@ -1530,6 +1530,7 @@ export const userVi: UserMessages = {
         unauthorized: "Cần đăng nhập.",
         forbidden: "Chỉ chủ tiệm mới xem được báo cáo.",
         server_error: "Không tải được. Thử lại sau.",
+        feature_not_enabled: "Báo cáo nâng cao chưa được bật cho tiệm này.",
       },
     },
     bookingLimitBanner: {

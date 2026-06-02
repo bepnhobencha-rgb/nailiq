@@ -11,13 +11,18 @@ import {
   Users,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
+import { type ReleaseFeatureMap } from "@/components/layout/DashboardSidebar";
 import { cn } from "@/shared/lib/cn";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import type { ReleaseFeatureKey } from "@/shared/features/featureRegistry";
 
 type Props = {
   slug: string;
   walkinQueueCount?: number;
+  /** Release-feature visibility (PR2). Beta tabs hide when their key is
+   *  not explicitly true — mirrors DashboardSidebar. See `featureRegistry`. */
+  releaseFeatures?: ReleaseFeatureMap;
 };
 
 /**
@@ -25,7 +30,11 @@ type Props = {
  * `docs/DASHBOARD_LAYOUT_RULES.md` §9.6. Hidden on `md`+ where
  * DashboardSidebar takes over.
  */
-export function MobileBottomNav({ slug, walkinQueueCount = 0 }: Props) {
+export function MobileBottomNav({
+  slug,
+  walkinQueueCount = 0,
+  releaseFeatures = {},
+}: Props) {
   const pathname = usePathname() ?? "";
   const { language } = useUserLanguage();
   const t = useMemo(() => getUserMessages(language).nav, [language]);
@@ -33,8 +42,13 @@ export function MobileBottomNav({ slug, walkinQueueCount = 0 }: Props) {
   const slugSeg = encodeURIComponent(slug);
   const dashRoot = `/dashboard/${slugSeg}`;
 
-  const tabs = useMemo(
-    () => [
+  const tabs = useMemo(() => {
+    // Release-feature gate. A Beta tab is hidden unless its mapped key is
+    // explicitly true in the server-resolved map. `!== true` mirrors
+    // "Beta defaults OFF" for any omitted key (matches DashboardSidebar).
+    const featureOff = (key: ReleaseFeatureKey): boolean =>
+      releaseFeatures[key] !== true;
+    return [
       {
         key: "front-desk",
         label: t.frontDesk,
@@ -65,6 +79,10 @@ export function MobileBottomNav({ slug, walkinQueueCount = 0 }: Props) {
         // analytics rather than generic "bars".
         icon: TrendingUp,
         match: (p: string) => p.startsWith(`${dashRoot}/reports`),
+        // Release flag: Reports is Beta (advanced_reports → reports_enabled),
+        // default OFF. Hidden unless SuperAdmin enables the flag — matches
+        // the DashboardSidebar gate so desktop + mobile stay in sync.
+        hidden: featureOff("advanced_reports"),
       },
       {
         key: "settings",
@@ -73,17 +91,17 @@ export function MobileBottomNav({ slug, walkinQueueCount = 0 }: Props) {
         icon: SettingsIcon,
         match: (p: string) => p.startsWith(`${dashRoot}/settings`),
       },
-    ],
-    [
-      dashRoot,
-      t.clients,
-      t.frontDesk,
-      t.reports,
-      t.settings,
-      t.walkinQueue,
-      walkinQueueCount,
-    ],
-  );
+    ];
+  }, [
+    dashRoot,
+    t.clients,
+    t.frontDesk,
+    t.reports,
+    t.settings,
+    t.walkinQueue,
+    walkinQueueCount,
+    releaseFeatures,
+  ]);
 
   return (
     <nav
@@ -95,7 +113,7 @@ export function MobileBottomNav({ slug, walkinQueueCount = 0 }: Props) {
       )}
     >
       <ul className="flex items-stretch justify-between">
-        {tabs.map((tab) => {
+        {tabs.filter((tab) => !tab.hidden).map((tab) => {
           const Icon = tab.icon;
           const active = tab.match(pathname);
           const showBadge = (tab.badge ?? 0) > 0;

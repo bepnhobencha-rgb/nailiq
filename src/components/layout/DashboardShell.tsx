@@ -93,7 +93,11 @@ export function DashboardShell({
       >
         {children}
       </main>
-      <MobileBottomNav slug={slug} walkinQueueCount={walkinQueueCount} />
+      <MobileBottomNav
+        slug={slug}
+        walkinQueueCount={walkinQueueCount}
+        releaseFeatures={releaseFeatures}
+      />
     </div>
   );
 }

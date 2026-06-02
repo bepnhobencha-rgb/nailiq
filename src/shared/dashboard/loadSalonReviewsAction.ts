@@ -1,6 +1,7 @@
 "use server";
 
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export type SalonReviewRow = {
@@ -15,7 +16,10 @@ export type SalonReviewRow = {
 
 export type LoadSalonReviewsResult =
   | { ok: true; rows: SalonReviewRow[] }
-  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" };
+  | {
+      ok: false;
+      error: "unauthorized" | "forbidden" | "feature_not_enabled" | "server_error";
+    };
 
 const PAGE_SIZE = 50;
 
@@ -30,6 +34,14 @@ export async function loadSalonReviews(
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
   if (resolved.role !== "owner") return { ok: false, error: "forbidden" };
+
+  // Release flag `reviews` (Beta, plan-sourced, default OFF). Refuse the
+  // load even though nav/route gating hides the surface (defense-in-depth).
+  // `resolved.salon` already carries subscription_plan/plan_override/
+  // feature_flags, so the plan-aware resolver returns OFF for Base salons.
+  if (!isReleaseFeatureEnabled(resolved.salon, "reviews")) {
+    return { ok: false, error: "feature_not_enabled" };
+  }
 
   const supabase = createServiceRoleClient();
 
