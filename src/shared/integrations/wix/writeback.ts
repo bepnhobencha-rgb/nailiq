@@ -194,3 +194,45 @@ export async function pushWixCreate(salonId: string, bookingId: string): Promise
     console.error("[wix create] error", bookingId, (e as Error).message);
   }
 }
+
+/**
+ * Reconciliation safety-net: push NailIQ-origin bookings that *should* be on Wix but aren't yet.
+ *
+ * The immediate per-creation push (public booking page, walk-in queue, …) is best-effort and
+ * fire-and-forget — it can be missed (client navigates away, a creation path that isn't wired,
+ * a transient Wix error). Running this every cron cycle makes NailIQ→Wix eventually-consistent
+ * regardless of *how* the booking was created. Idempotent: pushWixCreate stamps wix_booking_id,
+ * so each booking is pushed at most once, and pushWixCreate's own guards skip anything unmappable.
+ *
+ * Scope is deliberately narrow to avoid retrying forever / pushing stale rows:
+ *   - wix_booking_id IS NULL  (not already on Wix / not Wix-originated)
+ *   - status in (confirmed, pending)  (active — never push cancelled/no_show/completed)
+ *   - start_time_utc > now()  (Wix rejects past slots)
+ *   - created_at within the last 24h  (a fresh miss; older ones need manual attention)
+ */
+export async function pushUnsyncedBookings(salonId: string, limit = 20): Promise<number> {
+  try {
+    const db = looseServiceClient();
+    const nowIso = new Date().toISOString();
+    const dayAgoIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data } = await db
+      .from("bookings")
+      .select("id")
+      .eq("salon_id", salonId)
+      .is("wix_booking_id", null)
+      .in("status", ["confirmed", "pending"])
+      .gt("start_time_utc", nowIso)
+      .gt("created_at", dayAgoIso)
+      .order("start_time_utc", { ascending: true })
+      .limit(limit);
+    const rows = (data ?? []) as { id: string }[];
+    for (const r of rows) {
+      // pushWixCreate is self-guarding + idempotent (skips unmapped service / already-linked).
+      await pushWixCreate(salonId, r.id);
+    }
+    return rows.length;
+  } catch (e) {
+    console.error("[wix reconcile]", salonId, (e as Error).message);
+    return 0;
+  }
+}

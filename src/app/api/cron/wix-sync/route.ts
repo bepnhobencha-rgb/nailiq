@@ -4,6 +4,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { runForwardSync } from "@/shared/integrations/wix/sync";
+import { pushUnsyncedBookings } from "@/shared/integrations/wix/writeback";
 import { looseServiceClient } from "@/shared/integrations/wix/looseDb";
 
 export const runtime = "nodejs";
@@ -34,7 +35,9 @@ export async function GET(req: NextRequest) {
     const salonId = it.salon_id as string;
     try {
       const r = await runForwardSync(salonId, it.site_id as string, it.cursor_updated_date as string, (it.auto_approve as boolean) ?? true);
-      results[salonId] = r;
+      // Reconcile NailIQ→Wix: push any eligible booking whose immediate create-push was missed.
+      const reconciled = await pushUnsyncedBookings(salonId);
+      results[salonId] = { ...r, reconciled };
     } catch (e) {
       const msg = (e as Error).message;
       console.error("[wix-sync] salon", salonId, msg);
