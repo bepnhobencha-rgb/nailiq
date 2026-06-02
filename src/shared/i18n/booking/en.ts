@@ -553,6 +553,21 @@ export const bookingEn = {
     errorFallback: "Sorry, I couldn't connect. Please try again.",
     disclaimer: "AI assistant — for bookings, use the form above.",
   },
+  /** Returning-customer recognition strings (Info step phone lookup). */
+  returningCustomer: {
+    welcomeBack: "Welcome back!",
+    /** `{n}` = visit count, e.g. "Visit 4 at this salon" */
+    visitCount: "Visit {n} at this salon",
+    vipBadge: "VIP",
+    preferredStaffHeading: "Your usual tech",
+    /** `{name}` = staff first name */
+    preferredStaffPrompt: "Book with {name} again?",
+    /** `{name}` = staff first name */
+    acceptPreferredStaff: "Yes, book with {name}",
+    dismissPreferredStaff: "No thanks",
+    /** `{name}` = staff first name — shown when user already selected their preferred tech */
+    alreadyWithPreferred: "Booking with {name} ✓",
+  },
   voice: {
     tapToSpeak: "Speak to book",
     listening: "Listening…",

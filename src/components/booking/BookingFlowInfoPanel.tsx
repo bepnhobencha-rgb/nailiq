@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { motion } from "@/shared/lib/motionClient";
+import { motion, AnimatePresence } from "@/shared/lib/motionClient";
 import { Button } from "@/components/ui/Button";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 import {
@@ -12,6 +12,14 @@ import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { cn } from "@/shared/lib/cn";
+import type { ReturningCustomer } from "@/components/booking/useBookingFlowState";
+
+/** Mask email for display: j***@domain.com */
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  if (!local || !domain) return email;
+  return `${local.slice(0, 1)}***@${domain}`;
+}
 
 export function BookingFlowInfoPanel({
   t,
@@ -30,6 +38,12 @@ export function BookingFlowInfoPanel({
   stepDir,
   reducedMotion,
   stepTransition,
+  returningCustomer = null,
+  lookupLoading = false,
+  currentStaffId = null,
+  onAcceptPreferredStaff,
+  onDismissPreferredStaff,
+  preferredStaffDismissed = false,
   onClientNameChange,
   onClientPhoneChange,
   onClientEmailChange,
@@ -64,6 +78,18 @@ export function BookingFlowInfoPanel({
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
   stepTransition: { duration: number; ease: [number, number, number, number] };
+  /** Set when a returning customer is found by phone lookup. */
+  returningCustomer?: ReturningCustomer | null;
+  /** True while phone lookup API call is in-flight */
+  lookupLoading?: boolean;
+  /** ID of the staff currently selected by the user (null = any staff) */
+  currentStaffId?: string | null;
+  /** Called when the user accepts the preferred staff suggestion */
+  onAcceptPreferredStaff?: (staffId: string) => void;
+  /** Called when the user dismisses the preferred staff suggestion */
+  onDismissPreferredStaff?: () => void;
+  /** Whether the preferred staff suggestion has been dismissed this session */
+  preferredStaffDismissed?: boolean;
   onClientNameChange: (v: string) => void;
   onClientPhoneChange: (v: string) => void;
   onClientEmailChange: (v: string) => void;
@@ -166,6 +192,97 @@ export function BookingFlowInfoPanel({
       </h2>
 
       <div className="mt-6 space-y-6 lg:mt-8">
+        {/* Returning-customer welcome card — shown above the name field */}
+        <AnimatePresence>
+          {returningCustomer !== null && (
+            <motion.div
+              key="returning-customer-card"
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+              className="rounded-2xl bg-nq-primary/5 border border-nq-primary/20 p-4"
+              data-testid="returning-customer-card"
+            >
+              {/* Header row: avatar + name + VIP badge */}
+              <div className="flex items-start gap-3">
+                {/* Avatar circle showing first letter of name */}
+                <div className="w-10 h-10 rounded-full bg-nq-primary/20 text-nq-primary flex items-center justify-center font-semibold text-base shrink-0">
+                  {returningCustomer.name.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-[var(--booking-text)] text-sm">
+                      {t.returningCustomer.welcomeBack}
+                    </span>
+                    {returningCustomer.isVip && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-nq-warning/15 border border-nq-warning/30 px-2 py-0.5 text-[11px] font-semibold text-nq-warning">
+                        ✨ {t.returningCustomer.vipBadge}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-[var(--booking-text-muted)] mt-0.5">
+                    {t.returningCustomer.visitCount.replace("{n}", String(returningCustomer.visitCount))}
+                  </p>
+                  {returningCustomer.email && (
+                    <p className="text-xs text-[var(--booking-text-muted)] mt-0.5">
+                      {maskEmail(returningCustomer.email)}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Preferred staff section */}
+              {returningCustomer.preferredStaffId !== null && returningCustomer.preferredStaffName !== null && (() => {
+                const staffId = returningCustomer.preferredStaffId!;
+                const staffName = returningCustomer.preferredStaffName!;
+                // User already selected their preferred staff — show confirmation
+                if (currentStaffId === staffId) {
+                  return (
+                    <div className="mt-3 rounded-xl bg-[var(--booking-bg-input)] border border-[var(--booking-border)] p-3">
+                      <p className="text-sm font-medium text-nq-primary">
+                        {t.returningCustomer.alreadyWithPreferred.replace("{name}", staffName)}
+                      </p>
+                    </div>
+                  );
+                }
+                // Show suggestion only when not dismissed and no specific other staff is selected
+                if (!preferredStaffDismissed && (currentStaffId === null || currentStaffId === "any")) {
+                  return (
+                    <div className="mt-3 rounded-xl bg-[var(--booking-bg-input)] border border-[var(--booking-border)] p-3">
+                      <p className="text-xs text-[var(--booking-text-muted)] mb-1">
+                        {t.returningCustomer.preferredStaffHeading}
+                      </p>
+                      <p className="text-sm font-medium text-[var(--booking-text)] mb-3">
+                        {t.returningCustomer.preferredStaffPrompt.replace("{name}", staffName)}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="primary"
+                          size="sm"
+                          onClick={() => onAcceptPreferredStaff?.(staffId)}
+                        >
+                          {t.returningCustomer.acceptPreferredStaff.replace("{name}", staffName)}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onDismissPreferredStaff?.()}
+                        >
+                          {t.returningCustomer.dismissPreferredStaff}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div>
           <label
             htmlFor="booking-info-name"
@@ -241,6 +358,18 @@ export function BookingFlowInfoPanel({
               {effectivePhoneError}
             </p>
           ) : null}
+          {/* Phone lookup in-flight indicator — only shown while loading and no result yet */}
+          {lookupLoading && returningCustomer === null && (
+            <p
+              className="mt-1.5 flex gap-1 text-xs text-[var(--booking-text-muted)]"
+              aria-live="polite"
+              data-testid="phone-lookup-loading"
+            >
+              <span className="animate-pulse">●</span>
+              <span className="animate-pulse [animation-delay:150ms]">●</span>
+              <span className="animate-pulse [animation-delay:300ms]">●</span>
+            </p>
+          )}
         </div>
         <div>
           <label

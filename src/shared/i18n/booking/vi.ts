@@ -391,6 +391,17 @@ export const bookingVi: BookingMessages = {
     errorFallback: "Xin lỗi, không kết nối được. Vui lòng thử lại.",
     disclaimer: "Trợ lý AI — để đặt lịch, dùng form bên trên.",
   },
+  /** Returning-customer recognition strings (Info step phone lookup). */
+  returningCustomer: {
+    welcomeBack: "Chào mừng trở lại!",
+    visitCount: "Lần thứ {n} tại tiệm",
+    vipBadge: "VIP",
+    preferredStaffHeading: "Thợ quen của bạn",
+    preferredStaffPrompt: "Đặt với {name} lại không?",
+    acceptPreferredStaff: "Vâng, đặt với {name}",
+    dismissPreferredStaff: "Không, cảm ơn",
+    alreadyWithPreferred: "Đặt với {name} ✓",
+  },
   voice: {
     tapToSpeak: "Nói để đặt lịch",
     listening: "Đang nghe…",
