@@ -50,6 +50,16 @@ import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDa
 import * as Sentry from "@sentry/nextjs";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 
+export type ReturningCustomer = {
+  found: true;
+  name: string;
+  email: string | null;
+  isVip: boolean;
+  visitCount: number;
+  preferredStaffId: string | null;
+  preferredStaffName: string | null;
+};
+
 export type BookingFlowStep =
   | "service"
   | "staff"
@@ -155,6 +165,12 @@ export function useBookingFlowState(
   const [referenceImagePath, setReferenceImagePath] = useState<string | null>(null);
   const [referenceImagePreview, setReferenceImagePreview] = useState<string | null>(null);
 
+  // Returning customer lookup state
+  const [returningCustomer, setReturningCustomer] = useState<ReturningCustomer | null>(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [preferredStaffDismissed, setPreferredStaffDismissed] = useState(false);
+  const lookupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [submitting, setSubmitting] = useState(false);
   const [waitlistSubmitting, setWaitlistSubmitting] = useState(false);
   const [waitlistSlotJoined, setWaitlistSlotJoined] = useState(false);
@@ -239,6 +255,15 @@ export function useBookingFlowState(
     setInfoEmailError(null);
   }, []);
 
+  const handleAcceptPreferredStaff = useCallback((id: string) => {
+    setStaffId(id);
+    setPreferredStaffDismissed(false);
+  }, []); // stable setter
+
+  const handleDismissPreferredStaff = useCallback(() => {
+    setPreferredStaffDismissed(true);
+  }, []);
+
   const handleInfoNameBlur = useCallback(() => {
     const trimmed = clientName.trim();
     setClientName(trimmed);
@@ -294,6 +319,58 @@ export function useBookingFlowState(
     confettiFiredRef.current = true;
     void fireBookingConfetti();
   }, [step]);
+
+  // Debounced phone lookup — auto-fills name/email for returning customers
+  useEffect(() => {
+    // Cancel any pending lookup
+    if (lookupTimerRef.current) {
+      clearTimeout(lookupTimerRef.current);
+      lookupTimerRef.current = null;
+    }
+
+    const phoneValidation = validateGuestPhone(clientPhone.trim());
+    if (!phoneValidation.ok) {
+      setReturningCustomer(null);
+      setLookupLoading(false);
+      return;
+    }
+
+    // Phone valid — debounce 400ms then fetch
+    setLookupLoading(true);
+    lookupTimerRef.current = setTimeout(() => {
+      void fetch(
+        `/api/customer/${encodeURIComponent(phoneValidation.digits)}?salon_id=${encodeURIComponent(salon.id)}`
+      )
+        .then((r) => r.json() as Promise<ReturningCustomer | { found: false }>)
+        .then((data) => {
+          if (data.found) {
+            setReturningCustomer(data as ReturningCustomer);
+            setPreferredStaffDismissed(false); // reset dismiss when new profile loaded
+            // Auto-fill name only if empty (don't overwrite what the user typed)
+            setClientName((prev) => (!prev.trim() ? (data as ReturningCustomer).name : prev));
+            // Auto-fill email only if empty
+            const email = (data as ReturningCustomer).email;
+            if (email) {
+              setClientEmail((prev) => (!prev.trim() ? email : prev));
+            }
+          } else {
+            setReturningCustomer(null);
+          }
+        })
+        .catch(() => {
+          setReturningCustomer(null);
+        })
+        .finally(() => {
+          setLookupLoading(false);
+        });
+    }, 400);
+
+    return () => {
+      if (lookupTimerRef.current) {
+        clearTimeout(lookupTimerRef.current);
+      }
+    };
+  }, [clientPhone, salon.id]); // eslint-disable-line react-hooks/exhaustive-deps -- setClientName/setClientEmail are stable setters
 
   useEffect(() => {
     if (step !== "time" || !serviceId || !service) return;
@@ -1274,5 +1351,11 @@ export function useBookingFlowState(
     backToTime,
     backToInfo,
     backFromOtpToInfo,
+    // Returning customer lookup
+    returningCustomer,
+    lookupLoading,
+    preferredStaffDismissed,
+    onAcceptPreferredStaff: handleAcceptPreferredStaff,
+    onDismissPreferredStaff: handleDismissPreferredStaff,
   };
 }

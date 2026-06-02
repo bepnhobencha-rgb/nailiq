@@ -358,6 +358,16 @@ export function BookingFlow({
             onClientEmailBlur={flow.handleInfoEmailBlur}
             onBack={flow.backToTime}
             onNext={flow.goInfoNext}
+            returningCustomer={flow.returningCustomer}
+            lookupLoading={flow.lookupLoading}
+            currentStaffId={
+              flow.staffId && flow.staffId !== BOOKING_ANY_STAFF_ID
+                ? flow.staffId
+                : null
+            }
+            onAcceptPreferredStaff={flow.onAcceptPreferredStaff}
+            onDismissPreferredStaff={flow.onDismissPreferredStaff}
+            preferredStaffDismissed={flow.preferredStaffDismissed}
           />
         ) : null}
         {flow.step === "verify" ? (
