@@ -107,6 +107,8 @@ export const bookingEn = {
   bookingErrors: {
     slotJustTaken:
       "This slot was just booked. Please pick another time.",
+    wixSlotTaken:
+      "Sorry, this time slot was just booked by someone else. Please choose a different time.",
     invalidPhone:
       "Phone number invalid. Examples: +1 (604) 555-1234 or +84 90 123 4567",
     phoneRequired: "Enter your phone number.",

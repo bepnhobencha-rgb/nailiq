@@ -131,3 +131,35 @@ export async function createWixBooking(
   if (!id) throw new Error(`createWixBooking: no booking.id in response — ${JSON.stringify(r).slice(0, 200)}`);
   return id;
 }
+
+/**
+ * Check if a Wix staff resource has an active booking overlapping [startDateIso, endDateIso).
+ * Returns true if a conflict is found (slot taken), false if free.
+ * Fail-open: on any error returns false so a Wix outage never blocks the NailIQ booking flow.
+ */
+export async function checkWixSlotConflict(
+  siteId: string,
+  resourceId: string,
+  startDateIso: string, // ISO UTC e.g. "2026-06-05T14:00:00.000Z"
+  endDateIso: string,
+): Promise<boolean> {
+  try {
+    const r = (await post(READER, siteId, {
+      query: {
+        filter: {
+          $and: [
+            { "booking.bookedEntity.slot.resource.id": { $eq: resourceId } },
+            { "booking.startDate": { $lt: endDateIso } },
+            { "booking.endDate": { $gt: startDateIso } },
+            { "booking.status": { $nin: ["CANCELED", "CANCELLED", "DECLINED"] } },
+          ],
+        },
+        paging: { limit: 1 },
+      },
+    })) as { extendedBookings?: unknown[] };
+    return (r.extendedBookings?.length ?? 0) > 0;
+  } catch {
+    // Fail open — Wix API down or key missing → don't block the booking flow.
+    return false;
+  }
+}
