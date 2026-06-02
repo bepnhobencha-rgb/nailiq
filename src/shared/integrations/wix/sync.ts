@@ -8,6 +8,7 @@ import "server-only";
 import { queryBookingsUpdatedSince } from "./client";
 import { looseServiceClient } from "./looseDb";
 import { pushWixConfirm } from "./writeback";
+import { categorizeService } from "./categorize";
 
 // --- pure helpers ---
 function canonPhone(p: unknown): string | null {
@@ -101,7 +102,7 @@ export async function runForwardSync(salonId: string, siteId: string, sinceIso: 
   async function resolveService(title: string, durMin: number) {
     const hit = svcByName.get(normKey(title));
     if (hit) return hit;
-    const { data } = await db.from("services").insert({ salon_id: salonId, name: titleCase(title || "Service"), price_cents: 0, duration_minutes: Math.max(15, durMin) }).select("id").single();
+    const { data } = await db.from("services").insert({ salon_id: salonId, name: titleCase(title || "Service"), price_cents: 0, duration_minutes: Math.max(15, durMin), category: categorizeService(title) }).select("id").single();
     const rec = { id: data?.id as string, price: 0 };
     svcByName.set(normKey(title), rec);
     return rec;

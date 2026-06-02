@@ -14,6 +14,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
+import { categorizeService } from "../src/shared/integrations/wix/categorize";
 
 // ---------- config ----------
 const ROOT = resolve(__dirname, "..");
@@ -160,8 +161,7 @@ async function main() {
       name: titleCase(s.name),
       price_cents: price,
       duration_minutes: dur,
-      // category left null: services.category is an FK to service_categories.slug
-      // which we don't seed; the receptionist board works fine without it.
+      category: categorizeService(s.name, s.category), // map into a NailIQ catalog category (Wix category disambiguates eyelash vs nail)
     }).select("id").single();
     if (error) throw error;
     svcIdMap.set(s.wixId, { id: data.id, price, dur });
@@ -170,7 +170,7 @@ async function main() {
   async function ensureService(wixId: string, title: string, dur: number) {
     const hit = svcIdMap.get(wixId);
     if (hit) return hit;
-    const { data, error } = await db.from("services").insert({ salon_id: salonId, name: titleCase(title || "Service"), price_cents: 0, duration_minutes: Math.max(15, dur) }).select("id").single();
+    const { data, error } = await db.from("services").insert({ salon_id: salonId, name: titleCase(title || "Service"), price_cents: 0, duration_minutes: Math.max(15, dur), category: categorizeService(title) }).select("id").single();
     if (error) throw error;
     const rec = { id: data.id, price: 0, dur };
     svcIdMap.set(wixId, rec);
