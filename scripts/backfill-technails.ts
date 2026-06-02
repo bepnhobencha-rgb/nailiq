@@ -161,7 +161,7 @@ async function main() {
       name: titleCase(s.name),
       price_cents: price,
       duration_minutes: dur,
-      category: categorizeService(s.name), // map into a NailIQ catalog category by name
+      category: categorizeService(s.name, s.category), // map into a NailIQ catalog category (Wix category disambiguates eyelash vs nail)
     }).select("id").single();
     if (error) throw error;
     svcIdMap.set(s.wixId, { id: data.id, price, dur });
