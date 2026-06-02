@@ -2734,6 +2734,10 @@ export type Database = {
           id: string
         }[]
       }
+      bump_client_no_show: {
+        Args: { p_phone: string }
+        Returns: undefined
+      }
       compute_no_show_risk: {
         Args: {
           p_no_show_count: number

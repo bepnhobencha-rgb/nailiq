@@ -1232,6 +1232,8 @@ export type UserMessages = {
       /** Wix-origin pending: approve (→ confirm on Wix) / decline (→ decline on Wix). */
       approveWix: string;
       declineWix: string;
+      /** Mark a confirmed/in-progress booking as a no-show (customer didn't attend). */
+      noShow: string;
       /** Pending / confirmed: open inline edit form */
       editBooking: string;
       restoreBooking: string;
@@ -2801,6 +2803,7 @@ export const userEn: UserMessages = {
       cancelBooking: "Cancel booking",
       approveWix: "Approve",
       declineWix: "Decline",
+      noShow: "No-show",
       editBooking: "Edit",
       restoreBooking: "Restore booking",
       cancelConfirm: (clientName: string) =>
