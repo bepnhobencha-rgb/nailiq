@@ -99,10 +99,20 @@ export async function runForwardSync(salonId: string, siteId: string, sinceIso: 
     return { risk, approve: risk < otpThreshold };
   }
 
-  async function resolveService(title: string, durMin: number) {
+  async function resolveService(title: string, durMin: number, wixServiceId?: string | null, wixScheduleId?: string | null) {
     const hit = svcByName.get(normKey(title));
     if (hit) return hit;
-    const { data } = await db.from("services").insert({ salon_id: salonId, name: titleCase(title || "Service"), price_cents: 0, duration_minutes: Math.max(15, durMin), category: categorizeService(title) }).select("id").single();
+    const insertPayload: Record<string, unknown> = {
+      salon_id: salonId,
+      name: titleCase(title || "Service"),
+      price_cents: 0,
+      duration_minutes: Math.max(15, durMin),
+      category: categorizeService(title),
+    };
+    // Store Wix IDs on new services so pushWixCreate can round-trip back later.
+    if (wixServiceId)  insertPayload.wix_service_id  = wixServiceId;
+    if (wixScheduleId) insertPayload.wix_schedule_id = wixScheduleId;
+    const { data } = await db.from("services").insert(insertPayload as never).select("id").single();
     const rec = { id: data?.id as string, price: 0 };
     svcByName.set(normKey(title), rec);
     return rec;
@@ -127,7 +137,12 @@ export async function runForwardSync(salonId: string, siteId: string, sinceIso: 
     const start = b.startDate ?? b.bookedEntity?.slot?.startDate;
     if (!start) { skipped++; continue; }
     const end = b.endDate ?? b.bookedEntity?.slot?.endDate ?? new Date(new Date(start).getTime() + 45 * 60000).toISOString();
-    const svc = await resolveService(b.bookedEntity?.title ?? "Service", minutesBetween(start, end));
+    const svc = await resolveService(
+      b.bookedEntity?.title ?? "Service",
+      minutesBetween(start, end),
+      b.bookedEntity?.slot?.serviceId,
+      b.bookedEntity?.slot?.scheduleId,
+    );
     const staffId = await resolveStaff(b.bookedEntity?.slot?.resource?.name ?? "");
     const ph = canonPhone(b.contactDetails?.phone);
     const note = (b.additionalFields ?? []).find((f) => f.label === "Add Your Message")?.value || null;

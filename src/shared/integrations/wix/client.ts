@@ -116,3 +116,18 @@ export async function declineWixBooking(siteId: string, bookingId: string): Prom
   })) as { booking?: WixBooking };
   return r.booking?.status ?? "UNKNOWN";
 }
+
+/**
+ * Create a new booking on Wix. Uses skipAvailabilityValidation + skipBusinessConfirmation
+ * so staff-created NailIQ bookings don't get blocked by Wix's own schedule checks.
+ * Returns the new Wix booking ID, or throws on failure.
+ */
+export async function createWixBooking(
+  siteId: string,
+  body: Record<string, unknown>,
+): Promise<string> {
+  const r = (await post(WRITER, siteId, body)) as { booking?: { id?: string } };
+  const id = r.booking?.id;
+  if (!id) throw new Error(`createWixBooking: no booking.id in response — ${JSON.stringify(r).slice(0, 200)}`);
+  return id;
+}
