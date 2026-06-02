@@ -104,10 +104,10 @@ export async function pushWixCreate(salonId: string, bookingId: string): Promise
     // 4. Fetch service Wix IDs (added by migration 20260602100000 — not yet in generated types).
     const { data: rawSvc } = await db
       .from("services")
-      .select("wix_service_id, wix_schedule_id")
+      .select("name, wix_service_id, wix_schedule_id")
       .eq("id", bk.service_id ?? "")
       .maybeSingle();
-    const svc = rawSvc as { wix_service_id?: string | null; wix_schedule_id?: string | null } | null;
+    const svc = rawSvc as { name?: string | null; wix_service_id?: string | null; wix_schedule_id?: string | null } | null;
     if (!svc?.wix_service_id || !svc?.wix_schedule_id) {
       // Service has no Wix counterpart — cannot create on Wix.
       console.warn("[wix create] no wix_service_id/wix_schedule_id for booking", bookingId, "service", bk.service_id);
@@ -126,11 +126,14 @@ export async function pushWixCreate(salonId: string, bookingId: string): Promise
     }
 
     // 6. Build Wix Create Booking payload.
+    // Normalize timestamps to strict ISO-8601 (`...Z`). PostgREST returns `+00:00`-suffixed
+    // strings which Wix's slot validator can reject.
+    const toIso = (s: string) => new Date(s).toISOString();
     const slot: Record<string, unknown> = {
       serviceId:  svc.wix_service_id,
       scheduleId: svc.wix_schedule_id,
-      startDate:  bk.start_time_utc,
-      endDate:    bk.end_time_utc,
+      startDate:  toIso(bk.start_time_utc),
+      endDate:    toIso(bk.end_time_utc),
       timezone,
     };
     if (wixResourceId)          slot.resource  = { id: wixResourceId };
@@ -143,19 +146,29 @@ export async function pushWixCreate(salonId: string, bookingId: string): Promise
 
     const createBody: Record<string, unknown> = {
       booking: {
-        bookedEntity: { slot },
+        bookedEntity: {
+          slot,
+          ...(svc.name ? { title: svc.name } : {}),
+          tags: ["INDIVIDUAL"],
+        },
         contactDetails: {
           firstName,
           ...(lastName             ? { lastName }             : {}),
           ...(bk.client_phone      ? { phone: bk.client_phone }  : {}),
           ...(bk.client_email      ? { email: bk.client_email }  : {}),
         },
+        // Wix REQUIRES participantsChoices or totalParticipants — omitting it 400s the request.
+        totalParticipants: 1,
+        selectedPaymentOption: "OFFLINE",
       },
+      // NailIQ already sends its own SMS/email; suppress Wix's. (Top-level notifyParticipants is
+      // not a real field — the notification toggle lives under participantNotification.)
+      participantNotification: { notifyParticipants: false },
       flowControlSettings: {
-        skipAvailabilityValidation: true,
-        skipBusinessConfirmation:   true,
+        skipAvailabilityValidation:          true,
+        skipBusinessConfirmation:            true,
+        skipSelectedPaymentOptionValidation: true,
       },
-      notifyParticipants: false,
     };
 
     // 7. Call Wix Create Booking API.
