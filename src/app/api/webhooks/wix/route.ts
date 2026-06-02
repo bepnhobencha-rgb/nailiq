@@ -1,14 +1,16 @@
 /**
  * Real-time Wix webhook handler.
  *
- * Wix POSTs booking events here the moment they happen (<1s), replacing the
- * 2-minute polling cron for time-critical updates. The cron continues running
- * as a reliability fallback in case a webhook delivery fails.
+ * Supports two delivery paths:
  *
- * Docs: https://dev.wix.com/docs/rest/business-solutions/bookings/bookings/bookings-v2/event-triggered-emails
- * Signature: RSA-SHA256 signed by Wix using the app's private key.
- * Verify with WIX_WEBHOOK_PUBLIC_KEY (PEM format from Wix Dev Console → App → Webhooks).
- * Wix requires a 200 response within a few seconds; it retries on 5xx.
+ * A) Wix Custom App webhooks — sends `x-wix-signature` (RSA-SHA256) + `wix-site-id` header.
+ *    Signature verified with WIX_WEBHOOK_PUBLIC_KEY env var.
+ *
+ * B) Wix Automations "Send HTTP request" — no custom headers allowed by Wix UI.
+ *    Caller must include `siteId` in the JSON body instead.
+ *    No signature verification (Automations cannot sign requests).
+ *
+ * The cron /api/cron/wix-sync runs every minute as reliability fallback.
  */
 import "server-only";
 import { type NextRequest, NextResponse } from "next/server";
@@ -18,61 +20,57 @@ import { processWixBookingEvent } from "@/shared/integrations/wix/sync";
 import { looseServiceClient } from "@/shared/integrations/wix/looseDb";
 
 export const runtime = "nodejs";
-// Webhook must finish quickly; Wix has a short timeout before it marks the delivery failed.
 export const maxDuration = 20;
 
-// Wix slugs that require an upsert (created / updated / confirmed).
 const UPSERT_SLUGS = new Set(["created", "updated", "confirmed"]);
-// Wix slugs that mean the booking is cancelled.
 const CANCEL_SLUGS = new Set(["cancelled", "canceled", "declined"]);
 
-/**
- * Verify the RSA-SHA256 signature Wix attaches to every webhook delivery.
- * Wix custom apps sign using their private key; we verify with the public key
- * (PEM format) stored in WIX_WEBHOOK_PUBLIC_KEY.
- */
-function verifySignature(publicKeyPem: string, rawBody: Buffer, header: string | null): boolean {
-  if (!header) return false;
+/** Verify RSA-SHA256 signature sent by Wix custom app webhooks. */
+function verifySignature(publicKeyPem: string, rawBody: Buffer, sig: string | null): boolean {
+  if (!sig) return false;
   try {
     const verify = createVerify("RSA-SHA256");
     verify.update(rawBody);
-    return verify.verify(publicKeyPem, header, "base64");
+    return verify.verify(publicKeyPem, sig, "base64");
   } catch {
     return false;
   }
 }
 
-// Health-check — lets you verify the endpoint is reachable before wiring it in Wix.
 export async function GET() {
   return NextResponse.json({ ok: true, endpoint: "wix-webhook" });
 }
 
 export async function POST(req: NextRequest) {
-  // --- 1. Signature verification (skipped when WIX_WEBHOOK_PUBLIC_KEY is not configured) ---
-  const publicKey = process.env["WIX_WEBHOOK_PUBLIC_KEY"];
-  if (publicKey) {
-    const rawBody = Buffer.from(await req.arrayBuffer());
-    const sig = req.headers.get("x-wix-signature");
-    if (!verifySignature(publicKey, rawBody, sig)) {
-      console.warn("[wix-webhook] RSA signature mismatch");
-      return NextResponse.json({ error: "invalid_signature" }, { status: 401 });
-    }
-    // We already read the body as an ArrayBuffer; parse it from the buffer.
-    try {
-      const body = JSON.parse(rawBody.toString("utf-8")) as WixWebhookPayload;
-      return handleEvent(req, body);
-    } catch {
-      return NextResponse.json({ error: "invalid_json" }, { status: 400 });
-    }
-  }
+  const rawBody = Buffer.from(await req.arrayBuffer());
 
-  // --- No secret configured: parse body directly ---
   let body: WixWebhookPayload;
   try {
-    body = (await req.json()) as WixWebhookPayload;
+    body = JSON.parse(rawBody.toString("utf-8")) as WixWebhookPayload;
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
+
+  // --- 1. Auth: RSA signature (Custom App) or body siteId (Automations) ---
+  const sig = req.headers.get("x-wix-signature");
+  const publicKey = process.env["WIX_WEBHOOK_PUBLIC_KEY"];
+
+  if (sig) {
+    // Path A: Custom App — verify RSA signature
+    if (publicKey && !verifySignature(publicKey, rawBody, sig)) {
+      console.warn("[wix-webhook] RSA signature mismatch — rejected");
+      return NextResponse.json({ error: "invalid_signature" }, { status: 401 });
+    }
+    console.log("[wix-webhook] path=custom-app");
+  } else {
+    // Path B: Wix Automations — no signature possible; siteId in body is the identifier
+    if (!body.siteId) {
+      console.warn("[wix-webhook] no signature and no siteId — rejected");
+      return NextResponse.json({ error: "missing_site_id" }, { status: 400 });
+    }
+    console.log("[wix-webhook] path=automations siteId=%s", body.siteId);
+  }
+
   return handleEvent(req, body);
 }
 
@@ -81,26 +79,25 @@ interface WixWebhookPayload {
   slug?: string;
   entityId?: string;
   eventTime?: string;
-  data?: string; // base64-encoded booking JSON
+  data?: string;   // base64-encoded booking JSON (Custom App only)
+  siteId?: string; // Wix Automations fallback (no custom headers allowed)
 }
 
 async function handleEvent(req: NextRequest, body: WixWebhookPayload): Promise<NextResponse> {
-  const { entityFqdn = "", slug = "", entityId = "", data: encodedData } = body;
+  const { entityFqdn = "", slug = "", entityId = "", data: encodedData, siteId: bodySiteId } = body;
 
   // --- 2. Only handle booking events ---
   if (!entityFqdn.toLowerCase().includes("booking")) {
-    // Acknowledge non-booking events silently (Wix may send other entity types).
     return NextResponse.json({ ok: true, skipped: "non_booking_entity" });
   }
   if (!UPSERT_SLUGS.has(slug) && !CANCEL_SLUGS.has(slug)) {
     return NextResponse.json({ ok: true, skipped: `unhandled_slug:${slug}` });
   }
 
-  // --- 3. Resolve the salon from the wix-site-id header ---
-  const siteId = req.headers.get("wix-site-id");
+  // --- 3. Resolve siteId: header (Custom App) → body fallback (Automations) ---
+  const siteId = req.headers.get("wix-site-id") ?? bodySiteId ?? null;
   if (!siteId) {
-    // Wix always sends this header; missing = unexpected caller.
-    return NextResponse.json({ error: "missing_wix_site_id" }, { status: 400 });
+    return NextResponse.json({ error: "missing_site_id" }, { status: 400 });
   }
 
   const db = looseServiceClient();
