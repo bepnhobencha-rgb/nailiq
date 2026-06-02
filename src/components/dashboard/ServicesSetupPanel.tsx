@@ -5,23 +5,24 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { SaveButton, type SaveButtonStatus } from "@/components/ui/SaveButton";
 import { SetupToast, type SetupToastPayload } from "@/components/ui/Toast";
-import { SetupDeleteConfirm } from "@/components/dashboard/SetupDeleteConfirm";
 import {
   addService,
   deleteService,
   updateService,
 } from "@/shared/dashboard/setupActions";
 import type { ServiceCategorySummary } from "@/shared/booking/loadServiceCategories";
-import {
-  ADD_FORM_DEFAULT_CATEGORY,
-  type ServiceCategory,
-} from "@/shared/booking/serviceCategory";
+import { type ServiceCategory } from "@/shared/booking/serviceCategory";
 import { SERVICE_DESCRIPTION_MAX_LEN } from "@/shared/dashboard/serviceConstraints";
 import { getUserMessages, type UserMessages } from "@/shared/i18n/user";
 import type { Currency } from "@/shared/lib/currencyFormat";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { cn } from "@/shared/lib/cn";
+
+// ── ServiceDrawer — built in parallel, imported by interface contract ─────────
+import { ServiceDrawer } from "@/components/dashboard/ServiceDrawer";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 export type SetupServiceRow = {
   id: string;
@@ -36,10 +37,8 @@ export type SetupServiceRow = {
 };
 
 type ServiceFormLabels = UserMessages["serviceForm"];
-type CategoryPickerLabels = Pick<
-  UserMessages["serviceCategory"],
-  "pickerLabel"
->;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function centsFromDollarsString(raw: string): number | null {
   const normalized = raw.replace(/[^0-9.]/g, "");
@@ -53,782 +52,27 @@ function dollarsFromCents(cents: number): string {
 }
 
 const TOAST_ERR = "✗ Could not save. Check your connection.";
+const UNDO_TIMEOUT_MS = 5000;
 
-export function ServicesSetupPanel({
-  slug,
-  initialRows,
-  maxServices,
-  currency,
-  categories,
-}: {
-  slug: string;
-  initialRows: SetupServiceRow[];
-  /** Server-resolved cap (from `getEffectivePlanLimits`). `Infinity`
-   *  for unlimited plans / feature-flag overrides. Server still
-   *  re-validates on every `addService` call. */
-  maxServices: number;
-  /** Salon's display currency. Drives the "Price ({sym})" labels in
-   *  the add form and per-row editor. Stored cents are interpreted in
-   *  this currency by every formatter. */
-  currency: Currency;
-  /** Live category list from `loadServiceCategories`. Populates the
-   *  add-form dropdown and each row's category select. */
-  categories: readonly ServiceCategorySummary[];
-}) {
-  const { language } = useUserLanguage();
-  const messages = getUserMessages(language);
-  const setupErrors = messages.setupErrors;
-  const categoryPickerLabel = messages.serviceCategory.pickerLabel;
-  const formLabels = messages.serviceForm;
-  // P0.1 — shared setup-page labels (Name, Price, etc.).
-  const tLabels = messages.setupLabels;
-  // Localized + memo-friendly option list. Computed once per render
-  // and passed down so per-row dropdowns don't each re-localize.
-  const categoryOptions = categories.map((c) => ({
-    value: c.slug,
-    label: language === "vi" ? c.nameVi : c.nameEn,
-  }));
-  const router = useRouter();
-  const [rows, setRows] = useState<SetupServiceRow[]>(initialRows);
-  const [pendingId, setPendingId] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [addError, setAddError] = useState<string | null>(null);
-  const [addSaveStatus, setAddSaveStatus] = useState<SaveButtonStatus>("idle");
-  const [toast, setToast] = useState<SetupToastPayload | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const addStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+// ── Category icons ─────────────────────────────────────────────────────────────
 
-  const [draftName, setDraftName] = useState("");
-  const [draftPrice, setDraftPrice] = useState("");
-  const [draftDur, setDraftDur] = useState("45");
-  const [draftBuf, setDraftBuf] = useState("10");
-  const [draftCategory, setDraftCategory] = useState<ServiceCategory>(
-    ADD_FORM_DEFAULT_CATEGORY,
-  );
-  const [draftDescription, setDraftDescription] = useState("");
-  const [draftIsPopular, setDraftIsPopular] = useState(false);
+const CATEGORY_ICONS: Record<string, string> = {
+  manicure: "💅",
+  pedicure: "🦶",
+  acrylic: "✨",
+  gel: "💎",
+  dip_powder: "🌟",
+  removal: "🧹",
+  waxing: "🪮",
+  eyelashes: "👁️",
+  other: "🎨",
+};
 
-  const clearAddStatusTimer = useCallback(() => {
-    if (addStatusTimerRef.current !== null) {
-      clearTimeout(addStatusTimerRef.current);
-      addStatusTimerRef.current = null;
-    }
-  }, []);
-
-  useEffect(
-    () => () => {
-      clearAddStatusTimer();
-    },
-    [clearAddStatusTimer],
-  );
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- server list after refresh
-    setRows(initialRows);
-  }, [initialRows]);
-
-  const refresh = useCallback(() => router.refresh(), [router]);
-
-  // "Any mutation in flight" — disables the Add button and the
-  // per-row blur-saves while another save is round-tripping. Prevents
-  // a rapid-tap from queueing two creates / two updates from the same
-  // form and getting an inconsistent UI.
-  const isMutating = pendingId !== null || addSaveStatus === "saving";
-
-  // Plan-cap UX gate. `rows` reflects the optimistic-after-confirm
-  // state, so this stays accurate as the owner adds/removes services
-  // without a refetch. Server-side validator still re-checks every
-  // request, so this is a UX nudge, not a security boundary.
-  const atServiceLimit =
-    Number.isFinite(maxServices) && rows.length >= maxServices;
-
-  const handleUpdate = useCallback(
-    async (
-      serviceId: string,
-      patch: Partial<
-        Pick<
-          SetupServiceRow,
-          | "name"
-          | "price_cents"
-          | "duration_minutes"
-          | "buffer_minutes"
-          | "category"
-          | "description"
-          | "is_popular"
-          | "is_featured"
-        >
-      >,
-    ) => {
-      setFormError(null);
-      setPendingId(serviceId);
-      let res: Awaited<ReturnType<typeof updateService>>;
-      try {
-        res = await updateService(slug, serviceId, patch);
-      } catch (err) {
-        // Unexpected throw (network blip, server-action crash). Surface
-        // a red toast and log to Sentry — without this branch the
-        // pending state would stick and the owner would see no signal.
-        Sentry.captureMessage(
-          "[ServicesSetupPanel] updateService threw",
-          {
-            level: "error",
-            tags: { "salon.action": "update_service", "salon.slug": slug },
-            extra: { serviceId, patch, error: String(err) },
-          },
-        );
-        setPendingId(null);
-        setFormError("Could not save. Try again.");
-        setToast({ variant: "error", message: TOAST_ERR });
-        return;
-      }
-      setPendingId(null);
-      if (!res.ok) {
-        setFormError(mapUpdateError(res.error, formLabels));
-        setToast({ variant: "error", message: TOAST_ERR });
-        return;
-      }
-      setRows((prev) =>
-        prev.map((r) =>
-          r.id === serviceId
-            ? {
-                ...r,
-                ...(patch.name !== undefined ? { name: patch.name } : {}),
-                ...(patch.price_cents !== undefined
-                  ? { price_cents: patch.price_cents }
-                  : {}),
-                ...(patch.duration_minutes !== undefined
-                  ? { duration_minutes: patch.duration_minutes }
-                  : {}),
-                ...(patch.buffer_minutes !== undefined
-                  ? { buffer_minutes: patch.buffer_minutes }
-                  : {}),
-                ...(patch.category !== undefined
-                  ? { category: patch.category }
-                  : {}),
-                ...(patch.description !== undefined
-                  ? { description: patch.description }
-                  : {}),
-                ...(patch.is_popular !== undefined
-                  ? { is_popular: patch.is_popular }
-                  : {}),
-                ...(patch.is_featured !== undefined
-                  ? { is_featured: patch.is_featured }
-                  : {}),
-              }
-            : r,
-        ),
-      );
-      // Prefer the "description generated" toast when the server's
-      // best-effort auto-gen kicked in — it's a more specific signal
-      // than the generic save toast and replaces it for ~2s.
-      setToast(
-        res.descriptionGenerated
-          ? {
-              variant: "success",
-              message: formLabels.descriptionGeneratedToast,
-            }
-          : { variant: "success", message: tLabels.serviceSaved },
-      );
-      refresh();
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- formLabels and tLabels.serviceSaved are message strings that don't change within a session
-    [formLabels.descriptionGeneratedToast, refresh, slug],
-  );
-
-  const handleDelete = useCallback(
-    async (serviceId: string) => {
-      setFormError(null);
-      setConfirmDeleteId(null);
-      setPendingId(serviceId);
-      let res: Awaited<ReturnType<typeof deleteService>>;
-      try {
-        res = await deleteService(slug, serviceId);
-      } catch (err) {
-        Sentry.captureMessage(
-          "[ServicesSetupPanel] deleteService threw",
-          {
-            level: "error",
-            tags: { "salon.action": "delete_service", "salon.slug": slug },
-            extra: { serviceId, error: String(err) },
-          },
-        );
-        setPendingId(null);
-        setFormError("Could not delete. Try again.");
-        setToast({ variant: "error", message: TOAST_ERR });
-        return;
-      }
-      setPendingId(null);
-      if (!res.ok) {
-        setFormError(mapDeleteError(res.error, setupErrors));
-        setToast({ variant: "error", message: TOAST_ERR });
-        return;
-      }
-      setRows((prev) => prev.filter((r) => r.id !== serviceId));
-      setToast({ variant: "success", message: tLabels.serviceRemoved });
-      refresh();
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- tLabels.serviceRemoved is a message string that doesn't change within a session
-    [refresh, setupErrors, slug],
-  );
-
-  const onAdd = useCallback(async () => {
-    setAddError(null);
-    const cents = centsFromDollarsString(draftPrice);
-    if (!draftName.trim()) {
-      setAddError("Enter a service name.");
-      return;
-    }
-    if (cents === null) {
-      setAddError("Enter a valid price.");
-      return;
-    }
-    const dm = Number.parseInt(draftDur, 10);
-    const bm = Number.parseInt(draftBuf, 10);
-    if (!Number.isFinite(dm) || dm < 1) {
-      setAddError("Duration must be at least 1 minute.");
-      return;
-    }
-    if (!Number.isFinite(bm) || bm < 0) {
-      setAddError("Buffer must be 0 or more minutes.");
-      return;
-    }
-
-    // Description length is also enforced server-side (SERVICE_DESCRIPTION_MAX_LEN);
-    // catching it pre-flight gives the owner a localized error without a round-trip.
-    const descTrimmed = draftDescription.trim();
-    if (descTrimmed.length > SERVICE_DESCRIPTION_MAX_LEN) {
-      setAddError(formLabels.descriptionTooLong);
-      return;
-    }
-
-    clearAddStatusTimer();
-    setAddSaveStatus("saving");
-    let res: Awaited<ReturnType<typeof addService>>;
-    try {
-      res = await addService(slug, {
-        name: draftName.trim(),
-        price_cents: cents,
-        duration_minutes: dm,
-        buffer_minutes: bm,
-        category: draftCategory,
-        description: descTrimmed.length > 0 ? descTrimmed : null,
-        is_popular: draftIsPopular,
-      });
-    } catch (err) {
-      Sentry.captureMessage("[ServicesSetupPanel] addService threw", {
-        level: "error",
-        tags: { "salon.action": "add_service", "salon.slug": slug },
-        extra: { name: draftName.trim(), error: String(err) },
-      });
-      setAddSaveStatus("error");
-      setToast({ variant: "error", message: TOAST_ERR });
-      addStatusTimerRef.current = setTimeout(() => setAddSaveStatus("idle"), 3000);
-      return;
-    }
-    if (!res.ok) {
-      setAddSaveStatus("error");
-      // plan_limit_reached → inline error + Upgrade link below;
-      // invalid_description → localized hint; other errors fall back
-      // to the generic toast.
-      if (res.error === "plan_limit_reached") {
-        setAddError(setupErrors.serviceLimitReached);
-      } else if (res.error === "invalid_description") {
-        setAddError(formLabels.descriptionTooLong);
-      } else {
-        setToast({ variant: "error", message: TOAST_ERR });
-      }
-      addStatusTimerRef.current = setTimeout(() => setAddSaveStatus("idle"), 3000);
-      return;
-    }
-    setAddSaveStatus("saved");
-    setToast(
-      res.descriptionGenerated
-        ? {
-            variant: "success",
-            message: formLabels.descriptionGeneratedToast,
-          }
-        : { variant: "success", message: tLabels.serviceSaved },
-    );
-    addStatusTimerRef.current = setTimeout(() => setAddSaveStatus("idle"), 2000);
-    setDraftName("");
-    setDraftPrice("");
-    setDraftDur("45");
-    setDraftBuf("10");
-    // P1.5 — keep the last category selected so the owner can add a
-    // run of services in the same category without re-picking each
-    // time. Resetting only the variable fields (name/price/duration/
-    // buffer/description/popular) matches the actual usage pattern.
-    setDraftDescription("");
-    // P1.6 — explicitly reset Popular so the next service doesn't
-    // inherit the flag accidentally. (Was already here, but pin it
-    // down so a future refactor doesn't silently drop it.)
-    setDraftIsPopular(false);
-    refresh();
-  }, [
-    clearAddStatusTimer,
-    draftBuf,
-    draftCategory,
-    draftDescription,
-    draftDur,
-    draftIsPopular,
-    draftName,
-    draftPrice,
-    formLabels.descriptionTooLong,
-    refresh,
-    setupErrors.serviceLimitReached,
-    slug,
-  ]); // eslint-disable-line react-hooks/exhaustive-deps -- formLabels.descriptionGeneratedToast and tLabels.serviceSaved are message strings that don't change within a session
-
-  return (
-    <div className="flex flex-col gap-4">
-      <SetupToast toast={toast} onDismiss={() => setToast(null)} />
-
-      {formError ? (
-        <p className="rounded-xl border border-nq-error/40 bg-nq-error/10 px-4 py-3 text-sm text-nq-error">
-          {formError}
-        </p>
-      ) : null}
-
-      {/* AI import banner — shown when service list is empty */}
-      {rows.length === 0 && (
-        <div className="flex flex-col gap-3 rounded-2xl border border-nq-primary/40 bg-nq-primary/[0.05] px-4 py-4">
-          <div className="flex items-start gap-3">
-            <span aria-hidden className="text-2xl">✨</span>
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold text-nq-foreground">
-                {messages.aiPrefill.bannerTitle}
-              </p>
-              <p className="mt-0.5 text-sm text-nq-muted">
-                {messages.aiPrefill.bannerSubtitle}
-              </p>
-            </div>
-          </div>
-          <Link
-            href={`/dashboard/${encodeURIComponent(slug)}/setup/ai-prefill`}
-            className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-nq-primary px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/50"
-          >
-            {messages.aiPrefill.bannerCta}
-          </Link>
-        </div>
-      )}
-
-      <ul className="flex flex-col gap-3">
-        {rows.map((row) => (
-          <li
-            key={row.id}
-            className="rounded-2xl border border-nq-border/40 bg-nq-surface/40 p-4"
-          >
-            <ServiceRowFields
-              row={row}
-              disabled={pendingId === row.id}
-              confirmingDelete={confirmDeleteId === row.id}
-              categoryOptions={categoryOptions}
-              categoryPickerLabel={categoryPickerLabel}
-              formLabels={formLabels}
-              currency={currency}
-              onBeginDelete={() => {
-                setConfirmDeleteId(row.id);
-              }}
-              onCancelDelete={() => {
-                setConfirmDeleteId(null);
-              }}
-              onConfirmDelete={() => {
-                void handleDelete(row.id);
-              }}
-              onRowSave={(partial) => {
-                void handleUpdate(row.id, partial);
-              }}
-              canDelete={rows.length > 1}
-            />
-          </li>
-        ))}
-      </ul>
-
-      <section
-        aria-label={tLabels.addService}
-        className="rounded-2xl border border-nq-primary/35 bg-nq-bg/85 p-4"
-      >
-        <h2 className="text-base font-semibold text-nq-foreground">
-          {tLabels.addService}
-        </h2>
-        {atServiceLimit ? (
-          <p
-            className="mt-2 rounded-xl border border-nq-primary/30 bg-nq-primary/10 px-3 py-2 text-sm text-nq-foreground"
-            role="status"
-            data-testid="service-at-limit-banner"
-          >
-            {setupErrors.serviceLimitReached}{" "}
-            <Link
-              href={`/dashboard/${encodeURIComponent(slug)}/settings`}
-              className="font-semibold text-nq-primary hover:text-nq-primary/85 underline-offset-2 hover:underline"
-              data-testid="service-at-limit-upgrade-link"
-            >
-              {setupErrors.upgradeCta}
-            </Link>
-          </p>
-        ) : null}
-        {addError ? (
-          <p
-            className="mt-2 text-sm text-nq-error"
-            role="alert"
-            data-testid="service-add-error"
-          >
-            {addError}
-            {addError === setupErrors.serviceLimitReached ? (
-              <>
-                {" "}
-                <Link
-                  href={`/dashboard/${encodeURIComponent(slug)}/settings`}
-                  className="font-semibold text-nq-primary hover:text-nq-primary/85 underline-offset-2 hover:underline"
-                  data-testid="service-add-upgrade-link"
-                >
-                  {setupErrors.upgradeCta}
-                </Link>
-              </>
-            ) : null}
-          </p>
-        ) : null}
-        <div className="mt-3 flex flex-col gap-3">
-          <label className="block text-sm font-medium text-nq-muted">
-            {tLabels.name}
-            <input
-              className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
-              value={draftName}
-              disabled={addSaveStatus === "saving"}
-              onChange={(e) => {
-                setDraftName(e.target.value);
-              }}
-              placeholder="e.g. Acrylic full set"
-            />
-          </label>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="block text-sm font-medium text-nq-muted">
-              {`${tLabels.price} (${currency})`}
-              <input
-                inputMode="decimal"
-                className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
-                value={draftPrice}
-                disabled={addSaveStatus === "saving"}
-                onChange={(e) => {
-                  setDraftPrice(e.target.value);
-                }}
-                placeholder="45.00"
-              />
-            </label>
-            <label className="block text-sm font-medium text-nq-muted">
-              {tLabels.durationMin}
-              <input
-                inputMode="numeric"
-                className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
-                value={draftDur}
-                disabled={addSaveStatus === "saving"}
-                onChange={(e) => {
-                  setDraftDur(e.target.value);
-                }}
-              />
-            </label>
-            <label className="block text-sm font-medium text-nq-muted sm:col-span-2">
-              {tLabels.bufferMin}
-              <input
-                inputMode="numeric"
-                className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
-                value={draftBuf}
-                disabled={addSaveStatus === "saving"}
-                onChange={(e) => {
-                  setDraftBuf(e.target.value);
-                }}
-              />
-            </label>
-            <label className="block text-sm font-medium text-nq-muted sm:col-span-2">
-              {categoryPickerLabel}
-              <select
-                className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
-                value={draftCategory}
-                disabled={addSaveStatus === "saving"}
-                onChange={(e) => {
-                  setDraftCategory(e.target.value as ServiceCategory);
-                }}
-                data-testid="service-category-add"
-              >
-                {categoryOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <DescriptionField
-            value={draftDescription}
-            disabled={addSaveStatus === "saving"}
-            onChange={setDraftDescription}
-            labels={formLabels}
-            testId="service-description-add"
-          />
-          <PopularToggle
-            checked={draftIsPopular}
-            disabled={addSaveStatus === "saving"}
-            onChange={setDraftIsPopular}
-            labels={formLabels}
-            testId="service-popular-add"
-          />
-          <SaveButton
-            status={addSaveStatus}
-            onSave={() => {
-              void onAdd();
-            }}
-            idleLabel={tLabels.addService}
-            savedLabel="✓ Saved"
-            disabled={
-              isMutating ||
-              atServiceLimit ||
-              !draftName.trim() ||
-              centsFromDollarsString(draftPrice) === null ||
-              draftDescription.trim().length > SERVICE_DESCRIPTION_MAX_LEN
-            }
-            className="min-h-11 w-full"
-          />
-        </div>
-      </section>
-    </div>
-  );
+function getCategoryIcon(cat: string): string {
+  return CATEGORY_ICONS[cat] ?? "💄";
 }
 
-function ServiceRowFields({
-  row,
-  disabled,
-  confirmingDelete,
-  categoryOptions,
-  categoryPickerLabel,
-  formLabels,
-  currency: rowCurrency,
-  onBeginDelete,
-  onCancelDelete,
-  onConfirmDelete,
-  onRowSave,
-  canDelete,
-}: {
-  row: SetupServiceRow;
-  disabled: boolean;
-  confirmingDelete: boolean;
-  categoryOptions: ReadonlyArray<{ value: string; label: string }>;
-  categoryPickerLabel: CategoryPickerLabels["pickerLabel"];
-  formLabels: ServiceFormLabels;
-  currency: Currency;
-  onBeginDelete: () => void;
-  onCancelDelete: () => void;
-  onConfirmDelete: () => void;
-  /** P1.1 — explicit Save commits ALL dirty fields in one shot.
-   * Was previously `onBlurSave` per-field. */
-  onRowSave: (
-    patch: Partial<
-      Pick<
-        SetupServiceRow,
-        | "name"
-        | "price_cents"
-        | "duration_minutes"
-        | "buffer_minutes"
-        | "category"
-        | "description"
-        | "is_popular"
-        | "is_featured"
-      >
-    >,
-  ) => void;
-  canDelete: boolean;
-}) {
-  // P0.1 — pull labels per-row so labels stay localized. Avoids
-  // dragging a prop chain through `ServiceRowFields`.
-  const { language: rowLang } = useUserLanguage();
-  const tLabels = getUserMessages(rowLang).setupLabels;
-  const [name, setName] = useState(row.name);
-  const [price, setPrice] = useState(dollarsFromCents(row.price_cents));
-  const [dur, setDur] = useState(String(row.duration_minutes));
-  const [buf, setBuf] = useState(String(row.buffer_minutes));
-  const [category, setCategory] = useState<ServiceCategory>(row.category);
-  const [description, setDescription] = useState(row.description ?? "");
-  const [isPopular, setIsPopular] = useState(row.is_popular);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- row props after save / refresh
-    setName(row.name);
-    setPrice(dollarsFromCents(row.price_cents));
-    setDur(String(row.duration_minutes));
-    setBuf(String(row.buffer_minutes));
-    setCategory(row.category);
-    setDescription(row.description ?? "");
-    setIsPopular(row.is_popular);
-  }, [row]);
-
-  // P1.1 — build the patch of fields that differ from server state.
-  // Save button is disabled when the patch is empty (no changes).
-  const dirtyPatch = (): Partial<
-    Pick<
-      SetupServiceRow,
-      | "name"
-      | "price_cents"
-      | "duration_minutes"
-      | "buffer_minutes"
-      | "category"
-      | "description"
-      | "is_popular"
-    >
-  > => {
-    const patch: Partial<
-      Pick<
-        SetupServiceRow,
-        | "name"
-        | "price_cents"
-        | "duration_minutes"
-        | "buffer_minutes"
-        | "category"
-        | "description"
-        | "is_popular"
-      >
-    > = {};
-    const nameTrim = name.trim();
-    if (nameTrim && nameTrim !== row.name) patch.name = nameTrim;
-    const cents = centsFromDollarsString(price);
-    if (cents !== null && cents !== row.price_cents) patch.price_cents = cents;
-    const durNum = Number.parseInt(dur, 10);
-    if (
-      Number.isFinite(durNum) &&
-      durNum >= 1 &&
-      durNum !== row.duration_minutes
-    )
-      patch.duration_minutes = durNum;
-    const bufNum = Number.parseInt(buf, 10);
-    if (
-      Number.isFinite(bufNum) &&
-      bufNum >= 0 &&
-      bufNum !== row.buffer_minutes
-    )
-      patch.buffer_minutes = bufNum;
-    if (category !== row.category) patch.category = category;
-    const descTrim = description.trim();
-    const descNext = descTrim.length === 0 ? null : descTrim;
-    if (descNext !== (row.description ?? null)) {
-      // Server enforces SERVICE_DESCRIPTION_MAX_LEN; trust input
-      // `maxLength` to keep the local value short.
-      patch.description = descNext;
-    }
-    if (isPopular !== row.is_popular) patch.is_popular = isPopular;
-    return patch;
-  };
-  const patch = dirtyPatch();
-  const isDirty = Object.keys(patch).length > 0;
-
-  if (confirmingDelete) {
-    return (
-      <SetupDeleteConfirm
-        title={`Delete ${row.name}?`}
-        onCancel={onCancelDelete}
-        onConfirm={onConfirmDelete}
-        busy={disabled}
-      />
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label className="block text-sm font-medium text-nq-muted">
-          {tLabels.name}
-          <input
-            className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
-            value={name}
-            disabled={disabled}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </label>
-        <label className="block text-sm font-medium text-nq-muted">
-          {`${tLabels.price} (${rowCurrency})`}
-          <input
-            inputMode="decimal"
-            className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
-            value={price}
-            disabled={disabled}
-            onChange={(e) => setPrice(e.target.value)}
-          />
-        </label>
-        <label className="block text-sm font-medium text-nq-muted">
-          {tLabels.durationMin}
-          <input
-            inputMode="numeric"
-            className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
-            value={dur}
-            disabled={disabled}
-            onChange={(e) => setDur(e.target.value)}
-          />
-        </label>
-        <label className="block text-sm font-medium text-nq-muted">
-          {tLabels.bufferMin}
-          <input
-            inputMode="numeric"
-            className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
-            value={buf}
-            disabled={disabled}
-            onChange={(e) => setBuf(e.target.value)}
-          />
-        </label>
-        <label className="block text-sm font-medium text-nq-muted sm:col-span-2">
-          {categoryPickerLabel}
-          <select
-            className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
-            value={category}
-            disabled={disabled}
-            data-testid={`service-category-row-${row.id}`}
-            onChange={(e) => setCategory(e.target.value as ServiceCategory)}
-          >
-            {categoryOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <DescriptionField
-        value={description}
-        disabled={disabled}
-        onChange={setDescription}
-        labels={formLabels}
-        testId={`service-description-row-${row.id}`}
-      />
-      <PopularToggle
-        checked={isPopular}
-        disabled={disabled}
-        onChange={setIsPopular}
-        labels={formLabels}
-        testId={`service-popular-row-${row.id}`}
-      />
-      {/* P1.1 — explicit Save button per row. Commits every dirty
-          field in one server roundtrip → one toast on success. */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-        <Button
-          type="button"
-          variant="secondary"
-          className="min-h-11 touch-manipulation sm:w-auto"
-          disabled={disabled || !canDelete}
-          onClick={onBeginDelete}
-        >
-          {tLabels.deleteService}
-        </Button>
-        <Button
-          type="button"
-          variant="primary"
-          data-testid={`service-row-save-${row.id}`}
-          className="min-h-11 touch-manipulation sm:w-auto"
-          disabled={disabled || !isDirty}
-          loading={disabled}
-          onClick={() => onRowSave(patch)}
-        >
-          {formLabels.saveButton}
-        </Button>
-      </div>
-    </div>
-  );
-}
+// ── Error mappers (kept from original) ────────────────────────────────────────
 
 function mapUpdateError(code: string, formLabels: ServiceFormLabels): string {
   if (code === "invalid_name") return "Fix the name and try again.";
@@ -848,9 +92,10 @@ function mapDeleteError(
   return "Could not delete. Try again.";
 }
 
-/** Description textarea with a live character counter. Shared by the
- *  add-form (commits on form submit) and each row (commits on blur). */
-function DescriptionField({
+// ── DescriptionField (kept for ServiceDrawer usage) ───────────────────────────
+
+/** Description textarea with a live character counter. Used by ServiceDrawer. */
+export function DescriptionField({
   value,
   disabled,
   onChange,
@@ -902,9 +147,11 @@ function DescriptionField({
   );
 }
 
-/** "Popular" checkbox toggle. Renders a small gold badge on the public
- *  booking page when checked (see BookingFlowServicePanel). */
-function PopularToggle({
+// ── PopularToggle (kept for ServiceDrawer usage) ──────────────────────────────
+
+/** "Popular" checkbox toggle. Renders a small gold badge on the public booking
+ *  page when checked (see BookingFlowServicePanel). */
+export function PopularToggle({
   checked,
   disabled,
   onChange,
@@ -934,5 +181,853 @@ function PopularToggle({
         </span>
       </span>
     </label>
+  );
+}
+
+// ── PriceChip — inline-editable price cell ────────────────────────────────────
+
+function PriceChip({
+  row,
+  disabled,
+  onSave,
+  currency,
+}: {
+  row: SetupServiceRow;
+  disabled: boolean;
+  onSave: (cents: number) => void;
+  currency: Currency;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(dollarsFromCents(row.price_cents));
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Keep draft in sync when row prop changes (e.g. after save/refresh)
+  useEffect(() => {
+    if (!editing) {
+      setDraft(dollarsFromCents(row.price_cents));
+    }
+  }, [row.price_cents, editing]);
+
+  function handleCommit() {
+    const cents = centsFromDollarsString(draft);
+    if (cents !== null && cents !== row.price_cents) {
+      onSave(cents);
+    } else {
+      // Revert to original display value on invalid or unchanged input
+      setDraft(dollarsFromCents(row.price_cents));
+    }
+    setEditing(false);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleCommit();
+    }
+    if (e.key === "Escape") {
+      setDraft(dollarsFromCents(row.price_cents));
+      setEditing(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode="decimal"
+        autoFocus
+        className="w-20 rounded-lg border border-nq-primary/70 bg-nq-bg px-2 py-1 text-sm tabular-nums text-nq-foreground outline-none focus:border-nq-primary"
+        value={draft}
+        disabled={disabled}
+        onChange={(e) => setDraft(e.target.value)}
+        onFocus={(e) => e.target.select()}
+        onBlur={handleCommit}
+        onKeyDown={handleKeyDown}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      title="Click to edit price"
+      disabled={disabled}
+      className={cn(
+        "rounded-lg border border-nq-border/40 bg-nq-surface/60 px-2 py-1 text-sm tabular-nums text-nq-foreground transition-colors",
+        "hover:border-nq-primary/50 hover:bg-nq-primary/5 disabled:cursor-not-allowed disabled:opacity-50",
+      )}
+      onClick={() => {
+        setDraft(dollarsFromCents(row.price_cents));
+        setEditing(true);
+      }}
+    >
+      {currency}&nbsp;{dollarsFromCents(row.price_cents)}
+    </button>
+  );
+}
+
+// ── BulkPricePanel — bulk price update when multiple rows selected ─────────────
+
+type BulkMode = "increase" | "decrease" | "set";
+
+function BulkPricePanel({
+  selectedCount,
+  onApply,
+  onClear,
+}: {
+  selectedCount: number;
+  onApply: (mode: BulkMode, amountCents: number) => void;
+  onClear: () => void;
+}) {
+  const [mode, setMode] = useState<BulkMode>("increase");
+  const [amount, setAmount] = useState("");
+  const [open, setOpen] = useState(false);
+
+  if (!open) {
+    return (
+      <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border border-nq-border/50 bg-nq-surface px-4 py-2.5 shadow-lg text-sm">
+        <span className="text-nq-muted">
+          <strong className="text-nq-foreground">{selectedCount}</strong> dịch vụ đã chọn
+        </span>
+        <button
+          type="button"
+          className="rounded-full bg-nq-primary px-3 py-1 text-xs font-semibold text-white"
+          onClick={() => setOpen(true)}
+        >
+          Cập nhật giá
+        </button>
+        <button
+          type="button"
+          className="text-xs text-nq-muted hover:text-nq-foreground"
+          onClick={onClear}
+        >
+          Bỏ chọn
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed bottom-6 left-1/2 z-40 w-[min(100vw-2rem,22rem)] -translate-x-1/2 rounded-2xl border border-nq-border/50 bg-nq-surface px-4 py-4 shadow-lg">
+      <p className="mb-3 text-sm font-semibold text-nq-foreground">
+        Cập nhật giá cho {selectedCount} dịch vụ
+      </p>
+      <div className="flex flex-col gap-2">
+        {(["increase", "decrease", "set"] as BulkMode[]).map((m) => (
+          <label key={m} className="flex items-center gap-2 text-sm text-nq-foreground cursor-pointer">
+            <input
+              type="radio"
+              name="bulk-mode"
+              value={m}
+              checked={mode === m}
+              onChange={() => setMode(m)}
+              className="accent-nq-primary"
+            />
+            {m === "increase" ? "Tăng $" : m === "decrease" ? "Giảm $" : "Đặt về $"}
+          </label>
+        ))}
+        <input
+          type="text"
+          inputMode="decimal"
+          placeholder="0.00"
+          className="mt-1 rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 text-base outline-none focus-visible:border-nq-primary/75"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+        />
+        <div className="mt-1 flex gap-2">
+          <button
+            type="button"
+            className="flex-1 rounded-xl bg-nq-primary py-2 text-sm font-semibold text-white disabled:opacity-50"
+            disabled={centsFromDollarsString(amount) === null}
+            onClick={() => {
+              const cents = centsFromDollarsString(amount);
+              if (cents === null) return;
+              onApply(mode, cents);
+              setOpen(false);
+              setAmount("");
+            }}
+          >
+            Áp dụng
+          </button>
+          <button
+            type="button"
+            className="rounded-xl border border-nq-border/50 px-4 py-2 text-sm text-nq-muted"
+            onClick={() => setOpen(false)}
+          >
+            Hủy
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main panel ─────────────────────────────────────────────────────────────────
+
+export function ServicesSetupPanel({
+  slug,
+  initialRows,
+  maxServices,
+  currency,
+  categories,
+}: {
+  slug: string;
+  initialRows: SetupServiceRow[];
+  /** Server-resolved cap (from `getEffectivePlanLimits`). `Infinity`
+   *  for unlimited plans / feature-flag overrides. Server still
+   *  re-validates on every `addService` call. */
+  maxServices: number;
+  /** Salon's display currency. Drives the price chips and labels. */
+  currency: Currency;
+  /** Live category list from `loadServiceCategories`. */
+  categories: readonly ServiceCategorySummary[];
+}) {
+  const { language } = useUserLanguage();
+  const messages = getUserMessages(language);
+  const setupErrors = messages.setupErrors;
+  const formLabels = messages.serviceForm;
+  const tLabels = messages.setupLabels;
+
+  const router = useRouter();
+  const [rows, setRows] = useState<SetupServiceRow[]>(initialRows);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [toast, setToast] = useState<SetupToastPayload | null>(null);
+
+  // Drawer state
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerService, setDrawerService] = useState<SetupServiceRow | null>(null);
+
+  // Search + filter
+  const [search, setSearch] = useState("");
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+
+  // Undo-delete state
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [undoPending, setUndoPending] = useState<{
+    row: SetupServiceRow;
+    timer: ReturnType<typeof setTimeout>;
+  } | null>(null);
+
+  // Selection for bulk ops
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Sync rows from server
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- server list after refresh
+    setRows(initialRows);
+  }, [initialRows]);
+
+  const refresh = useCallback(() => router.refresh(), [router]);
+
+  // "Any mutation in flight" guard
+  const isMutating = pendingId !== null;
+
+  // Plan-cap gate (UX only — server re-validates)
+  const atServiceLimit =
+    Number.isFinite(maxServices) && rows.length >= maxServices;
+
+  // ── handleUpdate (unchanged logic) ──────────────────────────────────────────
+  const handleUpdate = useCallback(
+    async (
+      serviceId: string,
+      patch: Partial<
+        Pick<
+          SetupServiceRow,
+          | "name"
+          | "price_cents"
+          | "duration_minutes"
+          | "buffer_minutes"
+          | "category"
+          | "description"
+          | "is_popular"
+          | "is_featured"
+        >
+      >,
+    ) => {
+      setFormError(null);
+      setPendingId(serviceId);
+      let res: Awaited<ReturnType<typeof updateService>>;
+      try {
+        res = await updateService(slug, serviceId, patch);
+      } catch (err) {
+        Sentry.captureMessage(
+          "[ServicesSetupPanel] updateService threw",
+          {
+            level: "error",
+            tags: { "salon.action": "update_service", "salon.slug": slug },
+            extra: { serviceId, patch, error: String(err) },
+          },
+        );
+        setPendingId(null);
+        setFormError("Could not save. Try again.");
+        setToast({ variant: "error", message: TOAST_ERR });
+        return;
+      }
+      setPendingId(null);
+      if (!res.ok) {
+        setFormError(mapUpdateError(res.error, formLabels));
+        setToast({ variant: "error", message: TOAST_ERR });
+        return;
+      }
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === serviceId
+            ? {
+                ...r,
+                ...(patch.name !== undefined ? { name: patch.name } : {}),
+                ...(patch.price_cents !== undefined
+                  ? { price_cents: patch.price_cents }
+                  : {}),
+                ...(patch.duration_minutes !== undefined
+                  ? { duration_minutes: patch.duration_minutes }
+                  : {}),
+                ...(patch.buffer_minutes !== undefined
+                  ? { buffer_minutes: patch.buffer_minutes }
+                  : {}),
+                ...(patch.category !== undefined
+                  ? { category: patch.category }
+                  : {}),
+                ...(patch.description !== undefined
+                  ? { description: patch.description }
+                  : {}),
+                ...(patch.is_popular !== undefined
+                  ? { is_popular: patch.is_popular }
+                  : {}),
+                ...(patch.is_featured !== undefined
+                  ? { is_featured: patch.is_featured }
+                  : {}),
+              }
+            : r,
+        ),
+      );
+      setToast(
+        res.descriptionGenerated
+          ? {
+              variant: "success",
+              message: formLabels.descriptionGeneratedToast,
+            }
+          : { variant: "success", message: tLabels.serviceSaved },
+      );
+      refresh();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- formLabels and tLabels.serviceSaved are message strings that don't change within a session
+    [formLabels.descriptionGeneratedToast, refresh, slug],
+  );
+
+  // ── handleDeleteOptimistic — optimistic remove + undo window ─────────────────
+  const handleDeleteOptimistic = useCallback(
+    (serviceId: string) => {
+      // Clear any previous undo pending for a different row
+      if (undoTimerRef.current !== null) {
+        clearTimeout(undoTimerRef.current);
+        undoTimerRef.current = null;
+      }
+      // If there was a previous undo pending that hasn't fired yet,
+      // fire the real delete immediately for the previous row before
+      // starting the new undo window
+      if (undoPending !== null) {
+        const prevId = undoPending.row.id;
+        const prevSlug = slug;
+        void deleteService(prevSlug, prevId).catch(() => {
+          // Best-effort: if this fails we accept the ghost row
+        });
+      }
+
+      const rowToDelete = rows.find((r) => r.id === serviceId);
+      if (!rowToDelete) return;
+
+      // Optimistically remove from UI
+      setRows((prev) => prev.filter((r) => r.id !== serviceId));
+
+      // Set up undo window
+      const timer = setTimeout(async () => {
+        setUndoPending(null);
+        undoTimerRef.current = null;
+        // Commit the real delete
+        setFormError(null);
+        setPendingId(serviceId);
+        let res: Awaited<ReturnType<typeof deleteService>>;
+        try {
+          res = await deleteService(slug, serviceId);
+        } catch (err) {
+          Sentry.captureMessage(
+            "[ServicesSetupPanel] deleteService threw",
+            {
+              level: "error",
+              tags: { "salon.action": "delete_service", "salon.slug": slug },
+              extra: { serviceId, error: String(err) },
+            },
+          );
+          setPendingId(null);
+          // Restore the row on error
+          setRows((prev) => {
+            const idx = initialRows.findIndex((r) => r.id === serviceId);
+            const restored = [...prev];
+            if (idx !== -1) restored.splice(idx, 0, rowToDelete);
+            else restored.push(rowToDelete);
+            return restored;
+          });
+          setFormError("Could not delete. Try again.");
+          setToast({ variant: "error", message: TOAST_ERR });
+          return;
+        }
+        setPendingId(null);
+        if (!res.ok) {
+          setFormError(mapDeleteError(res.error, setupErrors));
+          setToast({ variant: "error", message: TOAST_ERR });
+          // Restore the row on server-side error
+          setRows((prev) => {
+            const restored = [...prev, rowToDelete];
+            return restored;
+          });
+          return;
+        }
+        setToast({ variant: "success", message: tLabels.serviceRemoved });
+        refresh();
+      }, UNDO_TIMEOUT_MS);
+
+      undoTimerRef.current = timer;
+      setUndoPending({ row: rowToDelete, timer });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tLabels.serviceRemoved is a message string that doesn't change within a session
+    [rows, undoPending, slug, setupErrors, refresh, initialRows],
+  );
+
+  const handleUndoDelete = useCallback(() => {
+    if (undoPending === null) return;
+    clearTimeout(undoPending.timer);
+    undoTimerRef.current = null;
+    // Restore the row
+    setRows((prev) => {
+      // Restore at original position if possible
+      const restored = [...prev, undoPending.row];
+      return restored;
+    });
+    setUndoPending(null);
+  }, [undoPending]);
+
+  // Cleanup timer on unmount
+  useEffect(
+    () => () => {
+      if (undoTimerRef.current !== null) clearTimeout(undoTimerRef.current);
+    },
+    [],
+  );
+
+  // ── Bulk price update ────────────────────────────────────────────────────────
+  const handleBulkPrice = useCallback(
+    async (mode: BulkMode, amountCents: number) => {
+      const ids = Array.from(selectedIds);
+      for (const id of ids) {
+        const row = rows.find((r) => r.id === id);
+        if (!row) continue;
+        let newCents: number;
+        if (mode === "increase") newCents = row.price_cents + amountCents;
+        else if (mode === "decrease")
+          newCents = Math.max(0, row.price_cents - amountCents);
+        else newCents = amountCents;
+        await handleUpdate(id, { price_cents: newCents });
+      }
+      setSelectedIds(new Set());
+    },
+    [selectedIds, rows, handleUpdate],
+  );
+
+  // ── Filtered + grouped rows ───────────────────────────────────────────────────
+  const filteredRows = rows.filter((r) => {
+    const matchesSearch = r.name
+      .toLowerCase()
+      .includes(search.toLowerCase());
+    const matchesCat =
+      activeCategory === null || r.category === activeCategory;
+    return matchesSearch && matchesCat;
+  });
+
+  // Deduplicated categories in order of first appearance
+  const uniqueCategories: string[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    if (!seen.has(r.category)) {
+      seen.add(r.category);
+      uniqueCategories.push(r.category);
+    }
+  }
+
+  // Group filtered rows by category (only when showing all)
+  const grouped: { cat: string; items: SetupServiceRow[] }[] = [];
+  if (activeCategory === null) {
+    const map = new Map<string, SetupServiceRow[]>();
+    for (const r of filteredRows) {
+      const bucket = map.get(r.category) ?? [];
+      bucket.push(r);
+      map.set(r.category, bucket);
+    }
+    for (const cat of uniqueCategories) {
+      const items = map.get(cat);
+      if (items && items.length > 0) grouped.push({ cat, items });
+    }
+  } else {
+    grouped.push({ cat: activeCategory, items: filteredRows });
+  }
+
+  // Category label helper
+  function getCategoryLabel(cat: string): string {
+    const found = categories.find((c) => c.slug === cat);
+    if (!found) return cat;
+    return language === "vi" ? found.nameVi : found.nameEn;
+  }
+
+  // ── Toggle row selection ──────────────────────────────────────────────────────
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <SetupToast toast={toast} onDismiss={() => setToast(null)} />
+
+      {formError ? (
+        <p className="rounded-xl border border-nq-error/40 bg-nq-error/10 px-4 py-3 text-sm text-nq-error">
+          {formError}
+        </p>
+      ) : null}
+
+      {/* ── Header row: title + "Thêm" button (sticky at top) ───────────────── */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold text-nq-foreground">
+          Dịch vụ · {rows.length}
+        </h2>
+        <div className="flex items-center gap-2">
+          {atServiceLimit ? (
+            <Link
+              href={`/dashboard/${encodeURIComponent(slug)}/settings`}
+              className="text-xs font-medium text-nq-primary hover:underline underline-offset-2"
+              data-testid="service-at-limit-upgrade-link"
+            >
+              {setupErrors.upgradeCta}
+            </Link>
+          ) : null}
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={atServiceLimit || isMutating}
+            onClick={() => {
+              setDrawerService(null);
+              setDrawerOpen(true);
+            }}
+          >
+            + Thêm
+          </Button>
+        </div>
+      </div>
+
+      {/* Plan-limit banner (when at limit) */}
+      {atServiceLimit ? (
+        <p
+          className="rounded-xl border border-nq-primary/30 bg-nq-primary/10 px-3 py-2 text-sm text-nq-foreground"
+          role="status"
+          data-testid="service-at-limit-banner"
+        >
+          {setupErrors.serviceLimitReached}{" "}
+          <Link
+            href={`/dashboard/${encodeURIComponent(slug)}/settings`}
+            className="font-semibold text-nq-primary hover:text-nq-primary/85 underline-offset-2 hover:underline"
+          >
+            {setupErrors.upgradeCta}
+          </Link>
+        </p>
+      ) : null}
+
+      {/* ── AI import banner — shown when service list is empty ─────────────── */}
+      {rows.length === 0 && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-nq-primary/40 bg-nq-primary/[0.05] px-4 py-4">
+          <div className="flex items-start gap-3">
+            <span aria-hidden className="text-2xl">✨</span>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-nq-foreground">
+                {messages.aiPrefill.bannerTitle}
+              </p>
+              <p className="mt-0.5 text-sm text-nq-muted">
+                {messages.aiPrefill.bannerSubtitle}
+              </p>
+            </div>
+          </div>
+          <Link
+            href={`/dashboard/${encodeURIComponent(slug)}/setup/ai-prefill`}
+            className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-nq-primary px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/50"
+          >
+            {messages.aiPrefill.bannerCta}
+          </Link>
+        </div>
+      )}
+
+      {/* ── Search bar ──────────────────────────────────────────────────────── */}
+      {rows.length > 0 && (
+        <input
+          type="search"
+          placeholder="🔍 Tìm dịch vụ..."
+          className="w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-4 py-2.5 text-base text-nq-foreground outline-none focus-visible:border-nq-primary/75"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      )}
+
+      {/* ── Category filter chips ────────────────────────────────────────────── */}
+      {uniqueCategories.length > 1 && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveCategory(null)}
+            className={cn(
+              "rounded-full border px-3 py-1 text-sm font-medium transition-colors",
+              activeCategory === null
+                ? "border-nq-primary bg-nq-primary text-white"
+                : "border-nq-border/50 text-nq-muted hover:border-nq-primary/50",
+            )}
+          >
+            Tất cả
+          </button>
+          {uniqueCategories.map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              onClick={() =>
+                setActiveCategory(activeCategory === cat ? null : cat)
+              }
+              className={cn(
+                "rounded-full border px-3 py-1 text-sm font-medium transition-colors",
+                activeCategory === cat
+                  ? "border-nq-primary bg-nq-primary text-white"
+                  : "border-nq-border/50 text-nq-muted hover:border-nq-primary/50",
+              )}
+            >
+              {getCategoryIcon(cat)} {getCategoryLabel(cat)}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Service list grouped by category ─────────────────────────────────── */}
+      {grouped.length === 0 && rows.length > 0 ? (
+        <p className="py-6 text-center text-sm text-nq-muted">
+          Không tìm thấy dịch vụ nào.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {grouped.map(({ cat, items }) => (
+            <div key={cat}>
+              {/* Category header (only when showing all categories) */}
+              {activeCategory === null && (
+                <div className="px-1 py-1.5 text-xs font-semibold uppercase tracking-wide text-nq-muted/70">
+                  {getCategoryIcon(cat)} {getCategoryLabel(cat)}
+                </div>
+              )}
+              {/* Rows card */}
+              <div className="overflow-hidden rounded-2xl border border-nq-border/40 bg-nq-surface/40">
+                {items.map((row, idx) => (
+                  <ServiceRow
+                    key={row.id}
+                    row={row}
+                    currency={currency}
+                    isLast={idx === items.length - 1}
+                    pendingId={pendingId}
+                    selected={selectedIds.has(row.id)}
+                    onToggleSelect={() => toggleSelect(row.id)}
+                    onEdit={() => {
+                      setDrawerService(row);
+                      setDrawerOpen(true);
+                    }}
+                    onDelete={() => handleDeleteOptimistic(row.id)}
+                    onPriceSave={(cents) =>
+                      void handleUpdate(row.id, { price_cents: cents })
+                    }
+                    canDelete={rows.length > 1}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Bulk price bar (when rows selected) ──────────────────────────────── */}
+      {selectedIds.size > 0 && (
+        <BulkPricePanel
+          selectedCount={selectedIds.size}
+          onApply={(mode, amountCents) => void handleBulkPrice(mode, amountCents)}
+          onClear={() => setSelectedIds(new Set())}
+        />
+      )}
+
+      {/* ── Undo delete toast ─────────────────────────────────────────────────── */}
+      {undoPending && (
+        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-nq-border/50 bg-nq-surface px-4 py-2.5 shadow-lg text-sm">
+          <span>
+            Đã xoá <strong>{undoPending.row.name}</strong>
+          </span>
+          <button
+            type="button"
+            onClick={handleUndoDelete}
+            className="font-semibold text-nq-primary"
+          >
+            ↺ Hoàn tác
+          </button>
+        </div>
+      )}
+
+      {/* ── ServiceDrawer (add + edit) ────────────────────────────────────────── */}
+      <ServiceDrawer
+        slug={slug}
+        service={drawerService}
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onSaved={(updated) => {
+          setRows((prev) =>
+            prev.map((r) => (r.id === updated.id ? updated : r)),
+          );
+          setDrawerOpen(false);
+          setToast({ variant: "success", message: tLabels.serviceSaved });
+        }}
+        onAdded={() => {
+          refresh();
+          setDrawerOpen(false);
+          setToast({ variant: "success", message: tLabels.serviceSaved });
+        }}
+        onRequestDelete={(id) => {
+          setDrawerOpen(false);
+          handleDeleteOptimistic(id);
+        }}
+        currency={currency}
+        categories={categories}
+        canDelete={rows.length > 1}
+        atServiceLimit={atServiceLimit}
+      />
+    </div>
+  );
+}
+
+// ── ServiceRow — compact row component ────────────────────────────────────────
+
+function ServiceRow({
+  row,
+  currency,
+  isLast,
+  pendingId,
+  selected,
+  onToggleSelect,
+  onEdit,
+  onDelete,
+  onPriceSave,
+  canDelete,
+}: {
+  row: SetupServiceRow;
+  currency: Currency;
+  isLast: boolean;
+  pendingId: string | null;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onPriceSave: (cents: number) => void;
+  canDelete: boolean;
+}) {
+  const isPending = pendingId === row.id;
+
+  return (
+    <div
+      className={cn(
+        "group flex min-h-[52px] items-center gap-2 px-3 py-2 transition-colors hover:bg-nq-surface/70",
+        !isLast && "border-b border-nq-border/30",
+      )}
+    >
+      {/* Checkbox — visible on hover (desktop) or always (mobile) */}
+      <div className="flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100 sm:block hidden">
+        <input
+          type="checkbox"
+          className="h-4 w-4 cursor-pointer accent-nq-primary"
+          checked={selected}
+          onChange={onToggleSelect}
+          aria-label={`Select ${row.name}`}
+        />
+      </div>
+      {/* Always visible checkbox on mobile */}
+      <div className="flex-shrink-0 sm:hidden block">
+        <input
+          type="checkbox"
+          className="h-4 w-4 cursor-pointer accent-nq-primary"
+          checked={selected}
+          onChange={onToggleSelect}
+          aria-label={`Select ${row.name}`}
+        />
+      </div>
+
+      {/* Category icon */}
+      <span aria-hidden className="flex-shrink-0 text-base leading-none">
+        {getCategoryIcon(row.category)}
+      </span>
+
+      {/* Service name */}
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-nq-foreground">
+        {row.name}
+        {row.is_popular && (
+          <span className="ml-1.5 inline-block rounded-full bg-nq-primary/15 px-1.5 py-px text-[10px] font-semibold text-nq-primary">
+            ★
+          </span>
+        )}
+      </span>
+
+      {/* Price chip (inline editable) */}
+      <div className="flex-shrink-0">
+        {isPending ? (
+          <span className="inline-flex items-center gap-1 rounded-lg border border-nq-border/40 bg-nq-surface/60 px-2 py-1 text-sm tabular-nums text-nq-muted">
+            <span className="h-1.5 w-1.5 rounded-full bg-nq-primary animate-pulse" />
+            {currency}&nbsp;{dollarsFromCents(row.price_cents)}
+          </span>
+        ) : (
+          <PriceChip
+            row={row}
+            disabled={pendingId !== null}
+            onSave={onPriceSave}
+            currency={currency}
+          />
+        )}
+      </div>
+
+      {/* Duration chip */}
+      <span className="flex-shrink-0 text-sm text-nq-muted tabular-nums hidden sm:block">
+        {row.duration_minutes}&nbsp;min
+      </span>
+
+      {/* Edit button */}
+      <button
+        type="button"
+        title="Chỉnh sửa"
+        aria-label={`Chỉnh sửa ${row.name}`}
+        disabled={pendingId !== null}
+        className="flex-shrink-0 rounded-lg p-1.5 text-nq-muted transition-colors hover:bg-nq-surface hover:text-nq-foreground disabled:opacity-50"
+        onClick={onEdit}
+      >
+        ✏️
+      </button>
+
+      {/* Delete button */}
+      <button
+        type="button"
+        title="Xoá"
+        aria-label={`Xoá ${row.name}`}
+        disabled={pendingId !== null || !canDelete}
+        className="flex-shrink-0 rounded-lg p-1.5 text-nq-muted transition-colors hover:bg-nq-error/10 hover:text-nq-error disabled:opacity-50"
+        onClick={onDelete}
+      >
+        🗑️
+      </button>
+    </div>
   );
 }
