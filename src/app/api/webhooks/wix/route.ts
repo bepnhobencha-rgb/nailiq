@@ -6,12 +6,13 @@
  * as a reliability fallback in case a webhook delivery fails.
  *
  * Docs: https://dev.wix.com/docs/rest/business-solutions/bookings/bookings/bookings-v2/event-triggered-emails
- * Signature: HMAC-SHA256 of the raw body with WIX_WEBHOOK_SECRET.
+ * Signature: RSA-SHA256 signed by Wix using the app's private key.
+ * Verify with WIX_WEBHOOK_PUBLIC_KEY (PEM format from Wix Dev Console → App → Webhooks).
  * Wix requires a 200 response within a few seconds; it retries on 5xx.
  */
 import "server-only";
 import { type NextRequest, NextResponse } from "next/server";
-import { createHmac, timingSafeEqual } from "crypto";
+import { createVerify } from "crypto";
 import { getBooking, type WixBooking } from "@/shared/integrations/wix/client";
 import { processWixBookingEvent } from "@/shared/integrations/wix/sync";
 import { looseServiceClient } from "@/shared/integrations/wix/looseDb";
@@ -25,12 +26,17 @@ const UPSERT_SLUGS = new Set(["created", "updated", "confirmed"]);
 // Wix slugs that mean the booking is cancelled.
 const CANCEL_SLUGS = new Set(["cancelled", "canceled", "declined"]);
 
-/** Verify the HMAC-SHA256 signature Wix attaches to every webhook delivery. */
-function verifySignature(secret: string, rawBody: Buffer, header: string | null): boolean {
+/**
+ * Verify the RSA-SHA256 signature Wix attaches to every webhook delivery.
+ * Wix custom apps sign using their private key; we verify with the public key
+ * (PEM format) stored in WIX_WEBHOOK_PUBLIC_KEY.
+ */
+function verifySignature(publicKeyPem: string, rawBody: Buffer, header: string | null): boolean {
   if (!header) return false;
-  const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
   try {
-    return timingSafeEqual(Buffer.from(expected), Buffer.from(header));
+    const verify = createVerify("RSA-SHA256");
+    verify.update(rawBody);
+    return verify.verify(publicKeyPem, header, "base64");
   } catch {
     return false;
   }
@@ -42,13 +48,13 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  // --- 1. Signature verification (skipped when WIX_WEBHOOK_SECRET is not configured) ---
-  const hmacKey = process.env["WIX_WEBHOOK_SECRET"];
-  if (hmacKey) {
+  // --- 1. Signature verification (skipped when WIX_WEBHOOK_PUBLIC_KEY is not configured) ---
+  const publicKey = process.env["WIX_WEBHOOK_PUBLIC_KEY"];
+  if (publicKey) {
     const rawBody = Buffer.from(await req.arrayBuffer());
     const sig = req.headers.get("x-wix-signature");
-    if (!verifySignature(hmacKey, rawBody, sig)) {
-      console.warn("[wix-webhook] signature mismatch");
+    if (!verifySignature(publicKey, rawBody, sig)) {
+      console.warn("[wix-webhook] RSA signature mismatch");
       return NextResponse.json({ error: "invalid_signature" }, { status: 401 });
     }
     // We already read the body as an ArrayBuffer; parse it from the buffer.
