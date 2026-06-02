@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/wix-sync",
-      "schedule": "*/2 * * * *"
+      "schedule": "*/1 * * * *"
     }
   ]
 }
