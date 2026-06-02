@@ -795,6 +795,13 @@ export async function submitPublicBooking(
     console.error("[submitPublicBooking] sms-confirm dispatch failed", e);
   }
 
+  // Wix write-back: create booking on Wix calendar (best-effort, fire-and-forget)
+  void fetch("/api/booking/wix-create", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bookingId, salonId: String(salon.id) }),
+  }).catch(() => {/* best-effort */});
+
   // Record verification method on booking (smart verification audit trail)
   if (params.verificationMethod && bookingId) {
     void supabase

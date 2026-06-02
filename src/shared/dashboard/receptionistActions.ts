@@ -18,7 +18,7 @@ import {
 } from "@/shared/lib/salonMemberRole";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
-import { pushWixCancel, pushWixConfirm, pushWixDecline } from "@/shared/integrations/wix/writeback";
+import { pushWixCancel, pushWixConfirm, pushWixDecline, pushWixCreate } from "@/shared/integrations/wix/writeback";
 import {
   type EditBookingInput,
   type EditBookingResult,
@@ -267,6 +267,9 @@ export async function addWalkinToQueue(
     eventType: "queue_joined",
     payload: { serviceId },
   });
+
+  // Wix write-back: push new walk-in to Wix calendar (best-effort, fire-and-forget)
+  void pushWixCreate(ctx.salon.id, bid);
 
   return { ok: true, bookingId: bid };
 }
