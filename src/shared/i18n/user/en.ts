@@ -788,6 +788,17 @@ export type UserMessages = {
     hoursPreview: string;
     hoursSaved: string;
     hoursIntro: string;
+    /** Default-hours row label and hint shown above the per-day overrides. */
+    hoursDefaultLabel: string;
+    hoursDefaultHint: string;
+    /** Badge shown on a day row that still follows the default. */
+    hoursFollowingDefault: string;
+    /** CTA to break a day out of the default and set custom times. */
+    hoursCustomize: string;
+    /** Inline link to reset a customised day back to the default. */
+    hoursResetToDefault: string;
+    /** Section label for a day that has been individually customised. */
+    hoursOverrideLabel: string;
     addressTitle: string;
     streetAddress: string;
     city: string;
@@ -2419,6 +2430,12 @@ export const userEn: UserMessages = {
     hoursSaved: "✓ Hours saved",
     hoursIntro:
       "Set when clients can book. Weekly closed days won't show slots. Add extra closed dates (holidays) one per line as YYYY-MM-DD.",
+    hoursDefaultLabel: "Default hours for all days",
+    hoursDefaultHint: "Change these times to update all days at once",
+    hoursFollowingDefault: "default",
+    hoursCustomize: "Customize",
+    hoursResetToDefault: "reset",
+    hoursOverrideLabel: "Custom hours",
     addressTitle: "Salon address",
     streetAddress: "Street address",
     city: "City",

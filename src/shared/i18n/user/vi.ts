@@ -868,6 +868,12 @@ export const userVi: UserMessages = {
     hoursSaved: "✓ Đã lưu giờ",
     hoursIntro:
       "Đặt giờ khách có thể đặt lịch. Ngày nghỉ trong tuần sẽ không hiện giờ trống. Thêm ngày nghỉ riêng (ngày lễ) mỗi dòng một ngày theo dạng YYYY-MM-DD.",
+    hoursDefaultLabel: "Giờ mặc định cho tất cả ngày",
+    hoursDefaultHint: "Đổi giờ này để cập nhật tất cả ngày cùng lúc",
+    hoursFollowingDefault: "mặc định",
+    hoursCustomize: "Chỉnh riêng",
+    hoursResetToDefault: "về mặc định",
+    hoursOverrideLabel: "Giờ tùy chỉnh",
     addressTitle: "Địa chỉ tiệm",
     streetAddress: "Địa chỉ",
     city: "Thành phố",
