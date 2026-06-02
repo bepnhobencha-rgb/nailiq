@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   const supabase = looseServiceClient();
   const { data: integrations, error } = await supabase
     .from("wix_integrations")
-    .select("salon_id, site_id, cursor_updated_date")
+    .select("salon_id, site_id, cursor_updated_date, auto_approve")
     .eq("enabled", true);
 
   if (error) {
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
   for (const it of integrations ?? []) {
     const salonId = it.salon_id as string;
     try {
-      const r = await runForwardSync(salonId, it.site_id as string, it.cursor_updated_date as string);
+      const r = await runForwardSync(salonId, it.site_id as string, it.cursor_updated_date as string, (it.auto_approve as boolean) ?? true);
       results[salonId] = r;
     } catch (e) {
       const msg = (e as Error).message;
