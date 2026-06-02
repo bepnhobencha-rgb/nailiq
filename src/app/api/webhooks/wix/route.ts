@@ -65,7 +65,8 @@ export async function POST(req: NextRequest) {
   } else {
     // Path B: Wix Automations — no signature possible; siteId in body is the identifier
     if (!body.siteId) {
-      console.warn("[wix-webhook] no signature and no siteId — rejected");
+      // Log the full body so we can see what Wix actually sends (for debugging)
+      console.warn("[wix-webhook] no signature and no siteId — rejected. body=%s", JSON.stringify(body));
       return NextResponse.json({ error: "missing_site_id" }, { status: 400 });
     }
     console.log("[wix-webhook] path=automations siteId=%s", body.siteId);
