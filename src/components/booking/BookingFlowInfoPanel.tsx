@@ -328,6 +328,9 @@ export function BookingFlowInfoPanel({
           >
             {t.clientPhoneLabel}
           </label>
+          <p className="mb-2 text-xs text-[var(--booking-text-muted)]">
+            {t.clientPhoneHint}
+          </p>
           <input
             id="booking-info-phone"
             ref={phoneRef}

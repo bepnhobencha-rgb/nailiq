@@ -130,6 +130,7 @@ export const bookingVi: BookingMessages = {
   verifyingBooking: "Đang kiểm tra lịch đặt…",
   clientNameLabel: "Họ tên",
   clientPhoneLabel: "Số điện thoại",
+  clientPhoneHint: "✨ Khách quen? Thông tin của bạn sẽ tự động điền vào.",
   clientPhonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
   clientEmailLabel: "Email (không bắt buộc)",
   clientEmailHint: "Nhận xác nhận đặt lịch qua email.",
