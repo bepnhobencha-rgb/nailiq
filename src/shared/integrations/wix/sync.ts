@@ -31,8 +31,14 @@ const staffNum = (name: string): number | null => {
 const minutesBetween = (a: string, b: string) =>
   Math.max(15, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60000));
 
-// Wix anonymises techs as "Staff Member #N" — provisional display names (owner remaps later).
-const STAFF_NAMES: Record<number, string> = { 1: "Tina", 2: "Trish", 3: "Vi", 4: "Anna", 5: "Sally", 6: "Kim", 7: "Jenny" };
+// Wix anonymises techs as "Staff Member #N" and never exposes real names via API. We deliberately
+// DO NOT fabricate names (customer notes proved too noisy — they name whoever the customer *wanted*,
+// not who was assigned). Use a neutral "Thợ #N" label; the owner renames once in Settings. Identity
+// is keyed on the stable Wix resource UUID (staff.wix_resource_id), so a rename never breaks links.
+const neutralStaffLabel = (wixName: string): string => {
+  const n = staffNum(wixName);
+  return n != null ? `Thợ ${n}` : (sanitizeName(wixName) ?? "Thợ mới");
+};
 
 /**
  * Wix PENDING/CREATED → 'confirmed' is WRONG (loses the "needs approval" signal); but plain
@@ -78,7 +84,11 @@ export async function runForwardSync(salonId: string, siteId: string, sinceIso: 
   const svcByName = new Map<string, { id: string; price: number }>(
     (svcRows ?? []).map((s): [string, { id: string; price: number }] => [normKey(s.name), { id: s.id as string, price: (s.price_cents as number) ?? 0 }]),
   );
-  const { data: staffRows } = await db.from("staff").select("id,name").eq("salon_id", salonId);
+  const { data: staffRows } = await db.from("staff").select("id,name,wix_resource_id").eq("salon_id", salonId);
+  // Primary key = stable Wix resource UUID; name map is only a legacy fallback for resource-less rows.
+  const staffByResource = new Map<string, string>(
+    (staffRows ?? []).filter((s) => s.wix_resource_id).map((s): [string, string] => [s.wix_resource_id as string, s.id as string]),
+  );
   const staffByName = new Map<string, string>(
     (staffRows ?? []).map((s): [string, string] => [normKey(s.name), s.id as string]),
   );
@@ -117,16 +127,31 @@ export async function runForwardSync(salonId: string, siteId: string, sinceIso: 
     svcByName.set(normKey(title), rec);
     return rec;
   }
-  async function resolveStaff(wixName: string): Promise<string | null> {
-    const n = staffNum(wixName);
-    const name = n != null ? STAFF_NAMES[n] ?? `Artist ${n}` : sanitizeName(wixName);
-    if (!name) return null;
-    const hit = staffByName.get(normKey(name));
+  async function resolveStaff(resourceId: string | null | undefined, wixName: string): Promise<string | null> {
+    // 1. Stable identity: match on the Wix resource UUID — survives owner renames in NailIQ.
+    if (resourceId) {
+      const hit = staffByResource.get(resourceId);
+      if (hit) return hit;
+    }
+    const label = neutralStaffLabel(wixName);
+    // 2. New Wix resource → create a neutral-labelled staff row tagged with its resource UUID.
+    if (resourceId) {
+      const { data } = await db
+        .from("staff")
+        .insert({ salon_id: salonId, name: label, job_role: "nail_tech", status: "active", wix_resource_id: resourceId })
+        .select("id")
+        .single();
+      const newId = data?.id as string | undefined;
+      if (newId) { staffByResource.set(resourceId, newId); staffByName.set(normKey(label), newId); }
+      return newId ?? null;
+    }
+    // 3. Booking carries no resource (rare) → fall back to name match, create if missing.
+    const hit = staffByName.get(normKey(label));
     if (hit) return hit;
-    const { data } = await db.from("staff").insert({ salon_id: salonId, name, job_role: "nail_tech", status: "active" }).select("id").single();
-    const newId = data?.id as string;
-    staffByName.set(normKey(name), newId);
-    return newId;
+    const { data } = await db.from("staff").insert({ salon_id: salonId, name: label, job_role: "nail_tech", status: "active" }).select("id").single();
+    const newId = data?.id as string | undefined;
+    if (newId) staffByName.set(normKey(label), newId);
+    return newId ?? null;
   }
 
   const bookings = await queryBookingsUpdatedSince(siteId, sinceIso);
@@ -143,7 +168,7 @@ export async function runForwardSync(salonId: string, siteId: string, sinceIso: 
       b.bookedEntity?.slot?.serviceId,
       b.bookedEntity?.slot?.scheduleId,
     );
-    const staffId = await resolveStaff(b.bookedEntity?.slot?.resource?.name ?? "");
+    const staffId = await resolveStaff(b.bookedEntity?.slot?.resource?.id, b.bookedEntity?.slot?.resource?.name ?? "");
     const ph = canonPhone(b.contactDetails?.phone);
     const note = (b.additionalFields ?? []).find((f) => f.label === "Add Your Message")?.value || null;
     let status = mapStatus(b.status, new Date(start).getTime(), now);
