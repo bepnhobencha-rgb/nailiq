@@ -2,9 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { SaveButton, type SaveButtonStatus } from "@/components/ui/SaveButton";
 import { SetupToast, type SetupToastPayload } from "@/components/ui/Toast";
+import { HoursBar } from "@/components/dashboard/HoursBar";
 import {
   compactOpeningHoursLabel,
   defaultOpeningHoursWeek,
@@ -102,11 +104,11 @@ function openingHoursFailMessage(code: string): string {
     case "unauthorized":
       return "Session expired — sign in again from /register with your phone number, then retry.";
     case "permission_denied":
-      return "Could not save: this account isn’t allowed to update this salon in the database (RLS). Sign out and sign in again, or check that Salon members includes your account.";
+      return "Could not save: this account isn't allowed to update this salon in the database (RLS). Sign out and sign in again, or check that Salon members includes your account.";
     case "schema_mismatch":
       return "Could not save: database is missing a column (often booking_closed_dates). Apply the latest Supabase migrations to your project, then try again.";
     case "server_error":
-      return "Could not save. If you’re offline, reconnect; otherwise ask an admin to check server logs for [updateOpeningHours].";
+      return "Could not save. If you're offline, reconnect; otherwise ask an admin to check server logs for [updateOpeningHours].";
     default:
       return "Could not save. If you edited extra closed dates, use only YYYY-MM-DD (one per line). Otherwise try again.";
   }
@@ -128,6 +130,60 @@ function closedDatesInitialText(raw: unknown): string {
   return normalizeBookingClosedDateList(lines).join("\n");
 }
 
+/** HTML time value "HH:MM" → storage "HH:MM" normalized */
+function hmFromDateInput(v: string): string {
+  if (!v) return "09:00";
+  const [h, m] = v.split(":");
+  const hh = Math.min(23, Math.max(0, Number(h))).toString().padStart(2, "0");
+  const mm = Math.min(59, Math.max(0, Number(m ?? 0)))
+    .toString()
+    .padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+// ---------------------------------------------------------------------------
+// Master hours derivation helpers
+// ---------------------------------------------------------------------------
+
+/** Derive master hours from the most common (open, close) pair among non-closed days. */
+function deriveMasterHours(week: OpeningHoursWeek): { open: string; close: string } {
+  const counts = new Map<string, number>();
+  for (const day of Object.values(week)) {
+    if (!day.closed) {
+      const key = `${day.open}|${day.close}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  let best = "09:00|19:00";
+  let bestCount = 0;
+  for (const [key, count] of counts) {
+    if (count > bestCount) {
+      best = key;
+      bestCount = count;
+    }
+  }
+  const [open, close] = best.split("|") as [string, string];
+  return { open: open ?? "09:00", close: close ?? "19:00" };
+}
+
+/** Derive which days are overridden (differ from master OR are closed). */
+function deriveOverriddenDays(
+  week: OpeningHoursWeek,
+  master: { open: string; close: string },
+): Set<DayKey> {
+  const s = new Set<DayKey>();
+  for (const [key, day] of Object.entries(week) as [DayKey, OpeningHoursWeek[DayKey]][]) {
+    if (day.closed || day.open !== master.open || day.close !== master.close) {
+      s.add(key);
+    }
+  }
+  return s;
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
 export function HoursSetupPanel({
   slug,
   initialRaw,
@@ -140,16 +196,36 @@ export function HoursSetupPanel({
   const router = useRouter();
   const { language } = useUserLanguage();
   const labels = getUserMessages(language).setupLabels;
+
+  // ---------------------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------------------
+
   const [hours, setHours] = useState<OpeningHoursWeek>(() =>
     parseOpeningHours(initialRaw) ?? defaultOpeningHoursWeek(),
   );
+
+  const [masterHours, setMasterHours] = useState(() =>
+    deriveMasterHours(parseOpeningHours(initialRaw) ?? defaultOpeningHoursWeek()),
+  );
+
+  const [overriddenDays, setOverriddenDays] = useState<Set<DayKey>>(() => {
+    const w = parseOpeningHours(initialRaw) ?? defaultOpeningHoursWeek();
+    return deriveOverriddenDays(w, deriveMasterHours(w));
+  });
+
   const [closedDatesText, setClosedDatesText] = useState(() =>
     closedDatesInitialText(initialClosedDatesRaw),
   );
+
   const [saveStatus, setSaveStatus] = useState<SaveButtonStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<SetupToastPayload | null>(null);
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ---------------------------------------------------------------------------
+  // Effects
+  // ---------------------------------------------------------------------------
 
   const clearStatusTimer = useCallback(() => {
     if (statusTimerRef.current !== null) {
@@ -167,12 +243,78 @@ export function HoursSetupPanel({
 
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- props → local editor state */
-    setHours(parseOpeningHours(initialRaw) ?? defaultOpeningHoursWeek());
+    const w = parseOpeningHours(initialRaw) ?? defaultOpeningHoursWeek();
+    const m = deriveMasterHours(w);
+    setHours(w);
+    setMasterHours(m);
+    setOverriddenDays(deriveOverriddenDays(w, m));
     setClosedDatesText(closedDatesInitialText(initialClosedDatesRaw));
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [initialClosedDatesRaw, initialRaw]);
 
   const preview = useMemo(() => compactOpeningHoursLabel(hours), [hours]);
+
+  // ---------------------------------------------------------------------------
+  // Handlers
+  // ---------------------------------------------------------------------------
+
+  /** Master time changed → propagate to all non-overridden days. */
+  const onMasterChange = useCallback(
+    (field: "open" | "close", value: string) => {
+      setMasterHours((prev) => {
+        const newMaster = { ...prev, [field]: value };
+        setHours((prevHours) => {
+          const next = { ...prevHours };
+          for (const key of DAY_KEYS_ORDERED) {
+            if (!overriddenDays.has(key)) {
+              next[key] = { ...next[key], open: newMaster.open, close: newMaster.close };
+            }
+          }
+          return next;
+        });
+        return newMaster;
+      });
+    },
+    [overriddenDays],
+  );
+
+  /** Day time/closed changed → lock this day as override. */
+  const onDayChange = useCallback(
+    (key: DayKey, field: "open" | "close" | "closed", value: string | boolean) => {
+      setOverriddenDays((prev) => new Set([...prev, key]));
+      setHours((prev) => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
+    },
+    [],
+  );
+
+  /** "Chỉnh riêng" clicked → add to overrides, keep current time (= master). */
+  const onOverrideDay = useCallback((key: DayKey) => {
+    setOverriddenDays((prev) => new Set([...prev, key]));
+  }, []);
+
+  /** "↺" clicked → remove override, reset to master. */
+  const onResetDay = useCallback(
+    (key: DayKey) => {
+      setOverriddenDays((prev) => {
+        const n = new Set(prev);
+        n.delete(key);
+        return n;
+      });
+      setHours((prev) => ({
+        ...prev,
+        [key]: { ...prev[key], open: masterHours.open, close: masterHours.close, closed: false },
+      }));
+    },
+    [masterHours],
+  );
+
+  /** Apply a full preset, re-deriving master and overrides. */
+  const applyPreset = useCallback((preset: OpeningHoursWeek) => {
+    const newMaster = deriveMasterHours(preset);
+    setMasterHours(newMaster);
+    setOverriddenDays(deriveOverriddenDays(preset, newMaster));
+    setHours(preset);
+  }, []);
 
   const onSaveAll = useCallback(async () => {
     setError(null);
@@ -198,11 +340,17 @@ export function HoursSetupPanel({
     router.refresh();
   }, [clearStatusTimer, closedDatesText, hours, labels.hoursSaved, router, slug]);
 
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
   return (
     <div className="flex flex-col gap-6">
       <SetupToast toast={toast} onDismiss={() => setToast(null)} />
 
       <p className="text-sm leading-snug text-nq-muted">{labels.hoursIntro}</p>
+
+      {/* Preset shortcut buttons */}
       <div
         className="flex flex-wrap items-center gap-2"
         data-testid="hours-shortcuts"
@@ -212,7 +360,7 @@ export function HoursSetupPanel({
           variant="primary"
           data-testid="hours-preset-standard"
           disabled={saveStatus === "saving"}
-          onClick={() => setHours(PRESET_STANDARD)}
+          onClick={() => applyPreset(PRESET_STANDARD)}
         >
           Tiệm chuẩn · T2–T6 9–7, T7 10–5
         </Button>
@@ -221,7 +369,7 @@ export function HoursSetupPanel({
           variant="secondary"
           data-testid="hours-preset-7days"
           disabled={saveStatus === "saving"}
-          onClick={() => setHours(PRESET_7_DAYS)}
+          onClick={() => applyPreset(PRESET_7_DAYS)}
         >
           Tuần 7 ngày · 9–7
         </Button>
@@ -230,86 +378,169 @@ export function HoursSetupPanel({
           variant="ghost"
           data-testid="hours-preset-custom"
           disabled={saveStatus === "saving"}
-          onClick={() => setHours(defaultOpeningHoursWeek())}
+          onClick={() => applyPreset(defaultOpeningHoursWeek())}
         >
           Tự chọn
         </Button>
       </div>
+
+      {/* Master hours card */}
+      <div className="rounded-2xl border border-nq-primary/20 bg-nq-primary/5 p-4">
+        <p className="mb-3 text-sm font-medium text-nq-foreground">
+          {labels.hoursDefaultLabel}
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="block text-sm font-medium text-nq-muted">
+            {labels.opens}
+            <input
+              type="time"
+              className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
+              value={toTimeInput(masterHours.open)}
+              disabled={saveStatus === "saving"}
+              onChange={(e) => onMasterChange("open", hmFromDateInput(e.target.value))}
+            />
+          </label>
+          <label className="block text-sm font-medium text-nq-muted">
+            {labels.closes}
+            <input
+              type="time"
+              className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
+              value={toTimeInput(masterHours.close)}
+              disabled={saveStatus === "saving"}
+              onChange={(e) => onMasterChange("close", hmFromDateInput(e.target.value))}
+            />
+          </label>
+        </div>
+      </div>
+
       {error ? (
         <p className="rounded-xl border border-nq-error/40 bg-nq-error/10 px-4 py-3 text-sm text-nq-error">
           {error}
         </p>
       ) : null}
+
+      {/* Per-day rows */}
       <section className="rounded-2xl border border-nq-border/40 bg-nq-surface/40 p-4">
         <ul className="flex flex-col divide-y divide-nq-border/30">
           {DAY_KEYS_ORDERED.map((key) => {
             const day = hours[key];
-            const label = labels.days[key];
+            const dayLabel = labels.days[key];
+            const isOverride = overriddenDays.has(key);
+
+            if (!isOverride) {
+              // State A — Following master (collapsed)
+              return (
+                <li key={key} className="flex flex-col gap-1.5 py-4 first:pt-0 last:pb-0">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-base font-medium text-nq-foreground">
+                      {dayLabel}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-nq-muted">
+                        {labels.hoursFollowingDefault}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={saveStatus === "saving"}
+                        onClick={() => onOverrideDay(key)}
+                      >
+                        {labels.hoursCustomize}
+                      </Button>
+                    </div>
+                  </div>
+                  <HoursBar
+                    open={day.open}
+                    close={day.close}
+                    closed={day.closed}
+                    isOverride={false}
+                  />
+                </li>
+              );
+            }
+
+            // State B — Overridden (expanded)
+            const timeRangeDisplay = day.closed
+              ? language === "vi"
+                ? "Đóng cửa"
+                : "Closed"
+              : `${toTimeInput(day.open)} – ${toTimeInput(day.close)}`;
+
             return (
-              <li key={key} className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0">
+              <li
+                key={key}
+                className="flex flex-col gap-3 border-l-2 border-nq-warning/60 py-4 pl-3 first:pt-0 last:pb-0"
+              >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <span className="text-base font-medium text-nq-foreground">
-                    {label}
+                    {dayLabel}
+                    <span className="ml-2 text-sm font-normal text-nq-muted">
+                      {timeRangeDisplay}
+                    </span>
                   </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={saveStatus === "saving"}
+                    onClick={() => onResetDay(key)}
+                  >
+                    <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                    {labels.hoursResetToDefault}
+                  </Button>
+                </div>
+                <div className="flex flex-wrap items-center gap-4">
+                  {!day.closed ? (
+                    <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2">
+                      <label className="block text-sm font-medium text-nq-muted">
+                        {labels.opens}
+                        <input
+                          type="time"
+                          className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
+                          value={toTimeInput(day.open)}
+                          disabled={day.closed || saveStatus === "saving"}
+                          onChange={(e) =>
+                            onDayChange(key, "open", hmFromDateInput(e.target.value))
+                          }
+                        />
+                      </label>
+                      <label className="block text-sm font-medium text-nq-muted">
+                        {labels.closes}
+                        <input
+                          type="time"
+                          className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
+                          value={toTimeInput(day.close)}
+                          disabled={day.closed || saveStatus === "saving"}
+                          onChange={(e) =>
+                            onDayChange(key, "close", hmFromDateInput(e.target.value))
+                          }
+                        />
+                      </label>
+                    </div>
+                  ) : null}
                   <label className="inline-flex min-h-11 cursor-pointer touch-manipulation items-center gap-3 text-sm font-medium text-nq-muted">
                     <input
                       type="checkbox"
                       className="h-5 w-5 rounded border-nq-border/60 text-nq-primary focus:ring-nq-primary"
                       checked={day.closed}
                       disabled={saveStatus === "saving"}
-                      onChange={(e) => {
-                        const closed = e.target.checked;
-                        setHours((prev) => ({
-                          ...prev,
-                          [key]: { ...prev[key], closed },
-                        }));
-                      }}
+                      onChange={(e) => onDayChange(key, "closed", e.target.checked)}
                     />
                     {labels.closed}
                   </label>
                 </div>
-                {!day.closed ? (
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <label className="block text-sm font-medium text-nq-muted">
-                      {labels.opens}
-                      <input
-                        type="time"
-                        className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
-                        value={toTimeInput(day.open)}
-                        disabled={day.closed || saveStatus === "saving"}
-                        onChange={(e) => {
-                          const open = hmFromDateInput(e.target.value);
-                          setHours((prev) => ({
-                            ...prev,
-                            [key]: { ...prev[key], open },
-                          }));
-                        }}
-                      />
-                    </label>
-                    <label className="block text-sm font-medium text-nq-muted">
-                      {labels.closes}
-                      <input
-                        type="time"
-                        className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
-                        value={toTimeInput(day.close)}
-                        disabled={day.closed || saveStatus === "saving"}
-                        onChange={(e) => {
-                          const close = hmFromDateInput(e.target.value);
-                          setHours((prev) => ({
-                            ...prev,
-                            [key]: { ...prev[key], close },
-                          }));
-                        }}
-                      />
-                    </label>
-                  </div>
-                ) : null}
+                <HoursBar
+                  open={day.open}
+                  close={day.close}
+                  closed={day.closed}
+                  isOverride={true}
+                />
               </li>
             );
           })}
         </ul>
       </section>
 
+      {/* Holiday chips + closed dates textarea */}
       <section className="rounded-2xl border border-nq-border/40 bg-nq-surface/40 p-4">
         <label className="block text-sm font-medium text-nq-muted">
           {labels.extraClosedDates}
@@ -400,6 +631,7 @@ export function HoursSetupPanel({
         </div>
       </section>
 
+      {/* Preview */}
       <div className="rounded-2xl border border-nq-border/35 bg-nq-bg/80 px-4 py-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
           {labels.hoursPreview}
@@ -419,15 +651,4 @@ export function HoursSetupPanel({
       />
     </div>
   );
-}
-
-/** HTML time value "HH:MM" → storage "HH:MM" normalized */
-function hmFromDateInput(v: string): string {
-  if (!v) return "09:00";
-  const [h, m] = v.split(":");
-  const hh = Math.min(23, Math.max(0, Number(h))).toString().padStart(2, "0");
-  const mm = Math.min(59, Math.max(0, Number(m ?? 0)))
-    .toString()
-    .padStart(2, "0");
-  return `${hh}:${mm}`;
 }
