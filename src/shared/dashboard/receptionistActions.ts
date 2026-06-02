@@ -792,6 +792,53 @@ export async function declineWixBooking(
   return { ok: true };
 }
 
+/**
+ * Mark a confirmed / in-progress booking as a no-show (customer didn't attend). Terminal:
+ * frees the slot and increments the client's lifetime no_show_count, which feeds the no-show
+ * risk engine (and the Wix smart auto-approve). Owner/senior only.
+ */
+export async function markNoShowBooking(
+  slug: string,
+  input: { salonId: string; bookingId: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (!canCancelBooking(ctx.role)) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+  const bookingId = String(input.bookingId ?? "").trim();
+  if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+
+  const { data: updated, error: upErr } = await ctx.supabase
+    .from("bookings")
+    .update({ status: "no_show" })
+    .eq("id", bookingId)
+    .eq("salon_id", ctx.salon.id)
+    .in("status", ["confirmed", "in_progress"])
+    .select("id, client_phone")
+    .maybeSingle();
+  if (upErr) {
+    console.error("[markNoShowBooking]", upErr);
+    return fail("server_error");
+  }
+  if (!updated?.id) return fail("invalid_state");
+
+  // Feed the no-show risk engine — best-effort, never fail the desk action on this.
+  if (updated.client_phone) {
+    const { error: bumpErr } = await ctx.supabase.rpc("bump_client_no_show", { p_phone: updated.client_phone });
+    if (bumpErr) console.error("[markNoShowBooking] bump", bumpErr);
+  }
+
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "booking_status_changed",
+    payload: { to: "no_show", reason: "desk_no_show" },
+  });
+  return { ok: true };
+}
+
 export type {
   EditBookingError,
   EditBookingInput,

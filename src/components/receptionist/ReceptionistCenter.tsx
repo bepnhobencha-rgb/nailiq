@@ -77,6 +77,7 @@ import {
   restoreCancelledBooking,
   approveWixBooking,
   declineWixBooking,
+  markNoShowBooking,
   undoCancelBooking,
   cancelWaitingWalkin,
   undoWalkinAssignment,
@@ -1677,6 +1678,38 @@ function ReceptionistCenterInner({
       }
     : undefined;
 
+  const onDrawerMarkNoShow = async () => {
+    const id = drawerBookingId;
+    if (!id) return;
+    setDrawerBusy(true);
+    try {
+      const r = await markNoShowBooking(slug, { salonId: data.salon.id, bookingId: id });
+      if (!r.ok) {
+        setShakeMessage(mutationMessage(messages.receptionist, r.error));
+      } else {
+        setDrawerBookingId(null);
+        await reloadCurrentDay();
+        router.refresh();
+      }
+    } finally {
+      setDrawerBusy(false);
+    }
+  };
+
+  // No-show: only for a confirmed / in-progress booking whose start time has passed
+  // (you can't no-show a future appointment). Owner / senior only.
+  const drawerNoShowAction =
+    openDrawerBooking &&
+    canCancelBooking(viewerRole) &&
+    (openDrawerBooking.status === "confirmed" || openDrawerBooking.status === "in_progress") &&
+    new Date(openDrawerBooking.start_time_utc).getTime() < Date.now()
+      ? {
+          label: rcMessages.drawer.noShow,
+          busy: drawerBusy,
+          onPress: () => void onDrawerMarkNoShow(),
+        }
+      : undefined;
+
   // Generic cancel — hidden for Wix-pending (Decline replaces it there to avoid a duplicate reject).
   const drawerCancelAction =
     openDrawerBooking &&
@@ -2532,6 +2565,7 @@ function ReceptionistCenterInner({
         cancelAction={drawerCancelAction}
         restoreAction={drawerRestoreAction}
         declineAction={drawerDeclineAction}
+        noShowAction={drawerNoShowAction}
         deskEdit={
           openDrawerBooking
             ? {

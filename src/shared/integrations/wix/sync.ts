@@ -163,12 +163,21 @@ export async function runForwardSync(salonId: string, siteId: string, sinceIso: 
     // Locate the existing row: by wix_booking_id first, then a natural-key fallback
     // (salon + start + phone, only rows not yet tagged) so we ADOPT backfilled rows
     // whose wix_booking_id is still NULL instead of inserting duplicates.
-    let existingId = (await db.from("bookings").select("id").eq("wix_booking_id", b.id).maybeSingle()).data?.id as string | undefined;
-    if (!existingId) {
-      let q = db.from("bookings").select("id").eq("salon_id", salonId).eq("start_time_utc", start).is("wix_booking_id", null);
+    let found = (await db.from("bookings").select("id, status").eq("wix_booking_id", b.id).maybeSingle()).data;
+    if (!found) {
+      let q = db.from("bookings").select("id, status").eq("salon_id", salonId).eq("start_time_utc", start).is("wix_booking_id", null);
       q = ph ? q.eq("client_phone", ph) : q.is("client_phone", null);
-      existingId = (await q.limit(1).maybeSingle()).data?.id as string | undefined;
+      found = (await q.limit(1).maybeSingle()).data;
     }
+    const existingId = found?.id as string | undefined;
+
+    // Preserve a desk-marked no-show: Wix has no concept of it (it still says CONFIRMED), so
+    // skip the status sync to avoid clobbering it back to confirmed/completed every poll.
+    if (existingId && (found?.status as string) === "no_show") {
+      if (b.updatedDate && b.updatedDate > maxUpdated) maxUpdated = b.updatedDate;
+      continue;
+    }
+
     let rowId: string | undefined;
     if (existingId) {
       const { error } = await db.from("bookings").update(fields).eq("id", existingId);

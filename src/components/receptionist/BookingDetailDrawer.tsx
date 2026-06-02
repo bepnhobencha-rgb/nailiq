@@ -150,6 +150,12 @@ export interface BookingDetailDrawerProps {
     busy: boolean;
     onPress: () => void | Promise<void>;
   };
+  /** Mark a past confirmed/in-progress booking as a no-show. Owner / senior only. */
+  noShowAction?: {
+    label: string;
+    busy: boolean;
+    onPress: () => void | Promise<void>;
+  };
   /** Inline edit (pending | confirmed); optional so presentational tests can omit. */
   deskEdit?: {
     slug: string;
@@ -186,6 +192,7 @@ export function BookingDetailDrawer({
   cancelAction,
   restoreAction,
   declineAction,
+  noShowAction,
   deskEdit,
 }: BookingDetailDrawerProps) {
   const [editMode, setEditMode] = useState(false);
@@ -249,6 +256,7 @@ export function BookingDetailDrawer({
     primaryAction !== undefined ||
     cancelAction !== undefined ||
     declineAction !== undefined ||
+    noShowAction !== undefined ||
     (canEditBooking && !editMode);
 
   const sheet = (
@@ -589,6 +597,20 @@ export function BookingDetailDrawer({
                         onClick={() => void declineAction.onPress()}
                       >
                         {declineAction.label}
+                      </Button>
+                    ) : null}
+                    {noShowAction !== undefined ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        loading={noShowAction.busy}
+                        data-testid="drawer-no-show"
+                        disabled={isOffline}
+                        title={isOffline ? offlineEditDisabledHint : undefined}
+                        className="w-full sm:w-full"
+                        onClick={() => void noShowAction.onPress()}
+                      >
+                        {noShowAction.label}
                       </Button>
                     ) : null}
                   </>
