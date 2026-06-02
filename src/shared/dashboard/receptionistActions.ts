@@ -18,6 +18,7 @@ import {
 } from "@/shared/lib/salonMemberRole";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { pushWixCancel } from "@/shared/integrations/wix/writeback";
 import {
   type EditBookingInput,
   type EditBookingResult,
@@ -701,6 +702,9 @@ export async function cancelDeskBooking(
     eventType: "booking_cancelled",
     payload: { reason: "desk_cancel" },
   });
+
+  // Write-back: if this booking came from Wix, cancel it there too. Best-effort/non-blocking.
+  void pushWixCancel(ctx.salon.id, bookingId);
 
   return { ok: true };
 }
