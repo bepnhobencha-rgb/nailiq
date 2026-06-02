@@ -5,7 +5,7 @@
  * `wix_integrations.cursor_updated_date`, so it is safe to run on Vercel cron.
  */
 import "server-only";
-import { queryBookingsUpdatedSince } from "./client";
+import { queryBookingsUpdatedSince, type WixBooking } from "./client";
 import { looseServiceClient } from "./looseDb";
 import { pushWixConfirm } from "./writeback";
 import { categorizeService } from "./categorize";
@@ -74,171 +74,198 @@ function computeNoShowRisk(noShows: number, visits: number, subtotalCents: numbe
 }
 
 export type ForwardSyncResult = { created: number; updated: number; skipped: number; autoApproved: number; cursor: string };
+export type BookingEventResult = { action: "inserted" | "updated" | "skipped"; bookingId?: string };
 
-export async function runForwardSync(salonId: string, siteId: string, sinceIso: string, autoApprove: boolean): Promise<ForwardSyncResult> {
-  // Loosely-typed handle: wix_booking_id column + wix_integrations table aren't in generated types yet.
+// --------------------------------------------------------------------------
+// Resolver context — built once per sync run and shared across all bookings.
+// Extracted so processWixBookingEvent can also build its own (smaller) context
+// when called from the webhook handler without a full batch run.
+// --------------------------------------------------------------------------
+interface ResolverContext {
+  db: ReturnType<typeof looseServiceClient>;
+  salonId: string;
+  svcByName: Map<string, { id: string; price: number }>;
+  staffByResource: Map<string, string>;
+  staffByName: Map<string, string>;
+  otpThreshold: number;
+  autoApprove: boolean;
+}
+
+async function buildResolverContext(salonId: string, autoApprove: boolean): Promise<ResolverContext> {
   const db = looseServiceClient();
-
-  // resolvers (cached per run)
   const { data: svcRows } = await db.from("services").select("id,name,duration_minutes,price_cents").eq("salon_id", salonId);
   const svcByName = new Map<string, { id: string; price: number }>(
     (svcRows ?? []).map((s): [string, { id: string; price: number }] => [normKey(s.name), { id: s.id as string, price: (s.price_cents as number) ?? 0 }]),
   );
   const { data: staffRows } = await db.from("staff").select("id,name,wix_resource_id").eq("salon_id", salonId);
-  // Primary key = stable Wix resource UUID; name map is only a legacy fallback for resource-less rows.
   const staffByResource = new Map<string, string>(
     (staffRows ?? []).filter((s) => s.wix_resource_id).map((s): [string, string] => [s.wix_resource_id as string, s.id as string]),
   );
   const staffByName = new Map<string, string>(
     (staffRows ?? []).map((s): [string, string] => [normKey(s.name), s.id as string]),
   );
-
-  // Smart auto-approve threshold (reuses the salon's existing OTP risk threshold).
   const { data: salonRow } = await db.from("salons").select("verification_risk_threshold_otp").eq("id", salonId).maybeSingle();
   const otpThreshold = Number((salonRow?.verification_risk_threshold_otp as number) ?? 30);
+  return { db, salonId, svcByName, staffByResource, staffByName, otpThreshold, autoApprove };
+}
 
-  /** Risk-score a client by phone and decide auto-approval (VIP / trusted returning / risk < threshold). */
-  async function evaluateClient(phone: string, subtotalCents: number): Promise<{ risk: number; approve: boolean }> {
-    const { data: c } = await db.from("client_profiles").select("is_vip, visit_count, no_show_count").eq("phone", phone).maybeSingle();
-    const vip = c?.is_vip === true;
-    const visits = Number((c?.visit_count as number) ?? 0);
-    const noShows = Number((c?.no_show_count as number) ?? 0);
-    if (vip) return { risk: 0, approve: true };
-    if (visits >= 5 && noShows === 0) return { risk: 0, approve: true };
-    const risk = computeNoShowRisk(noShows, visits, subtotalCents);
-    return { risk, approve: risk < otpThreshold };
-  }
+async function resolveService(ctx: ResolverContext, title: string, durMin: number, wixServiceId?: string | null, wixScheduleId?: string | null) {
+  const hit = ctx.svcByName.get(normKey(title));
+  if (hit) return hit;
+  const insertPayload: Record<string, unknown> = {
+    salon_id: ctx.salonId,
+    name: titleCase(title || "Service"),
+    price_cents: 0,
+    duration_minutes: Math.max(15, durMin),
+    category: categorizeService(title),
+  };
+  if (wixServiceId)  insertPayload.wix_service_id  = wixServiceId;
+  if (wixScheduleId) insertPayload.wix_schedule_id = wixScheduleId;
+  const { data } = await ctx.db.from("services").insert(insertPayload as never).select("id").single();
+  const rec = { id: data?.id as string, price: 0 };
+  ctx.svcByName.set(normKey(title), rec);
+  return rec;
+}
 
-  async function resolveService(title: string, durMin: number, wixServiceId?: string | null, wixScheduleId?: string | null) {
-    const hit = svcByName.get(normKey(title));
+async function resolveStaff(ctx: ResolverContext, resourceId: string | null | undefined, wixName: string): Promise<string | null> {
+  if (resourceId) {
+    const hit = ctx.staffByResource.get(resourceId);
     if (hit) return hit;
-    const insertPayload: Record<string, unknown> = {
-      salon_id: salonId,
-      name: titleCase(title || "Service"),
-      price_cents: 0,
-      duration_minutes: Math.max(15, durMin),
-      category: categorizeService(title),
-    };
-    // Store Wix IDs on new services so pushWixCreate can round-trip back later.
-    if (wixServiceId)  insertPayload.wix_service_id  = wixServiceId;
-    if (wixScheduleId) insertPayload.wix_schedule_id = wixScheduleId;
-    const { data } = await db.from("services").insert(insertPayload as never).select("id").single();
-    const rec = { id: data?.id as string, price: 0 };
-    svcByName.set(normKey(title), rec);
-    return rec;
   }
-  async function resolveStaff(resourceId: string | null | undefined, wixName: string): Promise<string | null> {
-    // 1. Stable identity: match on the Wix resource UUID — survives owner renames in NailIQ.
-    if (resourceId) {
-      const hit = staffByResource.get(resourceId);
-      if (hit) return hit;
-    }
-    const label = neutralStaffLabel(wixName);
-    // 2. New Wix resource → create a neutral-labelled staff row tagged with its resource UUID.
-    if (resourceId) {
-      const { data } = await db
-        .from("staff")
-        .insert({ salon_id: salonId, name: label, job_role: "nail_tech", status: "active", wix_resource_id: resourceId })
-        .select("id")
-        .single();
-      const newId = data?.id as string | undefined;
-      if (newId) { staffByResource.set(resourceId, newId); staffByName.set(normKey(label), newId); }
-      return newId ?? null;
-    }
-    // 3. Booking carries no resource (rare) → fall back to name match, create if missing.
-    const hit = staffByName.get(normKey(label));
-    if (hit) return hit;
-    const { data } = await db.from("staff").insert({ salon_id: salonId, name: label, job_role: "nail_tech", status: "active" }).select("id").single();
+  const label = neutralStaffLabel(wixName);
+  if (resourceId) {
+    const { data } = await ctx.db
+      .from("staff")
+      .insert({ salon_id: ctx.salonId, name: label, job_role: "nail_tech", status: "active", wix_resource_id: resourceId })
+      .select("id")
+      .single();
     const newId = data?.id as string | undefined;
-    if (newId) staffByName.set(normKey(label), newId);
+    if (newId) { ctx.staffByResource.set(resourceId, newId); ctx.staffByName.set(normKey(label), newId); }
     return newId ?? null;
   }
+  const hit = ctx.staffByName.get(normKey(label));
+  if (hit) return hit;
+  const { data } = await ctx.db.from("staff").insert({ salon_id: ctx.salonId, name: label, job_role: "nail_tech", status: "active" }).select("id").single();
+  const newId = data?.id as string | undefined;
+  if (newId) ctx.staffByName.set(normKey(label), newId);
+  return newId ?? null;
+}
 
-  const bookings = await queryBookingsUpdatedSince(siteId, sinceIso);
+async function evaluateClient(ctx: ResolverContext, phone: string, subtotalCents: number): Promise<{ risk: number; approve: boolean }> {
+  const { data: c } = await ctx.db.from("client_profiles").select("is_vip, visit_count, no_show_count").eq("phone", phone).maybeSingle();
+  const vip = c?.is_vip === true;
+  const visits = Number((c?.visit_count as number) ?? 0);
+  const noShows = Number((c?.no_show_count as number) ?? 0);
+  if (vip) return { risk: 0, approve: true };
+  if (visits >= 5 && noShows === 0) return { risk: 0, approve: true };
+  const risk = computeNoShowRisk(noShows, visits, subtotalCents);
+  return { risk, approve: risk < ctx.otpThreshold };
+}
+
+/**
+ * Process a single Wix extended booking object and upsert it into NailIQ's bookings table.
+ * Exported so the webhook handler can call it without going through a full batch sync.
+ * The resolver context is built fresh on each webhook call (small overhead, isolated per event).
+ */
+export async function processWixBookingEvent(salonId: string, b: WixBooking, autoApprove = true): Promise<BookingEventResult> {
+  const ctx = await buildResolverContext(salonId, autoApprove);
+  return _processOne(ctx, b);
+}
+
+/** Internal: process one booking using a pre-built resolver context (reused across the batch loop). */
+async function _processOne(ctx: ResolverContext, b: WixBooking): Promise<BookingEventResult & { autoConfirmed: boolean }> {
   const now = Date.now();
+  const start = b.startDate ?? b.bookedEntity?.slot?.startDate;
+  if (!start) return { action: "skipped", autoConfirmed: false };
+
+  const end = b.endDate ?? b.bookedEntity?.slot?.endDate ?? new Date(new Date(start).getTime() + 45 * 60000).toISOString();
+  const svc = await resolveService(
+    ctx,
+    b.bookedEntity?.title ?? "Service",
+    minutesBetween(start, end),
+    b.bookedEntity?.slot?.serviceId,
+    b.bookedEntity?.slot?.scheduleId,
+  );
+  const staffId = await resolveStaff(ctx, b.bookedEntity?.slot?.resource?.id, b.bookedEntity?.slot?.resource?.name ?? "");
+  const ph = canonPhone(b.contactDetails?.phone);
+  const note = (b.additionalFields ?? []).find((f) => f.label === "Add Your Message")?.value || null;
+  let status = mapStatus(b.status, new Date(start).getTime(), now);
+  const clientName = sanitizeName([b.contactDetails?.firstName, b.contactDetails?.lastName].filter(Boolean).join(" ")) || "Guest";
+
+  if (ph) {
+    await ctx.db.from("client_profiles").upsert(
+      { phone: ph, name: clientName === "Guest" ? null : clientName, email: b.contactDetails?.email ?? null, updated_at: new Date().toISOString() },
+      { onConflict: "phone" },
+    );
+  }
+
+  let computedRisk: number | undefined;
+  let autoConfirmed = false;
+  if (status === "pending" && ph) {
+    const ev = await evaluateClient(ctx, ph, svc.price);
+    computedRisk = ev.risk;
+    if (ctx.autoApprove && ev.approve) { status = "confirmed"; autoConfirmed = true; }
+  }
+
+  const fields: Record<string, unknown> = {
+    salon_id: ctx.salonId, client_name: clientName, client_phone: ph, client_email: b.contactDetails?.email ?? null,
+    service_id: svc.id, staff_id: staffId, start_time_utc: start, end_time_utc: end, status, source: "appointment",
+    price_cents: svc.price, staff_request_note: note, staff_requested_by_client: noteRequestsStaff(note),
+    verification_method: "none",
+    wix_booking_id: b.id,
+  };
+  if (computedRisk !== undefined) fields.no_show_risk_score = computedRisk;
+
+  // Locate existing row: by wix_booking_id first, then natural-key fallback for un-tagged rows.
+  let found = (await ctx.db.from("bookings").select("id, status").eq("wix_booking_id", b.id).maybeSingle()).data;
+  if (!found) {
+    let q = ctx.db.from("bookings").select("id, status").eq("salon_id", ctx.salonId).eq("start_time_utc", start).is("wix_booking_id", null);
+    q = ph ? q.eq("client_phone", ph) : q.is("client_phone", null);
+    found = (await q.limit(1).maybeSingle()).data;
+  }
+  const existingId = found?.id as string | undefined;
+
+  // Preserve a desk-marked no-show: Wix has no concept of it.
+  if (existingId && (found?.status as string) === "no_show") {
+    return { action: "skipped", autoConfirmed: false };
+  }
+
+  let bookingId: string | undefined;
+  let action: "inserted" | "updated" | "skipped";
+  if (existingId) {
+    const { error } = await ctx.db.from("bookings").update(fields).eq("id", existingId);
+    if (error && staffId) await ctx.db.from("bookings").update({ ...fields, staff_id: null }).eq("id", existingId);
+    bookingId = existingId;
+    action = "updated";
+  } else {
+    const insertRow = { ...fields, no_show_risk_score: computedRisk ?? 8, created_at: new Date().toISOString() };
+    let { data, error } = await ctx.db.from("bookings").insert(insertRow).select("id").single();
+    if (error && staffId) ({ data, error } = await ctx.db.from("bookings").insert({ ...insertRow, staff_id: null }).select("id").single());
+    if (error) { action = "skipped"; }
+    else { bookingId = data?.id as string | undefined; action = "inserted"; }
+  }
+
+  return { action, bookingId, autoConfirmed };
+}
+
+export async function runForwardSync(salonId: string, siteId: string, sinceIso: string, autoApprove: boolean): Promise<ForwardSyncResult> {
+  const ctx = await buildResolverContext(salonId, autoApprove);
+  const bookings = await queryBookingsUpdatedSince(siteId, sinceIso);
   let created = 0, updated = 0, skipped = 0, autoApproved = 0, maxUpdated = sinceIso;
 
   for (const b of bookings) {
-    const start = b.startDate ?? b.bookedEntity?.slot?.startDate;
-    if (!start) { skipped++; continue; }
-    const end = b.endDate ?? b.bookedEntity?.slot?.endDate ?? new Date(new Date(start).getTime() + 45 * 60000).toISOString();
-    const svc = await resolveService(
-      b.bookedEntity?.title ?? "Service",
-      minutesBetween(start, end),
-      b.bookedEntity?.slot?.serviceId,
-      b.bookedEntity?.slot?.scheduleId,
-    );
-    const staffId = await resolveStaff(b.bookedEntity?.slot?.resource?.id, b.bookedEntity?.slot?.resource?.name ?? "");
-    const ph = canonPhone(b.contactDetails?.phone);
-    const note = (b.additionalFields ?? []).find((f) => f.label === "Add Your Message")?.value || null;
-    let status = mapStatus(b.status, new Date(start).getTime(), now);
-    const clientName = sanitizeName([b.contactDetails?.firstName, b.contactDetails?.lastName].filter(Boolean).join(" ")) || "Guest";
+    const result = await _processOne(ctx, b);
+    if (result.action === "inserted") created++;
+    else if (result.action === "updated") updated++;
+    else skipped++;
 
-    if (ph) {
-      await db.from("client_profiles").upsert(
-        { phone: ph, name: clientName === "Guest" ? null : clientName, email: b.contactDetails?.email ?? null, updated_at: new Date().toISOString() },
-        { onConflict: "phone" },
-      );
-    }
-
-    // Smart auto-approve: risk-score a pending Wix request; auto-confirm the safe ones (and write
-    // the Confirm back to Wix), leaving risky / new customers 'pending' for manual review.
-    let computedRisk: number | undefined;
-    let autoConfirmed = false;
-    if (status === "pending" && ph) {
-      const ev = await evaluateClient(ph, svc.price);
-      computedRisk = ev.risk;
-      if (autoApprove && ev.approve) { status = "confirmed"; autoConfirmed = true; }
-    }
-
-    const fields: Record<string, unknown> = {
-      salon_id: salonId, client_name: clientName, client_phone: ph, client_email: b.contactDetails?.email ?? null,
-      service_id: svc.id, staff_id: staffId, start_time_utc: start, end_time_utc: end, status, source: "appointment",
-      price_cents: svc.price, staff_request_note: note, staff_requested_by_client: noteRequestsStaff(note),
-      verification_method: "none", // shields synced 'pending' rows from the release-pending cron
-      wix_booking_id: b.id,
-    };
-    if (computedRisk !== undefined) fields.no_show_risk_score = computedRisk;
-
-    // Locate the existing row: by wix_booking_id first, then a natural-key fallback
-    // (salon + start + phone, only rows not yet tagged) so we ADOPT backfilled rows
-    // whose wix_booking_id is still NULL instead of inserting duplicates.
-    let found = (await db.from("bookings").select("id, status").eq("wix_booking_id", b.id).maybeSingle()).data;
-    if (!found) {
-      let q = db.from("bookings").select("id, status").eq("salon_id", salonId).eq("start_time_utc", start).is("wix_booking_id", null);
-      q = ph ? q.eq("client_phone", ph) : q.is("client_phone", null);
-      found = (await q.limit(1).maybeSingle()).data;
-    }
-    const existingId = found?.id as string | undefined;
-
-    // Preserve a desk-marked no-show: Wix has no concept of it (it still says CONFIRMED), so
-    // skip the status sync to avoid clobbering it back to confirmed/completed every poll.
-    if (existingId && (found?.status as string) === "no_show") {
-      if (b.updatedDate && b.updatedDate > maxUpdated) maxUpdated = b.updatedDate;
-      continue;
-    }
-
-    let rowId: string | undefined;
-    if (existingId) {
-      const { error } = await db.from("bookings").update(fields).eq("id", existingId);
-      if (error && staffId) await db.from("bookings").update({ ...fields, staff_id: null }).eq("id", existingId);
-      rowId = existingId;
-      updated++;
-    } else {
-      const insertRow = { ...fields, no_show_risk_score: computedRisk ?? 8, created_at: new Date().toISOString() };
-      let { data, error } = await db.from("bookings").insert(insertRow).select("id").single();
-      if (error && staffId) ({ data, error } = await db.from("bookings").insert({ ...insertRow, staff_id: null }).select("id").single());
-      if (error) skipped++; else { rowId = data?.id as string | undefined; created++; }
-    }
-
-    // Auto-approve write-back: confirm on Wix (best-effort). Wix → CONFIRMED, so the next sync
-    // reads it as confirmed and never re-approves — naturally idempotent.
-    if (autoConfirmed && rowId) { autoApproved++; void pushWixConfirm(salonId, rowId); }
+    // Auto-approve write-back: confirm on Wix (best-effort).
+    if (result.autoConfirmed && result.bookingId) { autoApproved++; void pushWixConfirm(salonId, result.bookingId); }
 
     if (b.updatedDate && b.updatedDate > maxUpdated) maxUpdated = b.updatedDate;
   }
 
   const newCursor = new Date(new Date(maxUpdated).getTime() + 1).toISOString();
-  await db.from("wix_integrations").update({ cursor_updated_date: newCursor, last_run_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() }).eq("salon_id", salonId);
+  await ctx.db.from("wix_integrations").update({ cursor_updated_date: newCursor, last_run_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() }).eq("salon_id", salonId);
   return { created, updated, skipped, autoApproved, cursor: newCursor };
 }
