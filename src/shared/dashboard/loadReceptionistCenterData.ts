@@ -184,6 +184,9 @@ export interface ReceptionistCenterData {
     sms_confirmation_failed_at: string | null;
     /** No-show risk score 0-100. Higher = more likely to no-show. */
     no_show_risk_score: number | null;
+    /** Wix booking id if this booking was synced from Wix. Drives the desk Approve/Decline
+     * buttons on a Wix-origin pending card (status='pending' + non-null here). */
+    wix_booking_id: string | null;
   }>;
   /** Per-staff service whitelist for this salon. `null` = no rows → all-capable fallback. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
@@ -570,6 +573,7 @@ export async function loadReceptionistCenterData(
       sms_confirmation_sent_at,
       sms_confirmation_failed_at,
       no_show_risk_score,
+      wix_booking_id,
       services!bookings_service_id_fkey ( name, duration_minutes, buffer_minutes ),
       addon:services!bookings_addon_service_id_fkey ( name, duration_minutes, buffer_minutes )
     `,
@@ -892,6 +896,10 @@ export async function loadReceptionistCenterData(
         if (v == null) return null;
         const n = Number(v);
         return Number.isFinite(n) ? n : null;
+      })(),
+      wix_booking_id: (() => {
+        const v = (row as { wix_booking_id?: unknown }).wix_booking_id;
+        return typeof v === "string" && v.length > 0 ? v : null;
       })(),
     };
   });

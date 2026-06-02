@@ -57,3 +57,6 @@ next-env.d.ts
 .cursor/
 .aider*
 supabase/.temp/
+
+# Wix backfill scratch
+tmp/

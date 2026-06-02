@@ -1224,6 +1224,8 @@ export const userVi: UserMessages = {
       startService: "Bắt đầu phục vụ",
       markComplete: "Đánh dấu hoàn thành",
       cancelBooking: "Hủy lịch",
+      approveWix: "Duyệt",
+      declineWix: "Từ chối",
       editBooking: "Sửa",
       restoreBooking: "Khôi phục lịch",
       cancelConfirm: (clientName: string) =>
