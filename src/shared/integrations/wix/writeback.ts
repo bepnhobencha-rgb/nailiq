@@ -188,7 +188,16 @@ export async function pushWixCreate(salonId: string, bookingId: string): Promise
       .update({ wix_booking_id: wixBookingId } as never)
       .eq("id", bookingId);
 
-    console.log(`[wix create] ✓ created wix booking ${wixBookingId} for nailiq ${bookingId}`);
+    // 9. Confirm on Wix. Create Booking yields status CREATED (pending), which Wix parks in
+    //    the "Booking Requests" inbox — NOT on the main calendar. A salon-originated booking is
+    //    a real appointment, so confirm it immediately so it shows as a solid slot on Wix.
+    //    Best-effort: if confirm fails the booking still exists (as CREATED) and the cron retries.
+    try {
+      await confirmWixBooking(integ.site_id, wixBookingId);
+      console.log(`[wix create] ✓ created + confirmed wix booking ${wixBookingId} for nailiq ${bookingId}`);
+    } catch (e) {
+      console.warn(`[wix create] created ${wixBookingId} but confirm failed:`, (e as Error).message);
+    }
   } catch (e) {
     // Best-effort — never throw (booking already exists in NailIQ).
     console.error("[wix create] error", bookingId, (e as Error).message);
