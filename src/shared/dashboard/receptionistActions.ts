@@ -18,7 +18,7 @@ import {
 } from "@/shared/lib/salonMemberRole";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
-import { pushWixCancel } from "@/shared/integrations/wix/writeback";
+import { pushWixCancel, pushWixConfirm, pushWixDecline } from "@/shared/integrations/wix/writeback";
 import {
   type EditBookingInput,
   type EditBookingResult,
@@ -706,6 +706,89 @@ export async function cancelDeskBooking(
   // Write-back: if this booking came from Wix, cancel it there too. Best-effort/non-blocking.
   void pushWixCancel(ctx.salon.id, bookingId);
 
+  return { ok: true };
+}
+
+/**
+ * Approve a Wix-origin pending booking from the desk: confirm it in NailIQ AND push a
+ * Confirm to Wix so the customer gets Wix's confirmation. Owner/senior only. Scoped to
+ * rows that carry a `wix_booking_id` and are still 'pending', so NailIQ's native pending
+ * (OTP/deposit) flow is untouched. Best-effort write-back never blocks the desk.
+ */
+export async function approveWixBooking(
+  slug: string,
+  input: { salonId: string; bookingId: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (!canCancelBooking(ctx.role)) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+  const bookingId = String(input.bookingId ?? "").trim();
+  if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+
+  const { data: updated, error: upErr } = await ctx.supabase
+    .from("bookings")
+    .update({ status: "confirmed" })
+    .eq("id", bookingId)
+    .eq("salon_id", ctx.salon.id)
+    .eq("status", "pending")
+    .not("wix_booking_id", "is", null)
+    .select("id")
+    .maybeSingle();
+  if (upErr) {
+    console.error("[approveWixBooking]", upErr);
+    return fail("server_error");
+  }
+  if (!updated?.id) return fail("invalid_state");
+
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "booking_status_changed",
+    payload: { from: "pending", to: "confirmed", reason: "wix_approve" },
+  });
+  void pushWixConfirm(ctx.salon.id, bookingId);
+  return { ok: true };
+}
+
+/** Decline a Wix-origin pending booking: cancel in NailIQ AND push a Decline to Wix. */
+export async function declineWixBooking(
+  slug: string,
+  input: { salonId: string; bookingId: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (!canCancelBooking(ctx.role)) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+  const bookingId = String(input.bookingId ?? "").trim();
+  if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+
+  const { data: updated, error: upErr } = await ctx.supabase
+    .from("bookings")
+    .update({ status: "cancelled" })
+    .eq("id", bookingId)
+    .eq("salon_id", ctx.salon.id)
+    .eq("status", "pending")
+    .not("wix_booking_id", "is", null)
+    .select("id")
+    .maybeSingle();
+  if (upErr) {
+    console.error("[declineWixBooking]", upErr);
+    return fail("server_error");
+  }
+  if (!updated?.id) return fail("invalid_state");
+
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "booking_cancelled",
+    payload: { reason: "wix_decline" },
+  });
+  void pushWixDecline(ctx.salon.id, bookingId);
   return { ok: true };
 }
 

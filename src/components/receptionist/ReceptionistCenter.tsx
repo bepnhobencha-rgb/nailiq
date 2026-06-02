@@ -75,6 +75,8 @@ import {
   assignWalkinToSlot,
   cancelDeskBooking,
   restoreCancelledBooking,
+  approveWixBooking,
+  declineWixBooking,
   undoCancelBooking,
   cancelWaitingWalkin,
   undoWalkinAssignment,
@@ -1603,9 +1605,57 @@ function ReceptionistCenterInner({
       ? `/dashboard/${encodeURIComponent(slug)}/setup/services`
       : `/dashboard/${encodeURIComponent(slug)}/setup/staff`;
 
-  const drawerPrimaryAction =
-    openDrawerBooking?.status === "pending" ||
-    openDrawerBooking?.status === "confirmed"
+  // Wix-origin pending → desk Approve/Decline that writes back to Wix. Owner/senior only.
+  const isWixPending =
+    !!openDrawerBooking &&
+    openDrawerBooking.status === "pending" &&
+    !!openDrawerBooking.wix_booking_id &&
+    canCancelBooking(viewerRole);
+
+  const onDrawerApproveWix = async () => {
+    const id = drawerBookingId;
+    if (!id) return;
+    setDrawerBusy(true);
+    try {
+      const r = await approveWixBooking(slug, { salonId: data.salon.id, bookingId: id });
+      if (!r.ok) {
+        setShakeMessage(mutationMessage(messages.receptionist, r.error));
+      } else {
+        setDrawerBookingId(null);
+        await reloadCurrentDay();
+        router.refresh();
+      }
+    } finally {
+      setDrawerBusy(false);
+    }
+  };
+
+  const onDrawerDeclineWix = async () => {
+    const id = drawerBookingId;
+    if (!id) return;
+    setDrawerBusy(true);
+    try {
+      const r = await declineWixBooking(slug, { salonId: data.salon.id, bookingId: id });
+      if (!r.ok) {
+        setShakeMessage(mutationMessage(messages.receptionist, r.error));
+      } else {
+        setDrawerBookingId(null);
+        await reloadCurrentDay();
+        router.refresh();
+      }
+    } finally {
+      setDrawerBusy(false);
+    }
+  };
+
+  const drawerPrimaryAction = isWixPending
+    ? {
+        label: rcMessages.drawer.approveWix,
+        busy: drawerBusy,
+        onPress: () => void onDrawerApproveWix(),
+      }
+    : openDrawerBooking?.status === "pending" ||
+        openDrawerBooking?.status === "confirmed"
       ? {
           label: rcMessages.drawer.startService,
           busy: drawerBusy,
@@ -1619,8 +1669,18 @@ function ReceptionistCenterInner({
           }
         : undefined;
 
+  const drawerDeclineAction = isWixPending
+    ? {
+        label: rcMessages.drawer.declineWix,
+        busy: drawerBusy,
+        onPress: () => void onDrawerDeclineWix(),
+      }
+    : undefined;
+
+  // Generic cancel — hidden for Wix-pending (Decline replaces it there to avoid a duplicate reject).
   const drawerCancelAction =
     openDrawerBooking &&
+    !isWixPending &&
     canCancelBooking(viewerRole) &&
     (openDrawerBooking.status === "pending" ||
       openDrawerBooking.status === "confirmed" ||
@@ -2471,6 +2531,7 @@ function ReceptionistCenterInner({
         primaryAction={drawerPrimaryAction}
         cancelAction={drawerCancelAction}
         restoreAction={drawerRestoreAction}
+        declineAction={drawerDeclineAction}
         deskEdit={
           openDrawerBooking
             ? {

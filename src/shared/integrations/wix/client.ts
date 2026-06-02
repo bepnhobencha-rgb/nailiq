@@ -104,3 +104,15 @@ export async function cancelWixBooking(siteId: string, bookingId: string): Promi
   })) as { booking?: WixBooking };
   return r.booking?.status ?? "UNKNOWN";
 }
+
+/** Decline a PENDING/CREATED Wix booking → DECLINED (the "reject request" action). */
+export async function declineWixBooking(siteId: string, bookingId: string): Promise<string> {
+  const b = await getBooking(siteId, bookingId);
+  if (!b) throw new Error("booking_not_found");
+  const r = (await post(`${WRITER}/${bookingId}/decline`, siteId, {
+    participantNotification: { notifyParticipants: false },
+    bookingId,
+    revision: b.revision,
+  })) as { booking?: WixBooking };
+  return r.booking?.status ?? "UNKNOWN";
+}

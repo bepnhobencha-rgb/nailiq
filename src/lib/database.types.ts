@@ -622,6 +622,7 @@ export type Database = {
           walkin_request_tags: Json | null
           walkin_source: string | null
           wave_number: number
+          wix_booking_id: string | null
         }
         Insert: {
           addon_price_cents?: number | null
@@ -674,6 +675,7 @@ export type Database = {
           walkin_request_tags?: Json | null
           walkin_source?: string | null
           wave_number?: number
+          wix_booking_id?: string | null
         }
         Update: {
           addon_price_cents?: number | null
@@ -726,6 +728,7 @@ export type Database = {
           walkin_request_tags?: Json | null
           walkin_source?: string | null
           wave_number?: number
+          wix_booking_id?: string | null
         }
         Relationships: [
           {

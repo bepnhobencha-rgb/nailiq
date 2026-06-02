@@ -7,7 +7,7 @@
  * has an enabled `wix_integrations` row.
  */
 import "server-only";
-import { confirmWixBooking, cancelWixBooking } from "./client";
+import { confirmWixBooking, cancelWixBooking, declineWixBooking } from "./client";
 import { looseServiceClient } from "./looseDb";
 
 async function resolve(salonId: string, bookingId: string): Promise<{ siteId: string; wixId: string } | null> {
@@ -36,5 +36,15 @@ export async function pushWixConfirm(salonId: string, bookingId: string): Promis
     await confirmWixBooking(r.siteId, r.wixId);
   } catch (e) {
     console.error("[wix writeback] confirm", bookingId, (e as Error).message);
+  }
+}
+
+export async function pushWixDecline(salonId: string, bookingId: string): Promise<void> {
+  try {
+    const r = await resolve(salonId, bookingId);
+    if (!r) return;
+    await declineWixBooking(r.siteId, r.wixId);
+  } catch (e) {
+    console.error("[wix writeback] decline", bookingId, (e as Error).message);
   }
 }

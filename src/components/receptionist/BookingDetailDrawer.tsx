@@ -144,6 +144,12 @@ export interface BookingDetailDrawerProps {
     busy: boolean;
     onPress: () => void | Promise<void>;
   };
+  /** Decline a Wix-origin pending booking (→ declined on Wix). Owner / senior only. */
+  declineAction?: {
+    label: string;
+    busy: boolean;
+    onPress: () => void | Promise<void>;
+  };
   /** Inline edit (pending | confirmed); optional so presentational tests can omit. */
   deskEdit?: {
     slug: string;
@@ -179,6 +185,7 @@ export function BookingDetailDrawer({
   primaryAction,
   cancelAction,
   restoreAction,
+  declineAction,
   deskEdit,
 }: BookingDetailDrawerProps) {
   const [editMode, setEditMode] = useState(false);
@@ -241,6 +248,7 @@ export function BookingDetailDrawer({
     (deskEdit !== undefined && editMode) ||
     primaryAction !== undefined ||
     cancelAction !== undefined ||
+    declineAction !== undefined ||
     (canEditBooking && !editMode);
 
   const sheet = (
@@ -567,6 +575,20 @@ export function BookingDetailDrawer({
                         onClick={() => void restoreAction.onPress()}
                       >
                         {restoreAction.label}
+                      </Button>
+                    ) : null}
+                    {declineAction !== undefined ? (
+                      <Button
+                        type="button"
+                        variant="danger"
+                        loading={declineAction.busy}
+                        data-testid="drawer-decline-wix"
+                        disabled={isOffline}
+                        title={isOffline ? offlineEditDisabledHint : undefined}
+                        className="w-full sm:w-full"
+                        onClick={() => void declineAction.onPress()}
+                      >
+                        {declineAction.label}
                       </Button>
                     ) : null}
                   </>

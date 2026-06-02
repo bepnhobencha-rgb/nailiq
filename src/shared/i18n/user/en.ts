@@ -1218,6 +1218,9 @@ export type UserMessages = {
       startService: string;
       markComplete: string;
       cancelBooking: string;
+      /** Wix-origin pending: approve (→ confirm on Wix) / decline (→ decline on Wix). */
+      approveWix: string;
+      declineWix: string;
       /** Pending / confirmed: open inline edit form */
       editBooking: string;
       restoreBooking: string;
@@ -2779,6 +2782,8 @@ export const userEn: UserMessages = {
       startService: "Start service",
       markComplete: "Mark complete",
       cancelBooking: "Cancel booking",
+      approveWix: "Approve",
+      declineWix: "Decline",
       editBooking: "Edit",
       restoreBooking: "Restore booking",
       cancelConfirm: (clientName: string) =>
