@@ -65,7 +65,13 @@ export async function POST(req: NextRequest) {
   } else {
     // Path B: Wix Automations — no signature possible; siteId in body is the identifier
     if (!body.siteId) {
-      // Log the full body so we can see what Wix actually sends (for debugging)
+      // TEMP DEBUG: persist the raw body so we can inspect the exact shape Wix sends.
+      try {
+        await looseServiceClient()
+          .from("wix_integrations")
+          .update({ last_error: `DEBUG_BODY: ${rawBody.toString("utf-8").slice(0, 2000)}` })
+          .eq("site_id", "bca289a2-f279-4a9a-a484-c036e5f78a34");
+      } catch { /* ignore debug write errors */ }
       console.warn("[wix-webhook] no signature and no siteId — rejected. body=%s", JSON.stringify(body));
       return NextResponse.json({ error: "missing_site_id" }, { status: 400 });
     }
