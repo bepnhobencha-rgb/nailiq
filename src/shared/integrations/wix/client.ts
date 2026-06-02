@@ -101,6 +101,10 @@ export async function cancelWixBooking(siteId: string, bookingId: string): Promi
     participantNotification: { notifyParticipants: false },
     bookingId,
     revision: b.revision,
+    // A salon-initiated cancel must bypass the customer-facing cancellation window
+    // (e.g. "no cancellations within 24h"). Without this Wix returns 428
+    // BOOKING_POLICY_VIOLATION and the booking stays CONFIRMED on Wix.
+    flowControlSettings: { ignoreCancellationPolicy: true },
   })) as { booking?: WixBooking };
   return r.booking?.status ?? "UNKNOWN";
 }
