@@ -73,8 +73,8 @@ function computeNoShowRisk(noShows: number, visits: number, subtotalCents: numbe
   return Math.max(0, Math.min(100, s));
 }
 
-export type ForwardSyncResult = { created: number; updated: number; skipped: number; autoApproved: number; cursor: string };
-export type BookingEventResult = { action: "inserted" | "updated" | "skipped"; bookingId?: string };
+type ForwardSyncResult = { created: number; updated: number; skipped: number; autoApproved: number; cursor: string };
+type BookingEventResult = { action: "inserted" | "updated" | "skipped"; bookingId?: string };
 
 // --------------------------------------------------------------------------
 // Resolver context — built once per sync run and shared across all bookings.
