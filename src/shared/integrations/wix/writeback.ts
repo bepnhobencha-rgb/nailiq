@@ -64,11 +64,11 @@ export async function pushWixCreate(salonId: string, bookingId: string): Promise
     // 1. Check salon has an enabled wix_integrations row.
     const { data: rawInteg } = await db
       .from("wix_integrations")
-      .select("site_id, wix_location_id")
+      .select("site_id, wix_location_id, wix_default_resource_id")
       .eq("salon_id", salonId)
       .eq("enabled", true)
       .maybeSingle();
-    const integ = rawInteg as { site_id?: string; wix_location_id?: string | null } | null;
+    const integ = rawInteg as { site_id?: string; wix_location_id?: string | null; wix_default_resource_id?: string | null } | null;
     if (!integ?.site_id) return; // no Wix integration for this salon
 
     // 2. Fetch the NailIQ booking row.
@@ -136,8 +136,16 @@ export async function pushWixCreate(salonId: string, bookingId: string): Promise
       endDate:    toIso(bk.end_time_utc),
       timezone,
     };
-    if (wixResourceId)          slot.resource  = { id: wixResourceId };
-    if (integ.wix_location_id)  slot.location  = { id: integ.wix_location_id };
+    // A Wix slot without a sessionId REQUIRES both resource.id and location.locationType.
+    // Fall back to the salon's configured default resource when the assigned tech isn't mapped
+    // to Wix (e.g. a NailIQ-only staff). Without any resource we cannot create — skip, don't guess.
+    const resourceId = wixResourceId ?? integ.wix_default_resource_id ?? null;
+    if (!resourceId) {
+      console.warn("[wix create] no Wix resource for booking", bookingId, "staff", bk.staff_id, "— set wix_integrations.wix_default_resource_id");
+      return;
+    }
+    slot.resource = { id: resourceId };
+    slot.location = { locationType: "OWNER_BUSINESS" };
 
     // Split client_name into first/last (Wix requires separate fields).
     const nameParts  = (bk.client_name ?? "").trim().split(/\s+/);
