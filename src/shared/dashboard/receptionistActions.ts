@@ -1,5 +1,6 @@
 "use server";
 
+import { after } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
@@ -268,8 +269,10 @@ export async function addWalkinToQueue(
     payload: { serviceId },
   });
 
-  // Wix write-back: push new walk-in to Wix calendar (best-effort, fire-and-forget)
-  void pushWixCreate(ctx.salon.id, bid);
+  // Wix write-back: push new walk-in to Wix calendar. after() runs it post-response so the
+  // serverless function stays alive until the Wix call finishes (a bare `void` can be frozen
+  // before the request completes), while never blocking the desk.
+  after(() => pushWixCreate(ctx.salon.id, bid));
 
   return { ok: true, bookingId: bid };
 }
@@ -706,8 +709,10 @@ export async function cancelDeskBooking(
     payload: { reason: "desk_cancel" },
   });
 
-  // Write-back: if this booking came from Wix, cancel it there too. Best-effort/non-blocking.
-  void pushWixCancel(ctx.salon.id, bookingId);
+  // Write-back: if this booking came from Wix, cancel it there too. after() guarantees the
+  // Wix call runs to completion after the response (a bare `void` can be cut off by the
+  // serverless freeze) without blocking the desk.
+  after(() => pushWixCancel(ctx.salon.id, bookingId));
 
   return { ok: true };
 }
@@ -752,7 +757,7 @@ export async function approveWixBooking(
     eventType: "booking_status_changed",
     payload: { from: "pending", to: "confirmed", reason: "wix_approve" },
   });
-  void pushWixConfirm(ctx.salon.id, bookingId);
+  after(() => pushWixConfirm(ctx.salon.id, bookingId));
   return { ok: true };
 }
 
@@ -791,7 +796,7 @@ export async function declineWixBooking(
     eventType: "booking_cancelled",
     payload: { reason: "wix_decline" },
   });
-  void pushWixDecline(ctx.salon.id, bookingId);
+  after(() => pushWixDecline(ctx.salon.id, bookingId));
   return { ok: true };
 }
 
