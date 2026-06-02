@@ -113,10 +113,18 @@ export async function runForwardSync(salonId: string, siteId: string, sinceIso: 
       wix_booking_id: b.id,
     };
 
-    const { data: existing } = await db.from("bookings").select("id").eq("wix_booking_id", b.id).maybeSingle();
-    if (existing?.id) {
-      const { error } = await db.from("bookings").update(fields).eq("id", existing.id);
-      if (error && staffId) await db.from("bookings").update({ ...fields, staff_id: null }).eq("id", existing.id);
+    // Locate the existing row: by wix_booking_id first, then a natural-key fallback
+    // (salon + start + phone, only rows not yet tagged) so we ADOPT backfilled rows
+    // whose wix_booking_id is still NULL instead of inserting duplicates.
+    let existingId = (await db.from("bookings").select("id").eq("wix_booking_id", b.id).maybeSingle()).data?.id as string | undefined;
+    if (!existingId) {
+      let q = db.from("bookings").select("id").eq("salon_id", salonId).eq("start_time_utc", start).is("wix_booking_id", null);
+      q = ph ? q.eq("client_phone", ph) : q.is("client_phone", null);
+      existingId = (await q.limit(1).maybeSingle()).data?.id as string | undefined;
+    }
+    if (existingId) {
+      const { error } = await db.from("bookings").update(fields).eq("id", existingId);
+      if (error && staffId) await db.from("bookings").update({ ...fields, staff_id: null }).eq("id", existingId);
       updated++;
     } else {
       let { error } = await db.from("bookings").insert({ ...fields, no_show_risk_score: 8, created_at: new Date().toISOString() });
