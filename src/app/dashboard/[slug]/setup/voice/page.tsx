@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import {
   getDashboardWriteClient,
   updateVoiceAiSettings,
   type VoiceAiSettingsInput,
 } from "@/shared/dashboard/setupActions";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 
 const VOICES = [
   { value: "marin",   label: "Marin (default)" },
@@ -161,6 +162,14 @@ export default async function VoiceSetupPage({ params }: PageProps) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const r = (row ?? {}) as any;
+
+  // PR3: release flag `ai_voice` (Beta, default OFF) gates the whole page.
+  // notFound() when disabled — direct-URL access is refused, not just hidden.
+  // `ai_voice` is sourced from the `salons.voice_ai_enabled` column, already
+  // selected above.
+  if (!isReleaseFeatureEnabled(r, "ai_voice")) {
+    notFound();
+  }
 
   const initial: VoiceAiSettingsInput = {
     voice_ai_enabled:          r.voice_ai_enabled          ?? false,

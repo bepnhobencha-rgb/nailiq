@@ -1534,6 +1534,7 @@ export type UserMessages = {
         unauthorized: string;
         forbidden: string;
         server_error: string;
+        feature_not_enabled: string;
       };
     };
     /** Free-tier monthly booking-cap upsell banner. Rendered at the top
@@ -3086,6 +3087,7 @@ export const userEn: UserMessages = {
         unauthorized: "Sign in is required.",
         forbidden: "Only the salon owner can view reports.",
         server_error: "Could not load reports. Try again shortly.",
+        feature_not_enabled: "Advanced reports aren't enabled for this salon.",
       },
     },
     bookingLimitBanner: {

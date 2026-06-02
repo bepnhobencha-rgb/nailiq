@@ -11,7 +11,10 @@
 
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import { notFound } from "next/navigation";
 import { loadPartyLinkPage } from "@/shared/booking/partyLinkActions";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { bookingEn } from "@/shared/i18n/booking/en";
 import { bookingVi } from "@/shared/i18n/booking/vi";
 import PartyClaimClient from "./_components/PartyClaimClient";
@@ -75,6 +78,29 @@ export default async function PartyLinkPage({ params, searchParams }: Props) {
 
   if (!data) {
     return <PartyErrorPage reason="not_found" t={t} />;
+  }
+
+  // PR3: release flag `group_booking` (Beta, default OFF → group_booking_enabled)
+  // gates this public party link. When a salon turns Group Booking off, an
+  // old/shared link must 404 — resolve the salon's flag inputs from the token
+  // (party_links → salons.feature_flags) and notFound() when disabled. Runs
+  // AFTER the invalid-token not-found above so a bad token still renders the
+  // existing error page.
+  const { data: flagRow } = await createServiceRoleClient()
+    .from("party_links")
+    .select(
+      "salons ( subscription_plan, plan_override, feature_flags, voice_ai_enabled )" as never,
+    )
+    .eq("token", token)
+    .maybeSingle();
+  const flagSalon = ((flagRow as { salons?: unknown } | null)?.salons ?? {}) as {
+    subscription_plan?: string | null;
+    plan_override?: string | null;
+    feature_flags?: unknown;
+    voice_ai_enabled?: boolean | null;
+  };
+  if (!isReleaseFeatureEnabled(flagSalon, "group_booking")) {
+    notFound();
   }
 
   const waveCount = new Set(data.slots.map((s) => s.waveNumber)).size;

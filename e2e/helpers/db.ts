@@ -136,6 +136,15 @@ export async function seedTestSalon(opts?: {
    * must enable its flag here, e.g. `{ group_booking_enabled: true }`.
    */
   feature_flags?: Record<string, boolean>;
+  /**
+   * `salons.voice_ai_enabled` COLUMN — the per-salon store for the `ai_voice`
+   * Beta release feature (PR3 gates `/dashboard/[slug]/setup/voice` on it).
+   * Unlike the other Beta flags this is a dedicated boolean column, NOT a
+   * `feature_flags` jsonb key. Omit (or pass undefined) to leave the column at
+   * its DB default — `ai_voice` then resolves to its Beta default (OFF). Pass
+   * `true` to enable the Voice AI setup route.
+   */
+  voice_ai_enabled?: boolean;
 }) {
   const phone = opts?.phone ?? "15550001111";
   const slug = opts?.slug ?? "e2e-test-salon";
@@ -152,6 +161,12 @@ export async function seedTestSalon(opts?: {
       profile_complete: true,
       opening_hours: SEED_OPENING_HOURS,
       feature_flags: opts?.feature_flags ?? {},
+      // Only write the column when the caller opts in. Leaving it unset keeps
+      // the DB default so `ai_voice` resolves to its Beta default (OFF) — the
+      // route-gating OFF case must not depend on an explicit false here.
+      ...(opts?.voice_ai_enabled === undefined
+        ? {}
+        : { voice_ai_enabled: opts.voice_ai_enabled }),
       setup_wizard_completed_at: new Date().toISOString(),
       salon_phone:
         opts?.salon_phone === undefined
