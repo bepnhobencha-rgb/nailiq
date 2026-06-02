@@ -260,19 +260,30 @@ async function loadPlanAndCount(
   supabase: GenericSupabase,
   salonId: string,
   table: "staff" | "services",
-): Promise<{ plan: SubscriptionPlan; count: number } | null> {
+): Promise<{ planSalon: { subscription_plan: string | null; plan_override?: string | null; feature_flags?: Record<string, unknown> | null }; count: number } | null> {
+  // Must select plan_override + feature_flags so canAddService/canAddStaff
+  // can call getEffectivePlanLimits() correctly. Selecting only
+  // subscription_plan caused plan_override='premium' to be ignored,
+  // making the server think every salon is on 'free'.
   const { data: salonRow, error: salonErr } = await supabase
     .from("salons")
-    .select("subscription_plan")
+    .select("subscription_plan, plan_override, feature_flags" as never)
     .eq("id", salonId)
     .maybeSingle();
   if (salonErr) {
     console.error("[loadPlanAndCount] salons", salonErr);
     return null;
   }
-  const plan = parseSubscriptionPlan(
-    (salonRow as { subscription_plan?: unknown } | null)?.subscription_plan,
-  );
+  const row = salonRow as {
+    subscription_plan?: unknown;
+    plan_override?: unknown;
+    feature_flags?: unknown;
+  } | null;
+  const planSalon = {
+    subscription_plan: parseSubscriptionPlan(row?.subscription_plan) as string,
+    plan_override: typeof row?.plan_override === "string" ? row.plan_override : null,
+    feature_flags: (row?.feature_flags as Record<string, unknown> | null) ?? null,
+  };
 
   // Plan-limit checks count LIVE rows only — soft-deleted rows free
   // up the slot, otherwise a salon could hit its limit even after
@@ -286,7 +297,7 @@ async function loadPlanAndCount(
     console.error("[loadPlanAndCount] count", table, countErr);
     return null;
   }
-  return { plan, count: typeof count === "number" ? count : 0 };
+  return { planSalon, count: typeof count === "number" ? count : 0 };
 }
 
 const UUID_RE =
@@ -467,7 +478,7 @@ export async function addService(
   // default 'free' plan unless ops upgraded it; this still enforces.
   const planCheck = await loadPlanAndCount(supabase, r.salon.id, "services");
   if (!planCheck) return fail("server_error");
-  if (!canAddService({ subscription_plan: planCheck.plan }, planCheck.count)) {
+  if (!canAddService(planCheck.planSalon, planCheck.count)) {
     return fail("plan_limit_reached");
   }
 
@@ -773,7 +784,7 @@ export async function addStaff(
   // Plan-limit gate. Free plan caps staff at 3 (see PLAN_LIMITS).
   const planCheck = await loadPlanAndCount(supabase, r.salon.id, "staff");
   if (!planCheck) return fail("server_error");
-  if (!canAddStaff({ subscription_plan: planCheck.plan }, planCheck.count)) {
+  if (!canAddStaff(planCheck.planSalon, planCheck.count)) {
     return fail("plan_limit_reached");
   }
 
