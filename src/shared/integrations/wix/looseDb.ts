@@ -13,7 +13,7 @@ type Row = Record<string, unknown>;
 type Result = { data: Row | null; error: { message: string } | null };
 type ListResult = { data: Row[] | null; error: { message: string } | null };
 
-export interface LooseQuery extends PromiseLike<ListResult> {
+interface LooseQuery extends PromiseLike<ListResult> {
   select(cols?: string): LooseQuery;
   insert(values: Row | Row[]): LooseQuery;
   update(values: Row): LooseQuery;
@@ -31,7 +31,7 @@ export interface LooseQuery extends PromiseLike<ListResult> {
   single(): Promise<Result>;
 }
 
-export interface LooseDb {
+interface LooseDb {
   from(table: string): LooseQuery;
 }
 
