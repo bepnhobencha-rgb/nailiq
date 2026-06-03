@@ -150,8 +150,37 @@ These modules are load-bearing and easy to break — read before editing:
    - `npm run build` — production build.
    - `npm run test:e2e` (or the relevant spec) for UX-affecting changes.
    - Commit with conventional commits (`feat(scope):`, `fix(scope):`). Recent history shows `feat(receptionist):`, `fix(integrity):`, `fix(security):` patterns.
-3. **When stuck**: stop and explore — don't guess. Ask the user.
+3. **When stuck — docs-first, không đoán mò**:
+   - Đọc log nguyên văn → xác định symptom chính xác
+   - Tìm evidence: docs chính thức → GitHub issues → changelog của tool
+   - Có evidence → áp dụng fix đó. Không thử random approaches.
+   - 3 lần thất bại liên tiếp → dừng, báo: `log + link docs tìm được + 2 hướng có evidence`
 4. **Architectural decisions**: log in `docs/decisions.md`.
+5. **Analyze before implement** — với mọi yêu cầu, tự hỏi 4 câu trước khi code:
+   - **UX fit?** Người dùng (salon owner / receptionist / customer) có thấy tiện không?
+   - **Modern standard?** Đúng chuẩn Next.js 16 / React 19 / Supabase SSR chưa?
+   - **Wow?** Có cách nào hay hơn mà không tốn thêm nhiều effort?
+   - **Safe?** Có rủi ro RLS bypass / data loss / regression E2E không?
+   → Nếu thấy approach tốt hơn → đề xuất 1 dòng + lý do, chờ OK.
+6. **Parallel execution** — task độc lập nhau → chạy song song, không tuần tự:
+   - Explore codebase + Research docs + Analyze existing pattern → 3 agents cùng lúc
+   - Viết nhiều file không liên quan → multi Write/Edit trong 1 message
+   - `typecheck` + `build` không phụ thuộc nhau → parallel Bash calls
+   - Sequential chỉ khi có dependency rõ ràng (migration chưa xong, schema chưa có)
+
+## ⚡ Self-learning — rút kinh nghiệm từ lỗi
+
+**Sau mỗi bug fix không hiển nhiên** (tốn 2+ lần thử):
+1. Tạo / cập nhật `~/.claude/projects/-Users-huytran-nailiq/memory/gotcha_<topic>.md`:
+   - **Symptom**: lỗi nhìn thấy ra sao
+   - **Root cause**: tại sao xảy ra
+   - **Fix**: đã làm gì
+   - **Prevention**: test/check gì để không xảy ra lần sau
+2. Cập nhật `MEMORY.md` với 1 dòng pointer.
+
+**Trước khi implement**: scan `MEMORY.md` → có gotcha liên quan không? Nếu có, đọc trước.
+
+**Quy tắc 3 lần**: thấy pattern tương tự lần 3 → extract thành module tái sử dụng trong `src/shared/`, không copy-paste lần 4.
 
 ## 🧪 Testing
 
