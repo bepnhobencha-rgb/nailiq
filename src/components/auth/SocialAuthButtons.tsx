@@ -73,6 +73,18 @@ export function SocialAuthButtons({
     return trimmed;
   };
 
+  const getPasswordStrength = (pwd: string): "weak" | "medium" | "strong" => {
+    if (pwd.length < MIN_PASSWORD_LEN) return "weak";
+    const hasUpper = /[A-Z]/.test(pwd);
+    const hasNumber = /\d/.test(pwd);
+    if (hasUpper && hasNumber) return "strong";
+    if (hasUpper || hasNumber) return "medium";
+    return "weak";
+  };
+
+  const passwordStrength = getPasswordStrength(password);
+  const isPasswordAcceptable = passwordStrength === "medium" || passwordStrength === "strong";
+
   const onGoogle = () => {
     setError(null);
     setInfo(null);
@@ -356,6 +368,40 @@ export function SocialAuthButtons({
                 aria-invalid={Boolean(error)}
                 error={Boolean(error)}
               />
+              {password && (
+                <div className="space-y-2">
+                  {/* Password strength meter */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-nq-border rounded-full overflow-hidden">
+                      <div
+                        className={`h-full transition-all ${
+                          passwordStrength === "strong"
+                            ? "bg-green-500 w-full"
+                            : passwordStrength === "medium"
+                              ? "bg-yellow-500 w-2/3"
+                              : "bg-red-500 w-1/3"
+                        }`}
+                      />
+                    </div>
+                    <span
+                      className={`text-xs font-medium ${
+                        passwordStrength === "strong"
+                          ? "text-green-600"
+                          : passwordStrength === "medium"
+                            ? "text-yellow-600"
+                            : "text-red-600"
+                      }`}
+                    >
+                      {passwordStrength === "strong"
+                        ? t.passwordStrengthStrong
+                        : passwordStrength === "medium"
+                          ? t.passwordStrengthMedium
+                          : t.passwordStrengthWeak}
+                    </span>
+                  </div>
+                  <p className="text-xs text-nq-muted">{t.passwordRequirements}</p>
+                </div>
+              )}
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Button
                   type="button"
@@ -376,7 +422,7 @@ export function SocialAuthButtons({
                   size="md"
                   className="w-full min-h-11"
                   loading={pending && pendingAction === "signup"}
-                  disabled={pending}
+                  disabled={pending || !isPasswordAcceptable}
                   onClick={() => onPasswordSubmit("signup")}
                 >
                   {pending && pendingAction === "signup"

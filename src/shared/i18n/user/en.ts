@@ -415,6 +415,11 @@ export type UserMessages = {
     passwordPlaceholder: string;
     passwordTooShort: string;
     passwordRequired: string;
+    /** Password strength indicator labels. */
+    passwordStrengthWeak: string;
+    passwordStrengthMedium: string;
+    passwordStrengthStrong: string;
+    passwordRequirements: string;
     signInButton: string;
     signUpButton: string;
     signingIn: string;
@@ -440,6 +445,25 @@ export type UserMessages = {
     backHome: string;
     /** Trial reminder shown on /register below the auth form title. */
     registerMicrotrust: string;
+    /** Forgot password page and flow. */
+    forgotPasswordPageTitle: string;
+    forgotPasswordPageSubtitle: string;
+    forgotPasswordSubmit: string;
+    forgotPasswordSubmitting: string;
+    forgotPasswordSentTitle: string;
+    forgotPasswordSentBody: string;
+    forgotPasswordBackToSignIn: string;
+    /** Reset password page. */
+    resetPasswordPageTitle: string;
+    resetPasswordNewPassword: string;
+    resetPasswordConfirmPassword: string;
+    resetPasswordSubmit: string;
+    resetPasswordSubmitting: string;
+    resetPasswordSuccess: string;
+    resetPasswordMismatch: string;
+    resetPasswordInvalidLink: string;
+    resetPasswordServerError: string;
+    resetPasswordStrengthHint: string;
   };
   /** Multi-salon picker (`/choose-salon`). Shown when an authenticated user
    * has more than one `salon_members` row. Single-salon users skip it. */
@@ -2180,6 +2204,10 @@ export const userEn: UserMessages = {
     passwordPlaceholder: "Enter your password",
     passwordTooShort: "Password must be at least 8 characters.",
     passwordRequired: "Enter your password.",
+    passwordStrengthWeak: "Weak",
+    passwordStrengthMedium: "Medium",
+    passwordStrengthStrong: "Strong",
+    passwordRequirements: "8+ characters, 1 uppercase, 1 number recommended",
     signInButton: "Sign in",
     signUpButton: "Sign up",
     signingIn: "Signing in…",
@@ -2199,6 +2227,23 @@ export const userEn: UserMessages = {
     useDifferentEmail: "Use a different email",
     backHome: "← Home",
     registerMicrotrust: "14-day free trial · No credit card required",
+    forgotPasswordPageTitle: "Reset your password",
+    forgotPasswordPageSubtitle: "Enter your email address and we'll send you a link to reset your password.",
+    forgotPasswordSubmit: "Send reset link",
+    forgotPasswordSubmitting: "Sending…",
+    forgotPasswordSentTitle: "Check your inbox",
+    forgotPasswordSentBody: "If an account exists with that email, we've sent a password reset link. Links expire in one hour.",
+    forgotPasswordBackToSignIn: "Back to sign in",
+    resetPasswordPageTitle: "Create a new password",
+    resetPasswordNewPassword: "New password",
+    resetPasswordConfirmPassword: "Confirm password",
+    resetPasswordSubmit: "Set new password",
+    resetPasswordSubmitting: "Setting password…",
+    resetPasswordSuccess: "Password reset successfully. Redirecting to sign in…",
+    resetPasswordMismatch: "Passwords don't match.",
+    resetPasswordInvalidLink: "This reset link has expired. Request a new one.",
+    resetPasswordServerError: "Something went wrong. Try again.",
+    resetPasswordStrengthHint: "Password strength: ",
   },
   chooseSalon: {
     title: "Choose your salon",

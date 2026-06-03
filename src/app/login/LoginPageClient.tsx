@@ -192,11 +192,19 @@ export function LoginPageClient({
             {pending ? t.login.sendingSigninLink : t.login.sendSigninLink}
           </Button>
 
-          <p className="text-center text-sm text-nq-muted">
+          <p className="text-center text-sm">
             <Link
               href="/login/forgot-password"
-              className="font-medium text-nq-primary hover:underline"
+              className="inline-flex items-center gap-1.5 font-medium text-nq-primary hover:underline transition-opacity hover:opacity-80"
+              title="Reset your password"
             >
+              <svg
+                className="w-4 h-4"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm0-13c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zm.5 8h-1V9h1v6z" />
+              </svg>
               {t.login.forgotPasswordLink}
             </Link>
           </p>

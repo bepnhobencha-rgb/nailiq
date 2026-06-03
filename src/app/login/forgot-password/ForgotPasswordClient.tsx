@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { getUserMessages } from "@/shared/i18n/user";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { requestSalonOwnerPasswordReset } from "@/shared/auth/salonOwnerAuth";
 
 /**
@@ -15,6 +17,8 @@ import { requestSalonOwnerPasswordReset } from "@/shared/auth/salonOwnerAuth";
  * `server_error` is the only branch that surfaces a distinct message.
  */
 export function ForgotPasswordClient() {
+  const { language } = useUserLanguage();
+  const t = useMemo(() => getUserMessages(language).auth, [language]);
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "sent" | "error">("idle");
   const [pending, startTransition] = useTransition();
@@ -36,17 +40,16 @@ export function ForgotPasswordClient() {
         role="status"
       >
         <p className="text-sm font-medium text-nq-foreground">
-          Check your inbox
+          {t.forgotPasswordSentTitle}
         </p>
         <p className="text-sm text-nq-muted">
-          If your email is associated with a salon owner account, a
-          password-reset link is on its way. Links expire in one hour.
+          {t.forgotPasswordSentBody}
         </p>
         <Link
           href="/login"
           className="text-sm font-medium text-nq-accent underline-offset-4 hover:underline"
         >
-          Back to sign-in
+          {t.forgotPasswordBackToSignIn}
         </Link>
       </div>
     );
@@ -60,7 +63,7 @@ export function ForgotPasswordClient() {
       data-testid="salon-owner-forgot-password-form"
     >
       <label className="flex flex-col gap-2">
-        <span className="text-sm font-medium text-nq-foreground">Email</span>
+        <span className="text-sm font-medium text-nq-foreground">{t.emailLabel}</span>
         <Input
           type="email"
           inputMode="email"
@@ -87,22 +90,22 @@ export function ForgotPasswordClient() {
         fullWidth
         loading={pending}
       >
-        Send reset link
+        {pending ? t.forgotPasswordSubmitting : t.forgotPasswordSubmit}
       </Button>
 
       {status === "error" ? (
         <p className="text-sm text-nq-error" role="alert">
-          Something went wrong. Try again.
+          {t.resetPasswordServerError}
         </p>
       ) : null}
 
       <p className="text-sm text-nq-muted">
-        Remembered it?{" "}
+        {`${t.emailLabel}? `}
         <Link
           href="/login"
           className="font-medium text-nq-accent underline-offset-4 hover:underline"
         >
-          Back to sign-in
+          {t.forgotPasswordBackToSignIn}
         </Link>
       </p>
     </form>

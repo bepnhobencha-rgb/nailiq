@@ -52,7 +52,7 @@ export default async function SalonOwnerResetPasswordPage() {
           Set a new password
         </h1>
         <p className="text-sm text-nq-muted">
-          Choose a password at least 6 characters long. You&apos;ll be
+          Choose a strong password (8+ characters with uppercase and numbers recommended). You&apos;ll be
           signed out and asked to sign in fresh with the new password.
         </p>
       </header>
