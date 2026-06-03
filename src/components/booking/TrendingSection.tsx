@@ -52,11 +52,16 @@ export function TrendingSection({ salonId, lang, onSelectStyle }: Props) {
       .eq("salon_id", salonId)
       .eq("period", "this_week")
       .single()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
         if (!mounted) return;
         setLoading(false);
-        if (data?.trends) {
-          setTrends(data.trends as unknown as TrendItem[]);
+        if (error) {
+          console.warn("Failed to load trends:", error);
+          return;
+        }
+        const typedData = data as any;
+        if (typedData?.trends) {
+          setTrends(typedData.trends as unknown as TrendItem[]);
         }
       });
     return () => { mounted = false; };

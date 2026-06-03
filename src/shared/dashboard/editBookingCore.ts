@@ -94,7 +94,7 @@ export async function performEditBooking(
     return { ok: false, error: "server_error" };
   }
 
-  const { data: staffRow } = await supabase
+  const { data: staffRow, error: staffErr } = await supabase
     .from("staff")
     .select("id")
     .eq("id", newStaffId)
@@ -102,7 +102,7 @@ export async function performEditBooking(
     .is("deleted_at" as never, null)
     .maybeSingle();
 
-  if (!staffRow?.id) {
+  if (staffErr || !(staffRow as any)?.id) {
     return { ok: false, error: "server_error" };
   }
 
@@ -120,19 +120,20 @@ export async function performEditBooking(
     return { ok: false, error: "server_error" };
   }
 
-  if (!booking?.id) {
+  if (!(booking as any)?.id) {
     return { ok: false, error: "not_found" };
   }
 
+  const bookingData = booking as any;
   const st =
-    booking.start_time_utc != null ? String(booking.start_time_utc).trim() : "";
+    bookingData.start_time_utc != null ? String(bookingData.start_time_utc).trim() : "";
   const en =
-    booking.end_time_utc != null ? String(booking.end_time_utc).trim() : "";
+    bookingData.end_time_utc != null ? String(bookingData.end_time_utc).trim() : "";
   if (!st || !en) {
     return { ok: false, error: "server_error" };
   }
 
-  const status = String(booking.status);
+  const status = String(bookingData.status);
   if (status !== "pending" && status !== "confirmed") {
     return { ok: false, error: "invalid_status" };
   }
@@ -149,7 +150,8 @@ export async function performEditBooking(
     console.error("[performEditBooking] service", svcErr);
     return { ok: false, error: "server_error" };
   }
-  if (!svc?.id) {
+  const svcData = svc as any;
+  if (!svcData?.id) {
     return { ok: false, error: "server_error" };
   }
 
@@ -165,13 +167,13 @@ export async function performEditBooking(
       .eq("staff_id", newStaffId)
       .eq("service_id", newServiceId)
       .maybeSingle();
-    if (!capRow?.staff_id) {
+    if (!(capRow as any)?.staff_id) {
       return { ok: false, error: "staff_cannot_perform_service" };
     }
   }
 
-  const duration = Math.round(Number(svc.duration_minutes ?? 0));
-  const buffer = Math.round(Number(svc.buffer_minutes ?? 0));
+  const duration = Math.round(Number(svcData.duration_minutes ?? 0));
+  const buffer = Math.round(Number(svcData.buffer_minutes ?? 0));
   if (!Number.isFinite(duration) || duration < 1) {
     return { ok: false, error: "server_error" };
   }
@@ -186,8 +188,8 @@ export async function performEditBooking(
   let effectiveAddonId: string | null;
   if (input.newAddonServiceId === undefined) {
     const existing =
-      booking.addon_service_id != null
-        ? String(booking.addon_service_id).trim()
+      bookingData.addon_service_id != null
+        ? String(bookingData.addon_service_id).trim()
         : "";
     effectiveAddonId = existing.length > 0 ? existing : null;
   } else if (input.newAddonServiceId === null) {
@@ -216,11 +218,12 @@ export async function performEditBooking(
       console.error("[performEditBooking] addon service", addonErr);
       return { ok: false, error: "server_error" };
     }
-    if (!addonSvc) {
+    const addonSvcData = addonSvc as any;
+    if (!addonSvcData) {
       return { ok: false, error: "server_error" };
     }
-    const aDur = Math.round(Number(addonSvc.duration_minutes ?? 0));
-    const aBuf = Math.round(Number(addonSvc.buffer_minutes ?? 0));
+    const aDur = Math.round(Number(addonSvcData.duration_minutes ?? 0));
+    const aBuf = Math.round(Number(addonSvcData.buffer_minutes ?? 0));
     if (!Number.isFinite(aDur) || aDur < 1) {
       return { ok: false, error: "server_error" };
     }
@@ -229,8 +232,8 @@ export async function performEditBooking(
     }
     addonSpanMin = aDur + aBuf;
     const aPrice =
-      addonSvc.price_cents != null
-        ? Math.round(Number(addonSvc.price_cents))
+      addonSvcData.price_cents != null
+        ? Math.round(Number(addonSvcData.price_cents))
         : null;
     addonPriceCents = Number.isFinite(aPrice ?? NaN) ? aPrice : null;
   }
@@ -239,7 +242,7 @@ export async function performEditBooking(
   const endMs = startMs + totalMin * 60 * 1000;
   const slotEndUtc = new Date(endMs).toISOString();
 
-  const price = svc.price_cents != null ? Math.round(Number(svc.price_cents)) : null;
+  const price = svcData.price_cents != null ? Math.round(Number(svcData.price_cents)) : null;
   const priceCents = Number.isFinite(price ?? NaN) ? price : null;
 
   const { data: existing, error: exErr } = await supabase
@@ -260,7 +263,7 @@ export async function performEditBooking(
     staffId: newStaffId,
     startUtcIso: slotStartUtc,
     endUtcIso: slotEndUtc,
-    existingBookings: (existing ?? []) as ConflictCheckBooking[],
+    existingBookings: ((existing ?? []) as any) as ConflictCheckBooking[],
     excludeBookingId: bookingId,
   });
   if (conflict !== null) {
@@ -342,7 +345,7 @@ export async function performEditBooking(
     return { ok: false, error: "server_error" };
   }
 
-  if (!updated?.id) {
+  if (!(updated as any)?.id) {
     return { ok: false, error: "invalid_status" };
   }
 

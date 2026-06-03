@@ -563,8 +563,10 @@ export const userVi: UserMessages = {
     signOut: "Đăng xuất",
     roleBadge: {
       owner: "Chủ tiệm",
+      admin: "Quản lý",
       senior: "Thợ cấp cao",
       nail_tech: "Thợ nail",
+      receptionist: "Tiếp tân",
     },
   },
   ownerDashboard: {

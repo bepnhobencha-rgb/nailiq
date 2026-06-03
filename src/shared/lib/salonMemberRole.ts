@@ -3,12 +3,14 @@
  * routing surfaces. Mirrors `staff.job_role` from `setupActions.ts` but is
  * the canonical type for the membership row, not the staff catalog row.
  */
-export type SalonMemberRole = "owner" | "senior" | "nail_tech";
+export type SalonMemberRole = "owner" | "admin" | "senior" | "nail_tech" | "receptionist";
 
 export const SALON_MEMBER_ROLES: readonly SalonMemberRole[] = [
   "owner",
+  "admin",
   "senior",
   "nail_tech",
+  "receptionist",
 ] as const;
 
 /**
@@ -22,8 +24,10 @@ export const SALON_MEMBER_ROLES: readonly SalonMemberRole[] = [
  */
 export function normalizeSalonMemberRole(raw: unknown): SalonMemberRole {
   const v = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (v === "admin") return "admin";
   if (v === "senior") return "senior";
   if (v === "nail_tech") return "nail_tech";
+  if (v === "receptionist") return "receptionist";
   return "owner";
 }
 

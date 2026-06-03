@@ -447,8 +447,10 @@ export type UserMessages = {
     signOut: string;
     roleBadge: {
       owner: string;
+      admin: string;
       senior: string;
       nail_tech: string;
+      receptionist: string;
     };
   };
   /** `/dashboard/[slug]` owner home — strings beyond the `salonDashboard`
@@ -2201,8 +2203,10 @@ export const userEn: UserMessages = {
     signOut: "Sign out",
     roleBadge: {
       owner: "Owner",
+      admin: "Admin",
       senior: "Senior",
       nail_tech: "Nail Tech",
+      receptionist: "Receptionist",
     },
   },
   ownerDashboard: {

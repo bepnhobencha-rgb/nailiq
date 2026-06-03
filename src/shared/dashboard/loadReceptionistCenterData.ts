@@ -44,6 +44,8 @@ export interface ReceptionistCenterData {
     walkinAutoAssign: boolean;
     /** `salons.queue_display_mode`. 'simple' hides noise fields on queue cards. */
     queueDisplayMode: "simple" | "full";
+    /** `salons.basic_mode_forced`. When true, Basic Mode is auto-enabled and cannot be toggled off. */
+    basicModeForced: boolean;
   };
   staff: Array<{
     id: string;
@@ -471,7 +473,8 @@ export async function loadReceptionistCenterData(
         // currency_code + walkin_auto_assign added by recent migrations
         // (20260512000000 / 20260511100000) — not in auto-generated
         // types yet, hence the `as never` cast on the SELECT string.
-        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode" as never,
+        // basic_mode_forced: auto-enable Basic Mode for receptionist if salon config requires it
+        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced" as never,
       )
       .eq("id", ctx.salon.id)
       .maybeSingle();
@@ -495,6 +498,8 @@ export async function loadReceptionistCenterData(
     currencyCode: parseCurrency(salonData.currency_code),
     walkinAutoAssign: salonData.walkin_auto_assign === false ? false : true,
     queueDisplayMode: (salonData.queue_display_mode === "simple" ? "simple" : "full") as "simple" | "full",
+    // TODO: Regenerate types when Docker is available (npx supabase gen types typescript --local)
+    basicModeForced: (salonData as any).basic_mode_forced === true,
   };
 
   const rawDashboardModules = parseDashboardModules(
@@ -608,14 +613,14 @@ export async function loadReceptionistCenterData(
     return { ok: false, error: "server_error" };
   }
 
-  const staffRows = staffResult.data as Array<{
+  const staffRows = staffResult.data as unknown as Array<{
     id: string;
     name: string;
     job_role: string;
     status: string | null;
   }> | null;
 
-  const serviceRows = servicesResult.data as Array<{
+  const serviceRows = servicesResult.data as unknown as Array<{
     id: string;
     name: string;
     duration_minutes: number;
@@ -926,7 +931,7 @@ export async function loadReceptionistCenterData(
     if (capErr) {
       console.error("[loadReceptionistCenterData] staff_services", capErr);
     } else if ((capRows?.length ?? 0) > 0) {
-      capabilityRows = (capRows ?? []).map((r) => ({
+      capabilityRows = ((capRows ?? []) as any).map((r: any) => ({
         staff_id: String(r.staff_id),
         service_id: String(r.service_id),
       }));

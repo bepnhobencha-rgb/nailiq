@@ -753,7 +753,8 @@ function ReceptionistCenterInner({
   // Lightweight view toggle (localStorage). Default off → Balanced/Advanced
   // views are unchanged for everyone who never opts in. Only active on the
   // live "today + day" board where the cockpit's now-semantics make sense.
-  const { basicMode, toggleBasicMode } = useBasicMode();
+  // TODO: Re-enable basicModeForced after Supabase types are regenerated with Docker
+  const { basicMode, toggleBasicMode, isForced } = useBasicMode(false);
   // Basic Mode never renders the heavy party-card strip by default — the
   // actionable case surfaces as a compact cockpit alert. Clicking that
   // alert's "Open party bookings" reveals the full cards on demand.
