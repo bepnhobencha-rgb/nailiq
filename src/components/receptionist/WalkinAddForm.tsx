@@ -235,6 +235,14 @@ export interface WalkinAddFormProps {
    * for backward compatibility with callers that haven't migrated.
    */
   autoAssignEnabled?: boolean;
+  /**
+   * Bumped by the parent when the receptionist opens the panel via the
+   * dedicated "+ Walk-in" action (vs just toggling the queue list). Each
+   * change moves keyboard focus to the name field so they can type
+   * immediately — this is what makes "+ Walk-in" feel like an ADD action,
+   * distinct from "Hàng chờ" which just shows the waiting list.
+   */
+  focusNonce?: number;
 }
 
 function formatServicePrice(
@@ -294,6 +302,7 @@ export function WalkinAddForm({
   onCheckAvailability,
   onAddAndAssign,
   autoAssignEnabled = true,
+  focusNonce,
 }: WalkinAddFormProps) {
   const nameId = useId();
   const phoneId = useId();
@@ -313,6 +322,15 @@ export function WalkinAddForm({
   // `disabled={submitting}` applies. This ref blocks the 2nd call
   // immediately — no duplicate POST.
   const submittingRef = useRef(false);
+
+  // Move focus to the name field when the parent signals an explicit
+  // "+ Walk-in" open (focusNonce bumps). Guarded so the initial
+  // undefined → no-op; only deliberate opens steal focus.
+  useEffect(() => {
+    if (!focusNonce) return;
+    const raf = requestAnimationFrame(() => nameRef.current?.focus());
+    return () => cancelAnimationFrame(raf);
+  }, [focusNonce]);
 
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
