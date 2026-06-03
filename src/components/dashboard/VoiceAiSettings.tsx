@@ -29,9 +29,9 @@ export function VoiceAiSettings({ slug, initialName }: Props) {
       } else {
         setError(
           result.error === "invalid_name"
-            ? "Tên không hợp lệ — chỉ dùng chữ cái, khoảng trắng, hoặc dấu gạch ngang."
+            ? t.salonSettings.voiceAiSave.invalidName
             : result.error === "forbidden"
-              ? "Chỉ owner mới đổi được tên này."
+              ? t.salonSettings.voiceAiSave.forbidden
               : t.salonSettings.voiceAiSave.saveError,
         );
       }

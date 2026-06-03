@@ -736,6 +736,8 @@ export type UserMessages = {
       save: string;
       saving: string;
       saved: string;
+      invalidName: string;
+      forbidden: string;
     };
   };
   /** Aria label for the setup-wizard category dropdown.
@@ -2474,6 +2476,8 @@ export const userEn: UserMessages = {
       save: "Save",
       saving: "Saving…",
       saved: "✓ Saved",
+      invalidName: "Invalid name — letters, spaces, or hyphens only.",
+      forbidden: "Only the owner can change this name.",
     },
   },
   serviceCategory: {
