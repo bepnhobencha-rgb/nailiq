@@ -1,14 +1,56 @@
 /**
  * Wix Bookings REST client (server-only).
  *
- * Auth: account API key in `WIX_API_KEY` + per-call `wix-site-id` header.
+ * Auth: per-salon account API key (stored on `wix_integrations.wix_api_key`,
+ * resolved by `wix-site-id`) with a fallback to the `WIX_API_KEY` env var for
+ * the original single-tenant setup. Plus a per-call `wix-site-id` header.
  * The key needs Wix Bookings **Manage** (write) scope for confirm/cancel and
  * **Read** for the query. Generated at manage.wix.com/account/api-keys.
  */
 import "server-only";
+import { looseServiceClient } from "./looseDb";
 
 const READER = "https://www.wixapis.com/bookings/bookings-reader/v2/extended-bookings/query";
 const WRITER = "https://www.wixapis.com/bookings/v2/bookings";
+
+// siteId -> { key, at }. Self-service salons store their key in the DB; resolving
+// it on every Wix call would add a query per request, so cache briefly. TTL keeps
+// staleness bounded after a salon rotates its key in Admin Settings.
+const KEY_TTL_MS = 60_000;
+const keyCache = new Map<string, { key: string; at: number }>();
+
+/**
+ * Resolve the Wix API key for a site: per-salon `wix_integrations.wix_api_key`
+ * first (self-service onboarding), then the `WIX_API_KEY` env var (legacy single
+ * tenant). Whitespace is stripped — pasting a key into a form/env field often
+ * line-wraps it, which would make `Authorization` an invalid header value.
+ */
+async function resolveApiKey(siteId: string): Promise<string> {
+  const hit = keyCache.get(siteId);
+  if (hit && Date.now() - hit.at < KEY_TTL_MS) return hit.key;
+
+  let key = "";
+  try {
+    const { data } = await looseServiceClient()
+      .from("wix_integrations")
+      .select("wix_api_key")
+      .eq("site_id", siteId)
+      .maybeSingle();
+    key = String((data?.wix_api_key as string) ?? "").replace(/\s+/g, "");
+  } catch {
+    /* DB unreachable — fall through to env */
+  }
+  if (!key) key = (process.env.WIX_API_KEY ?? "").replace(/\s+/g, "");
+  if (!key) throw new Error(`No Wix API key for site ${siteId} (no wix_integrations.wix_api_key and no WIX_API_KEY env)`);
+
+  keyCache.set(siteId, { key, at: Date.now() });
+  return key;
+}
+
+/** Drop a cached key (call after a salon saves/rotates its key so the next call re-reads). */
+export function invalidateWixKeyCache(siteId: string): void {
+  keyCache.delete(siteId);
+}
 
 export type WixBooking = {
   id: string;
@@ -32,16 +74,26 @@ export type WixBooking = {
   additionalFields?: Array<{ label?: string; value?: string }>;
 };
 
-function headers(siteId: string): HeadersInit {
-  // Strip any whitespace/newlines — pasting the key into a dashboard env field often line-wraps
-  // it, which would make `Authorization` an invalid HTTP header value. Wix keys contain none.
-  const key = (process.env.WIX_API_KEY ?? "").replace(/\s+/g, "");
-  if (!key) throw new Error("WIX_API_KEY is not set");
-  return { "Content-Type": "application/json", Authorization: key, "wix-site-id": siteId };
+/** Build request headers using an already-resolved key. */
+function headersWithKey(siteId: string, apiKey: string): HeadersInit {
+  return { "Content-Type": "application/json", Authorization: apiKey.replace(/\s+/g, ""), "wix-site-id": siteId };
 }
 
 async function post(url: string, siteId: string, body: unknown): Promise<unknown> {
-  const res = await fetch(url, { method: "POST", headers: headers(siteId), body: JSON.stringify(body) });
+  const key = await resolveApiKey(siteId);
+  const res = await fetch(url, { method: "POST", headers: headersWithKey(siteId, key), body: JSON.stringify(body) });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Wix ${res.status} ${url.split("/").slice(-1)[0]}: ${text.slice(0, 240)}`);
+  return text ? JSON.parse(text) : {};
+}
+
+/**
+ * POST to any Wix endpoint with an EXPLICIT key (not resolved from DB/env).
+ * Used by the self-service admin flow to test a pasted key + list services/staff
+ * BEFORE it's saved. `path` is an absolute https URL.
+ */
+export async function wixPostWithKey(siteId: string, apiKey: string, url: string, body: unknown): Promise<unknown> {
+  const res = await fetch(url, { method: "POST", headers: headersWithKey(siteId, apiKey), body: JSON.stringify(body) });
   const text = await res.text();
   if (!res.ok) throw new Error(`Wix ${res.status} ${url.split("/").slice(-1)[0]}: ${text.slice(0, 240)}`);
   return text ? JSON.parse(text) : {};
