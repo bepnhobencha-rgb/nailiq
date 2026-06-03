@@ -191,6 +191,15 @@ export function LoginPageClient({
           >
             {pending ? t.login.sendingSigninLink : t.login.sendSigninLink}
           </Button>
+
+          <p className="text-center text-sm text-nq-muted">
+            <Link
+              href="/login/forgot-password"
+              className="font-medium text-nq-primary hover:underline"
+            >
+              {t.login.forgotPasswordLink}
+            </Link>
+          </p>
         </form>
 
         <SocialAuthButtons mode="login" />
@@ -269,6 +278,15 @@ export function LoginPageClient({
         >
           {pending ? t.login.sendingCode : t.login.sendCode}
         </Button>
+
+        <p className="text-center text-sm text-nq-muted">
+          <Link
+            href="/login/forgot-password"
+            className="font-medium text-nq-primary hover:underline"
+          >
+            {t.login.forgotPasswordLink}
+          </Link>
+        </p>
       </form>
 
       {demoMode ? null : <SocialAuthButtons mode="login" />}

@@ -340,7 +340,11 @@ export function SocialAuthButtons({
               id={passwordSectionId}
               className="flex flex-col gap-3 rounded-2xl border border-nq-border bg-nq-surface/40 p-3"
             >
+              <label htmlFor="password-input" className="text-sm font-medium text-nq-foreground">
+                {t.passwordLabel}
+              </label>
               <Input
+                id="password-input"
                 type="password"
                 autoComplete="current-password"
                 placeholder={t.passwordPlaceholder}

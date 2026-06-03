@@ -505,6 +505,7 @@ export const userVi: UserMessages = {
     signinDisabledTitle: "Đăng nhập tạm thời không khả dụng",
     signinDisabledBody:
       "Hệ thống đăng nhập đang được bảo trì. Vui lòng quay lại sau.",
+    forgotPasswordLink: "Quên mật khẩu?",
     verifyTitle: "Nhập mã OTP",
     verifySubtextSent: "Mã 6 số đã gửi đến số {masked}",
     verifySubtextLoading: "Đang tải…",

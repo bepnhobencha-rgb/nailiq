@@ -370,6 +370,8 @@ export type UserMessages = {
     /** Branch shown when both sms_enabled and email_enabled are false. */
     signinDisabledTitle: string;
     signinDisabledBody: string;
+    /** Forgot password link on /login form. */
+    forgotPasswordLink: string;
     /** /login/verify */
     verifyTitle: string;
     /** "Code sent to ending ····{last4}" */
@@ -2145,6 +2147,7 @@ export const userEn: UserMessages = {
     signinDisabledTitle: "Sign-in is temporarily unavailable",
     signinDisabledBody:
       "We've paused sign-in while platform maintenance is in progress. Please check back soon.",
+    forgotPasswordLink: "Forgot password?",
     verifyTitle: "Enter OTP",
     verifySubtextSent: "Sent a 6-digit code to {masked}",
     verifySubtextLoading: "Loading…",
