@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { updateVoiceAiPersonaName } from "@/shared/dashboard/salonOwnerActions";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { getUserMessages } from "@/shared/i18n/user";
 
 type Props = {
   slug: string;
@@ -9,6 +11,8 @@ type Props = {
 };
 
 export function VoiceAiSettings({ slug, initialName }: Props) {
+  const { language } = useUserLanguage();
+  const t = getUserMessages(language);
   const [name, setName] = useState(initialName || "Lily");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +32,7 @@ export function VoiceAiSettings({ slug, initialName }: Props) {
             ? "Tên không hợp lệ — chỉ dùng chữ cái, khoảng trắng, hoặc dấu gạch ngang."
             : result.error === "forbidden"
               ? "Chỉ owner mới đổi được tên này."
-              : "Lưu thất bại, thử lại.",
+              : t.salonSettings.voiceAiSave.saveError,
         );
       }
     });
@@ -68,10 +72,10 @@ export function VoiceAiSettings({ slug, initialName }: Props) {
             onClick={handleSave}
             className="rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-3 py-1.5 text-xs font-semibold text-nq-primary transition hover:bg-nq-primary/15 disabled:opacity-50"
           >
-            {isPending ? "Đang lưu…" : "Lưu"}
+            {isPending ? t.salonSettings.voiceAiSave.saving : t.salonSettings.voiceAiSave.save}
           </button>
           {saved ? (
-            <span className="text-xs text-nq-success">✓ Đã lưu</span>
+            <span className="text-xs text-nq-success">{t.salonSettings.voiceAiSave.saved}</span>
           ) : null}
         </div>
       </div>

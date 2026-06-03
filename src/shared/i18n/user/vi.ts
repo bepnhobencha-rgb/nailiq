@@ -799,6 +799,50 @@ export const userVi: UserMessages = {
       cost: "Cần cấu hình Twilio Verify trong biến môi trường.",
       errorGeneric: "Không lưu được. Vui lòng thử lại.",
     },
+    reminders: {
+      autoTitle: "Tự động nhắc khách",
+      autoHint: "Email 24h + SMS 3h trước lịch hẹn",
+      advancedToggle: "Tuỳ chỉnh nâng cao",
+      email24h: "Email nhắc trước 24h",
+      email3h: "Email nhắc trước 3h",
+      sms3h: "SMS nhắc trước 3h",
+      save: "Lưu",
+      saving: "Đang lưu…",
+      saved: "✓ Đã lưu",
+    },
+    googleReview: {
+      instruction:
+        'Tìm link trên Google Maps → nút "Viết đánh giá" → copy URL',
+      saveError: "Lưu thất bại",
+      save: "Lưu",
+      saving: "Đang lưu…",
+      saved: "✓ Đã lưu",
+    },
+    bookingVerify: {
+      title: "Xác thực lịch đặt",
+      subtitle: "Chọn mức độ xác thực phù hợp với tiệm",
+      saveError: "Lưu thất bại — thử lại",
+      saved: "✓ Đã lưu",
+      neverLabel: "Tin tưởng tất cả",
+      neverHint: "Không xác thực — ít ma sát nhất, rủi ro cao nhất.",
+      autoLabel: "Tự động thông minh (khuyến nghị)",
+      autoHint:
+        "Theo rủi ro: khách quen không cần xác thực, khách rủi ro cần OTP hoặc cọc.",
+      otpLabel: "Luôn yêu cầu OTP",
+      otpHint:
+        "Mọi lịch đặt đều cần xác thực số điện thoại. Miễn phí cho khách.",
+      depositLabel: "Luôn yêu cầu đặt cọc",
+      depositHint: "Mọi lịch đặt đều cần đặt cọc. Cao cấp, cam kết tối đa.",
+      depositThenOtpLabel: "Ưu tiên cọc, OTP nếu từ chối",
+      depositThenOtpHint:
+        "Yêu cầu cọc trước; nếu khách bỏ qua, chuyển sang OTP.",
+    },
+    voiceAiSave: {
+      saveError: "Lưu thất bại, thử lại.",
+      save: "Lưu",
+      saving: "Đang lưu…",
+      saved: "✓ Đã lưu",
+    },
   },
   serviceCategory: {
     pickerLabel: "Phân loại",
@@ -815,6 +859,17 @@ export const userVi: UserMessages = {
     characterCount: "{used}/{max}",
     descriptionGeneratedToast: "✨ Đã tạo mô tả bằng AI",
     saveButton: "Lưu",
+    priceTypeLabel: "Kiểu giá",
+    priceTypeFixed: "Cố định",
+    priceTypeFrom: "Từ giá",
+    priceTypeRange: "Khoảng giá",
+    priceFromShort: "Từ",
+    priceMinLabel: "Giá tối thiểu",
+    priceMaxLabel: "Giá tối đa",
+    priceValidation: "Giá tối đa phải lớn hơn giá tối thiểu.",
+    addTitle: "Thêm dịch vụ",
+    editTitle: "Sửa dịch vụ",
+    cancel: "Hủy",
   },
   setupErrors: {
     serviceInUse:
@@ -885,6 +940,8 @@ export const userVi: UserMessages = {
     descriptionLabel: "Mô tả tiệm",
     timezone: "Múi giờ",
     timezoneRequired: "Vui lòng chọn múi giờ",
+    searchServices: "Tìm dịch vụ…",
+    searchStaff: "Tìm nhân viên…",
   },
   setupStaff: {
     servicesCapableLabel: "Dịch vụ có thể làm",

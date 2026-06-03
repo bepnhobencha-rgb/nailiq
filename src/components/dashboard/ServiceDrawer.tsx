@@ -233,6 +233,10 @@ export function ServiceDrawer({
   );
   const [description, setDescription] = useState(service?.description ?? "");
   const [isPopular, setIsPopular] = useState(service?.is_popular ?? false);
+  // Declared before the reset effect below (which resets them) so they aren't
+  // referenced before initialization.
+  const [saveStatus, setSaveStatus] = useState<SaveButtonStatus>("idle");
+  const [fieldError, setFieldError] = useState<string | null>(null);
 
   // Reset all fields when the service prop changes (drawer opens for a
   // different service or switches between add/edit mode).
@@ -254,8 +258,6 @@ export function ServiceDrawer({
 
   // ── save state ────────────────────────────────────────────────────────────
 
-  const [saveStatus, setSaveStatus] = useState<SaveButtonStatus>("idle");
-  const [fieldError, setFieldError] = useState<string | null>(null);
   const [toast, setToast] = useState<SetupToastPayload | null>(null);
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -336,10 +338,7 @@ export function ServiceDrawer({
         return language === "vi"
           ? "Nhập giá tối đa hợp lệ."
           : "Enter a valid maximum price.";
-      if (maxCents <= baseCents)
-        return language === "vi"
-          ? "Giá tối đa phải lớn hơn giá tối thiểu."
-          : "Maximum price must be greater than the minimum.";
+      if (maxCents <= baseCents) return formLabels.priceValidation;
     }
     const dm = Number.parseInt(dur, 10);
     if (!Number.isFinite(dm) || dm < 1) return "Duration must be at least 1 minute.";
@@ -515,33 +514,22 @@ export function ServiceDrawer({
 
   // ── render ────────────────────────────────────────────────────────────────
 
-  const drawerTitle = isEditMode
-    ? language === "vi"
-      ? "Sửa dịch vụ"
-      : "Edit service"
-    : language === "vi"
-      ? "Thêm dịch vụ"
-      : "Add service";
+  const drawerTitle = isEditMode ? formLabels.editTitle : formLabels.addTitle;
 
   const drawerDescription = isEditMode && service ? service.name : undefined;
 
   // ── pricing-model UI (fixed / from / range) ──────────────────────────────
-  const fromLabel = language === "vi" ? "Từ" : "From";
-  const pricingModelLabel =
-    language === "vi" ? "Kiểu giá" : "Pricing model";
+  const fromLabel = formLabels.priceFromShort;
+  const pricingModelLabel = formLabels.priceTypeLabel;
   const priceTypeOptions: { value: ServicePriceType; label: string }[] = [
-    { value: "fixed", label: language === "vi" ? "Cố định" : "Fixed" },
-    { value: "from", label: language === "vi" ? "Từ giá" : "From" },
-    { value: "range", label: language === "vi" ? "Khoảng giá" : "Range" },
+    { value: "fixed", label: formLabels.priceTypeFixed },
+    { value: "from", label: formLabels.priceTypeFrom },
+    { value: "range", label: formLabels.priceTypeRange },
   ];
   // Base price input label adapts to the model: min for from/range, plain for fixed.
   const basePriceLabel =
-    priceType === "fixed"
-      ? tLabels.price
-      : language === "vi"
-        ? "Giá tối thiểu"
-        : "Minimum price";
-  const maxPriceLabel = language === "vi" ? "Giá tối đa" : "Maximum price";
+    priceType === "fixed" ? tLabels.price : formLabels.priceMinLabel;
+  const maxPriceLabel = formLabels.priceMaxLabel;
 
   // Live preview of how the price will render on public surfaces.
   const previewBaseCents = centsFromDollarsString(price);
@@ -586,7 +574,7 @@ export function ServiceDrawer({
             disabled={isSaving}
             onClick={onClose}
           >
-            {language === "vi" ? "Hủy" : "Cancel"}
+            {formLabels.cancel}
           </Button>
           {atServiceLimit ? (
             <p className="rounded-xl border border-nq-primary/30 bg-nq-primary/10 px-3 py-2 text-sm text-nq-foreground">

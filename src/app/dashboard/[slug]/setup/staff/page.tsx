@@ -4,6 +4,8 @@ import { MobileStack } from "@/components/layout/MobileStack";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
 import { StaffSetupPanel } from "@/components/dashboard/StaffSetupPanel";
+import { getUserMessages } from "@/shared/i18n/user";
+import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
 import {
   getDashboardWriteClient,
   type StaffJobRole,
@@ -38,6 +40,9 @@ export default async function SetupStaffPage({ params }: Props) {
   if (!ctx) {
     redirect("/register");
   }
+
+  const language = await resolveUserLanguage();
+  const t = getUserMessages(language);
 
   const [staffResult, servicesResult] = await Promise.all([
     ctx.supabase
@@ -112,7 +117,7 @@ export default async function SetupStaffPage({ params }: Props) {
   return (
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 sm:pt-6">
-        <SetupBackNav slug={slug} title="Nhân viên · Staff" />
+        <SetupBackNav slug={slug} title={t.setupLabels.staffTitle} />
         <StaffSetupPanel
           slug={slug}
           maxStaff={maxStaff}

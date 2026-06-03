@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { cn } from "@/shared/lib/cn";
 import { updateBookingVerificationMode } from "@/shared/dashboard/salonOwnerActions";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { getUserMessages } from "@/shared/i18n/user";
 
 type VerificationMode = "never" | "auto" | "always_otp" | "always_deposit" | "deposit_first";
 
@@ -14,54 +16,28 @@ type Props = {
   plan: "free" | "pro" | "studio" | "enterprise";
 };
 
+/**
+ * Map each verification mode to its i18n key suffix under
+ * `salonSettings.bookingVerify`. Labels/hints are looked up at render time
+ * so they follow the active language.
+ */
+const MODE_I18N: Record<VerificationMode, { labelKey: string; hintKey: string }> = {
+  never: { labelKey: "neverLabel", hintKey: "neverHint" },
+  auto: { labelKey: "autoLabel", hintKey: "autoHint" },
+  always_otp: { labelKey: "otpLabel", hintKey: "otpHint" },
+  always_deposit: { labelKey: "depositLabel", hintKey: "depositHint" },
+  deposit_first: { labelKey: "depositThenOtpLabel", hintKey: "depositThenOtpHint" },
+};
+
 const MODE_OPTIONS: {
   value: VerificationMode;
-  label: string;
-  labelVi: string;
-  hint: string;
-  hintVi: string;
   minPlan: "free" | "pro" | "studio";
 }[] = [
-  {
-    value: "never",
-    label: "Trust everyone",
-    labelVi: "Tin tưởng tất cả",
-    hint: "No verification — lowest friction, highest risk.",
-    hintVi: "Không xác thực — ít ma sát nhất, rủi ro cao nhất.",
-    minPlan: "free",
-  },
-  {
-    value: "auto",
-    label: "Smart auto (recommended)",
-    labelVi: "Tự động thông minh (khuyến nghị)",
-    hint: "Risk-based: trusted customers skip, risky bookings get OTP or deposit.",
-    hintVi: "Theo rủi ro: khách quen không cần xác thực, khách rủi ro cần OTP hoặc cọc.",
-    minPlan: "pro",
-  },
-  {
-    value: "always_otp",
-    label: "Always OTP",
-    labelVi: "Luôn yêu cầu OTP",
-    hint: "Every booking requires phone verification. Free for customers.",
-    hintVi: "Mọi lịch đặt đều cần xác thực số điện thoại. Miễn phí cho khách.",
-    minPlan: "free",
-  },
-  {
-    value: "always_deposit",
-    label: "Always deposit",
-    labelVi: "Luôn yêu cầu đặt cọc",
-    hint: "Every booking requires a deposit. Premium feel, maximum commitment.",
-    hintVi: "Mọi lịch đặt đều cần đặt cọc. Cao cấp, cam kết tối đa.",
-    minPlan: "studio",
-  },
-  {
-    value: "deposit_first",
-    label: "Deposit first, OTP fallback",
-    labelVi: "Ưu tiên cọc, OTP nếu từ chối",
-    hint: "Ask for deposit; if customer skips, require OTP instead.",
-    hintVi: "Yêu cầu cọc trước; nếu khách bỏ qua, chuyển sang OTP.",
-    minPlan: "studio",
-  },
+  { value: "never", minPlan: "free" },
+  { value: "auto", minPlan: "pro" },
+  { value: "always_otp", minPlan: "free" },
+  { value: "always_deposit", minPlan: "studio" },
+  { value: "deposit_first", minPlan: "studio" },
 ];
 
 const PLAN_RANK: Record<string, number> = {
@@ -76,6 +52,10 @@ function canUsePlan(userPlan: string, required: string): boolean {
 }
 
 export function BookingVerificationSettings({ slug, initialMode, canEdit, plan }: Props) {
+  const { language } = useUserLanguage();
+  const t = getUserMessages(language);
+  const bv = t.salonSettings.bookingVerify;
+
   const [mode, setMode] = useState<VerificationMode>(initialMode);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +75,7 @@ export function BookingVerificationSettings({ slug, initialMode, canEdit, plan }
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
       } catch {
-        setError("Lưu thất bại — thử lại");
+        setError(bv.saveError);
         setMode(initialMode);
       }
     });
@@ -105,11 +85,11 @@ export function BookingVerificationSettings({ slug, initialMode, canEdit, plan }
     <section className="space-y-3 rounded-2xl border border-nq-muted/20 bg-nq-surface p-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="font-medium text-nq-foreground">Xác thực lịch đặt</p>
-          <p className="text-xs text-nq-muted">Chọn mức độ xác thực phù hợp với tiệm</p>
+          <p className="font-medium text-nq-foreground">{bv.title}</p>
+          <p className="text-xs text-nq-muted">{bv.subtitle}</p>
         </div>
         {saved ? (
-          <span className="text-xs font-medium text-emerald-400">✓ Đã lưu</span>
+          <span className="text-xs font-medium text-emerald-400">{bv.saved}</span>
         ) : null}
         {error ? (
           <span className="text-xs text-red-400">{error}</span>
@@ -120,6 +100,8 @@ export function BookingVerificationSettings({ slug, initialMode, canEdit, plan }
         {MODE_OPTIONS.map((opt) => {
           const allowed = canUsePlan(plan, opt.minPlan);
           const selected = mode === opt.value;
+          const labelText = bv[MODE_I18N[opt.value].labelKey as keyof typeof bv];
+          const hintText = bv[MODE_I18N[opt.value].hintKey as keyof typeof bv];
           return (
             <label
               key={opt.value}
@@ -142,14 +124,14 @@ export function BookingVerificationSettings({ slug, initialMode, canEdit, plan }
               />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-nq-foreground">
-                  {opt.labelVi}
+                  {labelText}
                   {!allowed ? (
                     <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-nq-muted">
                       {opt.minPlan === "pro" ? "Pro+" : "Studio+"}
                     </span>
                   ) : null}
                 </p>
-                <p className="text-xs text-nq-muted">{opt.hintVi}</p>
+                <p className="text-xs text-nq-muted">{hintText}</p>
               </div>
             </label>
           );

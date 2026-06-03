@@ -714,7 +714,7 @@ export function ServicesSetupPanel({
       {/* ── Header row: title + "Thêm" button (sticky at top) ───────────────── */}
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-nq-foreground">
-          Dịch vụ · {rows.length}
+          {tLabels.servicesTitle} · {rows.length}
         </h2>
         <div className="flex items-center gap-2">
           {atServiceLimit ? (
@@ -735,7 +735,7 @@ export function ServicesSetupPanel({
               setDrawerOpen(true);
             }}
           >
-            + Thêm
+            + {tLabels.addService}
           </Button>
         </div>
       </div>
@@ -784,7 +784,7 @@ export function ServicesSetupPanel({
       {rows.length > 0 && (
         <input
           type="search"
-          placeholder="🔍 Tìm dịch vụ..."
+          placeholder={`🔍 ${tLabels.searchServices}`}
           className="w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-4 py-2.5 text-base text-nq-foreground outline-none focus-visible:border-nq-primary/75"
           value={search}
           onChange={(e) => setSearch(e.target.value)}

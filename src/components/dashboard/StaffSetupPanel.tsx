@@ -475,7 +475,7 @@ export function StaffSetupPanel({
       {/* ── Header row: title + "Thêm" button ────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-nq-foreground">
-          Nhân viên · {rows.length}
+          {tLabels.staffTitle} · {rows.length}
         </h2>
         <Button
           variant="primary"
@@ -486,7 +486,7 @@ export function StaffSetupPanel({
             setDrawerOpen(true);
           }}
         >
-          + Thêm
+          + {tLabels.addStaff}
         </Button>
       </div>
 
@@ -512,7 +512,7 @@ export function StaffSetupPanel({
       {rows.length > 0 && (
         <input
           type="search"
-          placeholder="🔍 Tìm nhân viên..."
+          placeholder={`🔍 ${tLabels.searchStaff}`}
           className="w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-4 py-2.5 text-base text-nq-foreground outline-none focus-visible:border-nq-primary/75"
           value={search}
           onChange={(e) => setSearch(e.target.value)}

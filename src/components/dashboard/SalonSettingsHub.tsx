@@ -276,13 +276,13 @@ export function SalonSettingsHub({
           >
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-nq-foreground">Tự động nhắc khách</p>
-                <p className="mt-0.5 text-xs text-nq-muted">Email 24h + SMS 3h trước lịch hẹn</p>
+                <p className="text-sm font-semibold text-nq-foreground">{t.reminders.autoTitle}</p>
+                <p className="mt-0.5 text-xs text-nq-muted">{t.reminders.autoHint}</p>
               </div>
               <Toggle
                 checked={reminderOn}
                 disabled={reminderPending}
-                aria-label="Tự động nhắc khách"
+                aria-label={t.reminders.autoTitle}
                 onChange={handleReminderToggle}
               />
             </div>
@@ -293,7 +293,7 @@ export function SalonSettingsHub({
               className="mt-3 flex items-center gap-1 text-xs text-nq-muted underline-offset-2 hover:text-nq-foreground hover:underline"
               aria-expanded={reminderAdvOpen}
             >
-              Tuỳ chỉnh nâng cao
+              {t.reminders.advancedToggle}
               <span aria-hidden className="text-[10px]">{reminderAdvOpen ? "▲" : "▼"}</span>
             </button>
 
@@ -301,9 +301,9 @@ export function SalonSettingsHub({
               <div className="mt-3 flex flex-col gap-3 border-t border-nq-border/20 pt-3">
                 {(
                   [
-                    { key: "24h", label: "Email nhắc trước 24h", checked: adv24h, set: setAdv24h },
-                    { key: "3h",  label: "Email nhắc trước 3h",  checked: adv3h,  set: setAdv3h },
-                    { key: "sms", label: "SMS nhắc trước 3h",    checked: advSms, set: setAdvSms },
+                    { key: "24h", label: t.reminders.email24h, checked: adv24h, set: setAdv24h },
+                    { key: "3h",  label: t.reminders.email3h,  checked: adv3h,  set: setAdv3h },
+                    { key: "sms", label: t.reminders.sms3h,    checked: advSms, set: setAdvSms },
                   ] as const
                 ).map(({ key, label, checked, set }) => (
                   <label
@@ -327,10 +327,10 @@ export function SalonSettingsHub({
                     onClick={handleReminderAdvSave}
                     className="rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-3 py-1.5 text-xs font-semibold text-nq-primary transition hover:bg-nq-primary/15 disabled:opacity-50"
                   >
-                    {reminderPending ? "Đang lưu…" : "Lưu"}
+                    {reminderPending ? t.reminders.saving : t.reminders.save}
                   </button>
                   {advSaved ? (
-                    <span className="text-xs text-nq-success">✓ Đã lưu</span>
+                    <span className="text-xs text-nq-success">{t.reminders.saved}</span>
                   ) : null}
                 </div>
               </div>
