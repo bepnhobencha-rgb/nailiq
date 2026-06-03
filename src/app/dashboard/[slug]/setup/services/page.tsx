@@ -7,6 +7,8 @@ import { ServicesSetupPanel } from "@/components/dashboard/ServicesSetupPanel";
 import { loadServiceCategories } from "@/shared/booking/loadServiceCategories";
 import { parseServiceCategory } from "@/shared/booking/serviceCategory";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { getUserMessages } from "@/shared/i18n/user";
+import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
 
@@ -67,11 +69,13 @@ export default async function SetupServicesPage({ params }: Props) {
     : Number.POSITIVE_INFINITY;
   const currency = parseCurrency(planForLimits.currency_code);
   const categories = await loadServiceCategories();
+  const language = await resolveUserLanguage();
+  const t = getUserMessages(language);
 
   return (
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 sm:pt-6">
-        <SetupBackNav slug={slug} title="Dịch vụ · Services" />
+        <SetupBackNav slug={slug} title={t.setupLabels.servicesTitle} />
         <ServicesSetupPanel
           slug={slug}
           maxServices={maxServices}

@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { updateGoogleReviewUrl } from "@/shared/dashboard/googleReviewActions";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { getUserMessages } from "@/shared/i18n/user";
 
 type Props = {
   slug: string;
@@ -9,6 +11,8 @@ type Props = {
 };
 
 export function GoogleReviewSettings({ slug, initialValue }: Props) {
+  const { language } = useUserLanguage();
+  const t = getUserMessages(language);
   const [value, setValue] = useState(initialValue);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +27,7 @@ export function GoogleReviewSettings({ slug, initialValue }: Props) {
         setSaved(true);
         setTimeout(() => setSaved(false), 2500);
       } else {
-        setError(result.error ?? "Lưu thất bại");
+        setError(result.error ?? t.salonSettings.googleReview.saveError);
       }
     });
   }
@@ -35,7 +39,7 @@ export function GoogleReviewSettings({ slug, initialValue }: Props) {
     >
       <p className="text-sm font-semibold text-nq-foreground">Google Review</p>
       <p className="mt-0.5 text-xs text-nq-muted">
-        Tìm link trên Google Maps → nút &ldquo;Viết đánh giá&rdquo; → copy URL
+        {t.salonSettings.googleReview.instruction}
       </p>
       <div className="mt-3 flex flex-col gap-2">
         <input
@@ -57,10 +61,14 @@ export function GoogleReviewSettings({ slug, initialValue }: Props) {
             onClick={handleSave}
             className="rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-3 py-1.5 text-xs font-semibold text-nq-primary transition hover:bg-nq-primary/15 disabled:opacity-50"
           >
-            {isPending ? "Đang lưu…" : "Lưu"}
+            {isPending
+              ? t.salonSettings.googleReview.saving
+              : t.salonSettings.googleReview.save}
           </button>
           {saved ? (
-            <span className="text-xs text-nq-success">✓ Đã lưu</span>
+            <span className="text-xs text-nq-success">
+              {t.salonSettings.googleReview.saved}
+            </span>
           ) : null}
         </div>
       </div>

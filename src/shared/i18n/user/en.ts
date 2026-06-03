@@ -693,6 +693,50 @@ export type UserMessages = {
       cost: string;
       errorGeneric: string;
     };
+    /** Automated appointment reminders (email/SMS) settings card. */
+    reminders: {
+      autoTitle: string;
+      autoHint: string;
+      advancedToggle: string;
+      email24h: string;
+      email3h: string;
+      sms3h: string;
+      save: string;
+      saving: string;
+      saved: string;
+    };
+    /** Google review link settings card. */
+    googleReview: {
+      instruction: string;
+      saveError: string;
+      save: string;
+      saving: string;
+      saved: string;
+    };
+    /** Booking verification level selector. */
+    bookingVerify: {
+      title: string;
+      subtitle: string;
+      saveError: string;
+      saved: string;
+      neverLabel: string;
+      neverHint: string;
+      autoLabel: string;
+      autoHint: string;
+      otpLabel: string;
+      otpHint: string;
+      depositLabel: string;
+      depositHint: string;
+      depositThenOtpLabel: string;
+      depositThenOtpHint: string;
+    };
+    /** Voice-AI settings save controls. */
+    voiceAiSave: {
+      saveError: string;
+      save: string;
+      saving: string;
+      saved: string;
+    };
   };
   /** Aria label for the setup-wizard category dropdown.
    *
@@ -733,6 +777,22 @@ export type UserMessages = {
      * the prior on-blur autosaves; the row now batches changes and
      * commits them in a single server call when this button is tapped. */
     saveButton: string;
+    /** Pricing-model selector (fixed / from / range) on the service row. */
+    priceTypeLabel: string;
+    priceTypeFixed: string;
+    priceTypeFrom: string;
+    priceTypeRange: string;
+    /** Short "From" prefix shown before a from-price value. */
+    priceFromShort: string;
+    /** Min/max inputs for the range pricing model. */
+    priceMinLabel: string;
+    priceMaxLabel: string;
+    /** Validation error when max <= min in range mode. */
+    priceValidation: string;
+    /** Add/edit modal titles + cancel control. */
+    addTitle: string;
+    editTitle: string;
+    cancel: string;
   };
   /** Setup CRUD error strings (services, etc.) */
   setupErrors: {
@@ -814,6 +874,9 @@ export type UserMessages = {
      *  holds an unsupported value. */
     timezone: string;
     timezoneRequired: string;
+    /** Search-filter placeholders on the services / staff setup lists. */
+    searchServices: string;
+    searchStaff: string;
   };
   /** F8 staff form (setup) */
   setupStaff: {
@@ -2368,6 +2431,50 @@ export const userEn: UserMessages = {
       cost: "Requires Twilio Verify configured in environment.",
       errorGeneric: "Could not save. Try again.",
     },
+    reminders: {
+      autoTitle: "Auto reminders",
+      autoHint: "Email 24h + SMS 3h before the appointment",
+      advancedToggle: "Advanced options",
+      email24h: "Email 24h before",
+      email3h: "Email 3h before",
+      sms3h: "SMS 3h before",
+      save: "Save",
+      saving: "Saving…",
+      saved: "✓ Saved",
+    },
+    googleReview: {
+      instruction:
+        'Find the link on Google Maps → the "Write a review" button → copy the URL',
+      saveError: "Save failed",
+      save: "Save",
+      saving: "Saving…",
+      saved: "✓ Saved",
+    },
+    bookingVerify: {
+      title: "Booking verification",
+      subtitle: "Choose the verification level that fits your salon",
+      saveError: "Save failed — try again",
+      saved: "✓ Saved",
+      neverLabel: "Trust everyone",
+      neverHint: "No verification — lowest friction, highest risk.",
+      autoLabel: "Smart auto (recommended)",
+      autoHint:
+        "Risk-based: regulars skip, risky bookings need OTP or a deposit.",
+      otpLabel: "Always require OTP",
+      otpHint: "Every booking needs phone verification. Free for customers.",
+      depositLabel: "Always require a deposit",
+      depositHint:
+        "Every booking needs a deposit. Premium, maximum commitment.",
+      depositThenOtpLabel: "Prefer deposit, OTP if declined",
+      depositThenOtpHint:
+        "Ask for a deposit first; if skipped, fall back to OTP.",
+    },
+    voiceAiSave: {
+      saveError: "Save failed, try again.",
+      save: "Save",
+      saving: "Saving…",
+      saved: "✓ Saved",
+    },
   },
   serviceCategory: {
     pickerLabel: "Category",
@@ -2384,6 +2491,17 @@ export const userEn: UserMessages = {
     characterCount: "{used}/{max}",
     descriptionGeneratedToast: "✨ Description generated",
     saveButton: "Save",
+    priceTypeLabel: "Pricing model",
+    priceTypeFixed: "Fixed",
+    priceTypeFrom: "From",
+    priceTypeRange: "Range",
+    priceFromShort: "From",
+    priceMinLabel: "Minimum price",
+    priceMaxLabel: "Maximum price",
+    priceValidation: "Maximum price must be greater than minimum price.",
+    addTitle: "Add service",
+    editTitle: "Edit service",
+    cancel: "Cancel",
   },
   setupErrors: {
     serviceInUse:
@@ -2453,6 +2571,8 @@ export const userEn: UserMessages = {
     descriptionLabel: "Salon description",
     timezone: "Timezone",
     timezoneRequired: "Timezone is required",
+    searchServices: "Search services…",
+    searchStaff: "Search staff…",
   },
   setupStaff: {
     servicesCapableLabel: "Services this staff can perform",
