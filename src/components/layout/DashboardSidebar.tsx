@@ -464,9 +464,9 @@ export function DashboardSidebar({
       ) : (
         <div className="flex items-center gap-3 px-3 py-4 border-b border-nq-border/40">
           <Link
-            href="/"
+            href={`/dashboard/${encodeURIComponent(slug)}/center`}
             className="flex items-center gap-2 min-w-0 flex-1 rounded-lg px-1 py-1 transition-colors hover:bg-nq-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
-            aria-label="NailIQ home"
+            aria-label="Dashboard home"
           >
             <span
               aria-hidden
