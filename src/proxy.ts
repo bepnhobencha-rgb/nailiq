@@ -228,6 +228,42 @@ export async function proxy(request: NextRequest) {
     return supabaseResponse;
   }
 
+  // Email-confirmation gate (defense-in-depth, independent of the
+  // Supabase "Confirm email" dashboard toggle). A session whose email
+  // is set but NOT confirmed must never reach a protected surface — it
+  // is bounced to /login with a notice. Exemptions:
+  //   - Phone-OTP users authenticate via `phone_confirmed_at` and often
+  //     have no email at all → `user.email` is null → not gated.
+  //   - OAuth (Google) and magic-link users always have
+  //     `email_confirmed_at` set → pass.
+  //   - Demo runtime is never gated (demo OTP has no real email step).
+  //   - `/auth/*` and `/api/*` stay reachable so the confirmation link
+  //     in /auth/callback can actually exchange the code and set
+  //     `email_confirmed_at`; gating them would make confirmation
+  //     impossible.
+  if (
+    user &&
+    !isDemoOtpRuntime() &&
+    !!user.email &&
+    !user.email_confirmed_at &&
+    !user.phone_confirmed_at
+  ) {
+    const exempt =
+      pathname.startsWith("/auth") ||
+      pathname.startsWith("/api") ||
+      pathname === "/login";
+    if (!exempt) {
+      const url = new URL("/login", request.url);
+      url.searchParams.set("notice", "confirm-email");
+      const redirect = NextResponse.redirect(url);
+      return applyCookiesFrom(redirect, supabaseResponse);
+    }
+    // On an exempt path: let it through WITHOUT running the membership
+    // guards below, so an unconfirmed user sitting on /login isn't
+    // bounced into /register/setup by Rule 2.
+    return supabaseResponse;
+  }
+
   // Auth guards for logged-in users (check salon membership)
   if (user) {
     const { data: membership } = await supabase

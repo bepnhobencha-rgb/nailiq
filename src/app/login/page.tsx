@@ -9,8 +9,13 @@ export const metadata = {
   robots: "noindex",
 };
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ notice?: string }>;
+}) {
   const demoMode = isDemoOtpRuntime();
+  const { notice } = await searchParams;
 
   // In demo mode always fall back to the phone/OTP path so local dev
   // isn't affected by the platform flag state. Mirrors /register.
@@ -23,6 +28,7 @@ export default async function LoginPage() {
       demoMode={demoMode}
       smsEnabled={smsEnabled}
       emailEnabled={emailEnabled}
+      showConfirmEmailNotice={notice === "confirm-email"}
     />
   );
 }
