@@ -1,17 +1,17 @@
-import { redirect } from "next/navigation";
 import { RegisterPageClient } from "@/app/register/RegisterPageClient";
-import { getSalonSlugForLoggedInOwner } from "@/shared/register/getSalonSlugForLoggedInOwner";
 
 export const dynamic = "force-dynamic";
 
-export default async function RegisterPage() {
-  // Already signed in with a salon → straight to dashboard. Sessions
-  // without a salon fall through to /register/setup via the
-  // /auth/callback flow, so we don't need to redirect them here.
-  const slug = await getSalonSlugForLoggedInOwner();
-  if (slug) {
-    redirect(`/dashboard/${encodeURIComponent(slug)}`);
-  }
-
+/**
+ * /register page — unified sign-in/sign-up surface.
+ *
+ * Auth guards are now centralized in `src/middleware.ts`:
+ * - Logged-in user with salon → redirected to /dashboard by middleware
+ * - Logged-in user WITHOUT salon → redirected to /register/setup by middleware
+ * - Unauthenticated user → allowed (see both sign-in + sign-up options)
+ *
+ * This page only renders for unauthenticated users.
+ */
+export default function RegisterPage() {
   return <RegisterPageClient />;
 }

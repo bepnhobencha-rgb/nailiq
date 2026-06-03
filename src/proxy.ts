@@ -228,8 +228,46 @@ export async function proxy(request: NextRequest) {
     return supabaseResponse;
   }
 
+  // Auth guards for logged-in users (check salon membership)
+  if (user) {
+    const { data: membership } = await supabase
+      .from("salon_members")
+      .select("salon_id")
+      .eq("user_id", user.id)
+      .limit(1)
+      .maybeSingle();
+
+    const hasSalon = !!membership?.salon_id;
+
+    // Rule 1: Logged-in with salon cannot access /register or /login
+    if (hasSalon && (pathname === "/register" || pathname === "/login")) {
+      const { data: salon } = await supabase
+        .from("salons")
+        .select("slug")
+        .eq("id", membership.salon_id)
+        .maybeSingle();
+
+      const slug = salon?.slug?.trim();
+      if (slug) {
+        const redirect = NextResponse.redirect(
+          new URL(`/dashboard/${encodeURIComponent(slug)}`, request.url),
+        );
+        return applyCookiesFrom(redirect, supabaseResponse);
+      }
+      const redirect = NextResponse.redirect(new URL("/register/setup", request.url));
+      return applyCookiesFrom(redirect, supabaseResponse);
+    }
+
+    // Rule 2: Logged-in WITHOUT salon cannot access /register, /login, or /dashboard
+    if (!hasSalon && (pathname === "/register" || pathname === "/login" || pathname.startsWith("/dashboard"))) {
+      const redirect = NextResponse.redirect(new URL("/register/setup", request.url));
+      return applyCookiesFrom(redirect, supabaseResponse);
+    }
+  }
+
+  // Unauthenticated guards
   if (!user && pathname.startsWith("/dashboard")) {
-    const redirect = NextResponse.redirect(new URL("/register", request.url));
+    const redirect = NextResponse.redirect(new URL("/login", request.url));
     return applyCookiesFrom(redirect, supabaseResponse);
   }
 

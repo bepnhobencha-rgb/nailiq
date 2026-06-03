@@ -723,9 +723,12 @@ test.describe("Auth Flows — Session & State", () => {
       await page.goto("/register");
       await page.waitForTimeout(500);
 
-      // Should be redirected away (either to dashboard or login)
+      // Should be redirected away from plain /register
+      // (either to /register/setup if no salon, or to /dashboard/[slug] if has salon)
       const url = page.url();
-      expect(url).not.toContain("/register");
+      const pathname = new URL(url).pathname;
+      // Check that they're not on the plain /register page (pathname === "/register")
+      expect(pathname).not.toBe("/register");
     } finally {
       await cleanupTestUser(userId);
     }
