@@ -166,6 +166,8 @@ export interface BookingDetailDrawerProps {
       id: string;
       name: string;
       price_cents: number;
+      price_type: string;
+      price_max_cents: number | null;
       duration_minutes: number;
       buffer_minutes: number;
     }[];

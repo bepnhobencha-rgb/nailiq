@@ -15,7 +15,7 @@ import type { ServiceCategorySummary } from "@/shared/booking/loadServiceCategor
 import { type ServiceCategory } from "@/shared/booking/serviceCategory";
 import { SERVICE_DESCRIPTION_MAX_LEN } from "@/shared/dashboard/serviceConstraints";
 import { getUserMessages, type UserMessages } from "@/shared/i18n/user";
-import type { Currency } from "@/shared/lib/currencyFormat";
+import { formatServicePrice, type Currency } from "@/shared/lib/currencyFormat";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { cn } from "@/shared/lib/cn";
 
@@ -28,6 +28,8 @@ export type SetupServiceRow = {
   id: string;
   name: string;
   price_cents: number;
+  price_type: string;
+  price_max_cents: number | null;
   duration_minutes: number;
   buffer_minutes: number;
   category: ServiceCategory;
@@ -248,21 +250,31 @@ function PriceChip({
     );
   }
 
+  // Display string honours the service's pricing model (fixed / from / range).
+  // The inline edit input above still edits only price_cents (the base/min).
+  const display =
+    formatServicePrice(row.price_cents, currency, {
+      priceType: row.price_type,
+      priceMaxCents: row.price_max_cents,
+    }) ?? `${currency} ${dollarsFromCents(row.price_cents)}`;
+  const isZeroPrice = row.price_cents === 0;
+
   return (
     <button
       type="button"
       title="Click to edit price"
       disabled={disabled}
       className={cn(
-        "rounded-lg border border-nq-border/40 bg-nq-surface/60 px-2 py-1 text-sm tabular-nums text-nq-foreground transition-colors",
+        "rounded-lg border border-nq-border/40 bg-nq-surface/60 px-2 py-1 text-sm tabular-nums transition-colors",
         "hover:border-nq-primary/50 hover:bg-nq-primary/5 disabled:cursor-not-allowed disabled:opacity-50",
+        isZeroPrice ? "text-nq-warning" : "text-nq-foreground",
       )}
       onClick={() => {
         setDraft(dollarsFromCents(row.price_cents));
         setEditing(true);
       }}
     >
-      {currency}&nbsp;{dollarsFromCents(row.price_cents)}
+      {display}
     </button>
   );
 }
@@ -988,7 +1000,10 @@ function ServiceRow({
         {isPending ? (
           <span className="inline-flex items-center gap-1 rounded-lg border border-nq-border/40 bg-nq-surface/60 px-2 py-1 text-sm tabular-nums text-nq-muted">
             <span className="h-1.5 w-1.5 rounded-full bg-nq-primary animate-pulse" />
-            {currency}&nbsp;{dollarsFromCents(row.price_cents)}
+            {formatServicePrice(row.price_cents, currency, {
+              priceType: row.price_type,
+              priceMaxCents: row.price_max_cents,
+            }) ?? `${currency} ${dollarsFromCents(row.price_cents)}`}
           </span>
         ) : (
           <PriceChip

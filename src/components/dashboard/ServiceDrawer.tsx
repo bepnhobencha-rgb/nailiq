@@ -17,9 +17,37 @@ import {
 } from "@/shared/booking/serviceCategory";
 import { SERVICE_DESCRIPTION_MAX_LEN } from "@/shared/dashboard/serviceConstraints";
 import { getUserMessages } from "@/shared/i18n/user";
-import type { Currency } from "@/shared/lib/currencyFormat";
+import {
+  type Currency,
+  formatServicePrice,
+  type ServicePriceType,
+} from "@/shared/lib/currencyFormat";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import type { SetupServiceRow } from "./ServicesSetupPanel";
+
+/**
+ * The variable-pricing columns (`price_type` / `price_max_cents`) live on the
+ * services row in the DB + database.types + the setup server actions. The
+ * `SetupServiceRow` type (owned by ServicesSetupPanel) may not surface them
+ * yet, so read them through this structural view to stay decoupled from that
+ * file while remaining forward-compatible once the row type carries them.
+ */
+type ServicePricingFields = {
+  price_type?: ServicePriceType | string | null;
+  price_max_cents?: number | null;
+};
+
+function readPriceType(service: SetupServiceRow | null): ServicePriceType {
+  const raw = (service as (SetupServiceRow & ServicePricingFields) | null)
+    ?.price_type;
+  return raw === "from" || raw === "range" ? raw : "fixed";
+}
+
+function readPriceMaxCents(service: SetupServiceRow | null): number | null {
+  const raw = (service as (SetupServiceRow & ServicePricingFields) | null)
+    ?.price_max_cents;
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+}
 
 // ── helpers (copied from ServicesSetupPanel so this module is self-contained) ──
 
@@ -185,6 +213,15 @@ export function ServiceDrawer({
   const [price, setPrice] = useState(
     service ? dollarsFromCents(service.price_cents) : "",
   );
+  // Variable pricing: 'fixed' | 'from' | 'range'. For 'range' the `price`
+  // input above is the minimum/base and `priceMax` holds the upper bound.
+  const [priceType, setPriceType] = useState<ServicePriceType>(
+    readPriceType(service),
+  );
+  const [priceMax, setPriceMax] = useState(() => {
+    const max = readPriceMaxCents(service);
+    return max !== null ? dollarsFromCents(max) : "";
+  });
   const [dur, setDur] = useState(
     service ? String(service.duration_minutes) : "45",
   );
@@ -203,6 +240,9 @@ export function ServiceDrawer({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset when drawer target changes
     setName(service?.name ?? "");
     setPrice(service ? dollarsFromCents(service.price_cents) : "");
+    setPriceType(readPriceType(service));
+    const maxCents = readPriceMaxCents(service);
+    setPriceMax(maxCents !== null ? dollarsFromCents(maxCents) : "");
     setDur(service ? String(service.duration_minutes) : "45");
     setBuf(service ? String(service.buffer_minutes) : "10");
     setCategory(service?.category ?? ADD_FORM_DEFAULT_CATEGORY);
@@ -248,7 +288,10 @@ export function ServiceDrawer({
         | "description"
         | "is_popular"
       >
-    > = {};
+    > & {
+      price_type?: ServicePriceType;
+      price_max_cents?: number | null;
+    } = {};
     const nameTrim = name.trim();
     if (nameTrim && nameTrim !== service.name) patch.name = nameTrim;
     const cents = centsFromDollarsString(price);
@@ -264,8 +307,19 @@ export function ServiceDrawer({
     const descNext = descTrim.length === 0 ? null : descTrim;
     if (descNext !== (service.description ?? null)) patch.description = descNext;
     if (isPopular !== service.is_popular) patch.is_popular = isPopular;
+    // Pricing model: send price_type + price_max_cents together whenever the
+    // model or the max changed. The server re-validates (clamps max > base,
+    // downgrades range→from when max is missing/invalid).
+    const nextMaxCents =
+      priceType === "range" ? centsFromDollarsString(priceMax) : null;
+    const prevType = readPriceType(service);
+    const prevMaxCents = readPriceMaxCents(service);
+    if (priceType !== prevType || nextMaxCents !== prevMaxCents) {
+      patch.price_type = priceType;
+      patch.price_max_cents = nextMaxCents;
+    }
     return patch;
-  }, [buf, category, description, dur, isPopular, name, price, service]);
+  }, [buf, category, description, dur, isPopular, name, price, priceMax, priceType, service]);
 
   const patch = buildDirtyPatch();
   const isDirty = Object.keys(patch).length > 0;
@@ -274,7 +328,19 @@ export function ServiceDrawer({
 
   function validateFields(): string | null {
     if (!name.trim()) return "Enter a service name.";
-    if (centsFromDollarsString(price) === null) return "Enter a valid price.";
+    const baseCents = centsFromDollarsString(price);
+    if (baseCents === null) return "Enter a valid price.";
+    if (priceType === "range") {
+      const maxCents = centsFromDollarsString(priceMax);
+      if (maxCents === null)
+        return language === "vi"
+          ? "Nhập giá tối đa hợp lệ."
+          : "Enter a valid maximum price.";
+      if (maxCents <= baseCents)
+        return language === "vi"
+          ? "Giá tối đa phải lớn hơn giá tối thiểu."
+          : "Maximum price must be greater than the minimum.";
+    }
     const dm = Number.parseInt(dur, 10);
     if (!Number.isFinite(dm) || dm < 1) return "Duration must be at least 1 minute.";
     const bm = Number.parseInt(buf, 10);
@@ -339,6 +405,15 @@ export function ServiceDrawer({
         ...(patch.category !== undefined ? { category: patch.category } : {}),
         ...(patch.description !== undefined ? { description: patch.description } : {}),
         ...(patch.is_popular !== undefined ? { is_popular: patch.is_popular } : {}),
+        // Mirror the pricing model the server normalized to, so the parent's
+        // in-memory row stays in sync. Spread as a structural view since
+        // SetupServiceRow may not declare these columns yet.
+        ...(patch.price_type !== undefined
+          ? ({
+              price_type: patch.price_type,
+              price_max_cents: patch.price_max_cents ?? null,
+            } satisfies ServicePricingFields)
+          : {}),
       };
       onSaved(updatedRow);
     } else {
@@ -358,6 +433,9 @@ export function ServiceDrawer({
           category,
           description: descTrimmed.length > 0 ? descTrimmed : null,
           is_popular: isPopular,
+          price_type: priceType,
+          price_max_cents:
+            priceType === "range" ? centsFromDollarsString(priceMax) : null,
         });
       } catch (err) {
         Sentry.captureMessage("[ServiceDrawer] addService threw", {
@@ -401,11 +479,14 @@ export function ServiceDrawer({
     formLabels,
     isEditMode,
     isPopular,
+    language,
     name,
     onAdded,
     onSaved,
     patch,
     price,
+    priceMax,
+    priceType,
     service,
     setupErrors.serviceLimitReached,
     slug,
@@ -443,6 +524,34 @@ export function ServiceDrawer({
       : "Add service";
 
   const drawerDescription = isEditMode && service ? service.name : undefined;
+
+  // ── pricing-model UI (fixed / from / range) ──────────────────────────────
+  const fromLabel = language === "vi" ? "Từ" : "From";
+  const pricingModelLabel =
+    language === "vi" ? "Kiểu giá" : "Pricing model";
+  const priceTypeOptions: { value: ServicePriceType; label: string }[] = [
+    { value: "fixed", label: language === "vi" ? "Cố định" : "Fixed" },
+    { value: "from", label: language === "vi" ? "Từ giá" : "From" },
+    { value: "range", label: language === "vi" ? "Khoảng giá" : "Range" },
+  ];
+  // Base price input label adapts to the model: min for from/range, plain for fixed.
+  const basePriceLabel =
+    priceType === "fixed"
+      ? tLabels.price
+      : language === "vi"
+        ? "Giá tối thiểu"
+        : "Minimum price";
+  const maxPriceLabel = language === "vi" ? "Giá tối đa" : "Maximum price";
+
+  // Live preview of how the price will render on public surfaces.
+  const previewBaseCents = centsFromDollarsString(price);
+  const previewMaxCents =
+    priceType === "range" ? centsFromDollarsString(priceMax) : null;
+  const pricePreview = formatServicePrice(previewBaseCents, currency, {
+    priceType,
+    priceMaxCents: previewMaxCents,
+    fromLabel,
+  });
 
   const footer = (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -538,10 +647,56 @@ export function ServiceDrawer({
             />
           </label>
 
+          {/* Pricing model: fixed / from / range */}
+          <fieldset className="block text-sm font-medium text-nq-muted">
+            <legend className="mb-1.5">{pricingModelLabel}</legend>
+            <div
+              className="grid grid-cols-3 gap-1 rounded-xl border border-nq-border/50 bg-nq-bg/40 p-1"
+              role="radiogroup"
+              aria-label={pricingModelLabel}
+            >
+              {priceTypeOptions.map((opt) => {
+                const active = priceType === opt.value;
+                return (
+                  <label
+                    key={opt.value}
+                    className={`flex min-h-[40px] cursor-pointer items-center justify-center rounded-lg px-2 py-1.5 text-center text-sm font-medium transition-colors ${
+                      active
+                        ? "bg-nq-primary text-nq-bg shadow-nq-sm"
+                        : "text-nq-muted hover:bg-nq-bg/80"
+                    } ${isSaving ? "pointer-events-none opacity-60" : ""}`}
+                  >
+                    <input
+                      type="radio"
+                      name="service-price-type"
+                      className="sr-only"
+                      value={opt.value}
+                      checked={active}
+                      disabled={isSaving}
+                      onChange={() => setPriceType(opt.value)}
+                      data-testid={`service-drawer-price-type-${opt.value}`}
+                    />
+                    {opt.label}
+                  </label>
+                );
+              })}
+            </div>
+            {/* Live preview of the rendered public price */}
+            <span className="mt-1.5 block text-xs text-nq-muted/80">
+              {language === "vi" ? "Hiển thị: " : "Shows as: "}
+              <span
+                className="font-medium tabular-nums text-nq-foreground"
+                data-testid="service-drawer-price-preview"
+              >
+                {pricePreview ?? "—"}
+              </span>
+            </span>
+          </fieldset>
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {/* Price */}
+            {/* Price (min/base) */}
             <label className="block text-sm font-medium text-nq-muted">
-              {`${tLabels.price} (${currency})`}
+              {`${basePriceLabel} (${currency})`}
               <input
                 inputMode="decimal"
                 className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
@@ -552,6 +707,22 @@ export function ServiceDrawer({
                 data-testid="service-drawer-price"
               />
             </label>
+
+            {/* Max price — only for the 'range' model */}
+            {priceType === "range" ? (
+              <label className="block text-sm font-medium text-nq-muted">
+                {`${maxPriceLabel} (${currency})`}
+                <input
+                  inputMode="decimal"
+                  className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
+                  value={priceMax}
+                  disabled={isSaving}
+                  placeholder="60.00"
+                  onChange={(e) => setPriceMax(e.target.value)}
+                  data-testid="service-drawer-price-max"
+                />
+              </label>
+            ) : null}
 
             {/* Duration */}
             <label className="block text-sm font-medium text-nq-muted">

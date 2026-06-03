@@ -12,6 +12,12 @@ export type BookingServiceItem = {
   totalMinutes: number;
   /** Snapshot from `services.price_cents`; optional display string. */
   priceCents: number | null;
+  /** Variable-pricing model from `services.price_type`
+   * ('fixed' | 'from' | 'range'). Drives how `priceDisplay` is rendered. */
+  priceType: string;
+  /** Upper bound (cents) from `services.price_max_cents` for the 'range'
+   * model; `null` for fixed/from. */
+  priceMaxCents: number | null;
   priceDisplay: string | null;
   /** From `services.category` (migration 20260511500000). Defaults to
    * `"other"` for legacy rows. Used by the public booking page to group

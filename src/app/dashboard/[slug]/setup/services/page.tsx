@@ -30,10 +30,11 @@ export default async function SetupServicesPage({ params }: Props) {
   const { data: rows, error } = await ctx.supabase
     .from("services")
     // `category`, `description`, `is_popular`, `is_featured` were added
-    // by migrations 20260511500000 + 20260511600000; not yet in the
-    // auto-generated DB types so the SELECT spread is cast.
+    // by migrations 20260511500000 + 20260511600000; `price_type` and
+    // `price_max_cents` by the variable-pricing migration. Some columns
+    // are not yet in the auto-generated DB types so the SELECT is cast.
     .select(
-      "id, name, price_cents, duration_minutes, buffer_minutes, category, description, is_popular, is_featured" as never,
+      "id, name, price_cents, price_type, price_max_cents, duration_minutes, buffer_minutes, category, description, is_popular, is_featured" as never,
     )
     .eq("salon_id", ctx.salon.id)
     .is("deleted_at" as never, null)
@@ -81,6 +82,8 @@ export default async function SetupServicesPage({ params }: Props) {
               id: string;
               name?: string;
               price_cents?: number;
+              price_type?: unknown;
+              price_max_cents?: unknown;
               duration_minutes?: number;
               buffer_minutes?: number;
               category?: unknown;
@@ -89,10 +92,21 @@ export default async function SetupServicesPage({ params }: Props) {
               is_featured?: unknown;
             };
             const descRaw = row.description;
+            const priceMaxRaw = row.price_max_cents;
             return {
               id: String(row.id),
               name: String(row.name ?? ""),
               price_cents: Number(row.price_cents ?? 0),
+              // Legacy rows (pre variable-pricing) → default to "fixed".
+              price_type:
+                typeof row.price_type === "string" &&
+                row.price_type.trim().length > 0
+                  ? row.price_type.trim()
+                  : "fixed",
+              price_max_cents:
+                priceMaxRaw != null && Number.isFinite(Number(priceMaxRaw))
+                  ? Math.round(Number(priceMaxRaw))
+                  : null,
               duration_minutes: Number(row.duration_minutes ?? 0),
               buffer_minutes: Number(row.buffer_minutes ?? 0),
               category: parseServiceCategory(row.category),

@@ -5,15 +5,20 @@ export type SalonVoiceContext = {
   salonName:       string;
   timezone:        string;
   address:         string | null;
+  /** Salon currency_code (CAD | USD | VND); used to format service prices. */
+  currency:        string | null;
   personaName:     string;
   personaVoice:    string;
   reasoningEffort: string;
   businessHours:   unknown;
   services: {
-    id:           string;
-    name:         string;
-    durationMins: number;
-    priceCents:   number;
+    id:              string;
+    name:            string;
+    durationMins:    number;
+    priceCents:      number;
+    // Variable pricing model — matches services.price_type / price_max_cents.
+    price_type:      string;
+    price_max_cents: number | null;
   }[];
   staff: {
     id:   string;
@@ -26,7 +31,7 @@ export async function loadSalonContext(salonSlug: string): Promise<SalonVoiceCon
 
   const { data: salon } = await supabase
     .from("salons")
-    .select("id, name, timezone, address, opening_hours, voice_ai_persona_name, voice_ai_persona_voice, voice_ai_reasoning_effort")
+    .select("id, name, timezone, address, currency_code, opening_hours, voice_ai_persona_name, voice_ai_persona_voice, voice_ai_reasoning_effort")
     .eq("slug", salonSlug)
     .single();
 
@@ -39,7 +44,7 @@ export async function loadSalonContext(salonSlug: string): Promise<SalonVoiceCon
   const [{ data: services }, { data: staff }] = await Promise.all([
     supabase
       .from("services")
-      .select("id, name, duration_minutes, price_cents")
+      .select("id, name, duration_minutes, price_cents, price_type, price_max_cents")
       .eq("salon_id", salon.id)
       .is("deleted_at", null)
       .order("name"),
@@ -57,15 +62,18 @@ export async function loadSalonContext(salonSlug: string): Promise<SalonVoiceCon
     salonName:       salon.name,
     timezone:        salon.timezone ?? "America/Vancouver",
     address:         salon.address ?? null,
+    currency:        salon.currency_code ?? null,
     personaName:     s.voice_ai_persona_name      ?? "Lily",
     personaVoice:    s.voice_ai_persona_voice      ?? "marin",
     reasoningEffort: s.voice_ai_reasoning_effort   ?? "low",
     businessHours:   s.opening_hours,
     services: (services ?? []).map((svc) => ({
-      id:           svc.id,
-      name:         svc.name,
-      durationMins: svc.duration_minutes,
-      priceCents:   svc.price_cents,
+      id:              svc.id,
+      name:            svc.name,
+      durationMins:    svc.duration_minutes,
+      priceCents:      svc.price_cents,
+      price_type:      svc.price_type ?? "fixed",
+      price_max_cents: svc.price_max_cents ?? null,
     })),
     staff: (staff ?? []).map((m) => ({ id: m.id, name: m.name })),
   };
