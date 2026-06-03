@@ -12,6 +12,7 @@ import {
   canEditBooking as roleAllowsEditBooking,
   type SalonMemberRole,
 } from "@/shared/lib/salonMemberRole";
+import { type Currency } from "@/shared/lib/currencyFormat";
 import type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
 
 import { EditBookingForm, type EditBookingFormBooking } from "./EditBookingForm";
@@ -39,6 +40,64 @@ function statusBadgeVariant(status: BookingStatus): BadgeVariant {
     case "cancelled":
       return "neutral"; // low-arousal muted / slate
   }
+}
+
+/** Inline "actual final price" editor for variable-priced bookings. Self-contained
+ *  so the drawer stays simple. Parses dollars→cents (×1 for VND, ×100 otherwise). */
+function FinalPriceEditor({
+  action,
+}: {
+  action: NonNullable<BookingDetailDrawerProps["finalPriceAction"]>;
+}) {
+  const factor = action.currency === "VND" ? 1 : 100;
+  const initial =
+    action.currentCents != null ? String(action.currentCents / factor) : "";
+  const [draft, setDraft] = useState(initial);
+  const [saved, setSaved] = useState(false);
+  // Re-sync when a different booking opens (currentCents changes).
+  useEffect(() => {
+    setDraft(action.currentCents != null ? String(action.currentCents / factor) : "");
+    setSaved(false);
+  }, [action.currentCents, factor]);
+
+  const cents = Math.round(parseFloat(draft) * factor);
+  const valid = draft.trim() !== "" && Number.isFinite(cents) && cents >= 0;
+
+  return (
+    <div className="mt-2 rounded-lg border border-nq-primary/25 bg-nq-primary/5 px-2.5 py-2">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-primary">
+        {action.fieldLabel}
+      </p>
+      <div className="mt-1 flex items-center gap-2">
+        <input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          value={draft}
+          disabled={action.busy}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setSaved(false);
+          }}
+          className="w-24 rounded-lg border border-nq-border/40 bg-nq-surface/70 px-2 py-1 text-sm tabular-nums text-nq-foreground focus:border-nq-primary/50 focus:outline-none focus:ring-1 focus:ring-nq-primary/30 disabled:opacity-50"
+          aria-label={action.fieldLabel}
+        />
+        <button
+          type="button"
+          disabled={action.busy || !valid}
+          onClick={async () => {
+            await action.onSave(cents);
+            setSaved(true);
+            setTimeout(() => setSaved(false), 2500);
+          }}
+          className="rounded-lg border border-nq-primary/40 bg-nq-primary/10 px-2.5 py-1 text-xs font-semibold text-nq-primary transition hover:bg-nq-primary/15 disabled:opacity-50"
+        >
+          {action.busy ? "…" : action.saveLabel}
+        </button>
+        {saved ? <span className="text-xs text-nq-success">{action.savedLabel}</span> : null}
+      </div>
+    </div>
+  );
 }
 
 /** Precomputed presentation values built by `ReceptionistCenter` so this leaf stays dumb. */
@@ -156,6 +215,17 @@ export interface BookingDetailDrawerProps {
     busy: boolean;
     onPress: () => void | Promise<void>;
   };
+  /** Enter the ACTUAL final price for a variable-priced ('from'/'range') booking.
+   *  Present only when the service is variable + viewer may edit. Owner/senior. */
+  finalPriceAction?: {
+    fieldLabel: string; // "Giá thực tế" / "Final price"
+    saveLabel: string; // "Lưu" / "Save"
+    savedLabel: string; // "✓ Đã lưu"
+    busy: boolean;
+    currency: Currency;
+    currentCents: number | null;
+    onSave: (priceCents: number) => void | Promise<void>;
+  };
   /** Inline edit (pending | confirmed); optional so presentational tests can omit. */
   deskEdit?: {
     slug: string;
@@ -195,6 +265,7 @@ export function BookingDetailDrawer({
   restoreAction,
   declineAction,
   noShowAction,
+  finalPriceAction,
   deskEdit,
 }: BookingDetailDrawerProps) {
   const [editMode, setEditMode] = useState(false);
@@ -398,6 +469,7 @@ export function BookingDetailDrawer({
                   {copy.nonePrice}
                 </p>
               )}
+              {finalPriceAction ? <FinalPriceEditor action={finalPriceAction} /> : null}
             </section>
 
             {model.addonServiceName ? (

@@ -78,6 +78,7 @@ import {
   approveWixBooking,
   declineWixBooking,
   markNoShowBooking,
+  setBookingFinalPrice,
   undoCancelBooking,
   cancelWaitingWalkin,
   undoWalkinAssignment,
@@ -106,6 +107,7 @@ import {
 import { logSalonRushEvent } from "@/shared/dashboard/rushHourEvent";
 import {
   canCancelBooking,
+  canEditBooking,
   canUndoCancel,
   type SalonMemberRole,
 } from "@/shared/lib/salonMemberRole";
@@ -1795,6 +1797,48 @@ function ReceptionistCenterInner({
         }
       : undefined;
 
+  const onDrawerSetFinalPrice = async (priceCents: number) => {
+    const id = drawerBookingId;
+    if (!id) return;
+    setDrawerBusy(true);
+    try {
+      const r = await setBookingFinalPrice(slug, {
+        salonId: data.salon.id,
+        bookingId: id,
+        priceCents,
+      });
+      if (!r.ok) {
+        setShakeMessage(mutationMessage(messages.receptionist, r.error));
+      } else {
+        await reloadCurrentDay();
+        router.refresh();
+      }
+    } finally {
+      setDrawerBusy(false);
+    }
+  };
+
+  // Final-price entry: only when the booking's service is variable-priced
+  // ('from'/'range'), the viewer may edit, and the booking isn't cancelled.
+  const drawerServicePriceType = openDrawerBooking
+    ? data.services.find((s) => s.id === openDrawerBooking.service_id)?.price_type
+    : undefined;
+  const drawerFinalPriceAction =
+    openDrawerBooking &&
+    canEditBooking(viewerRole) &&
+    openDrawerBooking.status !== "cancelled" &&
+    (drawerServicePriceType === "from" || drawerServicePriceType === "range")
+      ? {
+          fieldLabel: language === "vi" ? "Giá thực tế" : "Final price",
+          saveLabel: language === "vi" ? "Lưu" : "Save",
+          savedLabel: language === "vi" ? "✓ Đã lưu" : "✓ Saved",
+          busy: drawerBusy,
+          currency: data.salon.currencyCode,
+          currentCents: openDrawerBooking.price_cents ?? null,
+          onSave: onDrawerSetFinalPrice,
+        }
+      : undefined;
+
   return (
     <>
       <div
@@ -2610,6 +2654,7 @@ function ReceptionistCenterInner({
         restoreAction={drawerRestoreAction}
         declineAction={drawerDeclineAction}
         noShowAction={drawerNoShowAction}
+        finalPriceAction={drawerFinalPriceAction}
         deskEdit={
           openDrawerBooking
             ? {

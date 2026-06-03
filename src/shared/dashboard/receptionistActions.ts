@@ -847,6 +847,53 @@ export async function markNoShowBooking(
   return { ok: true };
 }
 
+/**
+ * Set the ACTUAL final price on a booking — for variable-priced ('from'/'range')
+ * services where the amount is only known when the work is done. Owner/senior only;
+ * audit-logged. Allowed on any non-cancelled booking so the desk can record the
+ * real total at checkout. Stores integer cents on bookings.price_cents.
+ */
+export async function setBookingFinalPrice(
+  slug: string,
+  input: { salonId: string; bookingId: string; priceCents: number },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (!canEditBooking(ctx.role)) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+  const bookingId = String(input.bookingId ?? "").trim();
+  if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+
+  const priceCents = Math.round(Number(input.priceCents));
+  if (!Number.isFinite(priceCents) || priceCents < 0 || priceCents > 100_000_00) {
+    return fail("invalid_price");
+  }
+
+  const { data: updated, error: upErr } = await ctx.supabase
+    .from("bookings")
+    .update({ price_cents: priceCents })
+    .eq("id", bookingId)
+    .eq("salon_id", ctx.salon.id)
+    .not("status", "eq", "cancelled")
+    .select("id")
+    .maybeSingle();
+  if (upErr) {
+    console.error("[setBookingFinalPrice]", upErr);
+    return fail("server_error");
+  }
+  if (!updated?.id) return fail("invalid_state");
+
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "booking_price_set",
+    payload: { priceCents, reason: "final_price" },
+  });
+  return { ok: true };
+}
+
 export type {
   EditBookingError,
   EditBookingInput,
