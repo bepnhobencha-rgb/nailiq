@@ -1148,6 +1148,7 @@ export type UserMessages = {
         phonePlaceholder: string;
         notePlaceholder: string;
         addButton: string;
+        incompleteHint: string;
         moreServices: string;
         submitting: string;
         errorRequired: string;
@@ -1502,8 +1503,8 @@ export type UserMessages = {
       empty: string;
       unknownName: string;
       vipBadge: string;
-      /** "{visits} visits · last {lastVisit}" — collapsed-row summary. */
-      summaryLine: string;
+      /** "{visits} visit(s) · last {lastVisit}" — collapsed-row summary. */
+      summaryLine: (visits: number, lastVisit: string) => string;
       totalSpent: string;
       email: string;
       notes: string;
@@ -2808,6 +2809,7 @@ export const userEn: UserMessages = {
         notePlaceholder:
           "Note for staff — e.g. polish color, prefers window seat",
         addButton: "Add customer",
+        incompleteHint: "Enter a name and pick a service to add",
         moreServices: "More services",
         submitting: "Adding…",
         errorRequired: "Pick a service to continue.",
@@ -3129,7 +3131,8 @@ export const userEn: UserMessages = {
       empty: "No clients yet.",
       unknownName: "(unnamed)",
       vipBadge: "VIP",
-      summaryLine: "{visits} visits · last {lastVisit}",
+      summaryLine: (visits, lastVisit) =>
+        `${visits} ${visits === 1 ? "visit" : "visits"} · last ${lastVisit}`,
       totalSpent: "Total spent",
       email: "Email",
       notes: "Notes",
