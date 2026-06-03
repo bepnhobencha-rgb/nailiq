@@ -30,6 +30,8 @@ type Props = {
   subscriptionPlan?: SubscriptionPlan;
   /** Server-resolved release-feature visibility for Beta nav items (PR2). */
   releaseFeatures?: ReleaseFeatureMap;
+  /** Authenticated user's email address for the user profile card in sidebar footer. */
+  userEmail?: string | null;
 };
 
 /**
@@ -56,6 +58,7 @@ export function DashboardShell({
   salons,
   subscriptionPlan,
   releaseFeatures,
+  userEmail,
 }: Props) {
   // Single hook instance owns the collapse state. We pass both the
   // value AND the toggle to DashboardSidebar so its toggle button
@@ -83,6 +86,7 @@ export function DashboardShell({
         onToggleCollapsed={toggle}
         subscriptionPlan={subscriptionPlan}
         releaseFeatures={releaseFeatures}
+        userEmail={userEmail}
       />
       <main
         // Padding-left tracks the sidebar width via the CSS variable.

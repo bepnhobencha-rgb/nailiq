@@ -77,6 +77,10 @@ export default async function DashboardSlugLayout({
 
   const salonName = (ctx.salon.name ?? "").trim() || slug;
 
+  // Get authenticated user email from Supabase auth
+  const { data: { user } } = await ctx.supabase.auth.getUser();
+  const userEmail = user?.email ?? null;
+
   const salons =
     ctx.role === "owner" ? await loadOwnerSalons(slug) : [];
 
@@ -143,6 +147,7 @@ export default async function DashboardSlugLayout({
         overdueCount={overdueCount}
         subscriptionPlan={subscriptionPlan}
         releaseFeatures={releaseFeatures}
+        userEmail={userEmail}
       >
         {children}
       </DashboardShell>
