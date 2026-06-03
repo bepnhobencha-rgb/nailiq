@@ -842,6 +842,8 @@ export const userVi: UserMessages = {
       save: "Lưu",
       saving: "Đang lưu…",
       saved: "✓ Đã lưu",
+      invalidName: "Tên không hợp lệ — chỉ dùng chữ cái, khoảng trắng, hoặc dấu gạch ngang.",
+      forbidden: "Chỉ owner mới đổi được tên này.",
     },
   },
   serviceCategory: {
