@@ -173,6 +173,8 @@ export interface WalkinQueueSidebarProps {
   offlineAddDisabledHint?: string;
   /** `quick_add` module — hides the walk-in intake form */
   showQuickAdd?: boolean;
+  /** Bumped by the parent on an explicit "+ Walk-in" open → focuses the name field. */
+  focusAddNonce?: number;
   /** `wait_time` module — hides urgency styling and wait badges */
   showWaitTime?: boolean;
   /** `vip_indicators` module — hides VIP source chip */
@@ -252,6 +254,7 @@ export function WalkinQueueSidebar({
   isOffline = false,
   offlineAddDisabledHint,
   showQuickAdd = true,
+  focusAddNonce,
   showWaitTime = true,
   showVipIndicator = true,
   compact = false,
@@ -390,6 +393,7 @@ export function WalkinQueueSidebar({
             onSubmit={onAddWalkin}
             onAddAndAssign={onAddAndAssign}
             autoAssignEnabled={autoAssignEnabled}
+            focusNonce={focusAddNonce}
             onPhoneLookup={onPhoneLookup}
             onCheckAvailability={onCheckAvailability}
             staffOptions={staffOptions}

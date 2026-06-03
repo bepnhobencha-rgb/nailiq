@@ -443,21 +443,10 @@ function ReceptionistCenterInner({
   /** Increments when receptionist taps "Now" — grid smooth-scrolls to current slot. */
   const [jumpToNowTrigger, setJumpToNowTrigger] = useState(0);
 
-  // Sidebar Walk-in Queue tab links to /center#queue. Honour the hash on
-  // mount by smooth-scrolling the queue panel into view. Wrapped in
-  // requestAnimationFrame so layout has settled (the queue is mounted
-  // conditionally on `viewMode === "day" && modules.queue_panel`). Only
-  // runs once on mount; subsequent in-app navigations that change the
-  // hash are user-driven and need no extra handling here.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (window.location.hash !== "#queue") return;
-    const raf = window.requestAnimationFrame(() => {
-      const el = document.getElementById("queue");
-      el?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-    return () => window.cancelAnimationFrame(raf);
-  }, []);
+  // Sidebar "Hàng chờ" (clock) tab deep-links to /center#queue. The effect that
+  // OPENS the panel for that hash lives just after useQueuePanelOpen below (it
+  // needs setQueuePanelOpen). The old version only scrolled, and only on mount,
+  // so re-clicking the tab while already on the page did nothing.
 
   const [drawerBusy, setDrawerBusy] = useState(false);
 
@@ -607,6 +596,36 @@ function ReceptionistCenterInner({
     setOpen: setQueuePanelOpen,
     toggle: toggleQueuePanel,
   } = useQueuePanelOpen(queueWaitingCount);
+
+  // Bumped by the header "+ Walk-in" action to focus the add form on open —
+  // makes that button a distinct ADD action vs the "Hàng chờ" list toggle.
+  const [addFocusNonce, setAddFocusNonce] = useState(0);
+  const openWalkinAdd = useCallback(() => {
+    setQueuePanelOpen(true);
+    setAddFocusNonce((n) => n + 1);
+  }, [setQueuePanelOpen]);
+
+  // Open the queue panel when the sidebar "Hàng chờ" (clock) tab deep-links to
+  // #queue — on mount AND on every hashchange (so re-clicking while already on
+  // the page works). The hash is cleared after handling so the next click
+  // re-fires hashchange.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const openFromHash = () => {
+      if (window.location.hash !== "#queue") return;
+      setQueuePanelOpen(true);
+      window.requestAnimationFrame(() => {
+        document.getElementById("queue")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    };
+    const raf = window.requestAnimationFrame(openFromHash); // mount (keeps setState out of the effect body)
+    window.addEventListener("hashchange", openFromHash);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("hashchange", openFromHash);
+    };
+  }, [setQueuePanelOpen]);
 
   const rush = useRushHourMode({
     queueLength: queueWaitingCount,
@@ -1598,6 +1617,13 @@ function ReceptionistCenterInner({
       }, 50);
       return;
     }
+    if (target === "add_walkin") {
+      // Banner "+ Walk-in" (e.g. "Thợ 1 đang sẵn sàng") → open in ADD mode with
+      // the name field focused, same as the header "+ Walk-in".
+      openWalkinAdd();
+      return;
+    }
+    // open_queue / assign_waiting → open the panel on the waiting LIST.
     setQueuePanelOpen(true);
   };
 
@@ -2002,7 +2028,7 @@ function ReceptionistCenterInner({
                   variant="primary"
                   size="sm"
                   data-testid="header-add-walkin"
-                  onClick={() => setQueuePanelOpen(true)}
+                  onClick={openWalkinAdd}
                 >
                   {rcMessages.queue.addWalkinCta}
                 </Button>
@@ -2015,8 +2041,15 @@ function ReceptionistCenterInner({
                * color tracks operational urgency: red when any walk-in
                * is overdue, gold when ≥1 waiting but none urgent, no
                * badge when empty.
+               *
+               * Hidden when the queue is empty: with nothing waiting there's
+               * no list to view, and "+ Walk-in" is the way in. This removes
+               * the "two buttons that do the same thing" confusion — the
+               * toggle only appears once there are people waiting (and then
+               * carries the count badge). When the panel is open it stays
+               * visible so it can also close the panel.
                */}
-              {modules.queue_panel ? (
+              {modules.queue_panel && (queueWaitingCount > 0 || queuePanelOpen) ? (
                 <button
                   type="button"
                   onClick={toggleQueuePanel}
@@ -2475,6 +2508,7 @@ function ReceptionistCenterInner({
                 isOffline={isOffline}
                 offlineAddDisabledHint={rcMessages.connection.offlineAddDisabled}
                 showQuickAdd={modules.quick_add}
+                focusAddNonce={addFocusNonce}
                 showWaitTime={modules.wait_time}
                 showVipIndicator={modules.vip_indicators}
                 compact={effectiveDensity === "simple"}
