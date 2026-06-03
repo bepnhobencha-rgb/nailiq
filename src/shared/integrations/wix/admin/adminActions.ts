@@ -32,6 +32,35 @@ interface WixSvc {
   schedule?: { id?: string };
   schedules?: Array<{ id?: string }>;
   category?: { name?: string };
+  payment?: {
+    rateType?: string; // "FIXED" | "CUSTOM" | "NO_FEE" | ...
+    fixed?: { price?: { value?: string } };
+    custom?: { description?: string }; // e.g. "From $35", "$50+"
+  };
+}
+
+/**
+ * Best-effort price (in cents) from a Wix service.
+ * - FIXED  → payment.fixed.price.value (e.g. "47" → 4700)
+ * - CUSTOM → the first number in the description (e.g. "From $35" → 3500), a
+ *   sensible STARTING price so the service never shows $0 (owner can refine).
+ * Returns null when no number can be derived.
+ */
+function wixServicePriceCents(svc: WixSvc): number | null {
+  const pay = svc.payment;
+  if (!pay) return null;
+  if (pay.rateType === "FIXED") {
+    const v = Number(pay.fixed?.price?.value);
+    return Number.isFinite(v) && v > 0 ? Math.round(v * 100) : null;
+  }
+  if (pay.rateType === "CUSTOM") {
+    const m = String(pay.custom?.description ?? "").match(/(\d+(?:\.\d+)?)/);
+    if (m) {
+      const v = Number(m[1]);
+      return Number.isFinite(v) && v > 0 ? Math.round(v * 100) : null;
+    }
+  }
+  return null;
 }
 interface WixRes {
   id?: string;
@@ -217,22 +246,27 @@ export async function autoMapWixCatalog(slug: string): Promise<
     const sres = (await wixPostWithKey(siteId, key, SERVICES_QUERY, { query: { paging: { limit: 100 } } })) as {
       services?: WixSvc[];
     };
-    const { data: existing } = await db.from("services").select("id, name").eq("salon_id", salonId);
-    const byName = new Map(((existing ?? []) as Array<{ id: string; name: string }>).map((s) => [norm(s.name), s.id]));
+    const { data: existing } = await db.from("services").select("id, name, price_cents").eq("salon_id", salonId);
+    const existingRows = (existing ?? []) as Array<{ id: string; name: string; price_cents: number | null }>;
+    const byName = new Map(existingRows.map((s) => [norm(s.name), s]));
 
     for (const ws of sres.services ?? []) {
       if (!ws?.id || !ws.name) continue;
       const scheduleId = ws.schedule?.id ?? ws.schedules?.[0]?.id ?? null;
-      const matchId = byName.get(norm(ws.name));
-      if (matchId) {
-        await db.from("services").update({ wix_service_id: ws.id, wix_schedule_id: scheduleId }).eq("id", matchId);
+      const priceCents = wixServicePriceCents(ws); // FIXED price or "From $X" minimum
+      const match = byName.get(norm(ws.name));
+      if (match) {
+        const patch: Record<string, unknown> = { wix_service_id: ws.id, wix_schedule_id: scheduleId };
+        // Backfill a price ONLY when the local one is still 0 — never clobber a
+        // price the owner has set.
+        if ((Number(match.price_cents) || 0) === 0 && priceCents) patch.price_cents = priceCents;
+        await db.from("services").update(patch).eq("id", match.id);
         svcMatched++;
       } else {
-        // Create a starter service — owner refines price/duration later in the catalog editor.
         await db.from("services").insert({
           salon_id: salonId,
           name: titleCase(ws.name),
-          price_cents: 0,
+          price_cents: priceCents ?? 0, // 0 only when Wix has no derivable price
           duration_minutes: 30,
           category: categorizeService(ws.name, ws.category?.name),
           wix_service_id: ws.id,

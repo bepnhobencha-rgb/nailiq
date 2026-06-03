@@ -76,10 +76,12 @@ export async function loadClientProfiles(
   type AggRow = {
     name: string | null;
     visitCount: number;
-    lastVisitMs: number;
+    lastVisitMs: number; // most recent COMPLETED visit (never a future date)
+    nextVisitMs: number; // soonest upcoming booking (for sort tie-break)
     totalSpentCents: number;
   };
   const agg = new Map<string, AggRow>();
+  const now = Date.now();
 
   for (const b of bookings ?? []) {
     const phone = String(b.client_phone ?? "").trim();
@@ -88,17 +90,23 @@ export async function loadClientProfiles(
       name: null as string | null,
       visitCount: 0,
       lastVisitMs: 0,
+      nextVisitMs: 0,
       totalSpentCents: 0,
     };
-    cur.visitCount += 1;
     if (cur.name === null && typeof b.client_name === "string") {
       cur.name = b.client_name.trim() || null;
     }
     const startMs = Date.parse(String(b.start_time_utc ?? ""));
-    if (Number.isFinite(startMs) && startMs > cur.lastVisitMs) {
-      cur.lastVisitMs = startMs;
-    }
-    if (b.status === "completed") {
+    const status = String(b.status ?? "");
+    if (status === "completed") {
+      // A real, past visit: count it, track the most recent one, add spend.
+      // (A completed booking is always in the past, so lastVisit can never be
+      // a future date — fixes the "last visit shows a future date" bug. Visit
+      // count now matches the spend basis too — both are completed-only.)
+      cur.visitCount += 1;
+      if (Number.isFinite(startMs) && startMs > cur.lastVisitMs) {
+        cur.lastVisitMs = startMs;
+      }
       const main =
         b.price_cents != null && Number.isFinite(Number(b.price_cents))
           ? Number(b.price_cents)
@@ -109,6 +117,17 @@ export async function loadClientProfiles(
           ? Number(b.addon_price_cents)
           : 0;
       cur.totalSpentCents += main + addon;
+    } else if (
+      status !== "cancelled" &&
+      status !== "no_show" &&
+      Number.isFinite(startMs) &&
+      startMs > now
+    ) {
+      // Upcoming appointment — track the soonest so clients with future
+      // bookings (e.g. freshly imported) still sort sensibly.
+      if (cur.nextVisitMs === 0 || startMs < cur.nextVisitMs) {
+        cur.nextVisitMs = startMs;
+      }
     }
     agg.set(phone, cur);
   }
@@ -158,7 +177,19 @@ export async function loadClientProfiles(
     profileByPhone.set(String(p.phone), p);
   }
 
-  const rows: ClientProfileRow[] = phones.map((phone) => {
+  // Sort by most-recent actual visit (desc); among clients with no past
+  // visits, soonest upcoming appointment first — so freshly-imported clients
+  // (future bookings only) stay visible instead of all sinking to the bottom.
+  const sortedPhones = phones.slice().sort((pa, pb) => {
+    const a = agg.get(pa)!;
+    const b = agg.get(pb)!;
+    if (b.lastVisitMs !== a.lastVisitMs) return b.lastVisitMs - a.lastVisitMs;
+    const an = a.nextVisitMs || Number.POSITIVE_INFINITY;
+    const bn = b.nextVisitMs || Number.POSITIVE_INFINITY;
+    return an - bn;
+  });
+
+  const rows: ClientProfileRow[] = sortedPhones.map((phone) => {
     const a = agg.get(phone)!;
     const p = profileByPhone.get(phone);
     return {
@@ -175,12 +206,6 @@ export async function loadClientProfiles(
         a.lastVisitMs > 0 ? new Date(a.lastVisitMs).toISOString() : null,
       totalSpentCents: a.totalSpentCents,
     };
-  });
-
-  rows.sort((a, b) => {
-    const am = a.lastVisitAt ? Date.parse(a.lastVisitAt) : 0;
-    const bm = b.lastVisitAt ? Date.parse(b.lastVisitAt) : 0;
-    return bm - am;
   });
 
   return { ok: true, rows: rows.slice(0, PAGE_SIZE) };

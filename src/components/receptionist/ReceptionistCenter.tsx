@@ -2049,7 +2049,10 @@ function ReceptionistCenterInner({
                * carries the count badge). When the panel is open it stays
                * visible so it can also close the panel.
                */}
-              {modules.queue_panel && (queueWaitingCount > 0 || queuePanelOpen) ? (
+              {isViewingToday &&
+              viewMode === "day" &&
+              modules.queue_panel &&
+              (queueWaitingCount > 0 || queuePanelOpen) ? (
                 <button
                   type="button"
                   onClick={toggleQueuePanel}
@@ -2099,11 +2102,16 @@ function ReceptionistCenterInner({
             aria-busy={dayLoading}
           >
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-              <DateSwitcher
-                selectedOffset={dateOffset}
-                onChange={(next) => void onDateSwitchChange(next)}
-                labels={rcMessages.dateSwitcher}
-              />
+              {/* Yesterday/Today/Tomorrow only drives the Day view's data
+                  loader. In Week/Month it was a dead click (QA M8), so hide it
+                  outside Day view. */}
+              {viewMode === "day" ? (
+                <DateSwitcher
+                  selectedOffset={dateOffset}
+                  onChange={(next) => void onDateSwitchChange(next)}
+                  labels={rcMessages.dateSwitcher}
+                />
+              ) : null}
               {/*
                 * Subtle pulse-dot replaces the prior "Loading day..."
                 * text. QA reported the text "lingered too long" — really
