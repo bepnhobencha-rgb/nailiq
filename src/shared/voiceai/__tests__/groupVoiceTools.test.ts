@@ -200,13 +200,14 @@ const MOCK_CTX: SalonVoiceContext = {
   salonName:       "Test Nails",
   timezone:        "America/Vancouver",
   address:         null,
+  currency:        "CAD",
   personaName:     "Lily",
   personaVoice:    "marin",
   reasoningEffort: "low",
   businessHours:   null,
   services: [
-    { id: PEDICURE_ID, name: "Pedicure", durationMins: 60, priceCents: 2500 },
-    { id: MANICURE_ID, name: "Manicure", durationMins: 45, priceCents: 2000 },
+    { id: PEDICURE_ID, name: "Pedicure", durationMins: 60, priceCents: 2500, price_type: "fixed", price_max_cents: null },
+    { id: MANICURE_ID, name: "Manicure", durationMins: 45, priceCents: 2000, price_type: "fixed", price_max_cents: null },
   ],
   staff: [
     { id: "s1", name: "Alice" },

@@ -74,6 +74,10 @@ export interface ReceptionistCenterData {
     duration_minutes: number;
     buffer_minutes: number;
     price_cents: number;
+    /** Variable-pricing model ('fixed' | 'from' | 'range'); legacy rows → 'fixed'. */
+    price_type: string;
+    /** Upper bound (cents) for the 'range' model; null otherwise. */
+    price_max_cents: number | null;
     created_at: string | null;
   }>;
   walkinQueue: Array<{
@@ -518,7 +522,9 @@ export async function loadReceptionistCenterData(
       .order("created_at", { ascending: true }),
     supabase
       .from("services")
-      .select("id, name, duration_minutes, buffer_minutes, price_cents, created_at")
+      .select(
+        "id, name, duration_minutes, buffer_minutes, price_cents, price_type, price_max_cents, created_at",
+      )
       .eq("salon_id", ctx.salon.id)
       .is("deleted_at" as never, null)
       .order("created_at", { ascending: true }),
@@ -615,6 +621,8 @@ export async function loadReceptionistCenterData(
     duration_minutes: number;
     buffer_minutes: number;
     price_cents: number;
+    price_type: string | null;
+    price_max_cents: number | null;
     created_at: string | null;
   }> | null;
 
@@ -948,6 +956,16 @@ export async function loadReceptionistCenterData(
           duration_minutes: Number(s.duration_minutes),
           buffer_minutes: Number(s.buffer_minutes),
           price_cents: Number(s.price_cents),
+          // Legacy rows (pre variable-pricing) → default to "fixed".
+          price_type:
+            typeof s.price_type === "string" && s.price_type.trim().length > 0
+              ? s.price_type.trim()
+              : "fixed",
+          price_max_cents:
+            s.price_max_cents != null &&
+            Number.isFinite(Number(s.price_max_cents))
+              ? Math.round(Number(s.price_max_cents))
+              : null,
           created_at: s.created_at,
         })) ?? [],
       walkinQueue,

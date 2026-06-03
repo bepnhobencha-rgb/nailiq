@@ -16,6 +16,7 @@ import { WALKIN_GROUP_BUFFER_MS } from "@/shared/config/constants";
 import { cn } from "@/shared/lib/cn";
 import {
   formatCurrency,
+  formatServicePrice as formatServicePriceLabel,
   type Currency,
 } from "@/shared/lib/currencyFormat";
 import { formatPhoneInputProgressive } from "@/shared/lib/phoneFormat";
@@ -45,6 +46,8 @@ export interface WalkinAddFormProps {
     name: string;
     duration_minutes: number;
     price_cents: number;
+    price_type: string;
+    price_max_cents: number | null;
   }>;
   /** P0.2 — salon's configured currency. Drives the per-service
    * price labels on the tile grid and the VIP profile summary. */
@@ -250,6 +253,21 @@ function formatServicePrice(
   currency: import("@/shared/lib/currencyFormat").Currency,
 ): string {
   return formatCurrency(priceCents, currency) ?? "—";
+}
+
+/** Catalog-tile price honouring the service's pricing model
+ *  (fixed / from / range). No dashboard `language` is in scope here,
+ *  so `fromLabel` is omitted (central formatter defaults to "From"). */
+function formatSvc(
+  s: { price_cents: number; price_type: string; price_max_cents: number | null },
+  currency: import("@/shared/lib/currencyFormat").Currency,
+): string {
+  return (
+    formatServicePriceLabel(s.price_cents, currency, {
+      priceType: s.price_type,
+      priceMaxCents: s.price_max_cents,
+    }) ?? "—"
+  );
 }
 
 const TOP_SERVICE_COUNT = 6;
@@ -1050,7 +1068,7 @@ export function WalkinAddForm({
                   {s.name}
                 </span>
                 <span className="mt-0.5 font-mono text-[11px] text-nq-muted">
-                  {s.duration_minutes}m · {formatServicePrice(s.price_cents, currency)}
+                  {s.duration_minutes}m · {formatSvc(s, currency)}
                 </span>
               </button>
             );
@@ -1092,7 +1110,7 @@ export function WalkinAddForm({
                         <span className="font-medium">{s.name}</span>
                         <span className="font-mono text-[11px] text-nq-muted">
                           {s.duration_minutes}m ·{" "}
-                          {formatServicePrice(s.price_cents, currency)}
+                          {formatSvc(s, currency)}
                         </span>
                       </button>
                     </li>

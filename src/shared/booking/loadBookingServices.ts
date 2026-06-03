@@ -1,13 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import * as Sentry from "@sentry/nextjs";
 import type { BookingComboItem, BookingServiceItem } from "@/shared/booking/catalog";
-import { formatBookingPrice } from "@/shared/booking/formatBookingPrice";
 import { getSalonBySlug } from "@/shared/booking/getSalonBySlug";
 import { parseServiceCategory } from "@/shared/booking/serviceCategory";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { createClient } from "@/shared/lib/supabase/server";
 import { normalizeBrandColor } from "@/shared/lib/brandColor";
-import { parseCurrency, type Currency } from "@/shared/lib/currencyFormat";
+import {
+  formatServicePrice,
+  parseCurrency,
+  type Currency,
+} from "@/shared/lib/currencyFormat";
 
 export type BookingStaffItem = {
   id: string;
@@ -115,10 +118,11 @@ export async function loadBookingServicesForSalonSlug(
   const { data: rows, error: servicesErr } = await client
     .from("services")
     // `category`, `description`, `is_popular`, `is_featured` were added
-    // in migrations 20260511500000 and 20260511600000; not yet in the
+    // in migrations 20260511500000 and 20260511600000; `price_type` and
+    // `price_max_cents` by the variable-pricing migration. Not yet in the
     // auto-generated DB types so the SELECT spread is cast.
     .select(
-      "id, name, duration_minutes, buffer_minutes, price_cents, category, description, is_popular, is_featured" as never,
+      "id, name, duration_minutes, buffer_minutes, price_cents, price_type, price_max_cents, category, description, is_popular, is_featured" as never,
     )
     .eq("salon_id", salonId)
     .is("deleted_at" as never, null)
@@ -153,6 +157,8 @@ export async function loadBookingServicesForSalonSlug(
       duration_minutes?: unknown;
       buffer_minutes?: unknown;
       price_cents?: unknown;
+      price_type?: unknown;
+      price_max_cents?: unknown;
       category?: unknown;
       description?: unknown;
       is_popular?: unknown;
@@ -165,6 +171,17 @@ export async function loadBookingServicesForSalonSlug(
     const priceCents =
       priceCentsRaw != null && Number.isFinite(Number(priceCentsRaw))
         ? Math.round(Number(priceCentsRaw))
+        : null;
+
+    // Variable-pricing model. Legacy rows (no column) default to "fixed".
+    const priceType =
+      typeof row.price_type === "string" && row.price_type.trim().length > 0
+        ? row.price_type.trim()
+        : "fixed";
+    const priceMaxRaw = row.price_max_cents;
+    const priceMaxCents =
+      priceMaxRaw != null && Number.isFinite(Number(priceMaxRaw))
+        ? Math.round(Number(priceMaxRaw))
         : null;
 
     const descRaw = row.description;
@@ -180,7 +197,12 @@ export async function loadBookingServicesForSalonSlug(
       bufferMinutes: buffer,
       totalMinutes,
       priceCents,
-      priceDisplay: formatBookingPrice(priceCents, salonCurrency),
+      priceType,
+      priceMaxCents,
+      priceDisplay: formatServicePrice(priceCents, salonCurrency, {
+        priceType,
+        priceMaxCents,
+      }),
       category: parseServiceCategory(row.category),
       description,
       isPopular: row.is_popular === true,

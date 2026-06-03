@@ -1,15 +1,24 @@
 import type { SalonVoiceContext } from "./loadSalonContext";
-
-function formatPrice(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
-}
+import { formatServicePrice } from "@/shared/lib/currencyFormat";
 
 export function buildSystemPrompt(ctx: SalonVoiceContext, language: "vi" | "en" | "fr" | "zh"): string {
   const isVi = language === "vi";
   const today = new Date().toLocaleDateString("en-CA", { timeZone: ctx.timezone }); // YYYY-MM-DD
 
+  // Localized "From" prefix for variable ("from") pricing so the AI never quotes
+  // a wrong flat price — it says "From $35" / "Từ $35" instead.
+  const fromLabel = isVi ? "Từ" : "From";
+
   const serviceList = ctx.services
-    .map((s) => `  • ${s.name} (${s.durationMins} min, ${formatPrice(s.priceCents)}) [id: ${s.id}]`)
+    .map((s) => {
+      const price = formatServicePrice(s.priceCents, ctx.currency, {
+        priceType:     s.price_type,
+        priceMaxCents: s.price_max_cents,
+        fromLabel,
+      });
+      const priceLabel = price ?? (isVi ? "Liên hệ" : "Ask for price");
+      return `  • ${s.name} (${s.durationMins} min, ${priceLabel}) [id: ${s.id}]`;
+    })
     .join("\n");
 
   const staffList = ctx.staff.length

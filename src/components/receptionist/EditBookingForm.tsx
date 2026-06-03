@@ -16,7 +16,7 @@ import {
 } from "@/shared/lib/salonTime";
 import type { SalonDashboardBooking } from "@/shared/types";
 import { cn } from "@/shared/lib/cn";
-import { formatCurrency } from "@/shared/lib/currencyFormat";
+import { formatCurrency, formatServicePrice } from "@/shared/lib/currencyFormat";
 
 /** Desk day row: ids + times required for edit defaults (receptionist `bookingsForDay`).
  *  Addon fields ride along for read-only display + correct end-time calc on save. */
@@ -81,6 +81,8 @@ export interface EditBookingFormProps {
     id: string;
     name: string;
     price_cents: number;
+    price_type: string;
+    price_max_cents: number | null;
     duration_minutes: number;
     buffer_minutes: number;
   }[];
@@ -356,7 +358,10 @@ export function EditBookingForm({
           >
             {services.map((s) => {
               const priceText =
-                formatCurrency(Number(s.price_cents), currency) ?? "—";
+                formatServicePrice(Number(s.price_cents), currency, {
+                  priceType: s.price_type,
+                  priceMaxCents: s.price_max_cents,
+                }) ?? "—";
               const dur = Number(s.duration_minutes);
               return (
                 <option key={s.id} value={s.id}>
@@ -383,7 +388,10 @@ export function EditBookingForm({
             <option value="">{addonCopy.none}</option>
             {services.map((s) => {
               const priceText =
-                formatCurrency(Number(s.price_cents), currency) ?? "—";
+                formatServicePrice(Number(s.price_cents), currency, {
+                  priceType: s.price_type,
+                  priceMaxCents: s.price_max_cents,
+                }) ?? "—";
               const dur = Number(s.duration_minutes);
               return (
                 <option key={s.id} value={s.id}>

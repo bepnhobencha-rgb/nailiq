@@ -2487,6 +2487,8 @@ function ReceptionistCenterInner({
                   name: s.name,
                   duration_minutes: s.duration_minutes,
                   price_cents: s.price_cents,
+                  price_type: s.price_type,
+                  price_max_cents: s.price_max_cents,
                 }))}
                 currency={data.salon.currencyCode}
                 nowIso={nowIso}
@@ -2642,6 +2644,8 @@ function ReceptionistCenterInner({
                   id: s.id,
                   name: s.name,
                   price_cents: s.price_cents,
+                  price_type: s.price_type,
+                  price_max_cents: s.price_max_cents,
                   duration_minutes: s.duration_minutes,
                   buffer_minutes: s.buffer_minutes,
                 })),
