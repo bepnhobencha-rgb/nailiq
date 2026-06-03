@@ -24,6 +24,12 @@ export async function resolvePostAuthRedirect(): Promise<string> {
   } = await supabase.auth.getUser();
   if (!user) return "/register";
 
+  // If email is not confirmed yet, require email verification before accessing dashboard.
+  // User must click the confirmation link sent to their email during signup.
+  if (!user.email_confirmed_at) {
+    return "/register";
+  }
+
   const resolved = await resolveRoleAndSlugForUser(supabase, user.id);
   if (!resolved) return "/register/setup";
   if (resolved.needsPicker) return "/choose-salon";
