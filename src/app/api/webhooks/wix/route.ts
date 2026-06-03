@@ -87,21 +87,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
 
-  // --- 1. Authentication ---
-  // Path A (Custom App): RSA signature present → verify it.
-  // Path B (Automations): no signature → trust the siteId in the body envelope.
+  // Signature is verified inside handleEvent once we know the salon (the public
+  // key is per-salon). The Automations path sends no signature and skips verify.
   const sig = req.headers.get("x-wix-signature");
-  const publicKey = process.env["WIX_WEBHOOK_PUBLIC_KEY"];
-  if (sig && publicKey && !verifySignature(publicKey, rawBody, sig)) {
-    console.warn("[wix-webhook] RSA signature mismatch — rejected");
-    return NextResponse.json({ error: "invalid_signature" }, { status: 401 });
-  }
-
   const evt = normalise(body, req.headers.get("wix-site-id"));
-  return handleEvent(evt);
+  return handleEvent(evt, rawBody, sig);
 }
 
-async function handleEvent(evt: NormalisedEvent): Promise<NextResponse> {
+async function handleEvent(evt: NormalisedEvent, rawBody: Buffer, sig: string | null): Promise<NextResponse> {
   const { entityFqdn, slug, entityId, siteId, encodedData } = evt;
 
   // --- 2. Only handle booking events ---
@@ -119,13 +112,24 @@ async function handleEvent(evt: NormalisedEvent): Promise<NextResponse> {
   const db = looseServiceClient();
   const { data: integration } = await db
     .from("wix_integrations")
-    .select("salon_id, auto_approve")
+    .select("salon_id, auto_approve, wix_webhook_public_key")
     .eq("site_id", siteId)
     .eq("enabled", true)
     .maybeSingle();
 
   if (!integration) {
     return NextResponse.json({ ok: true, skipped: "unknown_site" });
+  }
+
+  // --- Custom App path: verify the RSA signature with the per-salon public key
+  // (fall back to the env key for the original single-tenant setup). The
+  // Automations path sends no signature, so this is skipped there. ---
+  if (sig) {
+    const publicKey = String((integration.wix_webhook_public_key as string) ?? "") || process.env["WIX_WEBHOOK_PUBLIC_KEY"] || "";
+    if (publicKey && !verifySignature(publicKey, rawBody, sig)) {
+      console.warn("[wix-webhook] RSA signature mismatch — rejected");
+      return NextResponse.json({ error: "invalid_signature" }, { status: 401 });
+    }
   }
 
   const salonId = integration.salon_id as string;

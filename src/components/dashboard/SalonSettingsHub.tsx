@@ -18,6 +18,7 @@ import { PhoneOtpSettings } from "@/components/dashboard/PhoneOtpSettings";
 import { BookingVerificationSettings } from "@/components/dashboard/BookingVerificationSettings";
 import { PricingPanel } from "@/components/dashboard/PricingPanel";
 import { GoogleReviewSettings } from "@/components/dashboard/GoogleReviewSettings";
+import { WixIntegrationSettings } from "@/components/dashboard/WixIntegrationSettings";
 import { VoiceAiSettings } from "@/components/dashboard/VoiceAiSettings";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
@@ -344,6 +345,9 @@ export function SalonSettingsHub({
             initialValue={googleReviewUrl ?? ""}
           />
         ) : null}
+
+        {/* ── Wix integration (self-service connect) ──────────── */}
+        {canEditDashboardModules ? <WixIntegrationSettings slug={slug} /> : null}
 
         {/* ── Voice AI persona name (chỉ hiện khi voice AI được bật) ── */}
         {canEditDashboardModules && voiceAiEnabled ? (
