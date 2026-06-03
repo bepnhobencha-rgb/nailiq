@@ -400,6 +400,31 @@ function captureOpeningHoursUnexpected(err: unknown, meta: { slug: string }) {
   });
 }
 
+/**
+ * Normalise a service pricing model into stored columns.
+ * - type 'range' needs a max strictly greater than the base, else it degrades
+ *   to 'from' (a minimum) so we never store an invalid range.
+ * - type 'from' keeps the base as the minimum, max null.
+ * - anything else (incl. unknown) → 'fixed'.
+ */
+function normalizePriceModel(input: {
+  price_type?: string | null;
+  price_cents: number;
+  price_max_cents?: number | null;
+}): { price_type: "fixed" | "from" | "range"; price_max_cents: number | null } {
+  const raw = String(input.price_type ?? "fixed");
+  const maxRaw =
+    input.price_max_cents != null ? Math.round(Number(input.price_max_cents)) : NaN;
+  const validMax = Number.isFinite(maxRaw) && maxRaw > input.price_cents;
+  if (raw === "range") {
+    return validMax
+      ? { price_type: "range", price_max_cents: maxRaw }
+      : { price_type: "from", price_max_cents: null };
+  }
+  if (raw === "from") return { price_type: "from", price_max_cents: null };
+  return { price_type: "fixed", price_max_cents: null };
+}
+
 export async function addService(
   slug: string,
   input: {
@@ -415,6 +440,10 @@ export async function addService(
     is_popular?: boolean;
     /** When true, the public tile renders larger with a subtle glow. */
     is_featured?: boolean;
+    /** Pricing model — see normalizePriceModel. Defaults to 'fixed'. */
+    price_type?: string | null;
+    /** Upper bound for price_type='range' (cents). */
+    price_max_cents?: number | null;
   },
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
@@ -485,10 +514,18 @@ export async function addService(
   // `category`, `description`, `is_popular`, `is_featured` are cast:
   // columns not yet in the auto-generated DB types (migrations
   // 20260511500000 + 20260511600000). DB defaults handle omitted keys.
+  const priceModel = normalizePriceModel({
+    price_type: input.price_type,
+    price_cents: price,
+    price_max_cents: input.price_max_cents,
+  });
+
   const insertPayload = {
     salon_id: r.salon.id,
     name,
     price_cents: price,
+    price_type: priceModel.price_type,
+    price_max_cents: priceModel.price_max_cents,
     duration_minutes: duration,
     buffer_minutes: buffer,
     ...(category !== null ? { category } : {}),
@@ -578,6 +615,8 @@ export async function updateService(
     description: string | null;
     is_popular: boolean;
     is_featured: boolean;
+    price_type: string | null;
+    price_max_cents: number | null;
   }>,
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
@@ -586,6 +625,7 @@ export async function updateService(
   const demoGate = await verifyDemoSetupSlug(slug, r.kind);
   if (demoGate) return demoGate;
 
+  const supabase = await writableSupabase(slug, r.kind);
   const patch: Record<string, unknown> = {};
   if (data.name !== undefined) {
     const n = String(data.name).trim();
@@ -635,10 +675,32 @@ export async function updateService(
   if (data.is_featured !== undefined) {
     patch.is_featured = Boolean(data.is_featured);
   }
+  if (data.price_type !== undefined || data.price_max_cents !== undefined) {
+    // Normalise against the EFFECTIVE base price (the new one if also being
+    // changed, else the stored one) so a range/from is validated correctly.
+    let basePrice: number;
+    if (typeof patch.price_cents === "number") {
+      basePrice = patch.price_cents;
+    } else {
+      const { data: cur } = (await supabase
+        .from("services")
+        .select("price_cents")
+        .eq("id", serviceId)
+        .eq("salon_id", r.salon.id)
+        .maybeSingle()) as { data: { price_cents?: number } | null };
+      basePrice = Number(cur?.price_cents ?? 0);
+    }
+    const pm = normalizePriceModel({
+      price_type: data.price_type,
+      price_cents: basePrice,
+      price_max_cents: data.price_max_cents,
+    });
+    patch.price_type = pm.price_type;
+    patch.price_max_cents = pm.price_max_cents;
+  }
 
   if (Object.keys(patch).length === 0) return fail("empty_update");
 
-  const supabase = await writableSupabase(slug, r.kind);
   // Pull `name` too so the auto-gen branch below has an anchor even
   // when the owner only cleared the description (no patch.name).
   const { data: mine, error: fetchErr } = (await supabase

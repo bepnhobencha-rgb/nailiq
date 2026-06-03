@@ -254,12 +254,17 @@ export async function autoMapWixCatalog(slug: string): Promise<
       if (!ws?.id || !ws.name) continue;
       const scheduleId = ws.schedule?.id ?? ws.schedules?.[0]?.id ?? null;
       const priceCents = wixServicePriceCents(ws); // FIXED price or "From $X" minimum
+      // Wix CUSTOM ("From $35", "$50+") → a variable 'from' price in NailIQ.
+      const priceType = ws.payment?.rateType === "CUSTOM" && priceCents ? "from" : "fixed";
       const match = byName.get(norm(ws.name));
       if (match) {
         const patch: Record<string, unknown> = { wix_service_id: ws.id, wix_schedule_id: scheduleId };
-        // Backfill a price ONLY when the local one is still 0 — never clobber a
-        // price the owner has set.
-        if ((Number(match.price_cents) || 0) === 0 && priceCents) patch.price_cents = priceCents;
+        // Backfill price + type ONLY when the local price is still 0 — never
+        // clobber a price the owner has set.
+        if ((Number(match.price_cents) || 0) === 0 && priceCents) {
+          patch.price_cents = priceCents;
+          patch.price_type = priceType;
+        }
         await db.from("services").update(patch).eq("id", match.id);
         svcMatched++;
       } else {
@@ -267,6 +272,7 @@ export async function autoMapWixCatalog(slug: string): Promise<
           salon_id: salonId,
           name: titleCase(ws.name),
           price_cents: priceCents ?? 0, // 0 only when Wix has no derivable price
+          price_type: priceType,
           duration_minutes: 30,
           category: categorizeService(ws.name, ws.category?.name),
           wix_service_id: ws.id,
