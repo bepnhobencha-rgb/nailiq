@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/shared/lib/supabase/server";
+import { getSuperAdminRole } from "@/shared/lib/superadmin";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -12,6 +13,10 @@ export const runtime = "nodejs";
  * handler — not a server component — is the only context where
  * `@supabase/ssr` can persist the freshly-minted session cookies, so
  * the exchange has to happen here before redirecting on.
+ *
+ * After exchanging the code for a session, we determine whether the
+ * user is a superadmin or a salon owner to route them to the correct
+ * reset-password page.
  */
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
@@ -39,7 +44,40 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Determine if user is a superadmin or salon owner to route appropriately
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.redirect(
+      new URL("/superadmin/forgot-password", request.url),
+    );
+  }
+
+  // Check if user is a superadmin
+  const superadminRole = await getSuperAdminRole(user.id);
+  if (superadminRole) {
+    return NextResponse.redirect(
+      new URL("/superadmin/reset-password", request.url),
+    );
+  }
+
+  // Check if user is a salon member
+  const { data: salonMember } = await supabase
+    .from("salon_members")
+    .select("id")
+    .eq("user_id", user.id)
+    .single();
+
+  if (salonMember) {
+    return NextResponse.redirect(
+      new URL("/login/reset-password", request.url),
+    );
+  }
+
+  // User is neither superadmin nor salon member — treat as invalid recovery
   return NextResponse.redirect(
-    new URL("/superadmin/reset-password", request.url),
+    new URL("/superadmin/forgot-password", request.url),
   );
 }
