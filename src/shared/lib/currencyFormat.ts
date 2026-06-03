@@ -92,6 +92,43 @@ export function formatCurrencyOrZero(
   return getFormatter(parseCurrency(currency)).format(0);
 }
 
+export type ServicePriceType = "fixed" | "from" | "range";
+
+/**
+ * Render a SERVICE price honouring its pricing model:
+ *   fixed → "$47"
+ *   from  → "From $35"  (priceCents is the minimum; `fromLabel` is localized)
+ *   range → "$35–$60"   (priceCents = min, priceMaxCents = max)
+ *
+ * Falls back to the plain fixed format when a from/range is missing the data
+ * it needs (e.g. range with no/!> max). Returns null when the base price is
+ * null — caller decides whether to render "—".
+ */
+export function formatServicePrice(
+  priceCents: number | null | undefined,
+  currency: Currency | string | null | undefined,
+  opts?: {
+    priceType?: ServicePriceType | string | null;
+    priceMaxCents?: number | null;
+    fromLabel?: string; // localized "From" / "Từ"; defaults to "From"
+  },
+): string | null {
+  const base = formatCurrency(priceCents, currency);
+  if (base === null) return null;
+  const type = opts?.priceType ?? "fixed";
+  if (type === "range") {
+    const max = formatCurrency(opts?.priceMaxCents, currency);
+    if (max != null && Number(opts?.priceMaxCents) > Number(priceCents ?? 0)) {
+      return `${base}–${max}`; // en-dash
+    }
+    return base;
+  }
+  if (type === "from") {
+    return `${opts?.fromLabel ?? "From"} ${base}`;
+  }
+  return base;
+}
+
 /** Just the symbol, no value. Used by form labels like `Price (CA$)`.
  *  Pulled from the formatter so locale variants stay consistent. */
 export function currencySymbol(

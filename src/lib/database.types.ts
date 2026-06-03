@@ -2216,6 +2216,8 @@ export type Database = {
           is_popular: boolean
           name: string
           price_cents: number
+          price_max_cents: number | null
+          price_type: string
           salon_id: string
         }
         Insert: {
@@ -2230,6 +2232,8 @@ export type Database = {
           is_popular?: boolean
           name: string
           price_cents: number
+          price_max_cents?: number | null
+          price_type?: string
           salon_id: string
         }
         Update: {
@@ -2244,6 +2248,8 @@ export type Database = {
           is_popular?: boolean
           name?: string
           price_cents?: number
+          price_max_cents?: number | null
+          price_type?: string
           salon_id?: string
         }
         Relationships: [
