@@ -168,6 +168,43 @@ These modules are load-bearing and easy to break — read before editing:
    - `typecheck` + `build` không phụ thuộc nhau → parallel Bash calls
    - Sequential chỉ khi có dependency rõ ràng (migration chưa xong, schema chưa có)
 
+## 🔬 Deep Analysis — BẮT BUỘC trước khi implement feature mới
+
+Với mọi feature/module mới, tự chạy 6 chiều phân tích trước khi viết code:
+
+**1. Core** — tối thiểu để feature hoạt động đúng với salon workflow
+
+**2. Wow** — gì khiến salon owner / receptionist / customer "ồ hay quá"
+- Micro-interaction có ý nghĩa (không animation vô nghĩa)
+- AI auto-fill / smart suggestion
+- Realtime feedback tức thì (<100ms)
+- Mobile gesture-friendly (receptionist dùng tablet)
+
+**3. UX 2025+**
+- Mobile-first: touch target ≥44px, no hover-only interactions
+- Skeleton loading > spinner; optimistic UI > wait then show
+- Empty state có hướng dẫn — không bao giờ để màn hình trắng trơn
+- Dark mode support (dashboard users work long hours)
+
+**4. Failure modes đặc thù NailIQ** — top lỗi phải phòng từ architecture:
+
+| Failure | Root cause | Phòng ngay từ đầu |
+|---|---|---|
+| Double booking | conflictCheck.ts là app-level, không phải DB constraint | Optimistic lock + DB unique constraint backup |
+| Timezone mismatch | UTC stored, salon-local shown | Luôn dùng `salonTime.ts`, không dùng `new Date()` trực tiếp |
+| RLS bypass | server action không verify salon_members | Mọi mutation check membership trước RLS |
+| Realtime race | Supabase Realtime + server action mutate cùng lúc | Idempotent actions + version field |
+| E2E flaky | Async Supabase ops không await đủ | Explicit wait + seedTestSalon cleanup |
+
+**5. Scalability** — khi salon có 100+ bookings/ngày:
+- Query nào sẽ N+1? Index đã có chưa?
+- Realtime subscription: bao nhiêu concurrent channels?
+
+**6. Security**
+- `salon_members` check trong mọi server action (RLS là backstop, không phải primary)
+- `serviceRole.ts` chỉ dùng server-only path
+- User input → Zod validate trước khi insert
+
 ## ⚡ Self-learning — rút kinh nghiệm từ lỗi
 
 **Sau mỗi bug fix không hiển nhiên** (tốn 2+ lần thử):
