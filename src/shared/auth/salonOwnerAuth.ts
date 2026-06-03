@@ -61,18 +61,29 @@ export async function requestSalonOwnerPasswordReset(
       return { ok: true };
     }
 
-    // Check if this user has a salon owner/staff membership
-    const supabase = await createClient();
-    const { data: membership, error: membershipError } = await supabase
+    // Check if this user has a salon owner/staff membership.
+    //
+    // MUST use the service-role client: the caller is an UNAUTHENTICATED
+    // visitor on the forgot-password form, and `salon_members` has RLS
+    // that only lets an authenticated user read their own row
+    // (`auth.uid() = user_id`). Querying it through the request-scoped
+    // anon client returns zero rows for everyone, so the reset email
+    // would never be sent. `.maybeSingle()` (not `.single()`) so a
+    // multi-salon owner with >1 membership rows isn't treated as a
+    // non-member.
+    const { data: membership, error: membershipError } = await admin
       .from("salon_members")
       .select("id")
       .eq("user_id", matched.id)
-      .single();
+      .limit(1)
+      .maybeSingle();
 
     if (membershipError || !membership) {
       // User exists in auth but is not a salon member — silently no-op
       return { ok: true };
     }
+
+    const supabase = await createClient();
 
     const siteUrl =
       process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXTAUTH_URL ?? "";

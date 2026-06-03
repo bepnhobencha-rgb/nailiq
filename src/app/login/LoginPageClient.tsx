@@ -26,12 +26,15 @@ type Props = {
   smsEnabled: boolean;
   /** When true (and smsEnabled=false), show the email magic-link input. */
   emailEnabled: boolean;
+  /** Shown when the proxy bounced an unconfirmed-email session here. */
+  showConfirmEmailNotice?: boolean;
 };
 
 export function LoginPageClient({
   demoMode,
   smsEnabled,
   emailEnabled,
+  showConfirmEmailNotice = false,
 }: Props) {
   const router = useRouter();
   const { language } = useUserLanguage();
@@ -56,6 +59,18 @@ export function LoginPageClient({
   //   neither                 → "sign-in temporarily unavailable" panel
   const useEmailPath = !demoMode && !smsEnabled && emailEnabled;
   const bothDisabled = !demoMode && !smsEnabled && !emailEnabled;
+
+  // Banner rendered when the proxy redirected an unconfirmed-email
+  // session to /login?notice=confirm-email. Shown across whichever
+  // sign-in branch the platform flags select.
+  const confirmEmailBanner = showConfirmEmailNotice ? (
+    <div
+      role="status"
+      className="mb-4 rounded-lg border border-nq-primary/30 bg-nq-primary/10 px-4 py-3 text-sm text-nq-primary-soft"
+    >
+      {t.login.confirmEmailNotice}
+    </div>
+  ) : null;
 
   // ── SMS submit ────────────────────────────────────────────────────────────
   const onPhoneSubmit = useCallback(
@@ -154,6 +169,7 @@ export function LoginPageClient({
         title={t.login.emailEntryTitle}
         subtext={t.login.subtextEmail}
       >
+        {confirmEmailBanner}
         <form
           onSubmit={onEmailSubmit}
           method="post"
@@ -240,6 +256,8 @@ export function LoginPageClient({
           router.push("/login/verify");
         }}
       />
+
+      {confirmEmailBanner}
 
       <p className="mb-2 text-sm text-nq-muted sm:mb-4">
         {t.login.promptEnterPhone}
