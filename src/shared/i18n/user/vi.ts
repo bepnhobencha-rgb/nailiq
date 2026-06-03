@@ -1172,6 +1172,7 @@ export const userVi: UserMessages = {
         phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
         notePlaceholder: "Ghi chú nhân viên — ví dụ màu sơn…",
         addButton: "Thêm khách",
+        incompleteHint: "Nhập tên khách và chọn dịch vụ để thêm",
         moreServices: "Thêm dịch vụ",
         submitting: "Đang thêm…",
         errorRequired: "Chọn một dịch vụ để tiếp tục.",
@@ -1488,7 +1489,8 @@ export const userVi: UserMessages = {
       empty: "Chưa có khách.",
       unknownName: "(chưa có tên)",
       vipBadge: "VIP",
-      summaryLine: "{visits} lần ghé · lần cuối {lastVisit}",
+      summaryLine: (visits, lastVisit) =>
+        `${visits} lần ghé · lần cuối ${lastVisit}`,
       totalSpent: "Tổng chi tiêu",
       email: "Email",
       notes: "Ghi chú",

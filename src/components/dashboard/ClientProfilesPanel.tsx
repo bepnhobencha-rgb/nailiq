@@ -238,9 +238,10 @@ function ClientRow({
           {phoneDisplay}
         </span>
         <span className="text-[11px] text-nq-muted">
-          {messages.summaryLine
-            .replace("{visits}", String(row.visitCount))
-            .replace("{lastVisit}", formatLastVisit(row.lastVisitAt, language))}
+          {messages.summaryLine(
+            row.visitCount,
+            formatLastVisit(row.lastVisitAt, language),
+          )}
         </span>
       </button>
 

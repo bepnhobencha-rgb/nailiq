@@ -69,6 +69,7 @@ export interface WalkinAddFormProps {
     phonePlaceholder: string;
     notePlaceholder: string;
     addButton: string;
+    incompleteHint: string;
     moreServices: string;
     submitting: string;
     errorRequired: string;
@@ -1433,6 +1434,17 @@ export function WalkinAddForm({
           </span>
         )}
       </Button>
+
+      {/* M9: the submit button is soft-disabled (dimmed but still tappable) while
+          required fields are missing — a tap focuses the gap. Without a hint it
+          reads as "broken", so spell out what's needed. */}
+      {!submitting &&
+      !isOffline &&
+      (clientName.trim().length === 0 || selectedServiceId === null) ? (
+        <p className="mt-1.5 text-center text-[11px] text-nq-muted" data-testid="walkin-incomplete-hint">
+          {labels.incompleteHint}
+        </p>
+      ) : null}
     </form>
   );
 }
