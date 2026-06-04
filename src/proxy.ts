@@ -33,6 +33,10 @@ import {
   checkBookingPageRateLimit,
   checkBookingRateLimit,
 } from "@/shared/lib/rateLimit";
+import {
+  isPlatformHost,
+  resolveCustomDomainSlug,
+} from "@/shared/lib/customDomainResolver";
 
 /** Public booking slug path: `/<slug>` only (single segment, kebab case).
  *  Excludes `/dashboard`, `/register`, `/login`, `/api`, `/auth`,
@@ -93,6 +97,29 @@ function applyCookiesFrom(
 export async function proxy(request: NextRequest) {
   const pathnameEarly = request.nextUrl.pathname;
   const methodEarly = request.method;
+
+  // ── Custom-domain → tenant rewrite ──────────────────────────────────────
+  // A salon can serve its public booking page on its own domain. Only runs
+  // for NON-platform hosts, so nailiq.ca / *.vercel.app / localhost traffic is
+  // completely untouched (and pays no extra cost). We rewrite ONLY the bare
+  // root path to `/<slug>`; the booking page's own asset (/_next) and API
+  // (/api/*) sub-requests stay same-origin and pass through unchanged.
+  const hostHeader = request.headers.get("host") ?? "";
+  if (
+    methodEarly === "GET" &&
+    pathnameEarly === "/" &&
+    hostHeader &&
+    !isPlatformHost(hostHeader)
+  ) {
+    const slug = await resolveCustomDomainSlug(hostHeader);
+    if (slug) {
+      const url = request.nextUrl.clone();
+      url.pathname = `/${slug}`;
+      Sentry.getCurrentScope().setTag("salon.slug", slug);
+      Sentry.getCurrentScope().setTag("surface", "custom-domain");
+      return NextResponse.rewrite(url);
+    }
+  }
 
   // Task #09-10 — rate-limit checks at the proxy layer.
   //

@@ -21,6 +21,8 @@ import { GoogleReviewSettings } from "@/components/dashboard/GoogleReviewSetting
 import { WixIntegrationSettings } from "@/components/dashboard/WixIntegrationSettings";
 import { VoiceAiSettings } from "@/components/dashboard/VoiceAiSettings";
 import { BusinessTypeSettings } from "@/components/dashboard/BusinessTypeSettings";
+import { DomainSettings } from "@/components/dashboard/DomainSettings";
+import type { SalonDomainInfo } from "@/shared/dashboard/domainActions";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
@@ -55,6 +57,7 @@ export function SalonSettingsHub({
   voiceAiEnabled,
   voiceAiPersonaName,
   vertical,
+  domainInfo,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -77,6 +80,7 @@ export function SalonSettingsHub({
   voiceAiEnabled: boolean;
   voiceAiPersonaName: string;
   vertical: string;
+  domainInfo: SalonDomainInfo;
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -344,6 +348,11 @@ export function SalonSettingsHub({
         {/* ── Business type (vertical) ────────────────────────── */}
         {canEditDashboardModules ? (
           <BusinessTypeSettings slug={slug} initialVertical={vertical} />
+        ) : null}
+
+        {/* ── Custom domain ───────────────────────────────────── */}
+        {canEditDashboardModules ? (
+          <DomainSettings slug={slug} initial={domainInfo} />
         ) : null}
 
         {/* ── Google Review URL ───────────────────────────────── */}

@@ -4,6 +4,7 @@ import { SalonSettingsHub } from "@/components/dashboard/SalonSettingsHub";
 import { parseDashboardModules } from "@/shared/dashboard/dashboardModules";
 import { parsePresetKey } from "@/shared/dashboard/dashboardPresets";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { getSalonDomain } from "@/shared/dashboard/domainActions";
 import { normalizeBrandColor } from "@/shared/lib/brandColor";
 import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 
@@ -107,6 +108,8 @@ export default async function SalonSettingsPage({ params }: Props) {
       ? row.vertical.trim()
       : "nail_salon";
 
+  const domainInfo = await getSalonDomain(slug);
+
   return (
     <SalonSettingsHub
       slug={slug}
@@ -130,6 +133,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       voiceAiEnabled={voiceAiEnabled}
       voiceAiPersonaName={voiceAiPersonaName}
       vertical={vertical}
+      domainInfo={domainInfo}
     />
   );
 }
