@@ -21,10 +21,15 @@ export default async function ClientsPage({ params }: PageProps) {
   if (!ctx) {
     redirect("/register");
   }
-  // Server-side gate matches loadClientProfiles: owner+senior only.
-  // nail_tech viewers are bounced to the dashboard home rather than
-  // shown an empty / forbidden page.
-  if (ctx.role !== "owner" && ctx.role !== "senior") {
+  // Server-side gate matches loadClientProfiles: desk roles may view client
+  // profiles (owner / senior / admin / receptionist). Only nail_tech is
+  // bounced — its surface doesn't expose client PII.
+  if (
+    ctx.role !== "owner" &&
+    ctx.role !== "senior" &&
+    ctx.role !== "admin" &&
+    ctx.role !== "receptionist"
+  ) {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
 
