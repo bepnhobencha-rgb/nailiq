@@ -7,7 +7,12 @@ import {
   type SuperAdminRole,
 } from "@/shared/lib/superadmin";
 import { writeAuditLog } from "@/shared/superadmin/audit";
-import { EDITABLE_RELEASE_FLAG_KEYS } from "@/shared/features/featureRegistry";
+import {
+  EDITABLE_RELEASE_FLAG_KEYS,
+  RELEASE_FEATURE_KEYS,
+  type ReleaseFeatureKey,
+} from "@/shared/features/featureRegistry";
+import { platformFeatureFlagKey } from "@/shared/features/platformFeatureFlags";
 import {
   isPlatformFlagKey,
   isRestorableTable,
@@ -756,6 +761,79 @@ export async function updatePlatformFlag(
   }
 
   return { ok: true, key: k, enabled };
+}
+
+/**
+ * Platform-wide feature kill-switch. Writes a `platform_flags` row keyed
+ * `feature_<releaseKey>`; enabled=false hides the feature for EVERY salon
+ * (overrides per-salon, per product decision). Mirrors `updatePlatformFlag`
+ * (superadmin auth + audit-or-rollback + upsert).
+ */
+export async function updatePlatformFeatureFlag(
+  key: string,
+  enabled: boolean,
+): Promise<
+  { ok: true; key: string; enabled: boolean } | { ok: false; error: string }
+> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+
+  if (
+    !RELEASE_FEATURE_KEYS.includes(key as ReleaseFeatureKey) ||
+    typeof enabled !== "boolean"
+  ) {
+    return { ok: false, error: "invalid_payload" };
+  }
+
+  let admin;
+  try {
+    admin = createServiceRoleClient();
+  } catch (e) {
+    console.error("[superadmin/updatePlatformFeatureFlag] service role", e);
+    return { ok: false, error: "server_error" };
+  }
+
+  const rowKey = platformFeatureFlagKey(key as ReleaseFeatureKey);
+
+  const { data: prior } = (await admin
+    .from("platform_flags")
+    .select("key, enabled" as never)
+    .eq("key", rowKey)
+    .maybeSingle()) as {
+    data: { enabled?: boolean | null } | null;
+    error: unknown;
+  };
+
+  const audited = await writeAuditLog({
+    actorUserId: caller.userId,
+    actorRole: caller.role,
+    action: "platform_feature_flag_set",
+    targetKind: "platform_flag",
+    targetId: null,
+    // Absent row counts as enabled (default ON).
+    beforeJsonb: { key: rowKey, enabled: prior?.enabled !== false },
+    afterJsonb: { key: rowKey, enabled },
+  });
+  if (!audited) {
+    return { ok: false, error: "server_error" };
+  }
+
+  const { error } = await admin.from("platform_flags").upsert(
+    {
+      key: rowKey,
+      enabled,
+      updated_at: new Date().toISOString(),
+      updated_by: caller.userId,
+    } as never,
+    { onConflict: "key" } as never,
+  );
+
+  if (error) {
+    console.error("[superadmin/updatePlatformFeatureFlag] upsert", error);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true, key: rowKey, enabled };
 }
 
 // ─── service-category management ─────────────────────────────────────
