@@ -4,6 +4,7 @@ import { SalonSettingsHub } from "@/components/dashboard/SalonSettingsHub";
 import { parseDashboardModules } from "@/shared/dashboard/dashboardModules";
 import { parsePresetKey } from "@/shared/dashboard/dashboardPresets";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { getSalonDomain } from "@/shared/dashboard/domainActions";
 import { normalizeBrandColor } from "@/shared/lib/brandColor";
 import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 
@@ -102,6 +103,8 @@ export default async function SalonSettingsPage({ params }: Props) {
       ? row.booking_verification_mode
       : undefined;
 
+  const domainInfo = await getSalonDomain(slug);
+
   return (
     <SalonSettingsHub
       slug={slug}
@@ -124,6 +127,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       googleReviewUrl={googleReviewUrl}
       voiceAiEnabled={voiceAiEnabled}
       voiceAiPersonaName={voiceAiPersonaName}
+      domainInfo={domainInfo}
     />
   );
 }
