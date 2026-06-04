@@ -120,8 +120,12 @@ export default async function SetupStaffPage({ params }: Props) {
 
   // Login/permission info per staff member (service-role read — salon_members
   // RLS only exposes the caller's own row, so the owner couldn't otherwise see
-  // the whole team's access).
-  const accessMap = await loadTeamAccessMap(ctx.salon.id);
+  // the whole team's access). Resolve only the members that actually have a
+  // linked login, so cost scales with team size — not the whole project.
+  const linkedUserIds = staffRows
+    .map((r) => ("user_id" in r ? (r as { user_id?: unknown }).user_id : undefined))
+    .filter((v): v is string => typeof v === "string");
+  const accessMap = await loadTeamAccessMap(ctx.salon.id, linkedUserIds);
   const accessByStaff: Record<string, StaffAccessInfo | null> = {};
   for (const r of staffRows) {
     const uid =
