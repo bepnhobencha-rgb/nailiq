@@ -167,6 +167,9 @@ type Ok = {
    *  subtle "✨ Description generated" toast. Absent / false when no
    *  generation occurred. */
   descriptionGenerated?: boolean;
+  /** Set by `addStaff` to the new row's id so callers can chain follow-up
+   *  work (e.g. linking a login account) without a second lookup. */
+  id?: string;
 };
 
 function fail(msg: string): Fail {
@@ -828,7 +831,14 @@ export async function deleteService(
 
 export async function addStaff(
   slug: string,
-  input: { name: string; role: StaffJobRole; serviceIds?: string[] },
+  input: {
+    name: string;
+    role: StaffJobRole;
+    serviceIds?: string[];
+    /** Defaults to "active" (shows in public booking). Pass "inactive" for a
+     *  team member who manages but does not take bookings (e.g. a pure admin). */
+    status?: StaffStatus;
+  },
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
@@ -858,7 +868,8 @@ export async function addStaff(
       job_role: input.role,
       // Default new staff to active so the booking flow shows them immediately.
       // Owner can flip to 'pending' / 'inactive' from StaffSetupPanel later.
-      status: "active",
+      // A caller can pass "inactive" up front (e.g. a management-only admin).
+      status: input.status ?? "active",
     })
     .select("id")
     .single();
@@ -899,7 +910,7 @@ export async function addStaff(
   }
 
   await refreshSalonProfileComplete(supabase, r.salon.id);
-  return { ok: true };
+  return { ok: true, id: String(insertedStaff.id) };
 }
 
 export type StaffStatus = "active" | "pending" | "inactive";

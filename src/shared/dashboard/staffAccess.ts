@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { addStaff, getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 
 /**
  * Login/permission roles for a team member's optional dashboard account.
@@ -297,6 +297,68 @@ export async function inviteStaffAccess(
 
   revalidatePath(`/dashboard/${slug}/setup/staff`);
   return { ok: true, invited: resolved.invited };
+}
+
+export type AddTeamMemberResult =
+  | { ok: true; invited?: boolean; staffCreated: boolean }
+  | { ok: false; error: string; staffCreated: boolean };
+
+/**
+ * All-in-one "Add team member": create the staff row and (optionally) grant a
+ * login in a single call. This is the unified flow behind the Team page's
+ * "Add member" sheet — it replaces the old add-staff → set-inactive → invite
+ * dance and handles the "management-only admin" case cleanly:
+ *
+ *   takesBookings=false → staff row created with status "inactive" (kept out of
+ *   the public booking flow) while still optionally getting a login.
+ */
+export async function addTeamMember(
+  slug: string,
+  input: {
+    name: string;
+    takesBookings: boolean;
+    /** Provider role when takesBookings; ignored otherwise. */
+    jobRole?: "senior" | "nail_tech";
+    grantAccess: boolean;
+    accessRole?: StaffAccessRole;
+    email?: string;
+  },
+): Promise<AddTeamMemberResult> {
+  const name = input.name.trim();
+  if (!name) return { ok: false, error: "Name is required", staffCreated: false };
+  if (input.grantAccess && !input.email?.trim()) {
+    return {
+      ok: false,
+      error: "Email is required to grant a login",
+      staffCreated: false,
+    };
+  }
+
+  // A non-booking member still needs a valid job_role (the column is
+  // provider-only); "nail_tech" + inactive keeps them out of booking.
+  const jobRole = input.takesBookings ? (input.jobRole ?? "nail_tech") : "nail_tech";
+  const status = input.takesBookings ? "active" : "inactive";
+
+  const created = await addStaff(slug, { name, role: jobRole, status });
+  if (!created.ok) {
+    return { ok: false, error: created.error, staffCreated: false };
+  }
+
+  if (!input.grantAccess) {
+    revalidatePath(`/dashboard/${slug}/setup/staff`);
+    return { ok: true, staffCreated: true };
+  }
+
+  const res = await inviteStaffAccess(slug, created.id ?? "", {
+    email: input.email,
+    role: input.accessRole ?? "receptionist",
+  });
+  if (!res.ok) {
+    // The staff row exists; only the login step failed — surface both facts so
+    // the UI can say "member added, but the invite didn't send".
+    return { ok: false, error: res.error, staffCreated: true };
+  }
+  return { ok: true, invited: res.invited, staffCreated: true };
 }
 
 /** Change an existing access role (admin ↔ receptionist). Owner role is immutable here. */
