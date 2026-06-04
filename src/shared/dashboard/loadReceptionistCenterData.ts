@@ -452,6 +452,7 @@ export async function loadReceptionistCenterData(
     currency_code?: unknown;
     walkin_auto_assign?: unknown;
     queue_display_mode?: unknown;
+    basic_mode_forced?: unknown;
   };
   let salonData: SalonShape | null;
   if (deps?.preFetchedSalon) {
@@ -465,6 +466,10 @@ export async function loadReceptionistCenterData(
       dashboard_density: deps.preFetchedSalon.dashboard_density,
       currency_code: deps.preFetchedSalon.currency_code,
       walkin_auto_assign: deps.preFetchedSalon.walkin_auto_assign,
+      // Carried so the /center route (which pre-fetches the salon) honors
+      // forced Basic Mode without a second salons query.
+      basic_mode_forced: (deps.preFetchedSalon as { basic_mode_forced?: unknown })
+        .basic_mode_forced,
     };
   } else {
     const salonResult = await supabase

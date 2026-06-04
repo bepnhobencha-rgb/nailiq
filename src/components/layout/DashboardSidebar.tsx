@@ -519,8 +519,13 @@ export function DashboardSidebar({
                 insight section is hidden, so it would move under "live" —
                 but the Basic header already shows a primary "+ Walk-in",
                 so we drop the sidebar duplicate in Basic Mode (DoD #4:
-                no duplicate + Walk-in). Balanced/Advanced keep it. */}
-            {section.key === quickAddSectionKey && !basicMode ? (
+                no duplicate + Walk-in). We also drop it on the Front Desk
+                (/center) itself, where the board header already shows a
+                contextual "+ Walk-in" — the sidebar copy is only the global
+                entry point for OTHER pages. */}
+            {section.key === quickAddSectionKey &&
+            !basicMode &&
+            !pathname.includes("/center") ? (
               <QuickAddWalkinButton
                 slug={slug}
                 collapsed={collapsed}
