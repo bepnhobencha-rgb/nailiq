@@ -56,3 +56,18 @@ export async function loadPlatformDisabledFeatures(): Promise<
   }
   return disabled;
 }
+
+/**
+ * Current platform on/off state for every release feature (for the Superadmin
+ * kill-switch UI). Defaults to ON; a `feature_<key>` row with enabled=false
+ * flips it OFF.
+ */
+export async function loadPlatformFeatureStates(): Promise<
+  Record<ReleaseFeatureKey, boolean>
+> {
+  const states = {} as Record<ReleaseFeatureKey, boolean>;
+  for (const k of RELEASE_FEATURE_KEYS) states[k] = true;
+  const disabled = await loadPlatformDisabledFeatures();
+  for (const k of disabled) states[k] = false;
+  return states;
+}
