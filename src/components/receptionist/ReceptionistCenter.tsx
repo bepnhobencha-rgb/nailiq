@@ -1,7 +1,7 @@
 "use client";
 
 import * as Sentry from "@sentry/nextjs";
-import { Users, X as CloseIcon } from "lucide-react";
+import { Users } from "lucide-react";
 
 /**
  * ReceptionistCenter — performance notes
@@ -753,8 +753,11 @@ function ReceptionistCenterInner({
   // Lightweight view toggle (localStorage). Default off → Balanced/Advanced
   // views are unchanged for everyone who never opts in. Only active on the
   // live "today + day" board where the cockpit's now-semantics make sense.
-  // TODO: Re-enable basicModeForced after Supabase types are regenerated with Docker
-  const { basicMode, toggleBasicMode, isForced } = useBasicMode(false);
+  // When the salon has `basic_mode_forced`, everyone (incl. owner) starts in
+  // Basic Mode and cannot toggle it off — honored via useBasicMode's forced arg.
+  const { basicMode, toggleBasicMode, isForced } = useBasicMode(
+    data.salon.basicModeForced,
+  );
   // Basic Mode never renders the heavy party-card strip by default — the
   // actionable case surfaces as a compact cockpit alert. Clicking that
   // alert's "Open party bookings" reveals the full cards on demand.
@@ -1979,8 +1982,9 @@ function ReceptionistCenterInner({
                */}
               {/* Basic Mode toggle — per-device front-desk cockpit. Shown
                   on the live day board for every role (it's a personal view
-                  preference, not a salon-wide setting). */}
-              {isViewingToday && viewMode === "day" ? (
+                  preference, not a salon-wide setting). Hidden when the salon
+                  forces Basic Mode (the toggle would be a no-op). */}
+              {isViewingToday && viewMode === "day" && !isForced ? (
                 <button
                   type="button"
                   data-testid="basic-mode-toggle"
@@ -2510,21 +2514,10 @@ function ReceptionistCenterInner({
               queuePanelOpen ? "translate-x-0" : "translate-x-full",
             )}
           >
-            <div className="flex shrink-0 items-center justify-between border-b border-nq-border/40 px-3 py-2">
-              <p className="min-w-0 truncate text-sm font-semibold text-nq-foreground">
-                {rcMessages.queue.title}
-              </p>
-              <button
-                type="button"
-                onClick={() => setQueuePanelOpen(false)}
-                aria-label={rcMessages.queue.closePanel}
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-nq-border/40 bg-nq-surface/40 text-nq-muted transition-colors hover:bg-nq-surface/80 hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
-              >
-                <CloseIcon className="h-4 w-4" aria-hidden />
-              </button>
-            </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
               <WalkinQueueSidebar
+                onClose={() => setQueuePanelOpen(false)}
+                closeLabel={rcMessages.queue.closePanel}
                 assigningId={assigningWalkinId}
                 items={queueItems}
                 services={data.services.map((s) => ({

@@ -54,7 +54,7 @@ import { ACTIVE_GRID_STATUSES } from "@/shared/types";
  *  at the time of writing; the column itself exists. Here we read
  *  the value through `as { … }` casts at the call site instead. */
 const SALON_DASHBOARD_SELECT =
-  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, subscription_plan, plan_override, feature_flags, voice_ai_enabled";
+  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, subscription_plan, plan_override, feature_flags, voice_ai_enabled, basic_mode_forced";
 
 type SalonRow = {
   id: string;
@@ -88,6 +88,9 @@ type SalonRow = {
   plan_override?: string | null;
   feature_flags?: unknown;
   voice_ai_enabled?: boolean | null;
+  /** `salons.basic_mode_forced` — when true, Basic Mode is auto-enabled and
+   *  locked for the Receptionist board. Flows to `preFetchedSalon`. */
+  basic_mode_forced?: boolean | null;
 };
 
 async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
@@ -284,6 +287,7 @@ async function getSalonIfMember(
         typeof row.voice_ai_enabled === "boolean"
           ? row.voice_ai_enabled
           : null,
+      basic_mode_forced: row.basic_mode_forced === true,
     },
     role,
     viewerEmail,

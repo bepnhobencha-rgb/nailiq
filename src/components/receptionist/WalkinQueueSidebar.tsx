@@ -18,7 +18,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
+import { GripVertical, X as CloseIcon } from "lucide-react";
 
 import { cn } from "@/shared/lib/cn";
 import { displayCustomerName } from "@/shared/lib/customerDisplayName";
@@ -62,6 +62,12 @@ export interface QueueItem {
 export type QueueSortMode = "fifo" | "longest_wait" | "custom";
 
 export interface WalkinQueueSidebarProps {
+  /** Optional close handler. When provided, the panel header renders a
+   *  close (X) button — the slide-over no longer needs its own header,
+   *  so the "Walk-in queue" title is shown exactly once. */
+  onClose?: () => void;
+  /** Accessible label for the close button. */
+  closeLabel?: string;
   /** Queue items, already sorted FIFO by parent */
   items: QueueItem[];
   /** Currently being assigned (highlight that item, disable others) */
@@ -230,6 +236,8 @@ function SortableQueueItem({
 }
 
 export function WalkinQueueSidebar({
+  onClose,
+  closeLabel,
   items,
   assigningId,
   services,
@@ -381,6 +389,16 @@ export function WalkinQueueSidebar({
           <span className="rounded-full bg-nq-primary/20 px-2.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-nq-primary">
             {items.length}
           </span>
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={closeLabel ?? "Close"}
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-nq-border/40 bg-nq-surface/40 text-nq-muted transition-colors hover:bg-nq-surface/80 hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
+            >
+              <CloseIcon className="h-4 w-4" aria-hidden />
+            </button>
+          ) : null}
         </div>
       </header>
 
