@@ -19,7 +19,6 @@ interface StaffManagementHubProps {
 }
 
 export function StaffManagementHub({
-  salonId,
   salonSlug,
   currentUserRole,
   staffMembers,
@@ -40,14 +39,18 @@ export function StaffManagementHub({
     setLoading(true);
     try {
       const result = await addStaffMemberAction({
-        salonId,
+        salonSlug,
         email: email.trim(),
         phone: phone.trim(),
         role,
       });
 
       if (result.success) {
-        setMessage("✅ Staff member added successfully");
+        setMessage(
+          result.invited
+            ? "✅ Invite sent — the staff member will get an email to set their password"
+            : "✅ Existing user added to this salon",
+        );
         setEmail("");
         setPhone("");
         setRole("receptionist");
@@ -106,7 +109,9 @@ export function StaffManagementHub({
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="receptionist">Receptionist (Front-desk only)</option>
-              <option value="admin">Admin (Full access)</option>
+              {currentUserRole === "owner" && (
+                <option value="admin">Admin (Full access)</option>
+              )}
             </select>
           </div>
 
