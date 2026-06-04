@@ -28,7 +28,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, voice_ai_enabled, voice_ai_persona_name",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, voice_ai_enabled, voice_ai_persona_name, vertical",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -60,6 +60,7 @@ export default async function SalonSettingsPage({ params }: Props) {
         google_review_url?: unknown;
         voice_ai_enabled?: unknown;
         voice_ai_persona_name?: unknown;
+        vertical?: unknown;
       }
     | null;
 
@@ -101,6 +102,10 @@ export default async function SalonSettingsPage({ params }: Props) {
     typeof row?.booking_verification_mode === "string"
       ? row.booking_verification_mode
       : undefined;
+  const vertical =
+    typeof row?.vertical === "string" && row.vertical.trim().length > 0
+      ? row.vertical.trim()
+      : "nail_salon";
 
   return (
     <SalonSettingsHub
@@ -124,6 +129,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       googleReviewUrl={googleReviewUrl}
       voiceAiEnabled={voiceAiEnabled}
       voiceAiPersonaName={voiceAiPersonaName}
+      vertical={vertical}
     />
   );
 }

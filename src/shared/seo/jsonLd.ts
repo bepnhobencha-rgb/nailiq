@@ -1,4 +1,5 @@
 import { getSiteUrl } from "./site";
+import { resolveVertical } from "@/shared/verticals/registry";
 
 const DESCRIPTION =
   "Salon management and booking platform for nail salons.";
@@ -82,6 +83,9 @@ type SalonLocalBusinessInput = {
   address: string | null;
   phone: string | null;
   timezone: string;
+  /** `salons.vertical` — selects the schema.org business type. Falls back to
+   *  the nail-salon default when null/unknown. */
+  vertical?: string | null;
 };
 
 export function getSalonLocalBusinessJsonLd({
@@ -91,13 +95,14 @@ export function getSalonLocalBusinessJsonLd({
   address,
   phone,
   timezone,
+  vertical,
 }: SalonLocalBusinessInput) {
   const siteUrl = getSiteUrl();
   const pageUrl = `${siteUrl}/${slug}`;
 
   return {
     "@context": "https://schema.org",
-    "@type": "NailSalon",
+    "@type": resolveVertical(vertical).schemaType,
     "@id": `${pageUrl}/#salon`,
     name,
     url: pageUrl,

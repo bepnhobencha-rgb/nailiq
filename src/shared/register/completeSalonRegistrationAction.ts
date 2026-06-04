@@ -10,6 +10,7 @@ import {
 } from "@/shared/lib/demoDashboardCookie";
 import { DEMO_SALON_SLUG, isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import { slugifySalonName } from "@/shared/lib/slugifySalonName";
+import { DEFAULT_VERTICAL, resolveVertical } from "@/shared/verticals/registry";
 import { getOrCreateDemoSalonOwnerUserId } from "@/shared/register/demoSalonOwner";
 import { phoneDigitsFromAuthUser } from "@/shared/register/authUserPhone";
 import {
@@ -505,20 +506,12 @@ export async function completeSalonRegistration(
     console.log("Step 3: insert default services");
   }
 
-  const DEFAULT_SERVICES = [
-    { name: "Gel Manicure",        price_cents: 3500, duration_minutes: 30, buffer_minutes: 10 },
-    { name: "Regular Manicure",    price_cents: 2500, duration_minutes: 25, buffer_minutes: 10 },
-    { name: "Gel Pedicure",        price_cents: 5000, duration_minutes: 45, buffer_minutes: 10 },
-    { name: "Regular Pedicure",    price_cents: 4000, duration_minutes: 35, buffer_minutes: 10 },
-    { name: "Acrylic Full Set",    price_cents: 5500, duration_minutes: 60, buffer_minutes: 10 },
-    { name: "Acrylic Fill",        price_cents: 4000, duration_minutes: 45, buffer_minutes: 10 },
-    { name: "Dip Powder (SNS)",    price_cents: 5000, duration_minutes: 50, buffer_minutes: 10 },
-    { name: "Gel Removal",         price_cents: 1000, duration_minutes: 15, buffer_minutes:  5 },
-    { name: "Acrylic Removal",     price_cents: 1500, duration_minutes: 20, buffer_minutes:  5 },
-    { name: "Polish Change",       price_cents: 1500, duration_minutes: 15, buffer_minutes:  5 },
-    { name: "French Tips Add-on",  price_cents: 1000, duration_minutes: 10, buffer_minutes:  5 },
-    { name: "Pedicure Spa Deluxe", price_cents: 6500, duration_minutes: 60, buffer_minutes: 10 },
-  ].map((svc) => ({ ...svc, salon_id: salonId }));
+  // Seed catalogue comes from the vertical registry. New registrations default
+  // to the nail-salon vertical; other verticals are assigned in Admin Settings
+  // after onboarding (then services can be re-seeded / edited there).
+  const DEFAULT_SERVICES = resolveVertical(DEFAULT_VERTICAL).seedServices.map(
+    (svc) => ({ ...svc, salon_id: salonId }),
+  );
 
   const { error: svcErr } = await admin.from("services").insert(DEFAULT_SERVICES as never);
 

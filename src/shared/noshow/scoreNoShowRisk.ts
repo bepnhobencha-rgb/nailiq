@@ -10,6 +10,9 @@ export type RiskScoreInput = {
   bookingSource: string;
   hasEmail: boolean;
   hasPhone: boolean;
+  /** Vertical descriptor for the prompt, e.g. "a nail salon" / "a head spa".
+   *  Defaults to a generic appointment business when not supplied. */
+  businessDescriptor?: string;
 };
 
 export type RiskScoreResult = {
@@ -40,7 +43,8 @@ export async function scoreNoShowRisk(
     return deterministicScore(input);
   }
 
-  const prompt = `You are a no-show risk analyst for a nail salon booking system.
+  const businessDescriptor = input.businessDescriptor?.trim() || "an appointment-based business";
+  const prompt = `You are a no-show risk analyst for ${businessDescriptor} booking system.
 Score the likelihood this customer will not show up (0 = very likely to show, 100 = very likely to no-show).
 
 Customer data:

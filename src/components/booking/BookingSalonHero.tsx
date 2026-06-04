@@ -32,6 +32,9 @@ type BookingSalonHeroProps = {
   /** P2.8 — owner-written tagline override. Falls back to the
    * `salonHeroTagline` generic copy when null/empty. */
   description?: string | null;
+  /** Vertical-specific fallback tagline, used when `description` is empty and
+   *  before the generic i18n copy. Null for `nail_salon`. */
+  fallbackTagline?: string | null;
   /** P2.2 — pick localized strings inside the info line below. */
   lang?: "vi" | "en";
 };
@@ -54,6 +57,7 @@ export function BookingSalonHero({
   openingHoursRaw,
   timezone,
   description,
+  fallbackTagline,
   lang = "vi",
 }: BookingSalonHeroProps) {
   const isLight = themeMode === "light";
@@ -112,7 +116,7 @@ export function BookingSalonHero({
             {shopLabel}
           </h2>
           <p className="mt-4 text-[15px] leading-relaxed text-white/70 lg:text-base">
-            {description?.trim() || t.salonHeroTagline}
+            {description?.trim() || fallbackTagline?.trim() || t.salonHeroTagline}
           </p>
           {timezone ? (
             <BookingSalonInfoLine

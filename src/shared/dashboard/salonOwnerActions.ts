@@ -919,6 +919,48 @@ export async function updateVoiceAiPersonaName(
   return { ok: true, personaName: trimmed };
 }
 
+/* ───────────── Business vertical (Phase 1) ───────────── */
+
+export type UpdateSalonVerticalResult =
+  | { ok: true; vertical: string }
+  | { ok: false; error: "unauthorized" | "forbidden" | "invalid_vertical" | "server_error" };
+
+/**
+ * Owner-only: writes `salons.vertical`. Drives the schema.org type, AI prompt
+ * descriptors, staff-role label, hero tagline, and seed catalogue via the
+ * vertical registry. Validated against the known registry slugs so the column
+ * never receives an unrenderable value.
+ */
+export async function updateSalonVertical(
+  slug: string,
+  vertical: string,
+): Promise<UpdateSalonVerticalResult> {
+  const { isKnownVertical } = await import("@/shared/verticals/registry");
+  const normalized = String(vertical ?? "").trim().toLowerCase();
+  if (!isKnownVertical(normalized)) {
+    return { ok: false, error: "invalid_vertical" };
+  }
+
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+
+  const { error: upErr } = await ctx.supabase
+    .from("salons")
+    .update({ vertical: normalized } as never)
+    .eq("id", ctx.salon.id);
+
+  if (upErr) {
+    console.error("[updateSalonVertical]", upErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true, vertical: normalized };
+}
+
 /* ───────────── Walk-in auto-assign toggle (PR #107) ───────────── */
 
 export type UpdateWalkinAutoAssignResult =
