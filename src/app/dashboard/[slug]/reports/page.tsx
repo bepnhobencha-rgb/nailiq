@@ -4,7 +4,7 @@ import { ReportsPanel } from "@/components/dashboard/ReportsPanel";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
-import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
+import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 
 export const dynamic = "force-dynamic";
 
@@ -47,9 +47,9 @@ export default async function ReportsPage({ params }: PageProps) {
     plan_override?: string | null;
     feature_flags?: Record<string, unknown> | null;
   };
-  // PR3: release flag `advanced_reports` (Beta, default OFF → reports_enabled)
-  // gates the page. notFound() refuses direct-URL access when disabled.
-  if (!isReleaseFeatureEnabled(planFields, "advanced_reports")) {
+  // Release flag `advanced_reports` (per-salon) AND platform kill-switch gate
+  // the page. notFound() refuses direct-URL access when disabled.
+  if (!(await isReleaseFeatureVisible(planFields, "advanced_reports"))) {
     notFound();
   }
 

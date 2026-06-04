@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
-import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
+import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { CombosPanel } from "@/components/dashboard/CombosPanel";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +38,7 @@ export default async function CombosPage({ params }: PageProps) {
     feature_flags?: Record<string, unknown> | null;
     voice_ai_enabled?: boolean | null;
   };
-  if (!isReleaseFeatureEnabled(flagFields, "combos")) {
+  if (!(await isReleaseFeatureVisible(flagFields, "combos"))) {
     notFound();
   }
 
