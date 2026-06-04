@@ -15,7 +15,9 @@
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
   RELEASE_FEATURE_KEYS,
+  isReleaseFeatureEnabled,
   type ReleaseFeatureKey,
+  type ReleaseFeatureSalon,
 } from "./featureRegistry";
 
 const PREFIX = "feature_";
@@ -62,6 +64,25 @@ export async function loadPlatformDisabledFeatures(): Promise<
  * kill-switch UI). Defaults to ON; a `feature_<key>` row with enabled=false
  * flips it OFF.
  */
+/**
+ * Effective visibility for ONE feature (platform AND per-salon). Use in page
+ * route guards: `if (!(await isReleaseFeatureVisible(salon, key))) notFound()`.
+ */
+export async function isReleaseFeatureVisible(
+  salon: ReleaseFeatureSalon,
+  key: ReleaseFeatureKey,
+): Promise<boolean> {
+  const disabled = await loadPlatformDisabledFeatures();
+  return !disabled.has(key) && isReleaseFeatureEnabled(salon, key);
+}
+
+/** True when a feature is disabled platform-wide (kill-switch on). */
+export async function isFeaturePlatformDisabled(
+  key: ReleaseFeatureKey,
+): Promise<boolean> {
+  return (await loadPlatformDisabledFeatures()).has(key);
+}
+
 export async function loadPlatformFeatureStates(): Promise<
   Record<ReleaseFeatureKey, boolean>
 > {

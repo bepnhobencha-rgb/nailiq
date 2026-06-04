@@ -9,6 +9,7 @@ import { SalonBookingSkeleton } from "@/components/booking/SalonBookingSkeleton"
 import { BookingFlowErrorBoundary } from "@/components/booking/BookingFlowErrorBoundary";
 import { loadServiceCategories } from "@/shared/booking/loadServiceCategories";
 import { resolvePublicBookingPage } from "@/shared/booking/resolvePublicBookingPage";
+import { buildBookingThemeVars } from "@/shared/booking/bookingThemeVars";
 import {
   getBookingMessages,
   resolveBookingLanguage,
@@ -122,28 +123,13 @@ async function PublicBookingRouteBody({
   // (`--nq-luxury-cta-from/mid/to`) is no longer threaded through —
   // `.nq-booking-luxury-cta` now reads `--cta-bg` / `--cta-text`
   // directly.
-  const isLightTheme = load.salon.themeMode === "light";
-  const themeVars = isLightTheme
-    ? {
-        "--booking-bg": "#f9f9f9",
-        "--booking-bg-card": "#ffffff",
-        "--booking-bg-input": "#f2f2f2",
-        "--booking-text": "#1a1a1a",
-        "--booking-text-muted": "rgba(0, 0, 0, 0.45)",
-        "--booking-border": "rgba(0, 0, 0, 0.1)",
-        "--cta-bg": "#1a1a1a",
-        "--cta-text": "#ffffff",
-      }
-    : {
-        "--booking-bg": "#0a0a0a",
-        "--booking-bg-card": "#1c1c1e",
-        "--booking-bg-input": "#2c2c2e",
-        "--booking-text": "#ffffff",
-        "--booking-text-muted": "rgba(255, 255, 255, 0.5)",
-        "--booking-border": "rgba(255, 255, 255, 0.1)",
-        "--cta-bg": "#ffffff",
-        "--cta-text": "#0a0a0a",
-      };
+  // Branded canvas: surfaces are derived from the salon's brand colour with a
+  // luminance-adaptive tint so the booking page echoes their brand tone (text
+  // + CTA stay fixed for contrast). See buildBookingThemeVars.
+  const themeVars = buildBookingThemeVars(
+    load.salon.brandColor,
+    load.salon.themeMode === "light" ? "light" : "dark",
+  );
   const brandStyle = {
     "--salon-primary": load.salon.brandColor,
     "--brand": load.salon.brandColor,

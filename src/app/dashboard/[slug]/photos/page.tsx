@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { isFeaturePlatformDisabled } from "@/shared/features/platformFeatureFlags";
 import { hasFeature } from "@/lib/feature-gating";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { PhotoGalleryPanel } from "@/components/dashboard/PhotoGalleryPanel";
@@ -43,6 +44,9 @@ export default async function PhotosPage({ params }: PageProps) {
   if (ctx.role !== "owner" && ctx.role !== "senior") {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
+  // Platform kill-switch: hard-block when photos is disabled platform-wide
+  // (plan-tier gating still shows the friendly upsell below).
+  if (await isFeaturePlatformDisabled("photos")) notFound();
 
   const { data: planRow } = await ctx.supabase
     .from("salons")

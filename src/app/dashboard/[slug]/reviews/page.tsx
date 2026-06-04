@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { isFeaturePlatformDisabled } from "@/shared/features/platformFeatureFlags";
 import { loadSalonReviews } from "@/shared/dashboard/loadSalonReviewsAction";
 import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
 
@@ -25,6 +26,9 @@ export default async function SalonReviewsPage({ params }: PageProps) {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) redirect("/register");
   if (ctx.role !== "owner") redirect(`/dashboard/${encodeURIComponent(slug)}`);
+  // Platform kill-switch: hard-block when reviews is disabled platform-wide
+  // (plan-tier gating still shows the friendly upsell below).
+  if (await isFeaturePlatformDisabled("reviews")) notFound();
 
   const { data: planRow } = await ctx.supabase
     .from("salons")

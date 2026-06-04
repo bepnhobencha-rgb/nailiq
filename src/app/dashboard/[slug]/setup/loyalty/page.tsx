@@ -4,7 +4,7 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { getLoyaltyProgram } from "@/shared/loyalty/loyaltyActions";
 import { listGiftCards } from "@/shared/loyalty/giftCardActions";
 import { getEffectivePlan } from "@/shared/lib/subscriptionPlans";
-import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
+import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { LoyaltySetupClient } from "@/components/dashboard/LoyaltySetupClient";
 
 export const dynamic = "force-dynamic";
@@ -35,9 +35,9 @@ export default async function LoyaltySetupPage({ params }: Props) {
     feature_flags?: Record<string, unknown> | null;
   };
 
-  // PR3: release flag `loyalty` (Beta, default OFF) gates the whole page.
+  // Release flag `loyalty` (per-salon) AND platform kill-switch gate the page.
   // notFound() when disabled — direct-URL access is refused, not just hidden.
-  if (!isReleaseFeatureEnabled(planFields, "loyalty")) {
+  if (!(await isReleaseFeatureVisible(planFields, "loyalty"))) {
     notFound();
   }
 
