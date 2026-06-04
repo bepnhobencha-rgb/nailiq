@@ -4,6 +4,31 @@ import { revalidatePath } from "next/cache";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
+/**
+ * Owner-only: toggle whether the salon's visible website-builder sections
+ * render on the public booking page (`salons.public_sections_enabled`).
+ */
+export async function updatePublicSectionsEnabled(
+  slug: string,
+  enabled: boolean,
+): Promise<{ ok: boolean; error?: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+
+  const { error } = await ctx.supabase
+    .from("salons")
+    .update({ public_sections_enabled: enabled } as never)
+    .eq("id", ctx.salon.id);
+
+  if (error) {
+    console.error("[updatePublicSectionsEnabled]", error);
+    return { ok: false, error: error.message };
+  }
+  revalidatePath(`/dashboard/${slug}/settings/my-page`);
+  return { ok: true };
+}
+
 export async function updateSectionContent(
   slug: string,
   sectionId: string,

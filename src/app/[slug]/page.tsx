@@ -9,6 +9,8 @@ import { SalonBookingSkeleton } from "@/components/booking/SalonBookingSkeleton"
 import { BookingFlowErrorBoundary } from "@/components/booking/BookingFlowErrorBoundary";
 import { loadServiceCategories } from "@/shared/booking/loadServiceCategories";
 import { resolvePublicBookingPage } from "@/shared/booking/resolvePublicBookingPage";
+import { loadSalonPageSections } from "@/shared/booking/loadSalonPageSections";
+import { SalonPageSections } from "@/components/booking/SalonPageSections";
 import { buildBookingThemeVars } from "@/shared/booking/bookingThemeVars";
 import {
   getBookingMessages,
@@ -155,6 +157,12 @@ async function PublicBookingRouteBody({
     lang === "vi" ? "vi" : "en"
   ];
 
+  // Website-builder sections (opt-in per salon). Rendered above the booking
+  // flow when `public_sections_enabled` is on; otherwise the page is unchanged.
+  const pageSections = load.salon.publicSectionsEnabled
+    ? await loadSalonPageSections(load.salon.id)
+    : [];
+
   if (!load.salon.acceptingBookings) {
     return (
       <>
@@ -219,7 +227,19 @@ async function PublicBookingRouteBody({
           </div>
         </div>
 
-        <main className="relative z-10 mx-auto w-full max-w-[1200px] px-4 py-10 pb-safe sm:px-6 lg:flex lg:items-start lg:gap-10 lg:px-8 lg:py-14">
+        {pageSections.length > 0 ? (
+          <SalonPageSections
+            sections={pageSections}
+            services={load.services}
+            currency={load.salon.currencyCode}
+            lang={lang}
+            salonName={load.salon.name}
+            salonAddress={load.salon.address}
+            salonPhone={load.salon.salonPhone}
+          />
+        ) : null}
+
+        <main id="book" className="relative z-10 mx-auto w-full max-w-[1200px] px-4 py-10 pb-safe sm:px-6 lg:flex lg:items-start lg:gap-10 lg:px-8 lg:py-14">
           <BookingSalonHero
             shopLabel={shopLabel}
             t={t}

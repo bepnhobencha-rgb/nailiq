@@ -60,6 +60,9 @@ export type BookingSalonMeta = {
    *  type, staff-role label, and hero tagline fallback. Defaults to
    *  `"nail_salon"` for legacy rows. */
   vertical: string;
+  /** `salons.public_sections_enabled` — when true, the salon's website-builder
+   *  sections render above the booking flow on the public page. Default false. */
+  publicSectionsEnabled: boolean;
 };
 
 export type BookingLoadData = {
@@ -339,6 +342,10 @@ export async function loadBookingServicesForSalonSlug(
         (typeof (salon as { vertical?: unknown }).vertical === "string"
           ? ((salon as { vertical?: string }).vertical as string).trim()
           : "") || "nail_salon",
+      // `salons.public_sections_enabled` added by migration 20260604160000.
+      // Cast-tolerant: a row on the prior schema returns undefined → false.
+      publicSectionsEnabled:
+        (salon as { public_sections_enabled?: unknown }).public_sections_enabled === true,
     },
   };
 }
