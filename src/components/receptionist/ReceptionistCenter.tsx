@@ -1577,6 +1577,9 @@ function ReceptionistCenterInner({
     pendingPartyGroupTime: pendingPartyCard?.groupStartDisplay ?? null,
     pendingPartyGuestName,
     isSetupIncomplete,
+    // Walk-in queue feature gate (page forces queue_panel off when the
+    // walkin_queue feature is disabled) — suppresses walk-in/queue nudges.
+    queueEnabled: modules.queue_panel,
   };
   const cockpitLabels: CockpitLabels = {
     longWaitGuest: rcMessages.basicMode.longWaitGuest,

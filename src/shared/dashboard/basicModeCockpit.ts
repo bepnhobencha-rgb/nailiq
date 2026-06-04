@@ -86,6 +86,10 @@ export type CockpitInputs = {
   /** The single unconfirmed guest's name when exactly one is pending. */
   pendingPartyGuestName: string | null;
   isSetupIncomplete: boolean;
+  /** When false, the walk-in queue feature is off for this salon — the cockpit
+   *  must not suggest walk-ins or surface queue actions. Defaults to enabled
+   *  when omitted (backward compatible). */
+  queueEnabled?: boolean;
 };
 
 /** Localized copy — caller passes the i18n bundle so this stays pure. */
@@ -162,6 +166,7 @@ export function computeNextAction(
 
   // Ordered candidates (highest priority first); null entries don't apply.
   const candidates: Array<NextAction | null> = [
+    i.queueEnabled !== false &&
     i.longestWaitMinutes !== null &&
     i.longestWaitMinutes > config.longWaitThresholdMinutes
       ? {
@@ -182,7 +187,7 @@ export function computeNextAction(
           action: openBooking,
         }
       : null,
-    i.waitingCount > 0
+    i.queueEnabled !== false && i.waitingCount > 0
       ? {
           kind: "assign_waiting",
           text: i.firstWaitingName
@@ -211,7 +216,7 @@ export function computeNextAction(
           action: openParty,
         }
       : null,
-    i.availableStaffName && i.waitingCount === 0
+    i.queueEnabled !== false && i.availableStaffName && i.waitingCount === 0
       ? {
           kind: "suggest_walkin",
           text: labels.suggestWalkin(i.availableStaffName),
