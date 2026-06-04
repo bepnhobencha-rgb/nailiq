@@ -155,13 +155,25 @@ async function loadStaffRow(
 // ── Data loader for the Team page ───────────────────────────────────────────
 
 /**
- * Map staff.user_id → access info (role, email/phone, active). Uses the
- * service-role client because `salon_members` RLS only lets a user read
- * their OWN row — an owner could not otherwise list the whole team.
+ * Map staff.user_id → access info (role, email/phone, active) for the staff
+ * members that actually have a linked login (`linkedUserIds`).
+ *
+ * Uses the service-role client because `salon_members` RLS only lets a user
+ * read their OWN row — an owner could not otherwise see the whole team.
+ *
+ * Cost scales with the salon's linked-team size, NOT the project's total user
+ * count: roles come from one indexed `IN (...)` query, and each user's
+ * email/status is fetched with a targeted `getUserById` in parallel. A salon
+ * with no logins yet makes ZERO Auth calls. (The previous version paged
+ * through *every* auth user in the project — up to 4,000 rows — on each render.)
  */
 export async function loadTeamAccessMap(
   salonId: string,
+  linkedUserIds: string[],
 ): Promise<Record<string, StaffAccessInfo>> {
+  const ids = Array.from(new Set(linkedUserIds.filter(Boolean)));
+  if (ids.length === 0) return {};
+
   let admin: SupabaseClient;
   try {
     admin = createServiceRoleClient();
@@ -169,10 +181,12 @@ export async function loadTeamAccessMap(
     return {};
   }
 
+  // Roles for just the linked users — single indexed query.
   const { data: members } = await admin
     .from("salon_members")
     .select("user_id, role")
-    .eq("salon_id", salonId);
+    .eq("salon_id", salonId)
+    .in("user_id", ids);
 
   const roleByUser = new Map<string, StaffAccessInfo["role"]>();
   for (const m of (members ?? []) as { user_id: string; role: string }[]) {
@@ -182,39 +196,25 @@ export async function loadTeamAccessMap(
   }
   if (roleByUser.size === 0) return {};
 
-  // Resolve emails / confirmation status for the linked users.
-  const contactByUser = new Map<
-    string,
-    { email: string | null; phone: string | null; active: boolean }
-  >();
-  for (let page = 1; page <= 20; page += 1) {
-    const { data, error } = await admin.auth.admin.listUsers({
-      page,
-      perPage: 200,
-    });
-    if (error) break;
-    for (const u of data.users) {
-      if (!roleByUser.has(u.id)) continue;
-      contactByUser.set(u.id, {
-        email: u.email ?? null,
-        phone: u.phone ?? null,
-        active: Boolean(u.email_confirmed_at || u.phone_confirmed_at || u.last_sign_in_at),
-      });
-    }
-    if (data.users.length < 200) break;
-  }
+  // Email + confirmation status: one targeted lookup per linked user, in
+  // parallel. No full-project scan.
+  const entries = await Promise.all(
+    Array.from(roleByUser.entries()).map(async ([userId, role]) => {
+      const { data, error } = await admin.auth.admin.getUserById(userId);
+      const u = error ? null : data.user;
+      const info: StaffAccessInfo = {
+        role,
+        email: u?.email ?? null,
+        phone: u?.phone ?? null,
+        active: Boolean(
+          u?.email_confirmed_at || u?.phone_confirmed_at || u?.last_sign_in_at,
+        ),
+      };
+      return [userId, info] as const;
+    }),
+  );
 
-  const out: Record<string, StaffAccessInfo> = {};
-  for (const [userId, role] of roleByUser) {
-    const c = contactByUser.get(userId);
-    out[userId] = {
-      role,
-      email: c?.email ?? null,
-      phone: c?.phone ?? null,
-      active: c?.active ?? false,
-    };
-  }
-  return out;
+  return Object.fromEntries(entries);
 }
 
 // ── Mutations ───────────────────────────────────────────────────────────────
