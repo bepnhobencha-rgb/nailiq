@@ -18,6 +18,7 @@ import { BookingDocumentEn } from "./BookingDocumentEn";
 import { BookingLanguageToggle } from "@/components/booking/BookingLanguageToggle";
 import { BookingChatWidget } from "@/components/booking/BookingChatWidget";
 import { getSalonLocalBusinessJsonLd } from "@/shared/seo/jsonLd";
+import { resolveVertical } from "@/shared/verticals/registry";
 
 /** Avoid stale static segments for salons created after deploy. */
 export const dynamic = "force-dynamic";
@@ -158,7 +159,15 @@ async function PublicBookingRouteBody({
     address: load.salon.address,
     phone: load.salon.salonPhone,
     timezone: load.salon.timezone,
+    vertical: load.salon.vertical,
   });
+
+  // Vertical-specific fallback tagline for the booking hero. Only used when the
+  // salon has no custom `description`; `nail_salon` omits it so the existing
+  // i18n copy still wins (preserved in both languages).
+  const heroFallbackTagline = resolveVertical(load.salon.vertical).heroTagline?.[
+    lang === "vi" ? "vi" : "en"
+  ];
 
   if (!load.salon.acceptingBookings) {
     return (
@@ -233,6 +242,7 @@ async function PublicBookingRouteBody({
             openingHoursRaw={load.salon.opening_hours}
             timezone={load.salon.timezone}
             description={load.salon.description}
+            fallbackTagline={heroFallbackTagline}
             lang={lang}
             className="lg:sticky lg:top-10 lg:flex-shrink-0"
           />
@@ -246,6 +256,7 @@ async function PublicBookingRouteBody({
               openingHoursRaw={load.salon.opening_hours}
               timezone={load.salon.timezone}
               description={load.salon.description}
+              fallbackTagline={heroFallbackTagline}
               lang={lang}
             />
             <h1 className="hidden lg:block text-2xl font-semibold tracking-tight text-[var(--booking-text)] sm:text-3xl lg:text-[2.125rem] lg:leading-[1.15] lg:tracking-[-0.035em]">

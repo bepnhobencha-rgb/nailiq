@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { resolveVertical } from "@/shared/verticals/registry";
 import {
   getEffectivePlanLimits,
 } from "@/shared/lib/subscriptionPlans";
@@ -49,7 +50,8 @@ const ExtractedServicesArraySchema = z.array(ExtractedServiceSchema).max(60);
 // Shared prompt
 // ---------------------------------------------------------------------------
 
-const MENU_EXTRACTION_PROMPT = `This is a nail salon menu or price list image.
+function buildMenuExtractionPrompt(businessDescriptor: string): string {
+  return `This is the menu or price list image for ${businessDescriptor}.
 Extract every service you can clearly see.
 
 Return ONLY a JSON array with no markdown fences or commentary:
@@ -64,6 +66,7 @@ Rules:
   gel removal=15, acrylic removal=20, nail art=15, polish change=15, french tips=10.
 - Skip add-ons priced under $3. Skip vague entries like "other" or "ask for price".
 - If no clear menu or price list is visible in the image, return [].`;
+}
 
 // ---------------------------------------------------------------------------
 // Anthropic fetch helper (raw fetch, same pattern as extractBrandFromWebsiteAction)
@@ -82,10 +85,33 @@ const E2E_FIXTURE_SERVICES = JSON.stringify([
   { name: "Acrylic Full Set", price_cents: 5500, duration_minutes: 60 },
 ]);
 
+/** Resolve the vertical AI-descriptor ("a nail salon" / "a head spa") for the
+ *  salon behind a dashboard write context. The `vertical` column is read
+ *  separately because `getDashboardWriteClient`'s salon projection may not
+ *  include it; an unknown/missing value falls back to the nail-salon default. */
+type DashboardWriteCtx = NonNullable<
+  Awaited<ReturnType<typeof getDashboardWriteClient>>
+>;
+
+async function resolveSalonDescriptor(ctx: DashboardWriteCtx): Promise<string> {
+  try {
+    const { data } = await ctx.supabase
+      .from("salons")
+      .select("vertical")
+      .eq("id", ctx.salon.id)
+      .maybeSingle();
+    return resolveVertical((data as { vertical?: string | null } | null)?.vertical)
+      .aiDescriptor;
+  } catch {
+    return resolveVertical(null).aiDescriptor;
+  }
+}
+
 async function callClaudeVision(
   imageContent:
     | { type: "url"; url: string }
     | { type: "base64"; media_type: string; data: string },
+  businessDescriptor: string,
 ): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   // E2E mock gate — short-circuits before any real network call
   const e2eMock = process.env["AI_PREFILL_E2E_MOCK"];
@@ -127,7 +153,7 @@ async function callClaudeVision(
             role: "user",
             content: [
               imageBlock,
-              { type: "text", text: MENU_EXTRACTION_PROMPT },
+              { type: "text", text: buildMenuExtractionPrompt(businessDescriptor) },
             ],
           },
         ],
@@ -205,11 +231,14 @@ export async function analyzeMenuImage(
   const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
   const safeMime = allowed.includes(mimeType) ? mimeType : "image/jpeg";
 
-  const vision = await callClaudeVision({
-    type: "base64",
-    media_type: safeMime,
-    data: base64Data,
-  });
+  const vision = await callClaudeVision(
+    {
+      type: "base64",
+      media_type: safeMime,
+      data: base64Data,
+    },
+    await resolveSalonDescriptor(ctx),
+  );
 
   if (!vision.ok) {
     return {
@@ -250,7 +279,10 @@ export async function analyzeMenuImageUrl(
     return { ok: false, error: "invalid_url" };
   }
 
-  const vision = await callClaudeVision({ type: "url", url: imageUrl });
+  const vision = await callClaudeVision(
+    { type: "url", url: imageUrl },
+    await resolveSalonDescriptor(ctx),
+  );
   if (!vision.ok) {
     return {
       ok: false,

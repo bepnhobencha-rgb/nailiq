@@ -99,7 +99,7 @@ export const bookingEn = {
   },
   /** Optional reference image upload on the Info step. */
   refImageLabel: "Inspiration image (optional)",
-  refImageHelp: "Upload a photo of nails you'd like as a reference",
+  refImageHelp: "Upload a reference photo (optional)",
   refImageUploading: "Uploading…",
   refImageDone: "Image uploaded",
   refImageRemove: "Remove",
@@ -542,7 +542,7 @@ export const bookingEn = {
     changeServiceBtn: "Request service change",
     changeStaffBtn: "Request preferred staff",
     addNoteBtn: "Message salon",
-    changeRequestNotePlaceholder: "e.g. I'd prefer a different design or nail colour…",
+    changeRequestNotePlaceholder: "e.g. I'd prefer a different option or have a specific request…",
     changeRequestSubmit: "Submit request",
     changeRequestSubmitting: "Submitting…",
     changeRequestSuccess: "Your request has been sent to the salon.",

@@ -20,6 +20,7 @@ export function BookingMobileHero({
   openingHoursRaw,
   timezone,
   description,
+  fallbackTagline,
   lang = "vi",
 }: {
   shopLabel: string;
@@ -30,6 +31,8 @@ export function BookingMobileHero({
   timezone?: string;
   /** P2.8 — owner-written tagline override. */
   description?: string | null;
+  /** Vertical-specific fallback tagline (null for `nail_salon`). */
+  fallbackTagline?: string | null;
   /** P2.2 — drive the info-line locale. */
   lang?: "vi" | "en";
 }) {
@@ -56,7 +59,7 @@ export function BookingMobileHero({
         {shopLabel}
       </h1>
       <p className="relative mt-2 text-sm leading-relaxed text-white/70">
-        {description?.trim() || t.salonHeroTagline}
+        {description?.trim() || fallbackTagline?.trim() || t.salonHeroTagline}
       </p>
       {timezone ? (
         <div className="relative text-white/85">
