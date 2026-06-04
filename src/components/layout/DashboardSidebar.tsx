@@ -275,6 +275,9 @@ export function DashboardSidebar({
             href: `${dashRoot}/clients`,
             icon: Users,
             match: (p) => p.startsWith(`${dashRoot}/clients`),
+            // Client profiles expose PII — desk roles only (owner/senior/
+            // admin/receptionist). Hide from nail_tech so it can't bounce.
+            hidden: role === "nail_tech",
           },
           {
             key: "staff",

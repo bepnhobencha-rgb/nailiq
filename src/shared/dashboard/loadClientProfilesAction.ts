@@ -48,7 +48,15 @@ export async function loadClientProfiles(
 ): Promise<LoadClientProfilesResult> {
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
-  if (resolved.role !== "owner" && resolved.role !== "senior") {
+  // Desk roles may view client profiles (owner / senior / admin /
+  // receptionist). nail_tech is denied — the surface exposes phones/emails
+  // and aggregate spend. Editing (notes/VIP) stays owner-only below.
+  if (
+    resolved.role !== "owner" &&
+    resolved.role !== "senior" &&
+    resolved.role !== "admin" &&
+    resolved.role !== "receptionist"
+  ) {
     return { ok: false, error: "forbidden" };
   }
 
