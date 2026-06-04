@@ -19,6 +19,7 @@ import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 // StaffDrawer is being built in parallel — import by interface contract
 import { StaffDrawer } from "@/components/dashboard/StaffDrawer";
 import { StaffAccessControl } from "@/components/dashboard/StaffAccessControl";
+import { AddTeamMemberSheet } from "@/components/dashboard/AddTeamMemberSheet";
 import type { StaffAccessInfo } from "@/shared/dashboard/staffAccess";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -303,9 +304,12 @@ export function StaffSetupPanel({
   const [toast, setToast] = useState<SetupToastPayload | null>(null);
   const [search, setSearch] = useState("");
 
-  // Drawer state
+  // Drawer state (edit existing staff)
   const [drawerStaff, setDrawerStaff] = useState<SetupStaffRow | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // All-in-one "Add team member" sheet (create staff + optional login at once)
+  const [addSheetOpen, setAddSheetOpen] = useState(false);
 
   // Undo-delete state
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -489,10 +493,7 @@ export function StaffSetupPanel({
           variant="primary"
           size="sm"
           disabled={atStaffLimit || isMutating}
-          onClick={() => {
-            setDrawerStaff(null);
-            setDrawerOpen(true);
-          }}
+          onClick={() => setAddSheetOpen(true)}
         >
           + {tLabels.addStaff}
         </Button>
@@ -619,6 +620,15 @@ export function StaffSetupPanel({
         }}
         canDelete={rows.length > 1}
         atStaffLimit={atStaffLimit}
+      />
+
+      {/* ── Add team member (all-in-one: provider + optional login) ───────────── */}
+      <AddTeamMemberSheet
+        slug={slug}
+        currentUserRole={currentUserRole}
+        isOpen={addSheetOpen}
+        onClose={() => setAddSheetOpen(false)}
+        onToast={(message, kind) => setToast({ variant: kind, message })}
       />
     </div>
   );
