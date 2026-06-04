@@ -10,6 +10,10 @@ import {
   getDashboardWriteClient,
   type StaffJobRole,
 } from "@/shared/dashboard/setupActions";
+import {
+  loadTeamAccessMap,
+  type StaffAccessInfo,
+} from "@/shared/dashboard/staffAccess";
 import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -47,7 +51,7 @@ export default async function SetupStaffPage({ params }: Props) {
   const [staffResult, servicesResult] = await Promise.all([
     ctx.supabase
       .from("staff")
-      .select("id, name, job_role, status")
+      .select("id, name, job_role, status, user_id")
       .eq("salon_id", ctx.salon.id)
       .is("deleted_at" as never, null)
       .order("name", { ascending: true }),
@@ -114,6 +118,18 @@ export default async function SetupStaffPage({ params }: Props) {
     ? planLimits.maxStaff
     : Number.POSITIVE_INFINITY;
 
+  // Login/permission info per staff member (service-role read — salon_members
+  // RLS only exposes the caller's own row, so the owner couldn't otherwise see
+  // the whole team's access).
+  const accessMap = await loadTeamAccessMap(ctx.salon.id);
+  const accessByStaff: Record<string, StaffAccessInfo | null> = {};
+  for (const r of staffRows) {
+    const uid =
+      "user_id" in r ? (r as { user_id?: unknown }).user_id : undefined;
+    accessByStaff[String(r.id)] =
+      typeof uid === "string" ? (accessMap[uid] ?? null) : null;
+  }
+
   return (
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 sm:pt-6">
@@ -134,6 +150,8 @@ export default async function SetupStaffPage({ params }: Props) {
           services={services}
           initialServiceIdsByStaff={initialServiceIdsByStaff}
           salonHasCapabilityRows={capabilityRows.length > 0}
+          accessByStaff={accessByStaff}
+          currentUserRole={ctx.role}
         />
       </MobileStack>
     </ResponsiveShell>
