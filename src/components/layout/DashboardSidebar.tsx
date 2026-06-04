@@ -421,19 +421,25 @@ export function DashboardSidebar({
     ],
   );
 
+  // Basic Mode simplifies the rail to front-desk essentials — but only for
+  // front-desk roles. Management roles (owner/admin) always keep the full nav
+  // so they can reach Staff/Services/Reports/Settings even on a salon that
+  // forces Basic Mode for its receptionists.
+  const isManager = role === "owner" || role === "admin";
+  const navIsBasic = basicMode && !isManager;
   // Basic Mode: keep only the front-desk essentials; drop now-empty
   // sections. The "+ Walk-in" quick action moves under the live section
   // (the insight section it normally trails is hidden in Basic Mode).
   const visibleSections = useMemo<NavSection[]>(() => {
-    if (!basicMode) return sections;
+    if (!navIsBasic) return sections;
     return sections
       .map((s) => ({
         ...s,
         items: s.items.filter((i) => BASIC_NAV_KEYS.has(i.key)),
       }))
       .filter((s) => s.items.length > 0);
-  }, [sections, basicMode]);
-  const quickAddSectionKey = basicMode ? "live" : "insight";
+  }, [sections, navIsBasic]);
+  const quickAddSectionKey = navIsBasic ? "live" : "insight";
 
   // Reference the prop so unused-var lint stays clean. messagesCount is
   // intentionally not surfaced in the new layout (Messages shows the
@@ -531,7 +537,7 @@ export function DashboardSidebar({
                 contextual "+ Walk-in" — the sidebar copy is only the global
                 entry point for OTHER pages. */}
             {section.key === quickAddSectionKey &&
-            !basicMode &&
+            !navIsBasic &&
             !pathname.includes("/center") ? (
               <QuickAddWalkinButton
                 slug={slug}
