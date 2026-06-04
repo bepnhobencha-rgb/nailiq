@@ -18,6 +18,8 @@ import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 // StaffDrawer is being built in parallel — import by interface contract
 import { StaffDrawer } from "@/components/dashboard/StaffDrawer";
+import { StaffAccessControl } from "@/components/dashboard/StaffAccessControl";
+import type { StaffAccessInfo } from "@/shared/dashboard/staffAccess";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -268,12 +270,18 @@ export function StaffSetupPanel({
   initialServiceIdsByStaff,
   salonHasCapabilityRows,
   maxStaff,
+  accessByStaff,
+  currentUserRole,
 }: {
   slug: string;
   initialRows: SetupStaffRow[];
   services: SetupStaffServiceOption[];
   /** staffId → service IDs already attached. */
   initialServiceIdsByStaff: Record<string, string[]>;
+  /** staffId → login/permission info, or null when booking-only (no login). */
+  accessByStaff: Record<string, StaffAccessInfo | null>;
+  /** Caller's own salon_members role — gates who can grant `admin`. */
+  currentUserRole: string;
   /** When false, the salon is in the all-capable fallback; checkboxes are pre-checked
    *  so the first save does not accidentally narrow capability. */
   salonHasCapabilityRows: boolean;
@@ -526,23 +534,39 @@ export function StaffSetupPanel({
         </p>
       ) : (
         <div className="rounded-2xl border border-nq-border/40 bg-nq-surface/40 p-4">
-          {filteredRows.map((row, idx) => (
-            <StaffCompactRow
-              key={row.id}
-              row={row}
-              roleLabel={setupStaffCopy.roleOptions[row.job_role]}
-              pendingLabel={setupStaffCopy.pendingBadge}
-              inactiveLabel={setupStaffCopy.inactiveBadge}
-              isLast={idx === filteredRows.length - 1}
-              pendingId={pendingId}
-              canDelete={rows.length > 1}
-              onEdit={() => {
-                setDrawerStaff(row);
-                setDrawerOpen(true);
-              }}
-              onDelete={() => handleDeleteOptimistic(row.id)}
-            />
-          ))}
+          {filteredRows.map((row, idx) => {
+            const isLast = idx === filteredRows.length - 1;
+            return (
+              <div
+                key={row.id}
+                className={cn(!isLast && "border-b border-nq-border/20")}
+              >
+                <StaffCompactRow
+                  row={row}
+                  roleLabel={setupStaffCopy.roleOptions[row.job_role]}
+                  pendingLabel={setupStaffCopy.pendingBadge}
+                  inactiveLabel={setupStaffCopy.inactiveBadge}
+                  isLast
+                  pendingId={pendingId}
+                  canDelete={rows.length > 1}
+                  onEdit={() => {
+                    setDrawerStaff(row);
+                    setDrawerOpen(true);
+                  }}
+                  onDelete={() => handleDeleteOptimistic(row.id)}
+                />
+                <StaffAccessControl
+                  slug={slug}
+                  staffId={row.id}
+                  access={accessByStaff[row.id] ?? null}
+                  currentUserRole={currentUserRole}
+                  onToast={(message, kind) =>
+                    setToast({ variant: kind, message })
+                  }
+                />
+              </div>
+            );
+          })}
         </div>
       )}
 
