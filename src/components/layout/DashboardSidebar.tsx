@@ -231,6 +231,7 @@ export function DashboardSidebar({
             href: `${dashRoot}/center`,
             icon: LayoutGrid,
             match: (p) => p.startsWith(`${dashRoot}/center`),
+            hidden: featureOff("receptionist_center"),
           },
           {
             key: "queue",
@@ -239,6 +240,8 @@ export function DashboardSidebar({
             href: `${dashRoot}/center#queue`,
             icon: Clock,
             match: () => false,
+            hidden:
+              featureOff("receptionist_center") || featureOff("walkin_queue"),
             // Combined badge: overdue count takes precedence over
             // waiting count (so the receptionist sees "1 overdue" in
             // red, not "3 waiting" in gold). When ONLY waiting > 0, we
@@ -258,6 +261,7 @@ export function DashboardSidebar({
             href: `${dashRoot}/center?view=week`,
             icon: Calendar,
             match: () => false,
+            hidden: featureOff("receptionist_center"),
           },
         ],
       },

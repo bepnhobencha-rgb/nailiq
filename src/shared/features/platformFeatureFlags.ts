@@ -1,0 +1,58 @@
+/**
+ * Platform-wide feature kill-switches.
+ *
+ * Stored in the existing `platform_flags` table (key/value) under keys
+ * namespaced `feature_<releaseFeatureKey>` (e.g. `feature_walkin_queue`).
+ * A feature is platform-ENABLED unless an explicit row sets `enabled = false`
+ * — so an absent row means "on" (safe default: nothing hidden until an
+ * operator deliberately flips a kill-switch).
+ *
+ * Precedence (decided with product): platform OFF overrides per-salon —
+ * `effective = !platformDisabled(key) && isReleaseFeatureEnabled(salon, key)`.
+ * The AND is applied by `resolveFeatureVisibility` in featureRegistry.
+ */
+
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import {
+  RELEASE_FEATURE_KEYS,
+  type ReleaseFeatureKey,
+} from "./featureRegistry";
+
+const PREFIX = "feature_";
+
+/** platform_flags row key for a release feature kill-switch. */
+export function platformFeatureFlagKey(key: ReleaseFeatureKey): string {
+  return `${PREFIX}${key}`;
+}
+
+/**
+ * Set of release features currently DISABLED platform-wide. Absent / true
+ * rows are treated as enabled. Fails open (empty set = nothing disabled) so a
+ * read error never hides features for every salon at once.
+ */
+export async function loadPlatformDisabledFeatures(): Promise<
+  Set<ReleaseFeatureKey>
+> {
+  const disabled = new Set<ReleaseFeatureKey>();
+  let admin: ReturnType<typeof createServiceRoleClient>;
+  try {
+    admin = createServiceRoleClient();
+  } catch {
+    return disabled;
+  }
+
+  const keys = RELEASE_FEATURE_KEYS.map(platformFeatureFlagKey);
+  const { data, error } = await admin
+    .from("platform_flags")
+    .select("key, enabled")
+    .in("key", keys);
+
+  if (error || !data) return disabled;
+
+  for (const row of data as Array<{ key: string; enabled: boolean | null }>) {
+    if (row.enabled === false && row.key.startsWith(PREFIX)) {
+      disabled.add(row.key.slice(PREFIX.length) as ReleaseFeatureKey);
+    }
+  }
+  return disabled;
+}

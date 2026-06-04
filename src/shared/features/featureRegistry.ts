@@ -390,6 +390,32 @@ export function releaseFeatureDefault(key: ReleaseFeatureKey): boolean {
 }
 
 /**
+ * Effective visibility for EVERY release feature (base + beta), combining the
+ * two control planes:
+ *
+ *   effective(key) = !platformDisabled(key) && isReleaseFeatureEnabled(salon, key)
+ *
+ * - `platformDisabled`: platform-wide kill-switch (Superadmin). When a key is
+ *   in this set the feature is hidden for ALL salons, overriding per-salon.
+ * - `isReleaseFeatureEnabled`: per-salon override / plan / registry default.
+ *
+ * Safe by default: an empty `platformDisabled` set + no per-salon override
+ * resolves base features to ON and beta features to their registry default.
+ */
+export function resolveFeatureVisibility(
+  salon: ReleaseFeatureSalon,
+  platformDisabled?: ReadonlySet<ReleaseFeatureKey>,
+): Record<ReleaseFeatureKey, boolean> {
+  const out = {} as Record<ReleaseFeatureKey, boolean>;
+  for (const key of RELEASE_FEATURE_KEYS) {
+    out[key] =
+      !(platformDisabled?.has(key) ?? false) &&
+      isReleaseFeatureEnabled(salon, key);
+  }
+  return out;
+}
+
+/**
  * UI grouping for the read-only SuperAdmin release-features panel.
  *
  * Distinct from the registry `phase` (base/beta) and the `group` taxonomy:

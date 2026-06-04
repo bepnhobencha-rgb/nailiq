@@ -8,10 +8,9 @@ import { expireImpersonationIfStale } from "@/shared/superadmin/impersonationAct
 import { salonDayRangeUtc, salonToday } from "@/shared/lib/salonTime";
 import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import {
-  isReleaseFeatureEnabled,
-  BETA_FEATURE_KEYS,
-  type ReleaseFeatureKey,
+  resolveFeatureVisibility,
 } from "@/shared/features/featureRegistry";
+import { loadPlatformDisabledFeatures } from "@/shared/features/platformFeatureFlags";
 
 type Props = {
   children: ReactNode;
@@ -127,13 +126,12 @@ export default async function DashboardSlugLayout({
   };
   const subscriptionPlan = parseSubscriptionPlan(flagSalon.subscription_plan);
 
-  // PR2: resolve Beta release-feature visibility server-side so the client
-  // sidebar/shell receive plain booleans (never the raw salon row). Base
-  // features are not gated, so only Beta keys are passed.
-  const releaseFeatures: Partial<Record<ReleaseFeatureKey, boolean>> = {};
-  for (const key of BETA_FEATURE_KEYS) {
-    releaseFeatures[key] = isReleaseFeatureEnabled(flagSalon, key);
-  }
+  // Resolve release-feature visibility server-side so the client sidebar/shell
+  // receive plain booleans (never the raw salon row). Now covers EVERY key
+  // (base + beta) and ANDs in the platform-wide kill-switch: a feature is
+  // visible only when it's not platform-disabled AND enabled for this salon.
+  const platformDisabled = await loadPlatformDisabledFeatures();
+  const releaseFeatures = resolveFeatureVisibility(flagSalon, platformDisabled);
 
   return (
     <>
