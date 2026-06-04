@@ -56,6 +56,9 @@ export type BookingSalonMeta = {
   /** Release flag `group_booking` (PR2). When false, the public booking page
    *  hides the Individual/Group toggle and renders the individual flow only. */
   groupBookingEnabled: boolean;
+  /** `salons.public_sections_enabled` — when true, the salon's website-builder
+   *  sections render above the booking flow on the public page. Default false. */
+  publicSectionsEnabled: boolean;
 };
 
 export type BookingLoadData = {
@@ -329,6 +332,10 @@ export async function loadBookingServicesForSalonSlug(
         },
         "group_booking",
       ),
+      // `salons.public_sections_enabled` added by migration 20260604160000.
+      // Cast-tolerant: a row on the prior schema returns undefined → false.
+      publicSectionsEnabled:
+        (salon as { public_sections_enabled?: unknown }).public_sections_enabled === true,
     },
   };
 }
