@@ -9,6 +9,7 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { userEn } from "@/shared/i18n/user";
 import { salonToday } from "@/shared/lib/salonTime";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
+import { loadPlatformDisabledFeatures } from "@/shared/features/platformFeatureFlags";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +82,28 @@ export default async function ReceptionistCenterPage({
   };
   const groupBookingEnabled = isReleaseFeatureEnabled(flagSalon, "group_booking");
   const tvModeEnabled = isReleaseFeatureEnabled(flagSalon, "tv_mode");
+
+  // Hard URL enforcement: the sidebar hides the nav, but a direct visit to
+  // /center must also be blocked when the feature is off. effective =
+  // !platformDisabled && per-salon (platform overrides per-salon).
+  const platformDisabled = await loadPlatformDisabledFeatures();
+  const featureVisible = (key: Parameters<typeof isReleaseFeatureEnabled>[1]) =>
+    !platformDisabled.has(key) && isReleaseFeatureEnabled(flagSalon, key);
+
+  if (!featureVisible("receptionist_center")) {
+    redirect(`/dashboard/${encodeURIComponent(slug)}`);
+  }
+
+  // Walk-in queue off → hide the panel + quick-add inside the board too, not
+  // just the nav. Overriding the modules makes every existing
+  // `modules.queue_panel` / `modules.quick_add` gate hide it.
+  if (initialResult.ok && !featureVisible("walkin_queue")) {
+    initialResult.data.dashboardModules = {
+      ...initialResult.data.dashboardModules,
+      queue_panel: false,
+      quick_add: false,
+    };
+  }
 
   // Error-boundary labels are sourced server-side from English (the
   // primary product language per UX_PRINCIPLES §7). The boundary
