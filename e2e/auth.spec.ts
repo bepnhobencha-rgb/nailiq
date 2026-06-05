@@ -226,7 +226,7 @@ test.describe("Auth Flows — Login", () => {
 
     // Skip test if phone input not available (production without demo mode)
     if (!(await phoneInput.isVisible().catch(() => false))) {
-      page.test?.skip();
+      test.skip();
       return;
     }
 
@@ -260,7 +260,7 @@ test.describe("Auth Flows — Login", () => {
 
     // Skip test if phone input not available (production without demo mode)
     if (!(await phoneInput.isVisible().catch(() => false))) {
-      page.test?.skip();
+      test.skip();
       return;
     }
 
