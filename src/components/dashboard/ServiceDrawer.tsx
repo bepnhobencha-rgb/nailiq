@@ -233,6 +233,10 @@ export function ServiceDrawer({
   );
   const [description, setDescription] = useState(service?.description ?? "");
   const [isPopular, setIsPopular] = useState(service?.is_popular ?? false);
+  const [isAddon, setIsAddon] = useState(service?.is_addon ?? false);
+  const [addonTiming, setAddonTiming] = useState<"concurrent" | "sequential">(
+    service?.addon_timing ?? "sequential",
+  );
   // Declared before the reset effect below (which resets them) so they aren't
   // referenced before initialization.
   const [saveStatus, setSaveStatus] = useState<SaveButtonStatus>("idle");
@@ -252,6 +256,8 @@ export function ServiceDrawer({
     setCategory(service?.category ?? ADD_FORM_DEFAULT_CATEGORY);
     setDescription(service?.description ?? "");
     setIsPopular(service?.is_popular ?? false);
+    setIsAddon(service?.is_addon ?? false);
+    setAddonTiming(service?.addon_timing ?? "sequential");
     setSaveStatus("idle");
     setFieldError(null);
   }, [service]);
@@ -289,6 +295,8 @@ export function ServiceDrawer({
         | "category"
         | "description"
         | "is_popular"
+        | "is_addon"
+        | "addon_timing"
       >
     > & {
       price_type?: ServicePriceType;
@@ -309,6 +317,10 @@ export function ServiceDrawer({
     const descNext = descTrim.length === 0 ? null : descTrim;
     if (descNext !== (service.description ?? null)) patch.description = descNext;
     if (isPopular !== service.is_popular) patch.is_popular = isPopular;
+    if (isAddon !== service.is_addon) patch.is_addon = isAddon;
+    // Timing only matters for add-ons; persist when it changed.
+    if (isAddon && addonTiming !== service.addon_timing)
+      patch.addon_timing = addonTiming;
     // Pricing model: send price_type + price_max_cents together whenever the
     // model or the max changed. The server re-validates (clamps max > base,
     // downgrades range→from when max is missing/invalid).
@@ -321,7 +333,7 @@ export function ServiceDrawer({
       patch.price_max_cents = nextMaxCents;
     }
     return patch;
-  }, [buf, category, description, dur, isPopular, name, price, priceMax, priceType, service]);
+  }, [addonTiming, buf, category, description, dur, isAddon, isPopular, name, price, priceMax, priceType, service]);
 
   const patch = buildDirtyPatch();
   const isDirty = Object.keys(patch).length > 0;
@@ -404,6 +416,8 @@ export function ServiceDrawer({
         ...(patch.category !== undefined ? { category: patch.category } : {}),
         ...(patch.description !== undefined ? { description: patch.description } : {}),
         ...(patch.is_popular !== undefined ? { is_popular: patch.is_popular } : {}),
+        ...(patch.is_addon !== undefined ? { is_addon: patch.is_addon } : {}),
+        ...(patch.addon_timing !== undefined ? { addon_timing: patch.addon_timing } : {}),
         // Mirror the pricing model the server normalized to, so the parent's
         // in-memory row stays in sync. Spread as a structural view since
         // SetupServiceRow may not declare these columns yet.
@@ -432,6 +446,8 @@ export function ServiceDrawer({
           category,
           description: descTrimmed.length > 0 ? descTrimmed : null,
           is_popular: isPopular,
+          is_addon: isAddon,
+          addon_timing: isAddon ? addonTiming : "sequential",
           price_type: priceType,
           price_max_cents:
             priceType === "range" ? centsFromDollarsString(priceMax) : null,
@@ -476,6 +492,8 @@ export function ServiceDrawer({
     description,
     dur,
     formLabels,
+    isAddon,
+    addonTiming,
     isEditMode,
     isPopular,
     language,
@@ -774,6 +792,63 @@ export function ServiceDrawer({
             labels={formLabels}
             testId="service-drawer-popular"
           />
+
+          {/* Add-on toggle — hides this from the main picker; offered only as
+              an upsell on the review step. */}
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-nq-border/40 bg-nq-bg/40 px-3 py-2.5 text-sm text-nq-foreground">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-5 w-5 cursor-pointer accent-nq-primary"
+              checked={isAddon}
+              disabled={isSaving}
+              onChange={(e) => setIsAddon(e.target.checked)}
+              data-testid="service-drawer-is-addon"
+            />
+            <span className="flex-1">
+              <span className="block font-medium">
+                {language === "vi" ? "Đây là add-on" : "This is an add-on"}
+              </span>
+              <span className="mt-0.5 block text-xs text-nq-muted">
+                {language === "vi"
+                  ? "Ẩn khỏi danh sách dịch vụ chính; chỉ gợi ý thêm ở bước Xem lại."
+                  : "Hidden from the main service list; offered only as an upsell at review."}
+              </span>
+            </span>
+          </label>
+
+          {/* Add-on timing — only when this is an add-on. */}
+          {isAddon ? (
+            <label className="block text-sm font-medium text-nq-muted">
+              {language === "vi" ? "Thời điểm làm add-on" : "Add-on timing"}
+              <select
+                className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
+                value={addonTiming}
+                disabled={isSaving}
+                onChange={(e) =>
+                  setAddonTiming(
+                    e.target.value === "concurrent" ? "concurrent" : "sequential",
+                  )
+                }
+                data-testid="service-drawer-addon-timing"
+              >
+                <option value="concurrent">
+                  {language === "vi"
+                    ? "Làm cùng lúc dịch vụ chính (+0 phút)"
+                    : "During the service (+0 time)"}
+                </option>
+                <option value="sequential">
+                  {language === "vi"
+                    ? "Làm sau khi xong (cộng thêm giờ)"
+                    : "After the service (adds time)"}
+                </option>
+              </select>
+              <span className="mt-1 block text-xs text-nq-muted/80">
+                {language === "vi"
+                  ? "“Cùng lúc” = khách chồng nhiều add-on không tốn thêm thời gian."
+                  : "“During” lets customers stack add-ons with no extra time."}
+              </span>
+            </label>
+          ) : null}
         </div>
       </Drawer>
     </>

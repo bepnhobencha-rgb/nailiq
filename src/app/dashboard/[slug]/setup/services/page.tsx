@@ -36,7 +36,7 @@ export default async function SetupServicesPage({ params }: Props) {
     // `price_max_cents` by the variable-pricing migration. Some columns
     // are not yet in the auto-generated DB types so the SELECT is cast.
     .select(
-      "id, name, price_cents, price_type, price_max_cents, duration_minutes, buffer_minutes, category, description, is_popular, is_featured" as never,
+      "id, name, price_cents, price_type, price_max_cents, duration_minutes, buffer_minutes, category, description, is_popular, is_featured, is_addon, addon_timing" as never,
     )
     .eq("salon_id", ctx.salon.id)
     .is("deleted_at" as never, null)
@@ -94,6 +94,8 @@ export default async function SetupServicesPage({ params }: Props) {
               description?: unknown;
               is_popular?: unknown;
               is_featured?: unknown;
+              is_addon?: unknown;
+              addon_timing?: unknown;
             };
             const descRaw = row.description;
             const priceMaxRaw = row.price_max_cents;
@@ -120,6 +122,9 @@ export default async function SetupServicesPage({ params }: Props) {
                   : null,
               is_popular: row.is_popular === true,
               is_featured: row.is_featured === true,
+              is_addon: row.is_addon === true,
+              addon_timing:
+                row.addon_timing === "concurrent" ? "concurrent" : "sequential",
             };
           })}
         />

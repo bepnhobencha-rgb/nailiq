@@ -36,6 +36,8 @@ export type SetupServiceRow = {
   description: string | null;
   is_popular: boolean;
   is_featured: boolean;
+  is_addon: boolean;
+  addon_timing: "concurrent" | "sequential";
 };
 
 type ServiceFormLabels = UserMessages["serviceForm"];

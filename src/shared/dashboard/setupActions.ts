@@ -447,6 +447,10 @@ export async function addService(
     price_type?: string | null;
     /** Upper bound for price_type='range' (cents). */
     price_max_cents?: number | null;
+    /** When true, this is an add-on (upsell-only, hidden from the main picker). */
+    is_addon?: boolean;
+    /** Add-on scheduling: 'concurrent' (+0 time) | 'sequential' (adds time). */
+    addon_timing?: string | null;
   },
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
@@ -502,6 +506,12 @@ export async function addService(
     input.is_popular === undefined ? undefined : Boolean(input.is_popular);
   const isFeatured =
     input.is_featured === undefined ? undefined : Boolean(input.is_featured);
+  const isAddon =
+    input.is_addon === undefined ? undefined : Boolean(input.is_addon);
+  const addonTiming =
+    input.addon_timing === "concurrent" || input.addon_timing === "sequential"
+      ? input.addon_timing
+      : undefined;
 
   const supabase = await writableSupabase(slug, r.kind);
 
@@ -535,6 +545,8 @@ export async function addService(
     ...(description !== undefined ? { description } : {}),
     ...(isPopular !== undefined ? { is_popular: isPopular } : {}),
     ...(isFeatured !== undefined ? { is_featured: isFeatured } : {}),
+    ...(isAddon !== undefined ? { is_addon: isAddon } : {}),
+    ...(addonTiming !== undefined ? { addon_timing: addonTiming } : {}),
   } as never;
   const { data: insertedSvc, error } = await supabase
     .from("services")
@@ -620,6 +632,8 @@ export async function updateService(
     is_featured: boolean;
     price_type: string | null;
     price_max_cents: number | null;
+    is_addon: boolean;
+    addon_timing: string | null;
   }>,
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
@@ -677,6 +691,13 @@ export async function updateService(
   }
   if (data.is_featured !== undefined) {
     patch.is_featured = Boolean(data.is_featured);
+  }
+  if (data.is_addon !== undefined) {
+    patch.is_addon = Boolean(data.is_addon);
+  }
+  if (data.addon_timing !== undefined) {
+    patch.addon_timing =
+      data.addon_timing === "concurrent" ? "concurrent" : "sequential";
   }
   if (data.price_type !== undefined || data.price_max_cents !== undefined) {
     // Normalise against the EFFECTIVE base price (the new one if also being
