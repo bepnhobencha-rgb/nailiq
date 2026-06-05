@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 import { salonDayRangeUtc } from "@/shared/lib/salonTime";
 import {
@@ -143,6 +144,8 @@ export interface ReceptionistCenterData {
     addon_duration_minutes: number | null;
     addon_buffer_minutes: number | null;
     addon_price_cents: number | null;
+    /** All add-ons on this booking (from `booking_addons`). Empty when none. */
+    addons: { name: string; price_cents: number | null }[];
     /**
      * Receptionist booking-block icon flags. Derived server-side from
      * existing columns (no new DB schema) so the timeline can render them
@@ -812,6 +815,38 @@ export async function loadReceptionistCenterData(
   //   4. FIFO joined_queue_at for the rest
   sortQueueByPriority(walkinQueue, nowMsForReady);
 
+  // Itemized add-ons for the day's bookings. `booking_addons` is RLS-locked
+  // (writes via SECURITY DEFINER RPC), so read with the service-role client,
+  // scoped to this salon's booking ids (already salon-filtered above).
+  const addonsByBooking = new Map<string, { name: string; price_cents: number | null }[]>();
+  {
+    const dayBookingIds = (bookingsRows ?? [])
+      .map((r) => (r.id != null ? String(r.id) : ""))
+      .filter(Boolean);
+    if (dayBookingIds.length > 0) {
+      try {
+        const svc = createServiceRoleClient();
+        const { data: addonRows } = await svc
+          .from("booking_addons")
+          .select("booking_id, name, price_cents, created_at")
+          .in("booking_id", dayBookingIds)
+          .order("created_at", { ascending: true });
+        for (const a of (addonRows ?? []) as Array<{
+          booking_id: string;
+          name: string;
+          price_cents: number | null;
+        }>) {
+          const bid = String(a.booking_id);
+          const list = addonsByBooking.get(bid) ?? [];
+          list.push({ name: String(a.name ?? ""), price_cents: a.price_cents });
+          addonsByBooking.set(bid, list);
+        }
+      } catch (e) {
+        console.error("[loadReceptionistCenterData] booking_addons", e);
+      }
+    }
+  }
+
   const bookingsForDayUnfiltered = (bookingsRows ?? []).map((row): ReceptionistCenterData["bookingsForDay"][0] | null => {
     const staffId = row.staff_id != null ? String(row.staff_id).trim() : "";
     const st = row.start_time_utc != null ? String(row.start_time_utc).trim() : "";
@@ -892,6 +927,7 @@ export async function loadReceptionistCenterData(
         ? Math.max(0, Math.round(Number(addon?.buffer_minutes ?? 0)))
         : null,
       addon_price_cents: hasAddon ? row.addon_price_cents ?? null : null,
+      addons: addonsByBooking.get(String(row.id)) ?? [],
       is_vip: isVip,
       has_notes: hasNotes,
       has_design: hasDesign,

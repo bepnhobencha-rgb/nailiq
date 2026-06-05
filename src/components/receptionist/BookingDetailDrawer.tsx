@@ -134,6 +134,8 @@ export type BookingDetailDrawerModel = {
   addonServiceName: string | null;
   /** Add-on duration line (e.g. "30 minutes"); null when no add-on. */
   addonDurationLine: string | null;
+  /** All add-ons on the booking (multi-add-on). Empty when none. */
+  addons: { name: string; price_cents: number | null }[];
   /** Smart verification method recorded on booking. */
   verificationMethod: string | null;
   /** Non-null when SMS confirmation failed — show warning badge. */
@@ -472,18 +474,27 @@ export function BookingDetailDrawer({
               {finalPriceAction ? <FinalPriceEditor action={finalPriceAction} /> : null}
             </section>
 
-            {model.addonServiceName ? (
+            {model.addons.length > 0 ? (
               <section
-                className="space-y-1 border-t border-nq-muted/15 pt-4"
+                className="space-y-1.5 border-t border-nq-muted/15 pt-4"
                 data-testid="booking-drawer-addon"
               >
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
                   {copy.sectionAddon}
+                  {model.addons.length > 1 ? ` (${model.addons.length})` : ""}
                 </p>
-                <p className="font-medium text-nq-foreground">
-                  {model.addonServiceName}
-                </p>
-                {model.addonDurationLine ? (
+                <ul className="space-y-1">
+                  {model.addons.map((a, i) => (
+                    <li
+                      key={`${a.name}-${i}`}
+                      className="flex items-center gap-2 font-medium text-nq-foreground"
+                    >
+                      <span aria-hidden className="text-nq-muted">+</span>
+                      <span>{a.name}</span>
+                    </li>
+                  ))}
+                </ul>
+                {model.addons.length === 1 && model.addonDurationLine ? (
                   <p className="text-nq-muted">{model.addonDurationLine}</p>
                 ) : null}
               </section>
