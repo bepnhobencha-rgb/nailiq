@@ -237,6 +237,7 @@ export function BookingFlow({
         shopLabel={flow.shopLabel}
         service={flow.service}
         staffName={flow.bookingResult.staffName}
+        addons={flow.bookingResult.addons}
         addonServiceName={flow.bookingResult.addonServiceName}
         addonPriceCents={flow.bookingResult.addonPriceCents}
         displayStartUtc={flow.bookingResult.startTimeUtc}
@@ -440,7 +441,8 @@ export function BookingFlow({
             clientNotes={flow.clientNotes}
             upsellCandidates={flow.upsellCandidates}
             upsellGapMinutes={flow.upsellGapMinutes}
-            selectedAddonId={flow.selectedAddonId}
+            selectedAddonIds={flow.selectedAddonIds}
+            selectedAddonsTotalMin={flow.selectedAddonsTotalMin}
             error={flow.error}
             submitting={flow.submitting}
             stepDir={flow.stepDir}
@@ -449,7 +451,8 @@ export function BookingFlow({
             currency={salon.currencyCode}
             salonId={salon.id}
             appliedVoucher={flow.appliedVoucher}
-            onSelectAddonId={flow.setSelectedAddonId}
+            onToggleAddon={flow.toggleAddon}
+            onClearAddons={() => flow.setSelectedAddonIds([])}
             onBack={flow.backToInfo}
             onConfirm={() => void flow.onConfirm()}
             onApplyVoucher={flow.handleApplyVoucher}

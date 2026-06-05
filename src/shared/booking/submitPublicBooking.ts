@@ -32,6 +32,10 @@ export type BookingParams = {
   clientNotes?: string;
   /** Optional add-on booked into the same row (pre-confirm upsell with real float only). */
   addonServiceId?: string | null;
+  /** Multiple add-ons (review-step upsell). Takes precedence over `addonServiceId`
+   *  when non-empty. Each must be an `is_addon` service of this salon; durations
+   *  sum into the booking block and must fit the staff's free gap. */
+  addonServiceIds?: readonly string[] | null;
   /** SMS OTP session ID from `/api/booking-otp/verify`. Required only
    *  when the salon has `phone_otp_enabled = true`. */
   otpSessionId?: string | null;
@@ -63,9 +67,12 @@ export type BookingResult = {
   status: "confirmed";
   price_cents: number;
   staffName: string;
+  /** First add-on name (legacy/back-compat — prefer `addons`). */
   addonServiceName: string | null;
-  /** Snapshot at booking time so the success/done view can show the add-on alongside its price. */
+  /** Sum of all add-on prices (legacy/back-compat — prefer `addons`). */
   addonPriceCents: number | null;
+  /** All add-ons booked into this row (itemized for the success/done view). */
+  addons: { serviceId: string; name: string; priceCents: number | null }[];
 };
 
 export class BookingConflictError extends Error {
@@ -149,8 +156,21 @@ export async function submitPublicBooking(
     clientPhone,
     clientNotes = "",
     addonServiceId = null,
+    addonServiceIds = null,
     comboOverride = null,
   } = params;
+
+  // Normalize to a de-duplicated list of add-on ids: the multi-select list
+  // (review step) takes precedence; fall back to the legacy single id.
+  const addonIds: string[] = (() => {
+    const arr =
+      addonServiceIds && addonServiceIds.length > 0
+        ? addonServiceIds
+        : addonServiceId
+          ? [addonServiceId]
+          : [];
+    return Array.from(new Set(arr.map((s) => String(s)).filter(Boolean)));
+  })();
 
   const bookingScope = Sentry.getCurrentScope();
   bookingScope.setTag("booking.flow", "submit_public_booking");
@@ -183,6 +203,7 @@ export async function submitPublicBooking(
       staffName: "",
       addonServiceName: null,
       addonPriceCents: null,
+      addons: [],
     };
   }
 
@@ -320,37 +341,48 @@ export async function submitPublicBooking(
     : (Number(service.duration_minutes) || 0) + (Number(service.buffer_minutes) || 0);
 
   let addonBlockMin = 0;
-  let addonRow: {
-    id: string;
-    name: string;
-    price_cents: number | null;
-  } | null = null;
+  type AddonRow = { id: string; name: string; price_cents: number | null };
+  const addonRows: AddonRow[] = [];
 
-  if (addonServiceId) {
-    if (String(addonServiceId) === String(service.id)) {
+  if (addonIds.length > 0) {
+    if (addonIds.some((id) => id === String(service.id))) {
       throw new Error("invalid_addon");
     }
-    const { data: addSvc, error: addErr } = await supabase
+    // One round-trip for all add-ons; each must belong to the salon, be live,
+    // and be flagged is_addon (prices/durations come from the DB, not client).
+    const { data: addSvcs, error: addErr } = await supabase
       .from("services")
-      .select("id, name, duration_minutes, buffer_minutes, price_cents")
-      .eq("id", addonServiceId)
+      .select("id, name, duration_minutes, buffer_minutes, price_cents, is_addon")
+      .in("id", addonIds)
       .eq("salon_id", salon.id)
-      .is("deleted_at" as never, null)
-      .maybeSingle();
+      .is("deleted_at" as never, null);
 
-    if (addErr || !addSvc) throw new Error("addon_not_found");
-    addonBlockMin =
-      (Number(addSvc.duration_minutes) || 0) +
-      (Number(addSvc.buffer_minutes) || 0);
-    if (addonBlockMin <= 0) throw new Error("invalid_addon");
-    addonRow = {
-      id: String(addSvc.id),
-      name: String(addSvc.name ?? ""),
-      price_cents:
-        addSvc.price_cents != null ? Number(addSvc.price_cents) : null,
-    };
+    if (addErr) throw new Error("addon_not_found");
+    const byId = new Map(
+      (addSvcs ?? []).map((r) => [String((r as { id: string }).id), r]),
+    );
+    // Preserve the customer's selection order.
+    for (const id of addonIds) {
+      const addSvc = byId.get(id) as
+        | { id: string; name: string; duration_minutes?: unknown; buffer_minutes?: unknown; price_cents?: unknown; is_addon?: unknown }
+        | undefined;
+      if (!addSvc || addSvc.is_addon !== true) throw new Error("addon_not_found");
+      const block =
+        (Number(addSvc.duration_minutes) || 0) +
+        (Number(addSvc.buffer_minutes) || 0);
+      if (block <= 0) throw new Error("invalid_addon");
+      addonBlockMin += block;
+      addonRows.push({
+        id: String(addSvc.id),
+        name: String(addSvc.name ?? ""),
+        price_cents: addSvc.price_cents != null ? Number(addSvc.price_cents) : null,
+      });
+    }
   }
 
+  // First add-on drives the legacy single-value columns; the full list is
+  // persisted via `add_booking_addons` after insert.
+  const addonRow: AddonRow | null = addonRows[0] ?? null;
   const totalBlockMin = mainBlockMin + addonBlockMin;
   const endLocal = new Date(startLocal.getTime() + totalBlockMin * 60_000);
 
@@ -379,8 +411,11 @@ export async function submitPublicBooking(
     : service.price_cents != null
       ? Number(service.price_cents)
       : null;
+  // Booking row stores the SUM of all add-on prices (null when none priced).
   const addonPriceSnapshot =
-    addonRow?.price_cents != null ? addonRow.price_cents : null;
+    addonRows.length > 0
+      ? addonRows.reduce((sum, a) => sum + (a.price_cents ?? 0), 0)
+      : null;
 
   const { data: staffRows, error: staffListErr } = await supabase
     .from("staff")
@@ -406,9 +441,10 @@ export async function submitPublicBooking(
       service_id: String(r.service_id),
     })),
   );
-  const requiredServiceIds = addonRow
-    ? [String(service.id), String(addonRow.id)]
-    : [String(service.id)];
+  const requiredServiceIds = [
+    String(service.id),
+    ...addonRows.map((a) => a.id),
+  ];
   const orderedStaff = filterStaffCapableForServices(
     allStaff,
     capability,
@@ -642,6 +678,21 @@ export async function submitPublicBooking(
 
   const totalPriceCents =
     (priceSnapshot ?? 0) + (addonPriceSnapshot ?? 0);
+
+  // Persist the itemized add-on list (the booking row already holds the summed
+  // price + extended end time). Best-effort: a failure here only loses the
+  // itemized breakdown, not the booking or its total. Prices are re-derived
+  // server-side inside the SECURITY DEFINER RPC.
+  if (addonRows.length > 0 && bookingId) {
+    try {
+      await supabase.rpc("add_booking_addons", {
+        p_booking_id: bookingId,
+        p_service_ids: addonRows.map((a) => a.id),
+      });
+    } catch (e) {
+      console.error("[submitPublicBooking] add_booking_addons failed", e);
+    }
+  }
 
   // Best-effort: stamp the staff-requested flag for the RPC path.
   // The `create_public_booking` RPC currently has a fixed parameter
@@ -877,5 +928,10 @@ export async function submitPublicBooking(
     staffName: resolvedStaffName,
     addonServiceName: addonRow?.name ?? null,
     addonPriceCents: addonPriceSnapshot,
+    addons: addonRows.map((a) => ({
+      serviceId: a.id,
+      name: a.name,
+      priceCents: a.price_cents,
+    })),
   };
 }
