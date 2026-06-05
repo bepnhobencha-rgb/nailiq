@@ -644,8 +644,15 @@ export function useBookingFlowState(
     }
     setServiceError(null);
     setStepDir(1);
-    setStep("staff");
-  }, [serviceId, t.bookingErrors.serviceRequired]);
+    // When the salon hides staff selection, skip the staff step entirely and
+    // auto-assign any available provider.
+    if (salon.staffSelectionEnabled === false) {
+      setStaffId(BOOKING_ANY_STAFF_ID);
+      setStep("date");
+    } else {
+      setStep("staff");
+    }
+  }, [serviceId, t.bookingErrors.serviceRequired, salon.staffSelectionEnabled]);
 
   const setServiceIdAndClearError = useCallback((id: string) => {
     setServiceId(id);
@@ -1248,8 +1255,9 @@ export function useBookingFlowState(
 
   const backToStaff = useCallback(() => {
     setStepDir(-1);
-    setStep("staff");
-  }, []);
+    // Staff step is hidden when selection is disabled — go back to service.
+    setStep(salon.staffSelectionEnabled === false ? "service" : "staff");
+  }, [salon.staffSelectionEnabled]);
 
   const backToDate = useCallback(() => {
     setStepDir(-1);

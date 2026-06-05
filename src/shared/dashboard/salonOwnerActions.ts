@@ -961,6 +961,40 @@ export async function updateSalonVertical(
   return { ok: true, vertical: normalized };
 }
 
+/* ───────────── Staff selection toggle ───────────── */
+
+export type UpdateStaffSelectionResult =
+  | { ok: true; enabled: boolean }
+  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" };
+
+/**
+ * Owner-only: writes `salons.staff_selection_enabled`. When false, the public
+ * booking wizard hides the "choose staff" step and auto-assigns any available
+ * provider (common for spas where customers don't pick a therapist).
+ */
+export async function updateStaffSelectionEnabled(
+  slug: string,
+  enabled: boolean,
+): Promise<UpdateStaffSelectionResult> {
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+
+  const { error } = await ctx.supabase
+    .from("salons")
+    .update({ staff_selection_enabled: enabled } as never)
+    .eq("id", ctx.salon.id);
+
+  if (error) {
+    console.error("[updateStaffSelectionEnabled]", error);
+    return { ok: false, error: "server_error" };
+  }
+  return { ok: true, enabled };
+}
+
 /* ───────────── Walk-in auto-assign toggle (PR #107) ───────────── */
 
 export type UpdateWalkinAutoAssignResult =
