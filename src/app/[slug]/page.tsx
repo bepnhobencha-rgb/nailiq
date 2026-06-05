@@ -154,9 +154,11 @@ async function PublicBookingRouteBody({
     lang === "vi" ? "vi" : "en"
   ];
 
-  // Per-vertical booking imagery (head spa → spa photos, not nail). Ambient
-  // backdrop + hero panel both derive from this.
-  const bookingImagery = resolveVertical(load.salon.vertical).bookingImagery;
+  // Booking imagery: per-salon override (salon's own photos) → else the
+  // vertical default (head spa → spa photos, not nail). Ambient backdrop +
+  // hero panel both derive from this.
+  const bookingImagery =
+    load.salon.bookingImages ?? resolveVertical(load.salon.vertical).bookingImagery;
   const ambientSrc = `${bookingImagery.hero}?auto=format&fit=crop&q=55&w=2400`;
 
   // Website-builder sections (opt-in per salon). Rendered above the booking

@@ -63,6 +63,9 @@ export type BookingSalonMeta = {
   /** `salons.public_sections_enabled` — when true, the salon's website-builder
    *  sections render above the booking flow on the public page. Default false. */
   publicSectionsEnabled: boolean;
+  /** `salons.booking_images` — per-salon override for booking page hero/ambient
+   *  imagery. Null → use the vertical default. */
+  bookingImages: { hero: string; thumbA: string; thumbB: string } | null;
 };
 
 export type BookingLoadData = {
@@ -346,6 +349,22 @@ export async function loadBookingServicesForSalonSlug(
       // Cast-tolerant: a row on the prior schema returns undefined → false.
       publicSectionsEnabled:
         (salon as { public_sections_enabled?: unknown }).public_sections_enabled === true,
+      // `salons.booking_images` added by migration 20260605120000. Use only
+      // when it carries all three string URLs; otherwise null → vertical default.
+      bookingImages: (() => {
+        const bi = (salon as { booking_images?: unknown }).booking_images;
+        if (bi && typeof bi === "object") {
+          const o = bi as { hero?: unknown; thumbA?: unknown; thumbB?: unknown };
+          if (
+            typeof o.hero === "string" &&
+            typeof o.thumbA === "string" &&
+            typeof o.thumbB === "string"
+          ) {
+            return { hero: o.hero, thumbA: o.thumbA, thumbB: o.thumbB };
+          }
+        }
+        return null;
+      })(),
     },
   };
 }
