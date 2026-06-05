@@ -40,6 +40,7 @@ export function BookingTypeSwitcher({
   t,
   shopSlug,
   services,
+  addOns,
   combos,
   staff,
   salon,
@@ -52,6 +53,7 @@ export function BookingTypeSwitcher({
   t: BookingMessages;
   shopSlug: string;
   services: readonly BookingServiceItem[];
+  addOns: readonly BookingServiceItem[];
   combos: readonly BookingComboItem[];
   staff: readonly BookingStaffItem[];
   salon: BookingSalonMeta;
@@ -126,6 +128,7 @@ export function BookingTypeSwitcher({
           t={t}
           shopSlug={shopSlug}
           services={services}
+          addOns={addOns}
           combos={combos}
           staff={staff}
           salon={salon}
@@ -190,6 +193,7 @@ export function BookingTypeSwitcher({
           t={t}
           shopSlug={shopSlug}
           services={services}
+          addOns={addOns}
           combos={combos}
           staff={staff}
           salon={salon}

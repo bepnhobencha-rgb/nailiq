@@ -75,6 +75,8 @@ export type BookingLoadData = {
   /** Exact `salons.slug` from DB — pass to BookingFlow/submit lookups. */
   canonicalSlug: string;
   services: BookingServiceItem[];
+  /** Add-on services (is_addon) — upsell-only, not in the main picker. */
+  addOns: BookingServiceItem[];
   /** Active combo bundles for this salon. Empty when none defined. */
   combos: BookingComboItem[];
   staff: BookingStaffItem[];
@@ -135,7 +137,7 @@ export async function loadBookingServicesForSalonSlug(
     // `price_max_cents` by the variable-pricing migration. Not yet in the
     // auto-generated DB types so the SELECT spread is cast.
     .select(
-      "id, name, duration_minutes, buffer_minutes, price_cents, price_type, price_max_cents, category, description, is_popular, is_featured" as never,
+      "id, name, duration_minutes, buffer_minutes, price_cents, price_type, price_max_cents, category, description, is_popular, is_featured, is_addon" as never,
     )
     .eq("salon_id", salonId)
     .is("deleted_at" as never, null)
@@ -163,7 +165,7 @@ export async function loadBookingServicesForSalonSlug(
     (salon as { currency_code?: unknown }).currency_code,
   );
 
-  const services: BookingServiceItem[] = (rows ?? []).map((r) => {
+  const mapServiceRow = (r: unknown): BookingServiceItem => {
     const row = r as unknown as {
       id: string;
       name: string;
@@ -221,7 +223,21 @@ export async function loadBookingServicesForSalonSlug(
       isPopular: row.is_popular === true,
       isFeatured: row.is_featured === true,
     };
-  });
+  };
+
+  // Split add-ons out of the main service list: add-ons are offered only as
+  // upsells on the review step, never as a primary bookable service.
+  const allRows = rows ?? [];
+  const isAddonRow = (r: unknown) =>
+    (r as { is_addon?: unknown }).is_addon === true;
+  const services: BookingServiceItem[] = allRows
+    .filter((r) => !isAddonRow(r))
+    .map(mapServiceRow);
+  const addOns: BookingServiceItem[] = allRows
+    .filter(isAddonRow)
+    .map(mapServiceRow)
+    // Highest-value first so the most profitable upsells lead.
+    .sort((a, b) => (b.priceCents ?? 0) - (a.priceCents ?? 0));
 
   const staff: BookingStaffItem[] = (staffList ?? []).map((s) => ({
     id: String(s.id),
@@ -276,6 +292,7 @@ export async function loadBookingServicesForSalonSlug(
   return {
     canonicalSlug,
     services,
+    addOns,
     combos,
     staff,
     capabilityRows,
