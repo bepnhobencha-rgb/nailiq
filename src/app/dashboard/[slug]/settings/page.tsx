@@ -30,7 +30,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, voice_ai_enabled, voice_ai_persona_name, vertical",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -63,6 +63,7 @@ export default async function SalonSettingsPage({ params }: Props) {
         voice_ai_enabled?: unknown;
         voice_ai_persona_name?: unknown;
         vertical?: unknown;
+        staff_selection_enabled?: unknown;
       }
     | null;
 
@@ -111,6 +112,7 @@ export default async function SalonSettingsPage({ params }: Props) {
 
   const domainInfo = await getSalonDomain(slug);
   const lookPresets = getLookPresetsForVertical(vertical);
+  const staffSelectionEnabled = row?.staff_selection_enabled !== false;
 
   return (
     <SalonSettingsHub
@@ -137,6 +139,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       vertical={vertical}
       domainInfo={domainInfo}
       lookPresets={lookPresets}
+      staffSelectionEnabled={staffSelectionEnabled}
     />
   );
 }

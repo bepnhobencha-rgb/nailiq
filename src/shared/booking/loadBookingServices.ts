@@ -66,6 +66,9 @@ export type BookingSalonMeta = {
   /** `salons.booking_images` — per-salon override for booking page hero/ambient
    *  imagery. Null → use the vertical default. */
   bookingImages: { hero: string; thumbA: string; thumbB: string } | null;
+  /** `salons.staff_selection_enabled` — when false the wizard hides the staff
+   *  step and auto-assigns any available provider. Default true. */
+  staffSelectionEnabled: boolean;
 };
 
 export type BookingLoadData = {
@@ -365,6 +368,10 @@ export async function loadBookingServicesForSalonSlug(
         }
         return null;
       })(),
+      // `salons.staff_selection_enabled` added by migration 20260605160000.
+      // Default true (only false disables the staff step).
+      staffSelectionEnabled:
+        (salon as { staff_selection_enabled?: unknown }).staff_selection_enabled !== false,
     },
   };
 }

@@ -256,7 +256,11 @@ export function BookingFlow({
 
   return (
     <div className="mt-8 w-full">
-      <BookingStepper activeStep={wizardStep} t={t} />
+      <BookingStepper
+        activeStep={wizardStep}
+        t={t}
+        showStaff={salon.staffSelectionEnabled !== false}
+      />
       <AnimatePresence mode="wait" custom={flow.stepDir}>
         {flow.step === "phone" ? (
           <BookingFlowPhonePanel

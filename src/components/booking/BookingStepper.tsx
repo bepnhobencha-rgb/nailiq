@@ -23,10 +23,16 @@ const STEP_ORDER: BookingWizardStep[] = [
 export function BookingStepper({
   activeStep,
   t,
+  showStaff = true,
 }: {
   activeStep: BookingWizardStep;
   t: BookingMessages;
+  /** Hide the "staff" step when the salon disables staff selection. */
+  showStaff?: boolean;
 }) {
+  const steps = showStaff
+    ? STEP_ORDER
+    : STEP_ORDER.filter((s) => s !== "staff");
   const labels: Record<BookingWizardStep, string> = {
     phone: t.breadcrumbPhone,
     service: t.breadcrumbServices,
@@ -37,12 +43,12 @@ export function BookingStepper({
     confirm: t.breadcrumbConfirm,
   };
 
-  const activeIdx = STEP_ORDER.indexOf(activeStep);
+  const activeIdx = steps.indexOf(activeStep);
 
   return (
     <nav aria-label="Booking steps" className="mb-8 lg:mb-10">
       <ol className="flex w-full items-start gap-0">
-        {STEP_ORDER.map((id, i) => {
+        {steps.map((id, i) => {
           const state =
             i < activeIdx ? "done" : i === activeIdx ? "current" : "upcoming";
 

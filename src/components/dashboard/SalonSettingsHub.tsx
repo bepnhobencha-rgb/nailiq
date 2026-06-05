@@ -25,6 +25,7 @@ import { DomainSettings } from "@/components/dashboard/DomainSettings";
 import type { SalonDomainInfo } from "@/shared/dashboard/domainActions";
 import { LookPresetPicker } from "@/components/dashboard/LookPresetPicker";
 import type { LookPreset } from "@/shared/verticals/lookPresets";
+import { StaffSelectionSettings } from "@/components/dashboard/StaffSelectionSettings";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
@@ -61,6 +62,7 @@ export function SalonSettingsHub({
   vertical,
   domainInfo,
   lookPresets,
+  staffSelectionEnabled,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -85,6 +87,7 @@ export function SalonSettingsHub({
   vertical: string;
   domainInfo: SalonDomainInfo;
   lookPresets: LookPreset[];
+  staffSelectionEnabled: boolean;
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -361,6 +364,14 @@ export function SalonSettingsHub({
             presets={lookPresets}
             currentBrandColor={brandColor}
             currentThemeMode={themeMode}
+          />
+        ) : null}
+
+        {/* ── Let customers choose a provider ─────────────────── */}
+        {canEditDashboardModules ? (
+          <StaffSelectionSettings
+            slug={slug}
+            initialEnabled={staffSelectionEnabled}
           />
         ) : null}
 
