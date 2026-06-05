@@ -36,7 +36,8 @@ export function BookingFlowConfirmPanel({
   clientNotes,
   upsellCandidates,
   upsellGapMinutes,
-  selectedAddonId,
+  selectedAddonIds,
+  selectedAddonsTotalMin,
   error,
   submitting,
   stepDir,
@@ -45,7 +46,8 @@ export function BookingFlowConfirmPanel({
   currency,
   salonId,
   appliedVoucher,
-  onSelectAddonId,
+  onToggleAddon,
+  onClearAddons,
   onBack,
   onConfirm,
   onApplyVoucher,
@@ -61,7 +63,8 @@ export function BookingFlowConfirmPanel({
   clientNotes: string;
   upsellCandidates: readonly BookingServiceItem[];
   upsellGapMinutes: number;
-  selectedAddonId: string | null;
+  selectedAddonIds: readonly string[];
+  selectedAddonsTotalMin: number;
   error: string | null;
   submitting: boolean;
   stepDir: BookingMotionDir;
@@ -74,7 +77,8 @@ export function BookingFlowConfirmPanel({
   stepTransition: { duration: number; ease: [number, number, number, number] };
   /** Salon's display currency. Drives the receipt total formatting. */
   currency: Currency;
-  onSelectAddonId: (id: string | null) => void;
+  onToggleAddon: (id: string) => void;
+  onClearAddons: () => void;
   onBack: () => void;
   onConfirm: () => void | Promise<void>;
 }) {
@@ -90,40 +94,38 @@ export function BookingFlowConfirmPanel({
       : []),
   ];
 
-  const selectedAddOn =
-    selectedAddonId != null
-      ? upsellCandidates.find((s) => s.id === selectedAddonId)
-      : undefined;
+  // Selected add-ons, in candidate order, filtered to those still offered.
+  const selectedAddOns = upsellCandidates.filter((s) =>
+    selectedAddonIds.includes(s.id),
+  );
 
-  const baseTotalCents =
-    (service.priceCents ?? 0) + (selectedAddOn?.priceCents ?? 0);
+  const addonsTotalCents = selectedAddOns.reduce(
+    (sum, a) => sum + (a.priceCents ?? 0),
+    0,
+  );
+
+  const baseTotalCents = (service.priceCents ?? 0) + addonsTotalCents;
 
   const totalCents = appliedVoucher
     ? appliedVoucher.final_price_cents
     : baseTotalCents;
 
-  const totalMinutes =
-    (service.totalMinutes || 0) + (selectedAddOn?.totalMinutes ?? 0);
+  const totalMinutes = (service.totalMinutes || 0) + selectedAddonsTotalMin;
   const durationLabel =
     totalMinutes > 0
-      ? selectedAddOn
+      ? selectedAddOns.length > 0
         ? `${t.summaryDurationMinutes.replace("{n}", String(totalMinutes))} (${t.summaryDurationIncludesAddon})`
         : t.summaryDurationMinutes.replace("{n}", String(totalMinutes))
       : null;
 
-  const addonRow = selectedAddOn
-    ? (() => {
-        const priceLabel =
-          selectedAddOn.priceDisplay ??
-          formatBookingPrice(selectedAddOn.priceCents, currency);
-        return {
-          label: t.summaryAddOn,
-          value: priceLabel
-            ? `${selectedAddOn.name} — ${priceLabel}`
-            : selectedAddOn.name,
-        };
-      })()
-    : null;
+  // One pricing line per selected add-on.
+  const addonRows = selectedAddOns.map((a) => {
+    const priceLabel = a.priceDisplay ?? formatBookingPrice(a.priceCents, currency);
+    return {
+      label: t.summaryAddOn,
+      value: priceLabel ? `${a.name} — ${priceLabel}` : a.name,
+    };
+  });
 
   async function handleApply() {
     const code = voucherInput.trim().toUpperCase();
@@ -148,7 +150,7 @@ export function BookingFlowConfirmPanel({
         formatBookingPrice(service.priceCents, currency) ??
         "—",
     },
-    ...(addonRow ? [addonRow] : []),
+    ...addonRows,
     ...(appliedVoucher
       ? [
           {
@@ -253,10 +255,10 @@ export function BookingFlowConfirmPanel({
             <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => onSelectAddonId(null)}
+                onClick={() => onClearAddons()}
                 className={cn(
                   "rounded-full border px-4 py-2 text-sm font-medium transition-colors",
-                  selectedAddonId === null
+                  selectedAddonIds.length === 0
                     ? "border-[var(--salon-primary)] bg-[color-mix(in_srgb,var(--salon-primary)_15%,transparent)] text-[var(--salon-primary)]"
                     : "border-[var(--booking-border)] text-[var(--booking-text-muted)] hover:border-[var(--booking-border)]",
                 )}
@@ -264,24 +266,45 @@ export function BookingFlowConfirmPanel({
                 {t.upsellNoThanks}
               </button>
               {upsellCandidates.map((s) => {
-                const on = selectedAddonId === s.id;
+                const on = selectedAddonIds.includes(s.id);
+                // Disable add-ons that can't fit the time left in the gap.
+                const fits =
+                  on ||
+                  selectedAddonsTotalMin + s.totalMinutes <= upsellGapMinutes;
+                const mins = s.totalMinutes > 0 ? ` · +${s.totalMinutes}′` : "";
                 return (
                   <button
                     key={s.id}
                     type="button"
-                    onClick={() => onSelectAddonId(s.id)}
+                    aria-pressed={on}
+                    disabled={!fits}
+                    onClick={() => onToggleAddon(s.id)}
                     className={cn(
                       "rounded-full border px-4 py-2 text-left text-sm font-medium transition-colors",
                       on
                         ? "border-[var(--salon-primary)] bg-[color-mix(in_srgb,var(--salon-primary)_15%,transparent)] text-[var(--salon-primary)]"
                         : "border-[var(--booking-border)] text-[var(--booking-text)] hover:border-[var(--booking-border)]",
+                      !fits && "cursor-not-allowed opacity-40",
                     )}
                   >
-                    {s.priceDisplay ? `${s.name} · ${s.priceDisplay}` : s.name}
+                    {on ? "✓ " : ""}
+                    {s.priceDisplay ? `${s.name} · ${s.priceDisplay}${mins}` : `${s.name}${mins}`}
                   </button>
                 );
               })}
             </div>
+            {selectedAddOns.length > 0 ? (
+              <p className="mt-3 text-xs font-medium text-[var(--salon-primary)]">
+                {selectedAddOns.length} add-on
+                {selectedAddOns.length > 1 ? "s" : ""} · +{selectedAddonsTotalMin}′
+                {" · "}
+                {formatBookingPriceReceipt(addonsTotalCents, currency)}
+                {"  ·  "}
+                <span className="text-[var(--booking-text-muted)]">
+                  {Math.max(0, upsellGapMinutes - selectedAddonsTotalMin)}′ left
+                </span>
+              </p>
+            ) : null}
           </div>
           );
         })() : null}

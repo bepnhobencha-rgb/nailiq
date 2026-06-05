@@ -155,7 +155,8 @@ export function useBookingFlowState(
    *  silently returns a fake success when that happens so no row is
    *  written and the bot doesn't learn it was caught. */
   const [clientWebsite, setClientWebsite] = useState("");
-  const [selectedAddonId, setSelectedAddonId] = useState<string | null>(null);
+  // Multiple add-ons can be booked into one appointment, gated by free-gap time.
+  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [upsellCandidates, setUpsellCandidates] = useState<
     BookingServiceItem[]
   >([]);
@@ -197,8 +198,38 @@ export function useBookingFlowState(
     staffName: string;
     addonServiceName: string | null;
     addonPriceCents: number | null;
+    addons: { serviceId: string; name: string; priceCents: number | null }[];
     price_cents: number;
   } | null>(null);
+
+  // Total minutes consumed by the currently-selected add-ons.
+  const selectedAddonsTotalMin = useMemo(
+    () =>
+      selectedAddonIds.reduce((sum, id) => {
+        const a = upsellCandidates.find((s) => s.id === id);
+        return sum + (a?.totalMinutes ?? 0);
+      }, 0),
+    [selectedAddonIds, upsellCandidates],
+  );
+
+  // Toggle an add-on on/off. Adding is blocked when it would overflow the
+  // staff's free gap (so the appointment never runs into the next booking).
+  const toggleAddon = useCallback(
+    (id: string) => {
+      setSelectedAddonIds((prev) => {
+        if (prev.includes(id)) return prev.filter((x) => x !== id);
+        const cand = upsellCandidates.find((s) => s.id === id);
+        if (!cand) return prev;
+        const used = prev.reduce((sum, pid) => {
+          const a = upsellCandidates.find((s) => s.id === pid);
+          return sum + (a?.totalMinutes ?? 0);
+        }, 0);
+        if (used + cand.totalMinutes > upsellGapMinutes) return prev; // won't fit
+        return [...prev, id];
+      });
+    },
+    [upsellCandidates, upsellGapMinutes],
+  );
 
   const confettiFiredRef = useRef(false);
 
@@ -458,7 +489,7 @@ export function useBookingFlowState(
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset of upsell selection on key changes
-    setSelectedAddonId(null);
+    setSelectedAddonIds([]);
   }, [serviceId, timeSlot, staffId, selectedDate]);
 
   useEffect(() => {
@@ -752,6 +783,7 @@ export function useBookingFlowState(
         staffName: result.staffName,
         addonServiceName: result.addonServiceName,
         addonPriceCents: result.addonPriceCents,
+        addons: result.addons,
         price_cents: result.price_cents,
       });
       setStepDir(1);
@@ -899,7 +931,7 @@ export function useBookingFlowState(
     setClientEmail("");
     setClientNotes("");
     setClientWebsite("");
-    setSelectedAddonId(null);
+    setSelectedAddonIds([]);
     setOtpSessionId(null);
     setVerificationAction("none");
     setVerificationLoading(false);
@@ -1000,10 +1032,10 @@ export function useBookingFlowState(
     }
 
     const notes = clientNotes.trim();
-    const addonId =
-      selectedAddonId && upsellCandidates.some((s) => s.id === selectedAddonId)
-        ? selectedAddonId
-        : null;
+    // Keep only still-valid selections (in the current candidate list).
+    const addonIds = selectedAddonIds.filter((id) =>
+      upsellCandidates.some((s) => s.id === id),
+    );
 
     setSubmitting(true);
     try {
@@ -1017,7 +1049,7 @@ export function useBookingFlowState(
         clientPhone: phone,
         clientEmail: email.length > 0 ? email : null,
         clientNotes: notes,
-        addonServiceId: addonId,
+        addonServiceIds: addonIds,
         otpSessionId: otpSessionId ?? null,
         // Task #09-11 — honeypot. Real users never see this field;
         // a non-empty value triggers a silent fake-success on the
@@ -1042,6 +1074,7 @@ export function useBookingFlowState(
         staffName: result.staffName,
         addonServiceName: result.addonServiceName,
         addonPriceCents: result.addonPriceCents,
+        addons: result.addons,
         price_cents: result.price_cents,
       });
       setStepDir(1);
@@ -1109,7 +1142,7 @@ export function useBookingFlowState(
         err.message === "invalid_addon"
       ) {
         setError(t.submitError);
-        setSelectedAddonId(null);
+        setSelectedAddonIds([]);
       } else if (
         err instanceof Error &&
         err.message === "monthly_booking_limit_reached"
@@ -1146,7 +1179,7 @@ export function useBookingFlowState(
     clientEmail,
     clientNotes,
     clientWebsite,
-    selectedAddonId,
+    selectedAddonIds,
     upsellCandidates,
     selectedDate,
     serviceId,
@@ -1346,7 +1379,7 @@ export function useBookingFlowState(
     clientEmail,
     clientNotes,
     clientWebsite,
-    selectedAddonId,
+    selectedAddonIds,
     upsellCandidates,
     upsellGapMinutes,
     submitting,
@@ -1376,7 +1409,9 @@ export function useBookingFlowState(
     handleInfoEmailBlur,
     setClientNotes,
     setClientWebsite,
-    setSelectedAddonId,
+    toggleAddon,
+    selectedAddonsTotalMin,
+    setSelectedAddonIds,
     setError,
     otpSessionId,
     verificationAction,

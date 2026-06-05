@@ -26,6 +26,7 @@ export function BookingFlowDonePanel({
   shopLabel,
   service,
   staffName,
+  addons = [],
   addonServiceName,
   addonPriceCents,
   displayStartUtc,
@@ -44,6 +45,8 @@ export function BookingFlowDonePanel({
   shopLabel: string;
   service: BookingServiceItem | undefined;
   staffName: string;
+  /** Itemized add-ons (preferred). Falls back to the single legacy fields. */
+  addons?: { name: string; priceCents: number | null }[];
   addonServiceName: string | null;
   addonPriceCents: number | null;
   displayStartUtc: string;
@@ -96,8 +99,14 @@ export function BookingFlowDonePanel({
           0,
           Math.round((end.getTime() - start.getTime()) / 60_000),
         );
-  const hasAddon =
-    !!(addonServiceName && addonServiceName.trim().length > 0);
+  // Prefer the itemized list; fall back to the single legacy field.
+  const addonList: { name: string; priceCents: number | null }[] =
+    addons.length > 0
+      ? addons.map((a) => ({ name: a.name.trim(), priceCents: a.priceCents }))
+      : addonServiceName && addonServiceName.trim().length > 0
+        ? [{ name: addonServiceName.trim(), priceCents: addonPriceCents }]
+        : [];
+  const hasAddon = addonList.length > 0;
   const durationLabel =
     totalMinutes > 0
       ? hasAddon
@@ -227,21 +236,22 @@ export function BookingFlowDonePanel({
               </span>
             </div>
           ) : null}
-          {addonServiceName && addonServiceName.trim().length > 0 ? (
-            <div className="flex items-baseline justify-between gap-4 border-b border-[var(--booking-border)] pb-3.5 text-[15px] sm:text-base">
+          {addonList.map((a, i) => (
+            <div
+              key={`${a.name}-${i}`}
+              className="flex items-baseline justify-between gap-4 border-b border-[var(--booking-border)] pb-3.5 text-[15px] sm:text-base"
+            >
               <span className="font-semibold text-[var(--booking-text-muted)]">
                 {t.summaryAddOn}
               </span>
               <span className="min-w-0 shrink text-right font-semibold text-[var(--booking-text)]">
                 {(() => {
-                  const priceLabel = formatBookingPrice(addonPriceCents, currency);
-                  return priceLabel
-                    ? `${addonServiceName.trim()} — ${priceLabel}`
-                    : addonServiceName.trim();
+                  const priceLabel = formatBookingPrice(a.priceCents, currency);
+                  return priceLabel ? `${a.name} — ${priceLabel}` : a.name;
                 })()}
               </span>
             </div>
-          ) : null}
+          ))}
           {staffName.trim().length > 0 ? (
             <div className="flex items-baseline justify-between gap-4 border-b border-[var(--booking-border)] pb-3.5 text-[15px] sm:text-base">
               <span className="font-semibold text-[var(--booking-text-muted)]">{t.summaryStaff}</span>
