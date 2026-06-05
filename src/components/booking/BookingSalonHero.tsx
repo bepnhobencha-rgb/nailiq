@@ -8,18 +8,9 @@ import { BookingSalonInfoLine } from "./BookingSalonInfoLine";
  * panel but were being served at 800px (≈ 4× oversized even at 2×
  * DPR). Sources are now sized to roughly 2× their CSS box so the
  * file is right-sized without compromising sharpness on retina. */
-const HERO_BG =
-  "https://images.unsplash.com/photo-1610992015732-2449b76344bc?auto=format&fit=crop&q=85&w=1200";
-const HERO_BG_2X =
-  "https://images.unsplash.com/photo-1610992015732-2449b76344bc?auto=format&fit=crop&q=85&w=1600";
-const THUMB_A =
-  "https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&q=85&w=400";
-const THUMB_A_2X =
-  "https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&q=85&w=600";
-const THUMB_B =
-  "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&q=85&w=400";
-const THUMB_B_2X =
-  "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&q=85&w=600";
+/** Build a sized Unsplash URL from a base photo URL (no params). */
+const sized = (base: string, w: number) =>
+  `${base}?auto=format&fit=crop&q=85&w=${w}`;
 
 type BookingSalonHeroProps = {
   shopLabel: string;
@@ -37,6 +28,8 @@ type BookingSalonHeroProps = {
   fallbackTagline?: string | null;
   /** P2.2 — pick localized strings inside the info line below. */
   lang?: "vi" | "en";
+  /** Per-vertical booking imagery (base Unsplash photo URLs). */
+  imagery: { hero: string; thumbA: string; thumbB: string };
 };
 
 /**
@@ -59,8 +52,15 @@ export function BookingSalonHero({
   description,
   fallbackTagline,
   lang = "vi",
+  imagery,
 }: BookingSalonHeroProps) {
   const isLight = themeMode === "light";
+  const HERO_BG = sized(imagery.hero, 1200);
+  const HERO_BG_2X = sized(imagery.hero, 1600);
+  const THUMB_A = sized(imagery.thumbA, 400);
+  const THUMB_A_2X = sized(imagery.thumbA, 600);
+  const THUMB_B = sized(imagery.thumbB, 400);
+  const THUMB_B_2X = sized(imagery.thumbB, 600);
 
   const ambientGradient = isLight
     ? "linear-gradient(to bottom, color-mix(in srgb, var(--booking-bg) 20%, transparent), color-mix(in srgb, var(--booking-bg) 25%, transparent), color-mix(in srgb, var(--booking-bg) 30%, transparent))"
