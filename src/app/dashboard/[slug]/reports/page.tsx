@@ -25,9 +25,9 @@ export default async function ReportsPage({ params }: PageProps) {
     redirect("/register");
   }
   // Owner-only per PERMISSION_MATRIX §3 (reporting + export rows
-  // restrict revenue aggregates to owner). Non-owner viewers bounce
-  // back to the dashboard home rather than seeing a forbidden screen.
-  if (ctx.role !== "owner") {
+  // Reports = the manager KPI/revenue overview → owner + admin. Other roles
+  // bounce home rather than seeing a forbidden screen.
+  if (ctx.role !== "owner" && ctx.role !== "admin") {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
 
