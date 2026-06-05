@@ -200,12 +200,8 @@ export function DashboardSidebar({
     };
   }, [userMenuOpen]);
 
-  // Auto-close when the user collapses the sidebar — the trigger
-  // disappears and the dropdown would become an orphan otherwise.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional derived sync: hide orphaned dropdown when sidebar collapses
-    if (collapsed && switcherOpen) setSwitcherOpen(false);
-  }, [collapsed, switcherOpen]);
+  // (Removed the collapse→close-switcher effect: the footer menus now work
+  // while collapsed too, rendered as flyouts beside the rail.)
 
   const slugSeg = encodeURIComponent(slug);
   const dashRoot = `/dashboard/${slugSeg}`;
@@ -557,7 +553,10 @@ export function DashboardSidebar({
         <button
           ref={userMenuTriggerRef}
           type="button"
-          onClick={() => setUserMenuOpen((prev) => !prev)}
+          onClick={() => {
+            setUserMenuOpen((prev) => !prev);
+            setSwitcherOpen(false);
+          }}
           aria-haspopup="menu"
           aria-expanded={userMenuOpen}
           className={cn(
@@ -591,14 +590,16 @@ export function DashboardSidebar({
           />
         </button>
 
-        {/* User Menu Dropdown */}
-        {userMenuOpen && !collapsed ? (
+        {/* User Menu Dropdown — flies out beside the rail when collapsed. */}
+        {userMenuOpen ? (
           <div
             ref={userMenuPopoverRef}
             role="menu"
             className={cn(
-              "absolute bottom-[calc(100%-0.25rem)] left-2 right-2 z-50",
-              "rounded-lg border border-nq-border/40 bg-nq-surface p-1 shadow-nq-card",
+              "absolute z-50 rounded-lg border border-nq-border/40 bg-nq-surface p-1 shadow-nq-card",
+              collapsed
+                ? "bottom-2 left-[calc(100%+0.5rem)] w-56"
+                : "bottom-[calc(100%-0.25rem)] left-2 right-2",
             )}
           >
             <ul className="flex flex-col gap-0.5">
@@ -613,14 +614,18 @@ export function DashboardSidebar({
         ) : null}
 
         {/* Salon Switcher (independent dropdown) */}
-        {showSwitcher && !collapsed ? (
+        {showSwitcher ? (
           <button
             ref={switcherTriggerRef}
             type="button"
-            onClick={() => setSwitcherOpen((prev) => !prev)}
+            onClick={() => {
+              setSwitcherOpen((prev) => !prev);
+              setUserMenuOpen(false);
+            }}
             aria-haspopup="menu"
             aria-expanded={switcherOpen}
             aria-label={t.switchSalon}
+            title={collapsed ? salonName : undefined}
             className={cn(
               "flex w-full min-h-11 touch-manipulation items-center gap-3 rounded-lg px-2 py-2 text-xs",
               "transition-colors hover:bg-nq-surface/80",
@@ -629,32 +634,38 @@ export function DashboardSidebar({
             )}
           >
             <SalonAvatar salonName={salonName} />
-            <div className="min-w-0 flex-1 text-left">
-              <p className="truncate text-xs font-medium text-nq-muted">
-                Salon
-              </p>
-              <p className="truncate text-xs text-nq-muted">
-                {salonName}
-              </p>
-            </div>
-            <ChevronUp
-              className={cn(
-                "h-4 w-4 shrink-0 text-nq-muted transition-transform",
-                switcherOpen ? "rotate-180" : "",
-              )}
-              aria-hidden
-            />
+            {collapsed ? null : (
+              <>
+                <div className="min-w-0 flex-1 text-left">
+                  <p className="truncate text-xs font-medium text-nq-muted">
+                    Salon
+                  </p>
+                  <p className="truncate text-xs text-nq-muted">
+                    {salonName}
+                  </p>
+                </div>
+                <ChevronUp
+                  className={cn(
+                    "h-4 w-4 shrink-0 text-nq-muted transition-transform",
+                    switcherOpen ? "rotate-180" : "",
+                  )}
+                  aria-hidden
+                />
+              </>
+            )}
           </button>
         ) : null}
 
-        {switcherOpen && showSwitcher && !collapsed ? (
+        {switcherOpen && showSwitcher ? (
           <div
             ref={switcherPopoverRef}
             role="menu"
             aria-label={t.switchSalon}
             className={cn(
-              "absolute bottom-[calc(100%-0.25rem)] left-2 right-2 z-50",
-              "rounded-lg border border-nq-border/40 bg-nq-surface p-1 shadow-nq-card",
+              "absolute z-50 rounded-lg border border-nq-border/40 bg-nq-surface p-1 shadow-nq-card",
+              collapsed
+                ? "bottom-2 left-[calc(100%+0.5rem)] w-56"
+                : "bottom-[calc(100%-0.25rem)] left-2 right-2",
             )}
           >
             <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
