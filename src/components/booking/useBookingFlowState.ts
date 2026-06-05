@@ -103,6 +103,7 @@ export function useBookingFlowState(
   salon: BookingSalonMeta,
   capabilityRows: { staff_id: string; service_id: string }[] | null,
   phoneOtpEnabled: boolean,
+  addOns: readonly BookingServiceItem[] = [],
 ) {
   const capability = useMemo(
     () => buildCapabilityMap(capabilityRows),
@@ -560,12 +561,10 @@ export function useBookingFlowState(
         week,
       });
 
-      const candidates = services.filter(
-        (s) =>
-          s.id !== serviceId &&
-          s.totalMinutes > 0 &&
-          s.totalMinutes <= gapMin,
-      );
+      // Upsell ONLY add-ons (complementary enhancements), never other main
+      // services. Zero-duration upgrades (e.g. premium products) always fit;
+      // time-consuming add-ons must fit the free gap after the main service.
+      const candidates = addOns.filter((s) => s.totalMinutes <= gapMin);
       if (!cancelled) {
         setUpsellCandidates(candidates);
         setUpsellGapMinutes(Math.max(0, Math.round(gapMin)));
@@ -586,6 +585,7 @@ export function useBookingFlowState(
     salon.opening_hours,
     staff,
     services,
+    addOns,
   ]);
 
   const staffSummaryLabel = useMemo(() => {

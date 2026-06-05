@@ -84,6 +84,7 @@ type BookingFlowProps = {
   t: BookingMessages;
   shopSlug: string;
   services: readonly BookingServiceItem[];
+  addOns: readonly BookingServiceItem[];
   combos: readonly BookingComboItem[];
   staff: readonly BookingStaffItem[];
   salon: BookingSalonMeta;
@@ -96,6 +97,7 @@ export function BookingFlow({
   t,
   shopSlug,
   services,
+  addOns,
   combos,
   staff,
   salon,
@@ -115,6 +117,7 @@ export function BookingFlow({
     salon,
     capabilityRows,
     salon.phoneOtpEnabled,
+    addOns,
   );
 
   const [loyaltyCard, setLoyaltyCard] = useState<LoyaltyCard | null>(null);
