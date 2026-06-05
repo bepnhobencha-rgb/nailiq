@@ -526,8 +526,14 @@ export async function loadReceptionistCenterData(
   const [staffResult, servicesResult, queueResult, bookingsResult] = await Promise.all([
     supabase
       .from("staff")
+      // Only ACTIVE providers get a grid column — same filter the public
+      // booking page + walk-in assign use. `inactive`/`pending` rows (e.g.
+      // receptionists added via addTeamMember with takesBookings=false, or
+      // temporarily-off therapists) stay in the Team page but never clutter
+      // the operational timeline (they aren't bookable anyway).
       .select("id, name, job_role, status")
       .eq("salon_id", ctx.salon.id)
+      .eq("status", "active")
       .is("deleted_at" as never, null)
       .order("created_at", { ascending: true }),
     supabase
