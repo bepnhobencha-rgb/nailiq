@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
 import { MobileStack } from "@/components/layout/MobileStack";
-import { LogoutButton } from "@/components/dashboard/LogoutButton";
 import { SalonOwnerStatsSection } from "@/components/dashboard/SalonOwnerStatsSection";
 import { SalonOwnerTodayBookings } from "@/components/dashboard/SalonOwnerTodayBookings";
 import { SalonOwnerDashboardSkeleton } from "@/components/dashboard/SalonOwnerDashboardSkeleton";
@@ -190,7 +189,9 @@ export function SalonOwnerDashboardMain({
             language={language}
             onLanguageChange={onLanguageChange}
           />
-          {demoMode ? null : <LogoutButton language={language} />}
+          {/* Sign out removed — the persistent sidebar account menu owns it
+              (same rule as the Front Desk/Settings links above: the shell
+              must not duplicate it in the page header). */}
         </div>
       </div>
 

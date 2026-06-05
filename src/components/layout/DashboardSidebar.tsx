@@ -23,7 +23,6 @@ import {
   TrendingUp,
   UserCheck,
   Users,
-  LogOut as LogOutIcon,
 } from "lucide-react";
 import { LogoutButton } from "@/components/dashboard/LogoutButton";
 import { cn } from "@/shared/lib/cn";
@@ -599,51 +598,9 @@ export function DashboardSidebar({
             )}
           >
             <ul className="flex flex-col gap-0.5">
-              {/* Switch Salon (only for owners with multiple salons) */}
-              {showSwitcher ? (
-                <>
-                  <li>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSwitcherOpen(true);
-                        setUserMenuOpen(false);
-                      }}
-                      role="menuitem"
-                      className={cn(
-                        "flex w-full min-h-11 items-center gap-3 rounded-md px-2 py-2",
-                        "text-sm text-nq-foreground transition-colors hover:bg-nq-surface/80",
-                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45",
-                      )}
-                    >
-                      <SalonAvatar salonName={salonName} />
-                      <span className="flex-1 text-left truncate text-sm">{t.switchSalon}</span>
-                      <ChevronUp className="h-4 w-4 text-nq-muted rotate-180" aria-hidden />
-                    </button>
-                  </li>
-                  <li className="my-0.5 border-t border-nq-border/30" />
-                </>
-              ) : null}
-
-              {/* Account Settings */}
-              <li>
-                <Link
-                  href={`/dashboard/${encodeURIComponent(slug)}/settings`}
-                  role="menuitem"
-                  onClick={() => setUserMenuOpen(false)}
-                  className={cn(
-                    "flex min-h-11 items-center gap-3 rounded-md px-2 py-2",
-                    "text-sm text-nq-foreground transition-colors hover:bg-nq-surface/80",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45",
-                  )}
-                >
-                  <SettingsIcon className="h-4 w-4 text-nq-muted" />
-                  <span>{t.settings}</span>
-                </Link>
-              </li>
-
-              {/* Sign Out */}
-              <li className="my-0.5 border-t border-nq-border/30" />
+              {/* Account menu = Sign Out only. De-duped: "Switch salon" lives
+                  in the salon card below; "Settings" lives in the main nav rail
+                  — so each action appears exactly once. */}
               <li className="px-2 py-1">
                 <LogoutButton language={language} />
               </li>
