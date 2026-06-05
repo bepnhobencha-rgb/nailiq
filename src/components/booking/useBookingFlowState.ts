@@ -202,33 +202,44 @@ export function useBookingFlowState(
     price_cents: number;
   } | null>(null);
 
-  // Total minutes consumed by the currently-selected add-ons.
-  const selectedAddonsTotalMin = useMemo(
-    () =>
-      selectedAddonIds.reduce((sum, id) => {
-        const a = upsellCandidates.find((s) => s.id === id);
-        return sum + (a?.totalMinutes ?? 0);
-      }, 0),
-    [selectedAddonIds, upsellCandidates],
+  // Minutes an add-on ADDS to the appointment: concurrent add-ons run alongside
+  // the main service (+0), only sequential ones extend the block.
+  const addonAddedMinutes = useCallback(
+    (a: BookingServiceItem | undefined) =>
+      !a || a.addonConcurrent ? 0 : a.totalMinutes,
+    [],
   );
 
-  // Toggle an add-on on/off. Adding is blocked when it would overflow the
-  // staff's free gap (so the appointment never runs into the next booking).
+  // Total EXTRA minutes from the currently-selected add-ons (concurrent = 0).
+  const selectedAddonsTotalMin = useMemo(
+    () =>
+      selectedAddonIds.reduce(
+        (sum, id) =>
+          sum + addonAddedMinutes(upsellCandidates.find((s) => s.id === id)),
+        0,
+      ),
+    [selectedAddonIds, upsellCandidates, addonAddedMinutes],
+  );
+
+  // Toggle an add-on on/off. Concurrent add-ons are always allowed (no time
+  // cost); sequential ones are blocked when they'd overflow the staff's free
+  // gap (so the appointment never runs into the next booking).
   const toggleAddon = useCallback(
     (id: string) => {
       setSelectedAddonIds((prev) => {
         if (prev.includes(id)) return prev.filter((x) => x !== id);
         const cand = upsellCandidates.find((s) => s.id === id);
         if (!cand) return prev;
-        const used = prev.reduce((sum, pid) => {
-          const a = upsellCandidates.find((s) => s.id === pid);
-          return sum + (a?.totalMinutes ?? 0);
-        }, 0);
-        if (used + cand.totalMinutes > upsellGapMinutes) return prev; // won't fit
+        const used = prev.reduce(
+          (sum, pid) =>
+            sum + addonAddedMinutes(upsellCandidates.find((s) => s.id === pid)),
+          0,
+        );
+        if (used + addonAddedMinutes(cand) > upsellGapMinutes) return prev; // won't fit
         return [...prev, id];
       });
     },
-    [upsellCandidates, upsellGapMinutes],
+    [upsellCandidates, upsellGapMinutes, addonAddedMinutes],
   );
 
   const confettiFiredRef = useRef(false);

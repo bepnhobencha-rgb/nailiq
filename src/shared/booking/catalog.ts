@@ -30,6 +30,9 @@ export type BookingServiceItem = {
   isPopular: boolean;
   /** From `services.is_featured`. Lifts the tile (larger card + subtle glow). */
   isFeatured: boolean;
+  /** Add-on only: `services.addon_timing === 'concurrent'` — runs alongside the
+   *  main service so it adds price but NO time to the appointment. */
+  addonConcurrent: boolean;
 };
 
 export type BookingComboItem = {

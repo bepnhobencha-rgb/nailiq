@@ -137,7 +137,7 @@ export async function loadBookingServicesForSalonSlug(
     // `price_max_cents` by the variable-pricing migration. Not yet in the
     // auto-generated DB types so the SELECT spread is cast.
     .select(
-      "id, name, duration_minutes, buffer_minutes, price_cents, price_type, price_max_cents, category, description, is_popular, is_featured, is_addon" as never,
+      "id, name, duration_minutes, buffer_minutes, price_cents, price_type, price_max_cents, category, description, is_popular, is_featured, is_addon, addon_timing" as never,
     )
     .eq("salon_id", salonId)
     .is("deleted_at" as never, null)
@@ -178,6 +178,7 @@ export async function loadBookingServicesForSalonSlug(
       description?: unknown;
       is_popular?: unknown;
       is_featured?: unknown;
+      addon_timing?: unknown;
     };
     const duration = Number(row.duration_minutes) || 0;
     const buffer = Number(row.buffer_minutes) || 0;
@@ -222,6 +223,7 @@ export async function loadBookingServicesForSalonSlug(
       description,
       isPopular: row.is_popular === true,
       isFeatured: row.is_featured === true,
+      addonConcurrent: row.addon_timing === "concurrent",
     };
   };
 
