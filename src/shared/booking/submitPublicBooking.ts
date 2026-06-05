@@ -352,7 +352,7 @@ export async function submitPublicBooking(
     // and be flagged is_addon (prices/durations come from the DB, not client).
     const { data: addSvcs, error: addErr } = await supabase
       .from("services")
-      .select("id, name, duration_minutes, buffer_minutes, price_cents, is_addon")
+      .select("id, name, duration_minutes, buffer_minutes, price_cents, is_addon, addon_timing")
       .in("id", addonIds)
       .eq("salon_id", salon.id)
       .is("deleted_at" as never, null);
@@ -364,14 +364,16 @@ export async function submitPublicBooking(
     // Preserve the customer's selection order.
     for (const id of addonIds) {
       const addSvc = byId.get(id) as
-        | { id: string; name: string; duration_minutes?: unknown; buffer_minutes?: unknown; price_cents?: unknown; is_addon?: unknown }
+        | { id: string; name: string; duration_minutes?: unknown; buffer_minutes?: unknown; price_cents?: unknown; is_addon?: unknown; addon_timing?: unknown }
         | undefined;
       if (!addSvc || addSvc.is_addon !== true) throw new Error("addon_not_found");
       const block =
         (Number(addSvc.duration_minutes) || 0) +
         (Number(addSvc.buffer_minutes) || 0);
       if (block <= 0) throw new Error("invalid_addon");
-      addonBlockMin += block;
+      // Concurrent add-ons run alongside the main service → add $0 time to the
+      // appointment block; only sequential ones extend the end time.
+      if (addSvc.addon_timing !== "concurrent") addonBlockMin += block;
       addonRows.push({
         id: String(addSvc.id),
         name: String(addSvc.name ?? ""),

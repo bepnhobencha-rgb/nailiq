@@ -267,11 +267,16 @@ export function BookingFlowConfirmPanel({
               </button>
               {upsellCandidates.map((s) => {
                 const on = selectedAddonIds.includes(s.id);
-                // Disable add-ons that can't fit the time left in the gap.
+                // Concurrent add-ons cost no time (run during the service);
+                // only sequential ones eat into the free gap.
+                const added = s.addonConcurrent ? 0 : s.totalMinutes;
                 const fits =
-                  on ||
-                  selectedAddonsTotalMin + s.totalMinutes <= upsellGapMinutes;
-                const mins = s.totalMinutes > 0 ? ` · +${s.totalMinutes}′` : "";
+                  on || selectedAddonsTotalMin + added <= upsellGapMinutes;
+                const mins = s.addonConcurrent
+                  ? " · ✨ +0′"
+                  : added > 0
+                    ? ` · +${added}′`
+                    : "";
                 return (
                   <button
                     key={s.id}
