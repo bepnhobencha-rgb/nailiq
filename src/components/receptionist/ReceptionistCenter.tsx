@@ -539,6 +539,7 @@ function ReceptionistCenterInner({
           has_design: b.has_design,
           has_staff_request: b.has_staff_request,
           group_id: b.group_id,
+          addon_count: b.addons?.length ?? 0,
         },
       ];
     });
@@ -1236,13 +1237,23 @@ function ReceptionistCenterInner({
       priceLine,
       addonServiceName,
       addonDurationLine,
-      // Full itemized add-on list (multi-add-on). Prefer this over the single
-      // legacy addonServiceName when rendering.
+      // Full itemized add-on list (multi-add-on). Each carries a short
+      // timing label so the therapist knows during-vs-after at a glance.
       addons:
         b.addons && b.addons.length > 0
-          ? b.addons
+          ? b.addons.map((a) => ({
+              name: a.name,
+              price_cents: a.price_cents,
+              timingLabel: a.concurrent
+                ? language === "vi"
+                  ? "cùng lúc"
+                  : "during"
+                : language === "vi"
+                  ? `làm sau · +${a.duration_minutes}′`
+                  : `after · +${a.duration_minutes}m`,
+            }))
           : addonServiceName
-            ? [{ name: addonServiceName, price_cents: addonCents }]
+            ? [{ name: addonServiceName, price_cents: addonCents, timingLabel: null }]
             : [],
       verificationMethod: b.verification_method ?? null,
       smsFailedAt: b.sms_confirmation_failed_at ?? null,

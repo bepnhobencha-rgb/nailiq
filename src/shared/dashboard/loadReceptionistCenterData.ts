@@ -144,8 +144,14 @@ export interface ReceptionistCenterData {
     addon_duration_minutes: number | null;
     addon_buffer_minutes: number | null;
     addon_price_cents: number | null;
-    /** All add-ons on this booking (from `booking_addons`). Empty when none. */
-    addons: { name: string; price_cents: number | null }[];
+    /** All add-ons on this booking (from `booking_addons`). Empty when none.
+     *  `concurrent` = runs during the main service (+0 time). */
+    addons: {
+      name: string;
+      price_cents: number | null;
+      duration_minutes: number;
+      concurrent: boolean;
+    }[];
     /**
      * Receptionist booking-block icon flags. Derived server-side from
      * existing columns (no new DB schema) so the timeline can render them
@@ -818,7 +824,10 @@ export async function loadReceptionistCenterData(
   // Itemized add-ons for the day's bookings. `booking_addons` is RLS-locked
   // (writes via SECURITY DEFINER RPC), so read with the service-role client,
   // scoped to this salon's booking ids (already salon-filtered above).
-  const addonsByBooking = new Map<string, { name: string; price_cents: number | null }[]>();
+  const addonsByBooking = new Map<
+    string,
+    { name: string; price_cents: number | null; duration_minutes: number; concurrent: boolean }[]
+  >();
   {
     const dayBookingIds = (bookingsRows ?? [])
       .map((r) => (r.id != null ? String(r.id) : ""))
@@ -828,17 +837,28 @@ export async function loadReceptionistCenterData(
         const svc = createServiceRoleClient();
         const { data: addonRows } = await svc
           .from("booking_addons")
-          .select("booking_id, name, price_cents, created_at")
+          .select(
+            "booking_id, name, price_cents, duration_minutes, created_at, service:services!booking_addons_service_id_fkey(addon_timing)",
+          )
           .in("booking_id", dayBookingIds)
           .order("created_at", { ascending: true });
         for (const a of (addonRows ?? []) as Array<{
           booking_id: string;
           name: string;
           price_cents: number | null;
+          duration_minutes: number | null;
+          service: { addon_timing?: unknown } | { addon_timing?: unknown }[] | null;
         }>) {
           const bid = String(a.booking_id);
+          const svcJoin = Array.isArray(a.service) ? a.service[0] : a.service;
+          const concurrent = svcJoin?.addon_timing === "concurrent";
           const list = addonsByBooking.get(bid) ?? [];
-          list.push({ name: String(a.name ?? ""), price_cents: a.price_cents });
+          list.push({
+            name: String(a.name ?? ""),
+            price_cents: a.price_cents,
+            duration_minutes: Math.max(0, Math.round(Number(a.duration_minutes ?? 0))),
+            concurrent,
+          });
           addonsByBooking.set(bid, list);
         }
       } catch (e) {
