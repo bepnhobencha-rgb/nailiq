@@ -949,6 +949,7 @@ export function BookingGroupFlow({
         scheduleResult={scheduleResult}
         selectedArrangementIdx={selectedArrangementIdx}
         date={date}
+        showStaff={salon.staffSelectionEnabled !== false}
         partyLinkUrl={partyLinkUrl}
         partyLinkFailed={partyLinkFailed}
       />
@@ -996,6 +997,7 @@ export function BookingGroupFlow({
           services={services}
           staff={staff}
           capability={capability}
+          showStaff={salon.staffSelectionEnabled !== false}
           duplicateStaffIdx={duplicateStaffIdx}
           stepErrors={stepErrors}
           totalDisplay={totalDisplay}
@@ -1065,6 +1067,7 @@ export function BookingGroupFlow({
           date={date}
           timezone={salon.timezone}
           syncMode={syncMode}
+          showStaff={salon.staffSelectionEnabled !== false}
           onSelect={(idx) => {
             setSelectedArrangementIdx(idx);
             // FIX 03 — explicit pick re-stamps the timestamp.
@@ -1187,6 +1190,7 @@ export function BookingGroupFlow({
           services={services}
           date={date}
           timezone={salon.timezone}
+          showStaff={salon.staffSelectionEnabled !== false}
           primaryPhone={primaryPhone}
           primaryEmail={primaryEmail}
           submitting={submitting}
@@ -1381,6 +1385,7 @@ function ServiceStaffStep({
   services,
   staff,
   capability,
+  showStaff,
   duplicateStaffIdx,
   stepErrors,
   totalDisplay,
@@ -1396,6 +1401,7 @@ function ServiceStaffStep({
   services: readonly BookingServiceItem[];
   staff: readonly BookingStaffItem[];
   capability: ReturnType<typeof buildCapabilityMap>;
+  showStaff: boolean;
   duplicateStaffIdx: Set<number>;
   stepErrors: Set<string>;
   totalDisplay: string | null;
@@ -1432,6 +1438,7 @@ function ServiceStaffStep({
             services={services}
             staff={staff}
             capability={capability}
+            showStaff={showStaff}
             isDuplicateStaff={duplicateStaffIdx.has(i)}
             nameError={false}
             serviceError={stepErrors.has(`m${i}.service`)}
@@ -1481,6 +1488,7 @@ function MemberCard({
   services,
   staff,
   capability,
+  showStaff,
   isDuplicateStaff,
   nameError,
   serviceError,
@@ -1493,6 +1501,8 @@ function MemberCard({
   services: readonly BookingServiceItem[];
   staff: readonly BookingStaffItem[];
   capability: ReturnType<typeof buildCapabilityMap>;
+  /** When false (salon hides staff selection) the per-guest staff picker is omitted. */
+  showStaff: boolean;
   isDuplicateStaff: boolean;
   nameError: boolean;
   serviceError: boolean;
@@ -1568,6 +1578,7 @@ function MemberCard({
           ) : null}
         </div>
 
+        {showStaff ? (
         <div>
           <select
             id={`group-member-${index}-staff-input`}
@@ -1601,6 +1612,7 @@ function MemberCard({
             </p>
           ) : null}
         </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1951,6 +1963,7 @@ function ArrangementStep({
   date,
   timezone,
   syncMode,
+  showStaff,
   onSelect,
   onRetry,
   onBack,
@@ -1976,6 +1989,8 @@ function ArrangementStep({
   timezone: string;
   /** Phase 1: sync mode, forwarded to ArrangementCard for label copy. */
   syncMode: GroupSyncMode;
+  /** When false (salon hides staff selection) staff names are omitted. */
+  showStaff: boolean;
   onSelect: (i: number) => void;
   onRetry: () => void;
   onBack: () => void;
@@ -2064,6 +2079,7 @@ function ArrangementStep({
               currencyCode={currencyCode}
               selected={idx === selectedIdx}
               syncMode={syncMode}
+              showStaff={showStaff}
               onSelect={() => onSelect(idx)}
             />
           ))}
@@ -2103,6 +2119,7 @@ function ArrangementCard({
   currencyCode,
   selected,
   syncMode,
+  showStaff,
   onSelect,
 }: {
   t: BookingMessages;
@@ -2110,6 +2127,8 @@ function ArrangementCard({
   arrangement: GroupArrangement;
   currencyCode: BookingSalonMeta["currencyCode"];
   selected: boolean;
+  /** When false (salon hides staff selection) the per-guest staff name is omitted. */
+  showStaff: boolean;
   /** Phase 1: changes the heading copy for sync_finish mode. */
   syncMode: GroupSyncMode;
   onSelect: () => void;
@@ -2200,7 +2219,8 @@ function ArrangementCard({
               {a.memberName || `#${a.memberIndex + 1}`}
             </span>
             <span className="text-[var(--booking-text-muted)]">
-              {a.startDisplay} · {a.staffName} · {a.serviceName}
+              {a.startDisplay}
+              {showStaff ? ` · ${a.staffName}` : ""} · {a.serviceName}
             </span>
           </li>
         ))}
@@ -2636,6 +2656,7 @@ function ConfirmStep({
   services,
   date,
   timezone,
+  showStaff,
   primaryPhone,
   primaryEmail,
   submitting,
@@ -2661,6 +2682,7 @@ function ConfirmStep({
   services: readonly BookingServiceItem[];
   date: string;
   timezone: string;
+  showStaff: boolean;
   primaryPhone: string;
   primaryEmail: string;
   submitting: boolean;
@@ -2808,7 +2830,8 @@ function ConfirmStep({
               >
                 <span className="font-medium">{draft?.name || "—"}</span>
                 <span className="text-[var(--booking-text-muted)]">
-                  {a.startDisplay} · {a.staffName} ·{" "}
+                  {a.startDisplay}
+                  {showStaff ? ` · ${a.staffName}` : ""} ·{" "}
                   {svc?.name ?? a.serviceName}
                 </span>
               </li>
@@ -2952,12 +2975,14 @@ function SuccessPanel({
   scheduleResult,
   selectedArrangementIdx,
   date,
+  showStaff,
   partyLinkUrl,
   partyLinkFailed,
 }: {
   t: BookingMessages;
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
   successResult: { groupId: string; bookingIds: string[] };
+  showStaff: boolean;
   members: readonly MemberDraft[];
   services: readonly BookingServiceItem[];
   scheduleResult: GroupSmartScheduleResult | null;
@@ -3005,7 +3030,8 @@ function SuccessPanel({
               >
                 <span className="font-semibold">{draft?.name}</span>
                 <span className="text-[var(--booking-text-muted)]">
-                  {a.startDisplay} · {svc?.name ?? a.serviceName} · {a.staffName}
+                  {a.startDisplay} · {svc?.name ?? a.serviceName}
+                  {showStaff ? ` · ${a.staffName}` : ""}
                 </span>
               </li>
             );
