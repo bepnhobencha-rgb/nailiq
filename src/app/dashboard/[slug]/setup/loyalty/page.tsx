@@ -20,6 +20,9 @@ export default async function LoyaltySetupPage({ params }: Props) {
   const { slug } = await params;
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) redirect("/register");
+  // Salon config is owner/admin only.
+  if (ctx.role !== "owner" && ctx.role !== "admin")
+    redirect(`/dashboard/${encodeURIComponent(slug)}`);
 
   const { supabase, salon } = ctx;
 

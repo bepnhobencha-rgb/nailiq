@@ -23,6 +23,10 @@ export default async function SetupAddressPage({ params }: Props) {
   if (!ctx) {
     redirect("/register");
   }
+  // Salon config is owner/admin only.
+  if (ctx.role !== "owner" && ctx.role !== "admin") {
+    redirect(`/dashboard/${encodeURIComponent(slug)}`);
+  }
 
   // currency_code lives on the salon row but isn't exposed by
   // `getDashboardWriteClient` yet, so query it directly here. Column

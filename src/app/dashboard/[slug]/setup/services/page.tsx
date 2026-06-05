@@ -28,6 +28,11 @@ export default async function SetupServicesPage({ params }: Props) {
   if (!ctx) {
     redirect("/register");
   }
+  // Salon config is management-only (owner/admin). Front-desk roles
+  // (senior/receptionist/nail_tech) run operations but don't edit setup.
+  if (ctx.role !== "owner" && ctx.role !== "admin") {
+    redirect(`/dashboard/${encodeURIComponent(slug)}`);
+  }
 
   const { data: rows, error } = await ctx.supabase
     .from("services")

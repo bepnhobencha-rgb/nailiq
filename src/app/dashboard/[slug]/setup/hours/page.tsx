@@ -22,6 +22,10 @@ export default async function SetupHoursPage({ params }: Props) {
   if (!ctx) {
     redirect("/register");
   }
+  // Salon config is owner/admin only.
+  if (ctx.role !== "owner" && ctx.role !== "admin") {
+    redirect(`/dashboard/${encodeURIComponent(slug)}`);
+  }
 
   const rawHours = ctx.salon.opening_hours;
 

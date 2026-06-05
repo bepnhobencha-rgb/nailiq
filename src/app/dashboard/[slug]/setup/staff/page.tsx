@@ -44,6 +44,10 @@ export default async function SetupStaffPage({ params }: Props) {
   if (!ctx) {
     redirect("/register");
   }
+  // Staff management is owner/admin only (front-desk roles can't add/remove).
+  if (ctx.role !== "owner" && ctx.role !== "admin") {
+    redirect(`/dashboard/${encodeURIComponent(slug)}`);
+  }
 
   const language = await resolveUserLanguage();
   const t = getUserMessages(language);
