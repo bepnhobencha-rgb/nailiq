@@ -7,6 +7,7 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { getSalonDomain } from "@/shared/dashboard/domainActions";
 import { normalizeBrandColor } from "@/shared/lib/brandColor";
 import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
+import { getLookPresetsForVertical } from "@/shared/verticals/lookPresets";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -109,6 +110,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       : "nail_salon";
 
   const domainInfo = await getSalonDomain(slug);
+  const lookPresets = getLookPresetsForVertical(vertical);
 
   return (
     <SalonSettingsHub
@@ -134,6 +136,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       voiceAiPersonaName={voiceAiPersonaName}
       vertical={vertical}
       domainInfo={domainInfo}
+      lookPresets={lookPresets}
     />
   );
 }

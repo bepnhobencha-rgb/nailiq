@@ -23,6 +23,8 @@ import { VoiceAiSettings } from "@/components/dashboard/VoiceAiSettings";
 import { BusinessTypeSettings } from "@/components/dashboard/BusinessTypeSettings";
 import { DomainSettings } from "@/components/dashboard/DomainSettings";
 import type { SalonDomainInfo } from "@/shared/dashboard/domainActions";
+import { LookPresetPicker } from "@/components/dashboard/LookPresetPicker";
+import type { LookPreset } from "@/shared/verticals/lookPresets";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
@@ -58,6 +60,7 @@ export function SalonSettingsHub({
   voiceAiPersonaName,
   vertical,
   domainInfo,
+  lookPresets,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -81,6 +84,7 @@ export function SalonSettingsHub({
   voiceAiPersonaName: string;
   vertical: string;
   domainInfo: SalonDomainInfo;
+  lookPresets: LookPreset[];
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -348,6 +352,16 @@ export function SalonSettingsHub({
         {/* ── Business type (vertical) ────────────────────────── */}
         {canEditDashboardModules ? (
           <BusinessTypeSettings slug={slug} initialVertical={vertical} />
+        ) : null}
+
+        {/* ── Booking page style (look presets) ───────────────── */}
+        {canEditDashboardModules ? (
+          <LookPresetPicker
+            slug={slug}
+            presets={lookPresets}
+            currentBrandColor={brandColor}
+            currentThemeMode={themeMode}
+          />
         ) : null}
 
         {/* ── Custom domain ───────────────────────────────────── */}
