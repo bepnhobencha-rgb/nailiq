@@ -41,7 +41,11 @@ export default async function PhotosPage({ params }: PageProps) {
   const { slug } = await params;
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) redirect("/register");
-  if (ctx.role !== "owner" && ctx.role !== "senior") {
+  if (
+    ctx.role !== "owner" &&
+    ctx.role !== "admin" &&
+    ctx.role !== "senior"
+  ) {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
   // Platform kill-switch: hard-block when photos is disabled platform-wide

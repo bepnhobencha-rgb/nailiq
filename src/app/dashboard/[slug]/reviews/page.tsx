@@ -25,7 +25,8 @@ export default async function SalonReviewsPage({ params }: PageProps) {
   const { slug } = await params;
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) redirect("/register");
-  if (ctx.role !== "owner") redirect(`/dashboard/${encodeURIComponent(slug)}`);
+  if (ctx.role !== "owner" && ctx.role !== "admin")
+    redirect(`/dashboard/${encodeURIComponent(slug)}`);
   // Platform kill-switch: hard-block when reviews is disabled platform-wide
   // (plan-tier gating still shows the friendly upsell below).
   if (await isFeaturePlatformDisabled("reviews")) notFound();

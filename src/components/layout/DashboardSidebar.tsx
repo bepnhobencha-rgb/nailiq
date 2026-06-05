@@ -306,9 +306,11 @@ export function DashboardSidebar({
             // prior BarChart2.
             icon: TrendingUp,
             match: (p) => p.startsWith(`${dashRoot}/reports`),
-            // Release flag: Reports is Beta (advanced_reports → reports_enabled),
-            // default OFF. Hidden unless SuperAdmin enables the flag.
-            hidden: featureOff("advanced_reports"),
+            // Release flag (advanced_reports, default OFF) + role: the KPI/
+            // revenue overview is owner + admin only (matches the page gate).
+            hidden:
+              featureOff("advanced_reports") ||
+              (role !== "owner" && role !== "admin"),
           },
           {
             key: "reviews",
@@ -316,9 +318,9 @@ export function DashboardSidebar({
             href: `${dashRoot}/reviews`,
             icon: Star,
             match: (p) => p.startsWith(`${dashRoot}/reviews`),
-            // Plan-sourced release flag (`reviews` → billing). Keeps the
-            // existing plan behavior — Pro+ see it, free does not.
-            hidden: featureOff("reviews"),
+            // Plan flag + role: owner + admin only (matches the page gate).
+            hidden:
+              featureOff("reviews") || (role !== "owner" && role !== "admin"),
           },
           {
             key: "loyalty",
@@ -335,9 +337,11 @@ export function DashboardSidebar({
             href: `${dashRoot}/photos`,
             icon: Camera,
             match: (p) => p.startsWith(`${dashRoot}/photos`),
-            // Plan-sourced release flag (`photos` → photo_confirmation). Keeps
-            // the existing plan behavior — Pro+ see it, free does not.
-            hidden: featureOff("photos"),
+            // Plan flag + role: owner + admin + senior (matches the page gate);
+            // hidden from receptionist / nail_tech.
+            hidden:
+              featureOff("photos") ||
+              (role !== "owner" && role !== "admin" && role !== "senior"),
           },
           {
             key: "combos",
