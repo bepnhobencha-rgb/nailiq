@@ -753,10 +753,14 @@ function ReceptionistCenterInner({
   // Lightweight view toggle (localStorage). Default off → Balanced/Advanced
   // views are unchanged for everyone who never opts in. Only active on the
   // live "today + day" board where the cockpit's now-semantics make sense.
-  // When the salon has `basic_mode_forced`, everyone (incl. owner) starts in
-  // Basic Mode and cannot toggle it off — honored via useBasicMode's forced arg.
+  // When the salon has `basic_mode_forced`, FRONT-DESK roles (receptionist /
+  // nail_tech / senior) start locked in Basic Mode. Management roles
+  // (owner / admin) are never forced — they keep the full board and can still
+  // opt into Basic via the toggle. Keeps managers' analytics/controls available
+  // even on a receptionist-simplified salon.
+  const isManagerRole = viewerRole === "owner" || viewerRole === "admin";
   const { basicMode, toggleBasicMode, isForced } = useBasicMode(
-    data.salon.basicModeForced,
+    data.salon.basicModeForced && !isManagerRole,
   );
   // Basic Mode never renders the heavy party-card strip by default — the
   // actionable case surfaces as a compact cockpit alert. Clicking that
