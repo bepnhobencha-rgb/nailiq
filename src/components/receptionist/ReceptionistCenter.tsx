@@ -1236,6 +1236,14 @@ function ReceptionistCenterInner({
       priceLine,
       addonServiceName,
       addonDurationLine,
+      // Full itemized add-on list (multi-add-on). Prefer this over the single
+      // legacy addonServiceName when rendering.
+      addons:
+        b.addons && b.addons.length > 0
+          ? b.addons
+          : addonServiceName
+            ? [{ name: addonServiceName, price_cents: addonCents }]
+            : [],
       verificationMethod: b.verification_method ?? null,
       smsFailedAt: b.sms_confirmation_failed_at ?? null,
       noShowRiskScore: b.no_show_risk_score ?? null,
