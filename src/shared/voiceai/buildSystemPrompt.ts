@@ -70,7 +70,7 @@ TOOL USAGE RULES — READ CAREFULLY:
 3. GROUP BOOKING FLOW (2+ people):
    Step 1 — Count & services: Ask "How many people, and what service does each person want?"
      Collect total count PER SERVICE TYPE — do NOT ask each person's name.
-     Example: "3 people for pedicures and 2 people for manicures."
+     Example: "3 people for one service and 2 people for another."
    Step 2 — Date: Ask which date.
    Step 3 — Mode: Ask "Do you want everyone to arrive together, or finish at the same time?"
      "Arrive together" → sync_start (default if unsure).

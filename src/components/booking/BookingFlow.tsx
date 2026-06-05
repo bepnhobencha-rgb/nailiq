@@ -28,6 +28,7 @@ import {
 } from "@/components/booking/BookingStepper";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
+import { resolveVertical } from "@/shared/verticals/registry";
 import { formatBookingPriceReceipt } from "@/shared/booking/formatBookingPrice";
 import { salonTimezoneAbbreviation } from "@/shared/lib/salonTime";
 import { useBookingFlowState } from "@/components/booking/useBookingFlowState";
@@ -103,6 +104,8 @@ export function BookingFlow({
   language = "en",
 }: BookingFlowProps) {
   const reducedMotion = useReducedMotion();
+  const vertical = resolveVertical(salon.vertical);
+  const techRoleLabel = vertical.staffRoleLabel[language];
   const flow = useBookingFlowState(
     t,
     shopSlug,
@@ -298,6 +301,7 @@ export function BookingFlow({
             stepTransition={stepTransition}
             onSelectStaffId={(id) => flow.setStaffId(id)}
             onNext={flow.goStaffNext}
+            techRoleLabel={techRoleLabel}
           />
         ) : null}
         {flow.step === "date" ? (

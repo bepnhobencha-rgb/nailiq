@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { evaluateDeposit } from "@/shared/noshow/evaluateDeposit";
 import { scoreNoShowRisk } from "@/shared/noshow/scoreNoShowRisk";
+import { resolveVertical } from "@/shared/verticals/registry";
 
 /** Called fire-and-forget from submitPublicBooking after a booking insert. */
 export async function POST(req: Request) {
@@ -34,12 +35,15 @@ export async function POST(req: Request) {
 
     const { data: salonSettings } = await supabase
       .from("salons" as never)
-      .select("deposit_high_value_cents")
+      .select("deposit_high_value_cents, vertical")
       .eq("id", body.salonId)
       .maybeSingle();
     const highValueThreshold =
       (salonSettings as { deposit_high_value_cents?: number } | null)
         ?.deposit_high_value_cents ?? 10000;
+    const businessDescriptor = resolveVertical(
+      (salonSettings as { vertical?: string | null } | null)?.vertical,
+    ).aiDescriptor;
 
     const depositDecision = evaluateDeposit({
       isNewCustomer: body.isNewCustomer,
@@ -60,6 +64,7 @@ export async function POST(req: Request) {
         bookingSource: "public_booking",
         hasEmail: body.hasEmail,
         hasPhone: true,
+        businessDescriptor,
       }),
     ]);
 

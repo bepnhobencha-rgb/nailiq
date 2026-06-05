@@ -9,6 +9,8 @@ import { SalonBookingSkeleton } from "@/components/booking/SalonBookingSkeleton"
 import { BookingFlowErrorBoundary } from "@/components/booking/BookingFlowErrorBoundary";
 import { loadServiceCategories } from "@/shared/booking/loadServiceCategories";
 import { resolvePublicBookingPage } from "@/shared/booking/resolvePublicBookingPage";
+import { loadSalonPageSections } from "@/shared/booking/loadSalonPageSections";
+import { SalonPageSections } from "@/components/booking/SalonPageSections";
 import { buildBookingThemeVars } from "@/shared/booking/bookingThemeVars";
 import {
   getBookingMessages,
@@ -19,6 +21,7 @@ import { BookingDocumentEn } from "./BookingDocumentEn";
 import { BookingLanguageToggle } from "@/components/booking/BookingLanguageToggle";
 import { BookingChatWidget } from "@/components/booking/BookingChatWidget";
 import { getSalonLocalBusinessJsonLd } from "@/shared/seo/jsonLd";
+import { resolveVertical } from "@/shared/verticals/registry";
 
 /** Avoid stale static segments for salons created after deploy. */
 export const dynamic = "force-dynamic";
@@ -144,7 +147,21 @@ async function PublicBookingRouteBody({
     address: load.salon.address,
     phone: load.salon.salonPhone,
     timezone: load.salon.timezone,
+    vertical: load.salon.vertical,
   });
+
+  // Vertical-specific fallback tagline for the booking hero. Only used when the
+  // salon has no custom `description`; `nail_salon` omits it so the existing
+  // i18n copy still wins (preserved in both languages).
+  const heroFallbackTagline = resolveVertical(load.salon.vertical).heroTagline?.[
+    lang === "vi" ? "vi" : "en"
+  ];
+
+  // Website-builder sections (opt-in per salon). Rendered above the booking
+  // flow when `public_sections_enabled` is on; otherwise the page is unchanged.
+  const pageSections = load.salon.publicSectionsEnabled
+    ? await loadSalonPageSections(load.salon.id)
+    : [];
 
   if (!load.salon.acceptingBookings) {
     return (
@@ -210,7 +227,19 @@ async function PublicBookingRouteBody({
           </div>
         </div>
 
-        <main className="relative z-10 mx-auto w-full max-w-[1200px] px-4 py-10 pb-safe sm:px-6 lg:flex lg:items-start lg:gap-10 lg:px-8 lg:py-14">
+        {pageSections.length > 0 ? (
+          <SalonPageSections
+            sections={pageSections}
+            services={load.services}
+            currency={load.salon.currencyCode}
+            lang={lang}
+            salonName={load.salon.name}
+            salonAddress={load.salon.address}
+            salonPhone={load.salon.salonPhone}
+          />
+        ) : null}
+
+        <main id="book" className="relative z-10 mx-auto w-full max-w-[1200px] px-4 py-10 pb-safe sm:px-6 lg:flex lg:items-start lg:gap-10 lg:px-8 lg:py-14">
           <BookingSalonHero
             shopLabel={shopLabel}
             t={t}
@@ -219,6 +248,7 @@ async function PublicBookingRouteBody({
             openingHoursRaw={load.salon.opening_hours}
             timezone={load.salon.timezone}
             description={load.salon.description}
+            fallbackTagline={heroFallbackTagline}
             lang={lang}
             className="lg:sticky lg:top-10 lg:flex-shrink-0"
           />
@@ -232,6 +262,7 @@ async function PublicBookingRouteBody({
               openingHoursRaw={load.salon.opening_hours}
               timezone={load.salon.timezone}
               description={load.salon.description}
+              fallbackTagline={heroFallbackTagline}
               lang={lang}
             />
             <h1 className="hidden lg:block text-2xl font-semibold tracking-tight text-[var(--booking-text)] sm:text-3xl lg:text-[2.125rem] lg:leading-[1.15] lg:tracking-[-0.035em]">

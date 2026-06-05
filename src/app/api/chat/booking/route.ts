@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/shared/lib/supabase/server";
 import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
+import { resolveVertical } from "@/shared/verticals/registry";
 
 let anthropicClient: Anthropic | null = null;
 function getClient(): Anthropic | null {
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
   const db = await createClient();
   const { data: salon } = await db
     .from("salons")
-    .select("name, description, address, timezone, salon_phone, opening_hours")
+    .select("name, description, address, timezone, salon_phone, opening_hours, vertical")
     .eq("id", salonId)
     .maybeSingle();
 
@@ -77,7 +78,11 @@ export async function POST(req: NextRequest) {
     })
     .join("\n");
 
-  const systemPrompt = `You are a friendly booking assistant for ${salonName}, a nail salon. Help customers with questions about services, pricing, hours, and availability. Be concise and warm.
+  const businessDescriptor = resolveVertical(
+    (salon as { vertical?: string | null } | null)?.vertical,
+  ).aiDescriptor;
+
+  const systemPrompt = `You are a friendly booking assistant for ${salonName}, ${businessDescriptor}. Help customers with questions about services, pricing, hours, and availability. Be concise and warm.
 
 Salon: ${salonName}
 ${salon?.address ? `Address: ${salon.address}` : ""}
