@@ -118,6 +118,8 @@ export interface BookingBlockProps {
    * icon in the icon stack so the receptionist sees the preferred-
    * staff request without opening the drawer. */
   hasStaffRequest?: boolean;
+  /** Number of add-ons on the booking — renders a "+N" badge on the chip. */
+  addonCount?: number;
   /**
    * Overlay flag — `status === 'in_progress'` AND service end time has
    * passed. Per `STATE_MACHINE.md` §5 (auto-transition `in_service +
@@ -231,6 +233,7 @@ export function BookingBlock(props: BookingBlockProps) {
     isVip = false,
     hasDesign = false,
     hasStaffRequest = false,
+    addonCount = 0,
     isLate = false,
     isGroup = false,
     compactIcons = false,
@@ -329,6 +332,14 @@ export function BookingBlock(props: BookingBlockProps) {
           {showMetaLine ? (
             <p className={cn("truncate text-[11px] leading-snug", styles.meta)}>
               {serviceLabel}
+              {addonCount > 0 ? (
+                <span
+                  className="ml-1 rounded-full bg-[var(--salon-primary)]/20 px-1.5 py-px text-[10px] font-semibold text-[var(--salon-primary)] align-middle"
+                  title={`${addonCount} add-on${addonCount > 1 ? "s" : ""}`}
+                >
+                  +{addonCount}
+                </span>
+              ) : null}
             </p>
           ) : null}
           {showTimeRange ? (

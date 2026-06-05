@@ -80,6 +80,8 @@ export interface GridBooking {
   /** Booking belongs to a group (migration 20260512200000) — drives
    * the 👥 marker on the chip. */
   group_id?: string | null;
+  /** Number of add-ons on this booking — drives the "+N" chip badge. */
+  addon_count?: number;
 }
 
 export interface StaffTimelineGridProps {
@@ -840,6 +842,7 @@ function StaffTimelineGridImpl({
                           hasNotes={b.has_notes}
                           hasDesign={b.has_design}
                           hasStaffRequest={b.has_staff_request}
+                          addonCount={b.addon_count ?? 0}
                           isGroup={b.group_id != null}
                           compactIcons={compactBookingIcons}
                           isLate={isLate}

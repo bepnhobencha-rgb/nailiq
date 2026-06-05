@@ -134,8 +134,9 @@ export type BookingDetailDrawerModel = {
   addonServiceName: string | null;
   /** Add-on duration line (e.g. "30 minutes"); null when no add-on. */
   addonDurationLine: string | null;
-  /** All add-ons on the booking (multi-add-on). Empty when none. */
-  addons: { name: string; price_cents: number | null }[];
+  /** All add-ons on the booking (multi-add-on). Empty when none.
+   *  `timingLabel` = short "during"/"after · +Xm" hint (null for legacy single). */
+  addons: { name: string; price_cents: number | null; timingLabel: string | null }[];
   /** Smart verification method recorded on booking. */
   verificationMethod: string | null;
   /** Non-null when SMS confirmation failed — show warning badge. */
@@ -491,6 +492,11 @@ export function BookingDetailDrawer({
                     >
                       <span aria-hidden className="text-nq-muted">+</span>
                       <span>{a.name}</span>
+                      {a.timingLabel ? (
+                        <span className="rounded-full bg-nq-muted/15 px-2 py-0.5 text-[11px] font-medium text-nq-muted">
+                          {a.timingLabel}
+                        </span>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
