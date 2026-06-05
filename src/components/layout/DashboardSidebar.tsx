@@ -10,6 +10,7 @@ import {
   Package,
   ChevronLeft,
   ChevronRight,
+  Check,
   ChevronUp,
   Clock,
   LayoutGrid,
@@ -147,39 +148,15 @@ export function DashboardSidebar({
     () => (salons ?? []).filter((s) => s.slug !== slug),
     [salons, slug],
   );
+  // Salon switching now lives inside the single account menu below.
   const showSwitcher = otherSalons.length > 0;
-  const [switcherOpen, setSwitcherOpen] = useState(false);
-  const switcherTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const switcherPopoverRef = useRef<HTMLDivElement | null>(null);
 
-  // User menu dropdown state (for Settings + Sign Out)
+  // Account menu state (identity + salon switch + sign out) — one menu.
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const userMenuPopoverRef = useRef<HTMLDivElement | null>(null);
 
-  // Close on outside click and on Escape — basic discoverability for
-  // the simple HTML/React popover (no portal, no animation per task).
-  useEffect(() => {
-    if (!switcherOpen) return;
-    const onDown = (ev: MouseEvent) => {
-      const target = ev.target as Node | null;
-      if (!target) return;
-      if (switcherTriggerRef.current?.contains(target)) return;
-      if (switcherPopoverRef.current?.contains(target)) return;
-      setSwitcherOpen(false);
-    };
-    const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") setSwitcherOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [switcherOpen]);
-
-  // User menu close on outside click and on Escape
+  // Account menu close on outside click and on Escape
   useEffect(() => {
     if (!userMenuOpen) return;
     const onDown = (ev: MouseEvent) => {
@@ -199,13 +176,6 @@ export function DashboardSidebar({
       document.removeEventListener("keydown", onKey);
     };
   }, [userMenuOpen]);
-
-  // Auto-close when the user collapses the sidebar — the trigger
-  // disappears and the dropdown would become an orphan otherwise.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional derived sync: hide orphaned dropdown when sidebar collapses
-    if (collapsed && switcherOpen) setSwitcherOpen(false);
-  }, [collapsed, switcherOpen]);
 
   const slugSeg = encodeURIComponent(slug);
   const dashRoot = `/dashboard/${slugSeg}`;
@@ -552,133 +522,121 @@ export function DashboardSidebar({
         ))}
       </nav>
 
-      <div className="relative mt-auto border-t border-nq-border/40 px-2 py-3 space-y-2">
-        {/* User Profile Card with Settings + Sign Out Menu */}
+      <div className="relative mt-auto border-t border-nq-border/40 px-2 py-3">
+        {/* Single account menu: identity + salon switch + sign out.
+            One avatar trigger; works expanded (popover above) and collapsed
+            (flyout beside the rail). */}
         <button
           ref={userMenuTriggerRef}
           type="button"
           onClick={() => setUserMenuOpen((prev) => !prev)}
           aria-haspopup="menu"
           aria-expanded={userMenuOpen}
+          title={collapsed ? userEmail ?? "Account" : undefined}
           className={cn(
             "flex w-full min-h-11 touch-manipulation items-center gap-3 rounded-lg px-2 py-2",
             "transition-colors hover:bg-nq-surface/80",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45",
+            collapsed ? "justify-center" : "",
             userMenuOpen ? "bg-nq-surface/80" : "",
           )}
-          title={collapsed ? userEmail ?? "User" : undefined}
         >
-          {/* Avatar with initials from user email */}
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-nq-primary/20 text-xs font-semibold text-nq-primary">
             {userEmail?.charAt(0).toUpperCase() ?? "U"}
           </div>
           {collapsed ? null : (
-            <div className="min-w-0 flex-1 text-left">
-              <p className="truncate text-sm font-medium text-nq-foreground">
-                {userEmail ?? "User"}
-              </p>
-              <p className="truncate text-xs text-nq-muted">
-                {localizedRoleLabel(role, roleLabels)}
-              </p>
-            </div>
+            <>
+              <div className="min-w-0 flex-1 text-left">
+                <p className="truncate text-sm font-medium text-nq-foreground">
+                  {userEmail ?? "User"}
+                </p>
+                <p className="truncate text-xs text-nq-muted">
+                  {localizedRoleLabel(role, roleLabels)}
+                </p>
+              </div>
+              <ChevronUp
+                className={cn(
+                  "h-4 w-4 shrink-0 text-nq-muted transition-transform",
+                  userMenuOpen ? "rotate-180" : "",
+                )}
+                aria-hidden
+              />
+            </>
           )}
-          <ChevronUp
-            className={cn(
-              "h-4 w-4 shrink-0 text-nq-muted transition-transform",
-              userMenuOpen ? "rotate-180" : "",
-            )}
-            aria-hidden
-          />
         </button>
 
-        {/* User Menu Dropdown */}
-        {userMenuOpen && !collapsed ? (
+        {userMenuOpen ? (
           <div
             ref={userMenuPopoverRef}
             role="menu"
             className={cn(
-              "absolute bottom-[calc(100%-0.25rem)] left-2 right-2 z-50",
-              "rounded-lg border border-nq-border/40 bg-nq-surface p-1 shadow-nq-card",
+              "absolute z-50 rounded-lg border border-nq-border/40 bg-nq-surface p-1 shadow-nq-card",
+              collapsed
+                ? "bottom-2 left-[calc(100%+0.5rem)] w-60"
+                : "bottom-[calc(100%-0.25rem)] left-2 right-2",
             )}
           >
-            <ul className="flex flex-col gap-0.5">
-              {/* Account menu = Sign Out only. De-duped: "Switch salon" lives
-                  in the salon card below; "Settings" lives in the main nav rail
-                  — so each action appears exactly once. */}
-              <li className="px-2 py-1">
-                <LogoutButton language={language} />
-              </li>
-            </ul>
-          </div>
-        ) : null}
-
-        {/* Salon Switcher (independent dropdown) */}
-        {showSwitcher && !collapsed ? (
-          <button
-            ref={switcherTriggerRef}
-            type="button"
-            onClick={() => setSwitcherOpen((prev) => !prev)}
-            aria-haspopup="menu"
-            aria-expanded={switcherOpen}
-            aria-label={t.switchSalon}
-            className={cn(
-              "flex w-full min-h-11 touch-manipulation items-center gap-3 rounded-lg px-2 py-2 text-xs",
-              "transition-colors hover:bg-nq-surface/80",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45",
-              switcherOpen ? "bg-nq-surface/80" : "",
-            )}
-          >
-            <SalonAvatar salonName={salonName} />
-            <div className="min-w-0 flex-1 text-left">
-              <p className="truncate text-xs font-medium text-nq-muted">
-                Salon
-              </p>
-              <p className="truncate text-xs text-nq-muted">
-                {salonName}
-              </p>
+            {/* Identity header */}
+            <div className="flex items-center gap-3 px-2 py-2">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-nq-primary/20 text-xs font-semibold text-nq-primary">
+                {userEmail?.charAt(0).toUpperCase() ?? "U"}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-nq-foreground">
+                  {userEmail ?? "User"}
+                </p>
+                <p className="truncate text-xs text-nq-muted">
+                  {localizedRoleLabel(role, roleLabels)}
+                </p>
+              </div>
             </div>
-            <ChevronUp
-              className={cn(
-                "h-4 w-4 shrink-0 text-nq-muted transition-transform",
-                switcherOpen ? "rotate-180" : "",
-              )}
-              aria-hidden
-            />
-          </button>
-        ) : null}
 
-        {switcherOpen && showSwitcher && !collapsed ? (
-          <div
-            ref={switcherPopoverRef}
-            role="menu"
-            aria-label={t.switchSalon}
-            className={cn(
-              "absolute bottom-[calc(100%-0.25rem)] left-2 right-2 z-50",
-              "rounded-lg border border-nq-border/40 bg-nq-surface p-1 shadow-nq-card",
-            )}
-          >
-            <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
-              {t.switchSalon}
-            </p>
-            <ul className="flex flex-col gap-0.5">
-              {otherSalons.map((s) => (
-                <li key={s.id}>
-                  <Link
-                    href={`/dashboard/${encodeURIComponent(s.slug)}/center`}
-                    role="menuitem"
-                    onClick={() => setSwitcherOpen(false)}
-                    className={cn(
-                      "flex min-h-11 items-center gap-3 rounded-md px-2 py-2",
-                      "text-sm text-nq-foreground transition-colors hover:bg-nq-surface/80",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45",
-                    )}
-                  >
-                    <SalonAvatar salonName={s.name} />
-                    <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            {/* Salons — current (✓) + others to switch. Only when >1 salon. */}
+            {showSwitcher ? (
+              <>
+                <div className="my-1 border-t border-nq-border/30" />
+                <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+                  {t.switchSalon}
+                </p>
+                <ul className="flex flex-col gap-0.5">
+                  <li>
+                    <div className="flex min-h-9 items-center gap-3 rounded-md px-2 py-1.5 text-sm text-nq-foreground">
+                      <SalonAvatar salonName={salonName} />
+                      <span className="min-w-0 flex-1 truncate font-medium">
+                        {salonName}
+                      </span>
+                      <Check
+                        className="h-4 w-4 shrink-0 text-nq-primary"
+                        aria-hidden
+                      />
+                    </div>
+                  </li>
+                  {otherSalons.map((s) => (
+                    <li key={s.id}>
+                      <Link
+                        href={`/dashboard/${encodeURIComponent(s.slug)}/center`}
+                        role="menuitem"
+                        onClick={() => setUserMenuOpen(false)}
+                        className={cn(
+                          "flex min-h-11 items-center gap-3 rounded-md px-2 py-2",
+                          "text-sm text-nq-foreground transition-colors hover:bg-nq-surface/80",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45",
+                        )}
+                      >
+                        <SalonAvatar salonName={s.name} />
+                        <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+
+            {/* Sign out */}
+            <div className="my-1 border-t border-nq-border/30" />
+            <div className="px-2 py-1">
+              <LogoutButton language={language} />
+            </div>
           </div>
         ) : null}
       </div>
