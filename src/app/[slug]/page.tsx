@@ -26,9 +26,6 @@ import { resolveVertical } from "@/shared/verticals/registry";
 /** Avoid stale static segments for salons created after deploy. */
 export const dynamic = "force-dynamic";
 
-/** Soft ambient layer behind split layout (`lg:`); matches hero imagery tone. */
-const DESKTOP_BOOKING_AMBIENT_SRC =
-  "https://images.unsplash.com/photo-1610992015732-2449b76344bc?auto=format&fit=crop&q=55&w=2400";
 
 type PublicBookingPageProps = {
   params: Promise<{ slug: string }>;
@@ -157,6 +154,11 @@ async function PublicBookingRouteBody({
     lang === "vi" ? "vi" : "en"
   ];
 
+  // Per-vertical booking imagery (head spa → spa photos, not nail). Ambient
+  // backdrop + hero panel both derive from this.
+  const bookingImagery = resolveVertical(load.salon.vertical).bookingImagery;
+  const ambientSrc = `${bookingImagery.hero}?auto=format&fit=crop&q=55&w=2400`;
+
   // Website-builder sections (opt-in per salon). Rendered above the booking
   // flow when `public_sections_enabled` is on; otherwise the page is unchanged.
   const pageSections = load.salon.publicSectionsEnabled
@@ -210,7 +212,7 @@ async function PublicBookingRouteBody({
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={DESKTOP_BOOKING_AMBIENT_SRC}
+            src={ambientSrc}
             alt=""
             aria-hidden="true"
             loading="lazy"
@@ -249,6 +251,7 @@ async function PublicBookingRouteBody({
             timezone={load.salon.timezone}
             description={load.salon.description}
             fallbackTagline={heroFallbackTagline}
+            imagery={bookingImagery}
             lang={lang}
             className="lg:sticky lg:top-10 lg:flex-shrink-0"
           />

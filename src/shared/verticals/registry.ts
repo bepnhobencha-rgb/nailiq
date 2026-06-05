@@ -56,6 +56,13 @@ export type VerticalConfig = {
    * `nail_salon` does, preserving the historical copy in both languages).
    */
   heroTagline?: { en: string; vi: string };
+  /**
+   * Decorative imagery for the public booking page (desktop hero panel +
+   * faint ambient backdrop). Base Unsplash photo URLs WITHOUT query params —
+   * consumers append sizing. Per-vertical so a head spa never shows nail
+   * photos. (Future: per-salon override from the salon's own photos.)
+   */
+  bookingImagery: { hero: string; thumbA: string; thumbB: string };
   /** Default catalogue seeded for a brand-new salon of this vertical. */
   seedServices: VerticalSeedService[];
 };
@@ -105,6 +112,12 @@ const NAIL_SALON: VerticalConfig = {
   aiDescriptor: "a nail salon",
   staffRoleLabel: { en: "Nail Tech", vi: "Thợ nail" },
   // No heroTagline → falls through to the existing i18n copy in both langs.
+  // Preserves the historical hardcoded booking imagery for nail salons.
+  bookingImagery: {
+    hero: "https://images.unsplash.com/photo-1610992015732-2449b76344bc",
+    thumbA: "https://images.unsplash.com/photo-1604654894610-df63bc536371",
+    thumbB: "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e",
+  },
   seedServices: NAIL_SALON_SEED,
 };
 
@@ -114,6 +127,12 @@ const HEAD_SPA: VerticalConfig = {
   schemaType: "DaySpa",
   aiDescriptor: "a head spa offering scalp and relaxation treatments",
   staffRoleLabel: { en: "Therapist", vi: "Kỹ thuật viên" },
+  // Calm head-spa / wellness imagery (verified Unsplash, no nail photos).
+  bookingImagery: {
+    hero: "https://images.unsplash.com/photo-1540555700478-4be289fbecef",
+    thumbA: "https://images.unsplash.com/photo-1556228578-8c89e6adf883",
+    thumbB: "https://images.unsplash.com/photo-1583416750470-965b2707b355",
+  },
   heroTagline: {
     en: "A calm sanctuary for scalp care and deep relaxation — your visit begins here.",
     vi: "Không gian thư giãn cho da đầu và tóc — hành trình của bạn bắt đầu tại đây.",
