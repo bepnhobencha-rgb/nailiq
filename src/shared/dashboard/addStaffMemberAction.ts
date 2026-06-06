@@ -81,9 +81,9 @@ async function findAuthUserIdByPhone(
  *      may create another `admin` (prevents admin→admin escalation).
  *   2. Resolve the auth user:
  *      - email: reuse an existing auth user, otherwise `inviteUserByEmail`
- *        creates one and emails an invite. The link lands on
- *        `/auth/recovery`, which already routes salon members to
- *        `/login/reset-password` to choose their password.
+ *        creates one and emails an invite. The link lands on `/auth/callback`,
+ *        which exchanges the code and routes the member straight into their
+ *        salon dashboard (already signed in).
  *      - phone: reuse an existing auth user, otherwise create one with
  *        `phone_confirm` so they can sign in via phone OTP.
  *   3. Upsert the `salon_members` row (idempotent on (salon_id, user_id),
@@ -145,7 +145,7 @@ export async function addStaffMemberAction(
       const siteUrl =
         process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXTAUTH_URL ?? "";
       const redirectTo = siteUrl
-        ? `${siteUrl.replace(/\/$/, "")}/auth/recovery`
+        ? `${siteUrl.replace(/\/$/, "")}/auth/callback`
         : undefined;
       const { data, error } = await admin.auth.admin.inviteUserByEmail(
         email,

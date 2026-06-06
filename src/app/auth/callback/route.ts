@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { dashboardPathForRole } from "@/shared/lib/salonMemberRole";
 import { resolveRoleAndSlugForUser } from "@/shared/lib/salonMembership";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export const dynamic = "force-dynamic";
 // Supabase ssr server client + cookie writes are exercised against the Node
@@ -82,7 +83,27 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  const resolved = await resolveRoleAndSlugForUser(supabase, user.id);
+  let resolved = await resolveRoleAndSlugForUser(supabase, user.id);
+
+  // Staff invited by email often sign in with a DIFFERENT identity (e.g.
+  // Google), which Supabase may register as a fresh auth user that has no
+  // membership — so they'd be wrongly sent to /register/setup. Reconcile by
+  // verified email: claim any membership held by another same-email account,
+  // then re-resolve. Only runs on the no-membership path (no normal-login cost).
+  if (!resolved && user.email) {
+    try {
+      const admin = createServiceRoleClient();
+      const { data: claimed } = await admin.rpc(
+        "claim_salon_memberships_by_email",
+        { p_user_id: user.id },
+      );
+      if (claimed && Number(claimed) > 0) {
+        resolved = await resolveRoleAndSlugForUser(supabase, user.id);
+      }
+    } catch (e) {
+      console.error("[auth/callback] membership reconcile failed", e);
+    }
+  }
 
   let dest: URL;
   if (!resolved) {

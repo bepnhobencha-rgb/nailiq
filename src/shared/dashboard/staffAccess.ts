@@ -88,8 +88,11 @@ async function resolveOrInviteUser(
 
     const siteUrl =
       process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXTAUTH_URL ?? "";
+    // Invite link lands on /auth/callback → exchanges the code and routes the
+    // member straight into their salon dashboard (they're already signed in).
+    // (Not /auth/recovery, which forced a confusing "set password + sign out".)
     const redirectTo = siteUrl
-      ? `${siteUrl.replace(/\/$/, "")}/auth/recovery`
+      ? `${siteUrl.replace(/\/$/, "")}/auth/callback`
       : undefined;
     const { data, error } = await admin.auth.admin.inviteUserByEmail(
       email,
