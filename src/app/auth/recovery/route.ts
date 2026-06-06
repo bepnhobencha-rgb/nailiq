@@ -63,12 +63,15 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Check if user is a salon member
+  // Check if user is a salon member. Use limit(1)/maybeSingle so a member of
+  // MULTIPLE salons doesn't make .single() error and fall through to the wrong
+  // (superadmin) page.
   const { data: salonMember } = await supabase
     .from("salon_members")
     .select("id")
     .eq("user_id", user.id)
-    .single();
+    .limit(1)
+    .maybeSingle();
 
   if (salonMember) {
     return NextResponse.redirect(
@@ -76,8 +79,9 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // User is neither superadmin nor salon member — treat as invalid recovery
+  // Neither superadmin nor salon member — send to the salon-member
+  // forgot-password page (not the superadmin one).
   return NextResponse.redirect(
-    new URL("/superadmin/forgot-password", request.url),
+    new URL("/login/forgot-password", request.url),
   );
 }

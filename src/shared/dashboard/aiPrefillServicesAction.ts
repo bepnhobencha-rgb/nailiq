@@ -221,6 +221,11 @@ export async function analyzeMenuImage(
 ): Promise<AnalyzeMenuResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  // AI menu analysis/import writes the service menu + spends AI credits —
+  // management-only (owner/admin). Uses "unauthorized" to match the result
+  // type's error union.
+  if (ctx.role !== "owner" && ctx.role !== "admin")
+    return { ok: false, error: "unauthorized" };
 
   // ~4MB base64 ≈ 3MB binary; Anthropic accepts up to 5MB
   const MAX_BASE64_LEN = 6_000_000;
@@ -263,6 +268,11 @@ export async function analyzeMenuImageUrl(
 ): Promise<AnalyzeMenuResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  // AI menu analysis/import writes the service menu + spends AI credits —
+  // management-only (owner/admin). Uses "unauthorized" to match the result
+  // type's error union.
+  if (ctx.role !== "owner" && ctx.role !== "admin")
+    return { ok: false, error: "unauthorized" };
 
   // Validate URL (http/https only)
   const trimmed = String(rawUrl ?? "").trim();
@@ -307,6 +317,11 @@ export async function bulkImportAIServices(
 ): Promise<BulkImportResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  // AI menu analysis/import writes the service menu + spends AI credits —
+  // management-only (owner/admin). Uses "unauthorized" to match the result
+  // type's error union.
+  if (ctx.role !== "owner" && ctx.role !== "admin")
+    return { ok: false, error: "unauthorized" };
 
   if (services.length === 0) return { ok: true, imported: 0 };
 

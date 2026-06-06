@@ -455,6 +455,9 @@ export async function addService(
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
+  // Salon config is management-only (owner/admin) — defense-in-depth so a
+  // front-desk role can't mutate it by calling the action directly.
+  if (r.role !== "owner" && r.role !== "admin") return fail("forbidden");
 
   const demoGate = await verifyDemoSetupSlug(slug, r.kind);
   if (demoGate) return demoGate;
@@ -638,6 +641,9 @@ export async function updateService(
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
+  // Salon config is management-only (owner/admin) — defense-in-depth so a
+  // front-desk role can't mutate it by calling the action directly.
+  if (r.role !== "owner" && r.role !== "admin") return fail("forbidden");
 
   const demoGate = await verifyDemoSetupSlug(slug, r.kind);
   if (demoGate) return demoGate;
@@ -790,6 +796,9 @@ export async function deleteService(
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
+  // Salon config is management-only (owner/admin) — defense-in-depth so a
+  // front-desk role can't mutate it by calling the action directly.
+  if (r.role !== "owner" && r.role !== "admin") return fail("forbidden");
 
   const demoGate = await verifyDemoSetupSlug(slug, r.kind);
   if (demoGate) return demoGate;
@@ -863,6 +872,9 @@ export async function addStaff(
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
+  // Salon config is management-only (owner/admin) — defense-in-depth so a
+  // front-desk role can't mutate it by calling the action directly.
+  if (r.role !== "owner" && r.role !== "admin") return fail("forbidden");
 
   const demoGate = await verifyDemoSetupSlug(slug, r.kind);
   if (demoGate) return demoGate;
@@ -948,6 +960,9 @@ export async function updateStaff(
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
+  // Salon config is management-only (owner/admin) — defense-in-depth so a
+  // front-desk role can't mutate it by calling the action directly.
+  if (r.role !== "owner" && r.role !== "admin") return fail("forbidden");
 
   const demoGate = await verifyDemoSetupSlug(slug, r.kind);
   if (demoGate) return demoGate;
@@ -1034,6 +1049,9 @@ export async function deleteStaff(
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
+  // Salon config is management-only (owner/admin) — defense-in-depth so a
+  // front-desk role can't mutate it by calling the action directly.
+  if (r.role !== "owner" && r.role !== "admin") return fail("forbidden");
 
   const demoGate = await verifyDemoSetupSlug(slug, r.kind);
   if (demoGate) return demoGate;
@@ -1129,6 +1147,8 @@ export async function updateOpeningHours(
 
   const r = await resolveSalonForDashboard(slugTrimmed);
   if (!r) return fail("unauthorized");
+  // Salon config is management-only (owner/admin).
+  if (r.role !== "owner" && r.role !== "admin") return fail("forbidden");
 
   const salonId = String(r.salon.id ?? "").trim();
   if (!salonId) {
@@ -1271,6 +1291,9 @@ export async function updateAddress(
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
   if (!r) return fail("unauthorized");
+  // Salon config is management-only (owner/admin) — defense-in-depth so a
+  // front-desk role can't mutate it by calling the action directly.
+  if (r.role !== "owner" && r.role !== "admin") return fail("forbidden");
 
   const demoGate = await verifyDemoSetupSlug(slug, r.kind);
   if (demoGate) return demoGate;
