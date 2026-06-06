@@ -63,6 +63,12 @@ export type GroupBookingMember = {
   time: string;
   /** Phase 6.1 — wave this member belongs to (1 for normal bookings). */
   waveNumber?: number;
+  /** Add-on service IDs selected for this member. Stored via
+   *  `add_booking_addons` RPC after the booking row is created.
+   *  Sequential add-ons extend the end_time; concurrent add-ons
+   *  add price but +0 time. Prices/durations are re-derived
+   *  server-side from the DB. */
+  addonServiceIds?: string[];
 };
 
 export type GroupBookingParams = {
@@ -345,20 +351,47 @@ export async function submitGroupBooking(
 
   // 3. Services ------------------------------------------------------
   const serviceIds = Array.from(new Set(params.members.map((m) => m.serviceId)));
+
+  // Union add-on ids so we can fetch all in one query.
+  const addonIdSet = new Set<string>();
+  for (const m of params.members) {
+    for (const aid of m.addonServiceIds ?? []) {
+      if (aid) addonIdSet.add(aid);
+    }
+  }
+  const allFetchIds = Array.from(new Set([...serviceIds, ...addonIdSet]));
+
   const { data: services, error: svcErr } = await supabase
     .from("services")
-    .select("id, name, duration_minutes, buffer_minutes, price_cents")
-    .in("id", serviceIds)
+    .select("id, name, duration_minutes, buffer_minutes, price_cents, is_addon, addon_timing")
+    .in("id", allFetchIds)
     .eq("salon_id", salonRow.id)
     .is("deleted_at" as never, null);
   if (svcErr) return fail("server_error");
+
   const serviceById = new Map<string, {
     id: string;
     duration: number;
     buffer: number;
     priceCents: number | null;
   }>();
+  // addonById: is_addon rows only — block + priceCents + concurrent flag.
+  type AddonInfo = { block: number; priceCents: number | null; concurrent: boolean };
+  const addonById = new Map<string, AddonInfo>();
+
   for (const s of services ?? []) {
+    const sTyped = s as typeof s & { is_addon?: unknown; addon_timing?: unknown };
+    const isAddon = sTyped.is_addon === true;
+    if (isAddon) {
+      const block = (Number(s.duration_minutes) || 0) + (Number(s.buffer_minutes) || 0);
+      addonById.set(String(s.id), {
+        block,
+        priceCents: s.price_cents != null ? Number(s.price_cents) : null,
+        concurrent: sTyped.addon_timing === "concurrent",
+      });
+      // Don't register add-ons in serviceById (they're not main services).
+      continue;
+    }
     serviceById.set(String(s.id), {
       id: String(s.id),
       duration: Number(s.duration_minutes) || 0,
@@ -425,15 +458,44 @@ export async function submitGroupBooking(
     durationMin: number;
     bufferMin: number;
     priceCents: number | null;
+    addonPriceCents: number | null;
+    /** First add-on id for the legacy addon_service_id column. */
+    firstAddonId: string | null;
   };
   const resolved: Resolved[] = [];
   for (const m of params.members) {
     const svc = serviceById.get(m.serviceId)!;
-    const totalMin = svc.duration + svc.buffer;
+
+    // Add-on resolution: sum sequential block minutes + prices.
+    // Invalid / non-is_addon IDs are silently skipped (don't hard-fail).
+    let addonBlockMin = 0;
+    let addonPriceCentsSum = 0;
+    let hasAddonPrice = false;
+    let firstAddonId: string | null = null;
+    for (const aid of m.addonServiceIds ?? []) {
+      const addon = addonById.get(aid);
+      if (!addon) continue; // not is_addon for this salon — skip
+      if (firstAddonId === null) firstAddonId = aid;
+      if (!addon.concurrent) addonBlockMin += addon.block;
+      if (addon.priceCents != null) {
+        addonPriceCentsSum += addon.priceCents;
+        hasAddonPrice = true;
+      }
+    }
+
+    const totalMin = svc.duration + svc.buffer + addonBlockMin;
     const startMinutes = parseHmToMinutes(m.time)!;
     const startUtcIso = salonWallTimeToUtcIso(m.date, startMinutes, timezone);
     const startMs = Date.parse(startUtcIso);
     const endMs = startMs + totalMin * 60_000;
+
+    // Preserve null price semantics (same as loadGroupSmartSchedule).
+    const basePriceCents = svc.priceCents;
+    const effectivePriceCents: number | null =
+      basePriceCents != null || hasAddonPrice
+        ? (basePriceCents ?? 0) + addonPriceCentsSum
+        : null;
+
     resolved.push({
       member: m,
       startUtcIso,
@@ -442,7 +504,9 @@ export async function submitGroupBooking(
       endMs,
       durationMin: svc.duration,
       bufferMin: svc.buffer,
-      priceCents: svc.priceCents,
+      priceCents: effectivePriceCents,
+      addonPriceCents: hasAddonPrice ? addonPriceCentsSum : null,
+      firstAddonId,
     });
   }
 
@@ -577,6 +641,9 @@ export async function submitGroupBooking(
       start_time_utc: r.startUtcIso,
       end_time_utc: r.endUtcIso,
       price_cents: r.priceCents,
+      // Add-on legacy columns: first addon id + sum of addon prices.
+      addon_service_id: r.firstAddonId,
+      addon_price_cents: r.addonPriceCents,
       wave_number: r.member.waveNumber ?? 1,
       staff_requested_by_client: true,
       idempotency_key: idem,
@@ -757,9 +824,31 @@ export async function submitGroupBooking(
     });
   }
 
+  // Persist itemized add-ons per member — best-effort, exactly like
+  // submitPublicBooking. Prices/durations re-derived server-side
+  // inside the SECURITY DEFINER RPC; failure only loses the
+  // itemized breakdown, not the booking itself.
+  const bookingIdList = result.booking_ids.map((s) => String(s));
+  await Promise.all(
+    params.members.map(async (m, i) => {
+      const addonIds = (m.addonServiceIds ?? []).filter((aid) => addonById.has(aid));
+      if (addonIds.length === 0) return;
+      const bookingId = bookingIdList[i];
+      if (!bookingId) return;
+      try {
+        await supabase.rpc("add_booking_addons", {
+          p_booking_id: bookingId,
+          p_service_ids: addonIds,
+        });
+      } catch (e) {
+        console.error("[submitGroupBooking] add_booking_addons failed for member", i, e);
+      }
+    }),
+  );
+
   return {
     ok: true,
     groupId: result.group_id,
-    bookingIds: result.booking_ids.map((s) => String(s)),
+    bookingIds: bookingIdList,
   };
 }

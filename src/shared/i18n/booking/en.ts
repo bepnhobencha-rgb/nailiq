@@ -214,6 +214,8 @@ export const bookingEn = {
     /** QA P0.G3 — was "Review group booking" which read as a final
      * review step. This screen is the data-entry step. */
     reviewHeading: "Booking details per person",
+    /** Per-guest add-on section label in step 2. */
+    addOnsLabel: "Add-ons (optional)",
     confirmGroup: "Confirm group booking",
     submittingGroup: "Booking your group…",
     successHeading: "Group booking confirmed! 🎉",

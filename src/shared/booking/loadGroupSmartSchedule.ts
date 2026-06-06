@@ -109,6 +109,9 @@ export type GroupSmartScheduleMemberInput = {
   serviceId: string;
   /** Customer's preferred staff. `null` = "Any" (load-balanced). */
   preferredStaffId: string | null;
+  /** Add-on service IDs selected for this member. Sequential add-ons
+   *  extend the member's totalMinutes; concurrent add-ons add price only. */
+  addonServiceIds?: string[];
 };
 
 /** Scheduling synchronisation preference for group bookings.
@@ -477,20 +480,51 @@ export async function loadGroupSmartSchedule(
     new Set(params.members.map((m) => m.serviceId).filter((id) => !!id)),
   );
   if (serviceIds.length === 0) return { ok: false, reason: "invalid_input" };
+
+  // Gather all add-on ids across all members so we can fetch them in one query.
+  const addonIdSet = new Set<string>();
+  for (const m of params.members) {
+    for (const aid of m.addonServiceIds ?? []) {
+      if (aid) addonIdSet.add(aid);
+    }
+  }
+  const allFetchIds = Array.from(new Set([...serviceIds, ...addonIdSet]));
+
   const { data: serviceRows, error: svcErr } = await supabase
     .from("services")
-    .select("id, name, duration_minutes, buffer_minutes, price_cents")
-    .in("id", serviceIds)
+    .select("id, name, duration_minutes, buffer_minutes, price_cents, is_addon, addon_timing")
+    .in("id", allFetchIds)
     .eq("salon_id", salonRow.id)
     .is("deleted_at" as never, null);
   if (svcErr) return { ok: false, reason: "server_error" };
+
   const serviceById = new Map<
     string,
     { id: string; name: string; totalMin: number; priceCents: number | null }
   >();
+  // addonById: only rows flagged is_addon, for add-on resolution.
+  type AddonInfo = { block: number; priceCents: number | null; concurrent: boolean };
+  const addonById = new Map<string, AddonInfo>();
+
   for (const r of serviceRows ?? []) {
+    const rTyped = r as typeof r & { is_addon?: unknown; addon_timing?: unknown };
     const dur = Number(r.duration_minutes) || 0;
     const buf = Number(r.buffer_minutes) || 0;
+    const isAddon = rTyped.is_addon === true;
+
+    if (isAddon) {
+      // Register as add-on. Skip zero-block add-ons gracefully.
+      const block = dur + buf;
+      const concurrent = rTyped.addon_timing === "concurrent";
+      addonById.set(String(r.id), {
+        block,
+        priceCents: r.price_cents != null ? Number(r.price_cents) : null,
+        concurrent,
+      });
+      // Add-ons are not main services; don't register in serviceById.
+      continue;
+    }
+
     // Task #04-D FIX 17 — surface zero-buffer services so the
     // operator can fix the catalog. A 0-min buffer back-to-backs
     // the next booking right on top of the previous one's
@@ -525,13 +559,38 @@ export async function loadGroupSmartSchedule(
     const m = params.members[i];
     const svc = serviceById.get(m.serviceId);
     if (!svc) return { ok: false, reason: "invalid_input" };
+
+    // Add-on resolution: sum sequential block minutes + prices.
+    // Invalid / non-is_addon IDs are silently skipped (don't hard-fail).
+    let addedMin = 0;
+    let addonPriceCents = 0;
+    let hasAddonPrice = false;
+    for (const aid of m.addonServiceIds ?? []) {
+      const addon = addonById.get(aid);
+      if (!addon) continue; // not an is_addon service for this salon — skip
+      if (!addon.concurrent) addedMin += addon.block;
+      if (addon.priceCents != null) {
+        addonPriceCents += addon.priceCents;
+        hasAddonPrice = true;
+      }
+    }
+
+    // Preserve null price semantics: only add addon price when there's
+    // something priced (svc or addon) — avoid turning null→0 for
+    // unpriced services.
+    const basePriceCents = svc.priceCents;
+    const effectivePriceCents: number | null =
+      basePriceCents != null || hasAddonPrice
+        ? (basePriceCents ?? 0) + addonPriceCents
+        : null;
+
     resolvedMembers.push({
       index: i,
       name: m.name,
       serviceId: m.serviceId,
       serviceName: svc.name,
-      totalMinutes: svc.totalMin,
-      priceCents: svc.priceCents,
+      totalMinutes: svc.totalMin + addedMin,
+      priceCents: effectivePriceCents,
       preferredStaffId: m.preferredStaffId ?? null,
     });
   }

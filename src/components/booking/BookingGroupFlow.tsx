@@ -98,10 +98,12 @@ type MemberDraft = {
   serviceId: string;
   /** `null` = "Any available". String UUID = explicit pick. */
   preferredStaffId: string | null;
+  /** Add-on service IDs selected for this member. */
+  addonServiceIds: string[];
 };
 
 function blankMember(index = 0, guestLabel = "Guest"): MemberDraft {
-  return { name: `${guestLabel} ${index + 1}`, serviceId: "", preferredStaffId: null };
+  return { name: `${guestLabel} ${index + 1}`, serviceId: "", preferredStaffId: null, addonServiceIds: [] };
 }
 
 /**
@@ -153,6 +155,8 @@ type BookingGroupFlowProps = {
   t: BookingMessages;
   shopSlug: string;
   services: readonly BookingServiceItem[];
+  /** Add-on services available for per-guest selection. */
+  addOns: readonly BookingServiceItem[];
   staff: readonly BookingStaffItem[];
   salon: BookingSalonMeta;
   /** `Math.min(activeStaffCount, HARD_GROUP_CAP)` — drives the
@@ -168,6 +172,7 @@ export function BookingGroupFlow({
   t,
   shopSlug,
   services,
+  addOns,
   staff,
   salon,
   maxGroupSize,
@@ -279,6 +284,24 @@ export function BookingGroupFlow({
     [capabilityRows],
   );
 
+  // Add-on lookup map for fast per-member price/time computation.
+  const addonById = useMemo(
+    () => new Map(addOns.map((a) => [a.id, a])),
+    [addOns],
+  );
+  // Sequential add-on block minutes for a member (concurrent = +0 time).
+  const memberAddedMinutes = (m: MemberDraft) =>
+    m.addonServiceIds.reduce((s, id) => {
+      const a = addonById.get(id);
+      return s + (a && !a.addonConcurrent ? a.totalMinutes : 0);
+    }, 0);
+  // Total add-on price cents for a member.
+  const memberAddonCents = (m: MemberDraft) =>
+    m.addonServiceIds.reduce((s, id) => {
+      const a = addonById.get(id);
+      return s + (a?.priceCents ?? 0);
+    }, 0);
+
   /** QA bug (2026-05-12): the *previous* native `<input type="date">`
    *  accepted typed-in years like 0513 on Chromium even when
    *  `min`/`max` were set — the constraint only fires for picker-
@@ -306,8 +329,8 @@ export function BookingGroupFlow({
   }, [openingWeek, date]);
   const isSelectedDayClosed = !!dayHours?.closed;
 
-  // Totals — sum of service prices + max member duration (the
-  // group "spans" that long when aligned).
+  // Totals — sum of service prices + add-on prices; max member
+  // effective duration (svc block + sequential add-on block).
   const totals = useMemo(() => {
     let cents = 0;
     let anyPriced = false;
@@ -315,14 +338,17 @@ export function BookingGroupFlow({
     for (const m of members) {
       const svc = services.find((s) => s.id === m.serviceId);
       if (!svc) continue;
-      if (svc.priceCents != null) {
+      const addonCents = memberAddonCents(m);
+      if (svc.priceCents != null || addonCents > 0) {
         anyPriced = true;
-        cents += svc.priceCents;
+        cents += (svc.priceCents ?? 0) + addonCents;
       }
-      if (svc.totalMinutes > maxMin) maxMin = svc.totalMinutes;
+      const effectiveMin = svc.totalMinutes + memberAddedMinutes(m);
+      if (effectiveMin > maxMin) maxMin = effectiveMin;
     }
     return { totalCents: anyPriced ? cents : null, maxMinutes: maxMin };
-  }, [members, services]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [members, services, addonById]);
 
   // QA bug — closed-date set for the visual calendar in step 3.
   // Owner-defined exceptions (holidays, one-off closures) get
@@ -515,6 +541,7 @@ export function BookingGroupFlow({
           name: m.name.trim(),
           serviceId: m.serviceId,
           preferredStaffId: m.preferredStaffId,
+          addonServiceIds: m.addonServiceIds,
         })),
         // Phase 1: pass sync mode + finish time so the scheduler
         // can compute arrangements where everyone finishes together.
@@ -611,6 +638,8 @@ export function BookingGroupFlow({
             time: time24,
             // Phase 6.1 — carry the wave so submit persists wave_number per row.
             waveNumber: a.waveNumber,
+            // Add-on ids selected for this member.
+            addonServiceIds: draft.addonServiceIds,
           };
         });
 
@@ -995,6 +1024,7 @@ export function BookingGroupFlow({
           groupCopy={groupCopy}
           members={members}
           services={services}
+          addOns={addOns}
           staff={staff}
           capability={capability}
           showStaff={salon.staffSelectionEnabled !== false}
@@ -1383,6 +1413,7 @@ function ServiceStaffStep({
   groupCopy,
   members,
   services,
+  addOns,
   staff,
   capability,
   showStaff,
@@ -1399,6 +1430,7 @@ function ServiceStaffStep({
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
   members: readonly MemberDraft[];
   services: readonly BookingServiceItem[];
+  addOns: readonly BookingServiceItem[];
   staff: readonly BookingStaffItem[];
   capability: ReturnType<typeof buildCapabilityMap>;
   showStaff: boolean;
@@ -1436,6 +1468,7 @@ function ServiceStaffStep({
             groupCopy={groupCopy}
             member={m}
             services={services}
+            addOns={addOns}
             staff={staff}
             capability={capability}
             showStaff={showStaff}
@@ -1486,6 +1519,7 @@ function MemberCard({
   groupCopy,
   member,
   services,
+  addOns,
   staff,
   capability,
   showStaff,
@@ -1499,6 +1533,8 @@ function MemberCard({
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
   member: MemberDraft;
   services: readonly BookingServiceItem[];
+  /** Add-on services available for per-guest toggle selection. */
+  addOns: readonly BookingServiceItem[];
   staff: readonly BookingStaffItem[];
   capability: ReturnType<typeof buildCapabilityMap>;
   /** When false (salon hides staff selection) the per-guest staff picker is omitted. */
@@ -1612,6 +1648,50 @@ function MemberCard({
             </p>
           ) : null}
         </div>
+        ) : null}
+
+        {/* Per-guest add-on multi-toggle — only shown when add-ons exist. */}
+        {addOns.length > 0 ? (
+          <div data-testid={`group-member-${index}-addons`}>
+            <p className="mb-1.5 text-xs font-semibold text-[var(--booking-text-muted)]">
+              {groupCopy.addOnsLabel ?? "Add-ons"}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {addOns.map((a) => {
+                const selected = member.addonServiceIds.includes(a.id);
+                // Build the chip label: name + timing tag + price.
+                const timingTag = a.addonConcurrent
+                  ? " · ✨ +0′"
+                  : a.totalMinutes > 0
+                    ? ` · +${a.totalMinutes}′`
+                    : "";
+                const priceTag = a.priceDisplay ? ` · ${a.priceDisplay}` : "";
+                const label = `${a.name}${timingTag}${priceTag}`;
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    data-testid={`group-member-${index}-addon-${a.id}`}
+                    aria-pressed={selected}
+                    onClick={() => {
+                      const next = selected
+                        ? member.addonServiceIds.filter((id) => id !== a.id)
+                        : [...member.addonServiceIds, a.id];
+                      onChange({ addonServiceIds: next });
+                    }}
+                    className={cn(
+                      "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                      selected
+                        ? "border-[var(--salon-primary)] bg-[var(--salon-primary)]/10 text-[var(--booking-text)]"
+                        : "border-[var(--booking-border)] bg-[var(--booking-bg-input)] text-[var(--booking-text-muted)]",
+                    )}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         ) : null}
       </div>
     </div>
@@ -2823,6 +2903,7 @@ function ConfirmStep({
           {arrangement.assignments.map((a) => {
             const draft = members[a.memberIndex];
             const svc = services.find((s) => s.id === draft?.serviceId);
+            const addonCount = draft?.addonServiceIds.length ?? 0;
             return (
               <li
                 key={a.memberIndex}
@@ -2833,6 +2914,7 @@ function ConfirmStep({
                   {a.startDisplay}
                   {showStaff ? ` · ${a.staffName}` : ""} ·{" "}
                   {svc?.name ?? a.serviceName}
+                  {addonCount > 0 ? ` · +${addonCount} add-on` : ""}
                 </span>
               </li>
             );

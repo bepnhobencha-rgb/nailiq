@@ -177,6 +177,7 @@ export const bookingVi: BookingMessages = {
     primaryContactHint:
       "Chúng tôi sẽ gửi xác nhận đến số này. Mỗi người có thể thêm số riêng bên dưới nếu muốn nhận nhắc lịch riêng.",
     reviewHeading: "Đặt lịch cho từng người",
+    addOnsLabel: "Dịch vụ thêm (tuỳ chọn)",
     confirmGroup: "Xác nhận đặt lịch nhóm",
     submittingGroup: "Đang đặt lịch nhóm…",
     successHeading: "Đặt lịch nhóm thành công! 🎉",

@@ -206,6 +206,7 @@ export function BookingTypeSwitcher({
           t={t}
           shopSlug={shopSlug}
           services={services}
+          addOns={addOns}
           staff={staff}
           salon={salon}
           maxGroupSize={maxGroupSize}
