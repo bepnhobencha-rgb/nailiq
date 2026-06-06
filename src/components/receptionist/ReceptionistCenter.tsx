@@ -1158,8 +1158,24 @@ function ReceptionistCenterInner({
         ? new Date(startMs + durMin * 60_000).toISOString()
         : b.end_time_utc;
 
+    // Legacy `addon_*` columns only carry the FIRST add-on; with multiple
+    // add-ons the recomputed span is short. The booking's stored end_time_utc
+    // is the source of truth (it already includes every sequential add-on),
+    // so for multi-add-on bookings derive the span straight from it.
+    const hasMultiAddon = (b.addons?.length ?? 0) > 1;
+    const endMsReal = Date.parse(b.end_time_utc);
+    const realSpanMin =
+      Number.isFinite(startMs) && Number.isFinite(endMsReal)
+        ? Math.max(0, Math.round((endMsReal - startMs) / 60_000))
+        : durMin + bufMin;
+
     let scheduleLine: string;
-    if (bufMin > 0 && durMin > 0 && Number.isFinite(startMs)) {
+    if (hasMultiAddon) {
+      // Show the true occupied window (start → real end) — accurate regardless
+      // of how many add-ons extend the booking.
+      const t1 = formatInSalonTz(b.end_time_utc, timezone, "time");
+      scheduleLine = `${dateStr} · ${t0}${timeSep}${t1}`;
+    } else if (bufMin > 0 && durMin > 0 && Number.isFinite(startMs)) {
       const svcEndLabel = formatInSalonTz(serviceEndIso, timezone, "time");
       const bufferSeg = messages.receptionist.drawer.bufferNote.replace(
         "{n}",
@@ -1173,7 +1189,7 @@ function ReceptionistCenterInner({
 
     const durationLine = messages.receptionist.drawer.durationMinutes.replace(
       "{n}",
-      String(durMin),
+      String(hasMultiAddon ? realSpanMin : durMin),
     );
 
     // Sum main + addon prices. Use 0 fallbacks so a booking with only an
