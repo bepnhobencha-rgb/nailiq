@@ -876,7 +876,12 @@ function findArrangementsInWindow(
   if (
     altArrangement &&
     altArrangement.spreadMinutes <= ALT_SPREAD_LIMIT_MIN &&
-    (!bestArrangement || altArrangement.groupStartMs !== bestArrangement.groupStartMs)
+    // Only worth offering when it's actually BETTER than Best on some axis:
+    // it finishes earlier, or it's tighter (smaller start-spread). A more
+    // spread-out option that ends at the same time is just noise — hide it.
+    (!bestArrangement ||
+      altArrangement.groupEndMs < bestArrangement.groupEndMs ||
+      altArrangement.spreadMinutes < bestArrangement.spreadMinutes)
   ) {
     arrangements.push(altArrangement);
   }
