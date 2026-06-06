@@ -423,6 +423,12 @@ export async function submitPublicBooking(
     .from("staff")
     .select("id, name")
     .eq("salon_id", salon.id)
+    // Only ACTIVE providers are real bookable beds — must match the public
+    // slot grid (loadBookingServices) + receptionist grid, both of which
+    // filter status='active'. Without this, an inactive row (e.g. a
+    // receptionist's auto-created staff row) is counted as an extra bed and
+    // the salon gets oversold by one when auto-assigning "Any" staff.
+    .eq("status", "active")
     .is("deleted_at" as never, null)
     .order("name", { ascending: true });
 
@@ -778,7 +784,9 @@ export async function submitPublicBooking(
       } | null;
 
       const appUrl =
-        (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+        typeof window !== "undefined"
+          ? "" // same-origin relative — avoids www/non-www cross-origin "Failed to fetch"
+          : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
       const secret = (process.env.INTERNAL_API_SECRET ?? "").trim();
       await fetch(`${appUrl}/api/booking/noshow-evaluate`, {
         method: "POST",
@@ -810,7 +818,9 @@ export async function submitPublicBooking(
   if (emailToStore) {
     try {
       const appUrl =
-        (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+        typeof window !== "undefined"
+          ? "" // same-origin relative — avoids www/non-www cross-origin "Failed to fetch"
+          : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
       const secret = (process.env.INTERNAL_API_SECRET ?? "").trim();
       await fetch(`${appUrl}/api/booking-email`, {
         method: "POST",
@@ -839,7 +849,7 @@ export async function submitPublicBooking(
   if (params.voucherRedemption?.voucher_id && bookingId) {
     void (async () => {
       try {
-        const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+        const appUrl = typeof window !== "undefined" ? "" : ((process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca");
         await fetch(`${appUrl}/api/vouchers/redeem`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -860,7 +870,7 @@ export async function submitPublicBooking(
 
   // Awaited SMS confirmation — tracks sent_at / failed_at on the booking row
   try {
-    const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+    const appUrl = typeof window !== "undefined" ? "" : ((process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca");
     await fetch(`${appUrl}/api/booking/sms-confirm`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -908,7 +918,7 @@ export async function submitPublicBooking(
   if (params.referenceImagePath && bookingId) {
     void (async () => {
       try {
-        const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+        const appUrl = typeof window !== "undefined" ? "" : ((process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca");
         await fetch(`${appUrl}/api/booking/set-ref-image`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

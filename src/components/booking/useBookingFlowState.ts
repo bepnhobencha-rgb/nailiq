@@ -604,9 +604,12 @@ export function useBookingFlowState(
       });
 
       // Upsell ONLY add-ons (complementary enhancements), never other main
-      // services. Zero-duration upgrades (e.g. premium products) always fit;
-      // time-consuming add-ons must fit the free gap after the main service.
-      const candidates = addOns.filter((s) => s.totalMinutes <= gapMin);
+      // services. Surface ALL add-ons: concurrent ones add $0 time so they
+      // ALWAYS fit (e.g. LED mask "+0′"); time-consuming (sequential) ones
+      // that don't fit the free gap are kept but rendered disabled/dimmed by
+      // the confirm panel (it checks each add-on's fit). This avoids wrongly
+      // hiding a concurrent add-on just because its raw duration > gap.
+      const candidates = [...addOns];
       if (!cancelled) {
         setUpsellCandidates(candidates);
         setUpsellGapMinutes(Math.max(0, Math.round(gapMin)));
