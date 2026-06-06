@@ -36,6 +36,7 @@ export async function updateSectionContent(
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
 
   const { error } = await ctx.supabase
     .from("salon_page_sections" as never)
@@ -59,6 +60,7 @@ export async function toggleSectionVisibility(
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
 
   const { error } = await ctx.supabase
     .from("salon_page_sections" as never)

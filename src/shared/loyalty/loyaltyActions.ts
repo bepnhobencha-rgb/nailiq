@@ -75,6 +75,10 @@ export async function createOrUpdateLoyaltyProgram(
 ): Promise<{ ok: boolean; error?: string; program?: LoyaltyProgram }> {
   const { resolved, error } = await requirePremiumSalon(slug);
   if (!resolved) return { ok: false, error };
+  // Program CONFIG is management-only (owner/admin). Desk ops (add stamps /
+  // redeem) stay open to front-desk roles.
+  if (resolved.role !== "owner" && resolved.role !== "admin")
+    return { ok: false, error: "forbidden" };
 
   const supabase = createServiceRoleClient();
   const salonId = resolved.salon.id;

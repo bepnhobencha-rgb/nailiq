@@ -20,6 +20,9 @@ export default async function AIPrefillPage({ params }: Props) {
   const { slug } = await params;
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) redirect("/register");
+  // Salon config is management-only (owner/admin).
+  if (ctx.role !== "owner" && ctx.role !== "admin")
+    redirect(`/dashboard/${encodeURIComponent(slug)}`);
 
   return (
     <ResponsiveShell>

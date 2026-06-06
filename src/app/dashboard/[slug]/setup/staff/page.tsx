@@ -44,6 +44,10 @@ export default async function SetupStaffPage({ params }: Props) {
   if (!ctx) {
     redirect("/register");
   }
+  // Staff management is management-only (owner/admin).
+  if (ctx.role !== "owner" && ctx.role !== "admin") {
+    redirect(`/dashboard/${encodeURIComponent(slug)}`);
+  }
 
   const language = await resolveUserLanguage();
   const t = getUserMessages(language);

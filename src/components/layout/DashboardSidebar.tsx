@@ -254,6 +254,8 @@ export function DashboardSidebar({
             href: `${dashRoot}/setup/staff`,
             icon: UserCheck,
             match: (p) => p.startsWith(`${dashRoot}/setup/staff`),
+            // Salon config = owner/admin only (matches the page gate).
+            hidden: role !== "owner" && role !== "admin",
           },
           {
             key: "services",
@@ -261,6 +263,7 @@ export function DashboardSidebar({
             href: `${dashRoot}/setup/services`,
             icon: Scissors,
             match: (p) => p.startsWith(`${dashRoot}/setup/services`),
+            hidden: role !== "owner" && role !== "admin",
           },
         ],
       },
@@ -298,8 +301,9 @@ export function DashboardSidebar({
             href: `${dashRoot}/setup/loyalty`,
             icon: Gift,
             match: (p) => p.startsWith(`${dashRoot}/setup/loyalty`),
-            // Release flag: Loyalty is Beta (loyalty_enabled), default OFF.
-            hidden: featureOff("loyalty"),
+            // Release flag + role: config is owner/admin only (matches page gate).
+            hidden:
+              featureOff("loyalty") || (role !== "owner" && role !== "admin"),
           },
           {
             key: "photos",

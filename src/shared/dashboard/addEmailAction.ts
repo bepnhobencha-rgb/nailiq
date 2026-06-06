@@ -29,6 +29,10 @@ export async function addSalonEmail(
   if (!resolved) {
     return { ok: false, error: "unauthorized" };
   }
+  // The salon's account/recovery email is owner-level config.
+  if (resolved.role !== "owner") {
+    return { ok: false, error: "unauthorized" };
+  }
 
   const { salon, kind } = resolved;
 
