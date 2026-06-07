@@ -233,7 +233,7 @@ export async function submitPublicBooking(
   const { data: salon, error: salonErr } = await supabase
     .from("salons")
     .select(
-      "id, profile_complete, opening_hours, subscription_plan, plan_override, feature_flags, phone_otp_enabled",
+      "id, profile_complete, opening_hours, subscription_plan, plan_override, feature_flags, phone_otp_enabled, booking_lead_minutes",
     )
     .eq("slug", shopSlug)
     .single();
@@ -331,7 +331,18 @@ export async function submitPublicBooking(
   }
 
   const now = new Date();
-  const leadBufferMs = 15 * 60 * 1000;
+  // Must match the public slot grid (salons.booking_lead_minutes); a hardcoded
+  // 15-min buffer here rejected slots the grid offered when a salon lowered its
+  // lead time → "cannot_book_past" bounce. Default 15 when unset.
+  const leadMinutesRaw = Number(
+    (salon as { booking_lead_minutes?: unknown }).booking_lead_minutes,
+  );
+  const leadBufferMs =
+    (Number.isFinite(leadMinutesRaw) && leadMinutesRaw >= 0
+      ? Math.round(leadMinutesRaw)
+      : 15) *
+    60 *
+    1000;
   if (startLocal.getTime() < now.getTime() + leadBufferMs) {
     throw new Error("cannot_book_past");
   }
