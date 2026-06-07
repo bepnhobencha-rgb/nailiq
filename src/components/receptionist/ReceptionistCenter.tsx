@@ -78,6 +78,7 @@ import {
   approveWixBooking,
   declineWixBooking,
   markNoShowBooking,
+  undoNoShowBooking,
   setBookingFinalPrice,
   undoCancelBooking,
   cancelWaitingWalkin,
@@ -751,6 +752,22 @@ function ReceptionistCenterInner({
 
   const timezone = data.salon.timezone;
   const isViewingToday = data.selectedDate === salonToday(timezone, nowIso);
+
+  // "Needs attention" strip (today only): bookings that are past their start but
+  // still un-started (overdue → 1-tap no-show / arrived) + today's no-shows
+  // (1-tap undo for a late guest). Both reuse handleMarkNoShow / handleUndoNoShow.
+  const attentionNowMs = Date.parse(nowIso);
+  const attentionOverdue =
+    isViewingToday && canMarkNoShow(viewerRole)
+      ? data.bookingsForDay.filter(
+          (b) =>
+            b.status === "confirmed" &&
+            Date.parse(b.start_time_utc) < attentionNowMs,
+        )
+      : [];
+  const noShowsTodayList =
+    isViewingToday && canMarkNoShow(viewerRole) ? data.noShowsToday : [];
+  const attentionRemovedLabel = language === "vi" ? "[Đã xoá]" : "[Removed]";
 
   // ── Basic Mode (per-device Front Desk Cockpit) ──────────────────
   // Lightweight view toggle (localStorage). Default off → Balanced/Advanced
@@ -1755,8 +1772,7 @@ function ReceptionistCenterInner({
       }
     : undefined;
 
-  const onDrawerMarkNoShow = async () => {
-    const id = drawerBookingId;
+  const handleMarkNoShow = async (id: string) => {
     if (!id) return;
     setDrawerBusy(true);
     try {
@@ -1772,6 +1788,7 @@ function ReceptionistCenterInner({
       setDrawerBusy(false);
     }
   };
+  const onDrawerMarkNoShow = () => void handleMarkNoShow(drawerBookingId ?? "");
 
   // No-show: only for a confirmed / in-progress booking whose start time has passed
   // (you can't no-show a future appointment). Front desk: owner/admin/senior/receptionist.
@@ -1824,6 +1841,29 @@ function ReceptionistCenterInner({
               ? d.restorePast
               : mutationMessage(messages.receptionist, r.error);
         setShakeMessage(msg);
+      } else {
+        setDrawerBookingId(null);
+        await reloadCurrentDay();
+        router.refresh();
+      }
+    } finally {
+      setDrawerBusy(false);
+    }
+  };
+
+  // Undo a no-show (the guest was just running late). Reverts to confirmed +
+  // decrements their no-show history so they aren't wrongly penalised. Shared by
+  // the drawer action and the "needs attention" strip.
+  const handleUndoNoShow = async (id: string) => {
+    if (!id) return;
+    setDrawerBusy(true);
+    try {
+      const r = await undoNoShowBooking(slug, {
+        salonId: data.salon.id,
+        bookingId: id,
+      });
+      if (!r.ok) {
+        setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
         setDrawerBookingId(null);
         await reloadCurrentDay();
@@ -2465,6 +2505,65 @@ function ReceptionistCenterInner({
                 : "",
             )}
           >
+            {(attentionOverdue.length > 0 || noShowsTodayList.length > 0) ? (
+              <div className="mx-3 mt-3 rounded-2xl border border-amber-400/30 bg-amber-400/5 px-3 py-3 text-sm">
+                {attentionOverdue.length > 0 ? (
+                  <div className="mb-2">
+                    <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-amber-400">
+                      ⏰ {language === "vi" ? "Quá giờ — chưa bắt đầu" : "Overdue — not started"} ({attentionOverdue.length})
+                    </p>
+                    <div className="flex flex-col gap-1.5">
+                      {attentionOverdue.map((b) => (
+                        <div key={b.id} className="flex items-center justify-between gap-2 rounded-lg bg-nq-surface/40 px-2.5 py-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setDrawerBookingId(b.id)}
+                            className="min-w-0 flex-1 truncate text-left text-nq-foreground"
+                          >
+                            <span className="font-medium">{displayCustomerName(b.client_name, attentionRemovedLabel)}</span>
+                            <span className="text-nq-muted"> · {formatInSalonTz(b.start_time_utc, timezone, "time")}</span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={drawerBusy}
+                            onClick={() => void handleMarkNoShow(b.id)}
+                            className="shrink-0 rounded-full border border-red-400/40 px-3 py-1 text-xs font-medium text-red-400 hover:bg-red-400/10 disabled:opacity-50"
+                          >
+                            {language === "vi" ? "Vắng" : "No-show"}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {noShowsTodayList.length > 0 ? (
+                  <div>
+                    <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-nq-muted">
+                      {language === "vi" ? "Đã đánh dấu vắng hôm nay" : "Marked no-show today"} ({noShowsTodayList.length})
+                    </p>
+                    <div className="flex flex-col gap-1.5">
+                      {noShowsTodayList.map((ns) => (
+                        <div key={ns.id} className="flex items-center justify-between gap-2 rounded-lg bg-nq-surface/40 px-2.5 py-1.5">
+                          <span className="min-w-0 flex-1 truncate text-nq-muted line-through">
+                            {displayCustomerName(ns.clientName, attentionRemovedLabel)}
+                            <span> · {formatInSalonTz(ns.startTimeUtc, timezone, "time")}</span>
+                          </span>
+                          <button
+                            type="button"
+                            disabled={drawerBusy}
+                            onClick={() => void handleUndoNoShow(ns.id)}
+                            className="shrink-0 rounded-full border border-emerald-400/40 px-3 py-1 text-xs font-medium text-emerald-400 hover:bg-emerald-400/10 disabled:opacity-50"
+                          >
+                            {language === "vi" ? "Bỏ vắng (đã đến)" : "Undo (arrived)"}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             <StaffTimelineGrid
               compactBookingIcons={basicModeActive}
               staff={gridStaff}

@@ -335,6 +335,7 @@ export function BookingDetailDrawer({
     cancelAction !== undefined ||
     declineAction !== undefined ||
     noShowAction !== undefined ||
+    restoreAction !== undefined ||
     (canEditBooking && !editMode);
 
   const sheet = (
