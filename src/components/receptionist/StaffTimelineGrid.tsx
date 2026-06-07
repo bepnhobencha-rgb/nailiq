@@ -557,7 +557,12 @@ function StaffTimelineGridImpl({
                 <div
                   key={i}
                   className={cn(
-                    "flex shrink-0 items-end justify-center border-l border-nq-muted/15 pb-1",
+                    // Label is LEFT-aligned on the cell's left border (the
+                    // gridline = slot START). Bookings + the NOW line are
+                    // positioned at the slot-start gridline too, so centering
+                    // the label mid-cell shifted every label ½ slot (15 min)
+                    // right of its real time — making the NOW line look wrong.
+                    "flex shrink-0 items-end justify-start border-l border-nq-muted/15 pb-1 pl-1",
                     isHourMark ? "text-nq-foreground" : "text-nq-muted",
                   )}
                   style={{ width: SLOT_PX, height: TIME_HEADER_HEIGHT }}
