@@ -67,6 +67,17 @@ export function canCancelBooking(role: SalonMemberRole): boolean {
   return role === "owner" || role === "senior";
 }
 
+/** Marking a no-show is a front-desk operation (the receptionist sees who
+ *  didn't show), so it's broader than cancel: owner/admin/senior/receptionist. */
+export function canMarkNoShow(role: SalonMemberRole): boolean {
+  return (
+    role === "owner" ||
+    role === "admin" ||
+    role === "senior" ||
+    role === "receptionist"
+  );
+}
+
 export function canUndoCancel(role: SalonMemberRole): boolean {
   return role === "owner" || role === "senior";
 }

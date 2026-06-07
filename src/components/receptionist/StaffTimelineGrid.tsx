@@ -82,6 +82,8 @@ export interface GridBooking {
   group_id?: string | null;
   /** Number of add-ons on this booking — drives the "+N" chip badge. */
   addon_count?: number;
+  /** Client's lifetime no-show count — drives a ⚠ chip badge for repeat offenders. */
+  no_show_count?: number;
 }
 
 export interface StaffTimelineGridProps {
@@ -848,6 +850,7 @@ function StaffTimelineGridImpl({
                           hasDesign={b.has_design}
                           hasStaffRequest={b.has_staff_request}
                           addonCount={b.addon_count ?? 0}
+                          noShowCount={b.no_show_count ?? 0}
                           isGroup={b.group_id != null}
                           compactIcons={compactBookingIcons}
                           isLate={isLate}

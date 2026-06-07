@@ -120,6 +120,8 @@ export interface BookingBlockProps {
   hasStaffRequest?: boolean;
   /** Number of add-ons on the booking — renders a "+N" badge on the chip. */
   addonCount?: number;
+  /** Client's lifetime no-show count — shows a ⚠ badge for repeat offenders (≥2). */
+  noShowCount?: number;
   /**
    * Overlay flag — `status === 'in_progress'` AND service end time has
    * passed. Per `STATE_MACHINE.md` §5 (auto-transition `in_service +
@@ -234,6 +236,7 @@ export function BookingBlock(props: BookingBlockProps) {
     hasDesign = false,
     hasStaffRequest = false,
     addonCount = 0,
+    noShowCount = 0,
     isLate = false,
     isGroup = false,
     compactIcons = false,
@@ -327,6 +330,15 @@ export function BookingBlock(props: BookingBlockProps) {
               `[overflow-wrap:normal]` keeps single words from being chopped.
               The full name is always in the tooltip (title) + detail drawer. */}
           <p className="line-clamp-2 text-sm font-semibold leading-tight [overflow-wrap:normal]">
+            {noShowCount >= 2 ? (
+              <span
+                className="mr-1 align-middle text-[var(--color-nq-error)]"
+                title={`Đã vắng ${noShowCount} lần`}
+                aria-label={`No-show ${noShowCount} times`}
+              >
+                ⚠
+              </span>
+            ) : null}
             {clientName}
           </p>
           {showMetaLine ? (

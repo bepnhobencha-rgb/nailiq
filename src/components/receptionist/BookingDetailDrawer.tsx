@@ -143,6 +143,8 @@ export type BookingDetailDrawerModel = {
   smsFailedAt: string | null;
   /** No-show risk score 0-100. */
   noShowRiskScore: number | null;
+  /** Client's lifetime no-show count (cross-salon). 0 = clean. */
+  noShowHistoryCount: number;
 };
 
 export interface BookingDetailDrawerProps {
@@ -536,8 +538,8 @@ export function BookingDetailDrawer({
                 </Badge>
               </div>
 
-              {/* Verification + SMS badges */}
-              {(model.smsFailedAt || model.verificationMethod || (model.noShowRiskScore != null && model.noShowRiskScore >= 70)) ? (
+              {/* Verification + SMS + no-show-history badges */}
+              {(model.smsFailedAt || model.verificationMethod || (model.noShowRiskScore != null && model.noShowRiskScore >= 70) || model.noShowHistoryCount > 0) ? (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {model.smsFailedAt ? (
                     <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-400">
@@ -557,6 +559,11 @@ export function BookingDetailDrawer({
                   {model.noShowRiskScore != null && model.noShowRiskScore >= 70 && !model.verificationMethod ? (
                     <span className="inline-flex items-center gap-1 rounded-full border border-red-400/40 bg-red-400/10 px-2 py-0.5 text-[11px] font-medium text-red-400">
                       ⚠ Rủi ro cao chưa verify ({model.noShowRiskScore})
+                    </span>
+                  ) : null}
+                  {model.noShowHistoryCount > 0 ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-red-400/40 bg-red-400/10 px-2 py-0.5 text-[11px] font-medium text-red-400">
+                      ⚠ Đã vắng {model.noShowHistoryCount} lần
                     </span>
                   ) : null}
                 </div>

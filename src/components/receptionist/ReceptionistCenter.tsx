@@ -107,6 +107,7 @@ import {
 import { logSalonRushEvent } from "@/shared/dashboard/rushHourEvent";
 import {
   canCancelBooking,
+  canMarkNoShow,
   canEditBooking,
   canUndoCancel,
   type SalonMemberRole,
@@ -540,6 +541,7 @@ function ReceptionistCenterInner({
           has_staff_request: b.has_staff_request,
           group_id: b.group_id,
           addon_count: b.addons?.length ?? 0,
+          no_show_count: b.client_no_show_count ?? 0,
         },
       ];
     });
@@ -1274,6 +1276,7 @@ function ReceptionistCenterInner({
       verificationMethod: b.verification_method ?? null,
       smsFailedAt: b.sms_confirmation_failed_at ?? null,
       noShowRiskScore: b.no_show_risk_score ?? null,
+      noShowHistoryCount: b.client_no_show_count ?? 0,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ARCHITECTURE_LOCK: data.salon.currencyCode is intentionally omitted; it never changes within a session and adding it would cause memo churn
   }, [
@@ -1771,10 +1774,10 @@ function ReceptionistCenterInner({
   };
 
   // No-show: only for a confirmed / in-progress booking whose start time has passed
-  // (you can't no-show a future appointment). Owner / senior only.
+  // (you can't no-show a future appointment). Front desk: owner/admin/senior/receptionist.
   const drawerNoShowAction =
     openDrawerBooking &&
-    canCancelBooking(viewerRole) &&
+    canMarkNoShow(viewerRole) &&
     (openDrawerBooking.status === "confirmed" || openDrawerBooking.status === "in_progress") &&
     new Date(openDrawerBooking.start_time_utc).getTime() < Date.now()
       ? {

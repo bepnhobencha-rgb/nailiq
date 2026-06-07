@@ -14,6 +14,7 @@ import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import {
   canCancelBooking,
+  canMarkNoShow,
   canEditBooking,
   canUndoCancel,
 } from "@/shared/lib/salonMemberRole";
@@ -811,7 +812,7 @@ export async function markNoShowBooking(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
-  if (!canCancelBooking(ctx.role)) return fail("unauthorized");
+  if (!canMarkNoShow(ctx.role)) return fail("unauthorized");
   if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
