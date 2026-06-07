@@ -8,7 +8,7 @@ A salon booking and receptionist management web app for nail salons. Two surface
 - **Public booking** at `/[slug]` — customers pick service, staff, date/time, and contact info; no app install required.
 - **Receptionist + owner dashboard** at `/dashboard/[slug]/...` — real-time booking grid, queue management, salon setup (services, staff, hours, address), settings.
 
-Primary market is Vietnam (Vietnamese + English UI, phone formats 8–15 digits with country codes). B2C with salons as direct customers.
+**Target markets: United States, Canada, and Europe only — targeting Vietnamese-owned nail salons in the diaspora. NailIQ does NOT target or launch in the Vietnam (VN) domestic market.** The UI stays bilingual English + Vietnamese because salon owners and much of their clientele are Vietnamese-speaking (overseas Vietnamese), NOT because we serve the VN market. Phone formats support international numbers (8–15 digits with country codes). B2C with salons as direct customers.
 
 ## 📐 Architecture Constitution
 
