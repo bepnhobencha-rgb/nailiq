@@ -152,6 +152,8 @@ export interface ReceptionistCenterData {
       duration_minutes: number;
       concurrent: boolean;
     }[];
+    /** Client's lifetime no-show count (cross-salon, phone-keyed). 0 = clean. */
+    client_no_show_count: number;
     /**
      * Receptionist booking-block icon flags. Derived server-side from
      * existing columns (no new DB schema) so the timeline can render them
@@ -867,6 +869,39 @@ export async function loadReceptionistCenterData(
     }
   }
 
+  // Lifetime no-show count per client (client_profiles is global, phone-keyed)
+  // so the desk sees "missed N times" + a warning chip without opening reports.
+  const noShowByPhone = new Map<string, number>();
+  {
+    const phones = Array.from(
+      new Set(
+        (bookingsRows ?? [])
+          .map((r) => (r.client_phone ?? "").trim())
+          .filter(Boolean),
+      ),
+    );
+    if (phones.length > 0) {
+      try {
+        const svc = createServiceRoleClient();
+        const { data: rows } = await svc
+          .from("client_profiles")
+          .select("phone, no_show_count")
+          .in("phone", phones);
+        for (const r of (rows ?? []) as Array<{
+          phone: string;
+          no_show_count: number | null;
+        }>) {
+          noShowByPhone.set(
+            String(r.phone),
+            Math.max(0, Math.round(Number(r.no_show_count) || 0)),
+          );
+        }
+      } catch (e) {
+        console.error("[loadReceptionistCenterData] no_show_count", e);
+      }
+    }
+  }
+
   const bookingsForDayUnfiltered = (bookingsRows ?? []).map((row): ReceptionistCenterData["bookingsForDay"][0] | null => {
     const staffId = row.staff_id != null ? String(row.staff_id).trim() : "";
     const st = row.start_time_utc != null ? String(row.start_time_utc).trim() : "";
@@ -948,6 +983,8 @@ export async function loadReceptionistCenterData(
         : null,
       addon_price_cents: hasAddon ? row.addon_price_cents ?? null : null,
       addons: addonsByBooking.get(String(row.id)) ?? [],
+      client_no_show_count:
+        noShowByPhone.get((row.client_phone ?? "").trim()) ?? 0,
       is_vip: isVip,
       has_notes: hasNotes,
       has_design: hasDesign,
