@@ -961,6 +961,45 @@ export async function updateSalonVertical(
   return { ok: true, vertical: normalized };
 }
 
+/* ───────────── Booking lead time (min advance notice) ───────────── */
+
+export type UpdateBookingLeadResult =
+  | { ok: true; minutes: number }
+  | { ok: false; error: "unauthorized" | "forbidden" | "invalid" | "server_error" };
+
+/**
+ * Owner-only: writes `salons.booking_lead_minutes` — the minimum advance notice
+ * before a same-day slot is bookable (slots starting sooner than now()+this are
+ * hidden). Clamped 0–1440. Replaces the old hardcoded 15-min buffer.
+ */
+export async function updateBookingLeadMinutes(
+  slug: string,
+  minutes: number,
+): Promise<UpdateBookingLeadResult> {
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+
+  const m = Math.round(Number(minutes));
+  if (!Number.isFinite(m) || m < 0 || m > 1440) {
+    return { ok: false, error: "invalid" };
+  }
+
+  const { error } = await ctx.supabase
+    .from("salons")
+    .update({ booking_lead_minutes: m } as never)
+    .eq("id", ctx.salon.id);
+
+  if (error) {
+    console.error("[updateBookingLeadMinutes]", error);
+    return { ok: false, error: "server_error" };
+  }
+  return { ok: true, minutes: m };
+}
+
 /* ───────────── Staff selection toggle ───────────── */
 
 export type UpdateStaffSelectionResult =
