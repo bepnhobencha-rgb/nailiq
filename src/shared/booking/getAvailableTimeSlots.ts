@@ -83,6 +83,9 @@ export type GetAvailableTimeSlotsParams = {
    * Omit (or pass 0) to skip the dead-gap penalty and scoring entirely.
    */
   shortestServiceMinutes?: number;
+  /** Minimum same-day lead time in minutes (salons.booking_lead_minutes).
+   *  Omit → legacy 15-min default. */
+  leadMinutes?: number;
 };
 
 /**
@@ -127,6 +130,9 @@ export function computeTimeSlots(args: {
    * Omit or pass 0 to return slots without scoring (backward-compatible).
    */
   shortestServiceMinutes?: number;
+  /** Minimum lead time (ms) before a same-day slot is bookable. Defaults to
+   *  the legacy 15-min buffer; salons override via booking_lead_minutes. */
+  leadMs?: number;
 }): TimeSlot[] {
   const {
     openingHoursRaw,
@@ -138,6 +144,7 @@ export function computeTimeSlots(args: {
     nowMs,
     closedDateYmdSet,
     shortestServiceMinutes,
+    leadMs = BOOKING_BUFFER_MS,
   } = args;
 
   const durationMin = Math.max(1, Math.round(Number(serviceDurationMinutes) || 1));
@@ -227,7 +234,7 @@ export function computeTimeSlots(args: {
     if (slotEndMs > closeBoundaryMs) continue;
 
     // Guard: past + buffer (today only).
-    if (isToday && slotStartMs < nowMs + BOOKING_BUFFER_MS) continue;
+    if (isToday && slotStartMs < nowMs + leadMs) continue;
 
     const available = slotAvailableForSelection(slotStartMs, slotEndMs);
     slotMap.set(slotStartMs, { label: formatSlotLabel(slotStart), available });
@@ -275,7 +282,7 @@ export function computeTimeSlots(args: {
     if (slotMap.has(slotStartMs)) continue;
 
     // Past + buffer guard (today only).
-    if (isToday && slotStartMs < nowMs + BOOKING_BUFFER_MS) continue;
+    if (isToday && slotStartMs < nowMs + leadMs) continue;
 
     // Only inject when the slot is genuinely free.
     const available = slotAvailableForSelection(slotStartMs, slotEndMs);
@@ -344,6 +351,7 @@ export async function getAvailableTimeSlots(
     serviceDurationMinutes,
     closedDateYmdSet,
     shortestServiceMinutes,
+    leadMinutes,
   } = params;
 
   const week = parseOpeningHours(openingHoursRaw);
@@ -381,6 +389,10 @@ export async function getAvailableTimeSlots(
     nowMs: Date.now(),
     closedDateYmdSet,
     shortestServiceMinutes,
+    leadMs:
+      leadMinutes != null && Number.isFinite(leadMinutes)
+        ? Math.max(0, Math.round(leadMinutes)) * 60_000
+        : BOOKING_BUFFER_MS,
   });
 }
 

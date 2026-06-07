@@ -69,6 +69,8 @@ export type BookingSalonMeta = {
   /** `salons.staff_selection_enabled` — when false the wizard hides the staff
    *  step and auto-assigns any available provider. Default true. */
   staffSelectionEnabled: boolean;
+  /** `salons.booking_lead_minutes` — minimum same-day advance notice. Default 15. */
+  bookingLeadMinutes: number;
 };
 
 export type BookingLoadData = {
@@ -391,6 +393,13 @@ export async function loadBookingServicesForSalonSlug(
       // Default true (only false disables the staff step).
       staffSelectionEnabled:
         (salon as { staff_selection_enabled?: unknown }).staff_selection_enabled !== false,
+      // `salons.booking_lead_minutes` (migration 20260607…). Default 15.
+      bookingLeadMinutes: (() => {
+        const v = Number(
+          (salon as { booking_lead_minutes?: unknown }).booking_lead_minutes,
+        );
+        return Number.isFinite(v) && v >= 0 ? Math.round(v) : 15;
+      })(),
     },
   };
 }
