@@ -366,6 +366,7 @@ export function BookingFlow({
             clientNotes={flow.clientNotes}
             clientWebsite={flow.clientWebsite}
             salonId={salon.id}
+            referenceImageEnabled={salon.referenceImageEnabled}
             referenceImagePath={flow.referenceImagePath}
             referenceImagePreview={flow.referenceImagePreview}
             error={flow.error}

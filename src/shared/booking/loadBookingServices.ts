@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import * as Sentry from "@sentry/nextjs";
 import type { BookingComboItem, BookingServiceItem } from "@/shared/booking/catalog";
 import { getSalonBySlug } from "@/shared/booking/getSalonBySlug";
+import { resolveVertical } from "@/shared/verticals/registry";
 import { parseServiceCategory } from "@/shared/booking/serviceCategory";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { createClient } from "@/shared/lib/supabase/server";
@@ -71,6 +72,9 @@ export type BookingSalonMeta = {
   staffSelectionEnabled: boolean;
   /** `salons.booking_lead_minutes` — minimum same-day advance notice. Default 15. */
   bookingLeadMinutes: number;
+  /** Whether the booking flow offers the optional reference-image upload.
+   *  Resolved from salons.reference_image_enabled ?? vertical default. */
+  referenceImageEnabled: boolean;
 };
 
 export type BookingLoadData = {
@@ -399,6 +403,17 @@ export async function loadBookingServicesForSalonSlug(
           (salon as { booking_lead_minutes?: unknown }).booking_lead_minutes,
         );
         return Number.isFinite(v) && v >= 0 ? Math.round(v) : 15;
+      })(),
+      // Per-salon override; NULL falls back to the vertical's default.
+      referenceImageEnabled: (() => {
+        const explicit = (salon as { reference_image_enabled?: unknown })
+          .reference_image_enabled;
+        if (explicit === true || explicit === false) return explicit;
+        const vslug =
+          (typeof (salon as { vertical?: unknown }).vertical === "string"
+            ? ((salon as { vertical?: string }).vertical as string).trim()
+            : "") || "nail_salon";
+        return resolveVertical(vslug).referenceImageEnabled;
       })(),
     },
   };

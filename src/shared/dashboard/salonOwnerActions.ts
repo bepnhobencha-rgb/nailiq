@@ -1000,6 +1000,41 @@ export async function updateBookingLeadMinutes(
   return { ok: true, minutes: m };
 }
 
+/* ───────────── Reference-image upload toggle ───────────── */
+
+export type UpdateReferenceImageResult =
+  | { ok: true; enabled: boolean }
+  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" };
+
+/**
+ * Owner-only: writes an explicit `salons.reference_image_enabled` override for
+ * the optional booking reference-image upload (NULL would mean "use vertical
+ * default"; this action always sets an explicit true/false once the owner
+ * touches it).
+ */
+export async function updateReferenceImageEnabled(
+  slug: string,
+  enabled: boolean,
+): Promise<UpdateReferenceImageResult> {
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+
+  const { error } = await ctx.supabase
+    .from("salons")
+    .update({ reference_image_enabled: enabled } as never)
+    .eq("id", ctx.salon.id);
+
+  if (error) {
+    console.error("[updateReferenceImageEnabled]", error);
+    return { ok: false, error: "server_error" };
+  }
+  return { ok: true, enabled };
+}
+
 /* ───────────── Staff selection toggle ───────────── */
 
 export type UpdateStaffSelectionResult =

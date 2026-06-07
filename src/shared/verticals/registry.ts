@@ -63,6 +63,13 @@ export type VerticalConfig = {
    * photos. (Future: per-salon override from the salon's own photos.)
    */
   bookingImagery: { hero: string; thumbA: string; thumbB: string };
+  /**
+   * Whether the booking flow offers the optional "reference image" upload by
+   * default. Useful for visual/design services (nail, hair) where a customer
+   * shows the look they want; pointless for relaxation services (head spa,
+   * massage). Per-salon `salons.reference_image_enabled` overrides this.
+   */
+  referenceImageEnabled: boolean;
   /** Default catalogue seeded for a brand-new salon of this vertical. */
   seedServices: VerticalSeedService[];
 };
@@ -118,6 +125,7 @@ const NAIL_SALON: VerticalConfig = {
     thumbA: "https://images.unsplash.com/photo-1604654894610-df63bc536371",
     thumbB: "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e",
   },
+  referenceImageEnabled: true,
   seedServices: NAIL_SALON_SEED,
 };
 
@@ -137,6 +145,7 @@ const HEAD_SPA: VerticalConfig = {
     en: "A calm sanctuary for scalp care and deep relaxation — your visit begins here.",
     vi: "Không gian thư giãn cho da đầu và tóc — hành trình của bạn bắt đầu tại đây.",
   },
+  referenceImageEnabled: false,
   seedServices: HEAD_SPA_SEED,
 };
 

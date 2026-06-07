@@ -27,6 +27,7 @@ export function BookingFlowInfoPanel({
   clientNotes,
   clientWebsite,
   salonId,
+  referenceImageEnabled,
   referenceImagePath,
   referenceImagePreview,
   error,
@@ -61,6 +62,8 @@ export function BookingFlowInfoPanel({
   clientWebsite: string;
   /** Salon UUID — used for ref-upload path. */
   salonId: string;
+  /** When false, the optional reference-image upload is hidden (e.g. head spa). */
+  referenceImageEnabled: boolean;
   /** Storage path returned after successful upload. */
   referenceImagePath: string | null;
   /** Local object URL for preview before upload. */
@@ -353,7 +356,8 @@ export function BookingFlowInfoPanel({
           />
         </div>
 
-        {/* Reference / inspiration image — optional */}
+        {/* Reference / inspiration image — optional (vertical/salon gated) */}
+        {referenceImageEnabled ? (
         <div className="flex flex-col gap-2">
           <p className="text-sm font-medium text-[var(--booking-text)]">
             {t.refImageLabel}
@@ -392,6 +396,7 @@ export function BookingFlowInfoPanel({
             <p className="text-xs text-nq-error">{refError === "file_too_large" ? "Max 5 MB" : "Upload failed. Please try again."}</p>
           )}
         </div>
+        ) : null}
 
         {/*
          * Task #09-11 — honeypot. Hidden three ways (off-screen, no
