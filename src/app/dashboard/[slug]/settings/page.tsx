@@ -8,6 +8,7 @@ import { getSalonDomain } from "@/shared/dashboard/domainActions";
 import { normalizeBrandColor } from "@/shared/lib/brandColor";
 import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { getLookPresetsForVertical } from "@/shared/verticals/lookPresets";
+import { resolveVertical } from "@/shared/verticals/registry";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -30,7 +31,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, reference_image_enabled",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -65,6 +66,7 @@ export default async function SalonSettingsPage({ params }: Props) {
         vertical?: unknown;
         staff_selection_enabled?: unknown;
         booking_lead_minutes?: unknown;
+        reference_image_enabled?: unknown;
       }
     | null;
 
@@ -118,6 +120,11 @@ export default async function SalonSettingsPage({ params }: Props) {
     const v = Number(row?.booking_lead_minutes);
     return Number.isFinite(v) && v >= 0 ? Math.round(v) : 15;
   })();
+  // Effective reference-image setting: explicit override, else vertical default.
+  const referenceImageEnabled =
+    row?.reference_image_enabled === true || row?.reference_image_enabled === false
+      ? row.reference_image_enabled
+      : resolveVertical(vertical).referenceImageEnabled;
 
   return (
     <SalonSettingsHub
@@ -146,6 +153,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       lookPresets={lookPresets}
       staffSelectionEnabled={staffSelectionEnabled}
       bookingLeadMinutes={bookingLeadMinutes}
+      referenceImageEnabled={referenceImageEnabled}
     />
   );
 }

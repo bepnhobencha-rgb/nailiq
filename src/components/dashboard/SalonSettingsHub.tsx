@@ -27,6 +27,7 @@ import { LookPresetPicker } from "@/components/dashboard/LookPresetPicker";
 import type { LookPreset } from "@/shared/verticals/lookPresets";
 import { StaffSelectionSettings } from "@/components/dashboard/StaffSelectionSettings";
 import { BookingLeadSettings } from "@/components/dashboard/BookingLeadSettings";
+import { ReferenceImageSettings } from "@/components/dashboard/ReferenceImageSettings";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
@@ -65,6 +66,7 @@ export function SalonSettingsHub({
   lookPresets,
   staffSelectionEnabled,
   bookingLeadMinutes,
+  referenceImageEnabled,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -91,6 +93,7 @@ export function SalonSettingsHub({
   lookPresets: LookPreset[];
   staffSelectionEnabled: boolean;
   bookingLeadMinutes: number;
+  referenceImageEnabled: boolean;
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -381,6 +384,14 @@ export function SalonSettingsHub({
         {/* ── Minimum advance notice (booking lead time) ──────── */}
         {canEditDashboardModules ? (
           <BookingLeadSettings slug={slug} initialMinutes={bookingLeadMinutes} />
+        ) : null}
+
+        {/* ── Reference-image upload toggle ───────────────────── */}
+        {canEditDashboardModules ? (
+          <ReferenceImageSettings
+            slug={slug}
+            initialEnabled={referenceImageEnabled}
+          />
         ) : null}
 
         {/* ── Custom domain ───────────────────────────────────── */}
