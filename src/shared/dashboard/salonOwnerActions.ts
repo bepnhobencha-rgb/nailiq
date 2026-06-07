@@ -961,6 +961,45 @@ export async function updateSalonVertical(
   return { ok: true, vertical: normalized };
 }
 
+/* ───────────── Auto no-show (opt-in) ───────────── */
+
+export type UpdateAutoNoShowResult =
+  | { ok: true; minutes: number }
+  | { ok: false; error: "unauthorized" | "forbidden" | "invalid" | "server_error" };
+
+/**
+ * Owner-only: writes `salons.auto_no_show_minutes`. When > 0, a pg_cron worker
+ * auto-marks still-`confirmed` bookings as no_show once they're this many
+ * minutes past start (and bumps the client's no_show_count). 0 = off.
+ */
+export async function updateAutoNoShowMinutes(
+  slug: string,
+  minutes: number,
+): Promise<UpdateAutoNoShowResult> {
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+
+  const m = Math.round(Number(minutes));
+  if (!Number.isFinite(m) || m < 0 || m > 240) {
+    return { ok: false, error: "invalid" };
+  }
+
+  const { error } = await ctx.supabase
+    .from("salons")
+    .update({ auto_no_show_minutes: m } as never)
+    .eq("id", ctx.salon.id);
+
+  if (error) {
+    console.error("[updateAutoNoShowMinutes]", error);
+    return { ok: false, error: "server_error" };
+  }
+  return { ok: true, minutes: m };
+}
+
 /* ───────────── Booking lead time (min advance notice) ───────────── */
 
 export type UpdateBookingLeadResult =
