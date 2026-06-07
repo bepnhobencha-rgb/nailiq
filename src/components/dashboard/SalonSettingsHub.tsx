@@ -28,6 +28,7 @@ import type { LookPreset } from "@/shared/verticals/lookPresets";
 import { StaffSelectionSettings } from "@/components/dashboard/StaffSelectionSettings";
 import { BookingLeadSettings } from "@/components/dashboard/BookingLeadSettings";
 import { ReferenceImageSettings } from "@/components/dashboard/ReferenceImageSettings";
+import { AutoNoShowSettings } from "@/components/dashboard/AutoNoShowSettings";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
@@ -67,6 +68,7 @@ export function SalonSettingsHub({
   staffSelectionEnabled,
   bookingLeadMinutes,
   referenceImageEnabled,
+  autoNoShowMinutes,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -94,6 +96,7 @@ export function SalonSettingsHub({
   staffSelectionEnabled: boolean;
   bookingLeadMinutes: number;
   referenceImageEnabled: boolean;
+  autoNoShowMinutes: number;
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -392,6 +395,11 @@ export function SalonSettingsHub({
             slug={slug}
             initialEnabled={referenceImageEnabled}
           />
+        ) : null}
+
+        {/* ── Auto no-show (opt-in) ───────────────────────────── */}
+        {canEditDashboardModules ? (
+          <AutoNoShowSettings slug={slug} initialMinutes={autoNoShowMinutes} />
         ) : null}
 
         {/* ── Custom domain ───────────────────────────────────── */}
