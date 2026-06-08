@@ -1,7 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import {
+  type ReturningCustomer,
+} from "@/components/booking/useBookingFlowState";
+import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import { formatPhoneInputProgressive } from "@/shared/lib/phoneFormat";
 import type { BookingComboItem, BookingServiceItem } from "@/shared/booking/catalog";
 import type { ServiceCategorySummary } from "@/shared/booking/loadServiceCategories";
 import type {
@@ -104,6 +109,51 @@ export function BookingTypeSwitcher({
   // `group_booking` release flag is enabled (PR2 — Beta, default OFF).
   const groupEnabled = groupBookingEnabled && maxGroupSize >= MIN_GROUP_SIZE;
 
+  // ── Phone-first gate ───────────────────────────────────────────
+  // Ask the customer's phone once, up front, and recognise returning
+  // guests BEFORE they pick Individual vs Group. The captured phone +
+  // customer are threaded into whichever flow they choose so they
+  // never type it again. Gentle, not blocking: a guest can ignore it
+  // and pick a flow — the flow then asks for the phone as before.
+  const [entryPhoneRaw, setEntryPhoneRaw] = useState("");
+  const [entryCustomer, setEntryCustomer] = useState<ReturningCustomer | null>(
+    null,
+  );
+  const [entryLoading, setEntryLoading] = useState(false);
+  const entryLookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const entryValidation = validateGuestPhone(entryPhoneRaw.trim());
+  const entryPhone = entryValidation.ok ? entryPhoneRaw.trim() : "";
+
+  useEffect(() => {
+    if (entryLookupTimer.current) {
+      clearTimeout(entryLookupTimer.current);
+      entryLookupTimer.current = null;
+    }
+    const v = validateGuestPhone(entryPhoneRaw.trim());
+    if (!v.ok) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset when phone becomes invalid
+      setEntryCustomer(null);
+      setEntryLoading(false);
+      return;
+    }
+    setEntryLoading(true);
+    entryLookupTimer.current = setTimeout(() => {
+      void fetch(
+        `/api/customer/${encodeURIComponent(v.digits)}?salon_id=${encodeURIComponent(salon.id)}`,
+      )
+        .then((r) => r.json() as Promise<ReturningCustomer | { found: false }>)
+        .then((data) =>
+          setEntryCustomer(data.found ? (data as ReturningCustomer) : null),
+        )
+        .catch(() => setEntryCustomer(null))
+        .finally(() => setEntryLoading(false));
+    }, 400);
+    return () => {
+      if (entryLookupTimer.current) clearTimeout(entryLookupTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entryPhoneRaw, salon.id]);
+
   // Defensive fallback — older deployed booking i18n bundles (before
   // PR #140 / #141) may not have the `groupBooking` namespace; if a
   // cached client gets here without it the destructure would throw
@@ -118,13 +168,65 @@ export function BookingTypeSwitcher({
   // Solo-staff salon → no group booking, no toggle. Render only the
   // individual flow so the page reads exactly like the pre-group
   // experience for these salons.
+  // Phone-first gate UI — shown above whichever flow renders. Recognises
+  // returning guests before they choose. `key` on the flows below makes
+  // them remount once a valid phone lands, so the captured phone +
+  // customer pre-fill the flow (individual skips its phone step; group
+  // pre-fills the primary contact).
+  const phoneGate = (
+    <div
+      data-testid="booking-phone-gate"
+      className="rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4 sm:p-5"
+    >
+      <label
+        htmlFor="booking-entry-phone"
+        className="mb-1 block text-sm font-semibold"
+      >
+        {t.clientPhoneLabel}
+      </label>
+      <input
+        id="booking-entry-phone"
+        type="tel"
+        inputMode="tel"
+        autoComplete="tel"
+        data-testid="booking-entry-phone"
+        value={entryPhoneRaw}
+        placeholder={t.clientPhonePlaceholder}
+        onChange={(e) =>
+          setEntryPhoneRaw(formatPhoneInputProgressive(e.target.value))
+        }
+        className="nq-booking-field"
+      />
+      {entryCustomer ? (
+        <p
+          data-testid="booking-entry-recognized"
+          className="mt-2 text-sm font-medium text-[var(--salon-primary)]"
+        >
+          👋{" "}
+          {(groupCopy.organizerGreeting ?? "Welcome back, {name}!").replace(
+            "{name}",
+            entryCustomer.name,
+          )}
+          {entryCustomer.isVip ? ` · ${groupCopy.organizerVip ?? "VIP"}` : ""}
+        </p>
+      ) : (
+        <p className="mt-1.5 text-xs text-[var(--booking-text-muted)]">
+          {t.clientPhoneHint}
+        </p>
+      )}
+      {entryLoading ? <span className="sr-only">…</span> : null}
+    </div>
+  );
+
   if (!groupEnabled) {
     return (
       <div className="space-y-4">
         {voiceAiEnabled && (
           <VoiceBookingButton t={t} shopSlug={shopSlug} language={language} />
         )}
+        {phoneGate}
         <BookingFlow
+          key={`ind-${entryPhone}`}
           t={t}
           shopSlug={shopSlug}
           services={services}
@@ -135,6 +237,8 @@ export function BookingTypeSwitcher({
           capabilityRows={capabilityRows}
           categories={categories}
           language={language}
+          initialPhone={entryPhone}
+          initialReturningCustomer={entryCustomer}
         />
       </div>
     );
@@ -145,6 +249,8 @@ export function BookingTypeSwitcher({
       {voiceAiEnabled && (
         <VoiceBookingButton t={t} shopSlug={shopSlug} language={language} />
       )}
+      {/* Phone-first: ask once, recognise, then choose. */}
+      {phoneGate}
       {/* Heading + pill stacked. Was previously an inline-flex pill
           on its own line with no heading — easy to miss on first
           paint. Promoted to a small section so it's clearly part of
@@ -190,6 +296,7 @@ export function BookingTypeSwitcher({
 
       {mode === "individual" ? (
         <BookingFlow
+          key={`ind-${entryPhone}`}
           t={t}
           shopSlug={shopSlug}
           services={services}
@@ -200,9 +307,12 @@ export function BookingTypeSwitcher({
           capabilityRows={capabilityRows}
           categories={categories}
           language={language}
+          initialPhone={entryPhone}
+          initialReturningCustomer={entryCustomer}
         />
       ) : (
         <BookingGroupFlow
+          key={`grp-${entryPhone}`}
           t={t}
           shopSlug={shopSlug}
           services={services}
@@ -211,6 +321,8 @@ export function BookingTypeSwitcher({
           salon={salon}
           maxGroupSize={maxGroupSize}
           capabilityRows={capabilityRows}
+          initialPhone={entryPhone}
+          initialOrganizer={entryCustomer}
         />
       )}
     </div>

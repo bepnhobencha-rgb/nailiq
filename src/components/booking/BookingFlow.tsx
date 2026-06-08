@@ -32,7 +32,10 @@ import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDa
 import { resolveVertical } from "@/shared/verticals/registry";
 import { formatBookingPriceReceipt } from "@/shared/booking/formatBookingPrice";
 import { salonTimezoneAbbreviation } from "@/shared/lib/salonTime";
-import { useBookingFlowState } from "@/components/booking/useBookingFlowState";
+import {
+  useBookingFlowState,
+  type ReturningCustomer,
+} from "@/components/booking/useBookingFlowState";
 import type { VoiceParseResult } from "@/shared/types/booking";
 
 // Resolve a voice dateHint string to a concrete Date (noon local time)
@@ -92,6 +95,10 @@ type BookingFlowProps = {
   capabilityRows: { staff_id: string; service_id: string }[] | null;
   categories: readonly ServiceCategorySummary[];
   language?: "en" | "vi";
+  /** Phone-first entry — captured at the type-switcher gate. When set,
+   *  the flow skips its own phone step and pre-fills name/email. */
+  initialPhone?: string;
+  initialReturningCustomer?: ReturningCustomer | null;
 };
 
 export function BookingFlow({
@@ -105,6 +112,8 @@ export function BookingFlow({
   capabilityRows,
   categories,
   language = "en",
+  initialPhone = "",
+  initialReturningCustomer = null,
 }: BookingFlowProps) {
   const reducedMotion = useReducedMotion();
   const vertical = resolveVertical(salon.vertical);
@@ -119,6 +128,8 @@ export function BookingFlow({
     capabilityRows,
     salon.phoneOtpEnabled,
     addOns,
+    initialPhone,
+    initialReturningCustomer,
   );
 
   const [loyaltyCard, setLoyaltyCard] = useState<LoyaltyCard | null>(null);
