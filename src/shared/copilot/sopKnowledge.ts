@@ -1,0 +1,105 @@
+// SOP knowledge base for Coco, the in-admin assistant. This is the "how every
+// feature works" source of truth injected into Coco's system prompt. It is
+// grounded in the real dashboard routes and the documented operational flows
+// (booking lifecycle, Receptionist Center, walk-in queue, no-show handling,
+// staff/services/settings). Coco MUST NOT invent steps, routes, or labels that
+// are not described here — when unsure, it deep-links to the relevant page so
+// the user can act with the real, already-validated buttons.
+//
+// Route convention: every link is built as /dashboard/<slug>/... where <slug>
+// is provided in the LIVE CONTEXT block. Never hardcode a slug here.
+
+export const SOP_KNOWLEDGE = `# NailIQ — How the salon dashboard works (SOP)
+
+All dashboard pages live under /dashboard/<slug>/... — use the salon slug from
+the LIVE CONTEXT when building a link.
+
+## Roles (salon_members.role)
+- owner — full access: operations, staff, services, settings, reports, billing.
+- admin — like owner for day-to-day management (no billing/ownership changes).
+- senior — front-desk + can edit/cancel bookings.
+- receptionist — front-desk operations: check-in, walk-ins, mark no-show. Cannot
+  edit the service/staff catalog or salon settings.
+- nail_tech — view-only on the schedule; cannot modify bookings.
+If a user's role can't reach an area, tell them to ask the owner/admin — do not
+walk them through an action they can't perform.
+
+## A. Owner / Admin home — /dashboard/<slug>
+Today's overview: today's bookings, revenue snapshot, things needing attention.
+Starting point to jump into Front Desk, Clients, Settings, Reports.
+
+## B. Receptionist Center (Front Desk) — /dashboard/<slug>/center
+The live operational board, updated in real time. Three zones:
+1. Staff column (left) — each working staff and their availability
+   (available / busy / overbooked / offline). Offline = staff status
+   inactive/pending.
+2. Timeline (middle) — today's appointments on a time grid per staff.
+3. Walk-in queue (right) — walk-in guests waiting to be seated.
+Use this page to run the day: seat walk-ins, start/finish services, mark
+no-shows, see who is free.
+
+### Booking lifecycle (status values)
+- pending — booked but not yet confirmed (e.g. Wix-origin or awaiting verify).
+- confirmed — confirmed upcoming appointment.
+- waiting — a walk-in in the queue, not yet seated.
+- in_progress — service currently being performed.
+- completed — service finished.
+- cancelled — cancelled.
+- no_show — the client did not arrive.
+Typical flow: confirmed → in_progress → completed. Walk-in flow:
+waiting → in_progress → completed.
+
+### Walk-in queue
+A walk-in is added to the queue (status waiting) with name, optional phone,
+requested service and priority. From the queue you assign/seat them to a staff
+member, which moves them to in_progress. The Front Desk has an undo for a
+just-assigned walk-in.
+
+### No-shows
+When a confirmed client doesn't arrive, mark the booking as no_show from the
+Front Desk (owner/admin/senior/receptionist can do this). No-shows feed the
+client's no-show history and the no-show risk signal on future bookings.
+
+## C. Public booking page — /<slug>
+Customers book themselves through a step-by-step flow: pick service → pick staff
+(or "any") → pick date → pick time → enter contact info → verify → confirm.
+No-show protection (verification / OTP / deposit, where enabled) happens during
+this flow. Completed bookings appear on the Front Desk and calendar.
+
+## D. Calendar / booking list
+Day / week / month calendar plus a booking list to review and manage upcoming
+and past appointments. Owner/admin/senior can edit and cancel; nail_tech is
+view-only.
+
+## E. Clients — /dashboard/<slug>/clients
+Customer list and profiles (history, contact, notes, no-show history). Use this
+to look someone up before they arrive or to review a regular's preferences.
+
+## F. Staff (catalog) — managed in Settings
+Add staff, set their role and which services they can perform (capabilities),
+and their status (active = bookable; inactive/pending = offline). A booking can
+only be assigned to a staff member who is active and capable of that service.
+
+## G. Services (catalog) — managed in Settings
+Each service has a name, duration, buffer time, and price. Duration + buffer is
+the total time the slot occupies. Soft-deleted services stop being bookable.
+
+## H. Settings — /dashboard/<slug>/settings
+Salon settings hub: brand/profile, contact, opening hours, services, staff,
+dashboard modules, and integrations (e.g. AI voice, reviews where enabled).
+Opening hours drive what times customers can book.
+
+## I. Setup wizard — /dashboard/<slug>/setup
+Guided first-run setup: complete the salon profile, add services, add staff,
+and set opening hours. A salon is "ready to take bookings" once it has at least
+one service, one active staff member, customized opening hours, and a complete
+profile.
+
+## J. Reports — /dashboard/<slug>/reports
+Revenue and operational reports (advanced reports are a separate enabled
+feature).
+
+## K. Language
+The whole dashboard is bilingual EN/VI; users toggle their own language. Reply
+in the language the user is writing in.
+`;

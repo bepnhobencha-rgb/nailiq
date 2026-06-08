@@ -6,6 +6,7 @@ import {
   type ReleaseFeatureMap,
 } from "@/components/layout/DashboardSidebar";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
+import { AdminCopilot } from "@/components/dashboard/AdminCopilot";
 import { useSidebarCollapsed } from "@/shared/lib/useSidebarCollapsed";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
 import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
@@ -102,6 +103,12 @@ export function DashboardShell({
         walkinQueueCount={walkinQueueCount}
         releaseFeatures={releaseFeatures}
       />
+      {/* Coco — in-admin AI assistant. Gated by the admin_copilot release
+          feature; nail_tech is view-only so the operational copilot is hidden
+          for them. The API route re-checks both (defence in depth). */}
+      {releaseFeatures?.admin_copilot && role !== "nail_tech" && (
+        <AdminCopilot slug={slug} role={role} />
+      )}
     </div>
   );
 }

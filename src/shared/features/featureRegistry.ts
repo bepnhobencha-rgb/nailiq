@@ -61,7 +61,8 @@ export type BetaFeatureKey =
   | "combos"
   | "tv_mode"
   | "advanced_reports"
-  | "experimental_realtime";
+  | "experimental_realtime"
+  | "admin_copilot";
 
 export type ReleaseFeatureKey = BaseFeatureKey | BetaFeatureKey;
 
@@ -298,6 +299,17 @@ export const RELEASE_FEATURES: Record<ReleaseFeatureKey, ReleaseFeatureDescripto
     defaultOn: false,
     source: { kind: "registry" },
     description: "Experimental realtime dashboard widgets.",
+  },
+  admin_copilot: {
+    key: "admin_copilot",
+    label: "Admin Copilot (Coco)",
+    group: "operations",
+    phase: "beta",
+    defaultOn: false,
+    // Per-salon toggle via salons.feature_flags.admin_copilot_enabled, so a
+    // SuperAdmin can switch Coco on for a single salon without a code change.
+    source: { kind: "jsonb", flagKey: "admin_copilot_enabled" },
+    description: "In-admin AI assistant (Coco) for salon operations guidance.",
   },
 };
 
