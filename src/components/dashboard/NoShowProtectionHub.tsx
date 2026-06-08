@@ -25,6 +25,9 @@ type Props = {
   reminder3hEnabled: boolean;
   smsRemindersEnabled: boolean;
   depositHighValueCents: number;
+  depositPctNoShow: number;
+  depositPctHighValue: number;
+  depositPctNewCustomer: number;
   connectHasAccount: boolean;
   connectChargesEnabled: boolean;
   connectDetailsSubmitted: boolean;
@@ -78,6 +81,9 @@ export function NoShowProtectionHub({
   reminder3hEnabled: initial3h,
   smsRemindersEnabled: initialSms,
   depositHighValueCents: initialThreshold,
+  depositPctNoShow: initialPctNoShow,
+  depositPctHighValue: initialPctHighValue,
+  depositPctNewCustomer: initialPctNewCustomer,
   connectHasAccount,
   connectChargesEnabled,
   connectDetailsSubmitted,
@@ -92,6 +98,9 @@ export function NoShowProtectionHub({
   const [reminder3h, setReminder3h] = useState(initial3h);
   const [smsReminders, setSmsReminders] = useState(initialSms);
   const [threshold, setThreshold] = useState(String(Math.round(initialThreshold / 100)));
+  const [pctNoShow, setPctNoShow] = useState(String(initialPctNoShow));
+  const [pctHighValue, setPctHighValue] = useState(String(initialPctHighValue));
+  const [pctNewCustomer, setPctNewCustomer] = useState(String(initialPctNewCustomer));
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [waivedIds, setWaivedIds] = useState<Set<string>>(new Set());
 
@@ -111,6 +120,9 @@ export function NoShowProtectionHub({
         reminder_3h_enabled: reminder3h,
         sms_reminders_enabled: smsReminders,
         deposit_high_value_cents: isNaN(cents) ? 10000 : cents,
+        deposit_pct_no_show: parseInt(pctNoShow, 10),
+        deposit_pct_high_value: parseInt(pctHighValue, 10),
+        deposit_pct_new_customer: parseInt(pctNewCustomer, 10),
       });
       setSaveMsg("Settings saved");
       setTimeout(() => setSaveMsg(null), 3000);
@@ -213,6 +225,30 @@ export function NoShowProtectionHub({
                     onChange={(e) => setThreshold(e.target.value)}
                     className="w-24 rounded-lg border border-nq-border/40 bg-nq-bg px-3 py-1.5 text-sm text-nq-text focus:outline-none focus:border-nq-gold/50"
                   />
+                </div>
+                {/* Deposit % per trigger — de-hardcoded; charged on the salon's
+                    Stripe (Phase 2). 0 = no deposit for that trigger. */}
+                <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {([
+                    ["Vắng trước đó", pctNoShow, setPctNoShow],
+                    ["Dịch vụ giá cao", pctHighValue, setPctHighValue],
+                    ["Khách mới", pctNewCustomer, setPctNewCustomer],
+                  ] as const).map(([label, val, setter]) => (
+                    <label key={label} className="flex items-center gap-2 text-sm text-nq-text">
+                      <span className="whitespace-nowrap text-xs text-nq-muted">{label}</span>
+                      <span className="ml-auto flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={val}
+                          onChange={(e) => setter(e.target.value)}
+                          className="w-16 rounded-lg border border-nq-border/40 bg-nq-bg px-2 py-1.5 text-sm text-nq-text focus:outline-none focus:border-nq-gold/50"
+                        />
+                        <span className="text-xs text-nq-muted">%</span>
+                      </span>
+                    </label>
+                  ))}
                 </div>
                 <button
                   onClick={saveSettings}

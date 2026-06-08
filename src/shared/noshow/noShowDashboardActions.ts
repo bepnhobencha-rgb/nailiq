@@ -191,15 +191,26 @@ export async function updateReminderSettings(
     reminder_3h_enabled?: boolean;
     sms_reminders_enabled?: boolean;
     deposit_high_value_cents?: number;
+    deposit_pct_no_show?: number;
+    deposit_pct_high_value?: number;
+    deposit_pct_new_customer?: number;
   },
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx || ctx.role !== "owner") return { ok: false, error: "unauthorized" };
 
+  // Clamp deposit percentages to 0–100 (defense-in-depth; the DB also CHECKs).
+  const clampPct = (v: number | undefined) =>
+    v == null ? undefined : Math.min(100, Math.max(0, Math.round(v)));
+  const patch = { ...settings } as Record<string, unknown>;
+  for (const k of ["deposit_pct_no_show", "deposit_pct_high_value", "deposit_pct_new_customer"]) {
+    if (patch[k] !== undefined) patch[k] = clampPct(patch[k] as number | undefined);
+  }
+
   const supabase = createServiceRoleClient();
   const { error } = await supabase
     .from("salons" as never)
-    .update(settings as never)
+    .update(patch as never)
     .eq("id", ctx.salon.id);
 
   if (error) return { ok: false, error: error.message };
