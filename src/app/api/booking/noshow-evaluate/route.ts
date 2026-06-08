@@ -35,15 +35,20 @@ export async function POST(req: Request) {
 
     const { data: salonSettings } = await supabase
       .from("salons" as never)
-      .select("deposit_high_value_cents, vertical")
+      .select(
+        "deposit_high_value_cents, vertical, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer",
+      )
       .eq("id", body.salonId)
       .maybeSingle();
-    const highValueThreshold =
-      (salonSettings as { deposit_high_value_cents?: number } | null)
-        ?.deposit_high_value_cents ?? 10000;
-    const businessDescriptor = resolveVertical(
-      (salonSettings as { vertical?: string | null } | null)?.vertical,
-    ).aiDescriptor;
+    const s = (salonSettings ?? {}) as {
+      deposit_high_value_cents?: number;
+      vertical?: string | null;
+      deposit_pct_no_show?: number;
+      deposit_pct_high_value?: number;
+      deposit_pct_new_customer?: number;
+    };
+    const highValueThreshold = s.deposit_high_value_cents ?? 10000;
+    const businessDescriptor = resolveVertical(s.vertical).aiDescriptor;
 
     const depositDecision = evaluateDeposit({
       isNewCustomer: body.isNewCustomer,
@@ -51,6 +56,9 @@ export async function POST(req: Request) {
       isVip: body.isVip,
       servicePriceCents: body.svcPriceCents,
       highValueThresholdCents: highValueThreshold,
+      pctNoShow: s.deposit_pct_no_show,
+      pctHighValue: s.deposit_pct_high_value,
+      pctNewCustomer: s.deposit_pct_new_customer,
     });
 
     const [riskResult] = await Promise.allSettled([

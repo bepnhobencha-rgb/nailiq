@@ -20,7 +20,18 @@ export type DepositInput = {
   highValueThresholdCents: number;
   /** Owner override — when set, overrides all rules. */
   ownerOverride?: "require" | "waive" | null;
+  /** Per-salon deposit percentages (0–100). Admin-configurable, no hardcode.
+   *  Omit → safe defaults that preserve historical behavior. */
+  pctNoShow?: number;
+  pctHighValue?: number;
+  pctNewCustomer?: number;
 };
+
+/** Clamp a percentage to 0–1 fraction; fall back to `def` (0–1) when invalid. */
+function pctFraction(pct: number | undefined, def: number): number {
+  if (pct == null || !Number.isFinite(pct)) return def;
+  return Math.min(100, Math.max(0, pct)) / 100;
+}
 
 /**
  * Pure deposit rule engine.
@@ -37,6 +48,11 @@ export function evaluateDeposit(input: DepositInput): DepositDecision {
     ownerOverride,
   } = input;
 
+  // Configurable fractions (defaults preserve the prior 50/30/20 behavior).
+  const fNoShow = pctFraction(input.pctNoShow, 0.5);
+  const fHighValue = pctFraction(input.pctHighValue, 0.3);
+  const fNewCustomer = pctFraction(input.pctNewCustomer, 0.2);
+
   const noRequired: DepositDecision = {
     required: false,
     amountCents: 0,
@@ -49,7 +65,7 @@ export function evaluateDeposit(input: DepositInput): DepositDecision {
   if (ownerOverride === "require") {
     return {
       required: true,
-      amountCents: Math.round(servicePriceCents * 0.3),
+      amountCents: Math.round(servicePriceCents * fHighValue),
       reason: "rule_applied",
       explanation: "Deposit required by owner rule",
     };
@@ -64,7 +80,7 @@ export function evaluateDeposit(input: DepositInput): DepositDecision {
   if (previousNoShowCount > 0) {
     return {
       required: true,
-      amountCents: Math.round(servicePriceCents * 0.5),
+      amountCents: Math.round(servicePriceCents * fNoShow),
       reason: "previous_no_show",
       explanation: `Customer has ${previousNoShowCount} previous no-show(s)`,
     };
@@ -74,7 +90,7 @@ export function evaluateDeposit(input: DepositInput): DepositDecision {
   if (servicePriceCents >= highValueThresholdCents) {
     return {
       required: true,
-      amountCents: Math.round(servicePriceCents * 0.3),
+      amountCents: Math.round(servicePriceCents * fHighValue),
       reason: "high_value_service",
       explanation: `Service price $${(servicePriceCents / 100).toFixed(2)} exceeds high-value threshold`,
     };
@@ -84,7 +100,7 @@ export function evaluateDeposit(input: DepositInput): DepositDecision {
   if (isNewCustomer) {
     return {
       required: true,
-      amountCents: Math.round(servicePriceCents * 0.2),
+      amountCents: Math.round(servicePriceCents * fNewCustomer),
       reason: "new_customer",
       explanation: "First-time customer",
     };
