@@ -20,7 +20,8 @@
  * unchanged.
  */
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import {
   claimPartySlot,
   editPartyClaimDetails,
@@ -251,6 +252,7 @@ export default function PartyClaimClient({ data, t }: Props) {
       key={slot.claimId}
       slot={slot}
       token={data.token}
+      salonId={data.salonId}
       salonName={data.salonName}
       expired={data.expired}
       t={t}
@@ -312,6 +314,7 @@ export default function PartyClaimClient({ data, t }: Props) {
 function SlotCard({
   slot,
   token,
+  salonId,
   salonName,
   expired,
   t,
@@ -323,6 +326,7 @@ function SlotCard({
 }: {
   slot: PartyLinkSlot;
   token: string;
+  salonId: string;
   salonName: string;
   expired: boolean;
   t: PartyPageT;
@@ -410,6 +414,8 @@ function SlotCard({
         <ClaimForm
           token={token}
           claimId={slot.claimId}
+          salonId={salonId}
+          placeholderName={slot.guestLabel}
           t={t}
           partyConfig={partyConfig}
           onClaimed={handleClaimedHere}
@@ -481,24 +487,76 @@ function SlotCard({
 
 // ─── ClaimForm ────────────────────────────────────────────────────
 
+/**
+ * Pre-fill the claim name from the booking's placeholder, but only when
+ * the organizer actually typed a real name. Generic "Guest 2" / "Khách 2"
+ * placeholders stay empty so the guest types their own.
+ */
+function isGenericGuestLabel(label: string): boolean {
+  return /^(guest|khách|khach)\s*\d+$/i.test(label.trim());
+}
+
 function ClaimForm({
   token,
   claimId,
+  salonId,
+  placeholderName,
   t,
   partyConfig,
   onClaimed,
 }: {
   token: string;
   claimId: string;
+  /** Salon UUID — returning-customer lookup for the guest's phone. */
+  salonId: string;
+  /** Booking-level guest label (organizer-typed name or "Guest N"). */
+  placeholderName: string;
   t: PartyPageT;
   partyConfig: PartyLinkPageData["partyConfig"];
   onClaimed: (name: string) => void;
 }) {
-  const [name, setName] = useState("");
+  // "Tap your name": when the organizer already named this guest, the
+  // form opens with that name filled in — they just confirm.
+  const [name, setName] = useState(
+    isGenericGuestLabel(placeholderName) ? "" : placeholderName.trim(),
+  );
   const [phone, setPhone] = useState("");
   const [reminder, setReminder] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  // Returning-guest one-tap: when THIS guest enters their phone and
+  // they're a known customer, auto-fill their name (if still empty) so
+  // they just confirm.
+  const [recognizedName, setRecognizedName] = useState<string | null>(null);
+  const recogTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (recogTimer.current) clearTimeout(recogTimer.current);
+    const v = validateGuestPhone(phone.trim());
+    if (!v.ok || !salonId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset when phone invalid
+      setRecognizedName(null);
+      return;
+    }
+    recogTimer.current = setTimeout(() => {
+      void fetch(
+        `/api/customer/${encodeURIComponent(v.digits)}?salon_id=${encodeURIComponent(salonId)}`,
+      )
+        .then((r) => r.json() as Promise<{ found: boolean; name?: string }>)
+        .then((data) => {
+          if (data.found && data.name) {
+            setRecognizedName(data.name);
+            setName((prev) => (prev.trim() ? prev : data.name!));
+          } else {
+            setRecognizedName(null);
+          }
+        })
+        .catch(() => setRecognizedName(null));
+    }, 400);
+    return () => {
+      if (recogTimer.current) clearTimeout(recogTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phone, salonId]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -558,6 +616,17 @@ function ClaimForm({
           required
           className={INPUT_CLASS}
         />
+        {recognizedName ? (
+          <p
+            data-testid="party-claim-recognized"
+            className="mt-1.5 text-xs font-medium text-[#9a7b29]"
+          >
+            {(t.recognizedGreeting ?? "Welcome back, {name}! 👋").replace(
+              "{name}",
+              recognizedName,
+            )}
+          </p>
+        ) : null}
       </div>
 
       <div>

@@ -516,6 +516,8 @@ export const bookingEn = {
     guestWord: "Guest",
     claimFormTitle: "Confirm this spot is yours",
     claimFormSubtext: "Enter your name and phone so the salon can send reminders.",
+    /** Shown when the guest's phone matches a returning customer. */
+    recognizedGreeting: "Welcome back, {name}! 👋",
     /** Claim form */
     formNameLabel: "Your name",
     formNamePlaceholder: "e.g. Sarah",
