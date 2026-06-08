@@ -597,6 +597,15 @@ function ClaimForm({
       onSubmit={handleSubmit}
       className="space-y-3.5 border-t border-[#f0e7d8] bg-[#fcfaf6] px-4 pb-4 pt-4"
     >
+      {t.spotReservedNote ? (
+        <p
+          data-testid="party-claim-reserved-note"
+          className="rounded-lg bg-[#eef6ec] px-3 py-2 text-xs font-medium text-[#3f7a4f]"
+        >
+          {t.spotReservedNote}
+        </p>
+      ) : null}
+
       <div>
         <p className="text-sm font-bold text-[#2c2620]">{t.claimFormTitle}</p>
         <p className="mt-0.5 text-xs text-[#857a6c]">{t.claimFormSubtext}</p>

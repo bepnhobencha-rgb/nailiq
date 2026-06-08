@@ -521,7 +521,9 @@ export const bookingEn = {
     waveGuestCount: "{count} guests",
     guestWord: "Guest",
     claimFormTitle: "Confirm this spot is yours",
-    claimFormSubtext: "Enter your name and phone so the salon can send reminders.",
+    claimFormSubtext: "Just your name — a phone is optional, only if you'd like your own reminder.",
+    /** Reassurance: the appointment is already booked; claiming is optional enrichment. */
+    spotReservedNote: "✓ Your spot is already reserved — this just adds your name (and an optional reminder).",
     /** Shown when the guest's phone matches a returning customer. */
     recognizedGreeting: "Welcome back, {name}! 👋",
     /** Claim form */
@@ -552,7 +554,7 @@ export const bookingEn = {
     /** Phase 6.2 — Party Guest Passport */
     claimBtnSpot: "This is my spot",
     phonePrivacyNote: "🔒 Your phone number is only used for this appointment and is not shown to other guests.",
-    formPhoneLabelReminder: "Reminder phone number",
+    formPhoneLabelReminder: "Reminder phone number (optional)",
     personalPassTitle: "Your Personal Pass",
     arrivalNote: "Please arrive 5 minutes early.",
     waveNoteTemplate: "You are in {waveLabel}. You don't need to arrive with the other wave unless you want to join your group.",

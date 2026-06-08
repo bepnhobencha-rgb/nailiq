@@ -140,8 +140,12 @@ export async function createPartyLink(params: {
    *  Null/undefined when the organiser is only the contact (booking on
    *  behalf of others) — then every slot is claimable. */
   organizerBookingId?: string | null;
+  /** Booking-surface language so the shared link opens in the same language
+   *  (the /party page otherwise defaults to English / Accept-Language). */
+  language?: "en" | "vi";
 }): Promise<CreatePartyLinkResult> {
-  const { groupId, salonId, bookingIds, mode, groupStartUtcIso, baseUrl, organizerName, organizerPhone, organizerBookingId } = params;
+  const { groupId, salonId, bookingIds, mode, groupStartUtcIso, baseUrl, organizerName, organizerPhone, organizerBookingId, language } = params;
+  const langQuery = language === "en" || language === "vi" ? `?lang=${language}` : "";
 
   if (!groupId || !salonId || !Array.isArray(bookingIds) || bookingIds.length < 2) {
     return { ok: false, reason: "invalid_input" };
@@ -220,7 +224,7 @@ export async function createPartyLink(params: {
           .eq("group_id", groupId)
           .single();
         if (existing) {
-          return { ok: true, token: existing.token, url: `${baseUrl}/party/${existing.token}` };
+          return { ok: true, token: existing.token, url: `${baseUrl}/party/${existing.token}${langQuery}` };
         }
       }
       Sentry.captureException(insertErr, { extra: { groupId, attempt } });
@@ -265,7 +269,7 @@ export async function createPartyLink(params: {
     // But return ok so the user gets the URL.
   }
 
-  return { ok: true, token, url: `${baseUrl}/party/${token}` };
+  return { ok: true, token, url: `${baseUrl}/party/${token}${langQuery}` };
 }
 
 // ─── loadPartyLinkPage ────────────────────────────────────────────
@@ -410,7 +414,10 @@ export async function loadPartyLinkPage(
     showAddToCalendar:  cfg.show_add_to_calendar !== false,
     showPrivacyNote:    cfg.show_privacy_note    !== false,
     showArrivalNote:    cfg.show_arrival_note    !== false,
-    requirePhone:       cfg.require_phone        !== false,
+    // Phone is OPTIONAL by default — the appointment is already booked when
+    // the link is shared; a phone only adds the guest's own SMS reminder.
+    // A salon can opt back into requiring it by setting require_phone: true.
+    requirePhone:       cfg.require_phone        === true,
   };
 
   return {
@@ -448,9 +455,17 @@ export async function claimPartySlot(params: {
     return { ok: false, reason: "invalid_input" };
   }
 
-  const phoneResult = validateGuestPhone(memberPhone);
-  if (!phoneResult.ok) {
-    return { ok: false, reason: "invalid_input" };
+  // Phone is OPTIONAL — the appointment is already booked. A phone only adds
+  // this guest's own SMS reminder. If provided it must be valid; if blank we
+  // store null and there's nothing to remind.
+  const phoneTrim = memberPhone.trim();
+  let phoneDigits: string | null = null;
+  if (phoneTrim) {
+    const phoneResult = validateGuestPhone(phoneTrim);
+    if (!phoneResult.ok) {
+      return { ok: false, reason: "invalid_input" };
+    }
+    phoneDigits = phoneResult.digits;
   }
 
   const db = createServiceRoleClient();
@@ -459,8 +474,8 @@ export async function claimPartySlot(params: {
     p_token: token,
     p_claim_id: claimId,
     p_member_name: nameTrim,
-    p_member_phone: phoneResult.digits,
-    p_reminder_opted_in: reminderOptedIn,
+    p_member_phone: phoneDigits,
+    p_reminder_opted_in: reminderOptedIn && phoneDigits != null,
   });
 
   if (error) {
@@ -503,9 +518,15 @@ export async function editPartyClaimDetails(params: {
     return { ok: false, reason: "invalid_input" };
   }
 
-  const phoneResult = validateGuestPhone(memberPhone);
-  if (!phoneResult.ok) {
-    return { ok: false, reason: "invalid_input" };
+  // Phone optional (same contract as claimPartySlot).
+  const phoneTrim = memberPhone.trim();
+  let phoneDigits: string | null = null;
+  if (phoneTrim) {
+    const phoneResult = validateGuestPhone(phoneTrim);
+    if (!phoneResult.ok) {
+      return { ok: false, reason: "invalid_input" };
+    }
+    phoneDigits = phoneResult.digits;
   }
 
   const db = createServiceRoleClient();
@@ -514,8 +535,8 @@ export async function editPartyClaimDetails(params: {
     p_token:             token,
     p_claim_id:          claimId,
     p_member_name:       nameTrim,
-    p_member_phone:      phoneResult.digits,
-    p_reminder_opted_in: reminderOptedIn,
+    p_member_phone:      phoneDigits,
+    p_reminder_opted_in: reminderOptedIn && phoneDigits != null,
   });
 
   if (error) {

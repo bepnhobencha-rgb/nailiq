@@ -393,6 +393,7 @@ export function BookingTypeSwitcher({
           initialPhone={entryPhone}
           initialOrganizer={entryCustomer}
           initialName={entryNameResolved}
+          language={language}
         />
       )}
       </>

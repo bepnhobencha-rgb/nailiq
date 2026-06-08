@@ -174,6 +174,8 @@ type BookingGroupFlowProps = {
   initialOrganizer?: ReturningCustomer | null;
   /** Name captured at the gate → pre-fills Guest 1. */
   initialName?: string;
+  /** Booking-surface language → carried into the shared Party Link URL. */
+  language?: "en" | "vi";
 };
 
 export function BookingGroupFlow({
@@ -188,6 +190,7 @@ export function BookingGroupFlow({
   initialPhone = "",
   initialOrganizer = null,
   initialName = "",
+  language = "vi",
 }: BookingGroupFlowProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -823,6 +826,7 @@ export function BookingGroupFlow({
               typeof window !== "undefined" ? window.location.origin : "",
             organizerName:  members[0]?.name.trim() || undefined,
             organizerPhone: primaryPhone.trim() || undefined,
+            language,
             // When the organizer is also a guest, member 0 is their slot
             // (payload is sorted by memberIndex, so bookingIds[0] = member
             // 0). Pre-claim it so the link never asks them to claim.
