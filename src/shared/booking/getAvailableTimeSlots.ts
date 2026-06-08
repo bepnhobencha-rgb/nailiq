@@ -7,6 +7,12 @@ import { dayKeyFromLocalDate } from "@/shared/booking/dayKeyFromDate";
 import { hmToMinutes } from "@/shared/booking/hmToMinutes";
 import { bookingDateYmdFromLocalDate } from "@/shared/booking/bookingConfirmLabels";
 import { scoreSlot, type SlotScoringLabel } from "@/shared/booking/slotScoring";
+import {
+  salonDayRangeUtc,
+  salonToday,
+  salonWallTimeToUtcIso,
+  utcIsoToSalonMinutesFromMidnight,
+} from "@/shared/lib/salonTime";
 
 /**
  * Slot grid resolution in minutes.
@@ -61,6 +67,18 @@ function formatSlotLabel(d: Date): string {
   });
 }
 
+/** Salon-local minutes-from-midnight → "h:mm AM/PM" (no timezone dependency).
+ *  Used by the salon-tz code path so labels are the salon's wall-clock time
+ *  regardless of the customer's device timezone. */
+function minutesToLabel(mins: number): string {
+  const h24 = Math.floor(mins / 60);
+  const m = mins % 60;
+  const period = h24 >= 12 ? "PM" : "AM";
+  let h = h24 % 12;
+  if (h === 0) h = 12;
+  return `${h}:${String(m).padStart(2, "0")} ${period}`;
+}
+
 type OccupancyRow = {
   staff_id: string;
   start_time_utc: string;
@@ -86,6 +104,11 @@ export type GetAvailableTimeSlotsParams = {
   /** Minimum same-day lead time in minutes (salons.booking_lead_minutes).
    *  Omit → legacy 15-min default. */
   leadMinutes?: number;
+  /** Salon IANA timezone. When provided, slots are generated in the salon's
+   *  wall-clock time (correct even when the customer's device is in another
+   *  timezone). Omit → legacy device/UTC-frame behavior (server callers that
+   *  pre-shift their own frame rely on this). */
+  timezone?: string;
 };
 
 /**
@@ -133,6 +156,9 @@ export function computeTimeSlots(args: {
   /** Minimum lead time (ms) before a same-day slot is bookable. Defaults to
    *  the legacy 15-min buffer; salons override via booking_lead_minutes. */
   leadMs?: number;
+  /** Salon IANA timezone — when set, slots are computed in salon wall-clock
+   *  time (device-tz-independent). Omit → legacy local/UTC-frame behavior. */
+  timezone?: string;
 }): TimeSlot[] {
   const {
     openingHoursRaw,
@@ -145,6 +171,7 @@ export function computeTimeSlots(args: {
     closedDateYmdSet,
     shortestServiceMinutes,
     leadMs = BOOKING_BUFFER_MS,
+    timezone,
   } = args;
 
   const durationMin = Math.max(1, Math.round(Number(serviceDurationMinutes) || 1));
@@ -209,10 +236,25 @@ export function computeTimeSlots(args: {
     a.getDate() === b.getDate();
 
   const now = new Date(nowMs);
-  const isToday = sameCalendarDay(selectedDate, now);
+
+  // `slotMsAt(mins)` → the absolute UTC ms of a wall-clock minute-of-day.
+  //  - salon-tz path: anchor once at openMin via salonWallTimeToUtcIso (DST-safe;
+  //    no DST transition happens during open hours, so a linear offset from the
+  //    open anchor is exact) → device-timezone-independent.
+  //  - legacy path: local-midnight + offset (unchanged; server callers pre-shift
+  //    their own frame, and on the client device-tz == salon-tz in the common case).
+  const openAnchorMs = timezone
+    ? Date.parse(salonWallTimeToUtcIso(ymd, openMin, timezone))
+    : baseMidnightMs;
+  const slotMsAt = (mins: number): number =>
+    timezone ? openAnchorMs + (mins - openMin) * 60_000 : baseMidnightMs + mins * 60_000;
+
+  const isToday = timezone
+    ? salonToday(timezone, new Date(nowMs).toISOString()) === ymd
+    : sameCalendarDay(selectedDate, now);
 
   // Closing boundary in ms — used to guard against slots that run past close.
-  const closeBoundaryMs = baseMidnightMs + closeMin * 60_000;
+  const closeBoundaryMs = slotMsAt(closeMin);
 
   // ── Phase 1: regular 15-min grid ─────────────────────────────────────────
   // Map<startMs, TimeSlot> — keyed by ms for O(1) dedup in Phase 2.
@@ -225,9 +267,17 @@ export function computeTimeSlots(args: {
     mins + durationMin <= closeMin;
     mins += SLOT_STEP_MINUTES
   ) {
-    const slotStart = new Date(base);
-    slotStart.setHours(0, mins, 0, 0);
-    const slotStartMs = slotStart.getTime();
+    let slotStartMs: number;
+    let label: string;
+    if (timezone) {
+      slotStartMs = slotMsAt(mins);
+      label = minutesToLabel(mins);
+    } else {
+      const slotStart = new Date(base);
+      slotStart.setHours(0, mins, 0, 0);
+      slotStartMs = slotStart.getTime();
+      label = formatSlotLabel(slotStart);
+    }
     const slotEndMs = slotStartMs + durationMs;
 
     // Guard: service must not run past closing time.
@@ -237,7 +287,7 @@ export function computeTimeSlots(args: {
     if (isToday && slotStartMs < nowMs + leadMs) continue;
 
     const available = slotAvailableForSelection(slotStartMs, slotEndMs);
-    slotMap.set(slotStartMs, { label: formatSlotLabel(slotStart), available });
+    slotMap.set(slotStartMs, { label, available });
   }
 
   // ── Phase 2: exact booking end-time anchors ───────────────────────────────
@@ -257,7 +307,9 @@ export function computeTimeSlots(args: {
   // nearest grid slot already conveys "this time is blocked").
 
   for (const o of occIntervals) {
-    const minsFromMidnight = (o.endMs - baseMidnightMs) / 60_000;
+    const minsFromMidnight = timezone
+      ? utcIsoToSalonMinutesFromMidnight(new Date(o.endMs).toISOString(), timezone)
+      : (o.endMs - baseMidnightMs) / 60_000;
 
     // Must be strictly on the selected calendar day (0 inclusive, 1440 exclusive).
     if (minsFromMidnight < 0 || minsFromMidnight >= 24 * 60) continue;
@@ -270,12 +322,20 @@ export function computeTimeSlots(args: {
     // Must be within opening hours and leave room for the full service.
     if (endMins < openMin || endMins + durationMin > closeMin) continue;
 
-    const slotStart = new Date(base);
-    slotStart.setHours(0, endMins, 0, 0);
-    const slotStartMs = slotStart.getTime();
+    let slotStartMs: number;
+    let label: string;
+    if (timezone) {
+      slotStartMs = slotMsAt(endMins);
+      label = minutesToLabel(endMins);
+    } else {
+      const slotStart = new Date(base);
+      slotStart.setHours(0, endMins, 0, 0);
+      slotStartMs = slotStart.getTime();
+      label = formatSlotLabel(slotStart);
+    }
     const slotEndMs = slotStartMs + durationMs;
 
-    // Service must not run past closing time (double-check after setHours rounding).
+    // Service must not run past closing time (double-check after rounding).
     if (slotEndMs > closeBoundaryMs) continue;
 
     // Skip if already in the map (another occupancy row has the same end time).
@@ -288,7 +348,7 @@ export function computeTimeSlots(args: {
     const available = slotAvailableForSelection(slotStartMs, slotEndMs);
     if (!available) continue;
 
-    slotMap.set(slotStartMs, { label: formatSlotLabel(slotStart), available: true });
+    slotMap.set(slotStartMs, { label, available: true });
   }
 
   // ── Phase 5: Smart Gap-Free Scoring ──────────────────────────────────────
@@ -352,6 +412,7 @@ export async function getAvailableTimeSlots(
     closedDateYmdSet,
     shortestServiceMinutes,
     leadMinutes,
+    timezone,
   } = params;
 
   const week = parseOpeningHours(openingHoursRaw);
@@ -362,7 +423,20 @@ export async function getAvailableTimeSlots(
   const ymd = bookingDateYmdFromLocalDate(selectedDate);
   if (closedDateYmdSet?.has(ymd)) return [];
 
-  const { start: dayStart, end: dayEnd } = localDayBounds(selectedDate);
+  // Occupancy window: salon-tz-exact when a timezone is supplied (so we fetch
+  // the right calendar day for the customer's salon, not their device); else the
+  // legacy local-midnight bounds.
+  let startIso: string;
+  let endIso: string;
+  if (timezone) {
+    const range = salonDayRangeUtc(ymd, timezone);
+    startIso = range.startUtc;
+    endIso = range.endUtc;
+  } else {
+    const { start: dayStart, end: dayEnd } = localDayBounds(selectedDate);
+    startIso = dayStart.toISOString();
+    endIso = dayEnd.toISOString();
+  }
   const supabase = createClient();
   let occupancy: OccupancyRow[] = [];
 
@@ -370,8 +444,8 @@ export async function getAvailableTimeSlots(
     "public_booking_occupancy_for_range",
     {
       p_salon_id: salonId,
-      p_start: dayStart.toISOString(),
-      p_end: dayEnd.toISOString(),
+      p_start: startIso,
+      p_end: endIso,
     },
   );
 
@@ -393,6 +467,7 @@ export async function getAvailableTimeSlots(
       leadMinutes != null && Number.isFinite(leadMinutes)
         ? Math.max(0, Math.round(leadMinutes)) * 60_000
         : BOOKING_BUFFER_MS,
+    timezone,
   });
 }
 

@@ -442,6 +442,7 @@ export function useBookingFlowState(
       closedDateYmdSet,
       shortestServiceMinutes,
       leadMinutes: salon.bookingLeadMinutes,
+      timezone: salon.timezone,
     }).then((slots) => {
       if (cancelled) return;
       setTimeSlots(slots);
@@ -1111,6 +1112,7 @@ export function useBookingFlowState(
             closedDateYmdSet,
             shortestServiceMinutes,
             leadMinutes: salon.bookingLeadMinutes,
+            timezone: salon.timezone,
           }).then((slots) => {
             setTimeSlots(slots);
             setSlotsLoading(false);
