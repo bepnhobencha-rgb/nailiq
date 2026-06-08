@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { realNameOrEmpty } from "@/shared/booking/guestNamePlaceholder";
 
 // ---------------------------------------------------------------------------
 // Response types — exported so callers can import them
@@ -211,7 +212,10 @@ export async function GET(
 
     return NextResponse.json<CustomerLookupResponse>({
       found: true,
-      name: profile.name ?? "",
+      // Never surface a "Guest N" / "Khách N" placeholder as the name —
+      // those leaked into client_profiles from un-named group members.
+      // Empty name → the UI treats them as "returning but needs a name".
+      name: realNameOrEmpty(profile.name),
       email: profile.email ?? null,
       isVip: profile.is_vip ?? false,
       visitCount,

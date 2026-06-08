@@ -8,6 +8,7 @@ import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimi
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import { realNameOrEmpty } from "@/shared/booking/guestNamePlaceholder";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { salonDayRangeUtc, salonToday, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
@@ -766,19 +767,30 @@ export async function submitGroupBooking(
       async ([digits, info]) => {
         const { data: existingProfile } = await supabase
           .from("client_profiles")
-          .select("visit_count")
+          .select("visit_count, name")
           .eq("phone", digits)
           .is("deleted_at" as never, null)
           .maybeSingle();
 
         const nextVisits = (existingProfile?.visit_count ?? 0) + 1;
 
+        // Never persist a "Guest N" / "Khách N" placeholder as the
+        // profile name (it would make recognition greet them as
+        // "Guest 2" next time). Prefer the typed name; else keep any
+        // real name already on file; else leave it null.
+        const finalName =
+          realNameOrEmpty(info.name) ||
+          realNameOrEmpty(
+            (existingProfile as { name?: string | null } | null)?.name,
+          ) ||
+          null;
+
         const { error: profileUpsertErr } = await supabase
           .from("client_profiles")
           .upsert(
             {
               phone: digits,
-              name: info.name,
+              name: finalName,
               preferred_staff_id: info.staffId,
               last_service_date: nowIso,
               visit_count: nextVisits,

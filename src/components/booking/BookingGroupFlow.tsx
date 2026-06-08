@@ -454,18 +454,22 @@ export function BookingGroupFlow({
         .then((data) => {
           if (data.found) {
             setOrganizer(data as ReturningCustomer);
-            // Auto-fill Guest 1's name only if it's still the default
-            // "{label} 1" placeholder — never overwrite a typed name.
+            // Auto-fill Guest 1's name only with a REAL name and only if
+            // it's still the default "{label} 1" placeholder — never
+            // overwrite a typed name, never fill an empty/placeholder.
+            const recognizedName = (data as ReturningCustomer).name.trim();
             const lbl = groupCopy?.groupGuestLabel ?? "Guest";
             const def0 = `${lbl} 1`;
-            setMembers((prev) => {
-              if (prev.length === 0) return prev;
-              const cur = prev[0].name.trim();
-              if (cur !== "" && cur !== def0) return prev;
-              const next = prev.slice();
-              next[0] = { ...next[0], name: (data as ReturningCustomer).name };
-              return next;
-            });
+            if (recognizedName) {
+              setMembers((prev) => {
+                if (prev.length === 0) return prev;
+                const cur = prev[0].name.trim();
+                if (cur !== "" && cur !== def0) return prev;
+                const next = prev.slice();
+                next[0] = { ...next[0], name: recognizedName };
+                return next;
+              });
+            }
           } else {
             setOrganizer(null);
           }
@@ -3225,7 +3229,7 @@ function ConfirmStep({
         </p>
 
         {/* Organizer recognition — greet returning guests by name. */}
-        {organizer ? (
+        {organizer && organizer.name.trim() ? (
           <div
             data-testid="group-organizer-recognized"
             className="flex items-start gap-2 rounded-xl border border-[var(--salon-primary)]/40 bg-[var(--salon-primary)]/5 px-3 py-2.5"
