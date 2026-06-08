@@ -913,6 +913,14 @@ export type UserMessages = {
     /** Search-filter placeholders on the services / staff setup lists. */
     searchServices: string;
     searchStaff: string;
+    saveConnectionFailed: string;
+    removeFailed: string;
+    updateRowFailed: string;
+    invalidName: string;
+    minStaffRequired: string;
+    minServiceRequired: string;
+    removed: string;
+    undo: string;
   };
   /** F8 staff form (setup) */
   setupStaff: {
@@ -2644,6 +2652,16 @@ export const userEn: UserMessages = {
     timezoneRequired: "Timezone is required",
     searchServices: "Search services…",
     searchStaff: "Search staff…",
+    saveConnectionFailed: "✗ Could not save. Check your connection.",
+    removeFailed: "Could not remove. Try again.",
+    updateRowFailed: "Could not update that row.",
+    invalidName: "Fix the name and try again.",
+    minStaffRequired:
+      "You need more than one staff member before you can remove someone.",
+    minServiceRequired:
+      "You need more than one service before you can delete.",
+    removed: "Removed",
+    undo: "Undo",
   },
   setupStaff: {
     servicesCapableLabel: "Services this staff can perform",

@@ -55,7 +55,6 @@ function dollarsFromCents(cents: number): string {
   return (Math.round(cents) / 100).toFixed(2);
 }
 
-const TOAST_ERR = "✗ Could not save. Check your connection.";
 const UNDO_TIMEOUT_MS = 5000;
 
 // ── Category icons ─────────────────────────────────────────────────────────────
@@ -78,22 +77,33 @@ function getCategoryIcon(cat: string): string {
 
 // ── Error mappers (kept from original) ────────────────────────────────────────
 
-function mapUpdateError(code: string, formLabels: ServiceFormLabels): string {
-  if (code === "invalid_name") return "Fix the name and try again.";
-  if (code === "invalid_description") return formLabels.descriptionTooLong;
-  if (code === "not_found") return "Could not update that row.";
-  return "Could not save. Try again.";
+function mapUpdateError(
+  code: string,
+  messages: {
+    invalidName: string;
+    descriptionTooLong: string;
+    updateRowFailed: string;
+    saveFailed: string;
+  },
+): string {
+  if (code === "invalid_name") return messages.invalidName;
+  if (code === "invalid_description") return messages.descriptionTooLong;
+  if (code === "not_found") return messages.updateRowFailed;
+  return messages.saveFailed;
 }
 
 function mapDeleteError(
   code: string,
-  setupErrors: { serviceInUse: string },
+  messages: {
+    serviceInUse: string;
+    minServiceRequired: string;
+    deleteFailed: string;
+  },
 ): string {
-  if (code === "minimum_services")
-    return "You need more than one service before you can delete.";
+  if (code === "minimum_services") return messages.minServiceRequired;
   if (code === "service_in_use" || code === "in_use")
-    return setupErrors.serviceInUse;
-  return "Could not delete. Try again.";
+    return messages.serviceInUse;
+  return messages.deleteFailed;
 }
 
 // ── DescriptionField (kept for ServiceDrawer usage) ───────────────────────────
@@ -475,14 +485,21 @@ export function ServicesSetupPanel({
           },
         );
         setPendingId(null);
-        setFormError("Could not save. Try again.");
-        setToast({ variant: "error", message: TOAST_ERR });
+        setFormError(tLabels.saveFailed);
+        setToast({ variant: "error", message: tLabels.saveConnectionFailed });
         return;
       }
       setPendingId(null);
       if (!res.ok) {
-        setFormError(mapUpdateError(res.error, formLabels));
-        setToast({ variant: "error", message: TOAST_ERR });
+        setFormError(
+          mapUpdateError(res.error, {
+            invalidName: tLabels.invalidName,
+            descriptionTooLong: formLabels.descriptionTooLong,
+            updateRowFailed: tLabels.updateRowFailed,
+            saveFailed: tLabels.saveFailed,
+          }),
+        );
+        setToast({ variant: "error", message: tLabels.saveConnectionFailed });
         return;
       }
       setRows((prev) =>
@@ -583,14 +600,20 @@ export function ServicesSetupPanel({
             else restored.push(rowToDelete);
             return restored;
           });
-          setFormError("Could not delete. Try again.");
-          setToast({ variant: "error", message: TOAST_ERR });
+          setFormError(tLabels.deleteFailed);
+          setToast({ variant: "error", message: tLabels.saveConnectionFailed });
           return;
         }
         setPendingId(null);
         if (!res.ok) {
-          setFormError(mapDeleteError(res.error, setupErrors));
-          setToast({ variant: "error", message: TOAST_ERR });
+          setFormError(
+            mapDeleteError(res.error, {
+              serviceInUse: setupErrors.serviceInUse,
+              minServiceRequired: tLabels.minServiceRequired,
+              deleteFailed: tLabels.deleteFailed,
+            }),
+          );
+          setToast({ variant: "error", message: tLabels.saveConnectionFailed });
           // Restore the row on server-side error
           setRows((prev) => {
             const restored = [...prev, rowToDelete];
@@ -886,14 +909,14 @@ export function ServicesSetupPanel({
       {undoPending && (
         <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-nq-border/50 bg-nq-surface px-4 py-2.5 shadow-lg text-sm">
           <span>
-            Đã xoá <strong>{undoPending.row.name}</strong>
+            {tLabels.removed} <strong>{undoPending.row.name}</strong>
           </span>
           <button
             type="button"
             onClick={handleUndoDelete}
             className="font-semibold text-nq-primary"
           >
-            ↺ Hoàn tác
+            ↺ {tLabels.undo}
           </button>
         </div>
       )}
