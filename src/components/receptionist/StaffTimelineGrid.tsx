@@ -80,6 +80,9 @@ export interface GridBooking {
   /** Booking belongs to a group (migration 20260512200000) — drives
    * the 👥 marker on the chip. */
   group_id?: string | null;
+  /** Couple/group "seat together" preference (migration 20260607100000)
+   * — drives the 💕 marker on the chip. */
+  seat_together?: boolean;
   /** Number of add-ons on this booking — drives the "+N" chip badge. */
   addon_count?: number;
   /** Client's lifetime no-show count — drives a ⚠ chip badge for repeat offenders. */
@@ -852,6 +855,7 @@ function StaffTimelineGridImpl({
                           addonCount={b.addon_count ?? 0}
                           noShowCount={b.no_show_count ?? 0}
                           isGroup={b.group_id != null}
+                          seatTogether={b.seat_together === true}
                           compactIcons={compactBookingIcons}
                           isLate={isLate}
                           iconLabels={labels.bookingIcon}

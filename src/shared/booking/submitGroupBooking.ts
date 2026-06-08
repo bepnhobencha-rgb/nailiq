@@ -84,6 +84,11 @@ export type GroupBookingParams = {
    *  ship as a UI-only change. Empty / unset = pass-through to the
    *  real flow. */
   clientWebsite?: string;
+  /** Group/couple wants to be seated next to each other (head-spa
+   *  curtain "couple" space, or friends sitting together). Persisted
+   *  on every member row inside the `insert_group_bookings` RPC so the
+   *  receptionist board can show a 💕 badge. Default false. */
+  seatTogether?: boolean;
 };
 
 export type GroupBookingResult =
@@ -645,6 +650,10 @@ export async function submitGroupBooking(
       addon_service_id: r.firstAddonId,
       addon_price_cents: r.addonPriceCents,
       wave_number: r.member.waveNumber ?? 1,
+      // Couple/group "seat next to each other" preference. Persisted
+      // inside the SECURITY DEFINER RPC (the anon client can't UPDATE
+      // bookings under RLS). COALESCE default false in the RPC.
+      seat_together: params.seatTogether === true,
       staff_requested_by_client: true,
       idempotency_key: idem,
     };

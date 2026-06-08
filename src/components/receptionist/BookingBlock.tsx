@@ -1,6 +1,6 @@
 "use client";
 
-import { Star, Heart, Users, Palette } from "lucide-react";
+import { Star, Heart, Users, Palette, HeartHandshake } from "lucide-react";
 
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/shared/lib/cn";
@@ -133,6 +133,10 @@ export interface BookingBlockProps {
    * the 👥 marker in the icon stack so receptionists can identify
    * grouped bookings at a glance. */
   isGroup?: boolean;
+  /** Group/couple asked to be seated next to each other (migration
+   * 20260607100000). Renders a 💕 marker so reception knows to set up
+   * adjacent beds + a shared curtain. */
+  seatTogether?: boolean;
   /** Basic Mode: render the critical-icon cluster as a compact horizontal
    * row (wraps) instead of a tall vertical stack. Same icons, cleaner. */
   compactIcons?: boolean;
@@ -146,6 +150,8 @@ export interface BookingBlockProps {
     staffRequest: string;
     /** Aria label for the group marker shown when `isGroup` is true. */
     group?: string;
+    /** Aria label for the 💕 marker shown when `seatTogether` is true. */
+    seatTogether?: string;
     /** Localized source labels for the compact source icon (a11y title). */
     source?: BookingSourceLabels;
   };
@@ -200,6 +206,7 @@ const DEFAULT_ICON_LABELS = {
   design: "Design",
   staffRequest: "Staff request",
   group: "Group booking",
+  seatTogether: "Seat together",
 } as const;
 
 function formatPrice(
@@ -239,6 +246,7 @@ export function BookingBlock(props: BookingBlockProps) {
     noShowCount = 0,
     isLate = false,
     isGroup = false,
+    seatTogether = false,
     compactIcons = false,
     iconLabels = DEFAULT_ICON_LABELS,
     sourceLabelFull,
@@ -269,7 +277,13 @@ export function BookingBlock(props: BookingBlockProps) {
   const sourceMeta = bookingSourceIcon(sourceChannel ?? source, sourceLabels);
 
   const hasIcons =
-    !!sourceMeta || isVip || hasStaffRequest || isLate || hasDesign || isGroup;
+    !!sourceMeta ||
+    isVip ||
+    hasStaffRequest ||
+    isLate ||
+    hasDesign ||
+    isGroup ||
+    seatTogether;
 
   // Lightweight hover tooltip carrying the un-truncated essentials so the
   // icon-only / short-name compaction never hides operational info.
@@ -408,6 +422,15 @@ export function BookingBlock(props: BookingBlockProps) {
                 strokeWidth={2}
                 aria-label={iconLabels.group ?? "Group booking"}
                 data-testid={`booking-block-icon-group-${bookingId}`}
+              />
+            ) : null}
+            {seatTogether ? (
+              <HeartHandshake
+                size={13}
+                strokeWidth={2}
+                className="text-nq-primary"
+                aria-label={iconLabels.seatTogether ?? "Seat together"}
+                data-testid={`booking-block-icon-seat-together-${bookingId}`}
               />
             ) : null}
             {isLate ? (

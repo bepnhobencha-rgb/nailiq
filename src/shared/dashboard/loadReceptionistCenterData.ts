@@ -193,6 +193,10 @@ export interface ReceptionistCenterData {
      * context. */
     group_id: string | null;
     group_size: number | null;
+    /** Couple/group "seat next to each other" preference (migration
+     * 20260607100000). True → reception sets up adjacent beds + shared
+     * curtain; UI renders a 💕 badge on the booking block. */
+    seat_together: boolean;
     /** Smart verification method used (none/otp/deposit/vip_skip). Null = old bookings. */
     verification_method: string | null;
     /** When SMS confirmation was sent to this customer. Null = not sent or failed. */
@@ -614,6 +618,7 @@ export async function loadReceptionistCenterData(
       addon_price_cents,
       group_id,
       group_size,
+      seat_together,
       verification_method,
       sms_confirmation_sent_at,
       sms_confirmation_failed_at,
@@ -1046,6 +1051,7 @@ export async function loadReceptionistCenterData(
         const n = Number(v);
         return Number.isFinite(n) ? n : null;
       })(),
+      seat_together: (row as { seat_together?: unknown }).seat_together === true,
       verification_method: (row as { verification_method?: unknown }).verification_method != null
         ? String((row as { verification_method?: unknown }).verification_method)
         : null,

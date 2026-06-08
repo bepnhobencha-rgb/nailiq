@@ -177,6 +177,17 @@ export const bookingVi: BookingMessages = {
     primaryContactHint:
       "Chúng tôi sẽ gửi xác nhận đến số này. Mỗi người có thể thêm số riêng bên dưới nếu muốn nhận nhắc lịch riêng.",
     reviewHeading: "Đặt lịch cho từng người",
+    sameServiceHeading: "Cả nhóm làm cùng một dịch vụ?",
+    sameServiceHint: "Chọn một lần cho cả nhóm — có thể đổi riêng từng người bên dưới.",
+    sameServicePlaceholder: "Chọn dịch vụ cho cả nhóm",
+    sameServiceApplied: "Đã áp dụng cho cả {n} người",
+    sameServiceMixed: "Mỗi người một dịch vụ riêng",
+    memberCustomBadge: "Đã đổi",
+    seatTogetherLabel: "Xếp chỗ ngồi cạnh nhau",
+    seatTogetherHint:
+      "Chúng tôi sẽ chuẩn bị 2 giường cạnh nhau và kéo rèm chung khi có thể.",
+    seatTogetherBadge: "Ngồi cạnh nhau",
+    seatTogetherConfirm: "Chúng tôi sẽ xếp cả nhóm ngồi cạnh nhau 💕",
     addOnsLabel: "Dịch vụ thêm (tuỳ chọn)",
     confirmGroup: "Xác nhận đặt lịch nhóm",
     submittingGroup: "Đang đặt lịch nhóm…",

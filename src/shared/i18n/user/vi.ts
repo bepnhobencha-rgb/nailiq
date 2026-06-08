@@ -1290,6 +1290,7 @@ export const userVi: UserMessages = {
         late: "Trễ",
         design: "Vẽ / Nail art",
         staffRequest: "Yêu cầu thợ",
+        seatTogether: "Ngồi cạnh nhau",
       },
     },
     undo: {

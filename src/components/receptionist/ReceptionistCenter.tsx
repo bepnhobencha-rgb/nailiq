@@ -541,6 +541,7 @@ function ReceptionistCenterInner({
           has_design: b.has_design,
           has_staff_request: b.has_staff_request,
           group_id: b.group_id,
+          seat_together: b.seat_together === true,
           addon_count: b.addons?.length ?? 0,
           no_show_count: b.client_no_show_count ?? 0,
         },

@@ -214,6 +214,21 @@ export const bookingEn = {
     /** QA P0.G3 — was "Review group booking" which read as a final
      * review step. This screen is the data-entry step. */
     reviewHeading: "Booking details per person",
+    /** Step-2 "same service for everyone" quick-fill card. Picking a
+     *  service here applies it to all members at once; each person can
+     *  still override below. */
+    sameServiceHeading: "Same service for everyone?",
+    sameServiceHint: "Pick once for the whole group — you can change anyone below.",
+    sameServicePlaceholder: "Choose a service for the group",
+    sameServiceApplied: "Applied to all {n} guests",
+    sameServiceMixed: "Each guest has their own service",
+    memberCustomBadge: "Changed",
+    /** Step-2 couple/group "sit together" toggle + reception badge. */
+    seatTogetherLabel: "Seat us next to each other",
+    seatTogetherHint:
+      "We'll arrange adjacent beds with a shared curtain when possible.",
+    seatTogetherBadge: "Seat together",
+    seatTogetherConfirm: "We'll seat your group next to each other 💕",
     /** Per-guest add-on section label in step 2. */
     addOnsLabel: "Add-ons (optional)",
     confirmGroup: "Confirm group booking",
