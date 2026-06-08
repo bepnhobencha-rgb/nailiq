@@ -145,6 +145,8 @@ export const bookingVi: BookingMessages = {
   waitlistError: "Không lưu được. Vui lòng thử lại.",
   contactRequiredError: "Vui lòng nhập họ tên và số điện thoại.",
   pastTimeError: "Giờ này đã qua. Vui lòng chọn giờ khác.",
+  slotTooSoonError:
+    "Giờ này quá sát giờ hiện tại nên không đặt online được — vui lòng chọn giờ muộn hơn.",
   outsideHoursError: "Ngoài giờ mở cửa. Vui lòng chọn giờ khác.",
   salonClosedError: "Tiệm nghỉ vào ngày này. Vui lòng chọn ngày khác.",
   salonNotLiveHeading: "Tạm dừng nhận đặt lịch",

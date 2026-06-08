@@ -161,6 +161,10 @@ export const bookingEn = {
   contactRequiredError: "Please enter your name and phone.",
   pastTimeError:
     "This time has already passed. Please select a future time.",
+  /** Shown when a slot was offered but is now within the booking lead window
+   *  by submit time (e.g. the 9:00 slot at 8:56 with a 5-min lead). */
+  slotTooSoonError:
+    "That time is too close to now to book online — please pick a later slot.",
   outsideHoursError: "That time is outside salon hours. Please pick another slot.",
   salonClosedError: "The salon is closed that day. Please pick another date.",
   salonNotLiveHeading: "Booking is paused",
