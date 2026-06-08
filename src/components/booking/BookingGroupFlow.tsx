@@ -172,6 +172,8 @@ type BookingGroupFlowProps = {
    *  the primary-contact phone + organizer recognition. */
   initialPhone?: string;
   initialOrganizer?: ReturningCustomer | null;
+  /** Name captured at the gate → pre-fills Guest 1. */
+  initialName?: string;
 };
 
 export function BookingGroupFlow({
@@ -185,6 +187,7 @@ export function BookingGroupFlow({
   capabilityRows,
   initialPhone = "",
   initialOrganizer = null,
+  initialName = "",
 }: BookingGroupFlowProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -194,7 +197,10 @@ export function BookingGroupFlow({
   const [size, setSize] = useState(2);
   const [members, setMembers] = useState<MemberDraft[]>(() => {
     const lbl = t?.groupBooking?.groupGuestLabel ?? "Guest";
-    return [blankMember(0, lbl), blankMember(1, lbl)];
+    const m0 = blankMember(0, lbl);
+    // Pre-fill Guest 1 with the gate-captured name (returning or new).
+    if (initialName.trim()) m0.name = initialName.trim();
+    return [m0, blankMember(1, lbl)];
   });
   /** The service last applied via the step-2 "same service for
    *  everyone" quick-fill. Used only to badge members who later

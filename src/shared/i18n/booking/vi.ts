@@ -189,6 +189,7 @@ export const bookingVi: BookingMessages = {
     seatTogetherBadge: "Ngồi cạnh nhau",
     seatTogetherConfirm: "Chúng tôi sẽ xếp cả nhóm ngồi cạnh nhau 💕",
     organizerGreeting: "Chào lại {name}!",
+    entryNewGreeting: "Chào {name}! 👋",
     organizerVip: "VIP",
     organizerReturning: "Khách quen · {n} lần ghé",
     organizerUsual: "Thường làm: {service}",

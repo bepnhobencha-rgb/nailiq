@@ -120,9 +120,25 @@ export function BookingTypeSwitcher({
     null,
   );
   const [entryLoading, setEntryLoading] = useState(false);
+  // New-customer name captured at the gate (when the phone isn't
+  // recognized) so identity (phone + name) is collected once, up front.
+  const [entryName, setEntryName] = useState("");
   const entryLookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const entryValidation = validateGuestPhone(entryPhoneRaw.trim());
   const entryPhone = entryValidation.ok ? entryPhoneRaw.trim() : "";
+  // Debounced commit of the typed name so the flow (keyed on identity)
+  // doesn't remount on every keystroke — it picks the name up ~400ms
+  // after typing stops, or immediately on blur (see the name input).
+  const [committedName, setCommittedName] = useState("");
+  useEffect(() => {
+    const id = setTimeout(() => setCommittedName(entryName), 400);
+    return () => clearTimeout(id);
+  }, [entryName]);
+
+  // Identity passed into the flow → known customer's name, else the
+  // committed (debounced/blurred) new-customer name.
+  const entryNameResolved =
+    (entryCustomer?.name ?? "").trim() || committedName.trim();
 
   useEffect(() => {
     if (entryLookupTimer.current) {
@@ -215,6 +231,42 @@ export function BookingTypeSwitcher({
         </p>
       )}
       {entryLoading ? <span className="sr-only">…</span> : null}
+
+      {/* New customer (phone valid + not recognized) → capture the name
+          here so identity is collected once, up front. */}
+      {entryPhone && !entryCustomer && !entryLoading ? (
+        <div className="mt-3">
+          <label
+            htmlFor="booking-entry-name"
+            className="mb-1 block text-sm font-semibold"
+          >
+            {t.clientNameLabel}
+          </label>
+          <input
+            id="booking-entry-name"
+            type="text"
+            autoComplete="name"
+            data-testid="booking-entry-name"
+            value={entryName}
+            placeholder={groupCopy.groupGuestLabel ?? t.clientNameLabel}
+            maxLength={100}
+            onChange={(e) => setEntryName(e.target.value)}
+            onBlur={() => setCommittedName(entryName)}
+            className="nq-booking-field"
+          />
+          {entryName.trim() ? (
+            <p
+              data-testid="booking-entry-newgreeting"
+              className="mt-2 text-sm font-medium text-[var(--salon-primary)]"
+            >
+              {(groupCopy.entryNewGreeting ?? "Hi {name}! 👋").replace(
+                "{name}",
+                entryName.trim(),
+              )}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 
@@ -226,7 +278,7 @@ export function BookingTypeSwitcher({
         )}
         {phoneGate}
         <BookingFlow
-          key={`ind-${entryPhone}`}
+          key={`ind-${entryPhone}-${entryNameResolved}`}
           t={t}
           shopSlug={shopSlug}
           services={services}
@@ -239,6 +291,7 @@ export function BookingTypeSwitcher({
           language={language}
           initialPhone={entryPhone}
           initialReturningCustomer={entryCustomer}
+          initialName={entryNameResolved}
         />
       </div>
     );
@@ -296,7 +349,7 @@ export function BookingTypeSwitcher({
 
       {mode === "individual" ? (
         <BookingFlow
-          key={`ind-${entryPhone}`}
+          key={`ind-${entryPhone}-${entryNameResolved}`}
           t={t}
           shopSlug={shopSlug}
           services={services}
@@ -309,10 +362,11 @@ export function BookingTypeSwitcher({
           language={language}
           initialPhone={entryPhone}
           initialReturningCustomer={entryCustomer}
+          initialName={entryNameResolved}
         />
       ) : (
         <BookingGroupFlow
-          key={`grp-${entryPhone}`}
+          key={`grp-${entryPhone}-${entryNameResolved}`}
           t={t}
           shopSlug={shopSlug}
           services={services}
@@ -323,6 +377,7 @@ export function BookingTypeSwitcher({
           capabilityRows={capabilityRows}
           initialPhone={entryPhone}
           initialOrganizer={entryCustomer}
+          initialName={entryNameResolved}
         />
       )}
     </div>
