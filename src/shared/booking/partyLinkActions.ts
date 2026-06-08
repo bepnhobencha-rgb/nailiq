@@ -70,6 +70,8 @@ export type PartyLinkSlot = {
 
 export type PartyLinkPageData = {
   token: string;
+  /** Salon UUID — used by the claim form's returning-customer lookup. */
+  salonId: string;
   salonName: string;
   /** Salon-local date, e.g. "Saturday, June 15, 2030". */
   groupDateDisplay: string;
@@ -297,6 +299,7 @@ export async function loadPartyLinkPage(
       `
       id,
       group_id,
+      salon_id,
       mode,
       expires_at,
       salons (
@@ -411,6 +414,7 @@ export async function loadPartyLinkPage(
 
   return {
     token,
+    salonId: (link as { salon_id?: string }).salon_id ?? "",
     salonName: salon.name,
     groupDateDisplay,
     groupStartDisplay,

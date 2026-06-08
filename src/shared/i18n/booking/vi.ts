@@ -351,6 +351,7 @@ export const bookingVi: BookingMessages = {
     guestWord: "Khách",
     claimFormTitle: "Xác nhận chỗ này là của bạn",
     claimFormSubtext: "Nhập tên và số điện thoại để tiệm gửi nhắc lịch.",
+    recognizedGreeting: "Chào lại {name}! 👋",
     formNameLabel: "Tên của bạn",
     formNamePlaceholder: "vd. Hương",
     formPhoneLabel: "Số điện thoại",
