@@ -412,7 +412,7 @@ export async function loadGroupSmartSchedule(
   // 1. Salon ---------------------------------------------------------
   const { data: salonRaw, error: salonErr } = await supabase
     .from("salons")
-    .select("id, profile_complete, opening_hours, timezone, booking_closed_dates")
+    .select("id, profile_complete, opening_hours, timezone, booking_closed_dates, booking_lead_minutes")
     .eq("slug", params.shopSlug)
     .maybeSingle();
   if (salonErr || !salonRaw) return { ok: false, reason: "salon_not_found" };
@@ -422,7 +422,17 @@ export async function loadGroupSmartSchedule(
     opening_hours?: unknown;
     timezone?: unknown;
     booking_closed_dates?: unknown;
+    booking_lead_minutes?: unknown;
   };
+  // Minimum same-day advance notice (mirrors the individual slot grid). Used
+  // below to floor arrangement start times so we never suggest a past slot
+  // (e.g. a 9:00 group arrangement when it's already 10:00).
+  const leadMinutesRaw = Number(salonRow.booking_lead_minutes);
+  const leadMs =
+    (Number.isFinite(leadMinutesRaw) && leadMinutesRaw >= 0
+      ? Math.round(leadMinutesRaw)
+      : 15) * 60_000;
+  const earliestAllowedMs = Date.now() + leadMs;
   if (!salonRow.profile_complete) return { ok: false, reason: "salon_paused" };
 
   // Task #04-B — strict timezone read. Previously fell back to "UTC"
@@ -706,8 +716,11 @@ export async function loadGroupSmartSchedule(
     }
     const openMin = hmToMinutes(dayHours.open) ?? 0;
     const closeMin = hmToMinutes(dayHours.close) ?? 0;
-    const dayOpenMs = Date.parse(
-      salonWallTimeToUtcIso(params.date, openMin, timezone),
+    // Floor at max(salon open, now + lead) so same-day arrangements never
+    // start in the past. For future dates now+lead < open, so this is a no-op.
+    const dayOpenMs = Math.max(
+      Date.parse(salonWallTimeToUtcIso(params.date, openMin, timezone)),
+      earliestAllowedMs,
     );
     const targetFinishMs = Date.parse(
       salonWallTimeToUtcIso(params.date, finishMinutes, timezone),
@@ -734,6 +747,7 @@ export async function loadGroupSmartSchedule(
       timezone,
       window: window!,
       closeMin: hmToMinutes(dayHours.close) ?? 0,
+      earliestStartMs: earliestAllowedMs,
       resolvedMembers,
       staffList,
       staffById,
@@ -749,7 +763,10 @@ export async function loadGroupSmartSchedule(
     // instead of dead-ending. Reuses the Phase 6 wave scheduler unchanged.
     if (!isSyncFinish && window) {
       const closeMinForWave = hmToMinutes(dayHours.close) ?? 0;
-      const waveAnchorMs = Date.parse(salonWallTimeToUtcIso(params.date, window.startMin, timezone));
+      const waveAnchorMs = Math.max(
+        Date.parse(salonWallTimeToUtcIso(params.date, window.startMin, timezone)),
+        earliestAllowedMs,
+      );
       const waveCloseMs  = Date.parse(salonWallTimeToUtcIso(params.date, closeMinForWave, timezone));
       const waveRaw = tryWaveArrangement(
         waveAnchorMs, resolvedMembers, staffList, staffById, capability, existing, waveCloseMs,
@@ -784,6 +801,7 @@ export async function loadGroupSmartSchedule(
           arrivalPref: params.arrivalPref,
           dayHours,
           window: window!,
+          earliestStartMs: earliestAllowedMs,
           resolvedMembers,
           staffList,
           staffById,
@@ -815,6 +833,10 @@ type SchedulerSearchCtx = {
   date: string;
   timezone: string;
   window: { startMin: number; endMin: number };
+  /** Floor (UTC ms): anchors before this are skipped so we never propose a
+   *  same-day start in the past or inside the booking lead window. Omitted /
+   *  0 for future-date probes where it can't apply. */
+  earliestStartMs?: number;
   /** Salon closing time in minutes-from-midnight. Anchors where any
    *  member's service would end past this are filtered out so we never
    *  propose a slot that extends beyond closing time. */
@@ -841,6 +863,8 @@ function findArrangementsInWindow(
     const iso = salonWallTimeToUtcIso(ctx.date, mm, ctx.timezone);
     const ms = Date.parse(iso);
     if (!Number.isFinite(ms)) continue;
+    // Skip anchors in the past / inside the booking lead window (same-day).
+    if (ctx.earliestStartMs && ms < ctx.earliestStartMs) continue;
     // Reject anchor if the longest member's service would end past closing.
     if (Number.isFinite(dayCloseMs) && ms + maxMemberMin * 60_000 > dayCloseMs) continue;
     anchors.push(ms);
@@ -976,6 +1000,8 @@ type AlternativesCtx = {
   arrivalPref: GroupArrivalPreference;
   dayHours: { open: string; close: string; closed: boolean };
   window: { startMin: number; endMin: number };
+  /** UTC ms floor (now + lead) so same-day alternatives never start in the past. */
+  earliestStartMs: number;
   resolvedMembers: ResolvedMember[];
   staffList: StaffRow[];
   staffById: Map<string, StaffRow>;
@@ -1057,6 +1083,7 @@ function computeSplitOption(ctx: AlternativesCtx): GroupAlternatives["splitOptio
     timezone: ctx.timezone,
     window: ctx.window,
     closeMin: hmToMinutes(ctx.dayHours.close) ?? 0,
+    earliestStartMs: ctx.earliestStartMs,
     resolvedMembers: mainMembers,
     staffList: ctx.staffList,
     staffById: ctx.staffById,
@@ -1263,6 +1290,7 @@ function computeEarlierToday(
     timezone: ctx.timezone,
     window: alternateWindow,
     closeMin: hmToMinutes(ctx.dayHours.close) ?? 0,
+    earliestStartMs: ctx.earliestStartMs,
     resolvedMembers: ctx.resolvedMembers,
     staffList: ctx.staffList,
     staffById: ctx.staffById,
