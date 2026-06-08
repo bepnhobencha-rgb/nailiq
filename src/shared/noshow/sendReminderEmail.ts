@@ -10,16 +10,22 @@ export type ReminderEmailInput = {
   startTimeUtc: string;
   salonName: string;
   salonSlug: string;
+  /** Salon IANA timezone — the appointment time is shown in this zone.
+   *  Falls back to America/Los_Angeles when unset. No hardcode per salon. */
+  timezone?: string | null;
+  /** Vertical AI descriptor (e.g. "a head spa…") for the reminder wording —
+   *  replaces the old hardcoded "a nail salon". */
+  businessDescriptor?: string;
 };
 
 const SITE_URL =
   (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
 
-/** Formats UTC timestamp to a human-readable local string (Pacific time as default). */
-function formatAppointmentTime(isoUtc: string): string {
+/** Formats UTC timestamp in the salon's timezone (Pacific only as a fallback). */
+function formatAppointmentTime(isoUtc: string, timezone?: string | null): string {
   try {
     return new Date(isoUtc).toLocaleString("en-US", {
-      timeZone: "America/Los_Angeles",
+      timeZone: (timezone && timezone.trim()) || "America/Los_Angeles",
       weekday: "long",
       month: "long",
       day: "numeric",
@@ -38,9 +44,9 @@ async function generateAiBody(input: ReminderEmailInput): Promise<string> {
 
   try {
     const client = new Anthropic({ apiKey: key });
-    const formattedTime = formatAppointmentTime(input.startTimeUtc);
+    const formattedTime = formatAppointmentTime(input.startTimeUtc, input.timezone);
 
-    const prompt = `Write a warm, natural appointment reminder message for a nail salon.
+    const prompt = `Write a warm, natural appointment reminder message for ${input.businessDescriptor?.trim() || "a salon"}.
 Keep it under 3 sentences. Friendly but professional. No emojis.
 
 Details:
@@ -69,7 +75,7 @@ Only output the message text, nothing else.`;
 }
 
 function defaultBody(input: ReminderEmailInput): string {
-  const formattedTime = formatAppointmentTime(input.startTimeUtc);
+  const formattedTime = formatAppointmentTime(input.startTimeUtc, input.timezone);
   return `Hi ${input.clientName}, this is a friendly reminder about your upcoming ${input.serviceName} appointment with ${input.staffName} at ${input.salonName} on ${formattedTime}. We look forward to seeing you!`;
 }
 
@@ -77,7 +83,7 @@ function buildEmailHtml(input: ReminderEmailInput, body: string): string {
   const confirmUrl = `${SITE_URL}/booking/confirm?token=${input.tokenId}`;
   const rescheduleUrl = `${SITE_URL}/booking/reschedule?token=${input.tokenId}`;
   const cancelUrl = `${SITE_URL}/booking/cancel?token=${input.tokenId}`;
-  const formattedTime = formatAppointmentTime(input.startTimeUtc);
+  const formattedTime = formatAppointmentTime(input.startTimeUtc, input.timezone);
 
   return `<!DOCTYPE html>
 <html lang="en">
