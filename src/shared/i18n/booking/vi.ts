@@ -351,7 +351,8 @@ export const bookingVi: BookingMessages = {
     waveGuestCount: "{count} khách",
     guestWord: "Khách",
     claimFormTitle: "Xác nhận chỗ này là của bạn",
-    claimFormSubtext: "Nhập tên và số điện thoại để tiệm gửi nhắc lịch.",
+    claimFormSubtext: "Chỉ cần tên — số điện thoại không bắt buộc, chỉ nhập nếu bạn muốn nhận nhắc lịch riêng.",
+    spotReservedNote: "✓ Chỗ của bạn đã được giữ — phần này chỉ để thêm tên (và nhắc lịch nếu muốn).",
     recognizedGreeting: "Chào lại {name}! 👋",
     formNameLabel: "Tên của bạn",
     formNamePlaceholder: "vd. Hương",
@@ -377,7 +378,7 @@ export const bookingVi: BookingMessages = {
     /** Phase 6.2 — Party Guest Passport */
     claimBtnSpot: "Đây là chỗ của tôi",
     phonePrivacyNote: "🔒 Số điện thoại chỉ dùng cho lịch hẹn này và không hiển thị cho người khác.",
-    formPhoneLabelReminder: "Số điện thoại nhận nhắc lịch",
+    formPhoneLabelReminder: "Số điện thoại nhận nhắc lịch (không bắt buộc)",
     personalPassTitle: "Vé cá nhân của bạn",
     arrivalNote: "Vui lòng đến sớm 5 phút.",
     waveNoteTemplate: "Bạn đang ở {waveLabel}. Bạn không cần đến cùng đợt khác trừ khi muốn đi cùng nhóm.",
