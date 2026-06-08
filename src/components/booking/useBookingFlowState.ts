@@ -78,6 +78,7 @@ export type BookingFlowStep =
   | "info"
   | "verify"
   | "otp"
+  | "deposit"
   | "confirm"
   | "done";
 
@@ -164,6 +165,8 @@ export function useBookingFlowState(
   const [upsellGapMinutes, setUpsellGapMinutes] = useState<number>(0);
 
   const [otpSessionId, setOtpSessionId] = useState<string | null>(null);
+  const [depositPaymentIntentId, setDepositPaymentIntentId] = useState<string | null>(null);
+  const [depositConnectedAccountId, setDepositConnectedAccountId] = useState<string | null>(null);
   const [verificationAction, setVerificationAction] = useState<VerificationAction>("none");
   const [verificationLoading, setVerificationLoading] = useState(false);
 
@@ -908,8 +911,10 @@ export function useBookingFlowState(
       } else if (action === "otp_optional" || action === "otp_required") {
         setStep("otp");
       } else {
-        // deposit_required / deposit_or_otp — fall back to OTP until Stripe deposit UI is built
-        setStep("otp");
+        // deposit_required / deposit_or_otp → collect a deposit on the salon's
+        // connected Stripe. The deposit panel self-skips to confirm if the salon
+        // isn't connected or no deposit is actually owed (booking stays unblocked).
+        setStep("deposit");
       }
     },
     [],
@@ -918,6 +923,20 @@ export function useBookingFlowState(
   // Customer skipped optional OTP — proceed to confirm unverified
   const goSkipOtp = useCallback(() => {
     setOtpSessionId(null);
+    setStepDir(1);
+    setStep("confirm");
+  }, []);
+
+  // Deposit paid on the salon's connected Stripe → carry ids to submit + confirm.
+  const goDepositPaid = useCallback((piId: string, acct: string) => {
+    setDepositPaymentIntentId(piId);
+    setDepositConnectedAccountId(acct);
+    setStepDir(1);
+    setStep("confirm");
+  }, []);
+
+  // No deposit owed / salon not connected → proceed normally.
+  const goDepositSkip = useCallback(() => {
     setStepDir(1);
     setStep("confirm");
   }, []);
@@ -1083,6 +1102,23 @@ export function useBookingFlowState(
           : otpSessionId ? "otp"
           : undefined,
       });
+      // Link a paid deposit to the freshly-created booking (server re-verifies
+      // the PaymentIntent with Stripe). Best-effort: the webhook is the backstop.
+      if (depositPaymentIntentId && depositConnectedAccountId) {
+        try {
+          await fetch("/api/booking/record-deposit", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              bookingId: result.bookingId,
+              paymentIntentId: depositPaymentIntentId,
+              connectedAccountId: depositConnectedAccountId,
+            }),
+          });
+        } catch (e) {
+          console.error("[booking] record-deposit failed", e);
+        }
+      }
       setBookingResult({
         bookingId: result.bookingId,
         startTimeUtc: result.startTimeUtc,
@@ -1453,6 +1489,8 @@ export function useBookingFlowState(
     goInfoNext,
     goVerifyDecided,
     goSkipOtp,
+    goDepositPaid,
+    goDepositSkip,
     goOtpNext,
     resetAfterDone,
     handleAddToCalendar,

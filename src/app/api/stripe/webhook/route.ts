@@ -208,6 +208,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    // Deposit backstop (Connect): a deposit PaymentIntent succeeded on a salon's
+    // connected account. The record-deposit route is the primary path; this just
+    // ensures the booking is stamped paid if that call was lost. Idempotent.
+    if (event.type === "payment_intent.succeeded") {
+      const pi = event.data.object as Stripe.PaymentIntent;
+      if (pi.metadata?.kind === "booking_deposit") {
+        const db = createServiceRoleClient();
+        await db
+          .from("bookings" as never)
+          .update({
+            deposit_status: "paid",
+            deposit_required: true,
+            verification_method: "deposit",
+            stripe_payment_intent_id: pi.id,
+            deposit_paid_at: new Date().toISOString(),
+          } as never)
+          .eq("stripe_payment_intent_id", pi.id)
+          .neq("deposit_status", "paid");
+      }
+      return NextResponse.json({ ok: true });
+    }
+
     if (event.type === "customer.subscription.updated") {
       const sub = event.data.object as Stripe.Subscription;
       const customerId =
