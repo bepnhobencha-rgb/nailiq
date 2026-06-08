@@ -111,6 +111,28 @@ export default async function PartyLinkPage({ params, searchParams }: Props) {
   return (
     <main className="min-h-screen bg-gradient-to-b from-[#faf6f0] via-[#f6f1ea] to-[#f1e8da] px-4 py-10 text-[#2c2620] sm:py-14">
       <div className="mx-auto max-w-lg">
+        {/* Language toggle — guests can switch even if the link opened in the
+            organiser's language. Plain links re-render this server component
+            with the new ?lang= (path preserved). */}
+        <div className="mb-2 flex justify-end">
+          <div className="inline-flex rounded-full border border-[#e6dcc9] bg-white p-0.5 text-xs font-semibold">
+            <a
+              href="?lang=vi"
+              aria-current={lang === "vi"}
+              className={`rounded-full px-3 py-1 transition-colors ${lang === "vi" ? "bg-[#c8a45c] text-white" : "text-[#857a6c]"}`}
+            >
+              VI
+            </a>
+            <a
+              href="?lang=en"
+              aria-current={lang === "en"}
+              className={`rounded-full px-3 py-1 transition-colors ${lang === "en" ? "bg-[#c8a45c] text-white" : "text-[#857a6c]"}`}
+            >
+              EN
+            </a>
+          </div>
+        </div>
+
         {/* Invitation header */}
         <header className="mb-7 text-center">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-[#ecd9af] to-[#c8a45c] text-2xl shadow-[0_10px_24px_-10px_rgba(176,138,70,0.65)]">

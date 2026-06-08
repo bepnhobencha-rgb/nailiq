@@ -184,6 +184,8 @@ export const bookingVi: BookingMessages = {
     sameServicePlaceholder: "Chọn dịch vụ cho cả nhóm",
     sameServiceApplied: "Đã áp dụng cho cả {n} người",
     sameServiceMixed: "Mỗi người một dịch vụ riêng",
+    sameAddonsHeading: "Dịch vụ thêm cho cả nhóm",
+    sameAddonsHint: "Chạm để thêm cho cả nhóm — có thể đổi riêng từng người bên dưới.",
     memberCustomBadge: "Đã đổi",
     seatTogetherLabel: "Xếp chỗ ngồi cạnh nhau",
     seatTogetherHint:
