@@ -48,6 +48,8 @@ import {
 import { cn } from "@/shared/lib/cn";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 import { Button } from "@/components/ui/Button";
+import { QRCodeSVG } from "qrcode.react";
+import type { ReturningCustomer } from "@/components/booking/useBookingFlowState";
 
 /**
  * Group booking — AI Arrival-First redesign (May 2026).
@@ -210,6 +212,16 @@ export function BookingGroupFlow({
   const [specificTime, setSpecificTime] = useState("");
   const [primaryPhone, setPrimaryPhone] = useState("");
   const [primaryEmail, setPrimaryEmail] = useState("");
+
+  // Organizer recognition — when the primary-contact phone is valid we
+  // look the customer up (same `/api/customer/[phone]` endpoint the
+  // individual flow uses) and greet returning guests by name + VIP +
+  // their usual service. `null` = unknown / new customer.
+  const [organizer, setOrganizer] = useState<ReturningCustomer | null>(null);
+  const [organizerLoading, setOrganizerLoading] = useState(false);
+  const organizerLookupTimer = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   // Smart-schedule results.
   const [scheduling, setScheduling] = useState(false);
@@ -393,6 +405,59 @@ export function BookingGroupFlow({
     }
     return { kind: arrivalKind };
   }, [arrivalKind, specificTime]);
+
+  // ── Organizer recognition (debounced phone lookup) ─────────────
+  // Mirrors the individual flow's returning-customer lookup. On a
+  // valid primary-contact phone we greet the organizer by name and,
+  // when Guest 1 is still the default placeholder, auto-fill it.
+  useEffect(() => {
+    if (organizerLookupTimer.current) {
+      clearTimeout(organizerLookupTimer.current);
+      organizerLookupTimer.current = null;
+    }
+    const v = validateGuestPhone(primaryPhone.trim());
+    if (!v.ok) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset when phone becomes invalid
+      setOrganizer(null);
+      setOrganizerLoading(false);
+      return;
+    }
+    setOrganizerLoading(true);
+    organizerLookupTimer.current = setTimeout(() => {
+      void fetch(
+        `/api/customer/${encodeURIComponent(v.digits)}?salon_id=${encodeURIComponent(salon.id)}`,
+      )
+        .then((r) => r.json() as Promise<ReturningCustomer | { found: false }>)
+        .then((data) => {
+          if (data.found) {
+            setOrganizer(data as ReturningCustomer);
+            // Auto-fill Guest 1's name only if it's still the default
+            // "{label} 1" placeholder — never overwrite a typed name.
+            const lbl = groupCopy?.groupGuestLabel ?? "Guest";
+            const def0 = `${lbl} 1`;
+            setMembers((prev) => {
+              if (prev.length === 0) return prev;
+              const cur = prev[0].name.trim();
+              if (cur !== "" && cur !== def0) return prev;
+              const next = prev.slice();
+              next[0] = { ...next[0], name: (data as ReturningCustomer).name };
+              return next;
+            });
+          } else {
+            setOrganizer(null);
+          }
+        })
+        .catch(() => setOrganizer(null))
+        .finally(() => setOrganizerLoading(false));
+    }, 400);
+    return () => {
+      if (organizerLookupTimer.current) {
+        clearTimeout(organizerLookupTimer.current);
+        organizerLookupTimer.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [primaryPhone, salon.id]);
 
   // ── Helpers ────────────────────────────────────────────────────
   function applySize(n: number) {
@@ -1278,6 +1343,8 @@ export function BookingGroupFlow({
           showStaff={salon.staffSelectionEnabled !== false}
           primaryPhone={primaryPhone}
           primaryEmail={primaryEmail}
+          organizer={organizer}
+          organizerLoading={organizerLoading}
           submitting={submitting}
           errorMessage={errorMessage}
           totalDisplay={totalDisplay}
@@ -2925,6 +2992,8 @@ function ConfirmStep({
   showStaff,
   primaryPhone,
   primaryEmail,
+  organizer,
+  organizerLoading,
   submitting,
   errorMessage,
   totalDisplay,
@@ -2951,6 +3020,9 @@ function ConfirmStep({
   showStaff: boolean;
   primaryPhone: string;
   primaryEmail: string;
+  /** Returning-customer match for the organizer phone, or null. */
+  organizer: ReturningCustomer | null;
+  organizerLoading: boolean;
   submitting: boolean;
   errorMessage: string | null;
   totalDisplay: string | null;
@@ -3115,6 +3187,51 @@ function ConfirmStep({
         <p className="text-xs text-[var(--booking-text-muted)]">
           {groupCopy.primaryContactHint}
         </p>
+
+        {/* Organizer recognition — greet returning guests by name. */}
+        {organizer ? (
+          <div
+            data-testid="group-organizer-recognized"
+            className="flex items-start gap-2 rounded-xl border border-[var(--salon-primary)]/40 bg-[var(--salon-primary)]/5 px-3 py-2.5"
+          >
+            <span aria-hidden className="text-lg leading-none">
+              👋
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold">
+                {(groupCopy.organizerGreeting ?? "Welcome back, {name}!").replace(
+                  "{name}",
+                  organizer.name,
+                )}
+                {organizer.isVip ? (
+                  <span className="ml-1.5 rounded-full bg-[var(--salon-primary)]/15 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-[var(--salon-primary)]">
+                    {groupCopy.organizerVip ?? "VIP"}
+                  </span>
+                ) : null}
+              </span>
+              <span className="mt-0.5 block text-xs text-[var(--booking-text-muted)]">
+                {organizer.visitCount > 0
+                  ? (groupCopy.organizerReturning ?? "Returning guest · {n} visits").replace(
+                      "{n}",
+                      String(organizer.visitCount),
+                    )
+                  : null}
+                {organizer.lastBooking
+                  ? `${organizer.visitCount > 0 ? " · " : ""}${(
+                      groupCopy.organizerUsual ?? "Usual: {service}"
+                    ).replace("{service}", organizer.lastBooking.serviceName)}`
+                  : null}
+              </span>
+            </span>
+          </div>
+        ) : organizerLoading ? (
+          <p
+            data-testid="group-organizer-loading"
+            className="text-xs text-[var(--booking-text-muted)]"
+          >
+            {groupCopy.organizerChecking ?? "Checking…"}
+          </p>
+        ) : null}
         <div>
           <label
             htmlFor="group-primary-phone-input"
@@ -3347,6 +3464,17 @@ function PartyLinkShareBox({
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
 }) {
   const [copied, setCopied] = useState(false);
+  const [canShare, setCanShare] = useState(false);
+
+  // navigator.share is mobile-only + must be feature-detected after
+  // mount (SSR has no navigator). Drives whether the native Share
+  // button renders alongside Copy.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot feature detection on mount (no SSR navigator)
+    setCanShare(
+      typeof navigator !== "undefined" && typeof navigator.share === "function",
+    );
+  }, []);
 
   function handleCopy() {
     void navigator.clipboard.writeText(url).then(() => {
@@ -3355,18 +3483,48 @@ function PartyLinkShareBox({
     });
   }
 
+  function handleShare() {
+    void navigator
+      .share({
+        title: groupCopy.partyLinkShare ?? "Join my group booking",
+        text: groupCopy.partyLinkScan ?? "Tap to confirm your spot",
+        url,
+      })
+      .catch(() => {
+        /* user dismissed the share sheet — no-op */
+      });
+  }
+
   return (
     <div
       data-testid="party-link-share"
-      className="mt-6 rounded-xl border border-[var(--booking-border)] bg-[var(--booking-bg)] p-4 text-left"
+      className="mt-6 rounded-2xl border border-[var(--salon-primary)]/40 bg-[var(--salon-primary)]/5 p-4 text-center"
     >
       <p className="text-sm font-semibold" style={{ color: "var(--booking-text)" }}>
         {groupCopy.partyLinkShare ?? "Share with your group"}
       </p>
-      <p className="mt-0.5 text-xs text-[var(--booking-text-muted)]">
-        {groupCopy.partyLinkHint ??
-          "Send this link so everyone can confirm their slot."}
+      <p className="mx-auto mt-0.5 max-w-xs text-xs text-[var(--booking-text-muted)]">
+        {groupCopy.partyLinkScan ??
+          "Each guest scans to confirm their own slot and add their number."}
       </p>
+
+      {/* Scan-to-join QR — the headline action. Couples/friends are
+          usually together, so scanning beats copy-pasting a link. */}
+      <div className="mt-3 flex justify-center">
+        <div
+          data-testid="party-link-qr"
+          className="rounded-xl bg-white p-3 shadow-sm"
+        >
+          <QRCodeSVG
+            value={url}
+            size={148}
+            bgColor="#ffffff"
+            fgColor="#0b0c10"
+            level="M"
+          />
+        </div>
+      </div>
+
       <div className="mt-3 flex items-center gap-2">
         <input
           data-testid="party-link-url"
@@ -3376,10 +3534,19 @@ function PartyLinkShareBox({
           className="flex-1 rounded-lg border border-[var(--booking-border)] bg-[var(--booking-bg-card)] px-3 py-2 text-xs text-[var(--booking-text-muted)] focus:outline-none"
           onFocus={(e) => e.currentTarget.select()}
         />
+        {canShare ? (
+          <button
+            data-testid="party-link-share-btn"
+            onClick={handleShare}
+            className="shrink-0 rounded-lg bg-[var(--salon-primary)] px-3 py-2 text-xs font-semibold text-[var(--booking-bg)] transition-colors"
+          >
+            {groupCopy.partyLinkShareBtn ?? "Share"}
+          </button>
+        ) : null}
         <button
           data-testid="party-link-copy-btn"
           onClick={handleCopy}
-          className="shrink-0 rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-gray-700 transition-colors"
+          className="shrink-0 rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-gray-700"
         >
           {copied ? (groupCopy.partyLinkCopied ?? "Copied!") : (groupCopy.partyLinkCopy ?? "Copy")}
         </button>

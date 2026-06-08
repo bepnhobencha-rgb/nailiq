@@ -229,6 +229,15 @@ export const bookingEn = {
       "We'll arrange adjacent beds with a shared curtain when possible.",
     seatTogetherBadge: "Seat together",
     seatTogetherConfirm: "We'll seat your group next to each other 💕",
+    /** Step-5 organizer recognition (returning-customer greeting). */
+    organizerGreeting: "Welcome back, {name}!",
+    organizerVip: "VIP",
+    organizerReturning: "Returning guest · {n} visits",
+    organizerUsual: "Usual: {service}",
+    organizerChecking: "Checking…",
+    /** Success-screen QR / share-to-join copy. */
+    partyLinkScan: "Each guest scans to confirm their own slot and add their number.",
+    partyLinkShareBtn: "Share",
     /** Per-guest add-on section label in step 2. */
     addOnsLabel: "Add-ons (optional)",
     confirmGroup: "Confirm group booking",
