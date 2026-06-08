@@ -558,6 +558,8 @@ export type UserMessages = {
     phone: string;
     /** Guest notes from the booking form (owner-visible). */
     clientNotes: string;
+    /** 💕 badge — group/couple asked to be seated together. */
+    seatTogether: string;
     loading: string;
     /** Manual dashboard refresh */
     refresh: string;
@@ -2333,6 +2335,7 @@ export const userEn: UserMessages = {
     salonStaffLabel: "Staff",
     phone: "Phone",
     clientNotes: "Guest notes",
+    seatTogether: "Seat together",
     loading: "Loading…",
     refresh: "Refresh",
     navSettings: "Settings",

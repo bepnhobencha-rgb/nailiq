@@ -2822,6 +2822,7 @@ function ReceptionistCenterInner({
                   sms_confirmation_sent_at: openDrawerBooking.sms_confirmation_sent_at ?? null,
                   sms_confirmation_failed_at: openDrawerBooking.sms_confirmation_failed_at ?? null,
                   no_show_risk_score: openDrawerBooking.no_show_risk_score ?? null,
+                  seat_together: openDrawerBooking.seat_together === true,
                 },
                 staff: data.staff.map((s) => ({ id: s.id, name: s.name })),
                 services: data.services.map((s) => ({

@@ -61,4 +61,6 @@ export type SalonDashboardBooking = {
   sms_confirmation_failed_at: string | null;
   /** No-show risk score 0-100 (higher = riskier). */
   no_show_risk_score: number | null;
+  /** Group/couple asked to be seated together → 💕 badge. */
+  seat_together: boolean;
 };

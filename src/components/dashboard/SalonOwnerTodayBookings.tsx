@@ -87,8 +87,19 @@ export function SalonOwnerTodayBookings({
                       })
                     : "—"}
                 </p>
-                <span className="rounded-full border border-current/30 px-2 py-0.5 text-[11px] font-medium">
-                  {salonBookingStatusLabel(b.status, t)}
+                <span className="flex items-center gap-1.5">
+                  {b.seat_together ? (
+                    <span
+                      data-testid={`owner-booking-seat-together-${b.id}`}
+                      title={t.seatTogether}
+                      className="rounded-full border border-[var(--salon-primary)]/40 bg-[var(--salon-primary)]/10 px-2 py-0.5 text-[11px] font-medium text-[var(--salon-primary)]"
+                    >
+                      💕 {t.seatTogether}
+                    </span>
+                  ) : null}
+                  <span className="rounded-full border border-current/30 px-2 py-0.5 text-[11px] font-medium">
+                    {salonBookingStatusLabel(b.status, t)}
+                  </span>
                 </span>
               </div>
               <p className="mt-1 font-mono text-[11px] text-nq-muted/90">

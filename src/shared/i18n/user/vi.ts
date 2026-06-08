@@ -661,6 +661,7 @@ export const userVi: UserMessages = {
     salonStaffLabel: "Thợ",
     phone: "Điện thoại",
     clientNotes: "Ghi chú khách",
+    seatTogether: "Ngồi cạnh nhau",
     loading: "Đang tải…",
     refresh: "Làm mới",
     navSettings: "Cài đặt",
