@@ -67,20 +67,23 @@ function getRoleIcon(role: string): string {
   return ROLE_ICONS[role] ?? "👤";
 }
 
-const TOAST_ERR = "✗ Could not save. Check your connection.";
 const UNDO_TIMEOUT_MS = 5000;
 
 function mapDeleteStaffError(
   code: string,
-  setupErrors: { staffHasBookings: string },
+  messages: {
+    staffHasBookings: string;
+    minStaffRequired: string;
+    removeFailed: string;
+  },
 ): string {
   if (code === "minimum_staff") {
-    return "You need more than one staff member before you can remove someone.";
+    return messages.minStaffRequired;
   }
   if (code === "staff_has_bookings" || code === "in_use") {
-    return setupErrors.staffHasBookings;
+    return messages.staffHasBookings;
   }
-  return "Could not remove. Try again.";
+  return messages.removeFailed;
 }
 
 // ── ServicesCheckboxList (exported so StaffDrawer can import) ──────────────────
@@ -186,6 +189,8 @@ function StaffCompactRow({
   isLast,
   pendingId,
   canDelete,
+  editLabel,
+  removeLabel,
   onEdit,
   onDelete,
 }: {
@@ -196,6 +201,8 @@ function StaffCompactRow({
   isLast: boolean;
   pendingId: string | null;
   canDelete: boolean;
+  editLabel: string;
+  removeLabel: string;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -234,8 +241,9 @@ function StaffCompactRow({
       {/* Edit button */}
       <button
         type="button"
-        title="Chỉnh sửa"
-        aria-label={`Chỉnh sửa ${row.name}`}
+        title={editLabel}
+        aria-label={`${editLabel} — ${row.name}`}
+        data-testid={`staff-edit-${row.id}`}
         disabled={pendingId !== null}
         className="shrink-0 rounded-lg p-1.5 text-nq-muted transition-colors hover:bg-nq-surface hover:text-nq-foreground disabled:opacity-50"
         onClick={onEdit}
@@ -250,8 +258,9 @@ function StaffCompactRow({
       {/* Delete button */}
       <button
         type="button"
-        title="Xoá"
-        aria-label={`Xoá ${row.name}`}
+        title={removeLabel}
+        aria-label={`${removeLabel} — ${row.name}`}
+        data-testid={`staff-delete-${row.id}`}
         disabled={pendingId !== null || !canDelete}
         className="shrink-0 rounded-lg p-1.5 text-nq-muted transition-colors hover:bg-nq-error/10 hover:text-nq-error disabled:opacity-50"
         onClick={onDelete}
@@ -358,14 +367,14 @@ export function StaffSetupPanel({
           extra: { staffId, patch, error: String(err) },
         });
         setPendingId(null);
-        setFormError("Could not save changes. Try again.");
-        setToast({ variant: "error", message: TOAST_ERR });
+        setFormError(tLabels.saveFailed);
+        setToast({ variant: "error", message: tLabels.saveConnectionFailed });
         return;
       }
       setPendingId(null);
       if (!res.ok) {
-        setFormError("Could not save changes. Try again.");
-        setToast({ variant: "error", message: TOAST_ERR });
+        setFormError(tLabels.saveFailed);
+        setToast({ variant: "error", message: tLabels.saveConnectionFailed });
         return;
       }
       setRows((prev) =>
@@ -429,14 +438,20 @@ export function StaffSetupPanel({
           setPendingId(null);
           // Restore the row on error
           setRows((prev) => [...prev, rowToDelete]);
-          setFormError("Could not remove. Try again.");
-          setToast({ variant: "error", message: TOAST_ERR });
+          setFormError(tLabels.removeFailed);
+          setToast({ variant: "error", message: tLabels.saveConnectionFailed });
           return;
         }
         setPendingId(null);
         if (!res.ok) {
-          setFormError(mapDeleteStaffError(res.error, setupErrors));
-          setToast({ variant: "error", message: TOAST_ERR });
+          setFormError(
+            mapDeleteStaffError(res.error, {
+              staffHasBookings: setupErrors.staffHasBookings,
+              minStaffRequired: tLabels.minStaffRequired,
+              removeFailed: tLabels.removeFailed,
+            }),
+          );
+          setToast({ variant: "error", message: tLabels.saveConnectionFailed });
           // Restore the row on server-side error
           setRows((prev) => [...prev, rowToDelete]);
           return;
@@ -550,6 +565,8 @@ export function StaffSetupPanel({
                   isLast
                   pendingId={pendingId}
                   canDelete={rows.length > 1}
+                  editLabel={tLabels.editStaff}
+                  removeLabel={tLabels.removeStaff}
                   onEdit={() => {
                     setDrawerStaff(row);
                     setDrawerOpen(true);
@@ -575,14 +592,14 @@ export function StaffSetupPanel({
       {undoPending && (
         <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-nq-border/50 bg-nq-surface px-4 py-2.5 shadow-lg text-sm">
           <span>
-            Đã xoá <strong>{undoPending.row.name}</strong>
+            {tLabels.removed} <strong>{undoPending.row.name}</strong>
           </span>
           <button
             type="button"
             onClick={handleUndoDelete}
             className="font-semibold text-nq-primary"
           >
-            ↺ Hoàn tác
+            ↺ {tLabels.undo}
           </button>
         </div>
       )}

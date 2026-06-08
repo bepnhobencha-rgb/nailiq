@@ -39,8 +39,13 @@ function isoAtUtcYmdHourMinute(
   return new Date(Date.UTC(y, m - 1, dd, hour, minute, 0)).toISOString();
 }
 
-function serviceRow(page: Page, serviceName: string) {
-  return page.locator(`li:has(input[value="${serviceName}"])`);
+/**
+ * The 🗑️ delete button for a given service id. Rows are scoped by the stable
+ * `data-testid="service-delete-<id>"` on the icon button — the panel renders
+ * compact rows (drawer-based edit), not inline-editable `<li>` inputs.
+ */
+function serviceDeleteBtn(page: Page, serviceId: string) {
+  return page.getByTestId(`service-delete-${serviceId}`);
 }
 
 async function gotoSetupServices(page: Page, slug: string): Promise<void> {
@@ -67,9 +72,16 @@ async function gotoSetupServices(page: Page, slug: string): Promise<void> {
   ]);
 
   await page.goto(`/dashboard/${encodeURIComponent(slug)}/setup/services`);
-  await page.getByRole("heading", { name: "Services" }).waitFor({
-    timeout: 45_000,
-  });
+  // The page renders two "Services" headings — the SetupBackNav <h1> page
+  // title and the panel <h2> section header ("Services · N"). Playwright's
+  // default substring name match hits both → strict-mode violation. Match
+  // the first (the server-rendered page title) to wait for the route shell.
+  await page
+    .getByRole("heading", { name: "Services", exact: false })
+    .first()
+    .waitFor({
+      timeout: 45_000,
+    });
 }
 
 async function seedSalonAndStaff(): Promise<Fixture> {
@@ -225,6 +237,8 @@ test.afterAll(async () => {
 });
 
 test.describe("Setup services delete", () => {
+  test.describe.configure({ timeout: 60_000 });
+
   test("sd-1: cannot delete service with active booking", async ({ page }) => {
     const { inUseId } = await resolveServiceIds(fx.salonId);
 
@@ -241,16 +255,19 @@ test.describe("Setup services delete", () => {
 
     await gotoSetupServices(page, fx.slug);
 
-    await serviceRow(page, NAME_IN_USE)
-      .getByRole("button", { name: "Delete service" })
-      .click();
-    await page.getByRole("button", { name: "Confirm delete" }).click();
+    await serviceDeleteBtn(page, inUseId).click();
 
-    const errBanner = page.locator(".text-nq-error").filter({
-      hasText: /đang được dùng|is used/i,
+    // Delete is optimistic: the row vanishes, then after the undo window
+    // (UNDO_TIMEOUT_MS) the server-side delete runs and is rejected because
+    // the service is used by an active booking → the formError banner appears
+    // and the row is restored. `<p class="text-nq-error">` is that banner.
+    const errBanner = page.locator("p.text-nq-error").filter({
+      hasText: /used in active bookings|Cancel or complete|đang được dùng/i,
     });
-    await expect(errBanner.first()).toBeVisible({ timeout: 15_000 });
+    await expect(errBanner.first()).toBeVisible({ timeout: 20_000 });
 
+    // Row restored (delete button back) and service still present in the DB.
+    await expect(serviceDeleteBtn(page, inUseId)).toBeVisible();
     const stillThere = await getServiceRowById(inUseId);
     expect(stillThere?.id).toBe(inUseId);
   });
@@ -260,16 +277,17 @@ test.describe("Setup services delete", () => {
 
     await gotoSetupServices(page, fx.slug);
 
-    await serviceRow(page, NAME_UNUSED)
-      .getByRole("button", { name: "Delete service" })
-      .click();
-    await page.getByRole("button", { name: "Confirm delete" }).click();
+    await serviceDeleteBtn(page, unusedId).click();
 
-    await expect(serviceRow(page, NAME_UNUSED)).toHaveCount(0, {
+    // Optimistic removal: the row's delete button detaches immediately.
+    await expect(serviceDeleteBtn(page, unusedId)).toHaveCount(0, {
       timeout: 15_000,
     });
 
-    const gone = await getServiceRowById(unusedId);
-    expect(gone).toBeNull();
+    // After the undo window (UNDO_TIMEOUT_MS) the server-side delete commits;
+    // poll the DB until the soft-delete lands.
+    await expect
+      .poll(async () => getServiceRowById(unusedId), { timeout: 15_000 })
+      .toBeNull();
   });
 });
