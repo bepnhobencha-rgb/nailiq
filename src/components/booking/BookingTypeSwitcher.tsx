@@ -253,7 +253,7 @@ export function BookingTypeSwitcher({
             autoComplete="name"
             data-testid="booking-entry-name"
             value={entryName}
-            placeholder={groupCopy.groupGuestLabel ?? t.clientNameLabel}
+            placeholder={t.clientNameLabel}
             maxLength={100}
             onChange={(e) => setEntryName(e.target.value)}
             onBlur={() => setCommittedName(entryName)}

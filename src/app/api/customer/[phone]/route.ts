@@ -207,15 +207,35 @@ export async function GET(
       }
     }
 
-    // 8. Return safe subset — cap visitCount at 99 for display purposes
+    // 8. Resolve the display name. Never surface a "Guest N" / "Khách N"
+    // placeholder (those leaked into client_profiles from un-named group
+    // members). If the profile name is empty/placeholder, fall back to the
+    // most recent booking where the guest gave a real name — so a customer
+    // who once booked as "Mai" is recognized even if a later group booking
+    // overwrote the profile with "Guest 2".
+    let resolvedName = realNameOrEmpty(profile.name);
+    if (!resolvedName) {
+      const { data: namedRows } = await supabase
+        .from("bookings")
+        .select("client_name, start_time_utc")
+        .eq("client_phone", phoneDigits)
+        .order("start_time_utc", { ascending: false })
+        .limit(25);
+      for (const r of namedRows ?? []) {
+        const real = realNameOrEmpty((r as { client_name?: string | null }).client_name);
+        if (real) {
+          resolvedName = real;
+          break;
+        }
+      }
+    }
+
+    // 9. Return safe subset — cap visitCount at 99 for display purposes
     const visitCount = Math.min(profile.visit_count ?? 0, 99);
 
     return NextResponse.json<CustomerLookupResponse>({
       found: true,
-      // Never surface a "Guest N" / "Khách N" placeholder as the name —
-      // those leaked into client_profiles from un-named group members.
-      // Empty name → the UI treats them as "returning but needs a name".
-      name: realNameOrEmpty(profile.name),
+      name: resolvedName,
       email: profile.email ?? null,
       isVip: profile.is_vip ?? false,
       visitCount,
