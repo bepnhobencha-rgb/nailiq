@@ -9,6 +9,7 @@ import {
   checkBookingConflict,
 } from "@/shared/lib/conflictCheck";
 import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
@@ -833,9 +834,14 @@ export async function markNoShowBooking(
   }
   if (!updated?.id) return fail("invalid_state");
 
+  // These two RPCs are SECURITY DEFINER + revoked from anon/authenticated, so
+  // they're invoked with the service-role client AFTER the role/salon auth above
+  // (never directly callable by an untrusted user).
+  const svc = createServiceRoleClient();
+
   // Feed the no-show risk engine — best-effort, never fail the desk action on this.
   if (updated.client_phone) {
-    const { error: bumpErr } = await ctx.supabase.rpc("bump_client_no_show", { p_phone: updated.client_phone });
+    const { error: bumpErr } = await svc.rpc("bump_client_no_show", { p_phone: updated.client_phone });
     if (bumpErr) console.error("[markNoShowBooking] bump", bumpErr);
   }
 
@@ -843,7 +849,7 @@ export async function markNoShowBooking(
   // link. Best-effort; never fail the desk action on a notify hiccup.
   try {
     const svcId = (updated as { service_id?: string | null }).service_id;
-    const { data: wl } = await ctx.supabase.rpc("notify_waitlist_for_no_show", {
+    const { data: wl } = await svc.rpc("notify_waitlist_for_no_show", {
       p_booking_id: bookingId,
     });
     const row = Array.isArray(wl) ? wl[0] : wl;
@@ -938,13 +944,22 @@ export async function undoNoShowBooking(
     .select("id, client_phone")
     .maybeSingle();
   if (upErr) {
+    // The slot may have been re-taken (waitlist claim / walk-in) while it was
+    // freed — reverting to confirmed collides with bookings_no_overlap (23P01).
+    // Surface a clear "slot taken" instead of a generic retry message.
+    if ((upErr as { code?: string }).code === "23P01") {
+      return fail("slot_conflict");
+    }
     console.error("[undoNoShowBooking]", upErr);
     return fail("server_error");
   }
   if (!updated?.id) return fail("invalid_state");
 
   if (updated.client_phone) {
-    const { error: unbumpErr } = await ctx.supabase.rpc("unbump_client_no_show", {
+    // SECURITY DEFINER fn, revoked from anon/authenticated → call via service role
+    // after the auth checks above.
+    const svc = createServiceRoleClient();
+    const { error: unbumpErr } = await svc.rpc("unbump_client_no_show", {
       p_phone: updated.client_phone,
     });
     if (unbumpErr) console.error("[undoNoShowBooking] unbump", unbumpErr);
