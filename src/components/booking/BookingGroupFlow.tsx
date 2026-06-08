@@ -188,6 +188,16 @@ export function BookingGroupFlow({
     const lbl = t?.groupBooking?.groupGuestLabel ?? "Guest";
     return [blankMember(0, lbl), blankMember(1, lbl)];
   });
+  /** The service last applied via the step-2 "same service for
+   *  everyone" quick-fill. Used only to badge members who later
+   *  override it ("Changed"). "" = quick-fill never used. */
+  const [appliedServiceId, setAppliedServiceId] = useState("");
+  /** Couple/group "sit next to each other" preference. Defaults ON —
+   *  most groups (couples, friends, family) want to be seated
+   *  together; for head-spa tenants this signals reception to set up
+   *  two adjacent beds + a shared curtain. Persisted on every member
+   *  row; surfaced as a 💕 badge on the receptionist board. */
+  const [seatTogether, setSeatTogether] = useState(true);
   const [date, setDate] = useState("");
   /** Phase 1 sync mode: arrive together (default) or finish together. */
   const [syncMode, setSyncMode] = useState<GroupSyncMode>("sync_start");
@@ -425,6 +435,43 @@ export function BookingGroupFlow({
     setScheduleResult(null);
   }
 
+  /** Quick-fill: apply one service to every member at once. Most
+   *  groups (couples, friends, mother+daughter at a head spa) book
+   *  the SAME service, so the common path is one tap here instead of
+   *  N per-card picks. Each member can still override below — the
+   *  per-card picker stays fully functional. Mirrors `patchMember`'s
+   *  capability guard so a now-incompatible preferred staff is
+   *  dropped per member rather than left as a stale ghost. */
+  function applyServiceToAll(serviceId: string) {
+    if (!serviceId) return;
+    setAppliedServiceId(serviceId);
+    setMembers((prev) =>
+      prev.map((m) => {
+        const next: MemberDraft = { ...m, serviceId };
+        if (capability) {
+          const sid = next.preferredStaffId;
+          if (sid && !(capability.get(sid)?.has(serviceId) ?? false)) {
+            next.preferredStaffId = null;
+          }
+        }
+        return next;
+      }),
+    );
+    setStepErrors(new Set());
+    setErrorMessage(null);
+    setScheduleResult(null);
+  }
+
+  /** Derived: the single service shared by ALL members, or "" when
+   *  members differ (or any is still blank). Drives the quick-fill
+   *  select's value and the "applied / mixed" status line. */
+  const groupServiceId = useMemo(() => {
+    if (members.length === 0) return "";
+    const first = members[0].serviceId;
+    if (!first) return "";
+    return members.every((m) => m.serviceId === first) ? first : "";
+  }, [members]);
+
   /** Move forward to the given step, validating the current one
    *  on the way. Back-navigation (step < current) skips validation
    *  so the user can always retreat. */
@@ -646,6 +693,8 @@ export function BookingGroupFlow({
       const res: GroupBookingResult = await submitGroupBooking({
         shopSlug,
         members: payload,
+        // Couple/group seating preference → 💕 badge for reception.
+        seatTogether,
         // FIX 09 — stable key across retries. A network drop +
         // retry sends the same key; server's UNIQUE on
         // `(salon_id, idempotency_key, …)` returns
@@ -979,6 +1028,7 @@ export function BookingGroupFlow({
         selectedArrangementIdx={selectedArrangementIdx}
         date={date}
         showStaff={salon.staffSelectionEnabled !== false}
+        seatTogether={seatTogether}
         partyLinkUrl={partyLinkUrl}
         partyLinkFailed={partyLinkFailed}
       />
@@ -1033,6 +1083,11 @@ export function BookingGroupFlow({
           totalDisplay={totalDisplay}
           maxMinutes={totals.maxMinutes}
           size={size}
+          groupServiceId={groupServiceId}
+          appliedServiceId={appliedServiceId}
+          seatTogether={seatTogether}
+          onSeatTogetherChange={setSeatTogether}
+          onApplyServiceToAll={applyServiceToAll}
           onPatchMember={patchMember}
           onBack={() => goToStep(1)}
           onNext={() => goToStep(3)}
@@ -1422,6 +1477,11 @@ function ServiceStaffStep({
   totalDisplay,
   maxMinutes,
   size,
+  groupServiceId,
+  appliedServiceId,
+  seatTogether,
+  onSeatTogetherChange,
+  onApplyServiceToAll,
   onPatchMember,
   onBack,
   onNext,
@@ -1439,15 +1499,81 @@ function ServiceStaffStep({
   totalDisplay: string | null;
   maxMinutes: number;
   size: number;
+  /** Service shared by all members, or "" when mixed/blank. */
+  groupServiceId: string;
+  /** Service applied via quick-fill; used to badge overrides. */
+  appliedServiceId: string;
+  /** Couple/group "sit together" preference. */
+  seatTogether: boolean;
+  onSeatTogetherChange: (v: boolean) => void;
+  onApplyServiceToAll: (serviceId: string) => void;
   onPatchMember: (i: number, patch: Partial<MemberDraft>) => void;
   onBack: () => void;
   onNext: () => void;
 }) {
+  // Whether anyone has started picking — drives the "applied / mixed"
+  // status line under the quick-fill select.
+  const anyServicePicked = members.some((m) => m.serviceId);
   return (
     <div className="space-y-4 pb-32" data-testid="group-step-service-panel">
       <h2 className="text-lg font-semibold sm:text-xl">
         {groupCopy.reviewHeading}
       </h2>
+
+      {/* Quick-fill: "same service for everyone" — the common path
+          (couples / friends / family at a head spa usually book the
+          same service). One tap fills all member cards; each card can
+          still override below. Only shown when there's a real choice
+          (2+ services AND 2+ members). */}
+      {services.length > 1 && members.length > 1 ? (
+        <div
+          data-testid="group-same-service"
+          className="rounded-2xl border border-[var(--salon-primary)]/40 bg-[var(--salon-primary)]/5 p-4 sm:p-5"
+        >
+          <label
+            htmlFor="group-same-service-input"
+            className="mb-1 block text-base font-semibold"
+          >
+            ✨ {groupCopy.sameServiceHeading ?? "Same service for everyone?"}
+          </label>
+          <p className="mb-2.5 text-xs text-[var(--booking-text-muted)]">
+            {groupCopy.sameServiceHint ??
+              "Pick once for the whole group — you can change anyone below."}
+          </p>
+          <select
+            id="group-same-service-input"
+            value={groupServiceId}
+            onChange={(e) => onApplyServiceToAll(e.target.value)}
+            className="nq-booking-field"
+            data-testid="group-same-service-select"
+            style={{
+              color: groupServiceId
+                ? "var(--booking-text)"
+                : "var(--booking-text-muted)",
+            }}
+          >
+            <option value="">
+              — {groupCopy.sameServicePlaceholder ?? "Choose a service for the group"} —
+            </option>
+            {services.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} · {s.totalMinutes} {t.minuteSuffixShort}
+                {s.priceDisplay ? ` · ${s.priceDisplay}` : ""}
+              </option>
+            ))}
+          </select>
+          {anyServicePicked ? (
+            <p
+              className="mt-2 text-xs font-medium text-[var(--booking-text-muted)]"
+              data-testid="group-same-service-status"
+            >
+              {groupServiceId
+                ? `✓ ${(groupCopy.sameServiceApplied ?? "Applied to all {n} guests").replace("{n}", String(size))}`
+                : (groupCopy.sameServiceMixed ?? "Each guest has their own service")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       {duplicateStaffIdx.size > 0 ? (
         <p
           role="status"
@@ -1475,10 +1601,59 @@ function ServiceStaffStep({
             isDuplicateStaff={duplicateStaffIdx.has(i)}
             nameError={false}
             serviceError={stepErrors.has(`m${i}.service`)}
+            isCustomized={
+              !!appliedServiceId &&
+              !!m.serviceId &&
+              m.serviceId !== appliedServiceId
+            }
             onChange={(patch) => onPatchMember(i, patch)}
           />
         ))}
       </div>
+
+      {/* Couple/group "sit next to each other" preference. Default ON
+          — most groups want to be seated together; for head-spa
+          tenants this tells reception to set up two adjacent beds +
+          a shared curtain ("2 beds → 1 couple space"). */}
+      <button
+        type="button"
+        role="switch"
+        aria-checked={seatTogether}
+        data-testid="group-seat-together"
+        onClick={() => onSeatTogetherChange(!seatTogether)}
+        className={cn(
+          "flex w-full items-center gap-3 rounded-2xl border p-4 text-left transition-colors sm:p-5",
+          seatTogether
+            ? "border-[var(--salon-primary)]/50 bg-[var(--salon-primary)]/5"
+            : "border-[var(--booking-border)] bg-[var(--booking-bg-card)]",
+        )}
+      >
+        <span
+          aria-hidden
+          className={cn(
+            "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
+            seatTogether
+              ? "bg-[var(--salon-primary)]"
+              : "bg-[var(--booking-border)]",
+          )}
+        >
+          <span
+            className={cn(
+              "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
+              seatTogether ? "translate-x-[22px]" : "translate-x-0.5",
+            )}
+          />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold">
+            💕 {groupCopy.seatTogetherLabel ?? "Seat us next to each other"}
+          </span>
+          <span className="mt-0.5 block text-xs text-[var(--booking-text-muted)]">
+            {groupCopy.seatTogetherHint ??
+              "We'll arrange adjacent beds with a shared curtain when possible."}
+          </span>
+        </span>
+      </button>
 
       {groupCopy.partyLinkMemberHint ? (
         <p className="text-xs text-[var(--booking-text-muted)]">
@@ -1526,6 +1701,7 @@ function MemberCard({
   isDuplicateStaff,
   nameError,
   serviceError,
+  isCustomized,
   onChange,
 }: {
   index: number;
@@ -1542,6 +1718,8 @@ function MemberCard({
   isDuplicateStaff: boolean;
   nameError: boolean;
   serviceError: boolean;
+  /** True when this member's service differs from the group quick-fill. */
+  isCustomized: boolean;
   onChange: (patch: Partial<MemberDraft>) => void;
 }) {
   const eligibleStaff = useMemo(() => {
@@ -1559,8 +1737,16 @@ function MemberCard({
           : "border-[var(--booking-border)]",
       )}
     >
-      <h3 className="mb-3 text-base font-semibold">
-        {groupCopy.personLabel.replace("{n}", String(index + 1))}
+      <h3 className="mb-3 flex items-center gap-2 text-base font-semibold">
+        <span>{groupCopy.personLabel.replace("{n}", String(index + 1))}</span>
+        {isCustomized ? (
+          <span
+            data-testid={`group-member-${index}-custom-badge`}
+            className="rounded-full bg-[var(--salon-primary)]/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--salon-primary)]"
+          >
+            {groupCopy.memberCustomBadge ?? "Changed"}
+          </span>
+        ) : null}
       </h3>
 
       <div className="space-y-3">
@@ -3058,6 +3244,7 @@ function SuccessPanel({
   selectedArrangementIdx,
   date,
   showStaff,
+  seatTogether,
   partyLinkUrl,
   partyLinkFailed,
 }: {
@@ -3065,6 +3252,8 @@ function SuccessPanel({
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
   successResult: { groupId: string; bookingIds: string[] };
   showStaff: boolean;
+  /** Couple/group asked to be seated together — warm confirmation line. */
+  seatTogether: boolean;
   members: readonly MemberDraft[];
   services: readonly BookingServiceItem[];
   scheduleResult: GroupSmartScheduleResult | null;
@@ -3119,6 +3308,16 @@ function SuccessPanel({
             );
           })}
         </ul>
+      ) : null}
+
+      {seatTogether ? (
+        <p
+          data-testid="group-success-seat-together"
+          className="mt-4 rounded-xl border border-[var(--salon-primary)]/40 bg-[var(--salon-primary)]/5 px-3 py-2 text-sm font-medium"
+        >
+          {groupCopy.seatTogetherConfirm ??
+            "We'll seat your group next to each other 💕"}
+        </p>
       ) : null}
 
       {/* Party Link share section — shown once the async call resolves */}

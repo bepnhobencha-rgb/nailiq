@@ -1292,6 +1292,9 @@ export type UserMessages = {
         /** Heart icon shown when the booking has a non-empty
          * `staff_request_note` (e.g. "wants Tuong Vy"). */
         staffRequest: string;
+        /** HeartHandshake icon shown when a group/couple asked to be
+         * seated next to each other (adjacent beds + shared curtain). */
+        seatTogether: string;
       };
     };
     undo: {
@@ -2959,6 +2962,7 @@ export const userEn: UserMessages = {
         late: "Late",
         design: "Design / nail art",
         staffRequest: "Staff request",
+        seatTogether: "Seat together",
       },
     },
     undo: {
