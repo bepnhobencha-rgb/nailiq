@@ -228,6 +228,9 @@ Với mọi feature/module mới, tự chạy 6 chiều phân tích trước khi
 
 Tests hit a real Supabase (test DB) via the service-role client. `e2e/helpers/db.ts` provides `seedTestSalon()` / `cleanupTestSalon()`. The `receptionist-center/` folder has the deepest coverage — model new tests on it.
 
+- **Attribute failures before claiming a regression.** Much of the suite is pre-existing red/flaky (`e2e/booking.spec.ts`, the party individual golden-path smoke, mobile receptionist-center). Before blaming your change, re-run the failing spec on clean `main` (`git stash -u` your work → run → `git stash pop`); a failure that reproduces on main is NOT yours. Many "failures" in a parallel run also pass when re-run with `--workers=1` (parallel-contention flakes).
+- **Cold-start timing**: server-action-dependent assertions (e.g. Party Link `party-link-share`/QR appearing after success) can exceed 15 s on the first hit of a cold-compiled route — use a 30 s timeout for those.
+
 ## 🚀 Custom Scripts
 
 - `npm run auto-push` → `scripts/auto-push.js`. Watches the repo with `chokidar` (ignoring `.next`, `node_modules`, `.git`, `logs`); on any change debounces 30 s, infers a commit message from the changed paths (`update styles`, `update landing UI`, `update copy and i18n`, `update <file>`, or `auto update`), then runs `git add . && git commit && git push`. **Footguns**: any save triggers a commit; no typecheck/build/test gate; will push broken code; spams history. Gated behind a permission prompt — only run when the user explicitly asks.
@@ -251,7 +254,7 @@ Tests hit a real Supabase (test DB) via the service-role client. `e2e/helpers/db
 ## ⚠️ Known Tech Debt / Gotchas
 
 - **Registration sessionStorage + server-side fallback**: keys defined in `src/shared/lib/registerSessionKeys.ts`; `RegisterPageClient` and `VerifyPageClient` still write/read sessionStorage as the primary path. PR #72 (2026-05-09) added `src/shared/register/loadRegisterFlowStateAction.ts` — a server-side fallback that resolves register flow state from `register_completion_tokens` so reloads / cross-tab don't dead-end. Full migration off sessionStorage is future work; for now both code paths exist and you must keep them in sync.
-- **Phase-2 returning-customer WOW** — `src/shared/booking/submitPublicBooking.ts:513` carries a TODO to use `client_profiles` lookup at phone entry for auto-fill name + suggest preferred staff + "Welcome back" greeting. Not V1-blocking; activate when first beta salons report friction.
+- **Returning-customer "Welcome back" recognition — DONE (2026-06-08, #326–#329).** `client_profiles` lookup via `GET /api/customer/[phone]?salon_id=` (returns name/isVip/visitCount/lastBooking) now auto-fills name + greets across: the phone-first entry gate (`BookingTypeSwitcher`), the group flow primary contact, and the Party Link claim page. Reuse this endpoint + the `ReturningCustomer` type for any new "recognize the guest" surface — don't re-query `client_profiles` directly from the client.
 - **Demo OTP mode**: `NEXT_PUBLIC_DEMO_OTP` + `NAILQ_DEMO_SLUG_COOKIE` allow bypassing real auth in dev/test. Verify it's off in prod.
 - **Conflict checking is application-level**, not enforced by DB constraints — be careful when touching `conflictCheck.ts` or booking insert paths.
 - **Single proxy entry**: `src/proxy.ts` is the active one. Don't add a second one in `src/app/`.
@@ -270,6 +273,8 @@ Tests hit a real Supabase (test DB) via the service-role client. `e2e/helpers/db
 - Always apply DB migrations to prod via Supabase MCP in same PR
 - Open PR as draft, PM reviews and merges manually
 - One PR per logical change
+- **Preview-first for the live booking / revenue path.** Changes to the public booking flow (`BookingTypeSwitcher`, `BookingFlow`/`useBookingFlowState`, `BookingGroupFlow`, submit/Party-Link paths) carry conversion risk → don't blind-merge. Give the PM a testable preview URL. Vercel preview deployments are **auth-walled**, so generate a share-bypass link (Vercel MCP `get_access_to_vercel_url` on the preview's booking URL) — a raw preview URL just shows the Vercel login wall. Merge only after the PM confirms. Lower-risk surfaces (admin/dashboard, post-booking claim page) can skip the preview step.
+- **Additive-and-reversible** changes are safer to ship: new nullable/defaulted columns + best-effort writes (e.g. `bookings.seat_together`), feature behind an existing flag, gates that fall back to legacy behaviour when empty. Prefer these over in-place refactors of the revenue path; when you must refactor (e.g. phone-first skipping the individual phone step), do it via a key-remount + initial-props that leave the legacy path intact when unused.
 
 ---
 
