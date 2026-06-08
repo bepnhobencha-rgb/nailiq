@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ ok: false }, { status: 400 });
 
-  const { bookingId, salonId, clientPhone, clientName, serviceName, staffName, startTimeUtc } =
+  const { bookingId, salonId, clientPhone, clientName, serviceName, staffName, startTimeUtc, language } =
     body as {
       bookingId?: string;
       salonId?: string;
@@ -37,6 +37,8 @@ export async function POST(req: Request) {
       serviceName?: string;
       staffName?: string;
       startTimeUtc?: string;
+      /** Language the customer chose at booking — wins over any stored pref. */
+      language?: string | null;
     };
 
   if (!bookingId || !salonId || !clientPhone || !serviceName || !startTimeUtc) {
@@ -54,7 +56,10 @@ export async function POST(req: Request) {
 
   if (!salon) return NextResponse.json({ ok: false, error: "salon_not_found" }, { status: 404 });
 
-  // Get preferred language from client profile (default: vi)
+  // Language precedence: the language the customer just chose at booking
+  // wins; else their stored preference; else Vietnamese.
+  const requestedLang = language === "en" || language === "vi" ? language : null;
+
   const { data: profile } = await db
     .from("client_profiles")
     .select("id")
@@ -62,15 +67,27 @@ export async function POST(req: Request) {
     .is("deleted_at", null)
     .maybeSingle();
 
-  let lang = "vi";
+  let lang = requestedLang ?? "vi";
   if (profile) {
-    const { data: prefs } = await db
-      .from("customer_preferences")
-      .select("preferred_language")
-      .eq("client_profile_id", profile.id)
-      .eq("salon_id", salonId)
-      .maybeSingle();
-    lang = prefs?.preferred_language ?? "vi";
+    if (requestedLang) {
+      // Persist the choice so future reminders for this customer match it.
+      await db.from("customer_preferences").upsert(
+        {
+          client_profile_id: profile.id,
+          salon_id: salonId,
+          preferred_language: requestedLang,
+        },
+        { onConflict: "client_profile_id" },
+      );
+    } else {
+      const { data: prefs } = await db
+        .from("customer_preferences")
+        .select("preferred_language")
+        .eq("client_profile_id", profile.id)
+        .eq("salon_id", salonId)
+        .maybeSingle();
+      lang = prefs?.preferred_language ?? "vi";
+    }
   }
 
   const dateStr = formatConfirmDate(startTimeUtc);

@@ -134,6 +134,7 @@ export function BookingFlow({
     initialPhone,
     initialReturningCustomer,
     initialName,
+    language,
   );
 
   const [loyaltyCard, setLoyaltyCard] = useState<LoyaltyCard | null>(null);

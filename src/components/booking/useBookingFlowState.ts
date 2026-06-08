@@ -114,6 +114,9 @@ export function useBookingFlowState(
   /** Name captured at the gate — returning customer's name, or the
    *  name a new customer typed there. Pre-fills the info step. */
   initialName: string = "",
+  /** Booking surface language — forwarded to the booking so the
+   *  confirmation SMS is sent in the language the customer chose. */
+  language: "en" | "vi" = "vi",
 ) {
   const capability = useMemo(
     () => buildCapabilityMap(capabilityRows),
@@ -815,6 +818,7 @@ export function useBookingFlowState(
         clientEmail: clientEmail.trim() || null,
         clientNotes: clientNotes.trim(),
         verificationMethod: "none",
+        language,
       });
       setBookingResult({
         bookingId: result.bookingId,
@@ -1109,6 +1113,7 @@ export function useBookingFlowState(
         clientPhone: phone,
         clientEmail: email.length > 0 ? email : null,
         clientNotes: notes,
+        language,
         addonServiceIds: addonIds,
         otpSessionId: otpSessionId ?? null,
         // Task #09-11 — honeypot. Real users never see this field;

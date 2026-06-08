@@ -59,6 +59,9 @@ export type BookingParams = {
     durationMinutes: number;
     priceCents: number;
   } | null;
+  /** Booking-surface language. Forwarded to the confirmation SMS so it's
+   *  sent in the language the customer chose (defaults to vi server-side). */
+  language?: "en" | "vi";
 };
 
 export type BookingResult = {
@@ -907,6 +910,7 @@ export async function submitPublicBooking(
         serviceName: service.name as string,
         staffName: resolvedStaffName,
         startTimeUtc: startLocal.toISOString(),
+        language: params.language ?? null,
       }),
     });
   } catch (e) {
