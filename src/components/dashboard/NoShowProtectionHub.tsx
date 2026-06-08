@@ -15,6 +15,7 @@ import type {
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
+import { StripeConnectCard } from "@/components/dashboard/StripeConnectCard";
 
 type Props = {
   slug: string;
@@ -24,6 +25,9 @@ type Props = {
   reminder3hEnabled: boolean;
   smsRemindersEnabled: boolean;
   depositHighValueCents: number;
+  connectHasAccount: boolean;
+  connectChargesEnabled: boolean;
+  connectDetailsSubmitted: boolean;
   summary: NoShowSummary;
   unconfirmed: UnconfirmedBooking[];
   waitlist: WaitlistOpportunity[];
@@ -74,6 +78,9 @@ export function NoShowProtectionHub({
   reminder3hEnabled: initial3h,
   smsRemindersEnabled: initialSms,
   depositHighValueCents: initialThreshold,
+  connectHasAccount,
+  connectChargesEnabled,
+  connectDetailsSubmitted,
   summary,
   unconfirmed,
   waitlist,
@@ -134,6 +141,16 @@ export function NoShowProtectionHub({
           <StatCard label="Waitlist waiting" value={summary.waitingWaitlistCount} color="text-nq-gold" />
           <StatCard label="Recovered this week" value={summary.recoveredThisWeekCount} color="text-emerald-400" />
         </div>
+
+        {/* Stripe Connect — owner only (deposits go to the salon's own account) */}
+        {isOwner && (
+          <StripeConnectCard
+            slug={slug}
+            initialHasAccount={connectHasAccount}
+            initialChargesEnabled={connectChargesEnabled}
+            initialDetailsSubmitted={connectDetailsSubmitted}
+          />
+        )}
 
         {/* Reminder settings — owner only */}
         {isOwner && (

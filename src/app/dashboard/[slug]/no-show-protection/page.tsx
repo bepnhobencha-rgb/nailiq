@@ -19,7 +19,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
   const { data: salonRow } = await (await import("@/shared/lib/supabase/serviceRole"))
     .createServiceRoleClient()
     .from("salons" as never)
-    .select("reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents")
+    .select("reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_details_submitted")
     .eq("id", ctx.salon.id)
     .maybeSingle();
 
@@ -29,6 +29,9 @@ export default async function NoShowProtectionPage({ params }: Props) {
     reminder_3h_enabled?: boolean;
     sms_reminders_enabled?: boolean;
     deposit_high_value_cents?: number;
+    stripe_connect_account_id?: string | null;
+    stripe_connect_charges_enabled?: boolean;
+    stripe_connect_details_submitted?: boolean;
   } | null;
 
   const result = await loadNoShowDashboard(slug);
@@ -43,6 +46,9 @@ export default async function NoShowProtectionPage({ params }: Props) {
       reminder3hEnabled={row?.reminder_3h_enabled ?? true}
       smsRemindersEnabled={row?.sms_reminders_enabled ?? false}
       depositHighValueCents={row?.deposit_high_value_cents ?? 10000}
+      connectHasAccount={Boolean(row?.stripe_connect_account_id)}
+      connectChargesEnabled={row?.stripe_connect_charges_enabled ?? false}
+      connectDetailsSubmitted={row?.stripe_connect_details_submitted ?? false}
       summary={result.summary!}
       unconfirmed={result.unconfirmed!}
       waitlist={result.waitlist!}
