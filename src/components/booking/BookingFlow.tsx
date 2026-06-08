@@ -17,6 +17,7 @@ import { BookingFlowDatePanel } from "@/components/booking/BookingFlowDatePanel"
 import { BookingFlowDonePanel } from "@/components/booking/BookingFlowDonePanel";
 import { BookingFlowInfoPanel } from "@/components/booking/BookingFlowInfoPanel";
 import { BookingFlowOtpPanel } from "@/components/booking/BookingFlowOtpPanel";
+import { BookingFlowDepositPanel } from "@/components/booking/BookingFlowDepositPanel";
 import { BookingFlowPhonePanel } from "@/components/booking/BookingFlowPhonePanel";
 import { BookingFlowServicePanel } from "@/components/booking/BookingFlowServicePanel";
 import { BookingFlowStaffPanel } from "@/components/booking/BookingFlowStaffPanel";
@@ -227,7 +228,7 @@ export function BookingFlow({
 
   const wizardStep: BookingWizardStep =
     flow.step === "done" ? "confirm"
-    : flow.step === "otp" || flow.step === "verify" ? "info"
+    : flow.step === "otp" || flow.step === "verify" || flow.step === "deposit" ? "info"
     : flow.step;
 
   if (flow.step === "done" && flow.bookingResult) {
@@ -420,6 +421,16 @@ export function BookingFlow({
             isOptional={flow.verificationAction === "otp_optional"}
             onVerified={flow.goOtpNext}
             onSkip={flow.verificationAction === "otp_optional" ? flow.goSkipOtp : undefined}
+            onBack={flow.backFromOtpToInfo}
+          />
+        ) : null}
+        {flow.step === "deposit" ? (
+          <BookingFlowDepositPanel
+            salonId={salon.id}
+            serviceId={flow.serviceId ?? ""}
+            clientPhone={flow.clientPhone}
+            onPaid={flow.goDepositPaid}
+            onSkip={flow.goDepositSkip}
             onBack={flow.backFromOtpToInfo}
           />
         ) : null}
