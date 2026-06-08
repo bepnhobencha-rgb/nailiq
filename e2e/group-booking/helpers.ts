@@ -174,8 +174,21 @@ export function nextSundayYmd(): string {
  *  resolution with Playwright's default `en-US` accept-language
  *  returns EN, so the toggle text is "Group 👥". Click via testid
  *  so the spec stays locale-agnostic. */
+/** Phone-first gate uses this throwaway number so the Individual/Group
+ *  choice appears. Kept profile-less (deleted below) so recognition never
+ *  auto-fills member names — tests that need a returning customer set
+ *  their own phone later. */
+export const GATE_PHONE_DIGITS = "16045550000";
+
 export async function gotoGroupFlow(page: Page, slug: string): Promise<void> {
+  // Keep the gate phone a NEW customer so Guest names stay default.
+  await supabase.from("client_profiles").delete().eq("phone", GATE_PHONE_DIGITS);
   await page.goto(`/${slug}`);
+  // Phone-first gate: a phone must be entered before the choice appears.
+  await page
+    .getByTestId("booking-entry-phone")
+    .waitFor({ state: "visible", timeout: 15_000 });
+  await page.getByTestId("booking-entry-phone").fill(`+${GATE_PHONE_DIGITS}`);
   await page
     .getByTestId("booking-type-group")
     .waitFor({ state: "visible", timeout: 15_000 });
