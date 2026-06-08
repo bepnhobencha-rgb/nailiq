@@ -823,7 +823,7 @@ export async function markNoShowBooking(
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .in("status", ["confirmed", "in_progress"])
-    .select("id, client_phone")
+    .select("id, client_phone, service_id")
     .maybeSingle();
   if (upErr) {
     console.error("[markNoShowBooking]", upErr);
@@ -835,6 +835,30 @@ export async function markNoShowBooking(
   if (updated.client_phone) {
     const { error: bumpErr } = await ctx.supabase.rpc("bump_client_no_show", { p_phone: updated.client_phone });
     if (bumpErr) console.error("[markNoShowBooking] bump", bumpErr);
+  }
+
+  // Slot recovery — flag the next matching waitlist entry + email them the claim
+  // link. Best-effort; never fail the desk action on a notify hiccup.
+  try {
+    const svcId = (updated as { service_id?: string | null }).service_id;
+    const { data: wl } = await ctx.supabase.rpc("notify_waitlist_for_no_show", {
+      p_booking_id: bookingId,
+    });
+    const row = Array.isArray(wl) ? wl[0] : wl;
+    if (row?.entry_id && svcId) {
+      const { notifyWaitlistForSlot } = await import(
+        "@/shared/noshow/waitlistAutoFill"
+      );
+      await notifyWaitlistForSlot({
+        salonId: ctx.salon.id,
+        salonName: String(row.salon_name ?? ""),
+        serviceId: String(svcId),
+        serviceName: String(row.service_name ?? ""),
+        bookingDateYmd: String(row.booking_date ?? ""),
+      });
+    }
+  } catch (e) {
+    console.error("[markNoShowBooking] waitlist", e);
   }
 
   void logBookingEvent({
