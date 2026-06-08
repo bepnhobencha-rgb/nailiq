@@ -168,6 +168,10 @@ type BookingGroupFlowProps = {
   /** Optional staff capability rows for the salon. Threaded
    *  through so step 2's staff dropdown can filter by service. */
   capabilityRows?: { staff_id: string; service_id: string }[] | null;
+  /** Phone-first entry — captured at the type-switcher gate. Pre-fills
+   *  the primary-contact phone + organizer recognition. */
+  initialPhone?: string;
+  initialOrganizer?: ReturningCustomer | null;
 };
 
 export function BookingGroupFlow({
@@ -179,6 +183,8 @@ export function BookingGroupFlow({
   salon,
   maxGroupSize,
   capabilityRows,
+  initialPhone = "",
+  initialOrganizer = null,
 }: BookingGroupFlowProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -210,14 +216,19 @@ export function BookingGroupFlow({
     GroupArrivalPreference["kind"]
   >("morning");
   const [specificTime, setSpecificTime] = useState("");
-  const [primaryPhone, setPrimaryPhone] = useState("");
-  const [primaryEmail, setPrimaryEmail] = useState("");
+  // Phone-first: pre-fill from the type-switcher gate when provided.
+  const [primaryPhone, setPrimaryPhone] = useState(initialPhone ?? "");
+  const [primaryEmail, setPrimaryEmail] = useState(
+    initialOrganizer?.email ?? "",
+  );
 
   // Organizer recognition — when the primary-contact phone is valid we
   // look the customer up (same `/api/customer/[phone]` endpoint the
   // individual flow uses) and greet returning guests by name + VIP +
   // their usual service. `null` = unknown / new customer.
-  const [organizer, setOrganizer] = useState<ReturningCustomer | null>(null);
+  const [organizer, setOrganizer] = useState<ReturningCustomer | null>(
+    initialOrganizer ?? null,
+  );
   const [organizerLoading, setOrganizerLoading] = useState(false);
   const organizerLookupTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null,

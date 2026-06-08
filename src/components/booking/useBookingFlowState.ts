@@ -105,6 +105,12 @@ export function useBookingFlowState(
   capabilityRows: { staff_id: string; service_id: string }[] | null,
   phoneOtpEnabled: boolean,
   addOns: readonly BookingServiceItem[] = [],
+  /** Phone-first entry: when the customer entered their phone at the
+   *  type-switcher gate, the individual flow starts at "service"
+   *  (skipping its own phone step) with these pre-filled. Empty = the
+   *  legacy phone-first-step behaviour is unchanged. */
+  initialPhone: string = "",
+  initialReturningCustomer: ReturningCustomer | null = null,
 ) {
   const capability = useMemo(
     () => buildCapabilityMap(capabilityRows),
@@ -132,7 +138,12 @@ export function useBookingFlowState(
     return durations.length > 0 ? Math.min(...durations) : 0;
   }, [services]);
 
-  const [step, setStep] = useState<BookingFlowStep>("phone");
+  // Phone-first: skip the phone step when the gate already captured it.
+  // The phone step still exists in the machine, so "back" from service
+  // shows the (pre-filled) phone — no navigation refactor needed.
+  const [step, setStep] = useState<BookingFlowStep>(
+    initialPhone.trim() ? "service" : "phone",
+  );
   const [stepDir, setStepDir] = useState<1 | -1>(1);
   const [serviceId, setServiceId] = useState<string | null>(null);
   const [staffId, setStaffId] = useState<string | null>(null);
@@ -145,10 +156,14 @@ export function useBookingFlowState(
   const [popularSlotLabels, setPopularSlotLabels] = useState<string[]>([]);
   const [selectedCombo, setSelectedComboState] = useState<BookingComboItem | null>(null);
 
-  const [clientName, setClientName] = useState("");
-  const [clientPhone, setClientPhone] = useState("");
+  const [clientName, setClientName] = useState(
+    initialReturningCustomer?.name ?? "",
+  );
+  const [clientPhone, setClientPhone] = useState(initialPhone ?? "");
   /** B-10: optional. Empty stays empty — we never persist locally (privacy fix B-02). */
-  const [clientEmail, setClientEmail] = useState("");
+  const [clientEmail, setClientEmail] = useState(
+    initialReturningCustomer?.email ?? "",
+  );
   const [clientNotes, setClientNotes] = useState("");
   /** Task #09-11 — honeypot field, never shown to humans (CSS-hidden +
    *  `tabIndex=-1` + `aria-hidden`). Bots autofilling every `<input>`
@@ -181,7 +196,9 @@ export function useBookingFlowState(
   const [referenceImagePreview, setReferenceImagePreview] = useState<string | null>(null);
 
   // Returning customer lookup state
-  const [returningCustomer, setReturningCustomer] = useState<ReturningCustomer | null>(null);
+  const [returningCustomer, setReturningCustomer] = useState<ReturningCustomer | null>(
+    initialReturningCustomer ?? null,
+  );
   const [lookupLoading, setLookupLoading] = useState(false);
   const [preferredStaffDismissed, setPreferredStaffDismissed] = useState(false);
   const lookupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -386,6 +403,7 @@ export function useBookingFlowState(
 
     const phoneValidation = validateGuestPhone(clientPhone.trim());
     if (!phoneValidation.ok) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset when phone becomes invalid
       setReturningCustomer(null);
       setLookupLoading(false);
       return;
