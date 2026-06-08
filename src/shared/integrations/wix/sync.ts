@@ -9,12 +9,14 @@ import { queryBookingsUpdatedSince, type WixBooking } from "./client";
 import { looseServiceClient } from "./looseDb";
 import { pushWixConfirm } from "./writeback";
 import { categorizeService } from "./categorize";
+import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 
 // --- pure helpers ---
 function canonPhone(p: unknown): string | null {
-  if (!p) return null;
-  const d = String(p).replace(/\D/g, "");
-  return d.length < 7 ? null : "+1" + d.slice(-10); // NANP
+  // Was: "+1" + last10 — corrupted international numbers (e.g. VN +84) and
+  // stored a leading "+". Use the shared canonical normalizer so Wix-imported
+  // contacts match the same format every other write path produces.
+  return toCanonicalPhone(p == null ? null : String(p));
 }
 const titleCase = (s: string) =>
   s.replace(/\w\S*/g, (t) => t[0].toUpperCase() + t.slice(1).toLowerCase()).trim();

@@ -22,6 +22,7 @@ import crypto from "crypto";
 import * as Sentry from "@sentry/nextjs";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { formatInSalonTz } from "@/shared/lib/salonTime";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
@@ -247,7 +248,7 @@ export async function createPartyLink(params: {
         party_link_id: linkId as string,
         booking_id: bid,
         member_name: organizerName?.trim() || null,
-        member_phone: organizerPhone?.trim() || null,
+        member_phone: toCanonicalPhone(organizerPhone),
         claimed_at: new Date().toISOString(),
       };
     }

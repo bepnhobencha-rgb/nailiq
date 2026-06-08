@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 
 export const dynamic = "force-dynamic";
 
@@ -202,7 +203,7 @@ export async function POST(req: Request) {
       p_start_time_utc: slot.start,
       p_end_time_utc: endTimeUtc,
       p_client_name: clientName,
-      p_client_phone: phone,
+      p_client_phone: toCanonicalPhone(phone) ?? phone,
       p_price_cents: service.price_cents,
       p_status: "confirmed",
     },

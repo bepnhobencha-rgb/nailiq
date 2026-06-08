@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 
 function generateGiftCode(): string {
   const hex = crypto.randomUUID().replace(/-/g, "").toUpperCase();
@@ -44,8 +45,8 @@ export async function POST(req: NextRequest) {
         gift_card_value_cents: valueCents,
         gift_card_from_name: fromName?.trim() || null,
         gift_card_message: message?.trim() || null,
-        gift_card_purchaser_phone: recipientPhone?.trim() || null,
-        client_phone: recipientPhone?.trim() || null,
+        gift_card_purchaser_phone: toCanonicalPhone(recipientPhone),
+        client_phone: toCanonicalPhone(recipientPhone),
         expires_at: expiresAt,
         max_uses: 1,
         valid_from: new Date().toISOString(),

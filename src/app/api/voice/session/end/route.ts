@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 
 export const runtime = "nodejs";
 
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
       transcript:       transcript ?? [],
       ended_at:         new Date().toISOString(),
       ...(clientName  ? { client_name:  clientName  } : {}),
-      ...(clientPhone ? { client_phone: clientPhone } : {}),
+      ...(clientPhone ? { client_phone: toCanonicalPhone(clientPhone) ?? clientPhone } : {}),
     })
     .eq("id", sessionId);
 
