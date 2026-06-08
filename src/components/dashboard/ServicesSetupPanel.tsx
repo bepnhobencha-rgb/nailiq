@@ -863,6 +863,8 @@ export function ServicesSetupPanel({
                       void handleUpdate(row.id, { price_cents: cents })
                     }
                     canDelete={rows.length > 1}
+                    editLabel={tLabels.editService}
+                    removeLabel={tLabels.deleteService}
                   />
                 ))}
               </div>
@@ -940,6 +942,8 @@ function ServiceRow({
   onDelete,
   onPriceSave,
   canDelete,
+  editLabel,
+  removeLabel,
 }: {
   row: SetupServiceRow;
   currency: Currency;
@@ -951,6 +955,8 @@ function ServiceRow({
   onDelete: () => void;
   onPriceSave: (cents: number) => void;
   canDelete: boolean;
+  editLabel: string;
+  removeLabel: string;
 }) {
   const isPending = pendingId === row.id;
 
@@ -1025,8 +1031,9 @@ function ServiceRow({
       {/* Edit button */}
       <button
         type="button"
-        title="Chỉnh sửa"
-        aria-label={`Chỉnh sửa ${row.name}`}
+        title={editLabel}
+        aria-label={`${editLabel} — ${row.name}`}
+        data-testid={`service-edit-${row.id}`}
         disabled={pendingId !== null}
         className="flex-shrink-0 rounded-lg p-1.5 text-nq-muted transition-colors hover:bg-nq-surface hover:text-nq-foreground disabled:opacity-50"
         onClick={onEdit}
@@ -1037,8 +1044,9 @@ function ServiceRow({
       {/* Delete button */}
       <button
         type="button"
-        title="Xoá"
-        aria-label={`Xoá ${row.name}`}
+        title={removeLabel}
+        aria-label={`${removeLabel} — ${row.name}`}
+        data-testid={`service-delete-${row.id}`}
         disabled={pendingId !== null || !canDelete}
         className="flex-shrink-0 rounded-lg p-1.5 text-nq-muted transition-colors hover:bg-nq-error/10 hover:text-nq-error disabled:opacity-50"
         onClick={onDelete}

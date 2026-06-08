@@ -854,6 +854,7 @@ export type UserMessages = {
     durationMin: string;
     bufferMin: string;
     deleteService: string;
+    editService: string;
     addService: string;
     serviceSaved: string;
     serviceRemoved: string;
@@ -861,6 +862,7 @@ export type UserMessages = {
     deleteFailed: string;
     staffTitle: string;
     removeStaff: string;
+    editStaff: string;
     addStaff: string;
     staffSaved: string;
     staffRemoved: string;
@@ -2593,6 +2595,7 @@ export const userEn: UserMessages = {
     durationMin: "Duration (min)",
     bufferMin: "Buffer (min)",
     deleteService: "Delete service",
+    editService: "Edit service",
     addService: "Add service",
     serviceSaved: "✓ Service saved",
     serviceRemoved: "✓ Service removed",
@@ -2600,6 +2603,7 @@ export const userEn: UserMessages = {
     deleteFailed: "Could not delete. Try again.",
     staffTitle: "Staff",
     removeStaff: "Remove staff",
+    editStaff: "Edit staff",
     addStaff: "Add staff",
     staffSaved: "✓ Staff member saved",
     staffRemoved: "✓ Staff member removed",

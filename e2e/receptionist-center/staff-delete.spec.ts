@@ -13,7 +13,7 @@ const _RUN_SUFFIX =
   process.env.PLAYWRIGHT_WORKER_INDEX ??
   String(Date.now()).slice(-6);
 
-/** Run-scoped slug; torn down in afterAll. Row scoping: `li:has(input[value="${name}"])` (matches Task 3 setup pattern). */
+/** Run-scoped slug; torn down in afterAll. Row scoping: stable `data-testid="staff-delete-<id>"` on the row's delete button. */
 const E2E_STAFF_DELETE_SLUG = `e2e-staff-delete-${_RUN_SUFFIX}`;
 const ANCHOR_NAME = "E2E_ST_ANCHOR";
 const NAME_BLOCK = "E2E_ST_BLOCK";
@@ -47,8 +47,13 @@ function isoAtUtcYmdHourMinute(
   return new Date(Date.UTC(y, m - 1, dd, hour, minute, 0)).toISOString();
 }
 
-function staffRow(page: Page, displayName: string) {
-  return page.locator(`li:has(input[value="${displayName}"])`);
+/**
+ * The 🗑️ delete button for a given staff id. Rows are scoped by the stable
+ * `data-testid="staff-delete-<id>"` on the icon button — the panel renders
+ * compact rows (drawer-based edit), not inline-editable `<li>` inputs.
+ */
+function staffDeleteBtn(page: Page, staffId: string) {
+  return page.getByTestId(`staff-delete-${staffId}`);
 }
 
 async function gotoSetupStaff(page: Page, slug: string): Promise<void> {
@@ -222,16 +227,19 @@ test.describe("Setup staff delete", () => {
 
     await gotoSetupStaff(page, fx.slug);
 
-    await staffRow(page, NAME_BLOCK)
-      .getByRole("button", { name: "Remove staff" })
-      .click();
-    await page.getByRole("button", { name: "Confirm delete" }).click();
+    await staffDeleteBtn(page, blockId).click();
 
-    const errBanner = page.locator(".text-nq-error").filter({
-      hasText: /Reassign|upcoming|Nhân viên|booking sắp tới/i,
+    // Delete is optimistic: the row vanishes, then after the undo window
+    // (UNDO_TIMEOUT_MS) the server-side delete runs and is rejected because
+    // the staff has a future booking → the formError banner appears and the
+    // row is restored. `<p class="text-nq-error">` is that formError banner.
+    const errBanner = page.locator("p.text-nq-error").filter({
+      hasText: /upcoming bookings|Reassign|booking sắp tới|Nhân viên/i,
     });
-    await expect(errBanner.first()).toBeVisible({ timeout: 15_000 });
+    await expect(errBanner.first()).toBeVisible({ timeout: 20_000 });
 
+    // Row restored (delete button back) and staff still present in the DB.
+    await expect(staffDeleteBtn(page, blockId)).toBeVisible();
     const stillThere = await getStaffByName(fx.salonId, NAME_BLOCK);
     expect(stillThere?.id).toBe(blockId);
   });
@@ -267,18 +275,17 @@ test.describe("Setup staff delete", () => {
 
     await gotoSetupStaff(page, fx.slug);
 
-    await staffRow(page, NAME_OK)
-      .getByRole("button", { name: "Remove staff" })
-      .click();
-    await page.getByRole("button", { name: "Confirm delete" }).click();
+    await staffDeleteBtn(page, okId).click();
 
-    await expect(staffRow(page, NAME_OK)).toHaveCount(0, {
+    // Optimistic removal: the row's delete button detaches immediately.
+    await expect(staffDeleteBtn(page, okId)).toHaveCount(0, {
       timeout: 15_000,
     });
 
-    // UI removes optimistically; poll DB until the server-side delete commits
+    // After the undo window (UNDO_TIMEOUT_MS) the server-side delete commits;
+    // poll the DB until the soft-delete lands.
     await expect
-      .poll(async () => getStaffByName(fx.salonId, NAME_OK), { timeout: 10_000 })
+      .poll(async () => getStaffByName(fx.salonId, NAME_OK), { timeout: 15_000 })
       .toBeNull();
 
     const { data: bookingRow, error: bErr } = await supabaseAdmin

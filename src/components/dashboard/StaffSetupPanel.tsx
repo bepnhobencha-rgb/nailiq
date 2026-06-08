@@ -186,6 +186,8 @@ function StaffCompactRow({
   isLast,
   pendingId,
   canDelete,
+  editLabel,
+  removeLabel,
   onEdit,
   onDelete,
 }: {
@@ -196,6 +198,8 @@ function StaffCompactRow({
   isLast: boolean;
   pendingId: string | null;
   canDelete: boolean;
+  editLabel: string;
+  removeLabel: string;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -234,8 +238,9 @@ function StaffCompactRow({
       {/* Edit button */}
       <button
         type="button"
-        title="Chỉnh sửa"
-        aria-label={`Chỉnh sửa ${row.name}`}
+        title={editLabel}
+        aria-label={`${editLabel} — ${row.name}`}
+        data-testid={`staff-edit-${row.id}`}
         disabled={pendingId !== null}
         className="shrink-0 rounded-lg p-1.5 text-nq-muted transition-colors hover:bg-nq-surface hover:text-nq-foreground disabled:opacity-50"
         onClick={onEdit}
@@ -250,8 +255,9 @@ function StaffCompactRow({
       {/* Delete button */}
       <button
         type="button"
-        title="Xoá"
-        aria-label={`Xoá ${row.name}`}
+        title={removeLabel}
+        aria-label={`${removeLabel} — ${row.name}`}
+        data-testid={`staff-delete-${row.id}`}
         disabled={pendingId !== null || !canDelete}
         className="shrink-0 rounded-lg p-1.5 text-nq-muted transition-colors hover:bg-nq-error/10 hover:text-nq-error disabled:opacity-50"
         onClick={onDelete}
@@ -550,6 +556,8 @@ export function StaffSetupPanel({
                   isLast
                   pendingId={pendingId}
                   canDelete={rows.length > 1}
+                  editLabel={tLabels.editStaff}
+                  removeLabel={tLabels.removeStaff}
                   onEdit={() => {
                     setDrawerStaff(row);
                     setDrawerOpen(true);
