@@ -139,6 +139,11 @@ export function BookingTypeSwitcher({
   // committed (debounced/blurred) new-customer name.
   const entryNameResolved =
     (entryCustomer?.name ?? "").trim() || committedName.trim();
+  // Recognised AND on file with a real name. A returning customer whose
+  // stored name is empty/placeholder is treated like a new customer for
+  // the gate (show the name field so they finally give a real name).
+  const recognizedWithName =
+    !!entryCustomer && (entryCustomer.name ?? "").trim().length > 0;
 
   useEffect(() => {
     if (entryLookupTimer.current) {
@@ -213,7 +218,7 @@ export function BookingTypeSwitcher({
         }
         className="nq-booking-field"
       />
-      {entryCustomer ? (
+      {recognizedWithName ? (
         <p
           data-testid="booking-entry-recognized"
           className="mt-2 text-sm font-medium text-[var(--salon-primary)]"
@@ -221,9 +226,9 @@ export function BookingTypeSwitcher({
           👋{" "}
           {(groupCopy.organizerGreeting ?? "Welcome back, {name}!").replace(
             "{name}",
-            entryCustomer.name,
+            (entryCustomer?.name ?? "").trim(),
           )}
-          {entryCustomer.isVip ? ` · ${groupCopy.organizerVip ?? "VIP"}` : ""}
+          {entryCustomer?.isVip ? ` · ${groupCopy.organizerVip ?? "VIP"}` : ""}
         </p>
       ) : (
         <p className="mt-1.5 text-xs text-[var(--booking-text-muted)]">
@@ -232,9 +237,9 @@ export function BookingTypeSwitcher({
       )}
       {entryLoading ? <span className="sr-only">…</span> : null}
 
-      {/* New customer (phone valid + not recognized) → capture the name
-          here so identity is collected once, up front. */}
-      {entryPhone && !entryCustomer && !entryLoading ? (
+      {/* New customer — or a returning one with no real name on file —
+          captures the name here so identity is collected once, up front. */}
+      {entryPhone && !recognizedWithName && !entryLoading ? (
         <div className="mt-3">
           <label
             htmlFor="booking-entry-name"
@@ -248,7 +253,7 @@ export function BookingTypeSwitcher({
             autoComplete="name"
             data-testid="booking-entry-name"
             value={entryName}
-            placeholder={groupCopy.groupGuestLabel ?? t.clientNameLabel}
+            placeholder={t.clientNameLabel}
             maxLength={100}
             onChange={(e) => setEntryName(e.target.value)}
             onBlur={() => setCommittedName(entryName)}
