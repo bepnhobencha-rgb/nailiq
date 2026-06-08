@@ -99,6 +99,8 @@ type BookingFlowProps = {
    *  the flow skips its own phone step and pre-fills name/email. */
   initialPhone?: string;
   initialReturningCustomer?: ReturningCustomer | null;
+  /** Name captured at the gate (returning name or new-customer typed). */
+  initialName?: string;
 };
 
 export function BookingFlow({
@@ -114,6 +116,7 @@ export function BookingFlow({
   language = "en",
   initialPhone = "",
   initialReturningCustomer = null,
+  initialName = "",
 }: BookingFlowProps) {
   const reducedMotion = useReducedMotion();
   const vertical = resolveVertical(salon.vertical);
@@ -130,6 +133,7 @@ export function BookingFlow({
     addOns,
     initialPhone,
     initialReturningCustomer,
+    initialName,
   );
 
   const [loyaltyCard, setLoyaltyCard] = useState<LoyaltyCard | null>(null);

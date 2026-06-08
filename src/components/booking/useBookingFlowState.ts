@@ -111,6 +111,9 @@ export function useBookingFlowState(
    *  legacy phone-first-step behaviour is unchanged. */
   initialPhone: string = "",
   initialReturningCustomer: ReturningCustomer | null = null,
+  /** Name captured at the gate — returning customer's name, or the
+   *  name a new customer typed there. Pre-fills the info step. */
+  initialName: string = "",
 ) {
   const capability = useMemo(
     () => buildCapabilityMap(capabilityRows),
@@ -157,7 +160,7 @@ export function useBookingFlowState(
   const [selectedCombo, setSelectedComboState] = useState<BookingComboItem | null>(null);
 
   const [clientName, setClientName] = useState(
-    initialReturningCustomer?.name ?? "",
+    initialName.trim() || (initialReturningCustomer?.name ?? ""),
   );
   const [clientPhone, setClientPhone] = useState(initialPhone ?? "");
   /** B-10: optional. Empty stays empty — we never persist locally (privacy fix B-02). */

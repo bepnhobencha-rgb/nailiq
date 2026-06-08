@@ -231,6 +231,8 @@ export const bookingEn = {
     seatTogetherConfirm: "We'll seat your group next to each other 💕",
     /** Step-5 organizer recognition (returning-customer greeting). */
     organizerGreeting: "Welcome back, {name}!",
+    /** New-customer greeting at the gate (phone not recognized). */
+    entryNewGreeting: "Hi {name}! 👋",
     organizerVip: "VIP",
     organizerReturning: "Returning guest · {n} visits",
     organizerUsual: "Usual: {service}",
