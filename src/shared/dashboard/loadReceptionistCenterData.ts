@@ -208,6 +208,18 @@ export interface ReceptionistCenterData {
   /** Per-staff service whitelist for this salon. `null` = no rows → all-capable fallback. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
   /**
+   * Today's no-show bookings (status `no_show`), surfaced in the "needs
+   * attention" strip so a wrongly-flagged guest can be undone in one tap.
+   * Separate from `bookingsForDay` (which only carries active statuses).
+   */
+  noShowsToday: Array<{
+    id: string;
+    clientName: string;
+    startTimeUtc: string;
+    serviceName: string;
+    staffName: string | null;
+  }>;
+  /**
    * Top services by booking frequency on the selected day, ordered by count
    * (descending). Up to 3 ids. Empty when fewer than 2 bookings exist (the
    * "popular" signal is meaningless on a near-empty day). Computed from the
@@ -902,6 +914,41 @@ export async function loadReceptionistCenterData(
     }
   }
 
+  // Today's no-shows (separate from the active grid statuses) — surfaced in the
+  // "needs attention" strip so a wrongly-flagged guest can be undone in 1 tap.
+  const noShowsToday: ReceptionistCenterData["noShowsToday"] = [];
+  {
+    const { data, error } = await ctx.supabase
+      .from("bookings")
+      .select(
+        "id, client_name, start_time_utc, services!bookings_service_id_fkey(name), staff(name)",
+      )
+      .eq("salon_id", ctx.salon.id)
+      .gte("start_time_utc", startUtc)
+      .lt("start_time_utc", endUtc)
+      .eq("status", "no_show")
+      .order("start_time_utc", { ascending: true });
+    if (error) {
+      console.error("[loadReceptionistCenterData] no_shows_today", error);
+    } else {
+      for (const r of (data ?? []) as unknown as Array<{
+        id: string;
+        client_name: string | null;
+        start_time_utc: string;
+        services?: { name?: string | null } | null;
+        staff?: { name?: string | null } | null;
+      }>) {
+        noShowsToday.push({
+          id: String(r.id),
+          clientName: r.client_name ?? "",
+          startTimeUtc: r.start_time_utc,
+          serviceName: r.services?.name ?? "",
+          staffName: r.staff?.name ?? null,
+        });
+      }
+    }
+  }
+
   const bookingsForDayUnfiltered = (bookingsRows ?? []).map((row): ReceptionistCenterData["bookingsForDay"][0] | null => {
     const staffId = row.staff_id != null ? String(row.staff_id).trim() : "";
     const st = row.start_time_utc != null ? String(row.start_time_utc).trim() : "";
@@ -1079,6 +1126,7 @@ export async function loadReceptionistCenterData(
         })) ?? [],
       walkinQueue,
       bookingsForDay,
+      noShowsToday,
       capabilityRows,
       popularServiceIds,
       selectedDate: dateYmd,

@@ -849,6 +849,55 @@ export async function markNoShowBooking(
 }
 
 /**
+ * Undo a no-show — the customer was just running late after all. Reverts
+ * `no_show` → `confirmed` and decrements the client's no_show_count (so a
+ * wrongly-flagged guest, incl. an auto-marked one, isn't penalised). Same
+ * front-desk roles as marking.
+ */
+export async function undoNoShowBooking(
+  slug: string,
+  input: { salonId: string; bookingId: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (!canMarkNoShow(ctx.role)) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+  const bookingId = String(input.bookingId ?? "").trim();
+  if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+
+  const { data: updated, error: upErr } = await ctx.supabase
+    .from("bookings")
+    .update({ status: "confirmed" })
+    .eq("id", bookingId)
+    .eq("salon_id", ctx.salon.id)
+    .eq("status", "no_show")
+    .select("id, client_phone")
+    .maybeSingle();
+  if (upErr) {
+    console.error("[undoNoShowBooking]", upErr);
+    return fail("server_error");
+  }
+  if (!updated?.id) return fail("invalid_state");
+
+  if (updated.client_phone) {
+    const { error: unbumpErr } = await ctx.supabase.rpc("unbump_client_no_show", {
+      p_phone: updated.client_phone,
+    });
+    if (unbumpErr) console.error("[undoNoShowBooking] unbump", unbumpErr);
+  }
+
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "booking_status_changed",
+    payload: { to: "confirmed", reason: "undo_no_show" },
+  });
+  return { ok: true };
+}
+
+/**
  * Set the ACTUAL final price on a booking — for variable-priced ('from'/'range')
  * services where the amount is only known when the work is done. Owner/senior only;
  * audit-logged. Allowed on any non-cancelled booking so the desk can record the
