@@ -836,7 +836,11 @@ export function useBookingFlowState(
         setStep("time");
         setError(t.bookingErrors.slotJustTaken);
       } else if (err instanceof Error && err.message === "cannot_book_past") {
-        setError(t.pastTimeError);
+        // The slot was offered but is now within the lead window (or just
+        // passed). Clear the stale selection so the user re-picks from the
+        // freshly re-fetched grid instead of re-submitting the same slot.
+        setTimeSlot(null);
+        setError(t.slotTooSoonError ?? t.pastTimeError);
         setStep("time");
       } else if (err instanceof Error && (err.message === "outside_opening_hours" || err.message === "salon_closed_day")) {
         setError(err.message === "salon_closed_day" ? t.salonClosedError : t.outsideHoursError);
@@ -1179,7 +1183,8 @@ export function useBookingFlowState(
         err instanceof Error &&
         err.message === "cannot_book_past"
       ) {
-        setError(t.pastTimeError);
+        setTimeSlot(null);
+        setError(t.slotTooSoonError ?? t.pastTimeError);
         setStep("time");
       } else if (
         err instanceof Error &&
