@@ -2505,9 +2505,26 @@ function ArrangementCard({
   syncMode: GroupSyncMode;
   onSelect: () => void;
 }) {
-  // In sync_finish mode all members end at the same time so the
-  // "within 15 / 30 min start-spread" qualifier is meaningless.
-  // Use dedicated copy keys instead.
+  // Plain-language start-spread: the real gap between the first and last
+  // member's start time. "within 15/30 min" was confusing — when everyone
+  // starts at the SAME time it still read "within 15 min". Say it plainly.
+  const startSpreadMin = (() => {
+    const ts = arrangement.assignments
+      .map((a) => Date.parse(a.startUtcIso))
+      .filter((n) => Number.isFinite(n));
+    if (ts.length < 2) return 0;
+    return Math.round((Math.max(...ts) - Math.min(...ts)) / 60_000);
+  })();
+  const startQualifier =
+    startSpreadMin <= 0
+      ? groupCopy.schedulingTogether ?? "Everyone starts at the same time"
+      : (groupCopy.schedulingWithinMin ?? "Starts spread over {n} min").replace(
+          "{n}",
+          String(startSpreadMin),
+        );
+
+  // In sync_finish mode all members end at the same time so the start-spread
+  // qualifier is meaningless — use dedicated copy keys instead.
   // Phase 6.1 — wave (large-group split) gets its own heading + icon.
   const heading = arrangement.isWaveBooking
     ? (groupCopy.waveSplitLabel ?? "Split into {count} waves").replace(
@@ -2520,11 +2537,9 @@ function ArrangementCard({
         : arrangement.kind === "alternative"
           ? groupCopy.schedulingFinishAlt ?? "Alternative time 🔄"
           : groupCopy.schedulingFinishEarly ?? "Earliest possible ⚡"
-      : arrangement.kind === "best"
-        ? groupCopy.schedulingBest ?? "Best ✨"
-        : arrangement.kind === "alternative"
-          ? groupCopy.schedulingAlt ?? "Alternative"
-          : groupCopy.schedulingEarly ?? "Earliest";
+      : arrangement.kind === "earliest"
+        ? groupCopy.schedulingEarly ?? "Earliest"
+        : startQualifier;
   const icon = arrangement.isWaveBooking
     ? "🌊"
     : arrangement.kind === "best"

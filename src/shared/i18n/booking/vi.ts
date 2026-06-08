@@ -259,6 +259,8 @@ export const bookingVi: BookingMessages = {
     schedulingBest: "Tốt nhất — cả nhóm trong vòng 15 phút",
     schedulingAlt: "Phương án khác — trong vòng 30 phút",
     schedulingEarly: "Sớm nhất có thể",
+    schedulingTogether: "Cả nhóm bắt đầu cùng lúc",
+    schedulingWithinMin: "Cả nhóm bắt đầu cách nhau ~{n} phút",
     schedulingFinishBest: "Đúng giờ ✨",
     schedulingFinishAlt: "Giờ khác 🔄",
     schedulingFinishEarly: "Sớm nhất có thể ⚡",

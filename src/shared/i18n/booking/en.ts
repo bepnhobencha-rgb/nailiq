@@ -333,6 +333,11 @@ export const bookingEn = {
     schedulingBest: "Best — everyone within 15 min",
     schedulingAlt: "Alternative — within 30 min",
     schedulingEarly: "Earliest available",
+    /** Plain-language start-spread copy (replaces the jargon above). When the
+     *  whole group starts at the same time we say "together"; otherwise we show
+     *  the real gap. `{n}` = minutes between the first and last start. */
+    schedulingTogether: "Everyone starts at the same time",
+    schedulingWithinMin: "Starts spread over {n} min",
     /** Step 4 cards — sync_finish mode labels (replace the ≤15/≤30 min
      *  start-spread copy which is meaningless when everyone ENDS together). */
     schedulingFinishBest: "On time ✨",
