@@ -193,6 +193,7 @@ export const bookingVi: BookingMessages = {
     organizerReturning: "Khách quen · {n} lần ghé",
     organizerUsual: "Thường làm: {service}",
     organizerChecking: "Đang kiểm tra…",
+    organizerIsGuestLabel: "Tôi cũng làm dịch vụ cùng nhóm",
     partyLinkScan: "Mỗi người quét mã để tự xác nhận slot và thêm số điện thoại nhận nhắc riêng.",
     partyLinkShareBtn: "Chia sẻ",
     addOnsLabel: "Dịch vụ thêm (tuỳ chọn)",
