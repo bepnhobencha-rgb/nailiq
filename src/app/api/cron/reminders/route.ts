@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { generateReminderToken } from "@/shared/noshow/generateReminderToken";
 import { sendReminderEmail } from "@/shared/noshow/sendReminderEmail";
+import { resolveVertical } from "@/shared/verticals/registry";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { logNotification } from "@/shared/lib/notificationLog";
 
@@ -71,7 +72,7 @@ export async function GET(req: Request) {
   const baseSelect = `id, salon_id, client_name, client_email, client_phone, start_time_utc,
     reminder_24h_sent_at, reminder_3h_sent_at,
     services!bookings_service_id_fkey(name), staff(name),
-    salons(name, slug, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled)`;
+    salons(name, slug, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled)`;
 
   // Fetch both email-eligible AND SMS-eligible bookings (no email filter here).
   const { data: need24h } = await supabase
@@ -121,6 +122,10 @@ export async function GET(req: Request) {
         startTimeUtc: booking.start_time_utc,
         salonName:    salon.name,
         salonSlug:    salon.slug,
+        timezone:     (salon as { timezone?: string | null }).timezone ?? null,
+        businessDescriptor: resolveVertical(
+          (salon as { vertical?: string | null }).vertical,
+        ).aiDescriptor,
       });
       if (result.ok) anySuccess = true;
       else errors++;
