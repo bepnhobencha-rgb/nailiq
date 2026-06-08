@@ -1,10 +1,12 @@
 import * as Sentry from "@sentry/nextjs";
 import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
-import { assertSlotWithinOpeningHours } from "@/shared/booking/assertSlotWithinOpeningHours";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
-import { parseTimeSlotOnDate } from "@/shared/booking/parseBookingTimeSlot";
+import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
+import { hmToMinutes } from "@/shared/booking/hmToMinutes";
+import { dayKeyFromLocalDate } from "@/shared/booking/dayKeyFromDate";
+import { salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 import { pickBestStaffAmongFree } from "@/shared/booking/pickBestStaffAmongFree";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import {
@@ -233,7 +235,7 @@ export async function submitPublicBooking(
   const { data: salon, error: salonErr } = await supabase
     .from("salons")
     .select(
-      "id, profile_complete, opening_hours, subscription_plan, plan_override, feature_flags, phone_otp_enabled, booking_lead_minutes",
+      "id, profile_complete, opening_hours, subscription_plan, plan_override, feature_flags, phone_otp_enabled, booking_lead_minutes, timezone",
     )
     .eq("slug", shopSlug)
     .single();
@@ -323,9 +325,21 @@ export async function submitPublicBooking(
     throw new Error("cannot_book_past");
   }
 
+  // Resolve the chosen slot in the SALON's timezone (not the customer's device
+  // tz), so a slot labelled "2:00 PM" is always 2 PM at the salon. `startLocal`
+  // holds the resulting absolute instant — every downstream .getTime()/
+  // .toISOString() stays correct.
+  const salonTz =
+    String((salon as { timezone?: unknown }).timezone ?? "").trim() ||
+    "America/Los_Angeles";
   let startLocal: Date;
+  let startMinsOfDay: number;
   try {
-    startLocal = parseTimeSlotOnDate(timeSlot, bookingDateYmd);
+    startMinsOfDay = parseTimeSlotToMinutes(timeSlot);
+    startLocal = new Date(
+      Date.parse(salonWallTimeToUtcIso(bookingDateYmd, startMinsOfDay, salonTz)),
+    );
+    if (Number.isNaN(startLocal.getTime())) throw new Error("invalid_time_slot");
   } catch {
     throw new Error("invalid_time_slot");
   }
@@ -399,24 +413,24 @@ export async function submitPublicBooking(
   const totalBlockMin = mainBlockMin + addonBlockMin;
   const endLocal = new Date(startLocal.getTime() + totalBlockMin * 60_000);
 
-  try {
-    const anchor = new Date(
-      startLocal.getFullYear(),
-      startLocal.getMonth(),
-      startLocal.getDate(),
-      12,
-      0,
-      0,
-      0,
-    );
-    assertSlotWithinOpeningHours(week, anchor, startLocal, endLocal);
-  } catch (e) {
-    if (e instanceof Error) {
-      if (e.message === "salon_closed_day") throw new Error("salon_closed_day");
-      if (e.message === "outside_opening_hours")
-        throw new Error("outside_opening_hours");
+  // Opening-hours check in SALON-LOCAL minutes (device-tz-independent). Mirrors
+  // assertSlotWithinOpeningHours but works on the wall-clock minutes we already
+  // have, avoiding Date.getHours() (which would read the runtime's tz).
+  {
+    if (!week) throw new Error("outside_opening_hours");
+    const dayCfg = week[dayKeyFromLocalDate(new Date(`${bookingDateYmd}T12:00:00`))];
+    if (!dayCfg || dayCfg.closed) throw new Error("salon_closed_day");
+    const openM = hmToMinutes(dayCfg.open);
+    const closeM = hmToMinutes(dayCfg.close);
+    const endMinsOfDay = startMinsOfDay + totalBlockMin;
+    if (closeM <= openM) throw new Error("outside_opening_hours");
+    if (
+      startMinsOfDay < openM ||
+      endMinsOfDay > closeM ||
+      endMinsOfDay <= startMinsOfDay
+    ) {
+      throw new Error("outside_opening_hours");
     }
-    throw new Error("outside_opening_hours");
   }
 
   const priceSnapshot = comboOverride
