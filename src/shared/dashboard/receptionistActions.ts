@@ -823,7 +823,9 @@ export async function markNoShowBooking(
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .in("status", ["confirmed", "in_progress"])
-    .select("id, client_phone, service_id")
+    .select(
+      "id, client_phone, client_name, client_email, service_id, services!bookings_service_id_fkey(name)",
+    )
     .maybeSingle();
   if (upErr) {
     console.error("[markNoShowBooking]", upErr);
@@ -859,6 +861,44 @@ export async function markNoShowBooking(
     }
   } catch (e) {
     console.error("[markNoShowBooking] waitlist", e);
+  }
+
+  // Win-back — a friendly "we missed you, rebook" email (retention over
+  // penalty). Opt-out via salons.winback_enabled. Best-effort, off the response
+  // path; never fails the desk action.
+  const winbackEmail = (updated as { client_email?: string | null }).client_email;
+  if (winbackEmail && winbackEmail.trim()) {
+    const clientName = String((updated as { client_name?: string | null }).client_name ?? "");
+    const svcName = String(
+      (updated as { services?: { name?: string | null } | null }).services?.name ?? "",
+    );
+    after(async () => {
+      try {
+        const { data: salonRow } = await ctx.supabase
+          .from("salons")
+          .select("name, slug, winback_enabled" as never)
+          .eq("id", ctx.salon.id)
+          .maybeSingle();
+        const s = (salonRow ?? {}) as {
+          name?: string | null;
+          slug?: string | null;
+          winback_enabled?: boolean | null;
+        };
+        if (s.winback_enabled === false || !s.slug) return;
+        const { sendWinBackEmail } = await import(
+          "@/shared/noshow/sendWinBackEmail"
+        );
+        await sendWinBackEmail({
+          clientName,
+          clientEmail: winbackEmail,
+          salonName: String(s.name ?? ""),
+          salonSlug: String(s.slug),
+          serviceName: svcName,
+        });
+      } catch (e) {
+        console.error("[markNoShowBooking] winback", e);
+      }
+    });
   }
 
   void logBookingEvent({

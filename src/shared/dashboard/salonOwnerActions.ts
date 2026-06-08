@@ -961,6 +961,37 @@ export async function updateSalonVertical(
   return { ok: true, vertical: normalized };
 }
 
+/* ───────────── Win-back email (opt-out) ───────────── */
+
+export type UpdateWinBackResult =
+  | { ok: true; enabled: boolean }
+  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" };
+
+/** Owner-only: toggles `salons.winback_enabled` (friendly rebook email after a
+ *  no-show). Default true. */
+export async function updateWinBackEnabled(
+  slug: string,
+  enabled: boolean,
+): Promise<UpdateWinBackResult> {
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+
+  const { error } = await ctx.supabase
+    .from("salons")
+    .update({ winback_enabled: enabled } as never)
+    .eq("id", ctx.salon.id);
+
+  if (error) {
+    console.error("[updateWinBackEnabled]", error);
+    return { ok: false, error: "server_error" };
+  }
+  return { ok: true, enabled };
+}
+
 /* ───────────── Auto no-show (opt-in) ───────────── */
 
 export type UpdateAutoNoShowResult =

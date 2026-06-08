@@ -31,7 +31,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, reference_image_enabled, auto_no_show_minutes",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, reference_image_enabled, auto_no_show_minutes, winback_enabled",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -68,6 +68,7 @@ export default async function SalonSettingsPage({ params }: Props) {
         booking_lead_minutes?: unknown;
         reference_image_enabled?: unknown;
         auto_no_show_minutes?: unknown;
+        winback_enabled?: unknown;
       }
     | null;
 
@@ -130,6 +131,8 @@ export default async function SalonSettingsPage({ params }: Props) {
     const v = Number(row?.auto_no_show_minutes);
     return Number.isFinite(v) && v >= 0 ? Math.round(v) : 0;
   })();
+  // Win-back defaults ON (column default true); only explicit false disables.
+  const winBackEnabled = row?.winback_enabled !== false;
 
   return (
     <SalonSettingsHub
@@ -160,6 +163,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       bookingLeadMinutes={bookingLeadMinutes}
       referenceImageEnabled={referenceImageEnabled}
       autoNoShowMinutes={autoNoShowMinutes}
+      winBackEnabled={winBackEnabled}
     />
   );
 }
