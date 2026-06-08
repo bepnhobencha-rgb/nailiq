@@ -289,6 +289,16 @@ export function SalonOwnerDashboardMain({
                           </span>
                           <span className="min-w-0 flex-1 text-right text-base text-nq-foreground/95">
                             {b.client_name}
+                            {b.seat_together ? (
+                              <span
+                                title={t.seatTogether}
+                                aria-label={t.seatTogether}
+                                data-testid={`owner-upcoming-seat-together-${b.id}`}
+                                className="ml-1 align-middle"
+                              >
+                                💕
+                              </span>
+                            ) : null}
                             <span className="text-nq-muted"> · </span>
                             <span className="text-nq-muted">{b.service_name}</span>
                             {b.staff_name ? (
