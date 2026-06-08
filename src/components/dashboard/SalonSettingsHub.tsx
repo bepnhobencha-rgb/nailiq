@@ -29,6 +29,7 @@ import { StaffSelectionSettings } from "@/components/dashboard/StaffSelectionSet
 import { BookingLeadSettings } from "@/components/dashboard/BookingLeadSettings";
 import { ReferenceImageSettings } from "@/components/dashboard/ReferenceImageSettings";
 import { AutoNoShowSettings } from "@/components/dashboard/AutoNoShowSettings";
+import { WinBackSettings } from "@/components/dashboard/WinBackSettings";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
@@ -69,6 +70,7 @@ export function SalonSettingsHub({
   bookingLeadMinutes,
   referenceImageEnabled,
   autoNoShowMinutes,
+  winBackEnabled,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -97,6 +99,7 @@ export function SalonSettingsHub({
   bookingLeadMinutes: number;
   referenceImageEnabled: boolean;
   autoNoShowMinutes: number;
+  winBackEnabled: boolean;
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -400,6 +403,11 @@ export function SalonSettingsHub({
         {/* ── Auto no-show (opt-in) ───────────────────────────── */}
         {canEditDashboardModules ? (
           <AutoNoShowSettings slug={slug} initialMinutes={autoNoShowMinutes} />
+        ) : null}
+
+        {/* ── Win-back email after no-show ────────────────────── */}
+        {canEditDashboardModules ? (
+          <WinBackSettings slug={slug} initialEnabled={winBackEnabled} />
         ) : null}
 
         {/* ── Custom domain ───────────────────────────────────── */}
