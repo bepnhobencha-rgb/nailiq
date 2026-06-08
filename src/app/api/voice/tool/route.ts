@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { computeTimeSlots } from "@/shared/booking/getAvailableTimeSlots";
 import { parseOpeningHours, type DayKey, type OpeningHoursWeek } from "@/shared/dashboard/openingHoursDefaults";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
@@ -345,7 +346,7 @@ async function handleConfirmBooking(
     p_service_id:    serviceId,
     p_staff_id:      resolvedStaffId,
     p_client_name:   customerName,
-    p_client_phone:  customerPhone,
+    p_client_phone:  toCanonicalPhone(customerPhone) ?? customerPhone,
     p_start_time_utc: startUtcIso,
     p_end_time_utc:   endUtcIso,
     p_status:         "confirmed",
