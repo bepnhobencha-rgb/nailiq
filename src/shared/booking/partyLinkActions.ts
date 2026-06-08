@@ -131,8 +131,14 @@ export async function createPartyLink(params: {
   organizerName?: string;
   /** Normalised phone digits of the organiser (optional). */
   organizerPhone?: string;
+  /** Booking id of the organiser's OWN slot, when the organiser is also
+   *  one of the guests. That slot is pre-claimed (they already booked),
+   *  so the share link never asks the organiser to claim themselves.
+   *  Null/undefined when the organiser is only the contact (booking on
+   *  behalf of others) — then every slot is claimable. */
+  organizerBookingId?: string | null;
 }): Promise<CreatePartyLinkResult> {
-  const { groupId, salonId, bookingIds, mode, groupStartUtcIso, baseUrl, organizerName, organizerPhone } = params;
+  const { groupId, salonId, bookingIds, mode, groupStartUtcIso, baseUrl, organizerName, organizerPhone, organizerBookingId } = params;
 
   if (!groupId || !salonId || !Array.isArray(bookingIds) || bookingIds.length < 2) {
     return { ok: false, reason: "invalid_input" };
@@ -227,11 +233,27 @@ export async function createPartyLink(params: {
     return { ok: false, reason: "token_collision" };
   }
 
-  // Pre-create one claim per booking (unclaimed = member_name NULL, claimed_at NULL).
-  const claimRows = bookingIds.map((bid) => ({
-    party_link_id: linkId as string,
-    booking_id: bid,
-  }));
+  // Pre-create one claim per booking (unclaimed = member_name NULL,
+  // claimed_at NULL). The organiser's own slot is pre-claimed with their
+  // name + phone so the share link shows it confirmed and never asks the
+  // person who booked to claim themselves.
+  const claimRows = bookingIds.map((bid) => {
+    const isOrganizer =
+      organizerBookingId != null && bid === organizerBookingId;
+    if (isOrganizer) {
+      return {
+        party_link_id: linkId as string,
+        booking_id: bid,
+        member_name: organizerName?.trim() || null,
+        member_phone: organizerPhone?.trim() || null,
+        claimed_at: new Date().toISOString(),
+      };
+    }
+    return {
+      party_link_id: linkId as string,
+      booking_id: bid,
+    };
+  });
 
   const { error: claimErr } = await db.from("party_link_claims").insert(claimRows);
   if (claimErr) {

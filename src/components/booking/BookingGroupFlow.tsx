@@ -222,6 +222,12 @@ export function BookingGroupFlow({
   const organizerLookupTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  // Is the organizer (primary contact) also one of the guests getting a
+  // service? Default true (couples/friends usually are). When true their
+  // own slot is pre-claimed in the Party Link so the share link never
+  // asks them to claim themselves; when false (booking on behalf) every
+  // slot stays claimable.
+  const [organizerIsGuest, setOrganizerIsGuest] = useState(true);
 
   // Smart-schedule results.
   const [scheduling, setScheduling] = useState(false);
@@ -796,6 +802,12 @@ export function BookingGroupFlow({
               typeof window !== "undefined" ? window.location.origin : "",
             organizerName:  members[0]?.name.trim() || undefined,
             organizerPhone: primaryPhone.trim() || undefined,
+            // When the organizer is also a guest, member 0 is their slot
+            // (payload is sorted by memberIndex, so bookingIds[0] = member
+            // 0). Pre-claim it so the link never asks them to claim.
+            organizerBookingId: organizerIsGuest
+              ? (res.bookingIds[0] ?? null)
+              : null,
           }).then((linkResult) => {
             if (linkResult.ok) {
               setPartyLinkUrl(linkResult.url);
@@ -1345,6 +1357,8 @@ export function BookingGroupFlow({
           primaryEmail={primaryEmail}
           organizer={organizer}
           organizerLoading={organizerLoading}
+          organizerIsGuest={organizerIsGuest}
+          onOrganizerIsGuestChange={setOrganizerIsGuest}
           submitting={submitting}
           errorMessage={errorMessage}
           totalDisplay={totalDisplay}
@@ -2994,6 +3008,8 @@ function ConfirmStep({
   primaryEmail,
   organizer,
   organizerLoading,
+  organizerIsGuest,
+  onOrganizerIsGuestChange,
   submitting,
   errorMessage,
   totalDisplay,
@@ -3023,6 +3039,9 @@ function ConfirmStep({
   /** Returning-customer match for the organizer phone, or null. */
   organizer: ReturningCustomer | null;
   organizerLoading: boolean;
+  /** Whether the organizer is also one of the guests. */
+  organizerIsGuest: boolean;
+  onOrganizerIsGuestChange: (v: boolean) => void;
   submitting: boolean;
   errorMessage: string | null;
   totalDisplay: string | null;
@@ -3232,6 +3251,26 @@ function ConfirmStep({
             {groupCopy.organizerChecking ?? "Checking…"}
           </p>
         ) : null}
+
+        {/* Is the contact also one of the guests? Drives whether their
+            own slot is pre-claimed in the Party Link (so they're never
+            asked to "claim" themselves). */}
+        <label
+          data-testid="group-organizer-is-guest"
+          className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] px-3 py-2.5"
+        >
+          <input
+            type="checkbox"
+            checked={organizerIsGuest}
+            onChange={(e) => onOrganizerIsGuestChange(e.target.checked)}
+            className="h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+          />
+          <span className="text-sm font-medium">
+            {groupCopy.organizerIsGuestLabel ??
+              "I'm also getting a service with the group"}
+          </span>
+        </label>
+
         <div>
           <label
             htmlFor="group-primary-phone-input"

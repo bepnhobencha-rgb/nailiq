@@ -235,6 +235,7 @@ export const bookingEn = {
     organizerReturning: "Returning guest · {n} visits",
     organizerUsual: "Usual: {service}",
     organizerChecking: "Checking…",
+    organizerIsGuestLabel: "I'm also getting a service with the group",
     /** Success-screen QR / share-to-join copy. */
     partyLinkScan: "Each guest scans to confirm their own slot and add their number.",
     partyLinkShareBtn: "Share",
