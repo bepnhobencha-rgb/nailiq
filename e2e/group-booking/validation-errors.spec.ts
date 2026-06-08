@@ -104,7 +104,9 @@ test.describe("Group booking — validation errors", () => {
 
   test("step 5: empty phone → Confirm stays disabled", async ({ page }) => {
     await walkToStep5(page);
-    // No phone typed.
+    // The phone-first gate pre-fills the primary contact; clear it to
+    // exercise the empty-phone gate.
+    await page.getByTestId("group-primary-phone").fill("");
     await expect(page.getByTestId("group-confirm")).toBeDisabled();
   });
 

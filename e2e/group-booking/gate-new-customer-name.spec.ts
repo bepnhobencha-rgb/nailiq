@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
 import { cleanupTestSalon } from "../helpers/db";
-import { gotoGroupFlow, seedGroupTestSalon } from "./helpers";
+import { seedGroupTestSalon } from "./helpers";
 
 /**
  * Phone-first gate — NEW customer (phone not recognized) captures their
@@ -31,7 +31,8 @@ test.describe("Phone-first gate — new customer name", () => {
   test("new customer types name at the gate; it pre-fills Guest 1", async ({
     page,
   }) => {
-    await gotoGroupFlow(page, SLUG);
+    // Drive the gate directly (don't pre-enter a phone via gotoGroupFlow).
+    await page.goto(`/${SLUG}`);
     await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
 
     // New phone → no recognition → the name field appears.
@@ -51,6 +52,7 @@ test.describe("Phone-first gate — new customer name", () => {
     await page.waitForTimeout(600);
 
     // Into the group flow → Guest 1 is pre-filled with the typed name.
+    await page.getByTestId("booking-type-group").click();
     await page.getByTestId("group-size-2").click();
     await page.getByTestId("group-size-next").click();
     await page

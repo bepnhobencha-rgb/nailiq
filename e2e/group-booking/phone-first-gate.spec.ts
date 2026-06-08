@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
 import { cleanupTestSalon } from "../helpers/db";
-import { gotoGroupFlow, seedGroupTestSalon } from "./helpers";
+import { seedGroupTestSalon } from "./helpers";
 
 /**
  * Phone-first entry gate (above the Individual/Group choice):
@@ -38,9 +38,9 @@ test.describe("Phone-first entry gate", () => {
   test("recognizes the customer and skips the individual phone step", async ({
     page,
   }) => {
-    // gotoGroupFlow opens /<slug>?mode=group; the gate sits above both
-    // flows so it's present regardless of mode.
-    await gotoGroupFlow(page, SLUG);
+    // Land on the booking page directly — this test drives the gate
+    // itself, so it must not pre-enter a phone via gotoGroupFlow.
+    await page.goto(`/${SLUG}`);
 
     const gate = page.getByTestId("booking-phone-gate");
     await expect(gate).toBeVisible();

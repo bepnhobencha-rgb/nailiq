@@ -111,10 +111,10 @@ export function BookingTypeSwitcher({
 
   // ── Phone-first gate ───────────────────────────────────────────
   // Ask the customer's phone once, up front, and recognise returning
-  // guests BEFORE they pick Individual vs Group. The captured phone +
-  // customer are threaded into whichever flow they choose so they
-  // never type it again. Gentle, not blocking: a guest can ignore it
-  // and pick a flow — the flow then asks for the phone as before.
+  // guests BEFORE they pick Individual vs Group. The Individual/Group
+  // choice + the flow only appear AFTER a valid phone is entered — so
+  // the gate is the single phone input and the individual flow starts
+  // at "service" (never showing its own phone step → never two inputs).
   const [entryPhoneRaw, setEntryPhoneRaw] = useState("");
   const [entryCustomer, setEntryCustomer] = useState<ReturningCustomer | null>(
     null,
@@ -277,22 +277,27 @@ export function BookingTypeSwitcher({
           <VoiceBookingButton t={t} shopSlug={shopSlug} language={language} />
         )}
         {phoneGate}
-        <BookingFlow
-          key={`ind-${entryPhone}-${entryNameResolved}`}
-          t={t}
-          shopSlug={shopSlug}
-          services={services}
-          addOns={addOns}
-          combos={combos}
-          staff={staff}
-          salon={salon}
-          capabilityRows={capabilityRows}
-          categories={categories}
-          language={language}
-          initialPhone={entryPhone}
-          initialReturningCustomer={entryCustomer}
-          initialName={entryNameResolved}
-        />
+        {/* Phone-first: the flow (which starts at "service", skipping its
+            own phone step) only renders once a phone is entered at the
+            gate — so the gate is the single phone input, never two. */}
+        {entryPhone ? (
+          <BookingFlow
+            key={`ind-${entryPhone}-${entryNameResolved}`}
+            t={t}
+            shopSlug={shopSlug}
+            services={services}
+            addOns={addOns}
+            combos={combos}
+            staff={staff}
+            salon={salon}
+            capabilityRows={capabilityRows}
+            categories={categories}
+            language={language}
+            initialPhone={entryPhone}
+            initialReturningCustomer={entryCustomer}
+            initialName={entryNameResolved}
+          />
+        ) : null}
       </div>
     );
   }
@@ -302,8 +307,13 @@ export function BookingTypeSwitcher({
       {voiceAiEnabled && (
         <VoiceBookingButton t={t} shopSlug={shopSlug} language={language} />
       )}
-      {/* Phone-first: ask once, recognise, then choose. */}
+      {/* Phone-first: ask once, recognise, then choose. The choice +
+          flow only appear AFTER a phone is entered — so the gate is the
+          single phone input (the individual flow then starts at
+          "service", skipping its own phone step → never two inputs). */}
       {phoneGate}
+      {entryPhone ? (
+      <>
       {/* Heading + pill stacked. Was previously an inline-flex pill
           on its own line with no heading — easy to miss on first
           paint. Promoted to a small section so it's clearly part of
@@ -380,6 +390,8 @@ export function BookingTypeSwitcher({
           initialName={entryNameResolved}
         />
       )}
+      </>
+      ) : null}
     </div>
   );
 }
