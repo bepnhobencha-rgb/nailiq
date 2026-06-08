@@ -226,6 +226,9 @@ export const bookingEn = {
     sameServicePlaceholder: "Choose a service for the group",
     sameServiceApplied: "Applied to all {n} guests",
     sameServiceMixed: "Each guest has their own service",
+    /** Group-level add-on quick-fill (Step 2). */
+    sameAddonsHeading: "Add-ons for everyone",
+    sameAddonsHint: "Tap to add for the whole group — you can change anyone below.",
     memberCustomBadge: "Changed",
     /** Step-2 couple/group "sit together" toggle + reception badge. */
     seatTogetherLabel: "Seat us next to each other",

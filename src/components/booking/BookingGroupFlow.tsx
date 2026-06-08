@@ -567,6 +567,36 @@ export function BookingGroupFlow({
     return members.every((m) => m.serviceId === first) ? first : "";
   }, [members]);
 
+  /** Toggle an add-on for the WHOLE group at once. If every member already
+   *  has it → remove it from all; otherwise add it to all. Per-member chips
+   *  still let a guest override afterwards. */
+  function applyAddonToAll(addonId: string) {
+    if (!addonId) return;
+    setMembers((prev) => {
+      const allHave =
+        prev.length > 0 &&
+        prev.every((m) => m.addonServiceIds.includes(addonId));
+      return prev.map((m) => ({
+        ...m,
+        addonServiceIds: allHave
+          ? m.addonServiceIds.filter((id) => id !== addonId)
+          : Array.from(new Set([...m.addonServiceIds, addonId])),
+      }));
+    });
+    setScheduleResult(null);
+  }
+
+  /** Add-on ids shared by EVERY member — drives the group-level chip
+   *  "selected" state. */
+  const groupAddonIds = useMemo(() => {
+    if (members.length === 0) return new Set<string>();
+    return new Set(
+      members[0].addonServiceIds.filter((id) =>
+        members.every((m) => m.addonServiceIds.includes(id)),
+      ),
+    );
+  }, [members]);
+
   /** Move forward to the given step, validating the current one
    *  on the way. Back-navigation (step < current) skips validation
    *  so the user can always retreat. */
@@ -1187,9 +1217,11 @@ export function BookingGroupFlow({
           size={size}
           groupServiceId={groupServiceId}
           appliedServiceId={appliedServiceId}
+          groupAddonIds={groupAddonIds}
           seatTogether={seatTogether}
           onSeatTogetherChange={setSeatTogether}
           onApplyServiceToAll={applyServiceToAll}
+          onApplyAddonToAll={applyAddonToAll}
           onPatchMember={patchMember}
           onBack={() => goToStep(1)}
           onNext={() => goToStep(3)}
@@ -1585,9 +1617,11 @@ function ServiceStaffStep({
   size,
   groupServiceId,
   appliedServiceId,
+  groupAddonIds,
   seatTogether,
   onSeatTogetherChange,
   onApplyServiceToAll,
+  onApplyAddonToAll,
   onPatchMember,
   onBack,
   onNext,
@@ -1609,10 +1643,13 @@ function ServiceStaffStep({
   groupServiceId: string;
   /** Service applied via quick-fill; used to badge overrides. */
   appliedServiceId: string;
+  /** Add-on ids currently shared by EVERY member (group-level chip state). */
+  groupAddonIds: Set<string>;
   /** Couple/group "sit together" preference. */
   seatTogether: boolean;
   onSeatTogetherChange: (v: boolean) => void;
   onApplyServiceToAll: (serviceId: string) => void;
+  onApplyAddonToAll: (addonId: string) => void;
   onPatchMember: (i: number, patch: Partial<MemberDraft>) => void;
   onBack: () => void;
   onNext: () => void;
@@ -1678,6 +1715,53 @@ function ServiceStaffStep({
                 : (groupCopy.sameServiceMixed ?? "Each guest has their own service")}
             </p>
           ) : null}
+        </div>
+      ) : null}
+
+      {/* Add-ons for the whole group — one tap adds an add-on to every
+          guest; each card can still toggle its own below. */}
+      {addOns.length > 0 && members.length > 1 ? (
+        <div
+          data-testid="group-same-addons"
+          className="rounded-2xl border border-[var(--salon-primary)]/40 bg-[var(--salon-primary)]/5 p-4 sm:p-5"
+        >
+          <p className="mb-1 text-base font-semibold">
+            ✨ {groupCopy.sameAddonsHeading ?? "Add-ons for everyone"}
+          </p>
+          <p className="mb-2.5 text-xs text-[var(--booking-text-muted)]">
+            {groupCopy.sameAddonsHint ??
+              "Tap to add for the whole group — you can change anyone below."}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {addOns.map((a) => {
+              const selected = groupAddonIds.has(a.id);
+              const timingTag = a.addonConcurrent
+                ? " · ✨ +0′"
+                : a.totalMinutes > 0
+                  ? ` · +${a.totalMinutes}′`
+                  : "";
+              const priceTag = a.priceDisplay ? ` · ${a.priceDisplay}` : "";
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  data-testid={`group-same-addon-${a.id}`}
+                  aria-pressed={selected}
+                  onClick={() => onApplyAddonToAll(a.id)}
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                    selected
+                      ? "border-[var(--salon-primary)] bg-[var(--salon-primary)]/10 text-[var(--booking-text)]"
+                      : "border-[var(--booking-border)] bg-[var(--booking-bg-input)] text-[var(--booking-text-muted)]",
+                  )}
+                >
+                  {a.name}
+                  {timingTag}
+                  {priceTag}
+                </button>
+              );
+            })}
+          </div>
         </div>
       ) : null}
       {duplicateStaffIdx.size > 0 ? (
