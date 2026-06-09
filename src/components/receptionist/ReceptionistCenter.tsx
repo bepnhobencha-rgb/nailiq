@@ -123,6 +123,7 @@ import {
 import type { BookingStatus } from "@/shared/types";
 import { BookingLimitBanner } from "@/components/dashboard/BookingLimitBanner";
 import { PartyCardPanel } from "@/components/receptionist/PartyCardPanel";
+import { AttentionChipBar } from "@/components/receptionist/AttentionChipBar";
 import type { PartyCard } from "@/shared/dashboard/loadPartyCardsAction";
 
 export type ReceptionistCenterProps = {
@@ -1557,6 +1558,24 @@ function ReceptionistCenterInner({
   // ── Basic Mode cockpit data (deterministic; display-only) ───────
   const basicModeActive = basicMode && isViewingToday && viewMode === "day";
 
+  // ── Groups summary for the AttentionChipBar "Groups" chip ───────────
+  // Non-basic modes surface upcoming parties through the chip bar's dropdown
+  // (the inline strip is gone). Basic Mode keeps its cockpit reveal, so the
+  // chip's groups affordance is suppressed there. "Unconfirmed" = unclaimed
+  // slots + pending change requests across non-expired parties.
+  const activeParties = (partyCards ?? []).filter((c) => !c.expired);
+  const showGroupsChip = groupBookingEnabled && !basicModeActive;
+  const groupSummary =
+    showGroupsChip && activeParties.length > 0
+      ? {
+          active: activeParties.length,
+          unconfirmed: activeParties.reduce(
+            (n, c) => n + c.pendingCount + c.pendingChangeRequestCount,
+            0,
+          ),
+        }
+      : null;
+
   // Available staff (operational, not a risk state) — used by the Now Bar
   // "Available staff" card (shows a name) and the walk-in nudge.
   const availableStaffList = data.staff.filter((s) => s.status === "available");
@@ -2351,14 +2370,14 @@ function ReceptionistCenterInner({
         ) : null}
 
         {/* Party Card Panel — upcoming group bookings with party links.
-            Balanced/Advanced always mount the full strip. Basic Mode keeps
-            the cockpit calm: the heavy card strip is NOT rendered — an
-            actionable party issue shows only as a compact cockpit alert,
-            and clicking its "Open party bookings" reveals the cards on
-            demand (partyRevealed). No actionable issue → no party section. */}
+            Balanced/Advanced no longer mount the strip inline (it ate the
+            grid's height); instead the party cards live inside the
+            AttentionChipBar's "Groups" dropdown above the grid. Basic Mode
+            keeps its calm cockpit: the strip is revealed on demand only when
+            the cockpit's "Open party bookings" alert is tapped (partyRevealed). */}
         {/* Release flag `group_booking` (PR2): hide the party-card strip
             entirely when group booking is disabled for this salon. */}
-        {!groupBookingEnabled || (basicModeActive && !partyRevealed) ? null : (
+        {groupBookingEnabled && basicModeActive && partyRevealed ? (
           <div id="party-strip">
             <PartyCardPanel
               initialCards={partyCards}
@@ -2367,7 +2386,7 @@ function ReceptionistCenterInner({
               labels={rcMessages.partyCard}
             />
           </div>
-        )}
+        ) : null}
 
         {modules.alerts && isSetupIncomplete ? (
           <div
@@ -2506,64 +2525,29 @@ function ReceptionistCenterInner({
                 : "",
             )}
           >
-            {(attentionOverdue.length > 0 || noShowsTodayList.length > 0) ? (
-              <div className="mx-3 mt-3 rounded-2xl border border-amber-400/30 bg-amber-400/5 px-3 py-3 text-sm">
-                {attentionOverdue.length > 0 ? (
-                  <div className="mb-2">
-                    <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-amber-400">
-                      ⏰ {language === "vi" ? "Quá giờ — chưa bắt đầu" : "Overdue — not started"} ({attentionOverdue.length})
-                    </p>
-                    <div className="flex flex-col gap-1.5">
-                      {attentionOverdue.map((b) => (
-                        <div key={b.id} className="flex items-center justify-between gap-2 rounded-lg bg-nq-surface/40 px-2.5 py-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setDrawerBookingId(b.id)}
-                            className="min-w-0 flex-1 truncate text-left text-nq-foreground"
-                          >
-                            <span className="font-medium">{displayCustomerName(b.client_name, attentionRemovedLabel)}</span>
-                            <span className="text-nq-muted"> · {formatInSalonTz(b.start_time_utc, timezone, "time")}</span>
-                          </button>
-                          <button
-                            type="button"
-                            disabled={drawerBusy}
-                            onClick={() => void handleMarkNoShow(b.id)}
-                            className="shrink-0 rounded-full border border-red-400/40 px-3 py-1 text-xs font-medium text-red-400 hover:bg-red-400/10 disabled:opacity-50"
-                          >
-                            {language === "vi" ? "Vắng" : "No-show"}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                {noShowsTodayList.length > 0 ? (
-                  <div>
-                    <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-nq-muted">
-                      {language === "vi" ? "Đã đánh dấu vắng hôm nay" : "Marked no-show today"} ({noShowsTodayList.length})
-                    </p>
-                    <div className="flex flex-col gap-1.5">
-                      {noShowsTodayList.map((ns) => (
-                        <div key={ns.id} className="flex items-center justify-between gap-2 rounded-lg bg-nq-surface/40 px-2.5 py-1.5">
-                          <span className="min-w-0 flex-1 truncate text-nq-muted line-through">
-                            {displayCustomerName(ns.clientName, attentionRemovedLabel)}
-                            <span> · {formatInSalonTz(ns.startTimeUtc, timezone, "time")}</span>
-                          </span>
-                          <button
-                            type="button"
-                            disabled={drawerBusy}
-                            onClick={() => void handleUndoNoShow(ns.id)}
-                            className="shrink-0 rounded-full border border-emerald-400/40 px-3 py-1 text-xs font-medium text-emerald-400 hover:bg-emerald-400/10 disabled:opacity-50"
-                          >
-                            {language === "vi" ? "Bỏ vắng (đã đến)" : "Undo (arrived)"}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+            <AttentionChipBar
+              language={language === "vi" ? "vi" : "en"}
+              overdue={attentionOverdue}
+              noShowsToday={noShowsTodayList}
+              groupSummary={groupSummary}
+              groupsContent={
+                showGroupsChip ? (
+                  <PartyCardPanel
+                    initialCards={partyCards}
+                    slug={slug}
+                    currencyCode={data.salon.currencyCode}
+                    labels={rcMessages.partyCard}
+                  />
+                ) : null
+              }
+              busy={drawerBusy}
+              removedLabel={attentionRemovedLabel}
+              formatTime={(utcIso) => formatInSalonTz(utcIso, timezone, "time")}
+              displayName={displayCustomerName}
+              onOpenBooking={(id) => setDrawerBookingId(id)}
+              onMarkNoShow={(id) => void handleMarkNoShow(id)}
+              onUndoNoShow={(id) => void handleUndoNoShow(id)}
+            />
 
             <StaffTimelineGrid
               compactBookingIcons={basicModeActive}

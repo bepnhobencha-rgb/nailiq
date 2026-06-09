@@ -16,6 +16,7 @@
 import { test, expect } from "@playwright/test";
 
 import { cleanupTestSalon } from "../helpers/db";
+import { cleanupPartyData, seedPartyLink } from "../party-booking/helpers";
 import {
   cleanReceptionistData,
   gotoReceptionistCenter,
@@ -32,6 +33,11 @@ test.beforeAll(async ({}, testInfo) => {
 test.beforeEach(async () => {
   await cleanReceptionistData(fx.salonId);
 });
+test.afterEach(async () => {
+  // party_link_claims FK on bookings — clear party data so afterAll teardown
+  // (cleanupTestSalon) doesn't trip the constraint.
+  await cleanupPartyData(fx.salonId);
+});
 test.afterAll(async ({}, testInfo) => {
   await cleanupTestSalon(rcSlug(testInfo.project.name));
 });
@@ -40,7 +46,18 @@ test.describe("PartyCardPanel — valid HTML (no nested buttons)", () => {
   test("refresh button is NOT a descendant of the toggle button", async ({
     page,
   }) => {
+    // The PartyCardPanel now lives inside the AttentionChipBar "Groups"
+    // dropdown, which only appears when the salon has an active party. Seed
+    // one, then open the dropdown to reach the panel.
+    await seedPartyLink({
+      salonId: fx.salonId,
+      staffIds: fx.staffIds,
+      serviceIds: fx.serviceIds,
+      slotCount: 2,
+    });
+
     await gotoReceptionistCenter(page, fx.slug);
+    await page.getByTestId("attention-chip-groups").click();
 
     const toggle = page.getByTestId("party-card-panel-toggle");
     const refresh = page.getByTestId("party-card-panel-refresh");
