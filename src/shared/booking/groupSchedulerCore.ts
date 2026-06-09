@@ -89,10 +89,10 @@ export type ResolvedMember = {
   serviceName: string;
   /** Total minutes (duration + buffer) for occupancy math. */
   totalMinutes: number;
-  /** Per-service buffer ("Chuẩn bị (phút)") in minutes. Drives the
-   *  inter-wave gap so the chair-reset time the operator configured is
-   *  what shows on the calendar — not a hardcoded 15. Optional: when a
-   *  caller omits it, wave scheduling falls back to WAVE_BUFFER_MIN. */
+  /** Per-service buffer ("Chuẩn bị (phút)") in minutes. Already folded into
+   *  `totalMinutes` (duration + buffer), so it is the chair-reset time baked
+   *  into each booking block. Waves are flush against that block, so this is
+   *  NOT added again between waves (doing so double-counted the buffer). */
   bufferMinutes?: number;
   priceCents: number | null;
   preferredStaffId: string | null;
@@ -126,11 +126,10 @@ export type FinishArrangementsCtx = {
 
 export const SLOT_STEP_MIN = 15;
 
-/** Phase 6 — fallback gap inserted between the end of one wave and the start of
- *  the next so staff have time to reset between back-to-back guests. Used only
- *  when no member in the wave carries a per-service `bufferMinutes` (and no
- *  explicit `opts.waveBufferMin` is passed); otherwise the gap is derived from
- *  the service buffer the operator configured. */
+/** Legacy default inter-wave gap (minutes). No longer applied automatically —
+ *  waves are flush by default because each booking block already carries the
+ *  per-service buffer (see `tryWaveArrangement`). Retained only as a named
+ *  constant for callers that pass an explicit `opts.waveBufferMin` stagger. */
 export const WAVE_BUFFER_MIN = 15;
 
 /** Safety ceiling on wave count so a pathological input can't loop forever. */
@@ -409,18 +408,19 @@ export type WaveRawAssignment = {
  * because capacity is exceeded) — never as a replacement for it.
  *
  * Greedy fill: wave 1 starts at `anchorMs` and seats as many members as there
- * are capable, free staff. Whoever is left forms wave 2, starting at
- * (wave 1's latest end + the wave gap); repeat until everyone is seated.
+ * are capable, free staff. Whoever is left forms wave 2, starting at wave 1's
+ * latest block end; repeat until everyone is seated.
  *
- * The wave gap is, in priority order: `opts.waveBufferMin` when given, else the
- * largest `bufferMinutes` among the members seated in the just-finished wave
- * (so the chair-reset time the operator configured on the service is what the
- * schedule reflects), else `WAVE_BUFFER_MIN` as a last-resort fallback.
+ * Waves are FLUSH: each booking block already includes the per-service buffer
+ * (`totalMinutes` = duration + buffer), so the next wave starts the instant the
+ * previous wave's blocks end — one buffer of reset, exactly like back-to-back
+ * appointments. (Deriving an extra gap from the buffer double-counted it.) An
+ * explicit `opts.waveBufferMin` still inserts a deliberate inter-wave stagger.
  *
  * Each wave reuses the existing capability + `staffIsFree` checks. Earlier waves
  * are appended to a private occupancy copy so the same staff is never
- * double-booked — and because later waves start strictly after earlier ones end
- * (+ buffer), their intervals never overlap.
+ * double-booked — and because later waves start at/after earlier ones' block
+ * ends, their intervals never overlap.
  *
  * Returns null when the group can't be served even across waves (a service no
  * active staff can do, or it can't fit before close).
@@ -463,9 +463,6 @@ export function tryWaveArrangement(
     const thisWave: Array<{ staffId: string; startMs: number; endMs: number }> = [];
     const stillRemaining: ResolvedMember[] = [];
     let waveMaxEndMs = waveStartMs;
-    // Largest per-service buffer among members seated this wave — drives the
-    // gap before the next wave when no explicit override is supplied.
-    let waveMaxBufferMin = 0;
 
     for (const m of order) {
       const startMs = waveStartMs;
@@ -505,9 +502,6 @@ export function tryWaveArrangement(
       out.push({ memberIdx: m.index, staffId: picked, startMs, endMs, waveNumber });
       thisWave.push({ staffId: picked, startMs, endMs });
       if (endMs > waveMaxEndMs) waveMaxEndMs = endMs;
-      if (m.bufferMinutes != null && m.bufferMinutes > waveMaxBufferMin) {
-        waveMaxBufferMin = m.bufferMinutes;
-      }
     }
 
     // No member could be seated this wave → unservable (prevents infinite loop).
@@ -519,8 +513,14 @@ export function tryWaveArrangement(
     remaining = stillRemaining;
     if (remaining.length === 0) break;
 
-    const gapMin =
-      explicitWaveBufferMin ?? (waveMaxBufferMin > 0 ? waveMaxBufferMin : WAVE_BUFFER_MIN);
+    // Waves are FLUSH by default: each booking block already includes the
+    // per-service buffer (totalMinutes = duration + buffer), so wave N+1 starts
+    // the instant wave N's blocks end — exactly like two back-to-back
+    // appointments (one buffer of breathing room, not two). Deriving the gap
+    // from the buffer again double-counted it (5-min back-to-back vs 10-min
+    // between waves). An explicit `opts.waveBufferMin` still adds a deliberate
+    // inter-wave stagger for callers that want one.
+    const gapMin = explicitWaveBufferMin ?? 0;
     waveStartMs = waveMaxEndMs + gapMin * 60_000;
     waveNumber++;
   }

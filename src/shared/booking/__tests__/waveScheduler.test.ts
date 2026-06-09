@@ -4,7 +4,8 @@
  *
  * Covers:
  *   - over-capacity group splits into the right number of waves
- *   - wave N+1 starts at wave N's latest end + WAVE_BUFFER_MIN
+ *   - wave N+1 starts flush against wave N's latest block end (buffer is in the
+ *     block, never double-counted between waves)
  *   - no staff is ever double-booked across waves
  *   - capability is respected per wave
  *   - infeasible service (no capable staff) returns null
@@ -19,7 +20,6 @@ import {
   tryWaveArrangement,
   findEarliestWaveArrangement,
   buildWaveArrangement,
-  WAVE_BUFFER_MIN,
   SLOT_STEP_MIN,
   type ResolvedMember,
   type StaffRow,
@@ -93,15 +93,15 @@ test("7 members / 3 staff split into 3 waves of 3, 3, 1", () => {
   assertEqual(byWave(3).length, 1, "wave 3 has 1");
 });
 
-// ── wave N+1 starts at wave N latest end + buffer ──
-test("each wave starts at previous wave end + WAVE_BUFFER_MIN", () => {
+// ── wave N+1 starts FLUSH against wave N's latest block end ──
+test("each wave starts flush at the previous wave's block end", () => {
   const res = tryWaveArrangement(T0, members(7), staff3, staffById3, null, [], DAY_CLOSE)!;
   const a = res.assignments;
+  // Blocks are flush by default: the per-service buffer is baked into the block
+  // (totalMinutes), so the next wave starts the instant the previous one ends.
   const wave1Start = T0;
-  const wave1End = T0 + DUR * MIN;
-  const wave2Start = wave1End + WAVE_BUFFER_MIN * MIN;
-  const wave2End = wave2Start + DUR * MIN;
-  const wave3Start = wave2End + WAVE_BUFFER_MIN * MIN;
+  const wave2Start = wave1Start + DUR * MIN;
+  const wave3Start = wave2Start + DUR * MIN;
 
   for (const x of a.filter((y) => y.waveNumber === 1)) assertEqual(x.startMs, wave1Start, "wave1 start");
   for (const x of a.filter((y) => y.waveNumber === 2)) assertEqual(x.startMs, wave2Start, "wave2 start");
@@ -170,42 +170,33 @@ test("group that fits simultaneously is not a wave booking", () => {
   assertEqual(arr.waveCount, 1, "one wave");
 });
 
-// ── Inter-wave gap derives from the per-service buffer ──
-test("wave gap = members' bufferMinutes when set (not the 15-min fallback)", () => {
-  const BUF = 5;
-  const ms = members(7).map((m) => ({ ...m, bufferMinutes: BUF }));
+// ── Waves are flush: the per-service buffer is in the block, NOT added again ──
+// Regression guard for the "back-to-back = 5 min but between waves = 10 min"
+// double-count: bufferMinutes must NOT push wave N+1 out, because that buffer is
+// already baked into each booking block (totalMinutes = duration + buffer).
+test("bufferMinutes does NOT add an inter-wave gap (no double-count)", () => {
+  const ms = members(7).map((m) => ({ ...m, bufferMinutes: 5 }));
   const res = tryWaveArrangement(T0, ms, staff3, staffById3, null, [], DAY_CLOSE)!;
   const a = res.assignments;
-  const wave1End = T0 + DUR * MIN;
-  const wave2Start = wave1End + BUF * MIN; // 5-min gap, not 15
-  const wave2End = wave2Start + DUR * MIN;
-  const wave3Start = wave2End + BUF * MIN;
-  for (const x of a.filter((y) => y.waveNumber === 2)) assertEqual(x.startMs, wave2Start, "wave2 start uses 5-min buffer");
-  for (const x of a.filter((y) => y.waveNumber === 3)) assertEqual(x.startMs, wave3Start, "wave3 start uses 5-min buffer");
+  const wave2Start = T0 + DUR * MIN; // flush — no extra 5-min gap
+  const wave3Start = wave2Start + DUR * MIN;
+  for (const x of a.filter((y) => y.waveNumber === 2)) assertEqual(x.startMs, wave2Start, "wave2 flush against wave1");
+  for (const x of a.filter((y) => y.waveNumber === 3)) assertEqual(x.startMs, wave3Start, "wave3 flush against wave2");
 });
 
-// ── Mixed buffers → the largest in the wave wins (every chair gets enough reset) ──
-test("wave gap uses the max bufferMinutes among seated members", () => {
+test("mixed bufferMinutes still produce flush waves (largest is not added either)", () => {
   const ms = members(7).map((m, i) => ({ ...m, bufferMinutes: i === 0 ? 10 : 5 }));
   const res = tryWaveArrangement(T0, ms, staff3, staffById3, null, [], DAY_CLOSE)!;
   const wave2Start = res.assignments.find((x) => x.waveNumber === 2)!.startMs;
-  assertEqual(wave2Start, T0 + DUR * MIN + 10 * MIN, "wave2 start uses the max (10) buffer");
+  assertEqual(wave2Start, T0 + DUR * MIN, "wave2 starts flush regardless of per-service buffers");
 });
 
-// ── Explicit opts.waveBufferMin still overrides the derived value ──
-test("opts.waveBufferMin overrides per-service buffer", () => {
+// ── Explicit opts.waveBufferMin still inserts a deliberate inter-wave stagger ──
+test("opts.waveBufferMin adds an explicit inter-wave stagger", () => {
   const ms = members(7).map((m) => ({ ...m, bufferMinutes: 5 }));
   const res = tryWaveArrangement(T0, ms, staff3, staffById3, null, [], DAY_CLOSE, { waveBufferMin: 20 })!;
   const wave2Start = res.assignments.find((x) => x.waveNumber === 2)!.startMs;
-  assertEqual(wave2Start, T0 + DUR * MIN + 20 * MIN, "explicit override wins");
-});
-
-// ── Zero buffer falls back to WAVE_BUFFER_MIN (avoids stacked chairs on misconfig) ──
-test("zero bufferMinutes falls back to WAVE_BUFFER_MIN", () => {
-  const ms = members(7).map((m) => ({ ...m, bufferMinutes: 0 }));
-  const res = tryWaveArrangement(T0, ms, staff3, staffById3, null, [], DAY_CLOSE)!;
-  const wave2Start = res.assignments.find((x) => x.waveNumber === 2)!.startMs;
-  assertEqual(wave2Start, T0 + DUR * MIN + WAVE_BUFFER_MIN * MIN, "0 buffer → 15-min fallback");
+  assertEqual(wave2Start, T0 + DUR * MIN + 20 * MIN, "explicit stagger applied");
 });
 
 // ── Forward-scan: a busy anchor must roll forward to the first fittable time ──
