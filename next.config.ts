@@ -23,20 +23,38 @@ const nextConfig: NextConfig = {
       "form-action 'self'",
       ...(isHttpsOrigin ? ["upgrade-insecure-requests"] : []),
     ];
+    const commonHeaders = [
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      {
+        key: "Permissions-Policy",
+        value: "camera=(), microphone=(self), geolocation=()",
+      },
+    ];
     return [
       {
-        source: "/(.*)",
+        // Everything EXCEPT the embeddable booking route stays frame-DENY
+        // (anti-clickjacking on dashboard / auth / payments).
+        source: "/((?!embed/).*)",
         headers: [
           { key: "X-Frame-Options", value: "DENY" },
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          {
-            key: "Permissions-Policy",
-            value: "camera=(), microphone=(self), geolocation=()",
-          },
+          ...commonHeaders,
+          { key: "Content-Security-Policy", value: cspDirectives.join("; ") },
+        ],
+      },
+      {
+        // Embeddable booking widget route: framable on any site. This is the
+        // PUBLIC booking flow only (no auth / no session) — clickjacking risk is
+        // low and the multi-step + confirm UI makes it impractical. X-Frame-
+        // Options is omitted (deprecated `ALLOW-FROM` is unreliable); CSP
+        // `frame-ancestors *` is the modern control. Sensitive surfaces keep DENY
+        // via the rule above.
+        source: "/embed/:path*",
+        headers: [
+          ...commonHeaders,
           {
             key: "Content-Security-Policy",
-            value: cspDirectives.join("; "),
+            value: [...cspDirectives, "frame-ancestors *"].join("; "),
           },
         ],
       },
