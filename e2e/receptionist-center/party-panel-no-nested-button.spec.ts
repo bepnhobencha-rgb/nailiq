@@ -49,11 +49,20 @@ test.describe("PartyCardPanel — valid HTML (no nested buttons)", () => {
     // The PartyCardPanel now lives inside the AttentionChipBar "Groups"
     // dropdown, which only appears when the salon has an active party. Seed
     // one, then open the dropdown to reach the panel.
+    // Seed on the one staff that carries NO baseline fixed-hour booking, and
+    // split the two slots into separate 60-min waves so they never self-overlap
+    // on that single staff. The fixture's baseline bookings use absolute UTC
+    // hours (e.g. the "RC Conflict Anchor" at 10:00 on staffIds[0]), while
+    // seedPartyLink schedules relative to now + 3h. When CI happens to run
+    // ~07:00–07:55 UTC, now+3h lands inside 10:00–10:55 and a party slot on
+    // staffIds[0] tripped bookings_no_overlap. Pinning to freeStaffId makes the
+    // seed wall-clock-independent.
     await seedPartyLink({
       salonId: fx.salonId,
-      staffIds: fx.staffIds,
+      staffIds: [fx.freeStaffId],
       serviceIds: fx.serviceIds,
       slotCount: 2,
+      wavePlan: [1, 2],
     });
 
     await gotoReceptionistCenter(page, fx.slug);
