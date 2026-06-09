@@ -59,11 +59,11 @@ export default async function EmbedBookingPage({
 
   return (
     <div
-      className="nq-booking-embed min-h-dvh bg-[var(--booking-bg)] text-[var(--booking-text)]"
+      className="nq-booking-embed bg-[var(--booking-bg)] text-[var(--booking-text)]"
       style={brandStyle}
     >
       <EmbedFrameBridge />
-      <div className="mx-auto w-full max-w-[680px] px-4 py-6 sm:px-6 sm:py-8">
+      <div className="mx-auto w-full max-w-[680px] px-4 py-6 sm:px-6 sm:py-7">
         <BookingFlowErrorBoundary shopSlug={normalizedSlug} salon={load.salon}>
           <BookingTypeSwitcher
             t={t}

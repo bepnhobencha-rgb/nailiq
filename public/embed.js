@@ -47,8 +47,9 @@
     ".nq-embed-overlay{position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;" +
     "background:rgba(8,8,10,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:0;transition:opacity .28s ease;padding:max(16px,env(safe-area-inset-top)) 16px;}" +
     ".nq-embed-overlay.nq-open{opacity:1;}" +
-    ".nq-embed-panel{position:relative;width:100%;max-width:480px;height:min(90vh,780px);background:#0b0b0c;border-radius:22px;overflow:hidden;" +
-    "box-shadow:0 30px 80px -20px rgba(0,0,0,.7);transform:translateY(18px) scale(.985);opacity:0;transition:transform .3s cubic-bezier(.2,.8,.2,1),opacity .3s ease;}" +
+    ".nq-embed-panel{position:relative;width:100%;max-width:460px;height:540px;max-height:90vh;background:#0b0b0c;border-radius:22px;overflow:hidden;" +
+    "box-shadow:0 30px 80px -20px rgba(0,0,0,.7);transform:translateY(18px) scale(.985);opacity:0;" +
+    "transition:transform .3s cubic-bezier(.2,.8,.2,1),opacity .3s ease,height .28s cubic-bezier(.2,.8,.2,1);}" +
     ".nq-embed-overlay.nq-open .nq-embed-panel{transform:none;opacity:1;}" +
     ".nq-embed-frame{width:100%;height:100%;border:0;display:block;background:transparent;}" +
     ".nq-embed-close{position:absolute;top:10px;right:10px;z-index:2;width:34px;height:34px;border:0;border-radius:999px;cursor:pointer;" +
@@ -63,12 +64,12 @@
     ".nq-embed-fab:hover{transform:translateY(-2px);box-shadow:0 16px 36px -8px rgba(0,0,0,.55);}" +
     ".nq-embed-fab.br{right:20px;}.nq-embed-fab.bl{left:20px;}" +
     "@media(max-width:520px){.nq-embed-overlay{padding:0;align-items:flex-end;}" +
-    ".nq-embed-panel{max-width:none;height:92vh;border-radius:22px 22px 0 0;transform:translateY(100%);}" +
+    ".nq-embed-panel{max-width:none;max-height:92vh;border-radius:22px 22px 0 0;transform:translateY(100%);}" +
     ".nq-embed-overlay.nq-open .nq-embed-panel{transform:none;}}";
   var styleEl = document.createElement("style");
   styleEl.textContent = css;
 
-  var overlay, frame, spinner, lastFocus;
+  var overlay, panel, frame, spinner, lastFocus;
   var built = false;
 
   function build() {
@@ -82,7 +83,7 @@
     overlay.setAttribute("aria-modal", "true");
     overlay.setAttribute("aria-label", "Book an appointment");
 
-    var panel = document.createElement("div");
+    panel = document.createElement("div");
     panel.className = "nq-embed-panel";
 
     spinner = document.createElement("div");
@@ -146,6 +147,12 @@
     var d = e.data;
     if (!d || d.source !== "nailiq-embed") return;
     if (d.type === "ready" && spinner) spinner.style.display = "none";
+    if (d.type === "resize" && panel && typeof d.height === "number") {
+      // Size the modal to the flow's content (compact for the phone gate,
+      // taller once services/calendar appear), clamped to the viewport.
+      var h = Math.max(300, Math.min(d.height + 2, Math.round(window.innerHeight * 0.92)));
+      panel.style.height = h + "px";
+    }
     if (d.type === "booked") {
       // Let the success screen breathe, then close.
       setTimeout(closeModal, 4200);

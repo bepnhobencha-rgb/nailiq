@@ -17,13 +17,17 @@ export function EmbedFrameBridge() {
     const post = (type: string, payload: Record<string, unknown> = {}) =>
       window.parent.postMessage({ source: "nailiq-embed", type, ...payload }, "*");
 
+    // Measure the CONTENT wrapper, not the document — the root layout's
+    // `body.min-h-dvh` makes documentElement.scrollHeight track the iframe's own
+    // height (circular), which would defeat auto-resize.
+    const root =
+      (document.querySelector(".nq-booking-embed") as HTMLElement | null) ??
+      document.body;
     const sendHeight = () =>
-      post("resize", {
-        height: Math.ceil(document.documentElement.scrollHeight),
-      });
+      post("resize", { height: Math.ceil(root.getBoundingClientRect().height) });
 
     const ro = new ResizeObserver(sendHeight);
-    ro.observe(document.documentElement);
+    ro.observe(root);
     sendHeight();
     post("ready");
 
