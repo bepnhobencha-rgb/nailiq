@@ -11,7 +11,11 @@
 import AxeBuilder from "@axe-core/playwright";
 import { test, expect, type Page } from "@playwright/test";
 
-import { cleanupTestSalon, seedTestSalon } from "../helpers/db";
+import {
+  cleanupTestSalon,
+  gotoBookingServiceStep,
+  seedTestSalon,
+} from "../helpers/db";
 
 const A11Y_SLUG = "e2e-a11y-salon";
 const DEMO_COOKIE = "nailiq-demo-slug";
@@ -159,12 +163,11 @@ test.describe("Accessibility", () => {
     });
 
     test("axe scan", async ({ page }) => {
-      await page.goto(`/${A11Y_SLUG}`);
-      // Booking page keeps a Supabase WebSocket alive; "networkidle" never
-      // fires. Wait for a booking-specific landmark instead.
-      await page.waitForSelector('[data-testid="service-item"], [data-testid="booking-no-services"]', {
-        timeout: 20_000,
-      });
+      // Phone-first entry gate (PR #328): clear the gate so the service step
+      // (the richest booking UI) renders before the scan. Booking page keeps a
+      // Supabase WebSocket alive so "networkidle" never fires — gotoBooking-
+      // ServiceStep waits on the service tiles instead.
+      await gotoBookingServiceStep(page, A11Y_SLUG);
       await runAxe(page, "public booking");
       await assertImagesHaveAlt(page, "public booking");
       await assertInputsHaveLabels(page, "public booking");

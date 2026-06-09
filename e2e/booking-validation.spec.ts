@@ -1,13 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
+import {
+  cleanupTestSalon,
+  gotoBookingServiceStep,
+  seedTestSalon,
+  setReactInputValue,
+} from "./helpers/db";
 
 async function navigateToBookingInfo(page: Page, testSlug: string) {
-  await page.goto(`/${testSlug}`);
-  await page
-    .locator('[data-testid="service-tile-select"]')
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+  // Phone-first entry gate (PR #328): a phone is entered at the gate, so the
+  // info step collects only the name.
+  await gotoBookingServiceStep(page, testSlug);
   await page.locator('[data-testid="service-tile-select"]').first().click();
   await page.getByRole("button", { name: "Continue" }).first().click();
 
@@ -32,7 +35,7 @@ async function navigateToBookingInfo(page: Page, testSlug: string) {
   await page.locator('[data-testid="time-slot"]').first().click();
   await page.getByRole("button", { name: "Continue" }).first().click();
 
-  await expect(page.getByTestId("booking-info-phone")).toBeVisible();
+  await expect(page.getByTestId("booking-info-name")).toBeVisible();
 }
 
 test.describe("Booking validation — info step", () => {
@@ -51,34 +54,35 @@ test.describe("Booking validation — info step", () => {
     await cleanupTestSalon(testSlug);
   });
 
-  test("bv-1: invalid phone shows error on blur; Continue disabled", async ({ page }) => {
-    await navigateToBookingInfo(page, testSlug);
-    await page.getByTestId("booking-info-name").fill("Ada");
-    // "abc" is stripped to "" by formatPhoneInputProgressive (non-digits removed),
-    // so use partial digits that survive formatting but fail validateGuestPhone.
-    await page.getByTestId("booking-info-phone").fill("123");
-    await page.getByTestId("booking-info-phone").blur();
-
-    await expect(page.getByTestId("booking-info-phone-error")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Continue" })).toBeDisabled();
+  test("bv-1: invalid phone at the entry gate keeps the flow gated", async ({ page }) => {
+    // Phone-first: phone validation moved to the entry gate. A partial number
+    // survives formatPhoneInputProgressive but fails validateGuestPhone, so the
+    // individual flow (service step) must never mount.
+    await page.goto(`/${testSlug}`);
+    await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
+    await setReactInputValue(page.getByTestId("booking-entry-phone"), "123");
+    await expect(
+      page.locator('[data-testid="service-tile-select"]'),
+    ).toHaveCount(0);
   });
 
-  test("bv-2: valid phone formats enable Continue when name OK", async ({ page }) => {
-    await navigateToBookingInfo(page, testSlug);
-    await page.getByTestId("booking-info-name").fill("Ada");
+  test("bv-2: valid phone formats at the gate reveal the service step", async ({ page }) => {
+    await page.goto(`/${testSlug}`);
+    await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
 
     for (const fmt of ["6045551234", "+1 778 868 0738", "+84901234567"]) {
-      await page.getByTestId("booking-info-phone").fill(fmt);
-      await page.getByTestId("booking-info-phone").blur();
-
-      await expect(page.getByTestId("booking-info-phone-error")).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "Continue" })).toBeEnabled();
+      await setReactInputValue(page.getByTestId("booking-entry-phone"), "");
+      await setReactInputValue(page.getByTestId("booking-entry-phone"), fmt);
+      await expect(
+        page.locator('[data-testid="service-tile-select"]').first(),
+      ).toBeVisible({ timeout: 10_000 });
     }
   });
 
   test("bv-3: empty / whitespace-only name fails; valid name clears error", async ({ page }) => {
+    // Phone-first: phone already captured at the gate; the info step gates only
+    // on the name.
     await navigateToBookingInfo(page, testSlug);
-    await page.getByTestId("booking-info-phone").fill("6045551234");
 
     await page.getByTestId("booking-info-name").focus();
     await page.getByTestId("booking-info-name").blur();
@@ -102,7 +106,6 @@ test.describe("Booking validation — info step", () => {
 
   test("bv-4: name max length boundary", async ({ page }) => {
     await navigateToBookingInfo(page, testSlug);
-    await page.getByTestId("booking-info-phone").fill("6045551234");
 
     await page.getByTestId("booking-info-name").evaluate((el: HTMLInputElement) => {
       el.removeAttribute("maxLength");

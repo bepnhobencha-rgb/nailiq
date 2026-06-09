@@ -1,6 +1,10 @@
 import { test, expect } from "@playwright/test";
 
-import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
+import {
+  cleanupTestSalon,
+  gotoBookingServiceStep,
+  seedTestSalon,
+} from "./helpers/db";
 
 test.describe("Booking Flow", () => {
   let testSlug: string;
@@ -19,12 +23,7 @@ test.describe("Booking Flow", () => {
   });
 
   test("Complete booking end-to-end", async ({ page }) => {
-    await page.goto(`/${testSlug}`);
-
-    await page
-      .locator('[data-testid="service-tile-select"]')
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await gotoBookingServiceStep(page, testSlug);
     await page.locator('[data-testid="service-tile-select"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
@@ -52,8 +51,9 @@ test.describe("Booking Flow", () => {
     await page.locator('[data-testid="time-slot"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
+    // Phone-first: the phone was captured at the entry gate, so the info step
+    // only collects the name now.
     await page.fill('input[name="clientName"]', "Test Client");
-    await page.fill('input[name="clientPhone"]', "6045551234");
     await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page.getByRole("button", { name: "Confirm booking" }).click();
@@ -65,12 +65,7 @@ test.describe("Booking Flow", () => {
   });
 
   test("Time step lists slots for a future day", async ({ page }) => {
-    await page.goto(`/${testSlug}`);
-
-    await page
-      .locator('[data-testid="service-tile-select"]')
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await gotoBookingServiceStep(page, testSlug);
     await page.locator('[data-testid="service-tile-select"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
     await page
@@ -99,12 +94,7 @@ test.describe("Booking Flow", () => {
   });
 
   test("Calendar shows today and selectable days", async ({ page }) => {
-    await page.goto(`/${testSlug}`);
-
-    await page
-      .locator('[data-testid="service-tile-select"]')
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await gotoBookingServiceStep(page, testSlug);
     await page.locator('[data-testid="service-tile-select"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
     await page

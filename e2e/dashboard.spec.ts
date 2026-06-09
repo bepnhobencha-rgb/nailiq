@@ -4,7 +4,9 @@ import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
 
 test("Middleware blocks unauthenticated dashboard access", async ({ page }) => {
   await page.goto("/dashboard/any-salon");
-  await expect(page).toHaveURL(/register/);
+  // Unauthenticated dashboard access is bounced to /login (proxy.ts
+  // "Unauthenticated guards"); sign-in, not registration, is the entry point.
+  await expect(page).toHaveURL(/login/);
 });
 
 test("Dashboard responds when demo cookie matches slug", async () => {
@@ -48,7 +50,8 @@ test("Wrong demo cookie slug is rejected", async () => {
     });
 
     expect(res.status()).toBeGreaterThanOrEqual(300);
-    expect(res.headers().location ?? "").toMatch(/register/i);
+    // Wrong demo cookie → not authenticated → bounced to /login (see proxy.ts).
+    expect(res.headers().location ?? "").toMatch(/login/i);
   } finally {
     await req.dispose();
   }

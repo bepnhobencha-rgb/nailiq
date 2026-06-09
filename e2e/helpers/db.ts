@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import type { Locator, Page } from "@playwright/test";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -319,4 +320,58 @@ export async function cleanupTestUser(userId: string) {
   }
 
   await supabase.auth.admin.deleteUser(userId);
+}
+
+/**
+ * A valid phone for the phone-first entry gate (PR #328). Kept as a NEW
+ * customer (no client_profile) so the info step's name field stays empty.
+ */
+export const GATE_PHONE_DIGITS = "16045550000";
+export const GATE_PHONE = `+${GATE_PHONE_DIGITS}`;
+
+/**
+ * Set a controlled React input's value via the native setter + a bubbling
+ * InputEvent. Playwright's `locator.fill()` drives the value over CDP, which
+ * bypasses React's patched value setter on WebKit (the mobile project), so the
+ * input's onChange never fires. Use this for any input whose onChange must run
+ * (e.g. the phone-first entry gate, which only mounts the flow once a valid
+ * phone lands).
+ */
+export async function setReactInputValue(
+  locator: Locator,
+  value: string,
+): Promise<void> {
+  await locator.evaluate((el: HTMLInputElement, val: string) => {
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    if (nativeSetter) nativeSetter.call(el, val);
+    else el.value = val;
+    el.dispatchEvent(
+      new InputEvent("input", { bubbles: true, cancelable: true }),
+    );
+  }, value);
+}
+
+/**
+ * Navigate to a salon's public booking page and clear the phone-first entry
+ * gate so the individual booking flow mounts and the service step renders.
+ * Mirrors `gotoGroupFlow` for the non-group (individual) flow: the service
+ * tiles only exist once a valid phone is entered at the gate.
+ */
+export async function gotoBookingServiceStep(
+  page: Page,
+  slug: string,
+): Promise<void> {
+  // Keep the gate phone a NEW customer so the info-step name stays default.
+  await supabase.from("client_profiles").delete().eq("phone", GATE_PHONE_DIGITS);
+  await page.goto(`/${slug}`);
+  const phoneInput = page.getByTestId("booking-entry-phone");
+  await phoneInput.waitFor({ state: "visible", timeout: 15_000 });
+  await setReactInputValue(phoneInput, GATE_PHONE);
+  await page
+    .locator('[data-testid="service-tile-select"]')
+    .first()
+    .waitFor({ state: "visible", timeout: 15_000 });
 }
