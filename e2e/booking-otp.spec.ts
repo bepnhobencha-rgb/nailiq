@@ -62,10 +62,18 @@ test.describe("Booking Flow — Phone OTP", () => {
   async function walkToInfoStep(page: import("@playwright/test").Page) {
     await page.goto(`/${testSlug}`);
 
+    // Phone-first entry gate (PR #328): the new-customer phone is entered here,
+    // so `always_otp` routes this booking through OTP. Use the React-aware
+    // setter — page.fill()'s CDP path bypasses React's value setter on WebKit.
+    await page
+      .getByTestId("booking-entry-phone")
+      .waitFor({ state: "visible", timeout: 15_000 });
+    await fillReactInput(page.getByTestId("booking-entry-phone"), clientPhone);
+
     await page
       .locator('[data-testid="service-tile-select"]')
       .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+      .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="service-tile-select"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
@@ -108,10 +116,10 @@ test.describe("Booking Flow — Phone OTP", () => {
     await page.locator('[data-testid="time-slot"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    // Fill info form — use native setter so React's controlled onChange fires.
-    // page.fill() uses CDP which bypasses React's patched value getter.
+    // Phone-first: phone captured at the entry gate; info step takes name only.
+    // Use the native setter so React's controlled onChange fires (page.fill()
+    // uses CDP which bypasses React's patched value getter).
     await fillReactInput(page.locator('input[name="clientName"]'), "OTP Test Client");
-    await fillReactInput(page.locator('input[name="clientPhone"]'), clientPhone);
   }
 
   test("OTP step appears after info and accepts demo code", async ({ page }) => {

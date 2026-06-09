@@ -11,7 +11,11 @@
  * Run: npm run test:e2e -- e2e/party-booking/individual-regression.spec.ts
  */
 import { expect, test } from "@playwright/test";
-import { cleanupTestSalon, seedTestSalon } from "../helpers/db";
+import {
+  cleanupTestSalon,
+  gotoBookingServiceStep,
+  seedTestSalon,
+} from "../helpers/db";
 
 const SLUG = "e2e-party-individual";
 
@@ -28,14 +32,11 @@ test.afterAll(async () => {
 });
 
 test("individual booking still works — golden path smoke test", async ({ page }) => {
-  await page.goto(`/${SLUG}`);
+  // Phone-first entry gate (PR #328): enter a phone before the service step.
+  await gotoBookingServiceStep(page, SLUG);
 
   // ── Step 1: Select service ────────────────────────────────────
   // seedTestSalon creates "Gel Manicure" — use service-tile-select testid.
-  await page
-    .locator('[data-testid="service-tile-select"]')
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
   await page.locator('[data-testid="service-tile-select"]').first().click();
 
   // Advance to staff step
@@ -82,9 +83,9 @@ test("individual booking still works — golden path smoke test", async ({ page 
   await page.getByRole("button", { name: /continue/i }).first().click();
 
   // ── Step 5: Fill contact info ─────────────────────────────────
+  // Phone-first: phone captured at the entry gate; info step takes name only.
   await expect(page.getByTestId("booking-info-name")).toBeVisible({ timeout: 10_000 });
   await page.getByTestId("booking-info-name").fill("E2E Regression User");
-  await page.getByTestId("booking-info-phone").fill("+16045559876");
 
   // Advance to confirm step
   await page.getByRole("button", { name: /continue/i }).first().click();

@@ -1,6 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
 
-import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
+import {
+  cleanupTestSalon,
+  GATE_PHONE,
+  gotoBookingServiceStep,
+  seedTestSalon,
+} from "./helpers/db";
 
 test.describe("Public booking — privacy (reschedule tel)", () => {
   const slug = "e2e-booking-security";
@@ -20,12 +25,7 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
       salon_phone: salonPublicLine,
     });
 
-    await page.goto(`/${slug}`);
-
-    await page
-      .locator('[data-testid="service-tile-select"]')
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await gotoBookingServiceStep(page, slug);
     await page.locator('[data-testid="service-tile-select"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
     await page
@@ -51,9 +51,9 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
     await page.locator('[data-testid="time-slot"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    const guestPhone = "6045551234";
+    // Phone-first: the guest's phone is the one entered at the entry gate.
+    const guestPhone = GATE_PHONE;
     await page.fill('input[name="clientName"]', "Security Test Guest");
-    await page.fill('input[name="clientPhone"]', guestPhone);
     await page.getByRole("button", { name: "Continue" }).first().click();
     await page.getByRole("button", { name: "Confirm booking" }).click();
 
@@ -82,12 +82,7 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
       salon_phone: null,
     });
 
-    await page.goto(`/${slug}`);
-
-    await page
-      .locator('[data-testid="service-tile-select"]')
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await gotoBookingServiceStep(page, slug);
     await page.locator('[data-testid="service-tile-select"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
     await page
@@ -113,8 +108,8 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
     await page.locator('[data-testid="time-slot"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
+    // Phone-first: phone captured at the entry gate; info step takes name only.
     await page.fill('input[name="clientName"]', "Security Test Guest");
-    await page.fill('input[name="clientPhone"]', "6049876543");
     await page.getByRole("button", { name: "Continue" }).first().click();
     await page.getByRole("button", { name: "Confirm booking" }).click();
 
@@ -127,11 +122,7 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
 });
 
 async function navigateToBookingInfoStep(page: Page, testSlug: string) {
-  await page.goto(`/${testSlug}`);
-  await page
-    .locator('[data-testid="service-tile-select"]')
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await gotoBookingServiceStep(page, testSlug);
   await page.locator('[data-testid="service-tile-select"]').first().click();
   await page.getByRole("button", { name: "Continue" }).first().click();
   await page
@@ -193,8 +184,8 @@ test.describe("Guest name — XSS / charset guard", () => {
     });
 
     await navigateToBookingInfoStep(page, slug);
+    // Phone-first: phone captured at the entry gate; info step takes name only.
     await page.getByTestId("booking-info-name").fill("Nguyễn Thị Mai");
-    await page.getByTestId("booking-info-phone").fill("6045551234");
     await page.getByRole("button", { name: "Continue" }).first().click();
 
     await expect(

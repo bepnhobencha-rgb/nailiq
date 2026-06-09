@@ -1,7 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
-import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
+import {
+  cleanupTestSalon,
+  gotoBookingServiceStep,
+  seedTestSalon,
+  setReactInputValue,
+} from "./helpers/db";
 
 /**
  * Pre-launch error-path smoke for the public booking page (`/[slug]`).
@@ -80,14 +85,11 @@ async function setSalonRow(slug: string, patch: Record<string, unknown>) {
 }
 
 async function navigateToTimeStep(page: Page, slug: string) {
-  await page.goto(`/${slug}`);
+  // Phone-first entry gate (PR #328): clear the gate so the service step shows.
+  await gotoBookingServiceStep(page, slug);
   // Target the inner select button directly; clicking the outer service-item
   // div is unreliable on narrow (mobile) viewports where the hit-test center
   // may not land on the button.
-  await page
-    .locator('[data-testid="service-tile-select"]')
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
   await page.locator('[data-testid="service-tile-select"]').first().click();
   // .first() avoids strict-mode violations during the 0.18s AnimatePresence
   // window where both the exiting and entering panels are in the DOM.
@@ -147,10 +149,8 @@ async function navigateToConfirmStep(
   opts?: { name?: string; phone?: string; notes?: string },
 ) {
   await navigateToInfoStep(page, slug);
+  // Phone-first: phone captured at the entry gate; info step takes name only.
   await page.getByTestId("booking-info-name").fill(opts?.name ?? "Test Client");
-  await page
-    .getByTestId("booking-info-phone")
-    .fill(opts?.phone ?? "6045551234");
   if (opts?.notes) {
     const notes = page.locator(
       'textarea[name="clientNotes"], textarea[data-testid="booking-info-notes"]',
@@ -218,11 +218,7 @@ test.describe("Booking error scenarios — /[slug]", () => {
     // First guest — scout an available slot. Navigate manually so we can
     // read data-ymd from the selected date cell BEFORE leaving the date step
     // (date-day elements are removed from the DOM once the time panel mounts).
-    await page.goto(`/${PRIMARY_SLUG}`);
-    await page
-      .locator('[data-testid="service-tile-select"]')
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await gotoBookingServiceStep(page, PRIMARY_SLUG);
     await page.locator('[data-testid="service-tile-select"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
     await page
@@ -371,11 +367,7 @@ test.describe("Booking error scenarios — /[slug]", () => {
       end_time_utc: end.toISOString(),
     });
 
-    await page.goto(`/${PRIMARY_SLUG}`);
-    await page
-      .locator('[data-testid="service-tile-select"]')
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await gotoBookingServiceStep(page, PRIMARY_SLUG);
     await page.locator('[data-testid="service-tile-select"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
     await page
@@ -428,11 +420,7 @@ test.describe("Booking error scenarios — /[slug]", () => {
   test("hours-4: past dates in the calendar are disabled and marked data-past", async ({
     page,
   }) => {
-    await page.goto(`/${PRIMARY_SLUG}`);
-    await page
-      .locator('[data-testid="service-tile-select"]')
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await gotoBookingServiceStep(page, PRIMARY_SLUG);
     await page.locator('[data-testid="service-tile-select"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
     await page
@@ -488,11 +476,7 @@ test.describe("Booking error scenarios — /[slug]", () => {
       opening_hours: STANDARD_HOURS,
     });
 
-    await page.goto(`/${PRIMARY_SLUG}`);
-    await page
-      .locator('[data-testid="service-tile-select"]')
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await gotoBookingServiceStep(page, PRIMARY_SLUG);
     await page.locator('[data-testid="service-tile-select"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
     await page
@@ -550,11 +534,7 @@ test.describe("Booking error scenarios — /[slug]", () => {
     const otherIds = (otherStaff ?? []).map((s: { id: string }) => String(s.id));
     expect(otherIds.length).toBeGreaterThan(0);
 
-    await page.goto(`/${PRIMARY_SLUG}`);
-    await page
-      .locator('[data-testid="service-tile-select"]')
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await gotoBookingServiceStep(page, PRIMARY_SLUG);
     await page.locator('[data-testid="service-tile-select"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
@@ -590,7 +570,8 @@ test.describe("Booking error scenarios — /[slug]", () => {
     );
     expect(otherIds.length).toBeGreaterThan(0);
 
-    await page.goto(`/${PRIMARY_SLUG}`);
+    // Phone-first: clear the entry gate so the service picker renders.
+    await gotoBookingServiceStep(page, PRIMARY_SLUG);
     const items = page.locator('[data-testid="service-item"]');
     await items.first().waitFor({ state: "visible", timeout: 10_000 });
     const renderedIds: string[] = [];
@@ -618,40 +599,42 @@ test.describe("Booking error scenarios — /[slug]", () => {
     await expect(page.getByTestId("booking-info-name-error")).toBeVisible();
   });
 
-  // 11. Empty phone → Continue disabled.
-  test("input-11: empty phone keeps the info-step Continue button disabled", async ({
+  // 11. Phone-first: phone moved to the entry gate. With no phone entered the
+  //     individual flow never mounts, so the service step is unreachable.
+  test("input-11: an empty phone at the entry gate keeps the flow gated", async ({
     page,
   }) => {
-    await navigateToInfoStep(page, PRIMARY_SLUG);
-    await page.getByTestId("booking-info-name").fill("Ada");
+    await page.goto(`/${PRIMARY_SLUG}`);
+    await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Continue" }),
-    ).toBeDisabled();
+      page.locator('[data-testid="service-tile-select"]'),
+    ).toHaveCount(0);
   });
 
-  // 12. Invalid phone format (cf. bv-1).
-  test("input-12: a non-numeric phone shows the inline phone error", async ({
+  // 12. Phone-first: a malformed phone at the gate fails validateGuestPhone, so
+  //     the flow stays gated (cf. bv-1). "abc123" → digits "123" survive
+  //     formatPhoneInputProgressive but are not a valid number.
+  test("input-12: an invalid phone at the entry gate keeps the flow gated", async ({
     page,
   }) => {
-    await navigateToInfoStep(page, PRIMARY_SLUG);
-    await page.getByTestId("booking-info-name").fill("Ada");
-    await page.getByTestId("booking-info-phone").fill("abc123");
-    await page.getByTestId("booking-info-phone").blur();
-    await expect(page.getByTestId("booking-info-phone-error")).toBeVisible();
+    await page.goto(`/${PRIMARY_SLUG}`);
+    await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
+    await setReactInputValue(
+      page.getByTestId("booking-entry-phone"),
+      "abc123",
+    );
     await expect(
-      page.getByRole("button", { name: "Continue" }),
-    ).toBeDisabled();
+      page.locator('[data-testid="service-tile-select"]'),
+    ).toHaveCount(0);
   });
 
   // 13. No service selected → Continue disabled on the service step.
   test("input-13: with no service selected, Continue is disabled on step 1", async ({
     page,
   }) => {
-    await page.goto(`/${PRIMARY_SLUG}`);
-    await page
-      .locator('[data-testid="service-item"]')
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+    // Phone-first: clear the entry gate so the service step renders, then
+    // assert Continue is disabled while no service is selected.
+    await gotoBookingServiceStep(page, PRIMARY_SLUG);
     await expect(
       page.getByRole("button", { name: "Continue" }),
     ).toBeDisabled();
@@ -661,11 +644,7 @@ test.describe("Booking error scenarios — /[slug]", () => {
   test("input-14: with no staff selected, Continue is disabled on step 2", async ({
     page,
   }) => {
-    await page.goto(`/${PRIMARY_SLUG}`);
-    await page
-      .locator('[data-testid="service-tile-select"]')
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await gotoBookingServiceStep(page, PRIMARY_SLUG);
     await page.locator('[data-testid="service-tile-select"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
     await page
@@ -696,7 +675,6 @@ test.describe("Booking error scenarios — /[slug]", () => {
     page,
   }) => {
     await navigateToInfoStep(page, PRIMARY_SLUG);
-    await page.getByTestId("booking-info-phone").fill("6045551234");
 
     await page
       .getByTestId("booking-info-name")
