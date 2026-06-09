@@ -104,6 +104,7 @@ export async function loadPartyCardsAction(
         price_cents,
         client_name,
         wave_number,
+        status,
         services!bookings_service_id_fkey ( name ),
         staff!bookings_staff_id_fkey ( name )
       )
@@ -122,9 +123,16 @@ export async function loadPartyCardsAction(
   // 5. Filter to date window and group by party_link_id.
   const claimsByLink = new Map<string, RawClaim[]>();
   for (const raw of claims) {
-    const b = raw.bookings as unknown as { start_time_utc: string | null } | null;
+    const b = raw.bookings as unknown as {
+      start_time_utc: string | null;
+      status: string | null;
+    } | null;
     const startIso = b?.start_time_utc;
     if (!startIso) continue;
+
+    // Skip cancelled bookings — a fully-cancelled party then yields no claims
+    // in-window and drops off the strip entirely.
+    if (b?.status === "cancelled") continue;
 
     const startMs = new Date(startIso).getTime();
     if (startMs < windowStart.getTime() || startMs >= windowEnd.getTime()) {
