@@ -1079,6 +1079,13 @@ export type UserMessages = {
       statusConfirmed: string;
       statusPending: string;
       statusExpired: string;
+      /** Cancel-whole-group action (owner/senior only). */
+      cancelParty: string;
+      cancelConfirm: (n: number) => string;
+      cancelConfirmYes: string;
+      cancelConfirmNo: string;
+      cancelling: string;
+      cancelError: string;
     };
     /** Role-adaptive top-bar labels. */
     roleBadge: {
@@ -2808,6 +2815,12 @@ export const userEn: UserMessages = {
       statusConfirmed: "Confirmed",
       statusPending: "Pending",
       statusExpired: "Expired",
+      cancelParty: "Cancel party",
+      cancelConfirm: (n: number) => `Cancel all ${n} booking${n !== 1 ? "s" : ""} in this party?`,
+      cancelConfirmYes: "Yes, cancel all",
+      cancelConfirmNo: "Keep",
+      cancelling: "Cancelling…",
+      cancelError: "Couldn't cancel — please try again",
     },
     roleBadge: {
       ownerView: "Owner view",

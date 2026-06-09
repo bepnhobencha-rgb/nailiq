@@ -1125,6 +1125,12 @@ export const userVi: UserMessages = {
       statusConfirmed: "Đã xác nhận",
       statusPending: "Chưa xác nhận",
       statusExpired: "Hết hạn",
+      cancelParty: "Huỷ cả nhóm",
+      cancelConfirm: (n: number) => `Huỷ tất cả ${n} lịch trong nhóm này?`,
+      cancelConfirmYes: "Xác nhận huỷ",
+      cancelConfirmNo: "Giữ lại",
+      cancelling: "Đang huỷ…",
+      cancelError: "Huỷ không được — thử lại",
     },
     roleBadge: {
       ownerView: "Chủ tiệm",
