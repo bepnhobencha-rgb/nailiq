@@ -479,7 +479,7 @@ export const bookingEn = {
     /** Earlier-today card title. `{n}` = full group size,
      *  `{time}` = earliest start wall-time in the alternate
      *  window (morning ↔ afternoon flip). */
-    groupEarlierToday: "Earlier today — {n} people at {time}",
+    groupEarlierToday: "Same day at {time} — {n} people together",
     /** Per-card "Choose this option →" CTA label. */
     groupChooseOption: "Choose this option →",
     /** "Try a different date" — last-resort back-out shown

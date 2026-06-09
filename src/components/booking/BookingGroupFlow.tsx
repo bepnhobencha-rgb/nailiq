@@ -2458,7 +2458,7 @@ function ArrangementStep({
    *  pref to the opposite window + re-runs. `kind` is the new
    *  arrival pref kind ("morning" or "afternoon" — never
    *  "specific" because we don't surface "earlier than specific"). */
-  onPickEarlier: (kind: "morning" | "afternoon") => void;
+  onPickEarlier: (kind: "morning" | "afternoon" | "evening") => void;
   /** Task #05 — split-option card. Parent sets the synthetic
    *  arrangement into scheduleResult + jumps to step 5 so the
    *  existing confirm flow handles submission. */
@@ -2815,7 +2815,7 @@ function EmptyState({
   onRetry: () => void;
   onBack: () => void;
   onPickDate: (ymd: string) => void;
-  onPickEarlier: (kind: "morning" | "afternoon") => void;
+  onPickEarlier: (kind: "morning" | "afternoon" | "evening") => void;
   onPickSplit: (split: NonNullable<GroupAlternatives["splitOption"]>) => void;
 }) {
   const isCapacityEmpty = reason === "no_slots";
@@ -2928,7 +2928,7 @@ function AlternativesPanel({
   date: string;
   timezone: string;
   onPickDate: (ymd: string) => void;
-  onPickEarlier: (kind: "morning" | "afternoon") => void;
+  onPickEarlier: (kind: "morning" | "afternoon" | "evening") => void;
   onPickSplit: (split: NonNullable<GroupAlternatives["splitOption"]>) => void;
   onBack: () => void;
   onRetry: () => void;
@@ -2994,6 +2994,25 @@ function AlternativesPanel({
         />
       ) : null}
 
+      {/* Same-day alternative FIRST — keeping the customer on the day they
+          asked for (just a different time) converts far better than pushing
+          them to the next day. */}
+      {earlier ? (
+        <AlternativeCard
+          testid="group-alt-earlier"
+          icon="🕙"
+          title={(groupCopy.groupEarlierToday ?? "Same day at {time} — {n} people together")
+            .replace("{n}", String(earlier.arrangement.assignments.length))
+            .replace("{time}", earlier.time)}
+          subtitle={null}
+          ctaLabel={groupCopy.groupChooseOption ?? "Choose this option →"}
+          // The scheduler reports exactly which window this arrangement lands
+          // in (morning/afternoon/evening) — flip the selection to it
+          // deterministically, no before/after-noon guessing.
+          onClick={() => onPickEarlier(earlier.arrivalKind)}
+        />
+      ) : null}
+
       {next ? (
         <AlternativeCard
           testid={`group-alt-next-${next.date}`}
@@ -3005,41 +3024,6 @@ function AlternativesPanel({
           subtitle={null}
           ctaLabel={groupCopy.groupChooseOption ?? "Choose this option →"}
           onClick={() => onPickDate(next.date)}
-        />
-      ) : null}
-
-      {earlier ? (
-        <AlternativeCard
-          testid="group-alt-earlier"
-          icon="🕙"
-          title={(groupCopy.groupEarlierToday ?? "Earlier today — {n} people at {time}")
-            .replace("{n}", String(earlier.arrangement.assignments.length))
-            .replace("{time}", earlier.time)}
-          subtitle={null}
-          ctaLabel={groupCopy.groupChooseOption ?? "Choose this option →"}
-          onClick={() => {
-            // Flip the arrival kind to the alternate window. The
-            // sub-query only ran for morning↔afternoon, so the
-            // user's current pref must be one of those families;
-            // we infer the flip from the earlier-today result's
-            // first assignment start time (before/after noon).
-            const firstMs = Date.parse(
-              earlier.arrangement.assignments[0]?.startUtcIso ?? "",
-            );
-            if (!Number.isFinite(firstMs)) return;
-            const hour = Number(
-              new Intl.DateTimeFormat("en-US", {
-                timeZone: timezone,
-                hour: "2-digit",
-                hourCycle: "h23",
-              })
-                .formatToParts(new Date(firstMs))
-                .find((p) => p.type === "hour")?.value ?? "0",
-            );
-            const newKind: "morning" | "afternoon" =
-              hour < 12 ? "morning" : "afternoon";
-            onPickEarlier(newKind);
-          }}
         />
       ) : null}
 

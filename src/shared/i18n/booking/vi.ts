@@ -325,7 +325,7 @@ export const bookingVi: BookingMessages = {
     groupSplitOption: "{n} người lúc {time}, {name} lúc {lateTime}",
     groupSplitDone: "Cả nhóm xong trước {time}",
     groupNextDate: "{label} — {n} người cùng lúc {time}",
-    groupEarlierToday: "Hôm nay sớm hơn — {n} người lúc {time}",
+    groupEarlierToday: "Vẫn trong ngày, lúc {time} — cả nhóm {n} người",
     groupChooseOption: "Chọn phương án này →",
     groupTryDifferentDate: "Thử ngày khác",
     groupTomorrow: "Ngày mai",
