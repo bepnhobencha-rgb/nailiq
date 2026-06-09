@@ -174,6 +174,7 @@ export const bookingEn = {
   upsellHeading: "Your tech is free for {n} more minutes — want to add a service?",
   upsellNoThanks: "No thanks",
   upsellToggleHint: "Pick one before you confirm to bundle it with your booking.",
+  upsellAddonNeedsTime: "pick a time that fits →",
   /** Right column when `totalMinutes` from DB is 0 */
   serviceDurationFlexible: "Flexible",
   /** Minute suffix on service tiles, e.g. "45 min" */

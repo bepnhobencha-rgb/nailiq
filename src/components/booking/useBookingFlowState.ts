@@ -268,6 +268,23 @@ export function useBookingFlowState(
     [upsellCandidates, upsellGapMinutes, addonAddedMinutes],
   );
 
+  /**
+   * Hybrid upsell escape hatch: a time-consuming add-on that doesn't fit the
+   * current slot's free gap is force-selected, then the customer is sent back
+   * to the time step. Because slot sizing now includes selected add-ons, the
+   * grid re-offers only times that fit service + add-on — no dead-end, and the
+   * appointment stays correct. Clears the stale time pick so they choose fresh.
+   */
+  const addAddonAndRepickTime = useCallback(
+    (id: string) => {
+      setSelectedAddonIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      setTimeSlot(null);
+      setStepDir(-1);
+      setStep("time");
+    },
+    [],
+  );
+
   const confettiFiredRef = useRef(false);
 
   const baseService = serviceId ? getServiceById(services, serviceId) : undefined;
@@ -465,7 +482,11 @@ export function useBookingFlowState(
       selectedDate,
       staffId: staffId ?? BOOKING_ANY_STAFF_ID,
       staffList: capableStaff,
-      serviceDurationMinutes: service.totalMinutes,
+      // Size slots for the WHOLE appointment — service + any already-chosen
+      // add-ons. On the first pass no add-ons are picked yet (→ 0), so the
+      // behaviour is unchanged; on a re-pick (after adding a time-consuming
+      // add-on at confirm) the grid only offers times that fit everything.
+      serviceDurationMinutes: service.totalMinutes + selectedAddonsTotalMin,
       closedDateYmdSet,
       shortestServiceMinutes,
       leadMinutes: salon.bookingLeadMinutes,
@@ -490,6 +511,7 @@ export function useBookingFlowState(
     serviceId,
     service,
     shortestServiceMinutes,
+    selectedAddonsTotalMin,
   ]);
 
   useEffect(() => {
@@ -1495,6 +1517,7 @@ export function useBookingFlowState(
     setClientNotes,
     setClientWebsite,
     toggleAddon,
+    addAddonAndRepickTime,
     selectedAddonsTotalMin,
     setSelectedAddonIds,
     setError,
