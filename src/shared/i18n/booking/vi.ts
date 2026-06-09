@@ -335,6 +335,7 @@ export const bookingVi: BookingMessages = {
     groupPartialCapacity: "Chỉ còn {n} chỗ lúc {time}.",
     groupSplitOption: "{n} người lúc {time}, {name} lúc {lateTime}",
     groupSplitDone: "Cả nhóm xong trước {time}",
+    groupSplitStillTogether: "Vẫn cùng nhau — chỉ lệch {gap} phút ✨",
     groupNextDate: "{label} — {n} người cùng lúc {time}",
     groupNextDateWaves: "{label} — {n} người chia {waves} đợt từ {time}",
     groupEarlierToday: "Vẫn trong ngày, lúc {time} — cả nhóm {n} người",

@@ -485,6 +485,7 @@ export const bookingEn = {
     groupSplitOption: "{n} people at {time}, {name} at {lateTime}",
     /** Split-option card subtitle — "Everyone done by HH:MM". */
     groupSplitDone: "Everyone done by {time}",
+    groupSplitStillTogether: "Still together — just {gap} min apart ✨",
     /** Next-available-date card title. `{label}` = "Tomorrow" or
      *  localized weekday+day, `{n}` = full group size, `{time}` =
      *  earliest start wall-time on that day. */

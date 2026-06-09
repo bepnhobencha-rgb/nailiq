@@ -135,6 +135,14 @@ export const WAVE_BUFFER_MIN = 15;
 /** Safety ceiling on wave count so a pathological input can't loop forever. */
 export const MAX_WAVES = 6;
 
+/** Pha 1 — "togetherness" threshold. A group whose members start within this
+ *  many minutes of each other still counts as arriving *together* (gentle
+ *  waves), so a small offset is offered as the preferred option. Beyond this,
+ *  the spread reads as a real split and we lead with an all-together time
+ *  instead. Tuning constant for now (like the others above); can move to a
+ *  per-salon setting later. */
+export const GROUP_TOGETHER_THRESHOLD_MIN = 30;
+
 // ─── Helpers ─────────────────────────────────────────────────────
 
 /**
