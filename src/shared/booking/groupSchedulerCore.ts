@@ -89,6 +89,11 @@ export type ResolvedMember = {
   serviceName: string;
   /** Total minutes (duration + buffer) for occupancy math. */
   totalMinutes: number;
+  /** Per-service buffer ("Chuẩn bị (phút)") in minutes. Drives the
+   *  inter-wave gap so the chair-reset time the operator configured is
+   *  what shows on the calendar — not a hardcoded 15. Optional: when a
+   *  caller omits it, wave scheduling falls back to WAVE_BUFFER_MIN. */
+  bufferMinutes?: number;
   priceCents: number | null;
   preferredStaffId: string | null;
 };
@@ -121,8 +126,11 @@ export type FinishArrangementsCtx = {
 
 export const SLOT_STEP_MIN = 15;
 
-/** Phase 6 — gap inserted between the end of one wave and the start of the next
- *  so staff have a buffer to reset between back-to-back guests. */
+/** Phase 6 — fallback gap inserted between the end of one wave and the start of
+ *  the next so staff have time to reset between back-to-back guests. Used only
+ *  when no member in the wave carries a per-service `bufferMinutes` (and no
+ *  explicit `opts.waveBufferMin` is passed); otherwise the gap is derived from
+ *  the service buffer the operator configured. */
 export const WAVE_BUFFER_MIN = 15;
 
 /** Safety ceiling on wave count so a pathological input can't loop forever. */
@@ -402,7 +410,12 @@ export type WaveRawAssignment = {
  *
  * Greedy fill: wave 1 starts at `anchorMs` and seats as many members as there
  * are capable, free staff. Whoever is left forms wave 2, starting at
- * (wave 1's latest end + `waveBufferMin`); repeat until everyone is seated.
+ * (wave 1's latest end + the wave gap); repeat until everyone is seated.
+ *
+ * The wave gap is, in priority order: `opts.waveBufferMin` when given, else the
+ * largest `bufferMinutes` among the members seated in the just-finished wave
+ * (so the chair-reset time the operator configured on the service is what the
+ * schedule reflects), else `WAVE_BUFFER_MIN` as a last-resort fallback.
  *
  * Each wave reuses the existing capability + `staffIsFree` checks. Earlier waves
  * are appended to a private occupancy copy so the same staff is never
@@ -422,7 +435,7 @@ export function tryWaveArrangement(
   dayCloseMs: number,
   opts?: { waveBufferMin?: number; maxWaves?: number },
 ): { assignments: WaveRawAssignment[] } | null {
-  const waveBufferMin = opts?.waveBufferMin ?? WAVE_BUFFER_MIN;
+  const explicitWaveBufferMin = opts?.waveBufferMin;
   const maxWaves = opts?.maxWaves ?? MAX_WAVES;
 
   // Private occupancy copy — earlier waves get appended so later waves see them.
@@ -450,6 +463,9 @@ export function tryWaveArrangement(
     const thisWave: Array<{ staffId: string; startMs: number; endMs: number }> = [];
     const stillRemaining: ResolvedMember[] = [];
     let waveMaxEndMs = waveStartMs;
+    // Largest per-service buffer among members seated this wave — drives the
+    // gap before the next wave when no explicit override is supplied.
+    let waveMaxBufferMin = 0;
 
     for (const m of order) {
       const startMs = waveStartMs;
@@ -489,6 +505,9 @@ export function tryWaveArrangement(
       out.push({ memberIdx: m.index, staffId: picked, startMs, endMs, waveNumber });
       thisWave.push({ staffId: picked, startMs, endMs });
       if (endMs > waveMaxEndMs) waveMaxEndMs = endMs;
+      if (m.bufferMinutes != null && m.bufferMinutes > waveMaxBufferMin) {
+        waveMaxBufferMin = m.bufferMinutes;
+      }
     }
 
     // No member could be seated this wave → unservable (prevents infinite loop).
@@ -500,7 +519,9 @@ export function tryWaveArrangement(
     remaining = stillRemaining;
     if (remaining.length === 0) break;
 
-    waveStartMs = waveMaxEndMs + waveBufferMin * 60_000;
+    const gapMin =
+      explicitWaveBufferMin ?? (waveMaxBufferMin > 0 ? waveMaxBufferMin : WAVE_BUFFER_MIN);
+    waveStartMs = waveMaxEndMs + gapMin * 60_000;
     waveNumber++;
   }
 

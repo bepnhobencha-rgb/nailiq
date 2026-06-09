@@ -905,6 +905,7 @@ type ServiceInfo = {
   id:        string;
   name:      string;
   totalMin:  number;   // duration + buffer
+  bufferMin: number;   // per-service buffer ("Chuẩn bị") — drives inter-wave gap
   priceCents: number | null;
 };
 
@@ -979,6 +980,7 @@ async function loadGroupCtx(
       id:         String(r.id),
       name:       String(r.name ?? ""),
       totalMin:   (Number(r.duration_minutes) || 0) + (Number(r.buffer_minutes) || 0),
+      bufferMin:  Number(r.buffer_minutes) || 0,
       priceCents: r.price_cents != null ? Number(r.price_cents) : null,
     });
   }
@@ -995,6 +997,7 @@ async function loadGroupCtx(
       serviceId:       svcId,
       serviceName:     svc.name,
       totalMinutes:    svc.totalMin,
+      bufferMinutes:   svc.bufferMin,
       priceCents:      svc.priceCents,
       preferredStaffId: null,
     };
