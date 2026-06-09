@@ -761,12 +761,16 @@ export async function submitPublicBooking(
   // - Suggest preferred_staff_id (favorite tech)
   // - Show "Welcome back [name]!"
   try {
-    const { data: existingProfile } = await supabase
-      .from("client_profiles")
-      .select("visit_count")
-      .eq("phone", phoneOk.digits)
-      .is("deleted_at" as never, null)
-      .maybeSingle();
+    // Per-phone snapshot via SECURITY DEFINER RPC — anon can no longer read
+    // client_profiles directly (cross-tenant PII lockdown, migration
+    // 20260609120000); the RPC returns only this one phone's row.
+    const { data: snapshotRows } = await supabase.rpc(
+      "get_booking_client_snapshot" as never,
+      { p_phone: phoneOk.digits } as never,
+    );
+    const existingProfile = (Array.isArray(snapshotRows)
+      ? snapshotRows[0]
+      : null) as { visit_count?: number | null } | null;
 
     const nextVisits = (existingProfile?.visit_count ?? 0) + 1;
 
@@ -802,12 +806,11 @@ export async function submitPublicBooking(
   // (scoreNoShowRisk uses @anthropic-ai/sdk which is Node.js-only, can't run in browser).
   void (async () => {
     try {
-      const { data: clientForDeposit } = await supabase
-        .from("client_profiles")
-        .select("no_show_count, is_vip, visit_count")
-        .eq("phone", phoneOk.digits)
-        .maybeSingle();
-      const cp = clientForDeposit as {
+      const { data: depositRows } = await supabase.rpc(
+        "get_booking_client_snapshot" as never,
+        { p_phone: phoneOk.digits } as never,
+      );
+      const cp = (Array.isArray(depositRows) ? depositRows[0] : null) as {
         no_show_count?: number; is_vip?: boolean; visit_count?: number;
       } | null;
 
