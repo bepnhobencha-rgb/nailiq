@@ -107,11 +107,16 @@ export function BookingFlowDonePanel({
         ? [{ name: addonServiceName.trim(), priceCents: addonPriceCents }]
         : [];
   const hasAddon = addonList.length > 0;
+  // Show the actual service time, not the buffer-padded appointment span
+  // (end_time_utc bakes in the inter-service rest buffer). Fall back to the
+  // computed span only when the service item isn't available.
+  const displayDurationMin =
+    service && service.durationMinutes > 0 ? service.durationMinutes : totalMinutes;
   const durationLabel =
-    totalMinutes > 0
+    displayDurationMin > 0
       ? hasAddon
-        ? `${t.summaryDurationMinutes.replace("{n}", String(totalMinutes))} (${t.summaryDurationIncludesAddon})`
-        : t.summaryDurationMinutes.replace("{n}", String(totalMinutes))
+        ? `${t.summaryDurationMinutes.replace("{n}", String(displayDurationMin))} (${t.summaryDurationIncludesAddon})`
+        : t.summaryDurationMinutes.replace("{n}", String(displayDurationMin))
       : null;
 
   const staffDisplayName = getPublicStaffDisplayName(staffName);

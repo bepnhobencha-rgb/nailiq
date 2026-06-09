@@ -110,12 +110,20 @@ export function BookingFlowConfirmPanel({
     ? appliedVoucher.final_price_cents
     : baseTotalCents;
 
-  const totalMinutes = (service.totalMinutes || 0) + selectedAddonsTotalMin;
+  // Display the actual service time only (no inter-service rest buffer). The
+  // buffer still drives scheduling via `selectedAddonsTotalMin`/totalMinutes,
+  // but it's not part of what the customer "spends".
+  const displayDurationMin =
+    (service.durationMinutes || 0) +
+    selectedAddOns.reduce(
+      (sum, a) => sum + (a.addonConcurrent ? 0 : a.durationMinutes),
+      0,
+    );
   const durationLabel =
-    totalMinutes > 0
+    displayDurationMin > 0
       ? selectedAddOns.length > 0
-        ? `${t.summaryDurationMinutes.replace("{n}", String(totalMinutes))} (${t.summaryDurationIncludesAddon})`
-        : t.summaryDurationMinutes.replace("{n}", String(totalMinutes))
+        ? `${t.summaryDurationMinutes.replace("{n}", String(displayDurationMin))} (${t.summaryDurationIncludesAddon})`
+        : t.summaryDurationMinutes.replace("{n}", String(displayDurationMin))
       : null;
 
   // One pricing line per selected add-on.
@@ -268,14 +276,18 @@ export function BookingFlowConfirmPanel({
               {upsellCandidates.map((s) => {
                 const on = selectedAddonIds.includes(s.id);
                 // Concurrent add-ons cost no time (run during the service);
-                // only sequential ones eat into the free gap.
-                const added = s.addonConcurrent ? 0 : s.totalMinutes;
+                // only sequential ones eat into the free gap. The fit check
+                // uses the scheduled time (incl. buffer); the label shows the
+                // actual service minutes only.
+                const addedSchedule = s.addonConcurrent ? 0 : s.totalMinutes;
+                const addedDisplay = s.addonConcurrent ? 0 : s.durationMinutes;
                 const fits =
-                  on || selectedAddonsTotalMin + added <= upsellGapMinutes;
+                  on ||
+                  selectedAddonsTotalMin + addedSchedule <= upsellGapMinutes;
                 const mins = s.addonConcurrent
                   ? " · ✨ +0′"
-                  : added > 0
-                    ? ` · +${added}′`
+                  : addedDisplay > 0
+                    ? ` · +${addedDisplay}′`
                     : "";
                 return (
                   <button
