@@ -177,6 +177,19 @@ export async function getPartyLinkToken(groupId: string): Promise<string | null>
   return data?.token ?? null;
 }
 
+/** Status of every booking in a group — used to assert a whole-group cancel. */
+export async function getGroupBookingStatuses(
+  salonId: string,
+  groupId: string,
+): Promise<string[]> {
+  const { data } = await supabase
+    .from("bookings")
+    .select("status")
+    .eq("salon_id", salonId)
+    .eq("group_id", groupId);
+  return (data ?? []).map((r) => String(r.status));
+}
+
 export async function getPartyClaims(partyLinkId: string) {
   const { data } = await supabase
     .from("party_link_claims")

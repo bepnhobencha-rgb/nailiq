@@ -72,9 +72,10 @@ function buildConfirmationUrl(shopSlug: string, bookingId: string): string {
 }
 
 /** Self-serve reschedule/cancel links built from a reminder token. */
-type ManageLinks = { reschedule: string; cancel: string };
+export type ManageLinks = { reschedule: string; cancel: string };
 
-function buildHtml(
+/** Exported for unit tests — pure render, no I/O. */
+export function buildHtml(
   salonName: string,
   input: BookingConfirmationInput,
   dateTimeStr: string,
