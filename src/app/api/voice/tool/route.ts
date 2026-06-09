@@ -12,6 +12,7 @@ import {
   buildArrangement,
   findFinishArrangementsInWindow,
   tryWaveArrangement,
+  findEarliestWaveArrangement,
   buildWaveArrangement,
   type WaveRawAssignment,
   SLOT_STEP_MIN,
@@ -1165,7 +1166,10 @@ async function handleGetGroupAvailableSlots(
   if (arrangements.length === 0 && mode === "sync_start") {
     const anchorMs   = Date.parse(salonWallTimeToUtcIso(dateYmd, targetMin, ctx.timezone));
     const dayCloseMs = Date.parse(salonWallTimeToUtcIso(dateYmd, closeMin,  ctx.timezone));
-    const waveRaw = tryWaveArrangement(
+    // Discovery path: forward-scan from the requested time so a group whose
+    // requested slot is full is still offered the earliest later wave window
+    // today, instead of "no availability" while the afternoon sits open.
+    const waveRaw = findEarliestWaveArrangement(
       anchorMs, ctx.resolvedMembers, ctx.staffList, ctx.staffById,
       ctx.capability, ctx.existing, dayCloseMs,
     );
