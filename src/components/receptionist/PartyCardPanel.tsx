@@ -17,6 +17,7 @@
 
 import { useState, useTransition } from "react";
 import { loadPartyCardsAction, type PartyCard, type PartyCardSlot } from "@/shared/dashboard/loadPartyCardsAction";
+import { cancelDeskGroup } from "@/shared/dashboard/receptionistActions";
 import type { Currency } from "@/shared/lib/currencyFormat";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { cn } from "@/shared/lib/cn";
@@ -30,15 +31,23 @@ interface Props {
   /** Server-loaded initial data. Client-side refresh calls loadPartyCardsAction. */
   initialCards: PartyCard[];
   slug: string;
+  salonId: string;
   currencyCode: Currency;
   labels: PartyCardLabels;
+  /** Owner/senior only — gates the "Cancel party" action (server re-checks). */
+  canCancel: boolean;
 }
 
-export function PartyCardPanel({ initialCards, slug, currencyCode, labels }: Props) {
+/** Per-card lifecycle for the cancel-whole-group flow. */
+type CancelState = "idle" | "confirm" | "cancelling" | "error";
+
+export function PartyCardPanel({ initialCards, slug, salonId, currencyCode, labels, canCancel }: Props) {
   const [cards, setCards] = useState<PartyCard[]>(initialCards);
   const [open, setOpen] = useState(initialCards.length > 0);
   const [isPending, startTransition] = useTransition();
+  const [, startCancelTransition] = useTransition();
   const [copyStates, setCopyStates] = useState<Record<string, "idle" | "copied">>({});
+  const [cancelStates, setCancelStates] = useState<Record<string, CancelState>>({});
 
   const todayCount = cards.filter((c) => !c.expired).length;
 
@@ -46,6 +55,25 @@ export function PartyCardPanel({ initialCards, slug, currencyCode, labels }: Pro
     startTransition(async () => {
       const result = await loadPartyCardsAction(slug);
       if (result.ok) setCards(result.cards);
+    });
+  }
+
+  function setCancelState(groupId: string, state: CancelState) {
+    setCancelStates((prev) => ({ ...prev, [groupId]: state }));
+  }
+
+  function handleCancelGroup(card: PartyCard) {
+    setCancelState(card.groupId, "cancelling");
+    startCancelTransition(async () => {
+      const result = await cancelDeskGroup(slug, { salonId, groupId: card.groupId });
+      if (result.ok) {
+        // Refresh from the server so the cancelled party drops off the strip.
+        const refreshed = await loadPartyCardsAction(slug);
+        if (refreshed.ok) setCards(refreshed.cards);
+        setCancelState(card.groupId, "idle");
+      } else {
+        setCancelState(card.groupId, "error");
+      }
     });
   }
 
@@ -148,6 +176,11 @@ export function PartyCardPanel({ initialCards, slug, currencyCode, labels }: Pro
                           : `/party/${card.token}`;
                       handleCopy(card.token, url);
                     }}
+                    canCancel={canCancel && !card.expired}
+                    cancelState={cancelStates[card.groupId] ?? "idle"}
+                    onCancelClick={() => setCancelState(card.groupId, "confirm")}
+                    onCancelDismiss={() => setCancelState(card.groupId, "idle")}
+                    onCancelConfirm={() => handleCancelGroup(card)}
                   />
                 </li>
               ))}
@@ -167,12 +200,22 @@ function PartyCardItem({
   labels,
   copyState,
   onCopy,
+  canCancel,
+  cancelState,
+  onCancelClick,
+  onCancelDismiss,
+  onCancelConfirm,
 }: {
   card: PartyCard;
   currencyCode: Currency;
   labels: PartyCardLabels;
   copyState: "idle" | "copied";
   onCopy: () => void;
+  canCancel: boolean;
+  cancelState: CancelState;
+  onCancelClick: () => void;
+  onCancelDismiss: () => void;
+  onCancelConfirm: () => void;
 }) {
   const [slotsOpen, setSlotsOpen] = useState(false);
 
@@ -295,8 +338,8 @@ function PartyCardItem({
         </ul>
       )}
 
-      {/* Footer: Copy link */}
-      <div className="border-t border-nq-border/30 px-3 py-2">
+      {/* Footer: Copy link + (owner/senior) Cancel party */}
+      <div className="space-y-2 border-t border-nq-border/30 px-3 py-2">
         <button
           type="button"
           onClick={onCopy}
@@ -310,8 +353,89 @@ function PartyCardItem({
         >
           {copyState === "copied" ? labels.copied : labels.copyLink}
         </button>
+
+        {canCancel && (
+          <PartyCancelControl
+            card={card}
+            labels={labels}
+            cancelState={cancelState}
+            onCancelClick={onCancelClick}
+            onCancelDismiss={onCancelDismiss}
+            onCancelConfirm={onCancelConfirm}
+          />
+        )}
       </div>
     </div>
+  );
+}
+
+// ─── Cancel-whole-group control (owner/senior) ───────────────────
+// Two-step inline confirm so a stray tap never wipes a party: idle → confirm
+// → cancelling. The server action re-checks the role + status guards.
+function PartyCancelControl({
+  card,
+  labels,
+  cancelState,
+  onCancelClick,
+  onCancelDismiss,
+  onCancelConfirm,
+}: {
+  card: PartyCard;
+  labels: PartyCardLabels;
+  cancelState: CancelState;
+  onCancelClick: () => void;
+  onCancelDismiss: () => void;
+  onCancelConfirm: () => void;
+}) {
+  if (cancelState === "confirm" || cancelState === "cancelling" || cancelState === "error") {
+    const busy = cancelState === "cancelling";
+    return (
+      <div
+        data-testid={`party-card-cancel-confirm-${card.groupId}`}
+        className="rounded-md border border-nq-error/40 bg-nq-error/5 px-2.5 py-2"
+      >
+        <p className="text-[11px] font-medium text-nq-foreground">
+          {labels.cancelConfirm(card.totalSlots)}
+        </p>
+        {cancelState === "error" && (
+          <p className="mt-1 text-[10px] text-nq-error">{labels.cancelError}</p>
+        )}
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onCancelConfirm}
+            data-testid={`party-card-cancel-yes-${card.groupId}`}
+            className={cn(
+              "flex-1 rounded-md py-1.5 text-[11px] font-semibold transition-colors",
+              "bg-nq-error/15 text-nq-error hover:bg-nq-error/25",
+              busy && "opacity-60",
+            )}
+          >
+            {busy ? labels.cancelling : labels.cancelConfirmYes}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onCancelDismiss}
+            className="flex-1 rounded-md border border-nq-border/50 py-1.5 text-[11px] font-semibold text-nq-muted hover:text-nq-foreground transition-colors"
+          >
+            {labels.cancelConfirmNo}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onCancelClick}
+      data-testid={`party-card-cancel-${card.groupId}`}
+      className="w-full rounded-md py-1.5 text-[11px] font-semibold text-nq-error/80 hover:bg-nq-error/10 hover:text-nq-error transition-colors"
+    >
+      {labels.cancelParty}
+    </button>
   );
 }
 

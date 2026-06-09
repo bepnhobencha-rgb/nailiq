@@ -77,6 +77,10 @@ export type RawClaim = {
     client_name: string | null;
     /** Wave this booking belongs to (Phase 6). */
     wave_number: number | null;
+    /** Booking lifecycle — cancelled rows are filtered out so a cancelled
+     *  party drops off the strip. Optional: absent in older test fixtures,
+     *  treated as not-cancelled. */
+    status?: string | null;
     services: { name: string } | null;
     staff: { name: string } | null;
   } | null;

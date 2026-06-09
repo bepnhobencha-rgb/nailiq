@@ -1,6 +1,11 @@
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
+import { generateReminderToken } from "@/shared/noshow/generateReminderToken";
+
+/** Grace period after the appointment start during which the self-serve
+ *  reschedule/cancel link stays valid. */
+const SELF_SERVE_GRACE_MS = 2 * 60 * 60 * 1000;
 
 /**
  * Send a booking confirmation email to the customer.
@@ -54,20 +59,29 @@ function formatDateTimeForEmail(
   }
 }
 
-function buildConfirmationUrl(shopSlug: string, bookingId: string): string {
+function getEmailOrigin(): string {
   const base =
     (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() ||
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
   const origin = base.length > 0 ? base : "https://nailiq.ca";
-  return `${origin.replace(/\/$/, "")}/${shopSlug}/wait/${bookingId}`;
+  return origin.replace(/\/$/, "");
 }
 
-function buildHtml(
+function buildConfirmationUrl(shopSlug: string, bookingId: string): string {
+  return `${getEmailOrigin()}/${shopSlug}/wait/${bookingId}`;
+}
+
+/** Self-serve reschedule/cancel links built from a reminder token. */
+export type ManageLinks = { reschedule: string; cancel: string };
+
+/** Exported for unit tests — pure render, no I/O. */
+export function buildHtml(
   salonName: string,
   input: BookingConfirmationInput,
   dateTimeStr: string,
   confirmUrl: string,
   currencyCode: string,
+  manageLinks: ManageLinks | null,
 ): string {
   const eName = escapeHtml(input.clientName);
   const eSalon = escapeHtml(salonName);
@@ -149,9 +163,18 @@ function buildHtml(
               </a>
             </div>
 
-            <p style="margin:20px 0 0;font-size:13px;color:#888;text-align:center;">
+            ${
+              manageLinks
+                ? `<p style="margin:20px 0 0;font-size:13px;color:#888;text-align:center;">
+              Need to make a change?
+              <a href="${manageLinks.reschedule}" style="color:#0B0C10;font-weight:600;text-decoration:underline;">Reschedule</a>
+              &nbsp;·&nbsp;
+              <a href="${manageLinks.cancel}" style="color:#0B0C10;font-weight:600;text-decoration:underline;">Cancel</a>
+            </p>`
+                : `<p style="margin:20px 0 0;font-size:13px;color:#888;text-align:center;">
               Need to reschedule? Contact <strong>${eSalon}</strong> directly.
-            </p>
+            </p>`
+            }
           </td>
         </tr>
 
@@ -188,7 +211,7 @@ export async function sendBookingConfirmationEmail(
     const supabase = createServiceRoleClient();
     const { data: salonRow } = await supabase
       .from("salons")
-      .select("name, timezone, currency")
+      .select("id, name, timezone, currency, reminders_enabled")
       .eq("slug", input.shopSlug)
       .maybeSingle();
 
@@ -205,7 +228,31 @@ export async function sendBookingConfirmationEmail(
     const dateTimeStr = formatDateTimeForEmail(input.startTimeUtc, timezone);
     const confirmUrl = buildConfirmationUrl(input.shopSlug, input.bookingId);
 
-    const html = buildHtml(salonName, input, dateTimeStr, confirmUrl, currencyCode);
+    // Self-serve reschedule/cancel links — gated on the salon's existing
+    // customer self-service opt-in (`reminders_enabled`, the same switch that
+    // already puts these links in reminder emails). Token expires a short grace
+    // after the appointment so the link works right up to the visit, not 48h
+    // after booking. Best-effort: if the token can't be minted we fall back to
+    // the "contact the salon" copy.
+    let manageLinks: ManageLinks | null = null;
+    const salonId =
+      typeof salonRow?.id === "string" ? salonRow.id : null;
+    if (salonId && salonRow?.reminders_enabled === true) {
+      const startMs = Date.parse(input.startTimeUtc);
+      const expiresAt = Number.isFinite(startMs)
+        ? new Date(startMs + SELF_SERVE_GRACE_MS).toISOString()
+        : undefined;
+      const token = await generateReminderToken(input.bookingId, salonId, { expiresAt });
+      if (token) {
+        const origin = getEmailOrigin();
+        manageLinks = {
+          reschedule: `${origin}/booking/reschedule?token=${token.id}`,
+          cancel: `${origin}/booking/cancel?token=${token.id}`,
+        };
+      }
+    }
+
+    const html = buildHtml(salonName, input, dateTimeStr, confirmUrl, currencyCode, manageLinks);
 
     const res = await resend.emails.send({
       from: getResendFrom(),

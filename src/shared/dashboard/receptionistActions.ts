@@ -720,6 +720,68 @@ export async function cancelDeskBooking(
 }
 
 /**
+ * Cancel an ENTIRE group/party at once: every still-active booking sharing a
+ * `group_id` flips to `cancelled` in one statement. Owner/senior only (same
+ * gate as the single-booking cancel). Mirrors `cancelDeskBooking` for audit +
+ * Wix write-back, just fanned out across the group. Safe to call repeatedly —
+ * the `status` guard makes it a no-op once everything is already cancelled.
+ */
+export async function cancelDeskGroup(
+  slug: string,
+  input: { salonId: string; groupId: string },
+): Promise<{ ok: true; cancelledCount: number } | { ok: false; error: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+
+  if (!canCancelBooking(ctx.role)) {
+    return fail("unauthorized");
+  }
+
+  if (ctx.salon.id !== String(input.salonId).trim()) {
+    return fail("salon_mismatch");
+  }
+
+  const groupId = String(input.groupId ?? "").trim();
+  if (!groupId || !isUuidLike(groupId)) return fail("invalid_group");
+
+  const supabase = ctx.supabase;
+
+  // Atomic bulk cancel scoped to salon + group + still-active rows. Returns the
+  // ids actually flipped so audit + Wix write-back only fire for real changes.
+  const { data: cancelled, error: upErr } = await supabase
+    .from("bookings")
+    .update({ status: "cancelled" })
+    .eq("salon_id", ctx.salon.id)
+    .eq("group_id", groupId)
+    .in("status", ["pending", "confirmed", "in_progress"])
+    .select("id");
+
+  if (upErr) {
+    console.error("[cancelDeskGroup]", upErr);
+    return fail("server_error");
+  }
+
+  const ids = (cancelled ?? []).map((r) => String(r.id));
+  if (ids.length === 0) return fail("invalid_state");
+
+  for (const bookingId of ids) {
+    void logBookingEvent({
+      bookingId,
+      salonId: ctx.salon.id,
+      actorUserId: null,
+      actorRole: ctxActorRole(ctx),
+      eventType: "booking_cancelled",
+      payload: { reason: "desk_group_cancel", groupId },
+    });
+  }
+
+  // Wix write-back per row — best-effort, after the response is flushed.
+  after(() => Promise.all(ids.map((id) => pushWixCancel(ctx.salon.id, id))));
+
+  return { ok: true, cancelledCount: ids.length };
+}
+
+/**
  * Approve a Wix-origin pending booking from the desk: confirm it in NailIQ AND push a
  * Confirm to Wix so the customer gets Wix's confirmation. Owner/senior only. Scoped to
  * rows that carry a `wix_booking_id` and are still 'pending', so NailIQ's native pending

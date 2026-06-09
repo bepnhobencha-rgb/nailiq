@@ -2382,8 +2382,10 @@ function ReceptionistCenterInner({
             <PartyCardPanel
               initialCards={partyCards}
               slug={slug}
+              salonId={data.salon.id}
               currencyCode={data.salon.currencyCode}
               labels={rcMessages.partyCard}
+              canCancel={canCancelBooking(viewerRole)}
             />
           </div>
         ) : null}
@@ -2535,8 +2537,10 @@ function ReceptionistCenterInner({
                   <PartyCardPanel
                     initialCards={partyCards}
                     slug={slug}
+                    salonId={data.salon.id}
                     currencyCode={data.salon.currencyCode}
                     labels={rcMessages.partyCard}
+                    canCancel={canCancelBooking(viewerRole)}
                   />
                 ) : null
               }

@@ -11,10 +11,16 @@ export type ReminderToken = {
 /**
  * Creates (or reuses the unexpired) reminder token for a booking.
  * Returns null if the booking isn't found or DB write fails.
+ *
+ * `opts.expiresAt` overrides the default 48h TTL — used by the booking
+ * confirmation email, which is sent at booking time (potentially days before
+ * the appointment) and needs the self-serve reschedule/cancel link to stay
+ * valid right up to the appointment, not expire 48h after booking.
  */
 export async function generateReminderToken(
   bookingId: string,
   salonId: string,
+  opts?: { expiresAt?: string },
 ): Promise<ReminderToken | null> {
   const supabase = createServiceRoleClient();
 
@@ -34,7 +40,8 @@ export async function generateReminderToken(
     return { id: row.id, expiresAt: row.expires_at };
   }
 
-  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
+  const expiresAt =
+    opts?.expiresAt ?? new Date(Date.now() + TOKEN_TTL_MS).toISOString();
   const { data, error } = await supabase
     .from("booking_reminder_tokens" as never)
     .insert({ booking_id: bookingId, salon_id: salonId, expires_at: expiresAt })
