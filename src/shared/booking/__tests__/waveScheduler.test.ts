@@ -168,5 +168,43 @@ test("group that fits simultaneously is not a wave booking", () => {
   assertEqual(arr.waveCount, 1, "one wave");
 });
 
+// ── Inter-wave gap derives from the per-service buffer ──
+test("wave gap = members' bufferMinutes when set (not the 15-min fallback)", () => {
+  const BUF = 5;
+  const ms = members(7).map((m) => ({ ...m, bufferMinutes: BUF }));
+  const res = tryWaveArrangement(T0, ms, staff3, staffById3, null, [], DAY_CLOSE)!;
+  const a = res.assignments;
+  const wave1End = T0 + DUR * MIN;
+  const wave2Start = wave1End + BUF * MIN; // 5-min gap, not 15
+  const wave2End = wave2Start + DUR * MIN;
+  const wave3Start = wave2End + BUF * MIN;
+  for (const x of a.filter((y) => y.waveNumber === 2)) assertEqual(x.startMs, wave2Start, "wave2 start uses 5-min buffer");
+  for (const x of a.filter((y) => y.waveNumber === 3)) assertEqual(x.startMs, wave3Start, "wave3 start uses 5-min buffer");
+});
+
+// ── Mixed buffers → the largest in the wave wins (every chair gets enough reset) ──
+test("wave gap uses the max bufferMinutes among seated members", () => {
+  const ms = members(7).map((m, i) => ({ ...m, bufferMinutes: i === 0 ? 10 : 5 }));
+  const res = tryWaveArrangement(T0, ms, staff3, staffById3, null, [], DAY_CLOSE)!;
+  const wave2Start = res.assignments.find((x) => x.waveNumber === 2)!.startMs;
+  assertEqual(wave2Start, T0 + DUR * MIN + 10 * MIN, "wave2 start uses the max (10) buffer");
+});
+
+// ── Explicit opts.waveBufferMin still overrides the derived value ──
+test("opts.waveBufferMin overrides per-service buffer", () => {
+  const ms = members(7).map((m) => ({ ...m, bufferMinutes: 5 }));
+  const res = tryWaveArrangement(T0, ms, staff3, staffById3, null, [], DAY_CLOSE, { waveBufferMin: 20 })!;
+  const wave2Start = res.assignments.find((x) => x.waveNumber === 2)!.startMs;
+  assertEqual(wave2Start, T0 + DUR * MIN + 20 * MIN, "explicit override wins");
+});
+
+// ── Zero buffer falls back to WAVE_BUFFER_MIN (avoids stacked chairs on misconfig) ──
+test("zero bufferMinutes falls back to WAVE_BUFFER_MIN", () => {
+  const ms = members(7).map((m) => ({ ...m, bufferMinutes: 0 }));
+  const res = tryWaveArrangement(T0, ms, staff3, staffById3, null, [], DAY_CLOSE)!;
+  const wave2Start = res.assignments.find((x) => x.waveNumber === 2)!.startMs;
+  assertEqual(wave2Start, T0 + DUR * MIN + WAVE_BUFFER_MIN * MIN, "0 buffer → 15-min fallback");
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

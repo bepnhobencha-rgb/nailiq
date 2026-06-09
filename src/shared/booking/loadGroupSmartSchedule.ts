@@ -515,7 +515,7 @@ export async function loadGroupSmartSchedule(
 
   const serviceById = new Map<
     string,
-    { id: string; name: string; totalMin: number; priceCents: number | null }
+    { id: string; name: string; totalMin: number; bufferMin: number; priceCents: number | null }
   >();
   // addonById: only rows flagged is_addon, for add-on resolution.
   type AddonInfo = { block: number; priceCents: number | null; concurrent: boolean };
@@ -565,6 +565,7 @@ export async function loadGroupSmartSchedule(
       id: String(r.id),
       name: String(r.name ?? ""),
       totalMin: dur + buf,
+      bufferMin: buf,
       priceCents: r.price_cents != null ? Number(r.price_cents) : null,
     });
   }
@@ -605,6 +606,7 @@ export async function loadGroupSmartSchedule(
       serviceId: m.serviceId,
       serviceName: svc.name,
       totalMinutes: svc.totalMin + addedMin,
+      bufferMinutes: svc.bufferMin,
       priceCents: effectivePriceCents,
       preferredStaffId: m.preferredStaffId ?? null,
     });
@@ -1099,15 +1101,22 @@ function computeSplitOption(ctx: AlternativesCtx): GroupAlternatives["splitOptio
   // Use the BEST arrangement for the main group — most compact.
   const mainArrangement = mainArrangements[0];
 
-  // Find the late slot. The earliest a late member can start is
-  // the main group's max end + the buffer, rounded up to the
-  // next SLOT_STEP_MIN grid line so the staff's chair turns at
-  // a clean boundary.
+  // Find the late slot. The earliest a late member can start is the main
+  // group's max end + the chair-reset gap. That gap is derived from the
+  // per-service buffer ("Chuẩn bị (phút)") the operator configured — the
+  // largest buffer among the main group's services — instead of a hardcoded
+  // 15 min, so the schedule reflects the salon's own reset time. Falls back
+  // to SPLIT_LATE_BUFFER_MIN only when no service carries a buffer.
   const mainMaxEndMs = Math.max(
     ...mainArrangement.assignments.map((a) => Date.parse(a.endUtcIso)),
   );
-  const lateMinStartMs =
-    mainMaxEndMs + SPLIT_LATE_BUFFER_MIN * 60_000;
+  const derivedBufferMin = mainMembers.reduce(
+    (acc, m) => Math.max(acc, m.bufferMinutes ?? 0),
+    0,
+  );
+  const splitBufferMin =
+    derivedBufferMin > 0 ? derivedBufferMin : SPLIT_LATE_BUFFER_MIN;
+  const lateMinStartMs = mainMaxEndMs + splitBufferMin * 60_000;
 
   const closeMin = hmToMinutes(ctx.dayHours.close);
   if (closeMin === null) return null;
