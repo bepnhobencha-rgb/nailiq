@@ -341,6 +341,7 @@ export const bookingVi: BookingMessages = {
     groupEarlierToday: "Vẫn trong ngày, lúc {time} — cả nhóm {n} người",
     groupEarlierTodayWaves: "Trong ngày — {n} người chia {waves} đợt từ {time}",
     groupChooseOption: "Chọn phương án này →",
+    groupPreferAllTogether: "Tôi muốn cả nhóm bắt đầu đúng cùng một giờ →",
     groupTryDifferentDate: "Thử ngày khác",
     groupTomorrow: "Ngày mai",
     groupNoAlternatives: "Không tìm được lịch. Vui lòng thử ngày khác.",

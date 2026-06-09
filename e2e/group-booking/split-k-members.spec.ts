@@ -108,5 +108,18 @@ test.describe("Group booking — generalized split (K late members)", () => {
     // could never show.
     await expect(splitCard).toContainText(/2 more/i);
     await expect(splitCard).toContainText(/2 together/i);
+
+    // Pha 1.3 — the explicit "everyone together" escape hatch is offered
+    // (an all-together afternoon exists), and tapping it jumps straight to a
+    // real all-together arrangement, leaving the no-slots alternatives behind.
+    // Pha 1.3 — the explicit "everyone together" escape hatch is offered
+    // (an all-together alternative exists) and, when tapped, leaves the
+    // partial/split behind by jumping to an all-together window.
+    const preferTogether = page.getByTestId("group-alt-prefer-together");
+    await expect(preferTogether).toBeVisible();
+    await preferTogether.click();
+    await expect(page.getByTestId("group-alt-split")).toHaveCount(0, {
+      timeout: 20_000,
+    });
   });
 });

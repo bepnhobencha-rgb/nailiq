@@ -501,6 +501,7 @@ export const bookingEn = {
     groupEarlierTodayWaves: "Same day — {n} people in {waves} waves from {time}",
     /** Per-card "Choose this option →" CTA label. */
     groupChooseOption: "Choose this option →",
+    groupPreferAllTogether: "I'd rather everyone start at the same time →",
     /** "Try a different date" — last-resort back-out shown
      *  alongside the cards. Distinct from the legacy
      *  `schedulingTryDate` so PMs can tune it without affecting

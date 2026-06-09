@@ -3165,6 +3165,24 @@ function AlternativesPanel({
         />
       ) : null}
 
+      {/* Explicit "keep us together" escape hatch — when a partial/split is on
+          offer, let the customer decline the small offset in one tap and jump
+          straight to an all-together time (same-day preferred, else next day). */}
+      {split && (earlier || next) ? (
+        <button
+          type="button"
+          data-testid="group-alt-prefer-together"
+          onClick={() => {
+            if (earlier) onPickEarlier(earlier.arrivalKind);
+            else if (next) onPickDate(next.date);
+          }}
+          className="w-full rounded-xl border border-nq-primary/40 bg-nq-primary/5 px-4 py-3 text-sm font-medium text-nq-primary transition-colors hover:bg-nq-primary/10"
+        >
+          {groupCopy.groupPreferAllTogether ??
+            "I'd rather everyone start at the same time →"}
+        </button>
+      ) : null}
+
       <div className="flex gap-2 pt-1">
         <Button
           type="button"
