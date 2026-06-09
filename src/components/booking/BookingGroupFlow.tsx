@@ -3070,10 +3070,10 @@ function AlternativesPanel({
     <AlternativeCard
       testid="group-alt-split"
       icon="👥"
-      title={(groupCopy.groupSplitOption ?? "{n} people at {time}, {name} at {lateTime}")
+      title={(groupCopy.groupSplitOption ?? "{n} together at {time}, {late} more by {lateTime}")
         .replace("{n}", String(split.mainSize))
         .replace("{time}", split.mainTime)
-        .replace("{name}", split.lateMemberName)
+        .replace("{late}", String(split.lateCount))
         .replace("{lateTime}", split.lateTime)}
       subtitle={
         splitStaysTogether

@@ -333,7 +333,7 @@ export const bookingVi: BookingMessages = {
       "Dịch vụ không còn được cung cấp. Vui lòng chọn dịch vụ khác.",
     groupAlternativesTitle: "Chúng tôi sắp xếp được cho nhóm!",
     groupPartialCapacity: "Chỉ còn {n} chỗ lúc {time}.",
-    groupSplitOption: "{n} người lúc {time}, {name} lúc {lateTime}",
+    groupSplitOption: "{n} người lúc {time}, {late} người trễ chút (trước {lateTime})",
     groupSplitDone: "Cả nhóm xong trước {time}",
     groupSplitStillTogether: "Vẫn cùng nhau — chỉ lệch {gap} phút ✨",
     groupNextDate: "{label} — {n} người cùng lúc {time}",

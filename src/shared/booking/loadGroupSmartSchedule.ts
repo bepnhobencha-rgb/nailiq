@@ -152,28 +152,26 @@ export type GroupSmartScheduleParams = {
  */
 export type GroupAlternatives = {
   /**
-   * N-1 members fit at `mainTime`, the remaining 1 (always the
-   * last member by input index — matches the spec) fits at
-   * `lateTime` after the main group's wall-clock end + the
-   * `SPLIT_LATE_BUFFER_MIN` buffer. UI shows it as "4 people at
-   * 2:00 PM, Emma at 3:30 PM with Tina".
+   * The largest prefix of members (`mainSize`) fits together at `mainTime`;
+   * the remaining `lateCount` members (the trailing ones by input index)
+   * are each placed at the nearest later slot, starting after the main
+   * group's end + `SPLIT_LATE_BUFFER_MIN`. `lateTime` is the LATEST late
+   * start, so the UI can measure the spread (Pha 1 togetherness threshold)
+   * and decide ordering. UI shows it as "8 at 9:00, 2 a bit later (by 9:30)".
    */
   splitOption: {
-    mainArrangement: GroupArrangement;
     /** Wall-time HH:MM string (salon tz) for the main group. */
     mainTime: string;
     mainSize: number;
-    /** Wall-time HH:MM string for the late member. */
+    /** How many trailing members spilled into a later slot. */
+    lateCount: number;
+    /** Display names of the late members (input order). */
+    lateNames: string[];
+    /** Wall-time HH:MM of the LATEST late start (widest spread anchor). */
     lateTime: string;
-    lateStaffId: string;
-    lateStaffName: string;
-    lateMemberIndex: number;
-    /** Display name of the late member (echoed from input). */
-    lateMemberName: string;
-    /** Pre-built assignment list ready to flow into step 5 —
-     *  matches the shape of `GroupArrangement.assignments`. The
-     *  late member's `startUtcIso` is its split time, all others
-     *  are the main time. */
+    /** Pre-built assignment list ready to flow into step 5 — matches the
+     *  shape of `GroupArrangement.assignments`. Main members carry the main
+     *  time; each late member carries its own split time. */
     assignments: GroupArrangementAssignment[];
   } | null;
   /**
@@ -1070,70 +1068,80 @@ function utcIsoToSalonHm(utcIso: string, timezone: string): string {
 }
 
 /**
- * Split-option sub-query (Sub-query 1).
+ * Split-option sub-query (Sub-query 1) — generalized partial fit.
  *
- * Drops the LAST member (matches spec "members[N-1]") from the
- * resolved list and runs the normal arrangement search. If that
- * succeeds, walks forward from the main group's max end +
- * SPLIT_LATE_BUFFER_MIN looking for a single anchor where the
- * dropped member can be slotted onto a capable + free staff.
+ * Finds the LARGEST prefix of members that fits together at the requested
+ * window (dropping trailing members one at a time — matches the historical
+ * "members[N-1]" convention), then places EACH remaining (late) member at
+ * the nearest later slot after the main group's end + SPLIT_LATE_BUFFER_MIN,
+ * on a capable + free staff. Earlier this only ever split a single member;
+ * now it splits the minimum K needed, so "8 of you at 9:00, 2 a bit later"
+ * is offered instead of giving up.
  *
- * Returns `null` when N === 2 (can't split a duo without becoming
- * an individual booking, which is a different flow) or when no
- * late slot can be found inside the day's opening hours.
+ * The caller (UI) compares the resulting spread against the togetherness
+ * threshold to decide ordering. Returns `null` when N < 3, when not even a
+ * 2-person main group fits the window, or when any late member can't be
+ * seated before closing.
  */
 function computeSplitOption(ctx: AlternativesCtx): GroupAlternatives["splitOption"] {
-  if (ctx.resolvedMembers.length < 3) return null;
+  const members = ctx.resolvedMembers;
+  if (members.length < 3) return null;
 
-  const mainMembers = ctx.resolvedMembers.slice(0, -1);
-  const lateMember = ctx.resolvedMembers[ctx.resolvedMembers.length - 1];
+  const closeMin = hmToMinutes(ctx.dayHours.close);
+  if (closeMin === null) return null;
+  const dayCloseMs = Date.parse(
+    salonWallTimeToUtcIso(ctx.date, closeMin, ctx.timezone),
+  );
+  if (!Number.isFinite(dayCloseMs)) return null;
 
-  const mainArrangements = findArrangementsInWindow({
-    date: ctx.date,
-    timezone: ctx.timezone,
-    window: ctx.window,
-    closeMin: hmToMinutes(ctx.dayHours.close) ?? 0,
-    earliestStartMs: ctx.earliestStartMs,
-    resolvedMembers: mainMembers,
-    staffList: ctx.staffList,
-    staffById: ctx.staffById,
-    capability: ctx.capability,
-    existing: ctx.existing,
-  });
-  if (mainArrangements.length === 0) return null;
-  // Use the BEST arrangement for the main group — most compact.
-  const mainArrangement = mainArrangements[0];
+  // 1. Largest prefix [0..m-1] that fits together at the window. Walk down
+  //    from N-1 so the FIRST hit is the biggest main group (fewest late).
+  let mainArrangement: GroupArrangement | null = null;
+  let mainSize = 0;
+  for (let m = members.length - 1; m >= 2; m--) {
+    const found = findArrangementsInWindow({
+      date: ctx.date,
+      timezone: ctx.timezone,
+      window: ctx.window,
+      closeMin,
+      earliestStartMs: ctx.earliestStartMs,
+      resolvedMembers: members.slice(0, m),
+      staffList: ctx.staffList,
+      staffById: ctx.staffById,
+      capability: ctx.capability,
+      existing: ctx.existing,
+    });
+    if (found.length > 0) {
+      mainArrangement = found[0];
+      mainSize = m;
+      break;
+    }
+  }
+  if (!mainArrangement || mainSize < 2) return null;
 
-  // Find the late slot. The earliest a late member can start is the main
-  // group's max end + the chair-reset gap. That gap is derived from the
-  // per-service buffer ("Chuẩn bị (phút)") the operator configured — the
-  // largest buffer among the main group's services — instead of a hardcoded
-  // 15 min, so the schedule reflects the salon's own reset time. Falls back
-  // to SPLIT_LATE_BUFFER_MIN only when no service carries a buffer.
+  const lateMembers = members.slice(mainSize);
+  if (lateMembers.length === 0) return null;
+
+  // 2. Place each late member greedily at the nearest slot after the main
+  //    group ends + buffer. The main arrangement (in-memory, not yet in the
+  //    DB) plus each already-placed late member count as occupancy so no two
+  //    bookings double-book a chair.
   const mainMaxEndMs = Math.max(
     ...mainArrangement.assignments.map((a) => Date.parse(a.endUtcIso)),
   );
-  const derivedBufferMin = mainMembers.reduce(
-    (acc, m) => Math.max(acc, m.bufferMinutes ?? 0),
-    0,
-  );
+  // The chair-reset gap before the late members is derived from the per-service
+  // buffer ("Chuẩn bị (phút)") the operator configured — the largest buffer
+  // among the main group's services — instead of a hardcoded 15 min, so the
+  // schedule reflects the salon's own reset time. Falls back to
+  // SPLIT_LATE_BUFFER_MIN only when no service carries a buffer (preserves #348).
+  const derivedBufferMin = members
+    .slice(0, mainSize)
+    .reduce((acc, m) => Math.max(acc, m.bufferMinutes ?? 0), 0);
   const splitBufferMin =
     derivedBufferMin > 0 ? derivedBufferMin : SPLIT_LATE_BUFFER_MIN;
   const lateMinStartMs = mainMaxEndMs + splitBufferMin * 60_000;
 
-  const closeMin = hmToMinutes(ctx.dayHours.close);
-  if (closeMin === null) return null;
-  const dayCloseIso = salonWallTimeToUtcIso(ctx.date, closeMin, ctx.timezone);
-  const dayCloseMs = Date.parse(dayCloseIso);
-  if (!Number.isFinite(dayCloseMs)) return null;
-
-  // Walk forward from lateMinStartMs in SLOT_STEP_MIN ticks, try
-  // every capable + still-free staff. The main group's slots are
-  // already represented in soft-reservations through the standard
-  // `existing` list (the main arrangement is in-memory and hasn't
-  // been written to the DB), so we manually treat the main
-  // arrangement as additional occupancy for this search.
-  const augmentedExisting: ExistingBooking[] = [
+  const occupancy: ExistingBooking[] = [
     ...ctx.existing,
     ...mainArrangement.assignments.map((a) => ({
       staffId: a.staffId,
@@ -1142,69 +1150,84 @@ function computeSplitOption(ctx: AlternativesCtx): GroupAlternatives["splitOptio
     })),
   ];
 
-  const lateDurationMs = lateMember.totalMinutes * 60_000;
-  for (let ms = lateMinStartMs; ms + lateDurationMs <= dayCloseMs; ms += SLOT_STEP_MIN * 60_000) {
-    const endMs = ms + lateDurationMs;
-    const candidateOrder: string[] = [];
-    if (lateMember.preferredStaffId != null) {
-      candidateOrder.push(lateMember.preferredStaffId);
+  const lateAssignments: GroupArrangementAssignment[] = [];
+  for (const member of lateMembers) {
+    const durationMs = member.totalMinutes * 60_000;
+    let placed: GroupArrangementAssignment | null = null;
+    for (
+      let ms = lateMinStartMs;
+      ms + durationMs <= dayCloseMs && !placed;
+      ms += SLOT_STEP_MIN * 60_000
+    ) {
+      const endMs = ms + durationMs;
+      const candidateOrder: string[] = [];
+      if (member.preferredStaffId != null) {
+        candidateOrder.push(member.preferredStaffId);
+      }
+      for (const s of ctx.staffList) {
+        if (s.id !== member.preferredStaffId) candidateOrder.push(s.id);
+      }
+      for (const sid of candidateOrder) {
+        if (!ctx.staffById.has(sid)) continue;
+        if (!isStaffCapableForService(ctx.capability, sid, member.serviceId)) {
+          continue;
+        }
+        if (!staffIsFree(sid, ms, endMs, occupancy, new Map())) continue;
+
+        const staff = ctx.staffById.get(sid)!;
+        const startIso = new Date(ms).toISOString();
+        const endIso = new Date(endMs).toISOString();
+        placed = {
+          memberIndex: member.index,
+          staffId: sid,
+          staffName: staff.name,
+          startUtcIso: startIso,
+          endUtcIso: endIso,
+          startDisplay: formatInSalonTz(startIso, ctx.timezone, "shortTime"),
+          endDisplay: formatInSalonTz(endIso, ctx.timezone, "shortTime"),
+          durationMinutes: member.totalMinutes,
+          priceCents: member.priceCents,
+          memberName: member.name,
+          serviceName: member.serviceName,
+          waveNumber: 1,
+        };
+        // Reserve this chair so a later late member can't double-book it.
+        occupancy.push({ staffId: sid, startMs: ms, endMs });
+        break;
+      }
     }
-    for (const s of ctx.staffList) {
-      if (s.id !== lateMember.preferredStaffId) candidateOrder.push(s.id);
-    }
-    for (const sid of candidateOrder) {
-      if (!ctx.staffById.has(sid)) continue;
-      if (!isStaffCapableForService(ctx.capability, sid, lateMember.serviceId)) continue;
-      if (!staffIsFree(sid, ms, endMs, augmentedExisting, new Map())) continue;
-
-      const staff = ctx.staffById.get(sid)!;
-      const lateStartIso = new Date(ms).toISOString();
-      const lateEndIso = new Date(endMs).toISOString();
-
-      // Build a synthetic combined arrangement so the UI flow
-      // through step 5 + the submit payload can index by
-      // memberIndex naturally. Order matches the input member
-      // order so `members[a.memberIndex]` lookups stay valid.
-      const lateAssignment: GroupArrangementAssignment = {
-        memberIndex: lateMember.index,
-        staffId: sid,
-        staffName: staff.name,
-        startUtcIso: lateStartIso,
-        endUtcIso: lateEndIso,
-        startDisplay: formatInSalonTz(lateStartIso, ctx.timezone, "shortTime"),
-        endDisplay: formatInSalonTz(lateEndIso, ctx.timezone, "shortTime"),
-        durationMinutes: lateMember.totalMinutes,
-        priceCents: lateMember.priceCents,
-        memberName: lateMember.name,
-        serviceName: lateMember.serviceName,
-        // Existing web "late member" split is unrelated to Phase 6 wave booking.
-        waveNumber: 1,
-      };
-      const combinedAssignments: GroupArrangementAssignment[] = [
-        ...mainArrangement.assignments,
-        lateAssignment,
-      ].sort((a, b) => a.memberIndex - b.memberIndex);
-
-      const mainTime = utcIsoToSalonHm(
-        mainArrangement.assignments[0].startUtcIso,
-        ctx.timezone,
-      );
-      const lateTime = utcIsoToSalonHm(lateStartIso, ctx.timezone);
-
-      return {
-        mainArrangement,
-        mainTime,
-        mainSize: mainMembers.length,
-        lateTime,
-        lateStaffId: sid,
-        lateStaffName: staff.name,
-        lateMemberIndex: lateMember.index,
-        lateMemberName: lateMember.name,
-        assignments: combinedAssignments,
-      };
-    }
+    // Any late member that can't be seated before close kills the option.
+    if (!placed) return null;
+    lateAssignments.push(placed);
   }
-  return null;
+
+  const combinedAssignments: GroupArrangementAssignment[] = [
+    ...mainArrangement.assignments,
+    ...lateAssignments,
+  ].sort((a, b) => a.memberIndex - b.memberIndex);
+
+  const mainTime = utcIsoToSalonHm(
+    mainArrangement.assignments[0].startUtcIso,
+    ctx.timezone,
+  );
+  // The LATEST late start anchors the spread the UI compares to the
+  // togetherness threshold.
+  const latestLateMs = Math.max(
+    ...lateAssignments.map((a) => Date.parse(a.startUtcIso)),
+  );
+  const lateTime = utcIsoToSalonHm(
+    new Date(latestLateMs).toISOString(),
+    ctx.timezone,
+  );
+
+  return {
+    mainTime,
+    mainSize,
+    lateCount: lateAssignments.length,
+    lateNames: lateAssignments.map((a) => a.memberName),
+    lateTime,
+    assignments: combinedAssignments,
+  };
 }
 
 /**

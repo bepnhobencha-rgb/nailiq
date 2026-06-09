@@ -482,7 +482,7 @@ export const bookingEn = {
     /** Split-option card title. `{n}` = main size, `{time}` =
      *  main wall-time, `{name}` = late member name, `{lateTime}` =
      *  late wall-time. */
-    groupSplitOption: "{n} people at {time}, {name} at {lateTime}",
+    groupSplitOption: "{n} together at {time}, {late} more by {lateTime}",
     /** Split-option card subtitle — "Everyone done by HH:MM". */
     groupSplitDone: "Everyone done by {time}",
     groupSplitStillTogether: "Still together — just {gap} min apart ✨",
