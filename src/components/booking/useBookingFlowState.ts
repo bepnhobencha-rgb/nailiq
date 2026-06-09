@@ -179,6 +179,11 @@ export function useBookingFlowState(
   const [clientWebsite, setClientWebsite] = useState("");
   // Multiple add-ons can be booked into one appointment, gated by free-gap time.
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
+  // Hybrid re-pick: an add-on the customer WANTS but that didn't fit the
+  // previous slot. Tracked separately from `selectedAddonIds` (which the
+  // time/slot reset effect wipes) so it survives a re-pick; it drives slot
+  // sizing and is auto-applied once a fitting slot is chosen.
+  const [pendingAddonId, setPendingAddonId] = useState<string | null>(null);
   const [upsellCandidates, setUpsellCandidates] = useState<
     BookingServiceItem[]
   >([]);
@@ -247,6 +252,29 @@ export function useBookingFlowState(
     [selectedAddonIds, upsellCandidates, addonAddedMinutes],
   );
 
+  // Same total, but resolved against the FULL add-on list (`addOns`) instead
+  // of `upsellCandidates` — the latter is cleared whenever no slot is picked
+  // (e.g. right after a re-pick), which would wrongly drop the add-on minutes
+  // from the time-step slot sizing. Used only for slot sizing.
+  const selectedAddonsSlotMin = useMemo(
+    () =>
+      selectedAddonIds.reduce(
+        (sum, id) => sum + addonAddedMinutes(addOns.find((s) => s.id === id)),
+        0,
+      ),
+    [selectedAddonIds, addOns, addonAddedMinutes],
+  );
+
+  // Extra minutes for the pending (wanted-but-not-yet-fitting) add-on; added
+  // to the time-step slot sizing so the grid offers times that fit it.
+  const pendingAddonMin = useMemo(
+    () =>
+      pendingAddonId
+        ? addonAddedMinutes(addOns.find((s) => s.id === pendingAddonId))
+        : 0,
+    [pendingAddonId, addOns, addonAddedMinutes],
+  );
+
   // Toggle an add-on on/off. Concurrent add-ons are always allowed (no time
   // cost); sequential ones are blocked when they'd overflow the staff's free
   // gap (so the appointment never runs into the next booking).
@@ -266,6 +294,26 @@ export function useBookingFlowState(
       });
     },
     [upsellCandidates, upsellGapMinutes, addonAddedMinutes],
+  );
+
+  /**
+   * Hybrid upsell escape hatch: a time-consuming add-on that doesn't fit the
+   * current slot's free gap is force-selected, then the customer is sent back
+   * to the time step. Because slot sizing now includes selected add-ons, the
+   * grid re-offers only times that fit service + add-on — no dead-end, and the
+   * appointment stays correct. Clears the stale time pick so they choose fresh.
+   */
+  const addAddonAndRepickTime = useCallback(
+    (id: string) => {
+      // Mark as PENDING (not selected) so the time/slot reset effect can't
+      // wipe it; slot sizing picks it up and it's auto-applied once a fitting
+      // slot is chosen.
+      setPendingAddonId(id);
+      setTimeSlot(null);
+      setStepDir(-1);
+      setStep("time");
+    },
+    [],
   );
 
   const confettiFiredRef = useRef(false);
@@ -465,7 +513,12 @@ export function useBookingFlowState(
       selectedDate,
       staffId: staffId ?? BOOKING_ANY_STAFF_ID,
       staffList: capableStaff,
-      serviceDurationMinutes: service.totalMinutes,
+      // Size slots for the WHOLE appointment — service + any already-chosen
+      // add-ons. On the first pass no add-ons are picked yet (→ 0), so the
+      // behaviour is unchanged; on a re-pick (after adding a time-consuming
+      // add-on at confirm) the grid only offers times that fit everything.
+      serviceDurationMinutes:
+        service.totalMinutes + selectedAddonsSlotMin + pendingAddonMin,
       closedDateYmdSet,
       shortestServiceMinutes,
       leadMinutes: salon.bookingLeadMinutes,
@@ -490,6 +543,8 @@ export function useBookingFlowState(
     serviceId,
     service,
     shortestServiceMinutes,
+    selectedAddonsSlotMin,
+    pendingAddonMin,
   ]);
 
   useEffect(() => {
@@ -531,6 +586,44 @@ export function useBookingFlowState(
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset of upsell selection on key changes
     setSelectedAddonIds([]);
   }, [serviceId, timeSlot, staffId, selectedDate]);
+
+  // A pending add-on is service-specific — drop it if the service changes.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset pending on service change
+    setPendingAddonId(null);
+  }, [serviceId]);
+
+  // Hybrid: once the customer lands on a slot whose gap fits the pending
+  // add-on, promote it into the real selection (and clear pending) so the
+  // confirm shows it bundled in.
+  useEffect(() => {
+    if (!pendingAddonId) return;
+    const cand = addOns.find((s) => s.id === pendingAddonId);
+    if (!cand) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear invalid pending
+      setPendingAddonId(null);
+      return;
+    }
+    const used = selectedAddonIds.reduce(
+      (sum, id) =>
+        sum + addonAddedMinutes(upsellCandidates.find((s) => s.id === id)),
+      0,
+    );
+    if (used + addonAddedMinutes(cand) <= upsellGapMinutes) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- promote pending → selected once it fits
+      setSelectedAddonIds((prev) =>
+        prev.includes(pendingAddonId) ? prev : [...prev, pendingAddonId],
+      );
+      setPendingAddonId(null);
+    }
+  }, [
+    pendingAddonId,
+    upsellGapMinutes,
+    selectedAddonIds,
+    upsellCandidates,
+    addOns,
+    addonAddedMinutes,
+  ]);
 
   useEffect(() => {
     if (
@@ -1495,7 +1588,9 @@ export function useBookingFlowState(
     setClientNotes,
     setClientWebsite,
     toggleAddon,
+    addAddonAndRepickTime,
     selectedAddonsTotalMin,
+    selectedAddonsSlotMin,
     setSelectedAddonIds,
     setError,
     otpSessionId,

@@ -161,9 +161,11 @@ export function BookingFlowServicePanel({
   const renderTile = (s: BookingServiceItem) => {
     const isSelected = serviceId === s.id;
     const isExpanded = expandedServiceId === s.id;
+    // Show the actual service time only — the inter-service rest buffer is for
+    // scheduling (chair turnover), not something the customer "spends".
     const durationText =
-      s.totalMinutes > 0
-        ? `${s.totalMinutes} ${t.minuteSuffixShort}`
+      s.durationMinutes > 0
+        ? `${s.durationMinutes} ${t.minuteSuffixShort}`
         : t.serviceDurationFlexible;
     const detailId = `service-tile-${s.id}-detail`;
     const nameId = `service-tile-${s.id}-name`;

@@ -47,6 +47,7 @@ export function BookingFlowConfirmPanel({
   salonId,
   appliedVoucher,
   onToggleAddon,
+  onAddonRepickTime,
   onClearAddons,
   onBack,
   onConfirm,
@@ -78,6 +79,8 @@ export function BookingFlowConfirmPanel({
   /** Salon's display currency. Drives the receipt total formatting. */
   currency: Currency;
   onToggleAddon: (id: string) => void;
+  /** Hybrid: select a too-long add-on and jump back to re-pick a fitting time. */
+  onAddonRepickTime: (id: string) => void;
   onClearAddons: () => void;
   onBack: () => void;
   onConfirm: () => void | Promise<void>;
@@ -110,12 +113,20 @@ export function BookingFlowConfirmPanel({
     ? appliedVoucher.final_price_cents
     : baseTotalCents;
 
-  const totalMinutes = (service.totalMinutes || 0) + selectedAddonsTotalMin;
+  // Display the actual service time only (no inter-service rest buffer). The
+  // buffer still drives scheduling via `selectedAddonsTotalMin`/totalMinutes,
+  // but it's not part of what the customer "spends".
+  const displayDurationMin =
+    (service.durationMinutes || 0) +
+    selectedAddOns.reduce(
+      (sum, a) => sum + (a.addonConcurrent ? 0 : a.durationMinutes),
+      0,
+    );
   const durationLabel =
-    totalMinutes > 0
+    displayDurationMin > 0
       ? selectedAddOns.length > 0
-        ? `${t.summaryDurationMinutes.replace("{n}", String(totalMinutes))} (${t.summaryDurationIncludesAddon})`
-        : t.summaryDurationMinutes.replace("{n}", String(totalMinutes))
+        ? `${t.summaryDurationMinutes.replace("{n}", String(displayDurationMin))} (${t.summaryDurationIncludesAddon})`
+        : t.summaryDurationMinutes.replace("{n}", String(displayDurationMin))
       : null;
 
   // One pricing line per selected add-on.
@@ -268,32 +279,47 @@ export function BookingFlowConfirmPanel({
               {upsellCandidates.map((s) => {
                 const on = selectedAddonIds.includes(s.id);
                 // Concurrent add-ons cost no time (run during the service);
-                // only sequential ones eat into the free gap.
-                const added = s.addonConcurrent ? 0 : s.totalMinutes;
+                // only sequential ones eat into the free gap. The fit check
+                // uses the scheduled time (incl. buffer); the label shows the
+                // actual service minutes only.
+                const addedSchedule = s.addonConcurrent ? 0 : s.totalMinutes;
+                const addedDisplay = s.addonConcurrent ? 0 : s.durationMinutes;
                 const fits =
-                  on || selectedAddonsTotalMin + added <= upsellGapMinutes;
+                  on ||
+                  selectedAddonsTotalMin + addedSchedule <= upsellGapMinutes;
                 const mins = s.addonConcurrent
                   ? " · ✨ +0′"
-                  : added > 0
-                    ? ` · +${added}′`
+                  : addedDisplay > 0
+                    ? ` · +${addedDisplay}′`
                     : "";
+                // Hybrid: an add-on that doesn't fit the current slot's gap is
+                // no longer dead-ended. Tapping it keeps the add-on and sends
+                // the customer back to pick a time that fits the whole package.
+                const needsMoreTime = !fits && !on;
                 return (
                   <button
                     key={s.id}
                     type="button"
                     aria-pressed={on}
-                    disabled={!fits}
-                    onClick={() => onToggleAddon(s.id)}
+                    onClick={() =>
+                      needsMoreTime
+                        ? onAddonRepickTime(s.id)
+                        : onToggleAddon(s.id)
+                    }
                     className={cn(
                       "rounded-full border px-4 py-2 text-left text-sm font-medium transition-colors",
                       on
                         ? "border-[var(--salon-primary)] bg-[color-mix(in_srgb,var(--salon-primary)_15%,transparent)] text-[var(--salon-primary)]"
-                        : "border-[var(--booking-border)] text-[var(--booking-text)] hover:border-[var(--booking-border)]",
-                      !fits && "cursor-not-allowed opacity-40",
+                        : needsMoreTime
+                          ? "border-dashed border-[var(--salon-primary)]/50 text-[var(--booking-text-muted)] hover:border-[var(--salon-primary)]"
+                          : "border-[var(--booking-border)] text-[var(--booking-text)] hover:border-[var(--booking-border)]",
                     )}
                   >
                     {on ? "✓ " : ""}
                     {s.priceDisplay ? `${s.name} · ${s.priceDisplay}${mins}` : `${s.name}${mins}`}
+                    {needsMoreTime
+                      ? ` · 🕙 ${t.upsellAddonNeedsTime ?? "pick a longer time →"}`
+                      : ""}
                   </button>
                 );
               })}

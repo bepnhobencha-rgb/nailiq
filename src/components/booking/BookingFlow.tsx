@@ -337,7 +337,9 @@ export function BookingFlow({
             closedDateYmdSet={closedDateYmdSet}
             staff={flow.capableStaff}
             staffId={flow.staffId ?? BOOKING_ANY_STAFF_ID}
-            serviceTotalMinutes={flow.service?.totalMinutes ?? 0}
+            serviceTotalMinutes={
+              (flow.service?.totalMinutes ?? 0) + flow.selectedAddonsSlotMin
+            }
             selectedDate={flow.selectedDate}
             stepDir={flow.stepDir}
             reducedMotion={Boolean(reducedMotion)}
@@ -480,6 +482,7 @@ export function BookingFlow({
             salonId={salon.id}
             appliedVoucher={flow.appliedVoucher}
             onToggleAddon={flow.toggleAddon}
+            onAddonRepickTime={flow.addAddonAndRepickTime}
             onClearAddons={() => flow.setSelectedAddonIds([])}
             onBack={flow.backToInfo}
             onConfirm={() => void flow.onConfirm()}

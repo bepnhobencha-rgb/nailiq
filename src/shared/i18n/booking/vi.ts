@@ -156,6 +156,7 @@ export const bookingVi: BookingMessages = {
   upsellNoThanks: "Không, cảm ơn",
   upsellToggleHint:
     "Chọn trước khi xác nhận để gộp chung với lịch đặt.",
+  upsellAddonNeedsTime: "chọn giờ vừa cả gói →",
   serviceDurationFlexible: "Linh hoạt",
   minuteSuffixShort: "phút",
   slotBestFit: "Phù hợp nhất",

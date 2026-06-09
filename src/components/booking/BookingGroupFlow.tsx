@@ -1700,7 +1700,7 @@ function ServiceStaffStep({
             </option>
             {services.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.name} · {s.totalMinutes} {t.minuteSuffixShort}
+                {s.name} · {s.durationMinutes} {t.minuteSuffixShort}
                 {s.priceDisplay ? ` · ${s.priceDisplay}` : ""}
               </option>
             ))}
@@ -1737,8 +1737,8 @@ function ServiceStaffStep({
               const selected = groupAddonIds.has(a.id);
               const timingTag = a.addonConcurrent
                 ? " · ✨ +0′"
-                : a.totalMinutes > 0
-                  ? ` · +${a.totalMinutes}′`
+                : a.durationMinutes > 0
+                  ? ` · +${a.durationMinutes}′`
                   : "";
               const priceTag = a.priceDisplay ? ` · ${a.priceDisplay}` : "";
               return (
@@ -1978,7 +1978,7 @@ function MemberCard({
             <option value="">— {t.breadcrumbServices} —</option>
             {services.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.name} · {s.totalMinutes} {t.minuteSuffixShort}
+                {s.name} · {s.durationMinutes} {t.minuteSuffixShort}
                 {s.priceDisplay ? ` · ${s.priceDisplay}` : ""}
               </option>
             ))}
@@ -2038,8 +2038,8 @@ function MemberCard({
                 // Build the chip label: name + timing tag + price.
                 const timingTag = a.addonConcurrent
                   ? " · ✨ +0′"
-                  : a.totalMinutes > 0
-                    ? ` · +${a.totalMinutes}′`
+                  : a.durationMinutes > 0
+                    ? ` · +${a.durationMinutes}′`
                     : "";
                 const priceTag = a.priceDisplay ? ` · ${a.priceDisplay}` : "";
                 const label = `${a.name}${timingTag}${priceTag}`;
