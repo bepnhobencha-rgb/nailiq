@@ -129,11 +129,30 @@ async function navigateToTimeStep(page: Page, slug: string) {
   }
   await selectableDay.waitFor({ state: "visible", timeout: 15_000 });
   await selectableDay.click();
+  // Confirm the day actually registered as selected BEFORE advancing. On mobile
+  // WebKit the slot-hint stream re-renders the grid and the staff→date / date→
+  // time AnimatePresence briefly keeps two panels mounted, so clicking Continue
+  // too eagerly could (a) fire before `selectedDate` propagated or (b) hit the
+  // exiting panel's button via `.first()` — either way the flow stays on the
+  // date step and the time slots never load (20s timeout). `aria-pressed` flips
+  // true once the selection commits, so it's a reliable settle signal.
+  await page
+    .locator('[data-testid="date-day"][aria-pressed="true"]')
+    .first()
+    .waitFor({ state: "visible", timeout: 10_000 });
   await page.getByRole("button", { name: "Continue" }).first().click();
+  // The time grid fetches slots async (Supabase round-trip) behind a skeleton.
+  // Wait for the skeleton to clear before asserting a slot so a slow fetch under
+  // CI load doesn't eat the slot budget; `detached` resolves immediately if the
+  // fetch already finished.
+  await page
+    .locator('[data-testid="time-slots-skeleton"]')
+    .waitFor({ state: "detached", timeout: 25_000 })
+    .catch(() => {});
   await page
     .locator('[data-testid="time-slot"]')
     .first()
-    .waitFor({ state: "visible", timeout: 20_000 });
+    .waitFor({ state: "visible", timeout: 25_000 });
 }
 
 async function navigateToInfoStep(page: Page, slug: string) {
