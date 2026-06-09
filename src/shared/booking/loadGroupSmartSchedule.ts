@@ -192,16 +192,21 @@ export type GroupAlternatives = {
     time: string;
   } | null;
   /**
-   * Same-day cross-window flip. If the user picked afternoon /
-   * evening / specific we try morning; if they picked morning we
-   * try afternoon. `null` for specific-time queries (the user
-   * already targeted an exact slot, so "earlier" is ambiguous)
-   * and when the alternate window has no arrangements either.
+   * Same-day alternative window. When the requested window is full we keep
+   * the customer on THE SAME DAY by scanning the other windows (morning →
+   * afternoon → evening, etc.) with the full wave-capable scheduler, so a
+   * big group that needs multiple waves can still be seated later that day.
+   * Strongly preferred over rolling to the next day. `null` for
+   * specific-time queries and when no other same-day window fits.
    */
   earlierToday: {
     arrangement: GroupArrangement;
     /** Wall-time HH:MM string for the earliest member start. */
     time: string;
+    /** Which arrival window this arrangement falls in, so the UI can flip
+     *  the customer's selection deterministically (no before/after-noon
+     *  guessing). */
+    arrivalKind: "morning" | "afternoon" | "evening";
   } | null;
 };
 
@@ -1264,46 +1269,50 @@ async function computeNextAvailableDate(
  * Reuses the same loaded ctx (same date, same staff, same
  * bookings) — only the window changes, so no DB round-trip.
  */
-function computeEarlierToday(
+async function computeEarlierToday(
   ctx: AlternativesCtx,
-): GroupAlternatives["earlierToday"] {
-  let alternateWindow: { startMin: number; endMin: number } | null = null;
+): Promise<GroupAlternatives["earlierToday"]> {
+  // A specific-time request already targets an exact slot — don't second-guess.
+  if (ctx.arrivalPref.kind === "specific") return null;
 
-  if (ctx.arrivalPref.kind === "morning") {
-    alternateWindow = windowForArrival(
-      { kind: "afternoon" },
-      ctx.dayHours,
+  // Other windows to try on THE SAME DAY, in preference order, excluding the
+  // requested one. Morning-full → keep the customer today by offering the
+  // afternoon, then the evening (rather than rolling to the next day, which
+  // loses the booking). The reverse families flip toward the open part of the
+  // day too.
+  const tryOrder: ("morning" | "afternoon" | "evening")[] =
+    ctx.arrivalPref.kind === "morning"
+      ? ["afternoon", "evening"]
+      : ctx.arrivalPref.kind === "afternoon"
+        ? ["evening", "morning"]
+        : ["afternoon", "morning"]; // evening requested
+
+  for (const arrivalKind of tryOrder) {
+    // Reuse the FULL wave-capable scheduler for the same day + this window, so
+    // a group larger than the staff count still fits via multiple waves (the
+    // old in-ctx single-wave search capped at the staff count and silently
+    // returned nothing for big groups). `skipAlternatives` prevents recursion.
+    const r = await loadGroupSmartSchedule(
+      {
+        shopSlug: ctx.shopSlug,
+        date: ctx.date,
+        arrivalPref: { kind: arrivalKind },
+        members: ctx.rawMembers,
+        mode: ctx.mode,
+        finishTime: ctx.finishTime,
+      },
+      { skipAlternatives: true },
     );
-  } else if (
-    ctx.arrivalPref.kind === "afternoon" ||
-    ctx.arrivalPref.kind === "evening"
-  ) {
-    alternateWindow = windowForArrival(
-      { kind: "morning" },
-      ctx.dayHours,
-    );
+    if (r.ok && r.arrangements.length > 0) {
+      const arrangement = r.arrangements[0];
+      const time = utcIsoToSalonHm(
+        arrangement.assignments[0].startUtcIso,
+        ctx.timezone,
+      );
+      return { arrangement, time, arrivalKind };
+    }
   }
-  if (!alternateWindow) return null;
-
-  const arrangements = findArrangementsInWindow({
-    date: ctx.date,
-    timezone: ctx.timezone,
-    window: alternateWindow,
-    closeMin: hmToMinutes(ctx.dayHours.close) ?? 0,
-    earliestStartMs: ctx.earliestStartMs,
-    resolvedMembers: ctx.resolvedMembers,
-    staffList: ctx.staffList,
-    staffById: ctx.staffById,
-    capability: ctx.capability,
-    existing: ctx.existing,
-  });
-  if (arrangements.length === 0) return null;
-  const arrangement = arrangements[0];
-  const time = utcIsoToSalonHm(
-    arrangement.assignments[0].startUtcIso,
-    ctx.timezone,
-  );
-  return { arrangement, time };
+  return null;
 }
 
 async function computeAlternatives(
@@ -1319,10 +1328,7 @@ async function computeAlternatives(
       Promise.resolve(computeSplitOption(ctx)),
       ALTERNATIVE_QUERY_TIMEOUT_MS,
     ),
-    withTimeout(
-      Promise.resolve(computeEarlierToday(ctx)),
-      ALTERNATIVE_QUERY_TIMEOUT_MS,
-    ),
+    withTimeout(computeEarlierToday(ctx), ALTERNATIVE_QUERY_TIMEOUT_MS),
     withTimeout(
       computeNextAvailableDate(ctx),
       ALTERNATIVE_QUERY_TIMEOUT_MS,
