@@ -73,13 +73,13 @@ import {
 import {
   buildArrangement,
   buildWaveArrangement,
+  findEarliestWaveArrangement,
   findFinishArrangementsInWindow,
   MAX_WAVES,
   SLOT_STEP_MIN,
   staffIsFree,
   tryAlignedArrangement,
   tryFinishAlignedArrangement,
-  tryWaveArrangement,
   type ExistingBooking,
   type FinishArrangementsCtx,
   type GroupArrangement,
@@ -775,7 +775,10 @@ export async function loadGroupSmartSchedule(
         earliestAllowedMs,
       );
       const waveCloseMs  = Date.parse(salonWallTimeToUtcIso(params.date, closeMinForWave, timezone));
-      const waveRaw = tryWaveArrangement(
+      // Forward-scan from the requested window start: when the early part of the
+      // day is fully booked, find the earliest later anchor where the whole group
+      // still fits in waves (instead of dead-ending on a busy window start).
+      const waveRaw = findEarliestWaveArrangement(
         waveAnchorMs, resolvedMembers, staffList, staffById, capability, existing, waveCloseMs,
       );
       if (waveRaw && waveRaw.assignments.length === resolvedMembers.length) {

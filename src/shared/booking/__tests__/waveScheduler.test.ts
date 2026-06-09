@@ -17,8 +17,10 @@ import { buildCapabilityMap } from "../staffCapability";
 import {
   tryAlignedArrangement,
   tryWaveArrangement,
+  findEarliestWaveArrangement,
   buildWaveArrangement,
   WAVE_BUFFER_MIN,
+  SLOT_STEP_MIN,
   type ResolvedMember,
   type StaffRow,
   type ExistingBooking,
@@ -204,6 +206,49 @@ test("zero bufferMinutes falls back to WAVE_BUFFER_MIN", () => {
   const res = tryWaveArrangement(T0, ms, staff3, staffById3, null, [], DAY_CLOSE)!;
   const wave2Start = res.assignments.find((x) => x.waveNumber === 2)!.startMs;
   assertEqual(wave2Start, T0 + DUR * MIN + WAVE_BUFFER_MIN * MIN, "0 buffer → 15-min fallback");
+});
+
+// ── Forward-scan: a busy anchor must roll forward to the first fittable time ──
+// Regression for the Hi-Lite "group of 12 says no slots today despite a free
+// afternoon" bug: tryWaveArrangement dead-ends on a fully-booked anchor, while
+// findEarliestWaveArrangement walks forward to where the whole group fits.
+test("findEarliestWaveArrangement rolls a busy anchor forward to the first fit", () => {
+  // Block all 3 staff for the first 2 hours from T0.
+  const blockEnd = T0 + 120 * MIN;
+  const existing: ExistingBooking[] = staff3.map((s) => ({
+    staffId: s.id,
+    startMs: T0,
+    endMs: blockEnd,
+  }));
+
+  // Bare scheduler dead-ends at the busy anchor.
+  assert(
+    tryWaveArrangement(T0, members(7), staff3, staffById3, null, existing, DAY_CLOSE) === null,
+    "tryWaveArrangement must return null when no staff is free at the anchor",
+  );
+
+  // Forward-scan finds the earliest fit (first SLOT_STEP tick at/after blockEnd).
+  const res = findEarliestWaveArrangement(T0, members(7), staff3, staffById3, null, existing, DAY_CLOSE);
+  assert(res !== null, "forward-scan must find the free window later in the day");
+  assertEqual(res!.assignments.length, 7, "all 7 members seated after the scan");
+  const firstStart = Math.min(...res!.assignments.map((a) => a.startMs));
+  assert(firstStart >= blockEnd, "wave 1 must start at/after the blocked window");
+  const stepMs = SLOT_STEP_MIN * MIN;
+  assert((firstStart - T0) % stepMs === 0, "anchor lands on a SLOT_STEP tick");
+});
+
+// ── Forward-scan no-ops when the requested time is already free ──
+test("findEarliestWaveArrangement returns the anchor itself when it's free", () => {
+  const res = findEarliestWaveArrangement(T0, members(7), staff3, staffById3, null, [], DAY_CLOSE);
+  assert(res !== null, "must seat the group");
+  assertEqual(Math.min(...res!.assignments.map((a) => a.startMs)), T0, "starts at the requested anchor");
+});
+
+// ── Forward-scan returns null when the group can't fit before close at all ──
+test("findEarliestWaveArrangement returns null when nothing fits before close", () => {
+  // Close 30 min after open — a 60-min service can never fit.
+  const res = findEarliestWaveArrangement(T0, members(7), staff3, staffById3, null, [], T0 + 30 * MIN);
+  assert(res === null, "no fit before close → null");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

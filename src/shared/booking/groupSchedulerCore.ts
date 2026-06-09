@@ -529,6 +529,47 @@ export function tryWaveArrangement(
   return { assignments: out };
 }
 
+/**
+ * Forward-scanning wrapper around `tryWaveArrangement`.
+ *
+ * The bare scheduler anchors wave 1 at a single start time and bails (null) the
+ * moment no staff is free at that exact tick — so a group whose requested window
+ * is fully booked dead-ends with "no slots today" even when later in the day is
+ * wide open (e.g. mornings booked solid, afternoon empty). This walks the wave-1
+ * anchor forward in `SLOT_STEP_MIN` ticks from `fromMs` to `dayCloseMs` and
+ * returns the FIRST anchor at which the WHOLE group fits across waves — i.e. the
+ * earliest complete arrangement at or after the requested time. When the
+ * requested time is already free the first tick succeeds, so the happy path is
+ * unchanged. Returns null only when the group cannot be fully seated before
+ * close at any start time.
+ */
+export function findEarliestWaveArrangement(
+  fromMs: number,
+  members: ResolvedMember[],
+  staff: readonly StaffRow[],
+  staffById: Map<string, StaffRow>,
+  capability: StaffCapabilityMap,
+  existing: ExistingBooking[],
+  dayCloseMs: number,
+  opts?: { waveBufferMin?: number; maxWaves?: number },
+): { assignments: WaveRawAssignment[] } | null {
+  const stepMs = SLOT_STEP_MIN * 60_000;
+  for (let anchor = fromMs; anchor < dayCloseMs; anchor += stepMs) {
+    const raw = tryWaveArrangement(
+      anchor,
+      members,
+      staff,
+      staffById,
+      capability,
+      existing,
+      dayCloseMs,
+      opts,
+    );
+    if (raw && raw.assignments.length === members.length) return raw;
+  }
+  return null;
+}
+
 /** Joins per-wave phrases naturally: "A and B" / "A, B, and C". */
 function joinWavePhrases(parts: string[]): string {
   if (parts.length <= 1) return parts.join("");
