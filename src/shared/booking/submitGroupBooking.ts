@@ -765,12 +765,16 @@ export async function submitGroupBooking(
     const nowIso = new Date().toISOString();
     const profileOps = Array.from(byPhoneDigits.entries()).map(
       async ([digits, info]) => {
-        const { data: existingProfile } = await supabase
-          .from("client_profiles")
-          .select("visit_count, name")
-          .eq("phone", digits)
-          .is("deleted_at" as never, null)
-          .maybeSingle();
+        // Per-phone snapshot via SECURITY DEFINER RPC — anon can no longer read
+        // client_profiles directly (cross-tenant PII lockdown, migration
+        // 20260609120000); the RPC returns only this one phone's row.
+        const { data: snapshotRows } = await supabase.rpc(
+          "get_booking_client_snapshot" as never,
+          { p_phone: digits } as never,
+        );
+        const existingProfile = (Array.isArray(snapshotRows)
+          ? snapshotRows[0]
+          : null) as { visit_count?: number | null; name?: string | null } | null;
 
         const nextVisits = (existingProfile?.visit_count ?? 0) + 1;
 
