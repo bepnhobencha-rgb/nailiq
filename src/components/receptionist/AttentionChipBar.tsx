@@ -94,6 +94,7 @@ export function AttentionChipBar({
       <div className="flex flex-wrap items-center gap-2">
         {hasOverdue ? (
           <Chip
+            testId="attention-chip-overdue"
             active={open === "overdue"}
             tone="danger"
             pulse
@@ -106,6 +107,7 @@ export function AttentionChipBar({
 
         {hasNoShow ? (
           <Chip
+            testId="attention-chip-noshow"
             active={open === "noshow"}
             tone="muted"
             onClick={() => toggle("noshow")}
@@ -117,6 +119,7 @@ export function AttentionChipBar({
 
         {hasGroups ? (
           <Chip
+            testId="attention-chip-groups"
             active={open === "groups"}
             tone="primary"
             onClick={() => toggle("groups")}
@@ -233,6 +236,7 @@ export function AttentionChipBar({
 // ─── Chip ──────────────────────────────────────────────────────────────
 
 function Chip({
+  testId,
   active,
   tone,
   pulse,
@@ -242,6 +246,7 @@ function Chip({
   count,
   subBadge,
 }: {
+  testId: string;
   active: boolean;
   tone: "danger" | "muted" | "primary";
   pulse?: boolean;
@@ -261,6 +266,7 @@ function Chip({
   return (
     <button
       type="button"
+      data-testid={testId}
       onClick={onClick}
       aria-expanded={active}
       className={cn(

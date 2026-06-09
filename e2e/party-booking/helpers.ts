@@ -252,4 +252,16 @@ export async function gotoPartyDashboard(
   await page
     .getByTestId("receptionist-center-loaded")
     .waitFor({ state: "visible", timeout: 20_000 });
+
+  // The party-card panel now lives inside the AttentionChipBar "Groups"
+  // dropdown (non-basic modes). Open it so callers can reach the panel.
+  // Conditional: a no-op when no active party / no chip is present.
+  const groupsChip = page.getByTestId("attention-chip-groups");
+  if (await groupsChip.count()) {
+    await groupsChip.click();
+    await page
+      .getByTestId("party-card-panel")
+      .waitFor({ state: "visible", timeout: 10_000 })
+      .catch(() => {});
+  }
 }
