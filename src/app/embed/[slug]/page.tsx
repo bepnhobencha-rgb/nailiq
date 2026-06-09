@@ -27,13 +27,22 @@ export const metadata: Metadata = {
 
 type EmbedBookingPageProps = {
   params: Promise<{ slug: string }>;
+  searchParams?: Promise<{ lang?: string }>;
 };
 
 export default async function EmbedBookingPage({
   params,
+  searchParams,
 }: EmbedBookingPageProps) {
   const { slug } = await params;
-  const lang = await resolveBookingLanguage();
+  // The host site dictates the language via `?lang=en|vi` (so an English
+  // marketing page never shows a Vietnamese booking flow); fall back to the
+  // cookie / Accept-Language resolution when it's absent.
+  const sp = (await searchParams) ?? {};
+  const lang =
+    sp.lang === "en" || sp.lang === "vi"
+      ? sp.lang
+      : await resolveBookingLanguage();
   const t = getBookingMessages(lang);
 
   const resolved = await resolvePublicBookingPage(slug);
