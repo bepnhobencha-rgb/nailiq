@@ -338,7 +338,7 @@ export function BookingFlow({
             staff={flow.capableStaff}
             staffId={flow.staffId ?? BOOKING_ANY_STAFF_ID}
             serviceTotalMinutes={
-              (flow.service?.totalMinutes ?? 0) + flow.selectedAddonsTotalMin
+              (flow.service?.totalMinutes ?? 0) + flow.selectedAddonsSlotMin
             }
             selectedDate={flow.selectedDate}
             stepDir={flow.stepDir}
