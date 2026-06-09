@@ -1070,6 +1070,44 @@ export async function updateBookingLeadMinutes(
   return { ok: true, minutes: m };
 }
 
+export type UpdateGroupTogetherResult =
+  | { ok: true; minutes: number }
+  | { ok: false; error: "unauthorized" | "forbidden" | "invalid" | "server_error" };
+
+/**
+ * Owner-only: writes `salons.group_together_threshold_minutes` — group members
+ * starting within this spread still count as arriving "together", so the
+ * booking flow offers a small offset before suggesting an all-together time.
+ * Clamped 0–240.
+ */
+export async function updateGroupTogetherThreshold(
+  slug: string,
+  minutes: number,
+): Promise<UpdateGroupTogetherResult> {
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+
+  const m = Math.round(Number(minutes));
+  if (!Number.isFinite(m) || m < 0 || m > 240) {
+    return { ok: false, error: "invalid" };
+  }
+
+  const { error } = await ctx.supabase
+    .from("salons")
+    .update({ group_together_threshold_minutes: m } as never)
+    .eq("id", ctx.salon.id);
+
+  if (error) {
+    console.error("[updateGroupTogetherThreshold]", error);
+    return { ok: false, error: "server_error" };
+  }
+  return { ok: true, minutes: m };
+}
+
 /* ───────────── Reference-image upload toggle ───────────── */
 
 export type UpdateReferenceImageResult =

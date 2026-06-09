@@ -27,6 +27,7 @@ import { LookPresetPicker } from "@/components/dashboard/LookPresetPicker";
 import type { LookPreset } from "@/shared/verticals/lookPresets";
 import { StaffSelectionSettings } from "@/components/dashboard/StaffSelectionSettings";
 import { BookingLeadSettings } from "@/components/dashboard/BookingLeadSettings";
+import { GroupTogetherSettings } from "@/components/dashboard/GroupTogetherSettings";
 import { ReferenceImageSettings } from "@/components/dashboard/ReferenceImageSettings";
 import { AutoNoShowSettings } from "@/components/dashboard/AutoNoShowSettings";
 import { WinBackSettings } from "@/components/dashboard/WinBackSettings";
@@ -69,6 +70,7 @@ export function SalonSettingsHub({
   lookPresets,
   staffSelectionEnabled,
   bookingLeadMinutes,
+  groupTogetherThresholdMin,
   referenceImageEnabled,
   autoNoShowMinutes,
   winBackEnabled,
@@ -98,6 +100,7 @@ export function SalonSettingsHub({
   lookPresets: LookPreset[];
   staffSelectionEnabled: boolean;
   bookingLeadMinutes: number;
+  groupTogetherThresholdMin: number;
   referenceImageEnabled: boolean;
   autoNoShowMinutes: number;
   winBackEnabled: boolean;
@@ -391,6 +394,14 @@ export function SalonSettingsHub({
         {/* ── Minimum advance notice (booking lead time) ──────── */}
         {canEditDashboardModules ? (
           <BookingLeadSettings slug={slug} initialMinutes={bookingLeadMinutes} />
+        ) : null}
+
+        {/* ── Group booking "togetherness" threshold ──────────── */}
+        {canEditDashboardModules ? (
+          <GroupTogetherSettings
+            slug={slug}
+            initialMinutes={groupTogetherThresholdMin}
+          />
         ) : null}
 
         {/* ── Reference-image upload toggle ───────────────────── */}

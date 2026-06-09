@@ -1307,6 +1307,7 @@ export function BookingGroupFlow({
           currencyCode={salon.currencyCode}
           date={date}
           timezone={salon.timezone}
+          togetherThresholdMin={salon.groupTogetherThresholdMin}
           syncMode={syncMode}
           showStaff={salon.staffSelectionEnabled !== false}
           onSelect={(idx) => {
@@ -2512,6 +2513,7 @@ function ArrangementStep({
   currencyCode,
   date,
   timezone,
+  togetherThresholdMin,
   syncMode,
   showStaff,
   onSelect,
@@ -2537,6 +2539,9 @@ function ArrangementStep({
   date: string;
   /** FIX 06 — quick-pick labels resolve to salon-local weekdays. */
   timezone: string;
+  /** Per-salon togetherness threshold (minutes) for the partial-vs-all-together
+   *  ordering. */
+  togetherThresholdMin: number;
   /** Phase 1: sync mode, forwarded to ArrangementCard for label copy. */
   syncMode: GroupSyncMode;
   /** When false (salon hides staff selection) staff names are omitted. */
@@ -2602,6 +2607,7 @@ function ArrangementStep({
           groupCopy={groupCopy}
           date={date}
           timezone={timezone}
+          togetherThresholdMin={togetherThresholdMin}
           /* Task #05 — pass alternatives when present so the
            * empty state can offer split / earlier-today /
            * next-date cards instead of dead-ending. */
@@ -2888,6 +2894,7 @@ function EmptyState({
   groupCopy,
   date,
   timezone,
+  togetherThresholdMin,
   alternatives,
   onRetry,
   onBack,
@@ -2902,6 +2909,8 @@ function EmptyState({
   date: string;
   /** Salon IANA tz. */
   timezone: string;
+  /** Per-salon togetherness threshold (minutes). */
+  togetherThresholdMin: number;
   /** Task #05 — null when reason ≠ no_slots; otherwise the 3
    *  alternative records (any subset may itself be null when the
    *  corresponding sub-query timed out / found no candidate). */
@@ -2948,6 +2957,7 @@ function EmptyState({
         groupCopy={groupCopy}
         date={date}
         timezone={timezone}
+        togetherThresholdMin={togetherThresholdMin}
         onPickDate={onPickDate}
         onPickEarlier={onPickEarlier}
         onPickSplit={onPickSplit}
@@ -3011,6 +3021,7 @@ function AlternativesPanel({
   groupCopy,
   date,
   timezone,
+  togetherThresholdMin,
   onPickDate,
   onPickEarlier,
   onPickSplit,
@@ -3021,6 +3032,8 @@ function AlternativesPanel({
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
   date: string;
   timezone: string;
+  /** Per-salon togetherness threshold (minutes); falls back to the default. */
+  togetherThresholdMin: number;
   onPickDate: (ymd: string) => void;
   onPickEarlier: (kind: "morning" | "afternoon" | "evening") => void;
   onPickSplit: (split: NonNullable<GroupAlternatives["splitOption"]>) => void;
@@ -3056,10 +3069,14 @@ function AlternativesPanel({
   // When the split keeps everyone within the threshold it still feels
   // "together" → offer it first. When the gap is larger it reads as a real
   // split → lead with an all-together-different-time option instead.
+  const threshold =
+    Number.isFinite(togetherThresholdMin) && togetherThresholdMin >= 0
+      ? togetherThresholdMin
+      : GROUP_TOGETHER_THRESHOLD_MIN;
   const splitStaysTogether =
     split !== null &&
     Number.isFinite(splitGapMin) &&
-    splitGapMin <= GROUP_TOGETHER_THRESHOLD_MIN;
+    splitGapMin <= threshold;
 
   // Header capacity hint — pulled from the split sub-query when
   // present, since that's the only one that knows "N-1 fit at
