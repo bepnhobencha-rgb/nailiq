@@ -12,7 +12,10 @@ export type NotificationType =
   | "booking_confirmation"
   | "reminder_24h"
   | "reminder_3h"
-  | "review_request";
+  | "review_request"
+  // Inbound customer SMS replies handled by /api/twilio/inbound.
+  | "inbound_confirm"
+  | "inbound_cancel";
 
 export type NotificationChannel = "sms" | "email";
 
