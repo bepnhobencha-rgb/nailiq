@@ -21,7 +21,7 @@ import {
 } from "@/shared/lib/salonMemberRole";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
-import { createDepositForBooking } from "@/shared/integrations/square/deposits";
+import { createDepositForBooking, refundDeposit } from "@/shared/integrations/square/deposits";
 import { pushWixCancel, pushWixConfirm, pushWixDecline, pushWixCreate } from "@/shared/integrations/wix/writeback";
 import {
   type EditBookingInput,
@@ -664,8 +664,8 @@ export async function markWalkinInProgress(
 /** Grid / desk: pending | confirmed | in_progress → cancelled (atomic `status` guard). */
 export async function cancelDeskBooking(
   slug: string,
-  input: { salonId: string; bookingId: string },
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  input: { salonId: string; bookingId: string; refundDeposit?: boolean },
+): Promise<{ ok: true; depositRefunded?: boolean; depositRefundError?: string } | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
 
@@ -716,6 +716,14 @@ export async function cancelDeskBooking(
   // Wix call runs to completion after the response (a bare `void` can be cut off by the
   // serverless freeze) without blocking the desk.
   after(() => pushWixCancel(ctx.salon.id, bookingId));
+
+  // Mutually-agreed cancel → refund the Square deposit (if any). Keep otherwise
+  // (forfeit). Refund failure doesn't undo the cancel — surfaced so the desk can
+  // refund manually in Square.
+  if (input.refundDeposit) {
+    const r = await refundDeposit(bookingId);
+    return { ok: true, depositRefunded: r.ok, depositRefundError: r.ok ? undefined : r.reason };
+  }
 
   return { ok: true };
 }

@@ -13,7 +13,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { looseServiceClient, type Row } from "./looseDb";
-import { getSquareConfig, createPaymentLink, getOrder } from "./client";
+import { getSquareConfig, createPaymentLink, getOrder, refundPayment } from "./client";
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
@@ -80,6 +80,40 @@ export async function createDepositForBooking(bookingId: string): Promise<Deposi
   }).eq("id", bookingId);
 
   return { required: true, reason: "deposit link created", url: link.url, amountCents };
+}
+
+/**
+ * Refund a paid Square deposit (mutually-agreed cancel). Returns ok:false with a
+ * reason the desk can surface (e.g. refund manually in Square) rather than throwing.
+ */
+export async function refundDeposit(bookingId: string): Promise<{ ok: boolean; reason: string; refundedCents?: number }> {
+  const db = looseServiceClient();
+  const { data } = await db
+    .from("bookings")
+    .select("id, salon_id, deposit_status, deposit_amount_cents, square_payment_id")
+    .eq("id", bookingId)
+    .maybeSingle();
+  const b = data as Row | null;
+  if (!b) return { ok: false, reason: "booking not found" };
+  if (str(b.deposit_status) !== "paid") return { ok: false, reason: "no paid deposit" };
+
+  const paymentId = str(b.square_payment_id);
+  const amount = num(b.deposit_amount_cents);
+  if (!paymentId || amount <= 0) return { ok: false, reason: "missing payment id — refund manually in Square" };
+
+  const cfg = await getSquareConfig(db, str(b.salon_id));
+  try {
+    await refundPayment(cfg, {
+      paymentId,
+      amountCents: amount,
+      reason: "Booking cancelled — deposit refund",
+      idempotencyKey: randomUUID(),
+    });
+  } catch (e) {
+    return { ok: false, reason: `Square refund failed: ${(e as Error).message}` };
+  }
+  await db.from("bookings").update({ deposit_status: "refunded" }).eq("id", bookingId);
+  return { ok: true, reason: "refunded", refundedCents: amount };
 }
 
 /** Flip pending deposits to 'paid' once their Square link is paid. */

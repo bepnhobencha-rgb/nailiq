@@ -137,6 +137,21 @@ export async function createPaymentLink(
   return { id: String(pl.id ?? ""), url: String(pl.url ?? ""), orderId: (pl.order_id as string) ?? null };
 }
 
+/** Refund a payment (used to return a deposit on a mutually-agreed cancel). */
+export async function refundPayment(
+  cfg: SquareConfig,
+  opts: { paymentId: string; amountCents: number; reason: string; idempotencyKey: string },
+): Promise<{ id: string; status: string }> {
+  const json = await squareReq(cfg, "POST", "/refunds", {
+    idempotency_key: opts.idempotencyKey,
+    payment_id: opts.paymentId,
+    amount_money: { amount: opts.amountCents, currency: "USD" },
+    reason: opts.reason,
+  });
+  const r = (json.refund as Record<string, unknown>) ?? {};
+  return { id: String(r.id ?? ""), status: String(r.status ?? "") };
+}
+
 /** Retrieve an order to check whether a payment-link deposit has been paid. */
 export async function getOrder(cfg: SquareConfig, orderId: string): Promise<{ state: string; paidCents: number; tenderPaymentId: string | null }> {
   const json = await squareReq(cfg, "GET", `/orders/${orderId}`);
