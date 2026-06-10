@@ -122,6 +122,9 @@ export interface BookingBlockProps {
   addonCount?: number;
   /** Client's lifetime no-show count — shows a ⚠ badge for repeat offenders (≥2). */
   noShowCount?: number;
+  /** AI no-show risk score (0–100) for this booking. A score ≥70 on a
+   *  not-yet-arrived booking shows an amber risk ⚠ so the desk can act early. */
+  noShowRiskScore?: number | null;
   /**
    * Overlay flag — `status === 'in_progress'` AND service end time has
    * passed. Per `STATE_MACHINE.md` §5 (auto-transition `in_service +
@@ -244,6 +247,7 @@ export function BookingBlock(props: BookingBlockProps) {
     hasStaffRequest = false,
     addonCount = 0,
     noShowCount = 0,
+    noShowRiskScore = null,
     isLate = false,
     isGroup = false,
     seatTogether = false,
@@ -349,6 +353,18 @@ export function BookingBlock(props: BookingBlockProps) {
                 className="mr-1 align-middle text-[var(--color-nq-error)]"
                 title={`Đã vắng ${noShowCount} lần`}
                 aria-label={`No-show ${noShowCount} times`}
+              >
+                ⚠
+              </span>
+            ) : (noShowRiskScore ?? 0) >= 70 &&
+              (status === "pending" || status === "confirmed") ? (
+              // First-time / occasional guest the AI flags as high no-show risk —
+              // amber (distinct from the red repeat-offender ⚠) so the desk can
+              // confirm/deposit early.
+              <span
+                className="mr-1 align-middle text-[var(--color-nq-warning)]"
+                title="Nguy cơ vắng cao — nên xác nhận trước"
+                aria-label="High no-show risk"
               >
                 ⚠
               </span>

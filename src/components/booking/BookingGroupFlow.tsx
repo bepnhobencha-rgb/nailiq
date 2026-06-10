@@ -820,6 +820,8 @@ export function BookingGroupFlow({
         members: payload,
         // Couple/group seating preference → 💕 badge for reception.
         seatTogether,
+        // Language the organizer is booking in → confirmation SMS matches it.
+        language,
         // FIX 09 — stable key across retries. A network drop +
         // retry sends the same key; server's UNIQUE on
         // `(salon_id, idempotency_key, …)` returns
