@@ -81,7 +81,7 @@ export async function getSquareConfig(db: Db, salonId: string): Promise<SquareCo
 
 async function squareReq(
   cfg: SquareConfig,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PUT",
   path: string,
   body?: unknown,
 ): Promise<Record<string, unknown>> {
@@ -145,6 +145,18 @@ export async function listCatalogItems(cfg: SquareConfig): Promise<SquareCatalog
     cursor = json.cursor as string | undefined;
   } while (cursor);
   return out;
+}
+
+/** Rename a Square team member (sparse update — only the given fields change). */
+export async function updateTeamMemberName(
+  cfg: SquareConfig,
+  teamMemberId: string,
+  givenName: string,
+  familyName = "",
+): Promise<void> {
+  await squareReq(cfg, "PUT", `/team-members/${teamMemberId}`, {
+    team_member: { given_name: givenName, family_name: familyName },
+  });
 }
 
 export interface SquarePayment {
