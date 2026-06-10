@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   addDeskAppointment,
   getDeskBookingData,
@@ -74,6 +75,11 @@ export default function DeskBookingForm({ slug, salonId, onClose, onCreated }: P
   const [lookupMsg, setLookupMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Portal target — the modal must escape the (transformed) Front-Desk header,
+  // or `position: fixed` is trapped inside it.
+  const [mounted, setMounted] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only mount flag for the portal
+  useEffect(() => setMounted(true), []);
 
   // Load services / staff / salon meta once.
   useEffect(() => {
@@ -214,7 +220,8 @@ export default function DeskBookingForm({ slug, salonId, onClose, onCreated }: P
     "w-full rounded-md border border-nq-muted/30 bg-nq-bg px-3 py-2 text-sm text-nq-foreground outline-none focus:border-nq-primary/60";
   const labelCls = "mb-1 block text-xs font-medium text-nq-muted";
 
-  return (
+  if (!mounted) return null;
+  return createPortal(
     <div
       className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center"
       onClick={onClose}
@@ -357,6 +364,7 @@ export default function DeskBookingForm({ slug, salonId, onClose, onCreated }: P
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
