@@ -160,6 +160,18 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
           googleReviewUrl,
         }),
       });
+      // Audit the email send too (the owner's Notifications widget showed only
+      // the SMS channel for review requests before this).
+      const { logNotification } = await import("@/shared/lib/notificationLog");
+      void logNotification({
+        bookingId,
+        salonId: salon.id,
+        notificationType: "review_request",
+        channel: "email",
+        bodyPreview: `Review request email → ${email}`,
+        ok: !res.error,
+        errorMessage: res.error ? String(res.error) : undefined,
+      });
       if (res.error) {
         console.error("[sendReviewRequest] resend send", res.error);
       }
