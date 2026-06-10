@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { looseServiceClient } from "@/shared/integrations/square/looseDb";
 import { runSquareForwardSync } from "@/shared/integrations/square/sync";
+import { reconcileDeposits } from "@/shared/integrations/square/deposits";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -31,7 +32,9 @@ export async function GET(req: NextRequest) {
   for (const it of integrations ?? []) {
     const salonId = it.salon_id as string;
     try {
-      results[salonId] = await runSquareForwardSync(salonId);
+      const sync = await runSquareForwardSync(salonId);
+      const deposits = await reconcileDeposits(salonId);
+      results[salonId] = { ...sync, deposits };
     } catch (e) {
       const msg = (e as Error).message;
       console.error("[square-sync] salon", salonId, msg);

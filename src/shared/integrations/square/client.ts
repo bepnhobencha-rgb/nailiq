@@ -112,6 +112,45 @@ export async function listAllCustomers(cfg: SquareConfig): Promise<SquareCustome
   return out;
 }
 
+/**
+ * Create a Square hosted payment link (Quick Pay) for a fixed amount — used to
+ * collect a booking deposit. `referenceId` ties the resulting order/payment back
+ * to the NailIQ booking. Requires a unique idempotencyKey to avoid double-create.
+ */
+export async function createPaymentLink(
+  cfg: SquareConfig,
+  opts: { amountCents: number; name: string; referenceId: string; idempotencyKey: string; note?: string },
+): Promise<{ id: string; url: string; orderId: string | null }> {
+  const json = await squareReq(cfg, "POST", "/online-checkout/payment-links", {
+    idempotency_key: opts.idempotencyKey,
+    quick_pay: {
+      name: opts.name,
+      price_money: { amount: opts.amountCents, currency: "USD" },
+      location_id: cfg.locationId,
+    },
+    payment_note: opts.note,
+    checkout_options: { redirect_url: undefined },
+    pre_populated_data: undefined,
+    description: opts.referenceId,
+  });
+  const pl = (json.payment_link as Record<string, unknown>) ?? {};
+  return { id: String(pl.id ?? ""), url: String(pl.url ?? ""), orderId: (pl.order_id as string) ?? null };
+}
+
+/** Retrieve an order to check whether a payment-link deposit has been paid. */
+export async function getOrder(cfg: SquareConfig, orderId: string): Promise<{ state: string; paidCents: number; tenderPaymentId: string | null }> {
+  const json = await squareReq(cfg, "GET", `/orders/${orderId}`);
+  const o = (json.order as Record<string, unknown>) ?? {};
+  const tenders = (o.tenders as Record<string, unknown>[]) ?? [];
+  const paid = ((o.net_amount_due_money as Record<string, unknown>)?.amount as number | undefined);
+  const total = ((o.total_money as Record<string, unknown>)?.amount as number | undefined) ?? 0;
+  return {
+    state: String(o.state ?? ""),
+    paidCents: paid != null ? total - paid : (tenders.length ? total : 0),
+    tenderPaymentId: (tenders[0]?.payment_id as string) ?? null,
+  };
+}
+
 /** Retrieve a single customer by id (for on-demand import during sync). */
 export async function getCustomer(cfg: SquareConfig, customerId: string): Promise<SquareCustomer | null> {
   const json = await squareReq(cfg, "GET", `/customers/${customerId}`);
