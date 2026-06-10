@@ -47,13 +47,10 @@ export interface SquareBooking {
   }[];
 }
 
-type Db = {
-  from: (t: string) => {
-    select: (c: string) => {
-      eq: (k: string, v: string) => { maybeSingle: () => Promise<{ data: unknown; error: unknown }> };
-    };
-  };
-};
+// Loosely typed: square_integrations isn't in the generated Database types yet,
+// and both the service-role client and bare createClient() scripts pass through.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Db = { from: (table: string) => any };
 
 /** Load Square credentials for a salon from the service-role DB. */
 export async function getSquareConfig(db: Db, salonId: string): Promise<SquareConfig> {
@@ -113,6 +110,12 @@ export async function listAllCustomers(cfg: SquareConfig): Promise<SquareCustome
     cursor = json.cursor as string | undefined;
   } while (cursor);
   return out;
+}
+
+/** Retrieve a single customer by id (for on-demand import during sync). */
+export async function getCustomer(cfg: SquareConfig, customerId: string): Promise<SquareCustomer | null> {
+  const json = await squareReq(cfg, "GET", `/customers/${customerId}`);
+  return (json.customer as SquareCustomer) ?? null;
 }
 
 /** Pull catalog ITEMs with their variations + price, flagging add-ons. */
