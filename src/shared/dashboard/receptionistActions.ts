@@ -471,14 +471,23 @@ export async function assignWalkinToSlot(
     return fail("slot_conflict");
   }
 
+  // Resource-mode salons: auto-assign a free resource (bed/chair) on seat-down.
+  const walkinUpdate: Record<string, unknown> = {
+    staff_id: staffId,
+    start_time_utc: slotStartUtc,
+    end_time_utc: slotEndUtc,
+    status: "confirmed",
+  };
+  const walkinResMode = await getResourceMode(supabase, ctx.salon.id);
+  if (walkinResMode.enabled) {
+    const rr = await resolveFreeResource(supabase, ctx.salon.id, slotStartUtc, slotEndUtc);
+    if (!rr.resourceId) return fail("no_resource_available");
+    walkinUpdate.resource_id = rr.resourceId;
+  }
+
   const { data: updated, error: upErr } = await supabase
     .from("bookings")
-    .update({
-      staff_id: staffId,
-      start_time_utc: slotStartUtc,
-      end_time_utc: slotEndUtc,
-      status: "confirmed",
-    })
+    .update(walkinUpdate as never)
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .eq("source", "walkin")

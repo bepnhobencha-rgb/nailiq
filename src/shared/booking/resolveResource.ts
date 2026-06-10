@@ -41,6 +41,7 @@ export async function resolveFreeResource(
   startUtcIso: string,
   endUtcIso: string,
   preferredId?: string | null,
+  excludeBookingId?: string | null,
 ): Promise<{ resourceId: string | null; total: number; busy: number }> {
   const { data: resRows } = await db
     .from("salon_resources")
@@ -54,13 +55,14 @@ export async function resolveFreeResource(
 
   const { data: occRows } = await db
     .from("bookings")
-    .select("resource_id, status")
+    .select("id, resource_id, status")
     .eq("salon_id", salonId)
     .not("resource_id", "is", null)
     .lt("start_time_utc", endUtcIso)
     .gt("end_time_utc", startUtcIso);
   const busy = new Set<string>();
-  for (const b of (occRows as { resource_id: string; status: string }[]) ?? []) {
+  for (const b of (occRows as { id: string; resource_id: string; status: string }[]) ?? []) {
+    if (excludeBookingId && b.id === excludeBookingId) continue;
     if (!SKIP_STATUSES.includes(b.status)) busy.add(b.resource_id);
   }
 
