@@ -27,6 +27,7 @@ type BookingRow = {
   salons: {
     name: string;
     slug: string;
+    timezone: string | null;
     reminders_enabled: boolean;
     reminder_24h_enabled: boolean;
     reminder_3h_enabled: boolean;
@@ -38,18 +39,20 @@ function buildSmsBody(
   booking: BookingRow,
   reminderType: "24h" | "3h",
   confirmUrl: string,
+  rescheduleUrl: string,
 ): string {
   const when = reminderType === "24h" ? "tomorrow" : "in 3 hours";
   const time = new Date(booking.start_time_utc).toLocaleString("en-US", {
-    timeZone: "America/Los_Angeles",
+    timeZone: booking.salons?.timezone ?? "America/Los_Angeles",
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
   });
   const service = booking.services?.name ?? "appointment";
   const salon = booking.salons?.name ?? "";
-  // Keep under 160 chars so it's one SMS segment.
-  return `Reminder: Your ${service} at ${salon} is ${when} at ${time}. Confirm: ${confirmUrl} · Reply STOP to opt out.`;
+  // Two segments is fine — the customer needs a reschedule link so they can
+  // move the time instead of just no-showing, not only a confirm link.
+  return `Reminder: Your ${service} at ${salon} is ${when} at ${time}.\nConfirm: ${confirmUrl}\nReschedule: ${rescheduleUrl}\nReply STOP to opt out.`;
 }
 
 export async function GET(req: Request) {
@@ -134,8 +137,9 @@ export async function GET(req: Request) {
     // SMS channel
     if (wantsSms) {
       const confirmUrl = `${SITE_URL}/booking/confirm?token=${token.id}`;
+      const rescheduleUrl = `${SITE_URL}/booking/reschedule?token=${token.id}`;
       const toE164 = `+${booking.client_phone}`;
-      const body   = buildSmsBody(booking, reminderType, confirmUrl);
+      const body   = buildSmsBody(booking, reminderType, confirmUrl, rescheduleUrl);
       const statusCallbackUrl = `${SITE_URL}/api/twilio/status`;
       const result = await sendSmsReminder(toE164, body, { statusCallbackUrl });
       if (result.ok) anySuccess = true;
