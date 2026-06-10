@@ -4,3 +4,39 @@
 import * as Sentry from "@sentry/nextjs";
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
+
+// Self-hosted client error capture → /api/errors (in addition to Sentry).
+// Uses sendBeacon so the report survives even if the page is navigating away.
+function reportClientError(message: string, stack: string | null, level: "error" | "warning") {
+  try {
+    const payload = JSON.stringify({
+      message: message.slice(0, 2000),
+      stack: stack?.slice(0, 8000) ?? null,
+      level,
+      route: typeof location !== "undefined" ? location.pathname + location.search : null,
+      context: { href: typeof location !== "undefined" ? location.href : null },
+    });
+    const blob = new Blob([payload], { type: "application/json" });
+    if (navigator.sendBeacon?.("/api/errors", blob)) return;
+    void fetch("/api/errors", {
+      method: "POST",
+      body: payload,
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+    });
+  } catch {
+    /* reporting must never throw */
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("error", (e) => {
+    const msg = e.message || (e.error instanceof Error ? e.error.message : "Unknown error");
+    reportClientError(String(msg), e.error instanceof Error ? (e.error.stack ?? null) : null, "error");
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    const r = e.reason;
+    const msg = r instanceof Error ? r.message : typeof r === "string" ? r : "Unhandled promise rejection";
+    reportClientError(String(msg), r instanceof Error ? (r.stack ?? null) : null, "error");
+  });
+}
