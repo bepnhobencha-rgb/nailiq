@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/wix-sync",
       "schedule": "*/1 * * * *"
+    },
+    {
+      "path": "/api/cron/square-sync",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

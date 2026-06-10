@@ -26,6 +26,7 @@ import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { createDepositForBooking, refundDeposit } from "@/shared/integrations/square/deposits";
 import { pushWixCancel, pushWixConfirm, pushWixDecline, pushWixCreate } from "@/shared/integrations/wix/writeback";
 import {
   type EditBookingInput,
@@ -668,8 +669,8 @@ export async function markWalkinInProgress(
 /** Grid / desk: pending | confirmed | in_progress → cancelled (atomic `status` guard). */
 export async function cancelDeskBooking(
   slug: string,
-  input: { salonId: string; bookingId: string },
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  input: { salonId: string; bookingId: string; refundDeposit?: boolean },
+): Promise<{ ok: true; depositRefunded?: boolean; depositRefundError?: string } | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
 
@@ -721,7 +722,51 @@ export async function cancelDeskBooking(
   // serverless freeze) without blocking the desk.
   after(() => pushWixCancel(ctx.salon.id, bookingId));
 
+  // Mutually-agreed cancel → refund the Square deposit (if any). Keep otherwise
+  // (forfeit). Refund failure doesn't undo the cancel — surfaced so the desk can
+  // refund manually in Square.
+  if (input.refundDeposit) {
+    const r = await refundDeposit(bookingId);
+    return { ok: true, depositRefunded: r.ok, depositRefundError: r.ok ? undefined : r.reason };
+  }
+
   return { ok: true };
+}
+
+/**
+ * Desk: create (or return existing) a Square deposit payment link for a booking.
+ * Risk-gated + amount policy live in createDepositForBooking; here we only enforce
+ * auth + that the booking belongs to the caller's salon. The receptionist shows
+ * the returned URL/QR to the customer on screen.
+ */
+export async function requestDepositLink(
+  slug: string,
+  input: { salonId: string; bookingId: string },
+): Promise<{ ok: true; url: string; amountCents: number } | { ok: false; error: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+
+  const bookingId = String(input.bookingId ?? "").trim();
+  if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+
+  // Scope check: the booking must be visible in the caller's salon (RLS client).
+  const { data: bk } = await ctx.supabase
+    .from("bookings")
+    .select("id")
+    .eq("id", bookingId)
+    .eq("salon_id", ctx.salon.id)
+    .maybeSingle();
+  if (!bk?.id) return fail("invalid_booking");
+
+  try {
+    const r = await createDepositForBooking(bookingId);
+    if (!r.required || !r.url) return fail(r.reason || "deposit_not_required");
+    return { ok: true, url: r.url, amountCents: r.amountCents ?? 0 };
+  } catch (e) {
+    console.error("[requestDepositLink]", e);
+    return fail("server_error");
+  }
 }
 
 /**

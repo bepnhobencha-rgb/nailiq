@@ -205,6 +205,10 @@ export interface ReceptionistCenterData {
     sms_confirmation_failed_at: string | null;
     /** No-show risk score 0-100. Higher = more likely to no-show. */
     no_show_risk_score: number | null;
+    /** Deposit lifecycle (required/paid/waived/...). Null = no deposit on this booking. */
+    deposit_status: string | null;
+    /** Deposit amount in cents (paid via Square). Drives the checkout "remaining" line. */
+    deposit_amount_cents: number | null;
     /** Wix booking id if this booking was synced from Wix. Drives the desk Approve/Decline
      * buttons on a Wix-origin pending card (status='pending' + non-null here). */
     wix_booking_id: string | null;
@@ -623,6 +627,8 @@ export async function loadReceptionistCenterData(
       sms_confirmation_sent_at,
       sms_confirmation_failed_at,
       no_show_risk_score,
+      deposit_status,
+      deposit_amount_cents,
       wix_booking_id,
       services!bookings_service_id_fkey ( name, duration_minutes, buffer_minutes ),
       addon:services!bookings_addon_service_id_fkey ( name, duration_minutes, buffer_minutes )
@@ -1063,6 +1069,15 @@ export async function loadReceptionistCenterData(
         : null,
       no_show_risk_score: (() => {
         const v = (row as { no_show_risk_score?: unknown }).no_show_risk_score;
+        if (v == null) return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      })(),
+      deposit_status: (row as { deposit_status?: unknown }).deposit_status != null
+        ? String((row as { deposit_status?: unknown }).deposit_status)
+        : null,
+      deposit_amount_cents: (() => {
+        const v = (row as { deposit_amount_cents?: unknown }).deposit_amount_cents;
         if (v == null) return null;
         const n = Number(v);
         return Number.isFinite(n) ? n : null;

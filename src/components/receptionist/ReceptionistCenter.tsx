@@ -42,6 +42,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { createClient } from "@/shared/lib/supabase/client";
 import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
 import { BookingDetailDrawer, type BookingDetailDrawerModel } from "./BookingDetailDrawer";
@@ -455,6 +456,8 @@ function ReceptionistCenterInner({
   // so re-clicking the tab while already on the page did nothing.
 
   const [drawerBusy, setDrawerBusy] = useState(false);
+  // Pending desk-cancel that hit a paid deposit → ask refund-or-keep first.
+  const [depositCancel, setDepositCancel] = useState<{ id: string; amountCents: number } | null>(null);
 
   // Realtime connection-state machine. Default 'connected' — assume
   // online until the Supabase channel subscribe-callback flips us to
@@ -1241,6 +1244,16 @@ function ReceptionistCenterInner({
         ? formatCurrency(totalCents, data.salon.currencyCode)
         : null;
 
+    // Checkout summary: when a deposit was paid, show it + the balance the
+    // receptionist still charges on the Square POS (price − deposit).
+    const depositPaidCents = b.deposit_status === "paid" ? (b.deposit_amount_cents ?? 0) : 0;
+    const depositPaidLine =
+      depositPaidCents > 0 ? formatCurrency(depositPaidCents, data.salon.currencyCode) : null;
+    const remainingLine =
+      depositPaidCents > 0 && totalCents != null
+        ? formatCurrency(Math.max(0, totalCents - depositPaidCents), data.salon.currencyCode)
+        : null;
+
     const addonServiceName = b.addon_service_name?.trim()
       ? b.addon_service_name.trim()
       : null;
@@ -1299,6 +1312,9 @@ function ReceptionistCenterInner({
       smsFailedAt: b.sms_confirmation_failed_at ?? null,
       noShowRiskScore: b.no_show_risk_score ?? null,
       noShowHistoryCount: b.client_no_show_count ?? 0,
+      depositStatus: b.deposit_status ?? null,
+      depositPaidLine,
+      remainingLine,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ARCHITECTURE_LOCK: data.salon.currencyCode is intentionally omitted; it never changes within a session and adding it would cause memo churn
   }, [
@@ -1476,9 +1492,7 @@ function ReceptionistCenterInner({
     }
   };
 
-  const onDrawerCancelBooking = async () => {
-    const id = drawerBookingId;
-    if (!id) return;
+  const doCancelBooking = async (id: string, refundDeposit: boolean) => {
     const b = data.bookingsForDay.find((x) => x.id === id);
     if (
       !b ||
@@ -1491,32 +1505,58 @@ function ReceptionistCenterInner({
       const r = await cancelDeskBooking(slug, {
         salonId: data.salon.id,
         bookingId: id,
+        refundDeposit,
       });
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
+        if (refundDeposit && r.depositRefunded === false) {
+          setShakeMessage(
+            `Đã huỷ. Hoàn cọc chưa xong (${r.depositRefundError ?? "lỗi"}) — hoàn tay trong Square.`,
+          );
+        }
         // Close drawer and reload grid first so booking disappears
         setDrawerBookingId(null);
         await reloadCurrentDay();
         router.refresh();
 
-        // Show undo toast — user can restore within 8s
-        const u = messages.receptionist.undo;
-        const startLabel = b.start_time_utc
-          ? formatInSalonTz(b.start_time_utc, timezone, "time")
-          : "";
-        const svcName = b.service_name?.trim() || messages.receptionist.drawer.none;
-        setUndoState({
-          bookingId: id,
-          headline: `${u.cancelledPrefix} ${displayCustomerName(b.client_name, messages.receptionist.removedGuest)}`,
-          detailLine: [startLabel, svcName].filter(Boolean).join(" · "),
-          secondsRemaining: 8,
-          type: "cancel",
-        });
+        // Undo toast (8s). Skipped after a refund — a returned deposit isn't
+        // re-collected by restoring, so undo would leave booking + no deposit.
+        if (!refundDeposit) {
+          const u = messages.receptionist.undo;
+          const startLabel = b.start_time_utc
+            ? formatInSalonTz(b.start_time_utc, timezone, "time")
+            : "";
+          const svcName = b.service_name?.trim() || messages.receptionist.drawer.none;
+          setUndoState({
+            bookingId: id,
+            headline: `${u.cancelledPrefix} ${displayCustomerName(b.client_name, messages.receptionist.removedGuest)}`,
+            detailLine: [startLabel, svcName].filter(Boolean).join(" · "),
+            secondsRemaining: 8,
+            type: "cancel",
+          });
+        }
       }
     } finally {
       setDrawerBusy(false);
     }
+  };
+
+  const onDrawerCancelBooking = () => {
+    const id = drawerBookingId;
+    if (!id) return;
+    const b = data.bookingsForDay.find((x) => x.id === id);
+    if (
+      !b ||
+      !(b.status === "pending" || b.status === "confirmed" || b.status === "in_progress")
+    )
+      return;
+    // A paid Square deposit forces a refund-or-keep decision before cancelling.
+    if (b.deposit_status === "paid" && (b.deposit_amount_cents ?? 0) > 0) {
+      setDepositCancel({ id, amountCents: b.deposit_amount_cents ?? 0 });
+      return;
+    }
+    void doCancelBooking(id, false);
   };
 
   const rcMessages = messages.receptionist;
@@ -2860,6 +2900,48 @@ function ReceptionistCenterInner({
             : undefined
         }
       />
+
+      {depositCancel ? (
+        <Modal
+          isOpen
+          onClose={() => setDepositCancel(null)}
+          size="sm"
+          title="Khách đã đặt cọc"
+          description={`Khách đã cọc ${formatCurrency(depositCancel.amountCents, data.salon.currencyCode) ?? ""}. Hoàn cọc cho khách khi huỷ, hay giữ cọc?`}
+        >
+          <div className="flex flex-col gap-2 py-1">
+            <Button
+              type="button"
+              variant="primary"
+              loading={drawerBusy}
+              data-testid="deposit-cancel-refund"
+              onClick={() => {
+                const id = depositCancel.id;
+                setDepositCancel(null);
+                void doCancelBooking(id, true);
+              }}
+            >
+              Hoàn cọc &amp; huỷ
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              loading={drawerBusy}
+              data-testid="deposit-cancel-keep"
+              onClick={() => {
+                const id = depositCancel.id;
+                setDepositCancel(null);
+                void doCancelBooking(id, false);
+              }}
+            >
+              Giữ cọc &amp; huỷ
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => setDepositCancel(null)}>
+              Đóng
+            </Button>
+          </div>
+        </Modal>
+      ) : null}
     </>
   );
 }

@@ -16,6 +16,86 @@ import { type Currency } from "@/shared/lib/currencyFormat";
 import type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
 
 import { EditBookingForm, type EditBookingFormBooking } from "./EditBookingForm";
+import { DepositLinkModal } from "./DepositLinkModal";
+import { requestDepositLink } from "@/shared/dashboard/receptionistActions";
+
+/** Risk score at/above which a deposit makes sense to offer at the desk. Mirrors
+ *  the salon deposit policy default; the server is the source of truth (it can
+ *  decline with a reason that we surface inline). */
+const DEPOSIT_RISK_GATE = 60;
+
+function depositErrorLabel(code: string): string {
+  if (code.startsWith("risk ")) return "Khách chưa đủ mức rủi ro để cần cọc.";
+  if (code.includes("disabled")) return "Tính năng cọc chưa bật cho tiệm này.";
+  if (code === "unauthorized" || code === "salon_mismatch") return "Không có quyền.";
+  if (code === "invalid_booking") return "Lịch không hợp lệ.";
+  return "Không tạo được link cọc, thử lại.";
+}
+
+/** Self-contained desk action: create + show a Square deposit link (QR) for a
+ *  high-no-show-risk booking. Kept here so the drawer stays the single owner of
+ *  the deposit UI (no extra props threaded from ReceptionistCenter). */
+function DepositButton({
+  slug,
+  salonId,
+  bookingId,
+  disabled,
+  offlineHint,
+}: {
+  slug: string;
+  salonId: string;
+  bookingId: string;
+  disabled?: boolean;
+  offlineHint?: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [modal, setModal] = useState<{ url: string; amountCents: number } | null>(null);
+
+  async function onPress() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await requestDepositLink(slug, { salonId, bookingId });
+      if (r.ok) setModal({ url: r.url, amountCents: r.amountCents });
+      else setError(depositErrorLabel(r.error));
+    } catch {
+      setError("Không tạo được link cọc, thử lại.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="secondary"
+        loading={busy}
+        disabled={disabled}
+        title={disabled ? offlineHint : undefined}
+        data-testid="drawer-deposit-link"
+        className="w-full sm:w-full"
+        onClick={() => void onPress()}
+      >
+        💰 Tạo link cọc
+      </Button>
+      {error ? (
+        <p className="text-xs font-semibold text-nq-error" role="status">
+          {error}
+        </p>
+      ) : null}
+      {modal ? (
+        <DepositLinkModal
+          open
+          onClose={() => setModal(null)}
+          url={modal.url}
+          amountCents={modal.amountCents}
+        />
+      ) : null}
+    </>
+  );
+}
 
 /**
  * Booking status → Badge variant, per the locked status palette in
@@ -145,6 +225,12 @@ export type BookingDetailDrawerModel = {
   noShowRiskScore: number | null;
   /** Client's lifetime no-show count (cross-salon). 0 = clean. */
   noShowHistoryCount: number;
+  /** Deposit lifecycle status (e.g. 'paid'); null when no deposit on this booking. */
+  depositStatus: string | null;
+  /** Formatted deposit already paid via Square (e.g. "$17.00"); null when none. */
+  depositPaidLine: string | null;
+  /** Formatted balance still to charge on the POS (price − deposit); null when no deposit. */
+  remainingLine: string | null;
 };
 
 export interface BookingDetailDrawerProps {
@@ -475,6 +561,18 @@ export function BookingDetailDrawer({
                   {copy.nonePrice}
                 </p>
               )}
+              {model.remainingLine ? (
+                <div className="mt-2 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs" data-testid="drawer-deposit-summary">
+                  <p className="flex items-center justify-between text-nq-foreground/90">
+                    <span>💰 Đã cọc</span>
+                    <span className="font-medium">−{model.depositPaidLine}</span>
+                  </p>
+                  <p className="mt-1 flex items-center justify-between border-t border-emerald-400/20 pt-1 text-sm font-semibold text-emerald-300">
+                    <span>Còn thu trên POS</span>
+                    <span>{model.remainingLine}</span>
+                  </p>
+                </div>
+              ) : null}
               {finalPriceAction ? <FinalPriceEditor action={finalPriceAction} /> : null}
             </section>
 
@@ -540,8 +638,13 @@ export function BookingDetailDrawer({
               </div>
 
               {/* Verification + SMS + no-show-history badges */}
-              {(model.smsFailedAt || model.verificationMethod || (model.noShowRiskScore != null && model.noShowRiskScore >= 70) || model.noShowHistoryCount > 0) ? (
+              {(model.smsFailedAt || model.verificationMethod || model.depositPaidLine || (model.noShowRiskScore != null && model.noShowRiskScore >= 70) || model.noShowHistoryCount > 0) ? (
                 <div className="mt-2 flex flex-wrap gap-1.5">
+                  {model.depositPaidLine ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400" data-testid="drawer-deposit-paid-badge">
+                      💰 Đã cọc {model.depositPaidLine}
+                    </span>
+                  ) : null}
                   {model.smsFailedAt ? (
                     <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-400">
                       ⚠ SMS không gửi được
@@ -711,6 +814,18 @@ export function BookingDetailDrawer({
                       >
                         {noShowAction.label}
                       </Button>
+                    ) : null}
+                    {deskEdit &&
+                    model.verificationMethod !== "deposit" &&
+                    model.noShowRiskScore != null &&
+                    model.noShowRiskScore >= DEPOSIT_RISK_GATE ? (
+                      <DepositButton
+                        slug={deskEdit.slug}
+                        salonId={deskEdit.salonId}
+                        bookingId={deskEdit.booking.id}
+                        disabled={isOffline}
+                        offlineHint={offlineEditDisabledHint}
+                      />
                     ) : null}
                   </>
                 )}
