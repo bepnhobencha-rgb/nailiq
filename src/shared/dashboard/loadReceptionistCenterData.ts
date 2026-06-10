@@ -847,7 +847,14 @@ export async function loadReceptionistCenterData(
     string,
     { name: string; price_cents: number | null; duration_minutes: number; concurrent: boolean }[]
   >();
-  {
+  // Lifetime no-show count per client (client_profiles is global, phone-keyed).
+  const noShowByPhone = new Map<string, number>();
+  // Today's no-shows (separate from the active grid statuses).
+  const noShowsToday: ReceptionistCenterData["noShowsToday"] = [];
+  // These three enrichment round-trips are mutually independent (they only need
+  // the day's bookings already in hand) — run them concurrently, not serially.
+  await Promise.all([
+    (async () => {
     const dayBookingIds = (bookingsRows ?? [])
       .map((r) => (r.id != null ? String(r.id) : ""))
       .filter(Boolean);
@@ -884,12 +891,8 @@ export async function loadReceptionistCenterData(
         console.error("[loadReceptionistCenterData] booking_addons", e);
       }
     }
-  }
-
-  // Lifetime no-show count per client (client_profiles is global, phone-keyed)
-  // so the desk sees "missed N times" + a warning chip without opening reports.
-  const noShowByPhone = new Map<string, number>();
-  {
+    })(),
+    (async () => {
     const phones = Array.from(
       new Set(
         (bookingsRows ?? [])
@@ -917,12 +920,8 @@ export async function loadReceptionistCenterData(
         console.error("[loadReceptionistCenterData] no_show_count", e);
       }
     }
-  }
-
-  // Today's no-shows (separate from the active grid statuses) — surfaced in the
-  // "needs attention" strip so a wrongly-flagged guest can be undone in 1 tap.
-  const noShowsToday: ReceptionistCenterData["noShowsToday"] = [];
-  {
+    })(),
+    (async () => {
     const { data, error } = await ctx.supabase
       .from("bookings")
       .select(
@@ -952,7 +951,8 @@ export async function loadReceptionistCenterData(
         });
       }
     }
-  }
+    })(),
+  ]);
 
   const bookingsForDayUnfiltered = (bookingsRows ?? []).map((row): ReceptionistCenterData["bookingsForDay"][0] | null => {
     const staffId = row.staff_id != null ? String(row.staff_id).trim() : "";
