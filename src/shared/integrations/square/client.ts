@@ -147,6 +147,40 @@ export async function listCatalogItems(cfg: SquareConfig): Promise<SquareCatalog
   return out;
 }
 
+export interface SquarePayment {
+  id: string;
+  status: string;
+  created_at?: string;
+  amount_money?: { amount?: number; currency?: string };
+  tip_money?: { amount?: number };
+  refunded_money?: { amount?: number };
+  source_type?: string;
+}
+
+/** Pull completed payments for the location in [begin, end) (paginated). */
+export async function listPayments(
+  cfg: SquareConfig,
+  begin: Date,
+  end: Date,
+): Promise<SquarePayment[]> {
+  const out: SquarePayment[] = [];
+  let cursor: string | undefined;
+  do {
+    const qs = new URLSearchParams({
+      location_id: cfg.locationId,
+      begin_time: begin.toISOString(),
+      end_time: end.toISOString(),
+      sort_order: "ASC",
+      limit: "100",
+    });
+    if (cursor) qs.set("cursor", cursor);
+    const json = await squareReq(cfg, "GET", `/payments?${qs.toString()}`);
+    out.push(...((json.payments as SquarePayment[]) ?? []));
+    cursor = json.cursor as string | undefined;
+  } while (cursor);
+  return out;
+}
+
 /**
  * List bookings for the configured location across a date range. Square caps
  * each query at 31 days, so we walk the window month-by-month.
