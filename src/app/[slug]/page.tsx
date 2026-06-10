@@ -29,7 +29,7 @@ export const dynamic = "force-dynamic";
 
 type PublicBookingPageProps = {
   params: Promise<{ slug: string }>;
-  searchParams?: Promise<{ preview?: string }>;
+  searchParams?: Promise<{ preview?: string; lang?: string }>;
 };
 
 export async function generateMetadata({
@@ -67,13 +67,16 @@ export async function generateMetadata({
 
 async function PublicBookingRouteBody({
   paramsPromise,
+  langOverride,
 }: {
   paramsPromise: Promise<{ slug: string }>;
+  langOverride?: "en" | "vi";
 }) {
   const { slug } = await paramsPromise;
-  // P0.1 — resolve booking locale from cookie / Accept-Language.
-  // Vietnam is the primary market so VI wins when no signal is set.
-  const lang = await resolveBookingLanguage();
+  // P0.1 — resolve booking locale. An explicit `?lang=en|vi` wins (so links from
+  // Google / a salon's own site can pin the language); otherwise fall back to
+  // cookie / Accept-Language (VI is the primary market when no signal is set).
+  const lang = langOverride ?? (await resolveBookingLanguage());
   const t = getBookingMessages(lang);
 
   const resolved = await resolvePublicBookingPage(slug);
@@ -319,6 +322,8 @@ async function PublicBookingRouteBody({
 export default async function PublicBookingPage({ params, searchParams }: PublicBookingPageProps) {
   const sp = await searchParams;
   const isPreview = sp?.preview === "true";
+  const langOverride =
+    sp?.lang === "en" || sp?.lang === "vi" ? sp.lang : undefined;
 
   return (
     <>
@@ -342,7 +347,10 @@ export default async function PublicBookingPage({ params, searchParams }: Public
             </>
           }
         >
-          <PublicBookingRouteBody paramsPromise={params} />
+          <PublicBookingRouteBody
+            paramsPromise={params}
+            langOverride={langOverride}
+          />
         </Suspense>
       </div>
     </>
