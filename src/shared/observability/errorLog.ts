@@ -38,8 +38,18 @@ function fingerprint(level: string, surface: string, message: string): string {
   return createHash("sha1").update(`${level}|${surface}|${norm}`).digest("hex").slice(0, 16);
 }
 
+// E2E / test / demo salons hit the same routes (slugs like `e2e-rc-desktop-…`,
+// `test-…`, `playwright`), so they'd flood the monitor with non-customer noise.
+// Skip capturing anything whose route or href points at a test slug.
+const TEST_NOISE_RE = /(?:^|\/)(?:e2e|test|playwright)[-_]/i;
+function isTestNoise(input: LogErrorInput): boolean {
+  const href = typeof input.context?.href === "string" ? input.context.href : "";
+  return TEST_NOISE_RE.test(`${input.route ?? ""} ${href}`);
+}
+
 export async function logError(input: LogErrorInput): Promise<void> {
   try {
+    if (isTestNoise(input)) return;
     const message = String(input.message ?? "").trim().slice(0, 2000);
     if (!message) return;
     const level: ErrorLevel = input.level ?? "error";
