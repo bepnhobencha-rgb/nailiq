@@ -64,6 +64,14 @@ export async function loadErrorLogs(
   return { ok: true, rows: (data ?? []) as ErrorLogRow[] };
 }
 
+/** On-demand AI triage from the admin page (the cron also does this every 10m). */
+export async function triageErrorNow(id: string): Promise<{ ok: boolean }> {
+  const uid = await requireSuperadmin();
+  if (!uid) return { ok: false };
+  const { triageError } = await import("@/shared/observability/triageError");
+  return triageError(id);
+}
+
 export async function setErrorStatus(
   id: string,
   status: "resolved" | "ignored" | "open",

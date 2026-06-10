@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import {
   loadErrorLogs,
   setErrorStatus,
+  triageErrorNow,
   type ErrorLogRow,
 } from "@/shared/superadmin/errorMonitorActions";
 
@@ -39,6 +40,14 @@ export function ErrorMonitorClient({ initialRows }: { initialRows: ErrorLogRow[]
   function act(id: string, status: "resolved" | "ignored" | "open") {
     startTransition(async () => {
       await setErrorStatus(id, status);
+      const r = await loadErrorLogs(filter);
+      if (r.ok) setRows(r.rows);
+    });
+  }
+
+  function triage(id: string) {
+    startTransition(async () => {
+      await triageErrorNow(id);
       const r = await loadErrorLogs(filter);
       if (r.ok) setRows(r.rows);
     });
@@ -116,6 +125,14 @@ export function ErrorMonitorClient({ initialRows }: { initialRows: ErrorLogRow[]
                 <div className="flex shrink-0 flex-col gap-1.5">
                   {r.status === "open" ? (
                     <>
+                      {!r.ai_summary ? (
+                        <button
+                          onClick={() => triage(r.id)}
+                          className="rounded-md bg-nq-info/15 px-2.5 py-1 text-xs text-nq-info hover:bg-nq-info/25"
+                        >
+                          🧠 Triage
+                        </button>
+                      ) : null}
                       <button
                         onClick={() => act(r.id, "resolved")}
                         className="rounded-md bg-nq-success/15 px-2.5 py-1 text-xs text-nq-success hover:bg-nq-success/25"
