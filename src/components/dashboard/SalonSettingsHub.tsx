@@ -19,6 +19,7 @@ import { BookingVerificationSettings } from "@/components/dashboard/BookingVerif
 import { PricingPanel } from "@/components/dashboard/PricingPanel";
 import { GoogleReviewSettings } from "@/components/dashboard/GoogleReviewSettings";
 import { WixIntegrationSettings } from "@/components/dashboard/WixIntegrationSettings";
+import { ResourceSettings } from "@/components/dashboard/ResourceSettings";
 import { VoiceAiSettings } from "@/components/dashboard/VoiceAiSettings";
 import { BusinessTypeSettings } from "@/components/dashboard/BusinessTypeSettings";
 import { DomainSettings } from "@/components/dashboard/DomainSettings";
@@ -96,6 +97,8 @@ export function SalonSettingsHub({
   role,
   salonName,
   salons,
+  resourcesEnabled,
+  primaryGridAxis,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -136,6 +139,8 @@ export function SalonSettingsHub({
   role: string;
   salonName?: string;
   salons?: OwnerSalonSummary[];
+  resourcesEnabled: boolean;
+  primaryGridAxis: "staff" | "resource";
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -597,6 +602,16 @@ export function SalonSettingsHub({
           <GooglePlaceIdCard
             slug={slug}
             initialPlaceId={googlePlaceId}
+          />
+        ) : null}
+
+        {/* ── Resource layer (beds/chairs/stations) ────────────── */}
+        {canEditDashboardModules ? (
+          <ResourceSettings
+            slug={slug}
+            initialEnabled={resourcesEnabled}
+            initialAxis={primaryGridAxis}
+            vertical={vertical}
           />
         ) : null}
 

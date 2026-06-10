@@ -38,7 +38,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, google_place_id, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, group_together_threshold_minutes, reference_image_enabled, auto_no_show_minutes, winback_enabled, client_segment_settings, feature_flags",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, google_place_id, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, group_together_threshold_minutes, reference_image_enabled, auto_no_show_minutes, winback_enabled, client_segment_settings, feature_flags, resources_enabled, primary_grid_axis",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -80,6 +80,8 @@ export default async function SalonSettingsPage({ params }: Props) {
         winback_enabled?: unknown;
         client_segment_settings?: unknown;
         feature_flags?: unknown;
+        resources_enabled?: unknown;
+        primary_grid_axis?: unknown;
       }
     | null;
 
@@ -168,6 +170,10 @@ export default async function SalonSettingsPage({ params }: Props) {
     AI_AGENT_FLAG_KEYS.map((k) => [k, rawFlags[k] === true]),
   ) as AiAgentFlags;
 
+  const resourcesEnabled = row?.resources_enabled === true;
+  const primaryGridAxis: "staff" | "resource" =
+    row?.primary_grid_axis === "resource" ? "resource" : "staff";
+
   return (
     <SalonSettingsHub
       slug={slug}
@@ -208,6 +214,8 @@ export default async function SalonSettingsPage({ params }: Props) {
       role={ctx.role}
       salonName={salonName}
       salons={ownerSalons}
+      resourcesEnabled={resourcesEnabled}
+      primaryGridAxis={primaryGridAxis}
     />
   );
 }
