@@ -16,6 +16,86 @@ import { type Currency } from "@/shared/lib/currencyFormat";
 import type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
 
 import { EditBookingForm, type EditBookingFormBooking } from "./EditBookingForm";
+import { DepositLinkModal } from "./DepositLinkModal";
+import { requestDepositLink } from "@/shared/dashboard/receptionistActions";
+
+/** Risk score at/above which a deposit makes sense to offer at the desk. Mirrors
+ *  the salon deposit policy default; the server is the source of truth (it can
+ *  decline with a reason that we surface inline). */
+const DEPOSIT_RISK_GATE = 60;
+
+function depositErrorLabel(code: string): string {
+  if (code.startsWith("risk ")) return "Khách chưa đủ mức rủi ro để cần cọc.";
+  if (code.includes("disabled")) return "Tính năng cọc chưa bật cho tiệm này.";
+  if (code === "unauthorized" || code === "salon_mismatch") return "Không có quyền.";
+  if (code === "invalid_booking") return "Lịch không hợp lệ.";
+  return "Không tạo được link cọc, thử lại.";
+}
+
+/** Self-contained desk action: create + show a Square deposit link (QR) for a
+ *  high-no-show-risk booking. Kept here so the drawer stays the single owner of
+ *  the deposit UI (no extra props threaded from ReceptionistCenter). */
+function DepositButton({
+  slug,
+  salonId,
+  bookingId,
+  disabled,
+  offlineHint,
+}: {
+  slug: string;
+  salonId: string;
+  bookingId: string;
+  disabled?: boolean;
+  offlineHint?: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [modal, setModal] = useState<{ url: string; amountCents: number } | null>(null);
+
+  async function onPress() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await requestDepositLink(slug, { salonId, bookingId });
+      if (r.ok) setModal({ url: r.url, amountCents: r.amountCents });
+      else setError(depositErrorLabel(r.error));
+    } catch {
+      setError("Không tạo được link cọc, thử lại.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="secondary"
+        loading={busy}
+        disabled={disabled}
+        title={disabled ? offlineHint : undefined}
+        data-testid="drawer-deposit-link"
+        className="w-full sm:w-full"
+        onClick={() => void onPress()}
+      >
+        💰 Tạo link cọc
+      </Button>
+      {error ? (
+        <p className="text-xs font-semibold text-nq-error" role="status">
+          {error}
+        </p>
+      ) : null}
+      {modal ? (
+        <DepositLinkModal
+          open
+          onClose={() => setModal(null)}
+          url={modal.url}
+          amountCents={modal.amountCents}
+        />
+      ) : null}
+    </>
+  );
+}
 
 /**
  * Booking status → Badge variant, per the locked status palette in
@@ -711,6 +791,18 @@ export function BookingDetailDrawer({
                       >
                         {noShowAction.label}
                       </Button>
+                    ) : null}
+                    {deskEdit &&
+                    model.verificationMethod !== "deposit" &&
+                    model.noShowRiskScore != null &&
+                    model.noShowRiskScore >= DEPOSIT_RISK_GATE ? (
+                      <DepositButton
+                        slug={deskEdit.slug}
+                        salonId={deskEdit.salonId}
+                        bookingId={deskEdit.booking.id}
+                        disabled={isOffline}
+                        offlineHint={offlineEditDisabledHint}
+                      />
                     ) : null}
                   </>
                 )}
