@@ -1238,6 +1238,16 @@ function ReceptionistCenterInner({
         ? formatCurrency(totalCents, data.salon.currencyCode)
         : null;
 
+    // Checkout summary: when a deposit was paid, show it + the balance the
+    // receptionist still charges on the Square POS (price − deposit).
+    const depositPaidCents = b.deposit_status === "paid" ? (b.deposit_amount_cents ?? 0) : 0;
+    const depositPaidLine =
+      depositPaidCents > 0 ? formatCurrency(depositPaidCents, data.salon.currencyCode) : null;
+    const remainingLine =
+      depositPaidCents > 0 && totalCents != null
+        ? formatCurrency(Math.max(0, totalCents - depositPaidCents), data.salon.currencyCode)
+        : null;
+
     const addonServiceName = b.addon_service_name?.trim()
       ? b.addon_service_name.trim()
       : null;
@@ -1296,6 +1306,9 @@ function ReceptionistCenterInner({
       smsFailedAt: b.sms_confirmation_failed_at ?? null,
       noShowRiskScore: b.no_show_risk_score ?? null,
       noShowHistoryCount: b.client_no_show_count ?? 0,
+      depositStatus: b.deposit_status ?? null,
+      depositPaidLine,
+      remainingLine,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ARCHITECTURE_LOCK: data.salon.currencyCode is intentionally omitted; it never changes within a session and adding it would cause memo churn
   }, [

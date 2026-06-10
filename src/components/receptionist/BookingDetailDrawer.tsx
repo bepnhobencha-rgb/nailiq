@@ -225,6 +225,12 @@ export type BookingDetailDrawerModel = {
   noShowRiskScore: number | null;
   /** Client's lifetime no-show count (cross-salon). 0 = clean. */
   noShowHistoryCount: number;
+  /** Deposit lifecycle status (e.g. 'paid'); null when no deposit on this booking. */
+  depositStatus: string | null;
+  /** Formatted deposit already paid via Square (e.g. "$17.00"); null when none. */
+  depositPaidLine: string | null;
+  /** Formatted balance still to charge on the POS (price − deposit); null when no deposit. */
+  remainingLine: string | null;
 };
 
 export interface BookingDetailDrawerProps {
@@ -555,6 +561,18 @@ export function BookingDetailDrawer({
                   {copy.nonePrice}
                 </p>
               )}
+              {model.remainingLine ? (
+                <div className="mt-2 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs" data-testid="drawer-deposit-summary">
+                  <p className="flex items-center justify-between text-nq-foreground/90">
+                    <span>💰 Đã cọc</span>
+                    <span className="font-medium">−{model.depositPaidLine}</span>
+                  </p>
+                  <p className="mt-1 flex items-center justify-between border-t border-emerald-400/20 pt-1 text-sm font-semibold text-emerald-300">
+                    <span>Còn thu trên POS</span>
+                    <span>{model.remainingLine}</span>
+                  </p>
+                </div>
+              ) : null}
               {finalPriceAction ? <FinalPriceEditor action={finalPriceAction} /> : null}
             </section>
 
@@ -620,8 +638,13 @@ export function BookingDetailDrawer({
               </div>
 
               {/* Verification + SMS + no-show-history badges */}
-              {(model.smsFailedAt || model.verificationMethod || (model.noShowRiskScore != null && model.noShowRiskScore >= 70) || model.noShowHistoryCount > 0) ? (
+              {(model.smsFailedAt || model.verificationMethod || model.depositPaidLine || (model.noShowRiskScore != null && model.noShowRiskScore >= 70) || model.noShowHistoryCount > 0) ? (
                 <div className="mt-2 flex flex-wrap gap-1.5">
+                  {model.depositPaidLine ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400" data-testid="drawer-deposit-paid-badge">
+                      💰 Đã cọc {model.depositPaidLine}
+                    </span>
+                  ) : null}
                   {model.smsFailedAt ? (
                     <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-400">
                       ⚠ SMS không gửi được
