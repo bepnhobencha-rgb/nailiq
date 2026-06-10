@@ -22,6 +22,8 @@ const TYPE_LABEL: Record<string, string> = {
   reminder_24h: "24h Reminder",
   reminder_3h: "3h Reminder",
   review_request: "Review Request",
+  inbound_confirm: "Confirmed by reply",
+  inbound_cancel: "Cancelled by reply",
 };
 
 function StatusDot({ status }: { status: string }) {

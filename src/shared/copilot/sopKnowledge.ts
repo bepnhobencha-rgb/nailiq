@@ -104,7 +104,9 @@ Automated appointment reminders cut no-shows. When enabled, the system sends eac
 customer a reminder 24 hours and 3 hours before their appointment — by email, and
 by text when SMS reminders are on. Each reminder carries Confirm and Reschedule
 links (email also has Cancel) so the customer can self-serve: rescheduling frees
-the old slot and auto-offers it to the waitlist. Per-salon toggles: reminders
+the old slot and auto-offers it to the waitlist. Customers can also just reply to
+the reminder text — "YES" confirms the appointment, "CANCEL" cancels it (the
+booking updates and the freed slot is offered to the waitlist). Per-salon toggles: reminders
 on/off, the 24h reminder, the 3h reminder, and SMS reminders (SMS needs the
 salon's text/Twilio set up). Delivery status (sent / delivered / failed) shows
 live in the Notifications widget on the home dashboard.
