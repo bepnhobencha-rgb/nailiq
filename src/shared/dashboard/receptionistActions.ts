@@ -51,6 +51,7 @@ import {
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { sendCustomerLinkEmail } from "@/shared/lib/sendCustomerLinkEmail";
 import { logNotification } from "@/shared/lib/notificationLog";
+import { getResourceMode, resolveFreeResource } from "@/shared/booking/resolveResource";
 import {
   pushWixCancel,
   pushWixConfirm,
@@ -2481,6 +2482,21 @@ export async function addDeskAppointment(
     staffName = chosen.name;
   }
 
+  // Resource-mode salons: auto-assign a free resource (bed/chair) for this slot.
+  let resolvedResourceId: string | null = null;
+  const resMode = await getResourceMode(db, ctx.salon.id);
+  if (resMode.enabled) {
+    const rr = await resolveFreeResource(
+      db,
+      ctx.salon.id,
+      startUtcIso,
+      endUtcIso,
+      (input as { resourceId?: string }).resourceId ?? null,
+    );
+    if (!rr.resourceId) return fail("no_resource_available");
+    resolvedResourceId = rr.resourceId;
+  }
+
   const { data: rpcData, error: rpcErr } = await db.rpc(
     "create_public_booking",
     {
@@ -2495,6 +2511,7 @@ export async function addDeskAppointment(
       p_price_cents: svc.price_cents ?? null,
       p_client_notes: clientNotes,
       p_client_email: clientEmail,
+      p_resource_id: resolvedResourceId,
     } as never,
   );
   if (rpcErr) {
