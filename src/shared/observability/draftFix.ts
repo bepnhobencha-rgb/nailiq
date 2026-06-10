@@ -51,6 +51,57 @@ async function fetchRawFile(path: string): Promise<string | null> {
   }
 }
 
+/** All source file paths in the repo (cached). Read-only — uses the token for a
+ *  higher rate limit when present, else the public unauthenticated endpoint. */
+let treeCache: string[] | null = null;
+async function fetchRepoTree(): Promise<string[]> {
+  if (treeCache) return treeCache;
+  try {
+    const token = await getToken();
+    const r = await fetch(
+      `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/git/trees/${BASE_BRANCH}?recursive=1`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    );
+    if (!r.ok) return [];
+    const j = (await r.json()) as { tree?: Array<{ path?: string; type?: string }> };
+    treeCache = (j.tree ?? [])
+      .filter((t) => t.type === "blob" && typeof t.path === "string" && /\.(tsx?|jsx?)$/.test(t.path))
+      .map((t) => t.path as string);
+    return treeCache;
+  } catch {
+    return [];
+  }
+}
+
+/** Match a guessed/partial path to a REAL repo path by basename + longest
+ *  trailing-segment overlap (so dynamic `[slug]` segments don't defeat it). */
+function resolveRealPath(guess: string, tree: string[]): string | null {
+  const g = guess.replace(/^\/+/, "");
+  if (!g || tree.length === 0) return null;
+  if (tree.includes(g)) return g;
+  const gSegs = g.split("/").filter(Boolean);
+  const base = gSegs[gSegs.length - 1];
+  const gSet = new Set(gSegs);
+  let best: string | null = null;
+  let bestScore = 0;
+  for (const p of tree) {
+    const segs = p.split("/");
+    if (segs[segs.length - 1] !== base) continue; // basename must match
+    let trailing = 0;
+    for (let i = 1; i <= Math.min(gSegs.length, segs.length); i++) {
+      if (gSegs[gSegs.length - i] === segs[segs.length - i]) trailing++;
+      else break;
+    }
+    const overlap = segs.filter((s) => gSet.has(s)).length;
+    const score = trailing * 10 + overlap;
+    if (score > bestScore) {
+      bestScore = score;
+      best = p;
+    }
+  }
+  return best;
+}
+
 async function getToken(): Promise<string | null> {
   try {
     const db = createServiceRoleClient();
@@ -184,7 +235,11 @@ export async function draftFix(
         },
       ],
     });
-    const filePath = String((parseJson(textOf(idResp))?.file ?? "")).trim().replace(/^\/+/, "");
+    const guessed = String((parseJson(textOf(idResp))?.file ?? "")).trim().replace(/^\/+/, "");
+    // Minified prod stacks rarely carry the source path and the LLM guess often
+    // misses dynamic segments (dashboard/center → dashboard/[slug]/center), so
+    // resolve the guess against the REAL repo tree before fetching.
+    const filePath = guessed ? (resolveRealPath(guessed, await fetchRepoTree()) ?? guessed) : "";
     const fileContent = filePath ? await fetchRawFile(filePath) : null;
 
     // 2. Draft the fix from the REAL file content when we have it.
