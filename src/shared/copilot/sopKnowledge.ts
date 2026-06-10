@@ -37,6 +37,12 @@ The live operational board, updated in real time. Three zones:
 3. Walk-in queue (right) — walk-in guests waiting to be seated.
 Use this page to run the day: seat walk-ins, start/finish services, mark
 no-shows, see who is free.
+The **"+ New appointment"** button (day view) books a phone-in customer for a
+FUTURE date/time: enter the phone (returning customers auto-fill), pick service →
+staff → date → an available time. It's created as a confirmed booking with the
+same conflict checks and confirmation SMS/email as a public booking — use it when
+a customer calls in. The separate "+ Walk-in" button is for same-day in-person
+guests only.
 
 ### Booking lifecycle (status values)
 - pending — booked but not yet confirmed (e.g. Wix-origin or awaiting verify).

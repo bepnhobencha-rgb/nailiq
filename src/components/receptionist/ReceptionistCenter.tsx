@@ -124,6 +124,7 @@ import type { BookingStatus } from "@/shared/types";
 import { BookingLimitBanner } from "@/components/dashboard/BookingLimitBanner";
 import { PartyCardPanel } from "@/components/receptionist/PartyCardPanel";
 import { AttentionChipBar } from "@/components/receptionist/AttentionChipBar";
+import DeskBookingForm from "@/components/receptionist/DeskBookingForm";
 import type { PartyCard } from "@/shared/dashboard/loadPartyCardsAction";
 
 export type ReceptionistCenterProps = {
@@ -608,6 +609,8 @@ function ReceptionistCenterInner({
   // Bumped by the header "+ Walk-in" action to focus the add form on open —
   // makes that button a distinct ADD action vs the "Hàng chờ" list toggle.
   const [addFocusNonce, setAddFocusNonce] = useState(0);
+  // Desk "New appointment" modal — books a phone-in customer for a future date.
+  const [deskBookingOpen, setDeskBookingOpen] = useState(false);
   const openWalkinAdd = useCallback(() => {
     setQueuePanelOpen(true);
     setAddFocusNonce((n) => n + 1);
@@ -2186,6 +2189,28 @@ function ReceptionistCenterInner({
                 >
                   {rcMessages.queue.addWalkinCta}
                 </Button>
+              ) : null}
+              {/* "New appointment" — book a phone-in customer for a FUTURE date
+                 (not gated to today, unlike the walk-in queue). */}
+              {viewMode === "day" ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  data-testid="header-add-appointment"
+                  onClick={() => setDeskBookingOpen(true)}
+                >
+                  {language === "vi" ? "+ Hẹn mới" : "+ New appt"}
+                </Button>
+              ) : null}
+              {deskBookingOpen ? (
+                <DeskBookingForm
+                  slug={slug}
+                  salonId={data.salon.id}
+                  onClose={() => setDeskBookingOpen(false)}
+                  onCreated={() => {
+                    void reloadCurrentDay();
+                  }}
+                />
               ) : null}
               {/*
                * Walk-in queue slide-over toggle. See

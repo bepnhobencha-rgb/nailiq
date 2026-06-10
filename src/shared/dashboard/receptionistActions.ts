@@ -16,9 +16,14 @@ import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import {
   canCancelBooking,
   canMarkNoShow,
+  canCreateDeskBooking,
   canEditBooking,
   canUndoCancel,
 } from "@/shared/lib/salonMemberRole";
+import { loadBookingServicesForSalonSlug } from "@/shared/booking/loadBookingServices";
+import { salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
+import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { pushWixCancel, pushWixConfirm, pushWixDecline, pushWixCreate } from "@/shared/integrations/wix/writeback";
@@ -1438,4 +1443,226 @@ export async function clearSoftHold(
   });
 
   return { ok: true };
+}
+
+/**
+ * Data the receptionist "New appointment" form needs: services, staff, per-staff
+ * capability rows, and salon scheduling meta (opening hours, timezone, closed
+ * dates, lead minutes). Auth-gated; the available-slot grid is computed
+ * client-side from this, exactly like the public booking flow.
+ */
+export async function getDeskBookingData(slug: string): Promise<
+  | { ok: true; data: NonNullable<Awaited<ReturnType<typeof loadBookingServicesForSalonSlug>>> }
+  | { ok: false; error: string }
+> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (!canCreateDeskBooking(ctx.role)) return fail("unauthorized");
+  const data = await loadBookingServicesForSalonSlug(slug);
+  if (!data) return fail("not_found");
+  return { ok: true, data };
+}
+
+/**
+ * Create a FUTURE appointment from the front desk — the path for a phone-in
+ * customer (until AI Receptionist takes calls). Reuses the same conflict-safe
+ * `create_public_booking` RPC as public/voice bookings (advisory lock + the
+ * `bookings_no_overlap` GIST constraint, so it can never oversell), books it as
+ * `confirmed`, stamps the phone channel, and fires the same confirmation
+ * SMS/email. The slot is picked client-side; the RPC is the source of truth on
+ * availability, so a slot taken in the meantime returns `time_slot_taken`.
+ */
+export async function addDeskAppointment(
+  slug: string,
+  input: {
+    salonId: string;
+    serviceId: string;
+    staffId: string;
+    /** YYYY-MM-DD in salon-local time. */
+    bookingDateYmd: string;
+    /** Time-slot label as rendered by the grid, e.g. "9:00 AM". */
+    timeSlot: string;
+    clientName: string;
+    clientPhone: string;
+    clientEmail?: string | null;
+    clientNotes?: string | null;
+    language?: "en" | "vi";
+  },
+): Promise<OkBooking | { ok: false; error: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+  if (!canCreateDeskBooking(ctx.role)) return fail("unauthorized");
+
+  const clientName = String(input.clientName ?? "").trim();
+  if (!clientName || clientName.length > BOOKING_GUEST_NAME_MAX) return fail("invalid_name");
+  if (!isValidCustomerName(clientName)) return fail("invalid_name_chars");
+
+  const phoneOk = validateGuestPhone(String(input.clientPhone ?? "").trim());
+  if (!phoneOk.ok) return fail("invalid_phone");
+  const canonicalPhone = toCanonicalPhone(phoneOk.digits) ?? phoneOk.digits;
+
+  const serviceId = String(input.serviceId ?? "").trim();
+  if (!isUuidLike(serviceId)) return fail("invalid_service");
+  const staffId = String(input.staffId ?? "").trim();
+  if (!isUuidLike(staffId)) return fail("invalid_staff");
+
+  const dateYmd = String(input.bookingDateYmd ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) return fail("invalid_date");
+
+  const startMinutes = parseTimeSlotToMinutes(String(input.timeSlot ?? ""));
+  if (!Number.isFinite(startMinutes) || startMinutes < 0) return fail("invalid_time");
+
+  let clientEmail: string | null = null;
+  const emailRaw = String(input.clientEmail ?? "").trim();
+  if (emailRaw) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw)) return fail("invalid_email");
+    clientEmail = emailRaw.toLowerCase();
+  }
+  const clientNotes = String(input.clientNotes ?? "").trim().slice(0, 500) || null;
+
+  const db = createServiceRoleClient();
+
+  // Plan-tier booking cap (same gate as walk-ins).
+  try {
+    const { data: planRow } = await db
+      .from("salons")
+      .select("subscription_plan, plan_override, feature_flags" as never)
+      .eq("id", ctx.salon.id)
+      .maybeSingle();
+    const pf = (planRow ?? {}) as {
+      subscription_plan?: string | null;
+      plan_override?: string | null;
+      feature_flags?: Record<string, unknown> | null;
+    };
+    await assertBookingLimitAvailable(db, {
+      id: ctx.salon.id,
+      subscription_plan: pf.subscription_plan,
+      plan_override: pf.plan_override,
+      feature_flags: pf.feature_flags,
+    });
+  } catch {
+    return fail("booking_limit_reached");
+  }
+
+  // Authoritative service duration + price (don't trust the client).
+  const { data: svcRow } = await db
+    .from("services")
+    .select("name, duration_minutes, buffer_minutes, price_cents, salon_id, deleted_at")
+    .eq("id", serviceId)
+    .maybeSingle();
+  const svc = svcRow as {
+    name?: string;
+    duration_minutes?: number | null;
+    buffer_minutes?: number | null;
+    price_cents?: number | null;
+    salon_id?: string;
+    deleted_at?: string | null;
+  } | null;
+  if (!svc || svc.salon_id !== ctx.salon.id || svc.deleted_at) return fail("invalid_service");
+
+  const timezone = ctx.salon.timezone;
+  const startUtcIso = salonWallTimeToUtcIso(dateYmd, startMinutes, timezone);
+  const totalMin = (svc.duration_minutes ?? 0) + (svc.buffer_minutes ?? 0);
+  const endUtcIso = new Date(Date.parse(startUtcIso) + totalMin * 60_000).toISOString();
+
+  // Staff name for the confirmation message.
+  const { data: staffRow } = await db
+    .from("staff")
+    .select("name, salon_id, status")
+    .eq("id", staffId)
+    .maybeSingle();
+  const staff = staffRow as { name?: string; salon_id?: string; status?: string } | null;
+  if (!staff || staff.salon_id !== ctx.salon.id) return fail("invalid_staff");
+
+  const { data: rpcData, error: rpcErr } = await db.rpc("create_public_booking", {
+    p_salon_id: ctx.salon.id,
+    p_service_id: serviceId,
+    p_staff_id: staffId,
+    p_client_name: clientName,
+    p_client_phone: canonicalPhone,
+    p_start_time_utc: startUtcIso,
+    p_end_time_utc: endUtcIso,
+    p_status: "confirmed",
+    p_price_cents: svc.price_cents ?? null,
+    p_client_notes: clientNotes,
+    p_client_email: clientEmail,
+  } as never);
+  if (rpcErr) {
+    const code = (rpcErr as { code?: string }).code;
+    if (code === "P0002" || code === "23P01") return fail("time_slot_taken");
+    console.error("[addDeskAppointment] rpc error", rpcErr);
+    return fail("server_error");
+  }
+  const result = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as
+    | { success?: boolean; booking_id?: string; code?: string }
+    | null;
+  if (!result?.success || !result.booking_id) {
+    return fail(result?.code === "slot_conflict" ? "time_slot_taken" : "server_error");
+  }
+  const bookingId = result.booking_id;
+
+  // Track the phone-in channel (best-effort; `source` stays 'appointment').
+  try {
+    await db.from("bookings").update({ walkin_source: "phone" } as never).eq("id", bookingId);
+  } catch {
+    /* best-effort */
+  }
+
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: null,
+    actorRole: ctxActorRole(ctx),
+    eventType: "booking_created",
+    payload: { source: "desk_phone", staffId, serviceId },
+  });
+
+  // Same confirmation as a public booking (SMS always, email when given).
+  const base = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+  const serviceName = svc.name ?? "";
+  const staffName = staff.name ?? "";
+  after(async () => {
+    try {
+      await fetch(`${base}/api/booking/sms-confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookingId,
+          salonId: ctx.salon.id,
+          clientPhone: canonicalPhone,
+          clientName,
+          serviceName,
+          staffName,
+          startTimeUtc: startUtcIso,
+          language: input.language ?? null,
+        }),
+      });
+    } catch {
+      /* best-effort */
+    }
+    if (clientEmail) {
+      const secret = (process.env.INTERNAL_API_SECRET ?? "").trim();
+      try {
+        await fetch(`${base}/api/booking-email`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-internal-secret": secret },
+          body: JSON.stringify({
+            bookingId,
+            shopSlug: slug,
+            clientName,
+            clientEmail,
+            serviceName,
+            staffName,
+            startTimeUtc: startUtcIso,
+            totalPriceCents: svc.price_cents ?? 0,
+          }),
+        });
+      } catch {
+        /* best-effort */
+      }
+    }
+  });
+
+  return { ok: true, bookingId };
 }

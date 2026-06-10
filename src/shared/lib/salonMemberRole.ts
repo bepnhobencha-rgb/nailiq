@@ -78,6 +78,17 @@ export function canMarkNoShow(role: SalonMemberRole): boolean {
   );
 }
 
+/** Booking a phone-in customer for a future date is a core front-desk job, so
+ *  it's the same broad set as no-show: owner/admin/senior/receptionist. */
+export function canCreateDeskBooking(role: SalonMemberRole): boolean {
+  return (
+    role === "owner" ||
+    role === "admin" ||
+    role === "senior" ||
+    role === "receptionist"
+  );
+}
+
 export function canUndoCancel(role: SalonMemberRole): boolean {
   return role === "owner" || role === "senior";
 }
