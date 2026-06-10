@@ -90,6 +90,9 @@ export type GroupBookingParams = {
    *  on every member row inside the `insert_group_bookings` RPC so the
    *  receptionist board can show a 💕 badge. Default false. */
   seatTogether?: boolean;
+  /** Language the organizer booked in ("en"|"vi") — the confirmation SMS to
+   *  the primary contact matches it. Absent → falls back to stored pref / vi. */
+  language?: "en" | "vi";
 };
 
 export type GroupBookingResult =
@@ -870,6 +873,39 @@ export async function submitGroupBooking(
       }
     }),
   );
+
+  // Group confirmation SMS to the primary contact (all members share the
+  // organizer's phone). One summary message for the whole party — the group
+  // path previously sent NO confirmation at all, unlike individual bookings.
+  try {
+    const organizer = params.members[0];
+    const organizerPhoneOk = validateGuestPhone(organizer?.phone ?? "");
+    const earliest = resolved.reduce(
+      (min, r) => (r.startMs < min.startMs ? r : min),
+      resolved[0],
+    );
+    if (organizerPhoneOk.ok && earliest && bookingIdList[0]) {
+      const appUrl =
+        typeof window !== "undefined"
+          ? ""
+          : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+      await fetch(`${appUrl}/api/booking/sms-confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookingId: bookingIdList[0],
+          salonId: String(salonRow.id),
+          clientPhone: organizerPhoneOk.digits,
+          clientName: organizer?.name ?? null,
+          partySize: params.members.length,
+          startTimeUtc: earliest.startUtcIso,
+          language: params.language ?? null,
+        }),
+      });
+    }
+  } catch (e) {
+    console.error("[submitGroupBooking] group sms-confirm dispatch failed", e);
+  }
 
   return {
     ok: true,

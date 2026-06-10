@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ ok: false }, { status: 400 });
 
-  const { bookingId, salonId, clientPhone, clientName, serviceName, staffName, startTimeUtc, language } =
+  const { bookingId, salonId, clientPhone, clientName, serviceName, staffName, startTimeUtc, language, partySize } =
     body as {
       bookingId?: string;
       salonId?: string;
@@ -39,9 +39,14 @@ export async function POST(req: Request) {
       startTimeUtc?: string;
       /** Language the customer chose at booking — wins over any stored pref. */
       language?: string | null;
+      /** Set (>1) for a GROUP booking → one party-summary message instead of a
+       *  per-service line. serviceName is then not required. */
+      partySize?: number;
     };
 
-  if (!bookingId || !salonId || !clientPhone || !serviceName || !startTimeUtc) {
+  const isGroup = typeof partySize === "number" && partySize > 1;
+
+  if (!bookingId || !salonId || !clientPhone || !startTimeUtc || (!isGroup && !serviceName)) {
     return NextResponse.json({ ok: false, error: "missing_fields" }, { status: 400 });
   }
 
@@ -95,8 +100,11 @@ export async function POST(req: Request) {
   const salonName = salon.name ?? "";
   const staff = staffName ? ` with ${staffName}` : "";
 
-  const message =
-    lang === "en"
+  const message = isGroup
+    ? lang === "en"
+      ? `✅ Group of ${partySize} booked at ${salonName} · ${dateStr}. Reply STOP to opt out.`
+      : `✅ Đã đặt lịch nhóm ${partySize} người tại ${salonName} · ${dateStr}. Nhắn STOP để huỷ nhận tin.`
+    : lang === "en"
       ? `✅ Booked! ${serviceName}${staff} at ${salonName} · ${dateStr}. Reply STOP to opt out.`
       : `✅ Đã đặt lịch! ${serviceName} tại ${salonName} · ${dateStr}. Nhắn STOP để huỷ nhận tin.`;
 

@@ -87,6 +87,8 @@ export interface GridBooking {
   addon_count?: number;
   /** Client's lifetime no-show count — drives a ⚠ chip badge for repeat offenders. */
   no_show_count?: number;
+  /** AI no-show risk score (0–100) — drives an amber risk ⚠ on the block. */
+  no_show_risk_score?: number | null;
 }
 
 export interface StaffTimelineGridProps {
@@ -854,6 +856,7 @@ function StaffTimelineGridImpl({
                           hasStaffRequest={b.has_staff_request}
                           addonCount={b.addon_count ?? 0}
                           noShowCount={b.no_show_count ?? 0}
+                          noShowRiskScore={b.no_show_risk_score ?? null}
                           isGroup={b.group_id != null}
                           seatTogether={b.seat_together === true}
                           compactIcons={compactBookingIcons}
