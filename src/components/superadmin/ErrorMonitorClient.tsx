@@ -5,6 +5,7 @@ import {
   loadErrorLogs,
   setErrorStatus,
   triageErrorNow,
+  draftFixNow,
   type ErrorLogRow,
 } from "@/shared/superadmin/errorMonitorActions";
 
@@ -48,6 +49,14 @@ export function ErrorMonitorClient({ initialRows }: { initialRows: ErrorLogRow[]
   function triage(id: string) {
     startTransition(async () => {
       await triageErrorNow(id);
+      const r = await loadErrorLogs(filter);
+      if (r.ok) setRows(r.rows);
+    });
+  }
+
+  function fix(id: string) {
+    startTransition(async () => {
+      await draftFixNow(id);
       const r = await loadErrorLogs(filter);
       if (r.ok) setRows(r.rows);
     });
@@ -121,6 +130,24 @@ export function ErrorMonitorClient({ initialRows }: { initialRows: ErrorLogRow[]
                       <span className="font-semibold">Fix:</span> {r.ai_suggested_fix}
                     </p>
                   ) : null}
+                  {r.fix_proposal ? (
+                    <p className="mt-2 rounded-md bg-nq-success/10 px-2.5 py-1.5 text-xs text-nq-foreground">
+                      ✨ <span className="font-semibold">AI fix:</span> {r.fix_proposal}
+                      {r.fix_file ? (
+                        <span className="ml-1 font-mono text-[11px] text-nq-muted">({r.fix_file})</span>
+                      ) : null}
+                    </p>
+                  ) : null}
+                  {r.fix_pr_url ? (
+                    <a
+                      href={r.fix_pr_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-block text-xs font-semibold text-nq-info hover:underline"
+                    >
+                      → Review draft PR
+                    </a>
+                  ) : null}
                 </div>
                 <div className="flex shrink-0 flex-col gap-1.5">
                   {r.status === "open" ? (
@@ -131,6 +158,14 @@ export function ErrorMonitorClient({ initialRows }: { initialRows: ErrorLogRow[]
                           className="rounded-md bg-nq-info/15 px-2.5 py-1 text-xs text-nq-info hover:bg-nq-info/25"
                         >
                           🧠 Triage
+                        </button>
+                      ) : null}
+                      {!r.fix_pr_url ? (
+                        <button
+                          onClick={() => fix(r.id)}
+                          className="rounded-md bg-nq-primary/15 px-2.5 py-1 text-xs text-nq-primary hover:bg-nq-primary/25"
+                        >
+                          ✨ Draft fix
                         </button>
                       ) : null}
                       <button

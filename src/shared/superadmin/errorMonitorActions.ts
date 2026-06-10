@@ -17,6 +17,9 @@ export type ErrorLogRow = {
   status: "open" | "resolved" | "ignored";
   ai_summary: string | null;
   ai_suggested_fix: string | null;
+  fix_proposal: string | null;
+  fix_file: string | null;
+  fix_pr_url: string | null;
 };
 
 type LoadResult =
@@ -50,7 +53,7 @@ export async function loadErrorLogs(
   let q = admin
     .from("error_logs")
     .select(
-      "id, level, message, surface, route, salon_id, occurrence_count, first_seen_at, last_seen_at, status, ai_summary, ai_suggested_fix",
+      "id, level, message, surface, route, salon_id, occurrence_count, first_seen_at, last_seen_at, status, ai_summary, ai_suggested_fix, fix_proposal, fix_file, fix_pr_url",
     )
     .order("last_seen_at", { ascending: false })
     .limit(200);
@@ -70,6 +73,15 @@ export async function triageErrorNow(id: string): Promise<{ ok: boolean }> {
   if (!uid) return { ok: false };
   const { triageError } = await import("@/shared/observability/triageError");
   return triageError(id);
+}
+
+/** AI reads the offending file + drafts a fix (and a draft PR if a GitHub
+ *  token is configured). Always a draft for human review. */
+export async function draftFixNow(id: string): Promise<{ ok: boolean; prUrl?: string | null }> {
+  const uid = await requireSuperadmin();
+  if (!uid) return { ok: false };
+  const { draftFix } = await import("@/shared/observability/draftFix");
+  return draftFix(id);
 }
 
 export async function setErrorStatus(
