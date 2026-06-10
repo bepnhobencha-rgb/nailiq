@@ -37,9 +37,9 @@ const items = [
     href: "/superadmin/operations/system-health",
     title: "System health",
     blurb:
-      "Live signals: error rate, p95 latency, Supabase quotas, Sentry budget.",
-    phase: "Phase 2",
-    live: false,
+      "Self-hosted error monitor: grouped app errors with AI summary, suggested fix, and AI-drafted PRs.",
+    phase: "Live",
+    live: true,
   },
   {
     href: "/superadmin/operations/maintenance",
