@@ -99,7 +99,42 @@ profile.
 Revenue and operational reports (advanced reports are a separate enabled
 feature).
 
-## K. Language
+## K. Reminders & no-show protection — /dashboard/<slug>/settings (No-Show Protection)
+Automated appointment reminders cut no-shows. When enabled, the system sends each
+customer a reminder 24 hours and 3 hours before their appointment — by email, and
+by text when SMS reminders are on. Each reminder carries Confirm and Reschedule
+links (email also has Cancel) so the customer can self-serve: rescheduling frees
+the old slot and auto-offers it to the waitlist. Per-salon toggles: reminders
+on/off, the 24h reminder, the 3h reminder, and SMS reminders (SMS needs the
+salon's text/Twilio set up). Delivery status (sent / delivered / failed) shows
+live in the Notifications widget on the home dashboard.
+
+Other no-show defenses:
+- No-show risk: every booking gets an AI risk score. On the Front Desk grid a
+  not-yet-arrived booking flagged high-risk shows an amber warning; a client with
+  2+ past no-shows shows a red warning by their name. Use these to confirm the
+  booking or take a deposit early.
+- Auto no-show: optionally, a confirmed booking that never starts is marked
+  no_show automatically a set number of minutes past its start time.
+- Win-back: after a no-show, an optional friendly email invites the client to
+  rebook.
+
+## L. Group / party booking — public page /<slug>
+Customers can book several people at once (a party). They pick the group size, a
+service (plus optional staff and add-ons) per guest, a date, and whether the
+group should "arrive together" or "finish together"; the system arranges the
+slots — using waves for large groups — and can seat the party next to each other
+(a heart badge shows on the Front Desk). The organizer gets one confirmation text
+for the whole party plus a shareable Party Link so each guest can claim their own
+slot. Group booking is a per-salon feature that must be enabled.
+
+## M. Reviews — /dashboard/<slug>/settings (Google review)
+When a booking is marked completed, the system can automatically ask that
+customer for a Google review, by email and text, linking to the salon's Google
+review page. This needs the salon's Google review URL set in Settings and is
+available on Pro and higher plans. Each booking is only asked once.
+
+## N. Language
 The whole dashboard is bilingual EN/VI; users toggle their own language. Reply
 in the language the user is writing in.
 `;
