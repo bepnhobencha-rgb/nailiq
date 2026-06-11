@@ -17,6 +17,7 @@ import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { createClient } from "@/shared/lib/supabase/client";
+import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 
 export type BookingParams = {
   shopSlug: string;
@@ -723,6 +724,12 @@ export async function submitPublicBooking(
     if (chErr) {
       console.error("[submitPublicBooking] booking_channel stamp failed", chErr);
     }
+    // Notify owner/admin of the new booking (opt-in, fire-and-forget).
+    void sendOwnerBookingNotification({
+      salonId: String(salon.id),
+      bookingId,
+      event: "new",
+    });
   }
 
   const totalPriceCents =

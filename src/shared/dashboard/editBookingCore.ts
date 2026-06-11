@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import type { SalonDashboardBooking } from "@/shared/types";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
+import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import {
   type BookingRowDb,
   DASHBOARD_BOOKING_SELECT,
@@ -378,6 +379,17 @@ export async function performEditBooking(
       newAddonServiceId: effectiveAddonId,
     },
   });
+
+  // Owner/admin "rescheduled" alert — only when the start time actually moved
+  // (a pure staff/service swap isn't a reschedule). Opt-in, fire-and-forget.
+  if (slotStartUtc && slotStartUtc !== st) {
+    void sendOwnerBookingNotification({
+      salonId,
+      bookingId,
+      event: "reschedule",
+      previousStartUtc: st || null,
+    });
+  }
 
   return {
     ok: true,
