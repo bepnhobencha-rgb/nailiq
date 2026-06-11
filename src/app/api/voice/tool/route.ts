@@ -380,7 +380,7 @@ async function handleConfirmBooking(
     try {
       await supabase
         .from("bookings")
-        .update({ source: "voice" })
+        .update({ source: "voice", booking_channel: "voice" } as never)
         .eq("id", bookingId);
     } catch { /* best-effort */ }
   }
@@ -1466,7 +1466,7 @@ async function handleConfirmGroupBooking(
     try {
       await supabase
         .from("bookings")
-        .update({ source: "voice" })
+        .update({ source: "voice", booking_channel: "voice" } as never)
         .in("id", bookingIds);
     } catch { /* best-effort */ }
   }

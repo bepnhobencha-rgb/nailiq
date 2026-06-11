@@ -1615,12 +1615,23 @@ export const userVi: UserMessages = {
       tables: {
         topServices: "Dịch vụ phổ biến",
         topStaff: "Thợ làm nhiều nhất",
+        bySource: "Đặt hẹn theo nguồn",
         empty: "Chưa có dữ liệu trong khoảng này.",
         serviceCol: "Dịch vụ",
         staffCol: "Thợ",
+        sourceCol: "Nguồn",
         countCol: "Số lần",
         appointmentsCol: "Lịch",
+        shareCol: "Tỉ lệ",
         revenueCol: "Doanh thu",
+      },
+      channelLabels: {
+        online: "Online",
+        square: "Square",
+        wix: "Wix",
+        voice: "Voice AI",
+        walkin: "Khách vãng lai",
+        desk: "Tiếp tân nhập",
       },
       busyHours: {
         title: "Giờ đông khách",

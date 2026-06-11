@@ -1,6 +1,9 @@
 import {
   Calendar,
+  ClipboardList,
+  CreditCard,
   Globe,
+  LayoutTemplate,
   Mic,
   Phone,
   UserPlus,
@@ -29,11 +32,25 @@ export type BookingSourceIconMeta = {
 };
 
 export type BookingSourceLabels = Partial<
-  Record<"online" | "voice" | "ai" | "phone" | "walkin" | "appointment", string>
+  Record<
+    | "online"
+    | "square"
+    | "wix"
+    | "voice"
+    | "ai"
+    | "phone"
+    | "walkin"
+    | "desk"
+    | "appointment",
+    string
+  >
 >;
 
 const DEFAULTS: Record<string, BookingSourceIconMeta> = {
   online: { Icon: Globe, label: "Online" },
+  square: { Icon: CreditCard, label: "Square" },
+  wix: { Icon: LayoutTemplate, label: "Wix" },
+  desk: { Icon: ClipboardList, label: "Front desk" },
   appointment: { Icon: Calendar, label: "Appointment" },
   voice: { Icon: Mic, label: "Voice AI" },
   ai: { Icon: Bot, label: "AI Receptionist" },

@@ -230,6 +230,19 @@ export async function POST(req: Request) {
       ? (booking as { booking_id: string }).booking_id
       : String(booking);
 
+  // Stamp booking_channel = 'online' (customer-initiated rebook). Best-effort;
+  // the RPC leaves it null.
+  if (bookingId) {
+    try {
+      await supabase
+        .from("bookings")
+        .update({ booking_channel: "online" } as never)
+        .eq("id", bookingId);
+    } catch {
+      /* best-effort */
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     booking_id: bookingId,

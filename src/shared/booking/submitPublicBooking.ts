@@ -712,6 +712,19 @@ export async function submitPublicBooking(
     throw new Error("booking_rpc_empty");
   }
 
+  // Stamp booking_channel = 'online' (the RPC leaves it null). Reports use it
+  // to separate online bookings from desk / Square / Wix / voice. Best-effort,
+  // same post-insert UPDATE pattern as the staff-requested stamp below.
+  if (bookingId) {
+    const { error: chErr } = await supabase
+      .from("bookings")
+      .update({ booking_channel: "online" } as never)
+      .eq("id", bookingId);
+    if (chErr) {
+      console.error("[submitPublicBooking] booking_channel stamp failed", chErr);
+    }
+  }
+
   const totalPriceCents =
     (priceSnapshot ?? 0) + (addonPriceSnapshot ?? 0);
 
