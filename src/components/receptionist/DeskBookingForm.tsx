@@ -29,23 +29,94 @@ type LoadData = Extract<
 type Props = {
   slug: string;
   salonId: string;
+  /** Dashboard language — matches the rest of the receptionist center. */
+  language: "en" | "vi";
   onClose: () => void;
   onCreated: () => void;
 };
 
-const ERROR_LABEL: Record<string, string> = {
-  invalid_name: "Tên không hợp lệ.",
-  invalid_name_chars: "Tên chứa ký tự không hợp lệ.",
-  invalid_phone: "Số điện thoại không hợp lệ.",
-  invalid_email: "Email không hợp lệ.",
-  invalid_service: "Vui lòng chọn dịch vụ.",
-  invalid_staff: "Vui lòng chọn thợ.",
-  invalid_date: "Vui lòng chọn ngày.",
-  invalid_time: "Vui lòng chọn giờ.",
-  time_slot_taken: "Giờ này vừa có người đặt — chọn giờ khác.",
-  booking_limit_reached: "Đã đạt giới hạn lịch của gói hiện tại.",
-  unauthorized: "Bạn không có quyền tạo lịch.",
-};
+// Bilingual copy kept local to the form (UI labels, not config) so it stays
+// in lockstep with the rest of the receptionist center's EN/VI toggle.
+const COPY = {
+  en: {
+    heading: "New appointment",
+    close: "Close",
+    loadError: "Couldn't load data. Try again.",
+    loading: "Loading…",
+    phone: "Phone number *",
+    name: "Customer name *",
+    email: "Email (optional — for the confirmation)",
+    service: "Service *",
+    selectService: "— Select a service —",
+    staff: "Staff *",
+    selectStaff: "— Select staff —",
+    selectServiceFirst: "Pick a service first",
+    date: "Date *",
+    time: "Time *",
+    slotsLoading: "Finding open times…",
+    noSlots: "No open times this day — pick another date.",
+    notes: "Notes (optional)",
+    submit: "Create appointment",
+    submitting: "Creating…",
+    submitError: "Couldn't create the appointment. Try again.",
+    newCustomer: "New customer.",
+    returning: (vip: string, visits: string) => `✨ Returning customer${vip}${visits} — info filled in.`,
+    vipTag: " · VIP",
+    visitsTag: (n: number) => ` · ${n} visits`,
+    errors: {
+      invalid_name: "Invalid name.",
+      invalid_name_chars: "Name has invalid characters.",
+      invalid_phone: "Invalid phone number.",
+      invalid_email: "Invalid email.",
+      invalid_service: "Please choose a service.",
+      invalid_staff: "Please choose a staff member.",
+      invalid_date: "Please choose a date.",
+      invalid_time: "Please choose a time.",
+      time_slot_taken: "That time was just taken — pick another.",
+      booking_limit_reached: "You've hit your plan's booking limit.",
+      unauthorized: "You don't have permission to create bookings.",
+    } as Record<string, string>,
+  },
+  vi: {
+    heading: "Thêm hẹn mới",
+    close: "Đóng",
+    loadError: "Không tải được dữ liệu. Thử lại.",
+    loading: "Đang tải…",
+    phone: "Số điện thoại *",
+    name: "Tên khách *",
+    email: "Email (tuỳ chọn — để gửi xác nhận)",
+    service: "Dịch vụ *",
+    selectService: "— Chọn dịch vụ —",
+    staff: "Thợ *",
+    selectStaff: "— Chọn thợ —",
+    selectServiceFirst: "Chọn dịch vụ trước",
+    date: "Ngày *",
+    time: "Giờ *",
+    slotsLoading: "Đang tìm giờ trống…",
+    noSlots: "Không còn giờ trống ngày này — chọn ngày khác.",
+    notes: "Ghi chú (tuỳ chọn)",
+    submit: "Tạo lịch hẹn",
+    submitting: "Đang tạo lịch…",
+    submitError: "Không tạo được lịch. Thử lại.",
+    newCustomer: "Khách mới.",
+    returning: (vip: string, visits: string) => `✨ Khách quen${vip}${visits} — đã điền sẵn.`,
+    vipTag: " · VIP",
+    visitsTag: (n: number) => ` · ${n} lần ghé`,
+    errors: {
+      invalid_name: "Tên không hợp lệ.",
+      invalid_name_chars: "Tên chứa ký tự không hợp lệ.",
+      invalid_phone: "Số điện thoại không hợp lệ.",
+      invalid_email: "Email không hợp lệ.",
+      invalid_service: "Vui lòng chọn dịch vụ.",
+      invalid_staff: "Vui lòng chọn thợ.",
+      invalid_date: "Vui lòng chọn ngày.",
+      invalid_time: "Vui lòng chọn giờ.",
+      time_slot_taken: "Giờ này vừa có người đặt — chọn giờ khác.",
+      booking_limit_reached: "Đã đạt giới hạn lịch của gói hiện tại.",
+      unauthorized: "Bạn không có quyền tạo lịch.",
+    } as Record<string, string>,
+  },
+} as const;
 
 function ymdToLocalNoon(ymd: string): Date {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -57,7 +128,8 @@ function todayYmd(): string {
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
 }
 
-export default function DeskBookingForm({ slug, salonId, onClose, onCreated }: Props) {
+export default function DeskBookingForm({ slug, salonId, language, onClose, onCreated }: Props) {
+  const tx = COPY[language === "vi" ? "vi" : "en"];
   const [data, setData] = useState<LoadData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -179,10 +251,13 @@ export default function DeskBookingForm({ slug, salonId, onClose, onCreated }: P
         if (p.top_service && !serviceId) setServiceId(p.top_service.id);
         if (p.top_staff && !staffId) setStaffId(p.top_staff.id);
         setLookupMsg(
-          `✨ Khách quen${p.is_vip ? " · VIP" : ""}${p.visit_count ? ` · ${p.visit_count} lần ghé` : ""} — đã điền sẵn.`,
+          tx.returning(
+            p.is_vip ? tx.vipTag : "",
+            p.visit_count ? tx.visitsTag(p.visit_count) : "",
+          ),
         );
       } else {
-        setLookupMsg("Khách mới.");
+        setLookupMsg(tx.newCustomer);
       }
     }, 500);
     return () => clearTimeout(t);
@@ -212,7 +287,7 @@ export default function DeskBookingForm({ slug, salonId, onClose, onCreated }: P
       onCreated();
       onClose();
     } else {
-      setError(ERROR_LABEL[res.error] ?? "Không tạo được lịch. Thử lại.");
+      setError(tx.errors[res.error] ?? tx.submitError);
     }
   }, [canSubmit, slug, salonId, serviceId, staffId, ymd, slotLabel, name, phone, email, notes, onCreated, onClose]);
 
@@ -231,20 +306,20 @@ export default function DeskBookingForm({ slug, salonId, onClose, onCreated }: P
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-nq-foreground">Thêm hẹn mới</h2>
-          <button onClick={onClose} className="text-nq-muted hover:text-nq-foreground" aria-label="Đóng">
+          <h2 className="text-base font-semibold text-nq-foreground">{tx.heading}</h2>
+          <button onClick={onClose} className="text-nq-muted hover:text-nq-foreground" aria-label={tx.close}>
             ✕
           </button>
         </div>
 
         {loadError ? (
-          <p className="text-sm text-nq-error">Không tải được dữ liệu. Thử lại.</p>
+          <p className="text-sm text-nq-error">{tx.loadError}</p>
         ) : !data ? (
-          <p className="text-sm text-nq-muted">Đang tải…</p>
+          <p className="text-sm text-nq-muted">{tx.loading}</p>
         ) : (
           <div className="space-y-3">
             <div>
-              <label className={labelCls}>Số điện thoại *</label>
+              <label className={labelCls}>{tx.phone}</label>
               <input
                 className={inputCls}
                 inputMode="tel"
@@ -256,12 +331,12 @@ export default function DeskBookingForm({ slug, salonId, onClose, onCreated }: P
             </div>
 
             <div>
-              <label className={labelCls}>Tên khách *</label>
+              <label className={labelCls}>{tx.name}</label>
               <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} />
             </div>
 
             <div>
-              <label className={labelCls}>Email (tuỳ chọn — để gửi xác nhận)</label>
+              <label className={labelCls}>{tx.email}</label>
               <input
                 className={inputCls}
                 inputMode="email"
@@ -271,13 +346,13 @@ export default function DeskBookingForm({ slug, salonId, onClose, onCreated }: P
             </div>
 
             <div>
-              <label className={labelCls}>Dịch vụ *</label>
+              <label className={labelCls}>{tx.service}</label>
               <select
                 className={inputCls}
                 value={serviceId}
                 onChange={(e) => setServiceId(e.target.value)}
               >
-                <option value="">— Chọn dịch vụ —</option>
+                <option value="">{tx.selectService}</option>
                 {data.services.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -288,14 +363,14 @@ export default function DeskBookingForm({ slug, salonId, onClose, onCreated }: P
             </div>
 
             <div>
-              <label className={labelCls}>Thợ *</label>
+              <label className={labelCls}>{tx.staff}</label>
               <select
                 className={inputCls}
                 value={staffId}
                 onChange={(e) => setStaffId(e.target.value)}
                 disabled={!serviceId}
               >
-                <option value="">{serviceId ? "— Chọn thợ —" : "Chọn dịch vụ trước"}</option>
+                <option value="">{serviceId ? tx.selectStaff : tx.selectServiceFirst}</option>
                 {capableStaff.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -305,7 +380,7 @@ export default function DeskBookingForm({ slug, salonId, onClose, onCreated }: P
             </div>
 
             <div>
-              <label className={labelCls}>Ngày *</label>
+              <label className={labelCls}>{tx.date}</label>
               <input
                 type="date"
                 className={inputCls}
@@ -318,11 +393,11 @@ export default function DeskBookingForm({ slug, salonId, onClose, onCreated }: P
 
             {staffId && ymd ? (
               <div>
-                <label className={labelCls}>Giờ *</label>
+                <label className={labelCls}>{tx.time}</label>
                 {slotsLoading ? (
-                  <p className="text-xs text-nq-muted">Đang tìm giờ trống…</p>
+                  <p className="text-xs text-nq-muted">{tx.slotsLoading}</p>
                 ) : slots.filter((s) => s.available).length === 0 ? (
-                  <p className="text-xs text-nq-muted">Không còn giờ trống ngày này — chọn ngày khác.</p>
+                  <p className="text-xs text-nq-muted">{tx.noSlots}</p>
                 ) : (
                   <div className="grid max-h-40 grid-cols-3 gap-1.5 overflow-y-auto rounded-md border border-nq-muted/20 bg-nq-bg p-1.5">
                     {slots
@@ -347,7 +422,7 @@ export default function DeskBookingForm({ slug, salonId, onClose, onCreated }: P
             ) : null}
 
             <div>
-              <label className={labelCls}>Ghi chú (tuỳ chọn)</label>
+              <label className={labelCls}>{tx.notes}</label>
               <input className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
 
@@ -359,7 +434,7 @@ export default function DeskBookingForm({ slug, salonId, onClose, onCreated }: P
               onClick={submit}
               className="mt-1 w-full rounded-md bg-nq-primary py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {submitting ? "Đang tạo lịch…" : "Tạo lịch hẹn"}
+              {submitting ? tx.submitting : tx.submit}
             </button>
           </div>
         )}
