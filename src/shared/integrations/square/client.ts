@@ -7,13 +7,24 @@
  */
 
 const SQUARE_API = "https://connect.squareup.com/v2";
+const SQUARE_SANDBOX_API = "https://connect.squareupsandbox.com/v2";
 const SQUARE_VERSION = "2024-12-18";
+
+export type SquareEnvironment = "production" | "sandbox";
 
 export interface SquareConfig {
   salonId: string;
   merchantId: string;
   locationId: string;
   accessToken: string;
+  /** Public Web Payments SDK app id (sq0idp-… / sandbox-sq0idb-…). */
+  applicationId: string | null;
+  environment: SquareEnvironment;
+}
+
+/** API base for the config's environment. */
+function apiBase(cfg: SquareConfig): string {
+  return cfg.environment === "sandbox" ? SQUARE_SANDBOX_API : SQUARE_API;
 }
 
 export interface SquareCustomer {
@@ -56,7 +67,7 @@ type Db = { from: (table: string) => any };
 export async function getSquareConfig(db: Db, salonId: string): Promise<SquareConfig> {
   const { data, error } = await db
     .from("square_integrations")
-    .select("salon_id, merchant_id, location_id, access_token")
+    .select("salon_id, merchant_id, location_id, access_token, application_id, environment")
     .eq("salon_id", salonId)
     .maybeSingle();
   if (error) throw new Error(`square_integrations load failed: ${JSON.stringify(error)}`);
@@ -65,6 +76,8 @@ export async function getSquareConfig(db: Db, salonId: string): Promise<SquareCo
     merchant_id: string;
     location_id: string;
     access_token: string | null;
+    application_id: string | null;
+    environment: string | null;
   } | null;
   if (!row) throw new Error(`No square_integrations row for salon ${salonId}`);
   if (!row.access_token) throw new Error(`square_integrations.access_token is empty for salon ${salonId}`);
@@ -73,6 +86,8 @@ export async function getSquareConfig(db: Db, salonId: string): Promise<SquareCo
     merchantId: row.merchant_id,
     locationId: row.location_id,
     accessToken: row.access_token,
+    applicationId: row.application_id ?? null,
+    environment: row.environment === "sandbox" ? "sandbox" : "production",
   };
 }
 
@@ -82,7 +97,7 @@ async function squareReq(
   path: string,
   body?: unknown,
 ): Promise<Record<string, unknown>> {
-  const res = await fetch(`${SQUARE_API}${path}`, {
+  const res = await fetch(`${apiBase(cfg)}${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${cfg.accessToken}`,
@@ -135,6 +150,74 @@ export async function createPaymentLink(
   });
   const pl = (json.payment_link as Record<string, unknown>) ?? {};
   return { id: String(pl.id ?? ""), url: String(pl.url ?? ""), orderId: (pl.order_id as string) ?? null };
+}
+
+// ---------------------------------------------------------------------------
+// No-show card-on-file (Option C): save a card at booking, charge only if the
+// customer no-shows. Proven against sandbox: customer → CreateCard → CreatePayment.
+// ---------------------------------------------------------------------------
+
+/** Find-or-create a Square customer for this booking's contact. */
+export async function ensureSquareCustomer(
+  cfg: SquareConfig,
+  opts: { name?: string | null; phone?: string | null; email?: string | null; referenceId: string; idempotencyKey: string },
+): Promise<string> {
+  // Match on phone first (the salon's primary key for a guest).
+  if (opts.phone) {
+    const found = await squareReq(cfg, "POST", "/customers/search", {
+      query: { filter: { phone_number: { exact: opts.phone } } },
+      limit: 1,
+    });
+    const hit = (found.customers as Array<{ id?: string }> | undefined)?.[0];
+    if (hit?.id) return hit.id;
+  }
+  const parts = (opts.name ?? "").trim().split(/\s+/);
+  const json = await squareReq(cfg, "POST", "/customers", {
+    idempotency_key: opts.idempotencyKey,
+    given_name: parts[0] || undefined,
+    family_name: parts.slice(1).join(" ") || undefined,
+    phone_number: opts.phone || undefined,
+    email_address: opts.email || undefined,
+    reference_id: opts.referenceId,
+  });
+  const id = (json.customer as { id?: string } | undefined)?.id;
+  if (!id) throw new Error("Square CreateCustomer returned no id");
+  return id;
+}
+
+/** Save a tokenized card (Web Payments SDK sourceId) on file for later charging. */
+export async function saveCardOnFile(
+  cfg: SquareConfig,
+  opts: { customerId: string; sourceId: string; idempotencyKey: string },
+): Promise<{ cardId: string; last4: string; brand: string }> {
+  const json = await squareReq(cfg, "POST", "/cards", {
+    idempotency_key: opts.idempotencyKey,
+    source_id: opts.sourceId,
+    card: { customer_id: opts.customerId },
+  });
+  const card = (json.card as Record<string, unknown>) ?? {};
+  const cardId = String(card.id ?? "");
+  if (!cardId) throw new Error("Square CreateCard returned no id");
+  return { cardId, last4: String(card.last_4 ?? ""), brand: String(card.card_brand ?? "") };
+}
+
+/** Charge a saved card-on-file (used to collect the no-show fee). */
+export async function chargeSavedCard(
+  cfg: SquareConfig,
+  opts: { cardId: string; customerId: string; amountCents: number; idempotencyKey: string; note?: string; referenceId?: string },
+): Promise<{ paymentId: string; status: string }> {
+  const json = await squareReq(cfg, "POST", "/payments", {
+    idempotency_key: opts.idempotencyKey,
+    source_id: opts.cardId,
+    customer_id: opts.customerId,
+    amount_money: { amount: opts.amountCents, currency: "USD" },
+    location_id: cfg.locationId,
+    autocomplete: true,
+    note: opts.note,
+    reference_id: opts.referenceId,
+  });
+  const p = (json.payment as Record<string, unknown>) ?? {};
+  return { paymentId: String(p.id ?? ""), status: String(p.status ?? "") };
 }
 
 /** Refund a payment (used to return a deposit on a mutually-agreed cancel). */
