@@ -1395,6 +1395,19 @@ export async function addWalkinAndAssign(
   if (!assigned.ok) {
     return { ok: false, error: assigned.error };
   }
+  // Immediate assign at/before "now" means the guest is being served NOW — flip
+  // confirmed → in_progress so the cockpit IN SERVICE tile counts them, the
+  // staff shows busy, and no false "overdue to start" nudge fires while the
+  // guest sits in the chair (QA ReceptionistCenter ReTest3). Best-effort: a
+  // confirmed booking is still valid if this hiccups, so we don't fail the
+  // assign on it. Future-dated assigns (startAt > now) stay confirmed.
+  const startMs = Date.parse(startAt);
+  if (Number.isFinite(startMs) && startMs <= Date.now()) {
+    await markWalkinInProgress(slug, {
+      salonId: input.salonId,
+      bookingId: created.bookingId,
+    });
+  }
   return created;
 }
 
