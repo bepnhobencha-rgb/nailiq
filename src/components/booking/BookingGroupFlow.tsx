@@ -1303,20 +1303,56 @@ export function BookingGroupFlow({
           onBack={() => goToStep(3)}
           onNext={() => goToStep(5)}
           onPickDate={(ymd) => {
-            // FIX 06 / Task #05 — quick-pick OR
-            // next-available-date card from the alternatives
-            // panel. Updates the date and re-runs the scheduler
-            // so the user stays on step 4 (loading → arrangement
-            // cards) without a navigation jump.
             setDate(ymd);
+            // QA BUG-09: when this is the next-available CARD, its arrangement
+            // is already computed — seed it straight into step 5 instead of
+            // re-running the scheduler (which flashed a redundant spinner).
+            // A quick-pick of an arbitrary date has no pre-built arrangement,
+            // so that path still re-runs.
+            const nextAlt =
+              scheduleResult &&
+              !scheduleResult.ok &&
+              scheduleResult.reason === "no_slots"
+                ? scheduleResult.alternatives.nextAvailableDate
+                : null;
+            if (nextAlt && nextAlt.date === ymd && nextAlt.arrangement) {
+              setScheduleResult({
+                ok: true,
+                arrangements: [nextAlt.arrangement],
+                timezone: salon.timezone,
+              });
+              setSelectedArrangementIdx(0);
+              setArrangementSelectedAt(Date.now());
+              setArrangementStale(false);
+              setStaleAcknowledged(false);
+              goToStep(5);
+              return;
+            }
             void runScheduler();
           }}
           onPickEarlier={(kind) => {
-            // Task #05 — earlier-today card flips the arrival
-            // window kind and re-runs in place. We never set
-            // `specific` here (would need a time argument); only
-            // "morning" or "afternoon" can be flipped to.
             setArrivalKind(kind);
+            // QA BUG-09: the earlier-today card likewise carries its computed
+            // arrangement — jump straight to step 5 instead of re-running.
+            const earlierAlt =
+              scheduleResult &&
+              !scheduleResult.ok &&
+              scheduleResult.reason === "no_slots"
+                ? scheduleResult.alternatives.earlierToday
+                : null;
+            if (earlierAlt && earlierAlt.arrangement) {
+              setScheduleResult({
+                ok: true,
+                arrangements: [earlierAlt.arrangement],
+                timezone: salon.timezone,
+              });
+              setSelectedArrangementIdx(0);
+              setArrangementSelectedAt(Date.now());
+              setArrangementStale(false);
+              setStaleAcknowledged(false);
+              goToStep(5);
+              return;
+            }
             void runScheduler();
           }}
           onPickSplit={(split) => {
@@ -3023,8 +3059,13 @@ function AlternativesPanel({
         <AlternativeCard
           testid="group-alt-earlier"
           icon="🕙"
-          title={(groupCopy.groupEarlierToday ?? "Same day at {time} — {n} people together")
+          title={(earlier.arrangement.isWaveBooking
+            ? (groupCopy.groupEarlierTodayWaves ??
+              "Same day — {n} people in {waves} waves from {time}")
+            : (groupCopy.groupEarlierToday ??
+              "Same day at {time} — {n} people together"))
             .replace("{n}", String(earlier.arrangement.assignments.length))
+            .replace("{waves}", String(earlier.arrangement.waveCount))
             .replace("{time}", earlier.time)}
           subtitle={null}
           ctaLabel={groupCopy.groupChooseOption ?? "Choose this option →"}
@@ -3042,9 +3083,14 @@ function AlternativesPanel({
           // the "Tomorrow" label, looking like a contradiction. Use a neutral
           // "next" glyph instead.
           icon="🔜"
-          title={(groupCopy.groupNextDate ?? "{label} — {n} people together at {time}")
+          title={(next.arrangement.isWaveBooking
+            ? (groupCopy.groupNextDateWaves ??
+              "{label} — {n} people in {waves} waves from {time}")
+            : (groupCopy.groupNextDate ??
+              "{label} — {n} people together at {time}"))
             .replace("{label}", labelForDate(next.date))
             .replace("{n}", String(next.arrangement.assignments.length))
+            .replace("{waves}", String(next.arrangement.waveCount))
             .replace("{time}", next.time)}
           subtitle={null}
           ctaLabel={groupCopy.groupChooseOption ?? "Choose this option →"}

@@ -479,10 +479,15 @@ export const bookingEn = {
      *  localized weekday+day, `{n}` = full group size, `{time}` =
      *  earliest start wall-time on that day. */
     groupNextDate: "{label} — {n} people together at {time}",
+    /** QA BUG-06 — wave-aware variant: a large party is split into
+     *  `{waves}` waves, so "together at {time}" would mislead. */
+    groupNextDateWaves: "{label} — {n} people in {waves} waves from {time}",
     /** Earlier-today card title. `{n}` = full group size,
      *  `{time}` = earliest start wall-time in the alternate
      *  window (morning ↔ afternoon flip). */
     groupEarlierToday: "Same day at {time} — {n} people together",
+    /** QA BUG-06 — wave-aware variant of the earlier-today card. */
+    groupEarlierTodayWaves: "Same day — {n} people in {waves} waves from {time}",
     /** Per-card "Choose this option →" CTA label. */
     groupChooseOption: "Choose this option →",
     /** "Try a different date" — last-resort back-out shown
