@@ -981,6 +981,17 @@ export async function markNoShowBooking(
     console.error("[markNoShowBooking] waitlist", e);
   }
 
+  // No-show fee — charge the saved Square card-on-file if this booking has one.
+  // Idempotent (stable idempotency key) + best-effort; never fail the desk action.
+  try {
+    const { chargeNoShowFee } = await import(
+      "@/shared/integrations/square/noshow"
+    );
+    await chargeNoShowFee(bookingId);
+  } catch (e) {
+    console.error("[markNoShowBooking] noshow-fee", e);
+  }
+
   // Win-back — a friendly "we missed you, rebook" email (retention over
   // penalty). Opt-out via salons.winback_enabled. Best-effort, off the response
   // path; never fails the desk action.

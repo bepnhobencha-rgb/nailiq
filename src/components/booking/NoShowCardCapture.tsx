@@ -1,0 +1,191 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import type { BookingMessages } from "@/shared/i18n/booking/en";
+
+type Cfg = {
+  required: boolean;
+  feeCents?: number;
+  applicationId?: string;
+  locationId?: string;
+  environment?: "production" | "sandbox";
+};
+
+// Minimal shape of the Square Web Payments SDK we use.
+type SquareCard = {
+  attach: (sel: string) => Promise<void>;
+  tokenize: () => Promise<{ status: string; token?: string }>;
+};
+type SquarePayments = { card: () => Promise<SquareCard> };
+type SquareGlobal = { payments: (appId: string, locationId: string) => SquarePayments };
+
+declare global {
+  interface Window {
+    Square?: SquareGlobal;
+  }
+}
+
+const SDK_SRC = {
+  sandbox: "https://sandbox.web.squarecdn.com/v1/square.js",
+  production: "https://web.squarecdn.com/v1/square.js",
+};
+
+function loadSdk(env: "production" | "sandbox"): Promise<SquareGlobal> {
+  return new Promise((resolve, reject) => {
+    if (window.Square) return resolve(window.Square);
+    const src = SDK_SRC[env];
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);
+    if (existing) {
+      existing.addEventListener("load", () => resolve(window.Square as SquareGlobal));
+      existing.addEventListener("error", () => reject(new Error("sdk_load_failed")));
+      if (window.Square) resolve(window.Square);
+      return;
+    }
+    const s = document.createElement("script");
+    s.src = src;
+    s.async = true;
+    s.onload = () => (window.Square ? resolve(window.Square) : reject(new Error("sdk_no_global")));
+    s.onerror = () => reject(new Error("sdk_load_failed"));
+    document.head.appendChild(s);
+  });
+}
+
+/**
+ * Post-booking no-show protection (Square card-on-file). Fetches its own config;
+ * renders nothing unless the booking is risk-gated and Square is configured.
+ * The card is saved (not charged); the salon bills the fee only on a no-show.
+ */
+export function NoShowCardCapture({
+  bookingId,
+  currencyFormat,
+  t,
+}: {
+  bookingId: string;
+  /** Formats cents → display string (e.g. "$20.00") in the salon currency. */
+  currencyFormat: (cents: number) => string;
+  t: BookingMessages;
+}) {
+  const [cfg, setCfg] = useState<Cfg | null>(null);
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const cardRef = useRef<SquareCard | null>(null);
+  const mountedRef = useRef(false);
+
+  // 1. Decide whether to show + get the SDK params.
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/booking/square-noshow-config?bookingId=${encodeURIComponent(bookingId)}`)
+      .then((r) => r.json())
+      .then((c: Cfg) => {
+        if (alive) setCfg(c);
+      })
+      .catch(() => {
+        if (alive) setCfg({ required: false });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [bookingId]);
+
+  // 2. Init the Square card form once we know we need it.
+  useEffect(() => {
+    if (!cfg?.required || !cfg.applicationId || !cfg.locationId || mountedRef.current) {
+      return;
+    }
+    mountedRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const sq = await loadSdk(cfg.environment ?? "production");
+        const payments = sq.payments(cfg.applicationId!, cfg.locationId!);
+        const card = await payments.card();
+        if (cancelled) return;
+        await card.attach("#sq-noshow-card");
+        cardRef.current = card;
+      } catch {
+        if (!cancelled) {
+          setStatus("error");
+          setErrorMsg(t.noShowCardError ?? "Could not load the card form.");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [cfg, t.noShowCardError]);
+
+  async function onSave() {
+    if (!cardRef.current || status === "saving") return;
+    setStatus("saving");
+    setErrorMsg(null);
+    try {
+      const result = await cardRef.current.tokenize();
+      if (result.status !== "OK" || !result.token) {
+        setStatus("error");
+        setErrorMsg(t.noShowCardError ?? "Please check your card details.");
+        return;
+      }
+      const res = await fetch("/api/booking/square-save-card", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookingId, sourceId: result.token }),
+      });
+      const j = (await res.json()) as { ok?: boolean };
+      if (j.ok) {
+        setStatus("saved");
+      } else {
+        setStatus("error");
+        setErrorMsg(t.noShowCardError ?? "Could not save the card.");
+      }
+    } catch {
+      setStatus("error");
+      setErrorMsg(t.noShowCardError ?? "Could not save the card.");
+    }
+  }
+
+  if (!cfg?.required) return null;
+
+  const feeLabel = currencyFormat(cfg.feeCents ?? 0);
+
+  if (status === "saved") {
+    return (
+      <div
+        className="mt-5 rounded-xl border border-nq-success/40 bg-nq-success/10 px-4 py-3 text-sm text-nq-success"
+        data-testid="noshow-card-saved"
+      >
+        ✓ {(t.noShowCardSaved ?? "Card saved — you're only charged {fee} if you no-show.").replace("{fee}", feeLabel)}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-5 rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4 sm:p-5">
+      <p className="text-sm font-semibold text-[var(--booking-text)]">
+        {t.noShowCardTitle ?? "Secure your appointment"}
+      </p>
+      <p className="mt-1 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+        {(t.noShowCardDesc ?? "Add a card to hold your spot. You're only charged {fee} if you don't show up — nothing now.").replace("{fee}", feeLabel)}
+      </p>
+      <div
+        id="sq-noshow-card"
+        className="mt-3 rounded-lg border border-[var(--booking-border)] bg-white p-2"
+      />
+      {errorMsg ? (
+        <p className="mt-2 text-xs text-nq-error" role="alert">
+          {errorMsg}
+        </p>
+      ) : null}
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={status === "saving"}
+        data-testid="noshow-card-save"
+        className="mt-3 h-11 w-full rounded-xl bg-[var(--salon-primary)] text-sm font-semibold text-white disabled:opacity-50"
+      >
+        {status === "saving"
+          ? (t.noShowCardSaving ?? "Saving…")
+          : (t.noShowCardSave ?? "Save card")}
+      </button>
+    </div>
+  );
+}
