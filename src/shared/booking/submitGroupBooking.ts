@@ -4,6 +4,7 @@ import {
   checkBookingConflict,
 } from "@/shared/lib/conflictCheck";
 import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
+import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
@@ -759,6 +760,19 @@ export async function submitGroupBooking(
     !Array.isArray(result.booking_ids)
   ) {
     return fail("server_error");
+  }
+
+  // Owner/admin "new booking" alert — one email for the whole party (first
+  // booking id). Opt-in, fire-and-forget.
+  {
+    const firstId = result.booking_ids.map(String)[0];
+    if (firstId) {
+      void sendOwnerBookingNotification({
+        salonId: String(salonRow.id),
+        bookingId: firstId,
+        event: "new",
+      });
+    }
   }
 
   // Task #04-D FIX 15 — client_profiles upsert parity. The

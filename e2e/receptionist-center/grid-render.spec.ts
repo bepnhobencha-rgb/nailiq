@@ -101,7 +101,16 @@ test.describe("Receptionist grid render + ghost", () => {
     await moveMouseToAssignSlot(page, fx.conflictStaffId, fx.conflictSlotIndex);
     await expect(page.getByTestId("ghost-block")).toHaveAttribute("data-state", "conflict");
 
-    await moveMouseToAssignSlot(page, fx.freeStaffId, fx.overflowSlotIndex);
+    // Overflow = a long service whose span runs past the grid's end. The grid
+    // window is now DYNAMIC (it widens to include "now" + off-hours bookings),
+    // so a hardcoded slot index stops overflowing when CI runs late in the UTC
+    // day and the grid has grown. Drag to the LAST rendered slot instead — a
+    // multi-slot service starting there always overflows, whatever the width.
+    const slotCount = await page
+      .locator(`[data-testid^="assign-slot-${fx.freeStaffId}-"]`)
+      .count();
+    const overflowIdx = Math.max(0, slotCount - 1);
+    await moveMouseToAssignSlot(page, fx.freeStaffId, overflowIdx);
     await expect(page.getByTestId("ghost-block")).toHaveAttribute("data-state", "overflow");
   });
 });

@@ -10,6 +10,7 @@ import { looseServiceClient } from "./looseDb";
 import { pushWixConfirm } from "./writeback";
 import { categorizeService } from "./categorize";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
+import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 
 // --- pure helpers ---
 function canonPhone(p: unknown): string | null {
@@ -76,7 +77,7 @@ function computeNoShowRisk(noShows: number, visits: number, subtotalCents: numbe
 }
 
 type ForwardSyncResult = { created: number; updated: number; skipped: number; autoApproved: number; cursor: string };
-type BookingEventResult = { action: "inserted" | "updated" | "skipped"; bookingId?: string };
+type BookingEventResult = { action: "inserted" | "updated" | "skipped"; bookingId?: string; startUtc?: string };
 
 // --------------------------------------------------------------------------
 // Resolver context — built once per sync run and shared across all bookings.
@@ -248,19 +249,39 @@ async function _processOne(ctx: ResolverContext, b: WixBooking): Promise<Booking
     else { bookingId = data?.id as string | undefined; action = "inserted"; }
   }
 
-  return { action, bookingId, autoConfirmed };
+  return { action, bookingId, autoConfirmed, startUtc: start };
 }
 
 export async function runForwardSync(salonId: string, siteId: string, sinceIso: string, autoApprove: boolean): Promise<ForwardSyncResult> {
   const ctx = await buildResolverContext(salonId, autoApprove);
   const bookings = await queryBookingsUpdatedSince(siteId, sinceIso);
   let created = 0, updated = 0, skipped = 0, autoApproved = 0, maxUpdated = sinceIso;
+  // Owner-notify guard: cap emails per sync run so a bulk import can't storm.
+  const OWNER_NOTIFY_CAP = 5;
+  let ownerNotifyCount = 0;
 
   for (const b of bookings) {
     const result = await _processOne(ctx, b);
     if (result.action === "inserted") created++;
     else if (result.action === "updated") updated++;
     else skipped++;
+
+    // Owner/admin "new booking" alert — only newly-inserted future bookings,
+    // capped per run.
+    if (
+      result.action === "inserted" &&
+      result.bookingId &&
+      result.startUtc &&
+      Date.parse(result.startUtc) > Date.now() &&
+      ownerNotifyCount < OWNER_NOTIFY_CAP
+    ) {
+      ownerNotifyCount++;
+      void sendOwnerBookingNotification({
+        salonId,
+        bookingId: result.bookingId,
+        event: "new",
+      });
+    }
 
     // Auto-approve write-back: confirm on Wix (best-effort).
     if (result.autoConfirmed && result.bookingId) { autoApproved++; void pushWixConfirm(salonId, result.bookingId); }

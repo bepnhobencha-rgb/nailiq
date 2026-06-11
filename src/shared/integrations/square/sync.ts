@@ -19,6 +19,7 @@
  */
 import "server-only";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
+import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { looseServiceClient } from "./looseDb";
 import {
   getSquareConfig,
@@ -82,6 +83,9 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
     if (RENDER_STATUS.has(str(r.status)) && occ.has(str(r.staff_id))) occ.get(str(r.staff_id))!.push([Date.parse(str(r.start_time_utc)), Date.parse(str(r.end_time_utc))]);
 
   let inserted = 0, updated = 0, customersAdded = 0, skipped = 0;
+  // Owner-notify guard: cap emails per sync run so a bulk import can't storm.
+  const OWNER_NOTIFY_CAP = 5;
+  let ownerNotifyCount = 0;
   const clientCache = new Map<string, { name: string | null; phone: string | null }>();
 
   for (const b of bookings) {
@@ -157,7 +161,7 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
     }
     if (!staffId) { skipped++; continue; } // > all beds busy
 
-    const { error } = await db.from("bookings").insert({
+    const { data: insRow, error } = await db.from("bookings").insert({
       salon_id: salonId,
       service_id: svc.id,
       staff_id: staffId,
@@ -171,9 +175,21 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
       booking_channel: "square",
       price_cents: svc.price_cents,
       square_booking_id: b.id,
-    } as never);
+    } as never).select("id").maybeSingle();
     if (error) { skipped++; continue; }
     inserted++;
+
+    // Owner/admin "new booking" alert — only future bookings, capped per run so
+    // a bulk historical import can't blast a storm of emails.
+    const newId = (insRow as { id?: string } | null)?.id;
+    if (newId && startMs > Date.now() && ownerNotifyCount < OWNER_NOTIFY_CAP) {
+      ownerNotifyCount++;
+      void sendOwnerBookingNotification({
+        salonId,
+        bookingId: String(newId),
+        event: "new",
+      });
+    }
   }
 
   await db.from("square_integrations").update({

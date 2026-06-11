@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { computeTimeSlots } from "@/shared/booking/getAvailableTimeSlots";
 import { parseOpeningHours, type DayKey, type OpeningHoursWeek } from "@/shared/dashboard/openingHoursDefaults";
@@ -383,6 +384,12 @@ async function handleConfirmBooking(
         .update({ source: "voice", booking_channel: "voice" } as never)
         .eq("id", bookingId);
     } catch { /* best-effort */ }
+    // Owner/admin "new booking" alert (opt-in, fire-and-forget).
+    void sendOwnerBookingNotification({
+      salonId: String(salon.id),
+      bookingId,
+      event: "new",
+    });
   }
 
   // ── 7. Link booking to voice_ai_session ────────────────────────────────────
@@ -595,6 +602,15 @@ async function handleCancelBooking(
       return NextResponse.json({ error: "cancel_failed", detail: cancelErr.message }, { status: 500 });
     }
 
+    // Owner/admin "cancelled" alert — one email for the group (first booking).
+    if (ids[0]) {
+      void sendOwnerBookingNotification({
+        salonId: String(salon.id),
+        bookingId: ids[0],
+        event: "cancel",
+      });
+    }
+
     return NextResponse.json({
       success:        true,
       cancelled_count: ids.length,
@@ -642,6 +658,13 @@ async function handleCancelBooking(
     console.error("[voice/cancel_booking] update error:", updateErr);
     return NextResponse.json({ error: "cancel_failed", detail: updateErr.message }, { status: 500 });
   }
+
+  // Owner/admin "cancelled" alert (opt-in, fire-and-forget).
+  void sendOwnerBookingNotification({
+    salonId: String(salon.id),
+    bookingId: bookingId!,
+    event: "cancel",
+  });
 
   // Update voice session (best-effort)
   if (sessionId) {
@@ -840,6 +863,14 @@ async function handleRescheduleBooking(
     console.error("[voice/reschedule_booking] update error:", updateErr);
     return NextResponse.json({ error: "reschedule_failed", detail: updateErr.message }, { status: 500 });
   }
+
+  // Owner/admin "rescheduled" alert (opt-in, fire-and-forget).
+  void sendOwnerBookingNotification({
+    salonId: String(salon.id),
+    bookingId,
+    event: "reschedule",
+    previousStartUtc: oldStart,
+  });
 
   // Update voice session if we have one
   if (sessionId) {
@@ -1469,6 +1500,14 @@ async function handleConfirmGroupBooking(
         .update({ source: "voice", booking_channel: "voice" } as never)
         .in("id", bookingIds);
     } catch { /* best-effort */ }
+    // Owner/admin "new booking" alert — one email for the group (first booking).
+    if (bookingIds[0]) {
+      void sendOwnerBookingNotification({
+        salonId: ctx.salonId,
+        bookingId: bookingIds[0],
+        event: "new",
+      });
+    }
   }
 
   // 8. Create Party Link (best-effort — failure doesn't break the booking)

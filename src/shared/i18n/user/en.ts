@@ -591,6 +591,35 @@ export type UserMessages = {
     sectionStaff: string;
     sectionHours: string;
     sectionAddress: string;
+    /** Owner/admin email alerts for booking events. */
+    ownerNotifications: {
+      title: string;
+      subtitle: string;
+      loading: string;
+      enabledLabel: string;
+      recipientsHeading: string;
+      notifyMembersLabel: string;
+      customEmailsLabel: string;
+      customEmailsPlaceholder: string;
+      customEmailsHint: string;
+      eventsHeading: string;
+      eventLabels: {
+        new: string;
+        reschedule: string;
+        cancel: string;
+        no_show: string;
+      };
+      save: string;
+      saved: string;
+      saveError: string;
+      sendTest: string;
+      /** "{n}" = recipient count. */
+      testSent: string;
+      testErrorNotEnabled: string;
+      testErrorNoRecipients: string;
+      testErrorNoResend: string;
+      testErrorGeneric: string;
+    };
     hintRecoveryEmail: string;
     /** Recovery-email verification status block (Settings hub). */
     emailVerification: {
@@ -2398,6 +2427,34 @@ export const userEn: UserMessages = {
     sectionStaff: "Staff",
     sectionHours: "Opening hours",
     sectionAddress: "Salon address",
+    ownerNotifications: {
+      title: "Manager email alerts",
+      subtitle:
+        "Email the owner & admins when a booking is created, rescheduled, cancelled, or marked no-show.",
+      loading: "Loading…",
+      enabledLabel: "Turn on manager email alerts",
+      recipientsHeading: "Recipients",
+      notifyMembersLabel: "Email all owners & admins",
+      customEmailsLabel: "Also send to (optional)",
+      customEmailsPlaceholder: "manager@salon.com, owner2@salon.com",
+      customEmailsHint: "Separate multiple emails with a comma. Up to 10.",
+      eventsHeading: "Notify me when…",
+      eventLabels: {
+        new: "New booking",
+        reschedule: "Booking rescheduled",
+        cancel: "Booking cancelled",
+        no_show: "No-show",
+      },
+      save: "Save",
+      saved: "Saved.",
+      saveError: "Could not save. Please try again.",
+      sendTest: "Send test email",
+      testSent: "Test email sent to {n} recipient(s).",
+      testErrorNotEnabled: "Turn on alerts first, then save.",
+      testErrorNoRecipients: "No recipients yet — add an email or enable owners/admins.",
+      testErrorNoResend: "Email service not configured.",
+      testErrorGeneric: "Could not send the test email.",
+    },
     hintRecoveryEmail:
       "To add or change recovery email for your account, use the banner on your dashboard.",
     emailVerification: {

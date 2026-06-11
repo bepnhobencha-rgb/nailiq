@@ -26,6 +26,7 @@ import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { createDepositForBooking, refundDeposit } from "@/shared/integrations/square/deposits";
 import { pushWixCancel, pushWixConfirm, pushWixDecline, pushWixCreate } from "@/shared/integrations/wix/writeback";
 import {
@@ -250,6 +251,13 @@ export async function addWalkinToQueue(
   }
   const bid = inserted && "id" in inserted ? String(inserted.id) : "";
   if (!bid) return fail("server_error");
+
+  // Owner/admin "new booking" alert (opt-in, fire-and-forget).
+  void sendOwnerBookingNotification({
+    salonId: ctx.salon.id,
+    bookingId: bid,
+    event: "new",
+  });
 
   void logBookingEvent({
     bookingId: bid,
@@ -709,6 +717,13 @@ export async function cancelDeskBooking(
     return fail("invalid_state");
   }
 
+  // Owner/admin "cancelled" alert (opt-in, fire-and-forget).
+  void sendOwnerBookingNotification({
+    salonId: ctx.salon.id,
+    bookingId,
+    event: "cancel",
+  });
+
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
@@ -946,6 +961,13 @@ export async function markNoShowBooking(
     return fail("server_error");
   }
   if (!updated?.id) return fail("invalid_state");
+
+  // Owner/admin "no-show" alert (opt-in, fire-and-forget).
+  void sendOwnerBookingNotification({
+    salonId: ctx.salon.id,
+    bookingId,
+    event: "no_show",
+  });
 
   // These two RPCs are SECURITY DEFINER + revoked from anon/authenticated, so
   // they're invoked with the service-role client AFTER the role/salon auth above
@@ -1687,6 +1709,13 @@ export async function addDeskAppointment(
   } catch {
     /* best-effort */
   }
+
+  // Owner/admin "new booking" alert (opt-in, fire-and-forget).
+  void sendOwnerBookingNotification({
+    salonId: ctx.salon.id,
+    bookingId,
+    event: "new",
+  });
 
   void logBookingEvent({
     bookingId,
