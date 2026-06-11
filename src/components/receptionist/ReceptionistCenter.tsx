@@ -1624,17 +1624,19 @@ function ReceptionistCenterInner({
   const availableStaffList = data.staff.filter((s) => s.status === "available");
   const availableStaffCount = availableStaffList.length;
   const availableStaffName = availableStaffList[0]?.name?.trim() || null;
-  // Now Bar tile shows WHO is free, not just one name — list up to 3 then "+N"
-  // so a fully-free salon doesn't misleadingly read a single tech (QA ReTest2).
+  // Now Bar tile shows WHO is free, not just one name — list up to 2 full names
+  // then "+N" so a fully-free salon doesn't misleadingly read a single tech
+  // (QA ReTest2). Cap at 2 (not 3) + an explicit "+N" so three long names don't
+  // overflow the fixed-width tile and clip mid-word ("Tuor…").
   const availableStaffNames = availableStaffList
     .map((s) => s.name?.trim())
     .filter((n): n is string => !!n);
   const availableStaffLabel =
     availableStaffNames.length === 0
       ? null
-      : availableStaffNames.length <= 3
+      : availableStaffNames.length <= 2
         ? availableStaffNames.join(", ")
-        : `${availableStaffNames.slice(0, 3).join(", ")} +${availableStaffNames.length - 3}`;
+        : `${availableStaffNames.slice(0, 2).join(", ")} +${availableStaffNames.length - 2}`;
 
   // Longest CURRENT wait among queued guests (minutes) — drives the long-wait
   // Next Action + Critical Alert. Computed from queue join times vs "now".
