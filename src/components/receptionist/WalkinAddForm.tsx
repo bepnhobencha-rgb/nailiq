@@ -713,7 +713,12 @@ export function WalkinAddForm({
               availability.kind === "ready"
                 ? availability.nowIso
                 : new Date().toISOString(),
-            staffRequestedByClient: true,
+            // Honor the actual checkbox (auto-set true for returning customers
+            // with a usual tech via the lookup). Hardcoding true here flagged
+            // EVERY immediately-assigned walk-in as a ❤️ staff request the guest
+            // never made (QA ReceptionistCenter ReTest2/3); the #384 server-side
+            // default fix was overridden by this client value.
+            staffRequestedByClient,
             walkinSource: walkinSource === "" ? null : walkinSource,
             walkinPriority: walkinPriority === "" ? null : walkinPriority,
             walkinRequestTags: requestTags,
