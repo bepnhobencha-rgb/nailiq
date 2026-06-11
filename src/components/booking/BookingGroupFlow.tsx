@@ -29,6 +29,8 @@ import {
   filterStaffCapableForService,
 } from "@/shared/booking/staffCapability";
 import { BookingCalendarGrid } from "@/components/booking/BookingCalendarGrid";
+import { BookingFlowOtpPanel } from "@/components/booking/BookingFlowOtpPanel";
+import { BOOKING_STEP_EASE } from "@/components/booking/bookingMotion";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { bookingDateYmdFromLocalDate } from "@/shared/booking/bookingConfirmLabels";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
@@ -267,6 +269,11 @@ export function BookingGroupFlow({
   // Submit state.
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // OTP gate (anti-sabotage) — organizer phone verification when the salon has
+  // phone_otp_enabled. otpPanelOpen shows the verify panel; otpSessionId carries
+  // the proof into the re-submit.
+  const [otpSessionId, setOtpSessionId] = useState<string | null>(null);
+  const [otpPanelOpen, setOtpPanelOpen] = useState(false);
   const [successResult, setSuccessResult] = useState<{
     groupId: string;
     bookingIds: string[];
@@ -735,7 +742,7 @@ export function BookingGroupFlow({
     }
   }
 
-  async function onSubmit() {
+  async function onSubmit(otpOverride?: string) {
     // FIX 07 — synchronous double-tap guard. `submitting` state
     // would race a double-tap inside the same React frame; the ref
     // is read inline before any setState so the second tap exits
@@ -823,6 +830,10 @@ export function BookingGroupFlow({
         seatTogether,
         // Language the organizer is booking in → confirmation SMS matches it.
         language,
+        // OTP session (organizer phone) — required when the salon has
+        // phone_otp_enabled. Override (passed straight from onVerified) wins
+        // over state to avoid a stale-closure read on the retry.
+        otpSessionId: otpOverride ?? otpSessionId,
         // FIX 09 — stable key across retries. A network drop +
         // retry sends the same key; server's UNIQUE on
         // `(salon_id, idempotency_key, …)` returns
@@ -888,6 +899,13 @@ export function BookingGroupFlow({
             setPartyLinkFailed(true);
           });
         }
+        return;
+      }
+      if (res.reason === "otp_required" || res.reason === "otp_invalid") {
+        // Salon requires phone OTP (anti-sabotage). Open the verify panel for
+        // the organizer's number; on success we re-submit with the session id.
+        if (res.reason === "otp_invalid") setOtpSessionId(null);
+        setOtpPanelOpen(true);
         return;
       }
       if (res.reason === "slot_conflict") {
@@ -1435,7 +1453,24 @@ export function BookingGroupFlow({
         />
       ) : null}
 
-      {step === 5 ? (
+      {step === 5 && otpPanelOpen ? (
+        <BookingFlowOtpPanel
+          t={t}
+          shopSlug={shopSlug}
+          clientPhone={primaryPhone}
+          stepDir={1}
+          reducedMotion={false}
+          stepTransition={{ duration: 0.18, ease: BOOKING_STEP_EASE }}
+          isOptional={false}
+          onVerified={(sessionId) => {
+            setOtpSessionId(sessionId);
+            setOtpPanelOpen(false);
+            void onSubmit(sessionId);
+          }}
+          onBack={() => setOtpPanelOpen(false)}
+        />
+      ) : null}
+      {step === 5 && !otpPanelOpen ? (
         <ConfirmStep
           t={t}
           groupCopy={groupCopy}

@@ -36,6 +36,15 @@ export type GroupTestSalon = {
  */
 export async function seedGroupTestSalon(
   slug = "e2e-group-booking",
+  opts?: {
+    phone_otp_enabled?: boolean;
+    booking_verification_mode?:
+      | "never"
+      | "always_otp"
+      | "auto"
+      | "always_deposit"
+      | "deposit_first";
+  },
 ): Promise<GroupTestSalon> {
   const { salonId } = await seedTestSalon({
     slug,
@@ -44,6 +53,8 @@ export async function seedGroupTestSalon(
     // PR2: group_booking is a Beta release flag (default OFF). Enable it so the
     // public Individual/Group toggle renders for these specs.
     feature_flags: { group_booking_enabled: true },
+    phone_otp_enabled: opts?.phone_otp_enabled,
+    booking_verification_mode: opts?.booking_verification_mode,
   });
 
   // Standard seed inserted 1 staff (Jenny) + 1 service (Gel Manicure).
