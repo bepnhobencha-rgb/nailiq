@@ -4,7 +4,7 @@ import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: { absolute: "Xác thực · NailIQ" },
+  title: "Xác thực · NailIQ",
   robots: "noindex",
 };
 
