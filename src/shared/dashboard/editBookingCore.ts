@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import type { SalonDashboardBooking } from "@/shared/types";
@@ -380,14 +381,33 @@ export async function performEditBooking(
     },
   });
 
-  // Owner/admin "rescheduled" alert — only when the start time actually moved
-  // (a pure staff/service swap isn't a reschedule). Opt-in, fire-and-forget.
+  // Only when the start time actually moved (a pure staff/service swap isn't a
+  // reschedule) do we fire reschedule notifications. Opt-in, fire-and-forget.
   if (slotStartUtc && slotStartUtc !== st) {
+    // Owner/admin "rescheduled" alert.
     void sendOwnerBookingNotification({
       salonId,
       bookingId,
       event: "reschedule",
       previousStartUtc: st || null,
+    });
+
+    // Customer SMS — in the language they booked in. The reschedule-sms edge
+    // function self-resolves phone / salon / service / locale + template from
+    // the booking id, so we just hand it the id (it already sees the committed
+    // new start_time_utc). after() so it never blocks the desk response;
+    // best-effort — a failure only skips the SMS, the edit already succeeded.
+    after(async () => {
+      const { error: smsErr } = await supabase.functions.invoke(
+        "reschedule-sms",
+        { body: { booking_id: bookingId } },
+      );
+      if (smsErr) {
+        console.error(
+          "[performEditBooking] reschedule-sms dispatch failed",
+          smsErr,
+        );
+      }
     });
   }
 
