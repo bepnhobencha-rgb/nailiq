@@ -714,15 +714,22 @@ export async function submitPublicBooking(
   }
 
   // Stamp booking_channel = 'online' (the RPC leaves it null). Reports use it
-  // to separate online bookings from desk / Square / Wix / voice. Best-effort,
-  // same post-insert UPDATE pattern as the staff-requested stamp below.
+  // to separate online bookings from desk / Square / Wix / voice. We fold in
+  // client_locale on the SAME best-effort UPDATE so the confirmation /
+  // reschedule SMS goes out in the language the customer was browsing. A
+  // failure here only loses the stamp — the SMS sender falls back to
+  // customer_preferences.preferred_language, so the booking is never at risk.
   if (bookingId) {
+    const stamp: { booking_channel: string; client_locale?: string } = {
+      booking_channel: "online",
+    };
+    if (params.language) stamp.client_locale = params.language;
     const { error: chErr } = await supabase
       .from("bookings")
-      .update({ booking_channel: "online" } as never)
+      .update(stamp as never)
       .eq("id", bookingId);
     if (chErr) {
-      console.error("[submitPublicBooking] booking_channel stamp failed", chErr);
+      console.error("[submitPublicBooking] booking_channel/locale stamp failed", chErr);
     }
     // Notify owner/admin of the new booking (opt-in, fire-and-forget).
     void sendOwnerBookingNotification({
