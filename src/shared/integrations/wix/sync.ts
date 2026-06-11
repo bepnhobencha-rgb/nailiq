@@ -212,6 +212,7 @@ async function _processOne(ctx: ResolverContext, b: WixBooking): Promise<Booking
   const fields: Record<string, unknown> = {
     salon_id: ctx.salonId, client_name: clientName, client_phone: ph, client_email: b.contactDetails?.email ?? null,
     service_id: svc.id, staff_id: staffId, start_time_utc: start, end_time_utc: end, status, source: "appointment",
+    booking_channel: "wix",
     price_cents: svc.price, staff_request_note: note, staff_requested_by_client: noteRequestsStaff(note),
     verification_method: "none",
     wix_booking_id: b.id,

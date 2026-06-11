@@ -227,6 +227,7 @@ export async function addWalkinToQueue(
     end_time_utc: null,
     status: "waiting",
     source: "walkin",
+    booking_channel: "walkin",
     joined_queue_at: joinedAt,
     staff_request_note: note,
     staff_requested_by_client: staffRequestedByClient,
@@ -1676,8 +1677,13 @@ export async function addDeskAppointment(
   const bookingId = result.booking_id;
 
   // Track the phone-in channel (best-effort; `source` stays 'appointment').
+  // booking_channel = 'desk' marks this as a front-desk-entered appointment so
+  // reports can separate it from online / Square / Wix.
   try {
-    await db.from("bookings").update({ walkin_source: "phone" } as never).eq("id", bookingId);
+    await db
+      .from("bookings")
+      .update({ walkin_source: "phone", booking_channel: "desk" } as never)
+      .eq("id", bookingId);
   } catch {
     /* best-effort */
   }

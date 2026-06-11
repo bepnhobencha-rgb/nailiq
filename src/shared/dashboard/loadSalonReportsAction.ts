@@ -26,6 +26,13 @@ export type ReportsSnapshot = {
   }>;
   /** Per-hour booking counts (0-23). Always exactly 24 entries. */
   busyHours: Array<{ hour: number; count: number }>;
+  /**
+   * Booking count + completed-revenue per origin channel (online / square /
+   * wix / voice / walkin / desk). Null `booking_channel` (legacy group
+   * bookings) is folded into "online". Sorted by count desc; only channels
+   * with ≥1 booking appear.
+   */
+  channelMix: Array<{ channel: string; count: number; revenueCents: number }>;
   /** Per-staff performance breakdown for the Studio-tier drill-down.
    *  Includes everyone who took at least one booking in range, not
    *  just the top 5. Sorted by appointmentCount desc. */
@@ -117,7 +124,7 @@ export async function loadSalonReports(
     .select(
       `
       id, status, staff_id, service_id, start_time_utc, end_time_utc,
-      price_cents, addon_price_cents, client_phone,
+      price_cents, addon_price_cents, client_phone, booking_channel,
       services!bookings_service_id_fkey ( name, duration_minutes, price_cents )
     `,
     )
@@ -157,6 +164,7 @@ export async function loadSalonReports(
     price_cents: number | null;
     addon_price_cents: number | null;
     client_phone: string | null;
+    booking_channel: string | null;
     services: ServiceJoin | ServiceJoin[] | null;
   };
   const bookings = (rows ?? []) as BookingRow[];
@@ -219,6 +227,7 @@ function aggregate(
     price_cents: number | null;
     addon_price_cents: number | null;
     client_phone: string | null;
+    booking_channel: string | null;
     services:
       | { name: string; duration_minutes: number; price_cents?: number | null }
       | { name: string; duration_minutes: number; price_cents?: number | null }[]
@@ -258,6 +267,10 @@ function aggregate(
     (_, hour) => ({ hour, count: 0 }),
   );
 
+  // Origin channel breakdown. Null booking_channel (legacy group bookings →
+  // party links) folds into "online".
+  const channelAgg = new Map<string, { count: number; revenueCents: number }>();
+
   for (const b of bookings) {
     appointmentCount += 1;
     if (b.status === "completed") completedCount += 1;
@@ -284,6 +297,15 @@ function aggregate(
         : 0;
     const rev = b.status === "completed" ? main + addon : 0;
     totalRevenueCents += rev;
+
+    const channelKey =
+      typeof b.booking_channel === "string" && b.booking_channel.trim()
+        ? b.booking_channel.trim()
+        : "online";
+    const ch = channelAgg.get(channelKey) ?? { count: 0, revenueCents: 0 };
+    ch.count += 1;
+    ch.revenueCents += rev;
+    channelAgg.set(channelKey, ch);
     const svcName = svcRaw?.name?.trim() || b.service_id;
     const svcKey = b.service_id;
     const svc = svcAgg.get(svcKey) ?? {
@@ -400,6 +422,14 @@ function aggregate(
     })
     .sort((a, b) => b.appointmentCount - a.appointmentCount);
 
+  const channelMix = Array.from(channelAgg.entries())
+    .map(([channel, v]) => ({
+      channel,
+      count: v.count,
+      revenueCents: v.revenueCents,
+    }))
+    .sort((a, b) => b.count - a.count);
+
   return {
     totalRevenueCents,
     appointmentCount,
@@ -410,6 +440,7 @@ function aggregate(
     topServices,
     topStaff,
     busyHours,
+    channelMix,
     staffPerformance,
   };
 }

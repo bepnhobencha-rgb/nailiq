@@ -1636,12 +1636,27 @@ export type UserMessages = {
       tables: {
         topServices: string;
         topStaff: string;
+        /** "Bookings by source" section heading. */
+        bySource: string;
         empty: string;
         serviceCol: string;
         staffCol: string;
+        /** "Source" column header in the by-source table. */
+        sourceCol: string;
         countCol: string;
         appointmentsCol: string;
+        /** "Share" (% of bookings) column header. */
+        shareCol: string;
         revenueCol: string;
+      };
+      /** Display labels for each booking origin channel. */
+      channelLabels: {
+        online: string;
+        square: string;
+        wix: string;
+        voice: string;
+        walkin: string;
+        desk: string;
       };
       busyHours: {
         title: string;
@@ -3318,12 +3333,23 @@ export const userEn: UserMessages = {
       tables: {
         topServices: "Top services",
         topStaff: "Top staff",
+        bySource: "Bookings by source",
         empty: "No data in this range yet.",
         serviceCol: "Service",
         staffCol: "Staff",
+        sourceCol: "Source",
         countCol: "Count",
         appointmentsCol: "Appointments",
+        shareCol: "Share",
         revenueCol: "Revenue",
+      },
+      channelLabels: {
+        online: "Online",
+        square: "Square",
+        wix: "Wix",
+        voice: "Voice AI",
+        walkin: "Walk-in",
+        desk: "Front desk",
       },
       busyHours: {
         title: "Busy hours",

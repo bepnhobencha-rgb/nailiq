@@ -667,6 +667,7 @@ export async function loadReceptionistCenterData(
       end_time_utc,
       status,
       source,
+      booking_channel,
       service_id,
       price_cents,
       joined_queue_at,
@@ -763,6 +764,7 @@ export async function loadReceptionistCenterData(
     end_time_utc: string | null;
     status: string;
     source: string | null;
+    booking_channel: string | null;
     service_id: string;
     price_cents: number | null;
     joined_queue_at: string | null;
@@ -1068,13 +1070,16 @@ export async function loadReceptionistCenterData(
       end_time_utc: en,
       status,
       source,
-      // Raw source channel (e.g. "voice", "online", "phone") preserved for
-      // the compact source icon. `source` above is narrowed to walkin |
-      // appointment for the walk-in accent; this keeps the richer value.
+      // Granular origin channel for the compact source icon — prefer the
+      // explicit `booking_channel` (online | square | wix | voice | walkin |
+      // desk) so online/Square/Wix/front-desk are distinguishable, falling
+      // back to the raw `source` for any legacy row not yet backfilled.
       source_channel:
-        typeof row.source === "string" && row.source.trim()
-          ? row.source.trim().toLowerCase()
-          : null,
+        typeof row.booking_channel === "string" && row.booking_channel.trim()
+          ? row.booking_channel.trim().toLowerCase()
+          : typeof row.source === "string" && row.source.trim()
+            ? row.source.trim().toLowerCase()
+            : null,
       service_id: row.service_id,
       service_name: svc?.name ?? "—",
       service_duration_minutes: Number(svc?.duration_minutes ?? 0),

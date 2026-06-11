@@ -218,6 +218,65 @@ export function ReportsPanel({
         ) : null}
       </Card>
 
+      {/* B2. Bookings by source/channel */}
+      <Card variant="default" padding="md">
+        <h2 className="mb-2 text-sm font-semibold text-nq-foreground">
+          {messages.tables.bySource}
+        </h2>
+        {state.kind === "ok" && state.data.channelMix.length === 0 ? (
+          <p className="text-sm italic text-nq-muted">{messages.tables.empty}</p>
+        ) : null}
+        {state.kind === "ok" && state.data.channelMix.length > 0 ? (
+          (() => {
+            const total = state.data.channelMix.reduce(
+              (sum, c) => sum + c.count,
+              0,
+            );
+            return (
+              <table
+                className="w-full text-sm"
+                data-testid="reports-by-source"
+              >
+                <thead>
+                  <tr className="text-left text-[11px] uppercase tracking-wide text-nq-muted">
+                    <th className="py-1.5">{messages.tables.sourceCol}</th>
+                    <th className="py-1.5 text-right">
+                      {messages.tables.countCol}
+                    </th>
+                    <th className="py-1.5 text-right">
+                      {messages.tables.shareCol}
+                    </th>
+                    <th className="py-1.5 text-right">
+                      {messages.tables.revenueCol}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-nq-border/50">
+                  {state.data.channelMix.map((c) => (
+                    <tr key={c.channel}>
+                      <td className="py-1.5 text-nq-foreground">
+                        {messages.channelLabels[
+                          c.channel as keyof typeof messages.channelLabels
+                        ] ?? c.channel}
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums">
+                        {c.count}
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums text-nq-muted">
+                        {total > 0 ? Math.round((c.count / total) * 100) : 0}%
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums">
+                        {formatMoney(c.revenueCents, currency)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            );
+          })()
+        ) : null}
+      </Card>
+
       {/* C. Top staff table */}
       <Card variant="default" padding="md">
         <h2 className="mb-2 text-sm font-semibold text-nq-foreground">

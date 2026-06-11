@@ -167,9 +167,11 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
       end_time_utc: new Date(endMs).toISOString(),
       status: targetStatus,
       source: "appointment",
+      // booking_channel not yet in generated types — cast below.
+      booking_channel: "square",
       price_cents: svc.price_cents,
       square_booking_id: b.id,
-    });
+    } as never);
     if (error) { skipped++; continue; }
     inserted++;
   }
