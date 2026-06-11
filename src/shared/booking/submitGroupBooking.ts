@@ -93,6 +93,10 @@ export type GroupBookingParams = {
   /** Language the organizer booked in ("en"|"vi") — the confirmation SMS to
    *  the primary contact matches it. Absent → falls back to stored pref / vi. */
   language?: "en" | "vi";
+  /** OTP session UUID (from /api/booking-otp/verify on the organizer's phone).
+   *  Required when the salon has phone_otp_enabled — the same artifact the
+   *  individual flow uses. Blocks fake-number group bookings (sabotage). */
+  otpSessionId?: string | null;
 };
 
 export type GroupBookingResult =
@@ -116,6 +120,9 @@ export type GroupBookingResult =
         | "duplicate_submission"
         | "salon_paused"
         | "salon_not_found"
+        // Organizer phone not OTP-verified (salon has phone_otp_enabled).
+        | "otp_required"
+        | "otp_invalid"
         // PR3 — release flag `group_booking` is OFF for this salon.
         // Defense-in-depth: PR2 already hides the group UI, but a direct
         // server-action call must still be refused.
@@ -275,7 +282,7 @@ export async function submitGroupBooking(
   const { data: salonRaw, error: salonErr } = await supabase
     .from("salons")
     .select(
-      "id, profile_complete, opening_hours, timezone, booking_closed_dates, subscription_plan, plan_override, feature_flags",
+      "id, profile_complete, opening_hours, timezone, booking_closed_dates, subscription_plan, plan_override, feature_flags, phone_otp_enabled",
     )
     .eq("slug", params.shopSlug)
     .maybeSingle();
@@ -290,6 +297,7 @@ export async function submitGroupBooking(
     subscription_plan?: string | null;
     plan_override?: string | null;
     feature_flags?: Record<string, unknown> | null;
+    phone_otp_enabled?: boolean | null;
   };
   if (!salonRow.profile_complete) return fail("salon_paused");
 
@@ -663,6 +671,29 @@ export async function submitGroupBooking(
     };
   });
 
+  // OTP gate (sabotage shield) — the organizer's phone must carry a valid,
+  // unconsumed phone_otp_sessions row (same artifact the individual flow uses).
+  // Validated up front; consumed only AFTER the group commits, so a partial
+  // failure doesn't burn the session. Anon RLS hides consumed/expired rows.
+  let otpToConsume: string | null = null;
+  if (salonRow.phone_otp_enabled === true) {
+    const leadValidation = validateGuestPhone(params.members[0]?.phone ?? "");
+    const leadDigits = leadValidation.ok ? leadValidation.digits : "";
+    const sessionId = (params.otpSessionId ?? "").trim();
+    if (!sessionId) return fail("otp_required");
+    const { data: otpRow } = await supabase
+      .from("phone_otp_sessions")
+      .select("id, phone")
+      .eq("id", sessionId)
+      .eq("salon_id", String(salonRow.id))
+      .maybeSingle();
+    if (!otpRow) return fail("otp_invalid");
+    if (!leadDigits || (otpRow as { phone?: string }).phone !== leadDigits) {
+      return fail("otp_invalid");
+    }
+    otpToConsume = sessionId;
+  }
+
   const { data: rpcData, error: rpcErr } = await supabase.rpc(
     "insert_group_bookings",
     { p_bookings: payload },
@@ -857,6 +888,16 @@ export async function submitGroupBooking(
   // inside the SECURITY DEFINER RPC; failure only loses the
   // itemized breakdown, not the booking itself.
   const bookingIdList = result.booking_ids.map((s) => String(s));
+
+  // Group committed — now single-use-consume the OTP session (fire-and-forget).
+  if (otpToConsume) {
+    void fetch("/api/booking-otp/consume-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: otpToConsume }),
+    });
+  }
+
   await Promise.all(
     params.members.map(async (m, i) => {
       const addonIds = (m.addonServiceIds ?? []).filter((aid) => addonById.has(aid));
