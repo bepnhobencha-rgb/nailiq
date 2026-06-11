@@ -1047,6 +1047,8 @@ export type UserMessages = {
       // Critical alert texts
       alertOverdue: (n: number) => string;
       alertOverdueNamed: (name: string, time: string) => string;
+      alertNotStarted: (n: number) => string;
+      alertNotStartedNamed: (name: string, time: string) => string;
       alertLongWait: (n: number) => string;
       alertNoStaffForWaiting: string;
       alertSmsFailed: (n: number) => string;
@@ -2785,6 +2787,12 @@ export const userEn: UserMessages = {
         n === 1 ? "1 booking overdue" : `${n} bookings overdue`,
       alertOverdueNamed: (name: string, time: string) =>
         `${name} overdue · ${time}`,
+      alertNotStarted: (n: number) =>
+        n === 1
+          ? "1 guest overdue to start"
+          : `${n} guests overdue to start`,
+      alertNotStartedNamed: (name: string, time: string) =>
+        `${name} not started · ${time}`,
       alertLongWait: (n: number) => `Guest waiting over ${n} min`,
       alertNoStaffForWaiting: "Guests waiting — no staff available",
       alertSmsFailed: (n: number) =>

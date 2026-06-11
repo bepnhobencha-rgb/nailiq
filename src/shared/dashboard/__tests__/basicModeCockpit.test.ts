@@ -46,6 +46,8 @@ const labels: CockpitLabels = {
   actionOpenBooking: "OpenBooking",
   alertOverdue: (n) => `a-overdue:${n}`,
   alertOverdueNamed: (name, time) => `a-overdue-named:${name}:${time}`,
+  alertNotStarted: (n) => `a-notstarted:${n}`,
+  alertNotStartedNamed: (name, time) => `a-notstarted-named:${name}:${time}`,
   alertLongWait: (n) => `a-longwait:${n}`,
   alertNoStaffForWaiting: "a-nostaff",
   alertSmsFailed: (n) => `a-sms:${n}`,
@@ -183,6 +185,38 @@ test("overdue + long-wait are the top two; rest overflow", () => {
   assertEqual(r.shown[0]!.key, "overdue");
   assertEqual(r.shown[1]!.key, "long_wait");
   assertEqual(r.overflowCount, 3, "3 collapsed into +N");
+});
+
+test("not-started (single) surfaces named, opens the booking, above long-wait", () => {
+  const r = computeCriticalAlerts(
+    {
+      ...base,
+      notStartedCount: 1,
+      firstNotStartedName: "Dana",
+      firstNotStartedTimeLabel: "1:44 AM",
+      longestWaitMinutes: 20,
+    },
+    labels,
+  );
+  assertEqual(r.shown[0]!.key, "not_started");
+  assertEqual(r.shown[0]!.text, "a-notstarted-named:Dana:1:44 AM");
+  assertEqual(r.shown[0]!.action?.target, "open_not_started");
+  assertEqual(r.shown[1]!.key, "long_wait");
+});
+
+test("not-started (multiple) uses count copy", () => {
+  const r = computeCriticalAlerts({ ...base, notStartedCount: 3 }, labels);
+  assertEqual(r.shown[0]!.key, "not_started");
+  assertEqual(r.shown[0]!.text, "a-notstarted:3");
+});
+
+test("not-started suppresses the cheerful suggest-walk-in nudge", () => {
+  // A guest is overdue to start → don't suggest taking a NEW walk-in.
+  const a = computeNextAction(
+    { ...base, availableStaffName: "Anna", notStartedCount: 1 },
+    labels,
+  );
+  assertEqual(a, null);
 });
 
 test("no-staff-for-waiting bottleneck surfaces as alert", () => {

@@ -1624,6 +1624,17 @@ function ReceptionistCenterInner({
   const availableStaffList = data.staff.filter((s) => s.status === "available");
   const availableStaffCount = availableStaffList.length;
   const availableStaffName = availableStaffList[0]?.name?.trim() || null;
+  // Now Bar tile shows WHO is free, not just one name — list up to 3 then "+N"
+  // so a fully-free salon doesn't misleadingly read a single tech (QA ReTest2).
+  const availableStaffNames = availableStaffList
+    .map((s) => s.name?.trim())
+    .filter((n): n is string => !!n);
+  const availableStaffLabel =
+    availableStaffNames.length === 0
+      ? null
+      : availableStaffNames.length <= 3
+        ? availableStaffNames.join(", ")
+        : `${availableStaffNames.slice(0, 3).join(", ")} +${availableStaffNames.length - 3}`;
 
   // Longest CURRENT wait among queued guests (minutes) — drives the long-wait
   // Next Action + Critical Alert. Computed from queue join times vs "now".
@@ -1654,6 +1665,27 @@ function ReceptionistCenterInner({
   const firstOverdueName = firstOverdue?.client_name?.trim() || null;
   const firstOverdueTimeLabel = firstOverdue
     ? formatInSalonTz(firstOverdue.start_time_utc, timezone, "time")
+    : null;
+
+  // Confirmed bookings past their start time but not yet started/arrived (the
+  // AttentionChipBar "Overdue — not started" set). The Now Bar's queue-only
+  // "Waiting" tile misses these, so feed them to the cockpit as a Critical
+  // Alert — otherwise a scheduled guest sitting unattended reads as "no one
+  // waiting" (QA ReceptionistCenter ReTest2). Today-only (cockpit is today).
+  const notStartedBookings = isViewingToday
+    ? data.bookingsForDay
+        .filter(
+          (b) =>
+            b.status === "confirmed" &&
+            Date.parse(b.start_time_utc) < nowMsForWait,
+        )
+        .sort((a, b) => a.start_time_utc.localeCompare(b.start_time_utc))
+    : [];
+  const firstNotStarted = notStartedBookings[0] ?? null;
+  const firstNotStartedId = firstNotStarted?.id ?? null;
+  const firstNotStartedName = firstNotStarted?.client_name?.trim() || null;
+  const firstNotStartedTimeLabel = firstNotStarted
+    ? formatInSalonTz(firstNotStarted.start_time_utc, timezone, "time")
     : null;
 
   // Today's soonest party with UNCONFIRMED (unclaimed) guests — drives the
@@ -1688,9 +1720,13 @@ function ReceptionistCenterInner({
     longestWaitMinutes,
     availableStaffCount,
     availableStaffName,
+    availableStaffLabel,
     firstWaitingName: data.walkinQueue[0]?.client_name?.trim() || null,
     firstOverdueName,
     firstOverdueTimeLabel,
+    notStartedCount: notStartedBookings.length,
+    firstNotStartedName,
+    firstNotStartedTimeLabel,
     smsFailedCount: data.bookingsForDay.filter(
       (b) =>
         b.sms_confirmation_failed_at != null && b.status !== "cancelled",
@@ -1718,6 +1754,8 @@ function ReceptionistCenterInner({
     actionOpenBooking: rcMessages.basicMode.actionOpenBooking,
     alertOverdue: rcMessages.basicMode.alertOverdue,
     alertOverdueNamed: rcMessages.basicMode.alertOverdueNamed,
+    alertNotStarted: rcMessages.basicMode.alertNotStarted,
+    alertNotStartedNamed: rcMessages.basicMode.alertNotStartedNamed,
     alertLongWait: rcMessages.basicMode.alertLongWait,
     alertNoStaffForWaiting: rcMessages.basicMode.alertNoStaffForWaiting,
     alertSmsFailed: rcMessages.basicMode.alertSmsFailed,
@@ -1730,6 +1768,12 @@ function ReceptionistCenterInner({
   const onCockpitAction = (target: import("@/shared/dashboard/basicModeCockpit").CockpitActionTarget) => {
     if (target === "open_overdue") {
       if (firstOverdueId) setDrawerBookingId(firstOverdueId);
+      return;
+    }
+    if (target === "open_not_started") {
+      // Confirmed-but-not-started guest → open the booking so the receptionist
+      // can mark arrived / no-show (same affordance as the attention chip).
+      if (firstNotStartedId) setDrawerBookingId(firstNotStartedId);
       return;
     }
     if (target === "open_party") {

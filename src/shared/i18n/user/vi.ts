@@ -1095,6 +1095,10 @@ export const userVi: UserMessages = {
         n === 1 ? "1 lịch trễ giờ" : `${n} lịch trễ giờ`,
       alertOverdueNamed: (name: string, time: string) =>
         `${name} trễ giờ · ${time}`,
+      alertNotStarted: (n: number) =>
+        n === 1 ? "1 khách quá giờ chưa bắt đầu" : `${n} khách quá giờ chưa bắt đầu`,
+      alertNotStartedNamed: (name: string, time: string) =>
+        `${name} chưa bắt đầu · ${time}`,
       alertLongWait: (n: number) => `Khách chờ hơn ${n} phút`,
       alertNoStaffForWaiting: "Có khách chờ — không có thợ rảnh",
       alertSmsFailed: (n: number) =>
