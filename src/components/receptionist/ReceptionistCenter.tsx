@@ -2669,6 +2669,8 @@ function ReceptionistCenterInner({
               bookings={gridBookings}
               assigning={assignedSlot}
               selectedDate={data.selectedDate}
+              openMinutes={data.salon.openMinutes}
+              closeMinutes={data.salon.closeMinutes}
               timezone={timezone}
               nowIso={nowIso}
               isViewingToday={isViewingToday}

@@ -102,6 +102,15 @@ export interface StaffTimelineGridProps {
     serviceDurationMinutes: number;
   } | null;
   selectedDate: string;
+  /**
+   * Salon open/close minutes-from-midnight for the selected day (from
+   * `salons.opening_hours`). Sets the grid's DEFAULT visible window so a
+   * booking-free day shows real business hours instead of a fixed 8a–8p.
+   * `null` (closed/unset) falls back to the 8a–8p default. The window still
+   * widens past these to fit off-hours bookings + the current time.
+   */
+  openMinutes?: number | null;
+  closeMinutes?: number | null;
   timezone: string;
   nowIso: string;
   /** When false, hide now line and skip jump-to-now scrolling (yesterday/tomorrow). */
@@ -249,9 +258,11 @@ function computeHourRange(
   allBookings: GridBooking[],
   timezone: string,
   includeNowIso: string | null,
+  baseStartHour: number,
+  baseEndHour: number,
 ): { hourStart: number; hourEnd: number } {
-  let startH = DEFAULT_HOUR_START;
-  let endH = DEFAULT_HOUR_END;
+  let startH = baseStartHour;
+  let endH = baseEndHour;
   for (const b of allBookings) {
     const startMin = utcIsoToSalonMinutesFromMidnight(b.start_time_utc, timezone);
     const durMin =
@@ -303,6 +314,8 @@ function StaffTimelineGridImpl({
   bookings,
   assigning,
   selectedDate,
+  openMinutes,
+  closeMinutes,
   timezone,
   nowIso,
   isViewingToday,
@@ -357,15 +370,30 @@ function StaffTimelineGridImpl({
   // Visible hour window — widens past the default 8a–8p to fit off-hours
   // bookings + (today) the current time, so every block has a slot and the
   // now-line/scroll math stays valid at any hour.
-  const { hourStart, hourEnd } = useMemo(
-    () =>
-      computeHourRange(
-        [...bookings, ...existingBookings],
-        timezone,
-        isViewingToday ? nowIso : null,
-      ),
-    [bookings, existingBookings, timezone, isViewingToday, nowIso],
-  );
+  const { hourStart, hourEnd } = useMemo(() => {
+    // Base window from the salon's opening hours for the day; fall back to the
+    // 8a–8p default when closed/unset. floor(open)/ceil(close) snap to whole
+    // hours so the header labels stay clean.
+    const baseStart =
+      openMinutes != null ? Math.floor(openMinutes / 60) : DEFAULT_HOUR_START;
+    const baseEnd =
+      closeMinutes != null ? Math.ceil(closeMinutes / 60) : DEFAULT_HOUR_END;
+    return computeHourRange(
+      [...bookings, ...existingBookings],
+      timezone,
+      isViewingToday ? nowIso : null,
+      baseStart,
+      baseEnd,
+    );
+  }, [
+    bookings,
+    existingBookings,
+    timezone,
+    isViewingToday,
+    nowIso,
+    openMinutes,
+    closeMinutes,
+  ]);
   const totalSlots = (hourEnd - hourStart) * 2;
   const timelineWidthPx = totalSlots * SLOT_PX;
   // Refs so the always-on pointer handlers read the live window without
