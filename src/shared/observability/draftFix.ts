@@ -202,7 +202,7 @@ export async function draftFix(
     const db = createServiceRoleClient();
     const { data } = await db
       .from("error_logs")
-      .select("id, level, message, surface, route, stack, ai_summary")
+      .select("id, level, message, surface, route, stack, ai_summary, ai_suggested_fix")
       .eq("id", errorId)
       .maybeSingle();
     const e = data as {
@@ -212,6 +212,7 @@ export async function draftFix(
       route: string | null;
       stack: string | null;
       ai_summary: string | null;
+      ai_suggested_fix: string | null;
     } | null;
     if (!e) return { ok: false };
 
@@ -243,18 +244,30 @@ export async function draftFix(
     const fileContent = filePath ? await fetchRawFile(filePath) : null;
 
     // 2. Draft the fix from the REAL file content when we have it.
+    // Feed the triage diagnosis (ai_summary / ai_suggested_fix) so this step
+    // builds on what the first pass already worked out instead of re-guessing
+    // the root cause from scratch — a "Load failed" client error, for example,
+    // is a network failure, not a metadata/parse bug, and the triage usually
+    // catches that. Code wins on conflict: a stale/wrong triage must not
+    // override what the actual file content shows.
+    const triageBlock = [
+      e.ai_summary ? `triage.diagnosis: ${e.ai_summary}` : "",
+      e.ai_suggested_fix ? `triage.suggested_area: ${e.ai_suggested_fix}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
     const fixResp = await client.messages.create({
       model: FIX_MODEL,
       max_tokens: 4000,
       messages: [
         {
           role: "user",
-          content: `You are fixing a bug in NailIQ (Next.js 16 + TypeScript). Given the error and ${fileContent ? "the current file content" : "(file not fetchable — propose from the error alone)"}, reply ONLY JSON:
+          content: `You are fixing a bug in NailIQ (Next.js 16 + TypeScript). A first-pass triage already diagnosed this error — weigh its diagnosis before proposing a fix, but trust the actual file content over the triage if they conflict. Given the error and ${fileContent ? "the current file content" : "(file not fetchable — propose from the error alone)"}, reply ONLY JSON:
 {"root_cause":"one sentence","change_summary":"what to change, plainly","pr_title":"conventional-commit style","pr_body":"short markdown explanation","corrected_file":${fileContent ? '"the FULL corrected file content if the fix is small + safe, else empty string"' : '""'}}
 
 error.message: ${e.message}
 error.stack: ${(e.stack ?? "").slice(0, 1500)}
-file: ${filePath || "(unknown)"}
+${triageBlock ? `${triageBlock}\n` : ""}file: ${filePath || "(unknown)"}
 ${fileContent ? `\n--- current ${filePath} ---\n${fileContent}` : ""}`,
         },
       ],
