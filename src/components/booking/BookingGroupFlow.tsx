@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
+import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import type {
   BookingSalonMeta,
   BookingStaffItem,
@@ -1919,6 +1920,14 @@ function MemberCard({
     return filterStaffCapableForService(staff, capability, member.serviceId);
   }, [staff, capability, member.serviceId]);
 
+  // QA BUG-04/10 — validate the guest name on blur (the server already rejects
+  // invalid names; this surfaces it inline instead of only at the final step).
+  const [nameTouched, setNameTouched] = useState(false);
+  const localNameInvalid =
+    nameTouched &&
+    member.name.trim().length > 0 &&
+    !isValidCustomerName(member.name.trim());
+
   return (
     <div
       data-testid={`group-member-${index}`}
@@ -1951,13 +1960,24 @@ function MemberCard({
             value={member.name}
             maxLength={100}
             onChange={(e) => onChange({ name: e.target.value })}
+            onBlur={() => setNameTouched(true)}
+            aria-invalid={localNameInvalid || Boolean(nameError) || undefined}
             className={cn(
               "nq-booking-field",
               member.name.trim().length > 0 &&
                 "font-medium text-[var(--booking-text)]",
+              (localNameInvalid || nameError) && "border-nq-error/60",
             )}
             data-testid={`group-member-${index}-name`}
           />
+          {localNameInvalid ? (
+            <p
+              className="mt-1 text-xs text-nq-error"
+              data-testid={`group-member-${index}-name-error`}
+            >
+              {t.bookingErrors.invalidNameChars}
+            </p>
+          ) : null}
         </div>
 
         <div>
@@ -3018,7 +3038,10 @@ function AlternativesPanel({
       {next ? (
         <AlternativeCard
           testid={`group-alt-next-${next.date}`}
-          icon="📅"
+          // QA BUG-08: the 📅 glyph renders as a literal date ("JUL 17") next to
+          // the "Tomorrow" label, looking like a contradiction. Use a neutral
+          // "next" glyph instead.
+          icon="🔜"
           title={(groupCopy.groupNextDate ?? "{label} — {n} people together at {time}")
             .replace("{label}", labelForDate(next.date))
             .replace("{n}", String(next.arrangement.assignments.length))
@@ -3473,7 +3496,14 @@ function ConfirmStep({
           <span>
             {size} {groupCopy.peopleSuffix ?? "people"}
             {totalDisplay ? ` · ${totalDisplay}` : ""}
-            {maxMinutes > 0 ? ` · ${maxMinutes} ${t.minuteSuffixShort}` : ""}
+            {/* QA BUG-07: maxMinutes is the per-PERSON service length, so showing
+               it as the group's "65 min" misled multi-wave parties. Show the real
+               group span (first start → last end) instead. */}
+            {arrangement
+              ? ` · ${formatInSalonTz(new Date(arrangement.groupStartMs).toISOString(), timezone, "time")}–${formatInSalonTz(new Date(arrangement.groupEndMs).toISOString(), timezone, "time")}`
+              : maxMinutes > 0
+                ? ` · ${maxMinutes} ${t.minuteSuffixShort}`
+                : ""}
           </span>
         }
       >
