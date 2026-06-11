@@ -45,6 +45,7 @@ export const bookingVi: BookingMessages = {
   calendarLegendAvailable: "Còn chỗ",
   calendarLegendClosed: "Nghỉ",
   scarcityFewSlots: "Chỉ còn {n} giờ trống — ngày này sắp đầy.",
+  scarcityFewSlotsSoonest: "Chỉ còn {n} giờ trống — sớm nhất {time}.",
   slotLoading: "Đang tải giờ trống…",
   noSlotsAvailable: "Hết giờ trống. Vui lòng chọn ngày khác.",
   slotsTimezoneLabel: "Giờ {tz}",

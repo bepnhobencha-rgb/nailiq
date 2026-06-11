@@ -229,10 +229,26 @@ export function BookingFlow({
     if (flow.step !== "time" || flow.slotsLoading || flow.timeSlots.length === 0) {
       return null;
     }
-    const n = flow.timeSlots.length;
-    if (n > 4) return null;
+    // Live-availability teaser (#7): count only the OPEN slots (the grid also
+    // carries unavailable ones) and surface the soonest open time to create
+    // urgency — "Only 3 left — soonest 3:30 PM" converts better than a bare count.
+    const open = flow.timeSlots.filter((s) => s.available);
+    const n = open.length;
+    if (n === 0 || n > 4) return null;
+    const soonest = open[0]?.label;
+    if (soonest && t.scarcityFewSlotsSoonest) {
+      return t.scarcityFewSlotsSoonest
+        .replace("{n}", String(n))
+        .replace("{time}", soonest);
+    }
     return t.scarcityFewSlots.replace("{n}", String(n));
-  }, [flow.step, flow.slotsLoading, flow.timeSlots.length, t.scarcityFewSlots]);
+  }, [
+    flow.step,
+    flow.slotsLoading,
+    flow.timeSlots,
+    t.scarcityFewSlots,
+    t.scarcityFewSlotsSoonest,
+  ]);
 
   const stepTransition = useMemo(
     () => ({
