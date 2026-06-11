@@ -21,7 +21,8 @@ export type CockpitActionTarget =
   | "open_queue"
   | "add_walkin"
   | "open_party"
-  | "open_overdue";
+  | "open_overdue"
+  | "open_not_started";
 
 export type NextActionKind =
   | "long_wait"
@@ -43,6 +44,7 @@ export type NextAction = {
 
 export type CriticalAlertKey =
   | "overdue"
+  | "not_started"
   | "long_wait"
   | "no_staff_for_waiting"
   | "sms_failed"
@@ -69,6 +71,23 @@ export type CockpitInputs = {
   availableStaffCount: number;
   /** Name of an available staff member (for Now Bar + walk-in nudge). */
   availableStaffName: string | null;
+  /**
+   * Display label for the Available-staff Now Bar tile: up to 3 names + "+N"
+   * (e.g. "Huy, Bảo, Vy" or "Huy, Bảo, Vy +2"). Distinct from
+   * `availableStaffName` (a single name) which still drives the walk-in nudge
+   * copy. Optional — falls back to `availableStaffName` when omitted.
+   */
+  availableStaffLabel?: string | null;
+  /**
+   * Confirmed bookings past their start time that have NOT been started/marked
+   * arrived (guest overdue to begin). Surfaced as a Critical Alert so the
+   * cockpit never reads a calm "no one waiting" while a scheduled guest is
+   * unattended. Optional — treated as 0 when omitted (back-compat).
+   */
+  notStartedCount?: number;
+  /** First not-started booking's client name + start-time label (no phone). */
+  firstNotStartedName?: string | null;
+  firstNotStartedTimeLabel?: string | null;
   /** Name of the first waiting walk-in (FIFO), for the assign action. */
   firstWaitingName: string | null;
   /** First overdue booking's client name + start-time label (no phone). */
@@ -114,6 +133,10 @@ export type CockpitLabels = {
   alertOverdue: (n: number) => string;
   /** Clearer single-overdue copy with customer + time (no phone). */
   alertOverdueNamed: (name: string, time: string) => string;
+  /** "{n} guests overdue to start" (multiple not-started). */
+  alertNotStarted: (n: number) => string;
+  /** "{name} overdue to start ({time}) — mark arrived or no-show" (single). */
+  alertNotStartedNamed: (name: string, time: string) => string;
   alertLongWait: (n: number) => string;
   alertNoStaffForWaiting: string;
   alertSmsFailed: (n: number) => string;
@@ -216,7 +239,10 @@ export function computeNextAction(
           action: openParty,
         }
       : null,
-    i.queueEnabled !== false && i.availableStaffName && i.waitingCount === 0
+    i.queueEnabled !== false &&
+    i.availableStaffName &&
+    i.waitingCount === 0 &&
+    (i.notStartedCount ?? 0) === 0
       ? {
           kind: "suggest_walkin",
           text: labels.suggestWalkin(i.availableStaffName),
@@ -270,6 +296,25 @@ export function computeCriticalAlerts(
           : labels.alertOverdue(i.overdueCount),
       tone: "danger",
       action: openBooking,
+    });
+  }
+  // Confirmed guest(s) past their start time, not yet started/arrived — a guest
+  // is effectively waiting on the desk while the Now Bar would otherwise read
+  // "no one waiting". High severity → right after service-overrun overdue.
+  if ((i.notStartedCount ?? 0) > 0) {
+    all.push({
+      key: "not_started",
+      text:
+        i.notStartedCount === 1 &&
+        i.firstNotStartedName &&
+        i.firstNotStartedTimeLabel
+          ? labels.alertNotStartedNamed(
+              i.firstNotStartedName,
+              i.firstNotStartedTimeLabel,
+            )
+          : labels.alertNotStarted(i.notStartedCount ?? 0),
+      tone: "danger",
+      action: { target: "open_not_started", label: labels.actionOpenBooking },
     });
   }
   if (

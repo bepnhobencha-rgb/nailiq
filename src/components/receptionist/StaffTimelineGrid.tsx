@@ -24,14 +24,16 @@ import {
   utcIsoToSalonMinutesFromMidnight,
 } from "@/shared/lib/salonTime";
 
-const HOUR_START = 8;
-const HOUR_END = 20;
+// Default visible window when nothing forces it wider. The grid expands beyond
+// this to cover any booking outside it + the current time (so a 1:44 AM walk-in
+// has a real, clickable slot and the now-line/scroll-to-now work off-hours).
+const DEFAULT_HOUR_START = 8;
+const DEFAULT_HOUR_END = 20;
 const SLOT_MINUTES = 30;
 const SLOT_PX = 64;
 const ROW_HEIGHT = 76;
 const STAFF_COL_WIDTH = 140;
 const TIME_HEADER_HEIGHT = 44;
-const TOTAL_SLOTS = (HOUR_END - HOUR_START) * 2;
 // Minimum pointer movement (px) before a pointerdown is promoted to an active drag.
 // Below this threshold the interaction is treated as a click and the drawer opens normally.
 const DRAG_THRESHOLD_PX = 5;
@@ -181,45 +183,95 @@ function slotIndexToUtc(
   slotIndex: number,
   selectedDate: string,
   timezone: string,
+  hourStart: number,
 ): string {
-  const minutesFromMidnight = HOUR_START * 60 + slotIndex * SLOT_MINUTES;
+  const minutesFromMidnight = hourStart * 60 + slotIndex * SLOT_MINUTES;
   return salonWallTimeToUtcIso(selectedDate, minutesFromMidnight, timezone);
 }
 
-function bookingToPosition(booking: GridBooking, timezone: string) {
+function bookingToPosition(
+  booking: GridBooking,
+  timezone: string,
+  hourStart: number,
+) {
   const startMin = utcIsoToSalonMinutesFromMidnight(booking.start_time_utc, timezone);
-  const minutesFrom8 = startMin - HOUR_START * 60;
+  const minutesFromStart = startMin - hourStart * 60;
   const durationMin =
     (Date.parse(booking.end_time_utc) - Date.parse(booking.start_time_utc)) / 60_000;
   return {
-    leftPx: (minutesFrom8 / SLOT_MINUTES) * SLOT_PX,
+    leftPx: (minutesFromStart / SLOT_MINUTES) * SLOT_PX,
     widthPx: (durationMin / SLOT_MINUTES) * SLOT_PX,
   };
 }
 
-function computeNowLineLeftPx(nowIso: string, timezone: string): number | null {
+function computeNowLineLeftPx(
+  nowIso: string,
+  timezone: string,
+  hourStart: number,
+  hourEnd: number,
+): number | null {
   const m = salonNowMinutes(timezone, nowIso);
-  const gridStart = HOUR_START * 60;
-  const gridEnd = HOUR_END * 60;
+  const gridStart = hourStart * 60;
+  const gridEnd = hourEnd * 60;
   if (m < gridStart || m >= gridEnd) {
     return null;
   }
-  const minutesFrom8 = m - gridStart;
-  return (minutesFrom8 / SLOT_MINUTES) * SLOT_PX;
+  const minutesFromStart = m - gridStart;
+  return (minutesFromStart / SLOT_MINUTES) * SLOT_PX;
 }
 
 /** Nearest 30-minute slot center for scroll alignment (≈ ±15 min from "now"). */
-function computeNearestSlotCenterLeftPx(nowIso: string, timezone: string): number | null {
+function computeNearestSlotCenterLeftPx(
+  nowIso: string,
+  timezone: string,
+  hourStart: number,
+  hourEnd: number,
+  totalSlots: number,
+): number | null {
   const m = salonNowMinutes(timezone, nowIso);
-  const gridStart = HOUR_START * 60;
-  const gridEnd = HOUR_END * 60;
+  const gridStart = hourStart * 60;
+  const gridEnd = hourEnd * 60;
   if (m < gridStart || m >= gridEnd) {
     return null;
   }
-  const minutesFrom8 = m - gridStart;
-  const slotIndex = Math.round(minutesFrom8 / SLOT_MINUTES);
-  const clamped = Math.max(0, Math.min(TOTAL_SLOTS - 1, slotIndex));
+  const minutesFromStart = m - gridStart;
+  const slotIndex = Math.round(minutesFromStart / SLOT_MINUTES);
+  const clamped = Math.max(0, Math.min(totalSlots - 1, slotIndex));
   return clamped * SLOT_PX + SLOT_PX / 2;
+}
+
+/**
+ * Compute the visible hour window. Starts from the salon's default window and
+ * widens to include every booking on screen + (today) the current time — so
+ * off-hours bookings always have a real slot and now-line math stays valid.
+ */
+function computeHourRange(
+  allBookings: GridBooking[],
+  timezone: string,
+  includeNowIso: string | null,
+): { hourStart: number; hourEnd: number } {
+  let startH = DEFAULT_HOUR_START;
+  let endH = DEFAULT_HOUR_END;
+  for (const b of allBookings) {
+    const startMin = utcIsoToSalonMinutesFromMidnight(b.start_time_utc, timezone);
+    const durMin =
+      (Date.parse(b.end_time_utc) - Date.parse(b.start_time_utc)) / 60_000;
+    if (!Number.isFinite(startMin)) continue;
+    const endMin = startMin + (Number.isFinite(durMin) ? durMin : 0);
+    startH = Math.min(startH, Math.floor(startMin / 60));
+    endH = Math.max(endH, Math.ceil(endMin / 60));
+  }
+  if (includeNowIso) {
+    const m = salonNowMinutes(timezone, includeNowIso);
+    if (Number.isFinite(m)) {
+      startH = Math.min(startH, Math.floor(m / 60));
+      // +1 slot so "now" near the hour edge still has a column to its right.
+      endH = Math.max(endH, Math.ceil((m + SLOT_MINUTES) / 60));
+    }
+  }
+  startH = Math.max(0, startH);
+  endH = Math.min(24, Math.max(endH, startH + 1));
+  return { hourStart: startH, hourEnd: endH };
 }
 
 function toConflictRows(bookings: GridBooking[]): ConflictCheckBooking[] {
@@ -232,8 +284,6 @@ function toConflictRows(bookings: GridBooking[]): ConflictCheckBooking[] {
     client_name: b.client_name,
   }));
 }
-
-const timelineWidthPx = TOTAL_SLOTS * SLOT_PX;
 
 interface GridDragState {
   bookingId: string;
@@ -304,6 +354,29 @@ function StaffTimelineGridImpl({
   // eslint-disable-next-line react-hooks/refs -- ARCHITECTURE_LOCK: ref sync during render; intentional stable-ref pattern
   onRescheduleRef.current = onRescheduleBooking;
 
+  // Visible hour window — widens past the default 8a–8p to fit off-hours
+  // bookings + (today) the current time, so every block has a slot and the
+  // now-line/scroll math stays valid at any hour.
+  const { hourStart, hourEnd } = useMemo(
+    () =>
+      computeHourRange(
+        [...bookings, ...existingBookings],
+        timezone,
+        isViewingToday ? nowIso : null,
+      ),
+    [bookings, existingBookings, timezone, isViewingToday, nowIso],
+  );
+  const totalSlots = (hourEnd - hourStart) * 2;
+  const timelineWidthPx = totalSlots * SLOT_PX;
+  // Refs so the always-on pointer handlers read the live window without
+  // re-registering (same stable-ref pattern as the other drag inputs).
+  const hourStartRef = useRef(hourStart);
+  // eslint-disable-next-line react-hooks/refs -- ARCHITECTURE_LOCK: ref sync during render; intentional stable-ref pattern
+  hourStartRef.current = hourStart;
+  const totalSlotsRef = useRef(totalSlots);
+  // eslint-disable-next-line react-hooks/refs -- ARCHITECTURE_LOCK: ref sync during render; intentional stable-ref pattern
+  totalSlotsRef.current = totalSlots;
+
   // Pending drag: pointer is down but hasn't yet exceeded DRAG_THRESHOLD_PX.
   // Stored as a ref (not state) so we don't re-register global handlers on every
   // pointerdown — handlers are always-on and check both refs.
@@ -364,7 +437,10 @@ function StaffTimelineGridImpl({
 
       const slotIdx = Math.max(
         0,
-        Math.min(TOTAL_SLOTS - 1, Math.round((relX - ds.grabOffsetPx) / SLOT_PX)),
+        Math.min(
+          totalSlotsRef.current - 1,
+          Math.round((relX - ds.grabOffsetPx) / SLOT_PX),
+        ),
       );
       const staffIdx = Math.max(
         0,
@@ -396,6 +472,7 @@ function StaffTimelineGridImpl({
         ds.targetSlotIdx,
         selectedDateRef.current,
         timezoneRef.current,
+        hourStartRef.current,
       );
 
       const noChange =
@@ -442,17 +519,17 @@ function StaffTimelineGridImpl({
 
   const nowLineLeftPx = useMemo(() => {
     if (!isViewingToday) return null;
-    return computeNowLineLeftPx(nowIso, timezone);
-  }, [isViewingToday, nowIso, timezone]);
+    return computeNowLineLeftPx(nowIso, timezone, hourStart, hourEnd);
+  }, [isViewingToday, nowIso, timezone, hourStart, hourEnd]);
 
   const nowLineLabel = useMemo(() => labels.formatTimeLabel(nowIso), [labels, nowIso]);
 
   const slotUtcList = useMemo(
     () =>
-      Array.from({ length: TOTAL_SLOTS }, (_, i) =>
-        slotIndexToUtc(i, selectedDate, timezone),
+      Array.from({ length: totalSlots }, (_, i) =>
+        slotIndexToUtc(i, selectedDate, timezone, hourStart),
       ),
-    [selectedDate, timezone],
+    [selectedDate, timezone, totalSlots, hourStart],
   );
 
   useEffect(() => {
@@ -462,27 +539,39 @@ function StaffTimelineGridImpl({
   useEffect(() => {
     if (!isViewingToday || autoScrolledRef.current) return;
     const el = scrollRef.current;
-    const snapPx = computeNearestSlotCenterLeftPx(nowIso, timezone);
+    const snapPx = computeNearestSlotCenterLeftPx(
+      nowIso,
+      timezone,
+      hourStart,
+      hourEnd,
+      totalSlots,
+    );
     if (snapPx === null || !el) return;
     autoScrolledRef.current = true;
     const w = el.clientWidth;
     const maxScroll = Math.max(0, el.scrollWidth - w);
     const target = Math.max(0, Math.min(snapPx - w / 2, maxScroll));
     el.scrollLeft = target;
-  }, [isViewingToday, nowIso, timezone, selectedDate]);
+  }, [isViewingToday, nowIso, timezone, selectedDate, hourStart, hourEnd, totalSlots]);
 
   useEffect(() => {
     if (!isViewingToday) return;
     if (jumpToNowTrigger <= prevJumpTriggerRef.current) return;
     prevJumpTriggerRef.current = jumpToNowTrigger;
     const el = scrollRef.current;
-    const snapPx = computeNearestSlotCenterLeftPx(nowIso, timezone);
+    const snapPx = computeNearestSlotCenterLeftPx(
+      nowIso,
+      timezone,
+      hourStart,
+      hourEnd,
+      totalSlots,
+    );
     if (snapPx === null || !el) return;
     const w = el.clientWidth;
     const maxScroll = Math.max(0, el.scrollWidth - w);
     const target = Math.max(0, Math.min(snapPx - w / 2, maxScroll));
     el.scrollTo({ left: target, behavior: "smooth" });
-  }, [jumpToNowTrigger, isViewingToday, nowIso, timezone]);
+  }, [jumpToNowTrigger, isViewingToday, nowIso, timezone, hourStart, hourEnd, totalSlots]);
 
   const assignMode = assigning !== null;
 
@@ -636,6 +725,7 @@ function StaffTimelineGridImpl({
                   dragState.targetSlotIdx,
                   selectedDate,
                   timezone,
+                  hourStart,
                 );
                 const spanEndMs =
                   Date.parse(slotStartUtc) + dragState.durationMinutes * 60_000;
@@ -645,7 +735,7 @@ function StaffTimelineGridImpl({
                 const overflowMin =
                   dragState.targetSlotIdx * SLOT_MINUTES +
                   dragState.durationMinutes -
-                  TOTAL_SLOTS * SLOT_MINUTES;
+                  totalSlots * SLOT_MINUTES;
                 const overflow = overflowMin > 0;
                 const conflict = overflow
                   ? null
@@ -684,13 +774,18 @@ function StaffTimelineGridImpl({
               let ghostEl: ReactNode = null;
               if (showGhost && assigning !== null) {
                 const slotIndex = hoveredSlot.slotIndex;
-                const slotStartUtc = slotIndexToUtc(slotIndex, selectedDate, timezone);
+                const slotStartUtc = slotIndexToUtc(
+                  slotIndex,
+                  selectedDate,
+                  timezone,
+                  hourStart,
+                );
                 const spanMinutes = assigning.serviceDurationMinutes;
                 const spanEndMs = Date.parse(slotStartUtc) + spanMinutes * 60_000;
                 const spanEndIso = new Date(spanEndMs).toISOString();
 
                 const overflowEndMinutesFrom8 =
-                  slotIndex * SLOT_MINUTES + spanMinutes - TOTAL_SLOTS * SLOT_MINUTES;
+                  slotIndex * SLOT_MINUTES + spanMinutes - totalSlots * SLOT_MINUTES;
                 const overflow = overflowEndMinutesFrom8 > 0;
 
                 const conflict = overflow
@@ -732,7 +827,7 @@ function StaffTimelineGridImpl({
                   onMouseLeave={() => setHoveredSlot(null)}
                 >
                   <div className="pointer-events-none absolute inset-0 flex">
-                    {Array.from({ length: TOTAL_SLOTS }, (_, i) => (
+                    {Array.from({ length: totalSlots }, (_, i) => (
                       <div
                         key={i}
                         className={cn(
@@ -766,7 +861,7 @@ function StaffTimelineGridImpl({
                           "z-[1] pointer-events-none",
                     )}
                   >
-                    {Array.from({ length: TOTAL_SLOTS }, (_, slotIndex) => (
+                    {Array.from({ length: totalSlots }, (_, slotIndex) => (
                       <button
                         key={slotIndex}
                         type="button"
@@ -785,14 +880,14 @@ function StaffTimelineGridImpl({
                         onClick={(e: MouseEvent) => {
                           if (!assignMode) return;
                           e.stopPropagation();
-                          const utc = slotIndexToUtc(slotIndex, selectedDate, timezone);
+                          const utc = slotIndexToUtc(slotIndex, selectedDate, timezone, hourStart);
                           onSlotClick(s.id, utc);
                         }}
                         onKeyDown={(e: KeyboardEvent) => {
                           if (!assignMode) return;
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
-                            const utc = slotIndexToUtc(slotIndex, selectedDate, timezone);
+                            const utc = slotIndexToUtc(slotIndex, selectedDate, timezone, hourStart);
                             onSlotClick(s.id, utc);
                           }
                         }}
@@ -807,7 +902,7 @@ function StaffTimelineGridImpl({
                     )}
                   >
                     {rowBookings.map((b) => {
-                      const { leftPx, widthPx } = bookingToPosition(b, timezone);
+                      const { leftPx, widthPx } = bookingToPosition(b, timezone, hourStart);
                       const endMs = Date.parse(b.end_time_utc);
                       const nowMs = Date.parse(nowIso);
                       const isLate =
@@ -888,7 +983,7 @@ function StaffTimelineGridImpl({
                                     timezone,
                                   );
                                   const slotIdx = Math.round(
-                                    (startMin - HOUR_START * 60) / SLOT_MINUTES,
+                                    (startMin - hourStart * 60) / SLOT_MINUTES,
                                   );
                                   pendingDragRef.current = {
                                     bookingId: b.id,

@@ -88,7 +88,9 @@ export function BasicCockpit({
   );
 
   const availableStaffValue =
-    inputs.availableStaffName ?? nowBar.noStaffAvailable;
+    inputs.availableStaffLabel ??
+    inputs.availableStaffName ??
+    nowBar.noStaffAvailable;
 
   return (
     <div

@@ -1367,7 +1367,11 @@ export async function addWalkinAndAssign(
     clientName: input.clientName,
     clientPhone: input.clientPhone,
     serviceId: input.serviceId,
-    staffRequestedByClient: input.staffRequestedByClient ?? true,
+    // Default false: "customer requested this staff" is an explicit opt-in
+    // (form checkbox defaults off; addWalkinToQueue treats only `=== true` as a
+    // request). Defaulting to true here mislabeled auto-assigned walk-ins with a
+    // ❤️ request flag the guest never set (QA ReceptionistCenter ReTest2).
+    staffRequestedByClient: input.staffRequestedByClient ?? false,
     walkinSource: input.walkinSource ?? null,
     walkinPriority: input.walkinPriority ?? null,
     walkinRequestTags: input.walkinRequestTags ?? null,
