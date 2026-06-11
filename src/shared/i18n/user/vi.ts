@@ -518,6 +518,7 @@ export const userVi: UserMessages = {
     verifyErrorServer: "Lỗi server. Vui lòng thử lại.",
     verifyErrorInvalid: "Mã không đúng.",
     verifyErrorNoSalon: "Số này chưa đăng ký.",
+    errorNetwork: "Mất kết nối — kiểm tra mạng rồi thử lại.",
   },
   auth: {
     signInOrSignUpTitle: "Đăng nhập hoặc đăng ký",

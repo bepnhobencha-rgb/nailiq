@@ -386,6 +386,8 @@ export type UserMessages = {
     verifyErrorServer: string;
     verifyErrorInvalid: string;
     verifyErrorNoSalon: string;
+    /** Shown when the server-action fetch itself fails (Safari "Load failed" / Chrome "Failed to fetch"). */
+    errorNetwork: string;
   };
   /** Shared auth surfaces (login + register social buttons). Public booking is unaffected. */
   auth: {
@@ -2208,6 +2210,7 @@ export const userEn: UserMessages = {
     verifyErrorServer: "Server error. Please try again.",
     verifyErrorInvalid: "Incorrect code.",
     verifyErrorNoSalon: "This number is not registered.",
+    errorNetwork: "Connection lost — check your network and try again.",
   },
   auth: {
     signInOrSignUpTitle: "Sign in or sign up",

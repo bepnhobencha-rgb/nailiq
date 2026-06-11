@@ -85,7 +85,15 @@ export function LoginPageClient({
       startTransition(async () => {
         // sendLoginOtp pre-checks salon ownership; rejects unknown phones
         // BEFORE sending SMS (saves cost in prod, faster feedback in dev).
-        const result = await sendLoginOtp(normalized);
+        let result: Awaited<ReturnType<typeof sendLoginOtp>>;
+        try {
+          result = await sendLoginOtp(normalized);
+        } catch {
+          // Network-level fetch failure (iOS Safari: "Load failed") —
+          // surface a retryable message instead of an unhandled rejection.
+          setPhoneError(t.login.errorNetwork);
+          return;
+        }
 
         if (!result.success) {
           setPhoneError(result.error);
@@ -107,7 +115,7 @@ export function LoginPageClient({
         router.push("/login/verify");
       });
     },
-    [phoneRaw, router, t.register.phoneDigitsInvalid],
+    [phoneRaw, router, t.login.errorNetwork, t.register.phoneDigitsInvalid],
   );
 
   // ── Email submit ──────────────────────────────────────────────────────────
@@ -121,7 +129,13 @@ export function LoginPageClient({
       }
       setEmailError(null);
       startTransition(async () => {
-        const result = await sendEmailMagicLink(email);
+        let result: Awaited<ReturnType<typeof sendEmailMagicLink>>;
+        try {
+          result = await sendEmailMagicLink(email);
+        } catch {
+          setEmailError(t.login.errorNetwork);
+          return;
+        }
         if (!result.success) {
           setEmailError(result.error);
           return;
@@ -129,7 +143,7 @@ export function LoginPageClient({
         setEmailSentTo(email);
       });
     },
-    [emailRaw, t.login.emailInvalid],
+    [emailRaw, t.login.emailInvalid, t.login.errorNetwork],
   );
 
   // ── Branch 3: sign-in temporarily unavailable ─────────────────────────────
