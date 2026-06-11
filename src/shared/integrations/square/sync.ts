@@ -128,7 +128,17 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
     const { data: existing } = await db.from("bookings").select("id, status").eq("square_booking_id", b.id).maybeSingle();
 
     if (existing) {
-      if (str(existing.status) !== targetStatus) {
+      // The desk owns the workflow status once a booking has been started,
+      // completed, or no-showed in NailIQ — Square (which only knows ACCEPTED)
+      // must NOT clobber it back to "confirmed" on the next sync. (Bug: a
+      // receptionist-completed Square booking reverted to "not started".)
+      // Square's own state still applies while the booking is pending/confirmed.
+      const localStatus = str(existing.status);
+      const deskOwned =
+        localStatus === "in_progress" ||
+        localStatus === "completed" ||
+        localStatus === "no_show";
+      if (!deskOwned && localStatus !== targetStatus) {
         await db.from("bookings").update({ status: targetStatus }).eq("id", str(existing.id));
         updated++;
       }
