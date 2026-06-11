@@ -162,27 +162,47 @@ export async function ensureSquareCustomer(
   cfg: SquareConfig,
   opts: { name?: string | null; phone?: string | null; email?: string | null; referenceId: string; idempotencyKey: string },
 ): Promise<string> {
-  // Match on phone first (the salon's primary key for a guest).
+  // Match on phone first (the salon's primary key for a guest). Best-effort —
+  // a phone Square rejects (e.g. fictional 555 numbers) must not break saving.
   if (opts.phone) {
-    const found = await squareReq(cfg, "POST", "/customers/search", {
-      query: { filter: { phone_number: { exact: opts.phone } } },
-      limit: 1,
-    });
-    const hit = (found.customers as Array<{ id?: string }> | undefined)?.[0];
-    if (hit?.id) return hit.id;
+    try {
+      const found = await squareReq(cfg, "POST", "/customers/search", {
+        query: { filter: { phone_number: { exact: opts.phone } } },
+        limit: 1,
+      });
+      const hit = (found.customers as Array<{ id?: string }> | undefined)?.[0];
+      if (hit?.id) return hit.id;
+    } catch {
+      /* unsearchable phone — fall through to create */
+    }
   }
   const parts = (opts.name ?? "").trim().split(/\s+/);
-  const json = await squareReq(cfg, "POST", "/customers", {
-    idempotency_key: opts.idempotencyKey,
+  const base = {
     given_name: parts[0] || undefined,
     family_name: parts.slice(1).join(" ") || undefined,
-    phone_number: opts.phone || undefined,
     email_address: opts.email || undefined,
     reference_id: opts.referenceId,
-  });
-  const id = (json.customer as { id?: string } | undefined)?.id;
-  if (!id) throw new Error("Square CreateCustomer returned no id");
-  return id;
+  };
+  try {
+    const json = await squareReq(cfg, "POST", "/customers", {
+      idempotency_key: opts.idempotencyKey,
+      phone_number: opts.phone || undefined,
+      ...base,
+    });
+    const id = (json.customer as { id?: string } | undefined)?.id;
+    if (id) return id;
+  } catch (e) {
+    // Square rejected the create (most likely the phone) — retry without it so
+    // the card can still be saved against name/email.
+    const json = await squareReq(cfg, "POST", "/customers", {
+      idempotency_key: `${opts.idempotencyKey}-np`,
+      ...base,
+    });
+    const id = (json.customer as { id?: string } | undefined)?.id;
+    if (id) return id;
+    throw e;
+  }
+  throw new Error("Square CreateCustomer returned no id");
 }
 
 /** Save a tokenized card (Web Payments SDK sourceId) on file for later charging. */
