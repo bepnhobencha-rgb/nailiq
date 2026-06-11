@@ -42,6 +42,8 @@ export const bookingEn = {
   calendarLegendClosed: "Closed",
   /** `{n}` = number of open slot buttons for that day. */
   scarcityFewSlots: "Only {n} open times left — this day is filling up.",
+  /** Live-availability teaser (#7): scarcity hint + soonest open time. */
+  scarcityFewSlotsSoonest: "Only {n} open times left — soonest {time}.",
   slotLoading: "Loading times…",
   noSlotsAvailable: "No open slots that day. Try another date.",
   /** `{tz}` = short timezone abbreviation, e.g. "PDT", "GMT+7". Hidden if abbreviation unavailable. */
