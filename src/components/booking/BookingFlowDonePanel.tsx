@@ -16,6 +16,7 @@ import { StampCard } from "@/components/loyalty/StampCard";
 import { getPublicStaffDisplayName } from "@/shared/booking/publicStaffDisplay";
 import { formatBookingPrice } from "@/shared/booking/formatBookingPrice";
 import type { Currency } from "@/shared/lib/currencyFormat";
+import { NoShowCardCapture } from "./NoShowCardCapture";
 import {
   formatInSalonTz,
   salonTimezoneAbbreviation,
@@ -305,6 +306,12 @@ export function BookingFlowDonePanel({
           </div>
         </div>
       </div>
+
+      <NoShowCardCapture
+        bookingId={bookingId}
+        currencyFormat={(cents) => formatBookingPrice(cents, currency) ?? ""}
+        t={t}
+      />
 
       {loyaltyCard && loyaltyProgram ? (() => {
         const remaining = Math.max(0, loyaltyProgram.stamps_required - loyaltyCard.stamps_current);

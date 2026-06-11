@@ -44,6 +44,14 @@ export const bookingEn = {
   scarcityFewSlots: "Only {n} open times left — this day is filling up.",
   /** Live-availability teaser (#7): scarcity hint + soonest open time. */
   scarcityFewSlotsSoonest: "Only {n} open times left — soonest {time}.",
+  // No-show protection — Square card-on-file (charged only on a no-show).
+  noShowCardTitle: "Secure your appointment",
+  noShowCardDesc:
+    "Add a card to hold your spot. You're only charged {fee} if you don't show up — nothing now.",
+  noShowCardSave: "Save card",
+  noShowCardSaving: "Saving…",
+  noShowCardSaved: "Card saved — you're only charged {fee} if you no-show.",
+  noShowCardError: "Could not save the card. Please check your details.",
   slotLoading: "Loading times…",
   noSlotsAvailable: "No open slots that day. Try another date.",
   /** `{tz}` = short timezone abbreviation, e.g. "PDT", "GMT+7". Hidden if abbreviation unavailable. */

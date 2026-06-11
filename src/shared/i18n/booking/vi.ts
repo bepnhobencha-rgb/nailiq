@@ -46,6 +46,13 @@ export const bookingVi: BookingMessages = {
   calendarLegendClosed: "Nghỉ",
   scarcityFewSlots: "Chỉ còn {n} giờ trống — ngày này sắp đầy.",
   scarcityFewSlotsSoonest: "Chỉ còn {n} giờ trống — sớm nhất {time}.",
+  noShowCardTitle: "Giữ chỗ của bạn",
+  noShowCardDesc:
+    "Thêm thẻ để giữ chỗ. Bạn chỉ bị thu {fee} nếu không đến — không trừ gì bây giờ.",
+  noShowCardSave: "Lưu thẻ",
+  noShowCardSaving: "Đang lưu…",
+  noShowCardSaved: "Đã lưu thẻ — chỉ thu {fee} nếu bạn không đến.",
+  noShowCardError: "Không lưu được thẻ. Vui lòng kiểm tra lại thông tin.",
   slotLoading: "Đang tải giờ trống…",
   noSlotsAvailable: "Hết giờ trống. Vui lòng chọn ngày khác.",
   slotsTimezoneLabel: "Giờ {tz}",
