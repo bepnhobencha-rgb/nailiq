@@ -34,6 +34,10 @@ export const RATE_LIMIT_IDS = {
    *  per IP per hour — since this is unauthenticated and prone to spam.
    *  Fail-open until the rule exists. */
   contactSubmit: "contact-submit",
+  /** GET /api/customer/[phone] — returning-customer lookup. Public + unauth,
+   *  so it's a PII-enumeration target. Pair with a Vercel WAF rule at a low
+   *  ceiling (e.g. 20/min per IP) — legit booking only calls it a few times. */
+  customerLookup: "customer-lookup",
 } as const;
 
 export type RateLimitId = (typeof RATE_LIMIT_IDS)[keyof typeof RATE_LIMIT_IDS];

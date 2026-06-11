@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { realNameOrEmpty } from "@/shared/booking/guestNamePlaceholder";
+import { isRateLimited, RATE_LIMIT_IDS } from "@/shared/lib/rateLimit";
 
 // ---------------------------------------------------------------------------
 // Response types — exported so callers can import them
@@ -43,6 +44,14 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ phone: string }> },
 ) {
+  // 0. Rate-limit — this endpoint is a PII-enumeration target (returns a
+  // returning customer's name for any phone). Legit booking calls it a few
+  // times; a scraper hits it thousands of times. Backed by a Vercel WAF rule
+  // for "customer-lookup"; fail-open until the rule exists.
+  if (await isRateLimited(RATE_LIMIT_IDS.customerLookup, { request: _req })) {
+    return NextResponse.json<CustomerLookupResponse>({ found: false }, { status: 429 });
+  }
+
   const { phone: rawPhone } = await params;
   const { searchParams } = new URL(_req.url);
   const salonId = searchParams.get("salon_id") ?? "";
@@ -236,7 +245,12 @@ export async function GET(
     return NextResponse.json<CustomerLookupResponse>({
       found: true,
       name: resolvedName,
-      email: profile.email ?? null,
+      // PII hardening (QA BUG-01): never return the customer's email to this
+      // public, unauth endpoint — it's the most abusable PII for spam/phishing
+      // and email is optional at booking anyway. Name stays for the rebook UX
+      // (rate-limited above); masking/OTP-gating the name is a separate product
+      // decision. The field is kept (always null) so callers don't break.
+      email: null,
       isVip: profile.is_vip ?? false,
       visitCount,
       preferredStaffId,
