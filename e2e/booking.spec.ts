@@ -56,6 +56,7 @@ test.describe("Booking Flow", () => {
     await page.fill('input[name="clientName"]', "Test Client");
     await page.getByRole("button", { name: "Continue" }).first().click();
 
+    await page.getByTestId("sms-consent").check();
     await page.getByRole("button", { name: "Confirm booking" }).click();
 
     await expect(

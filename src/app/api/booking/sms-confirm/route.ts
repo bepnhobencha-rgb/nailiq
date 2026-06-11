@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ ok: false }, { status: 400 });
 
-  const { bookingId, salonId, clientPhone, clientName, serviceName, staffName, startTimeUtc, language, partySize } =
+  const { bookingId, salonId, clientPhone, clientName, serviceName, staffName, startTimeUtc, language, partySize, smsConsent, groupId } =
     body as {
       bookingId?: string;
       salonId?: string;
@@ -42,6 +42,11 @@ export async function POST(req: Request) {
       /** Set (>1) for a GROUP booking → one party-summary message instead of a
        *  per-service line. serviceName is then not required. */
       partySize?: number;
+      /** QA BUG-03 — the customer ticked the required SMS-consent box. Stamp
+       *  sms_consent_at so we have a CASL/TCPA record. */
+      smsConsent?: boolean;
+      /** Group id — stamp consent across all the party's bookings. */
+      groupId?: string;
     };
 
   const isGroup = typeof partySize === "number" && partySize > 1;
@@ -51,6 +56,17 @@ export async function POST(req: Request) {
   }
 
   const db = createServiceRoleClient();
+
+  // QA BUG-03 — record express SMS consent first, independent of whether the
+  // Twilio send below succeeds (the consent record must persist regardless).
+  if (smsConsent === true) {
+    const nowIso = new Date().toISOString();
+    if (groupId) {
+      void db.from("bookings").update({ sms_consent_at: nowIso } as never).eq("group_id", groupId);
+    } else {
+      void db.from("bookings").update({ sms_consent_at: nowIso } as never).eq("id", bookingId);
+    }
+  }
 
   // Check if SMS is enabled for this salon
   const { data: salon } = await db

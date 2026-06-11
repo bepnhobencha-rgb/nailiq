@@ -87,6 +87,7 @@ async function completeGroupFlow(
   // STEP 5 — contact + submit
   await page.getByTestId("group-step-confirm-panel").waitFor({ state: "visible" });
   await page.getByTestId("group-primary-phone").fill("+16045551234");
+  await page.getByTestId("group-sms-consent").check();
   await page.getByTestId("group-confirm").click();
 
   // Wait for success

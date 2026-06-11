@@ -914,6 +914,8 @@ export async function submitPublicBooking(
         staffName: resolvedStaffName,
         startTimeUtc: startLocal.toISOString(),
         language: params.language ?? null,
+        // Consent is required by the UI before this point (QA BUG-03).
+        smsConsent: true,
       }),
     });
   } catch (e) {

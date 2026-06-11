@@ -92,6 +92,7 @@ test("individual booking still works — golden path smoke test", async ({ page 
 
   // ── Step 6: Confirm ───────────────────────────────────────────
   await expect(page.getByTestId("confirm-booking-btn")).toBeVisible({ timeout: 10_000 });
+  await page.getByTestId("sms-consent").check();
   await page.getByTestId("confirm-booking-btn").click();
 
   // ── Success screen ────────────────────────────────────────────

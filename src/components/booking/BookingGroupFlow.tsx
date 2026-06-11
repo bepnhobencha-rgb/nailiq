@@ -3183,6 +3183,9 @@ function ConfirmStep({
     return formatInSalonTz(firstStart, timezone, "date");
   }, [arrangement, date, timezone]);
 
+  // QA BUG-03 — express SMS consent, required before confirming the party.
+  const [smsConsent, setSmsConsent] = useState(false);
+
   if (!arrangement) {
     return (
       <p
@@ -3467,6 +3470,17 @@ function ConfirmStep({
         </p>
       ) : null}
 
+      <label className="mb-3 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+        <input
+          type="checkbox"
+          data-testid="group-sms-consent"
+          checked={smsConsent}
+          onChange={(e) => setSmsConsent(e.target.checked)}
+          className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+        />
+        <span>{t.smsConsent}</span>
+      </label>
+
       <StickyFooter
         leftLabel={groupCopy.groupTotal ?? groupCopy.totalLabel ?? "Total"}
         leftValue={
@@ -3488,7 +3502,7 @@ function ConfirmStep({
         </Button>
         <LuxuryBookingCta
           onClick={onSubmit}
-          disabled={submitting || !contactReady}
+          disabled={submitting || !contactReady || !smsConsent}
           data-testid="group-confirm"
         >
           {submitting ? groupCopy.submittingGroup : groupCopy.confirmGroup}

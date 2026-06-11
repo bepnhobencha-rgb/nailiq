@@ -50,6 +50,8 @@ export const bookingEn = {
   back: "Back",
   confirmBooking: "Confirm booking",
   submitting: "Submitting…",
+  smsConsent:
+    "I agree to receive SMS appointment confirmations & reminders. Msg & data rates may apply; reply STOP to opt out.",
   successHeading: "You're all set!",
   /** Shown under the heading when a staff member is assigned, e.g. "with Jenny". */
   successStaffLine: "with {name}",

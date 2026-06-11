@@ -55,6 +55,7 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
     const guestPhone = GATE_PHONE;
     await page.fill('input[name="clientName"]', "Security Test Guest");
     await page.getByRole("button", { name: "Continue" }).first().click();
+    await page.getByTestId("sms-consent").check();
     await page.getByRole("button", { name: "Confirm booking" }).click();
 
     await expect(
@@ -111,6 +112,7 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
     // Phone-first: phone captured at the entry gate; info step takes name only.
     await page.fill('input[name="clientName"]', "Security Test Guest");
     await page.getByRole("button", { name: "Continue" }).first().click();
+    await page.getByTestId("sms-consent").check();
     await page.getByRole("button", { name: "Confirm booking" }).click();
 
     await expect(
@@ -191,6 +193,7 @@ test.describe("Guest name — XSS / charset guard", () => {
     await expect(
       page.getByRole("button", { name: "Confirm booking" }),
     ).toBeVisible({ timeout: 12_000 });
+    await page.getByTestId("sms-consent").check();
     await page.getByRole("button", { name: "Confirm booking" }).click();
 
     await expect(page.getByTestId("booking-success")).toBeVisible({

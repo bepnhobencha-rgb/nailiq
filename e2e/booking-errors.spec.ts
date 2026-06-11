@@ -776,6 +776,7 @@ test.describe("Booking error scenarios — /[slug]", () => {
       phone: "6045551234",
       notes,
     });
+    await page.getByTestId("sms-consent").check();
     await page.getByRole("button", { name: "Confirm booking" }).click();
     await expect(page.getByTestId("booking-success")).toBeVisible({
       timeout: 15_000,
@@ -799,6 +800,7 @@ test.describe("Booking error scenarios — /[slug]", () => {
       name: "Toronto Tester",
       phone: "6045551234",
     });
+    await page.getByTestId("sms-consent").check();
     await page.getByRole("button", { name: "Confirm booking" }).click();
     await expect(page.getByTestId("booking-success")).toBeVisible({
       timeout: 15_000,

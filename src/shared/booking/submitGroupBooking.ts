@@ -900,6 +900,9 @@ export async function submitGroupBooking(
           partySize: params.members.length,
           startTimeUtc: earliest.startUtcIso,
           language: params.language ?? null,
+          // Consent required by the UI (QA BUG-03); stamp the whole party.
+          smsConsent: true,
+          groupId: result.group_id,
         }),
       });
     }

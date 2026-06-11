@@ -88,6 +88,7 @@ test.describe("Group booking — organizer recognition + QR", () => {
     await expect(greeting).toContainText(ORGANIZER_NAME);
 
     // Submit → success.
+    await page.getByTestId("group-sms-consent").check();
     await page.getByTestId("group-confirm").click();
     await expect(page.getByTestId("booking-group-success")).toBeVisible({
       timeout: 15_000,

@@ -75,6 +75,7 @@ async function bookGroupOfTwo(
     .getByTestId("group-step-confirm-panel")
     .waitFor({ state: "visible" });
   await page.getByTestId("group-primary-phone").fill(phone);
+  await page.getByTestId("group-sms-consent").check();
   await page.getByTestId("group-confirm").click();
   await expect(page.getByTestId("booking-group-success")).toBeVisible({
     timeout: 15_000,
@@ -155,6 +156,7 @@ test.describe("Group booking — seat together / couple", () => {
         .getByTestId("group-step-confirm-panel")
         .waitFor({ state: "visible" });
       await page.getByTestId("group-primary-phone").fill("+16045550222");
+      await page.getByTestId("group-sms-consent").check();
       await page.getByTestId("group-confirm").click();
       await expect(page.getByTestId("booking-group-success")).toBeVisible({
         timeout: 15_000,

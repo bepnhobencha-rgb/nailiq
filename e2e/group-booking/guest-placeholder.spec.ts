@@ -97,6 +97,7 @@ test("member name fields are pre-filled with Guest N placeholders", async ({ pag
 
 test("group booking succeeds when member names are not manually edited", async ({ page }) => {
   await completeFlowWithoutNames(page);
+  await page.getByTestId("group-sms-consent").check();
   await page.getByTestId("group-confirm").click();
 
   // Success screen
@@ -130,6 +131,7 @@ test("organizer phone is not copied as member names", async ({ page }) => {
 
 test("DB stores Guest placeholder when organizer leaves names as default", async ({ page }) => {
   await completeFlowWithoutNames(page);
+  await page.getByTestId("group-sms-consent").check();
   await page.getByTestId("group-confirm").click();
 
   await expect(page.getByTestId("booking-group-success")).toBeVisible({ timeout: 20_000 });

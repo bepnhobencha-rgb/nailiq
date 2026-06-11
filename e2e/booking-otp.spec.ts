@@ -201,6 +201,7 @@ test.describe("Booking Flow — Phone OTP", () => {
     await page
       .getByRole("button", { name: /confirm booking|xác nhận/i })
       .waitFor({ state: "visible", timeout: 15_000 });
+    await page.getByTestId("sms-consent").check();
     await page.getByRole("button", { name: /confirm booking|xác nhận/i }).click();
 
     // Success screen
