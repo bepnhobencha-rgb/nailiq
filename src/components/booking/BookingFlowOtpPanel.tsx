@@ -154,18 +154,18 @@ export function BookingFlowOtpPanel({
       transition={stepTransition}
       className="mt-6 w-full"
     >
-      <h2 className="text-xl font-semibold text-nq-foreground">
+      <h2 className="text-xl font-semibold text-[var(--booking-text)]">
         {t.otpStepHeading}
       </h2>
       {sent ? (
-        <p className="mt-1 text-sm text-nq-muted">
+        <p className="mt-1 text-sm text-[var(--booking-text-muted)]">
           {t.otpStepSubheading}{" "}
-          <span className="font-medium text-nq-foreground">
+          <span className="font-medium text-[var(--booking-text)]">
             {maskPhone(clientPhone)}
           </span>
         </p>
       ) : (
-        <p className="mt-1 text-sm text-nq-muted">
+        <p className="mt-1 text-sm text-[var(--booking-text-muted)]">
           {isSending ? t.otpSending : t.otpSendCode + "…"}
         </p>
       )}
@@ -174,7 +174,7 @@ export function BookingFlowOtpPanel({
         <div>
           <label
             htmlFor="otp-code"
-            className="mb-2 block text-sm font-medium text-nq-foreground"
+            className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
           >
             {t.otpCodeLabel}
           </label>
@@ -196,8 +196,8 @@ export function BookingFlowOtpPanel({
             placeholder={t.otpCodePlaceholder}
             disabled={!sent || isVerifying}
             className={cn(
-              "w-full rounded-xl border bg-nq-bg/50 px-4 py-3 text-center text-xl tracking-widest text-nq-foreground placeholder:text-nq-muted/40 focus:outline-none focus:ring-2 focus:ring-nq-primary/50",
-              error ? "border-nq-error/50" : "border-nq-border/40",
+              "w-full rounded-xl border bg-[var(--booking-bg-input)] px-4 py-3 text-center text-xl tracking-widest text-[var(--booking-text)] placeholder:text-[var(--booking-text-muted)]/40 focus:outline-none focus:ring-2 focus:ring-[var(--salon-primary)]/60",
+              error ? "border-nq-error/60" : "border-[var(--booking-border)]",
             )}
           />
           {error ? (
@@ -212,7 +212,7 @@ export function BookingFlowOtpPanel({
             type="button"
             disabled={cooldown > 0 || isSending}
             onClick={sendCode}
-            className="text-sm text-nq-primary underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+            className="text-sm text-[var(--salon-primary)] underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSending ? t.otpSending : resendLabel}
           </button>
@@ -220,14 +220,14 @@ export function BookingFlowOtpPanel({
             <button
               type="button"
               onClick={onSkip}
-              className="text-sm text-nq-muted underline-offset-2 hover:underline"
+              className="text-sm text-[var(--booking-text-muted)] underline-offset-2 hover:underline"
             >
               {t.otpSkip ?? "Bỏ qua"}
             </button>
           ) : null}
         </div>
         {isOptional ? (
-          <p className="text-xs text-nq-muted/70">
+          <p className="text-xs text-[var(--booking-text-muted)]/70">
             {t.otpOptionalHint ?? "Xác thực OTP giúp giảm rủi ro không đến (không bắt buộc)"}
           </p>
         ) : null}
