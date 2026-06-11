@@ -77,7 +77,18 @@ export function LoginVerifyPageClient({ demoMode: _demoMode }: Props) {
       setError(null);
 
       startTransition(async () => {
-        const res = await verifyLoginOtp(phoneDigits, code, rememberDevice);
+        let res: Awaited<ReturnType<typeof verifyLoginOtp>>;
+        try {
+          res = await verifyLoginOtp(phoneDigits, code, rememberDevice);
+        } catch {
+          // Server-action POST never reached the server (flaky mobile network,
+          // Safari aborting the fetch on background/navigate). iOS Safari
+          // reports this as TypeError "Load failed" (Chrome: "Failed to
+          // fetch"); uncaught it escapes the transition into the error
+          // tracker. Show a retryable message instead — the OTP stays valid.
+          setError(t.errorNetwork);
+          return;
+        }
         if (!res.ok) {
           setError(
             res.reason === "expired"
@@ -111,6 +122,7 @@ export function LoginVerifyPageClient({ demoMode: _demoMode }: Props) {
       code,
       rememberDevice,
       router,
+      t.errorNetwork,
       t.verifyErrorExpired,
       t.verifyErrorInvalid,
       t.verifyErrorNoSalon,
