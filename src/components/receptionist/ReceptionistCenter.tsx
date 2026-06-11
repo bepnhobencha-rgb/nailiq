@@ -2246,6 +2246,7 @@ function ReceptionistCenterInner({
                 <DeskBookingForm
                   slug={slug}
                   salonId={data.salon.id}
+                  language={language}
                   onClose={() => setDeskBookingOpen(false)}
                   onCreated={() => {
                     void reloadCurrentDay();
