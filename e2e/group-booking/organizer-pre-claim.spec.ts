@@ -74,6 +74,7 @@ test.describe("Group booking — organizer slot pre-claimed", () => {
     // "I'm also getting a service" is on by default.
     await expect(page.getByTestId("group-organizer-is-guest")).toBeVisible();
     await page.getByTestId("group-primary-phone").fill(`+${ORG_PHONE}`);
+    await page.getByTestId("group-sms-consent").check();
     await page.getByTestId("group-confirm").click();
     await expect(page.getByTestId("booking-group-success")).toBeVisible({
       timeout: 15_000,

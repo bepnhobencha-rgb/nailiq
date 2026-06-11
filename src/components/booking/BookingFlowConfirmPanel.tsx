@@ -88,6 +88,8 @@ export function BookingFlowConfirmPanel({
   const [voucherInput, setVoucherInput] = useState("");
   const [voucherError, setVoucherError] = useState<string | null>(null);
   const [voucherLoading, setVoucherLoading] = useState(false);
+  // QA BUG-03 — express SMS consent (CASL/TCPA). Required before confirming.
+  const [smsConsent, setSmsConsent] = useState(false);
 
   const customerRows = [
     { label: t.summaryClientName, value: clientName.trim() || "—" },
@@ -346,7 +348,18 @@ export function BookingFlowConfirmPanel({
           </p>
         ) : null}
 
-        <div className="mt-5 flex flex-col gap-3 border-t border-[var(--booking-border)]/25 pt-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <label className="mt-5 flex cursor-pointer items-start gap-2.5 border-t border-[var(--booking-border)]/25 pt-5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+          <input
+            type="checkbox"
+            data-testid="sms-consent"
+            checked={smsConsent}
+            onChange={(e) => setSmsConsent(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+          />
+          <span>{t.smsConsent}</span>
+        </label>
+
+        <div className="mt-4 flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <Button
             type="button"
             variant="secondary"
@@ -359,7 +372,7 @@ export function BookingFlowConfirmPanel({
           <LuxuryBookingCta
             className="lg:min-w-[14rem]"
             data-testid="confirm-booking-btn"
-            disabled={submitting}
+            disabled={submitting || !smsConsent}
             onClick={onConfirm}
           >
             <span>{submitting ? t.submitting : t.confirmBooking}</span>

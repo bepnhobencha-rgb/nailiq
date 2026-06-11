@@ -62,6 +62,7 @@ test.describe("Party Link — tap your name", () => {
       .getByTestId("group-step-confirm-panel")
       .waitFor({ state: "visible" });
     await page.getByTestId("group-primary-phone").fill("+16045551234");
+    await page.getByTestId("group-sms-consent").check();
     await page.getByTestId("group-confirm").click();
     await expect(page.getByTestId("booking-group-success")).toBeVisible({
       timeout: 15_000,
