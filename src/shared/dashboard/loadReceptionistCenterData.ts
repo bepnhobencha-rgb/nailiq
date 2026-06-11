@@ -4,6 +4,10 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 import { salonDayRangeUtc } from "@/shared/lib/salonTime";
 import {
+  DAY_KEYS,
+  parseOpeningHours,
+} from "@/shared/dashboard/openingHoursDefaults";
+import {
   isQueuePriority,
   isQueueSource,
   parseRequestTags,
@@ -47,6 +51,15 @@ export interface ReceptionistCenterData {
     queueDisplayMode: "simple" | "full";
     /** `salons.basic_mode_forced`. When true, Basic Mode is auto-enabled and cannot be toggled off. */
     basicModeForced: boolean;
+    /**
+     * Salon open/close minutes-from-midnight for the SELECTED day, parsed from
+     * `salons.opening_hours` in the salon timezone. `null` when the salon is
+     * closed that day or hours are unset/unparseable. Drives the receptionist
+     * timeline grid's default window so a booking-free day still shows the real
+     * business hours (the grid still widens past these for off-hours bookings).
+     */
+    openMinutes: number | null;
+    closeMinutes: number | null;
   };
   staff: Array<{
     id: string;
@@ -429,10 +442,45 @@ export type ReceptionistCenterDataLoaderDeps = {
     dashboard_density: unknown | null;
     currency_code: unknown | null;
     walkin_auto_assign?: unknown | null;
+    opening_hours?: unknown | null;
   };
 };
 
 const DATE_YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** "HH:MM" → minutes from midnight, or null when malformed. */
+function hmToMinutes(hm: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hm.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(min)) return null;
+  return Math.min(23, Math.max(0, h)) * 60 + Math.min(59, Math.max(0, min));
+}
+
+/**
+ * Resolve the salon's open/close minutes for a given calendar day (YYYY-MM-DD)
+ * from `salons.opening_hours`. Returns {null, null} when closed/unset/unparseable
+ * — the timeline grid then falls back to its default window. Weekday is derived
+ * from the calendar date itself (no timezone shift: a YYYY-MM-DD names one day).
+ */
+function openingHoursForDay(
+  rawOpeningHours: unknown,
+  dateYmd: string,
+): { openMinutes: number | null; closeMinutes: number | null } {
+  const week = parseOpeningHours(rawOpeningHours);
+  if (!week) return { openMinutes: null, closeMinutes: null };
+  const utcDay = new Date(`${dateYmd}T12:00:00Z`).getUTCDay(); // 0=Sun..6=Sat
+  const dayKey = DAY_KEYS[(utcDay + 6) % 7]; // shift so Monday=0
+  const day = week[dayKey];
+  if (!day || day.closed) return { openMinutes: null, closeMinutes: null };
+  const openMinutes = hmToMinutes(day.open);
+  const closeMinutes = hmToMinutes(day.close);
+  if (openMinutes === null || closeMinutes === null || closeMinutes <= openMinutes) {
+    return { openMinutes: null, closeMinutes: null };
+  }
+  return { openMinutes, closeMinutes };
+}
 const BOOKING_DAY_STATUSES: BookingStatus[] = [
   "pending",
   "confirmed",
@@ -484,6 +532,7 @@ export async function loadReceptionistCenterData(
     walkin_auto_assign?: unknown;
     queue_display_mode?: unknown;
     basic_mode_forced?: unknown;
+    opening_hours?: unknown;
   };
   let salonData: SalonShape | null;
   if (deps?.preFetchedSalon) {
@@ -501,6 +550,9 @@ export async function loadReceptionistCenterData(
       // forced Basic Mode without a second salons query.
       basic_mode_forced: (deps.preFetchedSalon as { basic_mode_forced?: unknown })
         .basic_mode_forced,
+      // Drives the timeline grid's default window on booking-free days.
+      // SALON_DASHBOARD_SELECT already fetches opening_hours, so no extra query.
+      opening_hours: deps.preFetchedSalon.opening_hours,
     };
   } else {
     const salonResult = await supabase
@@ -510,7 +562,7 @@ export async function loadReceptionistCenterData(
         // (20260512000000 / 20260511100000) — not in auto-generated
         // types yet, hence the `as never` cast on the SELECT string.
         // basic_mode_forced: auto-enable Basic Mode for receptionist if salon config requires it
-        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced" as never,
+        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced, opening_hours" as never,
       )
       .eq("id", ctx.salon.id)
       .maybeSingle();
@@ -536,6 +588,7 @@ export async function loadReceptionistCenterData(
     queueDisplayMode: (salonData.queue_display_mode === "simple" ? "simple" : "full") as "simple" | "full",
     // TODO: Regenerate types when Docker is available (npx supabase gen types typescript --local)
     basicModeForced: (salonData as any).basic_mode_forced === true,
+    ...openingHoursForDay(salonData.opening_hours, dateYmd),
   };
 
   const rawDashboardModules = parseDashboardModules(
