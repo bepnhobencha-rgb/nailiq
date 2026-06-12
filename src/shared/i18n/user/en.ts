@@ -1335,6 +1335,13 @@ export type UserMessages = {
       conflictWith: (clientName: string) => string;
       overflowMessage: string;
       conflictShake: string;
+      /** Toast shown when a drag-to-reschedule is rejected, keyed by reason. */
+      rescheduleFailed: {
+        past_date: string;
+        slot_conflict: string;
+        staff_cannot_perform_service: string;
+        generic: string;
+      };
       /** Accessible labels for the booking-block icon stack. */
       bookingIcon: {
         vip: string;
@@ -3084,6 +3091,13 @@ export const userEn: UserMessages = {
       overflowMessage: "⚠ Past closing hours",
       conflictShake:
         "That slot overlaps another booking. Choose another slot or time.",
+      rescheduleFailed: {
+        past_date: "Can't move a booking into the past.",
+        slot_conflict: "That slot overlaps another booking.",
+        staff_cannot_perform_service:
+          "That staff member doesn't perform this service.",
+        generic: "Couldn't move the booking. Try again.",
+      },
       bookingIcon: {
         vip: "VIP",
         notes: "Has notes",

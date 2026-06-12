@@ -110,6 +110,13 @@ export interface WeekViewProps {
    * with it, only 2 (~120ms).
    */
   hint?: BookingsRangeHint;
+  /**
+   * Bumped by the parent on any booking mutation. Included in the fetch
+   * deps so a cancel/reschedule done from this view's own drawer refetches
+   * fresh data (cancelled rows are excluded server-side) instead of leaving
+   * the now-stale booking in this view's local cache. (QA #5.)
+   */
+  refreshNonce?: number;
 }
 
 export function WeekView({
@@ -125,6 +132,7 @@ export function WeekView({
   onThisWeek,
   onNextWeek,
   hint,
+  refreshNonce,
 }: WeekViewProps) {
   const ymds = useMemo(() => weekYmds(mondayYmd), [mondayYmd]);
   const [days, setDays] = useState<Record<string, DayState>>({});
@@ -174,7 +182,7 @@ export function WeekView({
     return () => {
       cancelled = true;
     };
-  }, [slug, mondayYmd, ymds, hint]);
+  }, [slug, mondayYmd, ymds, hint, refreshNonce]);
 
   /** Range label "Mon 5 – Sun 11" — uses local date math, no tz dependence
    *  beyond what the YMDs already encode. Using the salon timezone for the

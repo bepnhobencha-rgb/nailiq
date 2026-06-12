@@ -1334,6 +1334,12 @@ export const userVi: UserMessages = {
         clientName.trim() ? `⚠ Trùng — ${clientName}` : "⚠ Ô đã có lịch",
       overflowMessage: "⚠ Quá giờ đóng",
       conflictShake: "Trùng lịch. Chọn giờ hoặc thợ khác.",
+      rescheduleFailed: {
+        past_date: "Không thể dời lịch về quá khứ.",
+        slot_conflict: "Khung giờ này đã trùng với lịch khác.",
+        staff_cannot_perform_service: "Thợ này không làm dịch vụ đó.",
+        generic: "Không dời được lịch. Thử lại.",
+      },
       bookingIcon: {
         vip: "VIP",
         notes: "Có ghi chú",

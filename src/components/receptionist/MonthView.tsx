@@ -139,6 +139,12 @@ export interface MonthViewProps {
    * with it, only 2 (~120ms).
    */
   hint?: BookingsRangeHint;
+  /**
+   * Bumped by the parent on any booking mutation. Included in the fetch deps
+   * so a cancel/reschedule done from this view's drawer refetches fresh data
+   * instead of leaving a stale booking in this view's local cache. (QA #5.)
+   */
+  refreshNonce?: number;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -164,6 +170,7 @@ export function MonthView({
   onThisMonth,
   onNextMonth,
   hint,
+  refreshNonce,
 }: MonthViewProps) {
   const cells = useMemo(() => buildMonthGrid(firstYmd), [firstYmd]);
 
@@ -237,7 +244,7 @@ export function MonthView({
     return () => {
       cancelled = true;
     };
-  }, [slug, firstYmd, lastYmd, inMonthYmds, hint]);
+  }, [slug, firstYmd, lastYmd, inMonthYmds, hint, refreshNonce]);
 
   const monthLabel = useMemo(() => {
     const d = ymdToLocalDate(firstYmd);
