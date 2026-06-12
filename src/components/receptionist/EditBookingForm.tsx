@@ -574,11 +574,23 @@ export function EditBookingForm({
               className="grid max-h-40 grid-cols-3 gap-1.5 overflow-y-auto rounded-lg border border-nq-muted/30 bg-nq-bg p-1.5"
               data-testid="edit-time-grid"
             >
-              {availableSlots.map((s) => (
+              {availableSlots.map((s) => {
+                // Stable per-slot testid keyed by minutes-from-midnight (salon
+                // wall-clock), derived from the label so it never depends on the
+                // localized display string. `slotLabelToMinutes` is the exact
+                // inverse of `minutesToLabel`/`minutesToSlotLabel`, so a label
+                // like "11:00 AM" → 660. Falls back to a label-slug only if a
+                // label is somehow unparseable (defensive; shouldn't happen).
+                const slotMinutes = slotLabelToMinutes(s.label);
+                const slotTestId =
+                  slotMinutes != null
+                    ? `edit-time-slot-${slotMinutes}`
+                    : `edit-time-slot-${s.label.replace(/\s+/g, "-")}`;
+                return (
                 <button
                   key={s.label}
                   type="button"
-                  data-testid="edit-time-slot"
+                  data-testid={slotTestId}
                   onClick={() => setSelectedSlotLabel(s.label)}
                   className={cn(
                     "min-h-9 rounded px-1 py-1.5 text-xs transition",
@@ -589,7 +601,8 @@ export function EditBookingForm({
                 >
                   {s.label}
                 </button>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
