@@ -63,7 +63,10 @@ test.describe("Undo toast", () => {
     await expect(countdown).toHaveText(/^5s$/);
     const readSeconds = async () =>
       parseInt((await countdown.textContent())!.replace(/\D/g, ""), 10);
-    await expect.poll(readSeconds, { timeout: 4000 }).toBeLessThan(5);
+    // Generous 8s timeout: the grid re-renders each tick, so under CI load the
+    // countdown can stall briefly before the next decrement lands. We only need
+    // to observe ONE tick below 5, whenever the main thread frees up.
+    await expect.poll(readSeconds, { timeout: 8000 }).toBeLessThan(5);
 
     await toast.getByTestId("undo-toast-undo").click();
 

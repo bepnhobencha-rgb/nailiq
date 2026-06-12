@@ -890,12 +890,17 @@ function StaffTimelineGridImpl({
                     )}
                   >
                     {Array.from({ length: totalSlots }, (_, slotIndex) => {
-                      // The slot's absolute UTC start. Exposed as `data-slot-utc`
-                      // so tests can target a slot by wall-clock time rather than
-                      // by index — the index↔time mapping shifts with the dynamic
-                      // hour window (`computeHourRange` widens to include "now"),
-                      // which made fixed-index slot lookups flaky.
-                      const slotUtc = slotIndexToUtc(slotIndex, selectedDate, timezone, hourStart);
+                      // The slot's absolute UTC start, reused from the memoized
+                      // slotUtcList (NOT recomputed per render). Exposed as
+                      // `data-slot-utc` so tests can target a slot by wall-clock
+                      // time rather than by index — the index↔time mapping shifts
+                      // with the dynamic hour window (`computeHourRange` widens to
+                      // include "now"), which made fixed-index lookups flaky.
+                      // Computing it inline here ran totalSlots×staff date-math
+                      // calls on every grid render — and the grid re-renders each
+                      // second while the undo countdown ticks, janking the
+                      // countdown under CI load. The memo makes it O(totalSlots).
+                      const slotUtc = slotUtcList[slotIndex]!;
                       return (
                       <button
                         key={slotIndex}
