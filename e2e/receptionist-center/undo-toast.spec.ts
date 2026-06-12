@@ -51,9 +51,18 @@ test.describe("Undo toast", () => {
     await expect(page.getByTestId("undo-toast-undo")).toBeVisible();
 
     const countdown = toast.locator(".tabular-nums").filter({ hasText: /\d+s/ });
-    await expect(countdown).toHaveText(/^5s$/);
+    // Assert the countdown TICKS DOWN, not that it hits exact "5s"→"4s".
+    // Pinning exact values raced the second boundary: if the first read landed
+    // late in a second, 1.1s later the value had already skipped past "4s" to
+    // "3s", so /^4s$/ never matched. Reading the live value and asserting a
+    // strict decrease is tick-accurate regardless of when in the second we read.
+    await expect(countdown).toHaveText(/^\ds$/);
+    const readSeconds = async () =>
+      parseInt((await countdown.textContent())!.replace(/\D/g, ""), 10);
+    const before = await readSeconds();
     await page.waitForTimeout(1100);
-    await expect(countdown).toHaveText(/^4s$/);
+    const after = await readSeconds();
+    expect(after).toBeLessThan(before);
 
     await toast.getByTestId("undo-toast-undo").click();
 
