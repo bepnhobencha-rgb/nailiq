@@ -1325,6 +1325,10 @@ function ReceptionistCenterInner({
       depositStatus: b.deposit_status ?? null,
       depositPaidLine,
       remainingLine,
+      // Square deposits config (stable per session, like currencyCode) + the
+      // dashboard language so the desk can request + text a deposit link.
+      depositsEnabled: data.salon.depositsEnabled,
+      language,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ARCHITECTURE_LOCK: data.salon.currencyCode is intentionally omitted; it never changes within a session and adding it would cause memo churn
   }, [
@@ -1334,6 +1338,7 @@ function ReceptionistCenterInner({
     staffNameById,
     messages,
     timezone,
+    language,
   ]);
 
   const openDrawerBooking = drawerBookingId
