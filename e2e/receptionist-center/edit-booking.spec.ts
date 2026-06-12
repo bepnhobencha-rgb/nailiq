@@ -249,7 +249,9 @@ test.describe("Receptionist desk — edit booking", () => {
     const beforeConflict = await fetchBookingDeskSnapshot(fx.salonId, bookingAId);
     expect(beforeConflict).not.toBeNull();
 
-    await gotoReceptionistCenter(page, fx.slug, { dateYmd: dayYmd });
+    // Future day → the walk-in queue panel isn't rendered, so don't wait for it
+    // (gotoReceptionistCenter's default would time out on walkin-add-form).
+    await gotoReceptionistCenter(page, fx.slug, { dateYmd: dayYmd, expectWalkinQueue: false });
     await page.getByTestId(`booking-block-${bookingAId}`).click();
     await page.getByTestId("edit-booking-button").click();
     await expect(page.getByTestId("edit-booking-form")).toBeVisible();
