@@ -430,6 +430,13 @@ function ReceptionistCenterInner({
     [],
   );
 
+  // Bumped on every booking mutation (via reloadCurrentDay, which every
+  // mutation + realtime change funnels through). Week/Month views include it
+  // in their fetch deps so they refetch after a cancel/reschedule done from
+  // their own drawer — otherwise a booking cancelled while in Week view lingers
+  // in that view's local cache (its deps never changed). (QA #5.)
+  const [calendarRefreshNonce, setCalendarRefreshNonce] = useState(0);
+
   useEffect(() => {
     return () => {
       if (undoTimerRef.current !== null) window.clearInterval(undoTimerRef.current);
@@ -870,6 +877,8 @@ function ReceptionistCenterInner({
     } else {
       setShakeMessage(loadErrorCopy(messages.receptionist, res.error));
     }
+    // Keep Week/Month views in sync with this mutation (QA #5).
+    setCalendarRefreshNonce((n) => n + 1);
   }, [slug, timezone, dateOffset, messages.receptionist, markSynced]);
 
   /**
@@ -2625,6 +2634,7 @@ function ReceptionistCenterInner({
             messages={rcMessages.monthView}
             removedGuest={rcMessages.removedGuest}
             hint={calendarHint}
+            refreshNonce={calendarRefreshNonce}
             onDayClick={(ymd) => {
               // Switch to Day view for the tapped date.
               onChangeViewMode("day");
@@ -2668,6 +2678,7 @@ function ReceptionistCenterInner({
             messages={rcMessages.weekView}
             removedGuest={rcMessages.removedGuest}
             hint={calendarHint}
+            refreshNonce={calendarRefreshNonce}
             onDayClick={(ymd) => {
               // Tapping a day flips back to Day view and (when the day
               // is yesterday/today/tomorrow) slots into the existing
