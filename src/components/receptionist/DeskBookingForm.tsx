@@ -181,7 +181,8 @@ export default function DeskBookingForm({
   const [addonIds, setAddonIds] = useState<string[]>([]);
   const [staffId, setStaffId] = useState(initialStaffId ?? "");
   const [staffRequested, setStaffRequested] = useState(false);
-  const [ymd, setYmd] = useState(initialYmd ?? "");
+  // Default to today (not an empty "yyyy-mm-dd" placeholder) when not prefilled.
+  const [ymd, setYmd] = useState(initialYmd ?? todayYmd());
   const [slotLabel, setSlotLabel] = useState("");
   const [notes, setNotes] = useState("");
 
