@@ -19,50 +19,78 @@ import { EditBookingForm, type EditBookingFormBooking } from "./EditBookingForm"
 import { DepositLinkModal } from "./DepositLinkModal";
 import { requestDepositLink } from "@/shared/dashboard/receptionistActions";
 
-/** Risk score at/above which a deposit makes sense to offer at the desk. Mirrors
- *  the salon deposit policy default; the server is the source of truth (it can
- *  decline with a reason that we surface inline). */
-const DEPOSIT_RISK_GATE = 60;
-
-function depositErrorLabel(code: string): string {
-  if (code.startsWith("risk ")) return "Khách chưa đủ mức rủi ro để cần cọc.";
-  if (code.includes("disabled")) return "Tính năng cọc chưa bật cho tiệm này.";
-  if (code === "unauthorized" || code === "salon_mismatch") return "Không có quyền.";
-  if (code === "invalid_booking") return "Lịch không hợp lệ.";
-  return "Không tạo được link cọc, thử lại.";
+function depositErrorLabel(code: string, lang: "en" | "vi"): string {
+  if (code.startsWith("risk "))
+    return lang === "en"
+      ? "Customer isn't high-risk enough for a deposit."
+      : "Khách chưa đủ mức rủi ro để cần cọc.";
+  if (code.includes("disabled"))
+    return lang === "en"
+      ? "Deposits aren't enabled for this salon."
+      : "Tính năng cọc chưa bật cho tiệm này.";
+  if (code === "unauthorized" || code === "salon_mismatch")
+    return lang === "en" ? "Not allowed." : "Không có quyền.";
+  if (code === "invalid_booking")
+    return lang === "en" ? "Invalid booking." : "Lịch không hợp lệ.";
+  return lang === "en"
+    ? "Couldn't create the deposit link — try again."
+    : "Không tạo được link cọc, thử lại.";
 }
 
-/** Self-contained desk action: create + show a Square deposit link (QR) for a
- *  high-no-show-risk booking. Kept here so the drawer stays the single owner of
- *  the deposit UI (no extra props threaded from ReceptionistCenter). */
+/** Self-contained desk action: create a Square deposit link for ANY booking the
+ *  receptionist chooses (manual → bypasses the no-show-risk gate), then show it
+ *  as a QR AND offer to text it to the customer. Kept here so the drawer stays
+ *  the single owner of the deposit UI. */
 function DepositButton({
   slug,
   salonId,
   bookingId,
   disabled,
   offlineHint,
+  language,
 }: {
   slug: string;
   salonId: string;
   bookingId: string;
   disabled?: boolean;
   offlineHint?: string;
+  language: "en" | "vi";
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<{ url: string; amountCents: number } | null>(null);
+  const label = language === "en" ? "💰 Request deposit" : "💰 Tạo link cọc";
 
   async function onPress() {
     setBusy(true);
     setError(null);
     try {
-      const r = await requestDepositLink(slug, { salonId, bookingId });
+      // manual: a human at the desk decided a deposit is warranted → skip the
+      // server's no-show-risk gate.
+      const r = await requestDepositLink(slug, { salonId, bookingId, manual: true, language });
       if (r.ok) setModal({ url: r.url, amountCents: r.amountCents });
-      else setError(depositErrorLabel(r.error));
+      else setError(depositErrorLabel(r.error, language));
     } catch {
-      setError("Không tạo được link cọc, thử lại.");
+      setError(depositErrorLabel("server_error", language));
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Text the (idempotent) link to the customer. Returns ok only when Twilio
+  // actually accepted the message so the modal can show a truthful result.
+  async function onSendSms(): Promise<boolean> {
+    try {
+      const r = await requestDepositLink(slug, {
+        salonId,
+        bookingId,
+        manual: true,
+        sendSms: true,
+        language,
+      });
+      return r.ok && r.smsSent === true;
+    } catch {
+      return false;
     }
   }
 
@@ -78,7 +106,7 @@ function DepositButton({
         className="w-full sm:w-full"
         onClick={() => void onPress()}
       >
-        💰 Tạo link cọc
+        {label}
       </Button>
       {error ? (
         <p className="text-xs font-semibold text-nq-error" role="status">
@@ -91,6 +119,8 @@ function DepositButton({
           onClose={() => setModal(null)}
           url={modal.url}
           amountCents={modal.amountCents}
+          language={language}
+          onSendSms={onSendSms}
         />
       ) : null}
     </>
@@ -231,6 +261,10 @@ export type BookingDetailDrawerModel = {
   depositPaidLine: string | null;
   /** Formatted balance still to charge on the POS (price − deposit); null when no deposit. */
   remainingLine: string | null;
+  /** Square deposits enabled for this salon — gates the desk "request deposit" action. */
+  depositsEnabled: boolean;
+  /** Dashboard language — drives the deposit SMS copy + the deposit modal/button text. */
+  language: "en" | "vi";
 };
 
 export interface BookingDetailDrawerProps {
@@ -816,15 +850,15 @@ export function BookingDetailDrawer({
                       </Button>
                     ) : null}
                     {deskEdit &&
-                    model.verificationMethod !== "deposit" &&
-                    model.noShowRiskScore != null &&
-                    model.noShowRiskScore >= DEPOSIT_RISK_GATE ? (
+                    model.depositsEnabled &&
+                    model.verificationMethod !== "deposit" ? (
                       <DepositButton
                         slug={deskEdit.slug}
                         salonId={deskEdit.salonId}
                         bookingId={deskEdit.booking.id}
                         disabled={isOffline}
                         offlineHint={offlineEditDisabledHint}
+                        language={model.language}
                       />
                     ) : null}
                   </>

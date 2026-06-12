@@ -51,6 +51,10 @@ export interface ReceptionistCenterData {
     queueDisplayMode: "simple" | "full";
     /** `salons.basic_mode_forced`. When true, Basic Mode is auto-enabled and cannot be toggled off. */
     basicModeForced: boolean;
+    /** Square deposits enabled (`square_integrations.deposit_enabled`). Drives
+     * whether the desk offers the "request deposit + text link" action — false
+     * for salons without Square so they never see a dead button. */
+    depositsEnabled: boolean;
     /**
      * Salon open/close minutes-from-midnight for the SELECTED day, parsed from
      * `salons.opening_hours` in the salon timezone. `null` when the salon is
@@ -578,6 +582,23 @@ export async function loadReceptionistCenterData(
     return { ok: false, error: "salon_not_found" };
   }
 
+  // Square deposits enabled for this salon? Read with the service-role client —
+  // square_integrations is RLS-restricted, and deposit_enabled is a non-secret
+  // config flag the desk uses to decide whether to show the "request deposit +
+  // text link" action (so non-Square salons never get a dead button).
+  let depositsEnabled = false;
+  try {
+    const { data: sqRow } = await createServiceRoleClient()
+      .from("square_integrations")
+      .select("deposit_enabled")
+      .eq("salon_id", ctx.salon.id)
+      .maybeSingle();
+    depositsEnabled =
+      (sqRow as { deposit_enabled?: boolean } | null)?.deposit_enabled === true;
+  } catch {
+    /* leave false — desk just won't show the deposit action */
+  }
+
   const salonRow = {
     id: salonData.id,
     name: String(salonData.name ?? ""),
@@ -588,6 +609,7 @@ export async function loadReceptionistCenterData(
     queueDisplayMode: (salonData.queue_display_mode === "simple" ? "simple" : "full") as "simple" | "full",
     // TODO: Regenerate types when Docker is available (npx supabase gen types typescript --local)
     basicModeForced: (salonData as any).basic_mode_forced === true,
+    depositsEnabled,
     ...openingHoursForDay(salonData.opening_hours, dateYmd),
   };
 

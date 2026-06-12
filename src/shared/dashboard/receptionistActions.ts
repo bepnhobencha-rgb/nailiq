@@ -32,6 +32,7 @@ import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { createDepositForBooking, refundDeposit } from "@/shared/integrations/square/deposits";
+import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { pushWixCancel, pushWixConfirm, pushWixDecline, pushWixCreate } from "@/shared/integrations/wix/writeback";
 import {
   type EditBookingInput,
@@ -753,16 +754,55 @@ export async function cancelDeskBooking(
   return { ok: true };
 }
 
+/** Text the Square deposit pay-link to the customer (best-effort). Bilingual —
+ *  the receptionist's dashboard language drives the copy. Returns false on a
+ *  missing phone or a Twilio failure so the desk can fall back to the QR. */
+async function sendDepositSms(args: {
+  phone: string;
+  salonName: string;
+  amountCents: number;
+  url: string;
+  language: "en" | "vi";
+}): Promise<boolean> {
+  const phone = args.phone.trim();
+  if (!phone) return false;
+  const amount = `$${(args.amountCents / 100).toFixed(2)}`;
+  const salon = args.salonName.trim() || "NailIQ";
+  const body =
+    args.language === "en"
+      ? `${salon}: Please pay your ${amount} deposit to hold your appointment: ${args.url}`
+      : `${salon}: Vui lòng đặt cọc ${amount} để giữ lịch hẹn của bạn: ${args.url}`;
+  try {
+    const res = await sendSmsReminder(phone, body);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Desk: create (or return existing) a Square deposit payment link for a booking.
- * Risk-gated + amount policy live in createDepositForBooking; here we only enforce
- * auth + that the booking belongs to the caller's salon. The receptionist shows
- * the returned URL/QR to the customer on screen.
+ * Desk: create (or return existing) a Square deposit payment link for a booking,
+ * and optionally text it to the customer. Amount policy lives in
+ * createDepositForBooking; here we enforce auth + salon scope. `manual` lets the
+ * receptionist request a deposit regardless of no-show risk (the human decided);
+ * `sendSms` texts the link via Twilio. The link is also shown as a QR on screen.
  */
 export async function requestDepositLink(
   slug: string,
-  input: { salonId: string; bookingId: string },
-): Promise<{ ok: true; url: string; amountCents: number } | { ok: false; error: string }> {
+  input: {
+    salonId: string;
+    bookingId: string;
+    /** Receptionist-initiated → bypass the no-show-risk gate. */
+    manual?: boolean;
+    /** Also text the pay link to the customer's phone. */
+    sendSms?: boolean;
+    /** Dashboard language for the SMS copy. */
+    language?: "en" | "vi";
+  },
+): Promise<
+  | { ok: true; url: string; amountCents: number; smsSent?: boolean }
+  | { ok: false; error: string }
+> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
   if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
@@ -771,18 +811,30 @@ export async function requestDepositLink(
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
   // Scope check: the booking must be visible in the caller's salon (RLS client).
+  // Pull the phone too so we can text the link without a second round-trip.
   const { data: bk } = await ctx.supabase
     .from("bookings")
-    .select("id")
+    .select("id, client_phone")
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .maybeSingle();
   if (!bk?.id) return fail("invalid_booking");
 
   try {
-    const r = await createDepositForBooking(bookingId);
+    const r = await createDepositForBooking(bookingId, { manual: input.manual === true });
     if (!r.required || !r.url) return fail(r.reason || "deposit_not_required");
-    return { ok: true, url: r.url, amountCents: r.amountCents ?? 0 };
+
+    let smsSent: boolean | undefined;
+    if (input.sendSms) {
+      smsSent = await sendDepositSms({
+        phone: String((bk as { client_phone?: string }).client_phone ?? ""),
+        salonName: ctx.salon.name,
+        amountCents: r.amountCents ?? 0,
+        url: r.url,
+        language: input.language === "en" ? "en" : "vi",
+      });
+    }
+    return { ok: true, url: r.url, amountCents: r.amountCents ?? 0, smsSent };
   } catch (e) {
     console.error("[requestDepositLink]", e);
     return fail("server_error");
