@@ -71,7 +71,7 @@ export async function POST(req: Request) {
   // Check if SMS is enabled for this salon
   const { data: salon } = await db
     .from("salons")
-    .select("name, subscription_plan, plan_override")
+    .select("name, subscription_plan, plan_override, address")
     .eq("id", salonId)
     .maybeSingle();
 
@@ -116,13 +116,22 @@ export async function POST(req: Request) {
   const salonName = salon.name ?? "";
   const staff = staffName ? ` with ${staffName}` : "";
 
-  const message = isGroup
+  const baseMessage = isGroup
     ? lang === "en"
       ? `✅ Group of ${partySize} booked at ${salonName} · ${dateStr}. Reply STOP to opt out.`
       : `✅ Đã đặt lịch nhóm ${partySize} người tại ${salonName} · ${dateStr}. Nhắn STOP để huỷ nhận tin.`
     : lang === "en"
       ? `✅ Booked! ${serviceName}${staff} at ${salonName} · ${dateStr}. Reply STOP to opt out.`
       : `✅ Đã đặt lịch! ${serviceName} tại ${salonName} · ${dateStr}. Nhắn STOP để huỷ nhận tin.`;
+
+  // Append a Google Maps directions link (built from the salon address — no
+  // extra column). One short line so the customer can navigate; the pin emoji
+  // reads in any language. Adds an SMS segment, worth it for confirmations.
+  const salonAddress = (salon as { address?: string | null }).address?.trim() || "";
+  const mapsLine = salonAddress
+    ? `\n📍 https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(salonAddress)}`
+    : "";
+  const message = baseMessage + mapsLine;
 
   const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
   const statusCallbackUrl = `${SITE_URL}/api/twilio/status`;

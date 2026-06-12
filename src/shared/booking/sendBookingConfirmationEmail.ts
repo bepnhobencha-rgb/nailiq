@@ -82,6 +82,8 @@ export function buildHtml(
   confirmUrl: string,
   currencyCode: string,
   manageLinks: ManageLinks | null,
+  address?: string | null,
+  salonPhone?: string | null,
 ): string {
   const eName = escapeHtml(input.clientName);
   const eSalon = escapeHtml(salonName);
@@ -89,6 +91,26 @@ export function buildHtml(
   const eAddon = input.addonServiceName ? escapeHtml(input.addonServiceName) : null;
   const eStaff = escapeHtml(input.staffName);
   const eDateTime = escapeHtml(dateTimeStr);
+
+  // Location: render the address + a "Get directions" button (Google Maps URL
+  // built from the address — no extra DB column needed) so the customer,
+  // especially a first-timer, can find the salon. Phone (if set) becomes a
+  // tap-to-call link in the contact line.
+  const addr = address?.trim() || "";
+  const eAddress = addr ? escapeHtml(addr) : null;
+  const mapsUrl = addr
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`
+    : null;
+  const phone = salonPhone?.trim() || "";
+  const ePhone = phone ? escapeHtml(phone) : null;
+  const telHref = phone ? phone.replace(/[^\d+]/g, "") : null;
+  const locationBlock = eAddress
+    ? `<div style="margin:18px 0 0;padding:16px;border:1px solid #eee;border-radius:8px;background:#fafafa;">
+              <p style="margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#888;">Location</p>
+              <p style="margin:0 0 12px;font-size:14px;color:#333;line-height:1.45;">${eAddress}</p>
+              <a href="${mapsUrl}" style="display:inline-block;padding:9px 18px;background:#0B0C10;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;font-size:13px;">📍 Get directions</a>
+            </div>`
+    : "";
 
   const priceStr =
     input.totalPriceCents != null && input.totalPriceCents > 0
@@ -156,6 +178,9 @@ export function buildHtml(
               </table></td></tr>
             </table>
 
+            <!-- Location + directions -->
+            ${locationBlock}
+
             <!-- CTA -->
             <div style="margin:24px 0 0;text-align:center;">
               <a href="${confirmUrl}" style="display:inline-block;padding:12px 28px;background:#D4AF37;color:#0B0C10;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;">
@@ -172,7 +197,7 @@ export function buildHtml(
               <a href="${manageLinks.cancel}" style="color:#0B0C10;font-weight:600;text-decoration:underline;">Cancel</a>
             </p>`
                 : `<p style="margin:20px 0 0;font-size:13px;color:#888;text-align:center;">
-              Need to reschedule? Contact <strong>${eSalon}</strong> directly.
+              Need to reschedule? Contact <strong>${eSalon}</strong>${ePhone && telHref ? ` at <a href="tel:${telHref}" style="color:#0B0C10;font-weight:600;text-decoration:underline;">${ePhone}</a>` : ""} directly.
             </p>`
             }
           </td>
@@ -211,7 +236,7 @@ export async function sendBookingConfirmationEmail(
     const supabase = createServiceRoleClient();
     const { data: salonRow } = await supabase
       .from("salons")
-      .select("id, name, timezone, currency, reminders_enabled")
+      .select("id, name, timezone, currency, reminders_enabled, address, salon_phone")
       .eq("slug", input.shopSlug)
       .maybeSingle();
 
@@ -252,7 +277,21 @@ export async function sendBookingConfirmationEmail(
       }
     }
 
-    const html = buildHtml(salonName, input, dateTimeStr, confirmUrl, currencyCode, manageLinks);
+    const address =
+      typeof salonRow?.address === "string" ? salonRow.address : null;
+    const salonPhone =
+      typeof salonRow?.salon_phone === "string" ? salonRow.salon_phone : null;
+
+    const html = buildHtml(
+      salonName,
+      input,
+      dateTimeStr,
+      confirmUrl,
+      currencyCode,
+      manageLinks,
+      address,
+      salonPhone,
+    );
 
     const res = await resend.emails.send({
       from: getResendFrom(),
