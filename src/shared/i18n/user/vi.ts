@@ -1387,7 +1387,10 @@ export const userVi: UserMessages = {
     },
     edit: {
       modeTitle: "Sửa booking",
+      dateLabel: "Ngày",
       timeLabel: "Giờ",
+      slotsLoading: "Đang tìm giờ trống…",
+      noSlots: "Không còn giờ trống ngày này — chọn ngày khác.",
       staffLabel: "Thợ",
       serviceLabel: "Dịch vụ",
       endTimePrefix: "Kết thúc lúc",

@@ -1403,7 +1403,13 @@ export type UserMessages = {
     edit: {
       /** Section heading when editing from the drawer */
       modeTitle: string;
+      /** Date picker label (edit form supports changing the day). */
+      dateLabel: string;
       timeLabel: string;
+      /** Spinner copy while the availability grid loads. */
+      slotsLoading: string;
+      /** Empty state when no open times exist for the chosen day. */
+      noSlots: string;
       staffLabel: string;
       serviceLabel: string;
       endTimePrefix: string;
@@ -3132,7 +3138,10 @@ export const userEn: UserMessages = {
     },
     edit: {
       modeTitle: "Edit booking",
+      dateLabel: "Date",
       timeLabel: "Time",
+      slotsLoading: "Finding open times…",
+      noSlots: "No open times this day — pick another date.",
       staffLabel: "Staff",
       serviceLabel: "Service",
       endTimePrefix: "Ends at",
