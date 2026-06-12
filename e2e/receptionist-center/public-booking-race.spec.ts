@@ -10,7 +10,7 @@ import {
 import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
-  clickAssignSlot,
+  clickAssignSlotAtUtc,
   clickWalkinService,
   clickWalkinSubmit,
   countBookingsForClient,
@@ -269,7 +269,10 @@ test.describe("race-2: appointment blocks walk-in assign same slot", () => {
     const walkinBookingId = tid?.replace(/^queue-item-/, "") ?? "";
 
     await page.getByTestId(`queue-assign-${walkinBookingId}`).click();
-    await clickAssignSlot(page, fx.freeStaffId, fx.noonSlotIndex);
+    // Target the slot by the seeded booking's absolute UTC start — the grid's
+    // index↔time mapping shifts with the dynamic hour window, so a fixed index
+    // can land on the wrong (free) slot when CI runs before the salon opens.
+    await clickAssignSlotAtUtc(page, fx.freeStaffId, startIso);
 
     const deskMsg = page.getByTestId("desk-action-message");
     await expect(deskMsg).toBeVisible({ timeout: 12_000 });

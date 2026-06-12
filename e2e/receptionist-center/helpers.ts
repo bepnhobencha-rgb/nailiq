@@ -67,9 +67,13 @@ export type ReceptionistCenterFixture = {
   /** Six services; index 5 is long duration for overflow ghost tests */
   serviceIds: string[];
   ymdUtc: string;
-  /** Staff column 0 holds a confirmed booking at 10:00 UTC — slot index 4 conflicts */
+  /** Staff column 0 holds a confirmed booking at 10:00 UTC */
   conflictStaffId: string;
   conflictSlotIndex: number;
+  /** Absolute UTC start of the conflict anchor (10:00). Target slots by this
+   *  rather than by index: the grid's index↔time mapping shifts with the
+   *  dynamic hour window (computeHourRange widens to include "now"). */
+  conflictSlotUtc: string;
   /** Confirmed appointment for “existing booking renders” */
   displayApptBookingId: string;
   displayApptClientName: string;
@@ -365,6 +369,7 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
     ymdUtc,
     conflictStaffId,
     conflictSlotIndex: 4,
+    conflictSlotUtc: isoAtUtcYmdHourMinute(ymdUtc, 10, 0),
     displayApptBookingId,
     displayApptClientName,
     freeStaffId,
@@ -692,6 +697,23 @@ export async function clickAssignSlot(
   });
 }
 
+/** Click the assign slot at an absolute UTC wall-clock time. Robust to the
+ *  dynamic hour window (the index↔time mapping shifts when computeHourRange
+ *  widens to include "now"), unlike the fixed-index clickAssignSlot. */
+export async function clickAssignSlotAtUtc(
+  page: Page,
+  staffId: string,
+  utcIso: string,
+): Promise<void> {
+  const loc = page.locator(
+    `[data-testid^="assign-slot-${staffId}-"][data-slot-utc="${utcIso}"]`,
+  );
+  await loc.waitFor({ state: "attached", timeout: 15_000 });
+  await loc.evaluate((el: HTMLElement) => {
+    el.click();
+  });
+}
+
 /** Move physical cursor over slot (React `onMouseEnter` + ghost state). */
 export async function moveMouseToAssignSlot(
   page: Page,
@@ -705,6 +727,22 @@ export async function moveMouseToAssignSlot(
   // Slot `<button>`s drive the same ghost state via `onFocus` as `onMouseEnter`.
   await slot.focus();
   // Small wait for React state to settle hoveredSlot + ghost subtree
+  await page.waitForTimeout(100);
+}
+
+/** Move focus to the assign slot at an absolute UTC time (see
+ *  clickAssignSlotAtUtc for why we target by time, not index). */
+export async function moveMouseToAssignSlotAtUtc(
+  page: Page,
+  staffId: string,
+  utcIso: string,
+): Promise<void> {
+  const slot = page.locator(
+    `[data-testid^="assign-slot-${staffId}-"][data-slot-utc="${utcIso}"]`,
+  );
+  await slot.waitFor({ state: "attached", timeout: 15_000 });
+  await slot.scrollIntoViewIfNeeded();
+  await slot.focus();
   await page.waitForTimeout(100);
 }
 
