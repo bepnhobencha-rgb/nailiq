@@ -617,6 +617,13 @@ function ReceptionistCenterInner({
   const [addFocusNonce, setAddFocusNonce] = useState(0);
   // Desk "New appointment" modal — books a phone-in customer for a future date.
   const [deskBookingOpen, setDeskBookingOpen] = useState(false);
+  // Prefill for the desk form when opened by clicking an empty grid slot
+  // (staff + day + time). Null when opened via the header button (blank form).
+  const [deskPrefill, setDeskPrefill] = useState<{
+    staffId: string;
+    ymd: string;
+    slotLabel: string;
+  } | null>(null);
   const openWalkinAdd = useCallback(() => {
     setQueuePanelOpen(true);
     setAddFocusNonce((n) => n + 1);
@@ -2286,7 +2293,12 @@ function ReceptionistCenterInner({
                   variant="secondary"
                   size="sm"
                   data-testid="header-add-appointment"
-                  onClick={() => setDeskBookingOpen(true)}
+                  onClick={() => {
+                    // Header button opens a BLANK form — clear any stale
+                    // grid-slot prefill first.
+                    setDeskPrefill(null);
+                    setDeskBookingOpen(true);
+                  }}
                 >
                   {language === "vi" ? "+ Hẹn mới" : "+ New appt"}
                 </Button>
@@ -2296,8 +2308,15 @@ function ReceptionistCenterInner({
                   slug={slug}
                   salonId={data.salon.id}
                   language={language}
-                  onClose={() => setDeskBookingOpen(false)}
+                  initialStaffId={deskPrefill?.staffId}
+                  initialYmd={deskPrefill?.ymd}
+                  initialSlotLabel={deskPrefill?.slotLabel}
+                  onClose={() => {
+                    setDeskBookingOpen(false);
+                    setDeskPrefill(null);
+                  }}
                   onCreated={() => {
+                    setDeskPrefill(null);
                     void reloadCurrentDay();
                   }}
                 />
@@ -2683,6 +2702,11 @@ function ReceptionistCenterInner({
               existingBookings={gridBookings}
               onBookingClick={(id) => setDrawerBookingId(id)}
               onSlotClick={(staffId, utc) => void onWalkinAssignSlot(staffId, utc)}
+              onEmptySlotClick={(staffId, ymd, slotLabel) => {
+                // Click an empty grid slot → open the desk form prefilled.
+                setDeskPrefill({ staffId, ymd, slotLabel });
+                setDeskBookingOpen(true);
+              }}
               onRescheduleBooking={async (bookingId, newStaffId, newStartUtc) => {
                 const booking = data.bookingsForDay.find((b) => b.id === bookingId);
                 if (!booking) return { ok: false, error: "not_found" };
