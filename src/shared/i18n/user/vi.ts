@@ -1404,6 +1404,7 @@ export const userVi: UserMessages = {
       not_foundMessage: "Không tìm thấy booking",
       invalid_statusMessage: "Không thể sửa booking này",
       serverErrorMessage: "Lỗi server. Thử lại.",
+      pastDateMessage: "Không thể dời lịch về quá khứ.",
     },
     actionErrorFallback: "Không thực hiện được thao tác. Thử lại.",
     actionErrors: {

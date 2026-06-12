@@ -41,6 +41,7 @@ export type EditBookingInput = {
 export type EditBookingError =
   | "not_found"
   | "invalid_status"
+  | "past_date"
   | "slot_conflict"
   | "staff_cannot_perform_service"
   | "server_error"
@@ -138,6 +139,15 @@ export async function performEditBooking(
   const status = String(bookingData.status);
   if (status !== "pending" && status !== "confirmed") {
     return { ok: false, error: "invalid_status" };
+  }
+
+  // Don't allow rescheduling to a time in the PAST (mirrors the grid drag-drop
+  // guard; the Edit form previously had no such check, so a date change could
+  // land a "confirmed" booking days ago). Only a CHANGED start is checked —
+  // editing staff/service while keeping an already-past time is still allowed.
+  const PAST_GRACE_MS = 2 * 60 * 1000;
+  if (slotStartUtc !== st && startMs < Date.now() - PAST_GRACE_MS) {
+    return { ok: false, error: "past_date" };
   }
 
   const { data: svc, error: svcErr } = await supabase
