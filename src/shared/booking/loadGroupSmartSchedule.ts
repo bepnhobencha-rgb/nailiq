@@ -781,7 +781,21 @@ export async function loadGroupSmartSchedule(
       );
       if (waveRaw && waveRaw.assignments.length === resolvedMembers.length) {
         const waveArr = buildWaveArrangement(waveRaw, resolvedMembers, staffById, timezone);
-        if (waveArr.isWaveBooking) {
+        // Only accept the wave arrangement silently when its FIRST wave lands
+        // STRICTLY inside the requested arrival window (before the window's
+        // max-start boundary). If the only way the whole group fits in waves is
+        // by sliding to the window edge or past it (e.g. a morning request that
+        // only fits from noon on), fall through to the alternatives path: the
+        // arrangement at the boundary is really the *next* window, which the
+        // cross-window `earlierToday` search re-surfaces anyway, and falling
+        // through ALSO offers the window-honouring split (keep the prefix at the
+        // requested time, spill the rest later) — so the customer chooses rather
+        // than silently losing the window they asked for.
+        const firstWaveStartMs = Date.parse(waveArr.assignments[0].startUtcIso);
+        const windowEndMs = Date.parse(
+          salonWallTimeToUtcIso(params.date, window.endMin, timezone),
+        );
+        if (waveArr.isWaveBooking && firstWaveStartMs < windowEndMs) {
           return { ok: true, arrangements: [waveArr], timezone };
         }
       }
