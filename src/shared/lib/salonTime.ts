@@ -167,6 +167,15 @@ export function salonToday(timezone: string, nowIso?: string): string {
 }
 
 /**
+ * YYYY-MM-DD (in salon timezone) for an arbitrary UTC instant.
+ * Used by the desk's optimistic insert to decide whether a freshly-created
+ * booking belongs to the day the receptionist is currently viewing.
+ */
+export function salonYmdOfUtc(utcIso: string, timezone: string): string {
+  return ymdInTimeZone(parseUtcMs(utcIso), timezone);
+}
+
+/**
  * Get YYYY-MM-DD offset by N days from today in salon timezone.
  * Used for date switcher: yesterday/today/tomorrow.
  */
