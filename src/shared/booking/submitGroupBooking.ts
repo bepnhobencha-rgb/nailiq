@@ -669,6 +669,11 @@ export async function submitGroupBooking(
       seat_together: params.seatTogether === true,
       staff_requested_by_client: true,
       idempotency_key: idem,
+      // Language the organizer was browsing in — persisted on every member row
+      // so each guest's transactional SMS matches it. Read by the RPC as a
+      // jsonb key; absent/null → column stays null and the SMS sender falls
+      // back to customer_preferences.
+      client_locale: params.language ?? null,
     };
   });
 
