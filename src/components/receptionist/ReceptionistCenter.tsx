@@ -443,7 +443,10 @@ function ReceptionistCenterInner({
 
   useEffect(() => {
     if (!shakeMessage) return;
-    const t = window.setTimeout(() => setShakeMessage(null), 2400);
+    // 5s, not 2.4s: shakeMessage carries actionable errors ("Conflict with
+    // {name}", assign failures) the receptionist must read to understand why an
+    // action didn't land. 2.4s flashed too fast to read — and to assert in E2E.
+    const t = window.setTimeout(() => setShakeMessage(null), 5000);
     return () => window.clearTimeout(t);
   }, [shakeMessage]);
 

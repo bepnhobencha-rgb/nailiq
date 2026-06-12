@@ -889,11 +889,19 @@ function StaffTimelineGridImpl({
                           "z-[1] pointer-events-none",
                     )}
                   >
-                    {Array.from({ length: totalSlots }, (_, slotIndex) => (
+                    {Array.from({ length: totalSlots }, (_, slotIndex) => {
+                      // The slot's absolute UTC start. Exposed as `data-slot-utc`
+                      // so tests can target a slot by wall-clock time rather than
+                      // by index — the index↔time mapping shifts with the dynamic
+                      // hour window (`computeHourRange` widens to include "now"),
+                      // which made fixed-index slot lookups flaky.
+                      const slotUtc = slotIndexToUtc(slotIndex, selectedDate, timezone, hourStart);
+                      return (
                       <button
                         key={slotIndex}
                         type="button"
                         data-testid={`assign-slot-${s.id}-${slotIndex}`}
+                        data-slot-utc={slotUtc}
                         tabIndex={assignMode ? 0 : -1}
                         aria-hidden={!assignMode}
                         className={cn(
@@ -908,19 +916,18 @@ function StaffTimelineGridImpl({
                         onClick={(e: MouseEvent) => {
                           if (!assignMode) return;
                           e.stopPropagation();
-                          const utc = slotIndexToUtc(slotIndex, selectedDate, timezone, hourStart);
-                          onSlotClick(s.id, utc);
+                          onSlotClick(s.id, slotUtc);
                         }}
                         onKeyDown={(e: KeyboardEvent) => {
                           if (!assignMode) return;
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
-                            const utc = slotIndexToUtc(slotIndex, selectedDate, timezone, hourStart);
-                            onSlotClick(s.id, utc);
+                            onSlotClick(s.id, slotUtc);
                           }
                         }}
                       />
-                    ))}
+                      );
+                    })}
                   </div>
 
                   <div

@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
-  clickAssignSlot,
+  clickAssignSlotAtUtc,
   clickWalkinService,
   clickWalkinSubmit,
   fillWalkinGuestContact,
@@ -46,7 +46,7 @@ test.describe("Assign conflict prevention", () => {
 
     await page.getByTestId(`queue-assign-${bookingId}`).click();
 
-    await clickAssignSlot(page, fx.conflictStaffId, fx.conflictSlotIndex);
+    await clickAssignSlotAtUtc(page, fx.conflictStaffId, fx.conflictSlotUtc);
 
     await expect(page.getByTestId(`queue-item-${bookingId}`)).toBeVisible({ timeout: 5000 });
     await expect(page.getByTestId(`booking-block-${bookingId}`)).toHaveCount(0);
