@@ -917,19 +917,25 @@ function StaffTimelineGridImpl({
                           if (recentlyDraggedRef.current) return;
                           const rowRect =
                             e.currentTarget.getBoundingClientRect();
-                          const rawSlot = Math.floor(
-                            (e.clientX - rowRect.left) / SLOT_PX,
-                          );
-                          const slotIndex = Math.max(
+                          // The grid cells are 30 min, but the booking form
+                          // offers 15-min precision — so snap the clicked time to
+                          // the nearest 15-min sub-slot based on which half of
+                          // the cell was hit (half a cell = 15 min). The prefill
+                          // then matches a real form slot.
+                          const HALF_PX = SLOT_PX / 2; // 15 min
+                          const subSlot = Math.max(
                             0,
-                            Math.min(totalSlots - 1, rawSlot),
+                            Math.min(
+                              totalSlots * 2 - 1,
+                              Math.floor((e.clientX - rowRect.left) / HALF_PX),
+                            ),
                           );
+                          const slotIndex = Math.floor(subSlot / 2); // 30-min cell
                           // Skip if the click landed on an existing booking for
-                          // this staff row — the block already handles its own
-                          // click (drawer). Detect overlap by comparing the
-                          // clicked slot against each booking's start/end slot
-                          // range (derived from its pixel position).
-                          const clickedLeftPx = slotIndex * SLOT_PX;
+                          // this staff row — the block handles its own click
+                          // (drawer). Compare the snapped 15-min position against
+                          // each booking's pixel range.
+                          const clickedLeftPx = subSlot * HALF_PX;
                           const hitsBooking = rowBookings.some((b) => {
                             const { leftPx, widthPx } = bookingToPosition(
                               b,
@@ -945,7 +951,7 @@ function StaffTimelineGridImpl({
                           // Offline staff / out-of-hours slots are not creatable.
                           if (!isSlotCreatable(s.status, slotIndex)) return;
                           const timeLabel = minutesToLabel(
-                            hourStart * 60 + slotIndex * SLOT_MINUTES,
+                            hourStart * 60 + subSlot * 15,
                           );
                           onEmptySlotClick(s.id, selectedDate, timeLabel);
                         }
