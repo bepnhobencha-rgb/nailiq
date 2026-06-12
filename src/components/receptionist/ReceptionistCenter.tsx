@@ -414,6 +414,22 @@ function ReceptionistCenterInner({
 
   const undoVisible = undoState !== null;
 
+  // Transient error toast (e.g. a drag-to-reschedule rejected by the server —
+  // past date, slot conflict). Auto-clears so it never lingers.
+  const [errorToast, setErrorToast] = useState<string | null>(null);
+  const errorToastTimerRef = useRef<number | null>(null);
+  const showErrorToast = useCallback((message: string) => {
+    setErrorToast(message);
+    if (errorToastTimerRef.current) window.clearTimeout(errorToastTimerRef.current);
+    errorToastTimerRef.current = window.setTimeout(() => setErrorToast(null), 4500);
+  }, []);
+  useEffect(
+    () => () => {
+      if (errorToastTimerRef.current) window.clearTimeout(errorToastTimerRef.current);
+    },
+    [],
+  );
+
   useEffect(() => {
     return () => {
       if (undoTimerRef.current !== null) window.clearInterval(undoTimerRef.current);
@@ -2776,6 +2792,17 @@ function ReceptionistCenterInner({
                   router.refresh();
                   return { ok: true };
                 }
+                // Surface WHY the drop snapped back, instead of failing silently.
+                const failCopy = rcMessages.grid.rescheduleFailed;
+                const reason =
+                  result.error === "past_date"
+                    ? failCopy.past_date
+                    : result.error === "slot_conflict"
+                      ? failCopy.slot_conflict
+                      : result.error === "staff_cannot_perform_service"
+                        ? failCopy.staff_cannot_perform_service
+                        : failCopy.generic;
+                showErrorToast(reason);
                 return { ok: false, error: result.error };
               }}
               labels={{
@@ -2962,6 +2989,33 @@ function ReceptionistCenterInner({
         onUndo={() => void onUndoToastUndo()}
         onDismiss={() => setUndoState(null)}
       />
+
+      {/* Transient error toast — explains a rejected drag-to-reschedule. */}
+      <div
+        data-testid="reschedule-error-toast"
+        aria-live="assertive"
+        className={cn(
+          "fixed bottom-6 left-1/2 z-50 flex max-w-[min(100vw-2rem,26rem)] -translate-x-1/2 px-4",
+          "motion-safe:transition-[transform,opacity] motion-safe:duration-300 motion-safe:ease-[var(--ease-nq-out,cubic-bezier(0.22,1,0.36,1))]",
+          errorToast
+            ? "translate-y-0 opacity-100"
+            : "pointer-events-none translate-y-3 opacity-0",
+        )}
+        aria-hidden={!errorToast}
+        inert={!errorToast}
+      >
+        <div className="flex w-full items-start gap-3 rounded-xl border-2 border-nq-error bg-nq-surface p-4 shadow-nq-card">
+          <span
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-nq-error text-sm font-semibold leading-none text-white"
+            aria-hidden
+          >
+            !
+          </span>
+          <p className="min-w-0 flex-1 pt-1 text-sm font-medium leading-snug text-nq-foreground">
+            {errorToast}
+          </p>
+        </div>
+      </div>
 
       <BookingDetailDrawer
         open={drawerBookingId !== null && detailModel !== null}

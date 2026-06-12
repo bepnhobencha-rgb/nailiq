@@ -1424,17 +1424,17 @@ export function WalkinAddForm({
               className="text-[11px] font-normal opacity-80"
               data-testid="walkin-submit-sublabel"
             >
+              {/* Honest binary: the tap either assigns immediately (only when the
+                  engine confirms the staff is free now) or adds to the waiting
+                  list. The old "Assign to {name}" middle state lied — when the
+                  staff is busy the action is ALWAYS the queue path (onSubmit),
+                  yet it read like a direct assignment (QA #2). */}
               {canAssignImmediately && recommendedAvailability
                 ? labels.subLabelAssignNow.replace(
                     "{name}",
                     recommendedAvailability.staffName,
                   )
-                : selectedStaffId !== "" && recommendedAvailability
-                  ? labels.subLabelAssignTo.replace(
-                      "{name}",
-                      recommendedAvailability.staffName,
-                    )
-                  : labels.subLabelQueue}
+                : labels.subLabelQueue}
             </span>
           </span>
         )}

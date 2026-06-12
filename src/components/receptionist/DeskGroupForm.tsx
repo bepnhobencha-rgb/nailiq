@@ -39,6 +39,8 @@ import {
   filterStaffCapableForService,
 } from "@/shared/booking/staffCapability";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
+import { GROUP_MAX_SIZE } from "@/shared/config/constants";
+import { MAX_WAVES } from "@/shared/booking/groupSchedulerCore";
 
 type LoadData = Extract<
   Awaited<ReturnType<typeof getDeskBookingData>>,
@@ -68,7 +70,13 @@ type MemberDraft = {
 };
 
 const MIN_SIZE = 2;
-const MAX_SIZE = 8;
+// Upper bound matches the customer-facing online flow (BookingTypeSwitcher):
+// staffCount × MAX_WAVES, capped by the GROUP_MAX_SIZE safety ceiling. Computed
+// per-salon from the loaded active staff so the desk and online never disagree.
+function maxGroupSizeFor(activeStaffCount: number): number {
+  if (activeStaffCount <= 0) return MIN_SIZE;
+  return Math.max(MIN_SIZE, Math.min(activeStaffCount * MAX_WAVES, GROUP_MAX_SIZE));
+}
 
 // Bilingual copy kept local to the form (UI labels, not config) so it stays
 // in lockstep with the rest of the receptionist center's EN/VI toggle.
@@ -125,7 +133,7 @@ const COPY = {
       feature_not_enabled: "Group booking isn't enabled for this salon.",
       salon_closed_day: "The salon is closed that day.",
       invalid_input: "Please check the group details.",
-      invalid_group_size: "Group size is out of range (2–8).",
+      invalid_group_size: "Group size is out of range.",
       service_not_found: "A service is no longer available.",
       staff_not_found: "A staff member is no longer available.",
       past_date: "Can't book a date in the past.",
@@ -188,7 +196,7 @@ const COPY = {
       feature_not_enabled: "Tiệm chưa bật đặt lịch nhóm.",
       salon_closed_day: "Tiệm đóng cửa ngày này.",
       invalid_input: "Vui lòng kiểm tra lại thông tin nhóm.",
-      invalid_group_size: "Số người ngoài phạm vi (2–8).",
+      invalid_group_size: "Số người ngoài phạm vi.",
       service_not_found: "Một dịch vụ không còn khả dụng.",
       staff_not_found: "Một thợ không còn khả dụng.",
       past_date: "Không thể đặt vào ngày đã qua.",
@@ -258,26 +266,35 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
     [data?.capabilityRows],
   );
 
+  // Per-salon party-size ceiling, matching the online flow exactly.
+  const maxSize = useMemo(
+    () => maxGroupSizeFor(data?.staff?.length ?? 0),
+    [data?.staff?.length],
+  );
+
   // Grow/shrink the member list with the size pill, preserving prior rows.
-  const applySize = useCallback((n: number) => {
-    const clamped = Math.max(MIN_SIZE, Math.min(MAX_SIZE, Math.round(n)));
-    setSize(clamped);
-    setMembers((prev) => {
-      const next: MemberDraft[] = [];
-      for (let i = 0; i < clamped; i++) {
-        next.push(
-          prev[i] ?? {
-            name: "",
-            serviceId: "",
-            preferredStaffId: null,
-            addonServiceIds: [],
-          },
-        );
-      }
-      return next;
-    });
-    setScheduleResult(null);
-  }, []);
+  const applySize = useCallback(
+    (n: number) => {
+      const clamped = Math.max(MIN_SIZE, Math.min(maxSize, Math.round(n)));
+      setSize(clamped);
+      setMembers((prev) => {
+        const next: MemberDraft[] = [];
+        for (let i = 0; i < clamped; i++) {
+          next.push(
+            prev[i] ?? {
+              name: "",
+              serviceId: "",
+              preferredStaffId: null,
+              addonServiceIds: [],
+            },
+          );
+        }
+        return next;
+      });
+      setScheduleResult(null);
+    },
+    [maxSize],
+  );
 
   const patchMember = useCallback(
     (i: number, patch: Partial<MemberDraft>) => {
@@ -505,7 +522,7 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
             <div>
               <label className={labelCls}>{tx.peopleLabel}</label>
               <div className="flex flex-wrap gap-1.5">
-                {Array.from({ length: MAX_SIZE - MIN_SIZE + 1 }, (_, k) => k + MIN_SIZE).map(
+                {Array.from({ length: maxSize - MIN_SIZE + 1 }, (_, k) => k + MIN_SIZE).map(
                   (n) => (
                     <button
                       key={n}
