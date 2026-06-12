@@ -971,6 +971,11 @@ function StaffTimelineGridImpl({
                           data-slot-utc={slotUtc}
                           tabIndex={interactive ? 0 : -1}
                           aria-hidden={!interactive}
+                          // Discernible text for a11y: when the slot is exposed
+                          // (assign or click-to-create), the empty button is
+                          // visually opacity-0 with no children, so give it the
+                          // slot time as its accessible name (axe button-name).
+                          aria-label={interactive ? labels.formatTimeLabel(slotUtc) : undefined}
                           // Disable (visually dim, not clickable) empty slots
                           // that fail the click-to-create validity check —
                           // offline staff or out-of-hours times.
