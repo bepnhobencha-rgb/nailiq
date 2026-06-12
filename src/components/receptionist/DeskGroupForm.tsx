@@ -1,0 +1,800 @@
+"use client";
+
+/**
+ * Receptionist "Group appointment" form — books a group/party for a FUTURE
+ * date from the desk in one compact modal. It REUSES the public group engine
+ * end-to-end and never re-implements scheduling:
+ *
+ *   1. `getDeskBookingData(slug)`     → services / add-ons / staff / capability
+ *   2. `loadGroupSmartSchedule(...)`  → AI arrangements (read-only, server-auth)
+ *   3. `submitGroupBooking(...)`      → atomic group write (conflict-safe RPC)
+ *
+ * The arrangement → submit conversion mirrors `BookingGroupFlow.tsx` exactly:
+ * the scheduler returns UTC ISO start times, which are converted to salon-local
+ * "HH:MM" (24h) via Intl in the salon timezone (DST-safe) before being passed
+ * to `submitGroupBooking`. staffId + waveNumber come straight from each
+ * assignment.
+ *
+ * OTP: the desk caller is an authenticated salon member, so `submitGroupBooking`
+ * bypasses OTP via the session — we deliberately DO NOT pass `otpSessionId`.
+ * The `group_booking` feature flag and booking-cap are enforced server-side by
+ * `submitGroupBooking`; this form only gates the entry button (in
+ * ReceptionistCenter) on the same per-salon flag.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import {
+  getDeskBookingData,
+  createDeskGroup,
+} from "@/shared/dashboard/receptionistActions";
+import {
+  loadGroupSmartSchedule,
+  type GroupArrivalPreference,
+  type GroupSmartScheduleResult,
+} from "@/shared/booking/loadGroupSmartSchedule";
+import type { GroupBookingMember } from "@/shared/booking/submitGroupBooking";
+import {
+  buildCapabilityMap,
+  filterStaffCapableForService,
+} from "@/shared/booking/staffCapability";
+import { formatCurrency } from "@/shared/lib/currencyFormat";
+
+type LoadData = Extract<
+  Awaited<ReturnType<typeof getDeskBookingData>>,
+  { ok: true }
+>["data"];
+
+type Props = {
+  slug: string;
+  /** Accepted for parity with DeskBookingForm's call site, but the group
+   *  scheduler + submit engine resolve the salon from `slug` server-side,
+   *  so it isn't read here. */
+  salonId: string;
+  /** Dashboard language — matches the rest of the receptionist center. */
+  language: "en" | "vi";
+  onClose: () => void;
+  onCreated: () => void;
+};
+
+type ArrivalKind = GroupArrivalPreference["kind"];
+
+type MemberDraft = {
+  name: string;
+  serviceId: string;
+  /** `null` = "Any available". String UUID = explicit pick. */
+  preferredStaffId: string | null;
+  addonServiceIds: string[];
+};
+
+const MIN_SIZE = 2;
+const MAX_SIZE = 8;
+
+// Bilingual copy kept local to the form (UI labels, not config) so it stays
+// in lockstep with the rest of the receptionist center's EN/VI toggle.
+const COPY = {
+  en: {
+    heading: "New group appointment",
+    close: "Close",
+    loadError: "Couldn't load data. Try again.",
+    loading: "Loading…",
+    peopleLabel: "How many people?",
+    member: (n: number) => `Guest ${n}`,
+    namePlaceholder: (n: number) => `Guest ${n}`,
+    nameLabel: "Name (optional)",
+    service: "Service *",
+    selectService: "— Select a service —",
+    staff: "Staff",
+    anyStaff: "Any available",
+    addons: "Add-ons (optional)",
+    organizer: "Organizer",
+    phone: "Phone number * (one number for the whole group)",
+    organizerName: "Organizer name (optional)",
+    email: "Email (optional — for the confirmation)",
+    date: "Date *",
+    arrival: "Arrival time *",
+    morning: "Morning",
+    afternoon: "Afternoon",
+    evening: "Evening",
+    specific: "Specific time",
+    specificTime: "Pick a time",
+    seatTogether: "Seat next to each other",
+    findTimes: "Find times",
+    finding: "Finding open times…",
+    noSlots: "No room for the group this day — pick another date or time.",
+    altNextDate: (d: string) => `Next opening: ${d}`,
+    altEarlier: "Another window is open today",
+    chooseArrangement: "Choose an option",
+    waves: (n: number) => `Split into ${n} waves`,
+    createGroup: "Create group",
+    creating: "Creating…",
+    fixServices: "Please pick a service for every guest.",
+    fixPhone: "Please enter a valid phone number.",
+    fixDate: "Please choose a date.",
+    fixArrival: "Please choose an arrival time.",
+    scheduleErrors: {
+      salon_closed: "The salon is closed that day.",
+      salon_not_found: "Salon not found.",
+      salon_paused: "Booking is paused for this salon.",
+      invalid_input: "Please check the group details.",
+      server_error: "Something went wrong. Try again.",
+      timezone_not_set: "Salon timezone isn't set — contact support.",
+    } as Record<string, string>,
+    submitErrors: {
+      slot_conflict: "A slot was just taken — search again.",
+      feature_not_enabled: "Group booking isn't enabled for this salon.",
+      salon_closed_day: "The salon is closed that day.",
+      invalid_input: "Please check the group details.",
+      invalid_group_size: "Group size is out of range (2–8).",
+      service_not_found: "A service is no longer available.",
+      staff_not_found: "A staff member is no longer available.",
+      past_date: "Can't book a date in the past.",
+      monthly_booking_limit_reached: "You've hit your plan's booking limit.",
+      duplicate_submission: "This group was already created.",
+      unauthorized: "You don't have permission to create bookings.",
+      server_error: "Couldn't create the group. Try again.",
+    } as Record<string, string>,
+    submitFallback: "Couldn't create the group. Try again.",
+  },
+  vi: {
+    heading: "Tạo hẹn nhóm",
+    close: "Đóng",
+    loadError: "Không tải được dữ liệu. Thử lại.",
+    loading: "Đang tải…",
+    peopleLabel: "Mấy người?",
+    member: (n: number) => `Khách ${n}`,
+    namePlaceholder: (n: number) => `Khách ${n}`,
+    nameLabel: "Tên (tuỳ chọn)",
+    service: "Dịch vụ *",
+    selectService: "— Chọn dịch vụ —",
+    staff: "Thợ",
+    anyStaff: "Thợ nào cũng được",
+    addons: "Dịch vụ thêm (tuỳ chọn)",
+    organizer: "Người đại diện",
+    phone: "Số điện thoại * (1 số dùng cho cả nhóm)",
+    organizerName: "Tên người đại diện (tuỳ chọn)",
+    email: "Email (tuỳ chọn — để gửi xác nhận)",
+    date: "Ngày *",
+    arrival: "Giờ đến *",
+    morning: "Sáng",
+    afternoon: "Chiều",
+    evening: "Tối",
+    specific: "Giờ cụ thể",
+    specificTime: "Chọn giờ",
+    seatTogether: "Ngồi cạnh nhau",
+    findTimes: "Tìm giờ",
+    finding: "Đang tìm giờ trống…",
+    noSlots: "Không còn chỗ cho nhóm ngày này — chọn ngày/giờ khác.",
+    altNextDate: (d: string) => `Ngày trống gần nhất: ${d}`,
+    altEarlier: "Có khung giờ khác trống hôm nay",
+    chooseArrangement: "Chọn phương án",
+    waves: (n: number) => `Chia thành ${n} đợt`,
+    createGroup: "Tạo nhóm",
+    creating: "Đang tạo nhóm…",
+    fixServices: "Vui lòng chọn dịch vụ cho mỗi khách.",
+    fixPhone: "Vui lòng nhập số điện thoại hợp lệ.",
+    fixDate: "Vui lòng chọn ngày.",
+    fixArrival: "Vui lòng chọn giờ đến.",
+    scheduleErrors: {
+      salon_closed: "Tiệm đóng cửa ngày này.",
+      salon_not_found: "Không tìm thấy tiệm.",
+      salon_paused: "Tiệm đang tạm ngừng nhận lịch.",
+      invalid_input: "Vui lòng kiểm tra lại thông tin nhóm.",
+      server_error: "Có lỗi xảy ra. Thử lại.",
+      timezone_not_set: "Tiệm chưa cài múi giờ — liên hệ hỗ trợ.",
+    } as Record<string, string>,
+    submitErrors: {
+      slot_conflict: "Khung giờ vừa bị đặt mất — tìm lại giúp.",
+      feature_not_enabled: "Tiệm chưa bật đặt lịch nhóm.",
+      salon_closed_day: "Tiệm đóng cửa ngày này.",
+      invalid_input: "Vui lòng kiểm tra lại thông tin nhóm.",
+      invalid_group_size: "Số người ngoài phạm vi (2–8).",
+      service_not_found: "Một dịch vụ không còn khả dụng.",
+      staff_not_found: "Một thợ không còn khả dụng.",
+      past_date: "Không thể đặt vào ngày đã qua.",
+      monthly_booking_limit_reached: "Đã đạt giới hạn lịch của gói hiện tại.",
+      duplicate_submission: "Nhóm này đã được tạo.",
+      unauthorized: "Bạn không có quyền tạo lịch.",
+      server_error: "Không tạo được nhóm. Thử lại.",
+    } as Record<string, string>,
+    submitFallback: "Không tạo được nhóm. Thử lại.",
+  },
+} as const;
+
+function todayYmd(): string {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+}
+
+// `salonId` is passed to createDeskGroup for its salon-scope auth check.
+export default function DeskGroupForm({ slug, salonId, language, onClose, onCreated }: Props) {
+  const tx = COPY[language === "vi" ? "vi" : "en"];
+  const [data, setData] = useState<LoadData | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [size, setSize] = useState(MIN_SIZE);
+  const [members, setMembers] = useState<MemberDraft[]>(() => [
+    { name: "", serviceId: "", preferredStaffId: null, addonServiceIds: [] },
+    { name: "", serviceId: "", preferredStaffId: null, addonServiceIds: [] },
+  ]);
+
+  const [phone, setPhone] = useState("");
+  const [organizerName, setOrganizerName] = useState("");
+  const [email, setEmail] = useState("");
+  const [ymd, setYmd] = useState(todayYmd());
+  const [arrivalKind, setArrivalKind] = useState<ArrivalKind>("morning");
+  const [specificTime, setSpecificTime] = useState("");
+  const [seatTogether, setSeatTogether] = useState(true);
+
+  const [scheduling, setScheduling] = useState(false);
+  const [scheduleResult, setScheduleResult] =
+    useState<GroupSmartScheduleResult | null>(null);
+  const [selectedIdx, setSelectedIdx] = useState(0);
+
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Portal mount flag — the modal must escape the (transformed) header so
+  // position:fixed isn't trapped inside it.
+  const [mounted, setMounted] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only mount flag for the portal
+  useEffect(() => setMounted(true), []);
+
+  // Load services / add-ons / staff / capability once.
+  useEffect(() => {
+    let cancelled = false;
+    void getDeskBookingData(slug).then((res) => {
+      if (cancelled) return;
+      if (res.ok) setData(res.data);
+      else setLoadError(res.error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
+  const capability = useMemo(
+    () => buildCapabilityMap(data?.capabilityRows ?? null),
+    [data?.capabilityRows],
+  );
+
+  // Grow/shrink the member list with the size pill, preserving prior rows.
+  const applySize = useCallback((n: number) => {
+    const clamped = Math.max(MIN_SIZE, Math.min(MAX_SIZE, Math.round(n)));
+    setSize(clamped);
+    setMembers((prev) => {
+      const next: MemberDraft[] = [];
+      for (let i = 0; i < clamped; i++) {
+        next.push(
+          prev[i] ?? {
+            name: "",
+            serviceId: "",
+            preferredStaffId: null,
+            addonServiceIds: [],
+          },
+        );
+      }
+      return next;
+    });
+    setScheduleResult(null);
+  }, []);
+
+  const patchMember = useCallback(
+    (i: number, patch: Partial<MemberDraft>) => {
+      setMembers((prev) => {
+        const next = prev.slice();
+        next[i] = { ...next[i], ...patch };
+        // If the service changed, drop a preferred staff who can't do it.
+        if (patch.serviceId !== undefined && capability) {
+          const sid = next[i].preferredStaffId;
+          if (sid && !(capability.get(sid)?.has(patch.serviceId) ?? false)) {
+            next[i] = { ...next[i], preferredStaffId: null };
+          }
+        }
+        return next;
+      });
+      // Any member edit invalidates prior schedule results.
+      setScheduleResult(null);
+      setError(null);
+    },
+    [capability],
+  );
+
+  const toggleAddon = useCallback((i: number, addonId: string) => {
+    setMembers((prev) => {
+      const next = prev.slice();
+      const cur = next[i].addonServiceIds;
+      next[i] = {
+        ...next[i],
+        addonServiceIds: cur.includes(addonId)
+          ? cur.filter((id) => id !== addonId)
+          : [...cur, addonId],
+      };
+      return next;
+    });
+    setScheduleResult(null);
+  }, []);
+
+  const arrivalPref: GroupArrivalPreference = useMemo(() => {
+    if (arrivalKind === "specific") return { kind: "specific", time: specificTime };
+    return { kind: arrivalKind };
+  }, [arrivalKind, specificTime]);
+
+  const digits = phone.replace(/\D/g, "");
+  const allServicesPicked = members.every((m) => !!m.serviceId);
+  const arrivalOk = arrivalKind !== "specific" || specificTime.length > 0;
+
+  // ── Find times ─────────────────────────────────────────────────
+  const runScheduler = useCallback(async () => {
+    setError(null);
+    if (!allServicesPicked) {
+      setError(tx.fixServices);
+      return;
+    }
+    if (!ymd) {
+      setError(tx.fixDate);
+      return;
+    }
+    if (!arrivalOk) {
+      setError(tx.fixArrival);
+      return;
+    }
+    setScheduling(true);
+    setScheduleResult(null);
+    setSelectedIdx(0);
+    try {
+      const res = await loadGroupSmartSchedule({
+        shopSlug: slug,
+        date: ymd,
+        arrivalPref,
+        // Read-path member shape: name + service + preferred staff + add-ons.
+        members: members.map((m) => ({
+          name: m.name.trim(),
+          serviceId: m.serviceId,
+          preferredStaffId: m.preferredStaffId,
+          addonServiceIds: m.addonServiceIds,
+        })),
+        // Desk groups arrive together (default scheduler mode).
+        mode: "sync_start",
+      });
+      setScheduleResult(res);
+    } catch (e) {
+      console.error("[DeskGroupForm] scheduler failed", e);
+      setScheduleResult({ ok: false, reason: "server_error" });
+    } finally {
+      setScheduling(false);
+    }
+  }, [allServicesPicked, ymd, arrivalOk, arrivalPref, members, slug, tx]);
+
+  // ── Create group ───────────────────────────────────────────────
+  const createGroup = useCallback(async () => {
+    if (submitting) return;
+    if (
+      !scheduleResult ||
+      !scheduleResult.ok ||
+      !scheduleResult.arrangements[selectedIdx] ||
+      !data
+    ) {
+      return;
+    }
+    if (digits.length < 10) {
+      setError(tx.fixPhone);
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      const arr = scheduleResult.arrangements[selectedIdx];
+      const timezone = data.salon.timezone;
+      // Map each assignment → salon-local "HH:MM" (24h). The scheduler returns
+      // UTC ISO; submitGroupBooking expects salon-local time. Convert via Intl
+      // in the salon timezone so DST is handled correctly. (Mirrors
+      // BookingGroupFlow.tsx onSubmit exactly.)
+      const payload: GroupBookingMember[] = arr.assignments
+        .slice()
+        .sort((a, b) => a.memberIndex - b.memberIndex)
+        .map((a) => {
+          const draft = members[a.memberIndex];
+          const parts = new Intl.DateTimeFormat("en-US", {
+            timeZone: timezone,
+            hour: "2-digit",
+            minute: "2-digit",
+            hourCycle: "h23",
+          }).formatToParts(new Date(a.startUtcIso));
+          const hh = parts.find((p) => p.type === "hour")?.value ?? "00";
+          const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
+          const time24 = `${hh}:${mm}`;
+          return {
+            name: draft?.name.trim() || tx.namePlaceholder(a.memberIndex + 1),
+            // One organizer phone for every member (same as the public flow).
+            phone,
+            email: email.trim() || undefined,
+            serviceId: draft?.serviceId ?? "",
+            staffId: a.staffId,
+            date: ymd,
+            time: time24,
+            waveNumber: a.waveNumber,
+            addonServiceIds: draft?.addonServiceIds ?? [],
+          };
+        });
+
+      // Desk wrapper: enforces receptionist auth + mints the OTP session
+      // server-side when the salon requires phone-OTP (the receptionist vouches
+      // in person). Reuses the same submitGroupBooking engine underneath.
+      const res = await createDeskGroup(slug, {
+        salonId,
+        members: payload,
+        seatTogether,
+        language,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      if (res.ok) {
+        onCreated();
+        onClose();
+        return;
+      }
+      setError(tx.submitErrors[res.reason] ?? tx.submitFallback);
+    } catch (e) {
+      console.error("[DeskGroupForm] submit failed", e);
+      setError(tx.submitFallback);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [
+    submitting,
+    scheduleResult,
+    selectedIdx,
+    data,
+    digits.length,
+    members,
+    phone,
+    email,
+    ymd,
+    salonId,
+    seatTogether,
+    language,
+    slug,
+    onCreated,
+    onClose,
+    tx,
+  ]);
+
+  const inputCls =
+    "w-full rounded-md border border-nq-muted/30 bg-nq-bg px-3 py-2 text-sm text-nq-foreground outline-none focus:border-nq-primary/60";
+  const labelCls = "mb-1 block text-xs font-medium text-nq-muted";
+  const pillCls = (active: boolean) =>
+    `rounded-full px-3 py-1.5 text-xs font-medium transition ${
+      active
+        ? "bg-nq-primary text-white"
+        : "bg-nq-surface text-nq-foreground hover:bg-nq-primary/15 border border-nq-muted/25"
+    }`;
+
+  if (!mounted) return null;
+
+  // Build the arrangement option cards from a successful result.
+  const arrangements =
+    scheduleResult && scheduleResult.ok ? scheduleResult.arrangements : [];
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center"
+      onClick={onClose}
+    >
+      <div
+        className="my-auto w-full max-w-lg rounded-xl border border-nq-muted/25 bg-nq-surface p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-nq-foreground">{tx.heading}</h2>
+          <button
+            onClick={onClose}
+            className="text-nq-muted hover:text-nq-foreground"
+            aria-label={tx.close}
+          >
+            ✕
+          </button>
+        </div>
+
+        {loadError ? (
+          <p className="text-sm text-nq-error">{tx.loadError}</p>
+        ) : !data ? (
+          <p className="text-sm text-nq-muted">{tx.loading}</p>
+        ) : (
+          <div className="space-y-4">
+            {/* Step 1 — group size */}
+            <div>
+              <label className={labelCls}>{tx.peopleLabel}</label>
+              <div className="flex flex-wrap gap-1.5">
+                {Array.from({ length: MAX_SIZE - MIN_SIZE + 1 }, (_, k) => k + MIN_SIZE).map(
+                  (n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => applySize(n)}
+                      className={pillCls(size === n)}
+                    >
+                      {n}
+                    </button>
+                  ),
+                )}
+              </div>
+            </div>
+
+            {/* Step 2 — per-member service / staff / add-ons */}
+            <div className="space-y-3">
+              {members.map((m, i) => {
+                const capableStaff = filterStaffCapableForService(
+                  data.staff,
+                  capability,
+                  m.serviceId || null,
+                );
+                return (
+                  <div
+                    key={i}
+                    className="rounded-lg border border-nq-muted/20 bg-nq-bg p-3"
+                  >
+                    <p className="mb-2 text-xs font-semibold text-nq-foreground">
+                      {tx.member(i + 1)}
+                    </p>
+                    <input
+                      className={`${inputCls} mb-2`}
+                      placeholder={tx.namePlaceholder(i + 1)}
+                      aria-label={tx.nameLabel}
+                      value={m.name}
+                      onChange={(e) => patchMember(i, { name: e.target.value })}
+                    />
+                    <select
+                      className={`${inputCls} mb-2`}
+                      aria-label={tx.service}
+                      value={m.serviceId}
+                      onChange={(e) => patchMember(i, { serviceId: e.target.value })}
+                    >
+                      <option value="">{tx.selectService}</option>
+                      {data.services.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                          {s.priceDisplay ? ` · ${s.priceDisplay}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className={`${inputCls} ${data.addOns.length > 0 ? "mb-2" : ""}`}
+                      aria-label={tx.staff}
+                      value={m.preferredStaffId ?? ""}
+                      disabled={!m.serviceId}
+                      onChange={(e) =>
+                        patchMember(i, {
+                          preferredStaffId: e.target.value || null,
+                        })
+                      }
+                    >
+                      <option value="">{tx.anyStaff}</option>
+                      {capableStaff.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                    {data.addOns.length > 0 ? (
+                      <div>
+                        <p className="mb-1 text-[11px] text-nq-muted">{tx.addons}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {data.addOns.map((a) => {
+                            const on = m.addonServiceIds.includes(a.id);
+                            return (
+                              <button
+                                key={a.id}
+                                type="button"
+                                onClick={() => toggleAddon(i, a.id)}
+                                className={pillCls(on)}
+                              >
+                                {a.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Step 3 — shared organizer + date + arrival */}
+            <div className="space-y-3 rounded-lg border border-nq-muted/20 bg-nq-bg p-3">
+              <p className="text-xs font-semibold text-nq-foreground">{tx.organizer}</p>
+              <div>
+                <label className={labelCls}>{tx.phone}</label>
+                <input
+                  className={inputCls}
+                  inputMode="tel"
+                  placeholder="+1 (604) 555-1234"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>{tx.organizerName}</label>
+                <input
+                  className={inputCls}
+                  value={organizerName}
+                  onChange={(e) => setOrganizerName(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>{tx.email}</label>
+                <input
+                  className={inputCls}
+                  inputMode="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>{tx.date}</label>
+                <input
+                  type="date"
+                  className={`${inputCls} [color-scheme:dark]`}
+                  min={todayYmd()}
+                  value={ymd}
+                  onChange={(e) => {
+                    setYmd(e.target.value);
+                    setScheduleResult(null);
+                  }}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>{tx.arrival}</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {(
+                    [
+                      ["morning", tx.morning],
+                      ["afternoon", tx.afternoon],
+                      ["evening", tx.evening],
+                      ["specific", tx.specific],
+                    ] as [ArrivalKind, string][]
+                  ).map(([kind, label]) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() => {
+                        setArrivalKind(kind);
+                        setScheduleResult(null);
+                      }}
+                      className={pillCls(arrivalKind === kind)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {arrivalKind === "specific" ? (
+                  <input
+                    type="time"
+                    className={`${inputCls} mt-2 [color-scheme:dark]`}
+                    aria-label={tx.specificTime}
+                    value={specificTime}
+                    onChange={(e) => {
+                      setSpecificTime(e.target.value);
+                      setScheduleResult(null);
+                    }}
+                  />
+                ) : null}
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-nq-foreground">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-nq-primary"
+                  checked={seatTogether}
+                  onChange={(e) => setSeatTogether(e.target.checked)}
+                />
+                {tx.seatTogether}
+              </label>
+            </div>
+
+            {/* Step 4 — find times */}
+            <button
+              type="button"
+              disabled={scheduling || !allServicesPicked}
+              onClick={() => void runScheduler()}
+              className="w-full rounded-md bg-nq-primary py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {scheduling ? tx.finding : tx.findTimes}
+            </button>
+
+            {/* Schedule results */}
+            {scheduleResult && !scheduleResult.ok ? (
+              <div className="rounded-lg border border-nq-muted/20 bg-nq-bg p-3 text-sm text-nq-muted">
+                {scheduleResult.reason === "no_slots" ? (
+                  <>
+                    <p>{tx.noSlots}</p>
+                    {scheduleResult.alternatives.nextAvailableDate ? (
+                      <p className="mt-1 text-[11px]">
+                        {tx.altNextDate(
+                          scheduleResult.alternatives.nextAvailableDate.date,
+                        )}
+                      </p>
+                    ) : null}
+                    {scheduleResult.alternatives.earlierToday ? (
+                      <p className="mt-1 text-[11px]">{tx.altEarlier}</p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p>
+                    {tx.scheduleErrors[scheduleResult.reason] ??
+                      tx.scheduleErrors.server_error}
+                  </p>
+                )}
+              </div>
+            ) : null}
+
+            {arrangements.length > 0 ? (
+              <div>
+                <p className={labelCls}>{tx.chooseArrangement}</p>
+                <div className="space-y-2">
+                  {arrangements.map((arr, idx) => {
+                    const total = formatCurrency(
+                      arr.totalCents,
+                      data.salon.currencyCode,
+                    );
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setSelectedIdx(idx)}
+                        className={`w-full rounded-lg border p-3 text-left transition ${
+                          selectedIdx === idx
+                            ? "border-nq-primary bg-nq-primary/10"
+                            : "border-nq-muted/25 bg-nq-bg hover:border-nq-primary/50"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold text-nq-foreground">
+                            {arr.groupStartDisplay}
+                            {arr.isWaveBooking
+                              ? ` · ${tx.waves(arr.waveCount)}`
+                              : ""}
+                          </span>
+                          {total ? (
+                            <span className="text-xs text-nq-muted">{total}</span>
+                          ) : null}
+                        </div>
+                        <ul className="mt-1.5 space-y-0.5">
+                          {arr.assignments
+                            .slice()
+                            .sort((a, b) => a.memberIndex - b.memberIndex)
+                            .map((a) => (
+                              <li
+                                key={a.memberIndex}
+                                className="text-[11px] text-nq-muted"
+                              >
+                                {a.memberName || tx.member(a.memberIndex + 1)} ·{" "}
+                                {a.startDisplay} · {a.staffName}
+                              </li>
+                            ))}
+                        </ul>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {error ? <p className="text-xs text-nq-error">{error}</p> : null}
+
+            {arrangements.length > 0 ? (
+              <button
+                type="button"
+                disabled={submitting || digits.length < 10}
+                onClick={() => void createGroup()}
+                className="w-full rounded-md bg-nq-primary py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {submitting ? tx.creating : tx.createGroup}
+              </button>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}

@@ -12,6 +12,11 @@ import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import {
+  submitGroupBooking,
+  type GroupBookingMember,
+  type GroupBookingResult,
+} from "@/shared/booking/submitGroupBooking";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import {
   canCancelBooking,
@@ -839,6 +844,70 @@ export async function requestDepositLink(
     console.error("[requestDepositLink]", e);
     return fail("server_error");
   }
+}
+
+/**
+ * Create a GROUP booking from the front desk. Thin wrapper over the shared
+ * `submitGroupBooking` (same engine the public flow uses, so the AI scheduler /
+ * conflict checks / add-on handling are identical) with desk auth on top:
+ * receptionist must be an authenticated salon member allowed to create bookings.
+ *
+ * Phone-OTP: when the salon has `phone_otp_enabled`, the public flow makes the
+ * customer verify their phone. At the desk the receptionist vouches for the
+ * party in person, so we mint a verified `phone_otp_sessions` row for the
+ * organizer (same row shape the OTP-verify endpoint creates) and hand its id to
+ * `submitGroupBooking`. This is done server-side AFTER dashboard auth, so a
+ * customer can never forge it. (We deliberately do NOT call getDashboardWriteClient
+ * from inside submitGroupBooking — that import forms a server-action cycle.)
+ */
+export async function createDeskGroup(
+  slug: string,
+  input: {
+    salonId: string;
+    members: GroupBookingMember[];
+    idempotencyKey: string;
+    seatTogether?: boolean;
+    language?: "en" | "vi";
+  },
+): Promise<GroupBookingResult | { ok: false; reason: "unauthorized" | "salon_mismatch" }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, reason: "unauthorized" };
+  if (!canCreateDeskBooking(ctx.role)) return { ok: false, reason: "unauthorized" };
+  if (ctx.salon.id !== String(input.salonId).trim()) {
+    return { ok: false, reason: "salon_mismatch" };
+  }
+
+  let otpSessionId: string | null = null;
+  const db = createServiceRoleClient();
+  try {
+    const { data: srow } = await db
+      .from("salons")
+      .select("phone_otp_enabled")
+      .eq("id", ctx.salon.id)
+      .maybeSingle();
+    if ((srow as { phone_otp_enabled?: boolean } | null)?.phone_otp_enabled === true) {
+      const v = validateGuestPhone(input.members[0]?.phone ?? "");
+      if (v.ok) {
+        const { data: otpRow } = await db
+          .from("phone_otp_sessions")
+          .insert({ phone: v.digits, salon_id: ctx.salon.id } as never)
+          .select("id")
+          .single();
+        otpSessionId = (otpRow as { id?: string } | null)?.id ?? null;
+      }
+    }
+  } catch {
+    /* mint failed → submitGroupBooking will surface otp_required, handled by UI */
+  }
+
+  return submitGroupBooking({
+    shopSlug: slug,
+    members: input.members,
+    idempotencyKey: input.idempotencyKey,
+    seatTogether: input.seatTogether,
+    language: input.language,
+    otpSessionId,
+  });
 }
 
 /**

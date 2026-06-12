@@ -126,6 +126,7 @@ import { BookingLimitBanner } from "@/components/dashboard/BookingLimitBanner";
 import { PartyCardPanel } from "@/components/receptionist/PartyCardPanel";
 import { AttentionChipBar } from "@/components/receptionist/AttentionChipBar";
 import DeskBookingForm from "@/components/receptionist/DeskBookingForm";
+import DeskGroupForm from "@/components/receptionist/DeskGroupForm";
 import type { PartyCard } from "@/shared/dashboard/loadPartyCardsAction";
 
 export type ReceptionistCenterProps = {
@@ -624,6 +625,10 @@ function ReceptionistCenterInner({
     ymd: string;
     slotLabel: string;
   } | null>(null);
+  // Desk group booking — gated on the per-salon `group_booking` flag (same
+  // flag the PartyCardPanel uses). Mounts DeskGroupForm which reuses the
+  // public group scheduler + submit engine end-to-end.
+  const [deskGroupOpen, setDeskGroupOpen] = useState(false);
   const openWalkinAdd = useCallback(() => {
     setQueuePanelOpen(true);
     setAddFocusNonce((n) => n + 1);
@@ -2322,6 +2327,29 @@ function ReceptionistCenterInner({
                   }}
                   onCreated={() => {
                     setDeskPrefill(null);
+                    void reloadCurrentDay();
+                  }}
+                />
+              ) : null}
+              {/* "Group" — book a group/party for a future date. Gated on the
+                 same per-salon `group_booking` flag as the party-card strip. */}
+              {viewMode === "day" && groupBookingEnabled ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  data-testid="header-add-group"
+                  onClick={() => setDeskGroupOpen(true)}
+                >
+                  {language === "vi" ? "+ Nhóm" : "+ Group"}
+                </Button>
+              ) : null}
+              {deskGroupOpen ? (
+                <DeskGroupForm
+                  slug={slug}
+                  salonId={data.salon.id}
+                  language={language}
+                  onClose={() => setDeskGroupOpen(false)}
+                  onCreated={() => {
                     void reloadCurrentDay();
                   }}
                 />
