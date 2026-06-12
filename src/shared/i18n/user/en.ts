@@ -1427,6 +1427,7 @@ export type UserMessages = {
       not_foundMessage: string;
       invalid_statusMessage: string;
       serverErrorMessage: string;
+      pastDateMessage: string;
     };
     actionErrorFallback: string;
     actionErrors: {
@@ -3156,6 +3157,7 @@ export const userEn: UserMessages = {
       not_foundMessage: "Booking not found",
       invalid_statusMessage: "Cannot edit this booking",
       serverErrorMessage: "Server error. Try again.",
+      pastDateMessage: "Can't move a booking to the past.",
     },
     actionErrorFallback: "Could not complete that action. Try again.",
     actionErrors: {

@@ -295,6 +295,13 @@ export function EditBookingForm({
       setSlots([]);
       return;
     }
+    if (selectedDay < minDayYmd) {
+      // Can't reschedule into the past — mirror the grid drag-drop guard + the
+      // server check. No available times → Save stays disabled.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear grid for a past day
+      setSlots([]);
+      return;
+    }
     let cancelled = false;
     setSlotsLoading(true);
     void getAvailableTimeSlots({
@@ -327,6 +334,15 @@ export function EditBookingForm({
             // Original start isn't on the grid (off-grid time) — inject it.
             next = [{ label: originalSlotLabel, available: true }, ...next];
           }
+          // Re-sort: getAvailableTimeSlots orders available-first then
+          // chronological, but forcing the original slot to available (above)
+          // leaves it in its old unavailable position (end of list), so "4:00 PM"
+          // showed up after "5:45 PM". Sort again so times read in order.
+          next = [...next].sort((a, b) => {
+            const av = (b.available ? 1 : 0) - (a.available ? 1 : 0);
+            if (av !== 0) return av;
+            return (slotLabelToMinutes(a.label) ?? 0) - (slotLabelToMinutes(b.label) ?? 0);
+          });
         }
         setSlots(next);
       })
@@ -397,6 +413,12 @@ export function EditBookingForm({
     selectedService !== originalService ||
     selectedAddon !== originalAddon;
 
+  // Block Save on a past day (mirrors the server past_date guard + the grid
+  // drag-drop). Keep it day-level, NOT "selected slot must be in the freshly
+  // computed list" — the slot list re-loads async on a staff/service change, so
+  // a stricter check would wrongly disable Save for an unchanged-time edit.
+  const isPastDay = selectedDay < minDayYmd;
+
   const editCopy = rcMessages.edit;
   const addonCopy = rcMessages.editAddon;
 
@@ -448,6 +470,9 @@ export function EditBookingForm({
         break;
       case "invalid_status":
         setError(editCopy.invalid_statusMessage);
+        break;
+      case "past_date":
+        setError(editCopy.pastDateMessage);
         break;
       case "server_error":
         setError(editCopy.serverErrorMessage);
@@ -659,7 +684,7 @@ export function EditBookingForm({
           data-testid="edit-save-button"
           className="w-full sm:w-auto"
           loading={saving}
-          disabled={!hasChanges || saving || isOffline}
+          disabled={!hasChanges || isPastDay || saving || isOffline}
           title={
             isOffline
               ? offlineEditDisabledHint

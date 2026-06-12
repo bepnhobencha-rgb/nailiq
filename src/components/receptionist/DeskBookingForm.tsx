@@ -556,7 +556,7 @@ export default function DeskBookingForm({
               />
             </div>
 
-            {staffId && ymd ? (
+            {serviceId && staffId && ymd ? (
               <div>
                 <label className={labelCls}>{tx.time}</label>
                 {slotsLoading ? (
