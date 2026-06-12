@@ -51,18 +51,19 @@ test.describe("Undo toast", () => {
     await expect(page.getByTestId("undo-toast-undo")).toBeVisible();
 
     const countdown = toast.locator(".tabular-nums").filter({ hasText: /\d+s/ });
-    // Assert the countdown TICKS DOWN, not that it hits exact "5s"→"4s".
-    // Pinning exact values raced the second boundary: if the first read landed
-    // late in a second, 1.1s later the value had already skipped past "4s" to
-    // "3s", so /^4s$/ never matched. Reading the live value and asserting a
-    // strict decrease is tick-accurate regardless of when in the second we read.
-    await expect(countdown).toHaveText(/^\ds$/);
+    // Anchor on the full "5s" start, THEN assert the countdown ticks below 5.
+    // Two traps this avoids:
+    //   1. The toast span is always in the DOM and shows a frozen "0s" while the
+    //      toast is closed (secondsRemaining defaults to 0), so a /^\ds$/ match
+    //      would latch onto "0s" before the assign even opens the toast. Pinning
+    //      "5s" waits (retry) for the real open frame.
+    //   2. Pinning the next value to exact "4s" raced the second boundary — a
+    //      late first read meant the value had already skipped to "3s". Polling
+    //      for "< 5" is tick-accurate regardless of when in the second we read.
+    await expect(countdown).toHaveText(/^5s$/);
     const readSeconds = async () =>
       parseInt((await countdown.textContent())!.replace(/\D/g, ""), 10);
-    const before = await readSeconds();
-    await page.waitForTimeout(1100);
-    const after = await readSeconds();
-    expect(after).toBeLessThan(before);
+    await expect.poll(readSeconds, { timeout: 4000 }).toBeLessThan(5);
 
     await toast.getByTestId("undo-toast-undo").click();
 
