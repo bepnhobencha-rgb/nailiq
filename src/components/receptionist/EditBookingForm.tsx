@@ -413,12 +413,11 @@ export function EditBookingForm({
     selectedService !== originalService ||
     selectedAddon !== originalAddon;
 
-  // The chosen time must be a real, available slot for the chosen day — blocks
-  // Save when the day has no open times (e.g. a past day), so the receptionist
-  // can't submit only to get the server's past_date rejection.
-  const slotSelectable = slots.some(
-    (s) => s.available && s.label === selectedSlotLabel,
-  );
+  // Block Save on a past day (mirrors the server past_date guard + the grid
+  // drag-drop). Keep it day-level, NOT "selected slot must be in the freshly
+  // computed list" — the slot list re-loads async on a staff/service change, so
+  // a stricter check would wrongly disable Save for an unchanged-time edit.
+  const isPastDay = selectedDay < minDayYmd;
 
   const editCopy = rcMessages.edit;
   const addonCopy = rcMessages.editAddon;
@@ -685,7 +684,7 @@ export function EditBookingForm({
           data-testid="edit-save-button"
           className="w-full sm:w-auto"
           loading={saving}
-          disabled={!hasChanges || !slotSelectable || saving || isOffline}
+          disabled={!hasChanges || isPastDay || saving || isOffline}
           title={
             isOffline
               ? offlineEditDisabledHint
