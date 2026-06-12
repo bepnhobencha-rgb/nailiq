@@ -37,13 +37,22 @@ type LoadData = Extract<
   { ok: true }
 >["data"];
 
+/** Optimistic booking row returned by `addDeskAppointment` on success. */
+type DeskCreatedBooking = Extract<
+  Awaited<ReturnType<typeof addDeskAppointment>>,
+  { ok: true }
+>["booking"];
+
 type Props = {
   slug: string;
   salonId: string;
   /** Dashboard language — matches the rest of the receptionist center. */
   language: "en" | "vi";
   onClose: () => void;
-  onCreated: () => void;
+  /** Called on a successful create. Receives the freshly-built booking row
+   * (shaped like one `bookingsForDay` item) so the parent can render it
+   * optimistically before the background reload reconciles. */
+  onCreated: (booking?: DeskCreatedBooking) => void;
   /** Prefill (grid empty-slot click). Staff may be a UUID or the "any" sentinel. */
   initialServiceId?: string;
   initialStaffId?: string;
@@ -403,7 +412,7 @@ export default function DeskBookingForm({
     });
     setSubmitting(false);
     if (res.ok) {
-      onCreated();
+      onCreated(res.booking);
       onClose();
     } else {
       setError(tx.errors[res.error] ?? tx.submitError);

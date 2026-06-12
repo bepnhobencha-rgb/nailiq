@@ -114,7 +114,7 @@ import {
   canUndoCancel,
   type SalonMemberRole,
 } from "@/shared/lib/salonMemberRole";
-import { formatInSalonTz, salonDateOffset, salonToday } from "@/shared/lib/salonTime";
+import { formatInSalonTz, salonDateOffset, salonToday, salonYmdOfUtc } from "@/shared/lib/salonTime";
 import { useSoundAlerts } from "@/shared/lib/useSoundAlerts";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import {
@@ -2325,8 +2325,29 @@ function ReceptionistCenterInner({
                     setDeskBookingOpen(false);
                     setDeskPrefill(null);
                   }}
-                  onCreated={() => {
+                  onCreated={(booking) => {
                     setDeskPrefill(null);
+                    // Optimistic insert: if the new booking falls on the day the
+                    // receptionist is currently viewing (salon-local), splice it
+                    // into the grid immediately so it shows without waiting for
+                    // the full-day reload. The background reload below then
+                    // replaces it with the canonical row (same id → no dupe).
+                    if (booking) {
+                      const bookingYmd = salonYmdOfUtc(
+                        booking.start_time_utc,
+                        data.salon.timezone,
+                      );
+                      if (bookingYmd === data.selectedDate) {
+                        setData((d) =>
+                          d.bookingsForDay.some((b) => b.id === booking.id)
+                            ? d
+                            : {
+                                ...d,
+                                bookingsForDay: [...d.bookingsForDay, booking],
+                              },
+                        );
+                      }
+                    }
                     void reloadCurrentDay();
                   }}
                 />

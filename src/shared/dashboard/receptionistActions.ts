@@ -44,6 +44,7 @@ import {
   type EditBookingResult,
   performEditBooking,
 } from "@/shared/dashboard/editBookingCore";
+import type { ReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
 import {
   isQueuePriority,
   isQueueSource,
@@ -79,6 +80,11 @@ function ctxActorRole(ctx: {
 }
 
 type OkBooking = { ok: true; bookingId: string };
+
+/** Desk appointment row, shaped exactly like one `ReceptionistCenterData.bookingsForDay`
+ * item so the client can drop it straight into the grid optimistically. */
+type DeskBookingRow = ReceptionistCenterData["bookingsForDay"][number];
+type OkDeskBooking = { ok: true; bookingId: string; booking: DeskBookingRow };
 
 /**
  * Receptionist mutations: demo cookie (`nailiq-demo-slug` + service role) vs
@@ -1717,7 +1723,7 @@ export async function addDeskAppointment(
     clientNotes?: string | null;
     language?: "en" | "vi";
   },
-): Promise<OkBooking | { ok: false; error: string }> {
+): Promise<OkDeskBooking | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
   if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
@@ -1806,10 +1812,26 @@ export async function addDeskAppointment(
   // is_addon services — never trust client durations/prices.
   let addonBlockMin = 0;
   let addonPriceCents = 0;
+  // Display rows for the optimistic grid item (`bookingsForDay[].addons`) — same
+  // shape `loadReceptionistCenterData` builds from `booking_addons`.
+  const optimisticAddons: {
+    name: string;
+    price_cents: number | null;
+    duration_minutes: number;
+    concurrent: boolean;
+  }[] = [];
+  // First add-on, for the legacy single-addon columns on the grid item.
+  let firstAddon: {
+    id: string;
+    name: string;
+    price_cents: number | null;
+    duration_minutes: number;
+    buffer_minutes: number;
+  } | null = null;
   if (addonIds.length > 0) {
     const { data: addRows } = await db
       .from("services")
-      .select("id, duration_minutes, buffer_minutes, price_cents, is_addon, addon_timing, salon_id, deleted_at")
+      .select("id, name, duration_minutes, buffer_minutes, price_cents, is_addon, addon_timing, salon_id, deleted_at")
       .in("id", addonIds);
     const byId = new Map(
       (addRows ?? []).map((r) => [String((r as { id: string }).id), r]),
@@ -1817,6 +1839,7 @@ export async function addDeskAppointment(
     for (const id of addonIds) {
       const a = byId.get(id) as
         | {
+            name?: string | null;
             duration_minutes?: number | null;
             buffer_minutes?: number | null;
             price_cents?: number | null;
@@ -1831,8 +1854,27 @@ export async function addDeskAppointment(
       }
       const block = (Number(a.duration_minutes) || 0) + (Number(a.buffer_minutes) || 0);
       if (block <= 0) return fail("invalid_addon");
-      if (a.addon_timing !== "concurrent") addonBlockMin += block;
+      const concurrent = a.addon_timing === "concurrent";
+      if (!concurrent) addonBlockMin += block;
       addonPriceCents += a.price_cents != null ? Number(a.price_cents) : 0;
+      const addonName = String(a.name ?? "");
+      const addonDuration = Math.max(0, Math.round(Number(a.duration_minutes) || 0));
+      const addonPrice = a.price_cents != null ? Number(a.price_cents) : null;
+      optimisticAddons.push({
+        name: addonName,
+        price_cents: addonPrice,
+        duration_minutes: addonDuration,
+        concurrent,
+      });
+      if (!firstAddon) {
+        firstAddon = {
+          id,
+          name: addonName,
+          price_cents: addonPrice,
+          duration_minutes: addonDuration,
+          buffer_minutes: Math.max(0, Math.round(Number(a.buffer_minutes) || 0)),
+        };
+      }
     }
   }
 
@@ -2042,5 +2084,54 @@ export async function addDeskAppointment(
     }
   });
 
-  return { ok: true, bookingId };
+  // Build the optimistic grid row in the EXACT `bookingsForDay[number]` shape so
+  // the client can splice it in for an instant render, then reconcile when the
+  // background reload returns the canonical row (same id → replaced). Derived
+  // flags mirror loadReceptionistCenterData's logic for a desk-created booking.
+  const designRe = /(nail\s*art|design)/i;
+  const mainServiceName = svc.name ?? "—";
+  const hasDesignFlag =
+    designRe.test(mainServiceName) ||
+    optimisticAddons.some((a) => designRe.test(a.name));
+  const optimisticBooking: DeskBookingRow = {
+    id: bookingId,
+    client_name: clientName,
+    client_phone: canonicalPhone,
+    client_notes: clientNotes,
+    staff_id: resolvedStaffId,
+    start_time_utc: startUtcIso,
+    end_time_utc: endUtcIso,
+    status: "confirmed",
+    source: "appointment",
+    source_channel: "desk",
+    service_id: serviceId,
+    service_name: mainServiceName,
+    service_duration_minutes: Number(svc.duration_minutes ?? 0),
+    price_cents: svc.price_cents ?? null,
+    service_buffer_minutes: Math.max(0, Math.round(Number(svc.buffer_minutes ?? 0))),
+    joined_queue_at: null,
+    addon_service_id: firstAddon?.id ?? null,
+    addon_service_name: firstAddon?.name ?? null,
+    addon_duration_minutes: firstAddon?.duration_minutes ?? null,
+    addon_buffer_minutes: firstAddon?.buffer_minutes ?? null,
+    addon_price_cents: firstAddon?.price_cents ?? null,
+    addons: optimisticAddons,
+    client_no_show_count: 0,
+    is_vip: false,
+    has_notes: clientNotes != null && clientNotes.trim().length > 0,
+    has_design: hasDesignFlag,
+    has_staff_request: input.staffRequestedByClient === true,
+    group_id: null,
+    group_size: null,
+    seat_together: false,
+    verification_method: null,
+    sms_confirmation_sent_at: null,
+    sms_confirmation_failed_at: null,
+    no_show_risk_score: null,
+    deposit_status: null,
+    deposit_amount_cents: null,
+    wix_booking_id: null,
+  };
+
+  return { ok: true, bookingId, booking: optimisticBooking };
 }
