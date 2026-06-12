@@ -21,7 +21,11 @@ import {
   canUndoCancel,
 } from "@/shared/lib/salonMemberRole";
 import { loadBookingServicesForSalonSlug } from "@/shared/booking/loadBookingServices";
-import { salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+import { salonWallTimeToUtcIso, salonDayRangeUtc } from "@/shared/lib/salonTime";
+import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
+import { pickBestStaffAmongFree } from "@/shared/booking/pickBestStaffAmongFree";
+import { buildCapabilityMap, filterStaffCapableForServices } from "@/shared/booking/staffCapability";
+import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
@@ -1573,7 +1577,15 @@ export async function addDeskAppointment(
   input: {
     salonId: string;
     serviceId: string;
+    /** Optional sequential/concurrent add-ons (is_addon services). Extend the
+     *  appointment block exactly like the public flow so we never undercount
+     *  duration and overlap the next booking. */
+    addonServiceIds?: string[];
+    /** Staff UUID, or BOOKING_ANY_STAFF_ID ("any") to auto-assign the best free
+     *  capable provider — same picker as public/voice bookings. */
     staffId: string;
+    /** Stamp the ❤️ "customer requested this tech" flag (heart icon + report). */
+    staffRequestedByClient?: boolean;
     /** YYYY-MM-DD in salon-local time. */
     bookingDateYmd: string;
     /** Time-slot label as rendered by the grid, e.g. "9:00 AM". */
@@ -1600,8 +1612,11 @@ export async function addDeskAppointment(
 
   const serviceId = String(input.serviceId ?? "").trim();
   if (!isUuidLike(serviceId)) return fail("invalid_service");
-  const staffId = String(input.staffId ?? "").trim();
-  if (!isUuidLike(staffId)) return fail("invalid_staff");
+
+  // Staff may be a real UUID or the "any available" sentinel.
+  const rawStaffId = String(input.staffId ?? "").trim();
+  const isAnyStaff = rawStaffId === BOOKING_ANY_STAFF_ID;
+  if (!isAnyStaff && !isUuidLike(rawStaffId)) return fail("invalid_staff");
 
   const dateYmd = String(input.bookingDateYmd ?? "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) return fail("invalid_date");
@@ -1616,6 +1631,14 @@ export async function addDeskAppointment(
     clientEmail = emailRaw.toLowerCase();
   }
   const clientNotes = String(input.clientNotes ?? "").trim().slice(0, 500) || null;
+
+  // De-dupe + sanitize add-on ids; an add-on can't be the main service.
+  const addonIds: string[] = Array.isArray(input.addonServiceIds)
+    ? Array.from(
+        new Set(input.addonServiceIds.map((s) => String(s).trim()).filter(isUuidLike)),
+      )
+    : [];
+  if (addonIds.includes(serviceId)) return fail("invalid_addon");
 
   const db = createServiceRoleClient();
 
@@ -1657,24 +1680,122 @@ export async function addDeskAppointment(
   } | null;
   if (!svc || svc.salon_id !== ctx.salon.id || svc.deleted_at) return fail("invalid_service");
 
+  // Add-on durations extend the block (concurrent ones add $0 time); prices sum
+  // into the email total. Validated server-side: must be this salon's live,
+  // is_addon services — never trust client durations/prices.
+  let addonBlockMin = 0;
+  let addonPriceCents = 0;
+  if (addonIds.length > 0) {
+    const { data: addRows } = await db
+      .from("services")
+      .select("id, duration_minutes, buffer_minutes, price_cents, is_addon, addon_timing, salon_id, deleted_at")
+      .in("id", addonIds);
+    const byId = new Map(
+      (addRows ?? []).map((r) => [String((r as { id: string }).id), r]),
+    );
+    for (const id of addonIds) {
+      const a = byId.get(id) as
+        | {
+            duration_minutes?: number | null;
+            buffer_minutes?: number | null;
+            price_cents?: number | null;
+            is_addon?: unknown;
+            addon_timing?: unknown;
+            salon_id?: string;
+            deleted_at?: string | null;
+          }
+        | undefined;
+      if (!a || a.salon_id !== ctx.salon.id || a.deleted_at || a.is_addon !== true) {
+        return fail("invalid_addon");
+      }
+      const block = (Number(a.duration_minutes) || 0) + (Number(a.buffer_minutes) || 0);
+      if (block <= 0) return fail("invalid_addon");
+      if (a.addon_timing !== "concurrent") addonBlockMin += block;
+      addonPriceCents += a.price_cents != null ? Number(a.price_cents) : 0;
+    }
+  }
+
   const timezone = ctx.salon.timezone;
   const startUtcIso = salonWallTimeToUtcIso(dateYmd, startMinutes, timezone);
-  const totalMin = (svc.duration_minutes ?? 0) + (svc.buffer_minutes ?? 0);
+  const totalMin = (svc.duration_minutes ?? 0) + (svc.buffer_minutes ?? 0) + addonBlockMin;
   const endUtcIso = new Date(Date.parse(startUtcIso) + totalMin * 60_000).toISOString();
+  const slotStartMs = Date.parse(startUtcIso);
+  const slotEndMs = Date.parse(endUtcIso);
 
-  // Staff name for the confirmation message.
-  const { data: staffRow } = await db
+  // Resolve the staff to book. ALWAYS restrict to active + capable providers so
+  // we mirror the public slot grid and never oversell via an inactive staff row.
+  // The booking must be doable for the main service AND every add-on.
+  const requiredServiceIds = [serviceId, ...addonIds];
+  const { data: staffRows } = await db
     .from("staff")
-    .select("name, salon_id, status")
-    .eq("id", staffId)
-    .maybeSingle();
-  const staff = staffRow as { name?: string; salon_id?: string; status?: string } | null;
-  if (!staff || staff.salon_id !== ctx.salon.id) return fail("invalid_staff");
+    .select("id, name, salon_id, status")
+    .eq("salon_id", ctx.salon.id)
+    .eq("status", "active")
+    .is("deleted_at" as never, null)
+    .order("name", { ascending: true });
+  const activeStaff = (staffRows ?? []).map((r) => ({
+    id: String((r as { id: string }).id),
+    name: String((r as { name?: string }).name ?? ""),
+  }));
+  const { data: capRows } = await db
+    .from("staff_services")
+    .select("staff_id, service_id")
+    .in("staff_id", activeStaff.map((s) => s.id));
+  const capability = buildCapabilityMap(
+    (capRows ?? []).map((r) => ({
+      staff_id: String((r as { staff_id: string }).staff_id),
+      service_id: String((r as { service_id: string }).service_id),
+    })),
+  );
+  const capableStaff = filterStaffCapableForServices(activeStaff, capability, requiredServiceIds);
+  if (capableStaff.length === 0) return fail("no_staff_available");
+
+  let resolvedStaffId: string;
+  let staffName = "";
+  if (isAnyStaff) {
+    // Auto-assign: pick the freest capable provider for this exact block.
+    const range = salonDayRangeUtc(dateYmd, timezone);
+    const { data: occRaw } = await db.rpc("public_booking_occupancy_for_range", {
+      p_salon_id: ctx.salon.id,
+      p_start: range.startUtc,
+      p_end: range.endUtc,
+    } as never);
+    const occupancy = (Array.isArray(occRaw) ? occRaw : []).map(
+      (row) => ({
+        staffId: String((row as { staff_id: string }).staff_id),
+        startMs: Date.parse((row as { start_time_utc: string }).start_time_utc),
+        endMs: Date.parse((row as { end_time_utc: string }).end_time_utc),
+      }),
+    );
+    const freeIds = capableStaff
+      .map((s) => s.id)
+      .filter(
+        (id) =>
+          !occupancy.some(
+            (o) => o.staffId === id && intervalsOverlapMs(slotStartMs, slotEndMs, o.startMs, o.endMs),
+          ),
+      );
+    if (freeIds.length === 0) return fail("time_slot_taken");
+    resolvedStaffId = pickBestStaffAmongFree(
+      freeIds,
+      capableStaff,
+      occupancy,
+      Date.parse(range.startUtc),
+      Date.parse(range.endUtc),
+      slotStartMs,
+    );
+    staffName = capableStaff.find((s) => s.id === resolvedStaffId)?.name ?? "";
+  } else {
+    const chosen = capableStaff.find((s) => s.id === rawStaffId);
+    if (!chosen) return fail("invalid_staff");
+    resolvedStaffId = rawStaffId;
+    staffName = chosen.name;
+  }
 
   const { data: rpcData, error: rpcErr } = await db.rpc("create_public_booking", {
     p_salon_id: ctx.salon.id,
     p_service_id: serviceId,
-    p_staff_id: staffId,
+    p_staff_id: resolvedStaffId,
     p_client_name: clientName,
     p_client_phone: canonicalPhone,
     p_start_time_utc: startUtcIso,
@@ -1698,13 +1819,34 @@ export async function addDeskAppointment(
   }
   const bookingId = result.booking_id;
 
+  // Persist the full add-on list (durations/prices re-derived server-side by the
+  // RPC). Best-effort — the appointment already exists with the correct block.
+  if (addonIds.length > 0) {
+    try {
+      await db.rpc("add_booking_addons", {
+        p_booking_id: bookingId,
+        p_service_ids: addonIds,
+      } as never);
+    } catch {
+      /* best-effort */
+    }
+  }
+
   // Track the phone-in channel (best-effort; `source` stays 'appointment').
   // booking_channel = 'desk' marks this as a front-desk-entered appointment so
-  // reports can separate it from online / Square / Wix.
+  // reports can separate it from online / Square / Wix. The ❤️ staff-request
+  // flag is stamped in the same round-trip when the receptionist ticks it.
   try {
+    const channelUpdate: Record<string, unknown> = {
+      walkin_source: "phone",
+      booking_channel: "desk",
+    };
+    if (input.staffRequestedByClient === true) {
+      channelUpdate.staff_requested_by_client = true;
+    }
     await db
       .from("bookings")
-      .update({ walkin_source: "phone", booking_channel: "desk" } as never)
+      .update(channelUpdate as never)
       .eq("id", bookingId);
   } catch {
     /* best-effort */
@@ -1723,13 +1865,20 @@ export async function addDeskAppointment(
     actorUserId: null,
     actorRole: ctxActorRole(ctx),
     eventType: "booking_created",
-    payload: { source: "desk_phone", staffId, serviceId },
+    payload: {
+      source: "desk_phone",
+      staffId: resolvedStaffId,
+      serviceId,
+      addonServiceIds: addonIds,
+      anyStaff: isAnyStaff,
+      staffRequestedByClient: input.staffRequestedByClient === true,
+    },
   });
 
   // Same confirmation as a public booking (SMS always, email when given).
   const base = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
   const serviceName = svc.name ?? "";
-  const staffName = staff.name ?? "";
+  const totalPriceCents = (svc.price_cents ?? 0) + addonPriceCents;
   after(async () => {
     try {
       await fetch(`${base}/api/booking/sms-confirm`, {
@@ -1763,7 +1912,7 @@ export async function addDeskAppointment(
             serviceName,
             staffName,
             startTimeUtc: startUtcIso,
-            totalPriceCents: svc.price_cents ?? 0,
+            totalPriceCents,
           }),
         });
       } catch {

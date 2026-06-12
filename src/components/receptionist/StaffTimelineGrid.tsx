@@ -23,6 +23,7 @@ import {
   salonWallTimeToUtcIso,
   utcIsoToSalonMinutesFromMidnight,
 } from "@/shared/lib/salonTime";
+import { minutesToLabel } from "@/shared/booking/getAvailableTimeSlots";
 
 // Default visible window when nothing forces it wider. The grid expands beyond
 // this to cover any booking outside it + the current time (so a 1:44 AM walk-in
@@ -120,6 +121,14 @@ export interface StaffTimelineGridProps {
   existingBookings: GridBooking[];
   onBookingClick: (bookingId: string) => void;
   onSlotClick: (staffId: string, slotStartUtc: string) => void;
+  /**
+   * Click-to-create: fires when the receptionist clicks a genuinely EMPTY
+   * slot while NOT in walk-in assign mode. Opens the desk booking form
+   * prefilled with this staff + day + time label. `ymd` is salon-local
+   * YYYY-MM-DD; `timeLabel` is the exact `minutesToLabel` label so the
+   * form can auto-select the matching slot.
+   */
+  onEmptySlotClick?: (staffId: string, ymd: string, timeLabel: string) => void;
   /** Drag-to-reschedule: fires when a booking block is dropped on a new slot. */
   onRescheduleBooking?: (
     bookingId: string,
@@ -323,6 +332,7 @@ function StaffTimelineGridImpl({
   existingBookings,
   onBookingClick,
   onSlotClick,
+  onEmptySlotClick,
   onRescheduleBooking,
   labels,
   showStaffPerformanceDetail = true,
@@ -602,6 +612,23 @@ function StaffTimelineGridImpl({
   }, [jumpToNowTrigger, isViewingToday, nowIso, timezone, hourStart, hourEnd, totalSlots]);
 
   const assignMode = assigning !== null;
+  // Click-to-create is active when we're NOT assigning a walk-in AND the
+  // parent wired a handler. In this mode clicking a genuinely empty slot
+  // opens the desk booking form prefilled. Mutually exclusive with assign.
+  const clickToCreate = !assignMode && !!onEmptySlotClick;
+
+  // Slot-validity check for click-to-create only — does NOT affect assign
+  // mode (assign keeps its original "any slot clickable" behavior). A slot
+  // is creatable when the staff row is active (not "offline") AND the slot
+  // start time is within the salon's open/close window (skip the hours
+  // guard when either bound is null/unknown).
+  const isSlotCreatable = (staffStatus: StaffStatus, slotIndex: number): boolean => {
+    if (staffStatus === "offline") return false;
+    const slotMinutes = hourStart * 60 + slotIndex * SLOT_MINUTES;
+    if (openMinutes != null && slotMinutes < openMinutes) return false;
+    if (closeMinutes != null && slotMinutes >= closeMinutes) return false;
+    return true;
+  };
 
   return (
     <div
@@ -844,6 +871,27 @@ function StaffTimelineGridImpl({
                 );
               }
 
+              // Click-to-create hover ghost — a single highlighted slot under
+              // the pointer. We don't know the service duration yet, so it's
+              // just a 1-slot cue (not a duration-sized span). Only shown for
+              // a creatable empty slot in click-to-create mode.
+              let createGhostEl: ReactNode = null;
+              if (
+                clickToCreate &&
+                hoveredSlot !== null &&
+                hoveredSlot.staffId === s.id &&
+                isSlotCreatable(s.status, hoveredSlot.slotIndex)
+              ) {
+                createGhostEl = (
+                  <GhostBlock
+                    leftPx={hoveredSlot.slotIndex * SLOT_PX}
+                    widthPx={SLOT_PX}
+                    state="ok"
+                    label=""
+                  />
+                );
+              }
+
               return (
                 <div
                   key={s.id}
@@ -877,68 +925,118 @@ function StaffTimelineGridImpl({
                     className={cn(
                       "absolute inset-0 flex",
                       assignMode
-                        ? "z-[3]"
-                        : // When not in assign mode the slot buttons
-                          // are inert (tabIndex=-1, aria-hidden, opacity-0)
-                          // but they're still real <button> elements —
-                          // belt-and-suspenders pointer-events-none on the
-                          // wrapper guarantees they NEVER swallow a click
-                          // intended for a booking block above. Past-date
-                          // bookings reported as un-clickable in QA traced
-                          // back to a stacking-context edge case here.
-                          "z-[1] pointer-events-none",
+                        ? // Assign mode: buttons sit ABOVE booking blocks
+                          // (z-[3] > block z-[2]) so any slot — even one
+                          // visually under a block — can receive the
+                          // walk-in assignment click. Unchanged behavior.
+                          "z-[3]"
+                        : clickToCreate
+                          ? // Click-to-create: buttons must sit BELOW the
+                            // booking-block layer (z-[1] < block z-[2]) so a
+                            // click landing on a real booking hits the block
+                            // first (opens drawer / starts drag) and ONLY a
+                            // genuinely empty slot reaches the button. The
+                            // wrapper still needs pointer-events to let empty
+                            // slots receive clicks.
+                            "z-[1] pointer-events-auto"
+                          : // Fully inert: buttons are aria-hidden/opacity-0
+                            // but still real <button>s — pointer-events-none
+                            // on the wrapper guarantees they NEVER swallow a
+                            // click intended for a booking block above.
+                            "z-[1] pointer-events-none",
                     )}
                   >
                     {Array.from({ length: totalSlots }, (_, slotIndex) => {
                       // The slot's absolute UTC start, reused from the memoized
-                      // slotUtcList (NOT recomputed per render). Exposed as
-                      // `data-slot-utc` so tests can target a slot by wall-clock
-                      // time rather than by index — the index↔time mapping shifts
-                      // with the dynamic hour window (`computeHourRange` widens to
-                      // include "now"), which made fixed-index lookups flaky.
-                      // Computing it inline here ran totalSlots×staff date-math
-                      // calls on every grid render — and the grid re-renders each
-                      // second while the undo countdown ticks, janking the
-                      // countdown under CI load. The memo makes it O(totalSlots).
+                      // slotUtcList (NOT recomputed per render — the grid
+                      // re-renders each second while the undo countdown ticks).
+                      // Also exposed as `data-slot-utc` so E2E can target a slot
+                      // by wall-clock time rather than by index (the index↔time
+                      // mapping shifts as computeHourRange widens to include now).
                       const slotUtc = slotUtcList[slotIndex]!;
+                      // Click-to-create only: a slot is interactive when the
+                      // staff is active and the time is within open hours.
+                      // Assign mode ignores this entirely (its behavior is
+                      // unchanged below).
+                      const creatable =
+                        clickToCreate && isSlotCreatable(s.status, slotIndex);
+                      // The button is interactive in assign mode (always) or
+                      // when click-to-create deems this slot creatable.
+                      const interactive = assignMode || creatable;
                       return (
-                      <button
-                        key={slotIndex}
-                        type="button"
-                        data-testid={`assign-slot-${s.id}-${slotIndex}`}
-                        data-slot-utc={slotUtc}
-                        tabIndex={assignMode ? 0 : -1}
-                        aria-hidden={!assignMode}
-                        className={cn(
-                          "h-full shrink-0 border-0 bg-transparent p-0 opacity-0 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-nq-primary/50",
-                          assignMode ? "cursor-copy pointer-events-auto" : "",
-                        )}
-                        style={{ width: SLOT_PX }}
-                        onMouseEnter={() =>
-                          setHoveredSlot({ staffId: s.id, slotIndex })
-                        }
-                        onFocus={() => setHoveredSlot({ staffId: s.id, slotIndex })}
-                        onClick={(e: MouseEvent) => {
-                          if (!assignMode) return;
-                          e.stopPropagation();
-                          onSlotClick(s.id, slotUtc);
-                        }}
-                        onKeyDown={(e: KeyboardEvent) => {
-                          if (!assignMode) return;
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            onSlotClick(s.id, slotUtc);
+                        <button
+                          key={slotIndex}
+                          type="button"
+                          data-testid={`assign-slot-${s.id}-${slotIndex}`}
+                          data-slot-utc={slotUtc}
+                          tabIndex={interactive ? 0 : -1}
+                          aria-hidden={!interactive}
+                          // Disable (visually dim, not clickable) empty slots
+                          // that fail the click-to-create validity check —
+                          // offline staff or out-of-hours times.
+                          disabled={clickToCreate && !creatable}
+                          className={cn(
+                            "h-full shrink-0 border-0 bg-transparent p-0 opacity-0 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-nq-primary/50",
+                            assignMode ? "cursor-copy pointer-events-auto" : "",
+                            // Click-to-create affordances: pointer cursor +
+                            // subtle hover wash on creatable empty slots;
+                            // not-allowed + dim on blocked ones.
+                            creatable &&
+                              "cursor-pointer pointer-events-auto hover:bg-nq-primary/10 hover:opacity-100",
+                            clickToCreate &&
+                              !creatable &&
+                              "cursor-not-allowed pointer-events-auto opacity-40",
+                          )}
+                          style={{ width: SLOT_PX }}
+                          onMouseEnter={() =>
+                            setHoveredSlot({ staffId: s.id, slotIndex })
                           }
-                        }}
-                      />
+                          onFocus={() => setHoveredSlot({ staffId: s.id, slotIndex })}
+                          onClick={(e: MouseEvent) => {
+                            if (assignMode) {
+                              e.stopPropagation();
+                              onSlotClick(s.id, slotUtc);
+                              return;
+                            }
+                            // Click-to-create: only fire on a valid empty slot.
+                            if (!creatable || !onEmptySlotClick) return;
+                            e.stopPropagation();
+                            const minutesFromMidnight =
+                              hourStart * 60 + slotIndex * SLOT_MINUTES;
+                            const timeLabel = minutesToLabel(minutesFromMidnight);
+                            // `selectedDate` is already the salon-local
+                            // YYYY-MM-DD (same value fed to slotIndexToUtc).
+                            onEmptySlotClick(s.id, selectedDate, timeLabel);
+                          }}
+                          onKeyDown={(e: KeyboardEvent) => {
+                            if (e.key !== "Enter" && e.key !== " ") return;
+                            if (assignMode) {
+                              e.preventDefault();
+                              onSlotClick(s.id, slotUtc);
+                              return;
+                            }
+                            if (!creatable || !onEmptySlotClick) return;
+                            e.preventDefault();
+                            const minutesFromMidnight =
+                              hourStart * 60 + slotIndex * SLOT_MINUTES;
+                            const timeLabel = minutesToLabel(minutesFromMidnight);
+                            onEmptySlotClick(s.id, selectedDate, timeLabel);
+                          }}
+                        />
                       );
                     })}
                   </div>
 
                   <div
                     className={cn(
-                      "relative h-full",
-                      assignMode ? "z-[2] pointer-events-none" : "z-[2]",
+                      "relative h-full z-[2]",
+                      // Both assign mode AND click-to-create make this wrapper
+                      // pointer-transparent so EMPTY space falls through to the
+                      // slot-button layer below. The booking blocks inside are
+                      // `pointer-events: auto` (CSS default re-enables children),
+                      // so clicking a real block still opens the drawer / starts
+                      // a drag — only the empty gaps pass through.
+                      (assignMode || clickToCreate) && "pointer-events-none",
                     )}
                   >
                     {rowBookings.map((b) => {
@@ -1045,6 +1143,7 @@ function StaffTimelineGridImpl({
                       );
                     })}
                     {ghostEl}
+                    {createGhostEl}
                     {dragGhostEl}
                   </div>
                 </div>
