@@ -50,9 +50,15 @@ export function dashboardPathForRole(
 /**
  * Mutating-action permissions for booking rows in Receptionist Center.
  *
- * Phase 1 split: `nail_tech` is a view-only role for bookings — they see the
- * grid and drawer but can't modify the schedule. Owners and seniors can
- * still edit, cancel, and undo cancellations.
+ * Editing and cancelling a booking are core front-desk jobs, so they mirror
+ * the no-show / desk-booking / status set: owner/admin/senior/receptionist.
+ * `nail_tech` stays view-only — they see the grid and drawer but can't modify
+ * the schedule.
+ *
+ * (Previously this gate was owner/senior only, which wrongly locked an `admin`
+ *  out of the Cancel button entirely even though the same admin could mark
+ *  no-show and start/complete a service — see the Hi-Lite admin who couldn't
+ *  cancel a 2pm appointment.)
  *
  * The `canUndoCancel` helper currently has no consumer in the UI (there is
  * no undo-cancel flow yet — `UndoToast` is for walk-in assign). It's
@@ -60,11 +66,21 @@ export function dashboardPathForRole(
  * feature lands in the right gate from day one.
  */
 export function canEditBooking(role: SalonMemberRole): boolean {
-  return role === "owner" || role === "senior";
+  return (
+    role === "owner" ||
+    role === "admin" ||
+    role === "senior" ||
+    role === "receptionist"
+  );
 }
 
 export function canCancelBooking(role: SalonMemberRole): boolean {
-  return role === "owner" || role === "senior";
+  return (
+    role === "owner" ||
+    role === "admin" ||
+    role === "senior" ||
+    role === "receptionist"
+  );
 }
 
 /** Marking a no-show is a front-desk operation (the receptionist sees who
