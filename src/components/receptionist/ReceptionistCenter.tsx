@@ -2794,34 +2794,47 @@ function ReceptionistCenterInner({
                 setDeskPrefill({ staffId, ymd, slotLabel });
                 setDeskBookingOpen(true);
               }}
-              onRescheduleBooking={async (bookingId, newStaffId, newStartUtc) => {
-                const booking = data.bookingsForDay.find((b) => b.id === bookingId);
-                if (!booking) return { ok: false, error: "not_found" };
-                const result = await editBookingAction(slug, {
-                  salonId: data.salon.id,
-                  bookingId,
-                  newStartTimeUtc: newStartUtc,
-                  newStaffId,
-                  newServiceId: booking.service_id,
-                  newAddonServiceId: booking.addon_service_id ?? null,
-                });
-                if (result.ok) {
-                  router.refresh();
-                  return { ok: true };
-                }
-                // Surface WHY the drop snapped back, instead of failing silently.
-                const failCopy = rcMessages.grid.rescheduleFailed;
-                const reason =
-                  result.error === "past_date"
-                    ? failCopy.past_date
-                    : result.error === "slot_conflict"
-                      ? failCopy.slot_conflict
-                      : result.error === "staff_cannot_perform_service"
-                        ? failCopy.staff_cannot_perform_service
-                        : failCopy.generic;
-                showErrorToast(reason);
-                return { ok: false, error: result.error };
-              }}
+              onRescheduleBooking={
+                // Drag-to-reschedule is an EDIT, so only wire it for roles that
+                // can edit (owner/admin/senior/receptionist). Without this gate
+                // view-only nail_tech could grab-drag a block; the server would
+                // reject it (`canEditBooking`) and it would snap back with an
+                // "unauthorized" toast — a confusing UI/server split. Passing
+                // `undefined` hides the drag affordance so the UI matches the
+                // server gate (mirrors the Start/Complete button gate in #404).
+                canEditBooking(viewerRole)
+                  ? async (bookingId, newStaffId, newStartUtc) => {
+                      const booking = data.bookingsForDay.find(
+                        (b) => b.id === bookingId,
+                      );
+                      if (!booking) return { ok: false, error: "not_found" };
+                      const result = await editBookingAction(slug, {
+                        salonId: data.salon.id,
+                        bookingId,
+                        newStartTimeUtc: newStartUtc,
+                        newStaffId,
+                        newServiceId: booking.service_id,
+                        newAddonServiceId: booking.addon_service_id ?? null,
+                      });
+                      if (result.ok) {
+                        router.refresh();
+                        return { ok: true };
+                      }
+                      // Surface WHY the drop snapped back, instead of failing silently.
+                      const failCopy = rcMessages.grid.rescheduleFailed;
+                      const reason =
+                        result.error === "past_date"
+                          ? failCopy.past_date
+                          : result.error === "slot_conflict"
+                            ? failCopy.slot_conflict
+                            : result.error === "staff_cannot_perform_service"
+                              ? failCopy.staff_cannot_perform_service
+                              : failCopy.generic;
+                      showErrorToast(reason);
+                      return { ok: false, error: result.error };
+                    }
+                  : undefined
+              }
               labels={{
                 formatTimeLabel: (utcIso: string) => formatInSalonTz(utcIso, timezone, "shortTime"),
                 conflictWith: rcMessages.grid.conflictWith,
