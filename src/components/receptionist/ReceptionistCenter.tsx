@@ -2974,6 +2974,20 @@ function ReceptionistCenterInner({
                           newStaffId,
                           newServiceId: booking.service_id,
                           newAddonServiceId: booking.addon_service_id ?? null,
+                          // Drag has no confirm dialog → notify per the salon's
+                          // smart per-event default for reschedule.
+                          notify: defaultNotifyOn(
+                            data.salon.staffNotificationSettings,
+                            "reschedule",
+                          )
+                            ? {
+                                sms: data.salon.staffNotificationSettings
+                                  .channels.sms,
+                                email:
+                                  data.salon.staffNotificationSettings.channels
+                                    .email,
+                              }
+                            : { sms: false, email: false },
                         });
                         if (result.ok) {
                           router.refresh();
