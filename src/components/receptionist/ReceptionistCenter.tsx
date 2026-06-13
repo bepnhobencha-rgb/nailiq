@@ -84,7 +84,6 @@ import {
   undoCancelBooking,
   cancelWaitingWalkin,
   undoWalkinAssignment,
-  sendStaffActionNotification,
 } from "@/shared/dashboard/receptionistActions";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
 import { defaultNotifyOn } from "@/shared/dashboard/staffNotificationSettings";
@@ -420,11 +419,6 @@ function ReceptionistCenterInner({
 
   const [undoState, setUndoState] = useState<UndoToastState | null>(null);
   const undoTimerRef = useRef<number | null>(null);
-  // Dedicated one-shot timer for the "notify the customer" send, decoupled from
-  // the visual undo countdown. It fires the SMS/email ~8s after a cancel UNLESS
-  // the receptionist hits Undo first (which clears it) — so an accidental
-  // cancel never reaches the customer.
-  const notifyTimerRef = useRef<number | null>(null);
 
   const undoVisible = undoState !== null;
 
@@ -454,34 +448,8 @@ function ReceptionistCenterInner({
   useEffect(() => {
     return () => {
       if (undoTimerRef.current !== null) window.clearInterval(undoTimerRef.current);
-      if (notifyTimerRef.current !== null) window.clearTimeout(notifyTimerRef.current);
     };
   }, []);
-
-  // Schedule the customer cancel-notification ~8s out (the undo window). Cleared
-  // by undoCancel. Channels come from the salon's smart per-event defaults; the
-  // server only actually sends on a channel the customer has contact info for,
-  // and resolves the language (online→site language, else salon default).
-  const NOTIFY_DELAY_MS = 8000;
-  const scheduleCancelNotify = (bookingId: string, channels: NotifyChannels) => {
-    if (!channels.sms && !channels.email) return;
-    if (notifyTimerRef.current !== null) window.clearTimeout(notifyTimerRef.current);
-    notifyTimerRef.current = window.setTimeout(() => {
-      notifyTimerRef.current = null;
-      void sendStaffActionNotification(slug, {
-        salonId: data.salon.id,
-        bookingId,
-        event: "cancel",
-        channels,
-      });
-    }, NOTIFY_DELAY_MS);
-  };
-  const cancelScheduledNotify = () => {
-    if (notifyTimerRef.current !== null) {
-      window.clearTimeout(notifyTimerRef.current);
-      notifyTimerRef.current = null;
-    }
-  };
 
   useEffect(() => {
     if (undoTimerRef.current !== null) window.clearInterval(undoTimerRef.current);
@@ -1023,8 +991,8 @@ function ReceptionistCenterInner({
 
   const undoCancel = async () => {
     if (!undoState) return;
-    // The booking is being restored → never send the cancel notification.
-    cancelScheduledNotify();
+    // undoCancelBooking restores the booking AND flips the queued cancel
+    // notification to 'cancelled' server-side, so the customer is never texted.
     const res = await undoCancelBooking(slug, {
       salonId: data.salon.id,
       bookingId: undoState.bookingId,
@@ -1597,12 +1565,25 @@ function ReceptionistCenterInner({
     )
       return;
 
+    // Notify channels for the cancel — explicit panel choice, else the salon's
+    // smart per-event default (the deposit path has no panel). The server
+    // ENQUEUES this with a 20s grace; hitting Undo cancels the queued send.
+    const notifyChannelsResolved =
+      notifyChannels ??
+      (defaultNotifyOn(data.salon.staffNotificationSettings, "cancel")
+        ? {
+            sms: data.salon.staffNotificationSettings.channels.sms,
+            email: data.salon.staffNotificationSettings.channels.email,
+          }
+        : { sms: false, email: false });
+
     setDrawerBusy(true);
     try {
       const r = await cancelDeskBooking(slug, {
         salonId: data.salon.id,
         bookingId: id,
         refundDeposit,
+        notify: notifyChannelsResolved,
       });
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
@@ -1619,6 +1600,7 @@ function ReceptionistCenterInner({
 
         // Undo toast (8s). Skipped after a refund — a returned deposit isn't
         // re-collected by restoring, so undo would leave booking + no deposit.
+        // Undo also cancels the queued cancel notification server-side.
         if (!refundDeposit) {
           const u = messages.receptionist.undo;
           const startLabel = b.start_time_utc
@@ -1632,19 +1614,6 @@ function ReceptionistCenterInner({
             secondsRemaining: 8,
             type: "cancel",
           });
-          // Notify the customer about the cancellation after the 8s undo
-          // window — skipped if they hit Undo (cancelScheduledNotify). Channels
-          // come from the cancel-confirm panel; the deposit path (no panel)
-          // falls back to the salon's smart per-event default.
-          const channels =
-            notifyChannels ??
-            (defaultNotifyOn(data.salon.staffNotificationSettings, "cancel")
-              ? {
-                  sms: data.salon.staffNotificationSettings.channels.sms,
-                  email: data.salon.staffNotificationSettings.channels.email,
-                }
-              : { sms: false, email: false });
-          scheduleCancelNotify(id, channels);
         }
       }
     } finally {

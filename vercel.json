@@ -9,6 +9,10 @@
       "schedule": "*/1 * * * *"
     },
     {
+      "path": "/api/cron/send-pending-notifications",
+      "schedule": "*/1 * * * *"
+    },
+    {
       "path": "/api/cron/square-sync",
       "schedule": "*/5 * * * *"
     },
