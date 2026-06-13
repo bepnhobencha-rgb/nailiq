@@ -54,6 +54,7 @@ import {
   isStaffCapableForService,
   type StaffCapabilityMap,
 } from "@/shared/booking/staffCapability";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import {
   ALTERNATIVE_QUERY_TIMEOUT_MS,
   ALTERNATIVE_SEARCH_DAYS,
@@ -529,7 +530,7 @@ export async function loadGroupSmartSchedule(
 
     if (isAddon) {
       // Register as add-on. Skip zero-block add-ons gracefully.
-      const block = dur + buf;
+      const block = serviceBlockMinutes(dur, buf);
       const concurrent = rTyped.addon_timing === "concurrent";
       addonById.set(String(r.id), {
         block,
@@ -564,7 +565,7 @@ export async function loadGroupSmartSchedule(
     serviceById.set(String(r.id), {
       id: String(r.id),
       name: String(r.name ?? ""),
-      totalMin: dur + buf,
+      totalMin: serviceBlockMinutes(dur, buf),
       bufferMin: buf,
       priceCents: r.price_cents != null ? Number(r.price_cents) : null,
     });

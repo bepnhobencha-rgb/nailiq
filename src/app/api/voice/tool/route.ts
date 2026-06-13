@@ -6,6 +6,7 @@ import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { computeTimeSlots } from "@/shared/booking/getAvailableTimeSlots";
 import { parseOpeningHours, type DayKey, type OpeningHoursWeek } from "@/shared/dashboard/openingHoursDefaults";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { formatInSalonTz, salonDayRangeUtc, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 import {
   tryAlignedArrangement,
@@ -1011,7 +1012,7 @@ async function loadGroupCtx(
     serviceById.set(String(r.id), {
       id:         String(r.id),
       name:       String(r.name ?? ""),
-      totalMin:   (Number(r.duration_minutes) || 0) + (Number(r.buffer_minutes) || 0),
+      totalMin:   serviceBlockMinutes(r.duration_minutes, r.buffer_minutes),
       bufferMin:  Number(r.buffer_minutes) || 0,
       priceCents: r.price_cents != null ? Number(r.price_cents) : null,
     });

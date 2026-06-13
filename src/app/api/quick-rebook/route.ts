@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 
 export const dynamic = "force-dynamic";
 
@@ -183,7 +184,7 @@ export async function POST(req: Request) {
     preferredWeekday: pattern.recurring_weekday,
     preferredHour: pattern.recurring_hour ?? 10,
     staffId: pattern.usual_staff_id ?? null,
-    durationMinutes: service.duration_minutes + (service.buffer_minutes ?? 0),
+    durationMinutes: serviceBlockMinutes(service.duration_minutes, service.buffer_minutes),
   });
 
   if (!slot) {

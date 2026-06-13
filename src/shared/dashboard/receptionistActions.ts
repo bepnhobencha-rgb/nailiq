@@ -26,6 +26,7 @@ import {
   canUndoCancel,
 } from "@/shared/lib/salonMemberRole";
 import { loadBookingServicesForSalonSlug } from "@/shared/booking/loadBookingServices";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { salonWallTimeToUtcIso, salonDayRangeUtc } from "@/shared/lib/salonTime";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { pickBestStaffAmongFree } from "@/shared/booking/pickBestStaffAmongFree";
@@ -413,7 +414,7 @@ export async function assignWalkinToSlot(
   }
   if (!Number.isFinite(buffer) || buffer < 0) return fail("invalid_buffer");
 
-  const totalMin = duration + buffer;
+  const totalMin = serviceBlockMinutes(duration, buffer);
   const endMs = startMs + totalMin * 60 * 1000;
   const slotEndUtc = new Date(endMs).toISOString();
 
@@ -1859,7 +1860,7 @@ export async function addDeskAppointment(
       if (!a || a.salon_id !== ctx.salon.id || a.deleted_at || a.is_addon !== true) {
         return fail("invalid_addon");
       }
-      const block = (Number(a.duration_minutes) || 0) + (Number(a.buffer_minutes) || 0);
+      const block = serviceBlockMinutes(a.duration_minutes, a.buffer_minutes);
       if (block <= 0) return fail("invalid_addon");
       const concurrent = a.addon_timing === "concurrent";
       if (!concurrent) addonBlockMin += block;
@@ -1887,7 +1888,7 @@ export async function addDeskAppointment(
 
   const timezone = ctx.salon.timezone;
   const startUtcIso = salonWallTimeToUtcIso(dateYmd, startMinutes, timezone);
-  const totalMin = (svc.duration_minutes ?? 0) + (svc.buffer_minutes ?? 0) + addonBlockMin;
+  const totalMin = serviceBlockMinutes(svc.duration_minutes, svc.buffer_minutes) + addonBlockMin;
   const endUtcIso = new Date(Date.parse(startUtcIso) + totalMin * 60_000).toISOString();
   const slotStartMs = Date.parse(startUtcIso);
   const slotEndMs = Date.parse(endUtcIso);

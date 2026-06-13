@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { salonDayRangeUtc } from "@/shared/lib/salonTime";
 import {
   DAY_KEYS,
@@ -811,7 +812,7 @@ export async function loadReceptionistCenterData(
     const bRaw = Number(svc?.buffer_minutes ?? 0);
     const d = Number.isFinite(dRaw) ? Math.round(dRaw) : 0;
     const buf = Number.isFinite(bRaw) ? Math.round(bRaw) : 0;
-    const spanMin = Number.isFinite(d + buf) && d + buf > 0 ? d + buf : 0;
+    const spanMin = Math.max(0, serviceBlockMinutes(d, buf));
     const partyRaw = Number(row.party_size);
     const partySize =
       Number.isFinite(partyRaw) && partyRaw >= 1 && partyRaw <= 50
