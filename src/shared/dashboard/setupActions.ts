@@ -1417,6 +1417,12 @@ export async function getDashboardWriteClient(slug: string): Promise<
       kind: "member" | "demo_cookie";
       /** `salon_members.role` for this user-salon pair. Demo-cookie path is `"owner"`. */
       role: SalonMemberRole;
+      /**
+       * Auth user id of the acting member, or `null` for the demo-cookie
+       * path (no real auth user). Passed to `logBookingEvent` so
+       * `booking_events.actor_user_id` records who performed a desk action.
+       */
+      userId: string | null;
       supabase: GenericSupabase;
     }
 > {
@@ -1431,6 +1437,7 @@ export async function getDashboardWriteClient(slug: string): Promise<
     salon: r.salon,
     kind: r.kind,
     role: r.role,
+    userId: r.viewerUserId,
     supabase,
   };
 }
