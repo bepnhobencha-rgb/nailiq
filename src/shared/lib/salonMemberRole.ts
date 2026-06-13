@@ -92,3 +92,18 @@ export function canCreateDeskBooking(role: SalonMemberRole): boolean {
 export function canUndoCancel(role: SalonMemberRole): boolean {
   return role === "owner" || role === "senior";
 }
+
+/** Advancing a booking's status (confirm / start / complete) is a front-desk
+ *  operation, so it mirrors the no-show / desk-booking set:
+ *  owner/admin/senior/receptionist. `nail_tech` is excluded — they have a
+ *  view-only booking surface (see `canEditBooking`) and shouldn't be able to
+ *  flip a booking to completed (the test-click that wrongly closed a Hi-Lite
+ *  appointment came through an ungated status change). */
+export function canChangeBookingStatus(role: SalonMemberRole): boolean {
+  return (
+    role === "owner" ||
+    role === "admin" ||
+    role === "senior" ||
+    role === "receptionist"
+  );
+}
