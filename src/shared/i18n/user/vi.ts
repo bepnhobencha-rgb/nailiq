@@ -716,6 +716,31 @@ export const userVi: UserMessages = {
       testErrorNoResend: "Dịch vụ email chưa được cấu hình.",
       testErrorGeneric: "Không gửi được email thử.",
     },
+    staffNotifications: {
+      title: "Thông báo cho khách",
+      subtitle:
+        "Khi nhân viên tạo, dời, hoặc huỷ lịch — chọn có báo cho khách không, và bằng ngôn ngữ nào.",
+      loading: "Đang tải…",
+      enabledLabel: "Hiện bước “báo cho khách?” khi nhân viên thao tác",
+      channelsHeading: "Kênh được dùng",
+      smsLabel: "Tin nhắn (SMS)",
+      emailLabel: "Email",
+      eventsHeading: "Mặc định báo khách khi…",
+      eventsHint: "Nhân viên vẫn có thể bật/tắt cho từng lịch.",
+      eventLabels: {
+        create: "Tạo lịch tại quầy",
+        reschedule: "Dời lịch hẹn",
+        cancel: "Huỷ lịch hẹn",
+      },
+      languageHeading: "Ngôn ngữ mặc định",
+      languageHint:
+        "Khách đặt online luôn nhận theo ngôn ngữ họ đã chọn trên trang.",
+      langEn: "Tiếng Anh",
+      langVi: "Tiếng Việt",
+      save: "Lưu",
+      saved: "Đã lưu.",
+      saveError: "Không lưu được. Vui lòng thử lại.",
+    },
     hintRecoveryEmail:
       "Để thêm hoặc đổi email khôi phục cho tài khoản, dùng thanh nhắc trên bảng điều khiển.",
     emailVerification: {

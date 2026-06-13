@@ -620,6 +620,26 @@ export type UserMessages = {
       testErrorNoResend: string;
       testErrorGeneric: string;
     };
+    /** Customer-notification defaults for STAFF actions (create/reschedule/cancel). */
+    staffNotifications: {
+      title: string;
+      subtitle: string;
+      loading: string;
+      enabledLabel: string;
+      channelsHeading: string;
+      smsLabel: string;
+      emailLabel: string;
+      eventsHeading: string;
+      eventsHint: string;
+      eventLabels: { create: string; reschedule: string; cancel: string };
+      languageHeading: string;
+      languageHint: string;
+      langEn: string;
+      langVi: string;
+      save: string;
+      saved: string;
+      saveError: string;
+    };
     hintRecoveryEmail: string;
     /** Recovery-email verification status block (Settings hub). */
     emailVerification: {
@@ -2486,6 +2506,31 @@ export const userEn: UserMessages = {
       testErrorNoRecipients: "No recipients yet — add an email or enable owners/admins.",
       testErrorNoResend: "Email service not configured.",
       testErrorGeneric: "Could not send the test email.",
+    },
+    staffNotifications: {
+      title: "Customer notifications",
+      subtitle:
+        "When staff create, reschedule, or cancel a booking, choose whether the customer is notified — and in which language.",
+      loading: "Loading…",
+      enabledLabel: "Offer the “notify customer?” step on staff actions",
+      channelsHeading: "Channels offered",
+      smsLabel: "Text (SMS)",
+      emailLabel: "Email",
+      eventsHeading: "Notify the customer by default when…",
+      eventsHint: "Staff can still toggle this per booking.",
+      eventLabels: {
+        create: "Booking created at the desk",
+        reschedule: "Booking rescheduled",
+        cancel: "Booking cancelled",
+      },
+      languageHeading: "Default language",
+      languageHint:
+        "Online bookings always use the language the customer chose on the site.",
+      langEn: "English",
+      langVi: "Vietnamese",
+      save: "Save",
+      saved: "Saved.",
+      saveError: "Could not save. Please try again.",
     },
     hintRecoveryEmail:
       "To add or change recovery email for your account, use the banner on your dashboard.",
