@@ -45,7 +45,10 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { createClient } from "@/shared/lib/supabase/client";
 import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
-import { BookingDetailDrawer, type BookingDetailDrawerModel } from "./BookingDetailDrawer";
+import {
+  BookingDetailDrawer,
+  type BookingDetailDrawerModel,
+} from "./BookingDetailDrawer";
 import { ConnectionBanner, type ConnectionState } from "./ConnectionBanner";
 import { DateSwitcher } from "./DateSwitcher";
 import { DensitySlider } from "./DensitySlider";
@@ -100,7 +103,10 @@ import {
 } from "@/shared/dashboard/salonOwnerActions";
 import { editBookingAction } from "@/shared/dashboard/editBookingAction";
 import { getUserMessages } from "@/shared/i18n/user";
-import { checkBookingConflict, type ConflictCheckBooking } from "@/shared/lib/conflictCheck";
+import {
+  checkBookingConflict,
+  type ConflictCheckBooking,
+} from "@/shared/lib/conflictCheck";
 import { cn } from "@/shared/lib/cn";
 import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import { cleanPhone, formatPhone } from "@/shared/lib/phoneFormat";
@@ -122,7 +128,12 @@ import {
   canUndoCancel,
   type SalonMemberRole,
 } from "@/shared/lib/salonMemberRole";
-import { formatInSalonTz, salonDateOffset, salonToday, salonYmdOfUtc } from "@/shared/lib/salonTime";
+import {
+  formatInSalonTz,
+  salonDateOffset,
+  salonToday,
+  salonYmdOfUtc,
+} from "@/shared/lib/salonTime";
 import { useSoundAlerts } from "@/shared/lib/useSoundAlerts";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import {
@@ -145,7 +156,9 @@ export type ReceptionistCenterProps = {
   viewerRole: SalonMemberRole;
   /** Free-tier monthly booking-cap status. `null` if the loader
    *  couldn't fetch it (transient error — banner stays hidden). */
-  bookingLimitStatus?: import("@/shared/dashboard/loadBookingLimitStatus").BookingLimitStatus | null;
+  bookingLimitStatus?:
+    | import("@/shared/dashboard/loadBookingLimitStatus").BookingLimitStatus
+    | null;
   /** Party cards for today + 7 days. Empty array if none or service-role key unavailable. */
   partyCards?: PartyCard[];
   /** Release flag `group_booking` (PR2). When false, the party-card strip is
@@ -191,7 +204,10 @@ function updateBookingStatusToastMessage(
   }
 }
 
-function bookingStatusLabel(messages: ReturnType<typeof getUserMessages>, status: BookingStatus) {
+function bookingStatusLabel(
+  messages: ReturnType<typeof getUserMessages>,
+  status: BookingStatus,
+) {
   const d = messages.salonDashboard;
   switch (status) {
     case "pending":
@@ -226,8 +242,15 @@ function serviceSlotMinutes(
   serviceId: string,
   services: ReceptionistCenterData["services"],
 ): number | null {
-  const sid = String(serviceId ?? "").trim().toLowerCase();
-  const s = services.find((row) => String(row.id ?? "").trim().toLowerCase() === sid);
+  const sid = String(serviceId ?? "")
+    .trim()
+    .toLowerCase();
+  const s = services.find(
+    (row) =>
+      String(row.id ?? "")
+        .trim()
+        .toLowerCase() === sid,
+  );
   if (!s) return null;
   const dRaw = Number(s.duration_minutes);
   const bRaw = Number(s.buffer_minutes);
@@ -263,15 +286,24 @@ type UndoToastState = {
   type: "assign" | "cancel";
 };
 
-function ReceptionistGateError({ code }: { code: LoadReceptionistCenterError }) {
+function ReceptionistGateError({
+  code,
+}: {
+  code: LoadReceptionistCenterError;
+}) {
   const { language, setLanguage } = useUserLanguage();
   const messages = useMemo(() => getUserMessages(language), [language]);
 
   return (
     <div className="mx-auto flex max-w-[var(--max-nq-mobile)] flex-col gap-4 px-[var(--pad-nq-section-mobile)] py-10 text-center text-sm">
-      <p className="text-nq-error">{loadErrorCopy(messages.receptionist, code)}</p>
+      <p className="text-nq-error">
+        {loadErrorCopy(messages.receptionist, code)}
+      </p>
       <div className="flex justify-center">
-        <UserLanguageToggle language={language} onLanguageChange={setLanguage} />
+        <UserLanguageToggle
+          language={language}
+          onLanguageChange={setLanguage}
+        />
       </div>
     </div>
   );
@@ -289,7 +321,9 @@ function ReceptionistCenterInner({
   slug: string;
   initialOk: ReceptionistCenterData;
   viewerRole: SalonMemberRole;
-  bookingLimitStatus: import("@/shared/dashboard/loadBookingLimitStatus").BookingLimitStatus | null;
+  bookingLimitStatus:
+    | import("@/shared/dashboard/loadBookingLimitStatus").BookingLimitStatus
+    | null;
   partyCards: PartyCard[];
   groupBookingEnabled: boolean;
   tvModeEnabled: boolean;
@@ -404,7 +438,9 @@ function ReceptionistCenterInner({
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [data.salon.timezone, data.selectedDate, nowIso]);
 
-  const [assigningWalkinId, setAssigningWalkinId] = useState<string | null>(null);
+  const [assigningWalkinId, setAssigningWalkinId] = useState<string | null>(
+    null,
+  );
   const [dayLoading, setDayLoading] = useState(false);
 
   const [drawerBookingId, setDrawerBookingId] = useState<string | null>(null);
@@ -428,12 +464,17 @@ function ReceptionistCenterInner({
   const errorToastTimerRef = useRef<number | null>(null);
   const showErrorToast = useCallback((message: string) => {
     setErrorToast(message);
-    if (errorToastTimerRef.current) window.clearTimeout(errorToastTimerRef.current);
-    errorToastTimerRef.current = window.setTimeout(() => setErrorToast(null), 4500);
+    if (errorToastTimerRef.current)
+      window.clearTimeout(errorToastTimerRef.current);
+    errorToastTimerRef.current = window.setTimeout(
+      () => setErrorToast(null),
+      4500,
+    );
   }, []);
   useEffect(
     () => () => {
-      if (errorToastTimerRef.current) window.clearTimeout(errorToastTimerRef.current);
+      if (errorToastTimerRef.current)
+        window.clearTimeout(errorToastTimerRef.current);
     },
     [],
   );
@@ -447,12 +488,14 @@ function ReceptionistCenterInner({
 
   useEffect(() => {
     return () => {
-      if (undoTimerRef.current !== null) window.clearInterval(undoTimerRef.current);
+      if (undoTimerRef.current !== null)
+        window.clearInterval(undoTimerRef.current);
     };
   }, []);
 
   useEffect(() => {
-    if (undoTimerRef.current !== null) window.clearInterval(undoTimerRef.current);
+    if (undoTimerRef.current !== null)
+      window.clearInterval(undoTimerRef.current);
     undoTimerRef.current = null;
     if (!undoState) return;
 
@@ -466,7 +509,8 @@ function ReceptionistCenterInner({
     }, 1000);
 
     return () => {
-      if (undoTimerRef.current !== null) window.clearInterval(undoTimerRef.current);
+      if (undoTimerRef.current !== null)
+        window.clearInterval(undoTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ARCHITECTURE_LOCK: intentionally keyed on undoVisible (boolean) not undoState object; prevents timer restart on secondsRemaining ticks
   }, [undoVisible]);
@@ -492,13 +536,17 @@ function ReceptionistCenterInner({
 
   const [drawerBusy, setDrawerBusy] = useState(false);
   // Pending desk-cancel that hit a paid deposit → ask refund-or-keep first.
-  const [depositCancel, setDepositCancel] = useState<{ id: string; amountCents: number } | null>(null);
+  const [depositCancel, setDepositCancel] = useState<{
+    id: string;
+    amountCents: number;
+  } | null>(null);
   // Cancel-confirm with the "notify the customer?" panel (non-deposit path).
   const [notifyCancel, setNotifyCancel] = useState<{ id: string } | null>(null);
-  const [notifyCancelChannels, setNotifyCancelChannels] = useState<NotifyChannels>({
-    sms: false,
-    email: false,
-  });
+  const [notifyCancelChannels, setNotifyCancelChannels] =
+    useState<NotifyChannels>({
+      sms: false,
+      email: false,
+    });
 
   // Realtime connection-state machine. Default 'connected' — assume
   // online until the Supabase channel subscribe-callback flips us to
@@ -533,7 +581,9 @@ function ReceptionistCenterInner({
   // Sound alerts (Web Audio, generated tones only). Hook is a no-op
   // when `dashboard_modules.sound_alerts` is off; honors browser
   // autoplay policy via lazy AudioContext + first-gesture unlock.
-  const { playAlert, isUnlocked: isSoundUnlocked } = useSoundAlerts(data.dashboardModules);
+  const { playAlert, isUnlocked: isSoundUnlocked } = useSoundAlerts(
+    data.dashboardModules,
+  );
 
   const staffNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -624,7 +674,9 @@ function ReceptionistCenterInner({
     };
   }, [slug, nowIso, queueItems.length]);
 
-  const inProgressToday = data.bookingsForDay.filter((b) => b.status === "in_progress").length;
+  const inProgressToday = data.bookingsForDay.filter(
+    (b) => b.status === "in_progress",
+  ).length;
 
   // Walk-in slide-over toggle state — see DASHBOARD_LAYOUT_RULES §11.
   // The hook handles the auto-open contract (waiting > 0 → open
@@ -682,9 +734,15 @@ function ReceptionistCenterInner({
       if (window.location.hash !== "#queue") return;
       setQueuePanelOpen(true);
       window.requestAnimationFrame(() => {
-        document.getElementById("queue")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        document
+          .getElementById("queue")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
-      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      window.history.replaceState(
+        null,
+        "",
+        window.location.pathname + window.location.search,
+      );
     };
     const raf = window.requestAnimationFrame(openFromHash); // mount (keeps setState out of the effect body)
     window.addEventListener("hashchange", openFromHash);
@@ -800,8 +858,12 @@ function ReceptionistCenterInner({
     assigningWalkinId !== null
       ? (() => {
           const qi = queueItems.find((x) => x.id === assigningWalkinId);
-          const span = qi ? walkinEffectiveSpanMinutes(qi, data.services) : null;
-          return qi !== undefined && span !== null && qi.client_name.trim().length
+          const span = qi
+            ? walkinEffectiveSpanMinutes(qi, data.services)
+            : null;
+          return qi !== undefined &&
+            span !== null &&
+            qi.client_name.trim().length
             ? {
                 queueItemId: qi.id,
                 clientName: qi.client_name.trim(),
@@ -921,7 +983,9 @@ function ReceptionistCenterInner({
     const assignBookingId = assigningWalkinId;
     if (!assignBookingId || assignedSlot === null) return;
     const qi = queueItems.find((x) => x.id === assignBookingId);
-    const spanMinutes = qi ? walkinEffectiveSpanMinutes(qi, data.services) : null;
+    const spanMinutes = qi
+      ? walkinEffectiveSpanMinutes(qi, data.services)
+      : null;
     if (!qi || spanMinutes === null || spanMinutes < 1) {
       setShakeMessage(messages.receptionist.actionErrorFallback);
       return;
@@ -954,8 +1018,10 @@ function ReceptionistCenterInner({
       return;
     }
 
-    const staffName = staffNameById.get(staffId)?.trim() || messages.receptionist.drawer.none;
-    const svcName = qi.service_name?.trim() || messages.receptionist.drawer.none;
+    const staffName =
+      staffNameById.get(staffId)?.trim() || messages.receptionist.drawer.none;
+    const svcName =
+      qi.service_name?.trim() || messages.receptionist.drawer.none;
     const headline = `${messages.receptionist.undo.assignedPrefix} ${qi.client_name.trim()} ${messages.receptionist.undo.assignedMiddle} ${staffName}`;
     const startLabel = formatInSalonTz(slotStartUtc, timezone, "time");
     const detailLine = `${startLabel} · ${svcName}`;
@@ -1006,7 +1072,8 @@ function ReceptionistCenterInner({
     router.refresh();
   };
 
-  const onUndoToastUndo = undoState?.type === "cancel" ? undoCancel : undoAssign;
+  const onUndoToastUndo =
+    undoState?.type === "cancel" ? undoCancel : undoAssign;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1197,7 +1264,8 @@ function ReceptionistCenterInner({
     const b = data.bookingsForDay.find((x) => x.id === id);
     if (!b) return null;
 
-    const staffName = staffNameById.get(b.staff_id) ?? messages.receptionist.drawer.none;
+    const staffName =
+      staffNameById.get(b.staff_id) ?? messages.receptionist.drawer.none;
 
     let telHref: string | null = null;
     let phoneDisplay: string | null = null;
@@ -1303,12 +1371,18 @@ function ReceptionistCenterInner({
 
     // Checkout summary: when a deposit was paid, show it + the balance the
     // receptionist still charges on the Square POS (price − deposit).
-    const depositPaidCents = b.deposit_status === "paid" ? (b.deposit_amount_cents ?? 0) : 0;
+    const depositPaidCents =
+      b.deposit_status === "paid" ? (b.deposit_amount_cents ?? 0) : 0;
     const depositPaidLine =
-      depositPaidCents > 0 ? formatCurrency(depositPaidCents, data.salon.currencyCode) : null;
+      depositPaidCents > 0
+        ? formatCurrency(depositPaidCents, data.salon.currencyCode)
+        : null;
     const remainingLine =
       depositPaidCents > 0 && totalCents != null
-        ? formatCurrency(Math.max(0, totalCents - depositPaidCents), data.salon.currencyCode)
+        ? formatCurrency(
+            Math.max(0, totalCents - depositPaidCents),
+            data.salon.currencyCode,
+          )
         : null;
 
     const addonServiceName = b.addon_service_name?.trim()
@@ -1363,7 +1437,13 @@ function ReceptionistCenterInner({
                   : `after · +${a.duration_minutes}m`,
             }))
           : addonServiceName
-            ? [{ name: addonServiceName, price_cents: addonCents, timingLabel: null }]
+            ? [
+                {
+                  name: addonServiceName,
+                  price_cents: addonCents,
+                  timingLabel: null,
+                },
+              ]
             : [],
       verificationMethod: b.verification_method ?? null,
       smsFailedAt: b.sms_confirmation_failed_at ?? null,
@@ -1562,7 +1642,11 @@ function ReceptionistCenterInner({
     const b = data.bookingsForDay.find((x) => x.id === id);
     if (
       !b ||
-      !(b.status === "pending" || b.status === "confirmed" || b.status === "in_progress")
+      !(
+        b.status === "pending" ||
+        b.status === "confirmed" ||
+        b.status === "in_progress"
+      )
     )
       return;
 
@@ -1607,7 +1691,8 @@ function ReceptionistCenterInner({
           const startLabel = b.start_time_utc
             ? formatInSalonTz(b.start_time_utc, timezone, "time")
             : "";
-          const svcName = b.service_name?.trim() || messages.receptionist.drawer.none;
+          const svcName =
+            b.service_name?.trim() || messages.receptionist.drawer.none;
           setUndoState({
             bookingId: id,
             headline: `${u.cancelledPrefix} ${displayCustomerName(b.client_name, messages.receptionist.removedGuest)}`,
@@ -1628,7 +1713,11 @@ function ReceptionistCenterInner({
     const b = data.bookingsForDay.find((x) => x.id === id);
     if (
       !b ||
-      !(b.status === "pending" || b.status === "confirmed" || b.status === "in_progress")
+      !(
+        b.status === "pending" ||
+        b.status === "confirmed" ||
+        b.status === "in_progress"
+      )
     )
       return;
     // A paid Square deposit forces a refund-or-keep decision before cancelling.
@@ -1789,10 +1878,12 @@ function ReceptionistCenterInner({
         (c) =>
           !c.expired &&
           c.pendingCount > 0 &&
-          formatInSalonTz(c.groupStartUtcIso, timezone, "date") === todaySalonDate,
+          formatInSalonTz(c.groupStartUtcIso, timezone, "date") ===
+            todaySalonDate,
       )
-      .sort((a, b) => a.groupStartUtcIso.localeCompare(b.groupStartUtcIso))[0] ??
-    null;
+      .sort((a, b) =>
+        a.groupStartUtcIso.localeCompare(b.groupStartUtcIso),
+      )[0] ?? null;
   const pendingPartyGroupId = pendingPartyCard?.groupId ?? null;
   const pendingPartyGuestName =
     pendingPartyCard && pendingPartyCard.pendingCount === 1
@@ -1818,8 +1909,7 @@ function ReceptionistCenterInner({
     firstNotStartedName,
     firstNotStartedTimeLabel,
     smsFailedCount: data.bookingsForDay.filter(
-      (b) =>
-        b.sms_confirmation_failed_at != null && b.status !== "cancelled",
+      (b) => b.sms_confirmation_failed_at != null && b.status !== "cancelled",
     ).length,
     pendingPartyCount: pendingPartyCard?.pendingCount ?? 0,
     pendingPartyGroupTime: pendingPartyCard?.groupStartDisplay ?? null,
@@ -1855,7 +1945,9 @@ function ReceptionistCenterInner({
   // (the walk-in form lives inside it); party scrolls the party strip into
   // view; overdue opens the overdue booking's detail drawer (it's a desk
   // booking, NOT a queue item — opening the queue here was the dead-click bug).
-  const onCockpitAction = (target: import("@/shared/dashboard/basicModeCockpit").CockpitActionTarget) => {
+  const onCockpitAction = (
+    target: import("@/shared/dashboard/basicModeCockpit").CockpitActionTarget,
+  ) => {
     if (target === "open_overdue") {
       if (firstOverdueId) setDrawerBookingId(firstOverdueId);
       return;
@@ -1909,7 +2001,10 @@ function ReceptionistCenterInner({
     if (!id) return;
     setDrawerBusy(true);
     try {
-      const r = await approveWixBooking(slug, { salonId: data.salon.id, bookingId: id });
+      const r = await approveWixBooking(slug, {
+        salonId: data.salon.id,
+        bookingId: id,
+      });
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
@@ -1927,7 +2022,10 @@ function ReceptionistCenterInner({
     if (!id) return;
     setDrawerBusy(true);
     try {
-      const r = await declineWixBooking(slug, { salonId: data.salon.id, bookingId: id });
+      const r = await declineWixBooking(slug, {
+        salonId: data.salon.id,
+        bookingId: id,
+      });
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
@@ -1978,7 +2076,10 @@ function ReceptionistCenterInner({
     if (!id) return;
     setDrawerBusy(true);
     try {
-      const r = await markNoShowBooking(slug, { salonId: data.salon.id, bookingId: id });
+      const r = await markNoShowBooking(slug, {
+        salonId: data.salon.id,
+        bookingId: id,
+      });
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
@@ -1997,7 +2098,8 @@ function ReceptionistCenterInner({
   const drawerNoShowAction =
     openDrawerBooking &&
     canMarkNoShow(viewerRole) &&
-    (openDrawerBooking.status === "confirmed" || openDrawerBooking.status === "in_progress") &&
+    (openDrawerBooking.status === "confirmed" ||
+      openDrawerBooking.status === "in_progress") &&
     new Date(openDrawerBooking.start_time_utc).getTime() < Date.now()
       ? {
           label: rcMessages.drawer.noShow,
@@ -2112,7 +2214,8 @@ function ReceptionistCenterInner({
   // Final-price entry: only when the booking's service is variable-priced
   // ('from'/'range'), the viewer may edit, and the booking isn't cancelled.
   const drawerServicePriceType = openDrawerBooking
-    ? data.services.find((s) => s.id === openDrawerBooking.service_id)?.price_type
+    ? data.services.find((s) => s.id === openDrawerBooking.service_id)
+        ?.price_type
     : undefined;
   const drawerFinalPriceAction =
     openDrawerBooking &&
@@ -2141,7 +2244,13 @@ function ReceptionistCenterInner({
         )}
       >
         {/* Hydration signal for E2E: only rendered after React useEffect fires. */}
-        {rcHydrated && <span data-testid="rc-hydrated" aria-hidden="true" style={{ display: "none" }} />}
+        {rcHydrated && (
+          <span
+            data-testid="rc-hydrated"
+            aria-hidden="true"
+            style={{ display: "none" }}
+          />
+        )}
         {bookingLimitStatus && !bookingLimitStatus.isUnlimited ? (
           <div className="shrink-0 border-b border-nq-border/30 px-[var(--pad-nq-section-mobile)] py-2 md:px-6">
             <div className="mx-auto w-full max-w-[var(--max-nq-desktop)]">
@@ -2188,10 +2297,14 @@ function ReceptionistCenterInner({
                   ← {rcMessages.navOwnerDashboard}
                 </Link>
                 <h1 className="truncate text-lg font-semibold text-nq-foreground md:text-xl">
-                  {basicModeActive ? rcMessages.basicMode.pageTitle : rcMessages.title}
+                  {basicModeActive
+                    ? rcMessages.basicMode.pageTitle
+                    : rcMessages.title}
                 </h1>
               </div>
-              <p className="truncate text-xs text-nq-muted md:text-sm">{data.salon.name}</p>
+              <p className="truncate text-xs text-nq-muted md:text-sm">
+                {data.salon.name}
+              </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               {/* Status pill duplicates the Now Bar's Waiting + In service
@@ -2317,35 +2430,35 @@ function ReceptionistCenterInner({
                   Day/Week/Month toggle is hidden there (Yesterday/Today/
                   Tomorrow remains). Balanced/Advanced keep the toggle. */}
               {basicModeActive ? null : (
-              <div
-                role="tablist"
-                aria-label={rcMessages.viewMode.ariaLabel}
-                data-testid="view-mode-toggle"
-                data-rush-fade
-                className="inline-flex overflow-hidden rounded-md border border-nq-border bg-nq-surface text-xs font-medium"
-              >
-                {(["day", "week", "month"] as const).map((mode) => {
-                  const active = viewMode === mode;
-                  return (
-                    <button
-                      key={mode}
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      data-testid={`view-mode-${mode}`}
-                      onClick={() => onChangeViewMode(mode)}
-                      className={cn(
-                        "px-2.5 py-1 transition-colors",
-                        active
-                          ? "bg-nq-primary/15 text-nq-primary"
-                          : "text-nq-muted hover:text-nq-foreground",
-                      )}
-                    >
-                      {rcMessages.viewMode[mode]}
-                    </button>
-                  );
-                })}
-              </div>
+                <div
+                  role="tablist"
+                  aria-label={rcMessages.viewMode.ariaLabel}
+                  data-testid="view-mode-toggle"
+                  data-rush-fade
+                  className="inline-flex overflow-hidden rounded-md border border-nq-border bg-nq-surface text-xs font-medium"
+                >
+                  {(["day", "week", "month"] as const).map((mode) => {
+                    const active = viewMode === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        data-testid={`view-mode-${mode}`}
+                        onClick={() => onChangeViewMode(mode)}
+                        className={cn(
+                          "px-2.5 py-1 transition-colors",
+                          active
+                            ? "bg-nq-primary/15 text-nq-primary"
+                            : "text-nq-muted hover:text-nq-foreground",
+                        )}
+                      >
+                        {rcMessages.viewMode[mode]}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
               {/*
                * Prominent "+ Walk-in" CTA (P1 desk feedback: the queue
@@ -2391,6 +2504,7 @@ function ReceptionistCenterInner({
                   slug={slug}
                   salonId={data.salon.id}
                   language={language}
+                  notifySettings={data.salon.staffNotificationSettings}
                   initialStaffId={deskPrefill?.staffId}
                   initialYmd={deskPrefill?.ymd}
                   initialSlotLabel={deskPrefill?.slotLabel}
@@ -2528,15 +2642,15 @@ function ReceptionistCenterInner({
                 />
               ) : null}
               {/*
-                * Subtle pulse-dot replaces the prior "Loading day..."
-                * text. QA reported the text "lingered too long" — really
-                * the abrupt show/hide flickered + the bare text gave no
-                * visual continuity with the date-switcher's
-                * `pointer-events-none opacity-60` cue. The dot pulses
-                * via existing motion tokens and `animate-pulse` so it
-                * reads as a calm in-progress signal; full text stays
-                * reachable as the aria-label for screen readers.
-                */}
+               * Subtle pulse-dot replaces the prior "Loading day..."
+               * text. QA reported the text "lingered too long" — really
+               * the abrupt show/hide flickered + the bare text gave no
+               * visual continuity with the date-switcher's
+               * `pointer-events-none opacity-60` cue. The dot pulses
+               * via existing motion tokens and `animate-pulse` so it
+               * reads as a calm in-progress signal; full text stays
+               * reachable as the aria-label for screen readers.
+               */}
               {dayLoading ? (
                 <span
                   role="status"
@@ -2769,134 +2883,155 @@ function ReceptionistCenterInner({
             onNextWeek={() => setWeekMondayYmd((m) => shiftWeek(m, 1))}
           />
         ) : (
-        <div
-          // Day-view body now full-width on every viewport. The walk-in
-          // queue moved into a fixed slide-over (DASHBOARD_LAYOUT_RULES
-          // §11) so the timeline owns the row. When the slide-over is
-          // open AND the viewport is md+, we add right-padding equal to
-          // the panel width (320px) so the grid shrinks to make room
-          // instead of being covered by the panel.
-          className="mx-auto flex h-full min-h-[min(100dvh-8rem,48rem)] w-full flex-1 flex-col gap-0"
-        >
-          <section
-            className={cn(
-              "flex min-h-[min(50dvh,28rem)] min-w-0 flex-1 flex-col border-t border-nq-muted/20",
-              "transition-[padding-right] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]",
-              // Arbitrary value (`md:pr-[20rem]`) instead of `md:pr-80`
-              // so Tailwind always emits the rule even if the static
-              // utility hash changes between versions. Same 320px.
-              isViewingToday && modules.queue_panel && queuePanelOpen
-                ? "md:pr-[20rem]"
-                : "",
-            )}
+          <div
+            // Day-view body now full-width on every viewport. The walk-in
+            // queue moved into a fixed slide-over (DASHBOARD_LAYOUT_RULES
+            // §11) so the timeline owns the row. When the slide-over is
+            // open AND the viewport is md+, we add right-padding equal to
+            // the panel width (320px) so the grid shrinks to make room
+            // instead of being covered by the panel.
+            className="mx-auto flex h-full min-h-[min(100dvh-8rem,48rem)] w-full flex-1 flex-col gap-0"
           >
-            <AttentionChipBar
-              language={language === "vi" ? "vi" : "en"}
-              overdue={attentionOverdue}
-              noShowsToday={noShowsTodayList}
-              groupSummary={groupSummary}
-              groupsContent={
-                showGroupsChip ? (
-                  <PartyCardPanel
-                    initialCards={partyCards}
-                    slug={slug}
-                    salonId={data.salon.id}
-                    currencyCode={data.salon.currencyCode}
-                    labels={rcMessages.partyCard}
-                    canCancel={canCancelBooking(viewerRole)}
-                  />
-                ) : null
-              }
-              busy={drawerBusy}
-              removedLabel={attentionRemovedLabel}
-              formatTime={(utcIso) => formatInSalonTz(utcIso, timezone, "time")}
-              displayName={displayCustomerName}
-              onOpenBooking={(id) => setDrawerBookingId(id)}
-              onMarkNoShow={(id) => void handleMarkNoShow(id)}
-              onUndoNoShow={(id) => void handleUndoNoShow(id)}
-            />
+            <section
+              className={cn(
+                "flex min-h-[min(50dvh,28rem)] min-w-0 flex-1 flex-col border-t border-nq-muted/20",
+                "transition-[padding-right] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]",
+                // Arbitrary value (`md:pr-[20rem]`) instead of `md:pr-80`
+                // so Tailwind always emits the rule even if the static
+                // utility hash changes between versions. Same 320px.
+                isViewingToday && modules.queue_panel && queuePanelOpen
+                  ? "md:pr-[20rem]"
+                  : "",
+              )}
+            >
+              <AttentionChipBar
+                language={language === "vi" ? "vi" : "en"}
+                overdue={attentionOverdue}
+                noShowsToday={noShowsTodayList}
+                groupSummary={groupSummary}
+                groupsContent={
+                  showGroupsChip ? (
+                    <PartyCardPanel
+                      initialCards={partyCards}
+                      slug={slug}
+                      salonId={data.salon.id}
+                      currencyCode={data.salon.currencyCode}
+                      labels={rcMessages.partyCard}
+                      canCancel={canCancelBooking(viewerRole)}
+                    />
+                  ) : null
+                }
+                busy={drawerBusy}
+                removedLabel={attentionRemovedLabel}
+                formatTime={(utcIso) =>
+                  formatInSalonTz(utcIso, timezone, "time")
+                }
+                displayName={displayCustomerName}
+                onOpenBooking={(id) => setDrawerBookingId(id)}
+                onMarkNoShow={(id) => void handleMarkNoShow(id)}
+                onUndoNoShow={(id) => void handleUndoNoShow(id)}
+              />
 
-            <StaffTimelineGrid
-              compactBookingIcons={basicModeActive}
-              staff={gridStaff}
-              bookings={gridBookings}
-              assigning={assignedSlot}
-              selectedDate={data.selectedDate}
-              openMinutes={data.salon.openMinutes}
-              closeMinutes={data.salon.closeMinutes}
-              timezone={timezone}
-              nowIso={nowIso}
-              isViewingToday={isViewingToday}
-              jumpToNowTrigger={jumpToNowTrigger}
-              existingBookings={gridBookings}
-              onBookingClick={(id) => setDrawerBookingId(id)}
-              onSlotClick={(staffId, utc) => void onWalkinAssignSlot(staffId, utc)}
-              onEmptySlotClick={(staffId, ymd, slotLabel) => {
-                // Click an empty grid slot → open the desk form prefilled.
-                setDeskPrefill({ staffId, ymd, slotLabel });
-                setDeskBookingOpen(true);
-              }}
-              onRescheduleBooking={
-                // Drag-to-reschedule is an EDIT, so only wire it for roles that
-                // can edit (owner/admin/senior/receptionist). Without this gate
-                // view-only nail_tech could grab-drag a block; the server would
-                // reject it (`canEditBooking`) and it would snap back with an
-                // "unauthorized" toast — a confusing UI/server split. Passing
-                // `undefined` hides the drag affordance so the UI matches the
-                // server gate (mirrors the Start/Complete button gate in #404).
-                canEditBooking(viewerRole)
-                  ? async (bookingId, newStaffId, newStartUtc) => {
-                      const booking = data.bookingsForDay.find(
-                        (b) => b.id === bookingId,
-                      );
-                      if (!booking) return { ok: false, error: "not_found" };
-                      const result = await editBookingAction(slug, {
-                        salonId: data.salon.id,
-                        bookingId,
-                        newStartTimeUtc: newStartUtc,
-                        newStaffId,
-                        newServiceId: booking.service_id,
-                        newAddonServiceId: booking.addon_service_id ?? null,
-                      });
-                      if (result.ok) {
-                        router.refresh();
-                        return { ok: true };
+              <StaffTimelineGrid
+                compactBookingIcons={basicModeActive}
+                staff={gridStaff}
+                bookings={gridBookings}
+                assigning={assignedSlot}
+                selectedDate={data.selectedDate}
+                openMinutes={data.salon.openMinutes}
+                closeMinutes={data.salon.closeMinutes}
+                timezone={timezone}
+                nowIso={nowIso}
+                isViewingToday={isViewingToday}
+                jumpToNowTrigger={jumpToNowTrigger}
+                existingBookings={gridBookings}
+                onBookingClick={(id) => setDrawerBookingId(id)}
+                onSlotClick={(staffId, utc) =>
+                  void onWalkinAssignSlot(staffId, utc)
+                }
+                onEmptySlotClick={(staffId, ymd, slotLabel) => {
+                  // Click an empty grid slot → open the desk form prefilled.
+                  setDeskPrefill({ staffId, ymd, slotLabel });
+                  setDeskBookingOpen(true);
+                }}
+                onRescheduleBooking={
+                  // Drag-to-reschedule is an EDIT, so only wire it for roles that
+                  // can edit (owner/admin/senior/receptionist). Without this gate
+                  // view-only nail_tech could grab-drag a block; the server would
+                  // reject it (`canEditBooking`) and it would snap back with an
+                  // "unauthorized" toast — a confusing UI/server split. Passing
+                  // `undefined` hides the drag affordance so the UI matches the
+                  // server gate (mirrors the Start/Complete button gate in #404).
+                  canEditBooking(viewerRole)
+                    ? async (bookingId, newStaffId, newStartUtc) => {
+                        const booking = data.bookingsForDay.find(
+                          (b) => b.id === bookingId,
+                        );
+                        if (!booking) return { ok: false, error: "not_found" };
+                        const result = await editBookingAction(slug, {
+                          salonId: data.salon.id,
+                          bookingId,
+                          newStartTimeUtc: newStartUtc,
+                          newStaffId,
+                          newServiceId: booking.service_id,
+                          newAddonServiceId: booking.addon_service_id ?? null,
+                          // Drag has no confirm dialog → notify per the salon's
+                          // smart per-event default for reschedule.
+                          notify: defaultNotifyOn(
+                            data.salon.staffNotificationSettings,
+                            "reschedule",
+                          )
+                            ? {
+                                sms: data.salon.staffNotificationSettings
+                                  .channels.sms,
+                                email:
+                                  data.salon.staffNotificationSettings.channels
+                                    .email,
+                              }
+                            : { sms: false, email: false },
+                        });
+                        if (result.ok) {
+                          router.refresh();
+                          return { ok: true };
+                        }
+                        // Surface WHY the drop snapped back, instead of failing silently.
+                        const failCopy = rcMessages.grid.rescheduleFailed;
+                        const reason =
+                          result.error === "past_date"
+                            ? failCopy.past_date
+                            : result.error === "slot_conflict"
+                              ? failCopy.slot_conflict
+                              : result.error === "staff_cannot_perform_service"
+                                ? failCopy.staff_cannot_perform_service
+                                : failCopy.generic;
+                        showErrorToast(reason);
+                        return { ok: false, error: result.error };
                       }
-                      // Surface WHY the drop snapped back, instead of failing silently.
-                      const failCopy = rcMessages.grid.rescheduleFailed;
-                      const reason =
-                        result.error === "past_date"
-                          ? failCopy.past_date
-                          : result.error === "slot_conflict"
-                            ? failCopy.slot_conflict
-                            : result.error === "staff_cannot_perform_service"
-                              ? failCopy.staff_cannot_perform_service
-                              : failCopy.generic;
-                      showErrorToast(reason);
-                      return { ok: false, error: result.error };
-                    }
-                  : undefined
-              }
-              labels={{
-                formatTimeLabel: (utcIso: string) => formatInSalonTz(utcIso, timezone, "shortTime"),
-                conflictWith: rcMessages.grid.conflictWith,
-                overflowMessage: rcMessages.grid.overflowMessage,
-                closingLabel: rcMessages.grid.closingLabel,
-                bookingIcon: rcMessages.grid.bookingIcon,
-                removedGuest: rcMessages.removedGuest,
-              }}
-              showStaffPerformanceDetail={modules.staff_performance}
-              showTimelineHeatmap={modules.timeline_heatmap}
-              showBookingPrices={modules.revenue_today && densityConfig.showPriceInBlock}
-              showWalkinAccent={modules.vip_indicators}
-              currencyCode={data.salon.currencyCode}
-              showBookingMetaLine={densityConfig.showMetaLine}
-              showBookingTimeRange={densityConfig.showTimeRangeInBlock}
-              bookingBlockMinHeightPx={densityConfig.bookingBlockMinHeight}
-              timeSlotMinutesVisualHint={densityConfig.timeSlotMinutes}
-            />
-          </section>
-        </div>
+                    : undefined
+                }
+                labels={{
+                  formatTimeLabel: (utcIso: string) =>
+                    formatInSalonTz(utcIso, timezone, "shortTime"),
+                  conflictWith: rcMessages.grid.conflictWith,
+                  overflowMessage: rcMessages.grid.overflowMessage,
+                  closingLabel: rcMessages.grid.closingLabel,
+                  bookingIcon: rcMessages.grid.bookingIcon,
+                  removedGuest: rcMessages.removedGuest,
+                }}
+                showStaffPerformanceDetail={modules.staff_performance}
+                showTimelineHeatmap={modules.timeline_heatmap}
+                showBookingPrices={
+                  modules.revenue_today && densityConfig.showPriceInBlock
+                }
+                showWalkinAccent={modules.vip_indicators}
+                currencyCode={data.salon.currencyCode}
+                showBookingMetaLine={densityConfig.showMetaLine}
+                showBookingTimeRange={densityConfig.showTimeRangeInBlock}
+                bookingBlockMinHeightPx={densityConfig.bookingBlockMinHeight}
+                timeSlotMinutesVisualHint={densityConfig.timeSlotMinutes}
+              />
+            </section>
+          </div>
         )}
       </div>
 
@@ -2965,7 +3100,7 @@ function ReceptionistCenterInner({
                 onCheckAvailability={
                   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- ARCHITECTURE_LOCK: staffId from prop not used; availability checked per-service not per-staff
                   ({ staffId: _staffId, serviceId }) =>
-                  getStaffAvailability(slug, serviceId)
+                    getStaffAvailability(slug, serviceId)
                 }
                 staffOptions={data.staff.map((s) => ({
                   id: s.id,
@@ -2982,7 +3117,9 @@ function ReceptionistCenterInner({
                 onCancelAssign={() => setAssigningWalkinId(null)}
                 addFormDisabled={isSetupIncomplete}
                 isOffline={isOffline}
-                offlineAddDisabledHint={rcMessages.connection.offlineAddDisabled}
+                offlineAddDisabledHint={
+                  rcMessages.connection.offlineAddDisabled
+                }
                 showQuickAdd={modules.quick_add}
                 focusAddNonce={addFocusNonce}
                 showWaitTime={modules.wait_time}
@@ -3013,11 +3150,9 @@ function ReceptionistCenterInner({
                   waitHeroSuffix: rcMessages.queue.waitHeroSuffix,
                   vipAria: rcMessages.queue.vipAria,
                   readyAroundShort: rcMessages.queue.readyAroundShort,
-                  requestedByClientLine:
-                    rcMessages.queue.requestedByClientLine,
+                  requestedByClientLine: rcMessages.queue.requestedByClientLine,
                   overloadBanner: rcMessages.queue.overloadBanner,
-                  overloadBannerDismiss:
-                    rcMessages.queue.overloadBannerDismiss,
+                  overloadBannerDismiss: rcMessages.queue.overloadBannerDismiss,
                   softHoldButton: rcMessages.queue.softHoldButton,
                   softHoldClear: rcMessages.queue.softHoldClear,
                   softHoldLabel: rcMessages.queue.softHoldLabel,
@@ -3119,19 +3254,25 @@ function ReceptionistCenterInner({
                   status: openDrawerBooking.status,
                   source: openDrawerBooking.source,
                   service_name: openDrawerBooking.service_name,
-                  staff_name: staffNameById.get(openDrawerBooking.staff_id) ?? null,
+                  staff_name:
+                    staffNameById.get(openDrawerBooking.staff_id) ?? null,
                   price_cents: openDrawerBooking.price_cents ?? 0,
                   staff_id: openDrawerBooking.staff_id,
                   service_id: openDrawerBooking.service_id,
                   addon_service_id: openDrawerBooking.addon_service_id,
                   addon_service_name: openDrawerBooking.addon_service_name,
-                  addon_duration_minutes: openDrawerBooking.addon_duration_minutes,
+                  addon_duration_minutes:
+                    openDrawerBooking.addon_duration_minutes,
                   addon_buffer_minutes: openDrawerBooking.addon_buffer_minutes,
                   addon_price_cents: openDrawerBooking.addon_price_cents,
-                  verification_method: openDrawerBooking.verification_method ?? null,
-                  sms_confirmation_sent_at: openDrawerBooking.sms_confirmation_sent_at ?? null,
-                  sms_confirmation_failed_at: openDrawerBooking.sms_confirmation_failed_at ?? null,
-                  no_show_risk_score: openDrawerBooking.no_show_risk_score ?? null,
+                  verification_method:
+                    openDrawerBooking.verification_method ?? null,
+                  sms_confirmation_sent_at:
+                    openDrawerBooking.sms_confirmation_sent_at ?? null,
+                  sms_confirmation_failed_at:
+                    openDrawerBooking.sms_confirmation_failed_at ?? null,
+                  no_show_risk_score:
+                    openDrawerBooking.no_show_risk_score ?? null,
                   seat_together: openDrawerBooking.seat_together === true,
                 },
                 staff: data.staff.map((s) => ({ id: s.id, name: s.name })),
@@ -3193,7 +3334,11 @@ function ReceptionistCenterInner({
             >
               Giữ cọc &amp; huỷ
             </Button>
-            <Button type="button" variant="secondary" onClick={() => setDepositCancel(null)}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setDepositCancel(null)}
+            >
               Đóng
             </Button>
           </div>
