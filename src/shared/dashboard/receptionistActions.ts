@@ -2022,6 +2022,15 @@ export async function addDeskAppointment(
   const slotStartMs = Date.parse(startUtcIso);
   const slotEndMs = Date.parse(endUtcIso);
 
+  // Reject past-time bookings (defense-in-depth). The client grid already hides
+  // past slots, but a stale client — or a receptionist whose DEVICE is in a
+  // timezone ahead of the salon, so the form defaulted to the wrong day — must
+  // never be able to create an appointment in the past. 60s grace absorbs clock
+  // skew; anything older (e.g. a 9 AM slot picked at 4 PM) is refused.
+  if (Number.isFinite(slotStartMs) && slotStartMs < Date.now() - 60_000) {
+    return fail("time_in_past");
+  }
+
   // Resolve the staff to book. ALWAYS restrict to active + capable providers so
   // we mirror the public slot grid and never oversell via an inactive staff row.
   // The booking must be doable for the main service AND every add-on.
