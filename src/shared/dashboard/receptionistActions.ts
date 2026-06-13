@@ -38,6 +38,16 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { createDepositForBooking, refundDeposit } from "@/shared/integrations/square/deposits";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
+import {
+  resolveCustomerLocale,
+  type SupportedLocale,
+} from "@/shared/notifications/resolveCustomerLocale";
+import {
+  buildStaffActionSms,
+  buildStaffActionEmailSubject,
+} from "@/shared/notifications/staffActionMessages";
+import type { StaffNotifyEvent } from "@/shared/dashboard/staffNotificationSettings";
+import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { pushWixCancel, pushWixConfirm, pushWixDecline, pushWixCreate } from "@/shared/integrations/wix/writeback";
 import {
   type EditBookingInput,
@@ -770,6 +780,159 @@ export async function cancelDeskBooking(
   }
 
   return { ok: true };
+}
+
+/**
+ * Send the CUSTOMER a notification about a staff-initiated booking action
+ * (create / reschedule / cancel) on the channels the receptionist chose in the
+ * notify panel. Best-effort + idempotent-ish: never throws, returns per-channel
+ * results. The action is performed separately first; this only delivers the
+ * message — so the UI can defer the call ~8s and skip it on "Undo" (so an
+ * accidental cancel never reaches the customer).
+ *
+ * Language follows `resolveCustomerLocale`: online bookings keep the
+ * customer's site language; staff/desk actions use the salon default (English).
+ */
+export async function sendStaffActionNotification(
+  slug: string,
+  input: {
+    salonId: string;
+    bookingId: string;
+    event: StaffNotifyEvent;
+    channels: { sms?: boolean; email?: boolean };
+    /** Optional explicit locale override (else resolved from the booking). */
+    locale?: SupportedLocale;
+  },
+): Promise<
+  | { ok: true; smsSent: boolean; emailSent: boolean; locale: SupportedLocale }
+  | { ok: false; error: string }
+> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  // Notifying a customer mirrors the front-desk action set (the same roles that
+  // can create/cancel/no-show): owner/admin/senior/receptionist.
+  if (!canMarkNoShow(ctx.role)) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+
+  const bookingId = String(input.bookingId ?? "").trim();
+  if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+  if (input.event === "no_show") {
+    // No customer SMS/email for no-show by design (win-back handles retention).
+    return { ok: true, smsSent: false, emailSent: false, locale: "en" };
+  }
+
+  const { data: bk } = await ctx.supabase
+    .from("bookings")
+    .select(
+      "id, client_phone, client_email, client_name, client_locale, start_time_utc, service:services(name)",
+    )
+    .eq("id", bookingId)
+    .eq("salon_id", ctx.salon.id)
+    .maybeSingle();
+  if (!bk?.id) return fail("invalid_booking");
+
+  const row = bk as unknown as {
+    client_phone: string | null;
+    client_email: string | null;
+    client_name: string | null;
+    client_locale: string | null;
+    start_time_utc: string;
+    service: { name: string | null } | { name: string | null }[] | null;
+  };
+
+  // Per-salon default locale (column added in the staff-notify migration).
+  const { data: salonRow } = await ctx.supabase
+    .from("salons")
+    .select("name, phone, timezone, default_notification_locale")
+    .eq("id", ctx.salon.id)
+    .maybeSingle();
+  const salon = (salonRow ?? {}) as {
+    name?: string | null;
+    phone?: string | null;
+    timezone?: string | null;
+    default_notification_locale?: string | null;
+  };
+
+  const locale: SupportedLocale =
+    input.locale ??
+    resolveCustomerLocale({
+      clientLocale: row.client_locale,
+      salonDefaultLocale: salon.default_notification_locale,
+    });
+
+  const serviceName = Array.isArray(row.service)
+    ? (row.service[0]?.name ?? "")
+    : (row.service?.name ?? "");
+
+  const whenLabel = formatBookingWhenLabel(
+    row.start_time_utc,
+    salon.timezone || "America/Los_Angeles",
+    locale,
+  );
+
+  const vars = {
+    customerName: (row.client_name ?? "").trim(),
+    salonName: salon.name || ctx.salon.name,
+    serviceName,
+    whenLabel,
+    salonPhone: salon.phone,
+  };
+
+  let smsSent = false;
+  let emailSent = false;
+
+  if (input.channels.sms && row.client_phone) {
+    const body = buildStaffActionSms(input.event, locale, vars);
+    if (body) {
+      try {
+        const r = await sendSmsReminder(row.client_phone, body);
+        smsSent = r.ok;
+      } catch (e) {
+        console.error("[sendStaffActionNotification] sms", e);
+      }
+    }
+  }
+
+  if (input.channels.email && row.client_email) {
+    const subject = buildStaffActionEmailSubject(input.event, locale, vars.salonName);
+    const body = buildStaffActionSms(input.event, locale, vars); // reuse the line as the email body
+    const client = getResendClient();
+    if (subject && body && client) {
+      try {
+        const res = await client.emails.send({
+          from: getResendFrom(),
+          to: row.client_email,
+          subject,
+          text: body,
+        });
+        emailSent = !res.error;
+      } catch (e) {
+        console.error("[sendStaffActionNotification] email", e);
+      }
+    }
+  }
+
+  return { ok: true, smsSent, emailSent, locale };
+}
+
+/** Format an appointment time as a friendly label in the salon timezone + the
+ *  target locale (e.g. "Sat, Jun 14 at 2:00 PM" / "Th 7, 14 thg 6, 2:00 CH"). */
+function formatBookingWhenLabel(
+  startUtc: string,
+  timezone: string,
+  locale: SupportedLocale,
+): string {
+  const d = new Date(Date.parse(startUtc));
+  const intlLocale = locale === "vi" ? "vi-VN" : "en-US";
+  return new Intl.DateTimeFormat(intlLocale, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: timezone,
+  }).format(d);
 }
 
 /** Text the Square deposit pay-link to the customer (best-effort). Bilingual —
