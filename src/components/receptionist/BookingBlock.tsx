@@ -120,6 +120,13 @@ export interface BookingBlockProps {
   hasStaffRequest?: boolean;
   /** Number of add-ons on the booking — renders a "+N" badge on the chip. */
   addonCount?: number;
+  /** Width (px) of the trailing reset buffer baked into this block's span.
+   * When > 0, a faint hatched overlay marks the tail so the desk can tell
+   * service time from the cleanup gap. Purely visual — schedule math (the
+   * full span incl. buffer) is unchanged. */
+  bufferWidthPx?: number;
+  /** Buffer length in minutes — drives the hatched tail's tooltip text. */
+  bufferMinutes?: number;
   /** Client's lifetime no-show count — shows a ⚠ badge for repeat offenders (≥2). */
   noShowCount?: number;
   /** AI no-show risk score (0–100) for this booking. A score ≥70 on a
@@ -236,6 +243,8 @@ export function BookingBlock(props: BookingBlockProps) {
     priceCents,
     leftPx,
     widthPx,
+    bufferWidthPx = 0,
+    bufferMinutes = 0,
     onClick,
     showPrice = true,
     showMetaLine = true,
@@ -341,6 +350,29 @@ export function BookingBlock(props: BookingBlockProps) {
             duration: PULSE_PERIOD_SEC,
             repeat: Infinity,
             ease: "easeInOut",
+          }}
+        />
+      ) : null}
+
+      {bufferWidthPx >= 3 ? (
+        // Reset/cleanup buffer tail — a faint hatched strip at the block's
+        // right edge with a dashed divider at the service-end boundary, so the
+        // desk reads where the actual service stops and the buffer begins.
+        // currentColor stripes keep it visible on every status background +
+        // dark mode; pointer-events-none so it never blocks click/drag.
+        <span
+          aria-hidden
+          data-testid={`booking-block-buffer-${bookingId}`}
+          title={
+            bufferMinutes > 0
+              ? `Đệm dọn dẹp ${bufferMinutes} phút`
+              : "Đệm dọn dẹp"
+          }
+          className="pointer-events-none absolute inset-y-0 right-0 rounded-r-lg border-l border-dashed border-current/40 opacity-25"
+          style={{
+            width: bufferWidthPx,
+            backgroundImage:
+              "repeating-linear-gradient(45deg, currentColor 0, currentColor 1.5px, transparent 1.5px, transparent 6px)",
           }}
         />
       ) : null}

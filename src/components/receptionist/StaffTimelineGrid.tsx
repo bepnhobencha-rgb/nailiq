@@ -88,6 +88,10 @@ export interface GridBooking {
   seat_together?: boolean;
   /** Number of add-ons on this booking — drives the "+N" chip badge. */
   addon_count?: number;
+  /** Per-service reset/cleanup buffer (minutes) baked into the block's
+   * `end_time_utc`. Drives the hatched "buffer tail" overlay so the desk can
+   * see where the service actually ends and the reset gap begins. */
+  buffer_minutes?: number;
   /** Client's lifetime no-show count — drives a ⚠ chip badge for repeat offenders. */
   no_show_count?: number;
   /** AI no-show risk score (0–100) — drives an amber risk ⚠ on the block. */
@@ -219,9 +223,16 @@ function bookingToPosition(
   const minutesFromStart = startMin - hourStart * 60;
   const durationMin =
     (Date.parse(booking.end_time_utc) - Date.parse(booking.start_time_utc)) / 60_000;
+  // Trailing buffer width — the reset gap baked into end_time_utc. Clamp to the
+  // block span so a misconfigured buffer can never paint past the block edge.
+  const bufferMin = Math.max(
+    0,
+    Math.min(Number(booking.buffer_minutes ?? 0) || 0, durationMin),
+  );
   return {
     leftPx: (minutesFromStart / SLOT_MINUTES) * SLOT_PX,
     widthPx: (durationMin / SLOT_MINUTES) * SLOT_PX,
+    bufferWidthPx: (bufferMin / SLOT_MINUTES) * SLOT_PX,
   };
 }
 
@@ -1113,7 +1124,7 @@ function StaffTimelineGridImpl({
                     )}
                   >
                     {rowBookings.map((b) => {
-                      const { leftPx, widthPx } = bookingToPosition(b, timezone, hourStart);
+                      const { leftPx, widthPx, bufferWidthPx } = bookingToPosition(b, timezone, hourStart);
                       const endMs = Date.parse(b.end_time_utc);
                       const nowMs = Date.parse(nowIso);
                       const isLate =
@@ -1141,6 +1152,8 @@ function StaffTimelineGridImpl({
                           currencyCode={currencyCode}
                           leftPx={leftPx}
                           widthPx={widthPx}
+                          bufferWidthPx={bufferWidthPx}
+                          bufferMinutes={b.buffer_minutes ?? 0}
                           onClick={
                             isBeingDragged
                               ? undefined
