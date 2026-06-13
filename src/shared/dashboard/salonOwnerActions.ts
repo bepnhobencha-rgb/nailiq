@@ -15,6 +15,7 @@ import {
   isDemoSlugPinBypassed,
 } from "@/shared/lib/demoOtpMode";
 import {
+  canChangeBookingStatus,
   normalizeSalonMemberRole,
   type SalonMemberRole,
 } from "@/shared/lib/salonMemberRole";
@@ -456,6 +457,15 @@ export async function updateBookingStatus(
 ): Promise<UpdateBookingStatusResult> {
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) {
+    return { ok: false, error: "unauthorized" };
+  }
+
+  // Front-desk role gate. Previously ANY member (incl. view-only nail_tech)
+  // could flip a booking to in_progress/completed — an ungated path that let
+  // a test-click wrongly close a Hi-Lite appointment. Mirror the no-show /
+  // desk-booking permission set (owner/admin/senior/receptionist). Demo-cookie
+  // path resolves to role "owner" so it still passes.
+  if (!canChangeBookingStatus(resolved.role)) {
     return { ok: false, error: "unauthorized" };
   }
 

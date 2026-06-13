@@ -109,6 +109,7 @@ import {
 import { logSalonRushEvent } from "@/shared/dashboard/rushHourEvent";
 import {
   canCancelBooking,
+  canChangeBookingStatus,
   canMarkNoShow,
   canEditBooking,
   canUndoCancel,
@@ -1903,20 +1904,25 @@ function ReceptionistCenterInner({
         busy: drawerBusy,
         onPress: () => void onDrawerApproveWix(),
       }
-    : openDrawerBooking?.status === "pending" ||
-        openDrawerBooking?.status === "confirmed"
-      ? {
-          label: rcMessages.drawer.startService,
-          busy: drawerBusy,
-          onPress: () => void onDrawerPrimaryAction(),
-        }
-      : openDrawerBooking?.status === "in_progress"
+    : !canChangeBookingStatus(viewerRole)
+      ? // View-only roles (nail_tech) can't advance status — hide the
+        // Start/Complete button so it matches the server-side gate in
+        // updateBookingStatus (no button that would just error).
+        undefined
+      : openDrawerBooking?.status === "pending" ||
+          openDrawerBooking?.status === "confirmed"
         ? {
-            label: rcMessages.drawer.markComplete,
+            label: rcMessages.drawer.startService,
             busy: drawerBusy,
             onPress: () => void onDrawerPrimaryAction(),
           }
-        : undefined;
+        : openDrawerBooking?.status === "in_progress"
+          ? {
+              label: rcMessages.drawer.markComplete,
+              busy: drawerBusy,
+              onPress: () => void onDrawerPrimaryAction(),
+            }
+          : undefined;
 
   const drawerDeclineAction = isWixPending
     ? {
