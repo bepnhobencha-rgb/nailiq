@@ -30,6 +30,10 @@ import {
   parseDensityLevel,
   type DensityLevel,
 } from "@/shared/dashboard/dashboardDensity";
+import {
+  parseStaffNotificationSettings,
+  type StaffNotificationSettings,
+} from "@/shared/dashboard/staffNotificationSettings";
 
 type DashboardSupabaseClient = SupabaseClient<Database>;
 
@@ -64,6 +68,12 @@ export interface ReceptionistCenterData {
      */
     openMinutes: number | null;
     closeMinutes: number | null;
+    /**
+     * Per-salon staff-action customer-notification config (channels offered +
+     * smart per-event notify defaults + default language). Drives the
+     * "notify the customer?" decision when staff create / reschedule / cancel.
+     */
+    staffNotificationSettings: StaffNotificationSettings;
   };
   staff: Array<{
     id: string;
@@ -566,7 +576,7 @@ export async function loadReceptionistCenterData(
         // (20260512000000 / 20260511100000) — not in auto-generated
         // types yet, hence the `as never` cast on the SELECT string.
         // basic_mode_forced: auto-enable Basic Mode for receptionist if salon config requires it
-        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced, opening_hours" as never,
+        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced, opening_hours, staff_notification_settings" as never,
       )
       .eq("id", ctx.salon.id)
       .maybeSingle();
@@ -611,6 +621,10 @@ export async function loadReceptionistCenterData(
     basicModeForced: (salonData as any).basic_mode_forced === true,
     depositsEnabled,
     ...openingHoursForDay(salonData.opening_hours, dateYmd),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- types not regenerated yet (see basic_mode_forced TODO above)
+    staffNotificationSettings: parseStaffNotificationSettings(
+      (salonData as any).staff_notification_settings,
+    ),
   };
 
   const rawDashboardModules = parseDashboardModules(

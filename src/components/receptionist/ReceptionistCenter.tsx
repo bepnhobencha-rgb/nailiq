@@ -84,8 +84,10 @@ import {
   undoCancelBooking,
   cancelWaitingWalkin,
   undoWalkinAssignment,
+  sendStaffActionNotification,
 } from "@/shared/dashboard/receptionistActions";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
+import { defaultNotifyOn } from "@/shared/dashboard/staffNotificationSettings";
 import { getStaffAvailability } from "@/shared/dashboard/availabilityEngine";
 import {
   type UpdateBookingStatusResult,
@@ -412,6 +414,11 @@ function ReceptionistCenterInner({
 
   const [undoState, setUndoState] = useState<UndoToastState | null>(null);
   const undoTimerRef = useRef<number | null>(null);
+  // Dedicated one-shot timer for the "notify the customer" send, decoupled from
+  // the visual undo countdown. It fires the SMS/email ~8s after a cancel UNLESS
+  // the receptionist hits Undo first (which clears it) — so an accidental
+  // cancel never reaches the customer.
+  const notifyTimerRef = useRef<number | null>(null);
 
   const undoVisible = undoState !== null;
 
@@ -441,8 +448,40 @@ function ReceptionistCenterInner({
   useEffect(() => {
     return () => {
       if (undoTimerRef.current !== null) window.clearInterval(undoTimerRef.current);
+      if (notifyTimerRef.current !== null) window.clearTimeout(notifyTimerRef.current);
     };
   }, []);
+
+  // Schedule the customer cancel-notification ~8s out (the undo window). Cleared
+  // by undoCancel. Channels come from the salon's smart per-event defaults; the
+  // server only actually sends on a channel the customer has contact info for,
+  // and resolves the language (online→site language, else salon default).
+  const NOTIFY_DELAY_MS = 8000;
+  const scheduleCancelNotify = (bookingId: string) => {
+    const settings = data.salon.staffNotificationSettings;
+    if (!defaultNotifyOn(settings, "cancel")) return;
+    const channels = {
+      sms: settings.channels.sms,
+      email: settings.channels.email,
+    };
+    if (!channels.sms && !channels.email) return;
+    if (notifyTimerRef.current !== null) window.clearTimeout(notifyTimerRef.current);
+    notifyTimerRef.current = window.setTimeout(() => {
+      notifyTimerRef.current = null;
+      void sendStaffActionNotification(slug, {
+        salonId: data.salon.id,
+        bookingId,
+        event: "cancel",
+        channels,
+      });
+    }, NOTIFY_DELAY_MS);
+  };
+  const cancelScheduledNotify = () => {
+    if (notifyTimerRef.current !== null) {
+      window.clearTimeout(notifyTimerRef.current);
+      notifyTimerRef.current = null;
+    }
+  };
 
   useEffect(() => {
     if (undoTimerRef.current !== null) window.clearInterval(undoTimerRef.current);
@@ -978,6 +1017,8 @@ function ReceptionistCenterInner({
 
   const undoCancel = async () => {
     if (!undoState) return;
+    // The booking is being restored → never send the cancel notification.
+    cancelScheduledNotify();
     const res = await undoCancelBooking(slug, {
       salonId: data.salon.id,
       bookingId: undoState.bookingId,
@@ -1581,6 +1622,9 @@ function ReceptionistCenterInner({
             secondsRemaining: 8,
             type: "cancel",
           });
+          // Notify the customer about the cancellation after the 8s undo
+          // window — skipped if they hit Undo (cancelScheduledNotify).
+          scheduleCancelNotify(id);
         }
       }
     } finally {
