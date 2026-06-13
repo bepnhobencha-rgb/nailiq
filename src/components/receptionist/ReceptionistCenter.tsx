@@ -2826,6 +2826,7 @@ function ReceptionistCenterInner({
                 formatTimeLabel: (utcIso: string) => formatInSalonTz(utcIso, timezone, "shortTime"),
                 conflictWith: rcMessages.grid.conflictWith,
                 overflowMessage: rcMessages.grid.overflowMessage,
+                closingLabel: rcMessages.grid.closingLabel,
                 bookingIcon: rcMessages.grid.bookingIcon,
                 removedGuest: rcMessages.removedGuest,
               }}

@@ -139,6 +139,9 @@ export interface StaffTimelineGridProps {
     formatTimeLabel: (utc: string) => string;
     conflictWith: (clientName: string) => string;
     overflowMessage: string;
+    /** Localized word shown on the display-only closing-time marker
+     *  (e.g. "Close" / "Đóng cửa"). */
+    closingLabel: string;
     /** Localized label for a redacted/removed customer ("[removed]" in DB). */
     removedGuest: string;
     /**
@@ -562,6 +565,26 @@ function StaffTimelineGridImpl({
 
   const nowLineLabel = useMemo(() => labels.formatTimeLabel(nowIso), [labels, nowIso]);
 
+  // Display-only closing-time marker. The last BOOKABLE slot starts
+  // SLOT_MINUTES before close (e.g. 6:30p for a 7:00p close), so without a
+  // marker the grid "ends" at 6:30 and reads as if the salon closes then.
+  // This pins a static line + label at the true close gridline. Null when the
+  // day is closed/unset or close falls outside the (possibly widened) window.
+  const closingLeftPx = useMemo(() => {
+    if (closeMinutes == null) return null;
+    const gridStart = hourStart * 60;
+    const gridEnd = hourEnd * 60;
+    if (closeMinutes < gridStart || closeMinutes > gridEnd) return null;
+    return ((closeMinutes - gridStart) / SLOT_MINUTES) * SLOT_PX;
+  }, [closeMinutes, hourStart, hourEnd]);
+
+  const closingTimeLabel = useMemo(() => {
+    if (closeMinutes == null) return null;
+    return labels.formatTimeLabel(
+      salonWallTimeToUtcIso(selectedDate, closeMinutes, timezone),
+    );
+  }, [closeMinutes, selectedDate, timezone, labels]);
+
   const slotUtcList = useMemo(
     () =>
       Array.from({ length: totalSlots }, (_, i) =>
@@ -759,6 +782,26 @@ function StaffTimelineGridImpl({
                 aria-label={`Current time ${nowLineLabel}`}
               >
                 {nowLineLabel}
+              </div>
+            ) : null}
+            {/* Closing-time label, anchored to the LEFT of the close gridline
+                (it sits at the grid's right edge) so it stays inside view. */}
+            {closingLeftPx !== null && closingTimeLabel ? (
+              <div
+                data-testid="closing-marker"
+                className={cn(
+                  "pointer-events-none absolute bottom-1 z-[12] flex -translate-x-full items-center gap-1",
+                  "rounded-l-md border border-r-0 border-nq-muted/25 bg-nq-bg/95 px-1.5 py-0.5",
+                )}
+                style={{ left: closingLeftPx }}
+                aria-label={`${labels.closingLabel} ${closingTimeLabel}`}
+              >
+                <span className="font-mono text-[10px] font-semibold tabular-nums leading-none text-nq-muted">
+                  {closingTimeLabel}
+                </span>
+                <span className="text-[9px] font-medium uppercase leading-none tracking-wide text-nq-muted">
+                  {labels.closingLabel}
+                </span>
               </div>
             ) : null}
           </div>
@@ -1185,6 +1228,27 @@ function StaffTimelineGridImpl({
               className="pointer-events-none absolute inset-0 z-[8]"
               aria-hidden
             >
+              {/* Closing-time marker. A muted dashed gridline at the salon's
+                  close time + a faint shaded "closed" band to its right (the
+                  band only has width when an off-hours booking widened the
+                  window past close). Static + muted so it never competes with
+                  the red, pulsing NOW line. */}
+              {closingLeftPx !== null ? (
+                <>
+                  <div
+                    className="absolute inset-y-0 z-[7] bg-nq-muted/10"
+                    style={{ left: closingLeftPx, right: 0 }}
+                  />
+                  <div
+                    className="absolute inset-y-0 z-[9] w-px"
+                    style={{
+                      left: closingLeftPx,
+                      backgroundImage:
+                        "repeating-linear-gradient(to bottom, var(--color-nq-muted) 0 4px, transparent 4px 8px)",
+                    }}
+                  />
+                </>
+              ) : null}
               {/* Time bubble is rendered separately in the time-header strip
                   above so it stays vertically sticky during vertical scroll;
                   this NowLine renders only the vertical line itself. */}
