@@ -439,7 +439,12 @@ export default function DeskBookingForm({
             ✕
           </button>
         </div>
-        {prefilled && initialSlotLabel && !slotLabel ? (
+        {prefilled && initialSlotLabel && !slotLabel && ymd === initialYmd ? (
+          // The prefill hint shows the time the receptionist CLICKED on the grid.
+          // Only show it while still on the clicked day — once they change the
+          // date the clicked time no longer applies, and leaving it up made the
+          // hinted time disagree with the times the picker suggests for the new
+          // date.
           <p className="mb-3 text-xs font-medium text-nq-primary">
             {tx.prefillHint(initialSlotLabel, prefillStaffName)}
           </p>
