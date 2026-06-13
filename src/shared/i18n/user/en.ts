@@ -1334,6 +1334,8 @@ export type UserMessages = {
     grid: {
       conflictWith: (clientName: string) => string;
       overflowMessage: string;
+      /** Label on the display-only closing-time marker at the right edge of the grid. */
+      closingLabel: string;
       conflictShake: string;
       /** Toast shown when a drag-to-reschedule is rejected, keyed by reason. */
       rescheduleFailed: {
@@ -3089,6 +3091,7 @@ export const userEn: UserMessages = {
       conflictWith: (clientName: string) =>
         `${clientName.trim() ? `⚠ Busy — ${clientName}` : "⚠ Slot conflict"}`,
       overflowMessage: "⚠ Past closing hours",
+      closingLabel: "Close",
       conflictShake:
         "That slot overlaps another booking. Choose another slot or time.",
       rescheduleFailed: {

@@ -1333,6 +1333,7 @@ export const userVi: UserMessages = {
       conflictWith: (clientName: string) =>
         clientName.trim() ? `⚠ Trùng — ${clientName}` : "⚠ Ô đã có lịch",
       overflowMessage: "⚠ Quá giờ đóng",
+      closingLabel: "Đóng cửa",
       conflictShake: "Trùng lịch. Chọn giờ hoặc thợ khác.",
       rescheduleFailed: {
         past_date: "Không thể dời lịch về quá khứ.",
