@@ -822,15 +822,21 @@ export async function sendStaffActionNotification(
     return { ok: true, smsSent: false, emailSent: false, locale: "en" };
   }
 
-  const { data: bk } = await ctx.supabase
+  // NOTE: `bookings` has TWO FKs to `services` (service_id + addon_service_id),
+  // so a bare `service:services(name)` embed is AMBIGUOUS and errors out — which
+  // silently dropped the cancel SMS. Disambiguate via the FK column.
+  const { data: bk, error: bkErr } = await ctx.supabase
     .from("bookings")
     .select(
-      "id, client_phone, client_email, client_name, client_locale, start_time_utc, service:services(name)",
+      "id, client_phone, client_email, client_name, client_locale, start_time_utc, service:service_id(name)",
     )
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .maybeSingle();
-  if (!bk?.id) return fail("invalid_booking");
+  if (bkErr || !bk?.id) {
+    console.error("[sendStaffActionNotification] booking load failed", bkErr);
+    return fail("invalid_booking");
+  }
 
   const row = bk as unknown as {
     client_phone: string | null;
