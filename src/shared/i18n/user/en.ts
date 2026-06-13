@@ -1366,6 +1366,22 @@ export type UserMessages = {
       cancelledPrefix: string;
       cancelUndoFailed: string;
     };
+    /** "Notify the customer?" panel + cancel-confirm copy. */
+    notify: {
+      heading: string;
+      sms: string;
+      email: string;
+      previewTitle: string;
+      willNotNotify: string;
+      noPhone: string;
+      noEmail: string;
+      langEn: string;
+      langVi: string;
+      cancelTitle: string;
+      cancelDesc: string;
+      confirmCancel: string;
+      keep: string;
+    };
     drawer: {
       title: string;
       closeAria: string;
@@ -3117,6 +3133,21 @@ export const userEn: UserMessages = {
       assignedMiddle: "→",
       cancelledPrefix: "Cancelled:",
       cancelUndoFailed: "Cannot undo — appointment already past or staff just booked.",
+    },
+    notify: {
+      heading: "Notify customer",
+      sms: "Text (SMS)",
+      email: "Email",
+      previewTitle: "Preview",
+      willNotNotify: "Customer won't be notified.",
+      noPhone: "no phone",
+      noEmail: "no email",
+      langEn: "in English",
+      langVi: "in Vietnamese",
+      cancelTitle: "Cancel appointment?",
+      cancelDesc: "Choose whether to let the customer know.",
+      confirmCancel: "Cancel appointment",
+      keep: "Keep",
     },
     drawer: {
       title: "Booking",

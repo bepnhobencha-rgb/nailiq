@@ -84,8 +84,16 @@ import {
   undoCancelBooking,
   cancelWaitingWalkin,
   undoWalkinAssignment,
+  sendStaffActionNotification,
 } from "@/shared/dashboard/receptionistActions";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
+import { defaultNotifyOn } from "@/shared/dashboard/staffNotificationSettings";
+import {
+  NotifyCustomerPanel,
+  type NotifyChannels,
+} from "./NotifyCustomerPanel";
+import { resolveCustomerLocale } from "@/shared/notifications/resolveCustomerLocale";
+import { buildStaffActionSms } from "@/shared/notifications/staffActionMessages";
 import { getStaffAvailability } from "@/shared/dashboard/availabilityEngine";
 import {
   type UpdateBookingStatusResult,
@@ -412,6 +420,11 @@ function ReceptionistCenterInner({
 
   const [undoState, setUndoState] = useState<UndoToastState | null>(null);
   const undoTimerRef = useRef<number | null>(null);
+  // Dedicated one-shot timer for the "notify the customer" send, decoupled from
+  // the visual undo countdown. It fires the SMS/email ~8s after a cancel UNLESS
+  // the receptionist hits Undo first (which clears it) — so an accidental
+  // cancel never reaches the customer.
+  const notifyTimerRef = useRef<number | null>(null);
 
   const undoVisible = undoState !== null;
 
@@ -441,8 +454,34 @@ function ReceptionistCenterInner({
   useEffect(() => {
     return () => {
       if (undoTimerRef.current !== null) window.clearInterval(undoTimerRef.current);
+      if (notifyTimerRef.current !== null) window.clearTimeout(notifyTimerRef.current);
     };
   }, []);
+
+  // Schedule the customer cancel-notification ~8s out (the undo window). Cleared
+  // by undoCancel. Channels come from the salon's smart per-event defaults; the
+  // server only actually sends on a channel the customer has contact info for,
+  // and resolves the language (online→site language, else salon default).
+  const NOTIFY_DELAY_MS = 8000;
+  const scheduleCancelNotify = (bookingId: string, channels: NotifyChannels) => {
+    if (!channels.sms && !channels.email) return;
+    if (notifyTimerRef.current !== null) window.clearTimeout(notifyTimerRef.current);
+    notifyTimerRef.current = window.setTimeout(() => {
+      notifyTimerRef.current = null;
+      void sendStaffActionNotification(slug, {
+        salonId: data.salon.id,
+        bookingId,
+        event: "cancel",
+        channels,
+      });
+    }, NOTIFY_DELAY_MS);
+  };
+  const cancelScheduledNotify = () => {
+    if (notifyTimerRef.current !== null) {
+      window.clearTimeout(notifyTimerRef.current);
+      notifyTimerRef.current = null;
+    }
+  };
 
   useEffect(() => {
     if (undoTimerRef.current !== null) window.clearInterval(undoTimerRef.current);
@@ -486,6 +525,12 @@ function ReceptionistCenterInner({
   const [drawerBusy, setDrawerBusy] = useState(false);
   // Pending desk-cancel that hit a paid deposit → ask refund-or-keep first.
   const [depositCancel, setDepositCancel] = useState<{ id: string; amountCents: number } | null>(null);
+  // Cancel-confirm with the "notify the customer?" panel (non-deposit path).
+  const [notifyCancel, setNotifyCancel] = useState<{ id: string } | null>(null);
+  const [notifyCancelChannels, setNotifyCancelChannels] = useState<NotifyChannels>({
+    sms: false,
+    email: false,
+  });
 
   // Realtime connection-state machine. Default 'connected' — assume
   // online until the Supabase channel subscribe-callback flips us to
@@ -978,6 +1023,8 @@ function ReceptionistCenterInner({
 
   const undoCancel = async () => {
     if (!undoState) return;
+    // The booking is being restored → never send the cancel notification.
+    cancelScheduledNotify();
     const res = await undoCancelBooking(slug, {
       salonId: data.salon.id,
       bookingId: undoState.bookingId,
@@ -1538,7 +1585,11 @@ function ReceptionistCenterInner({
     }
   };
 
-  const doCancelBooking = async (id: string, refundDeposit: boolean) => {
+  const doCancelBooking = async (
+    id: string,
+    refundDeposit: boolean,
+    notifyChannels?: NotifyChannels,
+  ) => {
     const b = data.bookingsForDay.find((x) => x.id === id);
     if (
       !b ||
@@ -1581,6 +1632,19 @@ function ReceptionistCenterInner({
             secondsRemaining: 8,
             type: "cancel",
           });
+          // Notify the customer about the cancellation after the 8s undo
+          // window — skipped if they hit Undo (cancelScheduledNotify). Channels
+          // come from the cancel-confirm panel; the deposit path (no panel)
+          // falls back to the salon's smart per-event default.
+          const channels =
+            notifyChannels ??
+            (defaultNotifyOn(data.salon.staffNotificationSettings, "cancel")
+              ? {
+                  sms: data.salon.staffNotificationSettings.channels.sms,
+                  email: data.salon.staffNotificationSettings.channels.email,
+                }
+              : { sms: false, email: false });
+          scheduleCancelNotify(id, channels);
         }
       }
     } finally {
@@ -1602,7 +1666,15 @@ function ReceptionistCenterInner({
       setDepositCancel({ id, amountCents: b.deposit_amount_cents ?? 0 });
       return;
     }
-    void doCancelBooking(id, false);
+    // Otherwise open the cancel-confirm with the "notify the customer?" panel,
+    // pre-checked per the salon's smart per-event default for cancel.
+    const settings = data.salon.staffNotificationSettings;
+    const on = defaultNotifyOn(settings, "cancel");
+    setNotifyCancelChannels({
+      sms: on && settings.channels.sms,
+      email: on && settings.channels.email,
+    });
+    setNotifyCancel({ id });
   };
 
   const rcMessages = messages.receptionist;
@@ -2794,34 +2866,47 @@ function ReceptionistCenterInner({
                 setDeskPrefill({ staffId, ymd, slotLabel });
                 setDeskBookingOpen(true);
               }}
-              onRescheduleBooking={async (bookingId, newStaffId, newStartUtc) => {
-                const booking = data.bookingsForDay.find((b) => b.id === bookingId);
-                if (!booking) return { ok: false, error: "not_found" };
-                const result = await editBookingAction(slug, {
-                  salonId: data.salon.id,
-                  bookingId,
-                  newStartTimeUtc: newStartUtc,
-                  newStaffId,
-                  newServiceId: booking.service_id,
-                  newAddonServiceId: booking.addon_service_id ?? null,
-                });
-                if (result.ok) {
-                  router.refresh();
-                  return { ok: true };
-                }
-                // Surface WHY the drop snapped back, instead of failing silently.
-                const failCopy = rcMessages.grid.rescheduleFailed;
-                const reason =
-                  result.error === "past_date"
-                    ? failCopy.past_date
-                    : result.error === "slot_conflict"
-                      ? failCopy.slot_conflict
-                      : result.error === "staff_cannot_perform_service"
-                        ? failCopy.staff_cannot_perform_service
-                        : failCopy.generic;
-                showErrorToast(reason);
-                return { ok: false, error: result.error };
-              }}
+              onRescheduleBooking={
+                // Drag-to-reschedule is an EDIT, so only wire it for roles that
+                // can edit (owner/admin/senior/receptionist). Without this gate
+                // view-only nail_tech could grab-drag a block; the server would
+                // reject it (`canEditBooking`) and it would snap back with an
+                // "unauthorized" toast — a confusing UI/server split. Passing
+                // `undefined` hides the drag affordance so the UI matches the
+                // server gate (mirrors the Start/Complete button gate in #404).
+                canEditBooking(viewerRole)
+                  ? async (bookingId, newStaffId, newStartUtc) => {
+                      const booking = data.bookingsForDay.find(
+                        (b) => b.id === bookingId,
+                      );
+                      if (!booking) return { ok: false, error: "not_found" };
+                      const result = await editBookingAction(slug, {
+                        salonId: data.salon.id,
+                        bookingId,
+                        newStartTimeUtc: newStartUtc,
+                        newStaffId,
+                        newServiceId: booking.service_id,
+                        newAddonServiceId: booking.addon_service_id ?? null,
+                      });
+                      if (result.ok) {
+                        router.refresh();
+                        return { ok: true };
+                      }
+                      // Surface WHY the drop snapped back, instead of failing silently.
+                      const failCopy = rcMessages.grid.rescheduleFailed;
+                      const reason =
+                        result.error === "past_date"
+                          ? failCopy.past_date
+                          : result.error === "slot_conflict"
+                            ? failCopy.slot_conflict
+                            : result.error === "staff_cannot_perform_service"
+                              ? failCopy.staff_cannot_perform_service
+                              : failCopy.generic;
+                      showErrorToast(reason);
+                      return { ok: false, error: result.error };
+                    }
+                  : undefined
+              }
               labels={{
                 formatTimeLabel: (utcIso: string) => formatInSalonTz(utcIso, timezone, "shortTime"),
                 conflictWith: rcMessages.grid.conflictWith,
@@ -3144,6 +3229,95 @@ function ReceptionistCenterInner({
           </div>
         </Modal>
       ) : null}
+
+      {notifyCancel
+        ? (() => {
+            const b = data.bookingsForDay.find((x) => x.id === notifyCancel.id);
+            if (!b) return null;
+            const settings = data.salon.staffNotificationSettings;
+            const locale = resolveCustomerLocale({
+              clientLocale: b.client_locale,
+              salonDefaultLocale: settings.defaultLocale,
+            });
+            const whenLabel = new Intl.DateTimeFormat(
+              locale === "vi" ? "vi-VN" : "en-US",
+              {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+                hour12: true,
+                timeZone: timezone,
+              },
+            ).format(new Date(Date.parse(b.start_time_utc)));
+            const previewText = buildStaffActionSms("cancel", locale, {
+              customerName: (b.client_name ?? "").trim(),
+              salonName: data.salon.name,
+              serviceName: b.service_name ?? "",
+              whenLabel,
+              salonPhone: null,
+            });
+            const hasPhone = !!(b.client_phone && b.client_phone.trim());
+            const hasEmail = !!(b.client_email && b.client_email.trim());
+            const n = rcMessages.notify;
+            return (
+              <Modal
+                isOpen
+                onClose={() => setNotifyCancel(null)}
+                size="sm"
+                title={n.cancelTitle}
+                description={n.cancelDesc}
+              >
+                <div className="flex flex-col gap-3 py-1">
+                  <NotifyCustomerPanel
+                    value={notifyCancelChannels}
+                    onChange={setNotifyCancelChannels}
+                    hasPhone={hasPhone}
+                    hasEmail={hasEmail}
+                    previewText={previewText}
+                    labels={{
+                      heading: n.heading,
+                      sms: n.sms,
+                      email: n.email,
+                      previewTitle: n.previewTitle,
+                      willNotNotify: n.willNotNotify,
+                      noPhone: n.noPhone,
+                      noEmail: n.noEmail,
+                      languageNote: locale === "vi" ? n.langVi : n.langEn,
+                    }}
+                  />
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      type="button"
+                      variant="danger"
+                      loading={drawerBusy}
+                      data-testid="notify-cancel-confirm"
+                      onClick={() => {
+                        const id = notifyCancel.id;
+                        const ch = {
+                          sms: notifyCancelChannels.sms && hasPhone,
+                          email: notifyCancelChannels.email && hasEmail,
+                        };
+                        setNotifyCancel(null);
+                        void doCancelBooking(id, false, ch);
+                      }}
+                    >
+                      {n.confirmCancel}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => setNotifyCancel(null)}
+                    >
+                      {n.keep}
+                    </Button>
+                  </div>
+                </div>
+              </Modal>
+            );
+          })()
+        : null}
     </>
   );
 }
