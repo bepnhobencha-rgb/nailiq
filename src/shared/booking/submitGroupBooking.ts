@@ -7,6 +7,7 @@ import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { realNameOrEmpty } from "@/shared/booking/guestNamePlaceholder";
@@ -401,7 +402,7 @@ export async function submitGroupBooking(
     const sTyped = s as typeof s & { is_addon?: unknown; addon_timing?: unknown };
     const isAddon = sTyped.is_addon === true;
     if (isAddon) {
-      const block = (Number(s.duration_minutes) || 0) + (Number(s.buffer_minutes) || 0);
+      const block = serviceBlockMinutes(s.duration_minutes, s.buffer_minutes);
       addonById.set(String(s.id), {
         block,
         priceCents: s.price_cents != null ? Number(s.price_cents) : null,

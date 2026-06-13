@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import type { SalonDashboardBooking } from "@/shared/types";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import {
   type BookingRowDb,
@@ -245,7 +246,7 @@ export async function performEditBooking(
     if (!Number.isFinite(aBuf) || aBuf < 0) {
       return { ok: false, error: "server_error" };
     }
-    addonSpanMin = aDur + aBuf;
+    addonSpanMin = serviceBlockMinutes(aDur, aBuf);
     const aPrice =
       addonSvcData.price_cents != null
         ? Math.round(Number(addonSvcData.price_cents))
@@ -253,7 +254,7 @@ export async function performEditBooking(
     addonPriceCents = Number.isFinite(aPrice ?? NaN) ? aPrice : null;
   }
 
-  const totalMin = duration + buffer + addonSpanMin;
+  const totalMin = serviceBlockMinutes(duration, buffer) + addonSpanMin;
   const endMs = startMs + totalMin * 60 * 1000;
   const slotEndUtc = new Date(endMs).toISOString();
 

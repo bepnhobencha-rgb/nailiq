@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { parseTimeSlotOnDate } from "@/shared/booking/parseBookingTimeSlot";
 import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 
 type RescheduleBody = {
   token: string;
@@ -63,7 +64,7 @@ export async function POST(req: Request) {
   }
 
   const durationMs =
-    ((Number(svc.duration_minutes) || 0) + (Number(svc.buffer_minutes) || 0)) * 60_000;
+    serviceBlockMinutes(svc.duration_minutes, svc.buffer_minutes) * 60_000;
   const newEnd = new Date(newStart.getTime() + durationMs);
 
   const { data, error } = await supabase.rpc("reschedule_booking_as_customer" as never, {

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { editBookingAction } from "@/shared/dashboard/editBookingAction";
 import { getDeskBookingData } from "@/shared/dashboard/receptionistActions";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import {
   getAvailableTimeSlots,
   type TimeSlot,
@@ -244,15 +245,17 @@ export function EditBookingForm({
     if (!selectedAddonSvc) return 0;
     const dur = Math.max(0, Math.round(Number(selectedAddonSvc.durationMinutes ?? 0)));
     const buf = Math.max(0, Math.round(Number(selectedAddonSvc.bufferMinutes ?? 0)));
-    return dur + buf;
+    return serviceBlockMinutes(dur, buf);
   }, [selectedAddonSvc]);
 
   /** Total service span (main duration + buffer + add-on span). Drives both the
    *  availability grid and the end-time preview. */
   const totalSpanMinutes = useMemo(() => {
     if (!selectedSvc) return 0;
-    const mainTotal =
-      Number(selectedSvc.duration_minutes) + Number(selectedSvc.buffer_minutes);
+    const mainTotal = serviceBlockMinutes(
+      selectedSvc.duration_minutes,
+      selectedSvc.buffer_minutes,
+    );
     if (!Number.isFinite(mainTotal) || mainTotal < 1) return 0;
     return mainTotal + addonSpanMinutes;
   }, [selectedSvc, addonSpanMinutes]);

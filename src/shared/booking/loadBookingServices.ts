@@ -4,6 +4,7 @@ import type { BookingComboItem, BookingServiceItem } from "@/shared/booking/cata
 import { getSalonBySlug } from "@/shared/booking/getSalonBySlug";
 import { resolveVertical } from "@/shared/verticals/registry";
 import { parseServiceCategory } from "@/shared/booking/serviceCategory";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { createClient } from "@/shared/lib/supabase/server";
 import { normalizeBrandColor } from "@/shared/lib/brandColor";
@@ -188,7 +189,7 @@ export async function loadBookingServicesForSalonSlug(
     };
     const duration = Number(row.duration_minutes) || 0;
     const buffer = Number(row.buffer_minutes) || 0;
-    const totalMinutes = duration + buffer;
+    const totalMinutes = serviceBlockMinutes(duration, buffer);
     const priceCentsRaw = row.price_cents;
     const priceCents =
       priceCentsRaw != null && Number.isFinite(Number(priceCentsRaw))

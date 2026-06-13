@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
 import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
 import { hmToMinutes } from "@/shared/booking/hmToMinutes";
@@ -367,7 +368,7 @@ export async function submitPublicBooking(
 
   const mainBlockMin = comboOverride
     ? comboOverride.durationMinutes
-    : (Number(service.duration_minutes) || 0) + (Number(service.buffer_minutes) || 0);
+    : serviceBlockMinutes(service.duration_minutes, service.buffer_minutes);
 
   let addonBlockMin = 0;
   type AddonRow = { id: string; name: string; price_cents: number | null };
@@ -396,9 +397,10 @@ export async function submitPublicBooking(
         | { id: string; name: string; duration_minutes?: unknown; buffer_minutes?: unknown; price_cents?: unknown; is_addon?: unknown; addon_timing?: unknown }
         | undefined;
       if (!addSvc || addSvc.is_addon !== true) throw new Error("addon_not_found");
-      const block =
-        (Number(addSvc.duration_minutes) || 0) +
-        (Number(addSvc.buffer_minutes) || 0);
+      const block = serviceBlockMinutes(
+        addSvc.duration_minutes,
+        addSvc.buffer_minutes,
+      );
       if (block <= 0) throw new Error("invalid_addon");
       // Concurrent add-ons run alongside the main service → add $0 time to the
       // appointment block; only sequential ones extend the end time.
