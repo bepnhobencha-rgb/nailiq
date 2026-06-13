@@ -31,6 +31,15 @@ import {
   getAvailableTimeSlots,
   type TimeSlot,
 } from "@/shared/booking/getAvailableTimeSlots";
+import {
+  NotifyCustomerPanel,
+  type NotifyChannels,
+} from "./NotifyCustomerPanel";
+import {
+  type StaffNotificationSettings,
+  defaultNotifyOn,
+} from "@/shared/dashboard/staffNotificationSettings";
+import { buildStaffActionSms } from "@/shared/notifications/staffActionMessages";
 
 type LoadData = Extract<
   Awaited<ReturnType<typeof getDeskBookingData>>,
@@ -59,6 +68,8 @@ type Props = {
   initialYmd?: string;
   /** Desired time label, e.g. "2:00 PM" — auto-selected once it appears free. */
   initialSlotLabel?: string;
+  /** Per-salon notify config — drives the "notify customer?" panel defaults. */
+  notifySettings: StaffNotificationSettings;
 };
 
 // Bilingual copy kept local to the form (UI labels, not config) so it stays
@@ -89,11 +100,23 @@ const COPY = {
     submitting: "Creating…",
     submitError: "Couldn't create the appointment. Try again.",
     newCustomer: "New customer.",
-    returning: (vip: string, visits: string) => `✨ Returning customer${vip}${visits} — info filled in.`,
+    returning: (vip: string, visits: string) =>
+      `✨ Returning customer${vip}${visits} — info filled in.`,
     vipTag: " · VIP",
     visitsTag: (n: number) => ` · ${n} visits`,
     prefillHint: (time: string, staff: string) =>
       `${time}${staff ? ` · ${staff}` : ""} — pick a service to confirm.`,
+    notify: {
+      heading: "Notify customer",
+      sms: "Text (SMS)",
+      email: "Email",
+      previewTitle: "Preview",
+      willNotNotify: "Customer won't be notified.",
+      noPhone: "no phone",
+      noEmail: "no email",
+      langEn: "in English",
+      langVi: "in Vietnamese",
+    },
     errors: {
       invalid_name: "Invalid name.",
       invalid_name_chars: "Name has invalid characters.",
@@ -135,11 +158,23 @@ const COPY = {
     submitting: "Đang tạo lịch…",
     submitError: "Không tạo được lịch. Thử lại.",
     newCustomer: "Khách mới.",
-    returning: (vip: string, visits: string) => `✨ Khách quen${vip}${visits} — đã điền sẵn.`,
+    returning: (vip: string, visits: string) =>
+      `✨ Khách quen${vip}${visits} — đã điền sẵn.`,
     vipTag: " · VIP",
     visitsTag: (n: number) => ` · ${n} lần ghé`,
     prefillHint: (time: string, staff: string) =>
       `${time}${staff ? ` · ${staff}` : ""} — chọn dịch vụ để xác nhận.`,
+    notify: {
+      heading: "Báo cho khách",
+      sms: "Tin nhắn (SMS)",
+      email: "Email",
+      previewTitle: "Xem trước",
+      willNotNotify: "Khách sẽ không được báo.",
+      noPhone: "chưa có SĐT",
+      noEmail: "chưa có email",
+      langEn: "bằng tiếng Anh",
+      langVi: "bằng tiếng Việt",
+    },
     errors: {
       invalid_name: "Tên không hợp lệ.",
       invalid_name_chars: "Tên chứa ký tự không hợp lệ.",
@@ -178,8 +213,18 @@ export default function DeskBookingForm({
   initialStaffId,
   initialYmd,
   initialSlotLabel,
+  notifySettings,
 }: Props) {
   const tx = COPY[language === "vi" ? "vi" : "en"];
+  // "Notify customer?" channels for the booking confirmation — pre-checked per
+  // the salon's smart per-event default for 'create'.
+  const [notifyChannels, setNotifyChannels] = useState<NotifyChannels>(() => {
+    const on = defaultNotifyOn(notifySettings, "create");
+    return {
+      sms: on && notifySettings.channels.sms,
+      email: on && notifySettings.channels.email,
+    };
+  });
   const [data, setData] = useState<LoadData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -342,7 +387,17 @@ export default function DeskBookingForm({
     return () => {
       cancelled = true;
     };
-  }, [data, service, staffId, ymd, salonId, capableStaff, closedDateYmdSet, shortestServiceMinutes, blockMinutes]);
+  }, [
+    data,
+    service,
+    staffId,
+    ymd,
+    salonId,
+    capableStaff,
+    closedDateYmdSet,
+    shortestServiceMinutes,
+    blockMinutes,
+  ]);
 
   // Returning-customer recognition (debounced).
   const lookupSeq = useRef(0);
@@ -401,7 +456,8 @@ export default function DeskBookingForm({
       serviceId,
       addonServiceIds: addonIds,
       staffId,
-      staffRequestedByClient: staffId !== BOOKING_ANY_STAFF_ID && staffRequested,
+      staffRequestedByClient:
+        staffId !== BOOKING_ANY_STAFF_ID && staffRequested,
       bookingDateYmd: ymd,
       timeSlot: slotLabel,
       clientName: name.trim(),
@@ -409,6 +465,10 @@ export default function DeskBookingForm({
       clientEmail: email.trim() || null,
       clientNotes: notes.trim() || null,
       language,
+      notify: {
+        sms: notifyChannels.sms && phone.replace(/\D/g, "").length >= 10,
+        email: notifyChannels.email && !!email.trim(),
+      },
     });
     setSubmitting(false);
     if (res.ok) {
@@ -417,7 +477,26 @@ export default function DeskBookingForm({
     } else {
       setError(tx.errors[res.error] ?? tx.submitError);
     }
-  }, [canSubmit, slug, salonId, serviceId, addonIds, staffId, staffRequested, ymd, slotLabel, name, phone, email, notes, language, onCreated, onClose, tx]);
+  }, [
+    canSubmit,
+    slug,
+    salonId,
+    serviceId,
+    addonIds,
+    staffId,
+    staffRequested,
+    ymd,
+    slotLabel,
+    name,
+    phone,
+    email,
+    notes,
+    language,
+    notifyChannels,
+    onCreated,
+    onClose,
+    tx,
+  ]);
 
   const inputCls =
     "w-full rounded-md border border-nq-muted/30 bg-nq-bg px-3 py-2 text-sm text-nq-foreground outline-none focus:border-nq-primary/60";
@@ -434,8 +513,14 @@ export default function DeskBookingForm({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-1 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-nq-foreground">{tx.heading}</h2>
-          <button onClick={onClose} className="text-nq-muted hover:text-nq-foreground" aria-label={tx.close}>
+          <h2 className="text-base font-semibold text-nq-foreground">
+            {tx.heading}
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-nq-muted hover:text-nq-foreground"
+            aria-label={tx.close}
+          >
             ✕
           </button>
         </div>
@@ -462,12 +547,18 @@ export default function DeskBookingForm({
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
               />
-              {lookupMsg ? <p className="mt-1 text-[11px] text-nq-muted">{lookupMsg}</p> : null}
+              {lookupMsg ? (
+                <p className="mt-1 text-[11px] text-nq-muted">{lookupMsg}</p>
+              ) : null}
             </div>
 
             <div>
               <label className={labelCls}>{tx.name}</label>
-              <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} />
+              <input
+                className={inputCls}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
             </div>
 
             <div>
@@ -532,8 +623,12 @@ export default function DeskBookingForm({
                 onChange={(e) => setStaffId(e.target.value)}
                 disabled={!serviceId}
               >
-                <option value="">{serviceId ? tx.selectStaff : tx.selectServiceFirst}</option>
-                {serviceId ? <option value={BOOKING_ANY_STAFF_ID}>{tx.anyStaff}</option> : null}
+                <option value="">
+                  {serviceId ? tx.selectStaff : tx.selectServiceFirst}
+                </option>
+                {serviceId ? (
+                  <option value={BOOKING_ANY_STAFF_ID}>{tx.anyStaff}</option>
+                ) : null}
                 {capableStaff.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -597,8 +692,42 @@ export default function DeskBookingForm({
 
             <div>
               <label className={labelCls}>{tx.notes}</label>
-              <input className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} />
+              <input
+                className={inputCls}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
             </div>
+
+            {serviceId && slotLabel ? (
+              <NotifyCustomerPanel
+                value={notifyChannels}
+                onChange={setNotifyChannels}
+                hasPhone={phone.replace(/\D/g, "").length >= 10}
+                hasEmail={!!email.trim()}
+                previewText={buildStaffActionSms("create", language, {
+                  customerName: name.trim(),
+                  salonName: data?.salon.name ?? "",
+                  serviceName: service?.name ?? "",
+                  whenLabel: `${new Intl.DateTimeFormat(
+                    language === "vi" ? "vi-VN" : "en-US",
+                    { weekday: "short", month: "short", day: "numeric" },
+                  ).format(ymdToLocalNoon(ymd))} · ${slotLabel}`,
+                  salonPhone: null,
+                })}
+                labels={{
+                  heading: tx.notify.heading,
+                  sms: tx.notify.sms,
+                  email: tx.notify.email,
+                  previewTitle: tx.notify.previewTitle,
+                  willNotNotify: tx.notify.willNotNotify,
+                  noPhone: tx.notify.noPhone,
+                  noEmail: tx.notify.noEmail,
+                  languageNote:
+                    language === "vi" ? tx.notify.langVi : tx.notify.langEn,
+                }}
+              />
+            ) : null}
 
             {error ? <p className="text-xs text-nq-error">{error}</p> : null}
 
