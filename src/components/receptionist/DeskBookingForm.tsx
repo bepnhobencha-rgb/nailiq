@@ -1,11 +1,21 @@
 "use client";
 
 /**
- * Receptionist "New appointment" form — books a phone-in customer for a FUTURE
- * date/time from the desk (the path until AI Receptionist takes calls). Mirrors
- * the public booking inputs (returning-customer lookup, real availability grid,
- * conflict-safe create) but in one compact desk panel. Slots are computed
- * client-side via `getAvailableTimeSlots`; the create goes through
+ * Receptionist "New appointment" form — books a phone-in OR walk-up customer for
+ * a chosen date/time from the desk. Mirrors the public booking inputs (returning
+ * customer lookup, real availability grid, add-ons, "any available staff",
+ * conflict-safe create) but in one compact desk panel.
+ *
+ * Two entry points share this form:
+ *   1. The "New appointment" header button — opens blank (good for far-out / any-
+ *      staff bookings the grid can't show yet).
+ *   2. Clicking an empty cell on the staff timeline grid — opens PRE-FILLED with
+ *      that staff + date + the clicked time, so the receptionist confirms in one
+ *      tap instead of scrolling the grid to avoid a double-book.
+ *
+ * Slots are computed client-side via `getAvailableTimeSlots` (the duration
+ * already includes any selected add-ons, so availability can never undercount
+ * the block and overlap the next booking). The create goes through
  * `addDeskAppointment` (conflict-safe RPC) and fires the same confirmation.
  */
 
@@ -16,6 +26,7 @@ import {
   getDeskBookingData,
 } from "@/shared/dashboard/receptionistActions";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
+import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import {
   getAvailableTimeSlots,
   type TimeSlot,
@@ -26,13 +37,28 @@ type LoadData = Extract<
   { ok: true }
 >["data"];
 
+/** Optimistic booking row returned by `addDeskAppointment` on success. */
+type DeskCreatedBooking = Extract<
+  Awaited<ReturnType<typeof addDeskAppointment>>,
+  { ok: true }
+>["booking"];
+
 type Props = {
   slug: string;
   salonId: string;
   /** Dashboard language — matches the rest of the receptionist center. */
   language: "en" | "vi";
   onClose: () => void;
-  onCreated: () => void;
+  /** Called on a successful create. Receives the freshly-built booking row
+   * (shaped like one `bookingsForDay` item) so the parent can render it
+   * optimistically before the background reload reconciles. */
+  onCreated: (booking?: DeskCreatedBooking) => void;
+  /** Prefill (grid empty-slot click). Staff may be a UUID or the "any" sentinel. */
+  initialServiceId?: string;
+  initialStaffId?: string;
+  initialYmd?: string;
+  /** Desired time label, e.g. "2:00 PM" — auto-selected once it appears free. */
+  initialSlotLabel?: string;
 };
 
 // Bilingual copy kept local to the form (UI labels, not config) so it stays
@@ -48,9 +74,12 @@ const COPY = {
     email: "Email (optional — for the confirmation)",
     service: "Service *",
     selectService: "— Select a service —",
+    addons: "Add-ons (optional)",
     staff: "Staff *",
+    anyStaff: "✨ Any available staff",
     selectStaff: "— Select staff —",
     selectServiceFirst: "Pick a service first",
+    staffRequest: "❤️ Customer specifically asked for this tech",
     date: "Date *",
     time: "Time *",
     slotsLoading: "Finding open times…",
@@ -63,13 +92,17 @@ const COPY = {
     returning: (vip: string, visits: string) => `✨ Returning customer${vip}${visits} — info filled in.`,
     vipTag: " · VIP",
     visitsTag: (n: number) => ` · ${n} visits`,
+    prefillHint: (time: string, staff: string) =>
+      `${time}${staff ? ` · ${staff}` : ""} — pick a service to confirm.`,
     errors: {
       invalid_name: "Invalid name.",
       invalid_name_chars: "Name has invalid characters.",
       invalid_phone: "Invalid phone number.",
       invalid_email: "Invalid email.",
       invalid_service: "Please choose a service.",
+      invalid_addon: "One of the add-ons is invalid.",
       invalid_staff: "Please choose a staff member.",
+      no_staff_available: "No active staff can do this service.",
       invalid_date: "Please choose a date.",
       invalid_time: "Please choose a time.",
       time_slot_taken: "That time was just taken — pick another.",
@@ -87,9 +120,12 @@ const COPY = {
     email: "Email (tuỳ chọn — để gửi xác nhận)",
     service: "Dịch vụ *",
     selectService: "— Chọn dịch vụ —",
+    addons: "Dịch vụ kèm (tuỳ chọn)",
     staff: "Thợ *",
+    anyStaff: "✨ Thợ nào cũng được",
     selectStaff: "— Chọn thợ —",
     selectServiceFirst: "Chọn dịch vụ trước",
+    staffRequest: "❤️ Khách yêu cầu đúng thợ này",
     date: "Ngày *",
     time: "Giờ *",
     slotsLoading: "Đang tìm giờ trống…",
@@ -102,13 +138,17 @@ const COPY = {
     returning: (vip: string, visits: string) => `✨ Khách quen${vip}${visits} — đã điền sẵn.`,
     vipTag: " · VIP",
     visitsTag: (n: number) => ` · ${n} lần ghé`,
+    prefillHint: (time: string, staff: string) =>
+      `${time}${staff ? ` · ${staff}` : ""} — chọn dịch vụ để xác nhận.`,
     errors: {
       invalid_name: "Tên không hợp lệ.",
       invalid_name_chars: "Tên chứa ký tự không hợp lệ.",
       invalid_phone: "Số điện thoại không hợp lệ.",
       invalid_email: "Email không hợp lệ.",
       invalid_service: "Vui lòng chọn dịch vụ.",
+      invalid_addon: "Một dịch vụ kèm không hợp lệ.",
       invalid_staff: "Vui lòng chọn thợ.",
+      no_staff_available: "Không có thợ đang làm cho dịch vụ này.",
       invalid_date: "Vui lòng chọn ngày.",
       invalid_time: "Vui lòng chọn giờ.",
       time_slot_taken: "Giờ này vừa có người đặt — chọn giờ khác.",
@@ -128,7 +168,17 @@ function todayYmd(): string {
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
 }
 
-export default function DeskBookingForm({ slug, salonId, language, onClose, onCreated }: Props) {
+export default function DeskBookingForm({
+  slug,
+  salonId,
+  language,
+  onClose,
+  onCreated,
+  initialServiceId,
+  initialStaffId,
+  initialYmd,
+  initialSlotLabel,
+}: Props) {
   const tx = COPY[language === "vi" ? "vi" : "en"];
   const [data, setData] = useState<LoadData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -136,11 +186,20 @@ export default function DeskBookingForm({ slug, salonId, language, onClose, onCr
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [serviceId, setServiceId] = useState("");
-  const [staffId, setStaffId] = useState("");
-  const [ymd, setYmd] = useState("");
+  const [serviceId, setServiceId] = useState(initialServiceId ?? "");
+  const [addonIds, setAddonIds] = useState<string[]>([]);
+  const [staffId, setStaffId] = useState(initialStaffId ?? "");
+  const [staffRequested, setStaffRequested] = useState(false);
+  // Default to today (not an empty "yyyy-mm-dd" placeholder) when not prefilled.
+  const [ymd, setYmd] = useState(initialYmd ?? todayYmd());
   const [slotLabel, setSlotLabel] = useState("");
   const [notes, setNotes] = useState("");
+
+  // Desired time from a grid click — auto-selected once it shows up free in the
+  // freshly-computed slot grid (the grid cell is 30 min, the form grid 15 min,
+  // and the real availability depends on the service the user picks here).
+  const desiredSlotRef = useRef(initialSlotLabel ?? "");
+  const prefilled = !!(initialStaffId || initialYmd || initialSlotLabel);
 
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
@@ -166,26 +225,67 @@ export default function DeskBookingForm({ slug, salonId, language, onClose, onCr
     };
   }, [slug]);
 
-  // Staff capable of the chosen service (capabilityRows null = all-capable).
+  // Services this booking needs (main + add-ons) — used for capability filtering.
+  const requiredServiceIds = useMemo(
+    () => [serviceId, ...addonIds].filter(Boolean),
+    [serviceId, addonIds],
+  );
+
+  // Staff capable of EVERY chosen service (capabilityRows null = all-capable).
   const capableStaff = useMemo(() => {
     if (!data) return [];
     if (!serviceId || !data.capabilityRows) return data.staff;
-    const ids = new Set(
-      data.capabilityRows.filter((r) => r.service_id === serviceId).map((r) => r.staff_id),
-    );
-    return data.staff.filter((s) => ids.has(s.id));
-  }, [data, serviceId]);
+    const cap = new Map<string, Set<string>>();
+    for (const r of data.capabilityRows) {
+      let bucket = cap.get(r.staff_id);
+      if (!bucket) {
+        bucket = new Set();
+        cap.set(r.staff_id, bucket);
+      }
+      bucket.add(r.service_id);
+    }
+    return data.staff.filter((s) => {
+      const bucket = cap.get(s.id);
+      return !!bucket && requiredServiceIds.every((id) => bucket.has(id));
+    });
+  }, [data, serviceId, requiredServiceIds]);
 
-  // If the picked staff can't do the newly-picked service, clear it.
+  // If the picked (specific) staff can't do the chosen service+add-ons, clear it.
+  // "Any available" is never cleared — it isn't a concrete capability row.
+  // Guard on `data` + `serviceId`: capability only matters once a service is
+  // chosen, and capableStaff is [] until data loads — without this guard a
+  // grid-prefilled staff would be wiped during the initial load window before
+  // the receptionist ever sees it.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile staff to the new service's capability set
-    if (staffId && !capableStaff.some((s) => s.id === staffId)) setStaffId("");
-  }, [capableStaff, staffId]);
+    if (!data || !serviceId) return;
+    if (
+      staffId &&
+      staffId !== BOOKING_ANY_STAFF_ID &&
+      !capableStaff.some((s) => s.id === staffId)
+    ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile staff to the new capability set
+      setStaffId("");
+    }
+  }, [data, serviceId, capableStaff, staffId]);
 
   const service = useMemo(
     () => data?.services.find((s) => s.id === serviceId) ?? null,
     [data, serviceId],
   );
+
+  // Total appointment block in minutes: main service + sequential add-ons.
+  // Concurrent add-ons run alongside the main service and add no time. This is
+  // what makes availability honest — a "gel + design" booking reserves the full
+  // block so the next customer can't be slotted on top of it.
+  const blockMinutes = useMemo(() => {
+    if (!service) return 0;
+    const extra = addonIds.reduce((sum, id) => {
+      const a = data?.addOns.find((x) => x.id === id);
+      if (!a) return sum;
+      return sum + (a.addonConcurrent ? 0 : a.totalMinutes);
+    }, 0);
+    return service.totalMinutes + extra;
+  }, [service, addonIds, data]);
 
   const closedDateYmdSet = useMemo(() => {
     const raw = data?.salon.booking_closed_dates;
@@ -197,9 +297,15 @@ export default function DeskBookingForm({ slug, salonId, language, onClose, onCr
     [data],
   );
 
+  // Name of the prefilled staff (for the smart header). "" when "any" / blank.
+  const prefillStaffName = useMemo(() => {
+    if (!initialStaffId || initialStaffId === BOOKING_ANY_STAFF_ID) return "";
+    return data?.staff.find((s) => s.id === initialStaffId)?.name ?? "";
+  }, [data, initialStaffId]);
+
   // Compute the availability grid whenever service + staff + date are set.
   useEffect(() => {
-    if (!data || !service || !staffId || !ymd) {
+    if (!data || !service || !staffId || !ymd || blockMinutes <= 0) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale grid when inputs incomplete
       setSlots([]);
       return;
@@ -213,7 +319,7 @@ export default function DeskBookingForm({ slug, salonId, language, onClose, onCr
       selectedDate: ymdToLocalNoon(ymd),
       staffId,
       staffList: capableStaff,
-      serviceDurationMinutes: service.totalMinutes,
+      serviceDurationMinutes: blockMinutes,
       closedDateYmdSet,
       shortestServiceMinutes,
       leadMinutes: data.salon.bookingLeadMinutes,
@@ -222,6 +328,13 @@ export default function DeskBookingForm({ slug, salonId, language, onClose, onCr
       .then((res) => {
         if (cancelled) return;
         setSlots(res);
+        // Auto-select the time the receptionist clicked on the grid, once.
+        const want = desiredSlotRef.current;
+        if (want) {
+          const match = res.find((s) => s.available && s.label === want);
+          if (match) setSlotLabel(match.label);
+          desiredSlotRef.current = "";
+        }
       })
       .finally(() => {
         if (!cancelled) setSlotsLoading(false);
@@ -229,7 +342,7 @@ export default function DeskBookingForm({ slug, salonId, language, onClose, onCr
     return () => {
       cancelled = true;
     };
-  }, [data, service, staffId, ymd, salonId, capableStaff, closedDateYmdSet, shortestServiceMinutes]);
+  }, [data, service, staffId, ymd, salonId, capableStaff, closedDateYmdSet, shortestServiceMinutes, blockMinutes]);
 
   // Returning-customer recognition (debounced).
   const lookupSeq = useRef(0);
@@ -264,8 +377,20 @@ export default function DeskBookingForm({ slug, salonId, language, onClose, onCr
     // eslint-disable-next-line react-hooks/exhaustive-deps -- name/email/serviceId/staffId read as "fill only when empty"; re-running on their change would loop
   }, [phone, slug]);
 
+  const toggleAddon = useCallback((id: string) => {
+    setAddonIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }, []);
+
   const canSubmit =
-    !!name.trim() && phone.replace(/\D/g, "").length >= 10 && !!serviceId && !!staffId && !!ymd && !!slotLabel && !submitting;
+    !!name.trim() &&
+    phone.replace(/\D/g, "").length >= 10 &&
+    !!serviceId &&
+    !!staffId &&
+    !!ymd &&
+    !!slotLabel &&
+    !submitting;
 
   const submit = useCallback(async () => {
     if (!canSubmit) return;
@@ -274,22 +399,25 @@ export default function DeskBookingForm({ slug, salonId, language, onClose, onCr
     const res = await addDeskAppointment(slug, {
       salonId,
       serviceId,
+      addonServiceIds: addonIds,
       staffId,
+      staffRequestedByClient: staffId !== BOOKING_ANY_STAFF_ID && staffRequested,
       bookingDateYmd: ymd,
       timeSlot: slotLabel,
       clientName: name.trim(),
       clientPhone: phone.trim(),
       clientEmail: email.trim() || null,
       clientNotes: notes.trim() || null,
+      language,
     });
     setSubmitting(false);
     if (res.ok) {
-      onCreated();
+      onCreated(res.booking);
       onClose();
     } else {
       setError(tx.errors[res.error] ?? tx.submitError);
     }
-  }, [canSubmit, slug, salonId, serviceId, staffId, ymd, slotLabel, name, phone, email, notes, onCreated, onClose]);
+  }, [canSubmit, slug, salonId, serviceId, addonIds, staffId, staffRequested, ymd, slotLabel, name, phone, email, notes, language, onCreated, onClose, tx]);
 
   const inputCls =
     "w-full rounded-md border border-nq-muted/30 bg-nq-bg px-3 py-2 text-sm text-nq-foreground outline-none focus:border-nq-primary/60";
@@ -305,12 +433,19 @@ export default function DeskBookingForm({ slug, salonId, language, onClose, onCr
         className="w-full max-w-md rounded-xl border border-nq-muted/25 bg-nq-surface p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-1 flex items-center justify-between">
           <h2 className="text-base font-semibold text-nq-foreground">{tx.heading}</h2>
           <button onClick={onClose} className="text-nq-muted hover:text-nq-foreground" aria-label={tx.close}>
             ✕
           </button>
         </div>
+        {prefilled && initialSlotLabel && !slotLabel ? (
+          <p className="mb-3 text-xs font-medium text-nq-primary">
+            {tx.prefillHint(initialSlotLabel, prefillStaffName)}
+          </p>
+        ) : (
+          <div className="mb-3" />
+        )}
 
         {loadError ? (
           <p className="text-sm text-nq-error">{tx.loadError}</p>
@@ -362,6 +497,33 @@ export default function DeskBookingForm({ slug, salonId, language, onClose, onCr
               </select>
             </div>
 
+            {serviceId && data.addOns.length > 0 ? (
+              <div>
+                <label className={labelCls}>{tx.addons}</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {data.addOns.map((a) => {
+                    const on = addonIds.includes(a.id);
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => toggleAddon(a.id)}
+                        className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                          on
+                            ? "border-nq-primary bg-nq-primary text-white"
+                            : "border-nq-muted/30 bg-nq-bg text-nq-foreground hover:border-nq-primary/50"
+                        }`}
+                      >
+                        {on ? "✓ " : "+ "}
+                        {a.name}
+                        {a.priceDisplay ? ` · ${a.priceDisplay}` : ""}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
             <div>
               <label className={labelCls}>{tx.staff}</label>
               <select
@@ -371,12 +533,24 @@ export default function DeskBookingForm({ slug, salonId, language, onClose, onCr
                 disabled={!serviceId}
               >
                 <option value="">{serviceId ? tx.selectStaff : tx.selectServiceFirst}</option>
+                {serviceId ? <option value={BOOKING_ANY_STAFF_ID}>{tx.anyStaff}</option> : null}
                 {capableStaff.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
                 ))}
               </select>
+              {staffId && staffId !== BOOKING_ANY_STAFF_ID ? (
+                <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-[11px] text-nq-muted">
+                  <input
+                    type="checkbox"
+                    checked={staffRequested}
+                    onChange={(e) => setStaffRequested(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-rose-500"
+                  />
+                  {tx.staffRequest}
+                </label>
+              ) : null}
             </div>
 
             <div>
@@ -391,7 +565,7 @@ export default function DeskBookingForm({ slug, salonId, language, onClose, onCr
               />
             </div>
 
-            {staffId && ymd ? (
+            {serviceId && staffId && ymd ? (
               <div>
                 <label className={labelCls}>{tx.time}</label>
                 {slotsLoading ? (

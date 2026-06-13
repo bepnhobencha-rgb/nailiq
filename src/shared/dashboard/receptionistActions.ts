@@ -12,6 +12,11 @@ import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import {
+  submitGroupBooking,
+  type GroupBookingMember,
+  type GroupBookingResult,
+} from "@/shared/booking/submitGroupBooking";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import {
   canCancelBooking,
@@ -21,19 +26,25 @@ import {
   canUndoCancel,
 } from "@/shared/lib/salonMemberRole";
 import { loadBookingServicesForSalonSlug } from "@/shared/booking/loadBookingServices";
-import { salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+import { salonWallTimeToUtcIso, salonDayRangeUtc } from "@/shared/lib/salonTime";
+import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
+import { pickBestStaffAmongFree } from "@/shared/booking/pickBestStaffAmongFree";
+import { buildCapabilityMap, filterStaffCapableForServices } from "@/shared/booking/staffCapability";
+import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { createDepositForBooking, refundDeposit } from "@/shared/integrations/square/deposits";
+import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { pushWixCancel, pushWixConfirm, pushWixDecline, pushWixCreate } from "@/shared/integrations/wix/writeback";
 import {
   type EditBookingInput,
   type EditBookingResult,
   performEditBooking,
 } from "@/shared/dashboard/editBookingCore";
+import type { ReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
 import {
   isQueuePriority,
   isQueueSource,
@@ -69,6 +80,11 @@ function ctxActorRole(ctx: {
 }
 
 type OkBooking = { ok: true; bookingId: string };
+
+/** Desk appointment row, shaped exactly like one `ReceptionistCenterData.bookingsForDay`
+ * item so the client can drop it straight into the grid optimistically. */
+type DeskBookingRow = ReceptionistCenterData["bookingsForDay"][number];
+type OkDeskBooking = { ok: true; bookingId: string; booking: DeskBookingRow };
 
 /**
  * Receptionist mutations: demo cookie (`nailiq-demo-slug` + service role) vs
@@ -749,16 +765,55 @@ export async function cancelDeskBooking(
   return { ok: true };
 }
 
+/** Text the Square deposit pay-link to the customer (best-effort). Bilingual —
+ *  the receptionist's dashboard language drives the copy. Returns false on a
+ *  missing phone or a Twilio failure so the desk can fall back to the QR. */
+async function sendDepositSms(args: {
+  phone: string;
+  salonName: string;
+  amountCents: number;
+  url: string;
+  language: "en" | "vi";
+}): Promise<boolean> {
+  const phone = args.phone.trim();
+  if (!phone) return false;
+  const amount = `$${(args.amountCents / 100).toFixed(2)}`;
+  const salon = args.salonName.trim() || "NailIQ";
+  const body =
+    args.language === "en"
+      ? `${salon}: Please pay your ${amount} deposit to hold your appointment: ${args.url}`
+      : `${salon}: Vui lòng đặt cọc ${amount} để giữ lịch hẹn của bạn: ${args.url}`;
+  try {
+    const res = await sendSmsReminder(phone, body);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Desk: create (or return existing) a Square deposit payment link for a booking.
- * Risk-gated + amount policy live in createDepositForBooking; here we only enforce
- * auth + that the booking belongs to the caller's salon. The receptionist shows
- * the returned URL/QR to the customer on screen.
+ * Desk: create (or return existing) a Square deposit payment link for a booking,
+ * and optionally text it to the customer. Amount policy lives in
+ * createDepositForBooking; here we enforce auth + salon scope. `manual` lets the
+ * receptionist request a deposit regardless of no-show risk (the human decided);
+ * `sendSms` texts the link via Twilio. The link is also shown as a QR on screen.
  */
 export async function requestDepositLink(
   slug: string,
-  input: { salonId: string; bookingId: string },
-): Promise<{ ok: true; url: string; amountCents: number } | { ok: false; error: string }> {
+  input: {
+    salonId: string;
+    bookingId: string;
+    /** Receptionist-initiated → bypass the no-show-risk gate. */
+    manual?: boolean;
+    /** Also text the pay link to the customer's phone. */
+    sendSms?: boolean;
+    /** Dashboard language for the SMS copy. */
+    language?: "en" | "vi";
+  },
+): Promise<
+  | { ok: true; url: string; amountCents: number; smsSent?: boolean }
+  | { ok: false; error: string }
+> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
   if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
@@ -767,22 +822,98 @@ export async function requestDepositLink(
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
   // Scope check: the booking must be visible in the caller's salon (RLS client).
+  // Pull the phone too so we can text the link without a second round-trip.
   const { data: bk } = await ctx.supabase
     .from("bookings")
-    .select("id")
+    .select("id, client_phone")
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .maybeSingle();
   if (!bk?.id) return fail("invalid_booking");
 
   try {
-    const r = await createDepositForBooking(bookingId);
+    const r = await createDepositForBooking(bookingId, { manual: input.manual === true });
     if (!r.required || !r.url) return fail(r.reason || "deposit_not_required");
-    return { ok: true, url: r.url, amountCents: r.amountCents ?? 0 };
+
+    let smsSent: boolean | undefined;
+    if (input.sendSms) {
+      smsSent = await sendDepositSms({
+        phone: String((bk as { client_phone?: string }).client_phone ?? ""),
+        salonName: ctx.salon.name,
+        amountCents: r.amountCents ?? 0,
+        url: r.url,
+        language: input.language === "en" ? "en" : "vi",
+      });
+    }
+    return { ok: true, url: r.url, amountCents: r.amountCents ?? 0, smsSent };
   } catch (e) {
     console.error("[requestDepositLink]", e);
     return fail("server_error");
   }
+}
+
+/**
+ * Create a GROUP booking from the front desk. Thin wrapper over the shared
+ * `submitGroupBooking` (same engine the public flow uses, so the AI scheduler /
+ * conflict checks / add-on handling are identical) with desk auth on top:
+ * receptionist must be an authenticated salon member allowed to create bookings.
+ *
+ * Phone-OTP: when the salon has `phone_otp_enabled`, the public flow makes the
+ * customer verify their phone. At the desk the receptionist vouches for the
+ * party in person, so we mint a verified `phone_otp_sessions` row for the
+ * organizer (same row shape the OTP-verify endpoint creates) and hand its id to
+ * `submitGroupBooking`. This is done server-side AFTER dashboard auth, so a
+ * customer can never forge it. (We deliberately do NOT call getDashboardWriteClient
+ * from inside submitGroupBooking — that import forms a server-action cycle.)
+ */
+export async function createDeskGroup(
+  slug: string,
+  input: {
+    salonId: string;
+    members: GroupBookingMember[];
+    idempotencyKey: string;
+    seatTogether?: boolean;
+    language?: "en" | "vi";
+  },
+): Promise<GroupBookingResult | { ok: false; reason: "unauthorized" | "salon_mismatch" }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, reason: "unauthorized" };
+  if (!canCreateDeskBooking(ctx.role)) return { ok: false, reason: "unauthorized" };
+  if (ctx.salon.id !== String(input.salonId).trim()) {
+    return { ok: false, reason: "salon_mismatch" };
+  }
+
+  let otpSessionId: string | null = null;
+  const db = createServiceRoleClient();
+  try {
+    const { data: srow } = await db
+      .from("salons")
+      .select("phone_otp_enabled")
+      .eq("id", ctx.salon.id)
+      .maybeSingle();
+    if ((srow as { phone_otp_enabled?: boolean } | null)?.phone_otp_enabled === true) {
+      const v = validateGuestPhone(input.members[0]?.phone ?? "");
+      if (v.ok) {
+        const { data: otpRow } = await db
+          .from("phone_otp_sessions")
+          .insert({ phone: v.digits, salon_id: ctx.salon.id } as never)
+          .select("id")
+          .single();
+        otpSessionId = (otpRow as { id?: string } | null)?.id ?? null;
+      }
+    }
+  } catch {
+    /* mint failed → submitGroupBooking will surface otp_required, handled by UI */
+  }
+
+  return submitGroupBooking({
+    shopSlug: slug,
+    members: input.members,
+    idempotencyKey: input.idempotencyKey,
+    seatTogether: input.seatTogether,
+    language: input.language,
+    otpSessionId,
+  });
 }
 
 /**
@@ -1573,7 +1704,15 @@ export async function addDeskAppointment(
   input: {
     salonId: string;
     serviceId: string;
+    /** Optional sequential/concurrent add-ons (is_addon services). Extend the
+     *  appointment block exactly like the public flow so we never undercount
+     *  duration and overlap the next booking. */
+    addonServiceIds?: string[];
+    /** Staff UUID, or BOOKING_ANY_STAFF_ID ("any") to auto-assign the best free
+     *  capable provider — same picker as public/voice bookings. */
     staffId: string;
+    /** Stamp the ❤️ "customer requested this tech" flag (heart icon + report). */
+    staffRequestedByClient?: boolean;
     /** YYYY-MM-DD in salon-local time. */
     bookingDateYmd: string;
     /** Time-slot label as rendered by the grid, e.g. "9:00 AM". */
@@ -1584,7 +1723,7 @@ export async function addDeskAppointment(
     clientNotes?: string | null;
     language?: "en" | "vi";
   },
-): Promise<OkBooking | { ok: false; error: string }> {
+): Promise<OkDeskBooking | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
   if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
@@ -1600,8 +1739,11 @@ export async function addDeskAppointment(
 
   const serviceId = String(input.serviceId ?? "").trim();
   if (!isUuidLike(serviceId)) return fail("invalid_service");
-  const staffId = String(input.staffId ?? "").trim();
-  if (!isUuidLike(staffId)) return fail("invalid_staff");
+
+  // Staff may be a real UUID or the "any available" sentinel.
+  const rawStaffId = String(input.staffId ?? "").trim();
+  const isAnyStaff = rawStaffId === BOOKING_ANY_STAFF_ID;
+  if (!isAnyStaff && !isUuidLike(rawStaffId)) return fail("invalid_staff");
 
   const dateYmd = String(input.bookingDateYmd ?? "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) return fail("invalid_date");
@@ -1616,6 +1758,14 @@ export async function addDeskAppointment(
     clientEmail = emailRaw.toLowerCase();
   }
   const clientNotes = String(input.clientNotes ?? "").trim().slice(0, 500) || null;
+
+  // De-dupe + sanitize add-on ids; an add-on can't be the main service.
+  const addonIds: string[] = Array.isArray(input.addonServiceIds)
+    ? Array.from(
+        new Set(input.addonServiceIds.map((s) => String(s).trim()).filter(isUuidLike)),
+      )
+    : [];
+  if (addonIds.includes(serviceId)) return fail("invalid_addon");
 
   const db = createServiceRoleClient();
 
@@ -1657,24 +1807,158 @@ export async function addDeskAppointment(
   } | null;
   if (!svc || svc.salon_id !== ctx.salon.id || svc.deleted_at) return fail("invalid_service");
 
+  // Add-on durations extend the block (concurrent ones add $0 time); prices sum
+  // into the email total. Validated server-side: must be this salon's live,
+  // is_addon services — never trust client durations/prices.
+  let addonBlockMin = 0;
+  let addonPriceCents = 0;
+  // Display rows for the optimistic grid item (`bookingsForDay[].addons`) — same
+  // shape `loadReceptionistCenterData` builds from `booking_addons`.
+  const optimisticAddons: {
+    name: string;
+    price_cents: number | null;
+    duration_minutes: number;
+    concurrent: boolean;
+  }[] = [];
+  // First add-on, for the legacy single-addon columns on the grid item.
+  let firstAddon: {
+    id: string;
+    name: string;
+    price_cents: number | null;
+    duration_minutes: number;
+    buffer_minutes: number;
+  } | null = null;
+  if (addonIds.length > 0) {
+    const { data: addRows } = await db
+      .from("services")
+      .select("id, name, duration_minutes, buffer_minutes, price_cents, is_addon, addon_timing, salon_id, deleted_at")
+      .in("id", addonIds);
+    const byId = new Map(
+      (addRows ?? []).map((r) => [String((r as { id: string }).id), r]),
+    );
+    for (const id of addonIds) {
+      const a = byId.get(id) as
+        | {
+            name?: string | null;
+            duration_minutes?: number | null;
+            buffer_minutes?: number | null;
+            price_cents?: number | null;
+            is_addon?: unknown;
+            addon_timing?: unknown;
+            salon_id?: string;
+            deleted_at?: string | null;
+          }
+        | undefined;
+      if (!a || a.salon_id !== ctx.salon.id || a.deleted_at || a.is_addon !== true) {
+        return fail("invalid_addon");
+      }
+      const block = (Number(a.duration_minutes) || 0) + (Number(a.buffer_minutes) || 0);
+      if (block <= 0) return fail("invalid_addon");
+      const concurrent = a.addon_timing === "concurrent";
+      if (!concurrent) addonBlockMin += block;
+      addonPriceCents += a.price_cents != null ? Number(a.price_cents) : 0;
+      const addonName = String(a.name ?? "");
+      const addonDuration = Math.max(0, Math.round(Number(a.duration_minutes) || 0));
+      const addonPrice = a.price_cents != null ? Number(a.price_cents) : null;
+      optimisticAddons.push({
+        name: addonName,
+        price_cents: addonPrice,
+        duration_minutes: addonDuration,
+        concurrent,
+      });
+      if (!firstAddon) {
+        firstAddon = {
+          id,
+          name: addonName,
+          price_cents: addonPrice,
+          duration_minutes: addonDuration,
+          buffer_minutes: Math.max(0, Math.round(Number(a.buffer_minutes) || 0)),
+        };
+      }
+    }
+  }
+
   const timezone = ctx.salon.timezone;
   const startUtcIso = salonWallTimeToUtcIso(dateYmd, startMinutes, timezone);
-  const totalMin = (svc.duration_minutes ?? 0) + (svc.buffer_minutes ?? 0);
+  const totalMin = (svc.duration_minutes ?? 0) + (svc.buffer_minutes ?? 0) + addonBlockMin;
   const endUtcIso = new Date(Date.parse(startUtcIso) + totalMin * 60_000).toISOString();
+  const slotStartMs = Date.parse(startUtcIso);
+  const slotEndMs = Date.parse(endUtcIso);
 
-  // Staff name for the confirmation message.
-  const { data: staffRow } = await db
+  // Resolve the staff to book. ALWAYS restrict to active + capable providers so
+  // we mirror the public slot grid and never oversell via an inactive staff row.
+  // The booking must be doable for the main service AND every add-on.
+  const requiredServiceIds = [serviceId, ...addonIds];
+  const { data: staffRows } = await db
     .from("staff")
-    .select("name, salon_id, status")
-    .eq("id", staffId)
-    .maybeSingle();
-  const staff = staffRow as { name?: string; salon_id?: string; status?: string } | null;
-  if (!staff || staff.salon_id !== ctx.salon.id) return fail("invalid_staff");
+    .select("id, name, salon_id, status")
+    .eq("salon_id", ctx.salon.id)
+    .eq("status", "active")
+    .is("deleted_at" as never, null)
+    .order("name", { ascending: true });
+  const activeStaff = (staffRows ?? []).map((r) => ({
+    id: String((r as { id: string }).id),
+    name: String((r as { name?: string }).name ?? ""),
+  }));
+  const { data: capRows } = await db
+    .from("staff_services")
+    .select("staff_id, service_id")
+    .in("staff_id", activeStaff.map((s) => s.id));
+  const capability = buildCapabilityMap(
+    (capRows ?? []).map((r) => ({
+      staff_id: String((r as { staff_id: string }).staff_id),
+      service_id: String((r as { service_id: string }).service_id),
+    })),
+  );
+  const capableStaff = filterStaffCapableForServices(activeStaff, capability, requiredServiceIds);
+  if (capableStaff.length === 0) return fail("no_staff_available");
+
+  let resolvedStaffId: string;
+  let staffName = "";
+  if (isAnyStaff) {
+    // Auto-assign: pick the freest capable provider for this exact block.
+    const range = salonDayRangeUtc(dateYmd, timezone);
+    const { data: occRaw } = await db.rpc("public_booking_occupancy_for_range", {
+      p_salon_id: ctx.salon.id,
+      p_start: range.startUtc,
+      p_end: range.endUtc,
+    } as never);
+    const occupancy = (Array.isArray(occRaw) ? occRaw : []).map(
+      (row) => ({
+        staffId: String((row as { staff_id: string }).staff_id),
+        startMs: Date.parse((row as { start_time_utc: string }).start_time_utc),
+        endMs: Date.parse((row as { end_time_utc: string }).end_time_utc),
+      }),
+    );
+    const freeIds = capableStaff
+      .map((s) => s.id)
+      .filter(
+        (id) =>
+          !occupancy.some(
+            (o) => o.staffId === id && intervalsOverlapMs(slotStartMs, slotEndMs, o.startMs, o.endMs),
+          ),
+      );
+    if (freeIds.length === 0) return fail("time_slot_taken");
+    resolvedStaffId = pickBestStaffAmongFree(
+      freeIds,
+      capableStaff,
+      occupancy,
+      Date.parse(range.startUtc),
+      Date.parse(range.endUtc),
+      slotStartMs,
+    );
+    staffName = capableStaff.find((s) => s.id === resolvedStaffId)?.name ?? "";
+  } else {
+    const chosen = capableStaff.find((s) => s.id === rawStaffId);
+    if (!chosen) return fail("invalid_staff");
+    resolvedStaffId = rawStaffId;
+    staffName = chosen.name;
+  }
 
   const { data: rpcData, error: rpcErr } = await db.rpc("create_public_booking", {
     p_salon_id: ctx.salon.id,
     p_service_id: serviceId,
-    p_staff_id: staffId,
+    p_staff_id: resolvedStaffId,
     p_client_name: clientName,
     p_client_phone: canonicalPhone,
     p_start_time_utc: startUtcIso,
@@ -1698,13 +1982,34 @@ export async function addDeskAppointment(
   }
   const bookingId = result.booking_id;
 
+  // Persist the full add-on list (durations/prices re-derived server-side by the
+  // RPC). Best-effort — the appointment already exists with the correct block.
+  if (addonIds.length > 0) {
+    try {
+      await db.rpc("add_booking_addons", {
+        p_booking_id: bookingId,
+        p_service_ids: addonIds,
+      } as never);
+    } catch {
+      /* best-effort */
+    }
+  }
+
   // Track the phone-in channel (best-effort; `source` stays 'appointment').
   // booking_channel = 'desk' marks this as a front-desk-entered appointment so
-  // reports can separate it from online / Square / Wix.
+  // reports can separate it from online / Square / Wix. The ❤️ staff-request
+  // flag is stamped in the same round-trip when the receptionist ticks it.
   try {
+    const channelUpdate: Record<string, unknown> = {
+      walkin_source: "phone",
+      booking_channel: "desk",
+    };
+    if (input.staffRequestedByClient === true) {
+      channelUpdate.staff_requested_by_client = true;
+    }
     await db
       .from("bookings")
-      .update({ walkin_source: "phone", booking_channel: "desk" } as never)
+      .update(channelUpdate as never)
       .eq("id", bookingId);
   } catch {
     /* best-effort */
@@ -1723,13 +2028,20 @@ export async function addDeskAppointment(
     actorUserId: null,
     actorRole: ctxActorRole(ctx),
     eventType: "booking_created",
-    payload: { source: "desk_phone", staffId, serviceId },
+    payload: {
+      source: "desk_phone",
+      staffId: resolvedStaffId,
+      serviceId,
+      addonServiceIds: addonIds,
+      anyStaff: isAnyStaff,
+      staffRequestedByClient: input.staffRequestedByClient === true,
+    },
   });
 
   // Same confirmation as a public booking (SMS always, email when given).
   const base = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
   const serviceName = svc.name ?? "";
-  const staffName = staff.name ?? "";
+  const totalPriceCents = (svc.price_cents ?? 0) + addonPriceCents;
   after(async () => {
     try {
       await fetch(`${base}/api/booking/sms-confirm`, {
@@ -1763,7 +2075,7 @@ export async function addDeskAppointment(
             serviceName,
             staffName,
             startTimeUtc: startUtcIso,
-            totalPriceCents: svc.price_cents ?? 0,
+            totalPriceCents,
           }),
         });
       } catch {
@@ -1772,5 +2084,54 @@ export async function addDeskAppointment(
     }
   });
 
-  return { ok: true, bookingId };
+  // Build the optimistic grid row in the EXACT `bookingsForDay[number]` shape so
+  // the client can splice it in for an instant render, then reconcile when the
+  // background reload returns the canonical row (same id → replaced). Derived
+  // flags mirror loadReceptionistCenterData's logic for a desk-created booking.
+  const designRe = /(nail\s*art|design)/i;
+  const mainServiceName = svc.name ?? "—";
+  const hasDesignFlag =
+    designRe.test(mainServiceName) ||
+    optimisticAddons.some((a) => designRe.test(a.name));
+  const optimisticBooking: DeskBookingRow = {
+    id: bookingId,
+    client_name: clientName,
+    client_phone: canonicalPhone,
+    client_notes: clientNotes,
+    staff_id: resolvedStaffId,
+    start_time_utc: startUtcIso,
+    end_time_utc: endUtcIso,
+    status: "confirmed",
+    source: "appointment",
+    source_channel: "desk",
+    service_id: serviceId,
+    service_name: mainServiceName,
+    service_duration_minutes: Number(svc.duration_minutes ?? 0),
+    price_cents: svc.price_cents ?? null,
+    service_buffer_minutes: Math.max(0, Math.round(Number(svc.buffer_minutes ?? 0))),
+    joined_queue_at: null,
+    addon_service_id: firstAddon?.id ?? null,
+    addon_service_name: firstAddon?.name ?? null,
+    addon_duration_minutes: firstAddon?.duration_minutes ?? null,
+    addon_buffer_minutes: firstAddon?.buffer_minutes ?? null,
+    addon_price_cents: firstAddon?.price_cents ?? null,
+    addons: optimisticAddons,
+    client_no_show_count: 0,
+    is_vip: false,
+    has_notes: clientNotes != null && clientNotes.trim().length > 0,
+    has_design: hasDesignFlag,
+    has_staff_request: input.staffRequestedByClient === true,
+    group_id: null,
+    group_size: null,
+    seat_together: false,
+    verification_method: null,
+    sms_confirmation_sent_at: null,
+    sms_confirmation_failed_at: null,
+    no_show_risk_score: null,
+    deposit_status: null,
+    deposit_amount_cents: null,
+    wix_booking_id: null,
+  };
+
+  return { ok: true, bookingId, booking: optimisticBooking };
 }

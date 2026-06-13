@@ -39,25 +39,43 @@ async function loadPolicy(db: ReturnType<typeof looseServiceClient>, salonId: st
   };
 }
 
-export async function createDepositForBooking(bookingId: string): Promise<DepositResult> {
+export async function createDepositForBooking(
+  bookingId: string,
+  /** `manual: true` — a receptionist is requesting the deposit at the desk, so
+   *  skip the no-show-risk gate (the human decided it's warranted). The salon
+   *  still has to have Square deposits enabled — that's a config gate, not a
+   *  risk one. */
+  opts?: { manual?: boolean },
+): Promise<DepositResult> {
   const db = looseServiceClient();
   const { data: bRow } = await db
     .from("bookings")
-    .select("id, salon_id, price_cents, no_show_risk_score, deposit_status, square_payment_link_id, deposit_link_url, client_name")
+    .select("id, salon_id, price_cents, no_show_risk_score, deposit_status, deposit_amount_cents, square_payment_link_id, deposit_link_url, client_name")
     .eq("id", bookingId)
     .maybeSingle();
   const b = bRow as Row | null;
   if (!b) return { required: false, reason: "booking not found" };
 
-  // Already has a link -> return it (idempotent).
-  if (b.deposit_link_url) return { required: true, reason: "existing link", url: str(b.deposit_link_url), amountCents: undefined };
+  // Already has a link -> return it (idempotent). Surface the stored amount so
+  // callers (e.g. the SMS sender) don't have to re-read the booking.
+  if (b.deposit_link_url) {
+    return {
+      required: true,
+      reason: "existing link",
+      url: str(b.deposit_link_url),
+      amountCents: num(b.deposit_amount_cents) || undefined,
+    };
+  }
 
   const salonId = str(b.salon_id);
   const policy = await loadPolicy(db, salonId);
   if (!policy.enabled) return { required: false, reason: "deposits disabled for salon" };
 
   const risk = num(b.no_show_risk_score);
-  if (risk < policy.threshold) return { required: false, reason: `risk ${risk} < threshold ${policy.threshold}` };
+  const manual = opts?.manual === true;
+  if (!manual && risk < policy.threshold) {
+    return { required: false, reason: `risk ${risk} < threshold ${policy.threshold}` };
+  }
 
   const amountCents = Math.max(100, Math.round(num(b.price_cents) * policy.percent / 100));
   const cfg = await getSquareConfig(db, salonId);
@@ -73,7 +91,9 @@ export async function createDepositForBooking(bookingId: string): Promise<Deposi
     deposit_required: true,
     deposit_amount_cents: amountCents,
     deposit_status: "required",
-    deposit_reason: `no_show_risk ${risk} >= ${policy.threshold}`,
+    deposit_reason: manual
+      ? "manual desk request"
+      : `no_show_risk ${risk} >= ${policy.threshold}`,
     square_payment_link_id: link.id,
     square_deposit_order_id: link.orderId,
     deposit_link_url: link.url,

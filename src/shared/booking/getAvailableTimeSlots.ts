@@ -70,7 +70,7 @@ function formatSlotLabel(d: Date): string {
 /** Salon-local minutes-from-midnight → "h:mm AM/PM" (no timezone dependency).
  *  Used by the salon-tz code path so labels are the salon's wall-clock time
  *  regardless of the customer's device timezone. */
-function minutesToLabel(mins: number): string {
+export function minutesToLabel(mins: number): string {
   const h24 = Math.floor(mins / 60);
   const m = mins % 60;
   const period = h24 >= 12 ? "PM" : "AM";

@@ -114,7 +114,7 @@ import {
   canUndoCancel,
   type SalonMemberRole,
 } from "@/shared/lib/salonMemberRole";
-import { formatInSalonTz, salonDateOffset, salonToday } from "@/shared/lib/salonTime";
+import { formatInSalonTz, salonDateOffset, salonToday, salonYmdOfUtc } from "@/shared/lib/salonTime";
 import { useSoundAlerts } from "@/shared/lib/useSoundAlerts";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import {
@@ -126,6 +126,7 @@ import { BookingLimitBanner } from "@/components/dashboard/BookingLimitBanner";
 import { PartyCardPanel } from "@/components/receptionist/PartyCardPanel";
 import { AttentionChipBar } from "@/components/receptionist/AttentionChipBar";
 import DeskBookingForm from "@/components/receptionist/DeskBookingForm";
+import DeskGroupForm from "@/components/receptionist/DeskGroupForm";
 import type { PartyCard } from "@/shared/dashboard/loadPartyCardsAction";
 
 export type ReceptionistCenterProps = {
@@ -413,6 +414,29 @@ function ReceptionistCenterInner({
 
   const undoVisible = undoState !== null;
 
+  // Transient error toast (e.g. a drag-to-reschedule rejected by the server —
+  // past date, slot conflict). Auto-clears so it never lingers.
+  const [errorToast, setErrorToast] = useState<string | null>(null);
+  const errorToastTimerRef = useRef<number | null>(null);
+  const showErrorToast = useCallback((message: string) => {
+    setErrorToast(message);
+    if (errorToastTimerRef.current) window.clearTimeout(errorToastTimerRef.current);
+    errorToastTimerRef.current = window.setTimeout(() => setErrorToast(null), 4500);
+  }, []);
+  useEffect(
+    () => () => {
+      if (errorToastTimerRef.current) window.clearTimeout(errorToastTimerRef.current);
+    },
+    [],
+  );
+
+  // Bumped on every booking mutation (via reloadCurrentDay, which every
+  // mutation + realtime change funnels through). Week/Month views include it
+  // in their fetch deps so they refetch after a cancel/reschedule done from
+  // their own drawer — otherwise a booking cancelled while in Week view lingers
+  // in that view's local cache (its deps never changed). (QA #5.)
+  const [calendarRefreshNonce, setCalendarRefreshNonce] = useState(0);
+
   useEffect(() => {
     return () => {
       if (undoTimerRef.current !== null) window.clearInterval(undoTimerRef.current);
@@ -443,7 +467,10 @@ function ReceptionistCenterInner({
 
   useEffect(() => {
     if (!shakeMessage) return;
-    const t = window.setTimeout(() => setShakeMessage(null), 2400);
+    // 5s, not 2.4s: shakeMessage carries actionable errors ("Conflict with
+    // {name}", assign failures) the receptionist must read to understand why an
+    // action didn't land. 2.4s flashed too fast to read — and to assert in E2E.
+    const t = window.setTimeout(() => setShakeMessage(null), 5000);
     return () => window.clearTimeout(t);
   }, [shakeMessage]);
 
@@ -614,6 +641,17 @@ function ReceptionistCenterInner({
   const [addFocusNonce, setAddFocusNonce] = useState(0);
   // Desk "New appointment" modal — books a phone-in customer for a future date.
   const [deskBookingOpen, setDeskBookingOpen] = useState(false);
+  // Prefill for the desk form when opened by clicking an empty grid slot
+  // (staff + day + time). Null when opened via the header button (blank form).
+  const [deskPrefill, setDeskPrefill] = useState<{
+    staffId: string;
+    ymd: string;
+    slotLabel: string;
+  } | null>(null);
+  // Desk group booking — gated on the per-salon `group_booking` flag (same
+  // flag the PartyCardPanel uses). Mounts DeskGroupForm which reuses the
+  // public group scheduler + submit engine end-to-end.
+  const [deskGroupOpen, setDeskGroupOpen] = useState(false);
   const openWalkinAdd = useCallback(() => {
     setQueuePanelOpen(true);
     setAddFocusNonce((n) => n + 1);
@@ -839,6 +877,8 @@ function ReceptionistCenterInner({
     } else {
       setShakeMessage(loadErrorCopy(messages.receptionist, res.error));
     }
+    // Keep Week/Month views in sync with this mutation (QA #5).
+    setCalendarRefreshNonce((n) => n + 1);
   }, [slug, timezone, dateOffset, messages.receptionist, markSynced]);
 
   /**
@@ -1315,6 +1355,10 @@ function ReceptionistCenterInner({
       depositStatus: b.deposit_status ?? null,
       depositPaidLine,
       remainingLine,
+      // Square deposits config (stable per session, like currencyCode) + the
+      // dashboard language so the desk can request + text a deposit link.
+      depositsEnabled: data.salon.depositsEnabled,
+      language,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ARCHITECTURE_LOCK: data.salon.currencyCode is intentionally omitted; it never changes within a session and adding it would cause memo churn
   }, [
@@ -1324,6 +1368,7 @@ function ReceptionistCenterInner({
     staffNameById,
     messages,
     timezone,
+    language,
   ]);
 
   const openDrawerBooking = drawerBookingId
@@ -2283,7 +2328,12 @@ function ReceptionistCenterInner({
                   variant="secondary"
                   size="sm"
                   data-testid="header-add-appointment"
-                  onClick={() => setDeskBookingOpen(true)}
+                  onClick={() => {
+                    // Header button opens a BLANK form — clear any stale
+                    // grid-slot prefill first.
+                    setDeskPrefill(null);
+                    setDeskBookingOpen(true);
+                  }}
                 >
                   {language === "vi" ? "+ Hẹn mới" : "+ New appt"}
                 </Button>
@@ -2293,7 +2343,58 @@ function ReceptionistCenterInner({
                   slug={slug}
                   salonId={data.salon.id}
                   language={language}
-                  onClose={() => setDeskBookingOpen(false)}
+                  initialStaffId={deskPrefill?.staffId}
+                  initialYmd={deskPrefill?.ymd}
+                  initialSlotLabel={deskPrefill?.slotLabel}
+                  onClose={() => {
+                    setDeskBookingOpen(false);
+                    setDeskPrefill(null);
+                  }}
+                  onCreated={(booking) => {
+                    setDeskPrefill(null);
+                    // Optimistic insert: if the new booking falls on the day the
+                    // receptionist is currently viewing (salon-local), splice it
+                    // into the grid immediately so it shows without waiting for
+                    // the full-day reload. The background reload below then
+                    // replaces it with the canonical row (same id → no dupe).
+                    if (booking) {
+                      const bookingYmd = salonYmdOfUtc(
+                        booking.start_time_utc,
+                        data.salon.timezone,
+                      );
+                      if (bookingYmd === data.selectedDate) {
+                        setData((d) =>
+                          d.bookingsForDay.some((b) => b.id === booking.id)
+                            ? d
+                            : {
+                                ...d,
+                                bookingsForDay: [...d.bookingsForDay, booking],
+                              },
+                        );
+                      }
+                    }
+                    void reloadCurrentDay();
+                  }}
+                />
+              ) : null}
+              {/* "Group" — book a group/party for a future date. Gated on the
+                 same per-salon `group_booking` flag as the party-card strip. */}
+              {viewMode === "day" && groupBookingEnabled ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  data-testid="header-add-group"
+                  onClick={() => setDeskGroupOpen(true)}
+                >
+                  {language === "vi" ? "+ Nhóm" : "+ Group"}
+                </Button>
+              ) : null}
+              {deskGroupOpen ? (
+                <DeskGroupForm
+                  slug={slug}
+                  salonId={data.salon.id}
+                  language={language}
+                  onClose={() => setDeskGroupOpen(false)}
                   onCreated={() => {
                     void reloadCurrentDay();
                   }}
@@ -2533,6 +2634,7 @@ function ReceptionistCenterInner({
             messages={rcMessages.monthView}
             removedGuest={rcMessages.removedGuest}
             hint={calendarHint}
+            refreshNonce={calendarRefreshNonce}
             onDayClick={(ymd) => {
               // Switch to Day view for the tapped date.
               onChangeViewMode("day");
@@ -2576,6 +2678,7 @@ function ReceptionistCenterInner({
             messages={rcMessages.weekView}
             removedGuest={rcMessages.removedGuest}
             hint={calendarHint}
+            refreshNonce={calendarRefreshNonce}
             onDayClick={(ymd) => {
               // Tapping a day flips back to Day view and (when the day
               // is yesterday/today/tomorrow) slots into the existing
@@ -2680,6 +2783,11 @@ function ReceptionistCenterInner({
               existingBookings={gridBookings}
               onBookingClick={(id) => setDrawerBookingId(id)}
               onSlotClick={(staffId, utc) => void onWalkinAssignSlot(staffId, utc)}
+              onEmptySlotClick={(staffId, ymd, slotLabel) => {
+                // Click an empty grid slot → open the desk form prefilled.
+                setDeskPrefill({ staffId, ymd, slotLabel });
+                setDeskBookingOpen(true);
+              }}
               onRescheduleBooking={async (bookingId, newStaffId, newStartUtc) => {
                 const booking = data.bookingsForDay.find((b) => b.id === bookingId);
                 if (!booking) return { ok: false, error: "not_found" };
@@ -2695,6 +2803,17 @@ function ReceptionistCenterInner({
                   router.refresh();
                   return { ok: true };
                 }
+                // Surface WHY the drop snapped back, instead of failing silently.
+                const failCopy = rcMessages.grid.rescheduleFailed;
+                const reason =
+                  result.error === "past_date"
+                    ? failCopy.past_date
+                    : result.error === "slot_conflict"
+                      ? failCopy.slot_conflict
+                      : result.error === "staff_cannot_perform_service"
+                        ? failCopy.staff_cannot_perform_service
+                        : failCopy.generic;
+                showErrorToast(reason);
                 return { ok: false, error: result.error };
               }}
               labels={{
@@ -2881,6 +3000,33 @@ function ReceptionistCenterInner({
         onUndo={() => void onUndoToastUndo()}
         onDismiss={() => setUndoState(null)}
       />
+
+      {/* Transient error toast — explains a rejected drag-to-reschedule. */}
+      <div
+        data-testid="reschedule-error-toast"
+        aria-live="assertive"
+        className={cn(
+          "fixed bottom-6 left-1/2 z-50 flex max-w-[min(100vw-2rem,26rem)] -translate-x-1/2 px-4",
+          "motion-safe:transition-[transform,opacity] motion-safe:duration-300 motion-safe:ease-[var(--ease-nq-out,cubic-bezier(0.22,1,0.36,1))]",
+          errorToast
+            ? "translate-y-0 opacity-100"
+            : "pointer-events-none translate-y-3 opacity-0",
+        )}
+        aria-hidden={!errorToast}
+        inert={!errorToast}
+      >
+        <div className="flex w-full items-start gap-3 rounded-xl border-2 border-nq-error bg-nq-surface p-4 shadow-nq-card">
+          <span
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-nq-error text-sm font-semibold leading-none text-white"
+            aria-hidden
+          >
+            !
+          </span>
+          <p className="min-w-0 flex-1 pt-1 text-sm font-medium leading-snug text-nq-foreground">
+            {errorToast}
+          </p>
+        </div>
+      </div>
 
       <BookingDetailDrawer
         open={drawerBookingId !== null && detailModel !== null}

@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { editBookingAction } from "@/shared/dashboard/editBookingAction";
+import { getDeskBookingData } from "@/shared/dashboard/receptionistActions";
+import {
+  getAvailableTimeSlots,
+  type TimeSlot,
+} from "@/shared/booking/getAvailableTimeSlots";
 import type { ReceptionistMessages } from "@/shared/i18n/user";
 import {
   buildCapabilityMap,
@@ -11,6 +16,7 @@ import {
 } from "@/shared/booking/staffCapability";
 import {
   formatInSalonTz,
+  salonToday,
   salonWallTimeToUtcIso,
   utcIsoToSalonMinutesFromMidnight,
 } from "@/shared/lib/salonTime";
@@ -32,39 +38,42 @@ export type EditBookingFormBooking = SalonDashboardBooking & {
   addon_price_cents: number | null;
 };
 
-const SLOT_START_MIN = 8 * 60;
-const SLOT_END_MIN = 19 * 60 + 30;
+type DeskData = Extract<
+  Awaited<ReturnType<typeof getDeskBookingData>>,
+  { ok: true }
+>["data"];
 
-function slotMinutesOptions(): number[] {
-  const out: number[] = [];
-  for (let m = SLOT_START_MIN; m <= SLOT_END_MIN; m += 30) {
-    out.push(m);
-  }
-  return out;
+/** Salon-local minutes-from-midnight → "h:mm AM/PM". MUST stay byte-identical to
+ *  the `minutesToLabel` helper inside getAvailableTimeSlots so we can match the
+ *  booking's original slot against grid labels by string (Intl can emit a narrow
+ *  no-break space, which would break that match). */
+function minutesToSlotLabel(mins: number): string {
+  const h24 = Math.floor(mins / 60);
+  const m = mins % 60;
+  const period = h24 >= 12 ? "PM" : "AM";
+  let h = h24 % 12;
+  if (h === 0) h = 12;
+  return `${h}:${String(m).padStart(2, "0")} ${period}`;
 }
 
-function slotLabel(dayYmd: string, minutesFromMidnight: number, timezone: string): string {
-  const utc = salonWallTimeToUtcIso(dayYmd, minutesFromMidnight, timezone);
-  return formatInSalonTz(utc, timezone, "time");
+/** Parse a grid slot label ("9:00 AM") back to minutes-from-midnight. Inverse of
+ *  `minutesToSlotLabel`; used to build the UTC start instant on save. */
+function slotLabelToMinutes(label: string): number | null {
+  const m = label.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!m) return null;
+  let h = Number(m[1]) % 12;
+  const min = Number(m[2]);
+  if (m[3].toUpperCase() === "PM") h += 12;
+  const total = h * 60 + min;
+  if (!Number.isFinite(total) || total < 0 || total >= 24 * 60) return null;
+  return total;
 }
 
-function nearestSlotMinutes(bookingMinutes: number, slots: number[]): number {
-  let best = slots[0] ?? SLOT_START_MIN;
-  let bestDist = Math.abs(best - bookingMinutes);
-  for (const s of slots) {
-    const d = Math.abs(s - bookingMinutes);
-    if (d < bestDist) {
-      best = s;
-      bestDist = d;
-    }
-  }
-  return best;
-}
-
-function initialSlotForBooking(bookingMinutes: number, slots: number[]): number {
-  return slots.includes(bookingMinutes)
-    ? bookingMinutes
-    : nearestSlotMinutes(bookingMinutes, slots);
+/** Local-noon Date for a YYYY-MM-DD (passed to getAvailableTimeSlots as the
+ *  selectedDate anchor — same convention as DeskBookingForm). */
+function ymdToLocalNoon(ymd: string): Date {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1, 12, 0, 0);
 }
 
 function sameUtcInstant(a: string, b: string): boolean {
@@ -88,6 +97,9 @@ export interface EditBookingFormProps {
   }[];
   /** Per-staff service whitelist for the salon. `null` = no rows → all-capable fallback. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
+  /** Booking's original salon-local day (YYYY-MM-DD). Kept for back-compat; the
+   *  form now derives the initial day from the booking start so the day picker
+   *  can move off it. */
   dayYmd: string;
   timezone: string;
   /**
@@ -115,7 +127,9 @@ export function EditBookingForm({
   staff,
   services,
   capabilityRows,
-  dayYmd,
+  // `dayYmd` stays in the props interface for caller back-compat but is no longer
+  // read here — the initial day is derived from the booking's start instant
+  // (salon-tz), the canonical source, so the day picker can move off it.
   timezone,
   isOffline = false,
   offlineEditDisabledHint,
@@ -124,17 +138,30 @@ export function EditBookingForm({
   rcMessages,
   currency,
 }: EditBookingFormProps) {
-  const slots = useMemo(() => slotMinutesOptions(), []);
-
   const originalStaff = booking.staff_id;
   const originalService = booking.service_id;
-  const originalTimeMinutes = useMemo(() => {
-    return utcIsoToSalonMinutesFromMidnight(booking.start_time_utc, timezone);
-  }, [booking.start_time_utc, timezone]);
 
-  const [selectedTimeMinutes, setSelectedTimeMinutes] = useState(() =>
-    initialSlotForBooking(originalTimeMinutes, slots),
+  // Booking's original salon-local day + slot label — the day picker initializes
+  // here and the self-occupancy fix keys off them.
+  const originalDayYmd = useMemo(
+    () => salonToday(timezone, booking.start_time_utc),
+    [timezone, booking.start_time_utc],
   );
+  const originalTimeMinutes = useMemo(
+    () => utcIsoToSalonMinutesFromMidnight(booking.start_time_utc, timezone),
+    [booking.start_time_utc, timezone],
+  );
+  const originalSlotLabel = useMemo(
+    () => minutesToSlotLabel(originalTimeMinutes),
+    [originalTimeMinutes],
+  );
+
+  // Today in salon tz — `min` for the date input so the desk can't reschedule
+  // into the past.
+  const minDayYmd = useMemo(() => salonToday(timezone), [timezone]);
+
+  const [selectedDay, setSelectedDay] = useState(originalDayYmd);
+  const [selectedSlotLabel, setSelectedSlotLabel] = useState(originalSlotLabel);
   const [selectedStaff, setSelectedStaff] = useState(originalStaff);
   const [selectedService, setSelectedService] = useState(originalService);
   // `selectedAddon === ""` represents "no add-on" (matches the empty
@@ -144,6 +171,23 @@ export function EditBookingForm({
   const [selectedAddon, setSelectedAddon] = useState<string>(originalAddon);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Salon meta (opening hours / closures / lead time) + add-ons — fetched once,
+  // exactly like DeskBookingForm, so the grid shows REAL open times.
+  const [deskData, setDeskData] = useState<DeskData | null>(null);
+  const [slots, setSlots] = useState<TimeSlot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getDeskBookingData(slug).then((res) => {
+      if (cancelled) return;
+      if (res.ok) setDeskData(res.data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
 
   const selectedSvc = useMemo(
     () => services.find((s) => s.id === selectedService),
@@ -187,68 +231,208 @@ export function EditBookingForm({
     }
   }, [capableStaff, selectedStaff, originalStaff]);
 
-  /** Resolved add-on row for the current select value; null when "None". */
+  /** Resolved add-on row for the current select value; null when "None".
+   *  Add-ons come from getDeskBookingData (already filtered by `is_addon`). */
   const selectedAddonSvc = useMemo(() => {
-    if (!selectedAddon) return null;
-    return services.find((s) => s.id === selectedAddon) ?? null;
-  }, [selectedAddon, services]);
+    if (!selectedAddon || !deskData) return null;
+    return deskData.addOns.find((s) => s.id === selectedAddon) ?? null;
+  }, [selectedAddon, deskData]);
 
   /** Add-on contribution (duration + buffer) — recomputes live as the
    *  receptionist swaps the select. Returns 0 when no add-on selected. */
   const addonSpanMinutes = useMemo(() => {
     if (!selectedAddonSvc) return 0;
-    const dur = Math.max(0, Math.round(Number(selectedAddonSvc.duration_minutes ?? 0)));
-    const buf = Math.max(0, Math.round(Number(selectedAddonSvc.buffer_minutes ?? 0)));
+    const dur = Math.max(0, Math.round(Number(selectedAddonSvc.durationMinutes ?? 0)));
+    const buf = Math.max(0, Math.round(Number(selectedAddonSvc.bufferMinutes ?? 0)));
     return dur + buf;
   }, [selectedAddonSvc]);
 
-  const endTimeDisplay = useMemo(() => {
-    if (!selectedSvc) return "—";
-    const startUtc = salonWallTimeToUtcIso(dayYmd, selectedTimeMinutes, timezone);
+  /** Total service span (main duration + buffer + add-on span). Drives both the
+   *  availability grid and the end-time preview. */
+  const totalSpanMinutes = useMemo(() => {
+    if (!selectedSvc) return 0;
     const mainTotal =
       Number(selectedSvc.duration_minutes) + Number(selectedSvc.buffer_minutes);
-    if (!Number.isFinite(mainTotal) || mainTotal < 1) return "—";
-    const total = mainTotal + addonSpanMinutes;
-    const endMs = Date.parse(startUtc) + total * 60 * 1000;
+    if (!Number.isFinite(mainTotal) || mainTotal < 1) return 0;
+    return mainTotal + addonSpanMinutes;
+  }, [selectedSvc, addonSpanMinutes]);
+
+  const closedDateYmdSet = useMemo(() => {
+    const raw = deskData?.salon.booking_closed_dates;
+    return new Set(Array.isArray(raw) ? (raw as string[]) : []);
+  }, [deskData]);
+
+  const shortestServiceMinutes = useMemo(
+    () => (deskData ? Math.min(...deskData.services.map((s) => s.totalMinutes)) : 0),
+    [deskData],
+  );
+
+  // getAvailableTimeSlots wants `BookingStaffItem` (incl. job_role). The edit
+  // form's `staff` prop is {id,name} only, so recover job_role from deskData
+  // when present (job_role is only consulted on the ANY-staff path, which edit
+  // never uses — a concrete staff is always selected — so the fallback is safe).
+  const slotStaffList = useMemo(
+    () =>
+      capableStaff.map((s) => ({
+        id: s.id,
+        name: s.name,
+        job_role: deskData?.staff.find((d) => d.id === s.id)?.job_role ?? "",
+      })),
+    [capableStaff, deskData],
+  );
+
+  // Compute the availability grid whenever the inputs that affect it change.
+  // EDGE — self-occupancy: getAvailableTimeSlots fetches ALL occupancy, which
+  // INCLUDES this very booking, so on the booking's original day its current
+  // slot comes back `available: false`. We patch it back to available because
+  // the only thing blocking it is the booking we're editing, and the server
+  // (`performEditBooking`) passes `excludeBookingId`, so saving onto the
+  // original time is safe. We also inject the original slot if it isn't on the
+  // grid at all (e.g. an off-grid start time).
+  useEffect(() => {
+    if (!deskData || !selectedSvc || !selectedStaff || !selectedDay || totalSpanMinutes < 1) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale grid when inputs incomplete
+      setSlots([]);
+      return;
+    }
+    if (selectedDay < minDayYmd) {
+      // Can't reschedule into the past — mirror the grid drag-drop guard + the
+      // server check. No available times → Save stays disabled.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear grid for a past day
+      setSlots([]);
+      return;
+    }
+    let cancelled = false;
+    setSlotsLoading(true);
+    void getAvailableTimeSlots({
+      salonId,
+      openingHoursRaw: deskData.salon.opening_hours,
+      selectedDate: ymdToLocalNoon(selectedDay),
+      staffId: selectedStaff,
+      staffList: slotStaffList,
+      serviceDurationMinutes: totalSpanMinutes,
+      closedDateYmdSet,
+      shortestServiceMinutes,
+      leadMinutes: deskData.salon.bookingLeadMinutes,
+      timezone,
+    })
+      .then((res) => {
+        if (cancelled) return;
+        let next = res;
+        // Self-occupancy patch: only on the booking's original day, force the
+        // original slot to be selectable again.
+        if (selectedDay === originalDayYmd) {
+          let found = false;
+          next = res.map((s) => {
+            if (s.label === originalSlotLabel) {
+              found = true;
+              return { ...s, available: true };
+            }
+            return s;
+          });
+          if (!found) {
+            // Original start isn't on the grid (off-grid time) — inject it.
+            next = [{ label: originalSlotLabel, available: true }, ...next];
+          }
+          // Re-sort: getAvailableTimeSlots orders available-first then
+          // chronological, but forcing the original slot to available (above)
+          // leaves it in its old unavailable position (end of list), so "4:00 PM"
+          // showed up after "5:45 PM". Sort again so times read in order.
+          next = [...next].sort((a, b) => {
+            const av = (b.available ? 1 : 0) - (a.available ? 1 : 0);
+            if (av !== 0) return av;
+            return (slotLabelToMinutes(a.label) ?? 0) - (slotLabelToMinutes(b.label) ?? 0);
+          });
+        }
+        setSlots(next);
+      })
+      .finally(() => {
+        if (!cancelled) setSlotsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    deskData,
+    selectedSvc,
+    selectedStaff,
+    selectedDay,
+    totalSpanMinutes,
+    salonId,
+    slotStaffList,
+    closedDateYmdSet,
+    shortestServiceMinutes,
+    timezone,
+    originalDayYmd,
+    originalSlotLabel,
+  ]);
+
+  // When returning to the original day, default the selection back to the
+  // original slot so an unchanged form stays a no-op.
+  useEffect(() => {
+    if (selectedDay === originalDayYmd) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- restore original slot when the receptionist navigates back to the booking's day
+      setSelectedSlotLabel(originalSlotLabel);
+    }
+  }, [selectedDay, originalDayYmd, originalSlotLabel]);
+
+  const availableSlots = useMemo(() => slots.filter((s) => s.available), [slots]);
+
+  const endTimeDisplay = useMemo(() => {
+    if (!selectedSvc || totalSpanMinutes < 1) return "—";
+    const startMin = slotLabelToMinutes(selectedSlotLabel);
+    if (startMin == null) return "—";
+    const startUtc = salonWallTimeToUtcIso(selectedDay, startMin, timezone);
+    const endMs = Date.parse(startUtc) + totalSpanMinutes * 60 * 1000;
     if (Number.isNaN(endMs)) return "—";
     return formatInSalonTz(new Date(endMs).toISOString(), timezone, "time");
-  }, [dayYmd, selectedSvc, selectedTimeMinutes, timezone, addonSpanMinutes]);
+  }, [selectedDay, selectedSvc, selectedSlotLabel, timezone, totalSpanMinutes]);
 
   const priceDisplay = useMemo(() => {
     if (!selectedSvc) return "—";
     const mainCents = Number(selectedSvc.price_cents);
     if (!Number.isFinite(mainCents)) return "—";
     const addonCents = selectedAddonSvc
-      ? Number(selectedAddonSvc.price_cents ?? 0)
+      ? Number(selectedAddonSvc.priceCents ?? 0)
       : 0;
     const total = mainCents + (Number.isFinite(addonCents) ? addonCents : 0);
     // P0.2 — render in the salon's currency.
     return formatCurrency(total, currency) ?? "—";
   }, [selectedSvc, selectedAddonSvc, currency]);
 
-  const proposedStartUtc = useMemo(
-    () => salonWallTimeToUtcIso(dayYmd, selectedTimeMinutes, timezone),
-    [dayYmd, selectedTimeMinutes, timezone],
-  );
+  const proposedStartUtc = useMemo(() => {
+    const startMin = slotLabelToMinutes(selectedSlotLabel);
+    if (startMin == null) return null;
+    return salonWallTimeToUtcIso(selectedDay, startMin, timezone);
+  }, [selectedDay, selectedSlotLabel, timezone]);
 
   const hasChanges =
-    !sameUtcInstant(proposedStartUtc, booking.start_time_utc) ||
+    (proposedStartUtc != null &&
+      !sameUtcInstant(proposedStartUtc, booking.start_time_utc)) ||
     selectedStaff !== originalStaff ||
     selectedService !== originalService ||
     selectedAddon !== originalAddon;
+
+  // Block Save on a past day (mirrors the server past_date guard + the grid
+  // drag-drop). Keep it day-level, NOT "selected slot must be in the freshly
+  // computed list" — the slot list re-loads async on a staff/service change, so
+  // a stricter check would wrongly disable Save for an unchanged-time edit.
+  const isPastDay = selectedDay < minDayYmd;
 
   const editCopy = rcMessages.edit;
   const addonCopy = rcMessages.editAddon;
 
   const handleSave = async () => {
+    const startMin = slotLabelToMinutes(selectedSlotLabel);
+    if (startMin == null) {
+      setError(editCopy.serverErrorMessage);
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
-    const newStartTimeUtc = salonWallTimeToUtcIso(
-      dayYmd,
-      selectedTimeMinutes,
-      timezone,
-    );
+    const newStartTimeUtc = salonWallTimeToUtcIso(selectedDay, startMin, timezone);
 
     const result = await editBookingAction(slug, {
       salonId,
@@ -287,6 +471,9 @@ export function EditBookingForm({
       case "invalid_status":
         setError(editCopy.invalid_statusMessage);
         break;
+      case "past_date":
+        setError(editCopy.pastDateMessage);
+        break;
       case "server_error":
         setError(editCopy.serverErrorMessage);
         break;
@@ -303,23 +490,21 @@ export function EditBookingForm({
       <div className="grid gap-3 sm:grid-cols-1">
         <label className="block space-y-1">
           <span className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
-            {editCopy.timeLabel}
+            {editCopy.dateLabel}
           </span>
-          <select
-            data-testid="edit-time-select"
+          <input
+            type="date"
+            data-testid="edit-date-input"
+            // `[color-scheme:dark]` keeps the native calendar icon legible on
+            // the dark drawer background.
             className={cn(
-              "min-h-11 w-full rounded-lg border border-nq-muted/40 bg-nq-bg px-3 text-sm text-nq-foreground",
+              "min-h-11 w-full rounded-lg border border-nq-muted/40 bg-nq-bg px-3 text-sm text-nq-foreground [color-scheme:dark]",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/40",
             )}
-            value={String(selectedTimeMinutes)}
-            onChange={(e) => setSelectedTimeMinutes(Number(e.target.value))}
-          >
-            {slots.map((m) => (
-              <option key={m} value={String(m)}>
-                {slotLabel(dayYmd, m, timezone)}
-              </option>
-            ))}
-          </select>
+            min={minDayYmd}
+            value={selectedDay}
+            onChange={(e) => setSelectedDay(e.target.value)}
+          />
         </label>
 
         <label className="block space-y-1">
@@ -386,21 +571,66 @@ export function EditBookingForm({
             onChange={(e) => setSelectedAddon(e.target.value)}
           >
             <option value="">{addonCopy.none}</option>
-            {services.map((s) => {
-              const priceText =
-                formatServicePrice(Number(s.price_cents), currency, {
-                  priceType: s.price_type,
-                  priceMaxCents: s.price_max_cents,
-                }) ?? "—";
-              const dur = Number(s.duration_minutes);
-              return (
-                <option key={s.id} value={s.id}>
-                  {`${s.name} · ${dur}m · ${priceText}`}
-                </option>
-              );
-            })}
+            {/* Add-ons only (is_addon) — never the main-service catalog. */}
+            {(deskData?.addOns ?? []).map((s) => (
+              <option key={s.id} value={s.id}>
+                {`${s.name} · ${s.durationMinutes}m${s.priceDisplay ? ` · ${s.priceDisplay}` : ""}`}
+              </option>
+            ))}
           </select>
         </label>
+
+        {/* Real availability grid (reuses getAvailableTimeSlots), replacing the
+            old static 30-min dropdown. */}
+        <div className="block space-y-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+            {editCopy.timeLabel}
+          </span>
+          {slotsLoading ? (
+            <p className="text-xs text-nq-muted" data-testid="edit-slots-loading">
+              {editCopy.slotsLoading}
+            </p>
+          ) : availableSlots.length === 0 ? (
+            <p className="text-xs text-nq-muted" data-testid="edit-no-slots">
+              {editCopy.noSlots}
+            </p>
+          ) : (
+            <div
+              className="grid max-h-40 grid-cols-3 gap-1.5 overflow-y-auto rounded-lg border border-nq-muted/30 bg-nq-bg p-1.5"
+              data-testid="edit-time-grid"
+            >
+              {availableSlots.map((s) => {
+                // Stable per-slot testid keyed by minutes-from-midnight (salon
+                // wall-clock), derived from the label so it never depends on the
+                // localized display string. `slotLabelToMinutes` is the exact
+                // inverse of `minutesToLabel`/`minutesToSlotLabel`, so a label
+                // like "11:00 AM" → 660. Falls back to a label-slug only if a
+                // label is somehow unparseable (defensive; shouldn't happen).
+                const slotMinutes = slotLabelToMinutes(s.label);
+                const slotTestId =
+                  slotMinutes != null
+                    ? `edit-time-slot-${slotMinutes}`
+                    : `edit-time-slot-${s.label.replace(/\s+/g, "-")}`;
+                return (
+                <button
+                  key={s.label}
+                  type="button"
+                  data-testid={slotTestId}
+                  onClick={() => setSelectedSlotLabel(s.label)}
+                  className={cn(
+                    "min-h-9 rounded px-1 py-1.5 text-xs transition",
+                    selectedSlotLabel === s.label
+                      ? "bg-nq-primary text-white"
+                      : "bg-nq-surface text-nq-foreground hover:bg-nq-primary/15",
+                  )}
+                >
+                  {s.label}
+                </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="space-y-1 text-sm text-nq-muted">
@@ -454,7 +684,7 @@ export function EditBookingForm({
           data-testid="edit-save-button"
           className="w-full sm:w-auto"
           loading={saving}
-          disabled={!hasChanges || saving || isOffline}
+          disabled={!hasChanges || isPastDay || saving || isOffline}
           title={
             isOffline
               ? offlineEditDisabledHint

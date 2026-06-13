@@ -307,7 +307,12 @@ export function BookingBlock(props: BookingBlockProps) {
   // 52px, Pro 44px) without breaking the timeline math.
   const isDraggable = !!onPointerDown && (status === "pending" || status === "confirmed");
   const commonClass = cn(
-    "absolute top-1.5 bottom-1.5 rounded-lg px-2.5 py-1.5 text-left shadow-none transition-[transform,box-shadow,opacity] duration-[var(--duration-nq-fast)] ease-[var(--ease-nq-out)] motion-safe:hover:-translate-y-px motion-safe:hover:shadow-nq-card",
+    // pointer-events-auto: the timeline wraps blocks in a pointer-events-none
+    // layer (so clicks on EMPTY gaps fall through to the slot-create layer
+    // below). pointer-events is inherited, so each block must explicitly
+    // re-enable it or the wrapper's `none` cascades in and the block becomes
+    // unclickable (no drawer, no drag).
+    "pointer-events-auto absolute top-1.5 bottom-1.5 rounded-lg px-2.5 py-1.5 text-left shadow-none transition-[transform,box-shadow,opacity] duration-[var(--duration-nq-fast)] ease-[var(--ease-nq-out)] motion-safe:hover:-translate-y-px motion-safe:hover:shadow-nq-card",
     minHeightPx === undefined && "min-h-[3.25rem]",
     styles.root,
     isWalkin && showWalkinAccent && "border-l-[3px] border-nq-primary",

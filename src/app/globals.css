@@ -667,3 +667,19 @@
     transform: none;
   }
 }
+
+/* Native date/time inputs — the dashboard + booking surfaces are dark, but the
+   browser renders native pickers (value text + the calendar-picker icon) in
+   light mode by default, so the icon turns near-invisible on the dark bg and
+   users can't see where to click to open the calendar. Render them dark. */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"] {
+  color-scheme: dark;
+}
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.9;
+}

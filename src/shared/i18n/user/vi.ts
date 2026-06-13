@@ -1334,6 +1334,12 @@ export const userVi: UserMessages = {
         clientName.trim() ? `⚠ Trùng — ${clientName}` : "⚠ Ô đã có lịch",
       overflowMessage: "⚠ Quá giờ đóng",
       conflictShake: "Trùng lịch. Chọn giờ hoặc thợ khác.",
+      rescheduleFailed: {
+        past_date: "Không thể dời lịch về quá khứ.",
+        slot_conflict: "Khung giờ này đã trùng với lịch khác.",
+        staff_cannot_perform_service: "Thợ này không làm dịch vụ đó.",
+        generic: "Không dời được lịch. Thử lại.",
+      },
       bookingIcon: {
         vip: "VIP",
         notes: "Có ghi chú",
@@ -1387,7 +1393,10 @@ export const userVi: UserMessages = {
     },
     edit: {
       modeTitle: "Sửa booking",
+      dateLabel: "Ngày",
       timeLabel: "Giờ",
+      slotsLoading: "Đang tìm giờ trống…",
+      noSlots: "Không còn giờ trống ngày này — chọn ngày khác.",
       staffLabel: "Thợ",
       serviceLabel: "Dịch vụ",
       endTimePrefix: "Kết thúc lúc",
@@ -1401,6 +1410,7 @@ export const userVi: UserMessages = {
       not_foundMessage: "Không tìm thấy booking",
       invalid_statusMessage: "Không thể sửa booking này",
       serverErrorMessage: "Lỗi server. Thử lại.",
+      pastDateMessage: "Không thể dời lịch về quá khứ.",
     },
     actionErrorFallback: "Không thực hiện được thao tác. Thử lại.",
     actionErrors: {

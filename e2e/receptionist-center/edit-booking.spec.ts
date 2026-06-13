@@ -19,9 +19,33 @@ function endIsoFromDurationBuffer(startIso: string, durationMin: number, bufferM
   return new Date(Date.parse(startIso) + totalMin * 60 * 1000).toISOString();
 }
 
-/** Slot grid `selectedTimeMinutes` (minutes from midnight) for UTC salon on fixture day. */
+/** Slot grid minutes-from-midnight for the UTC salon (testid suffix on the
+ *  new edit-time-slot buttons: `edit-time-slot-${minutes}`). */
 function salonMinutesUtc(hour: number, minute: number): number {
   return hour * 60 + minute;
+}
+
+/**
+ * A future salon-local (UTC) day, ≥ `daysAhead` from the fixture day, that is
+ * NOT a Sunday (the default opening hours close Sunday → empty grid).
+ *
+ * Why a future day for the time tests: the availability grid hides past slots
+ * (`isToday && slotStartMs < now + lead`). On the fixture day (= today UTC) the
+ * set of selectable slots depends on the CI wall-clock — a late-UTC run would
+ * leave the 09:00–18:00 grid empty. A near-future open day makes the WHOLE
+ * opening-hours grid selectable regardless of when CI runs, and staffX has no
+ * baseline bookings on it, so every open-hours slot is genuinely free.
+ */
+function futureOpenYmdUtc(fromYmd: string, daysAhead = 1): string {
+  const [y, m, d] = fromYmd.split("-").map(Number);
+  const base = Date.UTC(y, m - 1, d);
+  for (let add = daysAhead; add < daysAhead + 7; add += 1) {
+    const cand = new Date(base + add * 86_400_000);
+    // getUTCDay: 0 = Sunday (closed in DEFAULT_OPENING_HOURS_JSON).
+    if (cand.getUTCDay() !== 0) return cand.toISOString().slice(0, 10);
+  }
+  // Unreachable (a 7-day window always contains a non-Sunday).
+  return new Date(base + daysAhead * 86_400_000).toISOString().slice(0, 10);
 }
 
 let fx: ReceptionistCenterFixture;
@@ -62,9 +86,17 @@ test.describe("Receptionist desk — edit booking", () => {
     await page.getByTestId("edit-booking-button").click();
     await expect(page.getByTestId("edit-booking-form")).toBeVisible();
 
-    await page
-      .getByTestId("edit-time-select")
-      .selectOption(String(salonMinutesUtc(15, 0)));
+    // New time picker: pick a near-future open day so the WHOLE 09:00–18:00 grid
+    // is selectable regardless of CI wall-clock (past slots are hidden on the
+    // current day), then click a free slot. staffX has no bookings on that day,
+    // so 11:00 is guaranteed free.
+    const targetYmd = futureOpenYmdUtc(fx.ymdUtc);
+    const targetMinutes = salonMinutesUtc(11, 0); /* 660 → "11:00 AM" */
+    await page.getByTestId("edit-date-input").fill(targetYmd);
+
+    const slot = page.getByTestId(`edit-time-slot-${targetMinutes}`);
+    await expect(slot).toBeVisible({ timeout: 15_000 });
+    await slot.click();
 
     await page.getByTestId("edit-save-button").click();
 
@@ -74,10 +106,7 @@ test.describe("Receptionist desk — edit booking", () => {
       .poll(async () => (await fetchBookingDeskSnapshot(fx.salonId, bookingId))?.start_time_utc, {
         timeout: 25_000,
       })
-      .toBe(isoAtUtcYmdHourMinute(fx.ymdUtc, 15, 0));
-
-    const block = page.getByTestId(`booking-block-${bookingId}`);
-    await expect(block).toBeVisible();
+      .toBe(isoAtUtcYmdHourMinute(targetYmd, 11, 0));
   });
 
   test("eb-2: Edit staff successfully", async ({ page }) => {
@@ -171,15 +200,28 @@ test.describe("Receptionist desk — edit booking", () => {
     await expect.poll(async () => (await block.boundingBox())?.width ?? 0).toBeGreaterThan(110);
   });
 
-  test("eb-4: Conflict prevented", async ({ page }) => {
+  test("eb-4: Conflict prevented (busy slot hidden, not selectable)", async ({ page }) => {
+    // NEW prevention model: the refactored edit form renders ONLY free slots
+    // (getAvailableTimeSlots). A receptionist therefore CANNOT pick a time that
+    // collides with another booking — the busy slot simply never appears in the
+    // grid. This replaces the old "select a busy slot → server returns
+    // slot_conflict" flow, which is impossible now that the static dropdown is
+    // gone. We assert the prevention happens at the UI layer (busy slot absent),
+    // while a known-free slot on the same day/staff is still selectable.
     const staffX = fx.conflictStaffId;
-    const deluxeId = fx.serviceIds[2]!;
-    const polishId = fx.serviceIds[1]!;
+    const deluxeId = fx.serviceIds[2]!; /* 60m + 15 buffer = 75m span */
+    const polishId = fx.serviceIds[1]!; /* 30m + 10 buffer = 40m span */
 
     const markerA = testClientNameMarker();
     const markerB = testClientNameMarker();
 
-    const startA = isoAtUtcYmdHourMinute(fx.ymdUtc, 14, 0);
+    // Both bookings live on a near-future open day so the full grid is visible
+    // (current-day past-slot hiding doesn't interfere) and staffX has no
+    // baseline bookings there besides these two.
+    const dayYmd = futureOpenYmdUtc(fx.ymdUtc);
+
+    // Booking A — the one we edit. Sits at 11:00.
+    const startA = isoAtUtcYmdHourMinute(dayYmd, 11, 0);
     const endA = endIsoFromDurationBuffer(startA, 60, 15);
     const bookingAId = await seedDeskBooking(fx.salonId, {
       clientName: markerA,
@@ -190,7 +232,10 @@ test.describe("Receptionist desk — edit booking", () => {
       status: "pending",
     });
 
-    const startB = isoAtUtcYmdHourMinute(fx.ymdUtc, 16, 0);
+    // Booking B — occupies 15:00 on the SAME day/staff. Its start slot (900 min)
+    // must be hidden from A's grid.
+    const busyHour = 15;
+    const startB = isoAtUtcYmdHourMinute(dayYmd, busyHour, 0);
     const endB = endIsoFromDurationBuffer(startB, 30, 10);
     await seedDeskBooking(fx.salonId, {
       clientName: markerB,
@@ -204,18 +249,27 @@ test.describe("Receptionist desk — edit booking", () => {
     const beforeConflict = await fetchBookingDeskSnapshot(fx.salonId, bookingAId);
     expect(beforeConflict).not.toBeNull();
 
-    await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc });
+    // Future day → the walk-in queue panel isn't rendered, so don't wait for it
+    // (gotoReceptionistCenter's default would time out on walkin-add-form).
+    await gotoReceptionistCenter(page, fx.slug, { dateYmd: dayYmd, expectWalkinQueue: false });
     await page.getByTestId(`booking-block-${bookingAId}`).click();
     await page.getByTestId("edit-booking-button").click();
     await expect(page.getByTestId("edit-booking-form")).toBeVisible();
 
-    await page.getByTestId("edit-time-select").selectOption(String(salonMinutesUtc(15, 30)));
-    await page.getByTestId("edit-save-button").click();
+    // Edit form opens on A's day (= dayYmd) by default. Wait for the grid.
+    await expect(page.getByTestId("edit-time-grid")).toBeVisible({ timeout: 15_000 });
 
-    const err = page.getByTestId("edit-error-message");
-    await expect(err).toBeVisible({ timeout: 15_000 });
-    await expect(err).toContainText(markerB);
+    // Prevention: the busy slot (B's 15:00 start) is NOT offered.
+    const busyMinutes = salonMinutesUtc(busyHour, 0); /* 900 */
+    await expect(page.getByTestId(`edit-time-slot-${busyMinutes}`)).toHaveCount(0);
 
+    // Sanity: a known-free slot on the same day IS selectable, proving the grid
+    // loaded with real availability (so the absence above is a real "blocked",
+    // not an empty/unrendered grid). 09:00 is free for staffX.
+    const freeMinutes = salonMinutesUtc(9, 0); /* 540 */
+    await expect(page.getByTestId(`edit-time-slot-${freeMinutes}`)).toBeVisible();
+
+    // Nothing was saved — A is unchanged.
     const after = await fetchBookingDeskSnapshot(fx.salonId, bookingAId);
     expect(after).toEqual(beforeConflict);
   });

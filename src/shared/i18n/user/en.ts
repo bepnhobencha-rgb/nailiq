@@ -1335,6 +1335,13 @@ export type UserMessages = {
       conflictWith: (clientName: string) => string;
       overflowMessage: string;
       conflictShake: string;
+      /** Toast shown when a drag-to-reschedule is rejected, keyed by reason. */
+      rescheduleFailed: {
+        past_date: string;
+        slot_conflict: string;
+        staff_cannot_perform_service: string;
+        generic: string;
+      };
       /** Accessible labels for the booking-block icon stack. */
       bookingIcon: {
         vip: string;
@@ -1403,7 +1410,13 @@ export type UserMessages = {
     edit: {
       /** Section heading when editing from the drawer */
       modeTitle: string;
+      /** Date picker label (edit form supports changing the day). */
+      dateLabel: string;
       timeLabel: string;
+      /** Spinner copy while the availability grid loads. */
+      slotsLoading: string;
+      /** Empty state when no open times exist for the chosen day. */
+      noSlots: string;
       staffLabel: string;
       serviceLabel: string;
       endTimePrefix: string;
@@ -1421,6 +1434,7 @@ export type UserMessages = {
       not_foundMessage: string;
       invalid_statusMessage: string;
       serverErrorMessage: string;
+      pastDateMessage: string;
     };
     actionErrorFallback: string;
     actionErrors: {
@@ -3077,6 +3091,13 @@ export const userEn: UserMessages = {
       overflowMessage: "⚠ Past closing hours",
       conflictShake:
         "That slot overlaps another booking. Choose another slot or time.",
+      rescheduleFailed: {
+        past_date: "Can't move a booking into the past.",
+        slot_conflict: "That slot overlaps another booking.",
+        staff_cannot_perform_service:
+          "That staff member doesn't perform this service.",
+        generic: "Couldn't move the booking. Try again.",
+      },
       bookingIcon: {
         vip: "VIP",
         notes: "Has notes",
@@ -3132,7 +3153,10 @@ export const userEn: UserMessages = {
     },
     edit: {
       modeTitle: "Edit booking",
+      dateLabel: "Date",
       timeLabel: "Time",
+      slotsLoading: "Finding open times…",
+      noSlots: "No open times this day — pick another date.",
       staffLabel: "Staff",
       serviceLabel: "Service",
       endTimePrefix: "Ends at",
@@ -3147,6 +3171,7 @@ export const userEn: UserMessages = {
       not_foundMessage: "Booking not found",
       invalid_statusMessage: "Cannot edit this booking",
       serverErrorMessage: "Server error. Try again.",
+      pastDateMessage: "Can't move a booking to the past.",
     },
     actionErrorFallback: "Could not complete that action. Try again.",
     actionErrors: {

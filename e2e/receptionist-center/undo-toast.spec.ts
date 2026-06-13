@@ -51,9 +51,22 @@ test.describe("Undo toast", () => {
     await expect(page.getByTestId("undo-toast-undo")).toBeVisible();
 
     const countdown = toast.locator(".tabular-nums").filter({ hasText: /\d+s/ });
+    // Anchor on the full "5s" start, THEN assert the countdown ticks below 5.
+    // Two traps this avoids:
+    //   1. The toast span is always in the DOM and shows a frozen "0s" while the
+    //      toast is closed (secondsRemaining defaults to 0), so a /^\ds$/ match
+    //      would latch onto "0s" before the assign even opens the toast. Pinning
+    //      "5s" waits (retry) for the real open frame.
+    //   2. Pinning the next value to exact "4s" raced the second boundary — a
+    //      late first read meant the value had already skipped to "3s". Polling
+    //      for "< 5" is tick-accurate regardless of when in the second we read.
     await expect(countdown).toHaveText(/^5s$/);
-    await page.waitForTimeout(1100);
-    await expect(countdown).toHaveText(/^4s$/);
+    const readSeconds = async () =>
+      parseInt((await countdown.textContent())!.replace(/\D/g, ""), 10);
+    // Generous 8s timeout: the grid re-renders each tick, so under CI load the
+    // countdown can stall briefly before the next decrement lands. We only need
+    // to observe ONE tick below 5, whenever the main thread frees up.
+    await expect.poll(readSeconds, { timeout: 8000 }).toBeLessThan(5);
 
     await toast.getByTestId("undo-toast-undo").click();
 
