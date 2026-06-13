@@ -79,6 +79,13 @@ function ctxActorRole(ctx: {
   return ctx.role as ActorRole;
 }
 
+/** Acting auth user id for the audit log. `null` on the demo-cookie path
+ * (no real auth user) — mirrors `ctxActorRole`'s demo handling so a desk
+ * action is attributed to a specific user whenever one exists. */
+function ctxActorUserId(ctx: { userId: string | null }): string | null {
+  return ctx.userId;
+}
+
 type OkBooking = { ok: true; bookingId: string };
 
 /** Desk appointment row, shaped exactly like one `ReceptionistCenterData.bookingsForDay`
@@ -278,7 +285,7 @@ export async function addWalkinToQueue(
   void logBookingEvent({
     bookingId: bid,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "walkin_added",
     payload: {
@@ -296,7 +303,7 @@ export async function addWalkinToQueue(
   void logBookingEvent({
     bookingId: bid,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "queue_joined",
     payload: { serviceId },
@@ -498,7 +505,7 @@ export async function assignWalkinToSlot(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_status_changed",
     payload: {
@@ -514,7 +521,7 @@ export async function assignWalkinToSlot(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "queue_assigned",
     payload: { staffId, slotStartUtc },
@@ -562,7 +569,7 @@ export async function cancelWaitingWalkin(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_cancelled",
     payload: { from: "waiting", reason: "walkin_removed" },
@@ -571,7 +578,7 @@ export async function cancelWaitingWalkin(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "queue_left",
     payload: { reason: "walkin_removed" },
@@ -627,7 +634,7 @@ export async function undoWalkinAssignment(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_status_changed",
     payload: { from: "confirmed", to: "waiting", reason: "undo_assign" },
@@ -682,7 +689,7 @@ export async function markWalkinInProgress(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_status_changed",
     payload: { from: "confirmed", to: "in_progress", startedAt },
@@ -743,7 +750,7 @@ export async function cancelDeskBooking(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_cancelled",
     payload: { reason: "desk_cancel" },
@@ -965,7 +972,7 @@ export async function cancelDeskGroup(
     void logBookingEvent({
       bookingId,
       salonId: ctx.salon.id,
-      actorUserId: null,
+      actorUserId: ctxActorUserId(ctx),
       actorRole: ctxActorRole(ctx),
       eventType: "booking_cancelled",
       payload: { reason: "desk_group_cancel", groupId },
@@ -1013,7 +1020,7 @@ export async function approveWixBooking(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_status_changed",
     payload: { from: "pending", to: "confirmed", reason: "wix_approve" },
@@ -1052,7 +1059,7 @@ export async function declineWixBooking(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_cancelled",
     payload: { reason: "wix_decline" },
@@ -1187,7 +1194,7 @@ export async function markNoShowBooking(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_status_changed",
     payload: { to: "no_show", reason: "desk_no_show" },
@@ -1245,7 +1252,7 @@ export async function undoNoShowBooking(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_status_changed",
     payload: { to: "confirmed", reason: "undo_no_show" },
@@ -1292,7 +1299,7 @@ export async function setBookingFinalPrice(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_price_set",
     payload: { priceCents, reason: "final_price" },
@@ -1342,7 +1349,7 @@ export async function undoCancelBooking(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_restored",
     payload: { reason: "undo_cancel" },
@@ -1423,7 +1430,7 @@ export async function restoreCancelledBooking(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_restored",
     payload: { reason: "desk_restore" },
@@ -1450,7 +1457,7 @@ export async function editBooking(
     ctx.supabase as SupabaseClient<Database>,
     ctx.salon.id,
     input,
-    { role: ctxActorRole(ctx), userId: null },
+    { role: ctxActorRole(ctx), userId: ctxActorUserId(ctx) },
   );
 }
 
@@ -1621,7 +1628,7 @@ export async function setSoftHold(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "soft_hold_set",
     payload: { minutes, holdUntilIso },
@@ -1663,7 +1670,7 @@ export async function clearSoftHold(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "soft_hold_expired",
     payload: { reason: input.reason ?? "returned" },
@@ -2025,7 +2032,7 @@ export async function addDeskAppointment(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_created",
     payload: {
