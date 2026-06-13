@@ -60,10 +60,10 @@ export function dashboardPathForRole(
  *  no-show and start/complete a service — see the Hi-Lite admin who couldn't
  *  cancel a 2pm appointment.)
  *
- * The `canUndoCancel` helper currently has no consumer in the UI (there is
- * no undo-cancel flow yet — `UndoToast` is for walk-in assign). It's
- * exported here for parity with edit/cancel so a future undo-after-cancel
- * feature lands in the right gate from day one.
+ * `canUndoCancel` shares the same set: undoing/restoring a cancellation is the
+ * other half of cancelling, so whoever can cancel must be able to undo their
+ * own mistake without escalating to an owner — otherwise broadening cancel to
+ * admin/receptionist (#405) leaves them trapped after a wrong cancel.
  */
 export function canEditBooking(role: SalonMemberRole): boolean {
   return (
@@ -106,7 +106,12 @@ export function canCreateDeskBooking(role: SalonMemberRole): boolean {
 }
 
 export function canUndoCancel(role: SalonMemberRole): boolean {
-  return role === "owner" || role === "senior";
+  return (
+    role === "owner" ||
+    role === "admin" ||
+    role === "senior" ||
+    role === "receptionist"
+  );
 }
 
 /** Advancing a booking's status (confirm / start / complete) is a front-desk
