@@ -622,6 +622,7 @@ function ReceptionistCenterInner({
           seat_together: b.seat_together === true,
           addon_count: b.addons?.length ?? 0,
           no_show_count: b.client_no_show_count ?? 0,
+          buffer_minutes: b.service_buffer_minutes,
         },
       ];
     });
