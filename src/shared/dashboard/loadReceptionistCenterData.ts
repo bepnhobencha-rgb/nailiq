@@ -145,6 +145,11 @@ export interface ReceptionistCenterData {
     id: string;
     client_name: string;
     client_phone: string | null;
+    /** For the staff-action notify panel: is the Email channel offerable? */
+    client_email: string | null;
+    /** Site language captured at online-booking time; drives the notify
+     *  preview locale (null for desk-created → salon default / English). */
+    client_locale: string | null;
     client_notes: string | null;
     staff_id: string;
     start_time_utc: string;
@@ -695,6 +700,8 @@ export async function loadReceptionistCenterData(
       id,
       client_name,
       client_phone,
+      client_email,
+      client_locale,
       client_notes,
       staff_request_note,
       staff_requested_by_client,
@@ -792,6 +799,8 @@ export async function loadReceptionistCenterData(
     id: string;
     client_name: string;
     client_phone: string | null;
+    client_email: string | null;
+    client_locale: string | null;
     client_notes: string | null;
     staff_request_note: string | null;
     staff_requested_by_client: boolean | null;
@@ -1100,6 +1109,8 @@ export async function loadReceptionistCenterData(
       id: row.id,
       client_name: row.client_name,
       client_phone: row.client_phone ?? null,
+      client_email: row.client_email ?? null,
+      client_locale: row.client_locale ?? null,
       client_notes: row.client_notes ?? null,
       staff_id: staffId,
       start_time_utc: st,

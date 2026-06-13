@@ -2267,6 +2267,8 @@ export async function addDeskAppointment(
     id: bookingId,
     client_name: clientName,
     client_phone: canonicalPhone,
+    client_email: clientEmail ?? null,
+    client_locale: input.language ?? null,
     client_notes: clientNotes,
     staff_id: resolvedStaffId,
     start_time_utc: startUtcIso,

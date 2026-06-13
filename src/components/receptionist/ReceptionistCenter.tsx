@@ -88,6 +88,12 @@ import {
 } from "@/shared/dashboard/receptionistActions";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
 import { defaultNotifyOn } from "@/shared/dashboard/staffNotificationSettings";
+import {
+  NotifyCustomerPanel,
+  type NotifyChannels,
+} from "./NotifyCustomerPanel";
+import { resolveCustomerLocale } from "@/shared/notifications/resolveCustomerLocale";
+import { buildStaffActionSms } from "@/shared/notifications/staffActionMessages";
 import { getStaffAvailability } from "@/shared/dashboard/availabilityEngine";
 import {
   type UpdateBookingStatusResult,
@@ -457,13 +463,7 @@ function ReceptionistCenterInner({
   // server only actually sends on a channel the customer has contact info for,
   // and resolves the language (online→site language, else salon default).
   const NOTIFY_DELAY_MS = 8000;
-  const scheduleCancelNotify = (bookingId: string) => {
-    const settings = data.salon.staffNotificationSettings;
-    if (!defaultNotifyOn(settings, "cancel")) return;
-    const channels = {
-      sms: settings.channels.sms,
-      email: settings.channels.email,
-    };
+  const scheduleCancelNotify = (bookingId: string, channels: NotifyChannels) => {
     if (!channels.sms && !channels.email) return;
     if (notifyTimerRef.current !== null) window.clearTimeout(notifyTimerRef.current);
     notifyTimerRef.current = window.setTimeout(() => {
@@ -525,6 +525,12 @@ function ReceptionistCenterInner({
   const [drawerBusy, setDrawerBusy] = useState(false);
   // Pending desk-cancel that hit a paid deposit → ask refund-or-keep first.
   const [depositCancel, setDepositCancel] = useState<{ id: string; amountCents: number } | null>(null);
+  // Cancel-confirm with the "notify the customer?" panel (non-deposit path).
+  const [notifyCancel, setNotifyCancel] = useState<{ id: string } | null>(null);
+  const [notifyCancelChannels, setNotifyCancelChannels] = useState<NotifyChannels>({
+    sms: false,
+    email: false,
+  });
 
   // Realtime connection-state machine. Default 'connected' — assume
   // online until the Supabase channel subscribe-callback flips us to
@@ -1579,7 +1585,11 @@ function ReceptionistCenterInner({
     }
   };
 
-  const doCancelBooking = async (id: string, refundDeposit: boolean) => {
+  const doCancelBooking = async (
+    id: string,
+    refundDeposit: boolean,
+    notifyChannels?: NotifyChannels,
+  ) => {
     const b = data.bookingsForDay.find((x) => x.id === id);
     if (
       !b ||
@@ -1623,8 +1633,18 @@ function ReceptionistCenterInner({
             type: "cancel",
           });
           // Notify the customer about the cancellation after the 8s undo
-          // window — skipped if they hit Undo (cancelScheduledNotify).
-          scheduleCancelNotify(id);
+          // window — skipped if they hit Undo (cancelScheduledNotify). Channels
+          // come from the cancel-confirm panel; the deposit path (no panel)
+          // falls back to the salon's smart per-event default.
+          const channels =
+            notifyChannels ??
+            (defaultNotifyOn(data.salon.staffNotificationSettings, "cancel")
+              ? {
+                  sms: data.salon.staffNotificationSettings.channels.sms,
+                  email: data.salon.staffNotificationSettings.channels.email,
+                }
+              : { sms: false, email: false });
+          scheduleCancelNotify(id, channels);
         }
       }
     } finally {
@@ -1646,7 +1666,15 @@ function ReceptionistCenterInner({
       setDepositCancel({ id, amountCents: b.deposit_amount_cents ?? 0 });
       return;
     }
-    void doCancelBooking(id, false);
+    // Otherwise open the cancel-confirm with the "notify the customer?" panel,
+    // pre-checked per the salon's smart per-event default for cancel.
+    const settings = data.salon.staffNotificationSettings;
+    const on = defaultNotifyOn(settings, "cancel");
+    setNotifyCancelChannels({
+      sms: on && settings.channels.sms,
+      email: on && settings.channels.email,
+    });
+    setNotifyCancel({ id });
   };
 
   const rcMessages = messages.receptionist;
@@ -3201,6 +3229,95 @@ function ReceptionistCenterInner({
           </div>
         </Modal>
       ) : null}
+
+      {notifyCancel
+        ? (() => {
+            const b = data.bookingsForDay.find((x) => x.id === notifyCancel.id);
+            if (!b) return null;
+            const settings = data.salon.staffNotificationSettings;
+            const locale = resolveCustomerLocale({
+              clientLocale: b.client_locale,
+              salonDefaultLocale: settings.defaultLocale,
+            });
+            const whenLabel = new Intl.DateTimeFormat(
+              locale === "vi" ? "vi-VN" : "en-US",
+              {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+                hour12: true,
+                timeZone: timezone,
+              },
+            ).format(new Date(Date.parse(b.start_time_utc)));
+            const previewText = buildStaffActionSms("cancel", locale, {
+              customerName: (b.client_name ?? "").trim(),
+              salonName: data.salon.name,
+              serviceName: b.service_name ?? "",
+              whenLabel,
+              salonPhone: null,
+            });
+            const hasPhone = !!(b.client_phone && b.client_phone.trim());
+            const hasEmail = !!(b.client_email && b.client_email.trim());
+            const n = rcMessages.notify;
+            return (
+              <Modal
+                isOpen
+                onClose={() => setNotifyCancel(null)}
+                size="sm"
+                title={n.cancelTitle}
+                description={n.cancelDesc}
+              >
+                <div className="flex flex-col gap-3 py-1">
+                  <NotifyCustomerPanel
+                    value={notifyCancelChannels}
+                    onChange={setNotifyCancelChannels}
+                    hasPhone={hasPhone}
+                    hasEmail={hasEmail}
+                    previewText={previewText}
+                    labels={{
+                      heading: n.heading,
+                      sms: n.sms,
+                      email: n.email,
+                      previewTitle: n.previewTitle,
+                      willNotNotify: n.willNotNotify,
+                      noPhone: n.noPhone,
+                      noEmail: n.noEmail,
+                      languageNote: locale === "vi" ? n.langVi : n.langEn,
+                    }}
+                  />
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      type="button"
+                      variant="danger"
+                      loading={drawerBusy}
+                      data-testid="notify-cancel-confirm"
+                      onClick={() => {
+                        const id = notifyCancel.id;
+                        const ch = {
+                          sms: notifyCancelChannels.sms && hasPhone,
+                          email: notifyCancelChannels.email && hasEmail,
+                        };
+                        setNotifyCancel(null);
+                        void doCancelBooking(id, false, ch);
+                      }}
+                    >
+                      {n.confirmCancel}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => setNotifyCancel(null)}
+                    >
+                      {n.keep}
+                    </Button>
+                  </div>
+                </div>
+              </Modal>
+            );
+          })()
+        : null}
     </>
   );
 }
