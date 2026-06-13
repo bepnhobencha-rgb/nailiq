@@ -1361,7 +1361,7 @@ export async function undoCancelBooking(
 /**
  * Restore a cancelled booking back to "confirmed".
  * Guards:
- *   - Only owner / senior (canUndoCancel)
+ *   - Front-desk roles only: owner / admin / senior / receptionist (canUndoCancel)
  *   - Booking must be cancelled (not already active)
  *   - start_time_utc must still be in the future (≥ now + 1 min)
  *   - No active booking conflict for the same staff at that time
