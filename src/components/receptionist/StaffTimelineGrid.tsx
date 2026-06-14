@@ -349,6 +349,9 @@ interface GridDragState {
   /** Target start as salon minutes-from-midnight. May be OFF the 15-min grid
    *  when snapped to a preceding booking's exact end (back-to-back drop). */
   targetStartMin: number;
+  /** True when the start locked onto a preceding booking's exact end (flush
+   *  back-to-back) — drives the "🧲 liền sau" snap affordance on the ghost. */
+  targetSnappedToEnd: boolean;
 }
 
 function StaffTimelineGridImpl({
@@ -513,6 +516,7 @@ function StaffTimelineGridImpl({
                 timezoneRef.current,
               ),
             ),
+            targetSnappedToEnd: false,
           });
         }
         return;
@@ -546,6 +550,7 @@ function StaffTimelineGridImpl({
       // block's start to that exact end — even off-grid (e.g. 1:10) — so it sits
       // flush after it. Excludes the booking being dragged.
       const targetStaffId = staffRef.current[staffIdx]?.id;
+      let flush = false;
       if (targetStaffId) {
         const rows = bookingsByStaffRef.current.get(targetStaffId) ?? [];
         let bestEnd: number | null = null;
@@ -564,13 +569,23 @@ function StaffTimelineGridImpl({
             bestEnd = endMin;
           }
         }
-        if (bestEnd !== null) startMin = bestEnd;
+        if (bestEnd !== null) {
+          startMin = bestEnd;
+          flush = true;
+        }
       }
 
       setDragState((prev) =>
         prev &&
-        (prev.targetStartMin !== startMin || prev.targetStaffIdx !== staffIdx)
-          ? { ...prev, targetStartMin: startMin, targetStaffIdx: staffIdx }
+        (prev.targetStartMin !== startMin ||
+          prev.targetStaffIdx !== staffIdx ||
+          prev.targetSnappedToEnd !== flush)
+          ? {
+              ...prev,
+              targetStartMin: startMin,
+              targetStaffIdx: staffIdx,
+              targetSnappedToEnd: flush,
+            }
           : prev,
       );
     };
@@ -1002,25 +1017,52 @@ function StaffTimelineGridImpl({
                       existingBookings: conflictRows,
                       excludeBookingId: dragState.bookingId,
                     });
-                // Show the exact time the block will land on — what-you-see is
+                // Show the exact span the block will land on — what-you-see is
                 // what-you-get on release (no more "shows 1:15 but drops 1:10").
                 const targetTimeLabel = labels.formatTimeLabel(slotStartUtc);
+                const endTimeLabel = labels.formatTimeLabel(spanEndIso);
+                const flush =
+                  dragState.targetSnappedToEnd && !overflow && !conflict;
                 let ghostState: "ok" | "conflict" | "overflow" = "ok";
-                let ghostLabel = `${targetTimeLabel} · ${dragState.clientName}`;
+                // The block itself shows just the name (narrow blocks truncate);
+                // the readable time lives in the floating pill below.
+                let ghostLabel = dragState.clientName;
                 if (overflow) {
                   ghostState = "overflow";
                   ghostLabel = labels.overflowMessage;
                 } else if (conflict) {
                   ghostState = "conflict";
-                  ghostLabel = `${targetTimeLabel} · ${labels.conflictWith(conflict.client_name)}`;
+                  ghostLabel = labels.conflictWith(conflict.client_name);
                 }
+                // Floating time pill above the ghost — always legible regardless
+                // of block width. Emerald + 🧲 when locked flush back-to-back.
+                const pillLeft = Math.max(0, Math.min(leftPx, timelineWidthPx - 150));
+                const pillText = overflow
+                  ? labels.overflowMessage
+                  : `${flush ? "🧲 " : ""}${targetTimeLabel} → ${endTimeLabel}`;
                 dragGhostEl = (
-                  <GhostBlock
-                    leftPx={leftPx}
-                    widthPx={widthPx}
-                    state={ghostState}
-                    label={ghostLabel}
-                  />
+                  <>
+                    <GhostBlock
+                      leftPx={leftPx}
+                      widthPx={widthPx}
+                      state={ghostState}
+                      flush={flush}
+                      label={ghostLabel}
+                    />
+                    <div
+                      className={cn(
+                        "pointer-events-none absolute top-1 z-40 flex items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-bold shadow-lg backdrop-blur-sm transition-[left] duration-150 ease-[cubic-bezier(0.34,1.56,0.64,1)]",
+                        flush
+                          ? "border-emerald-400/70 bg-emerald-500/90 text-white shadow-[0_4px_16px_-2px_rgba(16,185,129,0.7)]"
+                          : ghostState === "conflict" || ghostState === "overflow"
+                            ? "border-nq-error/60 bg-nq-error/90 text-white"
+                            : "border-nq-primary/60 bg-nq-bg/95 text-nq-primary shadow-[0_4px_16px_-4px_rgba(212,175,55,0.6)]",
+                      )}
+                      style={{ left: pillLeft }}
+                    >
+                      {pillText}
+                    </div>
+                  </>
                 );
               }
 
