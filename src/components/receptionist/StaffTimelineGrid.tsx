@@ -395,7 +395,11 @@ function StaffTimelineGridImpl({
   // row edge used to land on the wrong tech silently).
   const [createHover, setCreateHover] = useState<{
     staffId: string;
-    subSlot: number;
+    /** Salon minutes-from-midnight of the previewed start. Usually a 15-min
+     *  grid value, but snaps to a preceding booking's exact end (e.g. 1:25)
+     *  when hovering just after it — back-to-back, no dead grid gap. */
+    startMin: number;
+    leftPx: number;
   } | null>(null);
 
   const [dragState, setDragState] = useState<GridDragState | null>(null);
@@ -884,6 +888,46 @@ function StaffTimelineGridImpl({
             {/* eslint-disable react-hooks/refs -- ARCHITECTURE_LOCK: staffRef.current accessed during render for drag-ghost target lookup; stable-ref pattern */}
             {staff.map((s) => {
               const rowBookings = bookingsByStaff.get(s.id) ?? [];
+              // Resolve the click-to-create start from a cursor X (relative to
+              // the row). Snaps to the 15-min grid, EXCEPT when the cursor is
+              // just past a booking that ends off-grid (e.g. 1:25) — then it
+              // snaps to that exact end so the new appointment sits back-to-back
+              // with no dead gap, matching getAvailableTimeSlots' Phase-2 anchor.
+              // Returns null when the slot isn't creatable (over a booking body,
+              // off-hours, offline staff).
+              const resolveCreateStart = (
+                relX: number,
+              ): { startMin: number; leftPx: number } | null => {
+                const HALF_PX = SLOT_PX / 2; // 15 min
+                const subSlot = Math.max(
+                  0,
+                  Math.min(totalSlots * 2 - 1, Math.floor(relX / HALF_PX)),
+                );
+                const slotIndex = Math.floor(subSlot / 2);
+                if (!isSlotCreatable(s.status, slotIndex)) return null;
+                const gridLeftPx = subSlot * HALF_PX;
+                for (const b of rowBookings) {
+                  const { leftPx, widthPx } = bookingToPosition(
+                    b,
+                    timezone,
+                    hourStart,
+                  );
+                  const rightPx = leftPx + widthPx;
+                  if (gridLeftPx >= leftPx - 0.5 && gridLeftPx < rightPx - 0.5) {
+                    // Cursor still over the booking body → nothing to create.
+                    if (relX < rightPx - 0.5) return null;
+                    // Cursor past the booking's end → snap to its exact end.
+                    const endMin = Math.round(
+                      utcIsoToSalonMinutesFromMidnight(b.end_time_utc, timezone),
+                    );
+                    return { startMin: endMin, leftPx: rightPx };
+                  }
+                }
+                return {
+                  startMin: hourStart * 60 + subSlot * 15,
+                  leftPx: gridLeftPx,
+                };
+              };
               // Drag-to-reschedule ghost — shown when a booking block is being dragged.
               const isDragTarget =
                 dragState !== null &&
@@ -1004,11 +1048,8 @@ function StaffTimelineGridImpl({
                 createHover !== null &&
                 createHover.staffId === s.id
               ) {
-                const HALF_PX = SLOT_PX / 2;
-                const ghostLeft = createHover.subSlot * HALF_PX;
-                const pillTime = minutesToLabel(
-                  hourStart * 60 + createHover.subSlot * 15,
-                );
+                const ghostLeft = createHover.leftPx;
+                const pillTime = minutesToLabel(createHover.startMin);
                 // Label sits INSIDE the cell (top-1), never straddling the row's
                 // top edge — the old `-translate-y-1/2` floated it half above the
                 // cell, so on the first staff row / when the grid scroll clips
@@ -1063,42 +1104,23 @@ function StaffTimelineGridImpl({
                       ? (e: MouseEvent<HTMLDivElement>) => {
                           const rowRect =
                             e.currentTarget.getBoundingClientRect();
-                          const HALF_PX = SLOT_PX / 2;
-                          const subSlot = Math.max(
-                            0,
-                            Math.min(
-                              totalSlots * 2 - 1,
-                              Math.floor((e.clientX - rowRect.left) / HALF_PX),
-                            ),
+                          const res = resolveCreateStart(
+                            e.clientX - rowRect.left,
                           );
-                          const slotIndex = Math.floor(subSlot / 2);
-                          // Hide the preview over a real booking or a
-                          // non-creatable (off-hours / offline) slot.
-                          const clickedLeftPx = subSlot * HALF_PX;
-                          const hitsBooking = rowBookings.some((b) => {
-                            const { leftPx, widthPx } = bookingToPosition(
-                              b,
-                              timezone,
-                              hourStart,
-                            );
-                            return (
-                              clickedLeftPx >= leftPx - 0.5 &&
-                              clickedLeftPx < leftPx + widthPx - 0.5
-                            );
-                          });
-                          if (
-                            hitsBooking ||
-                            !isSlotCreatable(s.status, slotIndex)
-                          ) {
+                          if (!res) {
                             if (createHover?.staffId === s.id)
                               setCreateHover(null);
                             return;
                           }
                           if (
                             createHover?.staffId !== s.id ||
-                            createHover.subSlot !== subSlot
+                            createHover.startMin !== res.startMin
                           ) {
-                            setCreateHover({ staffId: s.id, subSlot });
+                            setCreateHover({
+                              staffId: s.id,
+                              startMin: res.startMin,
+                              leftPx: res.leftPx,
+                            });
                           }
                         }
                       : undefined
@@ -1118,42 +1140,15 @@ function StaffTimelineGridImpl({
                           if (recentlyDraggedRef.current) return;
                           const rowRect =
                             e.currentTarget.getBoundingClientRect();
-                          // The grid cells are 30 min, but the booking form
-                          // offers 15-min precision — so snap the clicked time to
-                          // the nearest 15-min sub-slot based on which half of
-                          // the cell was hit (half a cell = 15 min). The prefill
-                          // then matches a real form slot.
-                          const HALF_PX = SLOT_PX / 2; // 15 min
-                          const subSlot = Math.max(
-                            0,
-                            Math.min(
-                              totalSlots * 2 - 1,
-                              Math.floor((e.clientX - rowRect.left) / HALF_PX),
-                            ),
+                          // Same resolver as the hover preview — snaps to the
+                          // 15-min grid, or to a preceding booking's exact end
+                          // for a back-to-back start. Returns null over a booking
+                          // body / off-hours / offline staff (no create).
+                          const res = resolveCreateStart(
+                            e.clientX - rowRect.left,
                           );
-                          const slotIndex = Math.floor(subSlot / 2); // 30-min cell
-                          // Skip if the click landed on an existing booking for
-                          // this staff row — the block handles its own click
-                          // (drawer). Compare the snapped 15-min position against
-                          // each booking's pixel range.
-                          const clickedLeftPx = subSlot * HALF_PX;
-                          const hitsBooking = rowBookings.some((b) => {
-                            const { leftPx, widthPx } = bookingToPosition(
-                              b,
-                              timezone,
-                              hourStart,
-                            );
-                            return (
-                              clickedLeftPx >= leftPx - 0.5 &&
-                              clickedLeftPx < leftPx + widthPx - 0.5
-                            );
-                          });
-                          if (hitsBooking) return;
-                          // Offline staff / out-of-hours slots are not creatable.
-                          if (!isSlotCreatable(s.status, slotIndex)) return;
-                          const timeLabel = minutesToLabel(
-                            hourStart * 60 + subSlot * 15,
-                          );
+                          if (!res) return;
+                          const timeLabel = minutesToLabel(res.startMin);
                           onEmptySlotClick(s.id, selectedDate, timeLabel, {
                             x: e.clientX,
                             y: e.clientY,
