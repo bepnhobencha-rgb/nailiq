@@ -27,6 +27,7 @@ import {
 } from "@/shared/dashboard/receptionistActions";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
+import { salonToday } from "@/shared/lib/salonTime";
 import {
   getAvailableTimeSlots,
   type TimeSlot,
@@ -55,6 +56,10 @@ type DeskCreatedBooking = Extract<
 type Props = {
   slug: string;
   salonId: string;
+  /** Salon IANA timezone (e.g. "America/Los_Angeles"). The default booking
+   * date is "today" in THIS zone, not the receptionist's device zone — a VN
+   * device (UTC+7) would otherwise default an LA salon to tomorrow. */
+  timezone: string;
   /** Dashboard language — matches the rest of the receptionist center. */
   language: "en" | "vi";
   onClose: () => void;
@@ -128,6 +133,7 @@ const COPY = {
       no_staff_available: "No active staff can do this service.",
       invalid_date: "Please choose a date.",
       invalid_time: "Please choose a time.",
+      time_in_past: "That time is in the past — pick a later time.",
       time_slot_taken: "That time was just taken — pick another.",
       booking_limit_reached: "You've hit your plan's booking limit.",
       unauthorized: "You don't have permission to create bookings.",
@@ -186,6 +192,7 @@ const COPY = {
       no_staff_available: "Không có thợ đang làm cho dịch vụ này.",
       invalid_date: "Vui lòng chọn ngày.",
       invalid_time: "Vui lòng chọn giờ.",
+      time_in_past: "Giờ này đã qua — chọn giờ muộn hơn.",
       time_slot_taken: "Giờ này vừa có người đặt — chọn giờ khác.",
       booking_limit_reached: "Đã đạt giới hạn lịch của gói hiện tại.",
       unauthorized: "Bạn không có quyền tạo lịch.",
@@ -198,14 +205,11 @@ function ymdToLocalNoon(ymd: string): Date {
   return new Date(y, (m ?? 1) - 1, d ?? 1, 12, 0, 0);
 }
 
-function todayYmd(): string {
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
-}
 
 export default function DeskBookingForm({
   slug,
   salonId,
+  timezone,
   language,
   onClose,
   onCreated,
@@ -235,8 +239,12 @@ export default function DeskBookingForm({
   const [addonIds, setAddonIds] = useState<string[]>([]);
   const [staffId, setStaffId] = useState(initialStaffId ?? "");
   const [staffRequested, setStaffRequested] = useState(false);
-  // Default to today (not an empty "yyyy-mm-dd" placeholder) when not prefilled.
-  const [ymd, setYmd] = useState(initialYmd ?? todayYmd());
+  // Default to the salon's local "today" (not the device's) when not prefilled —
+  // a receptionist on a UTC+7 device would otherwise default an LA salon to
+  // tomorrow. salonToday resolves the calendar date in the salon timezone.
+  const [ymd, setYmd] = useState(
+    initialYmd ?? salonToday(timezone, new Date().toISOString()),
+  );
   const [slotLabel, setSlotLabel] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -658,7 +666,7 @@ export default function DeskBookingForm({
               <input
                 type="date"
                 className={inputCls}
-                min={todayYmd()}
+                min={salonToday(timezone, new Date().toISOString())}
                 value={ymd}
                 onChange={(e) => setYmd(e.target.value)}
                 disabled={!staffId}

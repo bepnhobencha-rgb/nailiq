@@ -2503,6 +2503,7 @@ function ReceptionistCenterInner({
                 <DeskBookingForm
                   slug={slug}
                   salonId={data.salon.id}
+                  timezone={data.salon.timezone}
                   language={language}
                   notifySettings={data.salon.staffNotificationSettings}
                   initialStaffId={deskPrefill?.staffId}
