@@ -30,7 +30,7 @@ export default async function PulsePage({ params }: PageProps) {
   const res = await loadOwnerPulse(slug, language);
 
   return (
-    <main className="mx-auto w-full max-w-[var(--max-nq-mobile)] px-4 pb-24 pt-5">
+    <main className="mx-auto w-full max-w-[var(--max-nq-mobile)] px-4 pb-24 pt-5 lg:max-w-5xl lg:px-8 lg:pt-8">
       {res.ok ? (
         <OwnerPulse slug={slug} language={language} data={res.data} />
       ) : (

@@ -210,6 +210,12 @@ export function OwnerPulse({
         </button>
       </header>
 
+      {/* Two-column on desktop (lg+), single stacked column on phone.
+          Same content, laid out for where it's opened. */}
+      <div className="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5 lg:space-y-0">
+        {/* Column A — live status + money headline */}
+        <div className="space-y-4">
+
       {/* ── Pulse ring ─────────────────────────────────────── */}
       <section className="flex flex-col items-center rounded-3xl border border-nq-border/50 bg-nq-surface/40 py-7">
         <p className="text-[11px] font-medium uppercase tracking-wide text-nq-muted">
@@ -319,6 +325,10 @@ export function OwnerPulse({
         )}
       </section>
 
+        </div>
+        {/* Column B — what to act on */}
+        <div className="space-y-4">
+
       {/* ── Today scorecard ────────────────────────────────── */}
       <section className="grid grid-cols-4 gap-2">
         <MiniStat label={t.done} value={data.completedToday} />
@@ -403,6 +413,8 @@ export function OwnerPulse({
         <QuickAction href={`/dashboard/${encodeURIComponent(slug)}/center?view=week`} label={t.calendar}
           icon={<><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M3 10h18M8 2v4M16 2v4" /></>} />
       </section>
+        </div>
+      </div>
     </div>
   );
 }
