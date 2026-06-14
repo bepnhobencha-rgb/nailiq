@@ -3011,7 +3011,11 @@ function ReceptionistCenterInner({
                             : { sms: false, email: false },
                         });
                         if (result.ok) {
-                          router.refresh();
+                          // Reload the CURRENTLY-VIEWED day (respects dateOffset)
+                          // like every other mutation — `router.refresh()` re-ran
+                          // the server loader's default day and snapped the view
+                          // back to today after dragging on a future day.
+                          await reloadCurrentDay();
                           return { ok: true };
                         }
                         // Surface WHY the drop snapped back, instead of failing silently.
