@@ -75,7 +75,17 @@ export async function buildCopilotContext(args: {
 }): Promise<string> {
   const { db, salon, role } = args;
   const tz = salon.timezone || "America/Los_Angeles";
-  const { startUtc, endUtc } = salonDayRangeUtc(salonToday(tz), tz);
+  const todayYmd = salonToday(tz);
+  const { startUtc, endUtc } = salonDayRangeUtc(todayYmd, tz);
+  // Human-readable label for the SAME salon-local date (noon-UTC anchor so the
+  // weekday/month never drift across a midnight boundary).
+  const todayLabel = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC",
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(new Date(`${todayYmd}T12:00:00Z`));
 
   const sid = salon.id;
   const bk = () => db.from("bookings").select("*", { count: "exact", head: true }).eq("salon_id", sid);
@@ -114,6 +124,8 @@ export async function buildCopilotContext(args: {
 Salon: ${salon.name} (slug: ${salon.slug}, timezone: ${tz})
 User role: ${roleLabel(role)}
 Areas this user can reach: ${allowed.join("; ") || "(none)"}
+
+Today (salon local): ${todayYmd} — ${todayLabel}. This IS today. Use it as the basis for ALL date math ("today", "tomorrow"/"ngày mai", "next Monday", etc.); NEVER guess or state a different current date.
 
 Today's real-time state:
 - Upcoming appointments today (pending/confirmed): ${upcomingToday.count ?? 0}
