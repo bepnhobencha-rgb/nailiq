@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { editBookingAction } from "@/shared/dashboard/editBookingAction";
 import { getDeskBookingData } from "@/shared/dashboard/receptionistActions";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
+import { addonLabel } from "@/shared/booking/serviceLabels";
 import {
   getAvailableTimeSlots,
   type TimeSlot,
@@ -582,7 +583,7 @@ export function EditBookingForm({
             {/* Add-ons only (is_addon) — never the main-service catalog. */}
             {(deskData?.addOns ?? []).map((s) => (
               <option key={s.id} value={s.id}>
-                {`${s.name} · ${s.durationMinutes}m${s.priceDisplay ? ` · ${s.priceDisplay}` : ""}`}
+                {addonLabel(s)}
               </option>
             ))}
           </select>

@@ -34,6 +34,7 @@ import {
 } from "@/shared/dashboard/receptionistActions";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
+import { addonLabel } from "@/shared/booking/serviceLabels";
 import { salonToday } from "@/shared/lib/salonTime";
 import {
   getAvailableTimeSlots,
@@ -692,8 +693,7 @@ export default function DeskBookingForm({
                         }`}
                       >
                         {on ? "✓ " : "+ "}
-                        {a.name}
-                        {a.priceDisplay ? ` · ${a.priceDisplay}` : ""}
+                        {addonLabel(a)}
                       </button>
                     );
                   })}
