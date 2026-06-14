@@ -553,26 +553,33 @@ function StaffTimelineGridImpl({
       let flush = false;
       if (targetStaffId) {
         const rows = bookingsByStaffRef.current.get(targetStaffId) ?? [];
-        let bestEnd: number | null = null;
-        let bestDist = Math.abs(startMin - rawMin);
-        for (const b of rows) {
-          if (b.id === ds.bookingId) continue;
-          const endMin = Math.round(
-            utcIsoToSalonMinutesFromMidnight(
-              b.end_time_utc,
-              timezoneRef.current,
+        const otherEnds = rows
+          .filter((b) => b.id !== ds.bookingId)
+          .map((b) =>
+            Math.round(
+              utcIsoToSalonMinutesFromMidnight(
+                b.end_time_utc,
+                timezoneRef.current,
+              ),
             ),
           );
+        // Snap to a preceding booking's exact end when the pointer is closer to
+        // it than to the 15-min grid point — reaches OFF-grid ends (e.g. 1:10).
+        let bestEnd: number | null = null;
+        let bestDist = Math.abs(startMin - rawMin);
+        for (const endMin of otherEnds) {
           const dist = Math.abs(endMin - rawMin);
           if (dist < bestDist && dist <= 15 && endMin + ds.durationMinutes <= gridEndMin) {
             bestDist = dist;
             bestEnd = endMin;
           }
         }
-        if (bestEnd !== null) {
-          startMin = bestEnd;
-          flush = true;
-        }
+        if (bestEnd !== null) startMin = bestEnd;
+        // Magnet shows whenever the block STARTS exactly when another booking
+        // ENDS — i.e. truly back-to-back — regardless of whether that end falls
+        // on the 15-min grid (1:15) or off it (1:10). Previously it only lit for
+        // off-grid ends, so adjacent on-grid bookings confusingly had no magnet.
+        flush = otherEnds.includes(startMin);
       }
 
       setDragState((prev) =>
