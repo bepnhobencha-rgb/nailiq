@@ -1,6 +1,6 @@
 "use client";
 
-import { Star, Heart, Users, Palette, HeartHandshake } from "lucide-react";
+import { Star, Heart, Users, Palette, HeartHandshake, Clock, Play } from "lucide-react";
 
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/shared/lib/cn";
@@ -300,6 +300,17 @@ export function BookingBlock(props: BookingBlockProps) {
   const isWalkin = source === "walkin";
   const isCompleted = status === "completed";
 
+  // Lateness escalation only applies to a not-yet-started booking past its start
+  // (confirmed/pending). `isLate` (in_progress past END) is a separate overlay.
+  const showLateness =
+    latenessTier !== null &&
+    status !== "in_progress" &&
+    status !== "completed";
+  // Compact source-icon-stack clock marker for late/critical (paired with the
+  // ring so the signal isn't hue-only). `due` stays calm — ring only.
+  const showLateIcon = showLateness && latenessTier !== "due";
+  const showStartButton = onStart !== undefined && showLateness;
+
   // Compact service label (display-only); full name stays in the tooltip + drawer.
   const serviceLabel = serviceShortName(serviceName);
 
@@ -312,9 +323,21 @@ export function BookingBlock(props: BookingBlockProps) {
     isVip ||
     hasStaffRequest ||
     isLate ||
+    showLateIcon ||
     hasDesign ||
     isGroup ||
     seatTogether;
+
+  const lateChipLabel =
+    latenessTier === "critical"
+      ? (iconLabels as { veryLateChip?: string })?.veryLateChip ?? "Very late"
+      : (iconLabels as { lateChip?: string })?.lateChip ?? "Late";
+  const autoNoShowTip =
+    showLateness && autoNoShowAtLabel
+      ? (iconLabels as { autoNoShowAt?: (t: string) => string })?.autoNoShowAt?.(
+          autoNoShowAtLabel,
+        ) ?? `Auto no-show at ${autoNoShowAtLabel}`
+      : null;
 
   // Lightweight hover tooltip carrying the un-truncated essentials so the
   // icon-only / short-name compaction never hides operational info.
@@ -323,6 +346,7 @@ export function BookingBlock(props: BookingBlockProps) {
     serviceName,
     sourceMeta ? `Source: ${sourceMeta.label}` : null,
     sourceLabelFull && !sourceMeta ? sourceLabelFull : null,
+    showLateness ? autoNoShowTip ?? lateChipLabel : null,
   ]
     .filter(Boolean)
     .join("\n");
@@ -374,80 +398,55 @@ export function BookingBlock(props: BookingBlockProps) {
         />
       ) : null}
 
-      {/* Lateness escalation ring + badge (confirmed/pending past start). Mutually
-          exclusive with the isLate overlay by status (isLate = in_progress past end;
-          latenessTier = confirmed/pending past start). */}
-      {latenessTier !== null &&
-      status !== "in_progress" &&
-      status !== "completed" ? (
-        <>
-          {latenessTier === "due" ? (
-            // Soft amber keyline — "just past start time", no alarm yet.
-            <span
-              aria-hidden
-              className="pointer-events-none absolute inset-0 rounded-lg ring-2 ring-nq-warning/60"
-            />
-          ) : latenessTier === "late" ? (
-            // Amber ring + small informational badge.
-            <>
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-0 rounded-lg ring-2 ring-nq-warning"
-              />
-              <div className="pointer-events-none absolute bottom-1 left-2">
-                <Badge variant="warning" size="sm" state="default">
-                  {autoNoShowAtLabel
-                    ? (iconLabels as { autoNoShowAt?: (t: string) => string })
-                        ?.autoNoShowAt?.(autoNoShowAtLabel) ??
-                      `Auto no-show at ${autoNoShowAtLabel}`
-                    : ((iconLabels as { lateChip?: string })?.lateChip ??
-                      "Late")}
-                </Badge>
-              </div>
-            </>
-          ) : (
-            // Critical: pulsing red ring + badge.
-            <>
-              <motion.span
-                aria-hidden
-                className="pointer-events-none absolute inset-0 rounded-lg ring-2 ring-nq-error"
-                initial={{ opacity: 0.55 }}
-                animate={reduced ? undefined : { opacity: [0.55, 1, 0.55] }}
-                transition={{
-                  duration: PULSE_PERIOD_SEC,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                }}
-              />
-              <div className="pointer-events-none absolute bottom-1 left-2">
-                <Badge variant="danger" size="sm" state="default">
-                  {autoNoShowAtLabel
-                    ? (iconLabels as { autoNoShowAt?: (t: string) => string })
-                        ?.autoNoShowAt?.(autoNoShowAtLabel) ??
-                      `Auto no-show at ${autoNoShowAtLabel}`
-                    : ((iconLabels as { veryLateChip?: string })
-                        ?.veryLateChip ?? "Very late")}
-                </Badge>
-              </div>
-            </>
-          )}
-        </>
+      {/* Lateness escalation ring (confirmed/pending past start) — RING ONLY, no
+          floating badge: the countdown lives in the tooltip + the icon-stack
+          clock so dense blocks stay clean. `isLate` (in_progress past end) is a
+          separate overlay above. due = soft amber · late = amber · critical =
+          pulsing red. */}
+      {showLateness ? (
+        latenessTier === "critical" ? (
+          <motion.span
+            aria-hidden
+            data-testid={`booking-block-lateness-${bookingId}`}
+            className="pointer-events-none absolute inset-0 rounded-lg ring-2 ring-nq-error"
+            initial={{ opacity: 0.55 }}
+            animate={reduced ? undefined : { opacity: [0.55, 1, 0.55] }}
+            transition={{
+              duration: PULSE_PERIOD_SEC,
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
+          />
+        ) : (
+          <span
+            aria-hidden
+            data-testid={`booking-block-lateness-${bookingId}`}
+            className={cn(
+              "pointer-events-none absolute inset-0 rounded-lg ring-2",
+              latenessTier === "late" ? "ring-nq-warning" : "ring-nq-warning/55",
+            )}
+          />
+        )
       ) : null}
 
-      {/* Inline "Start" button — appears when viewer can change status and booking is late. */}
-      {onStart !== undefined && latenessTier !== null ? (
+      {/* Inline "Start" — compact icon-only play button so it never crowds the
+          client/service/time text on a dense block (gated on viewer can-change-
+          status + lateness). Stops propagation so it doesn't open the drawer. */}
+      {showStartButton ? (
         <button
           type="button"
           aria-label={
             (iconLabels as { startShort?: string })?.startShort ?? "Start"
           }
-          className="pointer-events-auto absolute bottom-1 right-1.5 min-h-[28px] rounded-full bg-nq-success/90 px-2 py-0.5 text-[11px] font-semibold text-white transition-all hover:bg-nq-success active:scale-95"
+          title={(iconLabels as { startShort?: string })?.startShort ?? "Start"}
+          data-testid={`booking-block-start-${bookingId}`}
+          className="pointer-events-auto absolute bottom-1 right-1 z-[2] flex h-6 w-6 items-center justify-center rounded-full bg-nq-success text-white shadow-sm ring-1 ring-black/10 transition-transform hover:scale-110 active:scale-95"
           onClick={(e) => {
             e.stopPropagation();
-            onStart();
+            onStart?.();
           }}
         >
-          {(iconLabels as { startShort?: string })?.startShort ?? "Start"}
+          <Play size={11} strokeWidth={2.5} fill="currentColor" />
         </button>
       ) : null}
 
@@ -475,7 +474,14 @@ export function BookingBlock(props: BookingBlockProps) {
       ) : null}
 
       <div className="relative flex min-w-0 gap-2">
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div
+          className={cn(
+            "flex min-w-0 flex-1 flex-col",
+            // Reserve room at the bottom-right for the icon-only Start button so
+            // it never overlaps the service/time text on a dense block.
+            showStartButton && "pr-7",
+          )}
+        >
           {/* `break-words` removed: it split names mid-word in narrow cells
               ("Liam (O…", "Gue…"). A 2-line clamp wraps at word boundaries
               (multi-word names stay readable) and ellipsizes the 2nd line;
@@ -540,6 +546,19 @@ export function BookingBlock(props: BookingBlockProps) {
                 : "flex-col",
             )}
           >
+            {showLateIcon ? (
+              <Clock
+                size={13}
+                strokeWidth={2.5}
+                aria-label={lateChipLabel}
+                className={
+                  latenessTier === "critical"
+                    ? "text-[var(--color-nq-error)]"
+                    : "text-[var(--color-nq-warning)]"
+                }
+                data-testid={`booking-block-icon-late-${bookingId}`}
+              />
+            ) : null}
             {sourceMeta ? (
               <sourceMeta.Icon
                 size={13}
