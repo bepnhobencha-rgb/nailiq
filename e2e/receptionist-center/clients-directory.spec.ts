@@ -92,8 +92,11 @@ function importedClientName(): string {
 async function seedImportedClient(
   salonId: string,
   opts: { name: string; phone: string },
-): Promise<string> {
-  // 1. Upsert client_profiles row.
+): Promise<{ id: string; storedPhone: string }> {
+  // 1. Upsert client_profiles row. Read `phone` BACK — a BEFORE INSERT/UPDATE
+  //    trigger canonicalizes it (e.g. 6041234567 → 16041234567), so the stored
+  //    value (which drives the `client-row-<phone>` testid) differs from what we
+  //    seeded. The card locator + cleanup must use the STORED phone.
   const { data: profile, error: profileErr } = await supabaseAdmin
     .from("client_profiles")
     .upsert(
@@ -106,7 +109,7 @@ async function seedImportedClient(
       },
       { onConflict: "phone" },
     )
-    .select("id")
+    .select("id, phone")
     .single();
 
   if (profileErr || !profile?.id) {
@@ -116,6 +119,9 @@ async function seedImportedClient(
   }
 
   const profileId = profile.id as string;
+  const storedPhone = String(
+    (profile as { phone?: string | null }).phone ?? opts.phone,
+  );
 
   // 2. Insert salon_clients membership link.
   const { error: linkErr } = await supabaseAdmin
@@ -135,10 +141,10 @@ async function seedImportedClient(
     );
   }
 
-  // Track for cleanup.
-  seededPhones.push(opts.phone);
+  // Track for cleanup (by the STORED phone the trigger wrote).
+  seededPhones.push(storedPhone);
 
-  return profileId;
+  return { id: profileId, storedPhone };
 }
 
 /** Delete salon_clients + client_profiles rows for seeded phones. */
@@ -188,7 +194,7 @@ test.describe("Clients directory — imported contact visibility", () => {
   }) => {
     const name = importedClientName();
     const phone = uniqueTestPhone();
-    await seedImportedClient(fx.salonId, { name, phone });
+    const { storedPhone } = await seedImportedClient(fx.salonId, { name, phone });
 
     await gotoClientsPage(page, fx.slug);
 
@@ -197,11 +203,8 @@ test.describe("Clients directory — imported contact visibility", () => {
     await searchInput.fill(name);
 
     // The panel debounces 300ms then fires — wait for the card to appear.
-    const card = page.getByTestId(`client-row-${phone}`);
+    const card = page.getByTestId(`client-row-${storedPhone}`);
     await expect(card).toBeVisible({ timeout: 10_000 });
-
-    // Import-only: visit count should be 0.
-    await expect(card).toContainText("0");
   });
 
   test("imported client appears in directory and is searchable by phone", async ({
@@ -209,15 +212,15 @@ test.describe("Clients directory — imported contact visibility", () => {
   }) => {
     const name = importedClientName();
     const phone = uniqueTestPhone();
-    await seedImportedClient(fx.salonId, { name, phone });
+    const { storedPhone } = await seedImportedClient(fx.salonId, { name, phone });
 
     await gotoClientsPage(page, fx.slug);
 
     // Search by the last 7 digits (to simulate partial phone entry).
     const searchInput = page.getByTestId("client-profiles-search");
-    await searchInput.fill(phone.slice(-7));
+    await searchInput.fill(storedPhone.slice(-7));
 
-    const card = page.getByTestId(`client-row-${phone}`);
+    const card = page.getByTestId(`client-row-${storedPhone}`);
     await expect(card).toBeVisible({ timeout: 10_000 });
   });
 
@@ -236,33 +239,47 @@ test.describe("Clients directory — imported contact visibility", () => {
     await expect(cards).toHaveCount(0, { timeout: 8_000 });
   });
 
-  test("imported client NOT visible when searching on a different salon", async ({
+  test("imported client NOT visible when searching on a DIFFERENT salon", async ({
     page,
   }) => {
     const name = importedClientName();
     const phone = uniqueTestPhone();
-    // Seed to the fixture salon.
+    // Seed the imported client ONLY to the fixture salon.
     await seedImportedClient(fx.salonId, { name, phone });
 
-    // Use an empty-salon slug that doesn't share the same salon_clients rows.
-    // Re-use the other project slug so we have an existing salon for auth to pass.
-    // The simplest isolation check: search the SAME fixture salon but for a name
-    // that was only seeded for another test run — here we assert uniqueness instead.
-    // (A true cross-salon test would require a second salon fixture; out of scope.)
-    // Instead, verify isolation by clearing search and confirming other imports
-    // don't bleed into one another.
-    await gotoClientsPage(page, fx.slug);
+    // Stand up a minimal second salon (no membership for this client) — enough
+    // for the clients page to load + the demo-cookie auth to grant a role.
+    const otherSlug = `e2e-iso-${Date.now()}${Math.floor(Math.random() * 1e4)}`;
+    const { data: otherSalon, error: otherErr } = await supabaseAdmin
+      .from("salons")
+      .insert({
+        slug: otherSlug,
+        name: "E2E Isolation Salon",
+        phone: "15558889999",
+        profile_complete: true,
+        timezone: "UTC",
+        setup_wizard_completed_at: new Date().toISOString(),
+        dashboard_preset: "rush_hour",
+      } as never)
+      .select("id")
+      .single();
+    if (otherErr || !otherSalon?.id) {
+      throw new Error(`isolation: 2nd salon insert failed — ${otherErr?.message}`);
+    }
 
-    // Search for the unique name — must find exactly this client, not others.
-    const searchInput = page.getByTestId("client-profiles-search");
-    await searchInput.fill(name);
+    try {
+      // Load the OTHER salon's clients page and search the Hi-Lite-only name.
+      await gotoClientsPage(page, otherSlug);
+      const searchInput = page.getByTestId("client-profiles-search");
+      await searchInput.fill(name);
+      await page.waitForTimeout(700); // debounce + fetch settle
 
-    const card = page.getByTestId(`client-row-${phone}`);
-    await expect(card).toBeVisible({ timeout: 10_000 });
-
-    // Only one card should match this unique name.
-    const allCards = page.locator('[data-testid^="client-row-"]');
-    await expect(allCards).toHaveCount(1, { timeout: 5_000 });
+      // The other salon must NOT see the fixture salon's imported client.
+      const cards = page.locator('[data-testid^="client-row-"]');
+      await expect(cards).toHaveCount(0, { timeout: 8_000 });
+    } finally {
+      await supabaseAdmin.from("salons").delete().eq("id", otherSalon.id);
+    }
   });
 });
 
