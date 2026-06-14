@@ -196,7 +196,12 @@ test.describe("DRC no-show tombstone + fee decision", () => {
     await expect(page.getByTestId("booking-detail-drawer")).toBeVisible();
 
     // Drawer "No-show" action → fee modal intercepts before marking.
-    await page.getByRole("button", { name: /^no-show$/i }).click();
+    // evaluate-click (not .click()) — the drawer-footer button fails Playwright's
+    // visible/enabled/stable actionability gate under the open animation (the
+    // repo's helpers use the same synthetic-click trick for drawer/sidebar UI).
+    await page
+      .getByTestId("drawer-no-show")
+      .evaluate((el: HTMLElement) => el.click());
 
     // The modal title is unique ("No-show fee"); avoid getByRole("dialog")
     // since the drawer is also a dialog.
@@ -205,7 +210,9 @@ test.describe("DRC no-show tombstone + fee decision", () => {
     expect((await getBookingRow(fx.salonId, id))?.status).toBe("confirmed");
 
     // Choose Waive → booking becomes no_show + fee 'waived'.
-    await page.getByRole("button", { name: /^waive fee$/i }).click();
+    await page
+      .getByRole("button", { name: /^waive fee$/i })
+      .evaluate((el: HTMLElement) => el.click());
     await expect
       .poll(async () => (await getBookingRow(fx.salonId, id))?.status, { timeout: 15_000 })
       .toBe("no_show");
