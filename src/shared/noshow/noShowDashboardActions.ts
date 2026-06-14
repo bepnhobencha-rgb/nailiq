@@ -217,6 +217,45 @@ export async function updateReminderSettings(
   return { ok: true };
 }
 
+/** Update the provider choice + no-show card-on-file policy (provider-agnostic).
+ *  Owner only. Provider is locked elsewhere once a card exists; this just sets it. */
+export async function updateNoShowCardSettings(
+  slug: string,
+  settings: {
+    payment_provider?: "square" | "stripe";
+    noshow_protection_enabled?: boolean;
+    noshow_fee_percent?: number;
+    noshow_risk_threshold?: number;
+  },
+): Promise<{ ok: boolean; error?: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx || ctx.role !== "owner") return { ok: false, error: "unauthorized" };
+
+  const clampPct = (v: number) => Math.min(100, Math.max(0, Math.round(v)));
+  const patch: Record<string, unknown> = {};
+  if (settings.payment_provider === "square" || settings.payment_provider === "stripe") {
+    patch.payment_provider = settings.payment_provider;
+  }
+  if (typeof settings.noshow_protection_enabled === "boolean") {
+    patch.noshow_protection_enabled = settings.noshow_protection_enabled;
+  }
+  if (settings.noshow_fee_percent != null) {
+    patch.noshow_fee_percent = clampPct(settings.noshow_fee_percent);
+  }
+  if (settings.noshow_risk_threshold != null) {
+    patch.noshow_risk_threshold = clampPct(settings.noshow_risk_threshold);
+  }
+  if (Object.keys(patch).length === 0) return { ok: true };
+
+  const supabase = createServiceRoleClient();
+  const { error } = await supabase
+    .from("salons" as never)
+    .update(patch as never)
+    .eq("id", ctx.salon.id);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 /** Mark a booking's deposit as waived (owner override). */
 export async function waiveBookingDeposit(
   slug: string,
