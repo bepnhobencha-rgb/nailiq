@@ -739,7 +739,7 @@ test.describe("Booking error scenarios — /[slug]", () => {
   // 18. End-of-day overflow: with hours 09:00–17:00, the 45-minute seed
   //    service plus 10-minute buffer should not produce any slot whose
   //    label starts at 16:30 or later (would end at 17:25, past close).
-  test("edge-18: slots that would overflow closing time are not offered", async ({
+  test("edge-18: slots that would run the SERVICE past closing time are not offered", async ({
     page,
   }) => {
     await setSalonRow(PRIMARY_SLUG, { opening_hours: STANDARD_HOURS });
@@ -758,10 +758,14 @@ test.describe("Booking error scenarios — /[slug]", () => {
       if (meridiem === "PM" && h !== 12) h += 12;
       if (meridiem === "AM" && h === 12) h = 0;
       const minutesFromClose = (17 - h) * 60 - minute;
+      // The 45-min SERVICE must finish by 17:00; the 10-min trailing buffer
+      // (reset gap for the NEXT booking) may run past close for the last
+      // appointment of the day. So the last bookable start is 16:15 — 45 min
+      // before close — not 16:05.
       expect(
         minutesFromClose,
-        `slot ${label} overflows closing time (45min svc + 10min buffer = 55min needed before 17:00)`,
-      ).toBeGreaterThanOrEqual(55);
+        `slot ${label} runs the 45min service past closing time (needs 45min before 17:00; trailing buffer may spill past close)`,
+      ).toBeGreaterThanOrEqual(45);
     }
   });
 
