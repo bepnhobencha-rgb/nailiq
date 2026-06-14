@@ -326,7 +326,9 @@ export function BookingBlock(props: BookingBlockProps) {
     styles.root,
     isWalkin && showWalkinAccent && "border-l-[3px] border-nq-primary",
     isCompleted && "opacity-70",
-    isDragging && "opacity-40 shadow-nq-card scale-[0.97]",
+    // While dragging, hide the ORIGINAL block so only the moving dashed ghost
+    // (with the live snap time) shows — one clean block instead of two.
+    isDragging && "opacity-0",
     isDraggable && "cursor-grab touch-none select-none",
     onClick && !isDraggable && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
   );
