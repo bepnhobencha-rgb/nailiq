@@ -29,6 +29,7 @@ import { formatPhone } from "@/shared/lib/phoneFormat";
 import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { CLIENT_SEGMENT_DEFAULTS } from "@/shared/dashboard/clientSegmentSettings";
+import { getHostStats, type HostStats } from "@/shared/dashboard/hostStatsAction";
 
 /**
  * Client profiles panel — server-driven search + pagination over the salon's
@@ -497,6 +498,19 @@ function ClientCard({
 }) {
   const [vipPending, startVipTransition] = useTransition();
   const [vipError, setVipError] = useState<string | null>(null);
+  // "Người dẫn nhóm" stats — lazy-loaded once the card is expanded (one phone
+  // at a time, so the directory list stays cheap).
+  const [host, setHost] = useState<HostStats | null>(null);
+  useEffect(() => {
+    if (!isOpen || host !== null) return;
+    let cancelled = false;
+    void getHostStats(slug, row.phone).then((res) => {
+      if (!cancelled && res.ok) setHost(res.stats);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, host, slug, row.phone]);
   const phoneDisplay = formatPhone(row.phone) ?? row.phone;
   const isVip = segment === "vip";
   const badgeLabel = messages.segments[segment];
@@ -579,6 +593,26 @@ function ClientCard({
               {formatDollars(row.totalSpentCents)}
             </span>
           </p>
+
+          {/* "Người dẫn nhóm" — celebrate guests brought without inflating
+              visit count. Shown only when they've actually organized groups. */}
+          {host && host.guestsBrought > 0 ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-nq-primary/5 px-2.5 py-2">
+              <span className="rounded-full bg-nq-primary/15 px-2 py-0.5 text-xs font-semibold text-nq-primary">
+                🎀 {language === "vi" ? "Người dẫn nhóm" : "Group host"}
+              </span>
+              <span className="text-xs text-nq-muted">
+                {language === "vi"
+                  ? `đã dẫn ${host.guestsBrought} khách qua ${host.groupsOrganized} lần nhóm`
+                  : `brought ${host.guestsBrought} guest${host.guestsBrought === 1 ? "" : "s"} across ${host.groupsOrganized} group booking${host.groupsOrganized === 1 ? "" : "s"}`}
+              </span>
+              {canEditVip && !isVip && host.guestsBrought >= 3 ? (
+                <span className="text-[11px] font-medium text-amber-500">
+                  {language === "vi" ? "· nên cân nhắc VIP" : "· consider VIP"}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
 
           {row.email ? (
             <p className="truncate">
