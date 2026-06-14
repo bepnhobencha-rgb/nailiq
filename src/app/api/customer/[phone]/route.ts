@@ -100,7 +100,7 @@ export async function GET(
     }
 
     // Cast to the subset we care about (deleted_at already filtered, not returned)
-    const profile = profileData as {
+    let profile = profileData as {
       name: string | null;
       email: string | null;
       is_vip: boolean;
@@ -108,8 +108,37 @@ export async function GET(
       preferred_staff_id: string | null;
     } | null;
 
+    // Fallback recognition: a customer served only at the DESK (or imported from
+    // Square/Wix) has bookings but NO client_profiles row — that table is only
+    // written by the online flow. Without this, every desk/imported regular is a
+    // stranger online (name never auto-fills). Synthesize a profile from booking
+    // history so rebook recognition works for EVERY past customer regardless of
+    // channel. Read-only; name is resolved from bookings in step 8, visitCount
+    // from completed bookings here.
     if (!profile) {
-      return NextResponse.json<CustomerLookupResponse>({ found: false });
+      const { data: anyRow } = await supabase
+        .from("bookings")
+        .select("id")
+        .eq("salon_id", salonId)
+        .eq("client_phone", phoneDigits)
+        .not("status", "eq", "cancelled")
+        .limit(1);
+      if (!anyRow || anyRow.length === 0) {
+        return NextResponse.json<CustomerLookupResponse>({ found: false });
+      }
+      const { count: completedCount } = await supabase
+        .from("bookings")
+        .select("id", { count: "exact", head: true })
+        .eq("salon_id", salonId)
+        .eq("client_phone", phoneDigits)
+        .eq("status", "completed");
+      profile = {
+        name: null, // resolved from booking history in step 8
+        email: null,
+        is_vip: false,
+        visit_count: completedCount ?? 0,
+        preferred_staff_id: null,
+      };
     }
 
     // Capture salon timezone for date formatting (fallback to Vancouver as default)
