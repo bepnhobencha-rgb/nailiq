@@ -18,6 +18,7 @@ import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { createClient } from "@/shared/lib/supabase/client";
+import { runPublicBookingSideEffects } from "@/shared/booking/publicBookingSideEffects";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 
 export type BookingParams = {
@@ -838,8 +839,13 @@ export async function submitPublicBooking(
     /* booking succeeded; profile update is best-effort */
   }
 
-  // Evaluate deposit requirement + AI risk score — fire-and-forget via server route
-  // (scoreNoShowRisk uses @anthropic-ai/sdk which is Node.js-only, can't run in browser).
+  // Post-commit side-effects (deposit eval + AI no-show risk + card-required
+  // flag, and the confirmation email) run in a SERVER ACTION. This flow executes
+  // in the browser (anon Supabase client for RLS-scoped inserts), so the old
+  // client→internal-route fetches sent an empty INTERNAL_API_SECRET and were
+  // rejected on EVERY online booking (risk 401, email 403): no risk was ever
+  // scored and no confirmation email ever sent. A server action has the server
+  // env + uses after(), so it runs these directly without the HTTP/secret hop.
   void (async () => {
     try {
       const { data: depositRows } = await supabase.rpc(
@@ -850,18 +856,8 @@ export async function submitPublicBooking(
         no_show_count?: number; is_vip?: boolean; visit_count?: number;
       } | null;
 
-      const appUrl =
-        typeof window !== "undefined"
-          ? "" // same-origin relative — avoids www/non-www cross-origin "Failed to fetch"
-          : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
-      const secret = (process.env.INTERNAL_API_SECRET ?? "").trim();
-      await fetch(`${appUrl}/api/booking/noshow-evaluate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-internal-secret": secret,
-        },
-        body: JSON.stringify({
+      await runPublicBookingSideEffects({
+        risk: {
           bookingId,
           clientName: nameTrimmed,
           serviceName: service.name as string,
@@ -873,44 +869,25 @@ export async function submitPublicBooking(
           isVip: cp?.is_vip ?? false,
           hasEmail: !!emailToStore,
           svcPriceCents: priceSnapshot ?? 0,
-        }),
+        },
+        email: emailToStore
+          ? {
+              bookingId,
+              shopSlug,
+              clientName: nameTrimmed,
+              clientEmail: emailToStore,
+              serviceName: service.name as string,
+              addonServiceName: addonRow?.name ?? null,
+              staffName: resolvedStaffName,
+              startTimeUtc: startLocal.toISOString(),
+              totalPriceCents: totalPriceCents > 0 ? totalPriceCents : null,
+            }
+          : undefined,
       });
     } catch (e) {
-      console.error("[submitPublicBooking] noshow-evaluate dispatch failed", e);
+      console.error("[submitPublicBooking] side-effects dispatch failed", e);
     }
   })();
-
-  // Send confirmation email via a dedicated Route Handler that uses after()
-  // to guarantee delivery even after the server action returns.
-  if (emailToStore) {
-    try {
-      const appUrl =
-        typeof window !== "undefined"
-          ? "" // same-origin relative — avoids www/non-www cross-origin "Failed to fetch"
-          : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
-      const secret = (process.env.INTERNAL_API_SECRET ?? "").trim();
-      await fetch(`${appUrl}/api/booking-email`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-internal-secret": secret,
-        },
-        body: JSON.stringify({
-          bookingId,
-          shopSlug,
-          clientName: nameTrimmed,
-          clientEmail: emailToStore,
-          serviceName: service.name as string,
-          addonServiceName: addonRow?.name ?? null,
-          staffName: resolvedStaffName,
-          startTimeUtc: startLocal.toISOString(),
-          totalPriceCents: totalPriceCents > 0 ? totalPriceCents : null,
-        }),
-      });
-    } catch (e) {
-      console.error("[submitPublicBooking] booking-email dispatch failed", e);
-    }
-  }
 
   // Fire-and-forget: redeem voucher
   if (params.voucherRedemption?.voucher_id && bookingId) {
