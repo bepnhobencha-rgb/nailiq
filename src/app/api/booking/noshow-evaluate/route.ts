@@ -92,6 +92,22 @@ export async function POST(req: Request) {
       })
       .eq("id", body.bookingId);
 
+    // Hold-until-card: now that risk is written, flag whether this booking must
+    // leave a card (new / high-risk + provider connected + protection on). The
+    // release-pending cron auto-cancels it if no card is saved in time.
+    try {
+      const { noShowCardDecision } = await import(
+        "@/shared/integrations/square/noshow"
+      );
+      const decision = await noShowCardDecision(body.bookingId);
+      await supabase
+        .from("bookings" as never)
+        .update({ noshow_card_required: decision.required })
+        .eq("id", body.bookingId);
+    } catch (e) {
+      console.error("[noshow-evaluate] card-required flag", e);
+    }
+
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("[noshow-evaluate] failed", e);

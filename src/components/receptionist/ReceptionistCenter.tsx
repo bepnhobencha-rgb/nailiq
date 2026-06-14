@@ -87,6 +87,8 @@ import {
   undoCancelBooking,
   cancelWaitingWalkin,
   undoWalkinAssignment,
+  chargeNoShowFeeManual,
+  waiveNoShowFee,
 } from "@/shared/dashboard/receptionistActions";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
 import { defaultNotifyOn } from "@/shared/dashboard/staffNotificationSettings";
@@ -561,6 +563,13 @@ function ReceptionistCenterInner({
   // so re-clicking the tab while already on the page did nothing.
 
   const [drawerBusy, setDrawerBusy] = useState(false);
+  // No-show fee charge/waive modal — shown when a no-show'd booking has a Square
+  // card on file (declared here, above the TV-mode early return, so the hook
+  // order is stable). The charge/waive decision is wired in `triggerMarkNoShow`.
+  const [noShowChargeModal, setNoShowChargeModal] = useState<{
+    bookingId: string;
+    feeCents: number;
+  } | null>(null);
   // Pending desk-cancel that hit a paid deposit → ask refund-or-keep first.
   const [depositCancel, setDepositCancel] = useState<{
     id: string;
@@ -666,7 +675,11 @@ function ReceptionistCenterInner({
           seat_together: b.seat_together === true,
           addon_count: b.addons?.length ?? 0,
           no_show_count: b.client_no_show_count ?? 0,
+          no_show_risk_score: b.no_show_risk_score ?? null,
           buffer_minutes: b.service_buffer_minutes,
+          noshow_card_id: b.noshow_card_id ?? null,
+          noshow_fee_cents: b.noshow_fee_cents ?? null,
+          noshow_charge_status: b.noshow_charge_status ?? null,
         },
       ];
     });
@@ -2103,13 +2116,14 @@ function ReceptionistCenterInner({
       }
     : undefined;
 
-  const handleMarkNoShow = async (id: string) => {
+  const handleMarkNoShow = async (id: string, chargeFee?: boolean) => {
     if (!id) return;
     setDrawerBusy(true);
     try {
       const r = await markNoShowBooking(slug, {
         salonId: data.salon.id,
         bookingId: id,
+        ...(chargeFee !== undefined ? { chargeFee } : {}),
       });
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
@@ -2122,7 +2136,98 @@ function ReceptionistCenterInner({
       setDrawerBusy(false);
     }
   };
-  const onDrawerMarkNoShow = () => void handleMarkNoShow(drawerBookingId ?? "");
+
+  // Check if booking has a card + fee before marking no-show; show the
+  // charge/waive modal if so. Plain functions (NOT hooks) — they live after the
+  // component's early `return` for TV mode, where calling useState/useCallback
+  // would violate the rules of hooks. `noShowChargeModal` state is declared up
+  // with the other useState hooks above the early return.
+  const triggerMarkNoShow = (id: string) => {
+    const b = data.bookingsForDay.find((x) => x.id === id);
+    if (
+      b &&
+      b.noshow_card_id &&
+      b.noshow_fee_cents &&
+      b.noshow_fee_cents > 0 &&
+      b.noshow_charge_status !== "charged" &&
+      b.noshow_charge_status !== "waived"
+    ) {
+      setNoShowChargeModal({ bookingId: id, feeCents: b.noshow_fee_cents });
+    } else {
+      void handleMarkNoShow(id);
+    }
+  };
+
+  const onDrawerMarkNoShow = () =>
+    void triggerMarkNoShow(drawerBookingId ?? "");
+
+  // Inline "Start" handler — confirmed/pending → in_progress straight from the grid.
+  const handleStartBooking = async (bookingId: string) => {
+    const r = await updateBookingStatus(bookingId, "in_progress", slug);
+    if (!r.ok) {
+      setShakeMessage(
+        updateBookingStatusToastMessage(messages.receptionist, r),
+      );
+      return;
+    }
+    await reloadCurrentDay();
+    router.refresh();
+  };
+
+  // Tombstone handlers — undo / charge / waive from the grid ribbon popover.
+  const handleTombstoneUndo = async (bookingId: string) => {
+    if (!bookingId) return;
+    setDrawerBusy(true);
+    try {
+      const r = await undoNoShowBooking(slug, {
+        salonId: data.salon.id,
+        bookingId,
+      });
+      if (!r.ok) {
+        setShakeMessage(mutationMessage(messages.receptionist, r.error));
+      } else {
+        setDrawerBookingId(null);
+        await reloadCurrentDay();
+        router.refresh();
+      }
+    } finally {
+      setDrawerBusy(false);
+    }
+  };
+
+  const handleTombstoneCharge = async (bookingId: string) => {
+    setDrawerBusy(true);
+    try {
+      const r = await chargeNoShowFeeManual(slug, {
+        salonId: data.salon.id,
+        bookingId,
+      });
+      if (!r.ok) setShakeMessage(messages.receptionist.actionErrorFallback);
+      else {
+        await reloadCurrentDay();
+        router.refresh();
+      }
+    } finally {
+      setDrawerBusy(false);
+    }
+  };
+
+  const handleTombstoneWaive = async (bookingId: string) => {
+    setDrawerBusy(true);
+    try {
+      const r = await waiveNoShowFee(slug, {
+        salonId: data.salon.id,
+        bookingId,
+      });
+      if (!r.ok) setShakeMessage(messages.receptionist.actionErrorFallback);
+      else {
+        await reloadCurrentDay();
+        router.refresh();
+      }
+    } finally {
+      setDrawerBusy(false);
+    }
+  };
 
   // No-show: only for a confirmed / in-progress booking whose start time has passed
   // (you can't no-show a future appointment). Front desk: owner/admin/senior/receptionist.
@@ -2961,7 +3066,7 @@ function ReceptionistCenterInner({
                 }
                 displayName={displayCustomerName}
                 onOpenBooking={(id) => setDrawerBookingId(id)}
-                onMarkNoShow={(id) => void handleMarkNoShow(id)}
+                onMarkNoShow={(id) => void triggerMarkNoShow(id)}
                 onUndoNoShow={(id) => void handleUndoNoShow(id)}
               />
 
@@ -3053,8 +3158,15 @@ function ReceptionistCenterInner({
                   conflictWith: rcMessages.grid.conflictWith,
                   overflowMessage: rcMessages.grid.overflowMessage,
                   closingLabel: rcMessages.grid.closingLabel,
-                  bookingIcon: rcMessages.grid.bookingIcon,
+                  bookingIcon: {
+                    ...rcMessages.grid.bookingIcon,
+                    startShort: rcMessages.latenessGrid.startShort,
+                    autoNoShowAt: rcMessages.latenessGrid.autoNoShowAt,
+                    lateChip: rcMessages.latenessGrid.late,
+                    veryLateChip: rcMessages.latenessGrid.veryLate,
+                  },
                   removedGuest: rcMessages.removedGuest,
+                  latenessGrid: rcMessages.latenessGrid,
                 }}
                 showStaffPerformanceDetail={modules.staff_performance}
                 showTimelineHeatmap={modules.timeline_heatmap}
@@ -3067,6 +3179,17 @@ function ReceptionistCenterInner({
                 showBookingTimeRange={densityConfig.showTimeRangeInBlock}
                 bookingBlockMinHeightPx={densityConfig.bookingBlockMinHeight}
                 timeSlotMinutesVisualHint={densityConfig.timeSlotMinutes}
+                autoNoShowMinutes={data.salon.autoNoShowMinutes}
+                noShowTombstones={noShowsTodayList}
+                onStartBooking={
+                  canChangeBookingStatus(viewerRole)
+                    ? (id) => void handleStartBooking(id)
+                    : undefined
+                }
+                language={language === "vi" ? "vi" : "en"}
+                onTombstoneUndo={(id) => void handleTombstoneUndo(id)}
+                onTombstoneCharge={(id) => void handleTombstoneCharge(id)}
+                onTombstoneWaive={(id) => void handleTombstoneWaive(id)}
               />
             </section>
           </div>
@@ -3471,6 +3594,55 @@ function ReceptionistCenterInner({
             );
           })()
         : null}
+
+      {/* No-show fee charge/waive modal — shown when the booking has a Square card on file. */}
+      {noShowChargeModal ? (
+        <Modal
+          isOpen={!!noShowChargeModal}
+          onClose={() => setNoShowChargeModal(null)}
+          size="sm"
+          title={rcMessages.noShowFeeModal.title}
+          description={rcMessages.noShowFeeModal.desc(
+            formatCurrency(noShowChargeModal.feeCents, data.salon.currencyCode) ?? "",
+          )}
+          footer={
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                className="w-full rounded-xl bg-nq-warning/90 px-4 py-3 text-sm font-semibold text-white transition-all hover:bg-nq-warning active:scale-[0.98]"
+                onClick={() => {
+                  const id = noShowChargeModal.bookingId;
+                  setNoShowChargeModal(null);
+                  void handleMarkNoShow(id, true);
+                }}
+              >
+                {rcMessages.noShowFeeModal.charge(
+                  formatCurrency(noShowChargeModal.feeCents, data.salon.currencyCode) ?? "",
+                )}
+              </button>
+              <button
+                type="button"
+                className="w-full rounded-xl border border-nq-border px-4 py-3 text-sm font-medium text-nq-muted transition-colors hover:bg-nq-surface/60"
+                onClick={() => {
+                  const id = noShowChargeModal.bookingId;
+                  setNoShowChargeModal(null);
+                  void handleMarkNoShow(id, false);
+                }}
+              >
+                {rcMessages.noShowFeeModal.waive}
+              </button>
+              <button
+                type="button"
+                className="w-full px-4 py-2 text-sm text-nq-muted transition-colors hover:text-nq-foreground"
+                onClick={() => setNoShowChargeModal(null)}
+              >
+                {rcMessages.noShowFeeModal.cancel}
+              </button>
+            </div>
+          }
+          showCloseButton={false}
+        />
+      ) : null}
     </>
   );
 }

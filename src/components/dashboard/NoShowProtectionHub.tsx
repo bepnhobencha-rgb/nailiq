@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   updateRemindersEnabled,
   updateReminderSettings,
+  updateNoShowCardSettings,
   waiveBookingDeposit,
 } from "@/shared/noshow/noShowDashboardActions";
 import type {
@@ -31,6 +32,10 @@ type Props = {
   connectHasAccount: boolean;
   connectChargesEnabled: boolean;
   connectDetailsSubmitted: boolean;
+  paymentProvider: "square" | "stripe" | null;
+  noshowProtectionEnabled: boolean;
+  noshowFeePercent: number;
+  noshowRiskThreshold: number;
   summary: NoShowSummary;
   unconfirmed: UnconfirmedBooking[];
   waitlist: WaitlistOpportunity[];
@@ -87,6 +92,10 @@ export function NoShowProtectionHub({
   connectHasAccount,
   connectChargesEnabled,
   connectDetailsSubmitted,
+  paymentProvider: initialProvider,
+  noshowProtectionEnabled: initialNoshowEnabled,
+  noshowFeePercent: initialNoshowPct,
+  noshowRiskThreshold: initialNoshowThreshold,
   summary,
   unconfirmed,
   waitlist,
@@ -103,6 +112,28 @@ export function NoShowProtectionHub({
   const [pctNewCustomer, setPctNewCustomer] = useState(String(initialPctNewCustomer));
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [waivedIds, setWaivedIds] = useState<Set<string>>(new Set());
+  // No-show card-on-file policy (provider-agnostic) + provider choice.
+  const [provider, setProvider] = useState<"square" | "stripe">(
+    initialProvider ?? "square",
+  );
+  const [noshowEnabled, setNoshowEnabled] = useState(initialNoshowEnabled);
+  const [noshowPct, setNoshowPct] = useState(String(initialNoshowPct));
+  const [noshowThreshold, setNoshowThreshold] = useState(String(initialNoshowThreshold));
+  const [cardSaveMsg, setCardSaveMsg] = useState<string | null>(null);
+
+  function saveCardSettings() {
+    startTransition(async () => {
+      const r = await updateNoShowCardSettings(slug, {
+        payment_provider: provider,
+        noshow_protection_enabled: noshowEnabled,
+        noshow_fee_percent: parseInt(noshowPct, 10) || 0,
+        noshow_risk_threshold: parseInt(noshowThreshold, 10) || 0,
+      });
+      setCardSaveMsg(r.ok ? "Đã lưu" : (r.error ?? "Lỗi"));
+      setTimeout(() => setCardSaveMsg(null), 3000);
+      router.refresh();
+    });
+  }
 
   function toggleReminders(next: boolean) {
     setRemindersEnabled(next);
@@ -162,6 +193,87 @@ export function NoShowProtectionHub({
             initialChargesEnabled={connectChargesEnabled}
             initialDetailsSubmitted={connectDetailsSubmitted}
           />
+        )}
+
+        {/* Payment provider + no-show card-on-file policy — owner only */}
+        {isOwner && (
+          <section className="mt-6 rounded-2xl border border-nq-border/40 bg-nq-surface p-5">
+            <h2 className="text-sm font-semibold text-nq-text">
+              Lưu thẻ khi đặt (chống no-show)
+            </h2>
+            <p className="mt-1 text-xs text-nq-muted">
+              Khách lần đầu &amp; khách rủi ro cao phải lưu thẻ (không trừ tiền).
+              No-show thì nhân viên chọn thu hay bỏ qua.
+            </p>
+
+            <label className="mt-4 block text-xs font-medium text-nq-muted">
+              Cổng thanh toán
+            </label>
+            <div className="mt-1 flex gap-2">
+              {(["square", "stripe"] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setProvider(p)}
+                  className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
+                    provider === p
+                      ? "border-nq-gold bg-nq-gold/15 text-nq-gold"
+                      : "border-nq-border/50 text-nq-muted hover:border-nq-gold/40"
+                  }`}
+                >
+                  {p === "square" ? "Square (nhập thẻ)" : "Stripe (1-chạm Apple/Google Pay)"}
+                </button>
+              ))}
+            </div>
+
+            <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm text-nq-text">
+              <input
+                type="checkbox"
+                checked={noshowEnabled}
+                onChange={(e) => setNoshowEnabled(e.target.checked)}
+                className="h-4 w-4 accent-nq-gold"
+              />
+              Bật yêu cầu lưu thẻ no-show
+            </label>
+
+            <div className="mt-3 flex flex-wrap gap-4">
+              <div>
+                <label className="block text-xs text-nq-muted">Phí no-show (%)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={noshowPct}
+                  onChange={(e) => setNoshowPct(e.target.value)}
+                  className="mt-1 w-24 rounded-lg border border-nq-border/50 bg-nq-bg px-2 py-1 text-sm text-nq-text"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-nq-muted">
+                  Ngưỡng rủi ro (khách quen mới phải lưu)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={noshowThreshold}
+                  onChange={(e) => setNoshowThreshold(e.target.value)}
+                  className="mt-1 w-24 rounded-lg border border-nq-border/50 bg-nq-bg px-2 py-1 text-sm text-nq-text"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={saveCardSettings}
+              disabled={isPending}
+              className="mt-4 rounded-xl bg-nq-gold px-4 py-2 text-xs font-semibold text-black transition hover:bg-nq-gold/90 disabled:opacity-50"
+            >
+              {isPending ? "Đang lưu…" : "Lưu"}
+            </button>
+            {cardSaveMsg && (
+              <p className="mt-2 text-xs text-emerald-400">{cardSaveMsg}</p>
+            )}
+          </section>
         )}
 
         {/* Reminder settings — owner only */}

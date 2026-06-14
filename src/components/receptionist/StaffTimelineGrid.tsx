@@ -11,6 +11,9 @@ import {
   type ReactNode,
 } from "react";
 
+import { computeLatenessTier } from "./lateness";
+import { formatCurrency } from "@/shared/lib/currencyFormat";
+
 import { BookingBlock } from "./BookingBlock";
 import { GhostBlock } from "./GhostBlock";
 import { NowLine } from "./NowLine";
@@ -99,6 +102,10 @@ export interface GridBooking {
   no_show_count?: number;
   /** AI no-show risk score (0–100) — drives an amber risk ⚠ on the block. */
   no_show_risk_score?: number | null;
+  /** No-show fee lifecycle for the booking's no-show card — used by the tombstone. */
+  noshow_charge_status?: string | null;
+  noshow_card_id?: string | null;
+  noshow_fee_cents?: number | null;
 }
 
 export interface StaffTimelineGridProps {
@@ -170,6 +177,30 @@ export interface StaffTimelineGridProps {
       /** Aria label for the heart icon shown when the booking has a
        * non-empty staff request note. */
       staffRequest: string;
+      /** "Start" — inline start button label. */
+      startShort?: string;
+      /** "Auto no-show at {time}" template. */
+      autoNoShowAt?: (time: string) => string;
+      /** "Late" badge text. */
+      lateChip?: string;
+      /** "Very late" badge text. */
+      veryLateChip?: string;
+    };
+    /** Localized strings for lateness grid UI and tombstone popovers. */
+    latenessGrid?: {
+      startShort: string;
+      autoNoShowAt: (time: string) => string;
+      late: string;
+      veryLate: string;
+      tombstoneAria: (clientName: string) => string;
+      tombstoneUndo: string;
+      tombstoneCharge: (amount: string) => string;
+      tombstoneWaive: string;
+      tombstoneCharged: (amount: string) => string;
+      tombstoneWaived: string;
+      tombstoneFailed: string;
+      tombstoneUnpaid: (amount: string) => string;
+      tombstoneNoCard: string;
     };
   };
   /** When false, hides per-staff role line and busy ring on avatars (`staff_performance`). */
@@ -212,6 +243,27 @@ export interface StaffTimelineGridProps {
    * horizontal cluster instead of a vertical stack. Default false
    * (Balanced/Advanced keep the existing vertical stack). */
   compactBookingIcons?: boolean;
+  /** Minutes past start when the cron auto-marks no_show. Null = auto OFF. */
+  autoNoShowMinutes?: number | null;
+  /** No-show tombstones to render as thin ribbons on the grid. */
+  noShowTombstones?: Array<{
+    id: string;
+    clientName: string;
+    startTimeUtc: string;
+    endTimeUtc: string;
+    staffId: string | null;
+    feeCents: number | null;
+    chargeStatus: string | null;
+    hasCard: boolean;
+  }>;
+  /** Called when the "Start" inline button is clicked on a late block. */
+  onStartBooking?: (bookingId: string) => void;
+  /** Language for tombstone popover labels. */
+  language?: "en" | "vi";
+  /** Tombstone charge/waive/undo handlers. */
+  onTombstoneUndo?: (bookingId: string) => void;
+  onTombstoneCharge?: (bookingId: string) => void;
+  onTombstoneWaive?: (bookingId: string) => void;
 }
 
 function slotIndexToUtc(
@@ -380,6 +432,13 @@ function StaffTimelineGridImpl({
   bookingBlockMinHeightPx,
   currencyCode,
   compactBookingIcons = false,
+  autoNoShowMinutes,
+  noShowTombstones,
+  onStartBooking,
+  language = "en",
+  onTombstoneUndo,
+  onTombstoneCharge,
+  onTombstoneWaive,
   // `timeSlotMinutesVisualHint` is reserved for future row-height
   // adjustments; currently unused at runtime.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- ARCHITECTURE_LOCK: reserved for future row-height adjustments
@@ -1388,6 +1447,17 @@ function StaffTimelineGridImpl({
                         Number.isFinite(endMs) &&
                         Number.isFinite(nowMs) &&
                         endMs < nowMs;
+                      // Lateness tier for confirmed/pending past start time.
+                      const { tier: latenessTier, autoAtIso } =
+                        computeLatenessTier({
+                          status: b.status,
+                          startTimeUtc: b.start_time_utc,
+                          nowIso,
+                          autoNoShowMinutes: autoNoShowMinutes ?? null,
+                        });
+                      const autoNoShowAtLabel = autoAtIso
+                        ? labels.formatTimeLabel(autoAtIso)
+                        : undefined;
                       const isDraggable =
                         !!onRescheduleBooking &&
                         !assignMode &&
@@ -1443,6 +1513,14 @@ function StaffTimelineGridImpl({
                           isLate={isLate}
                           iconLabels={labels.bookingIcon}
                           isDragging={isBeingDragged}
+                          latenessTier={latenessTier}
+                          autoNoShowAtLabel={autoNoShowAtLabel}
+                          onStart={
+                            onStartBooking !== undefined &&
+                            latenessTier !== null
+                              ? () => onStartBooking(b.id)
+                              : undefined
+                          }
                           onPointerDown={
                             isDraggable
                               ? (e) => {
@@ -1492,6 +1570,56 @@ function StaffTimelineGridImpl({
                         />
                       );
                     })}
+                    {/* No-show tombstones — thin dashed ribbons at the bottom of the row
+                        for each no-show booking that belonged to this staff member. */}
+                    {(noShowTombstones ?? [])
+                      .filter((t) => t.staffId === s.id)
+                      .map((t) => {
+                        const startMin = utcIsoToSalonMinutesFromMidnight(
+                          t.startTimeUtc,
+                          timezone,
+                        );
+                        const minutesFromStart = startMin - hourStart * 60;
+                        const durationMin =
+                          (Date.parse(t.endTimeUtc) -
+                            Date.parse(t.startTimeUtc)) /
+                          60_000;
+                        const tLeftPx =
+                          (minutesFromStart / SLOT_MINUTES) * SLOT_PX;
+                        const tWidthPx =
+                          (durationMin / SLOT_MINUTES) * SLOT_PX;
+                        const canCharge =
+                          t.hasCard &&
+                          t.feeCents !== null &&
+                          t.feeCents > 0 &&
+                          t.chargeStatus !== "charged" &&
+                          t.chargeStatus !== "waived";
+                        return (
+                          <NoShowTombstone
+                            key={t.id}
+                            id={t.id}
+                            clientName={t.clientName}
+                            leftPx={tLeftPx}
+                            widthPx={tWidthPx}
+                            feeCents={t.feeCents}
+                            chargeStatus={t.chargeStatus}
+                            hasCard={t.hasCard}
+                            language={language}
+                            currencyCode={currencyCode}
+                            onUndo={() => onTombstoneUndo?.(t.id)}
+                            onCharge={
+                              canCharge
+                                ? () => onTombstoneCharge?.(t.id)
+                                : undefined
+                            }
+                            onWaive={
+                              canCharge
+                                ? () => onTombstoneWaive?.(t.id)
+                                : undefined
+                            }
+                          />
+                        );
+                      })}
                     {ghostEl}
                     {createGhostEl}
                     {dragGhostEl}
@@ -1534,6 +1662,162 @@ function StaffTimelineGridImpl({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── NoShowTombstone ─────────────────────────────────────────────────────────
+// Grid-specific thin ribbon pinned to the bottom of a staff row for no-show
+// bookings. Shows dashed red stripes and opens a popover on click with
+// undo / charge / waive actions.
+
+interface NoShowTombstoneProps {
+  id: string;
+  clientName: string;
+  leftPx: number;
+  widthPx: number;
+  feeCents: number | null;
+  chargeStatus: string | null;
+  hasCard: boolean;
+  language: "en" | "vi";
+  currencyCode?: import("@/shared/lib/currencyFormat").Currency;
+  onUndo: () => void;
+  onCharge?: () => void;
+  onWaive?: () => void;
+}
+
+function NoShowTombstone({
+  id,
+  clientName,
+  leftPx,
+  widthPx,
+  feeCents,
+  chargeStatus,
+  hasCard,
+  language,
+  currencyCode,
+  onUndo,
+  onCharge,
+  onWaive,
+}: NoShowTombstoneProps) {
+  const [open, setOpen] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const vi = language === "vi";
+
+  // Click-away: close when pointer lands outside the popover.
+  useEffect(() => {
+    if (!open) return;
+    const handle = (e: PointerEvent) => {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handle);
+    return () => document.removeEventListener("pointerdown", handle);
+  }, [open]);
+
+  // Derive status label and color.
+  const amountStr = feeCents ? (formatCurrency(feeCents, currencyCode) ?? "") : "";
+  let statusLabel: string;
+  let statusClass: string;
+  if (chargeStatus === "charged") {
+    statusLabel = vi ? `Đã thu ${amountStr}` : `Charged ${amountStr}`;
+    statusClass = "text-nq-success";
+  } else if (chargeStatus === "waived") {
+    statusLabel = vi ? "Đã bỏ qua" : "Waived";
+    statusClass = "text-nq-muted";
+  } else if (chargeStatus === "failed") {
+    statusLabel = vi ? "Thu phí thất bại" : "Charge failed";
+    statusClass = "text-nq-warning";
+  } else if (
+    hasCard &&
+    feeCents &&
+    feeCents > 0 &&
+    chargeStatus !== "charged" &&
+    chargeStatus !== "waived"
+  ) {
+    statusLabel = vi
+      ? `Chưa thu ${amountStr} — bấm để thu`
+      : `Unpaid ${amountStr} — tap to charge`;
+    statusClass = "text-nq-error";
+  } else {
+    statusLabel = vi ? "Vắng mặt" : "No-show";
+    statusClass = "text-nq-muted";
+  }
+
+  return (
+    <div
+      className="pointer-events-auto absolute bottom-0 h-3.5 cursor-pointer rounded border border-dashed border-nq-error/50 bg-nq-error/10"
+      style={{
+        left: leftPx,
+        width: Math.max(8, widthPx - 4),
+        backgroundImage:
+          "repeating-linear-gradient(45deg, rgba(239,68,68,0.25) 0, rgba(239,68,68,0.25) 2px, transparent 2px, transparent 6px)",
+        zIndex: 1,
+      }}
+      aria-label={vi ? `Khách vắng: ${clientName}` : `No-show: ${clientName}`}
+      data-testid={`noshow-tombstone-${id}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        setOpen((p) => !p);
+      }}
+    >
+      {open ? (
+        <div
+          ref={popoverRef}
+          className="absolute bottom-full left-0 z-50 min-w-48 rounded-xl border border-nq-border/60 bg-nq-surface p-2.5 shadow-nq-card"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Client name + status */}
+          <div className="mb-2 flex items-start gap-2">
+            <span className="flex-1 truncate text-sm font-semibold text-nq-foreground">
+              {clientName}
+            </span>
+            <span className={`shrink-0 text-xs ${statusClass}`}>
+              {statusLabel}
+            </span>
+          </div>
+
+          {/* Action buttons */}
+          <button
+            type="button"
+            className="w-full rounded-lg px-2 py-1.5 text-left text-sm text-nq-success transition-colors hover:bg-nq-surface/80"
+            onClick={() => {
+              setOpen(false);
+              onUndo();
+            }}
+          >
+            {vi ? "Bỏ vắng (đã đến)" : "Undo no-show"}
+          </button>
+          {onCharge ? (
+            <button
+              type="button"
+              className="w-full rounded-lg px-2 py-1.5 text-left text-sm text-nq-warning transition-colors hover:bg-nq-surface/80"
+              onClick={() => {
+                setOpen(false);
+                onCharge();
+              }}
+            >
+              {vi ? `Thu phí ${amountStr}` : `Charge ${amountStr}`}
+            </button>
+          ) : null}
+          {onWaive ? (
+            <button
+              type="button"
+              className="w-full rounded-lg px-2 py-1.5 text-left text-sm text-nq-muted transition-colors hover:bg-nq-surface/80"
+              onClick={() => {
+                setOpen(false);
+                onWaive();
+              }}
+            >
+              {vi ? "Bỏ qua phí" : "Waive fee"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

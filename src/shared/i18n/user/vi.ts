@@ -1752,6 +1752,28 @@ export const userVi: UserMessages = {
       upgradeError:
         "Không bắt đầu được thanh toán. Vào Cài đặt → Thanh toán để thử lại.",
     },
+    noShowFeeModal: {
+      title: "Phí vắng mặt",
+      desc: (amount: string) => `Thẻ của khách đã lưu khoản phí ${amount} cho lịch này.`,
+      charge: (amount: string) => `Thu phí ${amount} ngay`,
+      waive: "Bỏ qua phí",
+      cancel: "Huỷ (đánh dấu vắng, quyết định sau)",
+    },
+    latenessGrid: {
+      startShort: "Bắt đầu",
+      autoNoShowAt: (time: string) => `Tự động vắng lúc ${time}`,
+      late: "Trễ",
+      veryLate: "Trễ nhiều",
+      tombstoneAria: (clientName: string) => `Vắng mặt: ${clientName}`,
+      tombstoneUndo: "Bỏ vắng (đã đến)",
+      tombstoneCharge: (amount: string) => `Thu phí ${amount}`,
+      tombstoneWaive: "Bỏ qua phí",
+      tombstoneCharged: (amount: string) => `Đã thu ${amount}`,
+      tombstoneWaived: "Đã bỏ qua",
+      tombstoneFailed: "Thu phí thất bại",
+      tombstoneUnpaid: (amount: string) => `Chưa thu ${amount} — bấm để thu`,
+      tombstoneNoCard: "Vắng mặt",
+    },
   },
   wixSlotTaken:
     "Rất tiếc, khung giờ này vừa được đặt bởi khách khác. Vui lòng chọn giờ khác.",

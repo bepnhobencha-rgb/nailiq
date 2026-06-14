@@ -19,7 +19,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
   const { data: salonRow } = await (await import("@/shared/lib/supabase/serviceRole"))
     .createServiceRoleClient()
     .from("salons" as never)
-    .select("reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_details_submitted")
+    .select("reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_details_submitted, payment_provider, noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold")
     .eq("id", ctx.salon.id)
     .maybeSingle();
 
@@ -35,6 +35,10 @@ export default async function NoShowProtectionPage({ params }: Props) {
     stripe_connect_account_id?: string | null;
     stripe_connect_charges_enabled?: boolean;
     stripe_connect_details_submitted?: boolean;
+    payment_provider?: "square" | "stripe" | null;
+    noshow_protection_enabled?: boolean;
+    noshow_fee_percent?: number;
+    noshow_risk_threshold?: number;
   } | null;
 
   const result = await loadNoShowDashboard(slug);
@@ -55,6 +59,10 @@ export default async function NoShowProtectionPage({ params }: Props) {
       connectHasAccount={Boolean(row?.stripe_connect_account_id)}
       connectChargesEnabled={row?.stripe_connect_charges_enabled ?? false}
       connectDetailsSubmitted={row?.stripe_connect_details_submitted ?? false}
+      paymentProvider={row?.payment_provider ?? null}
+      noshowProtectionEnabled={row?.noshow_protection_enabled ?? false}
+      noshowFeePercent={row?.noshow_fee_percent ?? 20}
+      noshowRiskThreshold={row?.noshow_risk_threshold ?? 60}
       summary={result.summary!}
       unconfirmed={result.unconfirmed!}
       waitlist={result.waitlist!}

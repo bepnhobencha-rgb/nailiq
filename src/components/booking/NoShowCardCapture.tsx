@@ -2,6 +2,61 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
+import { NoShowCardCaptureStripe } from "./NoShowCardCaptureStripe";
+
+type CaptureProps = {
+  bookingId: string;
+  /** Formats cents → display string (e.g. "$20.00") in the salon currency. */
+  currencyFormat: (cents: number) => string;
+  t: BookingMessages;
+};
+
+/**
+ * Dispatcher: a Stripe-provider salon shows the one-tap Payment Element (Apple/
+ * Google Pay); a Square salon shows the card-entry form below. Renders nothing
+ * until it knows, and nothing when no card is required for this booking.
+ */
+export function NoShowCardCapture(props: CaptureProps) {
+  const [stripeCfg, setStripeCfg] = useState<{
+    required: boolean;
+    clientSecret?: string;
+    publishableKey?: string;
+    feeCents?: number;
+  } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/booking/stripe-setup-intent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookingId: props.bookingId }),
+    })
+      .then((r) => r.json())
+      .then((c) => {
+        if (alive) setStripeCfg(c);
+      })
+      .catch(() => {
+        if (alive) setStripeCfg({ required: false });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [props.bookingId]);
+
+  if (stripeCfg === null) return null; // still deciding which provider
+  if (stripeCfg.required && stripeCfg.clientSecret && stripeCfg.publishableKey) {
+    return (
+      <NoShowCardCaptureStripe
+        bookingId={props.bookingId}
+        clientSecret={stripeCfg.clientSecret}
+        publishableKey={stripeCfg.publishableKey}
+        feeLabel={props.currencyFormat(stripeCfg.feeCents ?? 0)}
+        t={props.t}
+      />
+    );
+  }
+  return <SquareCardCapture {...props} />;
+}
 
 type Cfg = {
   required: boolean;
@@ -55,19 +110,13 @@ function loadSdk(env: "production" | "sandbox"): Promise<SquareGlobal> {
  * renders nothing unless the booking is risk-gated and Square is configured.
  * The card is saved (not charged); the salon bills the fee only on a no-show.
  */
-export function NoShowCardCapture({
-  bookingId,
-  currencyFormat,
-  t,
-}: {
-  bookingId: string;
-  /** Formats cents → display string (e.g. "$20.00") in the salon currency. */
-  currencyFormat: (cents: number) => string;
-  t: BookingMessages;
-}) {
+/** Square card-entry capture (Web Payments SDK). Used when the salon's provider
+ *  is Square. The Stripe path (one-tap wallets) is handled by the dispatcher. */
+function SquareCardCapture({ bookingId, currencyFormat, t }: CaptureProps) {
   const [cfg, setCfg] = useState<Cfg | null>(null);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [consented, setConsented] = useState(false);
   const cardRef = useRef<SquareCard | null>(null);
   const mountedRef = useRef(false);
 
@@ -115,7 +164,7 @@ export function NoShowCardCapture({
   }, [cfg, t.noShowCardError]);
 
   async function onSave() {
-    if (!cardRef.current || status === "saving") return;
+    if (!cardRef.current || status === "saving" || !consented) return;
     setStatus("saving");
     setErrorMsg(null);
     try {
@@ -128,7 +177,7 @@ export function NoShowCardCapture({
       const res = await fetch("/api/booking/square-save-card", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookingId, sourceId: result.token }),
+        body: JSON.stringify({ bookingId, sourceId: result.token, consent: true }),
       });
       const j = (await res.json()) as { ok?: boolean };
       if (j.ok) {
@@ -175,10 +224,26 @@ export function NoShowCardCapture({
           {errorMsg}
         </p>
       ) : null}
+      <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+        <input
+          type="checkbox"
+          checked={consented}
+          onChange={(e) => setConsented(e.target.checked)}
+          data-testid="noshow-consent"
+          className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+        />
+        <span>
+          {(t.noShowConsent ??
+            "I agree to the no-show policy and authorize this salon to charge {fee} to this card only if I don't show up.").replace(
+            "{fee}",
+            feeLabel,
+          )}
+        </span>
+      </label>
       <button
         type="button"
         onClick={onSave}
-        disabled={status === "saving"}
+        disabled={status === "saving" || !consented}
         data-testid="noshow-card-save"
         className="mt-3 h-11 w-full rounded-xl bg-[var(--salon-primary)] text-sm font-semibold text-white disabled:opacity-50"
       >

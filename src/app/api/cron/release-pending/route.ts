@@ -37,5 +37,28 @@ export async function GET(req: NextRequest) {
     console.log(`[release-pending] cancelled ${released} unverified pending bookings`);
   }
 
-  return NextResponse.json({ ok: true, released });
+  // Hold-until-card: release a FUTURE booking that was required to leave a card
+  // (new / high-risk) but never did, once the grace window passes — so the slot
+  // isn't held by a customer who didn't commit a card. 30-min grace gives the
+  // customer time to finish on the confirmation screen.
+  const cardCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const nowIso = new Date().toISOString();
+  const { data: cardData, error: cardErr } = await supabase
+    .from("bookings")
+    .update({ status: "cancelled" } as never)
+    .eq("noshow_card_required", true)
+    .is("noshow_card_id", null)
+    .in("status", ["confirmed", "pending"])
+    .lt("created_at", cardCutoff)
+    .gt("start_time_utc", nowIso)
+    .select("id");
+  if (cardErr) {
+    console.error("[release-pending] card-release error", cardErr);
+  }
+  const cardReleased = cardData?.length ?? 0;
+  if (cardReleased > 0) {
+    console.log(`[release-pending] cancelled ${cardReleased} no-card bookings`);
+  }
+
+  return NextResponse.json({ ok: true, released, cardReleased });
 }

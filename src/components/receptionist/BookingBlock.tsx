@@ -11,6 +11,7 @@ import {
   bookingSourceIcon,
   type BookingSourceLabels,
 } from "@/shared/booking/bookingSourceIcon";
+import { type LatenessTier } from "./lateness";
 
 /**
  * Booking timeline cell.
@@ -164,7 +165,21 @@ export interface BookingBlockProps {
     seatTogether?: string;
     /** Localized source labels for the compact source icon (a11y title). */
     source?: BookingSourceLabels;
+    /** "Start" — inline start button label (used as aria-label too). */
+    startShort?: string;
+    /** "Auto no-show at {time}" template. */
+    autoNoShowAt?: (time: string) => string;
+    /** "Late" badge text. */
+    lateChip?: string;
+    /** "Very late" badge text. */
+    veryLateChip?: string;
   };
+  /** Lateness tier for confirmed/pending past start (null = not late / not applicable). */
+  latenessTier?: LatenessTier;
+  /** Wall-clock time when the cron will auto-mark no_show (in salon tz) — shown in the badge. */
+  autoNoShowAtLabel?: string;
+  /** Called when the inline "Start" button is tapped (only provided when viewer can change status). */
+  onStart?: () => void;
   /**
    * Optional full source label for the hover tooltip (e.g. "Source: Walk-in").
    * The detail drawer carries the authoritative source label; this is a
@@ -266,6 +281,9 @@ export function BookingBlock(props: BookingBlockProps) {
     currencyCode,
     onPointerDown,
     isDragging = false,
+    latenessTier = null,
+    autoNoShowAtLabel,
+    onStart,
   } = props;
 
   const reduced = useReducedMotion();
@@ -354,6 +372,83 @@ export function BookingBlock(props: BookingBlockProps) {
             ease: "easeInOut",
           }}
         />
+      ) : null}
+
+      {/* Lateness escalation ring + badge (confirmed/pending past start). Mutually
+          exclusive with the isLate overlay by status (isLate = in_progress past end;
+          latenessTier = confirmed/pending past start). */}
+      {latenessTier !== null &&
+      status !== "in_progress" &&
+      status !== "completed" ? (
+        <>
+          {latenessTier === "due" ? (
+            // Soft amber keyline — "just past start time", no alarm yet.
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 rounded-lg ring-2 ring-nq-warning/60"
+            />
+          ) : latenessTier === "late" ? (
+            // Amber ring + small informational badge.
+            <>
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 rounded-lg ring-2 ring-nq-warning"
+              />
+              <div className="pointer-events-none absolute bottom-1 left-2">
+                <Badge variant="warning" size="sm" state="default">
+                  {autoNoShowAtLabel
+                    ? (iconLabels as { autoNoShowAt?: (t: string) => string })
+                        ?.autoNoShowAt?.(autoNoShowAtLabel) ??
+                      `Auto no-show at ${autoNoShowAtLabel}`
+                    : ((iconLabels as { lateChip?: string })?.lateChip ??
+                      "Late")}
+                </Badge>
+              </div>
+            </>
+          ) : (
+            // Critical: pulsing red ring + badge.
+            <>
+              <motion.span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 rounded-lg ring-2 ring-nq-error"
+                initial={{ opacity: 0.55 }}
+                animate={reduced ? undefined : { opacity: [0.55, 1, 0.55] }}
+                transition={{
+                  duration: PULSE_PERIOD_SEC,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
+              />
+              <div className="pointer-events-none absolute bottom-1 left-2">
+                <Badge variant="danger" size="sm" state="default">
+                  {autoNoShowAtLabel
+                    ? (iconLabels as { autoNoShowAt?: (t: string) => string })
+                        ?.autoNoShowAt?.(autoNoShowAtLabel) ??
+                      `Auto no-show at ${autoNoShowAtLabel}`
+                    : ((iconLabels as { veryLateChip?: string })
+                        ?.veryLateChip ?? "Very late")}
+                </Badge>
+              </div>
+            </>
+          )}
+        </>
+      ) : null}
+
+      {/* Inline "Start" button — appears when viewer can change status and booking is late. */}
+      {onStart !== undefined && latenessTier !== null ? (
+        <button
+          type="button"
+          aria-label={
+            (iconLabels as { startShort?: string })?.startShort ?? "Start"
+          }
+          className="pointer-events-auto absolute bottom-1 right-1.5 min-h-[28px] rounded-full bg-nq-success/90 px-2 py-0.5 text-[11px] font-semibold text-white transition-all hover:bg-nq-success active:scale-95"
+          onClick={(e) => {
+            e.stopPropagation();
+            onStart();
+          }}
+        >
+          {(iconLabels as { startShort?: string })?.startShort ?? "Start"}
+        </button>
       ) : null}
 
       {bufferWidthPx >= 3 ? (

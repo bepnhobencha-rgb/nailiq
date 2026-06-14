@@ -75,6 +75,14 @@ export interface ReceptionistCenterData {
      * "notify the customer?" decision when staff create / reschedule / cancel.
      */
     staffNotificationSettings: StaffNotificationSettings;
+    /**
+     * `salons.auto_no_show_minutes` — minutes past start after which the cron
+     * auto-marks a never-started booking as no_show (0/null = off). Drives the
+     * grid's lateness-escalation countdown ("auto no-show at H:MM"). When off,
+     * the grid still escalates on fixed 10/20-minute milestones (visual only,
+     * no auto promise). The cron NEVER charges — that's the desk's call.
+     */
+    autoNoShowMinutes: number | null;
   };
   staff: Array<{
     id: string;
@@ -245,6 +253,15 @@ export interface ReceptionistCenterData {
     /** Wix booking id if this booking was synced from Wix. Drives the desk Approve/Decline
      * buttons on a Wix-origin pending card (status='pending' + non-null here). */
     wix_booking_id: string | null;
+    /** Square card-on-file saved for this booking's no-show fee. Non-null →
+     * the desk's no-show action offers a "charge $X / waive" choice. */
+    noshow_card_id: string | null;
+    /** Fee (cents) that would be collected if this booking no-shows. Set when a
+     * card was saved at booking time (risk-gated). */
+    noshow_fee_cents: number | null;
+    /** No-show fee lifecycle: 'saved' (card on file, uncharged) | 'charged' |
+     * 'failed' | 'waived'. Null = no fee on this booking. */
+    noshow_charge_status: string | null;
   }>;
   /** Per-staff service whitelist for this salon. `null` = no rows → all-capable fallback. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
@@ -257,8 +274,18 @@ export interface ReceptionistCenterData {
     id: string;
     clientName: string;
     startTimeUtc: string;
+    /** Service end (for the grid tombstone's span/position). */
+    endTimeUtc: string;
     serviceName: string;
     staffName: string | null;
+    /** Staff row the no-show belonged to — places the tombstone in the grid. */
+    staffId: string | null;
+    /** No-show fee (cents) on file, if a card was saved. Null = none. */
+    feeCents: number | null;
+    /** Fee lifecycle: 'saved'|'charged'|'failed'|'waived' | null. */
+    chargeStatus: string | null;
+    /** True when a Square card is on file (a fee can still be collected). */
+    hasCard: boolean;
   }>;
   /**
    * Top services by booking frequency on the selected day, ordered by count
@@ -582,7 +609,7 @@ export async function loadReceptionistCenterData(
         // (20260512000000 / 20260511100000) — not in auto-generated
         // types yet, hence the `as never` cast on the SELECT string.
         // basic_mode_forced: auto-enable Basic Mode for receptionist if salon config requires it
-        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced, opening_hours, staff_notification_settings" as never,
+        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced, opening_hours, staff_notification_settings, auto_no_show_minutes" as never,
       )
       .eq("id", ctx.salon.id)
       .maybeSingle();
@@ -631,6 +658,13 @@ export async function loadReceptionistCenterData(
     staffNotificationSettings: parseStaffNotificationSettings(
       (salonData as any).staff_notification_settings,
     ),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- types not regenerated yet (see basic_mode_forced TODO above)
+    autoNoShowMinutes: (() => {
+      const v = (salonData as any).auto_no_show_minutes;
+      if (v == null) return null;
+      const n = Math.round(Number(v));
+      return Number.isFinite(n) && n > 0 ? n : null;
+    })(),
   };
 
   const rawDashboardModules = parseDashboardModules(
@@ -728,6 +762,9 @@ export async function loadReceptionistCenterData(
       deposit_status,
       deposit_amount_cents,
       wix_booking_id,
+      noshow_card_id,
+      noshow_fee_cents,
+      noshow_charge_status,
       services!bookings_service_id_fkey ( name, duration_minutes, buffer_minutes ),
       addon:services!bookings_addon_service_id_fkey ( name, duration_minutes, buffer_minutes )
     `,
@@ -1032,7 +1069,7 @@ export async function loadReceptionistCenterData(
     const { data, error } = await ctx.supabase
       .from("bookings")
       .select(
-        "id, client_name, start_time_utc, services!bookings_service_id_fkey(name), staff(name)",
+        "id, client_name, start_time_utc, end_time_utc, staff_id, noshow_fee_cents, noshow_card_id, noshow_charge_status, services!bookings_service_id_fkey(name), staff(name)",
       )
       .eq("salon_id", ctx.salon.id)
       .gte("start_time_utc", startUtc)
@@ -1046,15 +1083,33 @@ export async function loadReceptionistCenterData(
         id: string;
         client_name: string | null;
         start_time_utc: string;
+        end_time_utc: string | null;
+        staff_id: string | null;
+        noshow_fee_cents: number | null;
+        noshow_card_id: string | null;
+        noshow_charge_status: string | null;
         services?: { name?: string | null } | null;
         staff?: { name?: string | null } | null;
       }>) {
+        const feeCents =
+          r.noshow_fee_cents == null || !Number.isFinite(Number(r.noshow_fee_cents))
+            ? null
+            : Number(r.noshow_fee_cents);
         noShowsToday.push({
           id: String(r.id),
           clientName: r.client_name ?? "",
           startTimeUtc: r.start_time_utc,
+          endTimeUtc: r.end_time_utc ?? r.start_time_utc,
           serviceName: r.services?.name ?? "",
           staffName: r.staff?.name ?? null,
+          staffId: r.staff_id != null ? String(r.staff_id) : null,
+          feeCents,
+          chargeStatus:
+            typeof r.noshow_charge_status === "string" && r.noshow_charge_status
+              ? r.noshow_charge_status
+              : null,
+          hasCard:
+            typeof r.noshow_card_id === "string" && r.noshow_card_id.length > 0,
         });
       }
     }
@@ -1190,6 +1245,21 @@ export async function loadReceptionistCenterData(
       })(),
       wix_booking_id: (() => {
         const v = (row as { wix_booking_id?: unknown }).wix_booking_id;
+        return typeof v === "string" && v.length > 0 ? v : null;
+      })(),
+      noshow_card_id: (() => {
+        const v = (row as { noshow_card_id?: unknown }).noshow_card_id;
+        return typeof v === "string" && v.length > 0 ? v : null;
+      })(),
+      noshow_fee_cents: (() => {
+        const v = (row as { noshow_fee_cents?: unknown }).noshow_fee_cents;
+        if (v == null) return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      })(),
+      noshow_charge_status: (() => {
+        const v = (row as { noshow_charge_status?: unknown })
+          .noshow_charge_status;
         return typeof v === "string" && v.length > 0 ? v : null;
       })(),
     };
