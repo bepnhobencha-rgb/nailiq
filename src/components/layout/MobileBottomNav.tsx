@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
 import {
+  Activity,
   Clock,
   LayoutGrid,
   Settings as SettingsIcon,
@@ -20,6 +21,8 @@ import type { ReleaseFeatureKey } from "@/shared/features/featureRegistry";
 type Props = {
   slug: string;
   walkinQueueCount?: number;
+  /** Salon-member role — gates the owner/admin-only Pulse tab. */
+  role?: string;
   /** Release-feature visibility (PR2). Beta tabs hide when their key is
    *  not explicitly true — mirrors DashboardSidebar. See `featureRegistry`. */
   releaseFeatures?: ReleaseFeatureMap;
@@ -33,6 +36,7 @@ type Props = {
 export function MobileBottomNav({
   slug,
   walkinQueueCount = 0,
+  role,
   releaseFeatures = {},
 }: Props) {
   const pathname = usePathname() ?? "";
@@ -48,7 +52,17 @@ export function MobileBottomNav({
     // "Beta defaults OFF" for any omitted key (matches DashboardSidebar).
     const featureOff = (key: ReleaseFeatureKey): boolean =>
       releaseFeatures[key] !== true;
+    const isOwnerAdmin = role === "owner" || role === "admin";
     return [
+      // Owner/admin remote command view — first tab for the away decision-maker.
+      {
+        key: "pulse",
+        label: t.pulse,
+        href: `${dashRoot}/pulse`,
+        icon: Activity,
+        match: (p: string) => p.startsWith(`${dashRoot}/pulse`),
+        hidden: !isOwnerAdmin,
+      },
       {
         key: "front-desk",
         label: t.frontDesk,
@@ -96,9 +110,11 @@ export function MobileBottomNav({
     dashRoot,
     t.clients,
     t.frontDesk,
+    t.pulse,
     t.reports,
     t.settings,
     t.walkinQueue,
+    role,
     walkinQueueCount,
     releaseFeatures,
   ]);

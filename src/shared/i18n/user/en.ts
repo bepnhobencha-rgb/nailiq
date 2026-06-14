@@ -318,6 +318,7 @@ export type UserMessages = {
   /** Dashboard app-shell navigation (sidebar + mobile bottom bar). */
   nav: {
     frontDesk: string;
+    pulse: string;
     calendar: string;
     clients: string;
     services: string;
@@ -2314,6 +2315,7 @@ export const userEn: UserMessages = {
   },
   nav: {
     frontDesk: "Live Board",
+    pulse: "Pulse",
     calendar: "Calendar",
     clients: "Customers",
     services: "Services",
