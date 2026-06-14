@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -23,14 +30,13 @@ import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 /**
- * Client profiles panel — segmented, card-based directory of recent
- * clients. Owner+senior+admin+receptionist can view; only owner can flip
- * the VIP toggle (server action enforces).
+ * Client profiles panel — server-driven search + pagination over the salon's
+ * full directory (bookings ∪ imported contacts, de-duped by phone).
  *
- * Search filters client-side because the server returns at most 50
- * rows; full-text search is a follow-up. Cards are bucketed into
- * lifecycle segments (VIP / new / regular / at-risk) so staff can see
- * who to court without scanning a flat list.
+ * Owner+senior+admin+receptionist can view; only owner can flip the VIP
+ * toggle (server action enforces). Cards are bucketed into lifecycle segments
+ * (VIP / new / regular / at-risk) for the visible page — segment counts
+ * therefore reflect the current page, not the full directory.
  */
 
 export interface ClientProfilesPanelProps {
@@ -40,7 +46,7 @@ export interface ClientProfilesPanelProps {
 
 /** A client is "at risk" once this many days pass since their last visit. */
 const AT_RISK_DAYS = 60;
-const PAGE_SIZE = 24;
+const DEFAULT_PAGE_SIZE = 25;
 
 type Segment = "vip" | "new" | "regular" | "atRisk";
 type SegmentFilter = "all" | Segment;
@@ -75,8 +81,7 @@ function formatLastVisit(iso: string | null, language: UserLanguage): string {
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return iso;
   const d = new Date(ms);
-  // VI: DD/M/YYYY (no zero-padding, matches "13/5/2026" spec).
-  // EN: locale-default (US-style M/D/YYYY for English browsers).
+  // VI: DD/M/YYYY (no zero-padding). EN: locale-default (M/D/YYYY).
   if (language === "vi") {
     return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
   }
@@ -105,6 +110,10 @@ const SEGMENT_BADGE: Record<
   atRisk: "warning",
 };
 
+// ---------------------------------------------------------------------------
+// Main panel
+// ---------------------------------------------------------------------------
+
 export function ClientProfilesPanel({
   slug,
   viewerRole,
@@ -114,42 +123,116 @@ export function ClientProfilesPanel({
     () => getUserMessages(language).receptionist.clientProfiles,
     [language],
   );
+
+  // Server-driven data state.
   const [state, setState] = useState<
     | { kind: "loading" }
-    | { kind: "ok"; rows: ClientProfileRow[] }
-    | { kind: "error"; error: Extract<LoadClientProfilesResult, { ok: false }>["error"] }
+    | {
+        kind: "ok";
+        clients: ClientProfileRow[];
+        total: number;
+        page: number;
+        pageSize: number;
+      }
+    | {
+        kind: "error";
+        error: Extract<LoadClientProfilesResult, { ok: false }>["error"];
+      }
   >({ kind: "loading" });
+
+  // Search + pagination controls.
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = DEFAULT_PAGE_SIZE;
+
+  // Debounce timer ref.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Segment filter (client-side within the current page).
   const [segment, setSegment] = useState<SegmentFilter>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
+  // isPending tracks in-flight server requests for subtle loading overlay.
+  const [isPending, startTransition] = useTransition();
+
+  // ── Fetch helper ──────────────────────────────────────────────────────────
+  const fetchPage = useCallback(
+    (q: string, p: number) => {
+      startTransition(async () => {
+        const res = await loadClientProfiles(slug, {
+          search: q,
+          page: p,
+          pageSize,
+        });
+        if (res.ok) {
+          setState({
+            kind: "ok",
+            clients: res.clients,
+            total: res.total,
+            page: res.page,
+            pageSize: res.pageSize,
+          });
+        } else {
+          setState({ kind: "error", error: res.error });
+        }
+      });
+    },
+    [slug, pageSize],
+  );
+
+  // Initial load.
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const res = await loadClientProfiles(slug);
-      if (cancelled) return;
-      if (res.ok) setState({ kind: "ok", rows: res.rows });
-      else setState({ kind: "error", error: res.error });
-    })();
-    return () => {
-      cancelled = true;
-    };
+    fetchPage("", 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
 
-  // Stable "now" for the lifetime of a render pass so segment counts and
-  // card buckets agree. Recomputed whenever the rows reference changes.
-  const rows = state.kind === "ok" ? state.rows : null;
+  // ── Search with 300ms debounce ────────────────────────────────────────────
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setSearch(value);
+      setSegment("all");
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        setPage(1);
+        fetchPage(value, 1);
+      }, 300);
+    },
+    [fetchPage],
+  );
+
+  // ── Pagination ────────────────────────────────────────────────────────────
+  const totalPages =
+    state.kind === "ok"
+      ? Math.max(1, Math.ceil(state.total / state.pageSize))
+      : 1;
+
+  const handlePrev = useCallback(() => {
+    if (page <= 1) return;
+    const next = page - 1;
+    setPage(next);
+    fetchPage(search, next);
+  }, [page, search, fetchPage]);
+
+  const handleNext = useCallback(() => {
+    if (page >= totalPages) return;
+    const next = page + 1;
+    setPage(next);
+    fetchPage(search, next);
+  }, [page, totalPages, search, fetchPage]);
+
+  // ── Segment filter (client-side within the fetched page) ──────────────────
+  const clients = state.kind === "ok" ? state.clients : null;
+
   const segmentOf = useMemo(() => {
     const nowMs = Date.now();
     const map = new Map<string, Segment>();
-    for (const r of rows ?? []) map.set(r.phone, clientSegment(r, nowMs));
+    for (const r of clients ?? []) map.set(r.phone, clientSegment(r, nowMs));
     return map;
-  }, [rows]);
+  }, [clients]);
 
-  const counts = useMemo(() => {
+  const segmentCounts = useMemo(() => {
     const c: Record<SegmentFilter, number> = {
-      all: rows?.length ?? 0,
+      all: clients?.length ?? 0,
       vip: 0,
       new: 0,
       regular: 0,
@@ -157,28 +240,13 @@ export function ClientProfilesPanel({
     };
     for (const seg of segmentOf.values()) c[seg] += 1;
     return c;
-  }, [rows, segmentOf]);
+  }, [clients, segmentOf]);
 
   const filtered = useMemo(() => {
-    if (!rows) return [];
-    const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (segment !== "all" && segmentOf.get(r.phone) !== segment) return false;
-      if (q.length === 0) return true;
-      return (
-        (r.name?.toLowerCase().includes(q) ?? false) ||
-        r.phone.toLowerCase().includes(q)
-      );
-    });
-  }, [rows, search, segment, segmentOf]);
-
-  // Reset pagination when the filter set changes so "Show more" always
-  // starts from the top of the new result set.
-  useEffect(() => {
-    setVisibleCount(PAGE_SIZE);
-  }, [search, segment]);
-
-  const visible = filtered.slice(0, visibleCount);
+    if (!clients) return [];
+    if (segment === "all") return clients;
+    return clients.filter((r) => segmentOf.get(r.phone) === segment);
+  }, [clients, segment, segmentOf]);
 
   const errorCopy = useMemo(() => {
     if (state.kind !== "error") return null;
@@ -193,8 +261,11 @@ export function ClientProfilesPanel({
     { key: "atRisk", label: messages.segments.atRisk },
   ];
 
+  const totalCount = state.kind === "ok" ? state.total : 0;
+
   return (
     <div className="space-y-5">
+      {/* ── Header ── */}
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-nq-foreground">
@@ -203,30 +274,41 @@ export function ClientProfilesPanel({
           <p className="mt-1 text-sm text-nq-muted">{messages.sectionIntro}</p>
         </div>
         {state.kind === "ok" ? (
-          <span className="text-sm text-nq-muted">
-            {messages.countLabel(visible.length, filtered.length)}
+          <span className="text-sm text-nq-muted" aria-live="polite">
+            {messages.totalCountLabel(totalCount)}
           </span>
         ) : null}
       </header>
 
+      {/* ── Search input ── */}
       <div className="space-y-3">
+        <label htmlFor="client-profiles-search" className="sr-only">
+          {messages.searchPlaceholder}
+        </label>
         <input
+          id="client-profiles-search"
           type="search"
           data-testid="client-profiles-search"
           placeholder={messages.searchPlaceholder}
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => handleSearchChange(e.target.value)}
+          aria-label={messages.searchPlaceholder}
           className={cn(
             "h-11 w-full rounded-xl border border-nq-border bg-nq-surface/60 px-4 text-sm text-nq-foreground placeholder:text-nq-muted",
             "transition-shadow focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
           )}
         />
 
-        {state.kind === "ok" && rows && rows.length > 0 ? (
-          <div className="flex flex-wrap gap-2" role="tablist" aria-label="Filter clients">
+        {/* Segment chips — client-side filter within the loaded page */}
+        {state.kind === "ok" && (clients?.length ?? 0) > 0 ? (
+          <div
+            className="flex flex-wrap gap-2"
+            role="tablist"
+            aria-label="Filter clients by segment"
+          >
             {segmentChips.map((chip) => {
               const active = segment === chip.key;
-              const n = counts[chip.key];
+              const n = segmentCounts[chip.key];
               if (chip.key !== "all" && n === 0) return null;
               return (
                 <button
@@ -260,10 +342,23 @@ export function ClientProfilesPanel({
         ) : null}
       </div>
 
+      {/* ── Loading state (initial or transition) ── */}
       {state.kind === "loading" ? (
         <SkeletonCardGrid count={6} cardClassName="h-[112px]" />
       ) : null}
 
+      {/* Subtle loading overlay during pagination / search transitions */}
+      {isPending && state.kind === "ok" ? (
+        <div
+          aria-live="polite"
+          aria-label={messages.loading}
+          className="flex justify-center py-4"
+        >
+          <span className="h-5 w-5 animate-spin rounded-full border-2 border-nq-border border-t-nq-primary" />
+        </div>
+      ) : null}
+
+      {/* ── Error state ── */}
       {state.kind === "error" ? (
         <p
           role="alert"
@@ -274,63 +369,98 @@ export function ClientProfilesPanel({
         </p>
       ) : null}
 
-      {state.kind === "ok" && filtered.length === 0 ? (
+      {/* ── Empty state ── */}
+      {state.kind === "ok" && !isPending && filtered.length === 0 ? (
         <EmptyState title={messages.empty} />
       ) : null}
 
-      {state.kind === "ok" && visible.length > 0 ? (
-        <>
-          <ul
-            data-testid="client-profiles-list"
-            className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
-          >
-            {visible.map((row) => (
-              <ClientCard
-                key={row.id}
-                row={row}
-                segment={segmentOf.get(row.phone) ?? "regular"}
-                isOpen={expanded === row.phone}
-                onToggleOpen={() =>
-                  setExpanded((cur) => (cur === row.phone ? null : row.phone))
-                }
-                canEditVip={viewerRole === "owner"}
-                slug={slug}
-                messages={messages}
-                language={language}
-                onVipChanged={(next) => {
-                  setState((prev) => {
-                    if (prev.kind !== "ok") return prev;
-                    return {
-                      kind: "ok",
-                      rows: prev.rows.map((r) =>
-                        r.phone === row.phone ? { ...r, isVip: next } : r,
-                      ),
-                    };
-                  });
-                }}
-              />
-            ))}
-          </ul>
+      {/* ── Client cards ── */}
+      {state.kind === "ok" && filtered.length > 0 ? (
+        <ul
+          data-testid="client-profiles-list"
+          className={cn(
+            "grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3",
+            isPending && "opacity-60 transition-opacity",
+          )}
+        >
+          {filtered.map((row) => (
+            <ClientCard
+              key={row.id}
+              row={row}
+              segment={segmentOf.get(row.phone) ?? "regular"}
+              isOpen={expanded === row.phone}
+              onToggleOpen={() =>
+                setExpanded((cur) => (cur === row.phone ? null : row.phone))
+              }
+              canEditVip={viewerRole === "owner"}
+              slug={slug}
+              messages={messages}
+              language={language}
+              onVipChanged={(next) => {
+                setState((prev) => {
+                  if (prev.kind !== "ok") return prev;
+                  return {
+                    ...prev,
+                    clients: prev.clients.map((r) =>
+                      r.phone === row.phone ? { ...r, isVip: next } : r,
+                    ),
+                  };
+                });
+              }}
+            />
+          ))}
+        </ul>
+      ) : null}
 
-          {visibleCount < filtered.length ? (
-            <div className="flex justify-center pt-1">
-              <button
-                type="button"
-                onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
-                className={cn(
-                  "rounded-full border border-nq-border bg-nq-surface/60 px-5 py-2 text-sm font-medium text-nq-foreground",
-                  "transition-colors hover:border-nq-primary/40 hover:text-nq-primary",
-                )}
-              >
-                {messages.loadMore}
-              </button>
-            </div>
-          ) : null}
-        </>
+      {/* ── Pagination controls ── */}
+      {state.kind === "ok" && totalCount > pageSize ? (
+        <div
+          className="flex items-center justify-between gap-4 border-t border-nq-border/40 pt-4"
+          aria-label="Pagination"
+        >
+          <button
+            type="button"
+            onClick={handlePrev}
+            disabled={page <= 1 || isPending}
+            aria-label={messages.prevPage}
+            className={cn(
+              "rounded-full border border-nq-border bg-nq-surface/60 px-5 py-2 text-sm font-medium",
+              "transition-colors hover:border-nq-primary/40 hover:text-nq-primary",
+              "disabled:cursor-not-allowed disabled:opacity-40",
+            )}
+          >
+            {messages.prevPage}
+          </button>
+
+          <span
+            className="text-sm tabular-nums text-nq-muted"
+            aria-live="polite"
+          >
+            {messages.pageLabel(page, totalPages)}
+          </span>
+
+          <button
+            type="button"
+            onClick={handleNext}
+            disabled={page >= totalPages || isPending}
+            aria-label={messages.nextPage}
+            className={cn(
+              "rounded-full border border-nq-border bg-nq-surface/60 px-5 py-2 text-sm font-medium",
+              "transition-colors hover:border-nq-primary/40 hover:text-nq-primary",
+              "disabled:cursor-not-allowed disabled:opacity-40",
+            )}
+          >
+            {messages.nextPage}
+          </button>
+        </div>
       ) : null}
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// ClientCard
+// ---------------------------------------------------------------------------
 
 function ClientCard({
   row,
@@ -358,6 +488,12 @@ function ClientCard({
   const phoneDisplay = formatPhone(row.phone) ?? row.phone;
   const isVip = segment === "vip";
   const badgeLabel = messages.segments[segment];
+
+  // Gracefully handle import-only clients with no visits yet.
+  const lastVisitDisplay =
+    row.visitCount === 0 || !row.lastVisitAt
+      ? messages.noVisitsYet
+      : formatLastVisit(row.lastVisitAt, language);
 
   return (
     <li
@@ -414,10 +550,7 @@ function ClientCard({
             label={messages.statSpent}
             value={formatDollarsCompact(row.totalSpentCents)}
           />
-          <Stat
-            label={messages.statLastVisit}
-            value={formatLastVisit(row.lastVisitAt, language)}
-          />
+          <Stat label={messages.statLastVisit} value={lastVisitDisplay} />
         </dl>
       </button>
 

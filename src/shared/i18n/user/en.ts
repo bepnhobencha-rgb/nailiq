@@ -1662,6 +1662,14 @@ export type UserMessages = {
       /** "{n} of {total}" footer when results are filtered/paginated. */
       countLabel: (shown: number, total: number) => string;
       loadMore: string;
+      /** Total directory count label — e.g. "9,496 clients". */
+      totalCountLabel: (total: number) => string;
+      /** Pagination: "Page X of Y". */
+      pageLabel: (page: number, totalPages: number) => string;
+      prevPage: string;
+      nextPage: string;
+      /** Shown when an imported-only client has no bookings yet. */
+      noVisitsYet: string;
       /** Compact stat labels on the card. */
       statVisits: string;
       statSpent: string;
@@ -3494,8 +3502,8 @@ export const userEn: UserMessages = {
       pageTitle: "Clients",
       sectionTitle: "Recent clients",
       sectionIntro:
-        "Last 50 clients sorted by their most recent visit. Search by name or phone.",
-      searchPlaceholder: "Search clients…",
+        "Full client directory — search by name or phone number.",
+      searchPlaceholder: "Search by name or phone number…",
       loading: "Loading clients…",
       empty: "No clients yet.",
       unknownName: "(unnamed)",
@@ -3511,6 +3519,12 @@ export const userEn: UserMessages = {
       },
       countLabel: (shown, total) => `${shown} of ${total}`,
       loadMore: "Show more",
+      totalCountLabel: (total) =>
+        `${total.toLocaleString()} ${total === 1 ? "client" : "clients"}`,
+      pageLabel: (page, totalPages) => `Page ${page} of ${totalPages}`,
+      prevPage: "Previous",
+      nextPage: "Next",
+      noVisitsYet: "No visits yet",
       statVisits: "Visits",
       statSpent: "Spent",
       statLastVisit: "Last visit",
