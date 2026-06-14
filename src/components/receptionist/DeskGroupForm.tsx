@@ -102,7 +102,7 @@ const COPY = {
     staff: "Staff",
     anyStaff: "Any available",
     addons: "Add-ons (optional)",
-    organizer: "Organizer",
+    groupDetails: "Group details",
     phone: "Phone number * (one number for the whole group)",
     leadPhone: "Phone number * (the lead's — used for the whole group)",
     returning: (vip: string, visits: string) =>
@@ -110,7 +110,6 @@ const COPY = {
     newCustomer: "New customer.",
     vipTag: " · VIP",
     visitsTag: (n: number) => ` · ${n} visits`,
-    organizerName: "Organizer name (optional)",
     email: "Email (optional — for the confirmation)",
     date: "Date *",
     arrival: "Arrival time *",
@@ -173,7 +172,7 @@ const COPY = {
     staff: "Thợ",
     anyStaff: "Thợ nào cũng được",
     addons: "Dịch vụ thêm (tuỳ chọn)",
-    organizer: "Người đại diện",
+    groupDetails: "Thông tin chung",
     phone: "Số điện thoại * (1 số dùng cho cả nhóm)",
     leadPhone: "Số điện thoại * (của đại diện — dùng cho cả nhóm)",
     returning: (vip: string, visits: string) =>
@@ -181,7 +180,6 @@ const COPY = {
     newCustomer: "Khách mới.",
     vipTag: " · VIP",
     visitsTag: (n: number) => ` · ${n} lần ghé`,
-    organizerName: "Tên người đại diện (tuỳ chọn)",
     email: "Email (tuỳ chọn — để gửi xác nhận)",
     date: "Ngày *",
     arrival: "Giờ đến *",
@@ -254,7 +252,6 @@ export default function DeskGroupForm({
   ]);
 
   const [phone, setPhone] = useState("");
-  const [organizerName, setOrganizerName] = useState("");
   const [email, setEmail] = useState("");
   const [leadLookupMsg, setLeadLookupMsg] = useState<string | null>(null);
   const [ymd, setYmd] = useState(todayYmd());
@@ -683,6 +680,18 @@ export default function DeskGroupForm({
                       value={m.name}
                       onChange={(e) => patchMember(i, { name: e.target.value })}
                     />
+                    {/* Lead's email (optional) lives with their contact info, not
+                        in a separate section — auto-filled by the phone lookup. */}
+                    {i === 0 ? (
+                      <input
+                        className={`${inputCls} mb-2`}
+                        inputMode="email"
+                        placeholder={tx.email}
+                        aria-label={tx.email}
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                      />
+                    ) : null}
                     <select
                       className={`${inputCls} mb-2`}
                       aria-label={tx.service}
@@ -755,29 +764,13 @@ export default function DeskGroupForm({
               })}
             </div>
 
-            {/* Step 3 — shared organizer + date + arrival */}
+            {/* Step 3 — group-level scheduling. Contact info (phone/name/email)
+                lives entirely in the lead block above; there is no separate
+                organizer name/email here (it duplicated the lead + was unused). */}
             <div className="space-y-3 rounded-lg border border-nq-muted/20 bg-nq-bg p-3">
               <p className="text-xs font-semibold text-nq-foreground">
-                {tx.organizer}
+                {tx.groupDetails}
               </p>
-              {/* Phone moved to the lead (đại diện) block above — phone-first. */}
-              <div>
-                <label className={labelCls}>{tx.organizerName}</label>
-                <input
-                  className={inputCls}
-                  value={organizerName}
-                  onChange={(e) => setOrganizerName(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className={labelCls}>{tx.email}</label>
-                <input
-                  className={inputCls}
-                  inputMode="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
               <div>
                 <label className={labelCls}>{tx.date}</label>
                 <input
