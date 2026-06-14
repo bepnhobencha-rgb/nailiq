@@ -314,6 +314,11 @@ export function EditBookingForm({
       staffId: selectedStaff,
       staffList: slotStaffList,
       serviceDurationMinutes: totalSpanMinutes,
+      // Trailing buffer may run past close for the last appointment (no next
+      // booking). Single-service only; with an add-on, keep the whole-block fit.
+      trailingBufferMinutes: selectedAddon
+        ? 0
+        : Math.max(0, Math.round(Number(selectedSvc?.buffer_minutes ?? 0))),
       closedDateYmdSet,
       shortestServiceMinutes,
       leadMinutes: deskData.salon.bookingLeadMinutes,

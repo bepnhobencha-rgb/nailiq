@@ -519,6 +519,12 @@ export function useBookingFlowState(
       // add-on at confirm) the grid only offers times that fit everything.
       serviceDurationMinutes:
         service.totalMinutes + selectedAddonsSlotMin + pendingAddonMin,
+      // The last appointment's trailing buffer may run past close (cleanup, no
+      // next customer) — recover that slot. Single-service only (no add-ons).
+      trailingBufferMinutes:
+        selectedAddonsSlotMin + pendingAddonMin === 0
+          ? service.bufferMinutes
+          : 0,
       closedDateYmdSet,
       shortestServiceMinutes,
       leadMinutes: salon.bookingLeadMinutes,
@@ -1268,6 +1274,8 @@ export function useBookingFlowState(
             staffId: staffId ?? BOOKING_ANY_STAFF_ID,
             staffList: capableStaff,
             serviceDurationMinutes: service.totalMinutes,
+            // Trailing buffer may run past close for the last appointment.
+            trailingBufferMinutes: service.bufferMinutes,
             closedDateYmdSet,
             shortestServiceMinutes,
             leadMinutes: salon.bookingLeadMinutes,

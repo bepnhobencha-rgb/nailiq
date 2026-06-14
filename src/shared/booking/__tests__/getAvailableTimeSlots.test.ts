@@ -655,5 +655,41 @@ test("Phase 5: no scoring when shortestServiceMinutes omitted (backward compat)"
   }
 });
 
+// ─── Trailing buffer may run past close (recover the last slot) ──────────────
+
+test("trailingBufferMinutes lets the SERVICE end at close; buffer may spill past", () => {
+  const base = {
+    openingHoursRaw: HOURS_9_TO_19, // close 19:00
+    selectedDate: FUTURE_DATE,
+    staffId: BOOKING_ANY_STAFF_ID,
+    staffList: STAFF,
+    occupancy: [],
+    nowMs: NOW_MS,
+  };
+  // 60-min service + 5-min buffer → block 65.
+  const without = computeTimeSlots({ ...base, serviceDurationMinutes: 65 }).map(
+    (s) => s.label,
+  );
+  const withBuf = computeTimeSlots({
+    ...base,
+    serviceDurationMinutes: 65,
+    trailingBufferMinutes: 5,
+  }).map((s) => s.label);
+
+  // Legacy: whole 65-min block must fit → last start 5:45 PM, no 6:00 PM.
+  if (without.includes("6:00 PM")) {
+    throw new Error(`legacy should exclude 6:00 PM; got: ${without.join(", ")}`);
+  }
+  // New: service (60) may end exactly at 7:00 close, buffer cleans up after →
+  // 6:00 PM is recovered.
+  if (!withBuf.includes("6:00 PM")) {
+    throw new Error(`expected 6:00 PM recovered; got: ${withBuf.join(", ")}`);
+  }
+  // But 6:15 PM (service alone would end 7:15) must still be excluded.
+  if (withBuf.includes("6:15 PM")) {
+    throw new Error(`6:15 PM must stay excluded; got: ${withBuf.join(", ")}`);
+  }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);

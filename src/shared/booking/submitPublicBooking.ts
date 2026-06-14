@@ -429,10 +429,17 @@ export async function submitPublicBooking(
     const openM = hmToMinutes(dayCfg.open);
     const closeM = hmToMinutes(dayCfg.close);
     const endMinsOfDay = startMinsOfDay + totalBlockMin;
+    // The trailing buffer may run past close for the last booking (cleanup, no
+    // next customer) — only the SERVICE must finish by close. Single-service
+    // only; with add-ons keep the conservative whole-block fit. Mirrors the
+    // client grid's `trailingBufferMinutes`.
+    const closingTrailingBuffer =
+      addonBlockMin === 0 ? Number(service.buffer_minutes) || 0 : 0;
+    const serviceEndMinsOfDay = endMinsOfDay - closingTrailingBuffer;
     if (closeM <= openM) throw new Error("outside_opening_hours");
     if (
       startMinsOfDay < openM ||
-      endMinsOfDay > closeM ||
+      serviceEndMinsOfDay > closeM ||
       endMinsOfDay <= startMinsOfDay
     ) {
       throw new Error("outside_opening_hours");
