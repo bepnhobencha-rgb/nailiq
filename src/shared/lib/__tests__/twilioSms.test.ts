@@ -13,7 +13,7 @@
  *
  * Run: npx tsx src/shared/lib/__tests__/twilioSms.test.ts
  */
-import { normaliseToE164 } from "../twilioSms";
+import { normaliseToE164, isFictionalTestNumber, smsSuppressReason } from "../twilioSms";
 
 let pass = 0,
   fail = 0;
@@ -66,6 +66,74 @@ test("empty string → null", () => {
 test("junk → null", () => {
   assertEqual(normaliseToE164("not-a-phone"), null);
   assertEqual(normaliseToE164("12"), null);
+});
+
+// ── KILL-SWITCH: fictional 555-exchange detection ───────────────────
+test("555 exchange numbers are flagged fictional (all seed forms)", () => {
+  // NANP layout +1 AAA 555 XXXX — exchange "555" is reserved, never a real sub.
+  assertEqual(isFictionalTestNumber("+16045550222"), true); // the leaked number
+  assertEqual(isFictionalTestNumber("+16045550142"), true);
+  assertEqual(isFictionalTestNumber("+16045551234"), true);
+  assertEqual(isFictionalTestNumber("+16045552200"), true);
+  assertEqual(isFictionalTestNumber("+12125559999"), true);
+});
+test("real customer numbers are NOT flagged fictional", () => {
+  assertEqual(isFictionalTestNumber("+16045101234"), false); // exchange 510
+  assertEqual(isFictionalTestNumber("+17789073426"), false); // the Twilio sender
+  assertEqual(isFictionalTestNumber("+14155552671"), true);  // 555 exchange (still test)
+  assertEqual(isFictionalTestNumber("+84901234567"), false); // non-NANP real
+});
+
+// ── KILL-SWITCH: smsSuppressReason precedence ───────────────────────
+test("env flag suppresses regardless of recipient", () => {
+  const prev = process.env.DISABLE_OUTBOUND_SMS;
+  process.env.DISABLE_OUTBOUND_SMS = "1";
+  assertEqual(smsSuppressReason("+16045101234"), "disabled_by_env");
+  process.env.DISABLE_OUTBOUND_SMS = prev ?? "";
+  if (prev === undefined) delete process.env.DISABLE_OUTBOUND_SMS;
+});
+test("DEMO_OTP/NEXT_PUBLIC_DEMO_OTP demo mode suppresses real numbers even in prod", () => {
+  const prevFlag = process.env.DISABLE_OUTBOUND_SMS;
+  const prevNode = process.env.NODE_ENV;
+  const prevDemo = process.env.DEMO_OTP;
+  const prevPubDemo = process.env.NEXT_PUBLIC_DEMO_OTP;
+  delete process.env.DISABLE_OUTBOUND_SMS;
+  (process.env as Record<string, string>).NODE_ENV = "production";
+  // CI sets DEMO_OTP=true while running `next start` (NODE_ENV=production) —
+  // this is the exact CI leak scenario; must suppress.
+  process.env.DEMO_OTP = "true";
+  delete process.env.NEXT_PUBLIC_DEMO_OTP;
+  assertEqual(smsSuppressReason("+16045101234"), "demo_mode");
+  // public flag alone also suppresses
+  delete process.env.DEMO_OTP;
+  process.env.NEXT_PUBLIC_DEMO_OTP = "true";
+  assertEqual(smsSuppressReason("+16045101234"), "demo_mode");
+  // restore
+  (process.env as Record<string, string>).NODE_ENV = prevNode ?? "";
+  if (prevFlag !== undefined) process.env.DISABLE_OUTBOUND_SMS = prevFlag;
+  if (prevDemo !== undefined) process.env.DEMO_OTP = prevDemo; else delete process.env.DEMO_OTP;
+  if (prevPubDemo !== undefined) process.env.NEXT_PUBLIC_DEMO_OTP = prevPubDemo; else delete process.env.NEXT_PUBLIC_DEMO_OTP;
+});
+test("non-production env suppresses real numbers", () => {
+  const prevFlag = process.env.DISABLE_OUTBOUND_SMS;
+  const prevNode = process.env.NODE_ENV;
+  delete process.env.DISABLE_OUTBOUND_SMS;
+  // tsx runs with NODE_ENV unset/"test" → must suppress.
+  (process.env as Record<string, string>).NODE_ENV = "test";
+  assertEqual(smsSuppressReason("+16045101234"), "non_production_env");
+  (process.env as Record<string, string>).NODE_ENV = prevNode ?? "";
+  if (prevFlag !== undefined) process.env.DISABLE_OUTBOUND_SMS = prevFlag;
+});
+test("in production: real number sends, 555/test-salon suppressed", () => {
+  const prevFlag = process.env.DISABLE_OUTBOUND_SMS;
+  const prevNode = process.env.NODE_ENV;
+  delete process.env.DISABLE_OUTBOUND_SMS;
+  (process.env as Record<string, string>).NODE_ENV = "production";
+  assertEqual(smsSuppressReason("+16045101234"), null);                 // real → send
+  assertEqual(smsSuppressReason("+16045550222"), "fictional_test_number"); // seed → block
+  assertEqual(smsSuppressReason("+16045101234", { salonIsTest: true }), "test_salon");
+  (process.env as Record<string, string>).NODE_ENV = prevNode ?? "";
+  if (prevFlag !== undefined) process.env.DISABLE_OUTBOUND_SMS = prevFlag;
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

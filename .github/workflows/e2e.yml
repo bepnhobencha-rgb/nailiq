@@ -77,6 +77,11 @@ jobs:
       # Allows demo cookie with non-"demo-salon" slugs so E2E fixtures can
       # use arbitrary test slugs. NEVER set on Vercel production.
       NAILIQ_TEST_BYPASS_SLUG_PIN: "1"
+      # HARD kill-switch: E2E must NEVER bill real Twilio SMS/Verify. The app
+      # runs `next start` here (NODE_ENV=production), so this flag is what stops
+      # outbound SMS — the 555-exchange recipient guard is the secondary net.
+      # NEVER set on Vercel production.
+      DISABLE_OUTBOUND_SMS: "1"
       # Short-circuits the Anthropic Vision call in aiPrefillServicesAction
       # so setup-ai-prefill E2E specs work without an API key.
       AI_PREFILL_E2E_MOCK: "services"
@@ -190,6 +195,8 @@ jobs:
       NEXT_PUBLIC_DEMO_OTP: "true"
       DEMO_OTP: "true"
       NAILIQ_TEST_BYPASS_SLUG_PIN: "1"
+      # HARD kill-switch — visual specs must never bill real Twilio either.
+      DISABLE_OUTBOUND_SMS: "1"
     steps:
       - uses: actions/checkout@v4
         with:

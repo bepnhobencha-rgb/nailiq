@@ -69,6 +69,76 @@ export function normaliseToE164(raw: string): string | null {
 }
 
 /**
+ * True when `e164` is a fictional / seed phone number that must NEVER receive a
+ * real SMS — even in production.
+ *
+ * The North American Numbering Plan reserves the central-office code (exchange)
+ * **555** for fictional use: it is not assignable to real subscribers, so any
+ * `+1 NPA 555 XXXX` number is guaranteed test data (E2E seed numbers like
+ * 604-555-0142, 604-555-1234, 604-555-2200 …). Blocking the whole 555 exchange
+ * is therefore safe and catches every seed number, not just the narrow official
+ * 555-0100..0199 fictional block.
+ *
+ * `e164` is the already-normalised "+<digits>" form from normaliseToE164.
+ */
+export function isFictionalTestNumber(e164: string): boolean {
+  const digits = e164.replace(/[^\d]/g, "");
+  // NANP: country code 1 + 10 national digits = "1AAANNNXXXX" (11 digits).
+  if (digits.length === 11 && digits.startsWith("1")) {
+    const exchange = digits.slice(4, 7); // NNN — the central-office code
+    if (exchange === "555") return true;
+  }
+  return false;
+}
+
+/**
+ * Outbound-SMS kill-switch. Returns a reason string when the message must be
+ * SUPPRESSED (logged, no real Twilio call), or null when it may be sent.
+ *
+ * Layered guards — ANY match suppresses:
+ *  (a) DISABLE_OUTBOUND_SMS env flag — manual / CI kill-switch.
+ *  (b) NODE_ENV !== "production" — dev & test servers never send real SMS.
+ *  (c) recipient is a fictional 555-exchange seed number — works even in
+ *      production. This is the ONLY guard that stops an E2E run hitting a
+ *      production server (where NODE_ENV=production, so (b) is bypassed) from
+ *      billing real SMS to fake seed numbers.
+ *  (d) caller marked the salon as a test/demo salon.
+ *
+ * Real customers on a production server are never affected: their numbers are
+ * not in the 555 exchange and NODE_ENV is "production".
+ */
+export function smsSuppressReason(
+  recipientE164: string,
+  opts?: { salonIsTest?: boolean },
+): string | null {
+  const flag = process.env.DISABLE_OUTBOUND_SMS?.trim().toLowerCase();
+  if (flag === "1" || flag === "true" || flag === "yes") {
+    return "disabled_by_env";
+  }
+  // Demo/test mode: CI (e2e.yml) + local E2E (playwright webServer) always set
+  // DEMO_OTP/NEXT_PUBLIC_DEMO_OTP. That flag only mocks OTP *receipt*; it never
+  // gated *outbound* SMS, which is exactly how the booking-confirmation path
+  // billed real Twilio under CI. Gating here closes that hole with the flag the
+  // test envs already carry — no new var to remember. (Unset on production.)
+  const demo = (process.env.DEMO_OTP ?? process.env.NEXT_PUBLIC_DEMO_OTP)
+    ?.trim()
+    .toLowerCase();
+  if (demo === "true" || demo === "1") {
+    return "demo_mode";
+  }
+  if (process.env.NODE_ENV !== "production") {
+    return "non_production_env";
+  }
+  if (isFictionalTestNumber(recipientE164)) {
+    return "fictional_test_number";
+  }
+  if (opts?.salonIsTest) {
+    return "test_salon";
+  }
+  return null;
+}
+
+/**
  * Send an outbound SMS reminder.
  * @param toE164 - recipient phone; any accepted form (+country / bare NANP /
  *                 formatted) is normalised to strict E.164 before sending.
@@ -78,19 +148,32 @@ export async function sendSmsReminder(
   toE164: string,
   body: string,
   /** Optional: pass `statusCallbackUrl` so Twilio POSTs delivery receipts. */
-  opts?: { statusCallbackUrl?: string },
-): Promise<{ ok: boolean; messageSid?: string; error?: string }> {
-  const creds = await getTwilioSmsCreds();
-  if (!creds) {
-    return { ok: false, error: "twilio_not_configured" };
-  }
-
+  opts?: { statusCallbackUrl?: string; salonIsTest?: boolean },
+): Promise<{ ok: boolean; messageSid?: string; error?: string; suppressed?: boolean }> {
   // Normalise the recipient to E.164 — Twilio needs the leading "+".
+  // Done BEFORE the kill-switch so the 555-exchange guard sees clean digits.
   const recipient = normaliseToE164(toE164);
   if (!recipient) {
     // Don't log the full number (PII) — only that normalisation failed.
     console.error("[sendSmsReminder] invalid recipient phone, cannot send (not E.164-normalisable)");
     return { ok: false, error: "invalid_phone" };
+  }
+
+  // ── KILL-SWITCH ─────────────────────────────────────────────────────
+  // Suppress (log + fake SID, never bill Twilio) for disabled-env / non-prod /
+  // fictional 555 seed numbers / test salons. Prevents E2E + dev from sending
+  // real SMS — and stops an E2E run that hits production from billing seed
+  // numbers, while real customers are never affected. See smsSuppressReason.
+  const suppressReason = smsSuppressReason(recipient, { salonIsTest: opts?.salonIsTest });
+  if (suppressReason) {
+    const fakeSid = `SUPPRESSED_${suppressReason}`;
+    console.warn(`[sendSmsReminder] SUPPRESSED outbound SMS (${suppressReason}) — no real Twilio call`);
+    return { ok: true, messageSid: fakeSid, suppressed: true };
+  }
+
+  const creds = await getTwilioSmsCreds();
+  if (!creds) {
+    return { ok: false, error: "twilio_not_configured" };
   }
 
   const auth = `Basic ${Buffer.from(
