@@ -358,10 +358,21 @@ function ReceptionistCenterInner({
     dashboardModules: initialOk.dashboardModules,
   }));
 
+  // The day the user is actually viewing — the source of truth for reloads.
+  const viewedYmdRef = useRef(data.selectedDate);
+  viewedYmdRef.current = data.selectedDate;
+
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync local data when initialOk reloads from server
-    setData({ ...initialOk, selectedDate: initialOk.selectedDate });
-    setLastSyncedIso(new Date().toISOString());
+    // Only adopt server-provided data when it's for the day the user is viewing.
+    // A revalidatePath() / router.refresh() re-runs the loader for its DEFAULT
+    // day (today); without this guard it would yank the grid back to today after
+    // acting on a future day (drag-reschedule, edit, etc.). When the server day
+    // differs, keep the viewed day — reloadCurrentDay already refreshed it.
+    if (initialOk.selectedDate === viewedYmdRef.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync local data when initialOk reloads from server
+      setData({ ...initialOk, selectedDate: initialOk.selectedDate });
+      setLastSyncedIso(new Date().toISOString());
+    }
   }, [initialOk]);
 
   const [dateOffset, setDateOffset] = useState<-1 | 0 | 1>(0);
@@ -963,7 +974,10 @@ function ReceptionistCenterInner({
 
   // eslint-disable-next-line react-hooks/preserve-manual-memoization -- ARCHITECTURE_LOCK: memoization could not be preserved; used by handlers declared earlier in component scope
   const reloadCurrentDay = useCallback(async () => {
-    const ymd = salonDateOffset(timezone, dateOffset, nowIsoRef.current);
+    // Reload the day the user is actually viewing — NOT one derived from
+    // dateOffset (which only spans yesterday/today/tomorrow, so a date-picked
+    // day or any offset drift would reload the wrong day, snapping to today).
+    const ymd = viewedYmdRef.current;
     const res = await loadReceptionistCenterDataAction(slug, ymd);
     if (res.ok) {
       setData(res.data);
@@ -973,7 +987,7 @@ function ReceptionistCenterInner({
     }
     // Keep Week/Month views in sync with this mutation (QA #5).
     setCalendarRefreshNonce((n) => n + 1);
-  }, [slug, timezone, dateOffset, messages.receptionist, markSynced]);
+  }, [slug, messages.receptionist, markSynced]);
 
   /**
    * Called when a booking chip is clicked from Week or Month view.
