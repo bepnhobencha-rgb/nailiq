@@ -115,6 +115,17 @@ export function smsSuppressReason(
   if (flag === "1" || flag === "true" || flag === "yes") {
     return "disabled_by_env";
   }
+  // Demo/test mode: CI (e2e.yml) + local E2E (playwright webServer) always set
+  // DEMO_OTP/NEXT_PUBLIC_DEMO_OTP. That flag only mocks OTP *receipt*; it never
+  // gated *outbound* SMS, which is exactly how the booking-confirmation path
+  // billed real Twilio under CI. Gating here closes that hole with the flag the
+  // test envs already carry — no new var to remember. (Unset on production.)
+  const demo = (process.env.DEMO_OTP ?? process.env.NEXT_PUBLIC_DEMO_OTP)
+    ?.trim()
+    .toLowerCase();
+  if (demo === "true" || demo === "1") {
+    return "demo_mode";
+  }
   if (process.env.NODE_ENV !== "production") {
     return "non_production_env";
   }

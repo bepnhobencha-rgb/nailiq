@@ -92,6 +92,28 @@ test("env flag suppresses regardless of recipient", () => {
   process.env.DISABLE_OUTBOUND_SMS = prev ?? "";
   if (prev === undefined) delete process.env.DISABLE_OUTBOUND_SMS;
 });
+test("DEMO_OTP/NEXT_PUBLIC_DEMO_OTP demo mode suppresses real numbers even in prod", () => {
+  const prevFlag = process.env.DISABLE_OUTBOUND_SMS;
+  const prevNode = process.env.NODE_ENV;
+  const prevDemo = process.env.DEMO_OTP;
+  const prevPubDemo = process.env.NEXT_PUBLIC_DEMO_OTP;
+  delete process.env.DISABLE_OUTBOUND_SMS;
+  (process.env as Record<string, string>).NODE_ENV = "production";
+  // CI sets DEMO_OTP=true while running `next start` (NODE_ENV=production) —
+  // this is the exact CI leak scenario; must suppress.
+  process.env.DEMO_OTP = "true";
+  delete process.env.NEXT_PUBLIC_DEMO_OTP;
+  assertEqual(smsSuppressReason("+16045101234"), "demo_mode");
+  // public flag alone also suppresses
+  delete process.env.DEMO_OTP;
+  process.env.NEXT_PUBLIC_DEMO_OTP = "true";
+  assertEqual(smsSuppressReason("+16045101234"), "demo_mode");
+  // restore
+  (process.env as Record<string, string>).NODE_ENV = prevNode ?? "";
+  if (prevFlag !== undefined) process.env.DISABLE_OUTBOUND_SMS = prevFlag;
+  if (prevDemo !== undefined) process.env.DEMO_OTP = prevDemo; else delete process.env.DEMO_OTP;
+  if (prevPubDemo !== undefined) process.env.NEXT_PUBLIC_DEMO_OTP = prevPubDemo; else delete process.env.NEXT_PUBLIC_DEMO_OTP;
+});
 test("non-production env suppresses real numbers", () => {
   const prevFlag = process.env.DISABLE_OUTBOUND_SMS;
   const prevNode = process.env.NODE_ENV;
