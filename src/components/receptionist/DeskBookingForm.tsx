@@ -19,7 +19,14 @@
  * `addDeskAppointment` (conflict-safe RPC) and fires the same confirmation.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   addDeskAppointment,
@@ -75,6 +82,10 @@ type Props = {
   initialSlotLabel?: string;
   /** Per-salon notify config — drives the "notify customer?" panel defaults. */
   notifySettings: StaffNotificationSettings;
+  /** Viewport coords of the originating grid click. When set (desktop), the form
+   *  opens as a CARD anchored next to the clicked cell so the grid stays visible
+   *  — instead of a centered modal that covers it. */
+  anchor?: { x: number; y: number };
 };
 
 // Bilingual copy kept local to the form (UI labels, not config) so it stays
@@ -205,7 +216,6 @@ function ymdToLocalNoon(ymd: string): Date {
   return new Date(y, (m ?? 1) - 1, d ?? 1, 12, 0, 0);
 }
 
-
 export default function DeskBookingForm({
   slug,
   salonId,
@@ -218,6 +228,7 @@ export default function DeskBookingForm({
   initialYmd,
   initialSlotLabel,
   notifySettings,
+  anchor,
 }: Props) {
   const tx = COPY[language === "vi" ? "vi" : "en"];
   // "Notify customer?" channels for the booking confirmation — pre-checked per
@@ -264,6 +275,43 @@ export default function DeskBookingForm({
   const [mounted, setMounted] = useState(false);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only mount flag for the portal
   useEffect(() => setMounted(true), []);
+
+  // Esc closes the form (QA: modal couldn't be dismissed with Esc).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Anchored-card mode: when opened from a grid click on a wide screen, render
+  // as a card next to the clicked cell (grid stays visible) instead of a
+  // centered modal. Mobile / header-button (no anchor) → modal.
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const isWideScreen =
+    mounted && typeof window !== "undefined" && window.innerWidth >= 700;
+  const anchored = !!anchor && isWideScreen;
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  // Clamp the card to the viewport, re-measuring as its height changes (slots /
+  // notify panel appear). Prefer the side of the click with more room.
+  useLayoutEffect(() => {
+    if (!anchored || !anchor || !popoverRef.current) return;
+    const r = popoverRef.current.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const M = 8;
+    const GAP = 14;
+    let left = anchor.x + GAP;
+    if (left + r.width > vw - M) left = anchor.x - r.width - GAP;
+    left = Math.max(M, Math.min(left, vw - r.width - M));
+    let top = anchor.y - 28;
+    top = Math.max(M, Math.min(top, vh - r.height - M));
+    setPos((prev) =>
+      prev && prev.left === left && prev.top === top ? prev : { left, top },
+    );
+  });
 
   // Load services / staff / salon meta once.
   useEffect(() => {
@@ -513,11 +561,31 @@ export default function DeskBookingForm({
   if (!mounted) return null;
   return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center"
+      // Anchored mode: transparent full-screen catcher (grid stays VISIBLE;
+      // outside-click closes). Modal mode: centered with a dark backdrop.
+      className={
+        anchored
+          ? "fixed inset-0 z-[60]"
+          : "fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center"
+      }
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-xl border border-nq-muted/25 bg-nq-surface p-5 shadow-xl"
+        ref={popoverRef}
+        className={
+          anchored
+            ? "fixed z-[61] w-[min(24rem,calc(100vw-1rem))] overflow-y-auto rounded-xl border border-nq-muted/25 bg-nq-surface p-5 shadow-2xl"
+            : "w-full max-w-md rounded-xl border border-nq-muted/25 bg-nq-surface p-5 shadow-xl"
+        }
+        style={
+          anchored
+            ? {
+                left: pos?.left ?? (anchor ? anchor.x + 14 : 0),
+                top: pos?.top ?? (anchor ? Math.max(8, anchor.y - 28) : 0),
+                maxHeight: "calc(100dvh - 16px)",
+              }
+            : undefined
+        }
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-1 flex items-center justify-between">
