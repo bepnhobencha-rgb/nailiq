@@ -1009,6 +1009,18 @@ function StaffTimelineGridImpl({
                 const pillTime = minutesToLabel(
                   hourStart * 60 + createHover.subSlot * 15,
                 );
+                // Label sits INSIDE the cell (top-1), never straddling the row's
+                // top edge — the old `-translate-y-1/2` floated it half above the
+                // cell, so on the first staff row / when the grid scroll clips
+                // overflow it got cut off. Also clamp `left` so a slot near the
+                // right edge doesn't push the pill off-screen. Right-anchor the
+                // text when it would overflow so it grows leftwards into view.
+                const PILL_W = 132;
+                const wouldOverflowRight =
+                  ghostLeft + PILL_W > timelineWidthPx;
+                const pillLeft = wouldOverflowRight
+                  ? Math.max(0, ghostLeft + SLOT_PX - PILL_W)
+                  : ghostLeft + 2;
                 createGhostEl = (
                   <>
                     <GhostBlock
@@ -1018,10 +1030,12 @@ function StaffTimelineGridImpl({
                       label=""
                     />
                     <div
-                      className="pointer-events-none absolute top-0 z-20 -translate-y-1/2 whitespace-nowrap rounded-full border border-nq-primary/40 bg-nq-bg/95 px-2 py-0.5 text-[10px] font-semibold text-nq-primary shadow-nq-card"
-                      style={{ left: ghostLeft + 2 }}
+                      className="pointer-events-none absolute top-1 z-30 flex items-center gap-1 whitespace-nowrap rounded-full border border-nq-primary/50 bg-nq-bg/90 px-2 py-0.5 text-[11px] font-semibold text-nq-primary shadow-nq-card ring-1 ring-nq-primary/20 backdrop-blur-sm"
+                      style={{ left: pillLeft }}
                     >
-                      {s.name} · {pillTime}
+                      <span aria-hidden className="text-nq-primary/90">＋</span>
+                      <span>{pillTime}</span>
+                      <span className="font-normal text-nq-primary/70">· {s.name}</span>
                     </div>
                   </>
                 );
