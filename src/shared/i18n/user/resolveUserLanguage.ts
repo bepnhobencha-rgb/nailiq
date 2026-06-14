@@ -1,4 +1,4 @@
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import {
   USER_LANGUAGE_COOKIE,
   USER_LANGUAGES,
@@ -13,10 +13,10 @@ import {
  *   1. `nailiq-user-lang` cookie — the explicit choice the visitor made
  *      via the EN/VI toggle (kept in sync with localStorage by the
  *      client provider).
- *   2. `Accept-Language` header — if the primary tag starts with `vi`
- *      (e.g. `vi-VN`), serve Vietnamese.
- *   3. Fallback `en`. Anything else (fr, zh, en-US, …) gets English so
- *      international visitors land on a language they can read.
+ *   2. Default `en` — English is the product default; the visitor opts
+ *      into Vietnamese explicitly via the toggle (persisted to the cookie),
+ *      and that choice then sticks for every page. We intentionally do NOT
+ *      auto-switch off `Accept-Language` so the first paint is predictable.
  *
  * Note: distinct from `resolveBookingLanguage` in `i18n/booking` — the
  * public booking page intentionally keeps its own cookie/story so
@@ -28,9 +28,5 @@ export async function resolveUserLanguage(): Promise<UserLanguage> {
   if (cookieVal && USER_LANGUAGES.includes(cookieVal as UserLanguage)) {
     return cookieVal as UserLanguage;
   }
-
-  const headerStore = await headers();
-  const accept = headerStore.get("accept-language") ?? "";
-  const primary = accept.split(",")[0]?.trim().toLowerCase() ?? "";
-  return primary.startsWith("vi") ? "vi" : "en";
+  return "en";
 }

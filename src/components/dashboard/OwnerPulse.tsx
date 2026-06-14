@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import { cn } from "@/shared/lib/cn";
+import { GlobalLanguageToggle } from "@/components/user/GlobalLanguageToggle";
 import type {
   OwnerPulseData,
   PulseAttentionKind,
@@ -195,19 +196,22 @@ export function OwnerPulse({
             {agoMin === 0 ? t.updatedNow : t.updatedAgo(agoMin)}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => startRefresh(() => router.refresh())}
-          aria-label={t.refresh}
-          className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-nq-border bg-nq-surface/60 text-nq-muted transition-colors hover:text-nq-primary",
-            refreshing && "animate-spin",
-          )}
-        >
-          <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M21 12a9 9 0 11-2.64-6.36M21 3v6h-6" />
-          </svg>
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <GlobalLanguageToggle />
+          <button
+            type="button"
+            onClick={() => startRefresh(() => router.refresh())}
+            aria-label={t.refresh}
+            className={cn(
+              "flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-nq-border bg-nq-surface/60 text-nq-muted transition-colors hover:text-nq-primary",
+              refreshing && "animate-spin",
+            )}
+          >
+            <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M21 12a9 9 0 11-2.64-6.36M21 3v6h-6" />
+            </svg>
+          </button>
+        </div>
       </header>
 
       {/* Two-column on desktop (lg+), single stacked column on phone.

@@ -27,6 +27,7 @@ import {
   Users,
 } from "lucide-react";
 import { LogoutButton } from "@/components/dashboard/LogoutButton";
+import { GlobalLanguageToggle } from "@/components/user/GlobalLanguageToggle";
 import { cn } from "@/shared/lib/cn";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -646,6 +647,15 @@ export function DashboardSidebar({
                 </ul>
               </>
             ) : null}
+
+            {/* Language — switches every surface (UI + server + AI) in lockstep */}
+            <div className="my-1 border-t border-nq-border/30" />
+            <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+                {language === "vi" ? "Ngôn ngữ" : "Language"}
+              </span>
+              <GlobalLanguageToggle />
+            </div>
 
             {/* Sign out */}
             <div className="my-1 border-t border-nq-border/30" />
