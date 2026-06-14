@@ -5,6 +5,12 @@
 ## 1. Mục tiêu & người dùng
 Khi khách đặt **online**, **khách mới** (và khách **rủi ro no-show cao**) **bắt buộc lưu thẻ** (card-on-file, **KHÔNG trừ tiền lúc đặt**). Nếu sau này khách **no-show**, **nhân viên có quyền tick "thu / không thu"** phí. Mỗi salon **tự chọn 1 provider** (Square hoặc Stripe) **lúc set up tiệm** bằng **1-bấm OAuth**; provider đã chọn được dùng cho **mọi giao dịch tiền**.
 
+## 1b. Quyết định cuối (2026-06-14)
+- **Cả hai provider, theo setting salon** (chọn 1-bấm OAuth lúc set up). Hi-Lite sẽ chọn **Stripe** để được trải nghiệm wow.
+- **Wow = 1 chạm Face ID**: chỉ **Stripe** lưu được thẻ từ **Apple/Google Pay** (SetupIntent off-session, không trừ tiền). **Square = nhập thẻ tay** (không lưu được ví số — đã kiểm). Nút "Xác nhận hẹn" có thể chính là tờ Apple/Google Pay.
+- **Bắt buộc cho khách lần đầu + rủi ro cao** theo mô hình **"giữ chỗ tới khi có thẻ"** (booking pending → confirm khi lưu thẻ → auto-nhả nếu bỏ ngang). Risk score tính lúc tạo hẹn nên phải tạo trước rồi mới gate.
+- **Không phiền**: khách quen sạch lịch sử KHÔNG bị hỏi; khách đã có thẻ trên hồ sơ KHÔNG hỏi lại; thẻ tự cập nhật khi hết hạn (card-updater).
+
 ## 2. Tính năng cốt lõi (đã thống nhất)
 - **Chọn provider trong Setup/Settings**: Square | Stripe (chọn 1) — **1-bấm OAuth** ("Connect with Square" / "Connect Stripe" → Stripe Connect). Nút **Test connection** + badge ✅/❌ + tên tài khoản. Khoá provider sau khi đã có thẻ khách đầu tiên (thẻ không chuyển provider được).
 - **Online card-on-file (bắt buộc)** cho: khách **mới** (chưa từng có booking hoàn tất ở tiệm) **HOẶC** `no_show_risk_score ≥ ngưỡng`. Lưu thẻ off-session, **không charge**. Khách quen sạch lịch sử → **không bị hỏi** (ít ma sát).
