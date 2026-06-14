@@ -48,7 +48,7 @@ export async function noShowCardDecision(
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
-    .select("salon_id, price_cents, no_show_risk_score, noshow_card_id")
+    .select("salon_id, price_cents, no_show_risk_score, noshow_card_id, client_phone")
     .eq("id", bookingId)
     .maybeSingle();
   const b = data as Row | null;
@@ -59,13 +59,49 @@ export async function noShowCardDecision(
   if (!policy.connected || !policy.enabled) {
     return { required: false, feeCents: 0, reason: "no-show protection off" };
   }
+
+  // Gate: a NEW customer (no prior non-cancelled booking at this salon) always
+  // leaves a card; returning customers only when their no-show risk is high.
+  // Loyal returning clients with a clean history are never asked (low friction).
   const risk = num(b.no_show_risk_score);
-  if (risk < policy.threshold) {
-    return { required: false, feeCents: 0, reason: `risk ${risk} < ${policy.threshold}` };
+  const isNew = await isNewCustomer(db, str(b.salon_id), str(b.client_phone), bookingId);
+  const highRisk = risk >= policy.threshold;
+  if (!isNew && !highRisk) {
+    return {
+      required: false,
+      feeCents: 0,
+      reason: `returning + risk ${risk} < ${policy.threshold}`,
+    };
   }
+
   const feeCents = Math.round((num(b.price_cents) * policy.percent) / 100);
   if (feeCents <= 0) return { required: false, feeCents: 0, reason: "fee is zero" };
-  return { required: true, feeCents, reason: `risk ${risk} ≥ ${policy.threshold}` };
+  return {
+    required: true,
+    feeCents,
+    reason: isNew ? "new customer" : `risk ${risk} ≥ ${policy.threshold}`,
+  };
+}
+
+/** True when this phone has no OTHER non-cancelled booking at the salon — i.e.
+ *  a first-time customer. Empty/short phone → treated as new (safer to protect). */
+async function isNewCustomer(
+  db: Db,
+  salonId: string,
+  clientPhone: string,
+  excludeBookingId: string,
+): Promise<boolean> {
+  const phone = clientPhone.trim();
+  if (phone.length < 8) return true;
+  const { data } = await db
+    .from("bookings")
+    .select("id")
+    .eq("salon_id", salonId)
+    .eq("client_phone", phone)
+    .not("id", "eq", excludeBookingId)
+    .not("status", "eq", "cancelled")
+    .limit(1);
+  return (data?.length ?? 0) === 0;
 }
 
 /** Save the customer's card on file for this booking (no charge). */
