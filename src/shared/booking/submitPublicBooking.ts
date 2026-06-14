@@ -723,24 +723,12 @@ export async function submitPublicBooking(
     throw new Error("booking_rpc_empty");
   }
 
-  // Stamp booking_channel = 'online' (the RPC leaves it null). Reports use it
-  // to separate online bookings from desk / Square / Wix / voice. We fold in
-  // client_locale on the SAME best-effort UPDATE so the confirmation /
-  // reschedule SMS goes out in the language the customer was browsing. A
-  // failure here only loses the stamp — the SMS sender falls back to
-  // customer_preferences.preferred_language, so the booking is never at risk.
+  // booking_channel='online' + client_locale are stamped SERVER-SIDE in
+  // runPublicBookingSideEffects below. The RPC leaves booking_channel null, and
+  // a browser anon `.update()` silently no-ops (UPDATE grant but no RLS UPDATE
+  // policy → 0 rows, no error), which is why every online booking saved as
+  // null channel. Reports use the channel; the SMS sender uses client_locale.
   if (bookingId) {
-    const stamp: { booking_channel: string; client_locale?: string } = {
-      booking_channel: "online",
-    };
-    if (params.language) stamp.client_locale = params.language;
-    const { error: chErr } = await supabase
-      .from("bookings")
-      .update(stamp as never)
-      .eq("id", bookingId);
-    if (chErr) {
-      console.error("[submitPublicBooking] booking_channel/locale stamp failed", chErr);
-    }
     // Notify owner/admin of the new booking (opt-in, fire-and-forget).
     void sendOwnerBookingNotification({
       salonId: String(salon.id),
@@ -767,30 +755,9 @@ export async function submitPublicBooking(
     }
   }
 
-  // Best-effort: stamp the staff-requested flag for the RPC path.
-  // The `create_public_booking` RPC currently has a fixed parameter
-  // list that doesn't include this field; rather than gate the
-  // feature on a SQL function migration, we follow up with an UPDATE
-  // when the customer picked a specific staff. Failures here are
-  // logged but don't fail the booking — the chip just renders
-  // without a heart, identical to the prior behavior.
-  if (customerRequestedStaff && bookingId) {
-    const { error: stampErr } = await supabase
-      .from("bookings")
-      .update({ staff_requested_by_client: true } as never)
-      .eq("id", bookingId);
-    if (stampErr) {
-      const err = new Error(stampErr.message);
-      err.name = "StaffRequestedFlagStampError";
-      Sentry.captureException(err, {
-        tags: {
-          "booking.rpc": "staff_requested_flag",
-          "booking.rpc.failure": "post_insert_stamp",
-        },
-        extra: { bookingId, message: stampErr.message },
-      });
-    }
-  }
+  // staff_requested_by_client (the ❤️ chip) is stamped SERVER-SIDE in
+  // runPublicBookingSideEffects below — same reason as booking_channel: a browser
+  // anon UPDATE silently no-ops under RLS, so this flag never persisted online.
 
   // TODO Phase 2 WOW:
   // - Check client_profiles when guest enters phone
@@ -883,6 +850,12 @@ export async function submitPublicBooking(
               totalPriceCents: totalPriceCents > 0 ? totalPriceCents : null,
             }
           : undefined,
+        stamp: {
+          bookingId,
+          bookingChannel: "online",
+          clientLocale: params.language || undefined,
+          staffRequested: customerRequestedStaff,
+        },
       });
     } catch (e) {
       console.error("[submitPublicBooking] side-effects dispatch failed", e);
