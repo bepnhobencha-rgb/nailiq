@@ -764,47 +764,11 @@ export async function submitPublicBooking(
   // - Auto-fill name if already known
   // - Suggest preferred_staff_id (favorite tech)
   // - Show "Welcome back [name]!"
-  try {
-    // Per-phone snapshot via SECURITY DEFINER RPC — anon can no longer read
-    // client_profiles directly (cross-tenant PII lockdown, migration
-    // 20260609120000); the RPC returns only this one phone's row.
-    const { data: snapshotRows } = await supabase.rpc(
-      "get_booking_client_snapshot" as never,
-      { p_phone: phoneOk.digits } as never,
-    );
-    const existingProfile = (Array.isArray(snapshotRows)
-      ? snapshotRows[0]
-      : null) as { visit_count?: number | null } | null;
-
-    const nextVisits = (existingProfile?.visit_count ?? 0) + 1;
-
-    const { error: profileUpsertErr } = await supabase
-      .from("client_profiles")
-      .upsert(
-        {
-          phone: phoneOk.digits,
-          name: nameTrimmed,
-          preferred_staff_id: resolvedStaffId,
-          last_service_date: new Date().toISOString(),
-          visit_count: nextVisits,
-        },
-        { onConflict: "phone" },
-      );
-
-    if (profileUpsertErr) {
-      const err = new Error(profileUpsertErr.message);
-      err.name = "ClientProfilesUpsertError";
-      Sentry.captureException(err, {
-        tags: {
-          "booking.rpc": "client_profiles",
-          "booking.rpc.failure": "upsert_best_effort",
-        },
-        extra: { message: profileUpsertErr.message },
-      });
-    }
-  } catch {
-    /* booking succeeded; profile update is best-effort */
-  }
+  // NOTE: the client_profiles upsert (identity resolve + visit_count bump) now
+  // lives INSIDE create_public_booking via resolve_client_profile() — atomic,
+  // server-authoritative, and stamps bookings.client_profile_id. The old
+  // best-effort browser upsert was removed (migration 20260614110000): under
+  // RLS it could silently no-op, and keeping it here would double-count visits.
 
   // Post-commit side-effects (deposit eval + AI no-show risk + card-required
   // flag, and the confirmation email) run in a SERVER ACTION. This flow executes
