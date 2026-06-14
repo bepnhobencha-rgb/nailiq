@@ -19,6 +19,7 @@ import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { createClient } from "@/shared/lib/supabase/client";
 import { runPublicBookingSideEffects } from "@/shared/booking/publicBookingSideEffects";
+import { saveNoShowCardAction } from "@/shared/noshow/saveNoShowCardAction";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 
 export type BookingParams = {
@@ -65,6 +66,13 @@ export type BookingParams = {
   /** Booking-surface language. Forwarded to the confirmation SMS so it's
    *  sent in the language the customer chose (defaults to vi server-side). */
   language?: "en" | "vi";
+  /** Option A no-show card gate: Web Payments SDK card token captured IN the
+   *  confirm step. When present, the card is saved server-side right after the
+   *  booking is created and BEFORE any confirmation (SMS/email) — if the save
+   *  fails the booking is cancelled and the customer sees an error. */
+  noShowCardSourceId?: string | null;
+  /** Customer agreed to the no-show policy + card-on-file authorization. */
+  noShowConsent?: boolean;
 };
 
 export type BookingResult = {
@@ -721,6 +729,20 @@ export async function submitPublicBooking(
     }
     captureCreatePublicBookingFailure({ reason: "booking_rpc_empty" });
     throw new Error("booking_rpc_empty");
+  }
+
+  // Option A no-show card gate: a required-card booking captured the card IN the
+  // confirm step. Save it NOW — before any confirmation goes out. The action
+  // cancels the booking on failure, so we surface an error and send nothing.
+  if (params.noShowCardSourceId && bookingId) {
+    const saved = await saveNoShowCardAction({
+      bookingId,
+      sourceId: params.noShowCardSourceId,
+      consent: params.noShowConsent === true,
+    });
+    if (!saved.ok) {
+      throw new Error("card_save_failed");
+    }
   }
 
   // booking_channel='online' + client_locale are stamped SERVER-SIDE in

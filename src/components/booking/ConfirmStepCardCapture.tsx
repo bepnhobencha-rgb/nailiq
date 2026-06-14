@@ -1,0 +1,148 @@
+"use client";
+
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
+import type { BookingMessages } from "@/shared/i18n/booking/en";
+
+type SquareCard = {
+  attach: (sel: string) => Promise<void>;
+  tokenize: () => Promise<{ status: string; token?: string }>;
+};
+type SquarePayments = { card: () => Promise<SquareCard> };
+type SquareGlobal = { payments: (appId: string, locationId: string) => SquarePayments };
+declare global {
+  interface Window {
+    Square?: SquareGlobal;
+  }
+}
+
+const SDK_SRC = {
+  sandbox: "https://sandbox.web.squarecdn.com/v1/square.js",
+  production: "https://web.squarecdn.com/v1/square.js",
+};
+
+function loadSdk(env: "production" | "sandbox"): Promise<SquareGlobal> {
+  return new Promise((resolve, reject) => {
+    if (window.Square) return resolve(window.Square);
+    const src = SDK_SRC[env];
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);
+    if (existing) {
+      existing.addEventListener("load", () => resolve(window.Square as SquareGlobal));
+      existing.addEventListener("error", () => reject(new Error("sdk_load_failed")));
+      if (window.Square) resolve(window.Square);
+      return;
+    }
+    const s = document.createElement("script");
+    s.src = src;
+    s.async = true;
+    s.onload = () => (window.Square ? resolve(window.Square) : reject(new Error("sdk_no_global")));
+    s.onerror = () => reject(new Error("sdk_load_failed"));
+    document.head.appendChild(s);
+  });
+}
+
+export type ConfirmStepCardHandle = {
+  /** Tokenize the entered card. Returns the source token, or null on failure
+   *  (an error is shown to the user). Called by the confirm button. */
+  tokenize: () => Promise<string | null>;
+};
+
+type Props = {
+  applicationId: string;
+  locationId: string;
+  environment: "production" | "sandbox";
+  feeLabel: string;
+  t: BookingMessages;
+};
+
+/**
+ * Square card-entry rendered INSIDE the confirm step (Option A). Unlike the
+ * post-booking capture, it does NOT save — it exposes tokenize() so the confirm
+ * action can grab the token and save the card as part of creating the booking.
+ */
+export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
+  function ConfirmStepCardCapture({ applicationId, locationId, environment, feeLabel, t }, ref) {
+    const cardRef = useRef<SquareCard | null>(null);
+    const mountedRef = useRef(false);
+    const [error, setError] = useState<string | null>(null);
+    const [ready, setReady] = useState(false);
+
+    useEffect(() => {
+      if (mountedRef.current) return;
+      mountedRef.current = true;
+      let cancelled = false;
+      (async () => {
+        try {
+          const sq = await loadSdk(environment);
+          const payments = sq.payments(applicationId, locationId);
+          const card = await payments.card();
+          if (cancelled) return;
+          await card.attach("#sq-confirm-card");
+          cardRef.current = card;
+          setReady(true);
+        } catch {
+          if (!cancelled) setError(t.noShowCardError ?? "Could not load the card form.");
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [applicationId, locationId, environment, t.noShowCardError]);
+
+    useImperativeHandle(ref, () => ({
+      async tokenize() {
+        if (!cardRef.current) {
+          setError(t.noShowCardError ?? "Could not load the card form.");
+          return null;
+        }
+        try {
+          const res = await cardRef.current.tokenize();
+          if (res.status !== "OK" || !res.token) {
+            setError(t.noShowCardError ?? "Please check your card details.");
+            return null;
+          }
+          setError(null);
+          return res.token;
+        } catch {
+          setError(t.noShowCardError ?? "Please check your card details.");
+          return null;
+        }
+      },
+    }));
+
+    return (
+      <div className="mt-4 rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4">
+        <p className="text-sm font-semibold text-[var(--booking-text)]">
+          {t.noShowCardTitle ?? "Secure your appointment"}
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+          {(t.noShowCardDesc ??
+            "Add a card to hold your spot. You're only charged {fee} if you don't show up — nothing now.").replace(
+            "{fee}",
+            feeLabel,
+          )}
+        </p>
+        <div
+          id="sq-confirm-card"
+          className="mt-3 rounded-lg border border-[var(--booking-border)] bg-white p-2"
+          data-testid="confirm-step-card"
+        />
+        {!ready && !error ? (
+          <p className="mt-2 text-xs text-[var(--booking-text-muted)]">
+            {t.noShowCardSaving ?? "Loading…"}
+          </p>
+        ) : null}
+        {error ? (
+          <p className="mt-2 text-xs text-nq-error" role="alert" data-testid="confirm-step-card-error">
+            {error}
+          </p>
+        ) : null}
+      </div>
+    );
+  },
+);

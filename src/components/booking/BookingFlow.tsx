@@ -501,7 +501,8 @@ export function BookingFlow({
             onAddonRepickTime={flow.addAddonAndRepickTime}
             onClearAddons={() => flow.setSelectedAddonIds([])}
             onBack={flow.backToInfo}
-            onConfirm={() => void flow.onConfirm()}
+            onConfirm={(extra) => void flow.onConfirm(extra)}
+            cardRequirement={flow.cardRequirement}
             onApplyVoucher={flow.handleApplyVoucher}
             onRemoveVoucher={flow.handleRemoveVoucher}
           />
