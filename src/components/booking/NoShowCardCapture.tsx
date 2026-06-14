@@ -2,6 +2,61 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
+import { NoShowCardCaptureStripe } from "./NoShowCardCaptureStripe";
+
+type CaptureProps = {
+  bookingId: string;
+  /** Formats cents → display string (e.g. "$20.00") in the salon currency. */
+  currencyFormat: (cents: number) => string;
+  t: BookingMessages;
+};
+
+/**
+ * Dispatcher: a Stripe-provider salon shows the one-tap Payment Element (Apple/
+ * Google Pay); a Square salon shows the card-entry form below. Renders nothing
+ * until it knows, and nothing when no card is required for this booking.
+ */
+export function NoShowCardCapture(props: CaptureProps) {
+  const [stripeCfg, setStripeCfg] = useState<{
+    required: boolean;
+    clientSecret?: string;
+    publishableKey?: string;
+    feeCents?: number;
+  } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/booking/stripe-setup-intent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookingId: props.bookingId }),
+    })
+      .then((r) => r.json())
+      .then((c) => {
+        if (alive) setStripeCfg(c);
+      })
+      .catch(() => {
+        if (alive) setStripeCfg({ required: false });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [props.bookingId]);
+
+  if (stripeCfg === null) return null; // still deciding which provider
+  if (stripeCfg.required && stripeCfg.clientSecret && stripeCfg.publishableKey) {
+    return (
+      <NoShowCardCaptureStripe
+        bookingId={props.bookingId}
+        clientSecret={stripeCfg.clientSecret}
+        publishableKey={stripeCfg.publishableKey}
+        feeLabel={props.currencyFormat(stripeCfg.feeCents ?? 0)}
+        t={props.t}
+      />
+    );
+  }
+  return <SquareCardCapture {...props} />;
+}
 
 type Cfg = {
   required: boolean;
@@ -55,16 +110,9 @@ function loadSdk(env: "production" | "sandbox"): Promise<SquareGlobal> {
  * renders nothing unless the booking is risk-gated and Square is configured.
  * The card is saved (not charged); the salon bills the fee only on a no-show.
  */
-export function NoShowCardCapture({
-  bookingId,
-  currencyFormat,
-  t,
-}: {
-  bookingId: string;
-  /** Formats cents → display string (e.g. "$20.00") in the salon currency. */
-  currencyFormat: (cents: number) => string;
-  t: BookingMessages;
-}) {
+/** Square card-entry capture (Web Payments SDK). Used when the salon's provider
+ *  is Square. The Stripe path (one-tap wallets) is handled by the dispatcher. */
+function SquareCardCapture({ bookingId, currencyFormat, t }: CaptureProps) {
   const [cfg, setCfg] = useState<Cfg | null>(null);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
