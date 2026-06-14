@@ -9,7 +9,7 @@ export const runtime = "nodejs";
  * Saves the card on file (no charge) so a no-show fee can be taken later.
  */
 export async function POST(req: NextRequest) {
-  let body: { bookingId?: string; sourceId?: string };
+  let body: { bookingId?: string; sourceId?: string; consent?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -17,11 +17,15 @@ export async function POST(req: NextRequest) {
   }
   const bookingId = String(body.bookingId ?? "");
   const sourceId = String(body.sourceId ?? "");
+  const consent = body.consent === true;
   if (!bookingId || !sourceId) {
     return NextResponse.json({ ok: false, error: "missing_fields" }, { status: 400 });
   }
+  if (!consent) {
+    return NextResponse.json({ ok: false, error: "consent_required" }, { status: 400 });
+  }
   try {
-    const r = await saveNoShowCardForBooking(bookingId, sourceId);
+    const r = await saveNoShowCardForBooking(bookingId, sourceId, consent);
     return NextResponse.json(r, { status: r.ok ? 200 : 400 });
   } catch (e) {
     console.error("[square-save-card] error", e);

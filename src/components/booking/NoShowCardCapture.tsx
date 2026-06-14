@@ -68,6 +68,7 @@ export function NoShowCardCapture({
   const [cfg, setCfg] = useState<Cfg | null>(null);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [consented, setConsented] = useState(false);
   const cardRef = useRef<SquareCard | null>(null);
   const mountedRef = useRef(false);
 
@@ -115,7 +116,7 @@ export function NoShowCardCapture({
   }, [cfg, t.noShowCardError]);
 
   async function onSave() {
-    if (!cardRef.current || status === "saving") return;
+    if (!cardRef.current || status === "saving" || !consented) return;
     setStatus("saving");
     setErrorMsg(null);
     try {
@@ -128,7 +129,7 @@ export function NoShowCardCapture({
       const res = await fetch("/api/booking/square-save-card", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookingId, sourceId: result.token }),
+        body: JSON.stringify({ bookingId, sourceId: result.token, consent: true }),
       });
       const j = (await res.json()) as { ok?: boolean };
       if (j.ok) {
@@ -175,10 +176,26 @@ export function NoShowCardCapture({
           {errorMsg}
         </p>
       ) : null}
+      <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+        <input
+          type="checkbox"
+          checked={consented}
+          onChange={(e) => setConsented(e.target.checked)}
+          data-testid="noshow-consent"
+          className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+        />
+        <span>
+          {(t.noShowConsent ??
+            "I agree to the no-show policy and authorize this salon to charge {fee} to this card only if I don't show up.").replace(
+            "{fee}",
+            feeLabel,
+          )}
+        </span>
+      </label>
       <button
         type="button"
         onClick={onSave}
-        disabled={status === "saving"}
+        disabled={status === "saving" || !consented}
         data-testid="noshow-card-save"
         className="mt-3 h-11 w-full rounded-xl bg-[var(--salon-primary)] text-sm font-semibold text-white disabled:opacity-50"
       >

@@ -104,11 +104,16 @@ async function isNewCustomer(
   return (data?.length ?? 0) === 0;
 }
 
-/** Save the customer's card on file for this booking (no charge). */
+/** Save the customer's card on file for this booking (no charge). `consent` MUST
+ *  be true — the customer has to agree to the no-show policy + card-on-file
+ *  authorization before we may store/charge a card (legal + chargeback defense).
+ *  The agreement time is stamped in `noshow_consent_at` and re-checked at charge. */
 export async function saveNoShowCardForBooking(
   bookingId: string,
   sourceId: string,
+  consent: boolean,
 ): Promise<{ ok: boolean; reason: string; last4?: string }> {
+  if (!consent) return { ok: false, reason: "consent required" };
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
@@ -143,6 +148,7 @@ export async function saveNoShowCardForBooking(
       noshow_customer_id: customerId,
       noshow_fee_cents: decision.feeCents,
       noshow_charge_status: "saved",
+      noshow_consent_at: new Date().toISOString(),
     } as never)
     .eq("id", bookingId);
 
@@ -157,7 +163,7 @@ export async function chargeNoShowFee(
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
-    .select("id, salon_id, noshow_card_id, noshow_customer_id, noshow_fee_cents, noshow_charge_status")
+    .select("id, salon_id, noshow_card_id, noshow_customer_id, noshow_fee_cents, noshow_charge_status, noshow_consent_at")
     .eq("id", bookingId)
     .maybeSingle();
   const b = data as Row | null;
@@ -165,6 +171,10 @@ export async function chargeNoShowFee(
   if (!b.noshow_card_id) return { charged: false, reason: "no card on file" };
   if (b.noshow_charge_status === "charged") {
     return { charged: false, reason: "already charged" }; // idempotent
+  }
+  // Legal guard: never charge a saved card without recorded consent.
+  if (!b.noshow_consent_at) {
+    return { charged: false, reason: "no consent on file" };
   }
   const feeCents = num(b.noshow_fee_cents);
   if (feeCents <= 0) return { charged: false, reason: "fee is zero" };
