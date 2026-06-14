@@ -19,18 +19,20 @@ const num = (v: unknown): number => (v == null ? 0 : Number(v));
 
 type Db = ReturnType<typeof looseServiceClient>;
 
+/** No-show policy is provider-agnostic now: it lives on `salons`, not on the
+ *  Square integration. "Connected" (is a provider hooked up) is checked
+ *  separately via resolvePaymentProvider, so a Stripe salon works too. */
 async function loadPolicy(db: Db, salonId: string) {
   const { data } = await db
-    .from("square_integrations")
-    .select("enabled, deposit_enabled, deposit_percent, deposit_risk_threshold")
-    .eq("salon_id", salonId)
+    .from("salons")
+    .select("noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold")
+    .eq("id", salonId)
     .maybeSingle();
   const r = (data as Row) ?? {};
   return {
-    connected: Boolean(r.enabled),
-    enabled: Boolean(r.deposit_enabled),
-    percent: num(r.deposit_percent) || 20,
-    threshold: num(r.deposit_risk_threshold) || 60,
+    enabled: Boolean(r.noshow_protection_enabled),
+    percent: num(r.noshow_fee_percent) || 20,
+    threshold: num(r.noshow_risk_threshold) || 60,
   };
 }
 
@@ -50,8 +52,13 @@ export async function noShowCardDecision(
   if (b.noshow_card_id) return { required: false, feeCents: 0, reason: "card already saved" };
 
   const policy = await loadPolicy(db, str(b.salon_id));
-  if (!policy.connected || !policy.enabled) {
+  if (!policy.enabled) {
     return { required: false, feeCents: 0, reason: "no-show protection off" };
+  }
+  // Connection check is provider-agnostic: a usable Square OR Stripe provider.
+  const provider = await resolvePaymentProvider(str(b.salon_id));
+  if (!provider) {
+    return { required: false, feeCents: 0, reason: "no payment provider connected" };
   }
 
   // Gate: a NEW customer (no prior non-cancelled booking at this salon) always
