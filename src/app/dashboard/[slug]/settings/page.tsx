@@ -4,6 +4,7 @@ import { SalonSettingsHub } from "@/components/dashboard/SalonSettingsHub";
 import { parseDashboardModules } from "@/shared/dashboard/dashboardModules";
 import { parsePresetKey } from "@/shared/dashboard/dashboardPresets";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { parseClientSegmentSettings } from "@/shared/dashboard/clientSegmentSettings";
 import { getSalonDomain } from "@/shared/dashboard/domainActions";
 import { normalizeBrandColor } from "@/shared/lib/brandColor";
 import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
@@ -31,7 +32,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, reference_image_enabled, auto_no_show_minutes, winback_enabled",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, reference_image_enabled, auto_no_show_minutes, winback_enabled, client_segment_settings",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -69,6 +70,7 @@ export default async function SalonSettingsPage({ params }: Props) {
         reference_image_enabled?: unknown;
         auto_no_show_minutes?: unknown;
         winback_enabled?: unknown;
+        client_segment_settings?: unknown;
       }
     | null;
 
@@ -133,6 +135,8 @@ export default async function SalonSettingsPage({ params }: Props) {
   })();
   // Win-back defaults ON (column default true); only explicit false disables.
   const winBackEnabled = row?.winback_enabled !== false;
+  // Clients lifecycle thresholds (NULL → app defaults).
+  const clientSegments = parseClientSegmentSettings(row?.client_segment_settings);
 
   return (
     <SalonSettingsHub
@@ -164,6 +168,8 @@ export default async function SalonSettingsPage({ params }: Props) {
       referenceImageEnabled={referenceImageEnabled}
       autoNoShowMinutes={autoNoShowMinutes}
       winBackEnabled={winBackEnabled}
+      clientNewMaxVisits={clientSegments.newMaxVisits}
+      clientAtRiskDays={clientSegments.atRiskDays}
     />
   );
 }
