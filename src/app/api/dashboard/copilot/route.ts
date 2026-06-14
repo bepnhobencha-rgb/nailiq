@@ -8,6 +8,7 @@ import {
   buildCopilotContext,
   COPILOT_TOOLS,
   runCopilotTool,
+  type CocoBookingProposal,
 } from "@/shared/copilot/copilotContext";
 import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
 
@@ -57,6 +58,7 @@ How to help:
 - Be PROACTIVE: if the live context shows a setup gap or pending work (walk-ins waiting, no-shows today, missing services/staff), surface it and offer the next step.
 - WOW with one-tap navigation: whenever you explain how to do something, ALWAYS finish your answer with the deep-link to that exact page on its OWN line — it renders as a big tappable "Open …" button so the user jumps straight there instead of hunting for the menu. e.g. [Open Front Desk](/dashboard/${slug}/center) or [Open Settings](/dashboard/${slug}/settings). The real action buttons live on that page. Build links as /dashboard/${slug}/... — only link to pages the user's role can actually reach.
 - Use the find_appointment tool when the user asks about a specific client's appointment (by name or phone).
+- BOOKING FOR THE USER: when they ask you to actually create/book an appointment, collect the customer name, phone, service, staff (or "any"), date, and time — ask for whatever is missing FIRST — then call prepare_appointment. It returns a proposal the user must confirm with a button; reply with a short friendly summary and tell them to tap **Confirm** to book. NEVER claim the appointment is booked — the Confirm button does that. If prepare_appointment returns ok:false, relay its message (e.g. ask which service/staff, or pick a non-past time).
 - If something isn't in the SOP and isn't in the live context, say honestly you don't have it — NEVER invent steps, page names, paths, or numbers.
 - You only guide and read; you cannot change data yourself.
 
@@ -134,8 +136,11 @@ export async function POST(req: NextRequest) {
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
 
-    // Agentic loop: let Coco call read-only tools, then answer.
+    // Agentic loop: let Coco call read-only tools, then answer. A
+    // `prepare_appointment` call yields a structured proposal the client turns
+    // into a confirm card — the params never depend on the model's prose.
     let finalText = "";
+    let proposal: CocoBookingProposal | null = null;
     for (let step = 0; step < 4; step++) {
       const resp = await anthropic.messages.create({
         model: "claude-haiku-4-5-20251001",
@@ -157,7 +162,8 @@ export async function POST(req: NextRequest) {
               name: block.name,
               input: block.input as Record<string, unknown>,
             });
-            toolResults.push({ type: "tool_result", tool_use_id: block.id, content: out });
+            if (out.proposal) proposal = out.proposal;
+            toolResults.push({ type: "tool_result", tool_use_id: block.id, content: out.content });
           }
         }
         convo.push({ role: "user", content: toolResults });
@@ -173,7 +179,7 @@ export async function POST(req: NextRequest) {
         ? "Xin lỗi, Coco chưa trả lời được. Bạn thử hỏi lại nhé."
         : "Sorry, Coco couldn't answer that. Please try again.";
     }
-    return NextResponse.json({ text: finalText });
+    return NextResponse.json({ text: finalText, proposal });
   } catch (e) {
     console.error("[copilot] generate", e);
     return NextResponse.json({ error: "server_error" }, { status: 500 });

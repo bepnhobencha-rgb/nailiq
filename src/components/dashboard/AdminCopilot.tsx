@@ -11,7 +11,10 @@ import {
   MessageCircleQuestion,
   ArrowRight,
   ExternalLink,
+  CalendarPlus,
+  Check,
 } from "lucide-react";
+import { addDeskAppointment } from "@/shared/dashboard/receptionistActions";
 
 // Coco — the in-admin agentic assistant for the salon dashboard. It guides and
 // reads only; any "do it for me" is rendered as a deep-link to the page where
@@ -19,7 +22,31 @@ import {
 // design tokens (nq-*). Bilingual EN/VI driven by the user-language cookie.
 
 type Lang = "en" | "vi";
-type Msg = { role: "user" | "assistant"; content: string };
+
+/** An appointment Coco resolved + validated server-side, awaiting the user's
+ *  one-tap confirmation. Mirrors `CocoBookingProposal` (kept local so this
+ *  client component never imports the server copilot module). */
+type CocoProposal = {
+  salonId: string;
+  serviceId: string;
+  serviceName: string;
+  staffId: string;
+  staffName: string;
+  bookingDateYmd: string;
+  timeSlot: string;
+  clientName: string;
+  clientPhone: string;
+  priceLabel: string;
+};
+
+type Msg = {
+  role: "user" | "assistant";
+  content: string;
+  /** When set, this assistant turn shows a confirm-to-book card. */
+  proposal?: CocoProposal;
+  /** Once the user acts, the card collapses to a result line. */
+  proposalDone?: "booked" | "cancelled";
+};
 
 const COPY = {
   fab: { en: "Ask Coco", vi: "Hỏi Coco" },
@@ -34,21 +61,44 @@ const COPY = {
   clear: { en: "New chat", vi: "Hỏi mới" },
   suggestionsLabel: { en: "Try asking", vi: "Thử hỏi" },
   errorGeneric: { en: "Something went wrong. Please try again.", vi: "Có lỗi xảy ra. Vui lòng thử lại." },
+  // Confirm-to-book card
+  bookTitle: { en: "Confirm this appointment?", vi: "Xác nhận đặt lịch này?" },
+  bookClient: { en: "Customer", vi: "Khách" },
+  bookService: { en: "Service", vi: "Dịch vụ" },
+  bookStaff: { en: "Staff", vi: "Thợ" },
+  bookWhen: { en: "When", vi: "Lúc" },
+  bookConfirm: { en: "Confirm booking", vi: "Xác nhận đặt" },
+  bookCancel: { en: "Not now", vi: "Để sau" },
+  bookingNow: { en: "Booking…", vi: "Đang đặt…" },
+  booked: { en: "Booked ✅", vi: "Đã đặt ✅" },
+  bookCancelled: { en: "Okay, not booked.", vi: "Đã huỷ, chưa đặt." },
+  bookErr: { en: "Couldn't book", vi: "Chưa đặt được" },
+};
+
+// Desk-booking error codes → friendly copy (same set addDeskAppointment returns).
+const BOOK_ERR: Record<string, { en: string; vi: string }> = {
+  time_in_past: { en: "that time has already passed.", vi: "giờ đó đã qua." },
+  time_slot_taken: { en: "that slot was just taken — try another time.", vi: "giờ đó vừa có người đặt — chọn giờ khác." },
+  no_staff_available: { en: "no available staff can do this service then.", vi: "không có thợ trống làm dịch vụ đó lúc này." },
+  outside_opening_hours: { en: "that's outside opening hours.", vi: "ngoài giờ mở cửa." },
+  invalid_time: { en: "that time isn't valid.", vi: "giờ không hợp lệ." },
+  salon_mismatch: { en: "salon mismatch.", vi: "sai tiệm." },
+  unauthorized: { en: "you don't have permission to book.", vi: "bạn không có quyền đặt lịch." },
 };
 
 const SUGGESTIONS: Record<Lang, string[]> = {
   vi: [
     "Tiệm cần làm gì bây giờ?",
+    "Đặt hẹn giúp tôi cho một khách",
     "Có khách walk-in nào đang chờ không?",
     "Làm sao đánh dấu khách no-show?",
-    "Cách thêm thợ mới và dịch vụ?",
     "Tiệm đã sẵn sàng nhận đặt lịch chưa?",
   ],
   en: [
     "What does my salon need right now?",
+    "Book an appointment for a customer",
     "Any walk-ins waiting?",
     "How do I mark a no-show?",
-    "How do I add a new staff and service?",
     "Is my salon ready to take bookings?",
   ],
 };
@@ -211,7 +261,15 @@ export function AdminCopilot({ slug }: { slug: string; role?: string }) {
           setMessages((m) => [...m, { role: "assistant", content: `⚠️ ${err}` }]);
           return;
         }
-        setMessages((m) => [...m, { role: "assistant", content: (data as { text: string }).text || COPY.errorGeneric[lang] }]);
+        const d = data as { text?: string; proposal?: CocoProposal | null };
+        setMessages((m) => [
+          ...m,
+          {
+            role: "assistant",
+            content: d.text || COPY.errorGeneric[lang],
+            proposal: d.proposal ?? undefined,
+          },
+        ]);
       } catch {
         setMessages((m) => [...m, { role: "assistant", content: `⚠️ ${COPY.errorGeneric[lang]}` }]);
       } finally {
@@ -220,6 +278,63 @@ export function AdminCopilot({ slug }: { slug: string; role?: string }) {
     },
     [messages, loading, lang, pathname, slug],
   );
+
+  // Track which message's proposal is being booked (spinner on that card only).
+  const [bookingIdx, setBookingIdx] = useState<number | null>(null);
+
+  // Confirm-to-book: the user tapped Confirm on a proposal card. The real
+  // create + all validation (conflict, past-time, capability, buffer, plan
+  // limit) run in addDeskAppointment — Coco only resolved + proposed it.
+  const confirmBooking = useCallback(
+    async (idx: number, p: CocoProposal) => {
+      if (bookingIdx !== null) return;
+      setBookingIdx(idx);
+      try {
+        const r = await addDeskAppointment(slug, {
+          salonId: p.salonId,
+          serviceId: p.serviceId,
+          staffId: p.staffId,
+          bookingDateYmd: p.bookingDateYmd,
+          timeSlot: p.timeSlot,
+          clientName: p.clientName,
+          clientPhone: p.clientPhone,
+          language: lang,
+        });
+        if (r.ok) {
+          setMessages((m) => {
+            const copy = [...m];
+            if (copy[idx]) copy[idx] = { ...copy[idx], proposalDone: "booked" };
+            return [
+              ...copy,
+              {
+                role: "assistant",
+                content: `${COPY.booked[lang]} — **${p.clientName}** · ${p.serviceName} · ${p.bookingDateYmd} ${p.timeSlot}${p.staffName ? ` · ${p.staffName}` : ""}.`,
+              },
+            ];
+          });
+        } else {
+          const why = BOOK_ERR[r.error]?.[lang] ?? r.error;
+          setMessages((m) => [
+            ...m,
+            { role: "assistant", content: `⚠️ ${COPY.bookErr[lang]}: ${why}` },
+          ]);
+        }
+      } catch {
+        setMessages((m) => [...m, { role: "assistant", content: `⚠️ ${COPY.errorGeneric[lang]}` }]);
+      } finally {
+        setBookingIdx(null);
+      }
+    },
+    [bookingIdx, slug, lang],
+  );
+
+  const dismissProposal = useCallback((idx: number) => {
+    setMessages((m) => {
+      const copy = [...m];
+      if (copy[idx]) copy[idx] = { ...copy[idx], proposalDone: "cancelled" };
+      return copy;
+    });
+  }, []);
 
   return (
     <>
@@ -303,6 +418,41 @@ export function AdminCopilot({ slug }: { slug: string; role?: string }) {
                     }
                   >
                     {m.role === "user" ? m.content : <Markdown text={m.content} nav={nav} />}
+
+                    {/* Confirm-to-book card (assistant turns with a proposal) */}
+                    {m.role === "assistant" && m.proposal && !m.proposalDone && (
+                      <div className="mt-2.5 rounded-xl border border-nq-primary/40 bg-nq-primary/5 p-3 text-sm">
+                        <p className="flex items-center gap-1.5 font-semibold text-nq-foreground">
+                          <CalendarPlus className="w-4 h-4 text-nq-primary" /> {COPY.bookTitle[lang]}
+                        </p>
+                        <dl className="mt-2 space-y-0.5 text-[13px] text-nq-foreground/90">
+                          <div className="flex gap-2"><dt className="w-16 shrink-0 text-nq-muted">{COPY.bookClient[lang]}</dt><dd className="font-medium">{m.proposal.clientName} · {m.proposal.clientPhone}</dd></div>
+                          <div className="flex gap-2"><dt className="w-16 shrink-0 text-nq-muted">{COPY.bookService[lang]}</dt><dd className="font-medium">{m.proposal.serviceName}{m.proposal.priceLabel && m.proposal.priceLabel !== "—" ? ` · ${m.proposal.priceLabel}` : ""}</dd></div>
+                          <div className="flex gap-2"><dt className="w-16 shrink-0 text-nq-muted">{COPY.bookStaff[lang]}</dt><dd className="font-medium">{m.proposal.staffName}</dd></div>
+                          <div className="flex gap-2"><dt className="w-16 shrink-0 text-nq-muted">{COPY.bookWhen[lang]}</dt><dd className="font-medium">{m.proposal.bookingDateYmd} · {m.proposal.timeSlot}</dd></div>
+                        </dl>
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            onClick={() => confirmBooking(i, m.proposal!)}
+                            disabled={bookingIdx !== null}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-nq-primary px-3 py-1.5 text-[13px] font-semibold text-nq-bg transition-opacity hover:opacity-90 disabled:opacity-60"
+                          >
+                            {bookingIdx === i ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            {bookingIdx === i ? COPY.bookingNow[lang] : COPY.bookConfirm[lang]}
+                          </button>
+                          <button
+                            onClick={() => dismissProposal(i)}
+                            disabled={bookingIdx !== null}
+                            className="rounded-lg border border-nq-border px-3 py-1.5 text-[13px] text-nq-muted transition-colors hover:bg-nq-border/30 disabled:opacity-60"
+                          >
+                            {COPY.bookCancel[lang]}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {m.role === "assistant" && m.proposalDone === "cancelled" && (
+                      <p className="mt-2 text-[13px] text-nq-muted">{COPY.bookCancelled[lang]}</p>
+                    )}
                   </div>
                 </div>
               ))}
