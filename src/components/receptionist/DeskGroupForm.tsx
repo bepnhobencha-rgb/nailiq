@@ -75,7 +75,10 @@ const MIN_SIZE = 2;
 // per-salon from the loaded active staff so the desk and online never disagree.
 function maxGroupSizeFor(activeStaffCount: number): number {
   if (activeStaffCount <= 0) return MIN_SIZE;
-  return Math.max(MIN_SIZE, Math.min(activeStaffCount * MAX_WAVES, GROUP_MAX_SIZE));
+  return Math.max(
+    MIN_SIZE,
+    Math.min(activeStaffCount * MAX_WAVES, GROUP_MAX_SIZE),
+  );
 }
 
 // Bilingual copy kept local to the form (UI labels, not config) so it stays
@@ -88,6 +91,8 @@ const COPY = {
     loading: "Loading…",
     peopleLabel: "How many people?",
     member: (n: number) => `Guest ${n}`,
+    lead: "lead",
+    applyToAll: "Apply this service to everyone",
     namePlaceholder: (n: number) => `Guest ${n}`,
     nameLabel: "Name (optional)",
     service: "Service *",
@@ -151,6 +156,8 @@ const COPY = {
     loading: "Đang tải…",
     peopleLabel: "Mấy người?",
     member: (n: number) => `Khách ${n}`,
+    lead: "đại diện",
+    applyToAll: "Áp dụng dịch vụ này cho cả nhóm",
     namePlaceholder: (n: number) => `Khách ${n}`,
     nameLabel: "Tên (tuỳ chọn)",
     service: "Dịch vụ *",
@@ -215,7 +222,13 @@ function todayYmd(): string {
 }
 
 // `salonId` is passed to createDeskGroup for its salon-scope auth check.
-export default function DeskGroupForm({ slug, salonId, language, onClose, onCreated }: Props) {
+export default function DeskGroupForm({
+  slug,
+  salonId,
+  language,
+  onClose,
+  onCreated,
+}: Props) {
   const tx = COPY[language === "vi" ? "vi" : "en"];
   const [data, setData] = useState<LoadData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -332,8 +345,31 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
     setScheduleResult(null);
   }, []);
 
+  // Quick-fill: copy the lead (guest 1)'s service + add-ons to everyone — the
+  // common "whole group wants the same thing" case. Preferred staff is reset to
+  // auto for the copied guests (one tech can't serve all at once, and the lead's
+  // tech may not even do the new service); each guest can still override after.
+  const applyServiceToAll = useCallback(() => {
+    setMembers((prev) => {
+      const lead = prev[0];
+      if (!lead?.serviceId) return prev;
+      return prev.map((m, idx) =>
+        idx === 0
+          ? m
+          : {
+              ...m,
+              serviceId: lead.serviceId,
+              addonServiceIds: [...lead.addonServiceIds],
+              preferredStaffId: null,
+            },
+      );
+    });
+    setScheduleResult(null);
+  }, []);
+
   const arrivalPref: GroupArrivalPreference = useMemo(() => {
-    if (arrivalKind === "specific") return { kind: "specific", time: specificTime };
+    if (arrivalKind === "specific")
+      return { kind: "specific", time: specificTime };
     return { kind: arrivalKind };
   }, [arrivalKind, specificTime]);
 
@@ -502,7 +538,9 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-nq-foreground">{tx.heading}</h2>
+          <h2 className="text-base font-semibold text-nq-foreground">
+            {tx.heading}
+          </h2>
           <button
             onClick={onClose}
             className="text-nq-muted hover:text-nq-foreground"
@@ -522,18 +560,19 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
             <div>
               <label className={labelCls}>{tx.peopleLabel}</label>
               <div className="flex flex-wrap gap-1.5">
-                {Array.from({ length: maxSize - MIN_SIZE + 1 }, (_, k) => k + MIN_SIZE).map(
-                  (n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => applySize(n)}
-                      className={pillCls(size === n)}
-                    >
-                      {n}
-                    </button>
-                  ),
-                )}
+                {Array.from(
+                  { length: maxSize - MIN_SIZE + 1 },
+                  (_, k) => k + MIN_SIZE,
+                ).map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => applySize(n)}
+                    className={pillCls(size === n)}
+                  >
+                    {n}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -552,6 +591,11 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
                   >
                     <p className="mb-2 text-xs font-semibold text-nq-foreground">
                       {tx.member(i + 1)}
+                      {i === 0 ? (
+                        <span className="ml-1 font-normal text-nq-primary">
+                          · {tx.lead}
+                        </span>
+                      ) : null}
                     </p>
                     <input
                       className={`${inputCls} mb-2`}
@@ -564,7 +608,9 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
                       className={`${inputCls} mb-2`}
                       aria-label={tx.service}
                       value={m.serviceId}
-                      onChange={(e) => patchMember(i, { serviceId: e.target.value })}
+                      onChange={(e) =>
+                        patchMember(i, { serviceId: e.target.value })
+                      }
                     >
                       <option value="">{tx.selectService}</option>
                       {data.services.map((s) => (
@@ -594,7 +640,9 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
                     </select>
                     {data.addOns.length > 0 ? (
                       <div>
-                        <p className="mb-1 text-[11px] text-nq-muted">{tx.addons}</p>
+                        <p className="mb-1 text-[11px] text-nq-muted">
+                          {tx.addons}
+                        </p>
                         <div className="flex flex-wrap gap-1.5">
                           {data.addOns.map((a) => {
                             const on = m.addonServiceIds.includes(a.id);
@@ -612,6 +660,16 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
                         </div>
                       </div>
                     ) : null}
+                    {i === 0 && members.length > 1 && m.serviceId ? (
+                      <button
+                        type="button"
+                        data-testid="group-apply-service-to-all"
+                        onClick={applyServiceToAll}
+                        className="mt-2 w-full rounded-md border border-nq-primary/40 bg-nq-primary/10 py-1.5 text-xs font-semibold text-nq-primary transition hover:bg-nq-primary/15"
+                      >
+                        ↓ {tx.applyToAll}
+                      </button>
+                    ) : null}
                   </div>
                 );
               })}
@@ -619,7 +677,9 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
 
             {/* Step 3 — shared organizer + date + arrival */}
             <div className="space-y-3 rounded-lg border border-nq-muted/20 bg-nq-bg p-3">
-              <p className="text-xs font-semibold text-nq-foreground">{tx.organizer}</p>
+              <p className="text-xs font-semibold text-nq-foreground">
+                {tx.organizer}
+              </p>
               <div>
                 <label className={labelCls}>{tx.phone}</label>
                 <input
@@ -772,7 +832,9 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
                               : ""}
                           </span>
                           {total ? (
-                            <span className="text-xs text-nq-muted">{total}</span>
+                            <span className="text-xs text-nq-muted">
+                              {total}
+                            </span>
                           ) : null}
                         </div>
                         <ul className="mt-1.5 space-y-0.5">
