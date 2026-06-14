@@ -346,7 +346,9 @@ interface GridDragState {
   grabOffsetPx: number;
   clientName: string;
   targetStaffIdx: number;
-  targetSlotIdx: number;
+  /** Target start as salon minutes-from-midnight. May be OFF the 15-min grid
+   *  when snapped to a preceding booking's exact end (back-to-back drop). */
+  targetStartMin: number;
 }
 
 function StaffTimelineGridImpl({
@@ -505,7 +507,12 @@ function StaffTimelineGridImpl({
             grabOffsetPx: pending.grabOffsetPx,
             clientName: pending.clientName,
             targetStaffIdx: pending.initialStaffIdx,
-            targetSlotIdx: pending.initialSlotIdx,
+            targetStartMin: Math.round(
+              utcIsoToSalonMinutesFromMidnight(
+                pending.startUtc,
+                timezoneRef.current,
+              ),
+            ),
           });
         }
         return;
@@ -517,22 +524,53 @@ function StaffTimelineGridImpl({
       const relX = e.clientX - rect.left - STAFF_COL_WIDTH + scroll.scrollLeft;
       const relY = e.clientY - rect.top - TIME_HEADER_HEIGHT + scroll.scrollTop;
 
-      const slotIdx = Math.max(
-        0,
-        Math.min(
-          totalSlotsRef.current - 1,
-          Math.round((relX - ds.grabOffsetPx) / SLOT_PX),
-        ),
-      );
       const staffIdx = Math.max(
         0,
         Math.min(staffRef.current.length - 1, Math.floor(relY / ROW_HEIGHT)),
       );
 
+      // Target start in salon minutes from the pointer (block's left edge =
+      // pointer − grab offset). Snap to the 15-min grid, clamped to the visible
+      // day window.
+      const hourStartMin = hourStartRef.current * 60;
+      const pxPerMin = SLOT_PX / SLOT_MINUTES;
+      const gridEndMin = hourStartMin + totalSlotsRef.current * SLOT_MINUTES;
+      const rawMin = hourStartMin + (relX - ds.grabOffsetPx) / pxPerMin;
+      let startMin = Math.round(rawMin / 15) * 15;
+      startMin = Math.max(
+        hourStartMin,
+        Math.min(gridEndMin - ds.durationMinutes, startMin),
+      );
+      // Back-to-back snap: if a booking on the TARGET staff ends very close to
+      // where the pointer is (closer than the 15-min grid point), snap the
+      // block's start to that exact end — even off-grid (e.g. 1:10) — so it sits
+      // flush after it. Excludes the booking being dragged.
+      const targetStaffId = staffRef.current[staffIdx]?.id;
+      if (targetStaffId) {
+        const rows = bookingsByStaffRef.current.get(targetStaffId) ?? [];
+        let bestEnd: number | null = null;
+        let bestDist = Math.abs(startMin - rawMin);
+        for (const b of rows) {
+          if (b.id === ds.bookingId) continue;
+          const endMin = Math.round(
+            utcIsoToSalonMinutesFromMidnight(
+              b.end_time_utc,
+              timezoneRef.current,
+            ),
+          );
+          const dist = Math.abs(endMin - rawMin);
+          if (dist < bestDist && dist <= 15 && endMin + ds.durationMinutes <= gridEndMin) {
+            bestDist = dist;
+            bestEnd = endMin;
+          }
+        }
+        if (bestEnd !== null) startMin = bestEnd;
+      }
+
       setDragState((prev) =>
         prev &&
-        (prev.targetSlotIdx !== slotIdx || prev.targetStaffIdx !== staffIdx)
-          ? { ...prev, targetSlotIdx: slotIdx, targetStaffIdx: staffIdx }
+        (prev.targetStartMin !== startMin || prev.targetStaffIdx !== staffIdx)
+          ? { ...prev, targetStartMin: startMin, targetStaffIdx: staffIdx }
           : prev,
       );
     };
@@ -551,11 +589,10 @@ function StaffTimelineGridImpl({
       if (!ds) return;
 
       const targetStaff = staffRef.current[ds.targetStaffIdx];
-      const slotStartUtc = slotIndexToUtc(
-        ds.targetSlotIdx,
+      const slotStartUtc = salonWallTimeToUtcIso(
         selectedDateRef.current,
+        ds.targetStartMin,
         timezoneRef.current,
-        hourStartRef.current,
       );
 
       const noChange =
@@ -603,6 +640,10 @@ function StaffTimelineGridImpl({
     }
     return m;
   }, [bookings]);
+  // Ref mirror so the once-registered pointer handlers can read live bookings
+  // (for back-to-back drag snapping) without going stale.
+  const bookingsByStaffRef = useRef(bookingsByStaff);
+  bookingsByStaffRef.current = bookingsByStaff;
 
   const nowLineLeftPx = useMemo(() => {
     if (!isViewingToday) return null;
@@ -934,22 +975,23 @@ function StaffTimelineGridImpl({
                 staffRef.current[dragState.targetStaffIdx]?.id === s.id;
               let dragGhostEl: ReactNode = null;
               if (isDragTarget && dragState !== null) {
-                const slotStartUtc = slotIndexToUtc(
-                  dragState.targetSlotIdx,
+                const slotStartUtc = salonWallTimeToUtcIso(
                   selectedDate,
+                  dragState.targetStartMin,
                   timezone,
-                  hourStart,
                 );
                 const spanEndMs =
                   Date.parse(slotStartUtc) + dragState.durationMinutes * 60_000;
                 const spanEndIso = new Date(spanEndMs).toISOString();
                 const widthPx =
                   (dragState.durationMinutes / SLOT_MINUTES) * SLOT_PX;
-                const leftPx = dragState.targetSlotIdx * SLOT_PX;
+                const leftPx =
+                  ((dragState.targetStartMin - hourStart * 60) / SLOT_MINUTES) *
+                  SLOT_PX;
                 const overflowMin =
-                  dragState.targetSlotIdx * SLOT_MINUTES +
+                  dragState.targetStartMin +
                   dragState.durationMinutes -
-                  totalSlots * SLOT_MINUTES;
+                  (hourStart * 60 + totalSlots * SLOT_MINUTES);
                 const overflow = overflowMin > 0;
                 const conflict = overflow
                   ? null
