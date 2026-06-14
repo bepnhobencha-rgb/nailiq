@@ -247,6 +247,12 @@ export function BookingFlowInfoPanel({
                           type="button"
                           variant="ghost"
                           size="sm"
+                          // The shared ghost variant paints `text-nq-foreground`
+                          // (light, for the DARK dashboard) which washes out to
+                          // near-white on the LIGHT booking theme. Force the
+                          // booking-theme text + a light hover bg so "No thanks"
+                          // is clearly legible next to the gold primary.
+                          className="text-[var(--booking-text)] hover:bg-[var(--booking-bg-input)] hover:text-[var(--booking-text)]"
                           onClick={() => onDismissPreferredStaff?.()}
                         >
                           {t.returningCustomer.dismissPreferredStaff}
