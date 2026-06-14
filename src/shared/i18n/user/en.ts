@@ -1782,6 +1782,43 @@ export type UserMessages = {
       manageCtaSettings: string;
       upgradeError: string;
     };
+    /** No-show fee charge/waive modal (shown when booking has a card on file). */
+    noShowFeeModal: {
+      title: string;
+      desc: (amount: string) => string;
+      charge: (amount: string) => string;
+      waive: string;
+      cancel: string;
+    };
+    /** Grid lateness/tombstone labels. */
+    latenessGrid: {
+      /** Inline Start button aria-label and visible label. */
+      startShort: string;
+      /** "Auto no-show at {time}" for late/critical badge when auto is ON. */
+      autoNoShowAt: (time: string) => string;
+      /** Badge label when auto is OFF and tier=late. */
+      late: string;
+      /** Badge label when auto is OFF and tier=critical. */
+      veryLate: string;
+      /** Tombstone aria-label template. */
+      tombstoneAria: (clientName: string) => string;
+      /** Tombstone popover: undo action label. */
+      tombstoneUndo: string;
+      /** Tombstone popover: charge action. */
+      tombstoneCharge: (amount: string) => string;
+      /** Tombstone popover: waive fee. */
+      tombstoneWaive: string;
+      /** Tombstone status: "Charged {amount}". */
+      tombstoneCharged: (amount: string) => string;
+      /** Tombstone status: "Waived". */
+      tombstoneWaived: string;
+      /** Tombstone status: charge failed. */
+      tombstoneFailed: string;
+      /** Tombstone status: "Unpaid {amount} — tap to charge". */
+      tombstoneUnpaid: (amount: string) => string;
+      /** Tombstone status: "No-show" (no card). */
+      tombstoneNoCard: string;
+    };
   };
   /** Shown when a NailIQ booking is blocked because the Wix-connected
    *  staff resource already has an overlapping active booking on Wix
@@ -3550,6 +3587,28 @@ export const userEn: UserMessages = {
       manageCtaSettings: "Manage in Settings",
       upgradeError:
         "Couldn't start checkout. Try again from Settings → Billing.",
+    },
+    noShowFeeModal: {
+      title: "No-show fee",
+      desc: (amount: string) => `A fee of ${amount} is saved on this booking's card.`,
+      charge: (amount: string) => `Charge ${amount} now`,
+      waive: "Waive fee",
+      cancel: "Cancel (mark no-show, decide later)",
+    },
+    latenessGrid: {
+      startShort: "Start",
+      autoNoShowAt: (time: string) => `Auto no-show at ${time}`,
+      late: "Late",
+      veryLate: "Very late",
+      tombstoneAria: (clientName: string) => `No-show: ${clientName}`,
+      tombstoneUndo: "Undo no-show",
+      tombstoneCharge: (amount: string) => `Charge ${amount}`,
+      tombstoneWaive: "Waive fee",
+      tombstoneCharged: (amount: string) => `Charged ${amount}`,
+      tombstoneWaived: "Waived",
+      tombstoneFailed: "Charge failed",
+      tombstoneUnpaid: (amount: string) => `Unpaid ${amount} — tap to charge`,
+      tombstoneNoCard: "No-show",
     },
   },
   wixSlotTaken:
