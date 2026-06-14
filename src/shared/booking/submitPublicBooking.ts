@@ -764,11 +764,44 @@ export async function submitPublicBooking(
   // - Auto-fill name if already known
   // - Suggest preferred_staff_id (favorite tech)
   // - Show "Welcome back [name]!"
-  // NOTE: the client_profiles upsert (identity resolve + visit_count bump) now
-  // lives INSIDE create_public_booking via resolve_client_profile() — atomic,
-  // server-authoritative, and stamps bookings.client_profile_id. The old
-  // best-effort browser upsert was removed (migration 20260614110000): under
-  // RLS it could silently no-op, and keeping it here would double-count visits.
+  // Identity resolve (name / visit_count / last_service_date / preferred_staff
+  // + bookings.client_profile_id FK stamp) now happens INSIDE
+  // create_public_booking via resolve_client_profile() — atomic + server-
+  // authoritative (migration 20260614110000). The old best-effort browser
+  // upsert that did all of that was removed (under RLS it could silently no-op,
+  // and keeping it would double-count visit_count).
+  //
+  // We KEEP only the "verify once, trust" stamp: on an OTP-verified booking,
+  // record phone_verified_at so future bookings can skip OTP
+  // (determine_booking_verification). It writes a single column — never
+  // visit_count — so it cannot double-count. By now the RPC has already
+  // upserted the profile row, so this only updates the existing row.
+  if (params.verificationMethod === "otp") {
+    try {
+      const { error: verifyStampErr } = await supabase
+        .from("client_profiles")
+        .upsert(
+          {
+            phone: phoneOk.digits,
+            phone_verified_at: new Date().toISOString(),
+          } as never,
+          { onConflict: "phone" },
+        );
+      if (verifyStampErr) {
+        const err = new Error(verifyStampErr.message);
+        err.name = "ClientProfilesVerifyStampError";
+        Sentry.captureException(err, {
+          tags: {
+            "booking.rpc": "client_profiles",
+            "booking.rpc.failure": "verify_stamp_best_effort",
+          },
+          extra: { message: verifyStampErr.message },
+        });
+      }
+    } catch {
+      /* booking succeeded; verify stamp is best-effort */
+    }
+  }
 
   // Post-commit side-effects (deposit eval + AI no-show risk + card-required
   // flag, and the confirmation email) run in a SERVER ACTION. This flow executes
@@ -819,6 +852,8 @@ export async function submitPublicBooking(
           bookingChannel: "online",
           clientLocale: params.language || undefined,
           staffRequested: customerRequestedStaff,
+          verificationMethod: params.verificationMethod || undefined,
+          otpSessionId: params.otpSessionId ?? undefined,
         },
       });
     } catch (e) {
@@ -879,16 +914,10 @@ export async function submitPublicBooking(
     body: JSON.stringify({ bookingId, salonId: String(salon.id) }),
   }).catch(() => {/* best-effort */});
 
-  // Record verification method on booking (smart verification audit trail)
-  if (params.verificationMethod && bookingId) {
-    void supabase
-      .from("bookings")
-      .update({
-        verification_method: params.verificationMethod,
-        verification_completed_at: new Date().toISOString(),
-      } as never)
-      .eq("id", bookingId);
-  }
+  // verification_method + verification_completed_at + otp_session_id are stamped
+  // SERVER-SIDE in runPublicBookingSideEffects above (a browser anon UPDATE here
+  // silently no-op'd under RLS, so it never persisted — front desk saw online
+  // OTP-verified bookings as "unverified").
 
   // Fire-and-forget: tag booking with combo ID for analytics
   if (comboOverride?.comboId && bookingId) {

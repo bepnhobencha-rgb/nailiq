@@ -20,6 +20,12 @@ type StampInput = {
   bookingChannel?: string;
   clientLocale?: string;
   staffRequested?: boolean;
+  /** How this booking was verified ('otp' | 'deposit' | 'none' | …). Recorded so
+   *  the front desk sees a verified badge + the release-pending cron can tell.
+   *  Was also a silent anon-UPDATE no-op when done client-side. */
+  verificationMethod?: string;
+  /** OTP session that verified it (audit trail). */
+  otpSessionId?: string | null;
 };
 
 /**
@@ -57,6 +63,11 @@ export async function runPublicBookingSideEffects(args: {
       if (s.bookingChannel) upd.booking_channel = s.bookingChannel;
       if (s.clientLocale) upd.client_locale = s.clientLocale;
       if (s.staffRequested) upd.staff_requested_by_client = true;
+      if (s.verificationMethod) {
+        upd.verification_method = s.verificationMethod;
+        upd.verification_completed_at = new Date().toISOString();
+        if (s.otpSessionId) upd.otp_session_id = s.otpSessionId;
+      }
       if (Object.keys(upd).length > 0) {
         jobs.push(
           (async () => {

@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import type { PhotoRow } from "@/app/dashboard/[slug]/photos/page";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 type Props = {
   slug: string;
@@ -136,21 +137,34 @@ export function PhotoGalleryPanel({ slug, photos }: Props) {
 
       {/* Empty state */}
       {filtered.length === 0 && (
-        <div className="flex flex-col items-center gap-4 rounded-2xl border border-nq-border/40 bg-nq-surface py-16 text-center">
-          <span className="text-5xl">📸</span>
-          <div>
-            <p className="text-base font-semibold text-nq-foreground">No photos yet</p>
-            <p className="text-sm text-nq-muted mt-1">
-              Staff can add photos from the booking detail page after completing an appointment.
-            </p>
-          </div>
-          <a
-            href={`/dashboard/${encodeURIComponent(slug)}/center`}
-            className="rounded-full bg-nq-primary px-4 py-2 text-sm font-semibold text-nq-bg hover:opacity-90"
-          >
-            Go to Live Board
-          </a>
-        </div>
+        <EmptyState
+          icon={
+            <svg
+              viewBox="0 0 24 24"
+              width={24}
+              height={24}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M3 8a2 2 0 012-2h2l1.5-2h7L18 6h2a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V8z" />
+              <circle cx="12" cy="13" r="3.5" />
+            </svg>
+          }
+          title="No photos yet"
+          description="Staff can add photos from the booking detail page after completing an appointment."
+          action={
+            <a
+              href={`/dashboard/${encodeURIComponent(slug)}/center`}
+              className="rounded-full bg-nq-primary px-4 py-2 text-sm font-semibold text-nq-bg hover:opacity-90"
+            >
+              Go to Live Board
+            </a>
+          }
+        />
       )}
 
       {/* Photo grid */}

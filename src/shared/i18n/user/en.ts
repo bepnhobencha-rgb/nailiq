@@ -591,6 +591,15 @@ export type UserMessages = {
     sectionStaff: string;
     sectionHours: string;
     sectionAddress: string;
+    /** Collapsible category headers that group the settings panels. */
+    categories: {
+      brand: { title: string; subtitle: string };
+      booking: { title: string; subtitle: string };
+      notifications: { title: string; subtitle: string };
+      integrations: { title: string; subtitle: string };
+      plan: { title: string; subtitle: string };
+      jumpLabel: string;
+    };
     /** Owner/admin email alerts for booking events. */
     ownerNotifications: {
       title: string;
@@ -1642,6 +1651,21 @@ export type UserMessages = {
       vipBadge: string;
       /** "{visits} visit(s) · last {lastVisit}" — collapsed-row summary. */
       summaryLine: (visits: number, lastVisit: string) => string;
+      /** Segment filter chips + per-card status badges. */
+      segments: {
+        all: string;
+        vip: string;
+        new: string;
+        regular: string;
+        atRisk: string;
+      };
+      /** "{n} of {total}" footer when results are filtered/paginated. */
+      countLabel: (shown: number, total: number) => string;
+      loadMore: string;
+      /** Compact stat labels on the card. */
+      statVisits: string;
+      statSpent: string;
+      statLastVisit: string;
       totalSpent: string;
       email: string;
       notes: string;
@@ -2516,6 +2540,29 @@ export const userEn: UserMessages = {
     sectionStaff: "Staff",
     sectionHours: "Opening hours",
     sectionAddress: "Salon address",
+    categories: {
+      brand: {
+        title: "Brand & booking page",
+        subtitle: "How your salon looks to customers",
+      },
+      booking: {
+        title: "Booking & queue",
+        subtitle: "Rules for how appointments are made",
+      },
+      notifications: {
+        title: "Notifications & reminders",
+        subtitle: "Emails, reminders & no-show follow-ups",
+      },
+      integrations: {
+        title: "Integrations",
+        subtitle: "Domain, Google, Wix & Voice AI",
+      },
+      plan: {
+        title: "Plan & advanced",
+        subtitle: "Subscription and power-user settings",
+      },
+      jumpLabel: "Jump to",
+    },
     ownerNotifications: {
       title: "Manager email alerts",
       subtitle:
@@ -3455,6 +3502,18 @@ export const userEn: UserMessages = {
       vipBadge: "VIP",
       summaryLine: (visits, lastVisit) =>
         `${visits} ${visits === 1 ? "visit" : "visits"} · last ${lastVisit}`,
+      segments: {
+        all: "All",
+        vip: "VIP",
+        new: "New",
+        regular: "Regular",
+        atRisk: "At-risk",
+      },
+      countLabel: (shown, total) => `${shown} of ${total}`,
+      loadMore: "Show more",
+      statVisits: "Visits",
+      statSpent: "Spent",
+      statLastVisit: "Last visit",
       totalSpent: "Total spent",
       email: "Email",
       notes: "Notes",
