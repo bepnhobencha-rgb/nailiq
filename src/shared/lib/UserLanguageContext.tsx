@@ -108,6 +108,26 @@ export function UserLanguageProvider({
     });
   }, []);
 
+  // One-tap language switch via deep-link `?setLang=vi|en`. Lets Coco (admin
+  // copilot) hand the user a button that ACTUALLY switches the dashboard
+  // language instead of only describing where the toggle is. Apply once on
+  // mount, then strip the param so a refresh/share doesn't re-trigger it.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const requested = parseStored(params.get("setLang"));
+    if (!requested) return;
+    setLanguage(requested);
+    params.delete("setLang");
+    const qs = params.toString();
+    const url =
+      window.location.pathname +
+      (qs ? `?${qs}` : "") +
+      window.location.hash;
+    window.history.replaceState(null, "", url);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once; setLanguage is stable
+  }, []);
+
   return (
     <UserLanguageContext.Provider value={{ language, setLanguage, toggleLanguage }}>
       {children}
