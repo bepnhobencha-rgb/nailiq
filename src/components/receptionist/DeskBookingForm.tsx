@@ -435,13 +435,17 @@ export default function DeskBookingForm({
       .then((res) => {
         if (cancelled) return;
         setSlots(res);
-        // Auto-select the time the receptionist clicked on the grid, once.
+        // Keep the PREFERRED time (the grid-clicked time, or one the
+        // receptionist picked) selected across service / staff / add-on changes,
+        // as long as it's still bookable. Previously this fired once then wiped
+        // the ref, so choosing a service after clicking a slot dropped the time
+        // and left nothing selected. Only give up if the time is unavailable.
         const want = desiredSlotRef.current;
-        if (want) {
-          const match = res.find((s) => s.available && s.label === want);
-          if (match) setSlotLabel(match.label);
-          desiredSlotRef.current = "";
-        }
+        const match = want
+          ? res.find((s) => s.available && s.label === want)
+          : null;
+        setSlotLabel(match ? match.label : "");
+        if (want && !match) desiredSlotRef.current = "";
       })
       .finally(() => {
         if (!cancelled) setSlotsLoading(false);
@@ -761,7 +765,12 @@ export default function DeskBookingForm({
                         <button
                           key={s.label}
                           type="button"
-                          onClick={() => setSlotLabel(s.label)}
+                          onClick={() => {
+                            // Becomes the new preferred time so a later add-on
+                            // change keeps it selected (sticky, like the grid click).
+                            setSlotLabel(s.label);
+                            desiredSlotRef.current = s.label;
+                          }}
                           className={`rounded px-1 py-1.5 text-xs transition ${
                             slotLabel === s.label
                               ? "bg-nq-primary text-white"
