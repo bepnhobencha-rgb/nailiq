@@ -506,7 +506,17 @@ export function AdminCopilot({ slug }: { slug: string; role?: string }) {
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
+                onKeyDown={(e) => {
+                  // Don't send mid-IME-composition (Vietnamese Telex/VNI, etc.):
+                  // the Enter that COMMITS the composition would otherwise also
+                  // fire send + clear, and the trailing compositionend re-inserts
+                  // the last word ("khong") back into the just-cleared box.
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    send(input);
+                  }
+                }}
                 rows={1}
                 placeholder={COPY.placeholder[lang]}
                 className="flex-1 resize-none max-h-28 px-3 py-2 rounded-xl border border-nq-border bg-nq-surface text-nq-foreground text-sm placeholder:text-nq-muted focus:outline-none focus:ring-2 focus:ring-nq-primary/50 focus:border-transparent"
