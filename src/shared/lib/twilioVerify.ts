@@ -8,6 +8,8 @@
  * @see https://www.twilio.com/docs/verify/api/verification-check
  */
 
+import { smsSuppressReason } from "@/shared/lib/twilioSms";
+
 type TwilioCreds = {
   accountSid: string;
   authToken: string;
@@ -81,6 +83,14 @@ export async function sendVerification(
   }
   if (!e164Phone.startsWith("+")) {
     return { ok: false, error: "Invalid phone format." };
+  }
+
+  // KILL-SWITCH: never bill real Twilio Verify for disabled-env / non-prod /
+  // fictional 555 seed numbers. Same guard as outbound SMS — see smsSuppressReason.
+  const suppressReason = smsSuppressReason(e164Phone);
+  if (suppressReason) {
+    console.warn(`[sendVerification] SUPPRESSED OTP (${suppressReason}) — no real Twilio call`);
+    return { ok: true };
   }
 
   const auth = `Basic ${Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString("base64")}`;
