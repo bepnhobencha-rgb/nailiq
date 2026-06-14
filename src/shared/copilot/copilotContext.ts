@@ -6,11 +6,40 @@
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
-import { salonToday, salonDayRangeUtc } from "@/shared/lib/salonTime";
+import { salonToday, salonDayRangeUtc, salonYmdOfUtc } from "@/shared/lib/salonTime";
+import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
+import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
+import { formatCurrency, parseCurrency } from "@/shared/lib/currencyFormat";
 
 type Ctx = NonNullable<Awaited<ReturnType<typeof getDashboardWriteClient>>>;
 export type CopilotDb = Ctx["supabase"];
 export type CopilotSalon = Ctx["salon"];
+
+/**
+ * A fully-resolved appointment Coco wants to create, returned by the
+ * `prepare_appointment` tool. The params travel to the client as STRUCTURED
+ * data (never through the model's free text), so the user confirms exactly what
+ * was validated — and the real create still runs through `addDeskAppointment`
+ * (conflict / past-time / capability / buffer / plan-limit guards) on confirm.
+ */
+export type CocoBookingProposal = {
+  salonId: string;
+  serviceId: string;
+  serviceName: string;
+  /** staff UUID, or BOOKING_ANY_STAFF_ID for "any available". */
+  staffId: string;
+  staffName: string;
+  bookingDateYmd: string;
+  /** Slot label exactly as the desk form expects, e.g. "3:00 PM". */
+  timeSlot: string;
+  clientName: string;
+  clientPhone: string;
+  priceLabel: string;
+};
+
+/** runCopilotTool result: the AI-facing string + an optional structured
+ *  proposal the route surfaces to the client for confirmation. */
+export type CopilotToolResult = { content: string; proposal?: CocoBookingProposal };
 
 // Dashboard areas mapped to the roles that can actually reach them, so Coco
 // only guides what THIS user can do. Paths are built per-request with the slug.
@@ -115,6 +144,23 @@ export const COPILOT_TOOLS = [
       required: ["query"],
     },
   },
+  {
+    name: "prepare_appointment",
+    description:
+      "Use when the user asks YOU to book / create a new appointment for a customer (e.g. 'đặt hẹn cho chị Lan, gel mani, 3h chiều mai với Anna'). This does NOT create anything — it resolves the service/staff/date/time, validates them, and returns a proposal the user must CONFIRM with a button before it's booked. Gather: customer name, phone, service, staff (or 'any'), date (YYYY-MM-DD — convert words like 'tomorrow' using today's date from the LIVE CONTEXT), and a time like '3:00 PM'. Ask for anything missing before calling. After it returns, tell the user to tap Confirm — NEVER say it's booked yet.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        clientName: { type: "string", description: "Customer's name." },
+        clientPhone: { type: "string", description: "Customer's phone number." },
+        serviceName: { type: "string", description: "Service name as the user said it (matched against the salon's services)." },
+        staffName: { type: "string", description: "Requested staff name, or 'any' / empty for any available staff." },
+        date: { type: "string", description: "Appointment date as YYYY-MM-DD in the salon's local calendar." },
+        time: { type: "string", description: "Start time label, e.g. '3:00 PM' or '15:00'." },
+      },
+      required: ["clientName", "clientPhone", "serviceName", "date", "time"],
+    },
+  },
 ];
 
 const STATUS_LABEL: Record<string, string> = {
@@ -149,13 +195,17 @@ export async function runCopilotTool(args: {
   timezone: string;
   name: string;
   input: Record<string, unknown>;
-}): Promise<string> {
+}): Promise<CopilotToolResult> {
   const { db, salonId, timezone, name, input } = args;
+
+  if (name === "prepare_appointment") {
+    return prepareAppointment(db, salonId, timezone, input);
+  }
 
   if (name === "find_appointment") {
     // Strip characters that would break the PostgREST `or` filter syntax.
     const q = String(input.query || "").trim().replace(/[^\p{L}\p{N}\s+@.-]/gu, "");
-    if (!q) return JSON.stringify({ error: "Missing search query." });
+    if (!q) return { content: JSON.stringify({ error: "Missing search query." }) };
     const like = `%${q}%`;
 
     const { data, error } = await db
@@ -168,7 +218,7 @@ export async function runCopilotTool(args: {
       .order("start_time_utc", { ascending: false })
       .limit(6);
 
-    if (error) return JSON.stringify({ error: "Lookup failed." });
+    if (error) return { content: JSON.stringify({ error: "Lookup failed." }) };
     const rows = (data ?? []) as unknown as Array<{
       id: string;
       client_name: string;
@@ -178,7 +228,7 @@ export async function runCopilotTool(args: {
       staff_id: string | null;
       services: { name: string } | { name: string }[] | null;
     }>;
-    if (rows.length === 0) return JSON.stringify({ found: false, message: `No appointments found for "${q}".` });
+    if (rows.length === 0) return { content: JSON.stringify({ found: false, message: `No appointments found for "${q}".` }) };
 
     // Resolve staff names in one round-trip (FK join name not assumed).
     const staffIds = [...new Set(rows.map((r) => r.staff_id).filter((x): x is string => !!x))];
@@ -188,12 +238,16 @@ export async function runCopilotTool(args: {
       for (const s of (staff ?? []) as Array<{ id: string; name: string }>) staffMap.set(s.id, s.name);
     }
 
-    return JSON.stringify({
+    return { content: JSON.stringify({
       found: true,
       count: rows.length,
       appointments: rows.map((r) => {
         const svc = Array.isArray(r.services) ? r.services[0] : r.services;
         return {
+          // id + date let Coco build an "open this exact booking" deep-link:
+          // /dashboard/<slug>/center?date=<date>&booking=<id>
+          id: r.id,
+          date: r.start_time_utc ? salonYmdOfUtc(r.start_time_utc, timezone) : null,
           client: r.client_name,
           phone: r.client_phone || null,
           when: formatLocal(r.start_time_utc, timezone),
@@ -202,8 +256,127 @@ export async function runCopilotTool(args: {
           status: STATUS_LABEL[r.status] || r.status,
         };
       }),
-    });
+    }) };
   }
 
-  return JSON.stringify({ error: `Unknown tool: ${name}` });
+  return { content: JSON.stringify({ error: `Unknown tool: ${name}` }) };
+}
+
+/**
+ * Resolve + validate an appointment the user asked Coco to book. READ-ONLY:
+ * matches the service + staff by name, checks the date isn't in the past, and
+ * returns a structured proposal for the client to confirm. The authoritative
+ * availability + creation happens in `addDeskAppointment` on confirm.
+ */
+async function prepareAppointment(
+  db: CopilotDb,
+  salonId: string,
+  timezone: string,
+  input: Record<string, unknown>,
+): Promise<CopilotToolResult> {
+  const clientName = String(input.clientName ?? "").trim();
+  const clientPhone = String(input.clientPhone ?? "").trim();
+  const serviceName = String(input.serviceName ?? "").trim();
+  const staffName = String(input.staffName ?? "").trim();
+  const dateYmd = String(input.date ?? "").trim();
+  const timeRaw = String(input.time ?? "").trim();
+
+  const err = (message: string, extra?: Record<string, unknown>) =>
+    ({ content: JSON.stringify({ ok: false, message, ...extra }) } as CopilotToolResult);
+
+  if (!clientName) return err("Missing the customer's name — ask for it.");
+  if (!clientPhone) return err("Missing the customer's phone number — ask for it.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) return err("Need the date as YYYY-MM-DD.");
+  if (dateYmd < salonToday(timezone, new Date().toISOString())) {
+    return err("That date is in the past — pick today or a future date.");
+  }
+  const startMinutes = parseTimeSlotToMinutes(timeRaw);
+  if (!Number.isFinite(startMinutes) || startMinutes < 0) {
+    return err(`Couldn't read the time "${timeRaw}". Ask for a time like '3:00 PM'.`);
+  }
+
+  // Resolve the service by name among the salon's live, bookable (non-add-on)
+  // services. Prefer an exact (case-insensitive) match, else a unique partial.
+  const { data: svcRows } = await db
+    .from("services")
+    .select("id, name, price_cents, is_addon, deleted_at")
+    .eq("salon_id", salonId)
+    .is("deleted_at" as never, null);
+  const services = ((svcRows ?? []) as Array<{
+    id: string; name: string; price_cents: number | null; is_addon: boolean | null;
+  }>).filter((s) => s.is_addon !== true);
+  if (services.length === 0) return err("This salon has no bookable services yet.");
+  const wantSvc = serviceName.toLowerCase();
+  const exactSvc = services.find((s) => s.name.toLowerCase() === wantSvc);
+  const partialSvc = services.filter((s) => s.name.toLowerCase().includes(wantSvc));
+  const service = exactSvc ?? (partialSvc.length === 1 ? partialSvc[0] : null);
+  if (!service) {
+    return err(
+      partialSvc.length === 0
+        ? `No service matches "${serviceName}".`
+        : `"${serviceName}" matches several services — ask which one.`,
+      { services: services.map((s) => s.name) },
+    );
+  }
+
+  // Resolve staff: empty / "any" → any-available sentinel; else a unique active
+  // staff name match.
+  const anyStaffWords = ["", "any", "anyone", "any available", "bất kỳ", "ai cũng được", "thợ nào cũng được"];
+  let staffId: string = BOOKING_ANY_STAFF_ID;
+  let staffLabel = "Any available staff";
+  if (!anyStaffWords.includes(staffName.toLowerCase())) {
+    const { data: staffRows } = await db
+      .from("staff")
+      .select("id, name, status")
+      .eq("salon_id", salonId)
+      .eq("status", "active" as never)
+      .is("deleted_at" as never, null);
+    const staff = (staffRows ?? []) as Array<{ id: string; name: string }>;
+    const want = staffName.toLowerCase();
+    const matches =
+      staff.filter((s) => s.name.toLowerCase() === want).length > 0
+        ? staff.filter((s) => s.name.toLowerCase() === want)
+        : staff.filter((s) => s.name.toLowerCase().includes(want));
+    if (matches.length === 0) {
+      return err(`No active staff named "${staffName}".`, { staff: staff.map((s) => s.name) });
+    }
+    if (matches.length > 1) {
+      return err(`"${staffName}" matches several staff — ask which one.`, { staff: matches.map((s) => s.name) });
+    }
+    staffId = matches[0].id;
+    staffLabel = matches[0].name;
+  }
+
+  // Price label in the salon's currency (read the currency once).
+  const { data: salonRow } = await db
+    .from("salons")
+    .select("currency_code")
+    .eq("id", salonId)
+    .maybeSingle();
+  const currency = parseCurrency((salonRow as { currency_code?: unknown } | null)?.currency_code);
+  const priceLabel =
+    service.price_cents != null ? formatCurrency(service.price_cents, currency) ?? "—" : "—";
+
+  const proposal: CocoBookingProposal = {
+    salonId,
+    serviceId: service.id,
+    serviceName: service.name,
+    staffId,
+    staffName: staffLabel,
+    bookingDateYmd: dateYmd,
+    timeSlot: timeRaw,
+    clientName,
+    clientPhone,
+    priceLabel,
+  };
+
+  // The AI-facing summary lets Coco narrate; the real params ride in `proposal`.
+  return {
+    content: JSON.stringify({
+      ok: true,
+      message: "Proposal ready — ask the user to tap Confirm to book it.",
+      summary: { client: clientName, phone: clientPhone, service: service.name, staff: staffLabel, date: dateYmd, time: timeRaw, price: priceLabel },
+    }),
+    proposal,
+  };
 }
