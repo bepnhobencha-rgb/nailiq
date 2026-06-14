@@ -191,6 +191,7 @@ export function BookingFlowOtpPanel({
               setError(null);
             }}
             onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
               if (e.key === "Enter" && !isVerifying) onVerify();
             }}
             placeholder={t.otpCodePlaceholder}
