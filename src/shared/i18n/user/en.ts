@@ -1642,6 +1642,21 @@ export type UserMessages = {
       vipBadge: string;
       /** "{visits} visit(s) · last {lastVisit}" — collapsed-row summary. */
       summaryLine: (visits: number, lastVisit: string) => string;
+      /** Segment filter chips + per-card status badges. */
+      segments: {
+        all: string;
+        vip: string;
+        new: string;
+        regular: string;
+        atRisk: string;
+      };
+      /** "{n} of {total}" footer when results are filtered/paginated. */
+      countLabel: (shown: number, total: number) => string;
+      loadMore: string;
+      /** Compact stat labels on the card. */
+      statVisits: string;
+      statSpent: string;
+      statLastVisit: string;
       totalSpent: string;
       email: string;
       notes: string;
@@ -3455,6 +3470,18 @@ export const userEn: UserMessages = {
       vipBadge: "VIP",
       summaryLine: (visits, lastVisit) =>
         `${visits} ${visits === 1 ? "visit" : "visits"} · last ${lastVisit}`,
+      segments: {
+        all: "All",
+        vip: "VIP",
+        new: "New",
+        regular: "Regular",
+        atRisk: "At-risk",
+      },
+      countLabel: (shown, total) => `${shown} of ${total}`,
+      loadMore: "Show more",
+      statVisits: "Visits",
+      statSpent: "Spent",
+      statLastVisit: "Last visit",
       totalSpent: "Total spent",
       email: "Email",
       notes: "Notes",

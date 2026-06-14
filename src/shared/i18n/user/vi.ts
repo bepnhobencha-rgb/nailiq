@@ -1619,6 +1619,18 @@ export const userVi: UserMessages = {
       vipBadge: "VIP",
       summaryLine: (visits, lastVisit) =>
         `${visits} lần ghé · lần cuối ${lastVisit}`,
+      segments: {
+        all: "Tất cả",
+        vip: "VIP",
+        new: "Khách mới",
+        regular: "Thường xuyên",
+        atRisk: "Sắp mất",
+      },
+      countLabel: (shown, total) => `${shown} / ${total}`,
+      loadMore: "Xem thêm",
+      statVisits: "Lần ghé",
+      statSpent: "Chi tiêu",
+      statLastVisit: "Lần cuối",
       totalSpent: "Tổng chi tiêu",
       email: "Email",
       notes: "Ghi chú",
