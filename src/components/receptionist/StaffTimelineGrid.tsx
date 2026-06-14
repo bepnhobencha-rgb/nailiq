@@ -15,7 +15,10 @@ import { BookingBlock } from "./BookingBlock";
 import { GhostBlock } from "./GhostBlock";
 import { NowLine } from "./NowLine";
 import { StaffAvatar, type StaffStatus } from "@/components/ui/StaffAvatar";
-import { checkBookingConflict, type ConflictCheckBooking } from "@/shared/lib/conflictCheck";
+import {
+  checkBookingConflict,
+  type ConflictCheckBooking,
+} from "@/shared/lib/conflictCheck";
 import { cn } from "@/shared/lib/cn";
 import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import {
@@ -219,10 +222,14 @@ function bookingToPosition(
   timezone: string,
   hourStart: number,
 ) {
-  const startMin = utcIsoToSalonMinutesFromMidnight(booking.start_time_utc, timezone);
+  const startMin = utcIsoToSalonMinutesFromMidnight(
+    booking.start_time_utc,
+    timezone,
+  );
   const minutesFromStart = startMin - hourStart * 60;
   const durationMin =
-    (Date.parse(booking.end_time_utc) - Date.parse(booking.start_time_utc)) / 60_000;
+    (Date.parse(booking.end_time_utc) - Date.parse(booking.start_time_utc)) /
+    60_000;
   // Trailing buffer width — the reset gap baked into end_time_utc. Clamp to the
   // block span so a misconfigured buffer can never paint past the block edge.
   const bufferMin = Math.max(
@@ -287,7 +294,10 @@ function computeHourRange(
   let startH = baseStartHour;
   let endH = baseEndHour;
   for (const b of allBookings) {
-    const startMin = utcIsoToSalonMinutesFromMidnight(b.start_time_utc, timezone);
+    const startMin = utcIsoToSalonMinutesFromMidnight(
+      b.start_time_utc,
+      timezone,
+    );
     const durMin =
       (Date.parse(b.end_time_utc) - Date.parse(b.start_time_utc)) / 60_000;
     if (!Number.isFinite(startMin)) continue;
@@ -370,6 +380,15 @@ function StaffTimelineGridImpl({
   const [hoveredSlot, setHoveredSlot] = useState<{
     staffId: string;
     slotIndex: number;
+  } | null>(null);
+
+  // Click-to-create hover preview: which staff row + 15-min sub-slot the pointer
+  // is over. Drives a ghost cell + a "Staff · time" pill so the receptionist
+  // sees exactly who/when a click will book BEFORE clicking (QA: clicks near a
+  // row edge used to land on the wrong tech silently).
+  const [createHover, setCreateHover] = useState<{
+    staffId: string;
+    subSlot: number;
   } | null>(null);
 
   const [dragState, setDragState] = useState<GridDragState | null>(null);
@@ -500,7 +519,8 @@ function StaffTimelineGridImpl({
       );
 
       setDragState((prev) =>
-        prev && (prev.targetSlotIdx !== slotIdx || prev.targetStaffIdx !== staffIdx)
+        prev &&
+        (prev.targetSlotIdx !== slotIdx || prev.targetStaffIdx !== staffIdx)
           ? { ...prev, targetSlotIdx: slotIdx, targetStaffIdx: staffIdx }
           : prev,
       );
@@ -532,7 +552,11 @@ function StaffTimelineGridImpl({
         slotStartUtc === ds.originalStartUtc;
 
       if (!noChange && targetStaff && onRescheduleRef.current) {
-        void onRescheduleRef.current(ds.bookingId, targetStaff.id, slotStartUtc);
+        void onRescheduleRef.current(
+          ds.bookingId,
+          targetStaff.id,
+          slotStartUtc,
+        );
       }
 
       setDragState(null);
@@ -574,7 +598,10 @@ function StaffTimelineGridImpl({
     return computeNowLineLeftPx(nowIso, timezone, hourStart, hourEnd);
   }, [isViewingToday, nowIso, timezone, hourStart, hourEnd]);
 
-  const nowLineLabel = useMemo(() => labels.formatTimeLabel(nowIso), [labels, nowIso]);
+  const nowLineLabel = useMemo(
+    () => labels.formatTimeLabel(nowIso),
+    [labels, nowIso],
+  );
 
   // Display-only closing-time marker. The last BOOKABLE slot starts
   // SLOT_MINUTES before close (e.g. 6:30p for a 7:00p close), so without a
@@ -624,7 +651,15 @@ function StaffTimelineGridImpl({
     const maxScroll = Math.max(0, el.scrollWidth - w);
     const target = Math.max(0, Math.min(snapPx - w / 2, maxScroll));
     el.scrollLeft = target;
-  }, [isViewingToday, nowIso, timezone, selectedDate, hourStart, hourEnd, totalSlots]);
+  }, [
+    isViewingToday,
+    nowIso,
+    timezone,
+    selectedDate,
+    hourStart,
+    hourEnd,
+    totalSlots,
+  ]);
 
   useEffect(() => {
     if (!isViewingToday) return;
@@ -643,7 +678,15 @@ function StaffTimelineGridImpl({
     const maxScroll = Math.max(0, el.scrollWidth - w);
     const target = Math.max(0, Math.min(snapPx - w / 2, maxScroll));
     el.scrollTo({ left: target, behavior: "smooth" });
-  }, [jumpToNowTrigger, isViewingToday, nowIso, timezone, hourStart, hourEnd, totalSlots]);
+  }, [
+    jumpToNowTrigger,
+    isViewingToday,
+    nowIso,
+    timezone,
+    hourStart,
+    hourEnd,
+    totalSlots,
+  ]);
 
   const assignMode = assigning !== null;
   // Click-to-create is active when we're NOT assigning a walk-in AND the
@@ -656,7 +699,10 @@ function StaffTimelineGridImpl({
   // is creatable when the staff row is active (not "offline") AND the slot
   // start time is within the salon's open/close window (skip the hours
   // guard when either bound is null/unknown).
-  const isSlotCreatable = (staffStatus: StaffStatus, slotIndex: number): boolean => {
+  const isSlotCreatable = (
+    staffStatus: StaffStatus,
+    slotIndex: number,
+  ): boolean => {
     if (staffStatus === "offline") return false;
     const slotMinutes = hourStart * 60 + slotIndex * SLOT_MINUTES;
     if (openMinutes != null && slotMinutes < openMinutes) return false;
@@ -713,9 +759,13 @@ function StaffTimelineGridImpl({
                 size="md"
               />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-nq-foreground">{s.name}</p>
+                <p className="truncate text-sm font-semibold text-nq-foreground">
+                  {s.name}
+                </p>
                 {showStaffPerformanceDetail ? (
-                  <p className="truncate text-[11px] text-nq-muted">{s.job_role}</p>
+                  <p className="truncate text-[11px] text-nq-muted">
+                    {s.job_role}
+                  </p>
                 ) : null}
               </div>
             </div>
@@ -819,7 +869,10 @@ function StaffTimelineGridImpl({
 
           <div
             className="relative"
-            style={{ height: staff.length * ROW_HEIGHT, width: timelineWidthPx }}
+            style={{
+              height: staff.length * ROW_HEIGHT,
+              width: timelineWidthPx,
+            }}
           >
             {/* eslint-disable react-hooks/refs -- ARCHITECTURE_LOCK: staffRef.current accessed during render for drag-ghost target lookup; stable-ref pattern */}
             {staff.map((s) => {
@@ -839,7 +892,8 @@ function StaffTimelineGridImpl({
                 const spanEndMs =
                   Date.parse(slotStartUtc) + dragState.durationMinutes * 60_000;
                 const spanEndIso = new Date(spanEndMs).toISOString();
-                const widthPx = (dragState.durationMinutes / SLOT_MINUTES) * SLOT_PX;
+                const widthPx =
+                  (dragState.durationMinutes / SLOT_MINUTES) * SLOT_PX;
                 const leftPx = dragState.targetSlotIdx * SLOT_PX;
                 const overflowMin =
                   dragState.targetSlotIdx * SLOT_MINUTES +
@@ -890,11 +944,14 @@ function StaffTimelineGridImpl({
                   hourStart,
                 );
                 const spanMinutes = assigning.serviceDurationMinutes;
-                const spanEndMs = Date.parse(slotStartUtc) + spanMinutes * 60_000;
+                const spanEndMs =
+                  Date.parse(slotStartUtc) + spanMinutes * 60_000;
                 const spanEndIso = new Date(spanEndMs).toISOString();
 
                 const overflowEndMinutesFrom8 =
-                  slotIndex * SLOT_MINUTES + spanMinutes - totalSlots * SLOT_MINUTES;
+                  slotIndex * SLOT_MINUTES +
+                  spanMinutes -
+                  totalSlots * SLOT_MINUTES;
                 const overflow = overflowEndMinutesFrom8 > 0;
 
                 const conflict = overflow
@@ -921,28 +978,45 @@ function StaffTimelineGridImpl({
                 }
 
                 ghostEl = (
-                  <GhostBlock leftPx={leftPx} widthPx={widthPx} state={state} label={label} />
+                  <GhostBlock
+                    leftPx={leftPx}
+                    widthPx={widthPx}
+                    state={state}
+                    label={label}
+                  />
                 );
               }
 
-              // Click-to-create hover ghost — a single highlighted slot under
-              // the pointer. We don't know the service duration yet, so it's
-              // just a 1-slot cue (not a duration-sized span). Only shown for
-              // a creatable empty slot in click-to-create mode.
+              // Click-to-create hover preview — a highlighted slot under the
+              // pointer PLUS a floating "Staff · time" pill, so the receptionist
+              // knows exactly who/when the click books. 15-min sub-slot precision
+              // (matches the click), positioned at sub-slot * HALF_PX.
               let createGhostEl: ReactNode = null;
               if (
                 clickToCreate &&
-                hoveredSlot !== null &&
-                hoveredSlot.staffId === s.id &&
-                isSlotCreatable(s.status, hoveredSlot.slotIndex)
+                createHover !== null &&
+                createHover.staffId === s.id
               ) {
+                const HALF_PX = SLOT_PX / 2;
+                const ghostLeft = createHover.subSlot * HALF_PX;
+                const pillTime = minutesToLabel(
+                  hourStart * 60 + createHover.subSlot * 15,
+                );
                 createGhostEl = (
-                  <GhostBlock
-                    leftPx={hoveredSlot.slotIndex * SLOT_PX}
-                    widthPx={SLOT_PX}
-                    state="ok"
-                    label=""
-                  />
+                  <>
+                    <GhostBlock
+                      leftPx={ghostLeft}
+                      widthPx={SLOT_PX}
+                      state="ok"
+                      label=""
+                    />
+                    <div
+                      className="pointer-events-none absolute top-0 z-20 -translate-y-1/2 whitespace-nowrap rounded-full border border-nq-primary/40 bg-nq-bg/95 px-2 py-0.5 text-[10px] font-semibold text-nq-primary shadow-nq-card"
+                      style={{ left: ghostLeft + 2 }}
+                    >
+                      {s.name} · {pillTime}
+                    </div>
+                  </>
                 );
               }
 
@@ -950,12 +1024,64 @@ function StaffTimelineGridImpl({
                 <div
                   key={s.id}
                   className={cn(
-                    "relative border-b border-nq-muted/15",
+                    "relative border-b border-nq-muted/15 transition-colors",
                     assignMode && "cursor-copy",
                     clickToCreate && "cursor-pointer",
+                    // Highlight the row the click-to-create pointer is over.
+                    clickToCreate &&
+                      createHover?.staffId === s.id &&
+                      "bg-nq-primary/[0.05]",
                   )}
                   style={{ height: ROW_HEIGHT, width: timelineWidthPx }}
-                  onMouseLeave={() => setHoveredSlot(null)}
+                  onMouseLeave={() => {
+                    setHoveredSlot(null);
+                    setCreateHover(null);
+                  }}
+                  onMouseMove={
+                    clickToCreate
+                      ? (e: MouseEvent<HTMLDivElement>) => {
+                          const rowRect =
+                            e.currentTarget.getBoundingClientRect();
+                          const HALF_PX = SLOT_PX / 2;
+                          const subSlot = Math.max(
+                            0,
+                            Math.min(
+                              totalSlots * 2 - 1,
+                              Math.floor((e.clientX - rowRect.left) / HALF_PX),
+                            ),
+                          );
+                          const slotIndex = Math.floor(subSlot / 2);
+                          // Hide the preview over a real booking or a
+                          // non-creatable (off-hours / offline) slot.
+                          const clickedLeftPx = subSlot * HALF_PX;
+                          const hitsBooking = rowBookings.some((b) => {
+                            const { leftPx, widthPx } = bookingToPosition(
+                              b,
+                              timezone,
+                              hourStart,
+                            );
+                            return (
+                              clickedLeftPx >= leftPx - 0.5 &&
+                              clickedLeftPx < leftPx + widthPx - 0.5
+                            );
+                          });
+                          if (
+                            hitsBooking ||
+                            !isSlotCreatable(s.status, slotIndex)
+                          ) {
+                            if (createHover?.staffId === s.id)
+                              setCreateHover(null);
+                            return;
+                          }
+                          if (
+                            createHover?.staffId !== s.id ||
+                            createHover.subSlot !== subSlot
+                          ) {
+                            setCreateHover({ staffId: s.id, subSlot });
+                          }
+                        }
+                      : undefined
+                  }
                   // Click-to-create at the ROW level (replaces the per-slot
                   // button path removed in this fix). A click anywhere on the
                   // row that lands on a genuinely empty + creatable slot opens
@@ -1079,7 +1205,11 @@ function StaffTimelineGridImpl({
                           // button is visually opacity-0 with no children, so
                           // give it the slot time as its accessible name (axe
                           // button-name).
-                          aria-label={interactive ? labels.formatTimeLabel(slotUtc) : undefined}
+                          aria-label={
+                            interactive
+                              ? labels.formatTimeLabel(slotUtc)
+                              : undefined
+                          }
                           className={cn(
                             "h-full shrink-0 border-0 bg-transparent p-0 opacity-0 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-nq-primary/50",
                             assignMode ? "cursor-copy pointer-events-auto" : "",
@@ -1087,12 +1217,14 @@ function StaffTimelineGridImpl({
                           style={{ width: SLOT_PX }}
                           onMouseEnter={
                             assignMode
-                              ? () => setHoveredSlot({ staffId: s.id, slotIndex })
+                              ? () =>
+                                  setHoveredSlot({ staffId: s.id, slotIndex })
                               : undefined
                           }
                           onFocus={
                             assignMode
-                              ? () => setHoveredSlot({ staffId: s.id, slotIndex })
+                              ? () =>
+                                  setHoveredSlot({ staffId: s.id, slotIndex })
                               : undefined
                           }
                           onClick={(e: MouseEvent) => {
@@ -1124,7 +1256,8 @@ function StaffTimelineGridImpl({
                     )}
                   >
                     {rowBookings.map((b) => {
-                      const { leftPx, widthPx, bufferWidthPx } = bookingToPosition(b, timezone, hourStart);
+                      const { leftPx, widthPx, bufferWidthPx } =
+                        bookingToPosition(b, timezone, hourStart);
                       const endMs = Date.parse(b.end_time_utc);
                       const nowMs = Date.parse(nowIso);
                       const isLate =
@@ -1141,12 +1274,17 @@ function StaffTimelineGridImpl({
                         <BookingBlock
                           key={b.id}
                           bookingId={b.id}
-                          clientName={displayCustomerName(b.client_name, labels.removedGuest)}
+                          clientName={displayCustomerName(
+                            b.client_name,
+                            labels.removedGuest,
+                          )}
                           serviceName={b.service_name}
                           status={b.status}
                           source={b.source}
                           sourceChannel={b.source_channel ?? b.source}
-                          startTimeLabel={labels.formatTimeLabel(b.start_time_utc)}
+                          startTimeLabel={labels.formatTimeLabel(
+                            b.start_time_utc,
+                          )}
                           endTimeLabel={labels.formatTimeLabel(b.end_time_utc)}
                           priceCents={b.price_cents}
                           currencyCode={currencyCode}
@@ -1193,8 +1331,10 @@ function StaffTimelineGridImpl({
                                   // after the threshold is exceeded.
                                   const blockRect =
                                     e.currentTarget.getBoundingClientRect();
-                                  const grabOffsetPx =
-                                    Math.max(0, e.clientX - blockRect.left);
+                                  const grabOffsetPx = Math.max(
+                                    0,
+                                    e.clientX - blockRect.left,
+                                  );
                                   const staffIdx = staffRef.current.findIndex(
                                     (st) => st.id === b.staff_id,
                                   );
@@ -1202,10 +1342,11 @@ function StaffTimelineGridImpl({
                                     (Date.parse(b.end_time_utc) -
                                       Date.parse(b.start_time_utc)) /
                                     60_000;
-                                  const startMin = utcIsoToSalonMinutesFromMidnight(
-                                    b.start_time_utc,
-                                    timezone,
-                                  );
+                                  const startMin =
+                                    utcIsoToSalonMinutesFromMidnight(
+                                      b.start_time_utc,
+                                      timezone,
+                                    );
                                   const slotIdx = Math.round(
                                     (startMin - hourStart * 60) / SLOT_MINUTES,
                                   );
