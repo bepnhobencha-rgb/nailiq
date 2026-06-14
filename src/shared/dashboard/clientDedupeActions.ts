@@ -64,8 +64,13 @@ function pairKey(a: string, b: string): string {
 
 export async function findDuplicateClients(
   slug: string,
-  opts?: { useAi?: boolean },
+  opts?: { useAi?: boolean; lang?: "en" | "vi" },
 ): Promise<FindDuplicatesResult> {
+  const lang = opts?.lang === "vi" ? "vi" : "en";
+  const reasonCopy =
+    lang === "vi"
+      ? { email: "Cùng email", name: "Tên gần giống" }
+      : { email: "Same email", name: "Similar name" };
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
   if (resolved.role !== "owner") return { ok: false, error: "forbidden" };
@@ -146,8 +151,8 @@ export async function findDuplicateClients(
       }
     }
   }
-  for (const g of byEmail.values()) if (g.length > 1) addPairsFrom(g, 0.85, "Cùng email");
-  for (const g of byName.values()) if (g.length > 1) addPairsFrom(g, 0.5, "Tên gần giống");
+  for (const g of byEmail.values()) if (g.length > 1) addPairsFrom(g, 0.85, reasonCopy.email);
+  for (const g of byName.values()) if (g.length > 1) addPairsFrom(g, 0.5, reasonCopy.name);
 
   // Cap to bound cost; strongest heuristic first.
   candidates.sort((x, y) => y.score - x.score);
@@ -155,7 +160,7 @@ export async function findDuplicateClients(
 
   let usedAi = false;
   if (opts?.useAi && pairs.length > 0) {
-    const scored = await scorePairsWithAi(pairs);
+    const scored = await scorePairsWithAi(pairs, lang);
     if (scored) {
       usedAi = true;
       for (let i = 0; i < pairs.length; i++) {
@@ -180,6 +185,7 @@ type AiPairScore = { samePerson: number; suggestedName: string | null; reason: s
  *  names, emails and the last 4 phone digits leave the server. */
 async function scorePairsWithAi(
   pairs: DedupeSuggestion[],
+  lang: "en" | "vi",
 ): Promise<(AiPairScore | null)[] | null> {
   const apiKey = process.env["ANTHROPIC_API_KEY"];
   if (!apiKey) return null;
@@ -198,7 +204,9 @@ async function scorePairsWithAi(
     'name or null>,"reason":<short>}. Same email is strong evidence. Near-identical ' +
     "names (accent/spacing/case variants, nicknames) are moderate evidence. " +
     "suggestedName: the best-formatted version of the shared name (proper case, " +
-    "keep diacritics), or null if unsure.\n\nPairs:\n" +
+    "keep diacritics), or null if unsure. Write the `reason` field in " +
+    (lang === "vi" ? "Vietnamese" : "English") +
+    ".\n\nPairs:\n" +
     JSON.stringify(items);
 
   let res: Response;

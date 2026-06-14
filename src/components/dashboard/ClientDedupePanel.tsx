@@ -67,7 +67,10 @@ export function ClientDedupePanel({ slug }: { slug: string }) {
   const scan = useCallback(async () => {
     setLoading(true);
     setError(false);
-    const res = await findDuplicateClients(slug, { useAi });
+    const res = await findDuplicateClients(slug, {
+      useAi,
+      lang: language === "vi" ? "vi" : "en",
+    });
     setLoading(false);
     setScanned(true);
     if (!res.ok) {
@@ -83,7 +86,7 @@ export function ClientDedupePanel({ slug }: { slug: string }) {
         status: "idle" as const,
       })),
     );
-  }, [slug, useAi]);
+  }, [slug, useAi, language]);
 
   const doMerge = useCallback(
     async (idx: number) => {
