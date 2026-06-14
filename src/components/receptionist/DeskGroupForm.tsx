@@ -514,11 +514,16 @@ export default function DeskGroupForm({
           const hh = parts.find((p) => p.type === "hour")?.value ?? "00";
           const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
           const time24 = `${hh}:${mm}`;
+          // Identity Layer: only the lead/đại diện (member 0) carries the
+          // contact phone+email. Other guests have no contact of their own, so
+          // they go in with an empty phone and the server marks them
+          // is_party_member — instead of copying the lead's number onto every
+          // row (the root cause of one phone fanning out into many names).
+          const isLead = a.memberIndex === 0;
           return {
             name: draft?.name.trim() || tx.namePlaceholder(a.memberIndex + 1),
-            // One organizer phone for every member (same as the public flow).
-            phone,
-            email: email.trim() || undefined,
+            phone: isLead ? phone : "",
+            email: isLead ? email.trim() || undefined : undefined,
             serviceId: draft?.serviceId ?? "",
             staffId: a.staffId,
             date: ymd,
