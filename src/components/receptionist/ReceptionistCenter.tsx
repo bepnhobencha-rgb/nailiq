@@ -714,6 +714,8 @@ function ReceptionistCenterInner({
     staffId: string;
     ymd: string;
     slotLabel: string;
+    /** Click coords → the form opens as a card anchored at the clicked cell. */
+    anchor?: { x: number; y: number };
   } | null>(null);
   // Desk group booking — gated on the per-salon `group_booking` flag (same
   // flag the PartyCardPanel uses). Mounts DeskGroupForm which reuses the
@@ -2509,6 +2511,7 @@ function ReceptionistCenterInner({
                   initialStaffId={deskPrefill?.staffId}
                   initialYmd={deskPrefill?.ymd}
                   initialSlotLabel={deskPrefill?.slotLabel}
+                  anchor={deskPrefill?.anchor}
                   onClose={() => {
                     setDeskBookingOpen(false);
                     setDeskPrefill(null);
@@ -2950,9 +2953,10 @@ function ReceptionistCenterInner({
                 onSlotClick={(staffId, utc) =>
                   void onWalkinAssignSlot(staffId, utc)
                 }
-                onEmptySlotClick={(staffId, ymd, slotLabel) => {
-                  // Click an empty grid slot → open the desk form prefilled.
-                  setDeskPrefill({ staffId, ymd, slotLabel });
+                onEmptySlotClick={(staffId, ymd, slotLabel, anchor) => {
+                  // Click an empty grid slot → open the desk form as a card
+                  // anchored at the click (grid stays visible).
+                  setDeskPrefill({ staffId, ymd, slotLabel, anchor });
                   setDeskBookingOpen(true);
                 }}
                 onRescheduleBooking={

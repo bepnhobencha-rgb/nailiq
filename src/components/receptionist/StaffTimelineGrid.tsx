@@ -135,7 +135,14 @@ export interface StaffTimelineGridProps {
    * YYYY-MM-DD; `timeLabel` is the exact `minutesToLabel` label so the
    * form can auto-select the matching slot.
    */
-  onEmptySlotClick?: (staffId: string, ymd: string, timeLabel: string) => void;
+  onEmptySlotClick?: (
+    staffId: string,
+    ymd: string,
+    timeLabel: string,
+    /** Viewport coords of the click → lets the form open as a card anchored at
+     *  the clicked cell instead of a grid-covering modal (desktop). */
+    anchor?: { x: number; y: number },
+  ) => void;
   /** Drag-to-reschedule: fires when a booking block is dropped on a new slot. */
   onRescheduleBooking?: (
     bookingId: string,
@@ -1133,7 +1140,10 @@ function StaffTimelineGridImpl({
                           const timeLabel = minutesToLabel(
                             hourStart * 60 + subSlot * 15,
                           );
-                          onEmptySlotClick(s.id, selectedDate, timeLabel);
+                          onEmptySlotClick(s.id, selectedDate, timeLabel, {
+                            x: e.clientX,
+                            y: e.clientY,
+                          });
                         }
                       : undefined
                   }
