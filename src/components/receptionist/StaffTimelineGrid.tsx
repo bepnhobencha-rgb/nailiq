@@ -1002,14 +1002,17 @@ function StaffTimelineGridImpl({
                       existingBookings: conflictRows,
                       excludeBookingId: dragState.bookingId,
                     });
+                // Show the exact time the block will land on — what-you-see is
+                // what-you-get on release (no more "shows 1:15 but drops 1:10").
+                const targetTimeLabel = labels.formatTimeLabel(slotStartUtc);
                 let ghostState: "ok" | "conflict" | "overflow" = "ok";
-                let ghostLabel = `${dragState.clientName}`;
+                let ghostLabel = `${targetTimeLabel} · ${dragState.clientName}`;
                 if (overflow) {
                   ghostState = "overflow";
                   ghostLabel = labels.overflowMessage;
                 } else if (conflict) {
                   ghostState = "conflict";
-                  ghostLabel = labels.conflictWith(conflict.client_name);
+                  ghostLabel = `${targetTimeLabel} · ${labels.conflictWith(conflict.client_name)}`;
                 }
                 dragGhostEl = (
                   <GhostBlock
