@@ -11,14 +11,8 @@
  * up front; the card is only billed on a confirmed no-show.
  */
 import "server-only";
-import { randomUUID } from "node:crypto";
 import { looseServiceClient, type Row } from "./looseDb";
-import {
-  getSquareConfig,
-  ensureSquareCustomer,
-  saveCardOnFile,
-  chargeSavedCard,
-} from "./client";
+import { resolvePaymentProvider } from "@/shared/integrations/payments";
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
@@ -127,32 +121,30 @@ export async function saveNoShowCardForBooking(
   const decision = await noShowCardDecision(bookingId);
   if (!decision.required) return { ok: false, reason: decision.reason };
 
-  const cfg = await getSquareConfig(db, str(b.salon_id));
-  const customerId = await ensureSquareCustomer(cfg, {
-    name: str(b.client_name) || null,
-    phone: str(b.client_phone) || null,
-    email: str(b.client_email) || null,
-    referenceId: `booking:${bookingId}`,
-    idempotencyKey: randomUUID(),
-  });
-  const card = await saveCardOnFile(cfg, {
-    customerId,
-    sourceId,
-    idempotencyKey: randomUUID(),
+  const provider = await resolvePaymentProvider(str(b.salon_id));
+  if (!provider) return { ok: false, reason: "payment provider not configured" };
+  const saved = await provider.saveCardOnFile({
+    customer: {
+      name: str(b.client_name) || null,
+      phone: str(b.client_phone) || null,
+      email: str(b.client_email) || null,
+      referenceId: `booking:${bookingId}`,
+    },
+    sourceToken: sourceId,
   });
 
   await db
     .from("bookings")
     .update({
-      noshow_card_id: card.cardId,
-      noshow_customer_id: customerId,
+      noshow_card_id: saved.cardId,
+      noshow_customer_id: saved.customerId,
       noshow_fee_cents: decision.feeCents,
       noshow_charge_status: "saved",
       noshow_consent_at: new Date().toISOString(),
     } as never)
     .eq("id", bookingId);
 
-  return { ok: true, reason: "saved", last4: card.last4 };
+  return { ok: true, reason: "saved", last4: saved.last4 };
 }
 
 /** Charge the saved card for the no-show fee. Called when a booking is marked
@@ -179,13 +171,14 @@ export async function chargeNoShowFee(
   const feeCents = num(b.noshow_fee_cents);
   if (feeCents <= 0) return { charged: false, reason: "fee is zero" };
 
-  const cfg = await getSquareConfig(db, str(b.salon_id));
+  const provider = await resolvePaymentProvider(str(b.salon_id));
+  if (!provider) return { charged: false, reason: "payment provider not configured" };
   try {
-    const pay = await chargeSavedCard(cfg, {
+    const pay = await provider.chargeSavedCard({
       cardId: str(b.noshow_card_id),
       customerId: str(b.noshow_customer_id),
       amountCents: feeCents,
-      idempotencyKey: `noshow:${bookingId}`, // stable → Square dedups a double-charge
+      idempotencyKey: `noshow:${bookingId}`, // stable → provider dedups a double-charge
       note: "No-show fee",
       referenceId: `booking:${bookingId}`,
     });
