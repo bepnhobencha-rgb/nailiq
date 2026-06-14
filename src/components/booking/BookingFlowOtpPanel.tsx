@@ -242,7 +242,9 @@ export function BookingFlowOtpPanel({
             size="md"
             onClick={onBack}
             disabled={isVerifying}
-            className="flex-1"
+            // Ghost paints text-nq-foreground (light, for the dark dashboard) —
+            // washes out on the light booking theme. Force booking-theme text.
+            className="flex-1 text-[var(--booking-text)] hover:bg-[var(--booking-bg-input)] hover:text-[var(--booking-text)]"
           >
             ← Back
           </Button>
