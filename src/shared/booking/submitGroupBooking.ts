@@ -545,8 +545,10 @@ export async function submitGroupBooking(
       const closeM = hmToMinutes(dayHours.close);
       if (openM === null || closeM === null) continue;
       const startM = parseHmToMinutes(r.member.time)!;
-      const endM = startM + r.durationMin + r.bufferMin;
-      if (startM < openM || endM > closeM) {
+      // Only the SERVICE must finish by close; the trailing buffer (reset gap
+      // for the next booking) may run past close for the last appointment.
+      const serviceEndM = startM + r.durationMin;
+      if (startM < openM || serviceEndM > closeM) {
         return fail("invalid_time", i + 1);
       }
     }

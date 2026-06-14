@@ -92,6 +92,13 @@ export type GetAvailableTimeSlotsParams = {
   staffId: string;
   staffList: readonly BookingStaffItem[];
   serviceDurationMinutes: number;
+  /**
+   * Trailing per-service buffer (minutes) within `serviceDurationMinutes` that
+   * may run past closing time — the cleanup gap after the LAST appointment has
+   * no following booking, so only the service itself must finish by close.
+   * Omit / 0 → legacy behavior (whole block must fit before close).
+   */
+  trailingBufferMinutes?: number;
   /** Salon-specific YYYY-MM-DD closures (holidays). */
   closedDateYmdSet?: ReadonlySet<string>;
   /**
@@ -142,6 +149,15 @@ export function computeTimeSlots(args: {
   staffId: string;
   staffList: readonly BookingStaffItem[];
   serviceDurationMinutes: number;
+  /**
+   * Trailing per-service buffer (minutes) included in `serviceDurationMinutes`
+   * that may spill PAST closing time. The buffer is a reset gap for the NEXT
+   * booking; the last appointment of the day has none, so only the actual
+   * service must finish by close — the cleanup can run after hours. Used only
+   * for the closing-time boundary; conflict/occupancy still use the full block.
+   * Omit / 0 → legacy behavior (whole block must fit before close).
+   */
+  trailingBufferMinutes?: number;
   occupancy: readonly OccupancyRow[];
   /** Substitute for `Date.now()` so tests are deterministic. */
   nowMs: number;
@@ -166,6 +182,7 @@ export function computeTimeSlots(args: {
     staffId,
     staffList,
     serviceDurationMinutes,
+    trailingBufferMinutes = 0,
     occupancy,
     nowMs,
     closedDateYmdSet,
@@ -176,6 +193,17 @@ export function computeTimeSlots(args: {
 
   const durationMin = Math.max(1, Math.round(Number(serviceDurationMinutes) || 1));
   const durationMs = durationMin * 60_000;
+
+  // The service's actual footprint that must finish by closing time = the full
+  // block minus the trailing buffer (cleanup may run after close). Clamped so a
+  // buffer larger than the block can't push it below 1 minute. Conflict math
+  // below still uses the full `durationMs` so back-to-back spacing is intact.
+  const trailingBufferMin = Math.max(
+    0,
+    Math.min(Math.round(Number(trailingBufferMinutes) || 0), durationMin - 1),
+  );
+  const closingDurationMin = durationMin - trailingBufferMin;
+  const closingDurationMs = closingDurationMin * 60_000;
 
   const week = parseOpeningHours(openingHoursRaw);
   if (!week) return [];
@@ -264,7 +292,7 @@ export function computeTimeSlots(args: {
 
   for (
     let mins = openMin;
-    mins + durationMin <= closeMin;
+    mins + closingDurationMin <= closeMin;
     mins += SLOT_STEP_MINUTES
   ) {
     let slotStartMs: number;
@@ -280,8 +308,8 @@ export function computeTimeSlots(args: {
     }
     const slotEndMs = slotStartMs + durationMs;
 
-    // Guard: service must not run past closing time.
-    if (slotEndMs > closeBoundaryMs) continue;
+    // Guard: the SERVICE (not its trailing buffer) must finish by closing time.
+    if (slotStartMs + closingDurationMs > closeBoundaryMs) continue;
 
     // Guard: past + buffer (today only).
     if (isToday && slotStartMs < nowMs + leadMs) continue;
@@ -319,8 +347,9 @@ export function computeTimeSlots(args: {
     // Skip if already on the grid — Phase 1 already covers it.
     if (endMins % SLOT_STEP_MINUTES === 0) continue;
 
-    // Must be within opening hours and leave room for the full service.
-    if (endMins < openMin || endMins + durationMin > closeMin) continue;
+    // Must be within opening hours and leave room for the service (its trailing
+    // buffer may run past close — see closingDurationMin).
+    if (endMins < openMin || endMins + closingDurationMin > closeMin) continue;
 
     let slotStartMs: number;
     let label: string;
@@ -335,8 +364,8 @@ export function computeTimeSlots(args: {
     }
     const slotEndMs = slotStartMs + durationMs;
 
-    // Service must not run past closing time (double-check after rounding).
-    if (slotEndMs > closeBoundaryMs) continue;
+    // Service (excl. trailing buffer) must not run past close (re-check after rounding).
+    if (slotStartMs + closingDurationMs > closeBoundaryMs) continue;
 
     // Skip if already in the map (another occupancy row has the same end time).
     if (slotMap.has(slotStartMs)) continue;
@@ -409,6 +438,7 @@ export async function getAvailableTimeSlots(
     staffId,
     staffList,
     serviceDurationMinutes,
+    trailingBufferMinutes,
     closedDateYmdSet,
     shortestServiceMinutes,
     leadMinutes,
@@ -459,6 +489,7 @@ export async function getAvailableTimeSlots(
     staffId,
     staffList,
     serviceDurationMinutes,
+    trailingBufferMinutes,
     occupancy,
     nowMs: Date.now(),
     closedDateYmdSet,

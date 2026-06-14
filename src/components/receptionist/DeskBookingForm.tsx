@@ -373,6 +373,11 @@ export default function DeskBookingForm({
       staffId,
       staffList: capableStaff,
       serviceDurationMinutes: blockMinutes,
+      // The last booking's trailing buffer may run past close (cleanup, no next
+      // customer) — recover that end-of-day slot. Single-service only; with
+      // add-ons we keep the conservative whole-block fit (trailing = 0).
+      trailingBufferMinutes:
+        addonIds.length === 0 ? (service.bufferMinutes ?? 0) : 0,
       closedDateYmdSet,
       shortestServiceMinutes,
       leadMinutes: data.salon.bookingLeadMinutes,
