@@ -239,18 +239,19 @@ export function AdminCopilot({ slug }: { slug: string; role?: string }) {
   const nav = useCallback(
     (href: string) => {
       setOpen(false);
-      // One-tap language switch: a `?setLang=vi|en` deep-link from Coco flips
-      // the WHOLE dashboard instantly via the shared language context (no
-      // reload — router.push alone wouldn't re-run the root provider), then
-      // navigates to the cleaned URL. Coco "does it" instead of just describing.
+      // One-tap language switch from a Coco `?setLang=vi|en` deep-link.
       try {
         const url = new URL(href, window.location.origin);
         const req = url.searchParams.get("setLang");
         if (req === "vi" || req === "en") {
-          setLanguage(req);
-          setLang(req);
+          setLanguage(req); // persist cookie + localStorage
           url.searchParams.delete("setLang");
-          href = url.pathname + url.search + url.hash;
+          // FULL reload (not router.push): client-only setLanguage left the
+          // SERVER-rendered parts of the dashboard in the old language — only
+          // client bits (like a header title) switched. Reloading makes the
+          // server re-render every page in the new language from the cookie.
+          window.location.assign(url.pathname + url.search + url.hash);
+          return;
         }
       } catch {
         /* malformed href — fall through to plain navigation */

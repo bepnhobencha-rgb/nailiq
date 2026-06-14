@@ -117,6 +117,10 @@ export function UserLanguageProvider({
     const params = new URLSearchParams(window.location.search);
     const requested = parseStored(params.get("setLang"));
     if (!requested) return;
+    // Persist first so the reload's SSR reads the new cookie, then FULL reload
+    // to the cleaned URL. A client-only state change leaves server-rendered
+    // pages in the old language (only client bits switch) — reloading re-renders
+    // the whole app, server included, in the new language.
     setLanguage(requested);
     params.delete("setLang");
     const qs = params.toString();
@@ -124,7 +128,7 @@ export function UserLanguageProvider({
       window.location.pathname +
       (qs ? `?${qs}` : "") +
       window.location.hash;
-    window.history.replaceState(null, "", url);
+    window.location.replace(url);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once; setLanguage is stable
   }, []);
 
