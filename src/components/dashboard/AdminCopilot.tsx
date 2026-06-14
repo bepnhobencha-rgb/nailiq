@@ -15,6 +15,7 @@ import {
   Check,
 } from "lucide-react";
 import { addDeskAppointment } from "@/shared/dashboard/receptionistActions";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 // Coco — the in-admin agentic assistant for the salon dashboard. It guides and
 // reads only; any "do it for me" is rendered as a deep-link to the page where
@@ -233,7 +234,31 @@ export function AdminCopilot({ slug }: { slug: string; role?: string }) {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setLang(readLangCookie()); }, []);
 
-  const nav = useCallback((href: string) => { setOpen(false); router.push(href); }, [router]);
+  const { setLanguage } = useUserLanguage();
+
+  const nav = useCallback(
+    (href: string) => {
+      setOpen(false);
+      // One-tap language switch: a `?setLang=vi|en` deep-link from Coco flips
+      // the WHOLE dashboard instantly via the shared language context (no
+      // reload — router.push alone wouldn't re-run the root provider), then
+      // navigates to the cleaned URL. Coco "does it" instead of just describing.
+      try {
+        const url = new URL(href, window.location.origin);
+        const req = url.searchParams.get("setLang");
+        if (req === "vi" || req === "en") {
+          setLanguage(req);
+          setLang(req);
+          url.searchParams.delete("setLang");
+          href = url.pathname + url.search + url.hash;
+        }
+      } catch {
+        /* malformed href — fall through to plain navigation */
+      }
+      router.push(href);
+    },
+    [router, setLanguage],
+  );
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;

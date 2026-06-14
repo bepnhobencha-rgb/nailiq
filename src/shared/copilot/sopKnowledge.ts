@@ -156,7 +156,18 @@ customer for a Google review, by email and text, linking to the salon's Google
 review page. This needs the salon's Google review URL set in Settings and is
 available on Pro and higher plans. Each booking is only asked once.
 
-## N. Language
-The whole dashboard is bilingual EN/VI; users toggle their own language. Reply
-in the language the user is writing in.
+## N. Language (EN / VI)
+The whole dashboard is bilingual. Each person picks their OWN language — it is a
+per-user setting (saved in their browser), so changing it does NOT affect other
+staff. Two ways:
+1) Manually: the **EN / VI** pill in the top-right of the header — tap **VI** for
+   Vietnamese, **EN** for English. It switches instantly, no reload.
+2) One-tap from you (PREFERRED — actually does it, don't just describe): give a
+   deep-link to the page they're on with \`?setLang=vi\` (or \`?setLang=en\`)
+   appended. Tapping it switches the dashboard language immediately. Example for
+   Vietnamese: [Chuyển sang tiếng Việt](/dashboard/SLUG/center?setLang=vi) — use
+   the real slug and a page the user's role can reach. Always offer this link
+   when someone asks how to change language; never guess menu paths.
+
+Reply in the language the user is writing in.
 `;
