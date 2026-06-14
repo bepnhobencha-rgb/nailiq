@@ -778,18 +778,23 @@ export async function submitPublicBooking(
 
     const nextVisits = (existingProfile?.visit_count ?? 0) + 1;
 
+    const profileRow: Record<string, unknown> = {
+      phone: phoneOk.digits,
+      name: nameTrimmed,
+      preferred_staff_id: resolvedStaffId,
+      last_service_date: new Date().toISOString(),
+      visit_count: nextVisits,
+    };
+    // "Verify once, trust": stamp the moment this phone passed OTP so future
+    // bookings can skip the OTP step (see determine_booking_verification). Only
+    // on an OTP-verified booking; omitted otherwise so we never clear it.
+    if (params.verificationMethod === "otp") {
+      profileRow.phone_verified_at = new Date().toISOString();
+    }
+
     const { error: profileUpsertErr } = await supabase
       .from("client_profiles")
-      .upsert(
-        {
-          phone: phoneOk.digits,
-          name: nameTrimmed,
-          preferred_staff_id: resolvedStaffId,
-          last_service_date: new Date().toISOString(),
-          visit_count: nextVisits,
-        },
-        { onConflict: "phone" },
-      );
+      .upsert(profileRow as never, { onConflict: "phone" });
 
     if (profileUpsertErr) {
       const err = new Error(profileUpsertErr.message);
