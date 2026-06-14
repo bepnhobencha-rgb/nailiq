@@ -44,6 +44,13 @@ export async function resolvePaymentProvider(
     }
   }
 
-  // kind === "stripe" → Đợt 2: StripeProvider once Connect keys are configured.
+  if (kind === "stripe") {
+    const { getStripeClient } = await import("@/shared/lib/stripe");
+    const stripe = getStripeClient();
+    if (!stripe) return null; // no Stripe key configured
+    const { StripeProvider } = await import("./stripe");
+    return new StripeProvider(stripe);
+  }
+
   return null;
 }
