@@ -57,7 +57,7 @@ export async function searchClients(
     visit_count?: number | null;
     last_visit_at?: string | null;
   };
-  const { data, error } = (await admin.rpc("search_salon_clients" as never, {
+  const { data, error } = (await admin.rpc("search_salon_client_typeahead" as never, {
     p_salon_id: ctx.salon.id,
     p_query: q,
     p_limit: 8,
