@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
+import { addonLabel } from "@/shared/booking/serviceLabels";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import type {
   BookingSalonMeta,
@@ -1809,12 +1810,6 @@ function ServiceStaffStep({
           <div className="flex flex-wrap gap-2">
             {addOns.map((a) => {
               const selected = groupAddonIds.has(a.id);
-              const timingTag = a.addonConcurrent
-                ? " · ✨ +0′"
-                : a.durationMinutes > 0
-                  ? ` · +${a.durationMinutes}′`
-                  : "";
-              const priceTag = a.priceDisplay ? ` · ${a.priceDisplay}` : "";
               return (
                 <button
                   key={a.id}
@@ -1829,9 +1824,7 @@ function ServiceStaffStep({
                       : "border-[var(--booking-border)] bg-[var(--booking-bg-input)] text-[var(--booking-text-muted)]",
                   )}
                 >
-                  {a.name}
-                  {timingTag}
-                  {priceTag}
+                  {addonLabel(a)}
                 </button>
               );
             })}
@@ -2128,14 +2121,7 @@ function MemberCard({
             <div className="flex flex-wrap gap-2">
               {addOns.map((a) => {
                 const selected = member.addonServiceIds.includes(a.id);
-                // Build the chip label: name + timing tag + price.
-                const timingTag = a.addonConcurrent
-                  ? " · ✨ +0′"
-                  : a.durationMinutes > 0
-                    ? ` · +${a.durationMinutes}′`
-                    : "";
-                const priceTag = a.priceDisplay ? ` · ${a.priceDisplay}` : "";
-                const label = `${a.name}${timingTag}${priceTag}`;
+                const label = addonLabel(a);
                 return (
                   <button
                     key={a.id}

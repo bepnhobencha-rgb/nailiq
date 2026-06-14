@@ -34,6 +34,7 @@ import {
   type GroupSmartScheduleResult,
 } from "@/shared/booking/loadGroupSmartSchedule";
 import type { GroupBookingMember } from "@/shared/booking/submitGroupBooking";
+import { addonLabel } from "@/shared/booking/serviceLabels";
 import {
   buildCapabilityMap,
   filterStaffCapableForService,
@@ -653,7 +654,8 @@ export default function DeskGroupForm({
                                 onClick={() => toggleAddon(i, a.id)}
                                 className={pillCls(on)}
                               >
-                                {a.name}
+                                {on ? "✓ " : "+ "}
+                                {addonLabel(a)}
                               </button>
                             );
                           })}
