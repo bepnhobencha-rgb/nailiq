@@ -781,6 +781,9 @@ export function WalkinAddForm({
   }, [disabled]);
 
   const onNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Ignore Enter while a Vietnamese IME composition is active — it commits
+    // the word; advancing focus here would strand the last word in the field.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === "Enter") {
       e.preventDefault();
       if (clientPhone.trim().length === 0) {
@@ -803,6 +806,8 @@ export function WalkinAddForm({
   };
 
   const onNoteKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Don't submit mid-IME-composition (Vietnamese note text).
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void runSubmit(canAssignImmediately ? "immediate" : "queue");
@@ -815,6 +820,8 @@ export function WalkinAddForm({
   };
 
   const onTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Don't add a tag mid-IME-composition (Vietnamese tag text).
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === "Enter") {
       e.preventDefault();
       addTag();

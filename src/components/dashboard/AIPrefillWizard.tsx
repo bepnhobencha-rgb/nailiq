@@ -262,6 +262,7 @@ export function AIPrefillWizard({ slug }: { slug: string }) {
                 placeholder={t.urlPlaceholder}
                 className="min-w-0 flex-1 rounded-xl border border-nq-border bg-nq-bg px-3 py-2 text-sm text-nq-foreground placeholder:text-nq-muted focus:border-nq-primary focus:outline-none focus:ring-2 focus:ring-nq-primary/30"
                 onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                   if (e.key === "Enter" && urlInput.trim()) {
                     void handleUrlAnalyze();
                   }

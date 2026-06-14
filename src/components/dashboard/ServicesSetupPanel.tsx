@@ -234,6 +234,8 @@ function PriceChip({
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    // Ignore Enter while an IME composition is active (consistency w/ text fields).
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === "Enter") {
       e.preventDefault();
       handleCommit();

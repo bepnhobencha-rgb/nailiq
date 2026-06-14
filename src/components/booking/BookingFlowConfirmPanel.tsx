@@ -235,7 +235,7 @@ export function BookingFlowConfirmPanel({
                 type="text"
                 value={voucherInput}
                 onChange={(e) => { setVoucherInput(e.target.value.toUpperCase()); setVoucherError(null); }}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleApply(); } }}
+                onKeyDown={(e) => { if (e.nativeEvent.isComposing || e.keyCode === 229) return; if (e.key === "Enter") { e.preventDefault(); void handleApply(); } }}
                 placeholder={t.voucherPlaceholder}
                 maxLength={32}
                 className="nq-booking-glass h-12 min-w-0 flex-1 rounded-xl border border-[var(--booking-border)] bg-[var(--booking-bg-input)] px-3 text-sm text-[var(--booking-text)] placeholder:text-[var(--booking-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--salon-primary)]/40"

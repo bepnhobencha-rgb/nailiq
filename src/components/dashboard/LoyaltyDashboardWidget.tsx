@@ -80,7 +80,10 @@ export function LoyaltyDashboardWidget({ slug }: Props) {
               <input
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleLookup()}
+                onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                  if (e.key === "Enter") handleLookup();
+                }}
                 placeholder="+1 604 555 0100"
                 className="flex-1 rounded-lg bg-black/20 border border-white/10 px-3 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-[#D4AF37]/40"
               />
