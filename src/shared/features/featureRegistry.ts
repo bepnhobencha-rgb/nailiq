@@ -305,9 +305,9 @@ export const RELEASE_FEATURES: Record<ReleaseFeatureKey, ReleaseFeatureDescripto
     label: "Admin Copilot (Coco)",
     group: "operations",
     phase: "beta",
-    defaultOn: false,
-    // Per-salon toggle via salons.feature_flags.admin_copilot_enabled, so a
-    // SuperAdmin can switch Coco on for a single salon without a code change.
+    // On by default for every salon. A SuperAdmin can still switch it OFF for a
+    // single salon via salons.feature_flags.admin_copilot_enabled=false.
+    defaultOn: true,
     source: { kind: "jsonb", flagKey: "admin_copilot_enabled" },
     description: "In-admin AI assistant (Coco) for salon operations guidance.",
   },
