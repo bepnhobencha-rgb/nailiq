@@ -860,6 +860,8 @@ export async function submitPublicBooking(
           bookingChannel: "online",
           clientLocale: params.language || undefined,
           staffRequested: customerRequestedStaff,
+          verificationMethod: params.verificationMethod || undefined,
+          otpSessionId: params.otpSessionId ?? undefined,
         },
       });
     } catch (e) {
@@ -920,16 +922,10 @@ export async function submitPublicBooking(
     body: JSON.stringify({ bookingId, salonId: String(salon.id) }),
   }).catch(() => {/* best-effort */});
 
-  // Record verification method on booking (smart verification audit trail)
-  if (params.verificationMethod && bookingId) {
-    void supabase
-      .from("bookings")
-      .update({
-        verification_method: params.verificationMethod,
-        verification_completed_at: new Date().toISOString(),
-      } as never)
-      .eq("id", bookingId);
-  }
+  // verification_method + verification_completed_at + otp_session_id are stamped
+  // SERVER-SIDE in runPublicBookingSideEffects above (a browser anon UPDATE here
+  // silently no-op'd under RLS, so it never persisted — front desk saw online
+  // OTP-verified bookings as "unverified").
 
   // Fire-and-forget: tag booking with combo ID for analytics
   if (comboOverride?.comboId && bookingId) {
