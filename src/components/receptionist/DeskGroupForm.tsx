@@ -22,8 +22,9 @@
  * ReceptionistCenter) on the same per-salon flag.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
 import {
   getDeskBookingData,
   createDeskGroup,
@@ -103,6 +104,12 @@ const COPY = {
     addons: "Add-ons (optional)",
     organizer: "Organizer",
     phone: "Phone number * (one number for the whole group)",
+    leadPhone: "Phone number * (the lead's — used for the whole group)",
+    returning: (vip: string, visits: string) =>
+      `✨ Returning customer${vip}${visits} — info filled in.`,
+    newCustomer: "New customer.",
+    vipTag: " · VIP",
+    visitsTag: (n: number) => ` · ${n} visits`,
     organizerName: "Organizer name (optional)",
     email: "Email (optional — for the confirmation)",
     date: "Date *",
@@ -168,6 +175,12 @@ const COPY = {
     addons: "Dịch vụ thêm (tuỳ chọn)",
     organizer: "Người đại diện",
     phone: "Số điện thoại * (1 số dùng cho cả nhóm)",
+    leadPhone: "Số điện thoại * (của đại diện — dùng cho cả nhóm)",
+    returning: (vip: string, visits: string) =>
+      `✨ Khách quen${vip}${visits} — đã điền sẵn.`,
+    newCustomer: "Khách mới.",
+    vipTag: " · VIP",
+    visitsTag: (n: number) => ` · ${n} lần ghé`,
     organizerName: "Tên người đại diện (tuỳ chọn)",
     email: "Email (tuỳ chọn — để gửi xác nhận)",
     date: "Ngày *",
@@ -243,6 +256,7 @@ export default function DeskGroupForm({
   const [phone, setPhone] = useState("");
   const [organizerName, setOrganizerName] = useState("");
   const [email, setEmail] = useState("");
+  const [leadLookupMsg, setLeadLookupMsg] = useState<string | null>(null);
   const [ymd, setYmd] = useState(todayYmd());
   const [arrivalKind, setArrivalKind] = useState<ArrivalKind>("morning");
   const [specificTime, setSpecificTime] = useState("");
@@ -330,6 +344,51 @@ export default function DeskGroupForm({
     },
     [capability],
   );
+
+  // Returning-customer recognition for the LEAD (đại diện), phone-first — mirrors
+  // DeskBookingForm + the online group flow. Looking up the lead's phone fills
+  // Guest 1's name (and service/staff when empty) so the receptionist doesn't
+  // retype a known customer. Debounced; only fills blank fields.
+  const lookupSeq = useRef(0);
+  useEffect(() => {
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 8) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear hint when phone too short
+      setLeadLookupMsg(null);
+      return;
+    }
+    const seq = ++lookupSeq.current;
+    const t = setTimeout(async () => {
+      const res = await lookupClientByPhone(slug, phone);
+      if (seq !== lookupSeq.current) return;
+      if (res.ok && res.found) {
+        const p = res.profile;
+        setMembers((prev) => {
+          const next = prev.slice();
+          const lead = next[0];
+          if (!lead) return prev;
+          next[0] = {
+            ...lead,
+            name: lead.name || p.name || "",
+            serviceId: lead.serviceId || p.top_service?.id || "",
+            preferredStaffId: lead.preferredStaffId ?? p.top_staff?.id ?? null,
+          };
+          return next;
+        });
+        if (p.email && !email) setEmail(p.email);
+        setLeadLookupMsg(
+          tx.returning(
+            p.is_vip ? tx.vipTag : "",
+            p.visit_count ? tx.visitsTag(p.visit_count) : "",
+          ),
+        );
+      } else {
+        setLeadLookupMsg(tx.newCustomer);
+      }
+    }, 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fill-when-empty; re-running on members/email change would loop
+  }, [phone, slug]);
 
   const toggleAddon = useCallback((i: number, addonId: string) => {
     setMembers((prev) => {
@@ -598,6 +657,25 @@ export default function DeskGroupForm({
                         </span>
                       ) : null}
                     </p>
+                    {/* Lead enters phone FIRST (phone-first) — one number for the
+                        whole group, with returning-customer recognition. */}
+                    {i === 0 ? (
+                      <div className="mb-2">
+                        <input
+                          className={inputCls}
+                          inputMode="tel"
+                          placeholder="+1 (604) 555-1234"
+                          aria-label={tx.leadPhone}
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                        />
+                        {leadLookupMsg ? (
+                          <p className="mt-1 text-[11px] text-nq-primary">
+                            {leadLookupMsg}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <input
                       className={`${inputCls} mb-2`}
                       placeholder={tx.namePlaceholder(i + 1)}
@@ -682,16 +760,7 @@ export default function DeskGroupForm({
               <p className="text-xs font-semibold text-nq-foreground">
                 {tx.organizer}
               </p>
-              <div>
-                <label className={labelCls}>{tx.phone}</label>
-                <input
-                  className={inputCls}
-                  inputMode="tel"
-                  placeholder="+1 (604) 555-1234"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                />
-              </div>
+              {/* Phone moved to the lead (đại diện) block above — phone-first. */}
               <div>
                 <label className={labelCls}>{tx.organizerName}</label>
                 <input
