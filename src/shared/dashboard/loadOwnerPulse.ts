@@ -80,7 +80,7 @@ type BookingLite = {
 
 export async function loadOwnerPulse(
   slug: string,
-  language: "en" | "vi" = "vi",
+  language: "en" | "vi" = "en",
 ): Promise<LoadOwnerPulseResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
