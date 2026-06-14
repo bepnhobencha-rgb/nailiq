@@ -1059,6 +1059,53 @@ export async function updateAutoNoShowMinutes(
   return { ok: true, minutes: m };
 }
 
+/* ───────────── Clients lifecycle thresholds (new / at-risk) ───────────── */
+
+export type UpdateClientSegmentResult =
+  | { ok: true; newMaxVisits: number; atRiskDays: number }
+  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" };
+
+/**
+ * Owner-only: writes `salons.client_segment_settings` (jsonb). Controls how the
+ * Clients page buckets customers — "New" (≤ newMaxVisits visits) and "At-risk"
+ * (no visit in atRiskDays). Values are clamped by parseClientSegmentSettings so
+ * out-of-range input falls back to the defaults rather than being rejected.
+ */
+export async function updateClientSegmentSettings(
+  slug: string,
+  input: { newMaxVisits: number; atRiskDays: number },
+): Promise<UpdateClientSegmentResult> {
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const { parseClientSegmentSettings, toClientSegmentJson } = await import(
+    "@/shared/dashboard/clientSegmentSettings"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+
+  const clamped = parseClientSegmentSettings({
+    new_max_visits: input.newMaxVisits,
+    at_risk_days: input.atRiskDays,
+  });
+
+  const { error } = await ctx.supabase
+    .from("salons")
+    .update({ client_segment_settings: toClientSegmentJson(clamped) } as never)
+    .eq("id", ctx.salon.id);
+
+  if (error) {
+    console.error("[updateClientSegmentSettings]", error);
+    return { ok: false, error: "server_error" };
+  }
+  return {
+    ok: true,
+    newMaxVisits: clamped.newMaxVisits,
+    atRiskDays: clamped.atRiskDays,
+  };
+}
+
 /* ───────────── Booking lead time (min advance notice) ───────────── */
 
 export type UpdateBookingLeadResult =

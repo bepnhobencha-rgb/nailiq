@@ -28,6 +28,7 @@ import { cn } from "@/shared/lib/cn";
 import { formatPhone } from "@/shared/lib/phoneFormat";
 import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { CLIENT_SEGMENT_DEFAULTS } from "@/shared/dashboard/clientSegmentSettings";
 
 /**
  * Client profiles panel — server-driven search + pagination over the salon's
@@ -42,10 +43,12 @@ import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 export interface ClientProfilesPanelProps {
   slug: string;
   viewerRole: SalonMemberRole;
+  /** Per-salon lifecycle thresholds (Admin Settings). Defaults reproduce the
+   *  previous hardcoded behaviour (new ≤ 1 visit, at-risk after 60 days). */
+  newMaxVisits?: number;
+  atRiskDays?: number;
 }
 
-/** A client is "at risk" once this many days pass since their last visit. */
-const AT_RISK_DAYS = 60;
 const DEFAULT_PAGE_SIZE = 25;
 
 type Segment = "vip" | "new" | "regular" | "atRisk";
@@ -55,14 +58,19 @@ type SegmentFilter = "all" | Segment;
  * Assign each client to exactly ONE lifecycle bucket so the chip counts
  * sum to the total. Priority: VIP > new > at-risk > regular.
  */
-function clientSegment(row: ClientProfileRow, nowMs: number): Segment {
+function clientSegment(
+  row: ClientProfileRow,
+  nowMs: number,
+  newMaxVisits: number,
+  atRiskDays: number,
+): Segment {
   if (row.isVip) return "vip";
-  if (row.visitCount <= 1) return "new";
+  if (row.visitCount <= newMaxVisits) return "new";
   const lastMs = row.lastVisitAt ? Date.parse(row.lastVisitAt) : NaN;
   const daysSince = Number.isFinite(lastMs)
     ? (nowMs - lastMs) / 86_400_000
     : Infinity;
-  if (daysSince > AT_RISK_DAYS) return "atRisk";
+  if (daysSince > atRiskDays) return "atRisk";
   return "regular";
 }
 
@@ -117,6 +125,8 @@ const SEGMENT_BADGE: Record<
 export function ClientProfilesPanel({
   slug,
   viewerRole,
+  newMaxVisits = CLIENT_SEGMENT_DEFAULTS.newMaxVisits,
+  atRiskDays = CLIENT_SEGMENT_DEFAULTS.atRiskDays,
 }: ClientProfilesPanelProps) {
   const { language } = useUserLanguage();
   const messages = useMemo(
@@ -224,11 +234,13 @@ export function ClientProfilesPanel({
   const clients = state.kind === "ok" ? state.clients : null;
 
   const segmentOf = useMemo(() => {
+    // eslint-disable-next-line react-hooks/purity -- render-time "now" snapshot for relative at-risk day math; recomputed when clients/thresholds change
     const nowMs = Date.now();
     const map = new Map<string, Segment>();
-    for (const r of clients ?? []) map.set(r.phone, clientSegment(r, nowMs));
+    for (const r of clients ?? [])
+      map.set(r.phone, clientSegment(r, nowMs, newMaxVisits, atRiskDays));
     return map;
-  }, [clients]);
+  }, [clients, newMaxVisits, atRiskDays]);
 
   const segmentCounts = useMemo(() => {
     const c: Record<SegmentFilter, number> = {
