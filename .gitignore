@@ -53,6 +53,8 @@ next-env.d.ts
 !.claude/hooks/
 !.claude/hooks/**
 !.claude/settings.json
+!.claude/agents/
+!.claude/agents/**
 # Other AI assistant scratchpads — never commit
 .cursor/
 .aider*
