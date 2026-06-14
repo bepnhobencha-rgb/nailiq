@@ -12,12 +12,16 @@ const nextConfig: NextConfig = {
   async headers() {
     const cspDirectives = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.vercel-scripts.com https://*.sentry.io https://js.stripe.com",
+      // Square Web Payments SDK (card-on-file) requires web.squarecdn.com in
+      // script/frame/connect + pci-connect for tokenization + its font hosts
+      // (per https://developer.squareup.com/docs/web-payments/content-security-policy).
+      // Both production + sandbox domains so any salon environment works.
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.vercel-scripts.com https://*.sentry.io https://js.stripe.com https://web.squarecdn.com https://sandbox.web.squarecdn.com",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
-      "font-src 'self' data:",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://api.stripe.com https://api.openai.com wss://api.openai.com",
-      "frame-src https://js.stripe.com https://hooks.stripe.com",
+      "font-src 'self' data: https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://api.stripe.com https://api.openai.com wss://api.openai.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com",
+      "frame-src https://js.stripe.com https://hooks.stripe.com https://web.squarecdn.com https://sandbox.web.squarecdn.com",
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",
