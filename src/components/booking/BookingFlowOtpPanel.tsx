@@ -246,7 +246,7 @@ export function BookingFlowOtpPanel({
             // washes out on the light booking theme. Force booking-theme text.
             className="flex-1 text-[var(--booking-text)] hover:bg-[var(--booking-bg-input)] hover:text-[var(--booking-text)]"
           >
-            ← Back
+            ← {t.back}
           </Button>
           <LuxuryBookingCta
             disabled={!sent || isVerifying || code.trim().length < 4}
