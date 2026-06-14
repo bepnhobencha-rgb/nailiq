@@ -33,6 +33,10 @@ import { WinBackSettings } from "@/components/dashboard/WinBackSettings";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
+import {
+  SettingsCategory,
+  SettingsJumpBar,
+} from "@/components/dashboard/SettingsCategory";
 import { Badge } from "@/components/ui/Badge";
 import { GearIcon } from "@/components/ui/icons/GearIcon";
 import type { DashboardModulesConfig } from "@/shared/dashboard/dashboardModules";
@@ -238,6 +242,31 @@ export function SalonSettingsHub({
           </span>
         </Link>
 
+        {/* ── Jump bar — quick anchors to each category ───────── */}
+        <SettingsJumpBar
+          label={t.categories.jumpLabel}
+          items={[
+            { id: "cat-notifications", title: t.categories.notifications.title },
+            ...(canEditDashboardModules
+              ? [
+                  { id: "cat-brand", title: t.categories.brand.title },
+                  { id: "cat-booking", title: t.categories.booking.title },
+                  {
+                    id: "cat-integrations",
+                    title: t.categories.integrations.title,
+                  },
+                  { id: "cat-plan", title: t.categories.plan.title },
+                ]
+              : []),
+          ]}
+        />
+
+        {/* ══ Category: Notifications & reminders ══════════════ */}
+        <SettingsCategory
+          id="cat-notifications"
+          title={t.categories.notifications.title}
+          subtitle={t.categories.notifications.subtitle}
+        >
         {/* ── Email verification ──────────────────────────────── */}
         <section
           data-testid="settings-email-verification"
@@ -399,21 +428,41 @@ export function SalonSettingsHub({
           </section>
         ) : null}
 
-        {/* ── Business type (vertical) ────────────────────────── */}
+        {/* ── Manager + staff notification cards ──────────────── */}
         {canEditDashboardModules ? (
-          <BusinessTypeSettings slug={slug} initialVertical={vertical} />
+          <OwnerNotificationCard slug={slug} />
         ) : null}
-
-        {/* ── Booking page style (look presets) ───────────────── */}
         {canEditDashboardModules ? (
+          <StaffNotificationCard slug={slug} />
+        ) : null}
+        </SettingsCategory>
+
+        {/* ══ Category: Brand & booking page ═══════════════════ */}
+        {canEditDashboardModules ? (
+        <SettingsCategory
+          id="cat-brand"
+          title={t.categories.brand.title}
+          subtitle={t.categories.brand.subtitle}
+        >
+          {/* ── Business type (vertical) ──────────────────────── */}
+          <BusinessTypeSettings slug={slug} initialVertical={vertical} />
+          {/* ── Booking page style (look presets) ─────────────── */}
           <LookPresetPicker
             slug={slug}
             presets={lookPresets}
             currentBrandColor={brandColor}
             currentThemeMode={themeMode}
           />
+        </SettingsCategory>
         ) : null}
 
+        {/* ══ Category: Booking & queue ════════════════════════ */}
+        {canEditDashboardModules ? (
+        <SettingsCategory
+          id="cat-booking"
+          title={t.categories.booking.title}
+          subtitle={t.categories.booking.subtitle}
+        >
         {/* ── Let customers choose a provider ─────────────────── */}
         {canEditDashboardModules ? (
           <StaffSelectionSettings
@@ -447,7 +496,17 @@ export function SalonSettingsHub({
         {canEditDashboardModules ? (
           <WinBackSettings slug={slug} initialEnabled={winBackEnabled} />
         ) : null}
+        </SettingsCategory>
+        ) : null}
 
+        {/* ══ Category: Integrations ═══════════════════════════ */}
+        {canEditDashboardModules ? (
+        <SettingsCategory
+          id="cat-integrations"
+          title={t.categories.integrations.title}
+          subtitle={t.categories.integrations.subtitle}
+          defaultOpen={false}
+        >
         {/* ── Custom domain ───────────────────────────────────── */}
         {canEditDashboardModules ? (
           <DomainSettings slug={slug} initial={domainInfo} />
@@ -470,20 +529,18 @@ export function SalonSettingsHub({
         {canEditDashboardModules && voiceAiEnabled ? (
           <VoiceAiSettings slug={slug} initialName={voiceAiPersonaName} />
         ) : null}
-
-        {/* ── Pricing ─────────────────────────────────────────── */}
-        {canEditDashboardModules ? (
-          <div className="mt-4">
-            <OwnerNotificationCard slug={slug} />
-          </div>
+        </SettingsCategory>
         ) : null}
 
+        {/* ══ Category: Plan & advanced ════════════════════════ */}
         {canEditDashboardModules ? (
-          <div className="mt-4">
-            <StaffNotificationCard slug={slug} />
-          </div>
-        ) : null}
-
+        <SettingsCategory
+          id="cat-plan"
+          title={t.categories.plan.title}
+          subtitle={t.categories.plan.subtitle}
+          defaultOpen={false}
+        >
+        {/* ── Subscription plan ───────────────────────────────── */}
         {canEditDashboardModules ? (
           <PricingPanel
             slug={slug}
@@ -567,6 +624,8 @@ export function SalonSettingsHub({
               messages={messages.receptionist.auditLog}
             />
           </>
+        ) : null}
+        </SettingsCategory>
         ) : null}
       </MobileStack>
     </ResponsiveShell>
