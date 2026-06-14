@@ -1,7 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { motion } from "@/shared/lib/motionClient";
+import {
+  ConfirmStepCardCapture,
+  type ConfirmStepCardHandle,
+} from "@/components/booking/ConfirmStepCardCapture";
+import type { NoShowCardRequirement } from "@/shared/noshow/resolveNoShowCardRequirement";
 import { Button } from "@/components/ui/Button";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
 import {
@@ -53,6 +58,7 @@ export function BookingFlowConfirmPanel({
   onConfirm,
   onApplyVoucher,
   onRemoveVoucher,
+  cardRequirement,
 }: {
   t: BookingMessages;
   shopLabel: string;
@@ -83,13 +89,37 @@ export function BookingFlowConfirmPanel({
   onAddonRepickTime: (id: string) => void;
   onClearAddons: () => void;
   onBack: () => void;
-  onConfirm: () => void | Promise<void>;
+  onConfirm: (
+    extra?: { noShowCardSourceId?: string; noShowConsent?: boolean },
+  ) => void | Promise<void>;
+  /** Option A no-show card gate, resolved BEFORE booking. When required, the card
+   *  is captured here and must be entered before the booking can be confirmed. */
+  cardRequirement?: NoShowCardRequirement | null;
 }) {
   const [voucherInput, setVoucherInput] = useState("");
   const [voucherError, setVoucherError] = useState<string | null>(null);
   const [voucherLoading, setVoucherLoading] = useState(false);
   // QA BUG-03 — express SMS consent (CASL/TCPA). Required before confirming.
   const [smsConsent, setSmsConsent] = useState(false);
+  // Option A no-show card gate.
+  const cardRequired = cardRequirement?.required === true;
+  const [noShowConsent, setNoShowConsent] = useState(false);
+  const cardRef = useRef<ConfirmStepCardHandle>(null);
+  const [cardError, setCardError] = useState<string | null>(null);
+
+  async function handleConfirm() {
+    if (cardRequired) {
+      setCardError(null);
+      const token = await cardRef.current?.tokenize();
+      if (!token) {
+        setCardError(t.noShowCardError ?? "Please check your card details.");
+        return;
+      }
+      await onConfirm({ noShowCardSourceId: token, noShowConsent: true });
+      return;
+    }
+    await onConfirm();
+  }
 
   const customerRows = [
     { label: t.summaryClientName, value: clientName.trim() || "—" },
@@ -359,6 +389,40 @@ export function BookingFlowConfirmPanel({
           <span>{t.smsConsent}</span>
         </label>
 
+        {cardRequired && cardRequirement?.required ? (
+          <>
+            <ConfirmStepCardCapture
+              ref={cardRef}
+              applicationId={cardRequirement.applicationId}
+              locationId={cardRequirement.locationId}
+              environment={cardRequirement.environment}
+              feeLabel={formatBookingPrice(cardRequirement.feeCents, currency) ?? ""}
+              t={t}
+            />
+            <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+              <input
+                type="checkbox"
+                data-testid="confirm-noshow-consent"
+                checked={noShowConsent}
+                onChange={(e) => setNoShowConsent(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+              />
+              <span>
+                {(t.noShowConsent ??
+                  "I agree to the no-show policy and authorize this salon to charge {fee} to this card only if I don't show up.").replace(
+                  "{fee}",
+                  formatBookingPrice(cardRequirement.feeCents, currency) ?? "",
+                )}
+              </span>
+            </label>
+            {cardError ? (
+              <p className="mt-2 text-xs text-nq-error" role="alert">
+                {cardError}
+              </p>
+            ) : null}
+          </>
+        ) : null}
+
         <div className="mt-4 flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <Button
             type="button"
@@ -372,8 +436,8 @@ export function BookingFlowConfirmPanel({
           <LuxuryBookingCta
             className="lg:min-w-[14rem]"
             data-testid="confirm-booking-btn"
-            disabled={submitting || !smsConsent}
-            onClick={onConfirm}
+            disabled={submitting || !smsConsent || (cardRequired && !noShowConsent)}
+            onClick={handleConfirm}
           >
             <span>{submitting ? t.submitting : t.confirmBooking}</span>
           </LuxuryBookingCta>

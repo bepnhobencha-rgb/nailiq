@@ -11,6 +11,10 @@ import {
   submitPublicBooking,
 } from "@/shared/booking/submitPublicBooking";
 import { submitPublicWaitlistEntry } from "@/shared/booking/submitPublicWaitlist";
+import {
+  resolveNoShowCardRequirement,
+  type NoShowCardRequirement,
+} from "@/shared/noshow/resolveNoShowCardRequirement";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import {
   bookingDateYmdFromLocalDate,
@@ -216,6 +220,9 @@ export function useBookingFlowState(
 
   const [submitting, setSubmitting] = useState(false);
   const [waitlistSubmitting, setWaitlistSubmitting] = useState(false);
+  // Option A no-show card gate — resolved when the customer reaches the confirm
+  // step (before any booking exists) so the card form can render in-step.
+  const [cardRequirement, setCardRequirement] = useState<NoShowCardRequirement | null>(null);
   const [waitlistSlotJoined, setWaitlistSlotJoined] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [serviceError, setServiceError] = useState<string | null>(null);
@@ -1156,7 +1163,31 @@ export function useBookingFlowState(
     }
   }, [bookingResult, service, shopLabel]);
 
-  const onConfirm = useCallback(async () => {
+  // Resolve the no-show card requirement when the customer reaches confirm —
+  // before any booking exists — so the card form can render in the confirm step.
+  useEffect(() => {
+    if (step !== "confirm" || !serviceId) return;
+    const v = validateGuestPhone(clientPhone.trim());
+    if (!v.ok) {
+      setCardRequirement(null);
+      return;
+    }
+    let alive = true;
+    void resolveNoShowCardRequirement({
+      salonId: salon.id,
+      serviceId,
+      clientPhone: v.digits,
+    })
+      .then((r) => alive && setCardRequirement(r))
+      .catch(() => alive && setCardRequirement(null));
+    return () => {
+      alive = false;
+    };
+  }, [step, serviceId, clientPhone, salon.id]);
+
+  const onConfirm = useCallback(async (
+    extra?: { noShowCardSourceId?: string; noShowConsent?: boolean },
+  ) => {
     if (!serviceId || !timeSlot || !staffId) return;
     setError(null);
     const name = clientName.trim();
@@ -1230,6 +1261,8 @@ export function useBookingFlowState(
           verificationAction === "none" ? "none"
           : otpSessionId ? "otp"
           : undefined,
+        noShowCardSourceId: extra?.noShowCardSourceId,
+        noShowConsent: extra?.noShowConsent,
       });
       // Link a paid deposit to the freshly-created booking (server re-verifies
       // the PaymentIntent with Stripe). Best-effort: the webhook is the backstop.
@@ -1308,6 +1341,13 @@ export function useBookingFlowState(
         err.message === "salon_not_live"
       ) {
         setError(t.submitError);
+      } else if (
+        err instanceof Error &&
+        err.message === "card_save_failed"
+      ) {
+        // Card couldn't be saved → booking was cancelled server-side. Stay on
+        // the confirm step so the customer can re-enter the card.
+        setError(t.noShowCardError ?? t.submitError);
       } else if (
         err instanceof Error &&
         err.message === "invalid_name_chars"
@@ -1629,6 +1669,7 @@ export function useBookingFlowState(
     resetAfterDone,
     handleAddToCalendar,
     onConfirm,
+    cardRequirement,
     submitWaitlistSlotUnavailable,
     backToPhone,
     backToService,
