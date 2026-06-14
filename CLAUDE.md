@@ -231,6 +231,15 @@ Tests hit a real Supabase (test DB) via the service-role client. `e2e/helpers/db
 - **Attribute failures before claiming a regression.** Much of the suite is pre-existing red/flaky (`e2e/booking.spec.ts`, the party individual golden-path smoke, mobile receptionist-center). Before blaming your change, re-run the failing spec on clean `main` (`git stash -u` your work → run → `git stash pop`); a failure that reproduces on main is NOT yours. Many "failures" in a parallel run also pass when re-run with `--workers=1` (parallel-contention flakes).
 - **Cold-start timing**: server-action-dependent assertions (e.g. Party Link `party-link-share`/QR appearing after success) can exceed 15 s on the first hit of a cold-compiled route — use a 30 s timeout for those.
 
+### 🔎 Phòng QA (agent QA tự động chạy test trên build deploy)
+
+> Trước MỖI đợt QA, **đọc `docs/qa/README.md`** (sổ tay đầy đủ). Tối thiểu, loại 3 nguyên nhân **report-false** TRƯỚC khi kết luận là bug — đây là thủ phạm khiến nhiều report "lỗi chưa fix" thực ra sai:
+> 1. **Bundle JS cũ trong tab** (deploy lag / cache) → **hard-refresh** (Cmd/Ctrl-Shift-R) + verify commit đã deploy. NailIQ auto-deploy từ `main`; sau khi dev báo "đã merge", đợi ~1–2 phút cho Vercel rồi mới re-test.
+> 2. **Lệch timezone** → ngày/giờ là **giờ TIỆM** (dùng `salonTime.ts`, không `new Date()`), KHÔNG phải giờ máy QA; tester VN buổi tối thấy "hôm nay/ngày mai" lệch so với tiệm LA. Tính ngày theo giờ tiệm trước khi báo "ngày sai".
+> 3. **E2E đỏ/flake sẵn trên `main`** (vd `grid-render case 11: ghost assign`) → đỏ trùng signature trên `main` ≠ regression (xem rule "Attribute failures" ở trên).
+>
+> Không gây side-effect dữ liệu thật (SĐT/tên giả, dọn sau; không submit/huỷ thật trên tenant khách). Lưu report vào `docs/qa/<khu-vực>-<YYYY-MM-DD>.md`.
+
 ## 🚀 Custom Scripts
 
 - `npm run auto-push` → `scripts/auto-push.js`. Watches the repo with `chokidar` (ignoring `.next`, `node_modules`, `.git`, `logs`); on any change debounces 30 s, infers a commit message from the changed paths (`update styles`, `update landing UI`, `update copy and i18n`, `update <file>`, or `auto update`), then runs `git add . && git commit && git push`. **Footguns**: any save triggers a commit; no typecheck/build/test gate; will push broken code; spams history. Gated behind a permission prompt — only run when the user explicitly asks.
