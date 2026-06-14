@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { Badge } from "@/components/ui/Badge";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { SkeletonCardGrid } from "@/components/ui/Skeleton";
 import { Toggle } from "@/components/ui/Toggle";
 import {
   loadClientProfiles,
@@ -259,18 +261,7 @@ export function ClientProfilesPanel({
       </div>
 
       {state.kind === "loading" ? (
-        <div
-          role="status"
-          aria-label={messages.loading}
-          className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
-        >
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-[112px] animate-pulse rounded-2xl border border-nq-border/40 bg-nq-surface/40"
-            />
-          ))}
-        </div>
+        <SkeletonCardGrid count={6} cardClassName="h-[112px]" />
       ) : null}
 
       {state.kind === "error" ? (
@@ -284,9 +275,7 @@ export function ClientProfilesPanel({
       ) : null}
 
       {state.kind === "ok" && filtered.length === 0 ? (
-        <div className="rounded-2xl border border-nq-border/40 bg-nq-surface/30 px-6 py-12 text-center">
-          <p className="text-sm text-nq-muted">{messages.empty}</p>
-        </div>
+        <EmptyState title={messages.empty} />
       ) : null}
 
       {state.kind === "ok" && visible.length > 0 ? (
