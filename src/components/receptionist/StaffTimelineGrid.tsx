@@ -501,6 +501,7 @@ function StaffTimelineGridImpl({
           // the position-update branch.
           recentlyDraggedRef.current = true;
           pendingDragRef.current = null;
+          setCreateHover(null); // clear any create-preview so only the drag ghost shows
           setDragState({
             bookingId: pending.bookingId,
             serviceId: pending.serviceId,
@@ -1139,6 +1140,7 @@ function StaffTimelineGridImpl({
               let createGhostEl: ReactNode = null;
               if (
                 clickToCreate &&
+                dragState === null && // never alongside the drag ghost
                 createHover !== null &&
                 createHover.staffId === s.id
               ) {
@@ -1196,6 +1198,14 @@ function StaffTimelineGridImpl({
                   onMouseMove={
                     clickToCreate
                       ? (e: MouseEvent<HTMLDivElement>) => {
+                          // While a block is being dragged, suppress the
+                          // click-to-create hover preview — otherwise BOTH the
+                          // drag ghost and the create ghost render at once and
+                          // overlap as two translucent layers.
+                          if (dragState !== null) {
+                            if (createHover !== null) setCreateHover(null);
+                            return;
+                          }
                           const rowRect =
                             e.currentTarget.getBoundingClientRect();
                           const res = resolveCreateStart(
