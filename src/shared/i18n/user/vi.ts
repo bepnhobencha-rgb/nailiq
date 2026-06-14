@@ -463,6 +463,7 @@ export const userVi: UserMessages = {
   },
   nav: {
     frontDesk: "Bảng Live",
+    pulse: "Nhịp tiệm",
     calendar: "Lịch",
     clients: "Khách hàng",
     services: "Dịch vụ",

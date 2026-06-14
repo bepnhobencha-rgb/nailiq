@@ -9,6 +9,7 @@ import {
   Gift,
   Package,
   ChevronLeft,
+  Activity,
   ChevronRight,
   Check,
   ChevronUp,
@@ -194,6 +195,15 @@ export function DashboardSidebar({
       {
         key: "live",
         items: [
+          {
+            // Owner/admin remote command view — the away decision-maker's home.
+            key: "pulse",
+            label: t.pulse,
+            href: `${dashRoot}/pulse`,
+            icon: Activity,
+            match: (p) => p.startsWith(`${dashRoot}/pulse`),
+            hidden: role !== "owner" && role !== "admin",
+          },
           {
             key: "front-desk",
             label: t.frontDesk,
@@ -383,6 +393,7 @@ export function DashboardSidebar({
       t.messages,
       t.messagesSoonBadge,
       t.noShowProtection,
+      t.pulse,
       t.reports,
       t.photos,
       t.combos,

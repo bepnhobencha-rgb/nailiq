@@ -101,6 +101,7 @@ export function DashboardShell({
       <MobileBottomNav
         slug={slug}
         walkinQueueCount={walkinQueueCount}
+        role={role}
         releaseFeatures={releaseFeatures}
       />
       {/* Coco — in-admin AI assistant. Gated by the admin_copilot release
