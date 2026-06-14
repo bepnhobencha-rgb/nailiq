@@ -445,6 +445,21 @@ function ReceptionistCenterInner({
 
   const [drawerBookingId, setDrawerBookingId] = useState<string | null>(null);
 
+  // Deep-link `?booking=<id>` (e.g. Coco's "open this appointment" link): open
+  // that booking's detail drawer once on mount. The page already loaded the
+  // matching `?date`, so the booking is in this day's data. One-shot via a ref
+  // so closing the drawer doesn't immediately re-open it.
+  const urlBookingParam = searchParams?.get("booking") ?? null;
+  const didOpenUrlBookingRef = useRef(false);
+  useEffect(() => {
+    if (didOpenUrlBookingRef.current || !urlBookingParam) return;
+    if (data.bookingsForDay.some((b) => b.id === urlBookingParam)) {
+      didOpenUrlBookingRef.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot deep-link open
+      setDrawerBookingId(urlBookingParam);
+    }
+  }, [urlBookingParam, data.bookingsForDay]);
+
   // E2E hydration signal: renders only after the first client-side effect,
   // confirming React has fully hydrated and all event handlers are registered.
   // Used by gotoReceptionistCenter in e2e/receptionist-center/helpers.ts.

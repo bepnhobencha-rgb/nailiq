@@ -6,7 +6,7 @@
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
-import { salonToday, salonDayRangeUtc } from "@/shared/lib/salonTime";
+import { salonToday, salonDayRangeUtc, salonYmdOfUtc } from "@/shared/lib/salonTime";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
 import { formatCurrency, parseCurrency } from "@/shared/lib/currencyFormat";
@@ -244,6 +244,10 @@ export async function runCopilotTool(args: {
       appointments: rows.map((r) => {
         const svc = Array.isArray(r.services) ? r.services[0] : r.services;
         return {
+          // id + date let Coco build an "open this exact booking" deep-link:
+          // /dashboard/<slug>/center?date=<date>&booking=<id>
+          id: r.id,
+          date: r.start_time_utc ? salonYmdOfUtc(r.start_time_utc, timezone) : null,
           client: r.client_name,
           phone: r.client_phone || null,
           when: formatLocal(r.start_time_utc, timezone),
