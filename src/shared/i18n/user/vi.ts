@@ -688,6 +688,29 @@ export const userVi: UserMessages = {
     sectionStaff: "Nhân viên",
     sectionHours: "Giờ mở cửa",
     sectionAddress: "Địa chỉ tiệm",
+    categories: {
+      brand: {
+        title: "Thương hiệu & trang đặt lịch",
+        subtitle: "Tiệm hiển thị thế nào với khách",
+      },
+      booking: {
+        title: "Đặt lịch & hàng đợi",
+        subtitle: "Quy tắc khi khách đặt hẹn",
+      },
+      notifications: {
+        title: "Thông báo & nhắc hẹn",
+        subtitle: "Email, nhắc hẹn & follow-up no-show",
+      },
+      integrations: {
+        title: "Tích hợp",
+        subtitle: "Tên miền, Google, Wix & Voice AI",
+      },
+      plan: {
+        title: "Gói & nâng cao",
+        subtitle: "Gói đăng ký và cài đặt nâng cao",
+      },
+      jumpLabel: "Nhảy tới",
+    },
     ownerNotifications: {
       title: "Thông báo email cho quản lý",
       subtitle:
