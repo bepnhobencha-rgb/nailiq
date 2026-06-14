@@ -10,7 +10,6 @@ import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
-import { realNameOrEmpty } from "@/shared/booking/guestNamePlaceholder";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { salonDayRangeUtc, salonToday, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
@@ -258,9 +257,16 @@ export async function submitGroupBooking(
     if (nameTrim.length > 0 && !isValidCustomerName(nameTrim)) {
       return fail("invalid_name", memberNumber);
     }
-    const phoneOk = validateGuestPhone(m.phone ?? "");
-    if (!phoneOk.ok) {
-      return fail("invalid_phone", memberNumber);
+    // Identity Layer: only the organizer (member 0) must supply a valid phone.
+    // Other guests have no contact of their own — an empty phone is valid and
+    // makes them a party member server-side (no profile, no phone inherited
+    // from the organizer). If a guest DOES provide a phone it must be valid.
+    const phoneRaw = (m.phone ?? "").trim();
+    if (i === 0 || phoneRaw.length > 0) {
+      const phoneOk = validateGuestPhone(phoneRaw);
+      if (!phoneOk.ok) {
+        return fail("invalid_phone", memberNumber);
+      }
     }
     const emailRaw = (m.email ?? "").trim();
     if (emailRaw.length > 0 && !isValidEmailFormat(emailRaw)) {
@@ -783,99 +789,13 @@ export async function submitGroupBooking(
     }
   }
 
-  // Task #04-D FIX 15 — client_profiles upsert parity. The
-  // individual flow (submitPublicBooking.ts:554) upserts the
-  // guest into `client_profiles` so:
-  //   - the receptionist phone-lookup card shows them as a
-  //     returning customer next visit,
-  //   - `visit_count` + `last_service_date` feed the owner's
-  //     reports, and
-  //   - `preferred_staff_id` powers the "Often with X" hint.
-  // Group bookings used to skip this entirely — each member
-  // landed in `bookings` but never appeared in `client_profiles`,
-  // so a group customer looked brand-new on their next visit and
-  // their revenue didn't roll up. We mirror the individual flow
-  // exactly: best-effort post-RPC upsert; failures are Sentry'd
-  // but never propagate back to the customer (booking is already
-  // confirmed; profile bookkeeping must not break confirmation).
-  //
-  // Dedup by phone digits so a parent booking under their own
-  // number for a child (same phone, different member rows)
-  // upserts only once. First member with that phone wins for
-  // `name`/`preferred_staff_id`.
-  try {
-    const byPhoneDigits = new Map<
-      string,
-      { name: string; staffId: string }
-    >();
-    for (const r of resolved) {
-      const v = validateGuestPhone(r.member.phone);
-      if (!v.ok) continue;
-      if (byPhoneDigits.has(v.digits)) continue;
-      byPhoneDigits.set(v.digits, {
-        name: r.member.name.trim(),
-        staffId: r.member.staffId,
-      });
-    }
-
-    const nowIso = new Date().toISOString();
-    const profileOps = Array.from(byPhoneDigits.entries()).map(
-      async ([digits, info]) => {
-        // Per-phone snapshot via SECURITY DEFINER RPC — anon can no longer read
-        // client_profiles directly (cross-tenant PII lockdown, migration
-        // 20260609120000); the RPC returns only this one phone's row.
-        const { data: snapshotRows } = await supabase.rpc(
-          "get_booking_client_snapshot" as never,
-          { p_phone: digits } as never,
-        );
-        const existingProfile = (Array.isArray(snapshotRows)
-          ? snapshotRows[0]
-          : null) as { visit_count?: number | null; name?: string | null } | null;
-
-        const nextVisits = (existingProfile?.visit_count ?? 0) + 1;
-
-        // Never persist a "Guest N" / "Khách N" placeholder as the
-        // profile name (it would make recognition greet them as
-        // "Guest 2" next time). Prefer the typed name; else keep any
-        // real name already on file; else leave it null.
-        const finalName =
-          realNameOrEmpty(info.name) ||
-          realNameOrEmpty(
-            (existingProfile as { name?: string | null } | null)?.name,
-          ) ||
-          null;
-
-        const { error: profileUpsertErr } = await supabase
-          .from("client_profiles")
-          .upsert(
-            {
-              phone: digits,
-              name: finalName,
-              preferred_staff_id: info.staffId,
-              last_service_date: nowIso,
-              visit_count: nextVisits,
-            },
-            { onConflict: "phone" },
-          );
-
-        if (profileUpsertErr) {
-          const err = new Error(profileUpsertErr.message);
-          err.name = "ClientProfilesUpsertError";
-          Sentry.captureException(err, {
-            tags: {
-              "booking.rpc": "client_profiles",
-              "booking.rpc.failure": "upsert_best_effort",
-              "booking.flow": "group",
-            },
-            extra: { message: profileUpsertErr.message },
-          });
-        }
-      },
-    );
-    await Promise.all(profileOps);
-  } catch {
-    /* booking succeeded; profile update is best-effort */
-  }
+  // Identity Layer: the client_profiles resolve (per-member, dedup by phone,
+  // placeholder-name guard, visit_count bump, FK stamp) now happens INSIDE
+  // insert_group_bookings via resolve_client_profile() — atomic + server-
+  // authoritative. The old best-effort browser upsert was removed (migration
+  // 20260614110000); under RLS it could silently no-op, and members without
+  // their own phone (party members) must NOT get a profile keyed to the
+  // organizer's number. Keeping it here would also double-count visits.
 
   // Task #04-D FIX 02 — atomic-rollback observability. The RPC
   // is wrapped in a single PL/pgSQL transaction so the only ways

@@ -33,6 +33,10 @@ import {
   getDeskBookingData,
 } from "@/shared/dashboard/receptionistActions";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
+import {
+  searchClients,
+  type ClientSearchHit,
+} from "@/shared/dashboard/searchClientsAction";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { addonLabel } from "@/shared/booking/serviceLabels";
 import { salonToday } from "@/shared/lib/salonTime";
@@ -121,6 +125,8 @@ const COPY = {
       `✨ Returning customer${vip}${visits} — info filled in.`,
     vipTag: " · VIP",
     visitsTag: (n: number) => ` · ${n} visits`,
+    searchHint: "Existing clients — pick one, or keep typing to create new",
+    noName: "(no name)",
     prefillHint: (time: string, staff: string) =>
       `${time}${staff ? ` · ${staff}` : ""} — pick a service to confirm.`,
     notify: {
@@ -180,6 +186,8 @@ const COPY = {
       `✨ Khách quen${vip}${visits} — đã điền sẵn.`,
     vipTag: " · VIP",
     visitsTag: (n: number) => ` · ${n} lần ghé`,
+    searchHint: "Khách có sẵn — chọn 1, hoặc gõ tiếp để tạo khách mới",
+    noName: "(chưa có tên)",
     prefillHint: (time: string, staff: string) =>
       `${time}${staff ? ` · ${staff}` : ""} — chọn dịch vụ để xác nhận.`,
     notify: {
@@ -269,6 +277,9 @@ export default function DeskBookingForm({
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [lookupMsg, setLookupMsg] = useState<string | null>(null);
+  // Existing-client typeahead on the name field.
+  const [clientHits, setClientHits] = useState<ClientSearchHit[]>([]);
+  const [showHits, setShowHits] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Portal target — the modal must escape the (transformed) Front-Desk header,
@@ -498,6 +509,48 @@ export default function DeskBookingForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- name/email/serviceId/staffId read as "fill only when empty"; re-running on their change would loop
   }, [phone, slug]);
 
+  // Existing-client typeahead: as the receptionist types a NAME, surface this
+  // salon's matching clients so they pick the known identity instead of minting
+  // a near-duplicate. Skipped while the name was just auto-filled from a phone
+  // lookup (selectedHitRef) to avoid reopening the dropdown over a picked client.
+  const searchSeq = useRef(0);
+  const selectedHitRef = useRef(false);
+  useEffect(() => {
+    if (selectedHitRef.current) {
+      selectedHitRef.current = false;
+      return;
+    }
+    const term = name.trim();
+    if (term.length < 2) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear hits when term too short
+      setClientHits([]);
+      return;
+    }
+    const seq = ++searchSeq.current;
+    const t = setTimeout(async () => {
+      const res = await searchClients(slug, term);
+      if (seq !== searchSeq.current) return;
+      if (res.ok) {
+        setClientHits(res.hits);
+        setShowHits(res.hits.length > 0);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [name, slug]);
+
+  const pickClient = useCallback(
+    (hit: ClientSearchHit) => {
+      // Fill identity from the chosen profile; the phone effect then fills the
+      // rest (top service/staff, returning-customer hint).
+      selectedHitRef.current = true;
+      if (hit.name) setName(hit.name);
+      setPhone(hit.phone);
+      setShowHits(false);
+      setClientHits([]);
+    },
+    [],
+  );
+
   const toggleAddon = useCallback((id: string) => {
     setAddonIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
@@ -643,13 +696,55 @@ export default function DeskBookingForm({
               ) : null}
             </div>
 
-            <div>
+            <div className="relative">
               <label className={labelCls}>{tx.name}</label>
               <input
                 className={inputCls}
                 value={name}
+                autoComplete="off"
                 onChange={(e) => setName(e.target.value)}
+                onFocus={() => {
+                  if (clientHits.length > 0) setShowHits(true);
+                }}
+                onBlur={() => {
+                  // Delay so an onMouseDown pick registers before the list hides.
+                  setTimeout(() => setShowHits(false), 150);
+                }}
               />
+              {showHits && clientHits.length > 0 ? (
+                <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-lg border border-nq-border bg-nq-surface shadow-lg">
+                  <p className="border-b border-nq-border px-3 py-1.5 text-[11px] text-nq-muted">
+                    {tx.searchHint}
+                  </p>
+                  <ul className="max-h-56 overflow-y-auto">
+                    {clientHits.map((h) => (
+                      <li key={h.phone}>
+                        <button
+                          type="button"
+                          // onMouseDown (not onClick) fires before the input's
+                          // onBlur, so the pick isn't swallowed by the hide.
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            pickClient(h);
+                          }}
+                          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-nq-primary/5"
+                        >
+                          <span className="min-w-0 flex-1 truncate font-medium text-nq-text">
+                            {h.name || tx.noName}
+                            {h.isVip ? (
+                              <span className="ml-1 text-amber-500">★</span>
+                            ) : null}
+                          </span>
+                          <span className="shrink-0 text-xs text-nq-muted">
+                            ··· {h.phone.slice(-4)}
+                            {h.visitCount > 0 ? tx.visitsTag(h.visitCount) : ""}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
 
             <div>

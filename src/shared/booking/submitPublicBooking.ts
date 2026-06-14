@@ -764,51 +764,43 @@ export async function submitPublicBooking(
   // - Auto-fill name if already known
   // - Suggest preferred_staff_id (favorite tech)
   // - Show "Welcome back [name]!"
-  try {
-    // Per-phone snapshot via SECURITY DEFINER RPC — anon can no longer read
-    // client_profiles directly (cross-tenant PII lockdown, migration
-    // 20260609120000); the RPC returns only this one phone's row.
-    const { data: snapshotRows } = await supabase.rpc(
-      "get_booking_client_snapshot" as never,
-      { p_phone: phoneOk.digits } as never,
-    );
-    const existingProfile = (Array.isArray(snapshotRows)
-      ? snapshotRows[0]
-      : null) as { visit_count?: number | null } | null;
-
-    const nextVisits = (existingProfile?.visit_count ?? 0) + 1;
-
-    const profileRow: Record<string, unknown> = {
-      phone: phoneOk.digits,
-      name: nameTrimmed,
-      preferred_staff_id: resolvedStaffId,
-      last_service_date: new Date().toISOString(),
-      visit_count: nextVisits,
-    };
-    // "Verify once, trust": stamp the moment this phone passed OTP so future
-    // bookings can skip the OTP step (see determine_booking_verification). Only
-    // on an OTP-verified booking; omitted otherwise so we never clear it.
-    if (params.verificationMethod === "otp") {
-      profileRow.phone_verified_at = new Date().toISOString();
+  // Identity resolve (name / visit_count / last_service_date / preferred_staff
+  // + bookings.client_profile_id FK stamp) now happens INSIDE
+  // create_public_booking via resolve_client_profile() — atomic + server-
+  // authoritative (migration 20260614110000). The old best-effort browser
+  // upsert that did all of that was removed (under RLS it could silently no-op,
+  // and keeping it would double-count visit_count).
+  //
+  // We KEEP only the "verify once, trust" stamp: on an OTP-verified booking,
+  // record phone_verified_at so future bookings can skip OTP
+  // (determine_booking_verification). It writes a single column — never
+  // visit_count — so it cannot double-count. By now the RPC has already
+  // upserted the profile row, so this only updates the existing row.
+  if (params.verificationMethod === "otp") {
+    try {
+      const { error: verifyStampErr } = await supabase
+        .from("client_profiles")
+        .upsert(
+          {
+            phone: phoneOk.digits,
+            phone_verified_at: new Date().toISOString(),
+          } as never,
+          { onConflict: "phone" },
+        );
+      if (verifyStampErr) {
+        const err = new Error(verifyStampErr.message);
+        err.name = "ClientProfilesVerifyStampError";
+        Sentry.captureException(err, {
+          tags: {
+            "booking.rpc": "client_profiles",
+            "booking.rpc.failure": "verify_stamp_best_effort",
+          },
+          extra: { message: verifyStampErr.message },
+        });
+      }
+    } catch {
+      /* booking succeeded; verify stamp is best-effort */
     }
-
-    const { error: profileUpsertErr } = await supabase
-      .from("client_profiles")
-      .upsert(profileRow as never, { onConflict: "phone" });
-
-    if (profileUpsertErr) {
-      const err = new Error(profileUpsertErr.message);
-      err.name = "ClientProfilesUpsertError";
-      Sentry.captureException(err, {
-        tags: {
-          "booking.rpc": "client_profiles",
-          "booking.rpc.failure": "upsert_best_effort",
-        },
-        extra: { message: profileUpsertErr.message },
-      });
-    }
-  } catch {
-    /* booking succeeded; profile update is best-effort */
   }
 
   // Post-commit side-effects (deposit eval + AI no-show risk + card-required

@@ -809,10 +809,17 @@ export function BookingGroupFlow({
           const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
           const time24 = `${hh}:${mm}`;
           const guestLbl = groupCopy?.groupGuestLabel ?? "Guest";
+          // Identity Layer: ONLY the organizer (member 0) carries the contact
+          // phone/email. Other guests have no contact of their own, so we send
+          // an empty phone — the server marks them is_party_member instead of
+          // copying the organizer's number onto their rows (the root cause of
+          // one phone fanning out into dozens of mismatched names). They link
+          // to a real profile later via the party-claim link.
+          const isOrganizer = a.memberIndex === 0;
           return {
             name: draft.name.trim() || `${guestLbl} ${a.memberIndex + 1}`,
-            phone: primaryPhone,
-            email: primaryEmail.trim() || undefined,
+            phone: isOrganizer ? primaryPhone : "",
+            email: isOrganizer ? primaryEmail.trim() || undefined : undefined,
             serviceId: draft.serviceId,
             staffId: a.staffId,
             date,
