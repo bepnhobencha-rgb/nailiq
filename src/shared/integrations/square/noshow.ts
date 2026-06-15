@@ -31,7 +31,7 @@ type Db = ReturnType<typeof looseServiceClient>;
 async function loadPolicy(db: Db, salonId: string) {
   const { data } = await db
     .from("salons")
-    .select("noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold, noshow_group_whole_party")
+    .select("noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold, noshow_group_whole_party, noshow_deposit_escalation_threshold")
     .eq("id", salonId)
     .maybeSingle();
   const r = (data as Row) ?? {};
@@ -41,6 +41,12 @@ async function loadPolicy(db: Db, salonId: string) {
     threshold: num(r.noshow_risk_threshold) || 60,
     // NULL/undefined → true (default-on whole-party protection).
     wholeParty: r.noshow_group_whole_party !== false,
+    // NULL → escalation OFF (opt-in). Set (1..10) → that many prior no-shows
+    // force an upfront pay-to-confirm deposit instead of card-on-file.
+    escalationThreshold:
+      r.noshow_deposit_escalation_threshold == null
+        ? null
+        : num(r.noshow_deposit_escalation_threshold),
   };
 }
 
@@ -76,6 +82,18 @@ async function noShowBaseCents(
  * customer). Guarded to `deposit_status='required'` so a genuinely PAID deposit
  * is never touched.
  */
+/** Whether the salon has opted into Square deposits (square_integrations flag).
+ *  Used to guard auto-escalation: only forfeit the card tier for a deposit when
+ *  a deposit can actually be created. */
+async function depositsEnabled(db: Db, salonId: string): Promise<boolean> {
+  const { data } = await db
+    .from("square_integrations")
+    .select("deposit_enabled")
+    .eq("salon_id", salonId)
+    .maybeSingle();
+  return (data as { deposit_enabled?: boolean } | null)?.deposit_enabled === true;
+}
+
 async function supersedeDepositWithCard(db: Db, bookingId: string): Promise<void> {
   await db
     .from("bookings")
@@ -113,9 +131,21 @@ export async function noShowCardDecision(
   // leaves a card; returning customers only when their no-show risk is high.
   // Loyal returning clients with a clean history are never asked (low friction).
   const risk = num(b.no_show_risk_score);
-  const { isNew, hadNoShow } = await priorBookingStats(
+  const { isNew, hadNoShow, noShowCount } = await priorBookingStats(
     db, str(b.salon_id), str(b.client_phone), bookingId,
   );
+  // Auto-escalation: a customer with ≥ threshold prior no-shows must pay an
+  // UPFRONT deposit (handled by evaluateBookingNoShow), so we do NOT ask them
+  // for a card — card-on-file is the low-friction tier they've forfeited.
+  // GUARD: only skip the card when deposits are actually enabled; otherwise we'd
+  // leave a high-risk customer with NO protection at all (worse than a card).
+  if (
+    policy.escalationThreshold != null &&
+    noShowCount >= policy.escalationThreshold &&
+    (await depositsEnabled(db, str(b.salon_id)))
+  ) {
+    return { required: false, feeCents: 0, reason: "escalated to deposit" };
+  }
   const highRisk = risk >= policy.threshold;
   // Must require a card whenever the CLIENT pre-booking gate
   // (resolveNoShowCardRequirement) does — new OR prior no-show — PLUS the
@@ -150,9 +180,9 @@ async function priorBookingStats(
   salonId: string,
   clientPhone: string,
   excludeBookingId: string,
-): Promise<{ isNew: boolean; hadNoShow: boolean }> {
+): Promise<{ isNew: boolean; hadNoShow: boolean; noShowCount: number }> {
   const phone = clientPhone.trim();
-  if (phone.length < 8) return { isNew: true, hadNoShow: false };
+  if (phone.length < 8) return { isNew: true, hadNoShow: false, noShowCount: 0 };
   const { data } = await db
     .from("bookings")
     .select("status")
@@ -162,9 +192,11 @@ async function priorBookingStats(
     .not("status", "eq", "cancelled")
     .limit(50);
   const rows = (data ?? []) as Row[];
+  const noShowCount = rows.filter((r) => str(r.status) === "no_show").length;
   return {
     isNew: rows.length === 0,
-    hadNoShow: rows.some((r) => str(r.status) === "no_show"),
+    hadNoShow: noShowCount > 0,
+    noShowCount,
   };
 }
 

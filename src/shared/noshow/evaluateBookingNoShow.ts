@@ -37,7 +37,7 @@ export async function evaluateBookingNoShow(
     const { data: salonSettings } = await supabase
       .from("salons" as never)
       .select(
-        "deposit_high_value_cents, vertical, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer",
+        "deposit_high_value_cents, vertical, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, noshow_deposit_escalation_threshold, name",
       )
       .eq("id", body.salonId)
       .maybeSingle();
@@ -47,6 +47,8 @@ export async function evaluateBookingNoShow(
       deposit_pct_no_show?: number;
       deposit_pct_high_value?: number;
       deposit_pct_new_customer?: number;
+      noshow_deposit_escalation_threshold?: number | null;
+      name?: string | null;
     };
     const highValueThreshold = s.deposit_high_value_cents ?? 10000;
     const businessDescriptor = resolveVertical(s.vertical).aiDescriptor;
@@ -132,7 +134,96 @@ export async function evaluateBookingNoShow(
         noshow_card_required: cardRequired,
       })
       .eq("id", body.bookingId);
+
+    // Auto-escalation (opt-in): a customer with ≥ threshold prior no-shows is
+    // routed to a pay-to-confirm DEPOSIT — the slot is HELD (pending) and a
+    // Square pay link is texted/emailed; release-pending auto-cancels it if
+    // unpaid. This is the "guaranteed collection" tier for chronic no-show
+    // customers (they pay to hold, or the slot frees — never an unpaid no-show).
+    const escThreshold = s.noshow_deposit_escalation_threshold;
+    const escalated =
+      escThreshold != null && body.noShowCount >= Number(escThreshold);
+    if (escalated && depositEnabled && !cardRequired) {
+      try {
+        const { createDepositForBooking } = await import(
+          "@/shared/integrations/square/deposits"
+        );
+        const dep = await createDepositForBooking(body.bookingId, {
+          hold: true,
+          manual: true,
+        });
+        if (dep.required && dep.url) {
+          await sendEscalationDepositLink(
+            supabase,
+            body.bookingId,
+            String(s.name ?? ""),
+            dep.url,
+            dep.amountCents ?? 0,
+          );
+        }
+      } catch (e) {
+        console.error("[evaluateBookingNoShow] escalation deposit", e);
+      }
+    }
   } catch (e) {
     console.error("[evaluateBookingNoShow] failed", e);
+  }
+}
+
+/** Text + email the pay-to-confirm deposit link to an escalated customer. The
+ *  customer's locale isn't on `body`; default to the salon's site language is
+ *  out of scope here, so we send EN (the link page itself is bilingual). */
+async function sendEscalationDepositLink(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  bookingId: string,
+  salonName: string,
+  url: string,
+  amountCents: number,
+): Promise<void> {
+  const { data } = await supabase
+    .from("bookings" as never)
+    .select("client_phone, client_email, client_name")
+    .eq("id", bookingId)
+    .maybeSingle();
+  const b = (data ?? {}) as {
+    client_phone?: string | null;
+    client_email?: string | null;
+    client_name?: string | null;
+  };
+  const salon = salonName.trim() || "NailIQ";
+  const amount = `$${(amountCents / 100).toFixed(2)}`;
+  const phone = String(b.client_phone ?? "").trim();
+  if (phone) {
+    try {
+      const { sendSmsReminder } = await import("@/shared/lib/twilioSms");
+      await sendSmsReminder(
+        phone,
+        `${salon}: A ${amount} deposit is required to confirm your appointment. Please pay here to hold your spot: ${url}`,
+        { lang: "en" },
+      );
+    } catch (e) {
+      console.error("[sendEscalationDepositLink] sms", e);
+    }
+  }
+  const email = String(b.client_email ?? "").trim();
+  if (email) {
+    try {
+      const { sendCustomerLinkEmail } = await import(
+        "@/shared/lib/sendCustomerLinkEmail"
+      );
+      await sendCustomerLinkEmail({
+        email,
+        clientName: b.client_name ?? null,
+        salonName: salon,
+        salonAddress: null,
+        lang: "en",
+        subject: `Pay your ${amount} deposit to confirm · ${salon}`,
+        bodyText: `A ${amount} deposit is required to confirm and hold your appointment.`,
+        ctaLabel: `Pay ${amount} deposit`,
+        url,
+      });
+    } catch (e) {
+      console.error("[sendEscalationDepositLink] email", e);
+    }
   }
 }

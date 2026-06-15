@@ -46,13 +46,17 @@ export async function resolveNoShowCardRequirement(args: {
     // Policy on the salon.
     const { data: salon } = await db
       .from("salons")
-      .select("noshow_protection_enabled, noshow_fee_percent, noshow_group_whole_party")
+      .select("noshow_protection_enabled, noshow_fee_percent, noshow_group_whole_party, noshow_deposit_escalation_threshold")
       .eq("id", args.salonId)
       .maybeSingle();
     const s = (salon ?? {}) as Row;
     if (!s.noshow_protection_enabled) return { required: false };
     const percent = num(s.noshow_fee_percent) || 20;
     const wholeParty = s.noshow_group_whole_party !== false;
+    const escalationThreshold =
+      s.noshow_deposit_escalation_threshold == null
+        ? null
+        : num(s.noshow_deposit_escalation_threshold);
 
     // Provider must be connected; Square-only gate for the pre-booking flow.
     const provider = await resolvePaymentProvider(args.salonId);
@@ -80,6 +84,7 @@ export async function resolveNoShowCardRequirement(args: {
     const phone = args.clientPhone.replace(/\D/g, "");
     let isNew = true;
     let hadNoShow = false;
+    let noShowCount = 0;
     if (phone.length >= 8) {
       const { data: prior } = await db
         .from("bookings")
@@ -90,7 +95,22 @@ export async function resolveNoShowCardRequirement(args: {
         .limit(50);
       const rows = (prior ?? []) as Row[];
       isNew = rows.length === 0;
-      hadNoShow = rows.some((r) => str(r.status) === "no_show");
+      noShowCount = rows.filter((r) => str(r.status) === "no_show").length;
+      hadNoShow = noShowCount > 0;
+    }
+    // Auto-escalation: a customer with ≥ threshold prior no-shows is routed to a
+    // pay-to-confirm DEPOSIT (enforced server-side after creation), not a card —
+    // so don't show them the card step. GUARD: only skip the card when deposits
+    // are enabled, else a high-risk customer would end up with NO protection.
+    if (escalationThreshold != null && noShowCount >= escalationThreshold) {
+      const { data: sq } = await db
+        .from("square_integrations")
+        .select("deposit_enabled")
+        .eq("salon_id", args.salonId)
+        .maybeSingle();
+      if ((sq as Row | null)?.deposit_enabled === true) {
+        return { required: false };
+      }
     }
     if (!isNew && !hadNoShow) return { required: false };
 
