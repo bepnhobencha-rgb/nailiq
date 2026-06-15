@@ -812,12 +812,17 @@ function ReceptionistCenterInner({
       clientName: string;
       serviceId: string;
       bookingDate: string;
+      preferredSlotLabel: string | null;
     }) => {
       setDeskPrefill({
         phone: entry.phone || undefined,
         name: entry.clientName || undefined,
         serviceId: entry.serviceId || undefined,
         ymd: entry.bookingDate || undefined,
+        // The customer's preferred time ("3:30 PM") — the form auto-selects it
+        // IF still free, else shows the open times so staff pick another. Saves
+        // re-typing; staff just assign a tech and confirm.
+        slotLabel: entry.preferredSlotLabel || undefined,
       });
       setDeskBookingOpen(true);
     },
