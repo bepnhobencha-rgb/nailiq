@@ -170,7 +170,7 @@ export type CompletePasswordResetResult =
 export async function completeSuperadminPasswordReset(
   newPassword: string,
 ): Promise<CompletePasswordResetResult> {
-  if (!newPassword || newPassword.length < 6) {
+  if (!newPassword || newPassword.length < 8) {
     return { ok: false, error: "weak_password" };
   }
 
