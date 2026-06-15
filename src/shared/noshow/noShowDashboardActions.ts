@@ -10,6 +10,13 @@ export type NoShowSummary = {
   cancelledTodayCount: number;
   waitingWaitlistCount: number;
   recoveredThisWeekCount: number;
+  /** No-show fees actually charged to a saved card (revenue recovered). */
+  noShowFeesChargedCount: number;
+  noShowFeesRecoveredCents: number;
+  /** No-show fees the salon chose to waive (forgiven). */
+  noShowFeesWaivedCount: number;
+  /** Cards currently on file protecting upcoming bookings. */
+  cardsOnFileCount: number;
 };
 
 export type UnconfirmedBooking = {
@@ -150,6 +157,35 @@ export async function loadNoShowDashboard(slug: string): Promise<{
     createdAt: w.created_at,
   }));
 
+  // Revenue recovered: no-show fees actually charged to a saved card, fees
+  // waived (forgiven), and cards currently protecting upcoming bookings.
+  const [{ data: chargedRows }, { count: waivedCount }, { count: cardsOnFile }] =
+    await Promise.all([
+      supabase
+        .from("bookings" as never)
+        .select("noshow_fee_cents")
+        .eq("salon_id", salonId)
+        .eq("noshow_charge_status", "charged")
+        .limit(2000),
+      supabase
+        .from("bookings" as never)
+        .select("id", { count: "exact", head: true })
+        .eq("salon_id", salonId)
+        .eq("noshow_charge_status", "waived"),
+      supabase
+        .from("bookings" as never)
+        .select("id", { count: "exact", head: true })
+        .eq("salon_id", salonId)
+        .not("noshow_card_id", "is", null)
+        .in("status", ["pending", "confirmed"])
+        .gte("start_time_utc", now),
+    ]);
+  const chargedList = (chargedRows ?? []) as { noshow_fee_cents: number | null }[];
+  const noShowFeesRecoveredCents = chargedList.reduce(
+    (sum, r) => sum + (Number(r.noshow_fee_cents) || 0),
+    0,
+  );
+
   return {
     ok: true,
     summary: {
@@ -159,6 +195,10 @@ export async function loadNoShowDashboard(slug: string): Promise<{
       cancelledTodayCount: cancelledToday ?? 0,
       waitingWaitlistCount: waitingWaitlist ?? 0,
       recoveredThisWeekCount: recoveredThisWeek ?? 0,
+      noShowFeesChargedCount: chargedList.length,
+      noShowFeesRecoveredCents,
+      noShowFeesWaivedCount: waivedCount ?? 0,
+      cardsOnFileCount: cardsOnFile ?? 0,
     },
     unconfirmed,
     waitlist,
