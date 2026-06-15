@@ -186,6 +186,8 @@ export const bookingEn = {
   waitlistJoined:
     "You're on the list. We'll text you if something opens.",
   waitlistError: "Couldn't save your request. Try again.",
+  waitlistPreferredTimeLabel: "Preferred time (optional)",
+  waitlistAnyTime: "Any time",
   /** Legacy banner copy when both fields are empty on Continue (prefer field-level bookingErrors.*). */
   contactRequiredError: "Please enter your name and phone.",
   pastTimeError:

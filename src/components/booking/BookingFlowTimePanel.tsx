@@ -27,6 +27,9 @@ export function BookingFlowTimePanel({
   clientEmail,
   waitlistSubmitting,
   waitlistSlotJoined,
+  waitlistPreferredTime,
+  onWaitlistPreferredTimeChange,
+  waitlistTimeOptions,
   waitlistContactInvalid,
   scarcityHint,
   error,
@@ -53,6 +56,9 @@ export function BookingFlowTimePanel({
   clientEmail: string;
   waitlistSubmitting: boolean;
   waitlistSlotJoined: boolean;
+  waitlistPreferredTime: string;
+  onWaitlistPreferredTimeChange: (v: string) => void;
+  waitlistTimeOptions: string[];
   waitlistContactInvalid: boolean;
   scarcityHint: string | null;
   error: string | null;
@@ -183,6 +189,32 @@ export function BookingFlowTimePanel({
                       placeholder={t.clientEmailHint ?? ""}
                     />
                   </div>
+                  {waitlistTimeOptions.length > 0 ? (
+                    <div>
+                      <label
+                        htmlFor="booking-waitlist-time"
+                        className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
+                      >
+                        {t.waitlistPreferredTimeLabel}
+                      </label>
+                      <select
+                        id="booking-waitlist-time"
+                        name="waitlistPreferredTime"
+                        value={waitlistPreferredTime}
+                        onChange={(e) =>
+                          onWaitlistPreferredTimeChange(e.target.value)
+                        }
+                        className="nq-booking-field"
+                      >
+                        <option value="">{t.waitlistAnyTime}</option>
+                        {waitlistTimeOptions.map((label) => (
+                          <option key={label} value={label}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
                 </div>
                 {error ? (
                   <p className="text-sm text-nq-error" role="alert">

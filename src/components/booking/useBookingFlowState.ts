@@ -27,6 +27,7 @@ import {
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import {
   getAvailableTimeSlots,
+  minutesToLabel,
   type TimeSlot,
 } from "@/shared/booking/getAvailableTimeSlots";
 import type {
@@ -181,6 +182,9 @@ export function useBookingFlowState(
     initialReturningCustomer?.email ?? "",
   );
   const [clientNotes, setClientNotes] = useState("");
+  /** Waitlist "Preferred time" — optional. Empty string = "any time" → the
+   *  submit sends preferredSlotLabel: null (unchanged legacy behavior). */
+  const [waitlistPreferredTime, setWaitlistPreferredTime] = useState<string>("");
   /** Task #09-11 — honeypot field, never shown to humans (CSS-hidden +
    *  `tabIndex=-1` + `aria-hidden`). Bots autofilling every `<input>`
    *  in the form will put something here; `submitPublicBooking`
@@ -594,6 +598,44 @@ export function useBookingFlowState(
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset when key inputs change
     setWaitlistSlotJoined(false);
   }, [selectedDate, staffId, serviceId, salon.id]);
+
+  /**
+   * Hourly time labels for the selected day's open window — drives the
+   * optional waitlist "Preferred time" select. Empty when the salon is
+   * closed that day (or no hours configured) → the select is hidden.
+   * Marks step every 60 min from the first whole hour at/after open, and
+   * stop strictly before close (so we never offer a slot at closing time).
+   */
+  const waitlistTimeOptions = useMemo<string[]>(() => {
+    const week = parseOpeningHours(salon.opening_hours);
+    if (!week) return [];
+    const dayKey = (["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const)[
+      selectedDate.getDay()
+    ];
+    const day = week[dayKey];
+    if (!day || day.closed) return [];
+    const [openH, openM] = day.open.split(":").map((n) => parseInt(n, 10));
+    const [closeH, closeM] = day.close.split(":").map((n) => parseInt(n, 10));
+    if (
+      Number.isNaN(openH) ||
+      Number.isNaN(openM) ||
+      Number.isNaN(closeH) ||
+      Number.isNaN(closeM)
+    ) {
+      return [];
+    }
+    const openMin = openH * 60 + openM;
+    const closeMin = closeH * 60 + closeM;
+    const out: string[] = [];
+    for (
+      let mark = Math.ceil(openMin / 60) * 60;
+      mark < closeMin;
+      mark += 60
+    ) {
+      out.push(minutesToLabel(mark));
+    }
+    return out;
+  }, [salon.opening_hours, selectedDate]);
 
   useEffect(() => {
     if (!timeSlot) return;
@@ -1124,6 +1166,7 @@ export function useBookingFlowState(
     setTimeSlots([]);
     setError(null);
     setWaitlistSlotJoined(false);
+    setWaitlistPreferredTime("");
     setInfoNameError(null);
     setInfoPhoneError(null);
     setInfoEmailError(null);
@@ -1506,7 +1549,7 @@ export function useBookingFlowState(
         serviceId,
         staffId,
         bookingDateYmd: bookingDateYmdFromLocalDate(selectedDate),
-        preferredSlotLabel: null,
+        preferredSlotLabel: waitlistPreferredTime.trim() || null,
         clientName: name,
         clientPhone: phone,
         clientEmail: clientEmail.trim() || undefined,
@@ -1528,6 +1571,7 @@ export function useBookingFlowState(
     clientName,
     clientPhone,
     clientEmail,
+    waitlistPreferredTime,
     selectedDate,
     serviceId,
     shopSlug,
@@ -1649,6 +1693,9 @@ export function useBookingFlowState(
     submitting,
     waitlistSubmitting,
     waitlistSlotJoined,
+    waitlistPreferredTime,
+    setWaitlistPreferredTime,
+    waitlistTimeOptions,
     error,
     serviceError,
     bookingResult,
