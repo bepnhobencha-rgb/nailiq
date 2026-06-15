@@ -35,6 +35,9 @@ type Props = {
   depositEnabled: boolean;
   /** Grace minutes before an unpaid deposit-held slot auto-releases. */
   depositHoldGraceMinutes: number;
+  /** Admin-editable cancellation/no-show/deposit policy (effective text, bilingual). */
+  cancellationPolicyEn: string;
+  cancellationPolicyVi: string;
   connectHasAccount: boolean;
   connectChargesEnabled: boolean;
   connectDetailsSubmitted: boolean;
@@ -97,6 +100,8 @@ export function NoShowProtectionHub({
   depositPctNewCustomer: initialPctNewCustomer,
   depositEnabled: initialDepositEnabled,
   depositHoldGraceMinutes: initialGrace,
+  cancellationPolicyEn: initialPolicyEn,
+  cancellationPolicyVi: initialPolicyVi,
   connectHasAccount,
   connectChargesEnabled,
   connectDetailsSubmitted,
@@ -123,6 +128,8 @@ export function NoShowProtectionHub({
   const [pctHighValue, setPctHighValue] = useState(String(initialPctHighValue));
   const [pctNewCustomer, setPctNewCustomer] = useState(String(initialPctNewCustomer));
   const [depositEnabled, setDepositEnabled] = useState(initialDepositEnabled);
+  const [policyEn, setPolicyEn] = useState(initialPolicyEn);
+  const [policyVi, setPolicyVi] = useState(initialPolicyVi);
   const [grace, setGrace] = useState(String(initialGrace));
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [waivedIds, setWaivedIds] = useState<Set<string>>(new Set());
@@ -170,6 +177,7 @@ export function NoShowProtectionHub({
         deposit_pct_new_customer: parseInt(pctNewCustomer, 10),
         deposit_enabled: depositEnabled,
         deposit_hold_grace_minutes: parseInt(grace, 10) || 30,
+        cancellation_policy: { en: policyEn, vi: policyVi },
       });
       setSaveMsg("Settings saved");
       setTimeout(() => setSaveMsg(null), 3000);
@@ -404,6 +412,45 @@ export function NoShowProtectionHub({
                     </label>
                   ))}
                 </div>
+
+                {/* Cancellation / No-Show / Deposit policy — admin-editable,
+                    bilingual, shown to customers + linked from the confirmation
+                    email. De-hardcoded: blank → a built-in default is used. */}
+                <div className="mt-4 rounded-xl border border-nq-border/30 p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-nq-text">
+                      Chính sách huỷ / vắng mặt / cọc · Cancellation policy
+                    </p>
+                    <a
+                      href={`/${slug}/policy`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs font-semibold text-nq-primary underline"
+                    >
+                      Xem trang / View →
+                    </a>
+                  </div>
+                  <p className="mt-1 text-xs text-nq-muted">
+                    Khách thấy ở trang chính sách + email + lúc đồng ý. Để trống = dùng mẫu mặc định.
+                  </p>
+                  <label className="mt-2 block text-xs text-nq-muted">English</label>
+                  <textarea
+                    data-testid="policy-en"
+                    rows={6}
+                    value={policyEn}
+                    onChange={(e) => setPolicyEn(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-nq-border/40 bg-nq-bg px-3 py-2 text-sm text-nq-text focus:outline-none focus:border-nq-primary/50"
+                  />
+                  <label className="mt-2 block text-xs text-nq-muted">Tiếng Việt</label>
+                  <textarea
+                    data-testid="policy-vi"
+                    rows={6}
+                    value={policyVi}
+                    onChange={(e) => setPolicyVi(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-nq-border/40 bg-nq-bg px-3 py-2 text-sm text-nq-text focus:outline-none focus:border-nq-primary/50"
+                  />
+                </div>
+
                 <button
                   onClick={saveSettings}
                   disabled={isPending}

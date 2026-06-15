@@ -198,6 +198,8 @@ export async function updateReminderSettings(
     deposit_hold_grace_minutes?: number;
     /** Master ON/OFF for Square deposits (lives on square_integrations). */
     deposit_enabled?: boolean;
+    /** Bilingual cancellation/no-show policy { en, vi }. */
+    cancellation_policy?: { en?: string; vi?: string };
   },
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
@@ -215,6 +217,14 @@ export async function updateReminderSettings(
   if (patch.deposit_hold_grace_minutes !== undefined) {
     const g = Math.round(Number(patch.deposit_hold_grace_minutes) || 30);
     patch.deposit_hold_grace_minutes = Math.min(1440, Math.max(5, g));
+  }
+  // Cancellation policy: cap each language at 8k chars (defense-in-depth).
+  if (patch.cancellation_policy !== undefined) {
+    const cp = (patch.cancellation_policy ?? {}) as { en?: string; vi?: string };
+    patch.cancellation_policy = {
+      en: typeof cp.en === "string" ? cp.en.slice(0, 8000) : "",
+      vi: typeof cp.vi === "string" ? cp.vi.slice(0, 8000) : "",
+    };
   }
 
   const supabase = createServiceRoleClient();

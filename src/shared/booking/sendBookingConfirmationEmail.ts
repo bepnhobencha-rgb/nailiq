@@ -91,6 +91,7 @@ export function buildHtml(
   salonPhone?: string | null,
   savedCard?: SavedCardInfo | null,
   calendarUrl?: string | null,
+  policyUrl?: string | null,
 ): string {
   const eName = escapeHtml(input.clientName);
   const eSalon = escapeHtml(salonName);
@@ -235,6 +236,13 @@ export function buildHtml(
               Need to reschedule? Contact <strong>${eSalon}</strong>${ePhone && telHref ? ` at <a href="tel:${telHref}" style="color:#0B0C10;font-weight:600;text-decoration:underline;">${ePhone}</a>` : ""} directly.
             </p>`
             }
+            ${
+              policyUrl
+                ? `<p style="margin:8px 0 0;font-size:12px;color:#aaa;text-align:center;">
+              <a href="${policyUrl}" style="color:#aaa;text-decoration:underline;">Cancellation &amp; no-show policy · Chính sách huỷ &amp; vắng mặt</a>
+            </p>`
+                : ""
+            }
           </td>
         </tr>
 
@@ -378,6 +386,7 @@ export async function sendBookingConfirmationEmail(
       salonPhone,
       savedCard,
       calendarUrl,
+      `${getEmailOrigin()}/${input.shopSlug}/policy`,
     );
 
     // CASL: sender ID + physical mailing address + unsubscribe in every email.
