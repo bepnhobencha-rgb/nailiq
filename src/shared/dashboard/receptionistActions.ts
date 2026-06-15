@@ -2525,7 +2525,7 @@ export async function inviteWaitlistEntry(
   const { data: entry, error: loadErr } = await svc
     .from("booking_waitlist_entries")
     .select(
-      "id, service_id, client_name, client_phone, booking_date, claim_token, status",
+      "id, service_id, client_name, client_phone, booking_date, claim_token, status, offered_staff_id, offered_start_utc",
     )
     .eq("id", id)
     .eq("salon_id", ctx.salon.id)
@@ -2543,6 +2543,8 @@ export async function inviteWaitlistEntry(
     booking_date: string | null;
     claim_token: string | null;
     status: string | null;
+    offered_staff_id: string | null;
+    offered_start_utc: string | null;
   } | null;
   if (!row?.id) return { ok: false, error: "not_found" };
 
@@ -2568,8 +2570,42 @@ export async function inviteWaitlistEntry(
   const token = row.claim_token ?? crypto.randomUUID();
 
   const claimUrl = `${WAITLIST_SITE_URL}/booking/waitlist-claim?token=${token}`;
+
+  // When the DB freed a concrete slot (offered_staff_id + offered_start_utc),
+  // name the staff + time so the customer knows exactly what they're claiming.
+  // Time is formatted in the salon tz (from ctx.salon.timezone, no extra query),
+  // ASCII-only ("2:00 PM") so the body stays a single GSM-7 segment.
+  let offeredSuffix = "";
+  if (row.offered_staff_id && row.offered_start_utc) {
+    const startMs = Date.parse(row.offered_start_utc);
+    if (Number.isFinite(startMs)) {
+      const { data: staffRow } = await svc
+        .from("staff")
+        .select("name")
+        .eq("id", row.offered_staff_id)
+        .maybeSingle();
+      const staffName = String(
+        (staffRow as { name?: string | null } | null)?.name ?? "",
+      ).trim();
+      if (staffName) {
+        const timeZone = String(ctx.salon.timezone ?? "").trim() || "UTC";
+        let time = "";
+        try {
+          time = new Intl.DateTimeFormat("en-US", {
+            timeZone,
+            hour: "numeric",
+            minute: "2-digit",
+          }).format(new Date(startMs));
+        } catch {
+          time = "";
+        }
+        if (time) offeredSuffix = ` luc ${time} voi ${staffName}`;
+      }
+    }
+  }
+
   // ASCII-only Vietnamese (no diacritics, no emoji) → single GSM-7 segment.
-  const body = `${salonName}: Co cho trong ${serviceName} ngay ${bookingDate}. Giu cho trong 20 phut: ${claimUrl}`;
+  const body = `${salonName}: Co cho trong ${serviceName} ngay ${bookingDate}${offeredSuffix}. Giu cho trong 20 phut: ${claimUrl}`;
 
   // Resolve the salon's notification language so the auto-appended opt-out line
   // matches it ('vi' → "Nhắn STOP để ngừng nhận tin."). Best-effort: any read

@@ -813,6 +813,7 @@ function ReceptionistCenterInner({
       serviceId: string;
       bookingDate: string;
       preferredSlotLabel: string | null;
+      offeredStaffId: string | null;
     }) => {
       setDeskPrefill({
         phone: entry.phone || undefined,
@@ -823,6 +824,9 @@ function ReceptionistCenterInner({
         // IF still free, else shows the open times so staff pick another. Saves
         // re-typing; staff just assign a tech and confirm.
         slotLabel: entry.preferredSlotLabel || undefined,
+        // Prefill the freed tech when the slot carried one — matches what the
+        // flag-on auto-book path would have assigned (manual parity).
+        staffId: entry.offeredStaffId || undefined,
       });
       setDeskBookingOpen(true);
     },

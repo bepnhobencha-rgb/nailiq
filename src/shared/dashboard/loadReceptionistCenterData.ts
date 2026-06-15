@@ -171,6 +171,10 @@ export interface ReceptionistCenterData {
     status: string; // 'waiting' | 'notified' | 'claimed'
     /** When the customer claimed the slot (status='claimed'); null otherwise. */
     claimedAt: string | null;
+    /** Staff the freed slot was offered to (`offered_staff_id`), when a concrete
+     *  slot was freed; null otherwise. Lets "Tạo lịch" prefill the freed tech so
+     *  the manual path matches what auto-book would have done. */
+    offeredStaffId: string | null;
     createdAt: string;
   }>;
   bookingsForDay: Array<{
@@ -1166,6 +1170,7 @@ export async function loadReceptionistCenterData(
         client_phone: string | null;
         status: string | null;
         claimed_at: string | null;
+        offered_staff_id: string | null;
         created_at: string | null;
       };
       const pushWlRow = (r: WlRow) => {
@@ -1185,11 +1190,12 @@ export async function loadReceptionistCenterData(
           phone: String(r.client_phone ?? ""),
           status: String(r.status ?? "waiting"),
           claimedAt: r.claimed_at ? String(r.claimed_at) : null,
+          offeredStaffId: r.offered_staff_id ? String(r.offered_staff_id) : null,
           createdAt: String(r.created_at ?? ""),
         });
       };
       const WL_SELECT =
-        "id, service_id, booking_date, preferred_slot_label, client_name, client_phone, status, claimed_at, created_at";
+        "id, service_id, booking_date, preferred_slot_label, client_name, client_phone, status, claimed_at, offered_staff_id, created_at";
       try {
         const svc = createServiceRoleClient();
         // Actionable (waiting / notified) — from selected day onward, FIFO.
