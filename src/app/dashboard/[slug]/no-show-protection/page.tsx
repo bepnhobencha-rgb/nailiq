@@ -19,7 +19,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
   const sb = (await import("@/shared/lib/supabase/serviceRole")).createServiceRoleClient();
   const { data: salonRow } = await sb
     .from("salons" as never)
-    .select("reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, deposit_hold_grace_minutes, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_details_submitted, payment_provider, noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold")
+    .select("name, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, deposit_hold_grace_minutes, cancellation_policy, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_details_submitted, payment_provider, noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold")
     .eq("id", ctx.salon.id)
     .maybeSingle();
   // deposit_enabled lives on square_integrations (a salon only has a row once
@@ -32,6 +32,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
   const depositEnabled = (sqRow as { deposit_enabled?: boolean } | null)?.deposit_enabled === true;
 
   const row = salonRow as {
+    name?: string | null;
     reminders_enabled?: boolean;
     reminder_24h_enabled?: boolean;
     reminder_3h_enabled?: boolean;
@@ -41,6 +42,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
     deposit_pct_high_value?: number;
     deposit_pct_new_customer?: number;
     deposit_hold_grace_minutes?: number;
+    cancellation_policy?: { en?: string; vi?: string } | null;
     stripe_connect_account_id?: string | null;
     stripe_connect_charges_enabled?: boolean;
     stripe_connect_details_submitted?: boolean;
@@ -49,6 +51,12 @@ export default async function NoShowProtectionPage({ params }: Props) {
     noshow_fee_percent?: number;
     noshow_risk_threshold?: number;
   } | null;
+
+  // Effective policy text (custom or built-in default) for the editor.
+  const { resolvePolicy } = await import("@/shared/lib/cancellationPolicy");
+  const policySalonName = (row?.name ?? "").trim() || slug;
+  const policyEn = resolvePolicy(row?.cancellation_policy, "en", policySalonName);
+  const policyVi = resolvePolicy(row?.cancellation_policy, "vi", policySalonName);
 
   const result = await loadNoShowDashboard(slug);
   if (!result.ok) redirect(`/dashboard/${slug}`);
@@ -67,6 +75,8 @@ export default async function NoShowProtectionPage({ params }: Props) {
       depositPctNewCustomer={row?.deposit_pct_new_customer ?? 20}
       depositEnabled={depositEnabled}
       depositHoldGraceMinutes={row?.deposit_hold_grace_minutes ?? 30}
+      cancellationPolicyEn={policyEn}
+      cancellationPolicyVi={policyVi}
       connectHasAccount={Boolean(row?.stripe_connect_account_id)}
       connectChargesEnabled={row?.stripe_connect_charges_enabled ?? false}
       connectDetailsSubmitted={row?.stripe_connect_details_submitted ?? false}

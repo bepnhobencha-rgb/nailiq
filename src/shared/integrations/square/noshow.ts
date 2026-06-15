@@ -158,17 +158,25 @@ export async function saveNoShowCardForBooking(
   // proof for a chargeback dispute — never trust the client to supply this.
   const { data: salonRow } = await db
     .from("salons")
-    .select("currency_code")
+    .select("currency_code, name, cancellation_policy")
     .eq("id", str(b.salon_id))
     .maybeSingle();
-  const currency = String((salonRow as Row | null)?.currency_code || "USD").trim().toUpperCase() || "USD";
+  const sr = salonRow as Row | null;
+  const currency = String(sr?.currency_code || "USD").trim().toUpperCase() || "USD";
   const feeStr = `${(decision.feeCents / 100).toFixed(2)} ${currency}`;
+  const { policyEvidence } = await import("@/shared/lib/cancellationPolicy");
   const consentMeta = {
     policyText: `Cardholder authorized this salon to keep this card on file and to charge a no-show fee of ${feeStr} only if they do not show up for this appointment. No charge is made at booking. The cardholder may remove the card at any time.`,
     feeCents: decision.feeCents,
     currency,
     cardBrand: saved.brand,
     cardLast4: saved.last4,
+    // Snapshot of the salon's full cancellation policy the customer agreed to —
+    // strongest chargeback/consent evidence.
+    cancellationPolicy: policyEvidence(
+      sr?.cancellation_policy as { en?: string; vi?: string } | null,
+      String(sr?.name || ""),
+    ),
     capturedAt: new Date().toISOString(),
   };
 
