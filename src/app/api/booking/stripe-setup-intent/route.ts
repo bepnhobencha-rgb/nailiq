@@ -3,6 +3,7 @@ import { looseServiceClient, type Row } from "@/shared/integrations/square/loose
 import { noShowCardDecision } from "@/shared/integrations/square/noshow";
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { getStripeClient } from "@/shared/lib/stripe";
+import { isRateLimited, RATE_LIMIT_IDS } from "@/shared/lib/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,16 @@ export async function POST(req: NextRequest) {
   }
   const bookingId = String(body.bookingId ?? "");
   if (!bookingId) return NextResponse.json({ required: false });
+
+  // Anti card-testing: cap attempts per IP+booking (Vercel WAF, fail-open).
+  if (
+    await isRateLimited(RATE_LIMIT_IDS.cardSave, {
+      request: req,
+      rateLimitKey: `card-save:${bookingId}`,
+    })
+  ) {
+    return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  }
 
   try {
     const decision = await noShowCardDecision(bookingId);

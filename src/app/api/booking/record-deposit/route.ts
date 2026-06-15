@@ -68,9 +68,16 @@ export async function POST(req: Request) {
       undefined,
       { stripeAccount: acct },
     );
+    // Defense-in-depth: the PI must have succeeded, be tagged for THIS salon,
+    // AND have actually collected at least the booking's required deposit — so a
+    // stray small succeeded PI with the right metadata can't mark a booking fully
+    // paid for less than it owes.
+    const required = b.deposit_amount_cents ?? 0;
     succeeded =
       pi.status === "succeeded" &&
-      pi.metadata?.salon_id === b.salon_id;
+      pi.metadata?.salon_id === b.salon_id &&
+      typeof pi.amount_received === "number" &&
+      pi.amount_received >= required;
   } catch (e) {
     console.error("[record-deposit] retrieve", e);
     return NextResponse.json({ error: "stripe_error" }, { status: 502 });
