@@ -40,6 +40,12 @@ export const bookingVi: BookingMessages = {
   dateClosedShort: "Nghỉ",
   dateHolidayLabel: "Tiệm nghỉ",
   dateHolidayShort: "Nghỉ",
+  /** Hybrid date picker: toggle that expands the full month grid below the strip. */
+  dateMoreDates: "Xem thêm ngày",
+  /** Hybrid date picker: collapse the month grid back to the strip. */
+  dateHideCalendar: "Thu gọn lịch",
+  /** Hybrid date picker: first chip label for today. */
+  dateTodayChip: "Hôm nay",
   calendarPrevMonthAria: "Tháng trước",
   calendarNextMonthAria: "Tháng sau",
   calendarLegendAvailable: "Còn chỗ",
