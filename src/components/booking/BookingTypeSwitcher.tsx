@@ -416,6 +416,7 @@ export function BookingTypeSwitcher({
           initialPhone={entryPhone}
           initialOrganizer={entryCustomer}
           initialName={entryNameResolved}
+          initialSmsConsent={entrySmsConsent}
           language={language}
         />
       )}
