@@ -52,6 +52,8 @@ export interface SquareCatalogItem {
 export interface SquareBooking {
   id: string;
   status: string;
+  /** Optimistic-concurrency version — required to cancel/update a booking. */
+  version?: number;
   start_at?: string;
   customer_id?: string;
   location_id?: string;
@@ -465,4 +467,23 @@ export async function listBookings(
     windowStart = windowEnd;
   }
   return out;
+}
+
+/**
+ * Cancel a Square booking (NailIQ → Square reverse sync, Tầng 1). `version` is
+ * Square's optimistic-concurrency token from the latest fetch; a stale version
+ * makes Square reject the call (the caller should re-fetch + retry). The
+ * idempotency key is stable per (booking, version) so a retry never
+ * double-cancels. Throws on API error (caller logs + continues — one failed
+ * cancel must not crash the sync run).
+ */
+export async function cancelSquareBooking(
+  cfg: SquareConfig,
+  bookingId: string,
+  version: number,
+): Promise<void> {
+  await squareReq(cfg, "POST", `/bookings/${encodeURIComponent(bookingId)}/cancel`, {
+    idempotency_key: `cancel:${bookingId}:${version}`,
+    booking_version: version,
+  });
 }

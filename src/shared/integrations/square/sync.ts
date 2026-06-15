@@ -26,6 +26,7 @@ import {
   listBookings,
   listCatalogItems,
   getCustomer,
+  cancelSquareBooking,
   type SquareBooking,
 } from "./client";
 
@@ -49,6 +50,8 @@ export interface SquareSyncResult {
   updated: number;
   customersAdded: number;
   skipped: number;
+  /** Tầng 1 reverse sync — NailIQ-side cancellations pushed to Square. */
+  cancelledInSquare: number;
 }
 
 /** Find an active bed/staff with no rendered booking overlapping [startMs,endMs)
@@ -272,11 +275,57 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
     }
   }
 
+  // ── Reverse sync, Tầng 1: push NailIQ-side CANCELLATIONS to Square ─────────
+  // A booking cancelled in NailIQ (desk/customer) but still ACTIVE in Square
+  // would linger on the Square calendar → the slot looks taken there and a
+  // double-booking can't be prevented. Mirror the cancel to Square. This never
+  // fights the forward pull: a Square-origin cancel already shows CANCELLED_* in
+  // the fetched list (skipped below), and once we cancel here the next pull is a
+  // no-op (NailIQ is already cancelled). One failed cancel is logged, not fatal.
+  let cancelledInSquare = 0;
+  // Safety rail for a DESTRUCTIVE write: a data glitch that mass-marks bookings
+  // cancelled must never mass-cancel a salon's real Square calendar. Cap pushes
+  // per run far above the legit cancel rate in a 5-min window; if we hit it,
+  // log loudly and stop (the rest retry next run once the anomaly is resolved).
+  const MAX_CANCEL_PUSH_PER_RUN = 10;
+  const ACTIVE_SQUARE = new Set(["ACCEPTED", "PENDING"]);
+  const squareById = new Map<string, SquareBooking>();
+  for (const b of bookings) squareById.set(b.id, b);
+
+  const { data: localCancels } = await db
+    .from("bookings")
+    .select("id, square_booking_id")
+    .eq("salon_id", salonId)
+    .eq("status", "cancelled")
+    .not("square_booking_id", "is", null)
+    .gte("start_time_utc", begin.toISOString())
+    .lt("start_time_utc", end.toISOString());
+
+  for (const r of localCancels ?? []) {
+    const sqId = str(r.square_booking_id);
+    const sq = squareById.get(sqId);
+    if (!sq) continue; // not in the fetched window (gone / out of range)
+    if (!ACTIVE_SQUARE.has(sq.status)) continue; // already cancelled/no-show in Square
+    if (typeof sq.version !== "number") continue;
+    if (cancelledInSquare >= MAX_CANCEL_PUSH_PER_RUN) {
+      console.error(
+        `[squareSync] cancel-push cap hit (${MAX_CANCEL_PUSH_PER_RUN}) for salon ${salonId} — possible anomaly, stopping this run`,
+      );
+      break;
+    }
+    try {
+      await cancelSquareBooking(cfg, sqId, sq.version);
+      cancelledInSquare++;
+    } catch (e) {
+      console.error("[squareSync] cancel push failed", sqId, e);
+    }
+  }
+
   await db.from("square_integrations").update({
     cursor_synced_at: now.toISOString(),
     last_run_at: now.toISOString(),
     last_error: null,
   }).eq("salon_id", salonId);
 
-  return { pulled: bookings.length, inserted, updated, customersAdded, skipped };
+  return { pulled: bookings.length, inserted, updated, customersAdded, skipped, cancelledInSquare };
 }
