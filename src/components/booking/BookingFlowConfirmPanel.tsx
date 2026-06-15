@@ -59,6 +59,8 @@ export function BookingFlowConfirmPanel({
   onApplyVoucher,
   onRemoveVoucher,
   cardRequirement,
+  smsConsent,
+  setSmsConsent,
 }: {
   t: BookingMessages;
   shopLabel: string;
@@ -95,12 +97,16 @@ export function BookingFlowConfirmPanel({
   /** Option A no-show card gate, resolved BEFORE booking. When required, the card
    *  is captured here and must be entered before the booking can be confirmed. */
   cardRequirement?: NoShowCardRequirement | null;
+  /** SMS consent (collected at the phone gate). Confirm hides its own checkbox
+   *  when already given; still gates the button on it as a safety net. */
+  smsConsent: boolean;
+  setSmsConsent: (v: boolean) => void;
 }) {
   const [voucherInput, setVoucherInput] = useState("");
   const [voucherError, setVoucherError] = useState<string | null>(null);
   const [voucherLoading, setVoucherLoading] = useState(false);
-  // QA BUG-03 — express SMS consent (CASL/TCPA). Required before confirming.
-  const [smsConsent, setSmsConsent] = useState(false);
+  // SMS consent (CASL/TCPA) now comes from the phone gate via props; the local
+  // checkbox below is only a fallback shown when it wasn't given there.
   // Option A no-show card gate.
   const cardRequired = cardRequirement?.required === true;
   const [noShowConsent, setNoShowConsent] = useState(false);
@@ -378,16 +384,20 @@ export function BookingFlowConfirmPanel({
           </p>
         ) : null}
 
-        <label className="mt-5 flex cursor-pointer items-start gap-2.5 border-t border-[var(--booking-border)]/25 pt-5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
-          <input
-            type="checkbox"
-            data-testid="sms-consent"
-            checked={smsConsent}
-            onChange={(e) => setSmsConsent(e.target.checked)}
-            className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
-          />
-          <span>{t.smsConsent}</span>
-        </label>
+        {/* SMS consent is collected at the phone gate; show this only as a
+            fallback if it wasn't given there. */}
+        {!smsConsent ? (
+          <label className="mt-5 flex cursor-pointer items-start gap-2.5 border-t border-[var(--booking-border)]/25 pt-5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+            <input
+              type="checkbox"
+              data-testid="sms-consent"
+              checked={smsConsent}
+              onChange={(e) => setSmsConsent(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+            />
+            <span>{t.smsConsent}</span>
+          </label>
+        ) : null}
 
         {cardRequired && cardRequirement?.required ? (
           <>
