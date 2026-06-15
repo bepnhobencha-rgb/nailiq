@@ -852,6 +852,17 @@ export function BookingGroupFlow({
       if (res.ok) {
         setSuccessResult({ groupId: res.groupId, bookingIds: res.bookingIds });
         setStep("success");
+        // Unified no-show card gate (online group): this flow runs in the
+        // browser so it can't import the server-only gate — flag the lead
+        // booking via a server endpoint (lead = members[0], the only row with
+        // a phone). Fire-and-forget; the desk badge reconciles on next load.
+        if (res.bookingIds?.[0]) {
+          void fetch("/api/booking/flag-noshow-card", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bookingId: res.bookingIds[0] }),
+          }).catch(() => {});
+        }
         // FIX 08 — drop the `?mode=group` query so a browser back
         // from the success panel lands on the clean booking home
         // rather than the filled-form mid-state. `router.replace`
