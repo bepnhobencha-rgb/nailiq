@@ -24,8 +24,14 @@ export function DashboardViewControls() {
   const vi = language === "vi";
   const router = useRouter();
 
-  const [softPending, startSoft] = useTransition();
+  const [, startSoft] = useTransition();
   const [hardSpinning, setHardSpinning] = useState(false);
+  // A soft router.refresh() resolves almost instantly, so the bare transition
+  // pending flag flickered for a few ms and the tap felt dead. Drive the spin
+  // off our own timer so it ALWAYS reads as a deliberate ≥650ms turn, then a
+  // brief gold "done" flash confirms it happened.
+  const [softSpinning, setSoftSpinning] = useState(false);
+  const [flash, setFlash] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [isFs, setIsFs] = useState(false);
   const baseVersion = useRef<string | null>(null);
@@ -89,7 +95,20 @@ export function DashboardViewControls() {
       void hardRefresh();
       return;
     }
+    try {
+      navigator.vibrate?.(10);
+    } catch {
+      /* no haptics */
+    }
+    setFlash(false);
+    setSoftSpinning(true);
     startSoft(() => router.refresh());
+    // Guaranteed-visible spin, then a short success flash.
+    window.setTimeout(() => {
+      setSoftSpinning(false);
+      setFlash(true);
+      window.setTimeout(() => setFlash(false), 900);
+    }, 650);
   }, [updateAvailable, hardRefresh, router]);
 
   const toggleFs = useCallback(() => {
@@ -100,7 +119,7 @@ export function DashboardViewControls() {
     }
   }, []);
 
-  const spinning = softPending || hardSpinning;
+  const spinning = softSpinning || hardSpinning;
   const refreshLabel = updateAvailable
     ? vi
       ? "Có bản mới — chạm để cập nhật"
@@ -127,12 +146,14 @@ export function DashboardViewControls() {
         aria-label={refreshLabel}
         title={refreshLabel}
         className={cn(
-          "relative flex h-9 w-9 items-center justify-center rounded-full text-nq-muted transition-colors hover:text-nq-primary",
+          "relative flex h-9 w-9 items-center justify-center rounded-full transition-[color,box-shadow] duration-200",
+          "text-nq-foreground/75 hover:text-nq-primary",
           spinning && "animate-spin",
-          updateAvailable && "text-nq-primary",
+          (spinning || flash || updateAvailable) && "text-nq-primary",
+          (flash || updateAvailable) && "ring-2 ring-nq-primary/50",
         )}
       >
-        <svg viewBox="0 0 24 24" width={17} height={17} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <svg viewBox="0 0 24 24" width={17} height={17} fill="none" stroke="currentColor" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="M21 12a9 9 0 11-2.64-6.36M21 3v6h-6" />
         </svg>
         {updateAvailable ? (
@@ -144,7 +165,7 @@ export function DashboardViewControls() {
         onClick={toggleFs}
         aria-label={fsLabel}
         title={fsLabel}
-        className="flex h-9 w-9 items-center justify-center rounded-full text-nq-muted transition-colors hover:text-nq-primary"
+        className="flex h-9 w-9 items-center justify-center rounded-full text-nq-foreground/75 transition-colors hover:text-nq-primary"
       >
         <svg viewBox="0 0 24 24" width={17} height={17} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           {isFs ? (
