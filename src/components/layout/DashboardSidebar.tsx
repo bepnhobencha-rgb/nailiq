@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Calendar,
   Camera,
+  Gavel,
   Gift,
   Package,
   ChevronLeft,
@@ -348,6 +349,15 @@ export function DashboardSidebar({
             hidden: true,
           },
           {
+            key: "disputes",
+            label: t.disputes,
+            href: `${dashRoot}/disputes`,
+            icon: Gavel,
+            match: (p) => p.startsWith(`${dashRoot}/disputes`),
+            // Financial data — owner + admin only (matches the page gate).
+            hidden: role !== "owner" && role !== "admin",
+          },
+          {
             key: "messages",
             label: t.messages,
             href: null,
@@ -390,6 +400,7 @@ export function DashboardSidebar({
       dashRoot,
       t.calendar,
       t.clients,
+      t.disputes,
       t.frontDesk,
       t.loyalty,
       t.marketing,
