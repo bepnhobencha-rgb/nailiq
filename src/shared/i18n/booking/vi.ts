@@ -170,6 +170,8 @@ export const bookingVi: BookingMessages = {
   waitlistSubmitting: "Đang lưu…",
   waitlistJoined: "Đã ghi nhận. Chúng tôi sẽ nhắn tin khi có chỗ trống.",
   waitlistError: "Không lưu được. Vui lòng thử lại.",
+  waitlistPreferredTimeLabel: "Giờ mong muốn (tuỳ chọn)",
+  waitlistAnyTime: "Bất kỳ giờ nào",
   contactRequiredError: "Vui lòng nhập họ tên và số điện thoại.",
   pastTimeError: "Giờ này đã qua. Vui lòng chọn giờ khác.",
   slotTooSoonError:
