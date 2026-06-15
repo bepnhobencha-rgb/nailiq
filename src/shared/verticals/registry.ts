@@ -51,6 +51,14 @@ export type VerticalConfig = {
   legalServiceNoun: { en: string; vi: string };
   legalServiceRisk: { en: string; vi: string };
   /**
+   * Booking notes-field hint, per vertical. For health-sensitive services
+   * (massage, facial, waxing, head spa, lash) it prompts the customer to mention
+   * PREGNANCY / allergies / conditions in the free-text note (no structured
+   * health field — privacy-light; the note reaches staff in the booking drawer).
+   * Omit → the generic i18n hint (allergies / design ideas) is used.
+   */
+  intakeHint?: { en: string; vi: string };
+  /**
    * Customer-facing label for the operational `nail_tech` staff role.
    * (The DB enum value stays `nail_tech` as a stable internal key; only the
    * display label changes per vertical.)
@@ -151,6 +159,10 @@ const HEAD_SPA: VerticalConfig = {
     en: "Some scalp/hair treatments use products and warm water. Please tell us about scalp sensitivity, allergies, or any health conditions (e.g. neck/back) before your treatment.",
     vi: "Một số liệu trình da đầu/tóc dùng sản phẩm và nước ấm. Vui lòng báo trước về da đầu nhạy cảm, dị ứng hoặc tình trạng sức khoẻ (vd cổ/lưng).",
   },
+  intakeHint: {
+    en: "Optional — pregnancy, scalp sensitivity, allergies, neck/back issues, anything we should know.",
+    vi: "Không bắt buộc — mang thai, da đầu nhạy cảm, dị ứng, vấn đề cổ/lưng, điều cần lưu ý.",
+  },
   staffRoleLabel: { en: "Therapist", vi: "Kỹ thuật viên" },
   // Calm head-spa / wellness imagery (verified Unsplash, no nail photos).
   bookingImagery: {
@@ -208,6 +220,10 @@ const FACIAL_SKIN: VerticalConfig = {
     en: "Facials apply products and treatments to the skin and can cause redness or reactions. Please tell us about allergies, skin conditions, recent peels/lasers, or retinoid/Accutane use before your service.",
     vi: "Facial dùng sản phẩm và liệu trình lên da, có thể gây đỏ hoặc phản ứng. Vui lòng báo về dị ứng, tình trạng da, vừa peel/laser, hoặc đang dùng retinoid/Accutane.",
   },
+  intakeHint: {
+    en: "Optional — pregnancy, allergies, skin conditions, recent peels/lasers or retinoid use.",
+    vi: "Không bắt buộc — mang thai, dị ứng, tình trạng da, vừa peel/laser hoặc đang dùng retinoid.",
+  },
   staffRoleLabel: { en: "Esthetician", vi: "Chuyên viên da" },
   bookingImagery: WELLNESS_IMAGERY,
   referenceImageEnabled: false,
@@ -231,6 +247,10 @@ const MASSAGE_SPA: VerticalConfig = {
     en: "Massage involves physical pressure. Please tell us about pregnancy, injuries, recent surgery, blood-pressure or other health conditions so we can adjust or recommend against a service.",
     vi: "Massage có tác động lực. Vui lòng báo nếu đang mang thai, có chấn thương, vừa phẫu thuật, huyết áp hoặc tình trạng sức khoẻ khác để điều chỉnh hoặc tư vấn phù hợp.",
   },
+  intakeHint: {
+    en: "Optional — pregnancy, injuries, recent surgery, blood pressure or other health conditions, allergies.",
+    vi: "Không bắt buộc — mang thai, chấn thương, vừa phẫu thuật, huyết áp hoặc tình trạng sức khoẻ khác, dị ứng.",
+  },
   staffRoleLabel: { en: "Therapist", vi: "Kỹ thuật viên" },
   bookingImagery: WELLNESS_IMAGERY,
   referenceImageEnabled: false,
@@ -253,6 +273,10 @@ const WAXING: VerticalConfig = {
     en: "Waxing removes hair from the skin and can cause redness, irritation or lifting. Please tell us about skin sensitivity, recent sun/tanning, or retinoid/Accutane use, which can make waxing unsafe.",
     vi: "Waxing lấy lông khỏi da, có thể gây đỏ, kích ứng hoặc tróc da. Vui lòng báo về da nhạy cảm, vừa phơi nắng/tắm nắng, hoặc đang dùng retinoid/Accutane (có thể không nên wax).",
   },
+  intakeHint: {
+    en: "Optional — pregnancy, skin sensitivity, recent sun/tanning, retinoid/Accutane use, allergies.",
+    vi: "Không bắt buộc — mang thai, da nhạy cảm, vừa phơi/tắm nắng, đang dùng retinoid/Accutane, dị ứng.",
+  },
   staffRoleLabel: { en: "Wax Specialist", vi: "Chuyên viên wax" },
   bookingImagery: WELLNESS_IMAGERY,
   referenceImageEnabled: false,
@@ -274,6 +298,10 @@ const LASH_BROW: VerticalConfig = {
   legalServiceRisk: {
     en: "Lash and brow services work near the eyes and use adhesives or tints that can cause irritation or allergic reaction. Please tell us about sensitivities; a patch test may be recommended.",
     vi: "Dịch vụ mi/chân mày làm gần mắt và dùng keo/thuốc nhuộm có thể gây kích ứng hoặc dị ứng. Vui lòng báo về nhạy cảm; có thể cần test thử trước.",
+  },
+  intakeHint: {
+    en: "Optional — eye sensitivity, allergies (adhesive/tint), recent eye procedures, anything we should know.",
+    vi: "Không bắt buộc — mắt nhạy cảm, dị ứng (keo/thuốc nhuộm), vừa làm gì ở mắt, điều cần lưu ý.",
   },
   staffRoleLabel: { en: "Lash & Brow Artist", vi: "Chuyên viên mi & mày" },
   bookingImagery: WELLNESS_IMAGERY,
