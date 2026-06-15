@@ -802,6 +802,28 @@ function ReceptionistCenterInner({
     setAddFocusNonce((n) => n + 1);
   }, [setQueuePanelOpen]);
 
+  // Create a real appointment from a claimed waitlist entry — reuse the
+  // desk-prefill mechanism (same as onRebookNext): open the existing
+  // DeskBookingForm prefilled so staff confirm time/staff and book. Shared by
+  // the waitlist panel (in the queue drawer) and the attention-chip dropdown.
+  const createBookingFromClaim = useCallback(
+    (entry: {
+      phone: string;
+      clientName: string;
+      serviceId: string;
+      bookingDate: string;
+    }) => {
+      setDeskPrefill({
+        phone: entry.phone || undefined,
+        name: entry.clientName || undefined,
+        serviceId: entry.serviceId || undefined,
+        ymd: entry.bookingDate || undefined,
+      });
+      setDeskBookingOpen(true);
+    },
+    [],
+  );
+
   // Open the queue panel when the sidebar "Hàng chờ" (clock) tab deep-links to
   // #queue — on mount AND on every hashchange (so re-clicking while already on
   // the page works). The hash is cleared after handling so the next click
@@ -1921,6 +1943,20 @@ function ReceptionistCenterInner({
             (n, c) => n + c.pendingCount + c.pendingChangeRequestCount,
             0,
           ),
+        }
+      : null;
+
+  // ── Online-waitlist summary for the AttentionChipBar "Chờ chỗ" chip ──
+  // Glanceable so staff never miss it (the panel itself lives at the bottom
+  // of the Hàng chờ drawer, which is easy to overlook). `claimed` drives a
+  // pulsing "N cần tạo lịch" badge — those customers grabbed a slot and need
+  // a real appointment created.
+  const waitlistSummary =
+    data.onlineWaitlist.length > 0
+      ? {
+          total: data.onlineWaitlist.length,
+          claimed: data.onlineWaitlist.filter((w) => w.status === "claimed")
+            .length,
         }
       : null;
 
@@ -3157,6 +3193,16 @@ function ReceptionistCenterInner({
                     />
                   ) : null
                 }
+                waitlistSummary={waitlistSummary}
+                waitlistContent={
+                  waitlistSummary ? (
+                    <OnlineWaitlistPanel
+                      slug={slug}
+                      entries={data.onlineWaitlist}
+                      onCreateBooking={createBookingFromClaim}
+                    />
+                  ) : null
+                }
                 busy={drawerBusy}
                 removedLabel={attentionRemovedLabel}
                 formatTime={(utcIso) =>
@@ -3434,18 +3480,7 @@ function ReceptionistCenterInner({
               <OnlineWaitlistPanel
                 slug={slug}
                 entries={data.onlineWaitlist}
-                onCreateBooking={(entry) => {
-                  // Reuse the desk-prefill mechanism (same as onRebookNext): open
-                  // the existing DeskBookingForm prefilled so staff confirm
-                  // time/staff and create the real appointment from a claimed slot.
-                  setDeskPrefill({
-                    phone: entry.phone || undefined,
-                    name: entry.clientName || undefined,
-                    serviceId: entry.serviceId || undefined,
-                    ymd: entry.bookingDate || undefined,
-                  });
-                  setDeskBookingOpen(true);
-                }}
+                onCreateBooking={createBookingFromClaim}
               />
             </div>
           </aside>
