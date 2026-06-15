@@ -144,12 +144,29 @@ export function smsSuppressReason(
  *                 formatted) is normalised to strict E.164 before sending.
  * @param body   - message text (keep under 160 chars to avoid split)
  */
+/**
+ * Append a STOP opt-out line to EVERY customer SMS, exactly once. Centralised at
+ * the single send chokepoint so no message type can ship without it — a CASL
+ * (Canada) / TCPA (US) requirement. Idempotent: skipped when the body already
+ * mentions STOP (messages that wrote their own line aren't doubled). STOP itself
+ * is honoured carrier-side by Twilio Advanced Opt-Out.
+ */
+function withOptOut(body: string, lang?: "en" | "vi"): string {
+  if (/\bSTOP\b/i.test(body)) return body;
+  const line = lang === "vi" ? "Nhắn STOP để ngừng nhận tin." : "Reply STOP to opt out.";
+  return `${body.trimEnd()}\n${line}`;
+}
+
 export async function sendSmsReminder(
   toE164: string,
   body: string,
-  /** Optional: pass `statusCallbackUrl` so Twilio POSTs delivery receipts. */
-  opts?: { statusCallbackUrl?: string; salonIsTest?: boolean },
+  /** `statusCallbackUrl` for delivery receipts; `lang` localises the auto opt-out
+   *  line; `salonIsTest` routes through the kill-switch. */
+  opts?: { statusCallbackUrl?: string; salonIsTest?: boolean; lang?: "en" | "vi" },
 ): Promise<{ ok: boolean; messageSid?: string; error?: string; suppressed?: boolean }> {
+  // Guarantee an opt-out on every customer SMS (idempotent — see withOptOut).
+  body = withOptOut(body, opts?.lang);
+
   // Normalise the recipient to E.164 — Twilio needs the leading "+".
   // Done BEFORE the kill-switch so the 555-exchange guard sees clean digits.
   const recipient = normaliseToE164(toE164);

@@ -3,6 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
+import { unsubscribeUrl, listUnsubscribeHeaders } from "@/shared/lib/emailCompliance";
 import {
   resolveCustomerLocale,
   type SupportedLocale,
@@ -112,7 +113,7 @@ export async function deliverStaffActionNotification(
     const body = buildStaffActionSms(input.event, locale, vars);
     if (body) {
       try {
-        const r = await sendSmsReminder(row.client_phone, body);
+        const r = await sendSmsReminder(row.client_phone, body, { lang: locale === "en" ? "en" : "vi" });
         smsSent = r.ok;
       } catch (e) {
         console.error("[deliverStaffActionNotification] sms", e);
@@ -125,12 +126,18 @@ export async function deliverStaffActionNotification(
     const body = buildStaffActionSms(input.event, locale, vars);
     const client = getResendClient();
     if (subject && body && client) {
+      const to = row.client_email;
+      const footer =
+        locale === "en"
+          ? `\n\n— ${vars.salonName}\nUnsubscribe: ${unsubscribeUrl(to)}`
+          : `\n\n— ${vars.salonName}\nNgừng nhận email: ${unsubscribeUrl(to)}`;
       try {
         const res = await client.emails.send({
           from: getResendFrom(),
-          to: row.client_email,
+          to,
           subject,
-          text: body,
+          text: body + footer,
+          headers: listUnsubscribeHeaders(to),
         });
         emailSent = !res.error;
       } catch (e) {

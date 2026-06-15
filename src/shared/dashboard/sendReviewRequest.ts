@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { complianceFooterHtml, listUnsubscribeHeaders, isEmailSuppressed } from "@/shared/lib/emailCompliance";
 import {
   getEffectivePlanLimits,
   type PlanCheckSalon,
@@ -148,17 +149,22 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
         : undefined;
 
     try {
+      if (await isEmailSuppressed(email)) {
+        // Review request is marketing → respect unsubscribe (skip email channel).
+      } else {
+      const reviewHtml = buildEmailHtml({
+        salonName,
+        serviceName,
+        staffName,
+        reviewUrl,
+        googleReviewUrl,
+      }).replace("</body>", `${complianceFooterHtml({ email, salonName, lang: "vi" })}</body>`);
       const res = await resend.emails.send({
         from: getResendFrom(),
         to: email,
         subject: `Cảm ơn bạn — đánh giá dịch vụ tại ${salonName}`,
-        html: buildEmailHtml({
-          salonName,
-          serviceName,
-          staffName,
-          reviewUrl,
-          googleReviewUrl,
-        }),
+        html: reviewHtml,
+        headers: listUnsubscribeHeaders(email),
       });
       // Audit the email send too (the owner's Notifications widget showed only
       // the SMS channel for review requests before this).
@@ -174,6 +180,7 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
       });
       if (res.error) {
         console.error("[sendReviewRequest] resend send", res.error);
+      }
       }
     } catch (e) {
       console.error("[sendReviewRequest] resend threw", e);

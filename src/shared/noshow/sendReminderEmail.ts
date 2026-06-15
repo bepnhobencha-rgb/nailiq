@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getResendClient } from "@/shared/lib/resend";
+import { complianceFooterHtml, listUnsubscribeHeaders, isEmailSuppressed } from "@/shared/lib/emailCompliance";
 
 export type ReminderEmailInput = {
   tokenId: string;
@@ -149,8 +150,16 @@ export async function sendReminderEmail(
     return { ok: false, error: "resend_not_configured" };
   }
 
+  // Reminders are optional/relationship mail → honour unsubscribe.
+  if (await isEmailSuppressed(input.clientEmail)) {
+    return { ok: true };
+  }
+
   const body = await generateAiBody(input);
-  const html = buildEmailHtml(input, body);
+  const html = buildEmailHtml(input, body).replace(
+    "</body>",
+    `${complianceFooterHtml({ email: input.clientEmail, salonName: input.salonName })}</body>`,
+  );
   const from =
     (process.env.RESEND_FROM ?? "").trim() ||
     `${input.salonName} <noreply@nailiq.ca>`;
@@ -161,6 +170,7 @@ export async function sendReminderEmail(
       to: input.clientEmail,
       subject: `Reminder: your ${input.serviceName} at ${input.salonName}`,
       html,
+      headers: listUnsubscribeHeaders(input.clientEmail),
     });
 
     if (error) {

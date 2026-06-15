@@ -1,5 +1,6 @@
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient } from "@/shared/lib/resend";
+import { complianceFooterHtml, listUnsubscribeHeaders, isEmailSuppressed } from "@/shared/lib/emailCompliance";
 
 const SITE_URL =
   (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
@@ -72,6 +73,9 @@ async function sendWaitlistEmail(input: {
   const resend = getResendClient();
   if (!resend) return;
 
+  // Waitlist offers are optional mail → honour unsubscribe.
+  if (await isEmailSuppressed(input.clientEmail)) return;
+
   const claimUrl = `${SITE_URL}/booking/waitlist-claim?token=${input.claimToken}`;
   const from =
     (process.env.RESEND_FROM ?? "").trim() ||
@@ -111,12 +115,17 @@ async function sendWaitlistEmail(input: {
 </body>
 </html>`;
 
+  const htmlC = html.replace(
+    "</body>",
+    `${complianceFooterHtml({ email: input.clientEmail, salonName: input.salonName })}</body>`,
+  );
   try {
     await resend.emails.send({
       from,
       to: input.clientEmail,
       subject: `Spot opened: ${input.serviceName} at ${input.salonName}`,
-      html,
+      html: htmlC,
+      headers: listUnsubscribeHeaders(input.clientEmail),
     });
   } catch (e) {
     console.error("[waitlistAutoFill] Email send failed", e);

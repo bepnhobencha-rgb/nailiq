@@ -1,4 +1,5 @@
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
+import { complianceFooterHtml, listUnsubscribeHeaders, isEmailSuppressed } from "@/shared/lib/emailCompliance";
 
 const SITE_URL =
   (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
@@ -29,6 +30,9 @@ export async function sendWinBackEmail(
   const email = input.clientEmail.trim();
   if (!email) return { ok: false };
 
+  // Win-back is marketing → honour unsubscribe.
+  if (await isEmailSuppressed(email)) return { ok: true };
+
   const rebookUrl = `${SITE_URL}/${input.salonSlug}`;
   const name = input.clientName.trim() || "there";
   const salon = input.salonName.trim() || "us";
@@ -38,7 +42,7 @@ export async function sendWinBackEmail(
     salon,
     serviceName: input.serviceName.trim(),
     rebookUrl,
-  });
+  }).replace("</body>", `${complianceFooterHtml({ email, salonName: salon })}</body>`);
 
   try {
     const { error } = await resend.emails.send({
@@ -46,6 +50,7 @@ export async function sendWinBackEmail(
       to: email,
       subject: `We missed you at ${salon} — rebook anytime`,
       html,
+      headers: listUnsubscribeHeaders(email),
     });
     return { ok: !error };
   } catch {
