@@ -862,7 +862,7 @@ async function sendDepositSms(args: {
       ? `${salon}: Please pay your ${amount} deposit to hold your appointment: ${args.url}`
       : `${salon}: Vui lòng đặt cọc ${amount} để giữ lịch hẹn của bạn: ${args.url}`;
   try {
-    const res = await sendSmsReminder(phone, body);
+    const res = await sendSmsReminder(phone, body, { lang: args.language === "en" ? "en" : "vi" });
     return res.ok;
   } catch {
     return false;

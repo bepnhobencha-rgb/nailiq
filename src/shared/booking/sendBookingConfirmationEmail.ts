@@ -1,4 +1,5 @@
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
+import { complianceFooterHtml, listUnsubscribeHeaders } from "@/shared/lib/emailCompliance";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { generateReminderToken } from "@/shared/noshow/generateReminderToken";
@@ -343,11 +344,21 @@ export async function sendBookingConfirmationEmail(
       savedCard,
     );
 
+    // CASL: sender ID + physical mailing address + unsubscribe in every email.
+    // Booking confirmation is transactional → always sent (no suppression check),
+    // but still carries the compliance footer + List-Unsubscribe header.
+    const to = input.clientEmail.trim();
+    const htmlWithFooter = html.replace(
+      "</body>",
+      `${complianceFooterHtml({ email: to, salonName, salonAddress: address })}</body>`,
+    );
+
     const res = await resend.emails.send({
       from: getResendFrom(),
-      to: input.clientEmail.trim(),
+      to,
       subject: `Booking confirmed — ${salonName}`,
-      html,
+      html: htmlWithFooter,
+      headers: listUnsubscribeHeaders(to),
     });
 
     if (res.error) {
