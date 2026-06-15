@@ -576,6 +576,11 @@ export function BookingGroupFlow({
       salonId: salon.id,
       serviceId: svcId,
       clientPhone: v.digits,
+      // Whole-party protection: the organizer's card fee covers every member's
+      // service, so show the party total upfront (matches what's saved/charged).
+      groupServiceIds: members
+        .map((m) => m.serviceId)
+        .filter((id): id is string => Boolean(id)),
     })
       .then((r) => {
         if (alive) setCardRequirement(r);

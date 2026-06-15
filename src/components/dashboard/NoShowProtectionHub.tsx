@@ -55,6 +55,8 @@ type Props = {
   connectDetailsSubmitted: boolean;
   paymentProvider: "square" | "stripe" | null;
   noshowProtectionEnabled: boolean;
+  /** Group organizer's card covers the whole party's no-show fee. */
+  noshowGroupWholeParty: boolean;
   noshowFeePercent: number;
   noshowRiskThreshold: number;
   summary: NoShowSummary;
@@ -256,6 +258,7 @@ export function NoShowProtectionHub({
   connectDetailsSubmitted,
   paymentProvider: initialProvider,
   noshowProtectionEnabled: initialNoshowEnabled,
+  noshowGroupWholeParty: initialWholeParty,
   noshowFeePercent: initialNoshowPct,
   noshowRiskThreshold: initialNoshowThreshold,
   summary,
@@ -291,6 +294,7 @@ export function NoShowProtectionHub({
     initialProvider ?? "square",
   );
   const [noshowEnabled, setNoshowEnabled] = useState(initialNoshowEnabled);
+  const [wholeParty, setWholeParty] = useState(initialWholeParty);
   const [noshowPct, setNoshowPct] = useState(String(initialNoshowPct));
   const [noshowThreshold, setNoshowThreshold] = useState(String(initialNoshowThreshold));
   const [cardSaveMsg, setCardSaveMsg] = useState<string | null>(null);
@@ -302,6 +306,7 @@ export function NoShowProtectionHub({
         noshow_protection_enabled: noshowEnabled,
         noshow_fee_percent: parseInt(noshowPct, 10) || 0,
         noshow_risk_threshold: parseInt(noshowThreshold, 10) || 0,
+        noshow_group_whole_party: wholeParty,
       });
       setCardSaveMsg(r.ok ? "Đã lưu" : (r.error ?? "Lỗi"));
       setTimeout(() => setCardSaveMsg(null), 3000);
@@ -461,6 +466,37 @@ export function NoShowProtectionHub({
                 </>
               )}
             </p>
+
+            {noshowEnabled ? (
+              <>
+                <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm text-nq-text">
+                  <input
+                    type="checkbox"
+                    data-testid="noshow-whole-party-toggle"
+                    checked={wholeParty}
+                    onChange={(e) => setWholeParty(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-nq-primary"
+                  />
+                  <span>Một thẻ giữ cả nhóm / Whole-party deposit</span>
+                </label>
+                <p className="ml-6 mt-1 text-xs text-nq-muted">
+                  {wholeParty ? (
+                    <>
+                      <span className="font-medium text-nq-text">Đang BẬT:</span> với booking
+                      nhóm, thẻ của người tổ chức giữ phí no-show cho{" "}
+                      <span className="text-nq-text">cả nhóm</span> (vd nhóm $150 → giữ $30 cho
+                      cả party). Bảo vệ mạnh khi cả nhóm bùng, chỉ cần 1 thẻ.
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-medium text-nq-text">Đang TẮT:</span> chỉ giữ phí
+                      của <span className="text-nq-text">riêng người tổ chức</span> — nếu cả
+                      nhóm bùng, tiệm chỉ thu được 1 suất.
+                    </>
+                  )}
+                </p>
+              </>
+            ) : null}
 
             <div className="mt-3 flex flex-wrap gap-4">
               <div>

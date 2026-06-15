@@ -20,7 +20,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
   const sb = (await import("@/shared/lib/supabase/serviceRole")).createServiceRoleClient();
   const { data: salonRow } = await sb
     .from("salons" as never)
-    .select("name, vertical, health_ack_required, email_links_enabled, feature_flags, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, deposit_hold_grace_minutes, cancellation_policy, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_details_submitted, payment_provider, noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold")
+    .select("name, vertical, health_ack_required, email_links_enabled, feature_flags, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, deposit_hold_grace_minutes, cancellation_policy, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_details_submitted, payment_provider, noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold, noshow_group_whole_party")
     .eq("id", ctx.salon.id)
     .maybeSingle();
   // deposit_enabled lives on square_integrations (a salon only has a row once
@@ -66,6 +66,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
     stripe_connect_details_submitted?: boolean;
     payment_provider?: "square" | "stripe" | null;
     noshow_protection_enabled?: boolean;
+    noshow_group_whole_party?: boolean;
     noshow_fee_percent?: number;
     noshow_risk_threshold?: number;
   } | null;
@@ -109,6 +110,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
       connectDetailsSubmitted={row?.stripe_connect_details_submitted ?? false}
       paymentProvider={row?.payment_provider ?? null}
       noshowProtectionEnabled={row?.noshow_protection_enabled ?? false}
+      noshowGroupWholeParty={row?.noshow_group_whole_party !== false}
       noshowFeePercent={row?.noshow_fee_percent ?? 20}
       noshowRiskThreshold={row?.noshow_risk_threshold ?? 60}
       summary={result.summary!}

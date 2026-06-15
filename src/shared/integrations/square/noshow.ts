@@ -26,7 +26,7 @@ type Db = ReturnType<typeof looseServiceClient>;
 async function loadPolicy(db: Db, salonId: string) {
   const { data } = await db
     .from("salons")
-    .select("noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold")
+    .select("noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold, noshow_group_whole_party")
     .eq("id", salonId)
     .maybeSingle();
   const r = (data as Row) ?? {};
@@ -34,7 +34,33 @@ async function loadPolicy(db: Db, salonId: string) {
     enabled: Boolean(r.noshow_protection_enabled),
     percent: num(r.noshow_fee_percent) || 20,
     threshold: num(r.noshow_risk_threshold) || 60,
+    // NULL/undefined → true (default-on whole-party protection).
+    wholeParty: r.noshow_group_whole_party !== false,
   };
+}
+
+/**
+ * The base amount the no-show % applies to. For a GROUP LEAD booking (the only
+ * member with a card) when the salon uses whole-party protection, this is the
+ * SUM of every member's service price — so the organizer's one card covers a
+ * no-show fee for the whole party. Otherwise it's just this booking's own price.
+ */
+async function noShowBaseCents(
+  db: Db,
+  booking: Row,
+  wholeParty: boolean,
+): Promise<{ baseCents: number; partySize: number }> {
+  const own = num(booking.price_cents);
+  const groupId = str(booking.group_id);
+  if (!wholeParty || !groupId) return { baseCents: own, partySize: 1 };
+  const { data } = await db
+    .from("bookings")
+    .select("price_cents")
+    .eq("group_id", groupId);
+  const rows = (data as Row[] | null) ?? [];
+  if (rows.length <= 1) return { baseCents: own, partySize: rows.length || 1 };
+  const total = rows.reduce((sum, r) => sum + num(r.price_cents), 0);
+  return { baseCents: total > 0 ? total : own, partySize: rows.length };
 }
 
 /**
@@ -57,11 +83,11 @@ async function supersedeDepositWithCard(db: Db, bookingId: string): Promise<void
  *  public booking page calls this to decide whether to render the card step. */
 export async function noShowCardDecision(
   bookingId: string,
-): Promise<{ required: boolean; feeCents: number; reason: string }> {
+): Promise<{ required: boolean; feeCents: number; reason: string; partySize?: number }> {
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
-    .select("salon_id, price_cents, no_show_risk_score, noshow_card_id, client_phone")
+    .select("salon_id, price_cents, no_show_risk_score, noshow_card_id, client_phone, group_id")
     .eq("id", bookingId)
     .maybeSingle();
   const b = data as Row | null;
@@ -99,12 +125,15 @@ export async function noShowCardDecision(
     };
   }
 
-  const feeCents = Math.round((num(b.price_cents) * policy.percent) / 100);
+  // Whole-party protection: for a group lead, the fee covers the entire party.
+  const { baseCents, partySize } = await noShowBaseCents(db, b, policy.wholeParty);
+  const feeCents = Math.round((baseCents * policy.percent) / 100);
   if (feeCents <= 0) return { required: false, feeCents: 0, reason: "fee is zero" };
   return {
     required: true,
     feeCents,
     reason: isNew ? "new customer" : hadNoShow ? "prior no-show" : `risk ${risk} ≥ ${policy.threshold}`,
+    partySize,
   };
 }
 
@@ -182,9 +211,15 @@ export async function saveNoShowCardForBooking(
   const sr = salonRow as Row | null;
   const currency = String(sr?.currency_code || "USD").trim().toUpperCase() || "USD";
   const feeStr = `${(decision.feeCents / 100).toFixed(2)} ${currency}`;
+  // When the organizer's card covers a whole party, say so explicitly in the
+  // consent — the fee is for the group, not one person (chargeback evidence).
+  const partyClause =
+    (decision.partySize ?? 1) > 1
+      ? ` for their party of ${decision.partySize}`
+      : "";
   const { policyEvidence } = await import("@/shared/lib/cancellationPolicy");
   const consentMeta = {
-    policyText: `Cardholder authorized this salon to keep this card on file and to charge a no-show fee of ${feeStr} only if they do not show up for this appointment. No charge is made at booking. The cardholder may remove the card at any time.`,
+    policyText: `Cardholder authorized this salon to keep this card on file and to charge a no-show fee of ${feeStr}${partyClause} only if they do not show up for this appointment. No charge is made at booking. The cardholder may remove the card at any time.`,
     feeCents: decision.feeCents,
     currency,
     cardBrand: saved.brand,
@@ -338,7 +373,7 @@ export async function autoAttachReturningCard(
     const db = looseServiceClient();
     const { data } = await db
       .from("bookings")
-      .select("id, salon_id, price_cents, client_phone, noshow_card_id")
+      .select("id, salon_id, price_cents, client_phone, noshow_card_id, group_id")
       .eq("id", bookingId)
       .maybeSingle();
     const b = data as Row | null;
@@ -359,7 +394,10 @@ export async function autoAttachReturningCard(
     const card = await provider.findSavedCardByPhone(phone);
     if (!card || !card.cardId) return { attached: false, reason: "no saved card on file" };
 
-    const feeCents = Math.round((num(b.price_cents) * policy.percent) / 100);
+    // Whole-party: a returning organizer's carried-forward card also covers the
+    // group total (keeps it consistent with the new-card path).
+    const { baseCents } = await noShowBaseCents(db, b, policy.wholeParty);
+    const feeCents = Math.round((baseCents * policy.percent) / 100);
     if (feeCents <= 0) return { attached: false, reason: "fee is zero" };
 
     const { data: salonRow } = await db

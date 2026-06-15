@@ -425,6 +425,8 @@ export async function updateNoShowCardSettings(
     noshow_protection_enabled?: boolean;
     noshow_fee_percent?: number;
     noshow_risk_threshold?: number;
+    /** Group organizer's card covers the whole party's no-show fee (default on). */
+    noshow_group_whole_party?: boolean;
   },
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
@@ -437,6 +439,9 @@ export async function updateNoShowCardSettings(
   }
   if (typeof settings.noshow_protection_enabled === "boolean") {
     patch.noshow_protection_enabled = settings.noshow_protection_enabled;
+  }
+  if (typeof settings.noshow_group_whole_party === "boolean") {
+    patch.noshow_group_whole_party = settings.noshow_group_whole_party;
   }
   if (settings.noshow_fee_percent != null) {
     patch.noshow_fee_percent = clampPct(settings.noshow_fee_percent);
