@@ -13,6 +13,7 @@ import type { ReceptionistMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
 import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import { formatInSalonTz } from "@/shared/lib/salonTime";
+import { ymdToLocalDate, localDateToYmd } from "@/shared/lib/localDateYmd";
 
 /**
  * 7-column read-only week-overview grid for the Receptionist Center.
@@ -37,19 +38,7 @@ const DAYS_PER_WEEK = 7;
 /** Range fetch timeout (ms). Single round-trip for 7 days. */
 const RANGE_FETCH_TIMEOUT_MS = 20_000;
 
-/** YYYY-MM-DD → Date at local midnight (no tz drift; consumers pass salon-local YMDs). */
-function ymdToLocalDate(ymd: string): Date {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(y, (m ?? 1) - 1, d ?? 1);
-}
-
-/** Rebuild YYYY-MM-DD from a local Date. */
-function localDateToYmd(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+// Device-local YMD↔Date helpers live in @/shared/lib/localDateYmd.
 
 /** Monday of the week containing the supplied YMD (Mon-Sun grid). */
 export function mondayYmdOf(ymd: string): string {

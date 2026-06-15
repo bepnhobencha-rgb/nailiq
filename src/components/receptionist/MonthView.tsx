@@ -14,6 +14,7 @@ import type { ReceptionistMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
 import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import { formatInSalonTz } from "@/shared/lib/salonTime";
+import { ymdToLocalDate, localDateToYmd } from "@/shared/lib/localDateYmd";
 
 /**
  * Read-only month-calendar grid for the Receptionist Center.
@@ -32,19 +33,7 @@ import { formatInSalonTz } from "@/shared/lib/salonTime";
 const TOP_BOOKINGS_PER_DAY = 3;
 const RANGE_FETCH_TIMEOUT_MS = 20_000;
 
-// ─── Date helpers ────────────────────────────────────────────────────────────
-
-function ymdToLocalDate(ymd: string): Date {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(y, (m ?? 1) - 1, d ?? 1);
-}
-
-function localDateToYmd(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+// ─── Date helpers (device-local YMD↔Date) live in @/shared/lib/localDateYmd ──
 
 /** First day of the month (YYYY-MM-01) for any YMD in that month. */
 export function firstOfMonth(ymd: string): string {
