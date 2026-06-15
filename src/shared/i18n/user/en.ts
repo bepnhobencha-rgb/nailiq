@@ -346,6 +346,8 @@ export type UserMessages = {
     switchSalon: string;
     /** Card Disputes nav item (owner/admin only). */
     disputes: string;
+    /** Activity / communications log nav item (owner only). */
+    activity: string;
   };
   /** Phone-OTP login flow (`/login`, `/login/verify`). Distinct from
    * `register.*` so the two flows can diverge without cross-talk. */
@@ -2564,6 +2566,7 @@ export const userEn: UserMessages = {
     switchSalon: "Switch salon",
     loyalty: "Loyalty & Gifts",
     disputes: "Card Disputes",
+    activity: "Activity",
   },
   login: {
     title: "Sign in",

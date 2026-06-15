@@ -8,6 +8,7 @@ import {
   Camera,
   Gavel,
   Gift,
+  History,
   Package,
   ChevronLeft,
   Activity,
@@ -358,6 +359,15 @@ export function DashboardSidebar({
             hidden: role !== "owner" && role !== "admin",
           },
           {
+            key: "activity",
+            label: t.activity,
+            href: `${dashRoot}/activity`,
+            icon: History,
+            match: (p) => p.startsWith(`${dashRoot}/activity`),
+            // Full audit/comms log — owner only (matches the page gate).
+            hidden: role !== "owner",
+          },
+          {
             key: "messages",
             label: t.messages,
             href: null,
@@ -398,6 +408,8 @@ export function DashboardSidebar({
     ];
   }, [
       dashRoot,
+      role,
+      t.activity,
       t.calendar,
       t.clients,
       t.disputes,

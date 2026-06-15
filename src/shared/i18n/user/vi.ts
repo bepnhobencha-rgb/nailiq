@@ -485,6 +485,7 @@ export const userVi: UserMessages = {
     switchSalon: "Chuyển tiệm",
     loyalty: "Loyalty & Quà tặng",
     disputes: "Tranh chấp thẻ",
+    activity: "Nhật ký",
   },
   login: {
     title: "Đăng nhập",
