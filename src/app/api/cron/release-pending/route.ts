@@ -60,5 +60,27 @@ export async function GET(req: NextRequest) {
     console.log(`[release-pending] cancelled ${cardReleased} no-card bookings`);
   }
 
-  return NextResponse.json({ ok: true, released, cardReleased });
+  // Pay-deposit-to-confirm: release a FUTURE booking whose slot was held pending a
+  // deposit that was never paid, once the grace window passes (measured from when
+  // the link was created, not booking creation). reconcileDeposits clears
+  // deposit_hold the moment payment lands, so a paid booking is never caught here.
+  const depCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const { data: depData, error: depErr } = await supabase
+    .from("bookings")
+    .update({ status: "cancelled", deposit_hold: false } as never)
+    .eq("deposit_hold", true)
+    .eq("deposit_status", "required")
+    .in("status", ["confirmed", "pending"])
+    .lt("deposit_requested_at", depCutoff)
+    .gt("start_time_utc", nowIso)
+    .select("id");
+  if (depErr) {
+    console.error("[release-pending] deposit-release error", depErr);
+  }
+  const depositReleased = depData?.length ?? 0;
+  if (depositReleased > 0) {
+    console.log(`[release-pending] cancelled ${depositReleased} unpaid-deposit bookings`);
+  }
+
+  return NextResponse.json({ ok: true, released, cardReleased, depositReleased });
 }
