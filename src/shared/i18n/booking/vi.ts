@@ -284,6 +284,7 @@ export const bookingVi: BookingMessages = {
     finishTimeHint: "Cả nhóm sẽ hoàn thành trước giờ này",
     finishTimeRequired: "Vui lòng chọn giờ kết thúc.",
     arrivalQuestion: "Cả nhóm muốn đến lúc nào?",
+    arrivalNow: "Phù hợp giờ này",
     arrivalMorning: "Buổi sáng · 9h – 12h",
     arrivalAfternoon: "Buổi chiều · 12h – 17h",
     arrivalEvening: "Buổi tối · 17h – đóng cửa",

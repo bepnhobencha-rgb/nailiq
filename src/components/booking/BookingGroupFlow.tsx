@@ -105,6 +105,31 @@ const ARRIVAL_PRESETS: ReadonlyArray<
   Exclude<GroupArrivalPreference, { kind: "specific" }>["kind"]
 > = ["morning", "afternoon", "evening"];
 
+/** Time-of-day bucket for "now" in the salon's timezone, so the arrival window
+ *  pre-focuses the period the customer is most likely thinking of (open at 11am
+ *  → Morning; at 12–5 → Afternoon; after 5 → Evening). */
+function currentArrivalPeriod(
+  tz: string,
+): Exclude<GroupArrivalPreference, { kind: "specific" }>["kind"] {
+  let h = 12;
+  try {
+    const part = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz || "America/Los_Angeles",
+      hour: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(new Date())
+      .find((p) => p.type === "hour");
+    h = Number(part?.value ?? "12");
+  } catch {
+    /* fall back to noon */
+  }
+  if (!Number.isFinite(h)) h = 12;
+  if (h < 12) return "morning";
+  if (h < 17) return "afternoon";
+  return "evening";
+}
+
 type Step = 1 | 2 | 3 | 4 | 5 | "success";
 
 type MemberDraft = {
@@ -237,9 +262,16 @@ export function BookingGroupFlow({
   /** Target finish time HH:MM (24h, salon-local) — only used when
    *  syncMode === "sync_finish". */
   const [finishTime, setFinishTime] = useState("");
+  // Pre-focus the arrival window on the period matching the current salon-local
+  // time (open at 11am → Morning, 12pm → Afternoon, …) so the customer's most
+  // likely choice is already selected.
+  const nowArrivalPeriod = useMemo(
+    () => currentArrivalPeriod(salon.timezone),
+    [salon.timezone],
+  );
   const [arrivalKind, setArrivalKind] = useState<
     GroupArrivalPreference["kind"]
-  >("morning");
+  >(() => currentArrivalPeriod(salon.timezone));
   const [specificTime, setSpecificTime] = useState("");
   // Phone-first: pre-fill from the type-switcher gate when provided.
   const [primaryPhone, setPrimaryPhone] = useState(initialPhone ?? "");
@@ -1427,6 +1459,7 @@ export function BookingGroupFlow({
           syncMode={syncMode}
           finishTime={finishTime}
           arrivalKind={arrivalKind}
+          nowPeriod={nowArrivalPeriod}
           specificTime={specificTime}
           isSelectedDayClosed={isSelectedDayClosed}
           stepErrors={stepErrors}
@@ -2337,6 +2370,7 @@ function DateArrivalStep({
   syncMode,
   finishTime,
   arrivalKind,
+  nowPeriod,
   specificTime,
   isSelectedDayClosed,
   stepErrors,
@@ -2362,6 +2396,7 @@ function DateArrivalStep({
   /** Salon-local HH:MM finish time; only relevant in sync_finish mode. */
   finishTime: string;
   arrivalKind: GroupArrivalPreference["kind"];
+  nowPeriod: Exclude<GroupArrivalPreference, { kind: "specific" }>["kind"];
   specificTime: string;
   isSelectedDayClosed: boolean;
   stepErrors: Set<string>;
@@ -2583,6 +2618,11 @@ function DateArrivalStep({
                     {emoji}
                   </span>
                   {label}
+                  {k === nowPeriod ? (
+                    <span className="ml-2 inline-block rounded-full bg-[var(--salon-primary)]/15 px-2 py-0.5 text-[10px] font-semibold text-[var(--salon-primary)]">
+                      🕐 {groupCopy.arrivalNow ?? "Now"}
+                    </span>
+                  ) : null}
                 </button>
               );
             })}

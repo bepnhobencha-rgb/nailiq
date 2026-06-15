@@ -360,6 +360,7 @@ export const bookingEn = {
     finishTimeRequired: "Please set a target finish time.",
     /** Step 3 — arrival-window heading. */
     arrivalQuestion: "When would you like to arrive?",
+    arrivalNow: "Now",
     arrivalMorning: "Morning · 9 AM – 12 PM",
     arrivalAfternoon: "Afternoon · 12 PM – 5 PM",
     arrivalEvening: "Evening · 5 PM – close",
