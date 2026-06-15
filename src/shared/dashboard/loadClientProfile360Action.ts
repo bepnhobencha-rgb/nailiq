@@ -3,6 +3,7 @@
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { inferReturnCadenceDays } from "@/shared/booking/returnRhythm";
+import { isFrontDeskRole } from "@/shared/lib/salonMemberRole";
 
 // ---------------------------------------------------------------------------
 // Exported types — UI agent depends on EXACT field names below
@@ -128,12 +129,7 @@ export type GenerateClient360SummaryResult =
 async function requireDeskRole(slug: string) {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return null;
-  if (
-    ctx.role !== "owner" &&
-    ctx.role !== "senior" &&
-    ctx.role !== "admin" &&
-    ctx.role !== "receptionist"
-  ) {
+  if (!isFrontDeskRole(ctx.role)) {
     return null;
   }
   return ctx;

@@ -128,3 +128,31 @@ export function canChangeBookingStatus(role: SalonMemberRole): boolean {
     role === "receptionist"
   );
 }
+
+// ─── Dashboard-action authorization predicates ───────────────────────────────
+// Single source of truth for the role SETS that gate dashboard server actions,
+// so "which roles count as owner-admin / front-desk" lives in one place instead
+// of being re-spelled inline at ~50 call sites (where it had begun to drift).
+// These name the SET only — each action keeps its own forbidden response.
+
+/** Owner of the salon. Settings/billing/integration actions gate on this. */
+export function isOwner(role: SalonMemberRole): boolean {
+  return role === "owner";
+}
+
+/** Owner or admin — salon management (staff, services, config, AI prefill). */
+export function isOwnerOrAdmin(role: SalonMemberRole): boolean {
+  return role === "owner" || role === "admin";
+}
+
+/** Front-desk roles (everyone except a view-only `nail_tech`): owner / admin /
+ *  senior / receptionist. The set that may read customer data + operate the
+ *  desk. Mirrors the `can*Booking` action set. */
+export function isFrontDeskRole(role: SalonMemberRole): boolean {
+  return (
+    role === "owner" ||
+    role === "admin" ||
+    role === "senior" ||
+    role === "receptionist"
+  );
+}

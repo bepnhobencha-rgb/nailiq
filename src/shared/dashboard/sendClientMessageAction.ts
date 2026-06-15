@@ -14,6 +14,7 @@
  */
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { isFrontDeskRole } from "@/shared/lib/salonMemberRole";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { logNotification, type NotificationType } from "@/shared/lib/notificationLog";
 
@@ -50,12 +51,7 @@ export async function sendClientMessage(
 
   // Role gate: owner / admin / senior / receptionist allowed; nail_tech denied.
   // Mirrors canCancelBooking / canCreateDeskBooking from salonMemberRole.ts.
-  if (
-    ctx.role !== "owner" &&
-    ctx.role !== "admin" &&
-    ctx.role !== "senior" &&
-    ctx.role !== "receptionist"
-  ) {
+  if (!isFrontDeskRole(ctx.role)) {
     return { ok: false, error: "forbidden" };
   }
 

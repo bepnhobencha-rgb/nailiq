@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { isOwner, isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { addStaff, getDashboardWriteClient } from "@/shared/dashboard/setupActions";
@@ -134,7 +135,7 @@ async function authorize(
 ): Promise<{ ok: true; ctx: NonNullable<AuthorizedCtx> } | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "Not authorized for this salon" };
-  if (ctx.role !== "owner" && ctx.role !== "admin") {
+  if (!isOwnerOrAdmin(ctx.role)) {
     return { ok: false, error: "Only an owner or admin can manage access" };
   }
   return { ok: true, ctx };
@@ -240,7 +241,7 @@ export async function inviteStaffAccess(
     return { ok: false, error: "Invalid role" };
   }
   // Only the owner may grant admin (prevents admin→admin escalation).
-  if (input.role === "admin" && ctx.role !== "owner") {
+  if (input.role === "admin" && !isOwner(ctx.role)) {
     return { ok: false, error: "Only the owner can grant admin access" };
   }
   if (!input.email?.trim() && !input.phone?.trim()) {
@@ -375,7 +376,7 @@ export async function changeStaffAccessRole(
   const { ctx } = auth;
 
   if (!ASSIGNABLE.includes(role)) return { ok: false, error: "Invalid role" };
-  if (role === "admin" && ctx.role !== "owner") {
+  if (role === "admin" && !isOwner(ctx.role)) {
     return { ok: false, error: "Only the owner can grant admin access" };
   }
 

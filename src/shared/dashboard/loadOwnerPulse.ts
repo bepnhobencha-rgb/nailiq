@@ -1,6 +1,7 @@
 "use server";
 
 import { unstable_cache } from "next/cache";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import Anthropic from "@anthropic-ai/sdk";
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
@@ -110,7 +111,7 @@ export async function loadOwnerPulse(
 ): Promise<LoadOwnerPulseResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner" && ctx.role !== "admin") {
+  if (!isOwnerOrAdmin(ctx.role)) {
     return { ok: false, error: "forbidden" };
   }
 
