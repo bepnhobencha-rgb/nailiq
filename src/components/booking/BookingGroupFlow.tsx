@@ -41,7 +41,14 @@ import {
   type OpeningHoursWeek,
 } from "@/shared/dashboard/openingHoursDefaults";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
-import { NoShowCardCapture } from "./NoShowCardCapture";
+import {
+  ConfirmStepCardCapture,
+  type ConfirmStepCardHandle,
+} from "./ConfirmStepCardCapture";
+import {
+  resolveNoShowCardRequirement,
+  type NoShowCardRequirement,
+} from "@/shared/noshow/resolveNoShowCardRequirement";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { formatPhoneInputProgressive } from "@/shared/lib/phoneFormat";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
@@ -280,6 +287,16 @@ export function BookingGroupFlow({
   // the proof into the re-submit.
   const [otpSessionId, setOtpSessionId] = useState<string | null>(null);
   const [otpPanelOpen, setOtpPanelOpen] = useState(false);
+  // No-show card capture at CONFIRM (Option A — like the individual flow):
+  // a new/risky organizer must leave a card BEFORE the group is created, not
+  // after success. cardRequirement is resolved pre-booking by organizer phone.
+  const [cardRequirement, setCardRequirement] =
+    useState<NoShowCardRequirement | null>(null);
+  const [noShowConsent, setNoShowConsent] = useState(false);
+  const cardRef = useRef<ConfirmStepCardHandle>(null);
+  // Holds the tokenized card across a possible OTP round-trip (the card iframe
+  // unmounts when the OTP panel replaces the confirm step).
+  const cardTokenRef = useRef<string | null>(null);
   const [successResult, setSuccessResult] = useState<{
     groupId: string;
     bookingIds: string[];
@@ -502,6 +519,39 @@ export function BookingGroupFlow({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [primaryPhone, salon.id]);
+
+  // Pre-booking no-show card requirement for the organizer (Option A). Resolved
+  // at the confirm step from the organizer's phone + service, exactly like the
+  // individual flow — drives the card-entry form shown BEFORE the group is
+  // created.
+  useEffect(() => {
+    if (step !== 5) {
+      return;
+    }
+    const svcId = members[0]?.serviceId;
+    const v = validateGuestPhone(primaryPhone.trim());
+    if (!svcId || !v.ok) {
+      // Deliberate reset when inputs go invalid — not a render-loop.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCardRequirement(null);
+      return;
+    }
+    let alive = true;
+    void resolveNoShowCardRequirement({
+      salonId: salon.id,
+      serviceId: svcId,
+      clientPhone: v.digits,
+    })
+      .then((r) => {
+        if (alive) setCardRequirement(r);
+      })
+      .catch(() => {
+        if (alive) setCardRequirement(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [step, primaryPhone, members, salon.id]);
 
   // ── Helpers ────────────────────────────────────────────────────
   function applySize(n: number) {
@@ -790,6 +840,29 @@ export function BookingGroupFlow({
       submittingRef.current = false;
       return;
     }
+    // Option A — capture the organizer's card BEFORE creating the group (only
+    // when required). Tokenize once and hold it across a possible OTP round-trip
+    // (the card iframe unmounts when the OTP panel replaces the confirm step).
+    if (cardRequirement?.required && !cardTokenRef.current) {
+      if (!noShowConsent) {
+        // Safety net — the confirm button is already disabled until consent is
+        // ticked, so this only fires on a programmatic submit.
+        setErrorMessage(
+          t.noShowCardError ??
+            "Vui lòng đồng ý chính sách no-show để tiếp tục.",
+        );
+        submittingRef.current = false;
+        return;
+      }
+      const token = await cardRef.current?.tokenize();
+      if (!token) {
+        setErrorMessage(t.noShowCardError ?? "Vui lòng kiểm tra thông tin thẻ.");
+        submittingRef.current = false;
+        return;
+      }
+      cardTokenRef.current = token;
+    }
+
     setErrorMessage(null);
     setSubmitting(true);
     try {
@@ -857,17 +930,28 @@ export function BookingGroupFlow({
       if (res.ok) {
         setSuccessResult({ groupId: res.groupId, bookingIds: res.bookingIds });
         setStep("success");
-        // Unified no-show card gate (online group): this flow runs in the
-        // browser so it can't import the server-only gate — flag the lead
-        // booking via a server endpoint (lead = members[0], the only row with
-        // a phone). Fire-and-forget; the desk badge reconciles on next load.
-        if (res.bookingIds?.[0]) {
-          void fetch("/api/booking/flag-noshow-card", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ bookingId: res.bookingIds[0] }),
-          }).catch(() => {});
+        // No-show card for the organizer (lead = members[0], the only row with
+        // a phone). Option A: a card captured at the confirm step is saved to
+        // the lead now. If none was captured (not required), flag for the desk
+        // fallback instead (no-op when not needed). Fire-and-forget.
+        const leadId = res.bookingIds?.[0];
+        if (leadId) {
+          const token = cardTokenRef.current;
+          if (token) {
+            void fetch("/api/booking/square-save-card", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ bookingId: leadId, sourceId: token, consent: true }),
+            }).catch(() => {});
+          } else {
+            void fetch("/api/booking/flag-noshow-card", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ bookingId: leadId }),
+            }).catch(() => {});
+          }
         }
+        cardTokenRef.current = null;
         // FIX 08 — drop the `?mode=group` query so a browser back
         // from the success panel lands on the clean booking home
         // rather than the filled-form mid-state. `router.replace`
@@ -1196,7 +1280,6 @@ export function BookingGroupFlow({
   if (step === "success" && successResult) {
     return (
       <SuccessPanel
-        t={t}
         groupCopy={groupCopy}
         successResult={successResult}
         members={members}
@@ -1208,7 +1291,6 @@ export function BookingGroupFlow({
         seatTogether={seatTogether}
         partyLinkUrl={partyLinkUrl}
         partyLinkFailed={partyLinkFailed}
-        currencyCode={salon.currencyCode}
       />
     );
   }
@@ -1558,6 +1640,11 @@ export function BookingGroupFlow({
           onBack={() => goToStep(4)}
           onSubmit={() => void onSubmit()}
           initialSmsConsent={initialSmsConsent}
+          cardRequirement={cardRequirement}
+          cardRef={cardRef}
+          noShowConsent={noShowConsent}
+          onNoShowConsentChange={setNoShowConsent}
+          currencyCode={salon.currencyCode}
         />
       ) : null}
     </section>
@@ -3256,6 +3343,11 @@ function ConfirmStep({
   onBack,
   onSubmit,
   initialSmsConsent,
+  cardRequirement,
+  cardRef,
+  noShowConsent,
+  onNoShowConsentChange,
+  currencyCode,
 }: {
   t: BookingMessages;
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
@@ -3296,6 +3388,16 @@ function ConfirmStep({
   onSubmit: () => void;
   /** SMS consent already given at the phone gate → pre-satisfies confirm. */
   initialSmsConsent: boolean;
+  /** No-show card requirement for the organizer (Option A — captured here,
+   *  before the group is created). Null while loading / not required. */
+  cardRequirement: NoShowCardRequirement | null;
+  /** Imperative handle to tokenize the entered card at submit time. */
+  cardRef: React.RefObject<ConfirmStepCardHandle | null>;
+  /** No-show policy consent (separate from SMS consent). */
+  noShowConsent: boolean;
+  onNoShowConsentChange: (v: boolean) => void;
+  /** Salon currency — for the no-show card fee label. */
+  currencyCode: BookingSalonMeta["currencyCode"];
 }) {
   const dateDisplay = useMemo(() => {
     // Display the chosen date in salon-tz long form. The
@@ -3595,6 +3697,43 @@ function ConfirmStep({
         </p>
       ) : null}
 
+      {/* Option A — no-show card for the organizer, captured BEFORE the group
+          is created (mirrors the individual confirm panel). The card is
+          tokenized at submit and saved to the lead booking on success, so a
+          confirmed party is already protected — never an afterthought on the
+          success screen. */}
+      {cardRequirement?.required ? (
+        <div className="mb-4 rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4">
+          <p className="text-sm font-semibold text-[var(--booking-text)]">
+            {t.noShowCardTitle ?? "Secure your appointment"}
+          </p>
+          <ConfirmStepCardCapture
+            ref={cardRef}
+            applicationId={cardRequirement.applicationId}
+            locationId={cardRequirement.locationId}
+            environment={cardRequirement.environment}
+            feeLabel={formatCurrency(cardRequirement.feeCents, currencyCode) ?? ""}
+            t={t}
+          />
+          <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+            <input
+              type="checkbox"
+              data-testid="group-noshow-consent"
+              checked={noShowConsent}
+              onChange={(e) => onNoShowConsentChange(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+            />
+            <span>
+              {(t.noShowConsent ??
+                "I agree to the no-show policy and authorize this salon to charge {fee} to this card only if I don't show up.").replace(
+                "{fee}",
+                formatCurrency(cardRequirement.feeCents, currencyCode) ?? "",
+              )}
+            </span>
+          </label>
+        </div>
+      ) : null}
+
       {/* SMS consent is captured at the phone gate; only show it here as a
           fallback when it wasn't already given (mirrors the individual confirm
           panel) — never ask the customer to tick the same consent twice. */}
@@ -3639,7 +3778,12 @@ function ConfirmStep({
         </Button>
         <LuxuryBookingCta
           onClick={onSubmit}
-          disabled={submitting || !contactReady || !smsConsent}
+          disabled={
+            submitting ||
+            !contactReady ||
+            !smsConsent ||
+            (cardRequirement?.required === true && !noShowConsent)
+          }
           data-testid="group-confirm"
         >
           {submitting ? groupCopy.submittingGroup : groupCopy.confirmGroup}
@@ -3652,7 +3796,6 @@ function ConfirmStep({
 // ─── Success ─────────────────────────────────────────────────────
 
 function SuccessPanel({
-  t,
   groupCopy,
   successResult,
   members,
@@ -3664,9 +3807,7 @@ function SuccessPanel({
   seatTogether,
   partyLinkUrl,
   partyLinkFailed,
-  currencyCode,
 }: {
-  t: BookingMessages;
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
   successResult: { groupId: string; bookingIds: string[] };
   showStaff: boolean;
@@ -3686,8 +3827,6 @@ function SuccessPanel({
   partyLinkUrl: string | null;
   /** True when createPartyLink returned ok:false or threw — triggers non-blocking warning. */
   partyLinkFailed: boolean;
-  /** Salon currency — for the no-show card-capture fee label. */
-  currencyCode: BookingSalonMeta["currencyCode"];
 }) {
   const arrangement =
     scheduleResult && scheduleResult.ok
@@ -3752,18 +3891,8 @@ function SuccessPanel({
         </p>
       ) : null}
 
-      {/* No-show card capture for the organizer (lead booking carries the
-          phone). Self-gates: renders the card form only when the lead is
-          risk-flagged + Square is configured — same as the individual flow. */}
-      {successResult.bookingIds[0] ? (
-        <div className="mt-5 text-left">
-          <NoShowCardCapture
-            bookingId={successResult.bookingIds[0]}
-            currencyFormat={(cents) => formatCurrency(cents, currencyCode) ?? ""}
-            t={t}
-          />
-        </div>
-      ) : null}
+      {/* No-show card is now captured at the CONFIRM step (Option A — like the
+          individual flow), not here after success. */}
     </section>
   );
 }
