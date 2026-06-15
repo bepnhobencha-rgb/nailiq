@@ -10,7 +10,7 @@
  * Uses the repo's <Drawer> primitive (Framer Motion, focus trap, Esc-to-close).
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -28,6 +28,7 @@ import {
   type C360Booking,
   type ClientProfile360,
 } from "@/shared/dashboard/loadClientProfile360Action";
+import { sendClientMessage } from "@/shared/dashboard/sendClientMessageAction";
 
 // C360Booking and ClientProfile360 types are imported from
 // "@/shared/dashboard/loadClientProfile360Action" above.
@@ -37,6 +38,9 @@ export type { C360Booking, ClientProfile360 };
 // Aliases to keep the call sites readable
 const callLoadProfile = loadClientProfile360;
 const callGenerateSummary = generateClient360Summary;
+
+// SMS body character limit (standard single SMS segment)
+const SMS_MAX_CHARS = 160;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -53,21 +57,32 @@ function formatCentsCompact(cents: number): string {
   return `$${dollars}`;
 }
 
-function formatDate(iso: string | null): string {
+/** Format a full date, locale-aware based on UI language. */
+function formatDate(iso: string | null, lang: "en" | "vi" = "en"): string {
   if (!iso) return "—";
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return iso;
   const d = new Date(ms);
-  return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+  const locale = lang === "vi" ? "vi-VN" : "en-US";
+  return d.toLocaleDateString(locale, {
+    day: "numeric",
+    month: "numeric",
+    year: "numeric",
+  });
 }
 
-function formatDateShort(iso: string | null): string {
+/** Format a short date (e.g. "14 Jun 2026"), locale-aware. */
+function formatDateShort(iso: string | null, lang: "en" | "vi" = "en"): string {
   if (!iso) return "—";
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return iso;
   const d = new Date(ms);
-  const month = d.toLocaleString("default", { month: "short" });
-  return `${d.getDate()} ${month} ${d.getFullYear()}`;
+  const locale = lang === "vi" ? "vi-VN" : "en-US";
+  return d.toLocaleDateString(locale, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function formatTime(iso: string): string {
@@ -255,12 +270,14 @@ function TimelineEntry({
   booking,
   m,
   highlight,
+  lang,
 }: {
   booking: C360Booking;
   m: ReceptionistMessages["clientProfiles"]["profile360"];
   highlight?: boolean;
+  lang: "en" | "vi";
 }) {
-  const dateStr = formatDate(booking.startUtc);
+  const dateStr = formatDate(booking.startUtc, lang);
   const timeStr = formatTime(booking.startUtc);
 
   return (
@@ -316,6 +333,196 @@ function StarRating({ rating }: { rating: number }) {
 }
 
 // ---------------------------------------------------------------------------
+// In-app SMS composer
+// ---------------------------------------------------------------------------
+
+type ComposeKind = "message" | "rebook_invite";
+
+interface SmsComposeState {
+  open: boolean;
+  body: string;
+  kind: ComposeKind;
+  /** null = idle, "sending" = in flight, "sent" | "suppressed" | string(error) = result */
+  status: null | "sending" | "sent" | "suppressed" | { error: string };
+}
+
+interface SmsComposerProps {
+  phone: string;
+  slug: string;
+  state: SmsComposeState;
+  onStateChange: (s: SmsComposeState) => void;
+  /** Called after a successful send so the parent can refresh data. */
+  onSentRefresh: () => void;
+  m: ReceptionistMessages["clientProfiles"]["profile360"];
+}
+
+function SmsComposer({
+  phone,
+  slug,
+  state,
+  onStateChange,
+  onSentRefresh,
+  m,
+}: SmsComposerProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-focus textarea when composer opens
+  useEffect(() => {
+    if (state.open) {
+      // Small delay to let CSS transition complete
+      const t = setTimeout(() => textareaRef.current?.focus(), 80);
+      return () => clearTimeout(t);
+    }
+  }, [state.open]);
+
+  if (!state.open) return null;
+
+  const charCount = state.body.length;
+  const overLimit = charCount > SMS_MAX_CHARS;
+  const isSending = state.status === "sending";
+  const sentOk = state.status === "sent" || state.status === "suppressed";
+
+  async function handleSend() {
+    if (isSending || overLimit || !state.body.trim()) return;
+    onStateChange({ ...state, status: "sending" });
+
+    try {
+      const result = await sendClientMessage(slug, {
+        phone,
+        body: state.body,
+        kind: state.kind,
+      });
+
+      if (result.ok) {
+        const nextStatus = result.suppressed ? "suppressed" : "sent";
+        onStateChange({ ...state, status: nextStatus });
+        // If truly sent, close after a moment + refresh
+        if (!result.suppressed) {
+          setTimeout(() => {
+            onStateChange({ open: false, body: "", kind: "message", status: null });
+            onSentRefresh();
+          }, 1400);
+        }
+      } else {
+        onStateChange({ ...state, status: { error: result.error } });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      onStateChange({ ...state, status: { error: msg } });
+    }
+  }
+
+  function handleCancel() {
+    onStateChange({ open: false, body: "", kind: "message", status: null });
+  }
+
+  const resultNote = (() => {
+    if (state.status === "sent") return { text: m.composeSent, cls: "text-nq-success" };
+    if (state.status === "suppressed") return { text: m.composeSentSuppressed, cls: "text-nq-warning" };
+    if (state.status && typeof state.status === "object" && "error" in state.status) {
+      return { text: m.composeError(state.status.error), cls: "text-nq-error" };
+    }
+    return null;
+  })();
+
+  return (
+    <div
+      role="region"
+      aria-label={m.actionMessage}
+      className={cn(
+        "overflow-hidden rounded-2xl border border-nq-primary/30 bg-nq-primary/5",
+        "motion-safe:animate-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200",
+      )}
+    >
+      <div className="px-4 pt-3 pb-2">
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-nq-primary">
+          {m.actionMessage} — {phone}
+        </p>
+
+        <label htmlFor="sms-compose-body" className="sr-only">
+          {m.composePlaceholder}
+        </label>
+        <textarea
+          id="sms-compose-body"
+          ref={textareaRef}
+          rows={4}
+          maxLength={SMS_MAX_CHARS + 20} /* soft clamp — warn via counter */
+          value={state.body}
+          onChange={(e) =>
+            onStateChange({ ...state, body: e.target.value, status: null })
+          }
+          placeholder={m.composePlaceholder}
+          disabled={isSending || sentOk}
+          className={cn(
+            "w-full resize-none rounded-xl border bg-nq-surface px-3 py-2 text-sm",
+            "placeholder:text-nq-muted/50 focus:outline-none focus:ring-2",
+            overLimit
+              ? "border-nq-error/60 focus:ring-nq-error/30"
+              : "border-nq-border/50 focus:ring-nq-primary/30",
+            "disabled:opacity-60",
+          )}
+        />
+
+        {/* Char counter */}
+        <p
+          className={cn(
+            "mt-1 text-right text-[11px] tabular-nums",
+            overLimit ? "font-semibold text-nq-error" : "text-nq-muted",
+          )}
+          aria-live="polite"
+        >
+          {m.composeCharCount(charCount, SMS_MAX_CHARS)}
+        </p>
+
+        {/* Result note */}
+        {resultNote ? (
+          <p
+            role="status"
+            aria-live="polite"
+            className={cn("mt-1.5 text-xs font-medium", resultNote.cls)}
+          >
+            {resultNote.text}
+          </p>
+        ) : null}
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 border-t border-nq-border/20 px-4 py-2.5">
+        <Button
+          type="button"
+          variant="primary"
+          size="sm"
+          className="flex-1"
+          onClick={handleSend}
+          disabled={isSending || sentOk || overLimit || !state.body.trim()}
+        >
+          {isSending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+                aria-hidden
+              />
+              {m.composeSend}…
+            </span>
+          ) : (
+            m.composeSend
+          )}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleCancel}
+          disabled={isSending}
+        >
+          {m.composeCancel}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main drawer component
 // ---------------------------------------------------------------------------
 
@@ -327,6 +534,8 @@ export function ClientProfile360Drawer({
 }: ClientProfile360DrawerProps) {
   const isOpen = clientPhone !== null;
   const { language } = useUserLanguage();
+  // language from useUserLanguage is UserLanguage = "en" | "vi"
+  const lang = language as "en" | "vi";
   const m = useMemo(
     () => getUserMessages(language).receptionist.clientProfiles.profile360,
     [language],
@@ -345,6 +554,17 @@ export function ClientProfile360Drawer({
   const [showAllTimeline, setShowAllTimeline] = useState(false);
   const TIMELINE_CAP = 20;
 
+  // In-app SMS compose state
+  const [compose, setCompose] = useState<SmsComposeState>({
+    open: false,
+    body: "",
+    kind: "message",
+    status: null,
+  });
+
+  // Build booking URL for rebook-invite template
+  const bookingUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://nailiq.ca"}/${slug}`;
+
   // Reset + fetch when phone changes
   useEffect(() => {
     if (!clientPhone) {
@@ -352,6 +572,7 @@ export function ClientProfile360Drawer({
       setError(null);
       setAiSummary(null);
       setShowAllTimeline(false);
+      setCompose({ open: false, body: "", kind: "message", status: null });
       return;
     }
 
@@ -361,8 +582,9 @@ export function ClientProfile360Drawer({
     setData(null);
     setAiSummary(null);
     setShowAllTimeline(false);
+    setCompose({ open: false, body: "", kind: "message", status: null });
 
-    void callLoadProfile(slug, clientPhone).then((res) => {
+    void callLoadProfile(slug, clientPhone, language).then((res) => {
       if (cancelled) return;
       setLoading(false);
       if (!res.ok) {
@@ -376,7 +598,7 @@ export function ClientProfile360Drawer({
         setAiSummary(res.data.aiSummary);
       } else {
         setAiGenerating(true);
-        void callGenerateSummary(slug, clientPhone).then((aiRes) => {
+        void callGenerateSummary(slug, clientPhone, language).then((aiRes) => {
           if (cancelled) return;
           setAiGenerating(false);
           if (aiRes.ok) {
@@ -394,8 +616,18 @@ export function ClientProfile360Drawer({
     return () => {
       cancelled = true;
     };
+  // Re-runs on language change so the AI summary + dates re-fetch in the new
+  // language (the rest of the UI is reactive via getUserMessages already).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, clientPhone]);
+  }, [slug, clientPhone, language]);
+
+  /** Re-fetch the profile (e.g. after a message is sent to pick up notification history). */
+  const refreshProfile = useCallback(() => {
+    if (!clientPhone) return;
+    void callLoadProfile(slug, clientPhone, language).then((res) => {
+      if (res.ok) setData(res.data);
+    });
+  }, [slug, clientPhone, language]);
 
   const handleClose = useCallback(() => {
     onClose();
@@ -403,9 +635,44 @@ export function ClientProfile360Drawer({
 
   const handleBookAgain = useCallback(() => {
     if (clientPhone && onBookAgain) onBookAgain(clientPhone);
-    // Always close on book-again (can be rewired later to open booking form)
     onClose();
   }, [clientPhone, onBookAgain, onClose]);
+
+  /** Open composer for a blank new message. */
+  const handleOpenMessage = useCallback(() => {
+    setCompose({ open: true, body: "", kind: "message", status: null });
+  }, []);
+
+  /** Open composer pre-filled with rebook-invite text. */
+  const handleOpenRebookInvite = useCallback(() => {
+    if (!data) return;
+    const firstName =
+      (data.profile.name?.trim().split(/\s+/)[0]) ?? "";
+    const service =
+      data.favorites.topServiceName ?? null;
+    const staff =
+      data.favorites.topStaffName ?? data.profile.preferredStaffName ?? null;
+
+    const body = m.rebookInviteTemplate({ firstName, service, staff, bookingUrl });
+    setCompose({ open: true, body, kind: "rebook_invite", status: null });
+  }, [data, m, bookingUrl]);
+
+  /** Re-generate AI summary. */
+  const handleRegenerateSummary = useCallback(() => {
+    if (!clientPhone || aiGenerating) return;
+    setAiGenerating(true);
+    setAiSummary(null);
+    void callGenerateSummary(slug, clientPhone, language).then((aiRes) => {
+      setAiGenerating(false);
+      if (aiRes.ok) {
+        setAiSummary({
+          text: aiRes.text,
+          nextAction: aiRes.nextAction,
+          computedAt: aiRes.computedAt,
+        });
+      }
+    });
+  }, [slug, clientPhone, aiGenerating]);
 
   // ── Build title ──────────────────────────────────────────────────────────
   const drawerTitle = data?.profile.name?.trim() ?? m.title;
@@ -421,35 +688,46 @@ export function ClientProfile360Drawer({
 
   // ── Footer ────────────────────────────────────────────────────────────────
   const footer = data ? (
-    <div className="flex w-full flex-wrap gap-2">
-      <Button
-        type="button"
-        variant="primary"
-        size="sm"
-        className="flex-1"
-        onClick={handleBookAgain}
-      >
-        {m.actionBookAgain}
-      </Button>
+    <div className="w-full space-y-2">
+      {/* In-app SMS composer — rendered above the footer buttons */}
       {data.profile.phone ? (
-        <a
-          href={`sms:${data.profile.phone}`}
-          className={cn(
-            "inline-flex flex-1 items-center justify-center rounded-lg border border-nq-border",
-            "bg-nq-surface px-3 py-2 text-sm font-medium text-nq-foreground",
-            "transition-colors hover:bg-nq-bg/50",
-          )}
+        <SmsComposer
+          phone={data.profile.phone}
+          slug={slug}
+          state={compose}
+          onStateChange={setCompose}
+          onSentRefresh={refreshProfile}
+          m={m}
+        />
+      ) : null}
+
+      {/* Footer action buttons */}
+      <div className="flex w-full flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="primary"
+          size="sm"
+          className="flex-1"
+          onClick={handleOpenRebookInvite}
+          disabled={!data.profile.phone}
         >
-          {m.actionMessage}
-        </a>
-      ) : (
-        <Button type="button" variant="secondary" size="sm" className="flex-1" onClick={handleClose}>
-          {m.actionEdit}
+          {m.actionBookAgain}
         </Button>
-      )}
-      <Button type="button" variant="ghost" size="sm" onClick={handleClose}>
-        {m.actionClose}
-      </Button>
+        {data.profile.phone ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="flex-1"
+            onClick={handleOpenMessage}
+          >
+            {m.actionMessage}
+          </Button>
+        ) : null}
+        <Button type="button" variant="ghost" size="sm" onClick={handleClose}>
+          {m.actionClose}
+        </Button>
+      </div>
     </div>
   ) : null;
 
@@ -534,7 +812,7 @@ export function ClientProfile360Drawer({
                   </p>
                   {data.profile.createdAt ? (
                     <p className="text-xs text-nq-muted">
-                      {m.clientSince(formatDateShort(data.profile.createdAt))}
+                      {m.clientSince(formatDateShort(data.profile.createdAt, lang))}
                     </p>
                   ) : null}
                 </div>
@@ -545,7 +823,7 @@ export function ClientProfile360Drawer({
                 <KpiCell label={m.lifetimeSpent} value={formatCentsCompact(data.stats.lifetimeSpentCents)} />
                 <KpiCell label={m.visits} value={String(data.stats.visitCount)} />
                 <KpiCell label={m.avgTicket} value={formatCentsCompact(data.stats.avgTicketCents)} />
-                <KpiCell label={m.lastVisit} value={formatDate(data.stats.lastVisitAt)} />
+                <KpiCell label={m.lastVisit} value={formatDate(data.stats.lastVisitAt, lang)} />
               </dl>
             </section>
 
@@ -554,9 +832,25 @@ export function ClientProfile360Drawer({
             ═══════════════════════════════════════════════════════════════ */}
             {(aiGenerating || aiSummary) ? (
               <section className="space-y-2 rounded-2xl border border-nq-primary/30 bg-nq-primary/5 px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-base" aria-hidden>🤖</span>
-                  <SectionLabel>{m.aiSummaryTitle}</SectionLabel>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base" aria-hidden>🤖</span>
+                    <SectionLabel>{m.aiSummaryTitle}</SectionLabel>
+                  </div>
+                  {/* Regenerate button — replaces the old redundant "Đặt lại" */}
+                  {aiSummary && !aiGenerating ? (
+                    <button
+                      type="button"
+                      onClick={handleRegenerateSummary}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-lg border border-nq-border/40",
+                        "px-2 py-1 text-[11px] font-semibold text-nq-muted",
+                        "transition hover:border-nq-primary/40 hover:text-nq-primary",
+                      )}
+                    >
+                      ↺ {m.regenerateSummary}
+                    </button>
+                  ) : null}
                 </div>
                 {aiGenerating && !aiSummary ? (
                   <AiShimmer label={m.aiGenerating} />
@@ -575,13 +869,8 @@ export function ClientProfile360Drawer({
                         </p>
                       </div>
                     ) : null}
-                    <button
-                      type="button"
-                      onClick={handleBookAgain}
-                      className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-nq-primary/40 bg-nq-primary/15 px-3 py-1.5 text-xs font-semibold text-nq-primary transition hover:bg-nq-primary/25"
-                    >
-                      {m.bookAgain}
-                    </button>
+                    {/* Regenerate shimmer shown during regen when old summary is still visible */}
+                    {aiGenerating ? <AiShimmer label={m.aiGenerating} /> : null}
                   </div>
                 ) : null}
               </section>
@@ -657,7 +946,7 @@ export function ClientProfile360Drawer({
                     {data.pattern.nextPredictedAt ? (
                       <p className="text-sm text-nq-muted">
                         <span className="font-semibold text-nq-foreground">{m.nextPredicted}:</span>{" "}
-                        {formatDateShort(data.pattern.nextPredictedAt)}
+                        {formatDateShort(data.pattern.nextPredictedAt, lang)}
                       </p>
                     ) : null}
                   </>
@@ -752,7 +1041,7 @@ export function ClientProfile360Drawer({
                           </div>
                           {v.expiresAt ? (
                             <span className="text-[11px] text-nq-muted">
-                              {m.expiresOn(formatDate(v.expiresAt))}
+                              {m.expiresOn(formatDate(v.expiresAt, lang))}
                             </span>
                           ) : null}
                         </li>
@@ -774,7 +1063,7 @@ export function ClientProfile360Drawer({
                     <SectionLabel>{m.upcomingTitle}</SectionLabel>
                     <ul className="space-y-1.5">
                       {data.upcoming.map((b) => (
-                        <TimelineEntry key={b.id} booking={b} m={m} highlight />
+                        <TimelineEntry key={b.id} booking={b} m={m} highlight lang={lang} />
                       ))}
                     </ul>
                   </>
@@ -786,7 +1075,7 @@ export function ClientProfile360Drawer({
                     <SectionLabel>{m.timelineTitle}</SectionLabel>
                     <ul className="space-y-1.5">
                       {visibleTimeline.map((b) => (
-                        <TimelineEntry key={b.id} booking={b} m={m} />
+                        <TimelineEntry key={b.id} booking={b} m={m} lang={lang} />
                       ))}
                     </ul>
                     {hasMoreTimeline ? (
@@ -824,7 +1113,7 @@ export function ClientProfile360Drawer({
                             ) : null}
                             {r.submittedAt ? (
                               <span className="text-[11px] tabular-nums text-nq-muted">
-                                {formatDate(r.submittedAt)}
+                                {formatDate(r.submittedAt, lang)}
                               </span>
                             ) : null}
                           </div>
@@ -864,7 +1153,7 @@ export function ClientProfile360Drawer({
                           </span>
                           {n.sentAt ? (
                             <span className="text-[10px] tabular-nums text-nq-muted/70">
-                              {formatDate(n.sentAt)}
+                              {formatDate(n.sentAt, lang)}
                             </span>
                           ) : null}
                         </li>
@@ -880,7 +1169,7 @@ export function ClientProfile360Drawer({
                       <KpiCell label={m.chatCount} value={String(data.ai.chatCount)} />
                       <KpiCell label={m.voiceCount} value={String(data.ai.voiceCount)} />
                       {data.ai.lastInteractionAt ? (
-                        <KpiCell label={m.lastInteraction} value={formatDate(data.ai.lastInteractionAt)} />
+                        <KpiCell label={m.lastInteraction} value={formatDate(data.ai.lastInteractionAt, lang)} />
                       ) : null}
                     </dl>
                   </div>
