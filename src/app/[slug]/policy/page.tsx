@@ -35,12 +35,12 @@ export default async function PolicyPage({ params }: Props) {
       <p className="mt-1 text-sm text-neutral-500">Cancellation & No-Show Policy · Chính sách huỷ &amp; vắng mặt</p>
 
       <section className="mt-8">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-neutral-400">English</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-neutral-600">English</h2>
         <pre className="mt-2 whitespace-pre-wrap font-sans text-sm leading-relaxed text-neutral-700">{en}</pre>
       </section>
 
       <section className="mt-8 border-t border-neutral-200 pt-8">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-neutral-400">Tiếng Việt</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-neutral-600">Tiếng Việt</h2>
         <pre className="mt-2 whitespace-pre-wrap font-sans text-sm leading-relaxed text-neutral-700">{vi}</pre>
       </section>
     </main>
