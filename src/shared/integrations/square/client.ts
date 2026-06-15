@@ -24,6 +24,10 @@ export interface SquareConfig {
    *  rejects a charge whose currency ≠ the merchant's, so this MUST match the
    *  merchant — never hardcode. Sourced from salons.currency_code. */
   currency: string;
+  /** Opt-in (default false): mirror NailIQ-created bookings INTO Square
+   *  (reverse-create, Tầng 2). Off until the salon confirms Square's customer
+   *  notification settings so a mirrored booking can't double-text the guest. */
+  reverseCreateEnabled: boolean;
 }
 
 /** API base for the config's environment. */
@@ -45,7 +49,7 @@ export interface SquareCatalogItem {
   id: string;
   name: string;
   description?: string;
-  variations: { id: string; name?: string; priceCents: number | null }[];
+  variations: { id: string; name?: string; priceCents: number | null; version?: number }[];
   isAddon: boolean;
 }
 
@@ -73,7 +77,7 @@ type Db = { from: (table: string) => any };
 export async function getSquareConfig(db: Db, salonId: string): Promise<SquareConfig> {
   const { data, error } = await db
     .from("square_integrations")
-    .select("salon_id, merchant_id, location_id, access_token, application_id, environment")
+    .select("salon_id, merchant_id, location_id, access_token, application_id, environment, reverse_create_enabled")
     .eq("salon_id", salonId)
     .maybeSingle();
   if (error) throw new Error(`square_integrations load failed: ${JSON.stringify(error)}`);
@@ -84,6 +88,7 @@ export async function getSquareConfig(db: Db, salonId: string): Promise<SquareCo
     access_token: string | null;
     application_id: string | null;
     environment: string | null;
+    reverse_create_enabled: boolean | null;
   } | null;
   if (!row) throw new Error(`No square_integrations row for salon ${salonId}`);
   if (!row.access_token) throw new Error(`square_integrations.access_token is empty for salon ${salonId}`);
@@ -108,6 +113,7 @@ export async function getSquareConfig(db: Db, salonId: string): Promise<SquareCo
     applicationId: row.application_id ?? null,
     environment: row.environment === "sandbox" ? "sandbox" : "production",
     currency,
+    reverseCreateEnabled: row.reverse_create_enabled === true,
   };
 }
 
@@ -375,6 +381,9 @@ export async function listCatalogItems(cfg: SquareConfig): Promise<SquareCatalog
           id: v.id as string,
           name: vd.name as string | undefined,
           priceCents: (pm.amount as number | undefined) ?? null,
+          // Catalog object version — required as service_variation_version when
+          // creating a Square booking (reverse sync).
+          version: typeof v.version === "number" ? (v.version as number) : undefined,
         };
       });
       out.push({
@@ -486,4 +495,47 @@ export async function cancelSquareBooking(
     idempotency_key: `cancel:${bookingId}:${version}`,
     booking_version: version,
   });
+}
+
+/**
+ * Create a Square booking (NailIQ → Square reverse sync, Tầng 2) so a booking
+ * made in NailIQ also appears on the Square calendar (prevents Square-side
+ * double-booking of the slot). `idempotencyKey` MUST be stable per NailIQ
+ * booking (e.g. `create:<bookingId>`) — if we create in Square but fail to store
+ * the id, the next run reuses the key and Square returns the SAME booking
+ * instead of a duplicate. Returns the new Square booking id. Throws on API error.
+ */
+export async function createSquareBooking(
+  cfg: SquareConfig,
+  opts: {
+    startAtIso: string;
+    customerId: string;
+    teamMemberId: string;
+    serviceVariationId: string;
+    serviceVariationVersion: number;
+    durationMinutes: number;
+    sellerNote?: string;
+    idempotencyKey: string;
+  },
+): Promise<{ id: string; version: number }> {
+  const json = await squareReq(cfg, "POST", "/bookings", {
+    idempotency_key: opts.idempotencyKey,
+    booking: {
+      location_id: cfg.locationId,
+      start_at: opts.startAtIso,
+      customer_id: opts.customerId,
+      seller_note: opts.sellerNote || undefined,
+      appointment_segments: [
+        {
+          team_member_id: opts.teamMemberId,
+          service_variation_id: opts.serviceVariationId,
+          service_variation_version: opts.serviceVariationVersion,
+          duration_minutes: opts.durationMinutes,
+        },
+      ],
+    },
+  });
+  const b = (json.booking as { id?: string; version?: number } | undefined) ?? {};
+  if (!b.id) throw new Error("Square CreateBooking returned no id");
+  return { id: b.id, version: typeof b.version === "number" ? b.version : 0 };
 }

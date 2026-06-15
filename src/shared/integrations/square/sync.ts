@@ -27,6 +27,8 @@ import {
   listCatalogItems,
   getCustomer,
   cancelSquareBooking,
+  createSquareBooking,
+  ensureSquareCustomer,
   type SquareBooking,
 } from "./client";
 
@@ -52,6 +54,8 @@ export interface SquareSyncResult {
   skipped: number;
   /** Tầng 1 reverse sync — NailIQ-side cancellations pushed to Square. */
   cancelledInSquare: number;
+  /** Tầng 2 reverse sync — NailIQ-created bookings mirrored into Square (opt-in). */
+  createdInSquare: number;
 }
 
 /** Find an active bed/staff with no rendered booking overlapping [startMs,endMs)
@@ -321,11 +325,83 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
     }
   }
 
+  // ── Reverse sync, Tầng 2: push NailIQ-CREATED bookings into Square (opt-in) ─
+  // So a booking made in NailIQ (desk/online/group) also lands on the Square
+  // calendar — otherwise the slot looks free there and Square can double-book it.
+  // OFF by default (cfg.reverseCreateEnabled): a mirrored booking may trigger
+  // Square's own customer confirmation, so the salon must align notification
+  // settings first (else the guest is double-texted). square_booking_id IS NULL
+  // ⟺ NailIQ-origin (Square-origin rows are always created WITH the id).
+  let createdInSquare = 0;
+  if (cfg.reverseCreateEnabled) {
+    const MAX_CREATE_PUSH_PER_RUN = 10;
+    // NailIQ service → Square variation (by normalized item name, first match) + version.
+    const varByNorm = new Map<string, { variationId: string; version: number }>();
+    for (const it of items) {
+      const n = norm(it.name);
+      if (varByNorm.has(n)) continue;
+      const v = it.variations.find((x) => typeof x.version === "number");
+      if (v && typeof v.version === "number") varByNorm.set(n, { variationId: v.id, version: v.version });
+    }
+    const svcIdToNorm = new Map<string, string>();
+    for (const s of svcRows ?? []) svcIdToNorm.set(str(s.id), norm(str(s.name)));
+    const staffToTm = new Map<string, string>();
+    for (const s of staffRows ?? []) if (s.square_team_member_id) staffToTm.set(str(s.id), str(s.square_team_member_id));
+
+    const { data: toPush } = await db
+      .from("bookings")
+      .select("id, service_id, staff_id, client_name, client_phone, client_email, start_time_utc, end_time_utc")
+      .eq("salon_id", salonId)
+      .is("square_booking_id", null)
+      .in("status", ["confirmed", "pending"])
+      .gt("start_time_utc", now.toISOString())
+      .lt("start_time_utc", end.toISOString())
+      .limit(50);
+
+    for (const r of toPush ?? []) {
+      if (createdInSquare >= MAX_CREATE_PUSH_PER_RUN) {
+        console.error(`[squareSync] create-push cap hit for salon ${salonId} — deferring rest to next run`);
+        break;
+      }
+      const tmId = r.staff_id ? staffToTm.get(str(r.staff_id)) : undefined;
+      if (!tmId) { skipped++; continue; } // staff not linked to a Square team member
+      const svcNorm = r.service_id ? svcIdToNorm.get(str(r.service_id)) : undefined;
+      const variation = svcNorm ? varByNorm.get(svcNorm) : undefined;
+      if (!variation) { skipped++; continue; } // service not mappable to a Square variation
+      const startMsR = Date.parse(str(r.start_time_utc));
+      const durMin = Math.max(5, Math.round((Date.parse(str(r.end_time_utc)) - startMsR) / 60_000));
+      try {
+        const customerId = await ensureSquareCustomer(cfg, {
+          name: str(r.client_name) || null,
+          phone: str(r.client_phone) || null,
+          email: str(r.client_email) || null,
+          referenceId: `booking:${str(r.id)}`,
+          idempotencyKey: `sqcust:${str(r.id)}`,
+        });
+        const created = await createSquareBooking(cfg, {
+          startAtIso: new Date(startMsR).toISOString(),
+          customerId,
+          teamMemberId: tmId,
+          serviceVariationId: variation.variationId,
+          serviceVariationVersion: variation.version,
+          durationMinutes: durMin,
+          sellerNote: "Đặt từ NailIQ",
+          idempotencyKey: `create:${str(r.id)}`, // stable → Square dedups a retry
+        });
+        await db.from("bookings").update({ square_booking_id: created.id } as never).eq("id", str(r.id));
+        createdInSquare++;
+      } catch (e) {
+        console.error("[squareSync] create push failed", str(r.id), e);
+        skipped++;
+      }
+    }
+  }
+
   await db.from("square_integrations").update({
     cursor_synced_at: now.toISOString(),
     last_run_at: now.toISOString(),
     last_error: null,
   }).eq("salon_id", salonId);
 
-  return { pulled: bookings.length, inserted, updated, customersAdded, skipped, cancelledInSquare };
+  return { pulled: bookings.length, inserted, updated, customersAdded, skipped, cancelledInSquare, createdInSquare };
 }
