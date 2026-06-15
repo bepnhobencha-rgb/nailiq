@@ -1100,7 +1100,8 @@ export function BookingDetailDrawer({
                     ) : null}
                     {deskEdit &&
                     model.depositsEnabled &&
-                    model.verificationMethod !== "deposit" ? (
+                    model.verificationMethod !== "deposit" &&
+                    !model.cardOnFile ? (
                       <DepositButton
                         slug={deskEdit.slug}
                         salonId={deskEdit.salonId}
