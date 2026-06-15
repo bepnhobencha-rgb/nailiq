@@ -296,6 +296,22 @@ export function NoShowProtectionHub({
               />
               Bật yêu cầu lưu thẻ no-show
             </label>
+            <p className="mt-1 text-xs text-nq-muted">
+              {noshowEnabled ? (
+                <>
+                  <span className="font-medium text-nq-text">Đang BẬT:</span> khách rủi ro
+                  được mời lưu thẻ khi đặt. <span className="text-nq-text">Không thu tiền
+                  trước</span> — chỉ trừ phí no-show nếu khách không đến. Đây là cách bảo vệ
+                  ít cản trở nhất.
+                </>
+              ) : (
+                <>
+                  <span className="font-medium text-nq-text">Đang TẮT:</span> không mời lưu
+                  thẻ → booking <span className="text-nq-text">không có lớp bảo vệ no-show
+                  bằng thẻ</span>.
+                </>
+              )}
+            </p>
 
             <div className="mt-3 flex flex-wrap gap-4">
               <div>
@@ -469,6 +485,22 @@ export function NoShowProtectionHub({
                   />
                   <span>Bật thu cọc (Square) / Enable deposits</span>
                 </label>
+                <p className="ml-6 mt-1 text-xs text-nq-muted">
+                  {depositEnabled ? (
+                    <>
+                      <span className="font-medium text-nq-text">Đang BẬT:</span> khách rủi
+                      ro (mới / dịch vụ đắt / từng vắng) bị yêu cầu <span className="text-nq-text">
+                      trả trước một phần</span> để giữ chỗ. Nếu khách đã lưu thẻ thì tự bỏ cọc
+                      (không đòi 2 lần). Lưu ý: nhiều khách ngại trả trước.
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-medium text-nq-text">Đang TẮT:</span> không yêu
+                      cầu cọc nữa — booking mới <span className="text-nq-text">không bị gắn cọc</span>.
+                      Tiệm dựa hoàn toàn vào Lưu thẻ ở trên để chống no-show.
+                    </>
+                  )}
+                </p>
                 <label className="mt-1 flex items-center gap-2 text-sm text-nq-text">
                   <span className="whitespace-nowrap text-xs text-nq-muted">
                     Giữ chỗ chờ cọc (phút) / Hold grace
