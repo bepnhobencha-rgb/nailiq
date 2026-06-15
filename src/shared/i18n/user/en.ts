@@ -1707,6 +1707,83 @@ export type UserMessages = {
         spent: string;
         vip: string;
       };
+      /** Customer 360 full-profile drawer. */
+      profile360: {
+        title: string;
+        close: string;
+        loading: string;
+        error: string;
+        /** Hero KPIs */
+        lifetimeSpent: string;
+        visits: string;
+        avgTicket: string;
+        lastVisit: string;
+        clientSince: (date: string) => string;
+        /** AI summary card */
+        aiSummaryTitle: string;
+        aiGenerating: string;
+        aiNextAction: string;
+        bookAgain: string;
+        /** Reliability */
+        reliabilityTitle: string;
+        completed: string;
+        noShow: string;
+        cancelled: string;
+        noShowRate: (pct: number) => string;
+        /** Favorites & pattern */
+        favoritesTitle: string;
+        topService: string;
+        topStaff: string;
+        patternTitle: string;
+        usualPattern: (weekday: string, hour: number, days: number) => string;
+        nextPredicted: string;
+        /** Preferences */
+        preferencesTitle: string;
+        allergiesWarning: string;
+        favoriteColors: string;
+        favoriteStyles: string;
+        language: string;
+        commChannel: string;
+        consentsTitle: string;
+        consentSms: string;
+        consentEmail: string;
+        consentAi: string;
+        /** Money */
+        moneyTitle: string;
+        loyaltyStamps: string;
+        loyaltyRewards: string;
+        activeVouchers: string;
+        expiresOn: (date: string) => string;
+        /** Timeline */
+        timelineTitle: string;
+        upcomingTitle: string;
+        showMore: string;
+        /** Engagement */
+        reviewsTitle: string;
+        notificationsTitle: string;
+        aiEngagementTitle: string;
+        chatCount: string;
+        voiceCount: string;
+        lastInteraction: string;
+        /** Footer actions */
+        actionBookAgain: string;
+        actionMessage: string;
+        actionEdit: string;
+        actionClose: string;
+        /** Weekday names (Sun=0) */
+        weekdays: [string, string, string, string, string, string, string];
+        /** Channel icon labels */
+        channelOnline: string;
+        channelWalkin: string;
+        channelVoice: string;
+        channelDesk: string;
+        /** Status labels */
+        statusCompleted: string;
+        statusCancelled: string;
+        statusNoShow: string;
+        statusConfirmed: string;
+        statusInProgress: string;
+      };
     };
     /** Subscription pricing panel (`/dashboard/[slug]/settings`). */
     pricing: {
@@ -3576,6 +3653,71 @@ export const userEn: UserMessages = {
         lastVisit: "Last visit",
         spent: "Spent",
         vip: "VIP",
+      },
+      profile360: {
+        title: "Customer Profile",
+        close: "Close",
+        loading: "Loading profile…",
+        error: "Could not load profile. Try again.",
+        lifetimeSpent: "Lifetime",
+        visits: "Visits",
+        avgTicket: "Avg ticket",
+        lastVisit: "Last visit",
+        clientSince: (date: string) => `Client since ${date}`,
+        aiSummaryTitle: "AI Summary",
+        aiGenerating: "Generating summary…",
+        aiNextAction: "Suggested action",
+        bookAgain: "Book again",
+        reliabilityTitle: "Reliability",
+        completed: "Completed",
+        noShow: "No-show",
+        cancelled: "Cancelled",
+        noShowRate: (pct: number) => `${pct}% no-show rate`,
+        favoritesTitle: "Favorites",
+        topService: "Favourite service",
+        topStaff: "Favourite staff",
+        patternTitle: "Visit pattern",
+        usualPattern: (weekday: string, hour: number, days: number) =>
+          `Usually ${weekday} ~${hour}:00, every ${days} days`,
+        nextPredicted: "Next predicted visit",
+        preferencesTitle: "Preferences",
+        allergiesWarning: "⚠ Allergies / sensitivities",
+        favoriteColors: "Favourite colours",
+        favoriteStyles: "Favourite styles",
+        language: "Language",
+        commChannel: "Preferred contact",
+        consentsTitle: "Consents",
+        consentSms: "SMS",
+        consentEmail: "Email",
+        consentAi: "AI",
+        moneyTitle: "Money",
+        loyaltyStamps: "Stamps",
+        loyaltyRewards: "Rewards",
+        activeVouchers: "Active vouchers",
+        expiresOn: (date: string) => `Expires ${date}`,
+        timelineTitle: "Visit history",
+        upcomingTitle: "Upcoming",
+        showMore: "Show more",
+        reviewsTitle: "Reviews",
+        notificationsTitle: "Notifications",
+        aiEngagementTitle: "AI engagement",
+        chatCount: "Chats",
+        voiceCount: "Voice calls",
+        lastInteraction: "Last interaction",
+        actionBookAgain: "Book again",
+        actionMessage: "Message",
+        actionEdit: "Edit",
+        actionClose: "Close",
+        weekdays: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+        channelOnline: "Online",
+        channelWalkin: "Walk-in",
+        channelVoice: "Voice AI",
+        channelDesk: "Desk",
+        statusCompleted: "Completed",
+        statusCancelled: "Cancelled",
+        statusNoShow: "No-show",
+        statusConfirmed: "Confirmed",
+        statusInProgress: "In progress",
       },
     },
     pricing: {
