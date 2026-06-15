@@ -1464,6 +1464,12 @@ function ReceptionistCenterInner({
             data.salon.currencyCode,
           )
         : null;
+    // Awaiting-deposit: a link was sent but not yet paid → the slot is held as
+    // "Chờ cọc", not a firm "Xác nhận". Surfaced as its own badge in the drawer.
+    const depositAwaitingLine =
+      b.deposit_status === "required" && (b.deposit_amount_cents ?? 0) > 0
+        ? formatCurrency(b.deposit_amount_cents ?? 0, data.salon.currencyCode)
+        : null;
 
     const addonServiceName = b.addon_service_name?.trim()
       ? b.addon_service_name.trim()
@@ -1565,6 +1571,7 @@ function ReceptionistCenterInner({
       depositStatus: b.deposit_status ?? null,
       depositPaidLine,
       remainingLine,
+      depositAwaitingLine,
       // Square deposits config (stable per session, like currencyCode) + the
       // dashboard language so the desk can request + text a deposit link.
       depositsEnabled: data.salon.depositsEnabled,
