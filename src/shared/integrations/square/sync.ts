@@ -28,6 +28,7 @@ import {
   getCustomer,
   cancelSquareBooking,
   createSquareBooking,
+  updateSquareBookingTime,
   ensureSquareCustomer,
   type SquareBooking,
 } from "./client";
@@ -56,6 +57,8 @@ export interface SquareSyncResult {
   cancelledInSquare: number;
   /** Tầng 2 reverse sync — NailIQ-created bookings mirrored into Square (opt-in). */
   createdInSquare: number;
+  /** Tầng 3 reverse sync — NailIQ reschedules pushed to Square (opt-in). */
+  updatedInSquare: number;
 }
 
 /** Find an active bed/staff with no rendered booking overlapping [startMs,endMs)
@@ -164,7 +167,7 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
 
     const { data: existing } = await db
       .from("bookings")
-      .select("id, status, start_time_utc, end_time_utc, staff_id")
+      .select("id, status, start_time_utc, end_time_utc, staff_id, local_updated_at, rescheduled_at")
       .eq("square_booking_id", b.id)
       .maybeSingle();
 
@@ -205,7 +208,16 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
       const timeMoved =
         Date.parse(str(existing.start_time_utc)) !== startMs ||
         Date.parse(str(existing.end_time_utc)) !== endMs;
-      if (!deskOwned && RENDER_STATUS.has(targetStatus) && timeMoved && cfg.sync.pullUpdate) {
+      // Last-writer-wins: only PULL Square's time when Square's edit is at least
+      // as recent as NailIQ's last local edit. Otherwise NailIQ owns the slot
+      // (a desk drag / customer / voice reschedule) and the reverse push (Tầng 3)
+      // will carry it TO Square — pulling here would fight that and revert it.
+      const localEditMs = Math.max(
+        existing.local_updated_at ? Date.parse(str(existing.local_updated_at)) : 0,
+        existing.rescheduled_at ? Date.parse(str(existing.rescheduled_at)) : 0,
+      );
+      const squareIsNewer = (b.updated_at ? Date.parse(b.updated_at) : 0) >= localEditMs;
+      if (!deskOwned && RENDER_STATUS.has(targetStatus) && timeMoved && cfg.sync.pullUpdate && squareIsNewer) {
         updates.start_time_utc = newStart;
         updates.end_time_utc = newEnd;
       }
@@ -292,6 +304,12 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
   // fights the forward pull: a Square-origin cancel already shows CANCELLED_* in
   // the fetched list (skipped below), and once we cancel here the next pull is a
   // no-op (NailIQ is already cancelled). One failed cancel is logged, not fatal.
+  // Shared by the cancel + reschedule reverse passes: index the fetched Square
+  // bookings + the "active in Square" set.
+  const ACTIVE_SQUARE = new Set(["ACCEPTED", "PENDING"]);
+  const squareById = new Map<string, SquareBooking>();
+  for (const b of bookings) squareById.set(b.id, b);
+
   let cancelledInSquare = 0;
   if (cfg.sync.pushCancel) {
   // Safety rail for a DESTRUCTIVE write: a data glitch that mass-marks bookings
@@ -299,9 +317,6 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
   // per run far above the legit cancel rate in a 5-min window; if we hit it,
   // log loudly and stop (the rest retry next run once the anomaly is resolved).
   const MAX_CANCEL_PUSH_PER_RUN = 10;
-  const ACTIVE_SQUARE = new Set(["ACCEPTED", "PENDING"]);
-  const squareById = new Map<string, SquareBooking>();
-  for (const b of bookings) squareById.set(b.id, b);
 
   const { data: localCancels } = await db
     .from("bookings")
@@ -405,11 +420,67 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
     }
   }
 
+  // ── Reverse sync, Tầng 3: push NailIQ RESCHEDULES to Square (opt-in) ───────
+  // When a Square-linked booking is moved in NailIQ (desk drag / customer /
+  // voice) more recently than Square's own last edit, carry the new time TO
+  // Square via UpdateBooking. Last-writer-wins (local edit vs Square updated_at)
+  // is the SAME comparison the forward pull uses, so the two never ping-pong:
+  // the side that edited last owns the slot.
+  let updatedInSquare = 0;
+  if (cfg.sync.pushUpdate) {
+    const MAX_UPDATE_PUSH_PER_RUN = 10;
+    const { data: linked } = await db
+      .from("bookings")
+      .select("id, square_booking_id, start_time_utc, end_time_utc, local_updated_at, rescheduled_at")
+      .eq("salon_id", salonId)
+      .not("square_booking_id", "is", null)
+      .in("status", ["confirmed", "pending"])
+      .gte("start_time_utc", begin.toISOString())
+      .lt("start_time_utc", end.toISOString());
+
+    for (const r of linked ?? []) {
+      if (updatedInSquare >= MAX_UPDATE_PUSH_PER_RUN) {
+        console.error(`[squareSync] reschedule-push cap hit for salon ${salonId} — deferring rest`);
+        break;
+      }
+      const sq = squareById.get(str(r.square_booking_id));
+      if (!sq || !ACTIVE_SQUARE.has(sq.status) || typeof sq.version !== "number") continue;
+      const seg = sq.appointment_segments?.[0];
+      if (!seg?.team_member_id || !seg.service_variation_id || typeof seg.service_variation_version !== "number") continue;
+
+      const localEditMs = Math.max(
+        r.local_updated_at ? Date.parse(str(r.local_updated_at)) : 0,
+        r.rescheduled_at ? Date.parse(str(r.rescheduled_at)) : 0,
+      );
+      const squareUpdatedMs = sq.updated_at ? Date.parse(sq.updated_at) : 0;
+      if (!(localEditMs > squareUpdatedMs)) continue; // Square owns it (or no local edit)
+
+      const nailStartMs = Date.parse(str(r.start_time_utc));
+      if (!Number.isFinite(nailStartMs)) continue;
+      if (sq.start_at && Date.parse(sq.start_at) === nailStartMs) continue; // already in sync
+      const durMin = Math.max(5, Math.round((Date.parse(str(r.end_time_utc)) - nailStartMs) / 60_000));
+      try {
+        await updateSquareBookingTime(cfg, {
+          bookingId: sq.id,
+          version: sq.version,
+          startAtIso: new Date(nailStartMs).toISOString(),
+          teamMemberId: seg.team_member_id,
+          serviceVariationId: seg.service_variation_id,
+          serviceVariationVersion: seg.service_variation_version,
+          durationMinutes: durMin,
+        });
+        updatedInSquare++;
+      } catch (e) {
+        console.error("[squareSync] reschedule push failed", str(r.id), e);
+      }
+    }
+  }
+
   await db.from("square_integrations").update({
     cursor_synced_at: now.toISOString(),
     last_run_at: now.toISOString(),
     last_error: null,
   }).eq("salon_id", salonId);
 
-  return { pulled: bookings.length, inserted, updated, customersAdded, skipped, cancelledInSquare, createdInSquare };
+  return { pulled: bookings.length, inserted, updated, customersAdded, skipped, cancelledInSquare, createdInSquare, updatedInSquare };
 }

@@ -65,12 +65,15 @@ export interface SquareBooking {
   status: string;
   /** Optimistic-concurrency version — required to cancel/update a booking. */
   version?: number;
+  /** RFC3339 last-update time — used for reschedule last-writer-wins vs NailIQ. */
+  updated_at?: string;
   start_at?: string;
   customer_id?: string;
   location_id?: string;
   appointment_segments?: {
     duration_minutes?: number;
     service_variation_id?: string;
+    service_variation_version?: number;
     team_member_id?: string;
   }[];
 }
@@ -572,4 +575,41 @@ export async function createSquareBooking(
   const b = (json.booking as { id?: string; version?: number } | undefined) ?? {};
   if (!b.id) throw new Error("Square CreateBooking returned no id");
   return { id: b.id, version: typeof b.version === "number" ? b.version : 0 };
+}
+
+/**
+ * Reschedule a Square booking (NailIQ → Square reverse sync, Tầng 3). `version`
+ * is Square's optimistic-concurrency token from the latest fetch — a stale one
+ * makes Square reject the update (the caller logs + retries next run). The
+ * appointment segment must be re-sent in full; pass the existing
+ * team_member_id / service_variation_id / version with the NEW start + duration.
+ * Idempotency key is stable per (booking, version) so a retry never double-applies.
+ */
+export async function updateSquareBookingTime(
+  cfg: SquareConfig,
+  opts: {
+    bookingId: string;
+    version: number;
+    startAtIso: string;
+    teamMemberId: string;
+    serviceVariationId: string;
+    serviceVariationVersion: number;
+    durationMinutes: number;
+  },
+): Promise<void> {
+  await squareReq(cfg, "PUT", `/bookings/${encodeURIComponent(opts.bookingId)}`, {
+    idempotency_key: `update:${opts.bookingId}:${opts.version}`,
+    booking: {
+      version: opts.version,
+      start_at: opts.startAtIso,
+      appointment_segments: [
+        {
+          team_member_id: opts.teamMemberId,
+          service_variation_id: opts.serviceVariationId,
+          service_variation_version: opts.serviceVariationVersion,
+          duration_minutes: opts.durationMinutes,
+        },
+      ],
+    },
+  });
 }
