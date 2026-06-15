@@ -7,6 +7,8 @@ import {
   type TopHost,
 } from "@/shared/dashboard/topHostsActions";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { HostDetailDrawer } from "@/components/dashboard/HostDetailDrawer";
+import { ClientProfile360Drawer } from "@/components/dashboard/ClientProfile360Drawer";
 
 const COPY = {
   en: {
@@ -39,12 +41,20 @@ function initials(name: string | null): string {
 
 type Row = TopHost & { pending: boolean };
 
-export function TopHostsPanel({ slug }: { slug: string }) {
+export function TopHostsPanel({
+  slug,
+  viewerRole,
+}: {
+  slug: string;
+  viewerRole: string;
+}) {
   const { language } = useUserLanguage();
   const tx = COPY[language === "vi" ? "vi" : "en"];
 
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<Row[]>([]);
+  const [detailIdx, setDetailIdx] = useState<number | null>(null);
+  const [open360, setOpen360] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,26 +99,33 @@ export function TopHostsPanel({ slug }: { slug: string }) {
         {rows.map((h, idx) => (
           <li
             key={h.phone}
-            className="flex items-center gap-3 rounded-xl border border-nq-border/50 px-3 py-2.5"
+            className="flex items-center gap-3 rounded-xl border border-nq-border/50 px-3 py-2.5 transition-colors hover:border-nq-primary/40"
           >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-nq-primary/10 text-xs font-semibold text-nq-primary ring-1 ring-nq-primary/30">
-              {initials(h.name)}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="truncate text-sm font-medium text-nq-text">
-                  {h.name || "—"}
-                </span>
-                {h.isVip ? (
-                  <span className="shrink-0 text-amber-500" title="VIP">
-                    ★
-                  </span>
-                ) : null}
-              </div>
-              <span className="block truncate text-xs text-nq-muted">
-                👥 {tx.brought(h.guestsBrought, h.groupsOrganized)} · ··· {h.phone.slice(-4)}
+            {/* Click the host → detail drawer (groups + who they brought). */}
+            <button
+              type="button"
+              onClick={() => setDetailIdx(idx)}
+              className="flex min-w-0 flex-1 items-center gap-3 text-left"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-nq-primary/10 text-xs font-semibold text-nq-primary ring-1 ring-nq-primary/30">
+                {initials(h.name)}
               </span>
-            </div>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2">
+                  <span className="truncate text-sm font-medium text-nq-text">
+                    {h.name || "—"}
+                  </span>
+                  {h.isVip ? (
+                    <span className="shrink-0 text-amber-500" title="VIP">
+                      ★
+                    </span>
+                  ) : null}
+                </span>
+                <span className="block truncate text-xs text-nq-muted">
+                  👥 {tx.brought(h.guestsBrought, h.groupsOrganized)} · ··· {h.phone.slice(-4)}
+                </span>
+              </span>
+            </button>
             <button
               type="button"
               disabled={h.pending}
@@ -124,6 +141,25 @@ export function TopHostsPanel({ slug }: { slug: string }) {
           </li>
         ))}
       </ul>
+
+      <HostDetailDrawer
+        slug={slug}
+        host={detailIdx != null ? (rows[detailIdx] ?? null) : null}
+        onClose={() => setDetailIdx(null)}
+        onToggleVip={() => {
+          if (detailIdx != null) toggleVip(detailIdx);
+        }}
+        onOpenFull={(phone) => {
+          setDetailIdx(null);
+          setOpen360(phone);
+        }}
+      />
+      <ClientProfile360Drawer
+        slug={slug}
+        clientPhone={open360}
+        viewerRole={viewerRole}
+        onClose={() => setOpen360(null)}
+      />
     </section>
   );
 }
