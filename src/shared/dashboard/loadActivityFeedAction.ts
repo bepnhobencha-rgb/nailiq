@@ -16,7 +16,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
  * after gating here). Read-only.
  */
 
-export type ActivityKind = "event" | "sms" | "email" | "call";
+export type ActivityKind = "event" | "sms" | "email" | "call" | "system";
 
 export type ActivityItem = {
   id: string;
@@ -83,6 +83,35 @@ const NOTIF_TITLE: Record<string, string> = {
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 
+const TABLE_LABEL: Record<string, string> = {
+  salons: "Cài đặt tiệm",
+  staff: "Nhân viên",
+  services: "Dịch vụ & giá",
+  square_integrations: "Tích hợp Square",
+};
+
+/** Build a readable line from a system_audit row's changed_fields jsonb. */
+function describeAudit(table: string, action: string, changed: Record<string, unknown>): { title: string; subtitle: string | null } {
+  const label = TABLE_LABEL[table] ?? table;
+  if (action === "INSERT" || changed._action === "created") {
+    return { title: `Đã thêm ${label}`, subtitle: null };
+  }
+  if (action === "DELETE" || changed._action === "deleted") {
+    return { title: `Đã xóa ${label}`, subtitle: null };
+  }
+  // UPDATE — list changed fields old→new (skip the _action marker).
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(changed)) {
+    if (k === "_action") continue;
+    const oldNew = v as { old?: unknown; new?: unknown };
+    const o = oldNew?.old == null ? "—" : String(oldNew.old);
+    const n = oldNew?.new == null ? "—" : String(oldNew.new);
+    parts.push(`${k}: ${o.slice(0, 24)}→${n.slice(0, 24)}`);
+    if (parts.length >= 4) break;
+  }
+  return { title: `Đổi ${label}`, subtitle: parts.join(" · ") || null };
+}
+
 function salonDate(iso: string, tz: string): string {
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return "";
@@ -113,7 +142,7 @@ export async function loadActivityFeed(
       .maybeSingle();
     const tz = (salonRow as { timezone?: string } | null)?.timezone || "America/Los_Angeles";
 
-    const [eventsRes, notifsRes, callsRes] = await Promise.all([
+    const [eventsRes, notifsRes, callsRes, auditRes] = await Promise.all([
       db
         .from("booking_events" as never)
         .select("id, booking_id, actor_role, event_type, payload, created_at, bookings ( client_name, start_time_utc )")
@@ -129,6 +158,12 @@ export async function loadActivityFeed(
       db
         .from("voice_ai_sessions" as never)
         .select("id, started_at, ended_at, status, duration_seconds, transcript, client_name, client_phone, created_at")
+        .eq("salon_id", salonId)
+        .order("created_at", { ascending: false })
+        .limit(PER_SOURCE),
+      db
+        .from("system_audit" as never)
+        .select("id, table_name, action, changed_fields, created_at")
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
@@ -188,6 +223,25 @@ export async function loadActivityFeed(
         bookingId: null,
         bookingDate: null,
         transcript: str(r.transcript) || null,
+      });
+    }
+
+    for (const r of (auditRes.data ?? []) as Array<Record<string, unknown>>) {
+      const changed = (r.changed_fields && typeof r.changed_fields === "object"
+        ? (r.changed_fields as Record<string, unknown>)
+        : {});
+      const { title, subtitle } = describeAudit(str(r.table_name), str(r.action), changed);
+      items.push({
+        id: `sy-${str(r.id)}`,
+        kind: "system",
+        when: str(r.created_at),
+        title,
+        subtitle,
+        status: null,
+        actorRole: null,
+        bookingId: null,
+        bookingDate: null,
+        transcript: null,
       });
     }
 
