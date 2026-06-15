@@ -51,6 +51,32 @@ export interface SquareSyncResult {
   skipped: number;
 }
 
+/** Find an active bed/staff with no rendered booking overlapping [startMs,endMs)
+ *  — used to re-home a Square-rescheduled booking whose new time collides with
+ *  its current bed (bookings_no_overlap GIST). Returns null when every bed is
+ *  busy at the new slot. */
+async function findFreeStaffForInterval(
+  db: ReturnType<typeof looseServiceClient>,
+  salonId: string,
+  activeStaff: string[],
+  startMs: number,
+  endMs: number,
+  excludeBookingId: string,
+): Promise<string | null> {
+  const { data } = await db
+    .from("bookings")
+    .select("staff_id, status")
+    .eq("salon_id", salonId)
+    .not("id", "eq", excludeBookingId)
+    .not("staff_id", "is", null)
+    .lt("start_time_utc", new Date(endMs).toISOString())
+    .gt("end_time_utc", new Date(startMs).toISOString());
+  const busy = new Set<string>();
+  for (const r of data ?? []) if (RENDER_STATUS.has(str(r.status))) busy.add(str(r.staff_id));
+  for (const sid of activeStaff) if (!busy.has(sid)) return sid;
+  return null;
+}
+
 export async function runSquareForwardSync(salonId: string): Promise<SquareSyncResult> {
   const db = looseServiceClient();
   const cfg = await getSquareConfig(db, salonId);
@@ -129,7 +155,11 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
     const startMs = Date.parse(b.start_at);
     const endMs = startMs + durMin * 60_000;
 
-    const { data: existing } = await db.from("bookings").select("id, status").eq("square_booking_id", b.id).maybeSingle();
+    const { data: existing } = await db
+      .from("bookings")
+      .select("id, status, start_time_utc, end_time_utc, staff_id")
+      .eq("square_booking_id", b.id)
+      .maybeSingle();
 
     if (existing) {
       // The desk owns the workflow status once a booking has been started,
@@ -138,13 +168,63 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
       // receptionist-completed Square booking reverted to "not started".)
       // Square's own state still applies while the booking is pending/confirmed.
       const localStatus = str(existing.status);
+      const existingId = str(existing.id);
       const deskOwned =
         localStatus === "in_progress" ||
         localStatus === "completed" ||
         localStatus === "no_show";
+
+      const updates: Record<string, unknown> = {};
       if (!deskOwned && localStatus !== targetStatus) {
-        await db.from("bookings").update({ status: targetStatus }).eq("id", str(existing.id));
-        updated++;
+        updates.status = targetStatus;
+      }
+
+      // RESCHEDULE sync (Square → NailIQ): Square's ListBookings has no
+      // "updated since" filter, so a time change on an EXISTING booking was
+      // never reflected — the row kept its original time and the desk saw the
+      // wrong slot. Update start/end when Square's time moved, but only for a
+      // booking the desk hasn't taken over and that's still active (a cancelled
+      // booking's time is moot).
+      const newStart = new Date(startMs).toISOString();
+      const newEnd = new Date(endMs).toISOString();
+      // Compare by instant (ms), not string — the DB returns timestamptz as
+      // "2026-06-15 19:30:00+00" while newStart is ISO "…T19:30:00.000Z"; a
+      // string compare would read every booking as moved and rewrite it each run.
+      const timeMoved =
+        Date.parse(str(existing.start_time_utc)) !== startMs ||
+        Date.parse(str(existing.end_time_utc)) !== endMs;
+      if (!deskOwned && RENDER_STATUS.has(targetStatus) && timeMoved) {
+        updates.start_time_utc = newStart;
+        updates.end_time_utc = newEnd;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        const { error } = await db.from("bookings").update(updates).eq("id", existingId);
+        if (error) {
+          // A time move can collide with another booking on the same bed
+          // (bookings_no_overlap GIST → 23P01). Re-home it to any active bed
+          // free at the NEW slot; if none, leave the row as-is (never crash the
+          // whole sync run for one conflict).
+          if (updates.start_time_utc) {
+            const freeStaff = await findFreeStaffForInterval(
+              db, salonId, activeStaff, startMs, endMs, existingId,
+            );
+            if (freeStaff) {
+              const { error: e2 } = await db
+                .from("bookings")
+                .update({ ...updates, staff_id: freeStaff })
+                .eq("id", existingId);
+              if (!e2) updated++;
+              else skipped++;
+            } else {
+              skipped++;
+            }
+          } else {
+            skipped++;
+          }
+        } else {
+          updated++;
+        }
       }
       continue;
     }
