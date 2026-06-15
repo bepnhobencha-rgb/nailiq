@@ -2,6 +2,7 @@
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { isOwner, isFrontDeskRole } from "@/shared/lib/salonMemberRole";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -62,12 +63,7 @@ export async function loadClientProfiles(
   // Auth gate: verify the viewer is a desk role.
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (
-    ctx.role !== "owner" &&
-    ctx.role !== "senior" &&
-    ctx.role !== "admin" &&
-    ctx.role !== "receptionist"
-  ) {
+  if (!isFrontDeskRole(ctx.role)) {
     return { ok: false, error: "forbidden" };
   }
 
@@ -148,7 +144,7 @@ export async function updateClientProfile(
 ): Promise<UpdateClientProfileResult> {
   const resolved = await getDashboardWriteClient(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
-  if (resolved.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwner(resolved.role)) return { ok: false, error: "forbidden" };
 
   const phone = String(input.phone ?? "").trim();
   if (!phone) return { ok: false, error: "not_found" };

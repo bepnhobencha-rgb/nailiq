@@ -1,6 +1,7 @@
 "use server";
 
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
+import { isOwner } from "@/shared/lib/salonMemberRole";
 import {
   getStripeClient,
   getStripeReturnOrigin,
@@ -66,7 +67,7 @@ export async function createCheckoutSession(
 
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
-  if (resolved.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwner(resolved.role)) return { ok: false, error: "forbidden" };
 
   const priceId = priceIdForPlan(plan);
   if (!priceId) return { ok: false, error: "invalid_plan" };
@@ -160,7 +161,7 @@ export async function createCustomerPortalSession(
 ): Promise<CreateCustomerPortalSessionResult> {
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
-  if (resolved.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwner(resolved.role)) return { ok: false, error: "forbidden" };
 
   const stripe = getStripeClient();
   if (!stripe) return { ok: false, error: "no_stripe_client" };

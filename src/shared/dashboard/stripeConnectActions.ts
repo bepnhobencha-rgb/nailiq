@@ -1,6 +1,7 @@
 "use server";
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { isOwner } from "@/shared/lib/salonMemberRole";
 import { getStripeClient, getStripeReturnOrigin } from "@/shared/lib/stripe";
 
 /**
@@ -35,7 +36,7 @@ export async function startStripeConnectOnboarding(
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
 
   const stripe = getStripeClient();
   if (!stripe) return { ok: false, error: "stripe_not_configured" };
@@ -100,7 +101,7 @@ export async function refreshStripeConnectStatus(
 ): Promise<{ ok: true; status: ConnectStatus } | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
 
   const stripe = getStripeClient();
   if (!stripe) return { ok: false, error: "stripe_not_configured" };

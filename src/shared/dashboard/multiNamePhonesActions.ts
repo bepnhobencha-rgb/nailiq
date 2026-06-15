@@ -1,6 +1,7 @@
 "use server";
 
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 
@@ -36,7 +37,7 @@ export async function loadMultiNamePhones(
 ): Promise<LoadMultiNamePhonesResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner" && ctx.role !== "admin")
+  if (!isOwnerOrAdmin(ctx.role))
     return { ok: false, error: "forbidden" };
 
   let admin;
@@ -90,7 +91,7 @@ export async function setClientName(
 ): Promise<SetClientNameResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner" && ctx.role !== "admin")
+  if (!isOwnerOrAdmin(ctx.role))
     return { ok: false, error: "forbidden" };
 
   const canonical = toCanonicalPhone(phone);

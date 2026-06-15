@@ -1,6 +1,7 @@
 "use server";
 
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
+import { isOwner } from "@/shared/lib/salonMemberRole";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import type { ActorRole, BookingEventType } from "@/shared/dashboard/auditLog";
 
@@ -31,7 +32,7 @@ const PAGE_SIZE = 50;
 export async function loadAuditLog(slug: string): Promise<LoadAuditLogResult> {
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
-  if (resolved.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwner(resolved.role)) return { ok: false, error: "forbidden" };
 
   const supabase = createServiceRoleClient();
   // `booking_events` is not yet in the auto-generated DB types; cast the

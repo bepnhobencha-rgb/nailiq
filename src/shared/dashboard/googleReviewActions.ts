@@ -1,6 +1,7 @@
 "use server";
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { isOwner } from "@/shared/lib/salonMemberRole";
 
 /**
  * Update the Google Maps review URL for a salon.
@@ -18,7 +19,7 @@ export async function updateGoogleReviewUrl(
 
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "Không tìm thấy salon" };
-  if (ctx.role !== "owner") return { ok: false, error: "Chỉ chủ salon mới có thể thay đổi" };
+  if (!isOwner(ctx.role)) return { ok: false, error: "Chỉ chủ salon mới có thể thay đổi" };
 
   const { error } = await ctx.supabase
     .from("salons" as never)

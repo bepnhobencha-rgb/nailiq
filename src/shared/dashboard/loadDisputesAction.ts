@@ -1,6 +1,7 @@
 "use server";
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 // ---------------------------------------------------------------------------
@@ -78,7 +79,7 @@ const NEEDS_ACTION_STATUSES = new Set([
 async function requireOwnerOrAdmin(slug: string) {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return null;
-  if (ctx.role !== "owner" && ctx.role !== "admin") return null;
+  if (!isOwnerOrAdmin(ctx.role)) return null;
   return ctx;
 }
 
