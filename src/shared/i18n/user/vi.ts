@@ -1678,6 +1678,19 @@ export const userVi: UserMessages = {
         not_found: "Không tìm thấy hồ sơ khách.",
         server_error: "Không lưu được. Thử lại sau.",
       },
+      viewModes: {
+        cards: "Thẻ",
+        list: "Danh sách",
+        details: "Chi tiết",
+      },
+      tableColumns: {
+        name: "Tên",
+        phone: "SĐT",
+        visits: "Lượt",
+        lastVisit: "Lần cuối",
+        spent: "Chi tiêu",
+        vip: "VIP",
+      },
     },
     pricing: {
       sectionTitle: "Gói đăng ký",
