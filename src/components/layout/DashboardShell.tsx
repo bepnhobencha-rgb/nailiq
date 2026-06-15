@@ -7,6 +7,7 @@ import {
 } from "@/components/layout/DashboardSidebar";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { DashboardTopBar } from "@/components/layout/DashboardTopBar";
+import { PwaRegister } from "@/components/layout/PwaRegister";
 import { AdminCopilot } from "@/components/dashboard/AdminCopilot";
 import { useSidebarCollapsed } from "@/shared/lib/useSidebarCollapsed";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
@@ -76,6 +77,7 @@ export function DashboardShell({
       className="min-h-dvh bg-nq-bg"
       style={{ ["--nq-sidebar-w" as string]: sidebarWidth }}
     >
+      <PwaRegister />
       <DashboardSidebar
         slug={slug}
         role={role}
