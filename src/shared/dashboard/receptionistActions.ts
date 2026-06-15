@@ -2567,24 +2567,15 @@ export async function inviteWaitlistEntry(
   // Idempotent token: reuse an existing one (re-invite) or mint a fresh one.
   const token = row.claim_token ?? crypto.randomUUID();
 
-  const { error: upErr } = await svc
-    .from("booking_waitlist_entries")
-    .update({
-      status: "notified",
-      notified_at: new Date().toISOString(),
-      claim_token: token,
-    } as never)
-    .eq("id", id)
-    .eq("salon_id", ctx.salon.id);
-  if (upErr) {
-    console.error("[inviteWaitlistEntry] update", upErr);
-    return { ok: false, error: "server_error" };
-  }
-
   const claimUrl = `${WAITLIST_SITE_URL}/booking/waitlist-claim?token=${token}`;
   // ASCII-only Vietnamese (no diacritics, no emoji) → single GSM-7 segment.
   const body = `${salonName}: Co cho trong ${serviceName} ngay ${bookingDate}. Giu cho trong 20 phut: ${claimUrl}`;
 
+  // Send FIRST, then record. A suppressed send (dev/CI/test/fictional number)
+  // returns ok:true and still counts as "handled". A genuine failure
+  // (twilio_not_configured / Twilio error) must NOT mark the entry notified —
+  // otherwise the customer never got the link yet the cron treats them as
+  // already invited. Leave the row 'waiting' so staff can retry / call them.
   const smsResult = await sendSmsReminder(phone, body);
 
   // Log to booking_notifications (booking_id is null — the entry isn't a
@@ -2605,9 +2596,24 @@ export async function inviteWaitlistEntry(
     console.error("[inviteWaitlistEntry] logNotification", e);
   }
 
-  return {
-    ok: true,
-    suppressed: smsResult.suppressed,
-    error: smsResult.ok ? undefined : smsResult.error,
-  };
+  if (!smsResult.ok) {
+    // Genuine delivery failure — nothing recorded, the row stays 'waiting'.
+    return { ok: false, error: smsResult.error ?? "sms_failed" };
+  }
+
+  const { error: upErr } = await svc
+    .from("booking_waitlist_entries")
+    .update({
+      status: "notified",
+      notified_at: new Date().toISOString(),
+      claim_token: token,
+    } as never)
+    .eq("id", id)
+    .eq("salon_id", ctx.salon.id);
+  if (upErr) {
+    console.error("[inviteWaitlistEntry] update", upErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true, suppressed: smsResult.suppressed };
 }

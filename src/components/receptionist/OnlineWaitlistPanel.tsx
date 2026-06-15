@@ -97,7 +97,7 @@ export function OnlineWaitlistPanel({ slug, entries }: OnlineWaitlistPanelProps)
     >
       <header className="flex items-center justify-between gap-2 pb-2">
         <h2 className="text-sm font-semibold text-nq-foreground">{t.title}</h2>
-        <span className="rounded-full bg-nq-gold/20 px-2.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-nq-gold">
+        <span className="rounded-full bg-nq-primary/20 px-2.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-nq-primary">
           {entries.length}
         </span>
       </header>
@@ -124,7 +124,7 @@ export function OnlineWaitlistPanel({ slug, entries }: OnlineWaitlistPanelProps)
                 <div className="flex items-start gap-2.5">
                   <span
                     aria-hidden
-                    className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-nq-gold/15 text-xs font-semibold text-nq-gold"
+                    className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-nq-primary/15 text-xs font-semibold text-nq-primary"
                   >
                     {initialOf(name)}
                   </span>
@@ -137,7 +137,7 @@ export function OnlineWaitlistPanel({ slug, entries }: OnlineWaitlistPanelProps)
                         className={cn(
                           "shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium",
                           isNotified
-                            ? "border-nq-gold/30 bg-nq-gold/10 text-nq-gold"
+                            ? "border-nq-primary/30 bg-nq-primary/10 text-nq-primary"
                             : "border-nq-border/40 text-nq-muted",
                         )}
                       >
@@ -155,8 +155,8 @@ export function OnlineWaitlistPanel({ slug, entries }: OnlineWaitlistPanelProps)
                       className={cn(
                         "mt-2 inline-flex min-h-11 w-full items-center justify-center rounded-lg px-3 text-sm font-semibold transition-opacity",
                         isNotified
-                          ? "border border-nq-gold/40 bg-transparent text-nq-gold hover:bg-nq-gold/10"
-                          : "bg-nq-gold text-nq-navy-deep hover:opacity-95",
+                          ? "border border-nq-primary/40 bg-transparent text-nq-primary hover:bg-nq-primary/10"
+                          : "bg-nq-primary text-nq-bg hover:opacity-95",
                         isPending && "pointer-events-none opacity-60",
                       )}
                     >
@@ -188,7 +188,7 @@ export function OnlineWaitlistPanel({ slug, entries }: OnlineWaitlistPanelProps)
             toast.kind === "success" &&
               "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
             toast.kind === "info" &&
-              "border-nq-gold/40 bg-nq-gold/10 text-nq-gold",
+              "border-nq-primary/40 bg-nq-primary/10 text-nq-primary",
             toast.kind === "error" &&
               "border-nq-error/60 bg-nq-error/15 text-nq-foreground",
           )}
