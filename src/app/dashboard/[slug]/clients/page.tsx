@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ClientProfilesPanel } from "@/components/dashboard/ClientProfilesPanel";
-import { ClientDedupePanel } from "@/components/dashboard/ClientDedupePanel";
 import { TopHostsPanel } from "@/components/dashboard/TopHostsPanel";
 import { MultiNamePhonePanel } from "@/components/dashboard/MultiNamePhonePanel";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
@@ -50,15 +49,15 @@ export default async function ClientsPage({ params }: PageProps) {
 
   return (
     <main className="mx-auto w-full max-w-[var(--max-nq-desktop)] px-[var(--pad-nq-section-mobile)] py-6 md:px-6">
-      {/* Manager insights (owner + admin): top group hosts, one-number-many-names
-          cleanup, merge. Front-desk roles don't manage customer identity. */}
+      {/* Manager insights (owner + admin): top group hosts (click → who they
+          brought / when / what) + one-number-many-names cleanup. Front-desk
+          roles don't manage customer identity. */}
       {(() => {
         const isManager = ctx.role === "owner" || ctx.role === "admin";
         return isManager ? (
           <>
-            <TopHostsPanel slug={slug} />
-            <MultiNamePhonePanel slug={slug} />
-            <ClientDedupePanel slug={slug} />
+            <TopHostsPanel slug={slug} viewerRole={ctx.role} />
+            <MultiNamePhonePanel slug={slug} viewerRole={ctx.role} />
           </>
         ) : null;
       })()}

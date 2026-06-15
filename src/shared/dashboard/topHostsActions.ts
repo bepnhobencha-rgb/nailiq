@@ -109,3 +109,70 @@ export async function setHostVip(
   }
   return { ok: true, isVip };
 }
+
+export type HostGroup = {
+  groupId: string;
+  startedAt: string | null;
+  status: string;
+  service: string | null;
+  size: number;
+  attendees: string[];
+};
+
+export type LoadHostGroupsResult =
+  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" }
+  | { ok: true; groups: HostGroup[] };
+
+/** The groups a host organized (newest first) + who they brought — for the
+ *  host detail drawer. Owner/admin only, salon-gated. */
+export async function loadHostGroups(
+  slug: string,
+  phone: string,
+): Promise<LoadHostGroupsResult> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (ctx.role !== "owner" && ctx.role !== "admin")
+    return { ok: false, error: "forbidden" };
+
+  let admin;
+  try {
+    admin = createServiceRoleClient();
+  } catch (e) {
+    console.error("[loadHostGroups] service role", e);
+    return { ok: false, error: "server_error" };
+  }
+
+  type Row = {
+    group_id?: string | null;
+    started_at?: string | null;
+    status?: string | null;
+    service?: string | null;
+    size?: number | null;
+    attendees?: string[] | null;
+  };
+  const { data, error } = (await admin.rpc("get_host_groups" as never, {
+    p_salon_id: ctx.salon.id,
+    p_phone: phone,
+    p_limit: 20,
+  } as never)) as { data: Row[] | null; error: unknown };
+
+  if (error) {
+    console.error("[loadHostGroups] rpc", error);
+    return { ok: false, error: "server_error" };
+  }
+
+  const groups: HostGroup[] = (data ?? [])
+    .filter((r) => typeof r.group_id === "string")
+    .map((r) => ({
+      groupId: String(r.group_id),
+      startedAt: r.started_at?.trim() ? String(r.started_at) : null,
+      status: String(r.status ?? ""),
+      service: r.service?.trim() || null,
+      size: Number(r.size ?? 0),
+      attendees: Array.isArray(r.attendees)
+        ? r.attendees.filter((a): a is string => typeof a === "string")
+        : [],
+    }));
+
+  return { ok: true, groups };
+}

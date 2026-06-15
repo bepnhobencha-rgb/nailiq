@@ -7,6 +7,7 @@ import {
   type MultiNamePhone,
 } from "@/shared/dashboard/multiNamePhonesActions";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { ClientProfile360Drawer } from "@/components/dashboard/ClientProfile360Drawer";
 
 const COPY = {
   en: {
@@ -15,6 +16,7 @@ const COPY = {
       "These phones (family / shared line / typos) appear under more than one name. Phone is the customer — pick the main name to show.",
     sharedLine: (n: number, v: number) => `${n} names · ${v} visits`,
     pickHint: "Tap the main name:",
+    viewProfile: "view profile →",
     saving: "…",
   },
   vi: {
@@ -23,18 +25,26 @@ const COPY = {
       "Các số này (gia đình / dùng chung / gõ sai) đang mang nhiều tên. Số là khách — chọn tên chính để hiển thị.",
     sharedLine: (n: number, v: number) => `${n} tên · ${v} lượt ghé`,
     pickHint: "Chạm tên chính:",
+    viewProfile: "xem hồ sơ →",
     saving: "…",
   },
 };
 
 type Row = MultiNamePhone & { pending: boolean };
 
-export function MultiNamePhonePanel({ slug }: { slug: string }) {
+export function MultiNamePhonePanel({
+  slug,
+  viewerRole,
+}: {
+  slug: string;
+  viewerRole: string;
+}) {
   const { language } = useUserLanguage();
   const tx = COPY[language === "vi" ? "vi" : "en"];
 
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<Row[]>([]);
+  const [open360, setOpen360] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,10 +93,15 @@ export function MultiNamePhonePanel({ slug }: { slug: string }) {
             key={row.phone}
             className="rounded-xl border border-nq-border/50 px-3 py-2.5"
           >
-            <div className="mb-2 flex items-center gap-2 text-xs text-nq-muted">
+            <button
+              type="button"
+              onClick={() => setOpen360(row.phone)}
+              className="mb-2 flex items-center gap-2 text-xs text-nq-muted hover:text-nq-primary"
+            >
               <span className="font-mono">··· {row.phone.slice(-4)}</span>
               <span>· {tx.sharedLine(row.distinctNames, row.totalVisits)}</span>
-            </div>
+              <span className="text-nq-primary">· {tx.viewProfile}</span>
+            </button>
             <p className="mb-1.5 text-[11px] text-nq-muted">{tx.pickHint}</p>
             <div className="flex flex-wrap gap-2">
               {row.variants.map((v) => {
@@ -113,6 +128,13 @@ export function MultiNamePhonePanel({ slug }: { slug: string }) {
           </li>
         ))}
       </ul>
+
+      <ClientProfile360Drawer
+        slug={slug}
+        clientPhone={open360}
+        viewerRole={viewerRole}
+        onClose={() => setOpen360(null)}
+      />
     </section>
   );
 }
