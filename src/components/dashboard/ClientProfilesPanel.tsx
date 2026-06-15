@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonCardGrid } from "@/components/ui/Skeleton";
 import { Toggle } from "@/components/ui/Toggle";
+import { ClientProfile360Drawer } from "./ClientProfile360Drawer";
 import {
   loadClientProfiles,
   updateClientProfile,
@@ -307,6 +308,8 @@ export function ClientProfilesPanel({
   // Segment filter (client-side within the current page).
   const [segment, setSegment] = useState<SegmentFilter>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Customer 360 drawer — stores the phone of the currently-open profile.
+  const [open360, setOpen360] = useState<string | null>(null);
 
   // View mode — default "cards"; hydrated from localStorage after mount.
   const [viewMode, setViewModeState] = useState<ViewMode>("cards");
@@ -630,6 +633,7 @@ export function ClientProfilesPanel({
                   messages={messages}
                   language={language}
                   onVipChanged={(next) => handleVipChanged(row.phone, next)}
+                  onOpen360={() => setOpen360(row.phone)}
                 />
               ))}
             </ul>
@@ -655,6 +659,7 @@ export function ClientProfilesPanel({
                   messages={messages}
                   language={language}
                   onVipChanged={(next) => handleVipChanged(row.phone, next)}
+                  onOpen360={() => setOpen360(row.phone)}
                 />
               ))}
             </ul>
@@ -707,6 +712,7 @@ export function ClientProfilesPanel({
                       messages={messages}
                       language={language}
                       onVipChanged={(next) => handleVipChanged(row.phone, next)}
+                      onOpen360={() => setOpen360(row.phone)}
                     />
                   ))}
                 </tbody>
@@ -715,6 +721,14 @@ export function ClientProfilesPanel({
           )}
         </>
       ) : null}
+
+      {/* ── Customer 360 drawer ── */}
+      <ClientProfile360Drawer
+        slug={slug}
+        clientPhone={open360}
+        viewerRole={viewerRole}
+        onClose={() => setOpen360(null)}
+      />
 
       {/* ── Pagination controls ── */}
       {state.kind === "ok" && totalCount > pageSize ? (
@@ -816,6 +830,7 @@ function ClientCard({
   messages,
   language,
   onVipChanged,
+  onOpen360,
 }: {
   row: ClientProfileRow;
   segment: Segment;
@@ -826,6 +841,7 @@ function ClientCard({
   messages: ReceptionistMessages["clientProfiles"];
   language: UserLanguage;
   onVipChanged: (next: boolean) => void;
+  onOpen360?: () => void;
 }) {
   const phoneDisplay = formatPhone(row.phone) ?? row.phone;
   const isVip = segment === "vip";
@@ -872,9 +888,21 @@ function ClientCard({
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="truncate text-sm font-semibold text-nq-foreground">
-                {row.name?.trim() || messages.unknownName}
-              </span>
+              {onOpen360 ? (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => { e.stopPropagation(); onOpen360(); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onOpen360(); } }}
+                  className="cursor-pointer truncate text-sm font-semibold text-nq-foreground underline-offset-2 hover:text-nq-primary hover:underline focus-visible:outline-none focus-visible:underline"
+                >
+                  {row.name?.trim() || messages.unknownName}
+                </span>
+              ) : (
+                <span className="truncate text-sm font-semibold text-nq-foreground">
+                  {row.name?.trim() || messages.unknownName}
+                </span>
+              )}
               <Badge variant={SEGMENT_BADGE[segment]} state="default" size="sm">
                 {badgeLabel}
               </Badge>
@@ -927,6 +955,7 @@ function ClientListRow({
   messages,
   language,
   onVipChanged,
+  onOpen360,
 }: {
   row: ClientProfileRow;
   segment: Segment;
@@ -937,6 +966,7 @@ function ClientListRow({
   messages: ReceptionistMessages["clientProfiles"];
   language: UserLanguage;
   onVipChanged: (next: boolean) => void;
+  onOpen360?: () => void;
 }) {
   const phoneDisplay = formatPhone(row.phone) ?? row.phone;
   const isVip = segment === "vip";
@@ -974,9 +1004,21 @@ function ClientListRow({
 
         {/* Name + phone */}
         <div className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-nq-foreground">
-            {row.name?.trim() || messages.unknownName}
-          </span>
+          {onOpen360 ? (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); onOpen360(); }}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onOpen360(); } }}
+              className="block cursor-pointer truncate text-sm font-semibold text-nq-foreground underline-offset-2 hover:text-nq-primary hover:underline focus-visible:outline-none focus-visible:underline"
+            >
+              {row.name?.trim() || messages.unknownName}
+            </span>
+          ) : (
+            <span className="block truncate text-sm font-semibold text-nq-foreground">
+              {row.name?.trim() || messages.unknownName}
+            </span>
+          )}
           <span className="block truncate font-mono text-[11px] tabular-nums text-nq-muted">
             {phoneDisplay}
           </span>
@@ -1034,6 +1076,7 @@ function ClientDetailsRow({
   messages,
   language,
   onVipChanged,
+  onOpen360,
 }: {
   row: ClientProfileRow;
   segment: Segment;
@@ -1044,6 +1087,7 @@ function ClientDetailsRow({
   messages: ReceptionistMessages["clientProfiles"];
   language: UserLanguage;
   onVipChanged: (next: boolean) => void;
+  onOpen360?: () => void;
 }) {
   const phoneDisplay = formatPhone(row.phone) ?? row.phone;
   const isVip = segment === "vip";
@@ -1080,9 +1124,21 @@ function ClientDetailsRow({
             >
               {initialsOf(row.name)}
             </span>
-            <span className="truncate text-sm font-semibold text-nq-foreground">
-              {row.name?.trim() || messages.unknownName}
-            </span>
+            {onOpen360 ? (
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => { e.stopPropagation(); onOpen360(); }}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onOpen360(); } }}
+                className="cursor-pointer truncate text-sm font-semibold text-nq-foreground underline-offset-2 hover:text-nq-primary hover:underline focus-visible:outline-none focus-visible:underline"
+              >
+                {row.name?.trim() || messages.unknownName}
+              </span>
+            ) : (
+              <span className="truncate text-sm font-semibold text-nq-foreground">
+                {row.name?.trim() || messages.unknownName}
+              </span>
+            )}
           </div>
         </td>
 
