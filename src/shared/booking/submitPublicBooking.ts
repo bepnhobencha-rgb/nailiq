@@ -741,7 +741,9 @@ export async function submitPublicBooking(
       consent: params.noShowConsent === true,
     });
     if (!saved.ok) {
-      throw new Error("card_save_failed");
+      // Carry the provider reason so the UI can show WHY (decline code) instead
+      // of a generic failure — critical for diagnosing real-card declines.
+      throw new Error(`card_save_failed:${saved.reason ?? ""}`);
     }
   }
 

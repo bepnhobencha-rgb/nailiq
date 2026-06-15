@@ -19,12 +19,16 @@ export async function saveNoShowCardAction(args: {
     const r = await saveNoShowCardForBooking(args.bookingId, args.sourceId, args.consent);
     if (r.ok) return r;
     // Required card failed → release the slot (anon UPDATE can't, RLS).
+    console.error("[saveNoShowCardAction] card NOT saved:", r.reason, "booking", args.bookingId);
     await createServiceRoleClient()
       .from("bookings" as never)
       .update({ status: "cancelled" } as never)
       .eq("id", args.bookingId);
     return r;
   } catch (e) {
+    // Log the FULL Square error (the provider throws "Square POST /cards -> …")
+    // so the exact decline code is visible in Vercel runtime logs.
+    console.error("[saveNoShowCardAction] threw:", e instanceof Error ? e.message : e, "booking", args.bookingId);
     await createServiceRoleClient()
       .from("bookings" as never)
       .update({ status: "cancelled" } as never)

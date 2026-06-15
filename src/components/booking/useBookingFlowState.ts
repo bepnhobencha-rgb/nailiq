@@ -1343,11 +1343,15 @@ export function useBookingFlowState(
         setError(t.submitError);
       } else if (
         err instanceof Error &&
-        err.message === "card_save_failed"
+        err.message.startsWith("card_save_failed")
       ) {
         // Card couldn't be saved → booking was cancelled server-side. Stay on
-        // the confirm step so the customer can re-enter the card.
-        setError(t.noShowCardError ?? t.submitError);
+        // the confirm step so the customer can re-enter the card. Show the
+        // provider reason (decline code) to aid diagnosis.
+        const reason = err.message.slice("card_save_failed:".length).trim();
+        setError(
+          (t.noShowCardError ?? t.submitError) + (reason ? ` — ${reason}` : ""),
+        );
       } else if (
         err instanceof Error &&
         err.message === "invalid_name_chars"
