@@ -329,6 +329,9 @@ export async function performEditBooking(
     end_time_utc: slotEndUtc,
     service_id: newServiceId,
     price_cents: priceCents,
+    // Mark this as a NailIQ-side edit so the Square reschedule sync knows NailIQ
+    // owns the latest change (last-writer-wins vs the Square booking's updated_at).
+    local_updated_at: new Date().toISOString(),
   };
   if (input.newAddonServiceId !== undefined) {
     baseUpdate.addon_service_id = effectiveAddonId;
