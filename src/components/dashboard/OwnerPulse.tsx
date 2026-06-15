@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -148,7 +148,6 @@ export function OwnerPulse({
 }) {
   const t = COPY[language];
   const router = useRouter();
-  const [refreshing, startRefresh] = useTransition();
 
   // Live "updated N min ago" + 60s auto-refresh so the away owner always
   // sees a fresh picture without manual reload.
@@ -167,26 +166,8 @@ export function OwnerPulse({
     return () => clearInterval(id);
   }, [router]);
 
-  // Fullscreen / TV-kiosk mode. Fullscreening the container element hides
-  // ALL other chrome (sidebar, bottom-nav, Coco) for free — only this tree
-  // fills the screen, so it reads as a clean live wall-board.
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [isFs, setIsFs] = useState(false);
-  useEffect(() => {
-    const onChange = () => setIsFs(document.fullscreenElement === containerRef.current);
-    document.addEventListener("fullscreenchange", onChange);
-    return () => document.removeEventListener("fullscreenchange", onChange);
-  }, []);
-  const toggleFullscreen = () => {
-    const el = containerRef.current;
-    if (!el) return;
-    if (document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => {});
-    } else {
-      void el.requestFullscreen().catch(() => {});
-    }
-  };
-
+  // Refresh + fullscreen are now the shared DashboardViewControls (top-right on
+  // every page) — Pulse keeps only its 60s auto-refresh above.
   const hour = salonHour(data.timezone);
   const greeting =
     hour < 12 ? t.greetingMorning : hour < 18 ? t.greetingAfternoon : t.greetingEvening;
@@ -220,15 +201,7 @@ export function OwnerPulse({
       : null;
 
   return (
-    <div
-      ref={containerRef}
-      className={cn(
-        "space-y-4",
-        // Kiosk: fill the screen with our own background + breathing room
-        // and widen the inner layout for a wall-board read.
-        isFs && "h-full overflow-y-auto bg-nq-bg p-6 lg:p-10",
-      )}
-    >
+    <div className="space-y-4">
       {/* ── Header ─────────────────────────────────────────── */}
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -240,36 +213,10 @@ export function OwnerPulse({
             {agoMin === 0 ? t.updatedNow : t.updatedAgo(agoMin)}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2 pr-20">
+          {/* Refresh + fullscreen moved to the shared top-right
+              DashboardViewControls; pr-20 keeps the toggle clear of it. */}
           <GlobalLanguageToggle />
-          <button
-            type="button"
-            onClick={() => startRefresh(() => router.refresh())}
-            aria-label={t.refresh}
-            className={cn(
-              "flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-nq-border bg-nq-surface/60 text-nq-muted transition-colors hover:text-nq-primary",
-              refreshing && "animate-spin",
-            )}
-          >
-            <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M21 12a9 9 0 11-2.64-6.36M21 3v6h-6" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={toggleFullscreen}
-            aria-label={isFs ? t.exitFullscreen : t.enterFullscreen}
-            title={isFs ? t.exitFullscreen : t.enterFullscreen}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-nq-border bg-nq-surface/60 text-nq-muted transition-colors hover:text-nq-primary"
-          >
-            <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              {isFs ? (
-                <path d="M9 4v3a2 2 0 01-2 2H4M20 9h-3a2 2 0 01-2-2V4M15 20v-3a2 2 0 012-2h3M4 15h3a2 2 0 012 2v3" />
-              ) : (
-                <path d="M8 4H5a1 1 0 00-1 1v3M16 4h3a1 1 0 011 1v3M8 20H5a1 1 0 01-1-1v-3M16 20h3a1 1 0 001-1v-3" />
-              )}
-            </svg>
-          </button>
         </div>
       </header>
 

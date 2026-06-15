@@ -20,7 +20,9 @@ export function DashboardTopBar({ slug }: { slug: string }) {
   if (hasOwnToggle) return null;
 
   return (
-    <div className="md:hidden sticky top-0 z-30 flex justify-end border-b border-nq-border/30 bg-nq-bg/85 px-4 py-2 backdrop-blur">
+    <div className="md:hidden sticky top-0 z-30 flex justify-start border-b border-nq-border/30 bg-nq-bg/85 px-4 py-2 pr-24 backdrop-blur">
+      {/* Left-aligned + right padding so it never sits under the fixed
+          top-right DashboardViewControls cluster. */}
       <GlobalLanguageToggle />
     </div>
   );
