@@ -75,7 +75,8 @@ export function buildBookingThemeVars(
       "--booking-bg-card": mix(cardPct, "#ffffff"),
       "--booking-bg-input": mix(inputPct, "#f2f2f2"),
       "--booking-text": "#1a1a1a",
-      "--booking-text-muted": "rgba(0, 0, 0, 0.45)",
+      // 0.6 (~#666 on white ≈ 5.7:1) meets WCAG AA 4.5:1; 0.45 failed. Still muted.
+      "--booking-text-muted": "rgba(0, 0, 0, 0.6)",
       "--booking-border": mix(16, "transparent"),
       "--cta-bg": "#1a1a1a",
       "--cta-text": "#ffffff",
@@ -92,7 +93,8 @@ export function buildBookingThemeVars(
     "--booking-bg-card": mix(cardPct, "#1c1c1e"),
     "--booking-bg-input": mix(inputPct, "#2c2c2e"),
     "--booking-text": "#ffffff",
-    "--booking-text-muted": "rgba(255, 255, 255, 0.5)",
+    // 0.7 on the near-black canvas meets WCAG AA; 0.5 failed. Still muted.
+    "--booking-text-muted": "rgba(255, 255, 255, 0.7)",
     "--booking-border": mix(20, "transparent"),
     "--cta-bg": "#ffffff",
     "--cta-text": "#0a0a0a",

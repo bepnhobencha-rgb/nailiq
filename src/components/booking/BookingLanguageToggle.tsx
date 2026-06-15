@@ -41,7 +41,7 @@ export function BookingLanguageToggle({
       data-testid="booking-language-toggle"
       role="group"
       aria-label="Language"
-      className="inline-flex items-center rounded-full border border-white/20 bg-black/30 p-0.5 text-[11px] font-semibold uppercase tracking-wide backdrop-blur-sm"
+      className="inline-flex items-center rounded-full border border-white/20 bg-black/70 p-0.5 text-[11px] font-semibold uppercase tracking-wide backdrop-blur-sm"
     >
       {(["vi", "en"] as const).map((lang) => {
         const active = currentLang === lang;
@@ -57,7 +57,7 @@ export function BookingLanguageToggle({
               "min-w-9 rounded-full px-2.5 py-1 transition-colors",
               active
                 ? "bg-white text-black"
-                : "text-white/75 hover:text-white",
+                : "text-white/90 hover:text-white",
               pending && "opacity-60",
             )}
           >
