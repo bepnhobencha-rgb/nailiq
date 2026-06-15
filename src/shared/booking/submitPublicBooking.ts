@@ -838,7 +838,9 @@ export async function submitPublicBooking(
     try {
       const { data: depositRows } = await supabase.rpc(
         "get_booking_client_snapshot" as never,
-        { p_phone: phoneOk.digits } as never,
+        // Salon-scoped: only recognizes a phone that has booked at THIS salon,
+        // so the snapshot can't be used as a cross-tenant phone→PII oracle.
+        { p_salon_id: String(salon.id), p_phone: phoneOk.digits } as never,
       );
       const cp = (Array.isArray(depositRows) ? depositRows[0] : null) as {
         no_show_count?: number; is_vip?: boolean; visit_count?: number;
