@@ -124,6 +124,46 @@ function salonDate(iso: string, tz: string): string {
   }).format(new Date(ms));
 }
 
+/**
+ * Lightweight unread count for the activity bell — how many items across all
+ * sources are newer than `sinceIso` (the owner's last-seen marker). Owner-gated.
+ */
+export async function getActivityUnreadCount(
+  slug: string,
+  sinceIso: string,
+): Promise<{ ok: true; count: number } | { ok: false }> {
+  const resolved = await resolveSalonForDashboard(slug);
+  if (!resolved || !isOwner(resolved.role)) return { ok: false };
+  const since = Number.isFinite(Date.parse(sinceIso))
+    ? new Date(Date.parse(sinceIso)).toISOString()
+    : new Date(Date.now() - 86_400_000).toISOString();
+  const salonId = resolved.salon.id;
+  const db = createServiceRoleClient();
+
+  const tables = [
+    "booking_events",
+    "booking_notifications",
+    "voice_ai_sessions",
+    "system_audit",
+  ];
+  try {
+    const results = await Promise.all(
+      tables.map((t) =>
+        db
+          .from(t as never)
+          .select("id", { count: "exact", head: true })
+          .eq("salon_id", salonId)
+          .gt("created_at", since),
+      ),
+    );
+    const count = results.reduce((sum, r) => sum + (r.count ?? 0), 0);
+    return { ok: true, count };
+  } catch (e) {
+    console.error("[getActivityUnreadCount]", e);
+    return { ok: false };
+  }
+}
+
 export async function loadActivityFeed(
   slug: string,
 ): Promise<LoadActivityFeedResult> {
