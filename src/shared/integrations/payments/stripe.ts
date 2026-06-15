@@ -16,7 +16,12 @@ import type { PaymentProvider } from "./types";
  */
 export class StripeProvider implements PaymentProvider {
   readonly kind = "stripe" as const;
-  constructor(private readonly stripe: Stripe) {}
+  constructor(
+    private readonly stripe: Stripe,
+    /** Salon account currency (lowercase ISO, e.g. 'cad'). Stripe charges in the
+     *  account's currency — never hardcode. */
+    private readonly currency: string = "usd",
+  ) {}
 
   async saveCardOnFile(input: {
     customer: {
@@ -73,7 +78,7 @@ export class StripeProvider implements PaymentProvider {
     const pi = await this.stripe.paymentIntents.create(
       {
         amount: input.amountCents,
-        currency: "usd",
+        currency: this.currency,
         customer: input.customerId,
         payment_method: input.cardId,
         off_session: true,

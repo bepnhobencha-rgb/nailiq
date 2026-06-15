@@ -20,6 +20,10 @@ export interface SquareConfig {
   /** Public Web Payments SDK app id (sq0idp-… / sandbox-sq0idb-…). */
   applicationId: string | null;
   environment: SquareEnvironment;
+  /** ISO currency the salon's Square merchant transacts in (CAD/USD/…). Square
+   *  rejects a charge whose currency ≠ the merchant's, so this MUST match the
+   *  merchant — never hardcode. Sourced from salons.currency_code. */
+  currency: string;
 }
 
 /** API base for the config's environment. */
@@ -81,6 +85,19 @@ export async function getSquareConfig(db: Db, salonId: string): Promise<SquareCo
   } | null;
   if (!row) throw new Error(`No square_integrations row for salon ${salonId}`);
   if (!row.access_token) throw new Error(`square_integrations.access_token is empty for salon ${salonId}`);
+
+  // Currency MUST match the salon's Square merchant (Square rejects a mismatch).
+  // The salon's configured currency_code is the admin-set source of truth.
+  const { data: salonRow } = await db
+    .from("salons")
+    .select("currency_code")
+    .eq("id", salonId)
+    .maybeSingle();
+  const currency =
+    String((salonRow as { currency_code?: string } | null)?.currency_code || "USD")
+      .trim()
+      .toUpperCase() || "USD";
+
   return {
     salonId: row.salon_id,
     merchantId: row.merchant_id,
@@ -88,6 +105,7 @@ export async function getSquareConfig(db: Db, salonId: string): Promise<SquareCo
     accessToken: row.access_token,
     applicationId: row.application_id ?? null,
     environment: row.environment === "sandbox" ? "sandbox" : "production",
+    currency,
   };
 }
 
@@ -140,7 +158,7 @@ export async function createPaymentLink(
     idempotency_key: opts.idempotencyKey,
     quick_pay: {
       name: opts.name,
-      price_money: { amount: opts.amountCents, currency: "USD" },
+      price_money: { amount: opts.amountCents, currency: cfg.currency },
       location_id: cfg.locationId,
     },
     payment_note: opts.note,
@@ -230,7 +248,7 @@ export async function chargeSavedCard(
     idempotency_key: opts.idempotencyKey,
     source_id: opts.cardId,
     customer_id: opts.customerId,
-    amount_money: { amount: opts.amountCents, currency: "USD" },
+    amount_money: { amount: opts.amountCents, currency: cfg.currency },
     location_id: cfg.locationId,
     autocomplete: true,
     note: opts.note,
@@ -248,7 +266,7 @@ export async function refundPayment(
   const json = await squareReq(cfg, "POST", "/refunds", {
     idempotency_key: opts.idempotencyKey,
     payment_id: opts.paymentId,
-    amount_money: { amount: opts.amountCents, currency: "USD" },
+    amount_money: { amount: opts.amountCents, currency: cfg.currency },
     reason: opts.reason,
   });
   const r = (json.refund as Record<string, unknown>) ?? {};

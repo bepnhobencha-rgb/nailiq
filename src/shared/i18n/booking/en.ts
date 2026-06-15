@@ -163,7 +163,7 @@ export const bookingEn = {
   /** Placeholder for contact step — NANP Canadian example; guests may enter any valid E.164. */
   clientPhonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
   clientEmailLabel: "Email (optional)",
-  clientEmailHint: "Receive booking confirmation by email.",
+  clientEmailHint: "Recommended — get a link to reschedule or cancel your appointment, plus member-only offers.",
   clientNotesLabel: "Special notes",
   clientNotesOptionalHint: "Optional — allergies, design ideas, parking, etc.",
   waitlistNotifyCta: "Notify me if a slot opens",
