@@ -71,7 +71,21 @@ type SquareCard = {
   attach: (sel: string) => Promise<void>;
   tokenize: () => Promise<{ status: string; token?: string }>;
 };
-type SquarePayments = { card: () => Promise<SquareCard> };
+type SquareVerifyDetails = {
+  intent: "STORE" | "CHARGE";
+  customerInitiated?: boolean;
+  sellerKeyedIn?: boolean;
+  billingContact?: Record<string, string>;
+  amount?: string;
+  currencyCode?: string;
+};
+type SquarePayments = {
+  card: () => Promise<SquareCard>;
+  verifyBuyer: (
+    source: string,
+    details: SquareVerifyDetails,
+  ) => Promise<{ token?: string } | null>;
+};
 type SquareGlobal = { payments: (appId: string, locationId: string) => SquarePayments };
 
 declare global {
@@ -118,6 +132,7 @@ function SquareCardCapture({ bookingId, currencyFormat, t }: CaptureProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [consented, setConsented] = useState(false);
   const cardRef = useRef<SquareCard | null>(null);
+  const paymentsRef = useRef<SquarePayments | null>(null);
   const mountedRef = useRef(false);
 
   // 1. Decide whether to show + get the SDK params.
@@ -151,6 +166,7 @@ function SquareCardCapture({ bookingId, currencyFormat, t }: CaptureProps) {
         if (cancelled) return;
         await card.attach("#sq-noshow-card");
         cardRef.current = card;
+        paymentsRef.current = payments;
       } catch {
         if (!cancelled) {
           setStatus("error");
@@ -174,10 +190,35 @@ function SquareCardCapture({ bookingId, currencyFormat, t }: CaptureProps) {
         setErrorMsg(t.noShowCardError ?? "Please check your card details.");
         return;
       }
+      // Buyer verification (SCA/AVS/CVV) — rejects a wrong CVV/postal before the
+      // card is ever vaulted. A failure blocks the save.
+      let verificationToken: string | undefined;
+      try {
+        const v = await paymentsRef.current?.verifyBuyer(result.token, {
+          intent: "STORE",
+          customerInitiated: true,
+          sellerKeyedIn: false,
+        });
+        verificationToken = v?.token ?? undefined;
+        if (!verificationToken) {
+          setStatus("error");
+          setErrorMsg(t.noShowCardError ?? "Please check your card details.");
+          return;
+        }
+      } catch {
+        setStatus("error");
+        setErrorMsg(t.noShowCardError ?? "Please check your card details.");
+        return;
+      }
       const res = await fetch("/api/booking/square-save-card", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookingId, sourceId: result.token, consent: true }),
+        body: JSON.stringify({
+          bookingId,
+          sourceId: result.token,
+          consent: true,
+          verificationToken,
+        }),
       });
       const j = (await res.json()) as { ok?: boolean };
       if (j.ok) {

@@ -297,6 +297,8 @@ export function BookingGroupFlow({
   // Holds the tokenized card across a possible OTP round-trip (the card iframe
   // unmounts when the OTP panel replaces the confirm step).
   const cardTokenRef = useRef<string | null>(null);
+  // Square buyer-verification token (SCA/AVS/CVV) paired with the card token.
+  const cardVerificationRef = useRef<string | null>(null);
   const [successResult, setSuccessResult] = useState<{
     groupId: string;
     bookingIds: string[];
@@ -854,13 +856,14 @@ export function BookingGroupFlow({
         submittingRef.current = false;
         return;
       }
-      const token = await cardRef.current?.tokenize();
-      if (!token) {
+      const result = await cardRef.current?.tokenize();
+      if (!result) {
         setErrorMessage(t.noShowCardError ?? "Vui lòng kiểm tra thông tin thẻ.");
         submittingRef.current = false;
         return;
       }
-      cardTokenRef.current = token;
+      cardTokenRef.current = result.token;
+      cardVerificationRef.current = result.verificationToken ?? null;
     }
 
     setErrorMessage(null);
@@ -953,7 +956,12 @@ export function BookingGroupFlow({
               const resp = await fetch("/api/booking/square-save-card", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ bookingId: leadId, sourceId: token, consent: true }),
+                body: JSON.stringify({
+                  bookingId: leadId,
+                  sourceId: token,
+                  consent: true,
+                  verificationToken: cardVerificationRef.current ?? undefined,
+                }),
               });
               const json = (await resp.json().catch(() => ({}))) as { ok?: boolean };
               saved = resp.ok && json.ok === true;
@@ -968,6 +976,7 @@ export function BookingGroupFlow({
           }
         }
         cardTokenRef.current = null;
+        cardVerificationRef.current = null;
         // FIX 08 — drop the `?mode=group` query so a browser back
         // from the success panel lands on the clean booking home
         // rather than the filled-form mid-state. `router.replace`

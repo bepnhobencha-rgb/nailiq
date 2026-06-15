@@ -47,6 +47,10 @@ export interface PaymentProvider {
   saveCardOnFile(input: {
     customer: PaymentCustomerInput;
     sourceToken: string;
+    /** Optional SCA/AVS/CVV verification token (Square `verifyBuyer`). When
+     *  present the provider verifies the card at storage time. Square-only;
+     *  Stripe ignores it (it verifies via the SetupIntent). */
+    verificationToken?: string;
   }): Promise<SavedCard>;
 
   /** Charge a previously-saved card. `idempotencyKey` MUST be stable per logical

@@ -126,6 +126,7 @@ export async function saveNoShowCardForBooking(
   bookingId: string,
   sourceId: string,
   consent: boolean,
+  verificationToken?: string,
 ): Promise<{ ok: boolean; reason: string; last4?: string }> {
   if (!consent) return { ok: false, reason: "consent required" };
   const db = looseServiceClient();
@@ -151,6 +152,7 @@ export async function saveNoShowCardForBooking(
       referenceId: `booking:${bookingId}`,
     },
     sourceToken: sourceId,
+    verificationToken,
   });
 
   // Server-authored consent evidence: the exact terms the customer agreed to,

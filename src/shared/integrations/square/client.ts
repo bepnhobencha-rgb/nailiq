@@ -258,11 +258,24 @@ export async function ensureSquareCustomer(
 /** Save a tokenized card (Web Payments SDK sourceId) on file for later charging. */
 export async function saveCardOnFile(
   cfg: SquareConfig,
-  opts: { customerId: string; sourceId: string; idempotencyKey: string },
+  opts: {
+    customerId: string;
+    sourceId: string;
+    idempotencyKey: string;
+    /** SCA/AVS/CVV verification token from the Web Payments SDK
+     *  `verifyBuyer({ intent: "STORE" })`. When present, Square verifies the
+     *  card at storage time and REJECTS a CVV/AVS/3DS failure — so a card typed
+     *  with a wrong CVV/postal no longer vaults silently. Also gives the
+     *  stored-credential liability shift for disputes. */
+    verificationToken?: string;
+  },
 ): Promise<{ cardId: string; last4: string; brand: string }> {
   const json = await squareReq(cfg, "POST", "/cards", {
     idempotency_key: opts.idempotencyKey,
     source_id: opts.sourceId,
+    ...(opts.verificationToken
+      ? { verification_token: opts.verificationToken }
+      : {}),
     card: { customer_id: opts.customerId },
   });
   const card = (json.card as Record<string, unknown>) ?? {};

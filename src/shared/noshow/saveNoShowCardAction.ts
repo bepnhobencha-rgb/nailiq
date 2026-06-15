@@ -14,9 +14,15 @@ export async function saveNoShowCardAction(args: {
   bookingId: string;
   sourceId: string;
   consent: boolean;
+  verificationToken?: string;
 }): Promise<{ ok: boolean; reason: string; last4?: string }> {
   try {
-    const r = await saveNoShowCardForBooking(args.bookingId, args.sourceId, args.consent);
+    const r = await saveNoShowCardForBooking(
+      args.bookingId,
+      args.sourceId,
+      args.consent,
+      args.verificationToken,
+    );
     if (r.ok) return r;
     // Required card failed → release the slot (anon UPDATE can't, RLS).
     console.error("[saveNoShowCardAction] card NOT saved:", r.reason, "booking", args.bookingId);

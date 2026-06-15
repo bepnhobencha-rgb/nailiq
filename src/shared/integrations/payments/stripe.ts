@@ -32,6 +32,9 @@ export class StripeProvider implements PaymentProvider {
     };
     /** A Stripe PaymentMethod id (pm_…) the client created/confirmed. */
     sourceToken: string;
+    /** Ignored by Stripe — card verification happens via the SetupIntent the
+     *  client already confirmed. Present only to satisfy the shared interface. */
+    verificationToken?: string;
   }) {
     // Reuse an existing customer by exact email (immediate, no search lag); else
     // create one. Dedupe by email keeps a returning client's cards together.

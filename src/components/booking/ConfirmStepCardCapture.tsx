@@ -13,7 +13,21 @@ type SquareCard = {
   attach: (sel: string) => Promise<void>;
   tokenize: () => Promise<{ status: string; token?: string }>;
 };
-type SquarePayments = { card: () => Promise<SquareCard> };
+type SquareVerifyDetails = {
+  intent: "STORE" | "CHARGE";
+  customerInitiated?: boolean;
+  sellerKeyedIn?: boolean;
+  billingContact?: Record<string, string>;
+  amount?: string;
+  currencyCode?: string;
+};
+type SquarePayments = {
+  card: () => Promise<SquareCard>;
+  verifyBuyer: (
+    source: string,
+    details: SquareVerifyDetails,
+  ) => Promise<{ token?: string } | null>;
+};
 type SquareGlobal = { payments: (appId: string, locationId: string) => SquarePayments };
 declare global {
   interface Window {
@@ -47,9 +61,11 @@ function loadSdk(env: "production" | "sandbox"): Promise<SquareGlobal> {
 }
 
 export type ConfirmStepCardHandle = {
-  /** Tokenize the entered card. Returns the source token, or null on failure
-   *  (an error is shown to the user). Called by the confirm button. */
-  tokenize: () => Promise<string | null>;
+  /** Tokenize the entered card AND run Square buyer verification (SCA/AVS/CVV).
+   *  Returns the source token + verification token, or null on failure (an
+   *  error is shown to the user). A wrong CVV/postal fails verification → null,
+   *  so a bad card never gets saved. Called by the confirm button. */
+  tokenize: () => Promise<{ token: string; verificationToken?: string } | null>;
 };
 
 type Props = {
@@ -68,6 +84,7 @@ type Props = {
 export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
   function ConfirmStepCardCapture({ applicationId, locationId, environment, feeLabel, t }, ref) {
     const cardRef = useRef<SquareCard | null>(null);
+    const paymentsRef = useRef<SquarePayments | null>(null);
     const mountedRef = useRef(false);
     const [error, setError] = useState<string | null>(null);
     const [ready, setReady] = useState(false);
@@ -84,6 +101,7 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
           if (cancelled) return;
           await card.attach("#sq-confirm-card");
           cardRef.current = card;
+          paymentsRef.current = payments;
           setReady(true);
         } catch {
           if (!cancelled) setError(t.noShowCardError ?? "Could not load the card form.");
@@ -106,8 +124,27 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
             setError(t.noShowCardError ?? "Please check your card details.");
             return null;
           }
+          // Buyer verification (SCA/AVS/CVV) — Square checks the card at storage
+          // time and rejects a wrong CVV/postal, so a bogus card never vaults.
+          // A verification failure (throw / no token) blocks the save.
+          let verificationToken: string | undefined;
+          try {
+            const v = await paymentsRef.current?.verifyBuyer(res.token, {
+              intent: "STORE",
+              customerInitiated: true,
+              sellerKeyedIn: false,
+            });
+            verificationToken = v?.token ?? undefined;
+            if (!verificationToken) {
+              setError(t.noShowCardError ?? "Please check your card details.");
+              return null;
+            }
+          } catch {
+            setError(t.noShowCardError ?? "Please check your card details.");
+            return null;
+          }
           setError(null);
-          return res.token;
+          return { token: res.token, verificationToken };
         } catch {
           setError(t.noShowCardError ?? "Please check your card details.");
           return null;
