@@ -93,10 +93,11 @@ export function MobileBottomNav({
         // analytics rather than generic "bars".
         icon: TrendingUp,
         match: (p: string) => p.startsWith(`${dashRoot}/reports`),
-        // Release flag: Reports is Beta (advanced_reports → reports_enabled),
-        // default OFF. Hidden unless SuperAdmin enables the flag — matches
-        // the DashboardSidebar gate so desktop + mobile stay in sync.
-        hidden: featureOff("advanced_reports"),
+        // Reports = owner/admin KPI/revenue overview. Gate on BOTH the release
+        // flag AND the role so mobile matches the sidebar + the /reports page's
+        // own server-side redirect — otherwise a receptionist saw a Reports tab
+        // that just bounced them home.
+        hidden: featureOff("advanced_reports") || !isOwnerAdmin,
       },
       {
         key: "settings",
