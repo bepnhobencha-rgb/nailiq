@@ -2773,6 +2773,7 @@ function ReceptionistCenterInner({
                   slug={slug}
                   salonId={data.salon.id}
                   language={language}
+                  timezone={data.salon.timezone}
                   onClose={() => setDeskGroupOpen(false)}
                   onCreated={() => {
                     void reloadCurrentDay();
