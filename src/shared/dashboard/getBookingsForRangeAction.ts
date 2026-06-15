@@ -4,7 +4,7 @@ import * as Sentry from "@sentry/nextjs";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { salonDayRangeUtc } from "@/shared/lib/salonTime";
+import { salonDayRangeUtc, salonYmdOfUtc } from "@/shared/lib/salonTime";
 import type { BookingStatus } from "@/shared/types";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -56,25 +56,7 @@ export type BookingsRangeHint = {
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/**
- * Derive the salon-local YYYY-MM-DD for a UTC ISO string.
- * Uses `en-CA` locale because it reliably emits `YYYY-MM-DD` parts.
- */
-function utcIsoToSalonYmd(utcIso: string, timezone: string): string {
-  const ms = Date.parse(utcIso);
-  if (Number.isNaN(ms)) return "";
-  const dtf = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const parts = Object.fromEntries(
-    dtf.formatToParts(new Date(ms)).map((p) => [p.type, p.value]),
-  ) as Record<string, string>;
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
+// Salon-local YYYY-MM-DD derivation uses the shared `salonYmdOfUtc`.
 
 const CALENDAR_STATUSES = ["pending", "confirmed", "in_progress", "completed"] as const;
 
@@ -156,7 +138,7 @@ function groupByDay(
   for (const row of data) {
     const st = row.start_time_utc as string | null | undefined;
     if (!st) continue;
-    const ymd = utcIsoToSalonYmd(st, timezone);
+    const ymd = salonYmdOfUtc(st, timezone);
     if (!ymd) continue;
     // FK join `services` may come back as an object, a single-element array,
     // or null — normalise to a name string.

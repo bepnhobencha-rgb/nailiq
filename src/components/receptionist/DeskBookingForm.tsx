@@ -40,6 +40,7 @@ import {
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { addonLabel } from "@/shared/booking/serviceLabels";
 import { salonToday } from "@/shared/lib/salonTime";
+import { ymdToLocalNoon } from "@/shared/lib/localDateYmd";
 import {
   getAvailableTimeSlots,
   type TimeSlot,
@@ -223,10 +224,6 @@ const COPY = {
   },
 } as const;
 
-function ymdToLocalNoon(ymd: string): Date {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(y, (m ?? 1) - 1, d ?? 1, 12, 0, 0);
-}
 
 export default function DeskBookingForm({
   slug,
