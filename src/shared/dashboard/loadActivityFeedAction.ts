@@ -16,7 +16,35 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
  * after gating here). Read-only.
  */
 
-export type ActivityKind = "event" | "sms" | "email" | "call" | "system";
+export type ActivityKind = "event" | "sms" | "email" | "call" | "system" | "login";
+
+/** Short, human device label from a user-agent string (for the login log). */
+function deviceLabel(ua: string): string {
+  if (!ua) return "Thiết bị lạ";
+  const os = /iphone/i.test(ua)
+    ? "iPhone"
+    : /ipad/i.test(ua)
+      ? "iPad"
+      : /android/i.test(ua)
+        ? "Android"
+        : /windows/i.test(ua)
+          ? "Windows"
+          : /mac os|macintosh/i.test(ua)
+            ? "Mac"
+            : /linux/i.test(ua)
+              ? "Linux"
+              : "Máy khác";
+  const browser = /edg\//i.test(ua)
+    ? "Edge"
+    : /chrome|crios/i.test(ua)
+      ? "Chrome"
+      : /firefox|fxios/i.test(ua)
+        ? "Firefox"
+        : /safari/i.test(ua)
+          ? "Safari"
+          : "";
+  return browser ? `${os} · ${browser}` : os;
+}
 
 export type ActivityItem = {
   id: string;
@@ -145,6 +173,7 @@ export async function getActivityUnreadCount(
     "booking_notifications",
     "voice_ai_sessions",
     "system_audit",
+    "auth_events",
   ];
   try {
     const results = await Promise.all(
@@ -182,7 +211,7 @@ export async function loadActivityFeed(
       .maybeSingle();
     const tz = (salonRow as { timezone?: string } | null)?.timezone || "America/Los_Angeles";
 
-    const [eventsRes, notifsRes, callsRes, auditRes] = await Promise.all([
+    const [eventsRes, notifsRes, callsRes, auditRes, authRes] = await Promise.all([
       db
         .from("booking_events" as never)
         .select("id, booking_id, actor_role, event_type, payload, created_at, bookings ( client_name, start_time_utc )")
@@ -204,6 +233,12 @@ export async function loadActivityFeed(
       db
         .from("system_audit" as never)
         .select("id, table_name, action, changed_fields, created_at")
+        .eq("salon_id", salonId)
+        .order("created_at", { ascending: false })
+        .limit(PER_SOURCE),
+      db
+        .from("auth_events" as never)
+        .select("id, event_type, actor_role, ip, user_agent, created_at")
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
@@ -279,6 +314,24 @@ export async function loadActivityFeed(
         subtitle,
         status: null,
         actorRole: null,
+        bookingId: null,
+        bookingDate: null,
+        transcript: null,
+      });
+    }
+
+    for (const r of (authRes.data ?? []) as Array<Record<string, unknown>>) {
+      const isLogin = str(r.event_type) === "login";
+      const dev = deviceLabel(str(r.user_agent));
+      const ip = str(r.ip);
+      items.push({
+        id: `au-${str(r.id)}`,
+        kind: "login",
+        when: str(r.created_at),
+        title: `${isLogin ? "Đăng nhập" : "Đăng xuất"}${r.actor_role ? ` · ${ROLE_LABEL[str(r.actor_role)] ?? str(r.actor_role)}` : ""}`,
+        subtitle: `${dev}${ip ? ` · IP ${ip}` : ""}`,
+        status: null,
+        actorRole: r.actor_role ? str(r.actor_role) : null,
         bookingId: null,
         bookingDate: null,
         transcript: null,
