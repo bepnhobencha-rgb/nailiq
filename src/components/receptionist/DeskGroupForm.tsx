@@ -26,6 +26,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
 import {
+  loadLastGroup,
+  type RebookMember,
+} from "@/shared/dashboard/loadLastGroupAction";
+import {
   getDeskBookingData,
   createDeskGroup,
 } from "@/shared/dashboard/receptionistActions";
@@ -110,6 +114,8 @@ const COPY = {
     newCustomer: "New customer.",
     vipTag: " · VIP",
     visitsTag: (n: number) => ` · ${n} visits`,
+    rebookPill: (n: number) => `🔁 Rebook last group of ${n}`,
+    rebookDone: "Group prefilled — pick a date.",
     email: "Email (optional — for the confirmation)",
     date: "Date *",
     arrival: "Arrival time *",
@@ -180,6 +186,8 @@ const COPY = {
     newCustomer: "Khách mới.",
     vipTag: " · VIP",
     visitsTag: (n: number) => ` · ${n} lần ghé`,
+    rebookPill: (n: number) => `🔁 Đặt lại nhóm ${n} người gần nhất`,
+    rebookDone: "Đã điền sẵn nhóm — chọn ngày là xong.",
     email: "Email (tuỳ chọn — để gửi xác nhận)",
     date: "Ngày *",
     arrival: "Giờ đến *",
@@ -254,6 +262,9 @@ export default function DeskGroupForm({
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [leadLookupMsg, setLeadLookupMsg] = useState<string | null>(null);
+  // "Đặt lại nhóm gần nhất": last group this lead organized, offered as a prefill.
+  const [lastGroup, setLastGroup] = useState<RebookMember[] | null>(null);
+  const [rebookMsg, setRebookMsg] = useState<string | null>(null);
   const [ymd, setYmd] = useState(todayYmd());
   const [arrivalKind, setArrivalKind] = useState<ArrivalKind>("morning");
   const [specificTime, setSpecificTime] = useState("");
@@ -352,10 +363,18 @@ export default function DeskGroupForm({
     if (digits.length < 8) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- clear hint when phone too short
       setLeadLookupMsg(null);
+      setLastGroup(null);
       return;
     }
     const seq = ++lookupSeq.current;
     const t = setTimeout(async () => {
+      // Offer to rebook the last group this lead organized (>= 2 members).
+      void loadLastGroup(slug, phone).then((g) => {
+        if (seq !== lookupSeq.current) return;
+        setLastGroup(
+          g.ok && g.found && g.memberCount >= 2 ? g.members : null,
+        );
+      });
       const res = await lookupClientByPhone(slug, phone);
       if (seq !== lookupSeq.current) return;
       if (res.ok && res.found) {
@@ -386,6 +405,25 @@ export default function DeskGroupForm({
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fill-when-empty; re-running on members/email change would loop
   }, [phone, slug]);
+
+  // Prefill the whole party from the lead's last group (one tap), then the
+  // receptionist just picks a date. Clamped to the per-salon size ceiling.
+  const applyLastGroup = useCallback(() => {
+    if (!lastGroup || lastGroup.length === 0) return;
+    const clamped = lastGroup.slice(0, Math.max(MIN_SIZE, Math.min(maxSize, lastGroup.length)));
+    setSize(clamped.length);
+    setMembers(
+      clamped.map((m) => ({
+        name: m.name,
+        serviceId: m.serviceId,
+        preferredStaffId: m.preferredStaffId,
+        addonServiceIds: m.addonServiceIds.slice(),
+      })),
+    );
+    setScheduleResult(null);
+    setError(null);
+    setRebookMsg(tx.rebookDone);
+  }, [lastGroup, maxSize, tx]);
 
   const toggleAddon = useCallback((i: number, addonId: string) => {
     setMembers((prev) => {
@@ -675,6 +713,20 @@ export default function DeskGroupForm({
                           <p className="mt-1 text-[11px] text-nq-primary">
                             {leadLookupMsg}
                           </p>
+                        ) : null}
+                        {/* One-tap: prefill the lead's last group for a new date. */}
+                        {lastGroup && lastGroup.length >= 2 ? (
+                          <button
+                            type="button"
+                            onClick={applyLastGroup}
+                            data-testid="rebook-last-group"
+                            className="mt-2 rounded-full border border-nq-primary/50 bg-nq-primary/10 px-3 py-1.5 text-xs font-medium text-nq-primary hover:bg-nq-primary/20"
+                          >
+                            {tx.rebookPill(lastGroup.length)}
+                          </button>
+                        ) : null}
+                        {rebookMsg ? (
+                          <p className="mt-1 text-[11px] text-nq-muted">{rebookMsg}</p>
                         ) : null}
                       </div>
                     ) : null}
