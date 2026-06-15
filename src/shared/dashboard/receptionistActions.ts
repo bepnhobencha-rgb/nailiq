@@ -49,6 +49,7 @@ import {
   refundDeposit,
 } from "@/shared/integrations/square/deposits";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
+import { sendCustomerLinkEmail } from "@/shared/lib/sendCustomerLinkEmail";
 import { logNotification } from "@/shared/lib/notificationLog";
 import {
   pushWixCancel,
@@ -893,7 +894,7 @@ export async function requestDepositLink(
     hold?: boolean;
   },
 ): Promise<
-  | { ok: true; url: string; amountCents: number; smsSent?: boolean }
+  | { ok: true; url: string; amountCents: number; smsSent?: boolean; emailSent?: boolean }
   | { ok: false; error: string }
 > {
   const ctx = await getDashboardWriteClient(slug);
@@ -905,14 +906,20 @@ export async function requestDepositLink(
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
   // Scope check: the booking must be visible in the caller's salon (RLS client).
-  // Pull the phone too so we can text the link without a second round-trip.
+  // Pull phone + email so we can deliver the link on both channels in one pass.
   const { data: bk } = await ctx.supabase
     .from("bookings")
-    .select("id, client_phone")
+    .select("id, client_phone, client_email, client_name")
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .maybeSingle();
   if (!bk?.id) return fail("invalid_booking");
+
+  const { data: salonRow } = await ctx.supabase
+    .from("salons")
+    .select("email_links_enabled, address")
+    .eq("id", ctx.salon.id)
+    .maybeSingle();
 
   try {
     const r = await createDepositForBooking(bookingId, {
@@ -921,6 +928,7 @@ export async function requestDepositLink(
     });
     if (!r.required || !r.url) return fail(r.reason || "deposit_not_required");
 
+    const en = input.language === "en";
     let smsSent: boolean | undefined;
     if (input.sendSms) {
       smsSent = await sendDepositSms({
@@ -928,10 +936,39 @@ export async function requestDepositLink(
         salonName: ctx.salon.name,
         amountCents: r.amountCents ?? 0,
         url: r.url,
-        language: input.language === "en" ? "en" : "vi",
+        language: en ? "en" : "vi",
       });
     }
-    return { ok: true, url: r.url, amountCents: r.amountCents ?? 0, smsSent };
+
+    // Parallel email channel — same link, resilient to US SMS link filtering.
+    // Only when the desk chose to notify the customer (sendSms = the notify
+    // intent); if they only want the on-screen QR, don't email unprompted.
+    let emailSent: boolean | undefined;
+    const emailEnabled =
+      (salonRow as { email_links_enabled?: boolean } | null)?.email_links_enabled !== false;
+    const email = String((bk as { client_email?: string }).client_email ?? "").trim();
+    if (input.sendSms && emailEnabled && email) {
+      const salonName = ctx.salon.name?.trim() || "NailIQ";
+      const amount = `$${((r.amountCents ?? 0) / 100).toFixed(2)}`;
+      const er = await sendCustomerLinkEmail({
+        email,
+        clientName: (bk as { client_name?: string }).client_name ?? null,
+        salonName,
+        salonAddress: (salonRow as { address?: string | null } | null)?.address ?? null,
+        lang: en ? "en" : "vi",
+        subject: en
+          ? `Pay your ${amount} deposit to hold your appointment · ${salonName}`
+          : `Đặt cọc ${amount} để giữ lịch hẹn · ${salonName}`,
+        bodyText: en
+          ? `Please pay your ${amount} deposit to confirm and hold your appointment.`
+          : `Vui lòng đặt cọc ${amount} để xác nhận và giữ lịch hẹn của bạn.`,
+        ctaLabel: en ? `Pay ${amount} deposit` : `Đặt cọc ${amount}`,
+        url: r.url,
+      });
+      emailSent = er.ok;
+    }
+
+    return { ok: true, url: r.url, amountCents: r.amountCents ?? 0, smsSent, emailSent };
   } catch (e) {
     console.error("[requestDepositLink]", e);
     return fail("server_error");
@@ -2543,7 +2580,7 @@ export async function inviteWaitlistEntry(
   const { data: entry, error: loadErr } = await svc
     .from("booking_waitlist_entries")
     .select(
-      "id, service_id, client_name, client_phone, booking_date, claim_token, status, offered_staff_id, offered_start_utc",
+      "id, service_id, client_name, client_phone, client_email, booking_date, claim_token, status, offered_staff_id, offered_start_utc",
     )
     .eq("id", id)
     .eq("salon_id", ctx.salon.id)
@@ -2558,6 +2595,7 @@ export async function inviteWaitlistEntry(
     service_id: string | null;
     client_name: string | null;
     client_phone: string | null;
+    client_email: string | null;
     booking_date: string | null;
     claim_token: string | null;
     status: string | null;
@@ -2567,7 +2605,10 @@ export async function inviteWaitlistEntry(
   if (!row?.id) return { ok: false, error: "not_found" };
 
   const phone = String(row.client_phone ?? "").trim();
-  if (!phone) return { ok: false, error: "no_phone" };
+  const inviteEmail = String(row.client_email ?? "").trim();
+  // Need at least one channel to reach the customer (email is the resilient
+  // fallback when US carriers filter the link-SMS).
+  if (!phone && !inviteEmail) return { ok: false, error: "no_phone" };
 
   // Resolve service + salon names for the SMS copy.
   let serviceName = "";
@@ -2629,10 +2670,12 @@ export async function inviteWaitlistEntry(
   // matches it ('vi' → "Nhắn STOP để ngừng nhận tin."). Best-effort: any read
   // failure defaults to English. The VN-ASCII body above is fixed by design.
   let smsLang: "en" | "vi" = "en";
+  let emailEnabled = true;
+  let salonAddress: string | null = null;
   try {
     const { data: langRow } = await svc
       .from("salons")
-      .select("default_notification_locale" as never)
+      .select("default_notification_locale, email_links_enabled, address" as never)
       .eq("id", ctx.salon.id)
       .maybeSingle();
     const locale = String(
@@ -2640,16 +2683,46 @@ export async function inviteWaitlistEntry(
         ?.default_notification_locale ?? "",
     ).toLowerCase();
     smsLang = locale === "vi" ? "vi" : "en";
+    emailEnabled =
+      (langRow as { email_links_enabled?: boolean } | null)?.email_links_enabled !== false;
+    salonAddress =
+      (langRow as { address?: string | null } | null)?.address ?? null;
   } catch {
-    /* default 'en' */
+    /* default 'en' + email on */
   }
 
   // Send FIRST, then record. A suppressed send (dev/CI/test/fictional number)
   // returns ok:true and still counts as "handled". A genuine failure
-  // (twilio_not_configured / Twilio error) must NOT mark the entry notified —
-  // otherwise the customer never got the link yet the cron treats them as
-  // already invited. Leave the row 'waiting' so staff can retry / call them.
-  const smsResult = await sendSmsReminder(phone, body, { lang: smsLang });
+  // (twilio_not_configured / Twilio error) must NOT mark the entry notified
+  // ON ITS OWN — but a successful EMAIL still reaches the customer, so the
+  // entry counts as notified if EITHER channel landed.
+  const smsResult = phone
+    ? await sendSmsReminder(phone, body, { lang: smsLang })
+    : { ok: false, suppressed: false, messageSid: null as string | null, error: "no_phone" };
+
+  // Parallel email channel — same claim link, resilient to US SMS link filtering.
+  let emailOk = false;
+  if (emailEnabled && inviteEmail) {
+    const er = await sendCustomerLinkEmail({
+      email: inviteEmail,
+      clientName: row.client_name,
+      salonName,
+      salonAddress,
+      lang: smsLang,
+      subject:
+        smsLang === "en"
+          ? `A spot opened up for your ${serviceName || "appointment"} · ${salonName}`
+          : `Có chỗ trống cho ${serviceName || "lịch hẹn"} của bạn · ${salonName}`,
+      bodyText:
+        smsLang === "en"
+          ? `Good news — a spot opened up${serviceName ? ` for ${serviceName}` : ""}${bookingDate ? ` on ${bookingDate}` : ""}. It's held for 20 minutes — claim it now.`
+          : `Tin vui — vừa có chỗ trống${serviceName ? ` cho ${serviceName}` : ""}${bookingDate ? ` ngày ${bookingDate}` : ""}. Chỗ được giữ trong 20 phút — nhận ngay.`,
+      ctaLabel: smsLang === "en" ? "Claim this spot" : "Nhận chỗ này",
+      url: claimUrl,
+      respectOptOut: true,
+    });
+    emailOk = er.ok;
+  }
 
   // Log to booking_notifications (booking_id is null — the entry isn't a
   // booking yet). Best-effort; never fail the invite on a logging hiccup.
@@ -2669,8 +2742,8 @@ export async function inviteWaitlistEntry(
     console.error("[inviteWaitlistEntry] logNotification", e);
   }
 
-  if (!smsResult.ok) {
-    // Genuine delivery failure — nothing recorded, the row stays 'waiting'.
+  if (!smsResult.ok && !emailOk) {
+    // Neither channel landed — nothing recorded, the row stays 'waiting'.
     return { ok: false, error: smsResult.error ?? "sms_failed" };
   }
 

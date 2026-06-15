@@ -19,7 +19,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
   const sb = (await import("@/shared/lib/supabase/serviceRole")).createServiceRoleClient();
   const { data: salonRow } = await sb
     .from("salons" as never)
-    .select("name, vertical, health_ack_required, feature_flags, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, deposit_hold_grace_minutes, cancellation_policy, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_details_submitted, payment_provider, noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold")
+    .select("name, vertical, health_ack_required, email_links_enabled, feature_flags, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, deposit_hold_grace_minutes, cancellation_policy, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_details_submitted, payment_provider, noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold")
     .eq("id", ctx.salon.id)
     .maybeSingle();
   // deposit_enabled lives on square_integrations (a salon only has a row once
@@ -35,6 +35,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
     name?: string | null;
     vertical?: string | null;
     health_ack_required?: boolean | null;
+    email_links_enabled?: boolean | null;
     feature_flags?: Record<string, unknown> | null;
     reminders_enabled?: boolean;
     reminder_24h_enabled?: boolean;
@@ -86,6 +87,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
       cancellationPolicyEn={policyEn}
       cancellationPolicyVi={policyVi}
       healthAckEffective={healthAckEff}
+      emailLinksEnabled={row?.email_links_enabled !== false}
       connectHasAccount={Boolean(row?.stripe_connect_account_id)}
       connectChargesEnabled={row?.stripe_connect_charges_enabled ?? false}
       connectDetailsSubmitted={row?.stripe_connect_details_submitted ?? false}

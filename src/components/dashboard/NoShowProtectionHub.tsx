@@ -42,6 +42,8 @@ type Props = {
   cancellationPolicyVi: string;
   /** Effective health-acknowledgment requirement (salon override ?? vertical default). */
   healthAckEffective: boolean;
+  /** Also email desk-sent links (save-card/deposit/waitlist) alongside SMS. */
+  emailLinksEnabled: boolean;
   connectHasAccount: boolean;
   connectChargesEnabled: boolean;
   connectDetailsSubmitted: boolean;
@@ -108,6 +110,7 @@ export function NoShowProtectionHub({
   cancellationPolicyEn: initialPolicyEn,
   cancellationPolicyVi: initialPolicyVi,
   healthAckEffective: initialHealthAck,
+  emailLinksEnabled: initialEmailLinks,
   connectHasAccount,
   connectChargesEnabled,
   connectDetailsSubmitted,
@@ -130,6 +133,7 @@ export function NoShowProtectionHub({
   const [reminder24h, setReminder24h] = useState(initial24h);
   const [reminder3h, setReminder3h] = useState(initial3h);
   const [smsReminders, setSmsReminders] = useState(initialSms);
+  const [emailLinks, setEmailLinks] = useState(initialEmailLinks);
   const [threshold, setThreshold] = useState(String(Math.round(initialThreshold / 100)));
   const [pctNoShow, setPctNoShow] = useState(String(initialPctNoShow));
   const [pctHighValue, setPctHighValue] = useState(String(initialPctHighValue));
@@ -188,6 +192,7 @@ export function NoShowProtectionHub({
         reminder_24h_enabled: reminder24h,
         reminder_3h_enabled: reminder3h,
         sms_reminders_enabled: smsReminders,
+        email_links_enabled: emailLinks,
         deposit_high_value_cents: isNaN(cents) ? 10000 : cents,
         deposit_pct_no_show: parseInt(pctNoShow, 10),
         deposit_pct_high_value: parseInt(pctHighValue, 10),
@@ -423,6 +428,23 @@ export function NoShowProtectionHub({
                   <span className="text-sm text-nq-text">
                     SMS reminders
                     <span className="ml-2 text-xs text-nq-muted">(requires Twilio phone number)</span>
+                  </span>
+                </label>
+                <p className="mt-1 text-xs font-medium uppercase tracking-widest text-nq-muted">Email</p>
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="checkbox"
+                    data-testid="email-links-toggle"
+                    checked={emailLinks}
+                    onChange={(e) => setEmailLinks(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded accent-nq-primary"
+                  />
+                  <span className="text-sm text-nq-text">
+                    Cũng gửi link qua email · Also email links
+                    <span className="mt-0.5 block text-xs text-nq-muted">
+                      Link lưu thẻ / cọc / mời chờ chỗ được gửi kèm email khi có địa chỉ — chống lỗi
+                      SMS gửi link ở Mỹ. Nên để bật.
+                    </span>
                   </span>
                 </label>
                 <div className="flex items-center gap-3">
