@@ -18,6 +18,35 @@ export type C360Booking = {
   channel: string | null;
 };
 
+/** Median days between a customer's distinct visit days — the real return
+ *  rhythm, used as a fallback when the batch-computed cadence is missing.
+ *  Returns null when there aren't enough visits (< 3) to infer one. */
+function inferCadenceDaysFromTimeline(
+  entries: { startUtc: string; status: string }[],
+): number | null {
+  const dayMs = 86_400_000;
+  const days = Array.from(
+    new Set(
+      entries
+        .filter((e) => e.status !== "cancelled" && e.status !== "pending")
+        .map((e) => Math.floor(Date.parse(e.startUtc) / dayMs))
+        .filter((n) => Number.isFinite(n)),
+    ),
+  ).sort((a, b) => a - b);
+  if (days.length < 3) return null;
+  const gaps: number[] = [];
+  for (let i = 1; i < days.length; i++) {
+    const g = days[i] - days[i - 1];
+    if (g >= 1 && g <= 183) gaps.push(g);
+  }
+  if (gaps.length === 0) return null;
+  gaps.sort((a, b) => a - b);
+  const mid = Math.floor(gaps.length / 2);
+  return gaps.length % 2 === 0
+    ? Math.round((gaps[mid - 1] + gaps[mid]) / 2)
+    : gaps[mid];
+}
+
 export type ClientProfile360 = {
   profile: {
     id: string | null;
@@ -506,11 +535,35 @@ export async function loadClientProfile360(
           (stfRow as { name?: string | null } | null)?.name?.trim() ?? null;
       }
 
+      // The precomputed `recurrence_frequency_days` is often 0/unset (the
+      // batch job lags). Fall back to the real visit rhythm (median gap
+      // between distinct visit days) so "comes back every ~N weeks" + the
+      // next-predicted date render meaningfully instead of "every 0 days".
+      const rawCadence = pt.recurrence_frequency_days ?? null;
+      const cadenceDays =
+        rawCadence && rawCadence > 0
+          ? rawCadence
+          : inferCadenceDaysFromTimeline(allTimeline);
+      const lastVisitUtc = allTimeline[0]?.startUtc ?? null;
+      let nextPredictedAt = pt.next_predicted_at ?? null;
+      if (
+        (!nextPredictedAt || !rawCadence || rawCadence <= 0) &&
+        cadenceDays &&
+        lastVisitUtc
+      ) {
+        const ms = Date.parse(lastVisitUtc);
+        if (Number.isFinite(ms)) {
+          nextPredictedAt = new Date(
+            ms + cadenceDays * 86_400_000,
+          ).toISOString();
+        }
+      }
+
       pattern = {
         recurringWeekday: pt.recurring_weekday ?? null,
         recurringHour: pt.recurring_hour ?? null,
-        recurrenceDays: pt.recurrence_frequency_days ?? null,
-        nextPredictedAt: pt.next_predicted_at ?? null,
+        recurrenceDays: cadenceDays,
+        nextPredictedAt,
         usualServiceName,
         usualStaffName,
         usualTotalCents: pt.usual_total_cents ?? null,
