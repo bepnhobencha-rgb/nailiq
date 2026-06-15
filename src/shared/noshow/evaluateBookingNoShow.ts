@@ -90,9 +90,13 @@ export async function evaluateBookingNoShow(
     // off). New / high-risk + provider connected + protection on.
     let cardRequired = false;
     try {
-      const { noShowCardDecision } = await import(
+      const { noShowCardDecision, autoAttachReturningCard } = await import(
         "@/shared/integrations/square/noshow"
       );
+      // Returning customer who already left a card → carry it forward so this
+      // visit stays protected without re-asking. Runs BEFORE the decision: once
+      // attached, noShowCardDecision returns "card already saved" (required:false).
+      await autoAttachReturningCard(body.bookingId);
       cardRequired = (await noShowCardDecision(body.bookingId)).required;
     } catch (e) {
       console.error("[evaluateBookingNoShow] card decision", e);

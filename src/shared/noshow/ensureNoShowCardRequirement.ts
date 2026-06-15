@@ -24,9 +24,15 @@ export async function ensureNoShowCardRequirement(
     const id = (bookingId ?? "").trim();
     if (!id) return { required: false, feeCents: 0 };
 
-    const { noShowCardDecision } = await import(
+    const { noShowCardDecision, autoAttachReturningCard } = await import(
       "@/shared/integrations/square/noshow"
     );
+    // Returning customer with a card already on file → carry it forward so this
+    // booking is protected without re-asking (desk/group/walk-in/voice paths).
+    // If attached, there's nothing to flag — the card is on file.
+    const carried = await autoAttachReturningCard(id);
+    if (carried.attached) return { required: false, feeCents: 0 };
+
     const decision = await noShowCardDecision(id);
     if (!decision.required) return { required: false, feeCents: 0 };
 
