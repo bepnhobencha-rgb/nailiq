@@ -54,17 +54,13 @@ export function DashboardViewControls() {
     };
   }, []);
 
-  // Fullscreen the whole document (not a sub-element) so portaled UI — the
-  // booking drawer, desk/group forms, toasts (all createPortal → document.body)
-  // — still render in fullscreen. A sub-element fullscreen would hide anything
-  // outside it. The `nq-kiosk` class on <html> then drops the sidebar/nav/Coco
-  // for the clean wall-board look (see globals.css), and is removed on exit.
+  // Fullscreen the whole document (not a sub-element) so ALL UI keeps working
+  // in fullscreen — portaled drawers/forms/toasts (createPortal → document.body)
+  // AND the sidebar/nav. Fullscreen just hides the browser chrome (address bar)
+  // for an immersive view; the sidebar stays (it collapses for more room).
   useEffect(() => {
-    const onChange = () => {
-      const fs = document.fullscreenElement === document.documentElement;
-      setIsFs(fs);
-      document.documentElement.classList.toggle("nq-kiosk", fs);
-    };
+    const onChange = () =>
+      setIsFs(document.fullscreenElement === document.documentElement);
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);

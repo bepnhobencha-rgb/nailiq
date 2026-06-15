@@ -75,7 +75,6 @@ export function DashboardShell({
 
   return (
     <div
-      data-nq-shell
       className="min-h-dvh bg-nq-bg"
       style={{ ["--nq-sidebar-w" as string]: sidebarWidth }}
     >
@@ -102,9 +101,9 @@ export function DashboardShell({
         className="min-h-dvh md:pl-[var(--nq-sidebar-w)] pb-16 md:pb-0 transition-[padding-left] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]"
       >
         <DashboardTopBar slug={slug} />
-        {/* Fullscreen target — kiosk mode hides sidebar/nav. The controls live
-            INSIDE this wrapper so the ⛶ exit stays visible + tappable in
-            fullscreen (critical on iPad/touch where there's no Esc key). */}
+        {/* The view controls (refresh + fullscreen) live here, fixed top-right
+            on every page. Fullscreen now targets the whole document so the
+            sidebar/nav + portaled drawers all stay usable. */}
         <div id="nq-dashboard-content">
           <DashboardViewControls />
           {children}
