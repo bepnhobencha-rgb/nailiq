@@ -410,6 +410,39 @@ export function BookingGroupFlow({
   }, [openingWeek, date]);
   const isSelectedDayClosed = !!dayHours?.closed;
 
+  // Pre-fill "Specific time" with the current salon-local time (rounded up to
+  // the next 15 min, clamped to that day's open hours) the first time the
+  // customer picks "Specific time" — so they confirm/nudge a sensible value
+  // instead of starting from an empty field. Functional setState keeps any
+  // value the customer already typed or intentionally cleared.
+  useEffect(() => {
+    if (arrivalKind !== "specific") return;
+    setSpecificTime((cur) => {
+      if (cur !== "") return cur;
+      const tz = salon.timezone || "America/Los_Angeles";
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).formatToParts(new Date());
+      const h = Number(parts.find((p) => p.type === "hour")?.value ?? "12");
+      const m = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+      let mins = Math.ceil((h * 60 + m) / 15) * 15;
+      const toMin = (s?: string): number | null => {
+        const [hh, mm] = (s ?? "").split(":").map(Number);
+        return Number.isFinite(hh) ? hh * 60 + (mm || 0) : null;
+      };
+      const open = (!dayHours?.closed ? toMin(dayHours?.open) : null) ?? 9 * 60;
+      const close =
+        (!dayHours?.closed ? toMin(dayHours?.close) : null) ?? 19 * 60;
+      if (mins < open || mins >= close) mins = open;
+      const hh = String(Math.floor(mins / 60)).padStart(2, "0");
+      const mm = String(mins % 60).padStart(2, "0");
+      return `${hh}:${mm}`;
+    });
+  }, [arrivalKind, salon.timezone, dayHours]);
+
   // Totals — sum of service prices + add-on prices; max member
   // effective duration (svc block + sequential add-on block).
   const totals = useMemo(() => {
