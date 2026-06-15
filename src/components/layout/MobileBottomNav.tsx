@@ -66,14 +66,15 @@ export function MobileBottomNav({
       {
         key: "front-desk",
         label: t.frontDesk,
-        href: `${dashRoot}/center`,
+        // Force the day grid (live board) — a stored week/month must not reopen.
+        href: `${dashRoot}/center?view=day`,
         icon: LayoutGrid,
         match: (p: string) => p.startsWith(`${dashRoot}/center`),
       },
       {
         key: "queue",
         label: t.walkinQueue,
-        href: `${dashRoot}/center#queue`,
+        href: `${dashRoot}/center?view=day#queue`,
         icon: Clock,
         match: () => false,
         badge: walkinQueueCount,
