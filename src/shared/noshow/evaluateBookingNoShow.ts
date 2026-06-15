@@ -80,33 +80,40 @@ export async function evaluateBookingNoShow(
     const riskScore =
       riskResult.status === "fulfilled" ? riskResult.value.score : null;
 
-    await supabase
-      .from("bookings" as never)
-      .update({
-        deposit_required: depositDecision.required,
-        deposit_amount_cents: depositDecision.required
-          ? depositDecision.amountCents
-          : null,
-        deposit_reason: depositDecision.reason,
-        deposit_status: depositDecision.required ? "required" : "not_required",
-        no_show_risk_score: riskScore,
-      })
-      .eq("id", body.bookingId);
-
-    // Hold-until-card: now that risk is written, flag whether this booking must
-    // leave a card (new / high-risk + provider connected + protection on).
+    // No-show card decision (the modern "charge only on a confirmed no-show"
+    // mechanism). Computed BEFORE the deposit write so a required card can
+    // SUPERSEDE the up-front deposit. The two protections were independent and
+    // both fired for a returning no-show customer — demanding a deposit AND a
+    // card for the very same risk. The card already covers the no-show, so when
+    // a card is required we skip the deposit; the deposit stays only as the
+    // fallback for salons that cannot capture a card (no provider / protection
+    // off). New / high-risk + provider connected + protection on.
+    let cardRequired = false;
     try {
       const { noShowCardDecision } = await import(
         "@/shared/integrations/square/noshow"
       );
-      const decision = await noShowCardDecision(body.bookingId);
-      await supabase
-        .from("bookings" as never)
-        .update({ noshow_card_required: decision.required })
-        .eq("id", body.bookingId);
+      cardRequired = (await noShowCardDecision(body.bookingId)).required;
     } catch (e) {
-      console.error("[evaluateBookingNoShow] card-required flag", e);
+      console.error("[evaluateBookingNoShow] card decision", e);
     }
+
+    // Card supersedes deposit: keep the deposit only when no card is required.
+    const depositActive = depositDecision.required && !cardRequired;
+
+    await supabase
+      .from("bookings" as never)
+      .update({
+        deposit_required: depositActive,
+        deposit_amount_cents: depositActive
+          ? depositDecision.amountCents
+          : null,
+        deposit_reason: depositActive ? depositDecision.reason : null,
+        deposit_status: depositActive ? "required" : "not_required",
+        no_show_risk_score: riskScore,
+        noshow_card_required: cardRequired,
+      })
+      .eq("id", body.bookingId);
   } catch (e) {
     console.error("[evaluateBookingNoShow] failed", e);
   }
