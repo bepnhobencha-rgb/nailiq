@@ -1610,6 +1610,7 @@ function ReceptionistCenterInner({
       // No-show card-on-file (charge only on no-show) — surface the protection
       // at the desk. Data already loaded on the booking row.
       cardOnFile: !!b.noshow_card_id,
+      noshowCardRequired: b.noshow_card_required === true,
       noshowFeeLine:
         b.noshow_fee_cents != null
           ? formatCurrency(b.noshow_fee_cents, data.salon.currencyCode)

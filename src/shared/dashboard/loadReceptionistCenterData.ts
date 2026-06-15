@@ -287,6 +287,10 @@ export interface ReceptionistCenterData {
     /** Square card-on-file saved for this booking's no-show fee. Non-null →
      * the desk's no-show action offers a "charge $X / waive" choice. */
     noshow_card_id: string | null;
+    /** True when this booking SHOULD have a no-show card but doesn't yet —
+     * flagged at creation across all paths (desk/group/voice/...). Drives the
+     * "⚠️ needs card" badge + gates the desk "send save-card link" button. */
+    noshow_card_required: boolean;
     /** Fee (cents) that would be collected if this booking no-shows. Set when a
      * card was saved at booking time (risk-gated). */
     noshow_fee_cents: number | null;
@@ -795,6 +799,7 @@ export async function loadReceptionistCenterData(
       deposit_amount_cents,
       wix_booking_id,
       noshow_card_id,
+      noshow_card_required,
       noshow_fee_cents,
       noshow_charge_status,
       services!bookings_service_id_fkey ( name, duration_minutes, buffer_minutes ),
@@ -1380,6 +1385,8 @@ export async function loadReceptionistCenterData(
         const v = (row as { noshow_card_id?: unknown }).noshow_card_id;
         return typeof v === "string" && v.length > 0 ? v : null;
       })(),
+      noshow_card_required:
+        (row as { noshow_card_required?: unknown }).noshow_card_required === true,
       noshow_fee_cents: (() => {
         const v = (row as { noshow_fee_cents?: unknown }).noshow_fee_cents;
         if (v == null) return null;

@@ -368,6 +368,9 @@ export type BookingDetailDrawerModel = {
   /** No-show card-on-file saved for this booking (charge only on no-show).
    *  Surfaces the existing protection at the desk as a green badge. */
   cardOnFile: boolean;
+  /** Booking was flagged "needs a no-show card" at creation (any path) but has
+   *  none yet → drives the "⚠️ needs card" badge + gates the send-link button. */
+  noshowCardRequired: boolean;
   /** Formatted no-show fee that would be charged if they no-show (e.g. "$25.00");
    *  null when no fee/card is set. */
   noshowFeeLine: string | null;
@@ -899,7 +902,7 @@ export function BookingDetailDrawer({
               </div>
 
               {/* Verification + SMS + no-show-history badges */}
-              {(model.smsFailedAt || model.verificationMethod || model.depositPaidLine || model.cardOnFile || model.depositAwaitingLine || (model.noShowRiskScore != null && model.noShowRiskScore >= 70) || model.noShowHistoryCount > 0) ? (
+              {(model.smsFailedAt || model.verificationMethod || model.depositPaidLine || model.cardOnFile || model.noshowCardRequired || model.depositAwaitingLine || (model.noShowRiskScore != null && model.noShowRiskScore >= 70) || model.noShowHistoryCount > 0) ? (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {model.depositAwaitingLine ? (
                     <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-400" data-testid="drawer-deposit-awaiting-badge">
@@ -919,6 +922,10 @@ export function BookingDetailDrawer({
                             ? ` · phí no-show ${model.noshowFeeLine}`
                             : ` · no-show fee ${model.noshowFeeLine}`)
                         : ""}
+                    </span>
+                  ) : model.noshowCardRequired ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-400" data-testid="drawer-card-needed-badge">
+                      ⚠ {model.language === "vi" ? "Cần lưu thẻ — chưa có" : "Needs card — none yet"}
                     </span>
                   ) : null}
                   {model.smsFailedAt ? (
@@ -1103,7 +1110,7 @@ export function BookingDetailDrawer({
                         language={model.language}
                       />
                     ) : null}
-                    {deskEdit && model.depositsEnabled && !model.cardOnFile ? (
+                    {deskEdit && model.depositsEnabled && model.noshowCardRequired && !model.cardOnFile ? (
                       <SaveCardButton
                         slug={deskEdit.slug}
                         bookingId={deskEdit.booking.id}

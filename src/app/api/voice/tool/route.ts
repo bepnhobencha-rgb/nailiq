@@ -391,6 +391,14 @@ async function handleConfirmBooking(
       bookingId,
       event: "new",
     });
+    // Unified no-show card gate — a voice booking has no in-session card
+    // capture, so flag "needs card" like the other non-online paths.
+    try {
+      const { ensureNoShowCardRequirement } = await import(
+        "@/shared/noshow/ensureNoShowCardRequirement"
+      );
+      await ensureNoShowCardRequirement(bookingId);
+    } catch { /* best-effort */ }
   }
 
   // ── 7. Link booking to voice_ai_session ────────────────────────────────────
@@ -1500,6 +1508,13 @@ async function handleConfirmGroupBooking(
         .from("bookings")
         .update({ source: "voice", booking_channel: "voice" } as never)
         .in("id", bookingIds);
+    } catch { /* best-effort */ }
+    // Unified no-show card gate — flag the lead (only it carries a phone).
+    try {
+      const { ensureNoShowCardRequirement } = await import(
+        "@/shared/noshow/ensureNoShowCardRequirement"
+      );
+      await ensureNoShowCardRequirement(bookingIds[0]);
     } catch { /* best-effort */ }
     // Owner/admin "new booking" alert — one email for the group (first booking).
     if (bookingIds[0]) {
