@@ -152,7 +152,13 @@ export interface MonthViewProps {
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 /** Weekday header labels Mon–Sun (short). */
-const WEEKDAY_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+/** Localized short weekday names, Mon→Sun (2024-01-01 is a Monday). */
+function localizedWeekdays(locale: string): string[] {
+  const fmt = new Intl.DateTimeFormat(locale, { weekday: "short" });
+  return Array.from({ length: 7 }, (_, i) =>
+    fmt.format(new Date(2024, 0, 1 + i)),
+  );
+}
 
 const PANEL_SPRING = { type: "spring", damping: 26, stiffness: 300 } as const;
 const LAYOUT_SPRING = { type: "spring", damping: 30, stiffness: 280 } as const;
@@ -250,13 +256,15 @@ export function MonthView({
     };
   }, [slug, firstYmd, lastYmd, inMonthYmds, hint, refreshNonce]);
 
+  const locale = language === "vi" ? "vi-VN" : "en-US";
+  const weekdayHeaders = useMemo(() => localizedWeekdays(locale), [locale]);
   const monthLabel = useMemo(() => {
     const d = ymdToLocalDate(firstYmd);
-    return new Intl.DateTimeFormat("en-US", {
+    return new Intl.DateTimeFormat(locale, {
       month: "long",
       year: "numeric",
     }).format(d);
-  }, [firstYmd]);
+  }, [firstYmd, locale]);
 
   const panelOpen = selectedYmd !== null;
   const panelState = selectedYmd ? (days[selectedYmd] ?? { kind: "loading" as const }) : null;
@@ -316,7 +324,7 @@ export function MonthView({
         >
           {/* Weekday column headers */}
           <div className="mb-1 grid grid-cols-7 gap-1 text-center">
-            {WEEKDAY_HEADERS.map((h) => (
+            {weekdayHeaders.map((h) => (
               <div
                 key={h}
                 className="text-[10px] font-semibold uppercase tracking-wide text-nq-muted"

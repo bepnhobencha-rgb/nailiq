@@ -239,11 +239,17 @@ export async function loadOwnerPulse(
     // resource_id; otherwise every in-progress service occupies one chair
     // (capped at capacity) so the number is right even before resource
     // scheduling assigns ids.
-    const chairsBusy = usingResources
-      ? busyResourceIds.size > 0
-        ? busyResourceIds.size
-        : Math.min(inProgressNow, chairsTotal)
-      : busyStaffIds.size;
+    // Cap at capacity: a booking can reference a since-deactivated resource
+    // (counted in busyResourceIds but not in the active resourceCount), which
+    // would otherwise show e.g. 4/3 and overflow the ring.
+    const chairsBusy = Math.min(
+      usingResources
+        ? busyResourceIds.size > 0
+          ? busyResourceIds.size
+          : inProgressNow
+        : busyStaffIds.size,
+      chairsTotal,
+    );
     const staff: PulseStaff[] = staffRows
       .map((s) => ({
         id: s.id,
