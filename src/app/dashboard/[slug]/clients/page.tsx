@@ -50,10 +50,18 @@ export default async function ClientsPage({ params }: PageProps) {
 
   return (
     <main className="mx-auto w-full max-w-[var(--max-nq-desktop)] px-[var(--pad-nq-section-mobile)] py-6 md:px-6">
-      {/* Owner-only insights: top group hosts, one-number-many-names cleanup, merge. */}
-      {ctx.role === "owner" ? <TopHostsPanel slug={slug} /> : null}
-      {ctx.role === "owner" ? <MultiNamePhonePanel slug={slug} /> : null}
-      {ctx.role === "owner" ? <ClientDedupePanel slug={slug} /> : null}
+      {/* Manager insights (owner + admin): top group hosts, one-number-many-names
+          cleanup, merge. Front-desk roles don't manage customer identity. */}
+      {(() => {
+        const isManager = ctx.role === "owner" || ctx.role === "admin";
+        return isManager ? (
+          <>
+            <TopHostsPanel slug={slug} />
+            <MultiNamePhonePanel slug={slug} />
+            <ClientDedupePanel slug={slug} />
+          </>
+        ) : null;
+      })()}
       <ClientProfilesPanel
         slug={slug}
         viewerRole={ctx.role}

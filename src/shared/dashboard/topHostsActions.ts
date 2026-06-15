@@ -30,7 +30,8 @@ export type SetHostVipResult =
 export async function loadTopHosts(slug: string): Promise<LoadTopHostsResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (ctx.role !== "owner" && ctx.role !== "admin")
+    return { ok: false, error: "forbidden" };
 
   let admin;
   try {
@@ -77,7 +78,8 @@ export async function setHostVip(
 ): Promise<SetHostVipResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (ctx.role !== "owner" && ctx.role !== "admin")
+    return { ok: false, error: "forbidden" };
 
   const canonical = toCanonicalPhone(phone);
   if (!canonical) return { ok: false, error: "invalid" };
