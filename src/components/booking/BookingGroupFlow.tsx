@@ -41,6 +41,7 @@ import {
   type OpeningHoursWeek,
 } from "@/shared/dashboard/openingHoursDefaults";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
+import { NoShowCardCapture } from "./NoShowCardCapture";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { formatPhoneInputProgressive } from "@/shared/lib/phoneFormat";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
@@ -1203,6 +1204,7 @@ export function BookingGroupFlow({
         seatTogether={seatTogether}
         partyLinkUrl={partyLinkUrl}
         partyLinkFailed={partyLinkFailed}
+        currencyCode={salon.currencyCode}
       />
     );
   }
@@ -3642,6 +3644,7 @@ function SuccessPanel({
   seatTogether,
   partyLinkUrl,
   partyLinkFailed,
+  currencyCode,
 }: {
   t: BookingMessages;
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
@@ -3663,6 +3666,8 @@ function SuccessPanel({
   partyLinkUrl: string | null;
   /** True when createPartyLink returned ok:false or threw — triggers non-blocking warning. */
   partyLinkFailed: boolean;
+  /** Salon currency — for the no-show card-capture fee label. */
+  currencyCode: BookingSalonMeta["currencyCode"];
 }) {
   const arrangement =
     scheduleResult && scheduleResult.ok
@@ -3727,7 +3732,18 @@ function SuccessPanel({
         </p>
       ) : null}
 
-      {t ? null : null}
+      {/* No-show card capture for the organizer (lead booking carries the
+          phone). Self-gates: renders the card form only when the lead is
+          risk-flagged + Square is configured — same as the individual flow. */}
+      {successResult.bookingIds[0] ? (
+        <div className="mt-5 text-left">
+          <NoShowCardCapture
+            bookingId={successResult.bookingIds[0]}
+            currencyFormat={(cents) => formatCurrency(cents, currencyCode) ?? ""}
+            t={t}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }
