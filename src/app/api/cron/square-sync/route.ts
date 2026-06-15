@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { looseServiceClient } from "@/shared/integrations/square/looseDb";
 import { runSquareForwardSync } from "@/shared/integrations/square/sync";
 import { reconcileDeposits } from "@/shared/integrations/square/deposits";
+import { reconcileNoShowFeeLinks } from "@/shared/integrations/square/noshow";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -34,7 +35,8 @@ export async function GET(req: NextRequest) {
     try {
       const sync = await runSquareForwardSync(salonId);
       const deposits = await reconcileDeposits(salonId);
-      results[salonId] = { ...sync, deposits };
+      const noShowFees = await reconcileNoShowFeeLinks(salonId);
+      results[salonId] = { ...sync, deposits, noShowFees };
     } catch (e) {
       const msg = (e as Error).message;
       console.error("[square-sync] salon", salonId, msg);

@@ -18,6 +18,7 @@ import type {
 import {
   chargeNoShowFeeManual,
   waiveNoShowFee,
+  sendNoShowFeeLink,
 } from "@/shared/dashboard/receptionistActions";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { getUserMessages } from "@/shared/i18n/user";
@@ -119,7 +120,7 @@ function UncollectedFeesCard({
   language: "en" | "vi";
 }) {
   const [rows, setRows] = useState(fees);
-  const [busy, setBusy] = useState<Record<string, "retry" | "waive" | null>>({});
+  const [busy, setBusy] = useState<Record<string, "retry" | "waive" | "link" | null>>({});
   const [note, setNote] = useState<Record<string, string>>({});
   const vi = language === "vi";
 
@@ -153,6 +154,34 @@ function UncollectedFeesCard({
       if (r.ok) setRows((rs) => rs.filter((f) => f.id !== id));
     } catch {
       /* leave the row; desk can retry the action */
+    } finally {
+      setBusy((b) => ({ ...b, [id]: null }));
+    }
+  }
+
+  async function sendLink(id: string) {
+    setBusy((b) => ({ ...b, [id]: "link" }));
+    setNote((n) => ({ ...n, [id]: "" }));
+    try {
+      const r = await sendNoShowFeeLink(slug, {
+        salonId,
+        bookingId: id,
+        sendSms: true,
+        language,
+      });
+      if (r.ok) {
+        setNote((n) => ({
+          ...n,
+          [id]:
+            r.smsSent || r.emailSent
+              ? vi ? "✓ Đã gửi link cho khách" : "✓ Link sent to customer"
+              : vi ? "✓ Đã tạo link (khách không có SĐT/email)" : "✓ Link created (no phone/email)",
+        }));
+      } else {
+        setNote((n) => ({ ...n, [id]: vi ? "Không tạo được link" : "Couldn't create link" }));
+      }
+    } catch {
+      setNote((n) => ({ ...n, [id]: vi ? "Lỗi, thử lại" : "Error, try again" }));
     } finally {
       setBusy((b) => ({ ...b, [id]: null }));
     }
@@ -211,6 +240,17 @@ function UncollectedFeesCard({
                   {b === "retry"
                     ? vi ? "Đang thu…" : "Charging…"
                     : vi ? "Thử thu lại" : "Retry charge"}
+                </button>
+                <button
+                  type="button"
+                  disabled={b !== null}
+                  onClick={() => void sendLink(f.id)}
+                  data-testid={`uncollected-fee-link-${f.id}`}
+                  className="flex-1 rounded-md border border-nq-primary/40 py-1.5 text-[11px] font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:opacity-50"
+                >
+                  {b === "link"
+                    ? vi ? "Đang gửi…" : "Sending…"
+                    : vi ? "Gửi link khách trả" : "Send pay link"}
                 </button>
                 <button
                   type="button"

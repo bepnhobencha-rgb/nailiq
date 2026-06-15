@@ -976,6 +976,110 @@ export async function requestDepositLink(
 }
 
 /**
+ * Desk: send the customer a Square link to pay their own no-show fee — the
+ * recovery path when the saved card just won't charge. Front-desk gated; mirrors
+ * requestDepositLink's SMS+email delivery. The fee flips to 'charged' when the
+ * link is paid (reconcileNoShowFeeLinks in the square-sync cron).
+ */
+export async function sendNoShowFeeLink(
+  slug: string,
+  input: {
+    salonId: string;
+    bookingId: string;
+    sendSms?: boolean;
+    language?: "en" | "vi";
+  },
+): Promise<
+  | { ok: true; url: string; amountCents: number; smsSent?: boolean; emailSent?: boolean }
+  | { ok: false; error: string }
+> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (!canMarkNoShow(ctx.role)) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim())
+    return fail("salon_mismatch");
+  const bookingId = String(input.bookingId ?? "").trim();
+  if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+
+  const { data: bk } = await ctx.supabase
+    .from("bookings")
+    .select("id, client_phone, client_email, client_name")
+    .eq("id", bookingId)
+    .eq("salon_id", ctx.salon.id)
+    .maybeSingle();
+  if (!bk?.id) return fail("invalid_booking");
+
+  const { data: salonRow } = await ctx.supabase
+    .from("salons")
+    .select("email_links_enabled, address")
+    .eq("id", ctx.salon.id)
+    .maybeSingle();
+
+  try {
+    const { createNoShowFeeLink } = await import(
+      "@/shared/integrations/square/noshow"
+    );
+    const r = await createNoShowFeeLink(bookingId);
+    if (!r.ok || !r.url) return fail(r.reason || "fee_link_failed");
+
+    const en = input.language === "en";
+    const amount = `$${((r.amountCents ?? 0) / 100).toFixed(2)}`;
+    const salon = ctx.salon.name?.trim() || "NailIQ";
+
+    let smsSent: boolean | undefined;
+    if (input.sendSms) {
+      const phone = String((bk as { client_phone?: string }).client_phone ?? "").trim();
+      if (phone) {
+        const body = en
+          ? `${salon}: Please pay your ${amount} no-show fee: ${r.url}`
+          : `${salon}: Vui lòng thanh toán phí no-show ${amount}: ${r.url}`;
+        try {
+          smsSent = (await sendSmsReminder(phone, body, { lang: en ? "en" : "vi" })).ok;
+        } catch {
+          smsSent = false;
+        }
+      }
+    }
+
+    let emailSent: boolean | undefined;
+    const emailEnabled =
+      (salonRow as { email_links_enabled?: boolean } | null)?.email_links_enabled !== false;
+    const email = String((bk as { client_email?: string }).client_email ?? "").trim();
+    if (input.sendSms && emailEnabled && email) {
+      const er = await sendCustomerLinkEmail({
+        email,
+        clientName: (bk as { client_name?: string }).client_name ?? null,
+        salonName: salon,
+        salonAddress: (salonRow as { address?: string | null } | null)?.address ?? null,
+        lang: en ? "en" : "vi",
+        subject: en
+          ? `Pay your ${amount} no-show fee · ${salon}`
+          : `Thanh toán phí no-show ${amount} · ${salon}`,
+        bodyText: en
+          ? `Please pay the ${amount} no-show fee for your missed appointment.`
+          : `Vui lòng thanh toán phí no-show ${amount} cho lịch hẹn đã lỡ.`,
+        ctaLabel: en ? `Pay ${amount}` : `Thanh toán ${amount}`,
+        url: r.url,
+      });
+      emailSent = er.ok;
+    }
+
+    void logBookingEvent({
+      bookingId,
+      salonId: ctx.salon.id,
+      actorUserId: ctxActorUserId(ctx),
+      actorRole: ctxActorRole(ctx),
+      eventType: "booking_status_changed",
+      payload: { reason: "desk_send_noshow_fee_link" },
+    });
+    return { ok: true, url: r.url, amountCents: r.amountCents ?? 0, smsSent, emailSent };
+  } catch (e) {
+    console.error("[sendNoShowFeeLink]", e);
+    return fail("server_error");
+  }
+}
+
+/**
  * Create a GROUP booking from the front desk. Thin wrapper over the shared
  * `submitGroupBooking` (same engine the public flow uses, so the AI scheduler /
  * conflict checks / add-on handling are identical) with desk auth on top:
