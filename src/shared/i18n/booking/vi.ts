@@ -147,7 +147,7 @@ export const bookingVi: BookingMessages = {
   clientPhoneHint: "✨ Khách quen? Thông tin của bạn sẽ tự động điền vào.",
   clientPhonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
   clientEmailLabel: "Email (không bắt buộc)",
-  clientEmailHint: "Nhận xác nhận đặt lịch qua email.",
+  clientEmailHint: "Nên thêm — nhận link đổi/huỷ lịch hẹn và ưu đãi riêng cho khách.",
   clientNotesLabel: "Ghi chú",
   clientNotesOptionalHint:
     "Không bắt buộc — dị ứng, ý tưởng thiết kế, chỗ đỗ xe, v.v.",

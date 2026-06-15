@@ -305,14 +305,32 @@ export function BookingFlowInfoPanel({
             </p>
           ) : null}
         </div>
-        <div>
+        <div
+          className={cn(
+            "rounded-xl transition-colors",
+            // Highlight to nudge adding an email (reschedule link + offers) while
+            // it's still empty; calms down once filled.
+            !clientEmail.trim() &&
+              "-mx-3 border border-[var(--salon-primary)]/35 bg-[var(--salon-primary)]/[0.05] px-3 py-3",
+          )}
+        >
           <label
             htmlFor="booking-info-email"
-            className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
+            className="mb-1 block text-sm font-medium text-[var(--booking-text)]"
           >
             {t.clientEmailLabel}
           </label>
-          <p className="mb-2 text-xs text-[var(--booking-text-muted)]">{t.clientEmailHint}</p>
+          <p
+            className={cn(
+              "mb-2 text-xs",
+              clientEmail.trim()
+                ? "text-[var(--booking-text-muted)]"
+                : "font-medium text-[var(--salon-primary)]",
+            )}
+          >
+            {clientEmail.trim() ? "" : "✨ "}
+            {t.clientEmailHint}
+          </p>
           <input
             id="booking-info-email"
             ref={emailRef}

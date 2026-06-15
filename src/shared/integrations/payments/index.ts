@@ -48,8 +48,18 @@ export async function resolvePaymentProvider(
     const { getStripeClient } = await import("@/shared/lib/stripe");
     const stripe = getStripeClient();
     if (!stripe) return null; // no Stripe key configured
+    // Currency must match the salon's account — never hardcode (Stripe charges
+    // in the connected account's currency).
+    const { data: salonRow } = await db
+      .from("salons")
+      .select("currency_code")
+      .eq("id", salonId)
+      .maybeSingle();
+    const currency = String(
+      (salonRow as Row | null)?.currency_code || "USD",
+    ).trim().toLowerCase() || "usd";
     const { StripeProvider } = await import("./stripe");
-    return new StripeProvider(stripe);
+    return new StripeProvider(stripe, currency);
   }
 
   return null;
