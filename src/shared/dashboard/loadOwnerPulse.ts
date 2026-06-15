@@ -37,6 +37,30 @@ export type PulseStaff = {
   status: "busy" | "available";
 };
 
+/** What the "in service" ring counts — a physical resource kind, or staff
+ *  headcount when the salon hasn't set up the resource layer. */
+export type CapacityKind = "bed" | "chair" | "room" | "station" | "staff";
+
+const KNOWN_KINDS: CapacityKind[] = ["bed", "chair", "room", "station"];
+
+function dominantKind(rows: { kind: string | null }[]): CapacityKind {
+  const tally = new Map<string, number>();
+  for (const r of rows) {
+    const k = (r.kind ?? "").trim().toLowerCase();
+    if (k) tally.set(k, (tally.get(k) ?? 0) + 1);
+  }
+  let best: CapacityKind = "chair";
+  let bestN = 0;
+  for (const k of KNOWN_KINDS) {
+    const n = tally.get(k) ?? 0;
+    if (n > bestN) {
+      best = k;
+      bestN = n;
+    }
+  }
+  return best;
+}
+
 export type OwnerPulseData = {
   salonName: string;
   timezone: string;
@@ -44,6 +68,7 @@ export type OwnerPulseData = {
   // Live busy
   chairsBusy: number;
   chairsTotal: number;
+  capacityKind: CapacityKind;
   // Money (cents)
   revenueTodayCents: number;
   revenueBenchmarkCents: number; // last week, same weekday (completed)
@@ -73,6 +98,7 @@ type BookingLite = {
   start_time_utc: string | null;
   end_time_utc: string | null;
   staff_id: string | null;
+  resource_id: string | null;
   no_show_risk_score: number | null;
   booking_channel: string | null;
   source: string | null;
@@ -102,11 +128,12 @@ export async function loadOwnerPulse(
     const sb = ctx.supabase;
     const salonId = ctx.salon.id;
 
-    const [todayRes, tomorrowRes, benchRes, staffRes] = await Promise.all([
+    const [todayRes, tomorrowRes, benchRes, staffRes, resourcesRes] =
+      await Promise.all([
       sb
         .from("bookings")
         .select(
-          "status, price_cents, start_time_utc, end_time_utc, staff_id, no_show_risk_score, booking_channel, source",
+          "status, price_cents, start_time_utc, end_time_utc, staff_id, resource_id, no_show_risk_score, booking_channel, source",
         )
         .eq("salon_id", salonId)
         .gte("start_time_utc", today.startUtc)
@@ -130,6 +157,14 @@ export async function loadOwnerPulse(
         .select("id, name, status")
         .eq("salon_id", salonId)
         .eq("status", "active"),
+      // Physical capacity (beds/chairs/stations). When a salon has configured
+      // resources we measure "in service" against THEM, not staff headcount.
+      sb
+        .from("salon_resources")
+        .select("id, kind")
+        .eq("salon_id", salonId)
+        .eq("status", "active")
+        .is("deleted_at", null),
     ]);
 
     const rows = (todayRes.data ?? []) as BookingLite[];
@@ -145,6 +180,8 @@ export async function loadOwnerPulse(
     let notStarted = 0;
     let noShowRisk = 0;
     const busyStaffIds = new Set<string>();
+    const busyResourceIds = new Set<string>();
+    let inProgressNow = 0;
 
     for (const b of rows) {
       if (isWalkin(b)) walkinToday += 1;
@@ -159,7 +196,9 @@ export async function loadOwnerPulse(
           noShowToday += 1;
           break;
         case "in_progress":
+          inProgressNow += 1;
           if (b.staff_id) busyStaffIds.add(b.staff_id);
+          if (b.resource_id) busyResourceIds.add(b.resource_id);
           if (end && end < nowIso) overdue += 1;
           break;
         case "confirmed":
@@ -184,8 +223,27 @@ export async function loadOwnerPulse(
       name: string | null;
       status: string;
     }[];
-    const chairsTotal = staffRows.length;
-    const chairsBusy = busyStaffIds.size;
+    // "Chairs in service" = physical capacity. Prefer the salon's configured
+    // resources (beds/chairs/stations); fall back to active-staff headcount for
+    // salons that haven't set up the resource layer, so nothing breaks for them.
+    const resourceRows = (resourcesRes.data ?? []) as { kind: string | null }[];
+    const resourceCount = resourceRows.length;
+    const usingResources = resourceCount > 0;
+    const chairsTotal = usingResources ? resourceCount : staffRows.length;
+    // Unit label for the ring — the dominant resource kind (bed/chair/room…),
+    // or "staff" when we fell back to headcount.
+    const capacityKind: CapacityKind = usingResources
+      ? dominantKind(resourceRows)
+      : "staff";
+    // Occupied chairs = distinct resources in use when bookings carry a
+    // resource_id; otherwise every in-progress service occupies one chair
+    // (capped at capacity) so the number is right even before resource
+    // scheduling assigns ids.
+    const chairsBusy = usingResources
+      ? busyResourceIds.size > 0
+        ? busyResourceIds.size
+        : Math.min(inProgressNow, chairsTotal)
+      : busyStaffIds.size;
     const staff: PulseStaff[] = staffRows
       .map((s) => ({
         id: s.id,
@@ -235,6 +293,7 @@ export async function loadOwnerPulse(
           null,
         chairsBusy,
         chairsTotal,
+        capacityKind,
         revenueTodayCents,
         revenueBenchmarkCents: benchRevenue,
         totalToday: rows.length,
