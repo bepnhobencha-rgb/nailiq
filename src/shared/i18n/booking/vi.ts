@@ -66,6 +66,8 @@ export const bookingVi: BookingMessages = {
   next: "Tiếp theo",
   back: "Quay lại",
   confirmBooking: "Xác nhận đặt lịch",
+  confirmTermsAgree: "Khi xác nhận, bạn đồng ý với",
+  confirmTermsLink: "Điều khoản đặt lịch & Chính sách huỷ",
   submitting: "Đang gửi…",
   smsConsent:
     "Tôi đồng ý nhận SMS xác nhận & nhắc lịch hẹn. Có thể tính phí tin nhắn; nhắn STOP để huỷ.",

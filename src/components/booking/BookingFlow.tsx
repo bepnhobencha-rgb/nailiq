@@ -480,6 +480,7 @@ export function BookingFlow({
           <BookingFlowConfirmPanel
             t={t}
             shopLabel={flow.shopLabel}
+            shopSlug={shopSlug}
             service={flow.service}
             confirmTimeLabel={
               slotsTimezoneAbbr

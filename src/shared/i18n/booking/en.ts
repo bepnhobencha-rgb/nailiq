@@ -66,6 +66,8 @@ export const bookingEn = {
   next: "Continue",
   back: "Back",
   confirmBooking: "Confirm booking",
+  confirmTermsAgree: "By confirming, you agree to the",
+  confirmTermsLink: "Booking Terms & Cancellation Policy",
   submitting: "Submitting…",
   smsConsent:
     "I agree to receive SMS appointment confirmations & reminders. Msg & data rates may apply; reply STOP to opt out.",

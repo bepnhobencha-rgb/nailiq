@@ -34,6 +34,7 @@ export type AppliedVoucher = {
 export function BookingFlowConfirmPanel({
   t,
   shopLabel,
+  shopSlug,
   service,
   confirmTimeLabel,
   staffSummaryLabel,
@@ -66,6 +67,7 @@ export function BookingFlowConfirmPanel({
 }: {
   t: BookingMessages;
   shopLabel: string;
+  shopSlug: string;
   service: BookingServiceItem;
   confirmTimeLabel: string;
   staffSummaryLabel: string;
@@ -513,6 +515,15 @@ export function BookingFlowConfirmPanel({
             <span>{submitting ? t.submitting : t.confirmBooking}</span>
           </LuxuryBookingCta>
         </div>
+        {/* Passive agreement to the customer Booking Terms + the salon's
+            Cancellation Policy (links). Confirming the booking = agreement. */}
+        <p className="mt-3 text-center text-[11px] leading-relaxed text-[var(--booking-text-muted)]" data-testid="confirm-terms-notice">
+          {t.confirmTermsAgree ?? "By confirming, you agree to the"}{" "}
+          <a href={`/${shopSlug}/booking-terms`} target="_blank" rel="noreferrer" className="underline">
+            {t.confirmTermsLink ?? "Booking Terms & Cancellation Policy"}
+          </a>
+          .
+        </p>
         <div
           className="pb-[max(env(safe-area-inset-bottom),0px)] pt-1"
           aria-hidden="true"
