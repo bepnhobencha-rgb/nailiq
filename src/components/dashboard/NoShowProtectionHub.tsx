@@ -58,6 +58,8 @@ type Props = {
   noshowProtectionEnabled: boolean;
   /** Group organizer's card covers the whole party's no-show fee. */
   noshowGroupWholeParty: boolean;
+  /** Prior-no-show count that escalates to upfront pay-to-confirm deposit; null = off. */
+  noshowDepositEscalationThreshold: number | null;
   noshowFeePercent: number;
   noshowRiskThreshold: number;
   summary: NoShowSummary;
@@ -299,6 +301,7 @@ export function NoShowProtectionHub({
   paymentProvider: initialProvider,
   noshowProtectionEnabled: initialNoshowEnabled,
   noshowGroupWholeParty: initialWholeParty,
+  noshowDepositEscalationThreshold: initialEscalation,
   noshowFeePercent: initialNoshowPct,
   noshowRiskThreshold: initialNoshowThreshold,
   summary,
@@ -335,6 +338,11 @@ export function NoShowProtectionHub({
   );
   const [noshowEnabled, setNoshowEnabled] = useState(initialNoshowEnabled);
   const [wholeParty, setWholeParty] = useState(initialWholeParty);
+  // Escalation: ON when a threshold is set. The number input holds the count.
+  const [escalationOn, setEscalationOn] = useState(initialEscalation != null);
+  const [escalationThreshold, setEscalationThreshold] = useState(
+    String(initialEscalation ?? 2),
+  );
   const [noshowPct, setNoshowPct] = useState(String(initialNoshowPct));
   const [noshowThreshold, setNoshowThreshold] = useState(String(initialNoshowThreshold));
   const [cardSaveMsg, setCardSaveMsg] = useState<string | null>(null);
@@ -347,6 +355,9 @@ export function NoShowProtectionHub({
         noshow_fee_percent: parseInt(noshowPct, 10) || 0,
         noshow_risk_threshold: parseInt(noshowThreshold, 10) || 0,
         noshow_group_whole_party: wholeParty,
+        noshow_deposit_escalation_threshold: escalationOn
+          ? parseInt(escalationThreshold, 10) || 2
+          : null,
       });
       setCardSaveMsg(r.ok ? "Đã lưu" : (r.error ?? "Lỗi"));
       setTimeout(() => setCardSaveMsg(null), 3000);
@@ -532,6 +543,48 @@ export function NoShowProtectionHub({
                       <span className="font-medium text-nq-text">Đang TẮT:</span> chỉ giữ phí
                       của <span className="text-nq-text">riêng người tổ chức</span> — nếu cả
                       nhóm bùng, tiệm chỉ thu được 1 suất.
+                    </>
+                  )}
+                </p>
+
+                {/* Auto-escalation: chronic no-show → upfront pay-to-confirm deposit */}
+                <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm text-nq-text">
+                  <input
+                    type="checkbox"
+                    data-testid="noshow-escalation-toggle"
+                    checked={escalationOn}
+                    onChange={(e) => setEscalationOn(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-nq-primary"
+                  />
+                  <span>Khách hay bùng → buộc cọc trước / Escalate to deposit</span>
+                </label>
+                {escalationOn ? (
+                  <div className="ml-6 mt-1 flex items-center gap-2">
+                    <span className="text-xs text-nq-muted">Sau</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={escalationThreshold}
+                      onChange={(e) => setEscalationThreshold(e.target.value)}
+                      data-testid="noshow-escalation-threshold"
+                      className="w-16 rounded-lg border border-nq-border/50 bg-nq-bg px-2 py-1 text-sm text-nq-text"
+                    />
+                    <span className="text-xs text-nq-muted">lần no-show</span>
+                  </div>
+                ) : null}
+                <p className="ml-6 mt-1 text-xs text-nq-muted">
+                  {escalationOn ? (
+                    <>
+                      <span className="font-medium text-nq-text">Đang BẬT:</span> khách đạt số
+                      lần no-show này phải <span className="text-nq-text">trả cọc trước</span>{" "}
+                      (giữ chỗ + gửi link; không trả thì tự huỷ) thay vì chỉ giữ thẻ → thu chắc
+                      ở nhóm rủi ro cao.
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-medium text-nq-text">Đang TẮT:</span> khách hay bùng
+                      vẫn chỉ bị giữ thẻ (charge sau, có thể hụt). Bật để buộc cọc trước.
                     </>
                   )}
                 </p>

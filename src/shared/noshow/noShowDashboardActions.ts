@@ -427,6 +427,9 @@ export async function updateNoShowCardSettings(
     noshow_risk_threshold?: number;
     /** Group organizer's card covers the whole party's no-show fee (default on). */
     noshow_group_whole_party?: boolean;
+    /** Prior-no-show count that escalates a customer to an upfront pay-to-confirm
+     *  deposit instead of card-on-file. null = OFF (opt-in); else clamped 1..10. */
+    noshow_deposit_escalation_threshold?: number | null;
   },
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
@@ -448,6 +451,13 @@ export async function updateNoShowCardSettings(
   }
   if (settings.noshow_risk_threshold != null) {
     patch.noshow_risk_threshold = clampPct(settings.noshow_risk_threshold);
+  }
+  if (settings.noshow_deposit_escalation_threshold !== undefined) {
+    // null → turn escalation OFF; else clamp to the DB's 1..10 CHECK range.
+    patch.noshow_deposit_escalation_threshold =
+      settings.noshow_deposit_escalation_threshold == null
+        ? null
+        : Math.min(10, Math.max(1, Math.round(settings.noshow_deposit_escalation_threshold)));
   }
   if (Object.keys(patch).length === 0) return { ok: true };
 
