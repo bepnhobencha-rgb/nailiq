@@ -18,7 +18,6 @@ import { useUserLanguage } from "@/shared/lib/useUserLanguage";
  */
 
 const VERSION_POLL_MS = 90 * 1000;
-const FS_TARGET_ID = "nq-dashboard-content";
 
 export function DashboardViewControls() {
   const { language } = useUserLanguage();
@@ -55,11 +54,16 @@ export function DashboardViewControls() {
     };
   }, []);
 
-  // Keep the fullscreen icon in sync with the actual state.
+  // Fullscreen the whole document (not a sub-element) so portaled UI — the
+  // booking drawer, desk/group forms, toasts (all createPortal → document.body)
+  // — still render in fullscreen. A sub-element fullscreen would hide anything
+  // outside it. The `nq-kiosk` class on <html> then drops the sidebar/nav/Coco
+  // for the clean wall-board look (see globals.css), and is removed on exit.
   useEffect(() => {
     const onChange = () => {
-      const target = document.getElementById(FS_TARGET_ID);
-      setIsFs(!!document.fullscreenElement && document.fullscreenElement === target);
+      const fs = document.fullscreenElement === document.documentElement;
+      setIsFs(fs);
+      document.documentElement.classList.toggle("nq-kiosk", fs);
     };
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
@@ -93,12 +97,10 @@ export function DashboardViewControls() {
   }, [updateAvailable, hardRefresh, router]);
 
   const toggleFs = useCallback(() => {
-    const el = document.getElementById(FS_TARGET_ID);
-    if (!el) return;
     if (document.fullscreenElement) {
       void document.exitFullscreen().catch(() => {});
     } else {
-      void el.requestFullscreen().catch(() => {});
+      void document.documentElement.requestFullscreen().catch(() => {});
     }
   }, []);
 
