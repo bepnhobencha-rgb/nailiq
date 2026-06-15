@@ -103,4 +103,9 @@ export class StripeProvider implements PaymentProvider {
     );
     return { refundId: r.id, status: r.status ?? "" };
   }
+
+  async removeSavedCard(input: { cardId: string; customerId: string }) {
+    // Detach the PaymentMethod — it can never be charged/re-attached after this.
+    await this.stripe.paymentMethods.detach(input.cardId);
+  }
 }

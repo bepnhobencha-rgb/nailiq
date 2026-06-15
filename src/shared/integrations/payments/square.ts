@@ -6,6 +6,7 @@ import {
   saveCardOnFile as sqSaveCard,
   chargeSavedCard as sqCharge,
   refundPayment as sqRefund,
+  disableCard as sqDisableCard,
 } from "@/shared/integrations/square/client";
 import type { PaymentProvider } from "./types";
 
@@ -76,5 +77,9 @@ export class SquareProvider implements PaymentProvider {
       idempotencyKey: input.idempotencyKey,
     });
     return { refundId: r.id, status: r.status };
+  }
+
+  async removeSavedCard(input: { cardId: string; customerId: string }) {
+    await sqDisableCard(this.cfg, input.cardId);
   }
 }
