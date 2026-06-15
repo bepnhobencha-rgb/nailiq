@@ -95,10 +95,10 @@ function buildMonthGrid(firstYmd: string): Array<{ ymd: string; inMonth: boolean
   return cells;
 }
 
-/** Long date label for the panel header, e.g. "Tuesday, 27 May". */
-function formatDayLabel(ymd: string): string {
+/** Long date label for the panel header, localized (e.g. "Thứ Ba, 27 tháng 5"). */
+function formatDayLabel(ymd: string, language: "en" | "vi"): string {
   const d = ymdToLocalDate(ymd);
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", {
     weekday: "long",
     day: "numeric",
     month: "long",
@@ -120,6 +120,8 @@ export interface MonthViewProps {
   timezone: string;
   /** Today (salon-local) for highlighting. */
   todayYmd: string;
+  /** UI language for the localized day-panel date label. */
+  language: "en" | "vi";
   messages: ReceptionistMessages["monthView"];
   /** Localized label for a redacted/removed customer ("[removed]" in DB). */
   removedGuest: string;
@@ -162,6 +164,7 @@ export function MonthView({
   firstYmd,
   timezone,
   todayYmd,
+  language,
   messages,
   removedGuest,
   onDayClick,
@@ -194,6 +197,7 @@ export function MonthView({
 
   // Close panel when navigating to a different month.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset panel on month change
     setSelectedYmd(null);
   }, [firstYmd]);
 
@@ -412,6 +416,7 @@ export function MonthView({
               <DayDetailPanel
                 ymd={selectedYmd}
                 timezone={timezone}
+                language={language}
                 state={panelState ?? { kind: "loading" }}
                 messages={messages}
                 removedGuest={removedGuest}
@@ -444,6 +449,7 @@ function statusVariant(
 function DayDetailPanel({
   ymd,
   timezone,
+  language,
   state,
   messages,
   removedGuest,
@@ -453,6 +459,7 @@ function DayDetailPanel({
 }: {
   ymd: string;
   timezone: string;
+  language: "en" | "vi";
   state: DayState;
   messages: ReceptionistMessages["monthView"];
   removedGuest: string;
@@ -478,7 +485,7 @@ function DayDetailPanel({
     return c;
   }, [sorted]);
 
-  const dayLabel = formatDayLabel(ymd);
+  const dayLabel = formatDayLabel(ymd, language);
 
   return (
     <Card

@@ -51,6 +51,7 @@ import {
 } from "./BookingDetailDrawer";
 import { ConnectionBanner, type ConnectionState } from "./ConnectionBanner";
 import { DateSwitcher } from "./DateSwitcher";
+import { ViewedDateChip } from "./ViewedDateChip";
 import { DensitySlider } from "./DensitySlider";
 import { KPIBar } from "./KPIBar";
 import { BasicCockpit } from "./BasicCockpit";
@@ -2806,11 +2807,20 @@ function ReceptionistCenterInner({
                   loader. In Week/Month it was a dead click (QA M8), so hide it
                   outside Day view. */}
               {viewMode === "day" ? (
-                <DateSwitcher
-                  selectedOffset={dateOffset}
-                  onChange={(next) => void onDateSwitchChange(next)}
-                  labels={rcMessages.dateSwitcher}
-                />
+                <>
+                  {/* Always-visible date anchor — tells you which day you're
+                      viewing, especially after drilling in from Month view. */}
+                  <ViewedDateChip
+                    ymd={data.selectedDate}
+                    language={language}
+                    isToday={isViewingToday}
+                  />
+                  <DateSwitcher
+                    selectedOffset={dateOffset}
+                    onChange={(next) => void onDateSwitchChange(next)}
+                    labels={rcMessages.dateSwitcher}
+                  />
+                </>
               ) : null}
               {/*
                * Subtle pulse-dot replaces the prior "Loading day..."
@@ -2964,6 +2974,7 @@ function ReceptionistCenterInner({
             firstYmd={monthFirstYmd}
             timezone={timezone}
             todayYmd={salonToday(timezone, nowIso)}
+            language={language}
             messages={rcMessages.monthView}
             removedGuest={rcMessages.removedGuest}
             hint={calendarHint}
