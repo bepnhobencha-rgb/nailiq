@@ -35,6 +35,10 @@ export async function resolveNoShowCardRequirement(args: {
   salonId: string;
   serviceId: string;
   clientPhone: string;
+  /** For a GROUP booking: ALL members' service ids (incl. the organizer). When
+   *  whole-party protection is on, the displayed fee covers the whole group so
+   *  it matches what the server saves on the organizer's card. */
+  groupServiceIds?: string[];
 }): Promise<NoShowCardRequirement> {
   try {
     const db = looseServiceClient();
@@ -42,24 +46,32 @@ export async function resolveNoShowCardRequirement(args: {
     // Policy on the salon.
     const { data: salon } = await db
       .from("salons")
-      .select("noshow_protection_enabled, noshow_fee_percent")
+      .select("noshow_protection_enabled, noshow_fee_percent, noshow_group_whole_party")
       .eq("id", args.salonId)
       .maybeSingle();
     const s = (salon ?? {}) as Row;
     if (!s.noshow_protection_enabled) return { required: false };
     const percent = num(s.noshow_fee_percent) || 20;
+    const wholeParty = s.noshow_group_whole_party !== false;
 
     // Provider must be connected; Square-only gate for the pre-booking flow.
     const provider = await resolvePaymentProvider(args.salonId);
     if (!provider || provider.kind !== "square") return { required: false };
 
-    // Fee from the service price.
-    const { data: svc } = await db
+    // Fee base: the whole party's services (group + whole-party on) or just this
+    // service. Sum prices in one query so the gate stays fast.
+    const ids =
+      wholeParty && args.groupServiceIds && args.groupServiceIds.length > 1
+        ? Array.from(new Set(args.groupServiceIds))
+        : [args.serviceId];
+    const { data: svcRows } = await db
       .from("services")
       .select("price_cents")
-      .eq("id", args.serviceId)
-      .maybeSingle();
-    const priceCents = num((svc as Row | null)?.price_cents);
+      .in("id", ids);
+    const priceCents = ((svcRows as Row[] | null) ?? []).reduce(
+      (sum, r) => sum + num(r.price_cents),
+      0,
+    );
     const feeCents = Math.round((priceCents * percent) / 100);
     if (feeCents <= 0) return { required: false };
 
