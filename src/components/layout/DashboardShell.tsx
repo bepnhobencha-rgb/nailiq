@@ -8,7 +8,7 @@ import {
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { DashboardTopBar } from "@/components/layout/DashboardTopBar";
 import { PwaRegister } from "@/components/layout/PwaRegister";
-import { HardRefreshButton } from "@/components/layout/HardRefreshButton";
+import { DashboardViewControls } from "@/components/layout/DashboardViewControls";
 import { AdminCopilot } from "@/components/dashboard/AdminCopilot";
 import { useSidebarCollapsed } from "@/shared/lib/useSidebarCollapsed";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
@@ -79,7 +79,7 @@ export function DashboardShell({
       style={{ ["--nq-sidebar-w" as string]: sidebarWidth }}
     >
       <PwaRegister />
-      <HardRefreshButton />
+      <DashboardViewControls />
       <DashboardSidebar
         slug={slug}
         role={role}
@@ -102,7 +102,9 @@ export function DashboardShell({
         className="min-h-dvh md:pl-[var(--nq-sidebar-w)] pb-16 md:pb-0 transition-[padding-left] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]"
       >
         <DashboardTopBar slug={slug} />
-        {children}
+        {/* Fullscreen target — DashboardViewControls toggles kiosk mode on this
+            content wrapper (sidebar/nav fall away). */}
+        <div id="nq-dashboard-content">{children}</div>
       </main>
       <MobileBottomNav
         slug={slug}

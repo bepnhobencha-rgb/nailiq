@@ -418,6 +418,14 @@
     min-height: 100dvh;
     padding-bottom: env(safe-area-inset-bottom, 0);
   }
+
+  /* Kiosk / TV view — DashboardViewControls fullscreens the content wrapper;
+     the Fullscreen API otherwise paints it on a default white page. */
+  #nq-dashboard-content:fullscreen {
+    background: var(--color-nq-bg);
+    overflow-y: auto;
+    padding: 1.25rem;
+  }
 }
 
 @layer components {
