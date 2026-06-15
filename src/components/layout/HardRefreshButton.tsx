@@ -115,14 +115,14 @@ export function HardRefreshButton() {
       title={updateAvailable ? labels.update : labels.idle}
       className={cn(
         "fixed z-50 bottom-20 left-5 md:bottom-5 md:left-[calc(var(--nq-sidebar-w)+1.25rem)]",
-        "flex h-[52px] w-[52px] items-center justify-center rounded-full",
-        "border bg-nq-surface/85 shadow-nq-card backdrop-blur-xl",
+        "flex h-14 w-14 items-center justify-center rounded-full",
+        // Gold-tinted glassy disc + an always-on gold glow so it lifts off the
+        // dark dashboard instead of blending in.
+        "border-2 border-nq-primary/55 bg-nq-primary/15 shadow-nq-glow backdrop-blur-xl",
         "transition-[transform,box-shadow,border-color] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]",
-        "hover:scale-105 hover:shadow-nq-glow active:scale-95",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45",
-        updateAvailable
-          ? "border-nq-primary/60 shadow-nq-glow"
-          : "border-nq-border/60 hover:border-nq-primary/50",
+        "hover:scale-110 hover:border-nq-primary/80 active:scale-95",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/55",
+        updateAvailable && "animate-pulse border-nq-primary",
       )}
     >
       {/* Freshness / update ring */}
@@ -157,20 +157,17 @@ export function HardRefreshButton() {
         />
       </svg>
 
-      {/* Refresh glyph */}
+      {/* Refresh glyph — gold so it reads as the actionable mark on the tile */}
       <svg
         viewBox="0 0 24 24"
-        width={22}
-        height={22}
+        width={24}
+        height={24}
         fill="none"
-        stroke={updateAvailable ? "#D4AF37" : "currentColor"}
-        strokeWidth={2}
+        stroke="#F5E6B8"
+        strokeWidth={2.25}
         strokeLinecap="round"
         strokeLinejoin="round"
-        className={cn(
-          "relative text-nq-foreground transition-colors",
-          spinning && "animate-spin",
-        )}
+        className={cn("relative", spinning && "animate-spin")}
         aria-hidden
       >
         <path d="M21 12a9 9 0 11-2.64-6.36M21 3v6h-6" />
