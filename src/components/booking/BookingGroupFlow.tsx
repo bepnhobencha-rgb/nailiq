@@ -179,6 +179,9 @@ type BookingGroupFlowProps = {
   initialOrganizer?: ReturningCustomer | null;
   /** Name captured at the gate → pre-fills Guest 1. */
   initialName?: string;
+  /** SMS consent captured at the phone gate → pre-satisfies the group confirm
+   *  so the customer doesn't tick the SAME consent twice. */
+  initialSmsConsent?: boolean;
   /** Booking-surface language → carried into the shared Party Link URL. */
   language?: "en" | "vi";
 };
@@ -195,6 +198,7 @@ export function BookingGroupFlow({
   initialPhone = "",
   initialOrganizer = null,
   initialName = "",
+  initialSmsConsent = false,
   language = "vi",
 }: BookingGroupFlowProps) {
   const router = useRouter();
@@ -1553,6 +1557,7 @@ export function BookingGroupFlow({
           onEmailChange={setPrimaryEmail}
           onBack={() => goToStep(4)}
           onSubmit={() => void onSubmit()}
+          initialSmsConsent={initialSmsConsent}
         />
       ) : null}
     </section>
@@ -3245,6 +3250,7 @@ function ConfirmStep({
   onEmailChange,
   onBack,
   onSubmit,
+  initialSmsConsent,
 }: {
   t: BookingMessages;
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
@@ -3283,6 +3289,8 @@ function ConfirmStep({
   onEmailChange: (v: string) => void;
   onBack: () => void;
   onSubmit: () => void;
+  /** SMS consent already given at the phone gate → pre-satisfies confirm. */
+  initialSmsConsent: boolean;
 }) {
   const dateDisplay = useMemo(() => {
     // Display the chosen date in salon-tz long form. The
@@ -3294,7 +3302,9 @@ function ConfirmStep({
   }, [arrangement, date, timezone]);
 
   // QA BUG-03 — express SMS consent, required before confirming the party.
-  const [smsConsent, setSmsConsent] = useState(false);
+  // Pre-satisfied from the phone gate (initialSmsConsent) so the customer
+  // doesn't tick the same consent twice (gate + group confirm).
+  const [smsConsent, setSmsConsent] = useState(initialSmsConsent);
 
   if (!arrangement) {
     return (
@@ -3580,16 +3590,21 @@ function ConfirmStep({
         </p>
       ) : null}
 
-      <label className="mb-3 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
-        <input
-          type="checkbox"
-          data-testid="group-sms-consent"
-          checked={smsConsent}
-          onChange={(e) => setSmsConsent(e.target.checked)}
-          className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
-        />
-        <span>{t.smsConsent}</span>
-      </label>
+      {/* SMS consent is captured at the phone gate; only show it here as a
+          fallback when it wasn't already given (mirrors the individual confirm
+          panel) — never ask the customer to tick the same consent twice. */}
+      {!smsConsent ? (
+        <label className="mb-3 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+          <input
+            type="checkbox"
+            data-testid="group-sms-consent"
+            checked={smsConsent}
+            onChange={(e) => setSmsConsent(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+          />
+          <span>{t.smsConsent}</span>
+        </label>
+      ) : null}
 
       <StickyFooter
         leftLabel={groupCopy.groupTotal ?? groupCopy.totalLabel ?? "Total"}
