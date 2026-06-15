@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveNoShowCardForBooking } from "@/shared/integrations/square/noshow";
 import { isRateLimited, RATE_LIMIT_IDS } from "@/shared/lib/rateLimit";
+import { isOverRateLimit, clientIp } from "@/shared/lib/inAppRateLimit";
 
 export const runtime = "nodejs";
 
@@ -22,12 +23,16 @@ export async function POST(req: NextRequest) {
   if (!bookingId || !sourceId) {
     return NextResponse.json({ ok: false, error: "missing_fields" }, { status: 400 });
   }
-  // Anti card-testing: cap attempts per IP+booking (Vercel WAF, fail-open).
+  // Anti card-testing — two layers: the Vercel WAF rule (fail-open until the
+  // rule exists) AND an app-level DB limiter (enforces on any plan): 6 attempts
+  // per IP+booking per minute.
+  const ip = clientIp(req);
   if (
-    await isRateLimited(RATE_LIMIT_IDS.cardSave, {
+    (await isRateLimited(RATE_LIMIT_IDS.cardSave, {
       request: req,
       rateLimitKey: `card-save:${bookingId}`,
-    })
+    })) ||
+    (await isOverRateLimit(`card-save:${ip}:${bookingId}`, 6, 60))
   ) {
     return NextResponse.json({ ok: false, error: "rate_limited" }, { status: 429 });
   }

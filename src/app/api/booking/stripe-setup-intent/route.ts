@@ -4,6 +4,7 @@ import { noShowCardDecision } from "@/shared/integrations/square/noshow";
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { getStripeClient } from "@/shared/lib/stripe";
 import { isRateLimited, RATE_LIMIT_IDS } from "@/shared/lib/rateLimit";
+import { isOverRateLimit, clientIp } from "@/shared/lib/inAppRateLimit";
 
 export const runtime = "nodejs";
 
@@ -26,12 +27,15 @@ export async function POST(req: NextRequest) {
   const bookingId = String(body.bookingId ?? "");
   if (!bookingId) return NextResponse.json({ required: false });
 
-  // Anti card-testing: cap attempts per IP+booking (Vercel WAF, fail-open).
+  // Anti card-testing — two layers: Vercel WAF rule (fail-open until created)
+  // AND an app-level DB limiter (enforces on any plan): 6/min per IP+booking.
+  const ip = clientIp(req);
   if (
-    await isRateLimited(RATE_LIMIT_IDS.cardSave, {
+    (await isRateLimited(RATE_LIMIT_IDS.cardSave, {
       request: req,
       rateLimitKey: `card-save:${bookingId}`,
-    })
+    })) ||
+    (await isOverRateLimit(`card-save:${ip}:${bookingId}`, 6, 60))
   ) {
     return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
