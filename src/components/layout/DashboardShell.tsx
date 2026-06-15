@@ -79,7 +79,6 @@ export function DashboardShell({
       style={{ ["--nq-sidebar-w" as string]: sidebarWidth }}
     >
       <PwaRegister />
-      <DashboardViewControls />
       <DashboardSidebar
         slug={slug}
         role={role}
@@ -102,9 +101,13 @@ export function DashboardShell({
         className="min-h-dvh md:pl-[var(--nq-sidebar-w)] pb-16 md:pb-0 transition-[padding-left] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]"
       >
         <DashboardTopBar slug={slug} />
-        {/* Fullscreen target — DashboardViewControls toggles kiosk mode on this
-            content wrapper (sidebar/nav fall away). */}
-        <div id="nq-dashboard-content">{children}</div>
+        {/* Fullscreen target — kiosk mode hides sidebar/nav. The controls live
+            INSIDE this wrapper so the ⛶ exit stays visible + tappable in
+            fullscreen (critical on iPad/touch where there's no Esc key). */}
+        <div id="nq-dashboard-content">
+          <DashboardViewControls />
+          {children}
+        </div>
       </main>
       <MobileBottomNav
         slug={slug}
