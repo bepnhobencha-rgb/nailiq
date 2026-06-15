@@ -8,15 +8,9 @@
 // input; `parsePhoneNumber` throws ParseError.  We want silent failure.
 import _parseCore from "libphonenumber-js/core";
 import _metadata from "libphonenumber-js/metadata.min.json";
-import { normalizedPhoneDigits } from "@/shared/lib/phoneFormat";
 
 /** Default region for ambiguous local input (e.g. "6041234567" → +16041234567). CA-first market, expanding to US. */
 const DEFAULT_COUNTRY = "CA" as const;
-
-/** @deprecated Prefer `normalizedPhoneDigits` / `cleanPhone`; kept for call sites importing the name. */
-export function digitsOnlyPhone(input: string): string {
-  return normalizedPhoneDigits(input);
-}
 
 export type GuestPhoneValidation =
   | { ok: true; digits: string }

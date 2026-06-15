@@ -36,11 +36,6 @@ export const FALLBACK_SERVICE_CATEGORY: ServiceCategory = "other";
  *  it cuts one tap from the common-case flow. */
 export const ADD_FORM_DEFAULT_CATEGORY: ServiceCategory = "manicure";
 
-/** @deprecated Use FALLBACK_SERVICE_CATEGORY (for orphan rows) or
- *  ADD_FORM_DEFAULT_CATEGORY (for the add form). Kept as an alias so
- *  any caller still importing the old name compiles. */
-export const DEFAULT_SERVICE_CATEGORY = FALLBACK_SERVICE_CATEGORY;
-
 export function parseServiceCategory(value: unknown): ServiceCategory {
   if (typeof value !== "string") return FALLBACK_SERVICE_CATEGORY;
   const trimmed = value.trim();
