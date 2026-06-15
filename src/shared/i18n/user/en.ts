@@ -344,6 +344,8 @@ export type UserMessages = {
     /** Sidebar footer trigger + dropdown header for the salon switcher
      * (rendered only when the owner has > 1 owner-memberships). */
     switchSalon: string;
+    /** Card Disputes nav item (owner/admin only). */
+    disputes: string;
   };
   /** Phone-OTP login flow (`/login`, `/login/verify`). Distinct from
    * `register.*` so the two flows can diverge without cross-talk. */
@@ -1966,6 +1968,82 @@ export type UserMessages = {
    *  staff resource already has an overlapping active booking on Wix
    *  (created within the 2-minute polling window). */
   wixSlotTaken: string;
+  /** `/dashboard/[slug]/disputes` — Card Disputes report (owner/admin only). */
+  disputes: {
+    /** Page <h1> + sidebar nav label. */
+    pageTitle: string;
+    /** One-line intro under the heading. */
+    intro: string;
+    /** Nav label (sidebar). */
+    navLabel: string;
+    /** Alert when needsResponse > 0. {n} = count. */
+    needsResponseAlert: (n: number) => string;
+    /** Empty state (good news). */
+    emptyTitle: string;
+    emptyBody: string;
+    /** Loading / error states. */
+    loading: string;
+    errorGeneric: string;
+    /** Status pill labels. */
+    status: {
+      needs_response: string;
+      under_review: string;
+      won: string;
+      lost: string;
+      warning_needs_response: string;
+      warning_closed: string;
+    };
+    /** Evidence-due countdown. {n} = days remaining. */
+    evidenceDueIn: (n: number) => string;
+    evidenceOverdue: string;
+    /** Evidence bundle section headings. */
+    evidenceTitle: string;
+    evidenceLoading: string;
+    evidenceError: string;
+    sectionConsent: string;
+    sectionCharge: string;
+    sectionBooking: string;
+    sectionCustomer: string;
+    sectionNoShow: string;
+    sectionNotifications: string;
+    /** No consent warning. */
+    noConsentWarning: string;
+    /** Field labels inside the evidence bundle. */
+    fields: {
+      consentAt: string;
+      chargeAmount: string;
+      paymentRef: string;
+      service: string;
+      staff: string;
+      time: string;
+      bookingStatus: string;
+      price: string;
+      clientName: string;
+      phone: string;
+      email: string;
+      visitCount: string;
+      noShowAt: string;
+      noShowBy: string;
+      notifType: string;
+      notifChannel: string;
+      notifStatus: string;
+      notifSentAt: string;
+    };
+    /** "Copy evidence bundle" button. */
+    copyEvidence: string;
+    copiedEvidence: string;
+    /** Provider badge. */
+    providerStripe: string;
+    providerSquare: string;
+    /** Column/row labels in the list. */
+    labelClient: string;
+    labelAmount: string;
+    labelReason: string;
+    labelStatus: string;
+    labelOpened: string;
+    labelEvidenceDue: string;
+    noInfo: string;
+  };
 };
 
 export const userEn: UserMessages = {
@@ -2453,6 +2531,7 @@ export const userEn: UserMessages = {
     primaryNav: "Primary navigation",
     switchSalon: "Switch salon",
     loyalty: "Loyalty & Gifts",
+    disputes: "Card Disputes",
   },
   login: {
     title: "Sign in",
@@ -3890,4 +3969,67 @@ export const userEn: UserMessages = {
   },
   wixSlotTaken:
     "Sorry, this time slot was just booked by someone else. Please choose a different time.",
+  disputes: {
+    pageTitle: "Card Disputes",
+    intro: "Review and respond to card disputes filed by your customers.",
+    navLabel: "Card Disputes",
+    needsResponseAlert: (n: number) =>
+      `${n} dispute${n === 1 ? "" : "s"} require${n === 1 ? "s" : ""} your response`,
+    emptyTitle: "No disputes — great news!",
+    emptyBody: "No card disputes have been filed against your salon.",
+    loading: "Loading disputes…",
+    errorGeneric: "Could not load disputes. Please try again.",
+    status: {
+      needs_response: "Needs Response",
+      under_review: "Under Review",
+      won: "Won",
+      lost: "Lost",
+      warning_needs_response: "Action required",
+      warning_closed: "Closed",
+    },
+    evidenceDueIn: (n: number) =>
+      `${n} day${n === 1 ? "" : "s"} left to respond`,
+    evidenceOverdue: "Response deadline passed",
+    evidenceTitle: "Evidence Bundle",
+    evidenceLoading: "Loading evidence…",
+    evidenceError: "Could not load evidence. Please try again.",
+    sectionConsent: "Policy Consent",
+    sectionCharge: "Charge",
+    sectionBooking: "Booking",
+    sectionCustomer: "Customer",
+    sectionNoShow: "No-Show Record",
+    sectionNotifications: "Notifications Sent",
+    noConsentWarning: "No consent on file — difficult to win without this",
+    fields: {
+      consentAt: "Agreed at",
+      chargeAmount: "Amount",
+      paymentRef: "Payment ref",
+      service: "Service",
+      staff: "Staff",
+      time: "Time",
+      bookingStatus: "Status",
+      price: "Price",
+      clientName: "Name",
+      phone: "Phone",
+      email: "Email",
+      visitCount: "Visit count",
+      noShowAt: "Marked at",
+      noShowBy: "Marked by",
+      notifType: "Type",
+      notifChannel: "Channel",
+      notifStatus: "Status",
+      notifSentAt: "Sent at",
+    },
+    copyEvidence: "Copy evidence bundle",
+    copiedEvidence: "Copied!",
+    providerStripe: "Stripe",
+    providerSquare: "Square",
+    labelClient: "Client",
+    labelAmount: "Amount",
+    labelReason: "Reason",
+    labelStatus: "Status",
+    labelOpened: "Opened",
+    labelEvidenceDue: "Evidence due",
+    noInfo: "—",
+  },
 };

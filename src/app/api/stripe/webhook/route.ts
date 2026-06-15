@@ -289,6 +289,104 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    // ── Dispute events ───────────────────────────────────────────────────────
+    // charge.dispute.created  — dispute opened against a charge
+    // charge.dispute.updated  — evidence submitted / status changed
+    // charge.dispute.closed   — dispute resolved (won/lost/charge_refunded)
+    //
+    // Never throws — disputes are non-critical telemetry; webhook always 200s.
+    if (
+      event.type === "charge.dispute.created" ||
+      event.type === "charge.dispute.updated" ||
+      event.type === "charge.dispute.closed"
+    ) {
+      try {
+        const dispute = event.data.object as Stripe.Dispute;
+        const db = createServiceRoleClient();
+
+        // Resolve payment reference — prefer payment_intent, fall back to charge.
+        const paymentIntent =
+          typeof dispute.payment_intent === "string"
+            ? dispute.payment_intent
+            : (dispute.payment_intent?.id ?? null);
+        const chargeId =
+          typeof dispute.charge === "string"
+            ? dispute.charge
+            : (dispute.charge?.id ?? null);
+        const paymentRef = paymentIntent ?? chargeId;
+
+        // Look up the booking so we can link salon + client.
+        // Try stripe_payment_intent_id first, then fall back via charge column.
+        type BookingLookup = {
+          id: string;
+          salon_id: string;
+          client_phone: string | null;
+        } | null;
+
+        let bookingRow: BookingLookup = null;
+        if (paymentIntent) {
+          const { data } = await db
+            .from("bookings" as never)
+            .select("id, salon_id, client_phone")
+            .eq("stripe_payment_intent_id" as never, paymentIntent)
+            .maybeSingle();
+          bookingRow = data as BookingLookup;
+        }
+        if (!bookingRow && chargeId) {
+          // Fall back: some bookings store the charge id in payment_ref-like columns
+          const { data } = await db
+            .from("bookings" as never)
+            .select("id, salon_id, client_phone")
+            .eq("stripe_payment_intent_id" as never, chargeId)
+            .maybeSingle();
+          bookingRow = data as BookingLookup;
+        }
+
+        const bookingId = bookingRow?.id ?? null;
+        const salonId = bookingRow?.salon_id ?? null;
+        const clientPhone = bookingRow?.client_phone ?? null;
+
+        // Resolve evidence due date (unix seconds → ISO string).
+        const dueBySecs =
+          (
+            dispute.evidence_details as
+              | { due_by?: number | null }
+              | undefined
+          )?.due_by ?? null;
+        const evidenceDueAt =
+          typeof dueBySecs === "number" && dueBySecs > 0
+            ? new Date(dueBySecs * 1000).toISOString()
+            : null;
+
+        await db
+          .from("payment_disputes" as never)
+          .upsert(
+            {
+              provider: "stripe",
+              provider_dispute_id: dispute.id,
+              payment_ref: paymentRef,
+              booking_id: bookingId,
+              salon_id: salonId,
+              client_phone: clientPhone,
+              amount_cents: dispute.amount,
+              currency: dispute.currency,
+              reason: dispute.reason,
+              status: dispute.status,
+              evidence_due_at: evidenceDueAt,
+              raw: dispute as unknown as Record<string, unknown>,
+              updated_at: new Date().toISOString(),
+            } as never,
+            { onConflict: "provider_dispute_id" },
+          );
+
+        return NextResponse.json({ ok: true });
+      } catch (err) {
+        console.error("[stripe webhook] dispute upsert error", err);
+        // Never 5xx from a dispute event — Stripe would retry indefinitely.
+        return NextResponse.json({ ok: true, _error: "dispute_write_failed" });
+      }
+    }
+
     // Unhandled events ack so Stripe stops retrying.
     return NextResponse.json({ ok: true, ignored: event.type });
   } catch (e) {
