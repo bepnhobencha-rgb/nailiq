@@ -99,7 +99,7 @@ export function BookingFlowConfirmPanel({
   onClearAddons: () => void;
   onBack: () => void;
   onConfirm: (
-    extra?: { noShowCardSourceId?: string; noShowConsent?: boolean; noShowReuseSavedCard?: boolean; healthAck?: boolean },
+    extra?: { noShowCardSourceId?: string; noShowCardVerificationToken?: string; noShowConsent?: boolean; noShowReuseSavedCard?: boolean; healthAck?: boolean },
   ) => void | Promise<void>;
   /** Option A no-show card gate, resolved BEFORE booking. When required, the card
    *  is captured here and must be entered before the booking can be confirmed. */
@@ -139,12 +139,17 @@ export function BookingFlowConfirmPanel({
         await onConfirm({ noShowReuseSavedCard: true, noShowConsent: true, healthAck: ack });
         return;
       }
-      const token = await cardRef.current?.tokenize();
-      if (!token) {
+      const result = await cardRef.current?.tokenize();
+      if (!result) {
         setCardError(t.noShowCardError ?? "Please check your card details.");
         return;
       }
-      await onConfirm({ noShowCardSourceId: token, noShowConsent: true, healthAck: ack });
+      await onConfirm({
+        noShowCardSourceId: result.token,
+        noShowCardVerificationToken: result.verificationToken,
+        noShowConsent: true,
+        healthAck: ack,
+      });
       return;
     }
     await onConfirm({ healthAck: ack });

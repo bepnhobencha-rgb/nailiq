@@ -71,6 +71,10 @@ export type BookingParams = {
    *  booking is created and BEFORE any confirmation (SMS/email) — if the save
    *  fails the booking is cancelled and the customer sees an error. */
   noShowCardSourceId?: string | null;
+  /** SCA/AVS/CVV verification token (Square `verifyBuyer`) paired with
+   *  `noShowCardSourceId`. Passed to CreateCard so Square verifies the card at
+   *  storage time (rejects a wrong CVV/postal). */
+  noShowCardVerificationToken?: string | null;
   /** Option A reuse path: returning OTP-verified customer chose to reuse their
    *  EXISTING saved card instead of entering a new one. No card token is sent —
    *  the server re-derives the card from the OTP-verified phone. Ignored if
@@ -747,6 +751,7 @@ export async function submitPublicBooking(
       bookingId,
       sourceId: params.noShowCardSourceId,
       consent: params.noShowConsent === true,
+      verificationToken: params.noShowCardVerificationToken ?? undefined,
     });
     if (!saved.ok) {
       // Carry the provider reason so the UI can show WHY (decline code) instead

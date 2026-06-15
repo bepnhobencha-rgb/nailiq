@@ -1216,7 +1216,7 @@ export function useBookingFlowState(
   }, [step, cardRequirement, otpSessionId, salon.id]);
 
   const onConfirm = useCallback(async (
-    extra?: { noShowCardSourceId?: string; noShowConsent?: boolean; noShowReuseSavedCard?: boolean; healthAck?: boolean },
+    extra?: { noShowCardSourceId?: string; noShowCardVerificationToken?: string; noShowConsent?: boolean; noShowReuseSavedCard?: boolean; healthAck?: boolean },
   ) => {
     if (!serviceId || !timeSlot || !staffId) return;
     setError(null);
@@ -1292,6 +1292,7 @@ export function useBookingFlowState(
           : otpSessionId ? "otp"
           : undefined,
         noShowCardSourceId: extra?.noShowCardSourceId,
+        noShowCardVerificationToken: extra?.noShowCardVerificationToken,
         noShowReuseSavedCard: extra?.noShowReuseSavedCard,
         noShowConsent: extra?.noShowConsent,
         healthAck: extra?.healthAck,
