@@ -108,4 +108,26 @@ export class StripeProvider implements PaymentProvider {
     // Detach the PaymentMethod — it can never be charged/re-attached after this.
     await this.stripe.paymentMethods.detach(input.cardId);
   }
+
+  async findSavedCardByPhone(phone: string) {
+    const digits = (phone || "").replace(/\D/g, "");
+    if (digits.length < 8) return null;
+    const last10 = digits.slice(-10);
+    // Search Customer by phone (try E.164 variants — Stripe stores what we sent).
+    const queries = [`phone:'+${digits}'`, `phone:'${digits}'`, `phone:'+1${last10}'`];
+    let customerId: string | null = null;
+    for (const query of queries) {
+      try {
+        const res = await this.stripe.customers.search({ query, limit: 1 });
+        if (res.data[0]?.id) { customerId = res.data[0].id; break; }
+      } catch {
+        /* search index not ready / bad query — try next */
+      }
+    }
+    if (!customerId) return null;
+    const pms = await this.stripe.paymentMethods.list({ customer: customerId, type: "card", limit: 1 });
+    const pm = pms.data[0];
+    if (!pm) return null;
+    return { customerId, cardId: pm.id, last4: pm.card?.last4 ?? "", brand: pm.card?.brand ?? "" };
+  }
 }

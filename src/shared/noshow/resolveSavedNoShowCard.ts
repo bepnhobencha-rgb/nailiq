@@ -1,12 +1,6 @@
 "use server";
 
-import { looseServiceClient } from "@/shared/integrations/square/looseDb";
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
-import {
-  getSquareConfig,
-  findSquareCustomerByPhone,
-  listCards,
-} from "@/shared/integrations/square/client";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export type SavedNoShowCard =
@@ -51,17 +45,11 @@ export async function resolveSavedNoShowCard(args: {
     const phone = (sess.phone || "").replace(/\D/g, "");
     if (phone.length < 8) return { hasSavedCard: false };
 
-    // Square only (Hi-Lite's provider; Stripe reuse is a later phase).
+    // Provider-agnostic (Square + Stripe). The phone came from the OTP session.
     const provider = await resolvePaymentProvider(args.salonId);
-    if (!provider || provider.kind !== "square") return { hasSavedCard: false };
+    if (!provider) return { hasSavedCard: false };
 
-    const db = looseServiceClient();
-    const cfg = await getSquareConfig(db, args.salonId);
-    const customerId = await findSquareCustomerByPhone(cfg, phone);
-    if (!customerId) return { hasSavedCard: false };
-
-    const cards = await listCards(cfg, customerId);
-    const card = cards[0];
+    const card = await provider.findSavedCardByPhone(phone);
     if (!card || !card.last4) return { hasSavedCard: false };
 
     return { hasSavedCard: true, brand: card.brand, last4: card.last4 };
