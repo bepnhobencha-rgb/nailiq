@@ -128,7 +128,7 @@ export function BookingFlow({
   const techRoleLabel = vertical.staffRoleLabel[language];
   // Mandatory health-acknowledgment text (null = not required for this salon).
   const healthAckTextStr = healthAckRequired(salon.healthAckRequired, salon.vertical)
-    ? healthAckText(language, salon.name)
+    ? healthAckText(language, salon.name, salon.vertical)
     : null;
   const flow = useBookingFlowState(
     t,
