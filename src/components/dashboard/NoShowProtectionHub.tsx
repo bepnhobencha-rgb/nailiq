@@ -204,6 +204,20 @@ export function NoShowProtectionHub({
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-8 pt-4 sm:pt-6">
         <SetupBackNav slug={slug} title="No-Show Protection" />
 
+        {/* Revenue recovered — the payoff of card-on-file protection. */}
+        <div className="mt-4 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-300/80">
+            💰 No-show fees recovered / Phí no-show đã thu
+          </p>
+          <p className="mt-1 text-3xl font-bold tabular-nums text-emerald-300">
+            ${(summary.noShowFeesRecoveredCents / 100).toFixed(2)}
+          </p>
+          <p className="mt-1 text-xs text-emerald-200/70">
+            {summary.noShowFeesChargedCount} charged · {summary.noShowFeesWaivedCount} waived ·{" "}
+            {summary.cardsOnFileCount} card{summary.cardsOnFileCount === 1 ? "" : "s"} on file protecting upcoming bookings
+          </p>
+        </div>
+
         {/* Summary cards */}
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <StatCard label="Unconfirmed (48h)" value={summary.unconfirmedCount} />
