@@ -61,23 +61,48 @@ export async function GET(req: NextRequest) {
   }
 
   // Pay-deposit-to-confirm: release a FUTURE booking whose slot was held pending a
-  // deposit that was never paid, once the grace window passes (measured from when
-  // the link was created, not booking creation). reconcileDeposits clears
-  // deposit_hold the moment payment lands, so a paid booking is never caught here.
-  const depCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-  const { data: depData, error: depErr } = await supabase
+  // deposit that was never paid, once the salon's grace window passes (measured
+  // from when the link was created, not booking creation). reconcileDeposits
+  // clears deposit_hold the moment payment lands, so a paid booking is never
+  // caught here. The window is per-salon (salons.deposit_hold_grace_minutes,
+  // admin-set, default 30) — so we filter in JS rather than one fixed cutoff.
+  let depositReleased = 0;
+  const { data: depCands } = await supabase
     .from("bookings")
-    .update({ status: "cancelled", deposit_hold: false } as never)
+    .select("id, deposit_requested_at, salon_id")
     .eq("deposit_hold", true)
     .eq("deposit_status", "required")
     .in("status", ["confirmed", "pending"])
-    .lt("deposit_requested_at", depCutoff)
-    .gt("start_time_utc", nowIso)
-    .select("id");
-  if (depErr) {
-    console.error("[release-pending] deposit-release error", depErr);
+    .gt("start_time_utc", nowIso);
+  const depRows = (depCands ?? []) as Array<{ id: string; deposit_requested_at: string | null; salon_id: string }>;
+  if (depRows.length > 0) {
+    const salonIds = [...new Set(depRows.map((r) => r.salon_id))];
+    const { data: salonRows } = await supabase
+      .from("salons")
+      .select("id, deposit_hold_grace_minutes")
+      .in("id", salonIds);
+    const graceMap = new Map(
+      ((salonRows ?? []) as Array<{ id: string; deposit_hold_grace_minutes: number | null }>).map(
+        (s) => [s.id, s.deposit_hold_grace_minutes ?? 30],
+      ),
+    );
+    const now = Date.now();
+    const toCancel = depRows
+      .filter((r) => {
+        if (!r.deposit_requested_at) return false;
+        const graceMs = (graceMap.get(r.salon_id) ?? 30) * 60 * 1000;
+        return Date.parse(r.deposit_requested_at) < now - graceMs;
+      })
+      .map((r) => r.id);
+    if (toCancel.length > 0) {
+      const { error: depErr } = await supabase
+        .from("bookings")
+        .update({ status: "cancelled", deposit_hold: false } as never)
+        .in("id", toCancel);
+      if (depErr) console.error("[release-pending] deposit-release error", depErr);
+      else depositReleased = toCancel.length;
+    }
   }
-  const depositReleased = depData?.length ?? 0;
   if (depositReleased > 0) {
     console.log(`[release-pending] cancelled ${depositReleased} unpaid-deposit bookings`);
   }

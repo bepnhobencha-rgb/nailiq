@@ -16,12 +16,20 @@ export default async function NoShowProtectionPage({ params }: Props) {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) redirect("/register");
 
-  const { data: salonRow } = await (await import("@/shared/lib/supabase/serviceRole"))
-    .createServiceRoleClient()
+  const sb = (await import("@/shared/lib/supabase/serviceRole")).createServiceRoleClient();
+  const { data: salonRow } = await sb
     .from("salons" as never)
-    .select("reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_details_submitted, payment_provider, noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold")
+    .select("reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, deposit_hold_grace_minutes, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_details_submitted, payment_provider, noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold")
     .eq("id", ctx.salon.id)
     .maybeSingle();
+  // deposit_enabled lives on square_integrations (a salon only has a row once
+  // Square is connected) — null row → deposits off.
+  const { data: sqRow } = await sb
+    .from("square_integrations" as never)
+    .select("deposit_enabled")
+    .eq("salon_id", ctx.salon.id)
+    .maybeSingle();
+  const depositEnabled = (sqRow as { deposit_enabled?: boolean } | null)?.deposit_enabled === true;
 
   const row = salonRow as {
     reminders_enabled?: boolean;
@@ -32,6 +40,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
     deposit_pct_no_show?: number;
     deposit_pct_high_value?: number;
     deposit_pct_new_customer?: number;
+    deposit_hold_grace_minutes?: number;
     stripe_connect_account_id?: string | null;
     stripe_connect_charges_enabled?: boolean;
     stripe_connect_details_submitted?: boolean;
@@ -56,6 +65,8 @@ export default async function NoShowProtectionPage({ params }: Props) {
       depositPctNoShow={row?.deposit_pct_no_show ?? 50}
       depositPctHighValue={row?.deposit_pct_high_value ?? 30}
       depositPctNewCustomer={row?.deposit_pct_new_customer ?? 20}
+      depositEnabled={depositEnabled}
+      depositHoldGraceMinutes={row?.deposit_hold_grace_minutes ?? 30}
       connectHasAccount={Boolean(row?.stripe_connect_account_id)}
       connectChargesEnabled={row?.stripe_connect_charges_enabled ?? false}
       connectDetailsSubmitted={row?.stripe_connect_details_submitted ?? false}

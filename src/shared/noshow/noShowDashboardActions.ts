@@ -194,6 +194,10 @@ export async function updateReminderSettings(
     deposit_pct_no_show?: number;
     deposit_pct_high_value?: number;
     deposit_pct_new_customer?: number;
+    /** Minutes a deposit-held slot waits for payment before auto-release. */
+    deposit_hold_grace_minutes?: number;
+    /** Master ON/OFF for Square deposits (lives on square_integrations). */
+    deposit_enabled?: boolean;
   },
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
@@ -202,9 +206,15 @@ export async function updateReminderSettings(
   // Clamp deposit percentages to 0–100 (defense-in-depth; the DB also CHECKs).
   const clampPct = (v: number | undefined) =>
     v == null ? undefined : Math.min(100, Math.max(0, Math.round(v)));
-  const patch = { ...settings } as Record<string, unknown>;
+  // deposit_enabled lives on square_integrations, not salons — pull it out.
+  const { deposit_enabled, ...salonSettings } = settings;
+  const patch = { ...salonSettings } as Record<string, unknown>;
   for (const k of ["deposit_pct_no_show", "deposit_pct_high_value", "deposit_pct_new_customer"]) {
     if (patch[k] !== undefined) patch[k] = clampPct(patch[k] as number | undefined);
+  }
+  if (patch.deposit_hold_grace_minutes !== undefined) {
+    const g = Math.round(Number(patch.deposit_hold_grace_minutes) || 30);
+    patch.deposit_hold_grace_minutes = Math.min(1440, Math.max(5, g));
   }
 
   const supabase = createServiceRoleClient();
@@ -212,8 +222,18 @@ export async function updateReminderSettings(
     .from("salons" as never)
     .update(patch as never)
     .eq("id", ctx.salon.id);
-
   if (error) return { ok: false, error: error.message };
+
+  // Master deposit toggle → square_integrations (only if a Square connection row
+  // exists; otherwise there's nothing to enable yet).
+  if (deposit_enabled !== undefined) {
+    const { error: sqErr } = await supabase
+      .from("square_integrations" as never)
+      .update({ deposit_enabled } as never)
+      .eq("salon_id", ctx.salon.id);
+    if (sqErr) return { ok: false, error: sqErr.message };
+  }
+
   return { ok: true };
 }
 
