@@ -45,6 +45,7 @@ import {
   filterStaffCapableForService,
 } from "@/shared/booking/staffCapability";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
+import { salonToday } from "@/shared/lib/salonTime";
 import { GROUP_MAX_SIZE } from "@/shared/config/constants";
 import { MAX_WAVES } from "@/shared/booking/groupSchedulerCore";
 
@@ -61,6 +62,10 @@ type Props = {
   salonId: string;
   /** Dashboard language — matches the rest of the receptionist center. */
   language: "en" | "vi";
+  /** Salon IANA timezone — the date picker defaults/min must be the salon's
+   *  "today", not the device's (a VN +7 device would otherwise default an LA
+   *  salon to tomorrow). Mirrors DeskBookingForm. */
+  timezone: string;
   onClose: () => void;
   onCreated: () => void;
 };
@@ -236,16 +241,12 @@ const COPY = {
   },
 } as const;
 
-function todayYmd(): string {
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
-}
-
 // `salonId` is passed to createDeskGroup for its salon-scope auth check.
 export default function DeskGroupForm({
   slug,
   salonId,
   language,
+  timezone,
   onClose,
   onCreated,
 }: Props) {
@@ -265,7 +266,11 @@ export default function DeskGroupForm({
   // "Đặt lại nhóm gần nhất": last group this lead organized, offered as a prefill.
   const [lastGroup, setLastGroup] = useState<RebookMember[] | null>(null);
   const [rebookMsg, setRebookMsg] = useState<string | null>(null);
-  const [ymd, setYmd] = useState(todayYmd());
+  // Default to the salon's local "today" (not the device's) — a VN +7 device
+  // would otherwise default an LA salon to tomorrow + show past slots.
+  const [ymd, setYmd] = useState(() =>
+    salonToday(timezone, new Date().toISOString()),
+  );
   const [arrivalKind, setArrivalKind] = useState<ArrivalKind>("morning");
   const [specificTime, setSpecificTime] = useState("");
   const [seatTogether, setSeatTogether] = useState(true);
@@ -837,7 +842,7 @@ export default function DeskGroupForm({
                 <input
                   type="date"
                   className={`${inputCls} [color-scheme:dark]`}
-                  min={todayYmd()}
+                  min={salonToday(timezone, new Date().toISOString())}
                   value={ymd}
                   onChange={(e) => {
                     setYmd(e.target.value);
