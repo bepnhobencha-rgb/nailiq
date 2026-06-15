@@ -13,9 +13,57 @@ type WaitlistEntry = {
   client_email: string | null;
   client_phone: string;
   claim_token: string | null;
+  /** Set by the DB flip when a concrete slot was freed (the assigned staff +
+   *  start time). When both are present, the SMS names the staff + time so the
+   *  customer knows exactly what they're claiming. */
+  offered_staff_id: string | null;
+  offered_start_utc: string | null;
   service_name?: string;
   salon_name?: string;
 };
+
+/**
+ * Build the staff-name + short ASCII time suffix for the waitlist SMS when a
+ * concrete slot was freed. Returns `null` (caller keeps the generic body) when
+ * either piece is missing/unresolvable. Time is formatted in the SALON
+ * timezone, ASCII-only ("2:00 PM") so the body stays a single GSM-7 segment.
+ */
+async function resolveOfferedSlotCopy(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  salonId: string,
+  offeredStaffId: string | null,
+  offeredStartUtc: string | null,
+): Promise<{ staffName: string; time: string } | null> {
+  if (!offeredStaffId || !offeredStartUtc) return null;
+  const startMs = Date.parse(offeredStartUtc);
+  if (!Number.isFinite(startMs)) return null;
+  try {
+    const [{ data: staffRow }, { data: salonRow }] = await Promise.all([
+      supabase.from("staff").select("name").eq("id", offeredStaffId).maybeSingle(),
+      supabase
+        .from("salons")
+        .select("timezone")
+        .eq("id", salonId)
+        .maybeSingle(),
+    ]);
+    const staffName = String(
+      (staffRow as { name?: string | null } | null)?.name ?? "",
+    ).trim();
+    const timeZone =
+      String((salonRow as { timezone?: string | null } | null)?.timezone ?? "").trim() ||
+      "UTC";
+    if (!staffName) return null;
+    const time = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date(startMs));
+    return { staffName, time };
+  } catch (e) {
+    console.error("[waitlistAutoFill] resolveOfferedSlotCopy", e);
+    return null;
+  }
+}
 
 /** Resolve the salon's notification language ('en'|'vi') from the canonical
  *  `salons.default_notification_locale` text column (the jsonb
@@ -64,7 +112,9 @@ export async function notifyWaitlistForSlot(params: {
   // Find the entry that was just marked 'notified' (claim_token IS NOT NULL).
   const { data: entry } = await supabase
     .from("booking_waitlist_entries" as never)
-    .select("id, client_name, client_email, client_phone, claim_token")
+    .select(
+      "id, client_name, client_email, client_phone, claim_token, offered_staff_id, offered_start_utc",
+    )
     .eq("salon_id", params.salonId)
     .eq("service_id", params.serviceId)
     .eq("status", "notified")
@@ -91,7 +141,17 @@ export async function notifyWaitlistForSlot(params: {
   // `inviteWaitlistEntry`: VN ASCII-only → single GSM-7 segment.
   if (phone) {
     const claimUrl = `${SITE_URL}/booking/waitlist-claim?token=${row.claim_token}`;
-    const body = `${params.salonName}: Co cho trong ${params.serviceName} ngay ${params.bookingDateYmd}. Giu cho trong 20 phut: ${claimUrl}`;
+    // When the DB freed a concrete slot, name the staff + time so the customer
+    // knows exactly what they're claiming; else keep the generic body.
+    const offered = await resolveOfferedSlotCopy(
+      supabase,
+      params.salonId,
+      row.offered_staff_id,
+      row.offered_start_utc,
+    );
+    const body = offered
+      ? `${params.salonName}: Co cho trong ${params.serviceName} ngay ${params.bookingDateYmd} luc ${offered.time} voi ${offered.staffName}. Giu cho trong 20 phut: ${claimUrl}`
+      : `${params.salonName}: Co cho trong ${params.serviceName} ngay ${params.bookingDateYmd}. Giu cho trong 20 phut: ${claimUrl}`;
     const lang = await resolveSalonLang(supabase, params.salonId);
     const smsResult = await sendSmsReminder(phone, body, { lang });
     smsOk = smsResult.ok;
