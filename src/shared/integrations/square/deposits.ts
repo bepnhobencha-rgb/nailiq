@@ -14,9 +14,48 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { looseServiceClient, type Row } from "./looseDb";
 import { getSquareConfig, createPaymentLink, getOrder, refundPayment } from "./client";
+import { evaluateDeposit } from "@/shared/noshow/evaluateDeposit";
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
+
+/** Per-salon TIERED deposit config (admin-set), so the desk deposit is as smart
+ *  as the online flow: different % for new / no-show / high-value. */
+async function loadTieredConfig(db: ReturnType<typeof looseServiceClient>, salonId: string) {
+  const { data } = await db
+    .from("salons")
+    .select("deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, deposit_high_value_cents")
+    .eq("id", salonId)
+    .maybeSingle();
+  const r = (data as Row) ?? {};
+  return {
+    pctNoShow: num(r.deposit_pct_no_show) || 50,
+    pctHighValue: num(r.deposit_pct_high_value) || 30,
+    pctNewCustomer: num(r.deposit_pct_new_customer) || 20,
+    highValueCents: num(r.deposit_high_value_cents) || 10000,
+  };
+}
+
+/** Risk signals from the phone-keyed client profile — same source the online
+ *  deposit flow uses, so a desk deposit reads the customer identically. */
+async function depositSignals(db: ReturnType<typeof looseServiceClient>, phone: string) {
+  let isNewCustomer = true;
+  let previousNoShowCount = 0;
+  let isVip = false;
+  const p = phone.trim();
+  if (p) {
+    const { data } = await db
+      .from("client_profiles")
+      .select("no_show_count, is_vip, visit_count")
+      .eq("phone", p)
+      .maybeSingle();
+    const r = (data ?? {}) as { no_show_count?: number; is_vip?: boolean; visit_count?: number };
+    previousNoShowCount = Math.max(0, Math.round(num(r.no_show_count)));
+    isVip = Boolean(r.is_vip);
+    isNewCustomer = !(num(r.visit_count) > 0);
+  }
+  return { isNewCustomer, previousNoShowCount, isVip };
+}
 
 export interface DepositResult {
   required: boolean;
@@ -50,7 +89,7 @@ export async function createDepositForBooking(
   const db = looseServiceClient();
   const { data: bRow } = await db
     .from("bookings")
-    .select("id, salon_id, price_cents, no_show_risk_score, deposit_status, deposit_amount_cents, square_payment_link_id, deposit_link_url, client_name")
+    .select("id, salon_id, price_cents, no_show_risk_score, deposit_status, deposit_amount_cents, square_payment_link_id, deposit_link_url, client_name, client_phone")
     .eq("id", bookingId)
     .maybeSingle();
   const b = bRow as Row | null;
@@ -77,7 +116,32 @@ export async function createDepositForBooking(
     return { required: false, reason: `risk ${risk} < threshold ${policy.threshold}` };
   }
 
-  const amountCents = Math.max(100, Math.round(num(b.price_cents) * policy.percent / 100));
+  // SMART amount — tier by who the customer is (new / prior no-show / high-value /
+  // VIP-exempt), same engine + signals as the online flow, instead of a flat %.
+  const tier = await loadTieredConfig(db, salonId);
+  const signals = await depositSignals(db, str(b.client_phone));
+  const evalInput = {
+    isNewCustomer: signals.isNewCustomer,
+    previousNoShowCount: signals.previousNoShowCount,
+    isVip: signals.isVip,
+    servicePriceCents: num(b.price_cents),
+    highValueThresholdCents: tier.highValueCents,
+    pctNoShow: tier.pctNoShow,
+    pctHighValue: tier.pctHighValue,
+    pctNewCustomer: tier.pctNewCustomer,
+  };
+  let decision = evaluateDeposit(evalInput);
+  // Desk override: the receptionist explicitly requested a deposit, so require it
+  // even when no automatic tier matched (loyal / low-risk / VIP) — at the
+  // high-value %. An auto (non-manual) call past the risk gate does the same.
+  if (!decision.required) {
+    decision = evaluateDeposit({ ...evalInput, ownerOverride: "require" });
+  }
+  if (!decision.required || decision.amountCents <= 0) {
+    return { required: false, reason: "no deposit rule matched" };
+  }
+  const amountCents = Math.max(100, decision.amountCents);
+
   const cfg = await getSquareConfig(db, salonId);
   const link = await createPaymentLink(cfg, {
     amountCents,
@@ -92,8 +156,8 @@ export async function createDepositForBooking(
     deposit_amount_cents: amountCents,
     deposit_status: "required",
     deposit_reason: manual
-      ? "manual desk request"
-      : `no_show_risk ${risk} >= ${policy.threshold}`,
+      ? `manual desk request (${decision.reason ?? "forced"})`
+      : `smart: ${decision.reason ?? "rule_applied"}`,
     square_payment_link_id: link.id,
     square_deposit_order_id: link.orderId,
     deposit_link_url: link.url,
