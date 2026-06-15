@@ -1505,7 +1505,7 @@ export async function chargeNoShowFeeManual(
   // check is what scopes the action to the authenticated desk.
   const { data: row } = await ctx.supabase
     .from("bookings")
-    .select("id, status")
+    .select("id, status, noshow_charge_status")
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .maybeSingle();
@@ -1516,7 +1516,16 @@ export async function chargeNoShowFeeManual(
   try {
     const { chargeNoShowFee } =
       await import("@/shared/integrations/square/noshow");
-    const res = await chargeNoShowFee(bookingId);
+    // A RETRY of a previously-failed charge needs a fresh idempotency suffix,
+    // else Square replays the original decline instead of re-attempting (the
+    // card may since have funds). First-time charges keep the stable key.
+    const isRetry =
+      (row as { noshow_charge_status?: string }).noshow_charge_status ===
+      "failed";
+    const res = await chargeNoShowFee(
+      bookingId,
+      isRetry ? { idempotencySuffix: crypto.randomUUID() } : undefined,
+    );
     void logBookingEvent({
       bookingId,
       salonId: ctx.salon.id,

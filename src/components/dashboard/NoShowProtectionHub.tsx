@@ -13,7 +13,12 @@ import type {
   NoShowSummary,
   UnconfirmedBooking,
   WaitlistOpportunity,
+  UncollectedFee,
 } from "@/shared/noshow/noShowDashboardActions";
+import {
+  chargeNoShowFeeManual,
+  waiveNoShowFee,
+} from "@/shared/dashboard/receptionistActions";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { getUserMessages } from "@/shared/i18n/user";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
@@ -23,6 +28,7 @@ import { StripeConnectCard } from "@/components/dashboard/StripeConnectCard";
 
 type Props = {
   slug: string;
+  salonId: string;
   isOwner: boolean;
   autoBookEnabled: boolean;
   remindersEnabled: boolean;
@@ -54,6 +60,8 @@ type Props = {
   summary: NoShowSummary;
   unconfirmed: UnconfirmedBooking[];
   waitlist: WaitlistOpportunity[];
+  /** No-show fees the saved-card charge failed on — desk can retry / waive. */
+  uncollectedFees: UncollectedFee[];
 };
 
 function formatTime(isoUtc: string): string {
@@ -93,8 +101,140 @@ function StatCard({ label, value, color = "text-white" }: { label: string; value
   );
 }
 
+/**
+ * Uncollected no-show fees — the saved-card charge failed (declined / no funds).
+ * Turns a dead "failed" log into recoverable revenue: the desk can RETRY the
+ * charge (the card may now have funds — a retry uses a fresh idempotency key so
+ * Square re-attempts) or WAIVE it. A recovered/waived row drops off the list.
+ */
+function UncollectedFeesCard({
+  slug,
+  salonId,
+  fees,
+  language,
+}: {
+  slug: string;
+  salonId: string;
+  fees: UncollectedFee[];
+  language: "en" | "vi";
+}) {
+  const [rows, setRows] = useState(fees);
+  const [busy, setBusy] = useState<Record<string, "retry" | "waive" | null>>({});
+  const [note, setNote] = useState<Record<string, string>>({});
+  const vi = language === "vi";
+
+  if (rows.length === 0) return null;
+  const totalCents = rows.reduce((s, f) => s + f.feeCents, 0);
+
+  async function retry(id: string) {
+    setBusy((b) => ({ ...b, [id]: "retry" }));
+    setNote((n) => ({ ...n, [id]: "" }));
+    try {
+      const r = await chargeNoShowFeeManual(slug, { salonId, bookingId: id });
+      if (r.ok && r.charged) {
+        setRows((rs) => rs.filter((f) => f.id !== id));
+      } else {
+        setNote((n) => ({
+          ...n,
+          [id]: vi ? "Vẫn chưa thu được — thẻ bị từ chối" : "Still declined",
+        }));
+      }
+    } catch {
+      setNote((n) => ({ ...n, [id]: vi ? "Lỗi, thử lại" : "Error, try again" }));
+    } finally {
+      setBusy((b) => ({ ...b, [id]: null }));
+    }
+  }
+
+  async function waive(id: string) {
+    setBusy((b) => ({ ...b, [id]: "waive" }));
+    try {
+      const r = await waiveNoShowFee(slug, { salonId, bookingId: id });
+      if (r.ok) setRows((rs) => rs.filter((f) => f.id !== id));
+    } catch {
+      /* leave the row; desk can retry the action */
+    } finally {
+      setBusy((b) => ({ ...b, [id]: null }));
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-300/80">
+          💸 {vi ? "Phí no-show chưa thu được" : "Uncollected no-show fees"}
+        </p>
+        <p className="text-sm font-bold tabular-nums text-amber-300">
+          ${(totalCents / 100).toFixed(2)}
+        </p>
+      </div>
+      <p className="mt-1 text-xs text-amber-200/70">
+        {vi
+          ? "Charge thẻ đã lưu bị từ chối. Thử thu lại (thẻ có thể đã có tiền) hoặc bỏ qua."
+          : "The saved-card charge was declined. Retry (the card may now have funds) or waive."}
+      </p>
+      <ul className="mt-3 space-y-2">
+        {rows.map((f) => {
+          const b = busy[f.id] ?? null;
+          return (
+            <li
+              key={f.id}
+              data-testid={`uncollected-fee-${f.id}`}
+              className="rounded-xl border border-amber-400/20 bg-nq-surface/60 p-3"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-nq-foreground">
+                    {f.clientName}
+                  </p>
+                  <p className="truncate text-xs text-nq-muted">
+                    {f.serviceName}
+                    {f.startTimeUtc ? ` · ${formatTime(f.startTimeUtc)}` : ""}
+                    {f.brand || f.last4 ? ` · ${f.brand ?? "Card"} ····${f.last4 ?? ""}` : ""}
+                  </p>
+                </div>
+                <p className="shrink-0 text-sm font-semibold tabular-nums text-amber-300">
+                  ${(f.feeCents / 100).toFixed(2)}
+                </p>
+              </div>
+              {note[f.id] ? (
+                <p className="mt-1 text-[11px] text-red-400">{note[f.id]}</p>
+              ) : null}
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  disabled={b !== null}
+                  onClick={() => void retry(f.id)}
+                  data-testid={`uncollected-fee-retry-${f.id}`}
+                  className="flex-1 rounded-md bg-amber-400/20 py-1.5 text-[11px] font-semibold text-amber-300 transition-colors hover:bg-amber-400/30 disabled:opacity-50"
+                >
+                  {b === "retry"
+                    ? vi ? "Đang thu…" : "Charging…"
+                    : vi ? "Thử thu lại" : "Retry charge"}
+                </button>
+                <button
+                  type="button"
+                  disabled={b !== null}
+                  onClick={() => void waive(f.id)}
+                  data-testid={`uncollected-fee-waive-${f.id}`}
+                  className="flex-1 rounded-md border border-nq-border/50 py-1.5 text-[11px] font-semibold text-nq-muted transition-colors hover:text-nq-foreground disabled:opacity-50"
+                >
+                  {b === "waive"
+                    ? vi ? "Đang bỏ…" : "Waiving…"
+                    : vi ? "Bỏ qua" : "Waive"}
+                </button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export function NoShowProtectionHub({
   slug,
+  salonId,
   isOwner,
   autoBookEnabled: initialAutoBook,
   remindersEnabled: initialReminders,
@@ -121,6 +261,7 @@ export function NoShowProtectionHub({
   summary,
   unconfirmed,
   waitlist,
+  uncollectedFees,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -235,6 +376,14 @@ export function NoShowProtectionHub({
             {summary.cardsOnFileCount} card{summary.cardsOnFileCount === 1 ? "" : "s"} on file protecting upcoming bookings
           </p>
         </div>
+
+        {/* Uncollected fees — failed charges the salon can recover. */}
+        <UncollectedFeesCard
+          slug={slug}
+          salonId={salonId}
+          fees={uncollectedFees}
+          language={language}
+        />
 
         {/* Summary cards */}
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">

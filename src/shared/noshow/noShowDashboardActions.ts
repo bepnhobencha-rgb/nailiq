@@ -38,11 +38,26 @@ export type WaitlistOpportunity = {
   createdAt: string;
 };
 
+/** A no-show fee the salon is owed but hasn't collected: the saved-card charge
+ *  failed (declined / insufficient funds). Surfaced so the desk can retry,
+ *  send the customer a link, or waive. */
+export type UncollectedFee = {
+  id: string;
+  clientName: string;
+  serviceName: string;
+  startTimeUtc: string;
+  feeCents: number;
+  last4: string | null;
+  brand: string | null;
+  hasPhone: boolean;
+};
+
 export async function loadNoShowDashboard(slug: string): Promise<{
   ok: boolean;
   summary?: NoShowSummary;
   unconfirmed?: UnconfirmedBooking[];
   waitlist?: WaitlistOpportunity[];
+  uncollectedFees?: UncollectedFee[];
   error?: string;
 }> {
   const ctx = await getDashboardWriteClient(slug);
@@ -186,6 +201,39 @@ export async function loadNoShowDashboard(slug: string): Promise<{
     0,
   );
 
+  // Uncollected fees: the saved-card charge failed (declined / no funds). These
+  // are real money owed — surfaced so the desk can retry / send a link / waive.
+  const { data: failedRows } = await supabase
+    .from("bookings" as never)
+    .select(
+      "id, client_name, client_phone, start_time_utc, noshow_fee_cents, noshow_card_last4, noshow_card_brand, services!bookings_service_id_fkey(name)",
+    )
+    .eq("salon_id", salonId)
+    .eq("noshow_charge_status", "failed")
+    .order("start_time_utc", { ascending: false })
+    .limit(100);
+  const uncollectedFees: UncollectedFee[] = (
+    (failedRows ?? []) as Array<{
+      id: string;
+      client_name: string | null;
+      client_phone: string | null;
+      start_time_utc: string | null;
+      noshow_fee_cents: number | null;
+      noshow_card_last4: string | null;
+      noshow_card_brand: string | null;
+      services: { name: string | null } | null;
+    }>
+  ).map((r) => ({
+    id: String(r.id),
+    clientName: String(r.client_name ?? "").trim() || "—",
+    serviceName: String(r.services?.name ?? "").trim() || "—",
+    startTimeUtc: String(r.start_time_utc ?? ""),
+    feeCents: Number(r.noshow_fee_cents) || 0,
+    last4: r.noshow_card_last4 ?? null,
+    brand: r.noshow_card_brand ?? null,
+    hasPhone: Boolean(r.client_phone),
+  }));
+
   return {
     ok: true,
     summary: {
@@ -202,6 +250,7 @@ export async function loadNoShowDashboard(slug: string): Promise<{
     },
     unconfirmed,
     waitlist,
+    uncollectedFees,
   };
 }
 

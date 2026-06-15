@@ -72,6 +72,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
   return (
     <NoShowProtectionHub
       slug={slug}
+      salonId={ctx.salon.id}
       isOwner={ctx.role === "owner"}
       autoBookEnabled={row?.feature_flags?.waitlist_auto_book === true}
       remindersEnabled={row?.reminders_enabled ?? false}
@@ -98,6 +99,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
       summary={result.summary!}
       unconfirmed={result.unconfirmed!}
       waitlist={result.waitlist!}
+      uncollectedFees={result.uncollectedFees ?? []}
     />
   );
 }
