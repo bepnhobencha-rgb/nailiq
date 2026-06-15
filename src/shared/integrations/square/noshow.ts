@@ -14,6 +14,11 @@ import "server-only";
 import { looseServiceClient, type Row } from "./looseDb";
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import {
+  createPaymentLink,
+  getOrder,
+  getSquareConfig,
+} from "@/shared/integrations/square/client";
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
@@ -468,4 +473,96 @@ export async function chargeNoShowFee(
       .eq("id", bookingId);
     return { charged: false, reason: e instanceof Error ? e.message : "charge failed" };
   }
+}
+
+/**
+ * Create a Square hosted payment link so the CUSTOMER can pay their own no-show
+ * fee — the recovery path for a card that just won't charge (closed / chronic
+ * insufficient funds). Idempotent: reuses an existing link. The link's order id
+ * is stored on the booking; reconcileNoShowFeeLinks flips the fee to 'charged'
+ * once the customer pays. Square-only (payment links are a Square feature).
+ */
+export async function createNoShowFeeLink(
+  bookingId: string,
+): Promise<{ ok: boolean; url?: string; amountCents?: number; reason?: string }> {
+  const db = looseServiceClient();
+  const { data } = await db
+    .from("bookings")
+    .select(
+      "id, salon_id, noshow_fee_cents, noshow_charge_status, noshow_fee_link_url",
+    )
+    .eq("id", bookingId)
+    .maybeSingle();
+  const b = data as Row | null;
+  if (!b) return { ok: false, reason: "booking not found" };
+  if (b.noshow_charge_status === "charged")
+    return { ok: false, reason: "already charged" };
+  const feeCents = num(b.noshow_fee_cents);
+  if (feeCents <= 0) return { ok: false, reason: "fee is zero" };
+  // Idempotent — reuse the existing link rather than minting a second one.
+  if (b.noshow_fee_link_url)
+    return { ok: true, url: str(b.noshow_fee_link_url), amountCents: feeCents };
+
+  const cfg = await getSquareConfig(db, str(b.salon_id));
+  const link = await createPaymentLink(cfg, {
+    amountCents: feeCents,
+    name: "No-show fee",
+    // Short ref (Square caps description); the stored order id is the reconcile
+    // key, so the ref needn't encode the booking id.
+    referenceId: "no-show-fee",
+    idempotencyKey: `nsf:${bookingId}`,
+    note: "No-show fee",
+  });
+  await db
+    .from("bookings")
+    .update({
+      noshow_fee_link_url: link.url,
+      noshow_fee_order_id: link.orderId,
+    } as never)
+    .eq("id", bookingId);
+  return { ok: true, url: link.url, amountCents: feeCents };
+}
+
+/**
+ * Mark a no-show fee as collected once the customer pays its hosted link.
+ * Mirrors reconcileDeposits — called per-salon from the square-sync cron.
+ */
+export async function reconcileNoShowFeeLinks(
+  salonId: string,
+): Promise<{ checked: number; paid: number }> {
+  const db = looseServiceClient();
+  const { data } = await db
+    .from("bookings")
+    .select("id, noshow_fee_cents, noshow_fee_order_id, noshow_charge_status")
+    .eq("salon_id", salonId)
+    .not("noshow_fee_order_id", "is", null)
+    .not("noshow_charge_status", "eq", "charged");
+  const rows = (data as Row[]) ?? [];
+  if (rows.length === 0) return { checked: 0, paid: 0 };
+
+  const cfg = await getSquareConfig(db, salonId);
+  let paid = 0;
+  for (const r of rows) {
+    const orderId = str(r.noshow_fee_order_id);
+    if (!orderId) continue;
+    try {
+      const order = await getOrder(cfg, orderId);
+      if (
+        order.state === "COMPLETED" ||
+        order.paidCents >= num(r.noshow_fee_cents)
+      ) {
+        await db
+          .from("bookings")
+          .update({
+            noshow_charge_status: "charged",
+            noshow_payment_id: order.tenderPaymentId,
+          } as never)
+          .eq("id", str(r.id));
+        paid++;
+      }
+    } catch {
+      // transient Square error — retry next run
+    }
+  }
+  return { checked: rows.length, paid };
 }
