@@ -312,7 +312,13 @@ function windowForArrival(
   } else if (pref.kind === "specific") {
     const t = hmToMinutes(pref.time);
     if (t === null) return null;
-    lo = Math.max(openMin, t - 90);
+    // Honor the time the customer explicitly picked: anchor AT it and only nudge
+    // FORWARD for capacity (waves can start a bit later when staff are full) —
+    // never schedule the group EARLIER than the time they chose. Previously this
+    // opened a ±90-min window, so the auto-selected "earliest" arrangement could
+    // land up to 90 min BEFORE the requested time (felt like the picker was
+    // ignored and a different time was recommended).
+    lo = Math.max(openMin, t);
     hi = Math.min(closeMin, t + 90);
   }
   if (hi <= lo) return null;
