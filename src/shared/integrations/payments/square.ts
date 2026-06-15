@@ -7,6 +7,8 @@ import {
   chargeSavedCard as sqCharge,
   refundPayment as sqRefund,
   disableCard as sqDisableCard,
+  findSquareCustomerByPhone,
+  listCards as sqListCards,
 } from "@/shared/integrations/square/client";
 import type { PaymentProvider } from "./types";
 
@@ -81,5 +83,14 @@ export class SquareProvider implements PaymentProvider {
 
   async removeSavedCard(input: { cardId: string; customerId: string }) {
     await sqDisableCard(this.cfg, input.cardId);
+  }
+
+  async findSavedCardByPhone(phone: string) {
+    const customerId = await findSquareCustomerByPhone(this.cfg, phone);
+    if (!customerId) return null;
+    const cards = await sqListCards(this.cfg, customerId);
+    const card = cards[0];
+    if (!card || !card.cardId) return null;
+    return { customerId, cardId: card.cardId, last4: card.last4, brand: card.brand };
   }
 }

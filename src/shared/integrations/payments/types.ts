@@ -72,4 +72,10 @@ export interface PaymentProvider {
    *  card; Stripe detaches the payment method. Required by the card networks'
    *  stored-credential rules (the cardholder must be able to cancel). */
   removeSavedCard(input: { cardId: string; customerId: string }): Promise<void>;
+
+  /** Find a returning customer's most recent saved card by their (OTP-verified)
+   *  phone — for one-tap reuse. READ ONLY. Returns null when none. Square: search
+   *  customer by phone → list cards. Stripe: search customer by phone → list
+   *  payment methods. Caller MUST gate on an OTP session (phone is the key). */
+  findSavedCardByPhone(phone: string): Promise<SavedCard | null>;
 }
