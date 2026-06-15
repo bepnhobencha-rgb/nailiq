@@ -3312,6 +3312,12 @@ function ReceptionistCenterInner({
                   conflictWith: rcMessages.grid.conflictWith,
                   overflowMessage: rcMessages.grid.overflowMessage,
                   closingLabel: rcMessages.grid.closingLabel,
+                  waitlistOffer:
+                    language === "vi"
+                      ? "Đang mời khách chờ"
+                      : "Offering to waitlist",
+                  waitlistOfferUntil: (time: string) =>
+                    language === "vi" ? `đến ${time}` : `until ${time}`,
                   bookingIcon: {
                     ...rcMessages.grid.bookingIcon,
                     startShort: rcMessages.latenessGrid.startShort,
@@ -3335,6 +3341,7 @@ function ReceptionistCenterInner({
                 timeSlotMinutesVisualHint={densityConfig.timeSlotMinutes}
                 autoNoShowMinutes={data.salon.autoNoShowMinutes}
                 noShowTombstones={noShowsTodayList}
+                waitlistOffers={data.waitlistOffers}
                 onStartBooking={
                   canChangeBookingStatus(viewerRole)
                     ? (id) => void handleStartBooking(id)
