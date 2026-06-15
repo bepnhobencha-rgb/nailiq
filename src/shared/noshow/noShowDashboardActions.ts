@@ -2,6 +2,7 @@
 
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { attributeRecentAudit } from "@/shared/dashboard/attributeAudit";
 
 export type NoShowSummary = {
   unconfirmedCount: number;
@@ -368,6 +369,8 @@ export async function updateReminderSettings(
     if (sqErr) return { ok: false, error: sqErr.message };
   }
 
+  // Attribute the change(s) to the owner who made them in the Activity log.
+  await attributeRecentAudit(ctx.salon.id, ["salons", "square_integrations"], ctx.userId);
   return { ok: true };
 }
 
@@ -413,6 +416,7 @@ export async function updateSquareSyncSettings(
     .update(patch as never)
     .eq("salon_id", ctx.salon.id);
   if (error) return { ok: false, error: error.message };
+  await attributeRecentAudit(ctx.salon.id, ["square_integrations"], ctx.userId);
   return { ok: true };
 }
 

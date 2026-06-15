@@ -232,7 +232,7 @@ export async function loadActivityFeed(
         .limit(PER_SOURCE),
       db
         .from("system_audit" as never)
-        .select("id, table_name, action, changed_fields, created_at")
+        .select("id, table_name, action, changed_fields, created_at, actor_user_id")
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
@@ -301,11 +301,35 @@ export async function loadActivityFeed(
       });
     }
 
-    for (const r of (auditRes.data ?? []) as Array<Record<string, unknown>>) {
+    // Resolve actor user ids → staff names so config changes read "Mai · Đổi …".
+    const auditRows = (auditRes.data ?? []) as Array<Record<string, unknown>>;
+    const auditUserIds = [
+      ...new Set(auditRows.map((r) => str(r.actor_user_id)).filter(Boolean)),
+    ];
+    const nameById = new Map<string, string>();
+    if (auditUserIds.length > 0) {
+      const { data: staffRows } = await db
+        .from("staff" as never)
+        .select("user_id, name")
+        .eq("salon_id", salonId)
+        .in("user_id", auditUserIds);
+      for (const s of (staffRows ?? []) as Array<Record<string, unknown>>) {
+        const u = str(s.user_id);
+        const n = str(s.name).trim();
+        if (u && n) nameById.set(u, n);
+      }
+    }
+
+    for (const r of auditRows) {
       const changed = (r.changed_fields && typeof r.changed_fields === "object"
         ? (r.changed_fields as Record<string, unknown>)
         : {});
-      const { title, subtitle } = describeAudit(str(r.table_name), str(r.action), changed);
+      const base = describeAudit(str(r.table_name), str(r.action), changed);
+      const actorName = r.actor_user_id ? nameById.get(str(r.actor_user_id)) : null;
+      const { title, subtitle } = {
+        title: actorName ? `${actorName} · ${base.title}` : base.title,
+        subtitle: base.subtitle,
+      };
       items.push({
         id: `sy-${str(r.id)}`,
         kind: "system",
