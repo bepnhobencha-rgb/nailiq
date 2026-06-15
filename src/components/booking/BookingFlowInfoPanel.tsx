@@ -22,6 +22,7 @@ function maskEmail(email: string): string {
 
 export function BookingFlowInfoPanel({
   t,
+  notesHint,
   clientName,
   clientEmail,
   clientNotes,
@@ -53,6 +54,8 @@ export function BookingFlowInfoPanel({
   onNext,
 }: {
   t: BookingMessages;
+  /** Vertical-aware notes hint (prompts pregnancy/health for relevant services). */
+  notesHint: string;
   clientName: string;
   clientEmail: string;
   clientNotes: string;
@@ -368,7 +371,7 @@ export function BookingFlowInfoPanel({
           >
             {t.clientNotesLabel}
           </label>
-          <p className="mb-2 text-xs text-[var(--booking-text-muted)]">{t.clientNotesOptionalHint}</p>
+          <p className="mb-2 text-xs text-[var(--booking-text-muted)]">{notesHint}</p>
           <textarea
             id="booking-info-notes"
             name="clientNotes"

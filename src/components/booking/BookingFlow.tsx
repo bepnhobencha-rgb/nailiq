@@ -401,6 +401,7 @@ export function BookingFlow({
         {flow.step === "info" ? (
           <BookingFlowInfoPanel
             t={t}
+            notesHint={vertical.intakeHint?.[language] ?? t.clientNotesOptionalHint}
             clientName={flow.clientName}
             clientEmail={flow.clientEmail}
             clientNotes={flow.clientNotes}
