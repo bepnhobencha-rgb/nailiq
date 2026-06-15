@@ -18,6 +18,7 @@ import type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
 import { EditBookingForm, type EditBookingFormBooking } from "./EditBookingForm";
 import { DepositLinkModal } from "./DepositLinkModal";
 import { requestDepositLink } from "@/shared/dashboard/receptionistActions";
+import { sendSaveCardLink } from "@/shared/dashboard/sendSaveCardLinkAction";
 import type { BookingCustomerContext } from "@/shared/dashboard/loadBookingCustomerContextAction";
 
 function depositErrorLabel(code: string, lang: "en" | "vi"): string {
@@ -42,6 +43,70 @@ function depositErrorLabel(code: string, lang: "en" | "vi"): string {
  *  receptionist chooses (manual → bypasses the no-show-risk gate), then show it
  *  as a QR AND offer to text it to the customer. Kept here so the drawer stays
  *  the single owner of the deposit UI. */
+/** Desk "save a card to hold the spot" — texts the customer a one-tap
+ *  card-capture link (charge only on no-show). The wow no-show flow: no
+ *  upfront payment for the customer, automatic protection for the salon. */
+function SaveCardButton({
+  slug,
+  bookingId,
+  disabled,
+  offlineHint,
+  language,
+}: {
+  slug: string;
+  bookingId: string;
+  disabled?: boolean;
+  offlineHint?: string;
+  language: "en" | "vi";
+}) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<"sent" | "error" | null>(null);
+
+  async function onPress() {
+    setBusy(true);
+    setResult(null);
+    try {
+      const r = await sendSaveCardLink(slug, { bookingId, sendSms: true, language });
+      setResult(r.ok && r.smsSent ? "sent" : "error");
+    } catch {
+      setResult("error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="secondary"
+        loading={busy}
+        disabled={disabled}
+        title={disabled ? offlineHint : undefined}
+        data-testid="drawer-save-card-link"
+        className="mt-2 w-full sm:w-full"
+        onClick={() => void onPress()}
+      >
+        {language === "en" ? "💳 Text save-card link" : "💳 Gửi link lưu thẻ"}
+      </Button>
+      {result === "sent" ? (
+        <p className="text-xs font-semibold text-nq-success" role="status">
+          {language === "en"
+            ? "✓ Save-card link sent by SMS"
+            : "✓ Đã gửi link lưu thẻ qua SMS"}
+        </p>
+      ) : null}
+      {result === "error" ? (
+        <p className="text-xs font-semibold text-nq-error" role="status">
+          {language === "en"
+            ? "Couldn't send the link — check the phone number."
+            : "Không gửi được link — kiểm tra số điện thoại."}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function DepositButton({
   slug,
   salonId,
@@ -1032,6 +1097,15 @@ export function BookingDetailDrawer({
                       <DepositButton
                         slug={deskEdit.slug}
                         salonId={deskEdit.salonId}
+                        bookingId={deskEdit.booking.id}
+                        disabled={isOffline}
+                        offlineHint={offlineEditDisabledHint}
+                        language={model.language}
+                      />
+                    ) : null}
+                    {deskEdit && model.depositsEnabled && !model.cardOnFile ? (
+                      <SaveCardButton
+                        slug={deskEdit.slug}
                         bookingId={deskEdit.booking.id}
                         disabled={isOffline}
                         offlineHint={offlineEditDisabledHint}
