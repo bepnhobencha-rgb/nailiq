@@ -273,6 +273,8 @@ export async function updateReminderSettings(
     cancellation_policy?: { en?: string; vi?: string };
     /** Override the per-vertical health-acknowledgment requirement (salons col). */
     health_ack_required?: boolean;
+    /** Also email desk-sent links (save-card/deposit/waitlist) alongside SMS. */
+    email_links_enabled?: boolean;
   },
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);

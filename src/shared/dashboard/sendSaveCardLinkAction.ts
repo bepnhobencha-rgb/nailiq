@@ -4,6 +4,7 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isFrontDeskRole } from "@/shared/lib/salonMemberRole";
 import { generateReminderToken } from "@/shared/noshow/generateReminderToken";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
+import { sendCustomerLinkEmail } from "@/shared/lib/sendCustomerLinkEmail";
 
 /**
  * Desk-initiated "save a card to hold your spot" link.
@@ -31,7 +32,7 @@ export type SendSaveCardLinkResult =
         | "protection_disabled"
         | "server_error";
     }
-  | { ok: true; url: string; smsSent?: boolean };
+  | { ok: true; url: string; smsSent?: boolean; emailSent?: boolean };
 
 export async function sendSaveCardLink(
   slug: string,
@@ -48,7 +49,7 @@ export async function sendSaveCardLink(
   // can text the link without a second round-trip.
   const { data: bk } = await ctx.supabase
     .from("bookings")
-    .select("id, client_phone")
+    .select("id, client_phone, client_email, client_name")
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .maybeSingle();
@@ -58,7 +59,7 @@ export async function sendSaveCardLink(
   // early with a clear reason rather than texting a dead link.
   const { data: salon } = await ctx.supabase
     .from("salons")
-    .select("noshow_protection_enabled")
+    .select("noshow_protection_enabled, email_links_enabled, address")
     .eq("id", ctx.salon.id)
     .maybeSingle();
   if (!(salon as { noshow_protection_enabled?: boolean } | null)?.noshow_protection_enabled) {
@@ -70,22 +71,54 @@ export async function sendSaveCardLink(
 
   const url = `${SITE_URL}/booking/save-card?token=${token.id}`;
 
+  const salonName = ctx.salon.name?.trim() || "NailIQ";
+  const en = input.language === "en";
+  const phone = String((bk as { client_phone?: string }).client_phone ?? "").trim();
+  const email = String((bk as { client_email?: string }).client_email ?? "").trim();
+  const emailEnabled =
+    (salon as { email_links_enabled?: boolean } | null)?.email_links_enabled !== false;
+
   let smsSent: boolean | undefined;
+  let emailSent: boolean | undefined;
+
+  // The "send link" intent. Deliver on EVERY channel we have — SMS often never
+  // reaches US handsets (carrier filtering of link-SMS from unregistered A2P
+  // numbers), so email is the parallel/fallback channel, not a nice-to-have.
   if (input.sendSms) {
-    const phone = String((bk as { client_phone?: string }).client_phone ?? "").trim();
-    if (!phone) return { ok: false, error: "no_phone" };
-    const salonName = ctx.salon.name?.trim() || "NailIQ";
-    const body =
-      input.language === "en"
+    const canEmail = emailEnabled && !!email;
+    if (!phone && !canEmail) return { ok: false, error: "no_phone" };
+
+    if (phone) {
+      const body = en
         ? `${salonName}: Save a card to hold your appointment — you're only charged if you no-show: ${url}`
         : `${salonName}: Lưu thẻ để giữ lịch hẹn — chỉ bị tính phí nếu bạn không đến: ${url}`;
-    try {
-      const r = await sendSmsReminder(phone, body);
-      smsSent = r.ok;
-    } catch {
-      smsSent = false;
+      try {
+        const r = await sendSmsReminder(phone, body);
+        smsSent = r.ok;
+      } catch {
+        smsSent = false;
+      }
+    }
+
+    if (canEmail) {
+      const r = await sendCustomerLinkEmail({
+        email,
+        clientName: (bk as { client_name?: string }).client_name ?? null,
+        salonName,
+        salonAddress: (salon as { address?: string | null } | null)?.address ?? null,
+        lang: en ? "en" : "vi",
+        subject: en
+          ? `Save a card to hold your appointment · ${salonName}`
+          : `Lưu thẻ để giữ lịch hẹn · ${salonName}`,
+        bodyText: en
+          ? "Save a card to hold your appointment — there's no upfront charge. You're only charged the no-show fee if you don't show up."
+          : "Lưu thẻ để giữ lịch hẹn — không thu phí trước. Bạn chỉ bị tính phí vắng mặt nếu không đến.",
+        ctaLabel: en ? "Save a card" : "Lưu thẻ",
+        url,
+      });
+      emailSent = r.ok;
     }
   }
 
-  return { ok: true, url, smsSent };
+  return { ok: true, url, smsSent, emailSent };
 }
