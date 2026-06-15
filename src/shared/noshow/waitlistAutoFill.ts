@@ -1,6 +1,8 @@
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient } from "@/shared/lib/resend";
 import { complianceFooterHtml, listUnsubscribeHeaders, isEmailSuppressed } from "@/shared/lib/emailCompliance";
+import { sendSmsReminder } from "@/shared/lib/twilioSms";
+import { logNotification } from "@/shared/lib/notificationLog";
 
 const SITE_URL =
   (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
@@ -15,12 +17,40 @@ type WaitlistEntry = {
   salon_name?: string;
 };
 
+/** Resolve the salon's notification language ('en'|'vi') from the canonical
+ *  `salons.default_notification_locale` text column (the jsonb
+ *  `staff_notification_settings.defaultLocale` is unset on every salon).
+ *  Best-effort — any read failure defaults to English. Only governs the auto
+ *  opt-out line Twilio appends; the VN-ASCII SMS body itself is fixed. */
+async function resolveSalonLang(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  salonId: string,
+): Promise<"en" | "vi"> {
+  try {
+    const { data } = await supabase
+      .from("salons")
+      .select("default_notification_locale" as never)
+      .eq("id", salonId)
+      .maybeSingle();
+    const locale = String(
+      (data as { default_notification_locale?: unknown } | null)
+        ?.default_notification_locale ?? "",
+    ).toLowerCase();
+    return locale === "vi" ? "vi" : "en";
+  } catch {
+    return "en";
+  }
+}
+
 /**
- * Finds the first waiting customer for a freed slot and sends them a claim email.
- * Called after a booking is cancelled or rescheduled.
- * This is separate from the DB-level SKIP LOCKED update in the RPCs —
- * this function handles the email notification after the DB has already
- * set the entry to 'notified' and assigned a claim_token.
+ * Finds the first waiting customer for a freed slot and sends them the claim
+ * link. Called after a booking is cancelled, rescheduled, or no-showed — after
+ * the DB has already flipped the next FIFO entry to 'notified' + assigned a
+ * claim_token.
+ *
+ * SMS is the PRIMARY channel (every entry has a phone; email is nullable, so a
+ * phone-only customer would otherwise get nothing). Email is sent as a bonus
+ * when present. Returns `notified:true` if EITHER channel succeeded.
  */
 export async function notifyWaitlistForSlot(params: {
   salonId: string;
@@ -31,7 +61,7 @@ export async function notifyWaitlistForSlot(params: {
 }): Promise<{ notified: boolean; entryId?: string }> {
   const supabase = createServiceRoleClient();
 
-  // Find the entry that was just marked 'notified' (claim_token IS NOT NULL, email not yet sent)
+  // Find the entry that was just marked 'notified' (claim_token IS NOT NULL).
   const { data: entry } = await supabase
     .from("booking_waitlist_entries" as never)
     .select("id, client_name, client_email, client_phone, claim_token")
@@ -46,19 +76,63 @@ export async function notifyWaitlistForSlot(params: {
   if (!entry) return { notified: false };
 
   const row = entry as WaitlistEntry;
-  if (!row.client_email || !row.claim_token) {
-    return { notified: false };
+  if (!row.claim_token) return { notified: false };
+
+  const phone = String(row.client_phone ?? "").trim();
+  const email = (row.client_email ?? "").trim();
+
+  // Bail only when there's no way to reach the customer at all.
+  if (!phone && !email) return { notified: false };
+
+  let smsOk = false;
+  let emailOk = false;
+
+  // PRIMARY — SMS the 20-minute claim link. Same body shape as the manual
+  // `inviteWaitlistEntry`: VN ASCII-only → single GSM-7 segment.
+  if (phone) {
+    const claimUrl = `${SITE_URL}/booking/waitlist-claim?token=${row.claim_token}`;
+    const body = `${params.salonName}: Co cho trong ${params.serviceName} ngay ${params.bookingDateYmd}. Giu cho trong 20 phut: ${claimUrl}`;
+    const lang = await resolveSalonLang(supabase, params.salonId);
+    const smsResult = await sendSmsReminder(phone, body, { lang });
+    smsOk = smsResult.ok;
+
+    // Log to booking_notifications (booking_id null — no booking yet). Mirrors
+    // the manual invite. Best-effort; never let logging mask a real send.
+    try {
+      await logNotification({
+        bookingId: null,
+        salonId: params.salonId,
+        notificationType: "waitlist_invite",
+        channel: "sms",
+        clientPhone: phone,
+        messageSid: smsResult.messageSid ?? null,
+        bodyPreview: body,
+        ok: smsResult.ok,
+        errorMessage: smsResult.ok ? null : smsResult.error ?? null,
+      });
+    } catch (e) {
+      console.error("[waitlistAutoFill] logNotification", e);
+    }
   }
 
-  await sendWaitlistEmail({
-    clientName: row.client_name,
-    clientEmail: row.client_email,
-    claimToken: row.claim_token,
-    serviceName: params.serviceName,
-    salonName: params.salonName,
-    bookingDateYmd: params.bookingDateYmd,
-  });
+  // BONUS — also email when an address is on file (honours unsubscribe inside).
+  if (email) {
+    try {
+      await sendWaitlistEmail({
+        clientName: row.client_name,
+        clientEmail: email,
+        claimToken: row.claim_token,
+        serviceName: params.serviceName,
+        salonName: params.salonName,
+        bookingDateYmd: params.bookingDateYmd,
+      });
+      emailOk = true;
+    } catch (e) {
+      console.error("[waitlistAutoFill] email send failed", e);
+    }
+  }
 
+  if (!smsOk && !emailOk) return { notified: false };
   return { notified: true, entryId: row.id };
 }
 
@@ -97,7 +171,7 @@ async function sendWaitlistEmail(input: {
         <tr>
           <td style="padding:28px 32px;">
             <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#d1d1d1;">
-              Good news, ${input.clientName}! A spot just opened up for <strong>${input.serviceName}</strong> on ${input.bookingDateYmd}. Claim it before someone else does — this link expires in 2 hours.
+              Good news, ${input.clientName}! A spot just opened up for <strong>${input.serviceName}</strong> on ${input.bookingDateYmd}. Claim it before someone else does — this link expires in 20 minutes.
             </p>
             <a href="${claimUrl}" style="display:block;background:#c9a96e;color:#000;text-align:center;padding:14px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:1px;">
               Claim My Spot →

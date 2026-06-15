@@ -3427,6 +3427,18 @@ function ReceptionistCenterInner({
               <OnlineWaitlistPanel
                 slug={slug}
                 entries={data.onlineWaitlist}
+                onCreateBooking={(entry) => {
+                  // Reuse the desk-prefill mechanism (same as onRebookNext): open
+                  // the existing DeskBookingForm prefilled so staff confirm
+                  // time/staff and create the real appointment from a claimed slot.
+                  setDeskPrefill({
+                    phone: entry.phone || undefined,
+                    name: entry.clientName || undefined,
+                    serviceId: entry.serviceId || undefined,
+                    ymd: entry.bookingDate || undefined,
+                  });
+                  setDeskBookingOpen(true);
+                }}
               />
             </div>
           </aside>

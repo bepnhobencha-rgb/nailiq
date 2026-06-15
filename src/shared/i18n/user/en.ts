@@ -1368,6 +1368,10 @@ export type UserMessages = {
       invited: string;
       /** Status pill — still waiting. */
       statusWaiting: string;
+      /** Status pill — customer grabbed the freed slot. */
+      claimed: string;
+      /** Primary action on a claimed row — open the prefilled desk form. */
+      createBooking: string;
       /** Compact empty state. */
       empty: string;
       /** Toasts. `{name}` is the customer's name. */
@@ -3446,6 +3450,8 @@ export const userEn: UserMessages = {
       inviteAgain: "Invite again",
       invited: "Invited",
       statusWaiting: "Waiting",
+      claimed: "✅ Claimed",
+      createBooking: "Create booking",
       empty: "No one on the waitlist",
       invitedToast: (name) => `Invited ${name} by SMS`,
       suppressedToast: (name) =>

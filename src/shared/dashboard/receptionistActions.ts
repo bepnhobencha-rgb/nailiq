@@ -2571,12 +2571,31 @@ export async function inviteWaitlistEntry(
   // ASCII-only Vietnamese (no diacritics, no emoji) → single GSM-7 segment.
   const body = `${salonName}: Co cho trong ${serviceName} ngay ${bookingDate}. Giu cho trong 20 phut: ${claimUrl}`;
 
+  // Resolve the salon's notification language so the auto-appended opt-out line
+  // matches it ('vi' → "Nhắn STOP để ngừng nhận tin."). Best-effort: any read
+  // failure defaults to English. The VN-ASCII body above is fixed by design.
+  let smsLang: "en" | "vi" = "en";
+  try {
+    const { data: langRow } = await svc
+      .from("salons")
+      .select("default_notification_locale" as never)
+      .eq("id", ctx.salon.id)
+      .maybeSingle();
+    const locale = String(
+      (langRow as { default_notification_locale?: unknown } | null)
+        ?.default_notification_locale ?? "",
+    ).toLowerCase();
+    smsLang = locale === "vi" ? "vi" : "en";
+  } catch {
+    /* default 'en' */
+  }
+
   // Send FIRST, then record. A suppressed send (dev/CI/test/fictional number)
   // returns ok:true and still counts as "handled". A genuine failure
   // (twilio_not_configured / Twilio error) must NOT mark the entry notified —
   // otherwise the customer never got the link yet the cron treats them as
   // already invited. Leave the row 'waiting' so staff can retry / call them.
-  const smsResult = await sendSmsReminder(phone, body);
+  const smsResult = await sendSmsReminder(phone, body, { lang: smsLang });
 
   // Log to booking_notifications (booking_id is null — the entry isn't a
   // booking yet). Best-effort; never fail the invite on a logging hiccup.

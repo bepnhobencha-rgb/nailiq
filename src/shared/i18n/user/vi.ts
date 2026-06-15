@@ -1376,6 +1376,8 @@ export const userVi: UserMessages = {
       inviteAgain: "Mời lại",
       invited: "Đã mời",
       statusWaiting: "Đang chờ",
+      claimed: "✅ Đã giành chỗ",
+      createBooking: "Tạo lịch",
       empty: "Chưa có khách chờ chỗ",
       invitedToast: (name) => `Đã gửi SMS mời ${name}`,
       suppressedToast: (name) =>
