@@ -51,6 +51,19 @@ export async function evaluateBookingNoShow(
     const highValueThreshold = s.deposit_high_value_cents ?? 10000;
     const businessDescriptor = resolveVertical(s.vertical).aiDescriptor;
 
+    // Deposit is OPT-IN per salon — the admin "Deposit" toggle lives on
+    // square_integrations.deposit_enabled. When off (or no Square row), never
+    // flag a deposit; the salon relies on card-on-file (or no protection). This
+    // is what makes the admin toggle actually STOP auto-deposits, not just block
+    // the charge.
+    const { data: sqRow } = await supabase
+      .from("square_integrations" as never)
+      .select("deposit_enabled")
+      .eq("salon_id", body.salonId)
+      .maybeSingle();
+    const depositEnabled =
+      (sqRow as { deposit_enabled?: boolean } | null)?.deposit_enabled === true;
+
     const depositDecision = evaluateDeposit({
       isNewCustomer: body.isNewCustomer,
       previousNoShowCount: body.noShowCount,
@@ -102,8 +115,9 @@ export async function evaluateBookingNoShow(
       console.error("[evaluateBookingNoShow] card decision", e);
     }
 
-    // Card supersedes deposit: keep the deposit only when no card is required.
-    const depositActive = depositDecision.required && !cardRequired;
+    // Deposit applies only when the salon opted into deposits AND a card isn't
+    // already the protection (card-on-file supersedes a deposit).
+    const depositActive = depositEnabled && depositDecision.required && !cardRequired;
 
     await supabase
       .from("bookings" as never)
