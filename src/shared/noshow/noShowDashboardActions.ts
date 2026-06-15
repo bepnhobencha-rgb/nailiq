@@ -434,6 +434,11 @@ export async function updateNoShowCardSettings(
     /** Prior-no-show count that escalates a customer to an upfront pay-to-confirm
      *  deposit instead of card-on-file. null = OFF (opt-in); else clamped 1..10. */
     noshow_deposit_escalation_threshold?: number | null;
+    /** "Who is asked for a card" rules. */
+    noshow_require_new_customer?: boolean;
+    noshow_require_prior_noshow?: boolean;
+    noshow_min_noshow_count?: number;
+    noshow_require_high_risk?: boolean;
   },
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
@@ -449,6 +454,18 @@ export async function updateNoShowCardSettings(
   }
   if (typeof settings.noshow_group_whole_party === "boolean") {
     patch.noshow_group_whole_party = settings.noshow_group_whole_party;
+  }
+  if (typeof settings.noshow_require_new_customer === "boolean") {
+    patch.noshow_require_new_customer = settings.noshow_require_new_customer;
+  }
+  if (typeof settings.noshow_require_prior_noshow === "boolean") {
+    patch.noshow_require_prior_noshow = settings.noshow_require_prior_noshow;
+  }
+  if (settings.noshow_min_noshow_count != null) {
+    patch.noshow_min_noshow_count = Math.min(20, Math.max(1, Math.round(settings.noshow_min_noshow_count)));
+  }
+  if (typeof settings.noshow_require_high_risk === "boolean") {
+    patch.noshow_require_high_risk = settings.noshow_require_high_risk;
   }
   if (settings.noshow_fee_percent != null) {
     patch.noshow_fee_percent = clampPct(settings.noshow_fee_percent);

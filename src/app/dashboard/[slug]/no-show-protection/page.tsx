@@ -20,7 +20,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
   const sb = (await import("@/shared/lib/supabase/serviceRole")).createServiceRoleClient();
   const { data: salonRow } = await sb
     .from("salons" as never)
-    .select("name, vertical, health_ack_required, email_links_enabled, feature_flags, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, deposit_hold_grace_minutes, cancellation_policy, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_details_submitted, payment_provider, noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold, noshow_group_whole_party, noshow_deposit_escalation_threshold")
+    .select("name, vertical, health_ack_required, email_links_enabled, feature_flags, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, deposit_hold_grace_minutes, cancellation_policy, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_details_submitted, payment_provider, noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold, noshow_group_whole_party, noshow_deposit_escalation_threshold, noshow_require_new_customer, noshow_require_prior_noshow, noshow_min_noshow_count, noshow_require_high_risk")
     .eq("id", ctx.salon.id)
     .maybeSingle();
   // deposit_enabled lives on square_integrations (a salon only has a row once
@@ -70,6 +70,10 @@ export default async function NoShowProtectionPage({ params }: Props) {
     noshow_fee_percent?: number;
     noshow_risk_threshold?: number;
     noshow_deposit_escalation_threshold?: number | null;
+    noshow_require_new_customer?: boolean;
+    noshow_require_prior_noshow?: boolean;
+    noshow_min_noshow_count?: number;
+    noshow_require_high_risk?: boolean;
   } | null;
 
   // Effective policy text (custom or built-in default) for the editor.
@@ -113,6 +117,10 @@ export default async function NoShowProtectionPage({ params }: Props) {
       noshowProtectionEnabled={row?.noshow_protection_enabled ?? false}
       noshowGroupWholeParty={row?.noshow_group_whole_party !== false}
       noshowDepositEscalationThreshold={row?.noshow_deposit_escalation_threshold ?? null}
+      noshowRequireNewCustomer={row?.noshow_require_new_customer !== false}
+      noshowRequirePriorNoshow={row?.noshow_require_prior_noshow !== false}
+      noshowMinNoshowCount={row?.noshow_min_noshow_count ?? 1}
+      noshowRequireHighRisk={row?.noshow_require_high_risk !== false}
       noshowFeePercent={row?.noshow_fee_percent ?? 20}
       noshowRiskThreshold={row?.noshow_risk_threshold ?? 60}
       summary={result.summary!}

@@ -58,6 +58,11 @@ type Props = {
   noshowProtectionEnabled: boolean;
   /** Group organizer's card covers the whole party's no-show fee. */
   noshowGroupWholeParty: boolean;
+  /** "Who is asked for a card" rules. */
+  noshowRequireNewCustomer: boolean;
+  noshowRequirePriorNoshow: boolean;
+  noshowMinNoshowCount: number;
+  noshowRequireHighRisk: boolean;
   /** Prior-no-show count that escalates to upfront pay-to-confirm deposit; null = off. */
   noshowDepositEscalationThreshold: number | null;
   noshowFeePercent: number;
@@ -301,6 +306,10 @@ export function NoShowProtectionHub({
   paymentProvider: initialProvider,
   noshowProtectionEnabled: initialNoshowEnabled,
   noshowGroupWholeParty: initialWholeParty,
+  noshowRequireNewCustomer: initialReqNew,
+  noshowRequirePriorNoshow: initialReqPrior,
+  noshowMinNoshowCount: initialMinCount,
+  noshowRequireHighRisk: initialReqRisk,
   noshowDepositEscalationThreshold: initialEscalation,
   noshowFeePercent: initialNoshowPct,
   noshowRiskThreshold: initialNoshowThreshold,
@@ -338,6 +347,10 @@ export function NoShowProtectionHub({
   );
   const [noshowEnabled, setNoshowEnabled] = useState(initialNoshowEnabled);
   const [wholeParty, setWholeParty] = useState(initialWholeParty);
+  const [reqNew, setReqNew] = useState(initialReqNew);
+  const [reqPrior, setReqPrior] = useState(initialReqPrior);
+  const [minCount, setMinCount] = useState(String(initialMinCount));
+  const [reqRisk, setReqRisk] = useState(initialReqRisk);
   // Escalation: ON when a threshold is set. The number input holds the count.
   const [escalationOn, setEscalationOn] = useState(initialEscalation != null);
   const [escalationThreshold, setEscalationThreshold] = useState(
@@ -355,6 +368,10 @@ export function NoShowProtectionHub({
         noshow_fee_percent: parseInt(noshowPct, 10) || 0,
         noshow_risk_threshold: parseInt(noshowThreshold, 10) || 0,
         noshow_group_whole_party: wholeParty,
+        noshow_require_new_customer: reqNew,
+        noshow_require_prior_noshow: reqPrior,
+        noshow_min_noshow_count: parseInt(minCount, 10) || 1,
+        noshow_require_high_risk: reqRisk,
         noshow_deposit_escalation_threshold: escalationOn
           ? parseInt(escalationThreshold, 10) || 2
           : null,
@@ -517,6 +534,62 @@ export function NoShowProtectionHub({
                 </>
               )}
             </p>
+
+            {noshowEnabled ? (
+              <div className="mt-4 rounded-xl border border-nq-border/40 bg-nq-bg/40 p-3">
+                <p className="text-xs font-medium uppercase tracking-widest text-nq-muted">
+                  Khi nào yêu cầu lưu thẻ? · When to ask for a card
+                </p>
+                <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm text-nq-text">
+                  <input
+                    type="checkbox"
+                    data-testid="rule-new-customer"
+                    checked={reqNew}
+                    onChange={(e) => setReqNew(e.target.checked)}
+                    className="h-4 w-4 accent-nq-primary"
+                  />
+                  <span>Khách mới (lần đầu) · First-time customers</span>
+                </label>
+                <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm text-nq-text">
+                  <input
+                    type="checkbox"
+                    data-testid="rule-prior-noshow"
+                    checked={reqPrior}
+                    onChange={(e) => setReqPrior(e.target.checked)}
+                    className="h-4 w-4 accent-nq-primary"
+                  />
+                  <span className="flex flex-wrap items-center gap-1">
+                    Khách từng no-show — sau
+                    <input
+                      type="number"
+                      min="1"
+                      max="20"
+                      data-testid="rule-min-noshow-count"
+                      value={minCount}
+                      disabled={!reqPrior}
+                      onChange={(e) => setMinCount(e.target.value)}
+                      className="w-14 rounded-lg border border-nq-border/40 bg-nq-bg px-2 py-1 text-sm text-nq-text focus:outline-none focus:border-nq-primary/50 disabled:opacity-40"
+                    />
+                    lần · after N no-shows
+                  </span>
+                </label>
+                <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm text-nq-text">
+                  <input
+                    type="checkbox"
+                    data-testid="rule-high-risk"
+                    checked={reqRisk}
+                    onChange={(e) => setReqRisk(e.target.checked)}
+                    className="h-4 w-4 accent-nq-primary"
+                  />
+                  <span>Booking rủi ro cao (AI) · High-risk bookings</span>
+                </label>
+                <p className="mt-2 text-xs text-nq-muted">
+                  {reqNew || reqPrior || reqRisk
+                    ? "Chỉ những nhóm được tick mới bị hỏi lưu thẻ. Khách quen sạch lịch sử không bị làm phiền."
+                    : "⚠️ Tắt hết → KHÔNG ai bị hỏi lưu thẻ (không có bảo vệ no-show)."}
+                </p>
+              </div>
+            ) : null}
 
             {noshowEnabled ? (
               <>
