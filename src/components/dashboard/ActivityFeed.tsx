@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ActivityItem, ActivityKind } from "@/shared/dashboard/loadActivityFeedAction";
 
 const KIND_ICON: Record<ActivityKind, string> = {
@@ -53,6 +53,23 @@ export function ActivityFeed({ slug, items }: { slug: string; items: ActivityIte
   const [tab, setTab] = useState<ActivityKind | "all">("all");
   const [open, setOpen] = useState<string | null>(null);
 
+  // Read/unread like email: items newer than the last time the owner opened the
+  // log show BOLD; already-seen ones are dimmed. Capture the PREVIOUS last-seen
+  // marker on mount (for styling), then advance it to now so this same set reads
+  // as "seen" next visit (and the bell badge clears).
+  const seenKey = `activity-seen:${slug}`;
+  const [prevSeenMs, setPrevSeenMs] = useState<number>(() => Date.now());
+  useEffect(() => {
+    try {
+      const prev = window.localStorage.getItem(seenKey);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPrevSeenMs(prev ? Date.parse(prev) : 0);
+      window.localStorage.setItem(seenKey, new Date().toISOString());
+    } catch {
+      /* storage blocked → everything reads as seen */
+    }
+  }, [seenKey]);
+
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: items.length };
     for (const it of items) c[it.kind] = (c[it.kind] ?? 0) + 1;
@@ -97,14 +114,18 @@ export function ActivityFeed({ slug, items }: { slug: string; items: ActivityIte
       ) : (
         <ul className="mt-4 divide-y divide-nq-border/50">
           {shown.map((it) => {
+            const unread = Date.parse(it.when) > prevSeenMs;
             const inner = (
-              <div className="flex items-start gap-3 py-3">
-                <span aria-hidden className="mt-0.5 text-base">
+              <div className={`flex items-start gap-3 py-3 ${unread ? "" : "opacity-55"}`}>
+                <span aria-hidden className="relative mt-0.5 text-base">
                   {KIND_ICON[it.kind]}
+                  {unread ? (
+                    <span className="absolute -left-2 top-1.5 h-1.5 w-1.5 rounded-full bg-nq-primary" />
+                  ) : null}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-nq-foreground">{it.title}</span>
+                    <span className={`text-sm text-nq-foreground ${unread ? "font-semibold" : "font-normal"}`}>{it.title}</span>
                     {it.status ? <StatusBadge status={it.status} /> : null}
                     {it.bookingId ? (
                       <span className="text-[10px] font-semibold text-nq-primary">Xem lịch →</span>
