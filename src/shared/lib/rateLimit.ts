@@ -38,6 +38,12 @@ export const RATE_LIMIT_IDS = {
    *  so it's a PII-enumeration target. Pair with a Vercel WAF rule at a low
    *  ceiling (e.g. 20/min per IP) — legit booking only calls it a few times. */
   customerLookup: "customer-lookup",
+  /** POST /api/booking/{square-save-card,stripe-setup-intent} — anon card-on-file
+   *  endpoints. No charge happens, but they hit the payment provider, so an
+   *  attacker with a booking id could card-test against them. Pair with a Vercel
+   *  WAF rule keyed by IP+bookingId at a low ceiling (e.g. 5/min) — a real
+   *  customer saves a card once. */
+  cardSave: "card-save",
 } as const;
 
 export type RateLimitId = (typeof RATE_LIMIT_IDS)[keyof typeof RATE_LIMIT_IDS];

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveNoShowCardForBooking } from "@/shared/integrations/square/noshow";
+import { isRateLimited, RATE_LIMIT_IDS } from "@/shared/lib/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,15 @@ export async function POST(req: NextRequest) {
   const consent = body.consent === true;
   if (!bookingId || !sourceId) {
     return NextResponse.json({ ok: false, error: "missing_fields" }, { status: 400 });
+  }
+  // Anti card-testing: cap attempts per IP+booking (Vercel WAF, fail-open).
+  if (
+    await isRateLimited(RATE_LIMIT_IDS.cardSave, {
+      request: req,
+      rateLimitKey: `card-save:${bookingId}`,
+    })
+  ) {
+    return NextResponse.json({ ok: false, error: "rate_limited" }, { status: 429 });
   }
   if (!consent) {
     return NextResponse.json({ ok: false, error: "consent_required" }, { status: 400 });
