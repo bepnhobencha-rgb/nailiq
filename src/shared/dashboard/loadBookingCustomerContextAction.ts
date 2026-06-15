@@ -2,6 +2,7 @@
 
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { inferReturnCadenceDays } from "@/shared/booking/returnRhythm";
 
 /**
  * Lazy "customer launchpad" context for the booking detail drawer.
@@ -56,15 +57,6 @@ const ACTIVE_VISIT_STATUSES = [
   "completed",
   "no_show",
 ];
-
-function median(nums: number[]): number | null {
-  if (nums.length === 0) return null;
-  const sorted = [...nums].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0
-    ? Math.round((sorted[mid - 1] + sorted[mid]) / 2)
-    : sorted[mid];
-}
 
 export async function loadBookingCustomerContext(
   slug: string,
@@ -194,30 +186,16 @@ export async function loadBookingCustomerContext(
     if (rows.length > 0) {
       lastVisitAt = rows[rows.length - 1].start_time_utc as string;
 
-      // Distinct visit DAYS → gaps in days → median cadence.
-      const dayMs = 24 * 60 * 60 * 1000;
-      const days = Array.from(
-        new Set(
-          rows.map((r) =>
-            Math.floor(Date.parse(r.start_time_utc as string) / dayMs),
-          ),
-        ),
-      ).sort((a, b) => a - b);
-
-      if (days.length >= 3) {
-        const gaps: number[] = [];
-        for (let i = 1; i < days.length; i++) {
-          const g = days[i] - days[i - 1];
-          // Ignore same-day duplicates and implausibly long lapses (> 6 months).
-          if (g >= 1 && g <= 183) gaps.push(g);
-        }
-        const m = median(gaps);
-        if (m && m >= 1) {
-          cadenceDays = m;
-          nextSuggestedAt = new Date(
-            Date.parse(lastVisitAt) + m * dayMs,
-          ).toISOString();
-        }
+      // Return rhythm from real visit history (shared with Customer 360 so the
+      // drawer + the profile card always agree). Rows are already non-cancelled.
+      const m = inferReturnCadenceDays(
+        rows.map((r) => ({ start: r.start_time_utc })),
+      );
+      if (m && m >= 1) {
+        cadenceDays = m;
+        nextSuggestedAt = new Date(
+          Date.parse(lastVisitAt) + m * 86_400_000,
+        ).toISOString();
       }
     }
   }
