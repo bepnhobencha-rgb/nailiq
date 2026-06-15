@@ -79,6 +79,9 @@ export type BookingSalonMeta = {
   /** `salons.health_ack_required` override (NULL → vertical default). Drives the
    *  mandatory health-acknowledgment tick for body/treatment services. */
   healthAckRequired: boolean | null;
+  /** `salons.email_links_enabled` (default true). Gates the OTP email fallback
+   *  + link emails. NULL/undefined treated as true by consumers. */
+  emailLinksEnabled: boolean | null;
 };
 
 export type BookingLoadData = {
@@ -423,6 +426,10 @@ export async function loadBookingServicesForSalonSlug(
       // null so the flow falls back to the per-vertical default.
       healthAckRequired: (() => {
         const v = (salon as { health_ack_required?: unknown }).health_ack_required;
+        return typeof v === "boolean" ? v : null;
+      })(),
+      emailLinksEnabled: (() => {
+        const v = (salon as { email_links_enabled?: unknown }).email_links_enabled;
         return typeof v === "boolean" ? v : null;
       })(),
     },
