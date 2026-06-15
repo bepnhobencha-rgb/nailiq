@@ -646,9 +646,9 @@ export function BookingDetailDrawer({
                   {copy.sectionGuest}
                 </p>
                 <p className="text-base font-semibold text-nq-foreground">{displayCustomerName(model.clientName, copy.removedGuest)}</p>
-                <p className="text-nq-muted" data-testid="booking-drawer-channel">
-                  <span className="text-nq-muted">{model.channelLabel ?? model.sourceLabel}</span>
-                </p>
+                {/* Channel (e.g. 🧑‍💼 Lễ tân đặt tại quầy) is shown once, in the
+                    "Đặt lúc · <channel>" line of the schedule section — no longer
+                    duplicated here under the guest name. */}
                 {/* "Ai đặt hẹn này" — creator of a manual booking (or self-book). */}
                 {customerContext?.creatorName ? (
                   <p className="text-xs text-nq-muted" data-testid="booking-drawer-created-by">
