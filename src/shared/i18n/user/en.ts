@@ -1356,6 +1356,25 @@ export type UserMessages = {
         };
       };
     };
+    /** Online waitlist panel in the Receptionist Center (next to the walk-in
+     *  queue). Staff see online customers waiting for a full slot and invite
+     *  one in a single tap (texts them the claim link via SMS). Shared by the
+     *  No-Show hub's waitlist section. */
+    waitlist: {
+      title: string;
+      inviteNow: string;
+      inviteAgain: string;
+      /** Status pill — already invited. */
+      invited: string;
+      /** Status pill — still waiting. */
+      statusWaiting: string;
+      /** Compact empty state. */
+      empty: string;
+      /** Toasts. `{name}` is the customer's name. */
+      invitedToast: (name: string) => string;
+      suppressedToast: (name: string) => string;
+      errorToast: string;
+    };
     walkin: {
       invalidPhone: string;
       phoneRequired: string;
@@ -3420,6 +3439,18 @@ export const userEn: UserMessages = {
           monthsAgo: (n: number) => `${n} month${n === 1 ? "" : "s"} ago`,
         },
       },
+    },
+    waitlist: {
+      title: "Waitlist",
+      inviteNow: "Invite now",
+      inviteAgain: "Invite again",
+      invited: "Invited",
+      statusWaiting: "Waiting",
+      empty: "No one on the waitlist",
+      invitedToast: (name) => `Invited ${name} by SMS`,
+      suppressedToast: (name) =>
+        `Marked ${name} invited — SMS disabled in this environment`,
+      errorToast: "Could not send the invite. Please try again.",
     },
     walkin: {
       invalidPhone:

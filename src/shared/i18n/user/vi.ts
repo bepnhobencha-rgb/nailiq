@@ -1370,6 +1370,18 @@ export const userVi: UserMessages = {
         },
       },
     },
+    waitlist: {
+      title: "Khách chờ chỗ",
+      inviteNow: "Mời ngay",
+      inviteAgain: "Mời lại",
+      invited: "Đã mời",
+      statusWaiting: "Đang chờ",
+      empty: "Chưa có khách chờ chỗ",
+      invitedToast: (name) => `Đã gửi SMS mời ${name}`,
+      suppressedToast: (name) =>
+        `Đã đánh dấu mời ${name} — SMS tắt ở môi trường này`,
+      errorToast: "Không gửi được lời mời. Vui lòng thử lại.",
+    },
     walkin: {
       invalidPhone:
         "Số không hợp lệ — ví dụ +1 (604) 555-1234 hoặc +84 901234567",

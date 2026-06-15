@@ -13,6 +13,8 @@ import type {
   UnconfirmedBooking,
   WaitlistOpportunity,
 } from "@/shared/noshow/noShowDashboardActions";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { getUserMessages } from "@/shared/i18n/user";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
@@ -108,6 +110,10 @@ export function NoShowProtectionHub({
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  // Bilingual copy for the waitlist section (shares the keys the Receptionist
+  // Center waitlist panel uses).
+  const { language } = useUserLanguage();
+  const wlCopy = getUserMessages(language).receptionist.waitlist;
   const [remindersEnabled, setRemindersEnabled] = useState(initialReminders);
   const [reminder24h, setReminder24h] = useState(initial24h);
   const [reminder3h, setReminder3h] = useState(initial3h);
@@ -460,7 +466,7 @@ export function NoShowProtectionHub({
         {waitlist.length > 0 && (
           <section className="mt-6">
             <h2 className="mb-3 text-xs font-medium uppercase tracking-widest text-nq-gold">
-              Waitlist Opportunities
+              {wlCopy.title}
             </h2>
             <div className="space-y-2">
               {waitlist.map((w) => (
@@ -477,7 +483,9 @@ export function NoShowProtectionHub({
                       ? "border-nq-gold/30 bg-nq-gold/10 text-nq-gold"
                       : "border-nq-border/30 text-nq-muted"
                   }`}>
-                    {w.status}
+                    {w.status === "notified"
+                      ? wlCopy.invited
+                      : wlCopy.statusWaiting}
                   </span>
                 </div>
               ))}

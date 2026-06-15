@@ -150,6 +150,25 @@ export interface ReceptionistCenterData {
     walkin_request_tags: QueueRequestTag[];
     party_size: number | null;
   }>;
+  /**
+   * Online customers who joined the waitlist (`booking_waitlist_entries`)
+   * because their desired slot was full. Surfaced in the Receptionist Center
+   * next to the walk-in queue so staff can invite a waiting customer in one
+   * tap (sends them the claim link via SMS). Scoped to this salon, from the
+   * salon-timezone "today" (`selectedDate`) onward, FIFO by `created_at`. Only
+   * `waiting` / `notified` entries (claimed/expired are done).
+   */
+  onlineWaitlist: Array<{
+    id: string;
+    clientName: string;
+    serviceId: string;
+    serviceName: string;
+    bookingDate: string; // YYYY-MM-DD
+    preferredSlotLabel: string | null;
+    phone: string;
+    status: string; // 'waiting' | 'notified'
+    createdAt: string;
+  }>;
   bookingsForDay: Array<{
     id: string;
     client_name: string;
@@ -1001,8 +1020,17 @@ export async function loadReceptionistCenterData(
   const noShowByPhone = new Map<string, number>();
   // Today's no-shows (separate from the active grid statuses).
   const noShowsToday: ReceptionistCenterData["noShowsToday"] = [];
-  // These three enrichment round-trips are mutually independent (they only need
-  // the day's bookings already in hand) — run them concurrently, not serially.
+  // Online waitlist (booking_waitlist_entries) for the Receptionist Center
+  // panel. Service name resolved from the already-loaded catalog (no extra
+  // join). Populated in the concurrent enrichment block below; falls back to
+  // [] on any error so a waitlist hiccup never breaks the RC load.
+  const onlineWaitlist: ReceptionistCenterData["onlineWaitlist"] = [];
+  const serviceNameById = new Map<string, string>();
+  for (const s of serviceRows ?? []) {
+    if (s.id) serviceNameById.set(String(s.id), String(s.name ?? ""));
+  }
+  // These enrichment round-trips are mutually independent (they only need
+  // the day's bookings / catalog already in hand) — run them concurrently.
   await Promise.all([
     (async () => {
     const dayBookingIds = (bookingsRows ?? [])
@@ -1119,6 +1147,59 @@ export async function loadReceptionistCenterData(
         });
       }
     }
+    })(),
+    (async () => {
+      // Online waitlist for THIS salon, from the salon-tz "today" (dateYmd ==
+      // selectedDate) onward, only actionable statuses, FIFO. Service-role
+      // client (booking_waitlist_entries is RLS-locked). Never throws — a
+      // failure leaves onlineWaitlist empty so the RC load is unaffected.
+      try {
+        const svc = createServiceRoleClient();
+        const { data: wlRows, error: wlErr } = await svc
+          .from("booking_waitlist_entries")
+          .select(
+            "id, service_id, booking_date, preferred_slot_label, client_name, client_phone, status, created_at",
+          )
+          .eq("salon_id", ctx.salon.id)
+          .in("status", ["waiting", "notified"])
+          .gte("booking_date", dateYmd)
+          .order("created_at", { ascending: true })
+          .limit(50);
+        if (wlErr) {
+          console.error("[loadReceptionistCenterData] online_waitlist", wlErr);
+        } else {
+          for (const r of (wlRows ?? []) as unknown as Array<{
+            id: string;
+            service_id: string | null;
+            booking_date: string | null;
+            preferred_slot_label: string | null;
+            client_name: string | null;
+            client_phone: string | null;
+            status: string | null;
+            created_at: string | null;
+          }>) {
+            const serviceId = r.service_id != null ? String(r.service_id) : "";
+            const slot =
+              typeof r.preferred_slot_label === "string" &&
+              r.preferred_slot_label.trim().length > 0
+                ? r.preferred_slot_label.trim()
+                : null;
+            onlineWaitlist.push({
+              id: String(r.id),
+              clientName: String(r.client_name ?? ""),
+              serviceId,
+              serviceName: serviceNameById.get(serviceId) ?? "—",
+              bookingDate: String(r.booking_date ?? "").slice(0, 10),
+              preferredSlotLabel: slot,
+              phone: String(r.client_phone ?? ""),
+              status: String(r.status ?? "waiting"),
+              createdAt: String(r.created_at ?? ""),
+            });
+          }
+        }
+      } catch (e) {
+        console.error("[loadReceptionistCenterData] online_waitlist", e);
+      }
     })(),
   ]);
 
@@ -1329,6 +1410,7 @@ export async function loadReceptionistCenterData(
           created_at: s.created_at,
         })) ?? [],
       walkinQueue,
+      onlineWaitlist,
       bookingsForDay,
       noShowsToday,
       capabilityRows,
