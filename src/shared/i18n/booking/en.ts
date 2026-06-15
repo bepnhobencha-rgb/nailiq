@@ -54,6 +54,11 @@ export const bookingEn = {
   noShowCardError: "Could not save the card. Please check your details.",
   noShowConsent:
     "I agree to the no-show policy and authorize this salon to charge {fee} to this card only if I don't show up.",
+  noShowSavedCardOnFile: "On file",
+  noShowSavedCardDesc:
+    "We'll use your saved card. You're only charged {fee} if you don't show up — nothing now.",
+  noShowUseDifferentCard: "Use a different card",
+  noShowUseSavedCard: "Use my saved card instead",
   slotLoading: "Loading times…",
   noSlotsAvailable: "No open slots that day. Try another date.",
   /** `{tz}` = short timezone abbreviation, e.g. "PDT", "GMT+7". Hidden if abbreviation unavailable. */

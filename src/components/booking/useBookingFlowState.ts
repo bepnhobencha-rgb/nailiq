@@ -15,6 +15,10 @@ import {
   resolveNoShowCardRequirement,
   type NoShowCardRequirement,
 } from "@/shared/noshow/resolveNoShowCardRequirement";
+import {
+  resolveSavedNoShowCard,
+  type SavedNoShowCard,
+} from "@/shared/noshow/resolveSavedNoShowCard";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import {
   bookingDateYmdFromLocalDate,
@@ -225,6 +229,9 @@ export function useBookingFlowState(
   // Option A no-show card gate — resolved when the customer reaches the confirm
   // step (before any booking exists) so the card form can render in-step.
   const [cardRequirement, setCardRequirement] = useState<NoShowCardRequirement | null>(null);
+  // Đợt 2 — returning OTP-verified customer's saved card (one-tap reuse). Null =
+  // not looked up / none; only populated when a card is required AND OTP-verified.
+  const [savedCard, setSavedCard] = useState<SavedNoShowCard | null>(null);
   // SMS consent — captured at the phone gate; pre-satisfies confirm so it isn't
   // asked twice. Confirm still requires it (gates the button) as a safety net.
   const [smsConsent, setSmsConsent] = useState(initialSmsConsent);
@@ -1190,8 +1197,26 @@ export function useBookingFlowState(
     };
   }, [step, serviceId, clientPhone, salon.id]);
 
+  // Đợt 2 — once a card is required AND the phone is OTP-verified, check whether
+  // this returning customer already has a card on file so the confirm step can
+  // offer one-tap reuse. OTP-gated by construction (needs otpSessionId; the
+  // server reads the phone from the session, never the client).
+  useEffect(() => {
+    if (step !== "confirm" || cardRequirement?.required !== true || !otpSessionId) {
+      setSavedCard(null);
+      return;
+    }
+    let alive = true;
+    void resolveSavedNoShowCard({ salonId: salon.id, otpSessionId })
+      .then((r) => alive && setSavedCard(r))
+      .catch(() => alive && setSavedCard(null));
+    return () => {
+      alive = false;
+    };
+  }, [step, cardRequirement, otpSessionId, salon.id]);
+
   const onConfirm = useCallback(async (
-    extra?: { noShowCardSourceId?: string; noShowConsent?: boolean },
+    extra?: { noShowCardSourceId?: string; noShowConsent?: boolean; noShowReuseSavedCard?: boolean },
   ) => {
     if (!serviceId || !timeSlot || !staffId) return;
     setError(null);
@@ -1267,6 +1292,7 @@ export function useBookingFlowState(
           : otpSessionId ? "otp"
           : undefined,
         noShowCardSourceId: extra?.noShowCardSourceId,
+        noShowReuseSavedCard: extra?.noShowReuseSavedCard,
         noShowConsent: extra?.noShowConsent,
       });
       // Link a paid deposit to the freshly-created booking (server re-verifies
@@ -1680,6 +1706,7 @@ export function useBookingFlowState(
     handleAddToCalendar,
     onConfirm,
     cardRequirement,
+    savedCard,
     smsConsent,
     setSmsConsent,
     submitWaitlistSlotUnavailable,

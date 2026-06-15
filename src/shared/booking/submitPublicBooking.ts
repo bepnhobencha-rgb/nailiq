@@ -19,7 +19,7 @@ import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { createClient } from "@/shared/lib/supabase/client";
 import { runPublicBookingSideEffects } from "@/shared/booking/publicBookingSideEffects";
-import { saveNoShowCardAction } from "@/shared/noshow/saveNoShowCardAction";
+import { saveNoShowCardAction, reuseNoShowCardAction } from "@/shared/noshow/saveNoShowCardAction";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 
 export type BookingParams = {
@@ -71,6 +71,11 @@ export type BookingParams = {
    *  booking is created and BEFORE any confirmation (SMS/email) — if the save
    *  fails the booking is cancelled and the customer sees an error. */
   noShowCardSourceId?: string | null;
+  /** Option A reuse path: returning OTP-verified customer chose to reuse their
+   *  EXISTING saved card instead of entering a new one. No card token is sent —
+   *  the server re-derives the card from the OTP-verified phone. Ignored if
+   *  `noShowCardSourceId` is also present (a new card wins). */
+  noShowReuseSavedCard?: boolean;
   /** Customer agreed to the no-show policy + card-on-file authorization. */
   noShowConsent?: boolean;
 };
@@ -744,6 +749,17 @@ export async function submitPublicBooking(
       // Carry the provider reason so the UI can show WHY (decline code) instead
       // of a generic failure — critical for diagnosing real-card declines.
       throw new Error(`card_save_failed:${saved.reason ?? ""}`);
+    }
+  } else if (params.noShowReuseSavedCard && bookingId) {
+    // Returning OTP-verified customer reused their existing card on file. The
+    // server re-derives the card from the OTP-verified phone (no token sent).
+    const reused = await reuseNoShowCardAction({
+      bookingId,
+      otpSessionId: (params.otpSessionId ?? "").trim(),
+      consent: params.noShowConsent === true,
+    });
+    if (!reused.ok) {
+      throw new Error(`card_save_failed:${reused.reason ?? ""}`);
     }
   }
 

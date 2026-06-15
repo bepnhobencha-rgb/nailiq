@@ -1,6 +1,6 @@
 "use server";
 
-import { saveNoShowCardForBooking } from "@/shared/integrations/square/noshow";
+import { saveNoShowCardForBooking, reuseNoShowCardForBooking } from "@/shared/integrations/square/noshow";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 /**
@@ -35,5 +35,36 @@ export async function saveNoShowCardAction(args: {
       .eq("id", args.bookingId)
       .then(() => {}, () => {});
     return { ok: false, reason: e instanceof Error ? e.message : "card_save_failed" };
+  }
+}
+
+/**
+ * Reuse a returning customer's EXISTING saved card for this booking (one-tap, no
+ * re-entry). OTP-gated + server-authoritative (the card is re-derived from the
+ * OTP-verified phone in reuseNoShowCardForBooking). Same failure contract as
+ * saveNoShowCardAction: a required card that can't be attached cancels the slot.
+ */
+export async function reuseNoShowCardAction(args: {
+  bookingId: string;
+  otpSessionId: string;
+  consent: boolean;
+}): Promise<{ ok: boolean; reason: string; last4?: string }> {
+  try {
+    const r = await reuseNoShowCardForBooking(args.bookingId, args.otpSessionId, args.consent);
+    if (r.ok) return r;
+    console.error("[reuseNoShowCardAction] card NOT reused:", r.reason, "booking", args.bookingId);
+    await createServiceRoleClient()
+      .from("bookings" as never)
+      .update({ status: "cancelled" } as never)
+      .eq("id", args.bookingId);
+    return r;
+  } catch (e) {
+    console.error("[reuseNoShowCardAction] threw:", e instanceof Error ? e.message : e, "booking", args.bookingId);
+    await createServiceRoleClient()
+      .from("bookings" as never)
+      .update({ status: "cancelled" } as never)
+      .eq("id", args.bookingId)
+      .then(() => {}, () => {});
+    return { ok: false, reason: e instanceof Error ? e.message : "card_reuse_failed" };
   }
 }
