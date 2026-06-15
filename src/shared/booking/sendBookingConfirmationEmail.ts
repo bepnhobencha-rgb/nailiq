@@ -239,7 +239,7 @@ export function buildHtml(
             ${
               policyUrl
                 ? `<p style="margin:8px 0 0;font-size:12px;color:#aaa;text-align:center;">
-              <a href="${policyUrl}" style="color:#aaa;text-decoration:underline;">Cancellation &amp; no-show policy · Chính sách huỷ &amp; vắng mặt</a>
+              <a href="${policyUrl}" style="color:#aaa;text-decoration:underline;">Booking terms &amp; cancellation policy · Điều khoản đặt lịch &amp; chính sách huỷ</a>
             </p>`
                 : ""
             }
@@ -386,7 +386,7 @@ export async function sendBookingConfirmationEmail(
       salonPhone,
       savedCard,
       calendarUrl,
-      `${getEmailOrigin()}/${input.shopSlug}/policy`,
+      `${getEmailOrigin()}/${input.shopSlug}/booking-terms`,
     );
 
     // CASL: sender ID + physical mailing address + unsubscribe in every email.
