@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { resolveNoShowCardRequirement } from "@/shared/noshow/resolveNoShowCardRequirement";
+import { noShowCardDecision } from "@/shared/integrations/square/noshow";
 
 /**
  * Context for the desk-sent "save a card to hold your spot" page
@@ -51,19 +51,13 @@ export async function GET(req: Request) {
     .maybeSingle();
   const s = sRow as { name: string | null; currency_code: string | null } | null;
 
-  // Whether THIS customer actually needs a card (same risk gate as online:
-  // new customer or prior no-show, salon protection on, provider connected).
-  // Lets the page show a clean "you're all set" instead of a blank form for a
-  // trusted returning customer.
-  let cardRequired = false;
-  if (b.service_id && b.client_phone) {
-    const req = await resolveNoShowCardRequirement({
-      salonId: b.salon_id,
-      serviceId: b.service_id,
-      clientPhone: b.client_phone,
-    });
-    cardRequired = req.required;
-  }
+  // Whether THIS customer actually needs a card — use the SAME post-booking
+  // decision the capture component uses (noShowCardDecision), so the page and
+  // the form never diverge. (resolveNoShowCardRequirement is the PRE-booking
+  // gate; it would count the current booking as prior history and wrongly read
+  // the customer as "returning", hiding the form the component shows.)
+  const decision = await noShowCardDecision(b.id);
+  const cardRequired = decision.required;
 
   return NextResponse.json({
     ok: true,
