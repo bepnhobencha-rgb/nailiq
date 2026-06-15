@@ -6,6 +6,7 @@ import {
   updateRemindersEnabled,
   updateReminderSettings,
   updateNoShowCardSettings,
+  updateWaitlistAutoBook,
   waiveBookingDeposit,
 } from "@/shared/noshow/noShowDashboardActions";
 import type {
@@ -23,6 +24,7 @@ import { StripeConnectCard } from "@/components/dashboard/StripeConnectCard";
 type Props = {
   slug: string;
   isOwner: boolean;
+  autoBookEnabled: boolean;
   remindersEnabled: boolean;
   reminder24hEnabled: boolean;
   reminder3hEnabled: boolean;
@@ -92,6 +94,7 @@ function StatCard({ label, value, color = "text-white" }: { label: string; value
 export function NoShowProtectionHub({
   slug,
   isOwner,
+  autoBookEnabled: initialAutoBook,
   remindersEnabled: initialReminders,
   reminder24hEnabled: initial24h,
   reminder3hEnabled: initial3h,
@@ -122,6 +125,7 @@ export function NoShowProtectionHub({
   // Center waitlist panel uses).
   const { language } = useUserLanguage();
   const wlCopy = getUserMessages(language).receptionist.waitlist;
+  const [autoBook, setAutoBook] = useState(initialAutoBook);
   const [remindersEnabled, setRemindersEnabled] = useState(initialReminders);
   const [reminder24h, setReminder24h] = useState(initial24h);
   const [reminder3h, setReminder3h] = useState(initial3h);
@@ -156,6 +160,15 @@ export function NoShowProtectionHub({
       });
       setCardSaveMsg(r.ok ? "Đã lưu" : (r.error ?? "Lỗi"));
       setTimeout(() => setCardSaveMsg(null), 3000);
+      router.refresh();
+    });
+  }
+
+  function toggleAutoBook(next: boolean) {
+    setAutoBook(next);
+    startTransition(async () => {
+      const r = await updateWaitlistAutoBook(slug, next);
+      if (!r.ok) setAutoBook(!next); // revert on failure
       router.refresh();
     });
   }
@@ -319,6 +332,47 @@ export function NoShowProtectionHub({
           </section>
         )}
 
+        {/* Auto-book waitlist claims — owner only. When ON, a freed slot the
+            customer claims via SMS becomes a real booking with no staff input. */}
+        {isOwner && (
+          <section className="mt-6 rounded-2xl border border-nq-primary/30 bg-nq-surface p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-semibold text-nq-text">
+                  {language === "vi"
+                    ? "Tự động đặt lịch khi khách giành chỗ"
+                    : "Auto-book waitlist claims"}
+                </h2>
+                <p className="mt-0.5 text-xs text-nq-muted">
+                  {language === "vi"
+                    ? "Khi có chỗ trống, khách trong danh sách chờ bấm link là tự tạo hẹn (đúng thợ + giờ) — nhân viên không cần thao tác."
+                    : "When a slot frees up, a waitlisted customer who taps the SMS link is booked automatically (right tech + time) — no staff action needed."}
+                </p>
+              </div>
+              <button
+                onClick={() => toggleAutoBook(!autoBook)}
+                disabled={isPending}
+                className={`relative h-6 w-11 shrink-0 rounded-full transition ${autoBook ? "bg-nq-primary" : "bg-nq-border"}`}
+                aria-pressed={autoBook}
+                aria-label={
+                  language === "vi" ? "Bật/tắt tự động đặt lịch" : "Toggle auto-book"
+                }
+              >
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${autoBook ? "translate-x-5" : "translate-x-0.5"}`} />
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-nq-muted">
+              {autoBook
+                ? language === "vi"
+                  ? "✅ Đang bật — hẹn tự tạo, không bao giờ trùng 2 khách 1 ghế."
+                  : "✅ On — bookings are created automatically; never double-books."
+                : language === "vi"
+                  ? "Đang tắt — nhân viên tự bấm “Tạo lịch” khi khách giành chỗ."
+                  : "Off — staff create the booking manually when a customer claims."}
+            </p>
+          </section>
+        )}
+
         {/* Reminder settings — owner only */}
         {isOwner && (
           <section className="mt-6 rounded-2xl border border-nq-border/40 bg-nq-surface p-5">
@@ -479,7 +533,7 @@ export function NoShowProtectionHub({
                     data-testid="health-ack-toggle"
                     checked={healthAck}
                     onChange={(e) => setHealthAck(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 accent-nq-gold"
+                    className="mt-0.5 h-4 w-4 accent-nq-primary"
                   />
                   <span>
                     Bắt khách xác nhận sức khoẻ (mang thai/chấn thương) khi đặt · Require health

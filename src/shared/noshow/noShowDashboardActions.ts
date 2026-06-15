@@ -223,6 +223,37 @@ export async function updateRemindersEnabled(
   return { ok: true };
 }
 
+/** Toggle full-auto waitlist backfill (salons.feature_flags.waitlist_auto_book).
+ *  When ON, a waitlisted customer who claims a freed slot is booked
+ *  automatically (see claim_waitlist_slot). Owner-only; read-modify-write the
+ *  jsonb so sibling flags are preserved. */
+export async function updateWaitlistAutoBook(
+  slug: string,
+  enabled: boolean,
+): Promise<{ ok: boolean; error?: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx || ctx.role !== "owner") return { ok: false, error: "unauthorized" };
+
+  const supabase = createServiceRoleClient();
+  const { data: row } = await supabase
+    .from("salons" as never)
+    .select("feature_flags")
+    .eq("id", ctx.salon.id)
+    .maybeSingle();
+  const flags = {
+    ...(((row as { feature_flags?: Record<string, unknown> } | null)
+      ?.feature_flags) ?? {}),
+    waitlist_auto_book: enabled,
+  };
+  const { error } = await supabase
+    .from("salons" as never)
+    .update({ feature_flags: flags } as never)
+    .eq("id", ctx.salon.id);
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 /** Update per-salon reminder + deposit settings. */
 export async function updateReminderSettings(
   slug: string,
