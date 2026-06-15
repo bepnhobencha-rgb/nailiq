@@ -44,6 +44,22 @@ export default async function SuperadminShellLayout({
     notFound();
   }
 
+  // Soft two-factor gate: ONLY superadmins who have enrolled a verified TOTP
+  // factor are challenged (nextLevel resolves to 'aal2'). An un-enrolled account
+  // resolves to 'aal1' and is never prompted — so this can't lock anyone out.
+  // The challenge page lives at /superadmin/mfa (outside this shell group) so
+  // it isn't itself gated (no redirect loop). FAIL-OPEN: any error resolving the
+  // assurance level lets the request through rather than locking the panel.
+  let needsMfa = false;
+  try {
+    const { data: aal } =
+      await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    needsMfa = aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2";
+  } catch {
+    needsMfa = false;
+  }
+  if (needsMfa) redirect("/superadmin/mfa");
+
   return (
     <div className="min-h-dvh bg-nq-bg text-nq-foreground">
       <SuperadminSidebar role={role} />
