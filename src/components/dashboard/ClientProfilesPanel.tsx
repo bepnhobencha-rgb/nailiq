@@ -9,6 +9,7 @@ import {
   useTransition,
 } from "react";
 
+import { useRouter } from "next/navigation";
 import { LayoutGrid, List, Table2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/Badge";
@@ -275,6 +276,7 @@ export function ClientProfilesPanel({
   newMaxVisits = CLIENT_SEGMENT_DEFAULTS.newMaxVisits,
   atRiskDays = CLIENT_SEGMENT_DEFAULTS.atRiskDays,
 }: ClientProfilesPanelProps) {
+  const router = useRouter();
   const { language } = useUserLanguage();
   const messages = useMemo(
     () => getUserMessages(language).receptionist.clientProfiles,
@@ -728,6 +730,7 @@ export function ClientProfilesPanel({
         clientPhone={open360}
         viewerRole={viewerRole}
         onClose={() => setOpen360(null)}
+        onBookAgain={() => router.push(`/dashboard/${encodeURIComponent(slug)}/center`)}
       />
 
       {/* ── Pagination controls ── */}

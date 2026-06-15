@@ -1783,6 +1783,13 @@ export type UserMessages = {
         statusNoShow: string;
         statusConfirmed: string;
         statusInProgress: string;
+        /** Duplicate-merge section (owner only) */
+        dupeSectionTitle: string;
+        dupeConfidenceHint: (pct: number) => string;
+        dupeMergeButton: string;
+        dupeConfirmText: (otherName: string) => string;
+        dupeMergeSuccess: (n: number) => string;
+        dupeMergeError: string;
       };
     };
     /** Subscription pricing panel (`/dashboard/[slug]/settings`). */
@@ -3718,6 +3725,13 @@ export const userEn: UserMessages = {
         statusNoShow: "No-show",
         statusConfirmed: "Confirmed",
         statusInProgress: "In progress",
+        dupeSectionTitle: "Possible duplicate",
+        dupeConfidenceHint: (pct: number) => `${pct}% match`,
+        dupeMergeButton: "Merge into this profile",
+        dupeConfirmText: (otherName: string) =>
+          `Merge "${otherName}" into this profile? All their booking history will be combined here. THIS CANNOT BE UNDONE.`,
+        dupeMergeSuccess: (n: number) => `Merged · ${n} booking${n === 1 ? "" : "s"} transferred`,
+        dupeMergeError: "Could not merge. Please try again.",
       },
     },
     pricing: {

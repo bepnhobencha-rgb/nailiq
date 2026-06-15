@@ -10,7 +10,7 @@
  * Uses the repo's <Drawer> primitive (Framer Motion, focus trap, Esc-to-close).
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -28,6 +28,11 @@ import {
   type C360Booking,
   type ClientProfile360,
 } from "@/shared/dashboard/loadClientProfile360Action";
+import {
+  findDuplicateClients,
+  mergeClientProfilesAction,
+  type DedupeSuggestion,
+} from "@/shared/dashboard/clientDedupeActions";
 
 // C360Booking and ClientProfile360 types are imported from
 // "@/shared/dashboard/loadClientProfile360Action" above.
@@ -322,6 +327,7 @@ function StarRating({ rating }: { rating: number }) {
 export function ClientProfile360Drawer({
   slug,
   clientPhone,
+  viewerRole,
   onClose,
   onBookAgain,
 }: ClientProfile360DrawerProps) {
@@ -344,6 +350,51 @@ export function ClientProfile360Drawer({
   // Timeline show-more
   const [showAllTimeline, setShowAllTimeline] = useState(false);
   const TIMELINE_CAP = 20;
+
+  // Duplicate-merge state (owner only)
+  const [dupeSuggestions, setDupeSuggestions] = useState<DedupeSuggestion[]>([]);
+  // Tracks which suggestion indexes are in inline-confirm mode
+  const [dupeConfirmIdx, setDupeConfirmIdx] = useState<number | null>(null);
+  // Per-suggestion merge pending / error
+  const [dupeMerging, setDupeMerging] = useState(false);
+  const [dupeError, setDupeError] = useState<string | null>(null);
+  const [dupeMergeMsg, setDupeMergeMsg] = useState<string | null>(null);
+  // Prevent double-fire of findDuplicateClients per open
+  const dupeLoadedForRef = useRef<string | null>(null);
+
+  // Reset dedupe state when the drawer closes / switches to a different phone
+  useEffect(() => {
+    if (!clientPhone) {
+      setDupeSuggestions([]);
+      setDupeConfirmIdx(null);
+      setDupeError(null);
+      setDupeMergeMsg(null);
+      dupeLoadedForRef.current = null;
+    }
+  }, [clientPhone]);
+
+  // Fetch duplicates once per open — owner only, after main profile loads
+  useEffect(() => {
+    if (!data || viewerRole !== "owner") return;
+    const profileId = data.profile.id; // may be null for import-only rows
+    const profilePhone = data.profile.phone;
+    // Guard: don't re-fetch if already loaded for this same profile
+    const cacheKey = profileId ?? profilePhone;
+    if (dupeLoadedForRef.current === cacheKey) return;
+    dupeLoadedForRef.current = cacheKey;
+
+    void findDuplicateClients(slug).then((res) => {
+      if (!res.ok) return; // silently skip on error / forbidden
+      const matches = res.suggestions.filter(
+        (s) =>
+          (profileId != null && (s.a.id === profileId || s.b.id === profileId)) ||
+          s.a.phone === profilePhone ||
+          s.b.phone === profilePhone,
+      );
+      setDupeSuggestions(matches);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, viewerRole, slug]);
 
   // Reset + fetch when phone changes
   useEffect(() => {
@@ -407,6 +458,31 @@ export function ClientProfile360Drawer({
     onClose();
   }, [clientPhone, onBookAgain, onClose]);
 
+  const handleMerge = useCallback(
+    async (otherId: string, otherName: string | null, suggIdx: number) => {
+      if (!data || !data.profile.id) return;
+      setDupeError(null);
+      setDupeMergeMsg(null);
+      setDupeMerging(true);
+      const res = await mergeClientProfilesAction(slug, data.profile.id, otherId);
+      setDupeMerging(false);
+      if (!res.ok) {
+        setDupeError(m.dupeMergeError);
+        setDupeConfirmIdx(null);
+        return;
+      }
+      setDupeMergeMsg(m.dupeMergeSuccess(res.reassigned));
+      // Remove the merged suggestion from the list
+      setDupeSuggestions((prev) => prev.filter((_, i) => i !== suggIdx));
+      setDupeConfirmIdx(null);
+      // Re-fetch profile to show merged history
+      void callLoadProfile(slug, clientPhone!).then((reloadRes) => {
+        if (reloadRes.ok) setData(reloadRes.data);
+      });
+    },
+    [data, slug, clientPhone, m],
+  );
+
   // ── Build title ──────────────────────────────────────────────────────────
   const drawerTitle = data?.profile.name?.trim() ?? m.title;
 
@@ -434,6 +510,17 @@ export function ClientProfile360Drawer({
       {data.profile.phone ? (
         <a
           href={`sms:${data.profile.phone}`}
+          className={cn(
+            "inline-flex flex-1 items-center justify-center rounded-lg border border-nq-border",
+            "bg-nq-surface px-3 py-2 text-sm font-medium text-nq-foreground",
+            "transition-colors hover:bg-nq-bg/50",
+          )}
+        >
+          {m.actionMessage}
+        </a>
+      ) : data.profile.email ? (
+        <a
+          href={`mailto:${data.profile.email}`}
           className={cn(
             "inline-flex flex-1 items-center justify-center rounded-lg border border-nq-border",
             "bg-nq-surface px-3 py-2 text-sm font-medium text-nq-foreground",
@@ -800,6 +887,112 @@ export function ClientProfile360Drawer({
                     ) : null}
                   </>
                 ) : null}
+              </section>
+            ) : null}
+
+            {/* ═══════════════════════════════════════════════════════════════
+              8b. DUPLICATE MERGE — owner only, shown when matches exist
+            ═══════════════════════════════════════════════════════════════ */}
+            {viewerRole === "owner" && dupeSuggestions.length > 0 ? (
+              <section className="space-y-3 border-t border-amber-400/20 pt-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-base" aria-hidden>🔀</span>
+                  <SectionLabel>{m.dupeSectionTitle}</SectionLabel>
+                </div>
+
+                {dupeMergeMsg ? (
+                  <p className="rounded-xl border border-nq-success/40 bg-nq-success/10 px-3 py-2 text-sm text-nq-success">
+                    {dupeMergeMsg}
+                  </p>
+                ) : null}
+
+                {dupeError ? (
+                  <p
+                    role="alert"
+                    className="rounded-xl border border-nq-error/40 bg-nq-error/10 px-3 py-2 text-sm text-nq-error"
+                  >
+                    {dupeError}
+                  </p>
+                ) : null}
+
+                <ul className="space-y-2">
+                  {dupeSuggestions.map((s, idx) => {
+                    // Determine which side is the "other" profile
+                    const isA =
+                      (data.profile.id != null && s.a.id === data.profile.id) ||
+                      s.a.phone === data.profile.phone;
+                    const other = isA ? s.b : s.a;
+                    const confidencePct = Math.round(s.score * 100);
+                    const isConfirming = dupeConfirmIdx === idx;
+
+                    return (
+                      <li
+                        key={`${s.a.id}-${s.b.id}`}
+                        className="rounded-xl border border-amber-400/30 bg-amber-400/5 px-3 py-2.5"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold text-nq-foreground">
+                              {other.name ?? "(chưa có tên)"}
+                            </p>
+                            <p className="font-mono text-xs text-nq-muted">
+                              {other.phone}
+                            </p>
+                            <p className="mt-1 text-xs text-nq-muted/80">
+                              {s.reason}
+                            </p>
+                            <p className="mt-0.5 text-[11px] font-medium text-amber-600">
+                              {m.dupeConfidenceHint(confidencePct)}
+                            </p>
+                          </div>
+
+                          <div className="shrink-0">
+                            {isConfirming ? (
+                              <div className="space-y-1.5 text-right">
+                                <p className="max-w-[180px] text-xs text-nq-foreground/80">
+                                  {m.dupeConfirmText(other.name ?? "(chưa có tên)")}
+                                </p>
+                                <div className="flex justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setDupeConfirmIdx(null)}
+                                    className="rounded-lg border border-nq-border px-2.5 py-1 text-xs font-medium text-nq-muted hover:text-nq-foreground"
+                                  >
+                                    Huỷ / Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={dupeMerging}
+                                    onClick={() => void handleMerge(other.id, other.name, idx)}
+                                    className={cn(
+                                      "rounded-lg border border-nq-error/50 bg-nq-error/10 px-2.5 py-1 text-xs font-semibold text-nq-error",
+                                      "transition-colors hover:bg-nq-error/20",
+                                      "disabled:cursor-not-allowed disabled:opacity-50",
+                                    )}
+                                  >
+                                    {dupeMerging ? "…" : m.dupeMergeButton}
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDupeError(null);
+                                  setDupeMergeMsg(null);
+                                  setDupeConfirmIdx(idx);
+                                }}
+                                className="rounded-lg border border-amber-400/50 bg-amber-400/10 px-2.5 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-400/20 dark:text-amber-400"
+                              >
+                                {m.dupeMergeButton}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
               </section>
             ) : null}
 

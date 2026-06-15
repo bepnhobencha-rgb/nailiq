@@ -1755,6 +1755,13 @@ export const userVi: UserMessages = {
         statusNoShow: "Vắng mặt",
         statusConfirmed: "Đã xác nhận",
         statusInProgress: "Đang làm",
+        dupeSectionTitle: "Có thể là cùng một khách",
+        dupeConfidenceHint: (pct: number) => `${pct}% trùng`,
+        dupeMergeButton: "Gộp vào hồ sơ này",
+        dupeConfirmText: (otherName: string) =>
+          `Gộp "${otherName}" vào hồ sơ này? Toàn bộ lịch sử của họ sẽ dồn về đây. KHÔNG THỂ HOÀN TÁC.`,
+        dupeMergeSuccess: (n: number) => `Đã gộp · ${n} lịch sử`,
+        dupeMergeError: "Không gộp được. Vui lòng thử lại.",
       },
     },
     pricing: {
