@@ -932,23 +932,39 @@ export function BookingGroupFlow({
         setStep("success");
         // No-show card for the organizer (lead = members[0], the only row with
         // a phone). Option A: a card captured at the confirm step is saved to
-        // the lead now. If none was captured (not required), flag for the desk
-        // fallback instead (no-op when not needed). Fire-and-forget.
+        // the lead now. CRITICAL — this must NOT silently fail: the booking is
+        // already created, so a swallowed save error would leave a confirmed
+        // group with no card and nobody the wiser. We AWAIT the save and, on any
+        // failure, flag the lead so the desk collects the card manually (never a
+        // silent loss). The flag endpoint is also the path when no card was
+        // captured (not required → no-op).
         const leadId = res.bookingIds?.[0];
+        const flagForDesk = (id: string) =>
+          fetch("/api/booking/flag-noshow-card", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bookingId: id }),
+          }).catch(() => {});
         if (leadId) {
           const token = cardTokenRef.current;
           if (token) {
-            void fetch("/api/booking/square-save-card", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ bookingId: leadId, sourceId: token, consent: true }),
-            }).catch(() => {});
+            let saved = false;
+            try {
+              const resp = await fetch("/api/booking/square-save-card", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ bookingId: leadId, sourceId: token, consent: true }),
+              });
+              const json = (await resp.json().catch(() => ({}))) as { ok?: boolean };
+              saved = resp.ok && json.ok === true;
+            } catch {
+              saved = false;
+            }
+            if (!saved) {
+              await flagForDesk(leadId);
+            }
           } else {
-            void fetch("/api/booking/flag-noshow-card", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ bookingId: leadId }),
-            }).catch(() => {});
+            await flagForDesk(leadId);
           }
         }
         cardTokenRef.current = null;
