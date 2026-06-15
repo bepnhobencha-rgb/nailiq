@@ -58,21 +58,20 @@ function DepositButton({
   language: "en" | "vi";
 }) {
   const [busy, setBusy] = useState(false);
-  const [holdMode, setHoldMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<{ url: string; amountCents: number } | null>(null);
   const label = language === "en" ? "💰 Request deposit" : "💰 Tạo link cọc";
-  const holdLabel =
-    language === "en" ? "🔒 Hold slot — pay to confirm" : "🔒 Giữ chỗ — trả cọc mới xác nhận";
 
-  async function onPress(hold: boolean) {
+  async function onPress() {
     setBusy(true);
-    setHoldMode(hold);
     setError(null);
     try {
       // manual: a human at the desk decided a deposit is warranted → skip the
-      // server's no-show-risk gate. hold: pay-to-confirm (auto-cancel if unpaid).
-      const r = await requestDepositLink(slug, { salonId, bookingId, manual: true, hold, language });
+      // server's no-show-risk gate. hold:false → request a deposit without
+      // flipping the booking to pending (the "hold / pay-to-confirm" variant
+      // was removed: unused at the desk + its auto-cancel cron isn't wired,
+      // so it left bookings stuck "pending"; see no-show card-on-file plan).
+      const r = await requestDepositLink(slug, { salonId, bookingId, manual: true, hold: false, language });
       if (r.ok) setModal({ url: r.url, amountCents: r.amountCents });
       else setError(depositErrorLabel(r.error, language));
     } catch {
@@ -90,7 +89,7 @@ function DepositButton({
         salonId,
         bookingId,
         manual: true,
-        hold: holdMode,
+        hold: false,
         sendSms: true,
         language,
       });
@@ -110,21 +109,9 @@ function DepositButton({
         title={disabled ? offlineHint : undefined}
         data-testid="drawer-deposit-link"
         className="w-full sm:w-full"
-        onClick={() => void onPress(false)}
+        onClick={() => void onPress()}
       >
         {label}
-      </Button>
-      <Button
-        type="button"
-        variant="secondary"
-        loading={busy}
-        disabled={disabled}
-        title={disabled ? offlineHint : undefined}
-        data-testid="drawer-deposit-hold"
-        className="mt-2 w-full sm:w-full"
-        onClick={() => void onPress(true)}
-      >
-        {holdLabel}
       </Button>
       {error ? (
         <p className="text-xs font-semibold text-nq-error" role="status">
@@ -313,6 +300,12 @@ export type BookingDetailDrawerModel = {
   depositAwaitingLine: string | null;
   /** Square deposits enabled for this salon — gates the desk "request deposit" action. */
   depositsEnabled: boolean;
+  /** No-show card-on-file saved for this booking (charge only on no-show).
+   *  Surfaces the existing protection at the desk as a green badge. */
+  cardOnFile: boolean;
+  /** Formatted no-show fee that would be charged if they no-show (e.g. "$25.00");
+   *  null when no fee/card is set. */
+  noshowFeeLine: string | null;
   /** Dashboard language — drives the deposit SMS copy + the deposit modal/button text. */
   language: "en" | "vi";
 };
@@ -841,7 +834,7 @@ export function BookingDetailDrawer({
               </div>
 
               {/* Verification + SMS + no-show-history badges */}
-              {(model.smsFailedAt || model.verificationMethod || model.depositPaidLine || model.depositAwaitingLine || (model.noShowRiskScore != null && model.noShowRiskScore >= 70) || model.noShowHistoryCount > 0) ? (
+              {(model.smsFailedAt || model.verificationMethod || model.depositPaidLine || model.cardOnFile || model.depositAwaitingLine || (model.noShowRiskScore != null && model.noShowRiskScore >= 70) || model.noShowHistoryCount > 0) ? (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {model.depositAwaitingLine ? (
                     <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-400" data-testid="drawer-deposit-awaiting-badge">
@@ -851,6 +844,16 @@ export function BookingDetailDrawer({
                   {model.depositPaidLine ? (
                     <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400" data-testid="drawer-deposit-paid-badge">
                       💰 Đã cọc {model.depositPaidLine}
+                    </span>
+                  ) : null}
+                  {model.cardOnFile ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400" data-testid="drawer-card-on-file-badge">
+                      💳 {model.language === "vi" ? "Đã lưu thẻ" : "Card on file"}
+                      {model.noshowFeeLine
+                        ? (model.language === "vi"
+                            ? ` · phí no-show ${model.noshowFeeLine}`
+                            : ` · no-show fee ${model.noshowFeeLine}`)
+                        : ""}
                     </span>
                   ) : null}
                   {model.smsFailedAt ? (
