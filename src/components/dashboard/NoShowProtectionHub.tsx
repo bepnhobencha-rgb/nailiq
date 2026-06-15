@@ -13,6 +13,8 @@ import type {
   UnconfirmedBooking,
   WaitlistOpportunity,
 } from "@/shared/noshow/noShowDashboardActions";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { getUserMessages } from "@/shared/i18n/user";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
@@ -108,6 +110,10 @@ export function NoShowProtectionHub({
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  // Bilingual copy for the waitlist section (shares the keys the Receptionist
+  // Center waitlist panel uses).
+  const { language } = useUserLanguage();
+  const wlCopy = getUserMessages(language).receptionist.waitlist;
   const [remindersEnabled, setRemindersEnabled] = useState(initialReminders);
   const [reminder24h, setReminder24h] = useState(initial24h);
   const [reminder3h, setReminder3h] = useState(initial3h);
@@ -191,7 +197,7 @@ export function NoShowProtectionHub({
           <StatCard label="High risk" value={summary.highRiskCount} color="text-red-400" />
           <StatCard label="Deposit required" value={summary.depositRequiredCount} color="text-amber-400" />
           <StatCard label="Cancelled today" value={summary.cancelledTodayCount} />
-          <StatCard label="Waitlist waiting" value={summary.waitingWaitlistCount} color="text-nq-gold" />
+          <StatCard label="Waitlist waiting" value={summary.waitingWaitlistCount} color="text-nq-primary" />
           <StatCard label="Recovered this week" value={summary.recoveredThisWeekCount} color="text-emerald-400" />
         </div>
 
@@ -227,8 +233,8 @@ export function NoShowProtectionHub({
                   onClick={() => setProvider(p)}
                   className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
                     provider === p
-                      ? "border-nq-gold bg-nq-gold/15 text-nq-gold"
-                      : "border-nq-border/50 text-nq-muted hover:border-nq-gold/40"
+                      ? "border-nq-primary bg-nq-primary/15 text-nq-primary"
+                      : "border-nq-border/50 text-nq-muted hover:border-nq-primary/40"
                   }`}
                 >
                   {p === "square" ? "Square (nhập thẻ)" : "Stripe (1-chạm Apple/Google Pay)"}
@@ -241,7 +247,7 @@ export function NoShowProtectionHub({
                 type="checkbox"
                 checked={noshowEnabled}
                 onChange={(e) => setNoshowEnabled(e.target.checked)}
-                className="h-4 w-4 accent-nq-gold"
+                className="h-4 w-4 accent-nq-primary"
               />
               Bật yêu cầu lưu thẻ no-show
             </label>
@@ -276,7 +282,7 @@ export function NoShowProtectionHub({
             <button
               onClick={saveCardSettings}
               disabled={isPending}
-              className="mt-4 rounded-xl bg-nq-gold px-4 py-2 text-xs font-semibold text-black transition hover:bg-nq-gold/90 disabled:opacity-50"
+              className="mt-4 rounded-xl bg-nq-primary px-4 py-2 text-xs font-semibold text-black transition hover:bg-nq-primary/90 disabled:opacity-50"
             >
               {isPending ? "Đang lưu…" : "Lưu"}
             </button>
@@ -297,7 +303,7 @@ export function NoShowProtectionHub({
               <button
                 onClick={() => toggleReminders(!remindersEnabled)}
                 disabled={!isOwner || isPending}
-                className={`relative h-6 w-11 rounded-full transition ${remindersEnabled ? "bg-nq-gold" : "bg-nq-border"}`}
+                className={`relative h-6 w-11 rounded-full transition ${remindersEnabled ? "bg-nq-primary" : "bg-nq-border"}`}
                 aria-pressed={remindersEnabled}
               >
                 <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${remindersEnabled ? "translate-x-5" : "translate-x-0.5"}`} />
@@ -312,7 +318,7 @@ export function NoShowProtectionHub({
                     type="checkbox"
                     checked={reminder24h}
                     onChange={(e) => setReminder24h(e.target.checked)}
-                    className="h-4 w-4 rounded accent-nq-gold"
+                    className="h-4 w-4 rounded accent-nq-primary"
                   />
                   <span className="text-sm text-nq-text">24-hour reminder</span>
                 </label>
@@ -321,7 +327,7 @@ export function NoShowProtectionHub({
                     type="checkbox"
                     checked={reminder3h}
                     onChange={(e) => setReminder3h(e.target.checked)}
-                    className="h-4 w-4 rounded accent-nq-gold"
+                    className="h-4 w-4 rounded accent-nq-primary"
                   />
                   <span className="text-sm text-nq-text">3-hour reminder</span>
                 </label>
@@ -331,7 +337,7 @@ export function NoShowProtectionHub({
                     type="checkbox"
                     checked={smsReminders}
                     onChange={(e) => setSmsReminders(e.target.checked)}
-                    className="h-4 w-4 rounded accent-nq-gold"
+                    className="h-4 w-4 rounded accent-nq-primary"
                   />
                   <span className="text-sm text-nq-text">
                     SMS reminders
@@ -345,7 +351,7 @@ export function NoShowProtectionHub({
                     min="0"
                     value={threshold}
                     onChange={(e) => setThreshold(e.target.value)}
-                    className="w-24 rounded-lg border border-nq-border/40 bg-nq-bg px-3 py-1.5 text-sm text-nq-text focus:outline-none focus:border-nq-gold/50"
+                    className="w-24 rounded-lg border border-nq-border/40 bg-nq-bg px-3 py-1.5 text-sm text-nq-text focus:outline-none focus:border-nq-primary/50"
                   />
                 </div>
                 {/* Master ON/OFF for Square deposits + the pay-to-confirm grace
@@ -356,7 +362,7 @@ export function NoShowProtectionHub({
                     data-testid="deposit-enabled-toggle"
                     checked={depositEnabled}
                     onChange={(e) => setDepositEnabled(e.target.checked)}
-                    className="h-4 w-4 accent-nq-gold"
+                    className="h-4 w-4 accent-nq-primary"
                   />
                   <span>Bật thu cọc (Square) / Enable deposits</span>
                 </label>
@@ -371,7 +377,7 @@ export function NoShowProtectionHub({
                     data-testid="deposit-grace-input"
                     value={grace}
                     onChange={(e) => setGrace(e.target.value)}
-                    className="ml-auto w-20 rounded-lg border border-nq-border/40 bg-nq-bg px-2 py-1.5 text-sm text-nq-text focus:outline-none focus:border-nq-gold/50"
+                    className="ml-auto w-20 rounded-lg border border-nq-border/40 bg-nq-bg px-2 py-1.5 text-sm text-nq-text focus:outline-none focus:border-nq-primary/50"
                   />
                 </label>
                 {/* Deposit % per trigger — de-hardcoded; charged on the salon's
@@ -391,7 +397,7 @@ export function NoShowProtectionHub({
                           max="100"
                           value={val}
                           onChange={(e) => setter(e.target.value)}
-                          className="w-16 rounded-lg border border-nq-border/40 bg-nq-bg px-2 py-1.5 text-sm text-nq-text focus:outline-none focus:border-nq-gold/50"
+                          className="w-16 rounded-lg border border-nq-border/40 bg-nq-bg px-2 py-1.5 text-sm text-nq-text focus:outline-none focus:border-nq-primary/50"
                         />
                         <span className="text-xs text-nq-muted">%</span>
                       </span>
@@ -401,7 +407,7 @@ export function NoShowProtectionHub({
                 <button
                   onClick={saveSettings}
                   disabled={isPending}
-                  className="mt-2 rounded-xl bg-nq-gold px-4 py-2 text-xs font-semibold text-black transition hover:bg-nq-gold/90 disabled:opacity-50"
+                  className="mt-2 rounded-xl bg-nq-primary px-4 py-2 text-xs font-semibold text-black transition hover:bg-nq-primary/90 disabled:opacity-50"
                 >
                   {isPending ? "Saving…" : "Save Settings"}
                 </button>
@@ -414,7 +420,7 @@ export function NoShowProtectionHub({
         {/* Upcoming unconfirmed bookings */}
         {unconfirmed.length > 0 && (
           <section className="mt-6">
-            <h2 className="mb-3 text-xs font-medium uppercase tracking-widest text-nq-gold">
+            <h2 className="mb-3 text-xs font-medium uppercase tracking-widest text-nq-primary">
               Upcoming — Not Confirmed
             </h2>
             <div className="space-y-2">
@@ -459,8 +465,8 @@ export function NoShowProtectionHub({
         {/* Waitlist */}
         {waitlist.length > 0 && (
           <section className="mt-6">
-            <h2 className="mb-3 text-xs font-medium uppercase tracking-widest text-nq-gold">
-              Waitlist Opportunities
+            <h2 className="mb-3 text-xs font-medium uppercase tracking-widest text-nq-primary">
+              {wlCopy.title}
             </h2>
             <div className="space-y-2">
               {waitlist.map((w) => (
@@ -474,10 +480,12 @@ export function NoShowProtectionHub({
                   </div>
                   <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
                     w.status === "notified"
-                      ? "border-nq-gold/30 bg-nq-gold/10 text-nq-gold"
+                      ? "border-nq-primary/30 bg-nq-primary/10 text-nq-primary"
                       : "border-nq-border/30 text-nq-muted"
                   }`}>
-                    {w.status}
+                    {w.status === "notified"
+                      ? wlCopy.invited
+                      : wlCopy.statusWaiting}
                   </span>
                 </div>
               ))}

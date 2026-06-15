@@ -48,6 +48,7 @@ import {
   refundDeposit,
 } from "@/shared/integrations/square/deposits";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
+import { logNotification } from "@/shared/lib/notificationLog";
 import {
   pushWixCancel,
   pushWixConfirm,
@@ -2486,4 +2487,133 @@ export async function addDeskAppointment(
   };
 
   return { ok: true, bookingId, booking: optimisticBooking };
+}
+
+/** Origin the customer waitlist claim link is built on (same convention as
+ *  waitlistAutoFill). Falls back to the production host. */
+const WAITLIST_SITE_URL =
+  (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+
+/**
+ * Receptionist "Invite now" — text a waitlisted online customer the claim link
+ * the moment staff decide to offer them a slot. The customer joined
+ * `booking_waitlist_entries` because their desired slot was full; this flips
+ * the entry to `notified`, mints a claim token if needed, and SMSes the
+ * 20-minute claim link via Twilio.
+ *
+ * Auth mirrors `cancelDeskBooking`: front-desk roles only
+ * (owner/admin/senior/receptionist). Idempotent — re-inviting a `notified`
+ * entry just re-sends with the same token. The SMS body is Vietnamese by
+ * design (most salons are VN-facing) and ASCII-only so Twilio sends a single
+ * GSM-7 segment.
+ */
+export async function inviteWaitlistEntry(
+  slug: string,
+  entryId: string,
+): Promise<{ ok: boolean; suppressed?: boolean; error?: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "forbidden" };
+  // Same front-desk gate as cancelDeskBooking (owner/admin/senior/receptionist).
+  if (!canCancelBooking(ctx.role)) return { ok: false, error: "forbidden" };
+
+  const id = String(entryId ?? "").trim();
+  if (!id || !isUuidLike(id)) return { ok: false, error: "not_found" };
+
+  // Service-role: booking_waitlist_entries is RLS-locked. Load defensively by
+  // id AND salon_id (tenant isolation) — never trust the id alone.
+  const svc = createServiceRoleClient();
+  const { data: entry, error: loadErr } = await svc
+    .from("booking_waitlist_entries")
+    .select(
+      "id, service_id, client_name, client_phone, booking_date, claim_token, status",
+    )
+    .eq("id", id)
+    .eq("salon_id", ctx.salon.id)
+    .maybeSingle();
+
+  if (loadErr) {
+    console.error("[inviteWaitlistEntry] load", loadErr);
+    return { ok: false, error: "server_error" };
+  }
+  const row = entry as {
+    id: string;
+    service_id: string | null;
+    client_name: string | null;
+    client_phone: string | null;
+    booking_date: string | null;
+    claim_token: string | null;
+    status: string | null;
+  } | null;
+  if (!row?.id) return { ok: false, error: "not_found" };
+
+  const phone = String(row.client_phone ?? "").trim();
+  if (!phone) return { ok: false, error: "no_phone" };
+
+  // Resolve service + salon names for the SMS copy.
+  let serviceName = "";
+  const serviceId = row.service_id ? String(row.service_id) : "";
+  if (serviceId) {
+    const { data: svcRow } = await svc
+      .from("services")
+      .select("name")
+      .eq("id", serviceId)
+      .eq("salon_id", ctx.salon.id)
+      .maybeSingle();
+    serviceName = String((svcRow as { name?: string } | null)?.name ?? "");
+  }
+  const salonName = String(ctx.salon.name ?? "").trim() || "NailIQ";
+  const bookingDate = String(row.booking_date ?? "").slice(0, 10);
+
+  // Idempotent token: reuse an existing one (re-invite) or mint a fresh one.
+  const token = row.claim_token ?? crypto.randomUUID();
+
+  const claimUrl = `${WAITLIST_SITE_URL}/booking/waitlist-claim?token=${token}`;
+  // ASCII-only Vietnamese (no diacritics, no emoji) → single GSM-7 segment.
+  const body = `${salonName}: Co cho trong ${serviceName} ngay ${bookingDate}. Giu cho trong 20 phut: ${claimUrl}`;
+
+  // Send FIRST, then record. A suppressed send (dev/CI/test/fictional number)
+  // returns ok:true and still counts as "handled". A genuine failure
+  // (twilio_not_configured / Twilio error) must NOT mark the entry notified —
+  // otherwise the customer never got the link yet the cron treats them as
+  // already invited. Leave the row 'waiting' so staff can retry / call them.
+  const smsResult = await sendSmsReminder(phone, body);
+
+  // Log to booking_notifications (booking_id is null — the entry isn't a
+  // booking yet). Best-effort; never fail the invite on a logging hiccup.
+  try {
+    await logNotification({
+      bookingId: null,
+      salonId: ctx.salon.id,
+      notificationType: "waitlist_invite",
+      channel: "sms",
+      clientPhone: phone,
+      messageSid: smsResult.messageSid ?? null,
+      bodyPreview: body,
+      ok: smsResult.ok,
+      errorMessage: smsResult.ok ? null : smsResult.error ?? null,
+    });
+  } catch (e) {
+    console.error("[inviteWaitlistEntry] logNotification", e);
+  }
+
+  if (!smsResult.ok) {
+    // Genuine delivery failure — nothing recorded, the row stays 'waiting'.
+    return { ok: false, error: smsResult.error ?? "sms_failed" };
+  }
+
+  const { error: upErr } = await svc
+    .from("booking_waitlist_entries")
+    .update({
+      status: "notified",
+      notified_at: new Date().toISOString(),
+      claim_token: token,
+    } as never)
+    .eq("id", id)
+    .eq("salon_id", ctx.salon.id);
+  if (upErr) {
+    console.error("[inviteWaitlistEntry] update", upErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true, suppressed: smsResult.suppressed };
 }

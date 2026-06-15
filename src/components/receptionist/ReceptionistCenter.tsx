@@ -65,6 +65,7 @@ import { StatusPill } from "./StatusPill";
 import { TVModeView } from "./TVModeView";
 import { UndoToast } from "./UndoToast";
 import { WalkinQueueSidebar, type QueueItem } from "./WalkinQueueSidebar";
+import { OnlineWaitlistPanel } from "./OnlineWaitlistPanel";
 import { WeekView, mondayYmdOf, shiftWeek } from "./WeekView";
 import { MonthView, firstOfMonth, shiftMonth } from "./MonthView";
 import type { BookingsRangeHint } from "@/shared/dashboard/getBookingsForRangeAction";
@@ -3419,6 +3420,13 @@ function ReceptionistCenterInner({
                     invalidNameChars: rcMessages.walkin.invalidNameChars,
                   },
                 }}
+              />
+              {/* Online waitlist — staff see online customers waiting for a
+                  full slot right below the walk-in queue and invite one in a
+                  single tap (texts them the claim link via SMS). */}
+              <OnlineWaitlistPanel
+                slug={slug}
+                entries={data.onlineWaitlist}
               />
             </div>
           </aside>
