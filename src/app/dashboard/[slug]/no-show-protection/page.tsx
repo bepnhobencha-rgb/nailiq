@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { loadNoShowDashboard } from "@/shared/noshow/noShowDashboardActions";
 import { NoShowProtectionHub } from "@/components/dashboard/NoShowProtectionHub";
+import { SquareSyncCard } from "@/components/dashboard/SquareSyncCard";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -26,10 +27,23 @@ export default async function NoShowProtectionPage({ params }: Props) {
   // Square is connected) — null row → deposits off.
   const { data: sqRow } = await sb
     .from("square_integrations" as never)
-    .select("deposit_enabled")
+    .select("deposit_enabled, merchant_id, location_id, environment, last_run_at, sync_pull_create, sync_pull_update, sync_pull_cancel, sync_push_create, sync_push_update, sync_push_cancel")
     .eq("salon_id", ctx.salon.id)
     .maybeSingle();
-  const depositEnabled = (sqRow as { deposit_enabled?: boolean } | null)?.deposit_enabled === true;
+  const sq = sqRow as {
+    deposit_enabled?: boolean;
+    merchant_id?: string | null;
+    location_id?: string | null;
+    environment?: string | null;
+    last_run_at?: string | null;
+    sync_pull_create?: boolean;
+    sync_pull_update?: boolean;
+    sync_pull_cancel?: boolean;
+    sync_push_create?: boolean;
+    sync_push_update?: boolean;
+    sync_push_cancel?: boolean;
+  } | null;
+  const depositEnabled = sq?.deposit_enabled === true;
 
   const row = salonRow as {
     name?: string | null;
@@ -70,6 +84,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
   if (!result.ok) redirect(`/dashboard/${slug}`);
 
   return (
+    <div className="space-y-6">
     <NoShowProtectionHub
       slug={slug}
       isOwner={ctx.role === "owner"}
@@ -99,5 +114,23 @@ export default async function NoShowProtectionPage({ params }: Props) {
       unconfirmed={result.unconfirmed!}
       waitlist={result.waitlist!}
     />
+    <SquareSyncCard
+      slug={slug}
+      isOwner={ctx.role === "owner"}
+      connected={Boolean(sqRow)}
+      merchantId={sq?.merchant_id ?? null}
+      locationId={sq?.location_id ?? null}
+      environment={sq?.environment ?? null}
+      lastRunAt={sq?.last_run_at ?? null}
+      initial={{
+        sync_pull_create: sq?.sync_pull_create !== false,
+        sync_pull_update: sq?.sync_pull_update !== false,
+        sync_pull_cancel: sq?.sync_pull_cancel !== false,
+        sync_push_create: sq?.sync_push_create === true,
+        sync_push_update: sq?.sync_push_update === true,
+        sync_push_cancel: sq?.sync_push_cancel === true,
+      }}
+    />
+    </div>
   );
 }

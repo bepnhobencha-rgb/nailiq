@@ -24,10 +24,17 @@ export interface SquareConfig {
    *  rejects a charge whose currency ≠ the merchant's, so this MUST match the
    *  merchant — never hardcode. Sourced from salons.currency_code. */
   currency: string;
-  /** Opt-in (default false): mirror NailIQ-created bookings INTO Square
-   *  (reverse-create, Tầng 2). Off until the salon confirms Square's customer
-   *  notification settings so a mirrored booking can't double-text the guest. */
-  reverseCreateEnabled: boolean;
+  /** Per-direction, per-operation sync switches (admin-controllable). PULL =
+   *  Square→NailIQ (default on), PUSH = NailIQ→Square (default off, opt-in
+   *  because it writes the salon's live Square calendar). */
+  sync: {
+    pullCreate: boolean;
+    pullUpdate: boolean;
+    pullCancel: boolean;
+    pushCreate: boolean;
+    pushUpdate: boolean;
+    pushCancel: boolean;
+  };
 }
 
 /** API base for the config's environment. */
@@ -77,7 +84,7 @@ type Db = { from: (table: string) => any };
 export async function getSquareConfig(db: Db, salonId: string): Promise<SquareConfig> {
   const { data, error } = await db
     .from("square_integrations")
-    .select("salon_id, merchant_id, location_id, access_token, application_id, environment, reverse_create_enabled")
+    .select("salon_id, merchant_id, location_id, access_token, application_id, environment, sync_pull_create, sync_pull_update, sync_pull_cancel, sync_push_create, sync_push_update, sync_push_cancel")
     .eq("salon_id", salonId)
     .maybeSingle();
   if (error) throw new Error(`square_integrations load failed: ${JSON.stringify(error)}`);
@@ -88,7 +95,12 @@ export async function getSquareConfig(db: Db, salonId: string): Promise<SquareCo
     access_token: string | null;
     application_id: string | null;
     environment: string | null;
-    reverse_create_enabled: boolean | null;
+    sync_pull_create: boolean | null;
+    sync_pull_update: boolean | null;
+    sync_pull_cancel: boolean | null;
+    sync_push_create: boolean | null;
+    sync_push_update: boolean | null;
+    sync_push_cancel: boolean | null;
   } | null;
   if (!row) throw new Error(`No square_integrations row for salon ${salonId}`);
   if (!row.access_token) throw new Error(`square_integrations.access_token is empty for salon ${salonId}`);
@@ -113,7 +125,16 @@ export async function getSquareConfig(db: Db, salonId: string): Promise<SquareCo
     applicationId: row.application_id ?? null,
     environment: row.environment === "sandbox" ? "sandbox" : "production",
     currency,
-    reverseCreateEnabled: row.reverse_create_enabled === true,
+    sync: {
+      // PULL defaults true (forward cron's long-standing behaviour), PUSH
+      // defaults false (opt-in writes to the live Square calendar).
+      pullCreate: row.sync_pull_create !== false,
+      pullUpdate: row.sync_pull_update !== false,
+      pullCancel: row.sync_pull_cancel !== false,
+      pushCreate: row.sync_push_create === true,
+      pushUpdate: row.sync_push_update === true,
+      pushCancel: row.sync_push_cancel === true,
+    },
   };
 }
 
