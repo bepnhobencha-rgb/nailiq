@@ -112,6 +112,16 @@ export async function GET(request: NextRequest) {
     dest = new URL("/choose-salon", request.url);
   } else {
     dest = new URL(dashboardPathForRole(resolved.slug, resolved.role), request.url);
+    // Audit the email/OAuth login (who / when / device / IP) for the Activity log.
+    const xff = request.headers.get("x-forwarded-for");
+    void (await import("@/shared/dashboard/recordAuthEvent")).recordAuthEvent({
+      event: "login",
+      userId: user.id,
+      slug: resolved.slug,
+      role: resolved.role,
+      ip: (xff ? xff.split(",")[0]?.trim() : "") || request.headers.get("x-real-ip") || null,
+      userAgent: request.headers.get("user-agent"),
+    });
   }
 
   const response = NextResponse.redirect(dest);

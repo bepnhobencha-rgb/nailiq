@@ -10,6 +10,7 @@ const KIND_ICON: Record<ActivityKind, string> = {
   email: "✉️",
   call: "📞",
   system: "⚙️",
+  login: "🔑",
 };
 
 const TABS: { key: ActivityKind | "all"; label: string }[] = [
@@ -19,6 +20,7 @@ const TABS: { key: ActivityKind | "all"; label: string }[] = [
   { key: "email", label: "Email" },
   { key: "call", label: "Cuộc gọi" },
   { key: "system", label: "Hệ thống" },
+  { key: "login", label: "Đăng nhập" },
 ];
 
 function timeAgo(iso: string): string {

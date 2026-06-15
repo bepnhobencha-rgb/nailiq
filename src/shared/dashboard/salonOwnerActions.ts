@@ -642,6 +642,10 @@ export async function loadOwnerSalons(
  */
 export async function signOutAction(): Promise<never> {
   const supabase = await createClient();
+  // Audit BEFORE signOut, while the session (and getUser) is still live.
+  await (await import("@/shared/dashboard/recordAuthEvent")).recordAuthEvent({
+    event: "logout",
+  });
   await supabase.auth.signOut();
   redirect("/login");
 }
