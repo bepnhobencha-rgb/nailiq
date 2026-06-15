@@ -861,6 +861,9 @@ export async function requestDepositLink(
     sendSms?: boolean;
     /** Dashboard language for the SMS copy. */
     language?: "en" | "vi";
+    /** Hold the slot only until the deposit is paid — auto-cancel a FUTURE
+     *  booking if unpaid past the grace window. Default ON (pay-to-confirm). */
+    hold?: boolean;
   },
 ): Promise<
   | { ok: true; url: string; amountCents: number; smsSent?: boolean }
@@ -887,6 +890,7 @@ export async function requestDepositLink(
   try {
     const r = await createDepositForBooking(bookingId, {
       manual: input.manual === true,
+      hold: input.hold,
     });
     if (!r.required || !r.url) return fail(r.reason || "deposit_not_required");
 

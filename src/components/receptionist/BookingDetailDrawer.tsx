@@ -57,17 +57,21 @@ function DepositButton({
   language: "en" | "vi";
 }) {
   const [busy, setBusy] = useState(false);
+  const [holdMode, setHoldMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<{ url: string; amountCents: number } | null>(null);
   const label = language === "en" ? "💰 Request deposit" : "💰 Tạo link cọc";
+  const holdLabel =
+    language === "en" ? "🔒 Hold slot — pay to confirm" : "🔒 Giữ chỗ — trả cọc mới xác nhận";
 
-  async function onPress() {
+  async function onPress(hold: boolean) {
     setBusy(true);
+    setHoldMode(hold);
     setError(null);
     try {
       // manual: a human at the desk decided a deposit is warranted → skip the
-      // server's no-show-risk gate.
-      const r = await requestDepositLink(slug, { salonId, bookingId, manual: true, language });
+      // server's no-show-risk gate. hold: pay-to-confirm (auto-cancel if unpaid).
+      const r = await requestDepositLink(slug, { salonId, bookingId, manual: true, hold, language });
       if (r.ok) setModal({ url: r.url, amountCents: r.amountCents });
       else setError(depositErrorLabel(r.error, language));
     } catch {
@@ -85,6 +89,7 @@ function DepositButton({
         salonId,
         bookingId,
         manual: true,
+        hold: holdMode,
         sendSms: true,
         language,
       });
@@ -104,9 +109,21 @@ function DepositButton({
         title={disabled ? offlineHint : undefined}
         data-testid="drawer-deposit-link"
         className="w-full sm:w-full"
-        onClick={() => void onPress()}
+        onClick={() => void onPress(false)}
       >
         {label}
+      </Button>
+      <Button
+        type="button"
+        variant="secondary"
+        loading={busy}
+        disabled={disabled}
+        title={disabled ? offlineHint : undefined}
+        data-testid="drawer-deposit-hold"
+        className="mt-2 w-full sm:w-full"
+        onClick={() => void onPress(true)}
+      >
+        {holdLabel}
       </Button>
       {error ? (
         <p className="text-xs font-semibold text-nq-error" role="status">

@@ -84,7 +84,7 @@ export async function createDepositForBooking(
    *  skip the no-show-risk gate (the human decided it's warranted). The salon
    *  still has to have Square deposits enabled — that's a config gate, not a
    *  risk one. */
-  opts?: { manual?: boolean },
+  opts?: { manual?: boolean; hold?: boolean },
 ): Promise<DepositResult> {
   const db = looseServiceClient();
   const { data: bRow } = await db
@@ -151,6 +151,11 @@ export async function createDepositForBooking(
     note: `NailIQ deposit for booking ${bookingId}`,
   });
 
+  // hold = "pay-to-confirm": the slot is only held until the deposit is paid; if
+  // unpaid past the grace window the release-pending cron cancels it. Explicit
+  // opt-in (default OFF) so existing "just collect a deposit" callers are
+  // unchanged — the desk "hold slot" action passes hold:true.
+  const hold = opts?.hold === true;
   await db.from("bookings").update({
     deposit_required: true,
     deposit_amount_cents: amountCents,
@@ -161,6 +166,8 @@ export async function createDepositForBooking(
     square_payment_link_id: link.id,
     square_deposit_order_id: link.orderId,
     deposit_link_url: link.url,
+    deposit_hold: hold,
+    deposit_requested_at: new Date().toISOString(),
   }).eq("id", bookingId);
 
   return { required: true, reason: "deposit link created", url: link.url, amountCents };
@@ -218,7 +225,14 @@ export async function reconcileDeposits(salonId: string): Promise<{ checked: num
     try {
       const order = await getOrder(cfg, orderId);
       if (order.state === "COMPLETED" || order.paidCents >= num(r.deposit_amount_cents)) {
-        await db.from("bookings").update({ deposit_status: "paid", square_payment_id: order.tenderPaymentId }).eq("id", str(r.id));
+        // Paid → flip to paid, stamp time, and RELEASE the hold so the cron no
+        // longer eyes it for cancellation: it's now a firm confirmed booking.
+        await db.from("bookings").update({
+          deposit_status: "paid",
+          square_payment_id: order.tenderPaymentId,
+          deposit_paid_at: new Date().toISOString(),
+          deposit_hold: false,
+        }).eq("id", str(r.id));
         paid++;
       }
     } catch {
