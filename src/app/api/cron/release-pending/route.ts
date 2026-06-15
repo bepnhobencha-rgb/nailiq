@@ -24,6 +24,9 @@ export async function GET(req: NextRequest) {
     .update({ status: "cancelled" } as never)
     .eq("status", "pending")
     .is("verification_method", null)
+    // Don't sweep a deposit-held slot here — it's `pending` only because it's
+    // awaiting a deposit; the per-salon deposit grace window (below) owns it.
+    .neq("deposit_hold", true)
     .lt("created_at", cutoff)
     .select("id, salon_id");
 

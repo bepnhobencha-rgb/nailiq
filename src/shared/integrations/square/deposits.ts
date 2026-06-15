@@ -89,7 +89,7 @@ export async function createDepositForBooking(
   const db = looseServiceClient();
   const { data: bRow } = await db
     .from("bookings")
-    .select("id, salon_id, price_cents, no_show_risk_score, deposit_status, deposit_amount_cents, square_payment_link_id, deposit_link_url, client_name, client_phone")
+    .select("id, salon_id, status, price_cents, no_show_risk_score, deposit_status, deposit_amount_cents, square_payment_link_id, deposit_link_url, client_name, client_phone")
     .eq("id", bookingId)
     .maybeSingle();
   const b = bRow as Row | null;
@@ -156,7 +156,12 @@ export async function createDepositForBooking(
   // opt-in (default OFF) so existing "just collect a deposit" callers are
   // unchanged — the desk "hold slot" action passes hold:true.
   const hold = opts?.hold === true;
-  await db.from("bookings").update({
+  // Pay-to-confirm: a held booking reads as "Chờ cọc" not "Xác nhận", so move a
+  // currently-confirmed slot to `pending` until payment (reconcile flips it back
+  // to confirmed). Only downgrade from confirmed — never touch in_progress /
+  // completed / etc. The OTP-15min release cron is guarded against deposit_hold,
+  // so the slot is only released by the deposit grace window.
+  const patch: Record<string, unknown> = {
     deposit_required: true,
     deposit_amount_cents: amountCents,
     deposit_status: "required",
@@ -168,7 +173,9 @@ export async function createDepositForBooking(
     deposit_link_url: link.url,
     deposit_hold: hold,
     deposit_requested_at: new Date().toISOString(),
-  }).eq("id", bookingId);
+  };
+  if (hold && str(b.status) === "confirmed") patch.status = "pending";
+  await db.from("bookings").update(patch as never).eq("id", bookingId);
 
   return { required: true, reason: "deposit link created", url: link.url, amountCents };
 }
@@ -213,7 +220,7 @@ export async function reconcileDeposits(salonId: string): Promise<{ checked: num
   const cfg = await getSquareConfig(db, salonId);
   const { data } = await db
     .from("bookings")
-    .select("id, deposit_amount_cents, square_deposit_order_id")
+    .select("id, status, deposit_hold, deposit_amount_cents, square_deposit_order_id")
     .eq("salon_id", salonId)
     .eq("deposit_status", "required")
     .not("square_deposit_order_id", "is", null);
@@ -226,13 +233,16 @@ export async function reconcileDeposits(salonId: string): Promise<{ checked: num
       const order = await getOrder(cfg, orderId);
       if (order.state === "COMPLETED" || order.paidCents >= num(r.deposit_amount_cents)) {
         // Paid → flip to paid, stamp time, and RELEASE the hold so the cron no
-        // longer eyes it for cancellation: it's now a firm confirmed booking.
-        await db.from("bookings").update({
+        // longer eyes it for cancellation. If the slot was held as `pending`
+        // (pay-to-confirm), promote it back to `confirmed` now that it's paid.
+        const upd: Record<string, unknown> = {
           deposit_status: "paid",
           square_payment_id: order.tenderPaymentId,
           deposit_paid_at: new Date().toISOString(),
           deposit_hold: false,
-        }).eq("id", str(r.id));
+        };
+        if (r.deposit_hold === true && str(r.status) === "pending") upd.status = "confirmed";
+        await db.from("bookings").update(upd as never).eq("id", str(r.id));
         paid++;
       }
     } catch {

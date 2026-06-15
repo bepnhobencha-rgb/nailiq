@@ -308,6 +308,9 @@ export type BookingDetailDrawerModel = {
   depositPaidLine: string | null;
   /** Formatted balance still to charge on the POS (price − deposit); null when no deposit. */
   remainingLine: string | null;
+  /** Formatted deposit owed but NOT yet paid (deposit_status='required') — the
+   *  slot is "Chờ cọc", shown as an amber badge; null when none. */
+  depositAwaitingLine: string | null;
   /** Square deposits enabled for this salon — gates the desk "request deposit" action. */
   depositsEnabled: boolean;
   /** Dashboard language — drives the deposit SMS copy + the deposit modal/button text. */
@@ -838,8 +841,13 @@ export function BookingDetailDrawer({
               </div>
 
               {/* Verification + SMS + no-show-history badges */}
-              {(model.smsFailedAt || model.verificationMethod || model.depositPaidLine || (model.noShowRiskScore != null && model.noShowRiskScore >= 70) || model.noShowHistoryCount > 0) ? (
+              {(model.smsFailedAt || model.verificationMethod || model.depositPaidLine || model.depositAwaitingLine || (model.noShowRiskScore != null && model.noShowRiskScore >= 70) || model.noShowHistoryCount > 0) ? (
                 <div className="mt-2 flex flex-wrap gap-1.5">
+                  {model.depositAwaitingLine ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-400" data-testid="drawer-deposit-awaiting-badge">
+                      ⏳ Chờ cọc {model.depositAwaitingLine}
+                    </span>
+                  ) : null}
                   {model.depositPaidLine ? (
                     <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400" data-testid="drawer-deposit-paid-badge">
                       💰 Đã cọc {model.depositPaidLine}
