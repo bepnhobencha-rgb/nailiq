@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/shared/lib/cn";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { ActivityBell } from "@/components/layout/ActivityBell";
 
 /**
  * Shared dashboard chrome — one consistent top-right cluster on EVERY dashboard
@@ -140,6 +141,7 @@ export function DashboardViewControls() {
       data-testid="dashboard-view-controls"
       className="fixed right-2 top-2 z-40 flex items-center gap-1 rounded-full border border-nq-border/60 bg-nq-surface/80 p-1 shadow-sm backdrop-blur md:right-3 md:top-3"
     >
+      <ActivityBell />
       <button
         type="button"
         onClick={onRefresh}
