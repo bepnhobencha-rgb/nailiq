@@ -59,7 +59,7 @@ const COPY = {
     teamFree: "đang rảnh",
     noStaff: "Chưa có thợ active",
     callSalon: "Gọi tiệm",
-    liveBoard: "Live Board",
+    liveBoard: "Bảng Live",
     calendar: "Lịch hẹn",
   },
   en: {
@@ -121,10 +121,12 @@ function salonHour(tz: string): number {
   try {
     const s = new Intl.DateTimeFormat("en-US", {
       hour: "numeric",
-      hour12: false,
+      // h23 so midnight is "00" not "24" (h24 runtimes returned 24 → the
+      // 00:00–00:59 hour was misread as 24 → wrong "evening" greeting).
+      hourCycle: "h23",
       timeZone: tz,
     }).format(new Date());
-    return parseInt(s, 10) || 0;
+    return (parseInt(s, 10) || 0) % 24;
   } catch {
     return new Date().getHours();
   }
@@ -168,9 +170,24 @@ export function OwnerPulse({
 
   // Refresh + fullscreen are now the shared DashboardViewControls (top-right on
   // every page) — Pulse keeps only its 60s auto-refresh above.
-  const hour = salonHour(data.timezone);
+  //
+  // Compute the time-based greeting AFTER mount: salonHour() reads the live
+  // clock, which differs between SSR and hydration and would mismatch at an
+  // hour boundary. Render a stable non-breaking-space placeholder through
+  // hydration, then swap in the real greeting.
+  const [hour, setHour] = useState<number | null>(null);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration-safe: live-clock greeting computed after mount
+    setHour(salonHour(data.timezone));
+  }, [data.timezone]);
   const greeting =
-    hour < 12 ? t.greetingMorning : hour < 18 ? t.greetingAfternoon : t.greetingEvening;
+    hour === null
+      ? " "
+      : hour < 12
+        ? t.greetingMorning
+        : hour < 18
+          ? t.greetingAfternoon
+          : t.greetingEvening;
 
   const ratio =
     data.chairsTotal > 0 ? data.chairsBusy / data.chairsTotal : 0;
