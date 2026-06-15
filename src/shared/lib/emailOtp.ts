@@ -168,7 +168,15 @@ async function sendOtpCodeEmail(input: {
   salonAddress?: string | null;
   lang: "en" | "vi";
 }): Promise<{ ok: boolean; error?: string }> {
-  const resend = getResendClient();
+  // getResendClient() THROWS when the key is missing in a production build (e.g.
+  // a preview deployment without the Preview-env key). Treat that as "not
+  // configured" rather than a 500 — the SMS channel still works.
+  let resend: ReturnType<typeof getResendClient>;
+  try {
+    resend = getResendClient();
+  } catch {
+    return { ok: false, error: "resend_not_configured" };
+  }
   if (!resend) return { ok: false, error: "resend_not_configured" };
 
   const en = input.lang === "en";
