@@ -2727,7 +2727,12 @@ function ArrangementCard({
           : groupCopy.schedulingFinishEarly ?? "Earliest possible ⚡"
       : arrangement.kind === "earliest"
         ? groupCopy.schedulingEarly ?? "Earliest"
-        : startQualifier;
+        // sync_start options are a TIME picker — lead with the start time so the
+        // distinct choices (2:00 · 2:30 · 3:00) are scannable at a glance. Keep
+        // the spread qualifier only when members are actually staggered.
+        : startSpreadMin > 0
+          ? `${arrangement.groupStartDisplay} · ${startQualifier}`
+          : arrangement.groupStartDisplay;
   const icon = arrangement.isWaveBooking
     ? "🌊"
     : arrangement.kind === "best"
