@@ -184,7 +184,7 @@ export async function loadClientProfile360(
     supabase
       .from("bookings")
       .select(
-        "id, start_time_utc, end_time_utc, price_cents, status, booking_channel, services ( name ), staff ( name )",
+        "id, start_time_utc, end_time_utc, price_cents, status, booking_channel, services!bookings_service_id_fkey ( name ), staff ( name )",
       )
       .eq("salon_id", salonId)
       .eq("client_phone", clientPhone)
@@ -768,14 +768,14 @@ export async function generateClient360Summary(
       // visit count + lifetime spend
       supabase
         .from("bookings")
-        .select("status, price_cents, start_time_utc, services ( name ), staff ( name )")
+        .select("status, price_cents, start_time_utc, services!bookings_service_id_fkey ( name ), staff ( name )")
         .eq("salon_id", salonId)
         .eq("client_phone", clientPhone),
 
       // last completed visit
       supabase
         .from("bookings")
-        .select("start_time_utc, services ( name ), staff ( name )")
+        .select("start_time_utc, services!bookings_service_id_fkey ( name ), staff ( name )")
         .eq("salon_id", salonId)
         .eq("client_phone", clientPhone)
         .eq("status", "completed")

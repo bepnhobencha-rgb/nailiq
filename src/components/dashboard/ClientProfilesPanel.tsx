@@ -889,13 +889,15 @@ function ClientCard({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               {onOpen360 ? (
-                <button
-                  type="button"
+                <span
+                  role="button"
+                  tabIndex={0}
                   onClick={(e) => { e.stopPropagation(); onOpen360(); }}
-                  className="truncate text-sm font-semibold text-nq-foreground underline-offset-2 hover:text-nq-primary hover:underline focus-visible:outline-none focus-visible:underline"
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onOpen360(); } }}
+                  className="cursor-pointer truncate text-sm font-semibold text-nq-foreground underline-offset-2 hover:text-nq-primary hover:underline focus-visible:outline-none focus-visible:underline"
                 >
                   {row.name?.trim() || messages.unknownName}
-                </button>
+                </span>
               ) : (
                 <span className="truncate text-sm font-semibold text-nq-foreground">
                   {row.name?.trim() || messages.unknownName}
@@ -1003,13 +1005,15 @@ function ClientListRow({
         {/* Name + phone */}
         <div className="min-w-0 flex-1">
           {onOpen360 ? (
-            <button
-              type="button"
+            <span
+              role="button"
+              tabIndex={0}
               onClick={(e) => { e.stopPropagation(); onOpen360(); }}
-              className="block truncate text-sm font-semibold text-nq-foreground underline-offset-2 hover:text-nq-primary hover:underline focus-visible:outline-none focus-visible:underline"
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onOpen360(); } }}
+              className="block cursor-pointer truncate text-sm font-semibold text-nq-foreground underline-offset-2 hover:text-nq-primary hover:underline focus-visible:outline-none focus-visible:underline"
             >
               {row.name?.trim() || messages.unknownName}
-            </button>
+            </span>
           ) : (
             <span className="block truncate text-sm font-semibold text-nq-foreground">
               {row.name?.trim() || messages.unknownName}
@@ -1121,13 +1125,15 @@ function ClientDetailsRow({
               {initialsOf(row.name)}
             </span>
             {onOpen360 ? (
-              <button
-                type="button"
+              <span
+                role="button"
+                tabIndex={0}
                 onClick={(e) => { e.stopPropagation(); onOpen360(); }}
-                className="truncate text-sm font-semibold text-nq-foreground underline-offset-2 hover:text-nq-primary hover:underline focus-visible:outline-none focus-visible:underline"
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onOpen360(); } }}
+                className="cursor-pointer truncate text-sm font-semibold text-nq-foreground underline-offset-2 hover:text-nq-primary hover:underline focus-visible:outline-none focus-visible:underline"
               >
                 {row.name?.trim() || messages.unknownName}
-              </button>
+              </span>
             ) : (
               <span className="truncate text-sm font-semibold text-nq-foreground">
                 {row.name?.trim() || messages.unknownName}
