@@ -286,6 +286,106 @@ export async function reuseNoShowCardForBooking(
   return { ok: true, reason: "reused", last4: card.last4 };
 }
 
+/**
+ * Carry a returning customer's existing card-on-file FORWARD onto a fresh
+ * booking — automatically, no re-entry and no OTP. The no-show card is stored
+ * per-booking (`noshow_card_id`), so without this a customer who left a card on
+ * visit #1 had NO card on visit #2 (returning + clean → never re-asked), leaving
+ * every repeat visit unprotected. This closes that gap with zero added friction.
+ *
+ * Server-authoritative + safe by construction:
+ *  - the phone comes from the BOOKING row (salon-trusted: OTP-verified online /
+ *    receptionist-entered at the desk), never from the client;
+ *  - we look up the saved card via the provider ourselves (the client never
+ *    supplies a card id, so it can't point us at someone else's card);
+ *  - nothing is charged here — the card only bills on a confirmed no-show, and
+ *    that fee is paid to the salon, so attaching a card has no abuse value.
+ *
+ * Idempotent + best-effort: a booking that already has a card is a no-op; a new
+ * customer (no card on file) is skipped so the normal "new customer must leave a
+ * card" capture still runs. Never throws.
+ *
+ * NOTE: unlike `noShowCardDecision`, this is intentionally INDEPENDENT of the
+ * required-gate — a loyal, clean returning customer returns `required: false`,
+ * yet we DO want their already-authorized card to keep protecting them.
+ */
+export async function autoAttachReturningCard(
+  bookingId: string,
+): Promise<{ attached: boolean; reason: string; last4?: string }> {
+  try {
+    const db = looseServiceClient();
+    const { data } = await db
+      .from("bookings")
+      .select("id, salon_id, price_cents, client_phone, noshow_card_id")
+      .eq("id", bookingId)
+      .maybeSingle();
+    const b = data as Row | null;
+    if (!b) return { attached: false, reason: "booking not found" };
+    if (b.noshow_card_id) return { attached: true, reason: "already saved" };
+
+    const phone = str(b.client_phone).replace(/\D/g, "");
+    if (phone.length < 8) return { attached: false, reason: "no usable phone" };
+
+    const policy = await loadPolicy(db, str(b.salon_id));
+    if (!policy.enabled) return { attached: false, reason: "no-show protection off" };
+
+    const provider = await resolvePaymentProvider(str(b.salon_id));
+    if (!provider) return { attached: false, reason: "no payment provider connected" };
+
+    // Only CARRY FORWARD a card the customer already authorized — never enroll a
+    // new card here. No saved card → leave it to the new-customer capture flow.
+    const card = await provider.findSavedCardByPhone(phone);
+    if (!card || !card.cardId) return { attached: false, reason: "no saved card on file" };
+
+    const feeCents = Math.round((num(b.price_cents) * policy.percent) / 100);
+    if (feeCents <= 0) return { attached: false, reason: "fee is zero" };
+
+    const { data: salonRow } = await db
+      .from("salons")
+      .select("currency_code, name, cancellation_policy")
+      .eq("id", str(b.salon_id))
+      .maybeSingle();
+    const sr = salonRow as Row | null;
+    const currency =
+      String(sr?.currency_code || "USD").trim().toUpperCase() || "USD";
+    const feeStr = `${(feeCents / 100).toFixed(2)} ${currency}`;
+    const { policyEvidence } = await import("@/shared/lib/cancellationPolicy");
+    const consentMeta = {
+      policyText: `Cardholder previously authorized this salon to keep this card (${card.brand} ending ${card.last4}) on file for their visits, and to charge a no-show fee of ${feeStr} only if they do not show up. The card on file is carried forward to this appointment. No charge is made at booking. The cardholder may remove the card at any time.`,
+      feeCents,
+      currency,
+      cardBrand: card.brand,
+      cardLast4: card.last4,
+      reused: true,
+      carriedForward: true,
+      capturedAt: new Date().toISOString(),
+      cancellationPolicy: policyEvidence(
+        sr?.cancellation_policy as { en?: string; vi?: string } | null,
+        String(sr?.name || ""),
+      ),
+    };
+
+    await db
+      .from("bookings")
+      .update({
+        noshow_card_id: card.cardId,
+        noshow_customer_id: card.customerId,
+        noshow_card_last4: card.last4,
+        noshow_card_brand: card.brand,
+        noshow_fee_cents: feeCents,
+        noshow_charge_status: "saved",
+        noshow_consent_at: new Date().toISOString(),
+        noshow_consent_meta: consentMeta,
+      } as never)
+      .eq("id", bookingId);
+
+    return { attached: true, reason: "carried forward", last4: card.last4 };
+  } catch (e) {
+    console.error("[autoAttachReturningCard]", e);
+    return { attached: false, reason: "error" };
+  }
+}
+
 /** Charge the saved card for the no-show fee. Called when a booking is marked
  *  no-show. Idempotent and safe to call on bookings without a saved card. */
 export async function chargeNoShowFee(
