@@ -24,7 +24,13 @@ const COPY = {
     enterFullscreen: "Toàn màn hình",
     exitFullscreen: "Thoát toàn màn hình",
     busyTitle: "Nhịp tiệm",
-    chairsUnit: "ghế đang có khách",
+    units: {
+      bed: "giường đang dùng",
+      chair: "ghế đang có khách",
+      room: "phòng đang dùng",
+      station: "chỗ đang dùng",
+      staff: "thợ đang làm",
+    },
     statusBusy: "Đông khách",
     statusRunning: "Đang chạy",
     statusQuiet: "Vắng khách",
@@ -66,7 +72,13 @@ const COPY = {
     enterFullscreen: "Fullscreen",
     exitFullscreen: "Exit fullscreen",
     busyTitle: "Salon pulse",
-    chairsUnit: "chairs in service",
+    units: {
+      bed: "beds in service",
+      chair: "chairs in service",
+      room: "rooms in service",
+      station: "stations in service",
+      staff: "staff working",
+    },
     statusBusy: "Slammed",
     statusRunning: "Humming",
     statusQuiet: "Quiet",
@@ -314,7 +326,9 @@ export function OwnerPulse({
             </span>
           </div>
         </div>
-        <p className="mt-2 text-xs text-nq-muted">{t.chairsUnit}</p>
+        <p className="mt-2 text-xs text-nq-muted">
+          {t.units[data.capacityKind]}
+        </p>
       </section>
 
       {/* ── AI briefing ────────────────────────────────────── */}
