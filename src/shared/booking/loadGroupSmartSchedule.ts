@@ -283,6 +283,11 @@ function hmToMinutes(hm: string): number | null {
 // SLOT_STEP_MIN is imported from groupSchedulerCore.
 const BEST_SPREAD_LIMIT_MIN = 15;
 const ALT_SPREAD_LIMIT_MIN = 30;
+// Group customers pick a TIME — surface several distinct start times across the
+// window (not three staffing variants around one anchor). Cap the count so the
+// card list stays scannable, and space them apart so the choices feel real.
+const MAX_TIME_OPTIONS = 5;
+const MIN_TIME_GAP_MIN = 30;
 
 /** Map an arrival pill onto a [minStart, maxStart] window in
  *  minutes-from-midnight, then clamp against opening hours. The
@@ -888,6 +893,47 @@ function findArrangementsInWindow(
   }
   if (anchors.length === 0) return [];
 
+  // ── PASS 1 — distinct START-TIME options (customer picks a time) ──────────
+  // Walk the window and offer up to MAX_TIME_OPTIONS aligned arrangements at
+  // times spaced ≥ MIN_TIME_GAP_MIN apart (e.g. 2:00 · 2:30 · 3:00), each
+  // keeping everyone's preferred staff. This is what a group customer actually
+  // wants: real time choices, not three staffing variants around one anchor.
+  const timeOptions: GroupArrangement[] = [];
+  let lastAcceptedStartMs = -Infinity;
+  for (const anchorMs of anchors) {
+    if (timeOptions.length >= MAX_TIME_OPTIONS) break;
+    // Space options out so we don't show 2:00 / 2:15 / 2:30 (no real choice).
+    if (anchorMs - lastAcceptedStartMs < MIN_TIME_GAP_MIN * 60_000) continue;
+    const aligned = tryAlignedArrangement(
+      anchorMs,
+      ctx.resolvedMembers,
+      ctx.staffList,
+      ctx.staffById,
+      ctx.capability,
+      ctx.existing,
+      true,
+    );
+    if (!aligned) continue;
+    const arr = buildArrangement(
+      timeOptions.length === 0 ? "best" : "alternative",
+      aligned,
+      ctx.resolvedMembers,
+      ctx.staffById,
+      ctx.timezone,
+    );
+    // Aligned arrangements are tight by construction; guard defensively.
+    if (arr.spreadMinutes > BEST_SPREAD_LIMIT_MIN) continue;
+    timeOptions.push(arr);
+    lastAcceptedStartMs = anchorMs;
+  }
+  if (timeOptions.length > 0) {
+    return timeOptions;
+  }
+
+  // ── PASS 2 (fallback) — the group can't all start together anywhere in the
+  // window (not enough free staff for an aligned start). Keep the original
+  // best / staggered / earliest-by-any-staff search so the booking still
+  // completes instead of dead-ending.
   let bestArrangement: GroupArrangement | null = null;
   let altArrangement: GroupArrangement | null = null;
   let earliestArrangement: GroupArrangement | null = null;
