@@ -162,8 +162,8 @@ const HEAD_SPA: VerticalConfig = {
   aiDescriptor: "a head spa offering scalp and relaxation treatments",
   legalServiceNoun: { en: "head spa treatment", vi: "dịch vụ head spa" },
   legalServiceRisk: {
-    en: "Some scalp/hair treatments use products and warm water. Please tell us about scalp sensitivity, allergies, or any health conditions (e.g. neck/back) before your treatment.",
-    vi: "Một số liệu trình da đầu/tóc dùng sản phẩm và nước ấm. Vui lòng báo trước về da đầu nhạy cảm, dị ứng hoặc tình trạng sức khoẻ (vd cổ/lưng).",
+    en: "Head spa treatments include scalp massage, pressure points, warm water and aromatic products. Please tell us if you are pregnant, or have scalp sensitivity, allergies, high blood pressure, or any neck/back or other health condition before your treatment — some steps may need to be adjusted for your safety.",
+    vi: "Liệu trình head spa có massage da đầu, bấm huyệt, nước ấm và sản phẩm tinh dầu. Vui lòng báo trước nếu bạn đang mang thai, hoặc có da đầu nhạy cảm, dị ứng, huyết áp cao, vấn đề cổ/lưng hay tình trạng sức khoẻ khác — một số bước có thể cần điều chỉnh vì an toàn của bạn.",
   },
   intakeHint: {
     en: "Optional — pregnancy, scalp sensitivity, allergies, neck/back issues, anything we should know.",
