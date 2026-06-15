@@ -37,6 +37,22 @@ async function loadPolicy(db: Db, salonId: string) {
   };
 }
 
+/**
+ * Card-on-file SUPERSEDES a deposit. Once a no-show card is saved for a booking,
+ * the customer is already protected, so drop any still-UNPAID deposit
+ * requirement — otherwise the desk sees a phantom "deposit required" alongside
+ * the saved card (double protection that confuses staff and double-asks the
+ * customer). Guarded to `deposit_status='required'` so a genuinely PAID deposit
+ * is never touched.
+ */
+async function supersedeDepositWithCard(db: Db, bookingId: string): Promise<void> {
+  await db
+    .from("bookings")
+    .update({ deposit_required: false, deposit_status: "not_required" } as never)
+    .eq("id", bookingId)
+    .eq("deposit_status", "required");
+}
+
 /** Whether this booking should be asked to leave a card (risk-gated). The
  *  public booking page calls this to decide whether to render the card step. */
 export async function noShowCardDecision(
@@ -194,6 +210,8 @@ export async function saveNoShowCardForBooking(
     } as never)
     .eq("id", bookingId);
 
+  await supersedeDepositWithCard(db, bookingId);
+
   return { ok: true, reason: "saved", last4: saved.last4 };
 }
 
@@ -282,6 +300,8 @@ export async function reuseNoShowCardForBooking(
       noshow_consent_meta: consentMeta,
     } as never)
     .eq("id", bookingId);
+
+  await supersedeDepositWithCard(db, bookingId);
 
   return { ok: true, reason: "reused", last4: card.last4 };
 }
@@ -378,6 +398,8 @@ export async function autoAttachReturningCard(
         noshow_consent_meta: consentMeta,
       } as never)
       .eq("id", bookingId);
+
+    await supersedeDepositWithCard(db, bookingId);
 
     return { attached: true, reason: "carried forward", last4: card.last4 };
   } catch (e) {
