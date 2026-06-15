@@ -9,6 +9,8 @@ import {
   useTransition,
 } from "react";
 
+import { LayoutGrid, List, Table2 } from "lucide-react";
+
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonCardGrid } from "@/components/ui/Skeleton";
@@ -54,6 +56,16 @@ const DEFAULT_PAGE_SIZE = 25;
 
 type Segment = "vip" | "new" | "regular" | "atRisk";
 type SegmentFilter = "all" | Segment;
+
+/** View mode for the client list. Persisted in localStorage. */
+type ViewMode = "cards" | "list" | "details";
+
+const VIEW_MODE_STORAGE_KEY = "nailiq-clients-view-mode";
+const VIEW_MODE_VALUES: ViewMode[] = ["cards", "list", "details"];
+
+function isViewMode(v: string | null): v is ViewMode {
+  return VIEW_MODE_VALUES.includes(v as ViewMode);
+}
 
 /**
  * Assign each client to exactly ONE lifecycle bucket so the chip counts
@@ -120,6 +132,139 @@ const SEGMENT_BADGE: Record<
 };
 
 // ---------------------------------------------------------------------------
+// ClientDetailBody — shared expanded content across all three view modes
+// ---------------------------------------------------------------------------
+
+function ClientDetailBody({
+  row,
+  segment,
+  slug,
+  messages,
+  language,
+  canEditVip,
+  onVipChanged,
+}: {
+  row: ClientProfileRow;
+  segment: Segment;
+  slug: string;
+  messages: ReceptionistMessages["clientProfiles"];
+  language: UserLanguage;
+  canEditVip: boolean;
+  onVipChanged: (next: boolean) => void;
+}) {
+  const [vipPending, startVipTransition] = useTransition();
+  const [vipError, setVipError] = useState<string | null>(null);
+  const [host, setHost] = useState<HostStats | null>(null);
+  const isVip = segment === "vip";
+
+  useEffect(() => {
+    let cancelled = false;
+    void getHostStats(slug, row.phone).then((res) => {
+      if (!cancelled && res.ok) setHost(res.stats);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, row.phone]);
+
+  return (
+    <div
+      data-testid={`client-detail-${row.phone}`}
+      className="space-y-2 text-sm"
+    >
+      <p>
+        <span className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
+          {messages.totalSpent}
+        </span>{" "}
+        <span className="font-medium text-nq-foreground">
+          {formatDollars(row.totalSpentCents)}
+        </span>
+      </p>
+
+      {/* "Người dẫn nhóm" — celebrate guests brought without inflating
+          visit count. Shown only when they've actually organized groups. */}
+      {host && host.guestsBrought > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-nq-primary/5 px-2.5 py-2">
+          <span className="rounded-full bg-nq-primary/15 px-2 py-0.5 text-xs font-semibold text-nq-primary">
+            🎀 {language === "vi" ? "Người dẫn nhóm" : "Group host"}
+          </span>
+          <span className="text-xs text-nq-muted">
+            {language === "vi"
+              ? `đã dẫn ${host.guestsBrought} khách qua ${host.groupsOrganized} lần nhóm`
+              : `brought ${host.guestsBrought} guest${host.guestsBrought === 1 ? "" : "s"} across ${host.groupsOrganized} group booking${host.groupsOrganized === 1 ? "" : "s"}`}
+          </span>
+          {canEditVip && !isVip && host.guestsBrought >= 3 ? (
+            <span className="text-[11px] font-medium text-amber-500">
+              {language === "vi" ? "· nên cân nhắc VIP" : "· consider VIP"}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {row.email ? (
+        <p className="truncate">
+          <span className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
+            {messages.email}
+          </span>{" "}
+          <span className="text-nq-foreground">{row.email}</span>
+        </p>
+      ) : null}
+
+      {row.notes?.trim() ? (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
+            {messages.notes}
+          </p>
+          <p className="mt-1 whitespace-pre-wrap text-nq-foreground/95">
+            {row.notes}
+          </p>
+        </div>
+      ) : (
+        <p className="italic text-nq-muted">{messages.noNotes}</p>
+      )}
+
+      {canEditVip ? (
+        <div className="flex flex-col gap-1 pt-1">
+          <Toggle
+            checked={row.isVip}
+            onChange={(next) => {
+              setVipError(null);
+              startVipTransition(async () => {
+                const res = await updateClientProfile(slug, {
+                  phone: row.phone,
+                  isVip: next,
+                });
+                if (res.ok) {
+                  onVipChanged(next);
+                } else {
+                  setVipError(
+                    messages.vipUpdateErrors[res.error] ??
+                      messages.vipUpdateErrors.server_error,
+                  );
+                }
+              });
+            }}
+            disabled={vipPending}
+            loading={vipPending}
+            label={messages.vipLabel}
+            description={messages.vipHint}
+          />
+          {vipError ? (
+            <p
+              role="alert"
+              className="text-xs text-nq-error"
+              data-testid={`client-vip-error-${row.phone}`}
+            >
+              {vipError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main panel
 // ---------------------------------------------------------------------------
 
@@ -162,6 +307,29 @@ export function ClientProfilesPanel({
   // Segment filter (client-side within the current page).
   const [segment, setSegment] = useState<SegmentFilter>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  // View mode — default "cards"; hydrated from localStorage after mount.
+  const [viewMode, setViewModeState] = useState<ViewMode>("cards");
+
+  useEffect(() => {
+    // Hydrate stored preference after mount (SSR-safe).
+    if (typeof window === "undefined") return;
+    try {
+      const stored = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+      if (isViewMode(stored)) setViewModeState(stored);
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }, []);
+
+  const setViewMode = useCallback((next: ViewMode) => {
+    setViewModeState(next);
+    try {
+      window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, next);
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }, []);
 
   // isPending tracks in-flight server requests for subtle loading overlay.
   const [isPending, startTransition] = useTransition();
@@ -276,6 +444,22 @@ export function ClientProfilesPanel({
 
   const totalCount = state.kind === "ok" ? state.total : 0;
 
+  // Shared VIP-changed updater (used by all three views).
+  const handleVipChanged = useCallback(
+    (phone: string, next: boolean) => {
+      setState((prev) => {
+        if (prev.kind !== "ok") return prev;
+        return {
+          ...prev,
+          clients: prev.clients.map((r) =>
+            r.phone === phone ? { ...r, isVip: next } : r,
+          ),
+        };
+      });
+    },
+    [],
+  );
+
   return (
     <div className="space-y-5">
       {/* ── Header ── */}
@@ -286,11 +470,45 @@ export function ClientProfilesPanel({
           </h1>
           <p className="mt-1 text-sm text-nq-muted">{messages.sectionIntro}</p>
         </div>
-        {state.kind === "ok" ? (
-          <span className="text-sm text-nq-muted" aria-live="polite">
-            {messages.totalCountLabel(totalCount)}
-          </span>
-        ) : null}
+        <div className="flex items-center gap-3">
+          {state.kind === "ok" ? (
+            <span className="text-sm text-nq-muted" aria-live="polite">
+              {messages.totalCountLabel(totalCount)}
+            </span>
+          ) : null}
+
+          {/* ── View-mode toggle ── */}
+          <div
+            className="flex items-center rounded-xl border border-nq-border/60 bg-nq-surface/50 p-0.5"
+            role="group"
+            aria-label="View mode"
+          >
+            <ViewModeButton
+              mode="cards"
+              current={viewMode}
+              label={messages.viewModes.cards}
+              icon={<LayoutGrid className="h-4 w-4" />}
+              testId="client-view-cards"
+              onClick={setViewMode}
+            />
+            <ViewModeButton
+              mode="list"
+              current={viewMode}
+              label={messages.viewModes.list}
+              icon={<List className="h-4 w-4" />}
+              testId="client-view-list"
+              onClick={setViewMode}
+            />
+            <ViewModeButton
+              mode="details"
+              current={viewMode}
+              label={messages.viewModes.details}
+              icon={<Table2 className="h-4 w-4" />}
+              testId="client-view-details"
+              onClick={setViewMode}
+            />
+          </div>
+        </div>
       </header>
 
       {/* ── Search input ── */}
@@ -387,42 +605,115 @@ export function ClientProfilesPanel({
         <EmptyState title={messages.empty} />
       ) : null}
 
-      {/* ── Client cards ── */}
+      {/* ── Client list (view-mode aware) ── */}
       {state.kind === "ok" && filtered.length > 0 ? (
-        <ul
-          data-testid="client-profiles-list"
-          className={cn(
-            "grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3",
-            isPending && "opacity-60 transition-opacity",
+        <>
+          {viewMode === "cards" ? (
+            <ul
+              data-testid="client-profiles-list"
+              className={cn(
+                "grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3",
+                isPending && "opacity-60 transition-opacity",
+              )}
+            >
+              {filtered.map((row) => (
+                <ClientCard
+                  key={row.id}
+                  row={row}
+                  segment={segmentOf.get(row.phone) ?? "regular"}
+                  isOpen={expanded === row.phone}
+                  onToggleOpen={() =>
+                    setExpanded((cur) => (cur === row.phone ? null : row.phone))
+                  }
+                  canEditVip={viewerRole === "owner"}
+                  slug={slug}
+                  messages={messages}
+                  language={language}
+                  onVipChanged={(next) => handleVipChanged(row.phone, next)}
+                />
+              ))}
+            </ul>
+          ) : viewMode === "list" ? (
+            <ul
+              data-testid="client-profiles-list"
+              className={cn(
+                "flex flex-col divide-y divide-nq-border/40 rounded-2xl border border-nq-border/50 bg-nq-surface/30",
+                isPending && "opacity-60 transition-opacity",
+              )}
+            >
+              {filtered.map((row) => (
+                <ClientListRow
+                  key={row.id}
+                  row={row}
+                  segment={segmentOf.get(row.phone) ?? "regular"}
+                  isOpen={expanded === row.phone}
+                  onToggleOpen={() =>
+                    setExpanded((cur) => (cur === row.phone ? null : row.phone))
+                  }
+                  canEditVip={viewerRole === "owner"}
+                  slug={slug}
+                  messages={messages}
+                  language={language}
+                  onVipChanged={(next) => handleVipChanged(row.phone, next)}
+                />
+              ))}
+            </ul>
+          ) : (
+            /* details */
+            <div
+              data-testid="client-profiles-list"
+              className={cn(
+                "overflow-x-auto rounded-2xl border border-nq-border/50 bg-nq-surface/30",
+                isPending && "opacity-60 transition-opacity",
+              )}
+            >
+              <table className="w-full min-w-[600px] text-sm">
+                <thead>
+                  <tr className="border-b border-nq-border/40 bg-nq-surface/60">
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-nq-muted">
+                      {messages.tableColumns.name}
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-nq-muted">
+                      {messages.tableColumns.phone}
+                    </th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-nq-muted">
+                      {messages.tableColumns.visits}
+                    </th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-nq-muted">
+                      {messages.tableColumns.lastVisit}
+                    </th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-nq-muted">
+                      {messages.tableColumns.spent}
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-nq-muted">
+                      {messages.tableColumns.vip}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-nq-border/30">
+                  {filtered.map((row) => (
+                    <ClientDetailsRow
+                      key={row.id}
+                      row={row}
+                      segment={segmentOf.get(row.phone) ?? "regular"}
+                      isOpen={expanded === row.phone}
+                      onToggleOpen={() =>
+                        setExpanded((cur) =>
+                          cur === row.phone ? null : row.phone,
+                        )
+                      }
+                      canEditVip={viewerRole === "owner"}
+                      slug={slug}
+                      messages={messages}
+                      language={language}
+                      onVipChanged={(next) => handleVipChanged(row.phone, next)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
-        >
-          {filtered.map((row) => (
-            <ClientCard
-              key={row.id}
-              row={row}
-              segment={segmentOf.get(row.phone) ?? "regular"}
-              isOpen={expanded === row.phone}
-              onToggleOpen={() =>
-                setExpanded((cur) => (cur === row.phone ? null : row.phone))
-              }
-              canEditVip={viewerRole === "owner"}
-              slug={slug}
-              messages={messages}
-              language={language}
-              onVipChanged={(next) => {
-                setState((prev) => {
-                  if (prev.kind !== "ok") return prev;
-                  return {
-                    ...prev,
-                    clients: prev.clients.map((r) =>
-                      r.phone === row.phone ? { ...r, isVip: next } : r,
-                    ),
-                  };
-                });
-              }}
-            />
-          ))}
-        </ul>
+        </>
       ) : null}
 
       {/* ── Pagination controls ── */}
@@ -472,7 +763,47 @@ export function ClientProfilesPanel({
 }
 
 // ---------------------------------------------------------------------------
-// ClientCard
+// ViewModeButton helper
+// ---------------------------------------------------------------------------
+
+function ViewModeButton({
+  mode,
+  current,
+  label,
+  icon,
+  testId,
+  onClick,
+}: {
+  mode: ViewMode;
+  current: ViewMode;
+  label: string;
+  icon: React.ReactNode;
+  testId: string;
+  onClick: (mode: ViewMode) => void;
+}) {
+  const active = mode === current;
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      aria-label={label}
+      title={label}
+      data-testid={testId}
+      onClick={() => onClick(mode)}
+      className={cn(
+        "flex h-9 w-9 items-center justify-center rounded-lg transition-colors duration-[var(--duration-nq-fast)]",
+        active
+          ? "bg-nq-primary/15 text-nq-primary shadow-sm"
+          : "text-nq-muted hover:bg-nq-bg/60 hover:text-nq-foreground",
+      )}
+    >
+      {icon}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ClientCard (cards view — unchanged from original)
 // ---------------------------------------------------------------------------
 
 function ClientCard({
@@ -496,21 +827,6 @@ function ClientCard({
   language: UserLanguage;
   onVipChanged: (next: boolean) => void;
 }) {
-  const [vipPending, startVipTransition] = useTransition();
-  const [vipError, setVipError] = useState<string | null>(null);
-  // "Người dẫn nhóm" stats — lazy-loaded once the card is expanded (one phone
-  // at a time, so the directory list stays cheap).
-  const [host, setHost] = useState<HostStats | null>(null);
-  useEffect(() => {
-    if (!isOpen || host !== null) return;
-    let cancelled = false;
-    void getHostStats(slug, row.phone).then((res) => {
-      if (!cancelled && res.ok) setHost(res.stats);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, host, slug, row.phone]);
   const phoneDisplay = formatPhone(row.phone) ?? row.phone;
   const isVip = segment === "vip";
   const badgeLabel = messages.segments[segment];
@@ -581,101 +897,246 @@ function ClientCard({
       </button>
 
       {isOpen ? (
-        <div
-          data-testid={`client-detail-${row.phone}`}
-          className="space-y-2 border-t border-nq-border/40 px-4 py-3 text-sm"
-        >
-          <p>
-            <span className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
-              {messages.totalSpent}
-            </span>{" "}
-            <span className="font-medium text-nq-foreground">
-              {formatDollars(row.totalSpentCents)}
-            </span>
-          </p>
-
-          {/* "Người dẫn nhóm" — celebrate guests brought without inflating
-              visit count. Shown only when they've actually organized groups. */}
-          {host && host.guestsBrought > 0 ? (
-            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-nq-primary/5 px-2.5 py-2">
-              <span className="rounded-full bg-nq-primary/15 px-2 py-0.5 text-xs font-semibold text-nq-primary">
-                🎀 {language === "vi" ? "Người dẫn nhóm" : "Group host"}
-              </span>
-              <span className="text-xs text-nq-muted">
-                {language === "vi"
-                  ? `đã dẫn ${host.guestsBrought} khách qua ${host.groupsOrganized} lần nhóm`
-                  : `brought ${host.guestsBrought} guest${host.guestsBrought === 1 ? "" : "s"} across ${host.groupsOrganized} group booking${host.groupsOrganized === 1 ? "" : "s"}`}
-              </span>
-              {canEditVip && !isVip && host.guestsBrought >= 3 ? (
-                <span className="text-[11px] font-medium text-amber-500">
-                  {language === "vi" ? "· nên cân nhắc VIP" : "· consider VIP"}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-
-          {row.email ? (
-            <p className="truncate">
-              <span className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
-                {messages.email}
-              </span>{" "}
-              <span className="text-nq-foreground">{row.email}</span>
-            </p>
-          ) : null}
-
-          {row.notes?.trim() ? (
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
-                {messages.notes}
-              </p>
-              <p className="mt-1 whitespace-pre-wrap text-nq-foreground/95">
-                {row.notes}
-              </p>
-            </div>
-          ) : (
-            <p className="italic text-nq-muted">{messages.noNotes}</p>
-          )}
-
-          {canEditVip ? (
-            <div className="flex flex-col gap-1 pt-1">
-              <Toggle
-                checked={row.isVip}
-                onChange={(next) => {
-                  setVipError(null);
-                  startVipTransition(async () => {
-                    const res = await updateClientProfile(slug, {
-                      phone: row.phone,
-                      isVip: next,
-                    });
-                    if (res.ok) {
-                      onVipChanged(next);
-                    } else {
-                      setVipError(
-                        messages.vipUpdateErrors[res.error] ??
-                          messages.vipUpdateErrors.server_error,
-                      );
-                    }
-                  });
-                }}
-                disabled={vipPending}
-                loading={vipPending}
-                label={messages.vipLabel}
-                description={messages.vipHint}
-              />
-              {vipError ? (
-                <p
-                  role="alert"
-                  className="text-xs text-nq-error"
-                  data-testid={`client-vip-error-${row.phone}`}
-                >
-                  {vipError}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
+        <div className="border-t border-nq-border/40 px-4 py-3">
+          <ClientDetailBody
+            row={row}
+            segment={segment}
+            slug={slug}
+            messages={messages}
+            language={language}
+            canEditVip={canEditVip}
+            onVipChanged={onVipChanged}
+          />
         </div>
       ) : null}
     </li>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ClientListRow (list view — compact horizontal row)
+// ---------------------------------------------------------------------------
+
+function ClientListRow({
+  row,
+  segment,
+  isOpen,
+  onToggleOpen,
+  canEditVip,
+  slug,
+  messages,
+  language,
+  onVipChanged,
+}: {
+  row: ClientProfileRow;
+  segment: Segment;
+  isOpen: boolean;
+  onToggleOpen: () => void;
+  canEditVip: boolean;
+  slug: string;
+  messages: ReceptionistMessages["clientProfiles"];
+  language: UserLanguage;
+  onVipChanged: (next: boolean) => void;
+}) {
+  const phoneDisplay = formatPhone(row.phone) ?? row.phone;
+  const isVip = segment === "vip";
+
+  const lastVisitDisplay =
+    row.visitCount === 0 || !row.lastVisitAt
+      ? messages.noVisitsYet
+      : formatLastVisit(row.lastVisitAt, language);
+
+  return (
+    <li data-testid={`client-row-${row.phone}`}>
+      <button
+        type="button"
+        onClick={onToggleOpen}
+        aria-expanded={isOpen}
+        className={cn(
+          "flex w-full items-center gap-3 px-4 py-3 text-left",
+          "transition-colors hover:bg-nq-bg/40",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-nq-primary/40",
+          isOpen && "bg-nq-bg/30",
+        )}
+      >
+        {/* Avatar */}
+        <span
+          aria-hidden
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+            isVip
+              ? "bg-nq-primary/15 text-nq-primary ring-1 ring-nq-primary/50"
+              : "bg-nq-bg/70 text-nq-foreground ring-1 ring-nq-border/60",
+          )}
+        >
+          {initialsOf(row.name)}
+        </span>
+
+        {/* Name + phone */}
+        <div className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold text-nq-foreground">
+            {row.name?.trim() || messages.unknownName}
+          </span>
+          <span className="block truncate font-mono text-[11px] tabular-nums text-nq-muted">
+            {phoneDisplay}
+          </span>
+        </div>
+
+        {/* VIP star + segment badge */}
+        <div className="flex shrink-0 items-center gap-2">
+          {isVip ? (
+            <span aria-label="VIP" className="text-sm leading-none text-nq-primary">
+              ⭐
+            </span>
+          ) : null}
+          <Badge variant={SEGMENT_BADGE[segment]} state="default" size="sm">
+            {messages.segments[segment]}
+          </Badge>
+        </div>
+
+        {/* Visit count + last visit */}
+        <div className="hidden shrink-0 text-right sm:block">
+          <span className="block text-sm font-semibold tabular-nums text-nq-foreground">
+            {row.visitCount}
+          </span>
+          <span className="block text-[11px] text-nq-muted">{lastVisitDisplay}</span>
+        </div>
+      </button>
+
+      {isOpen ? (
+        <div className="border-t border-nq-border/30 bg-nq-bg/20 px-4 py-3">
+          <ClientDetailBody
+            row={row}
+            segment={segment}
+            slug={slug}
+            messages={messages}
+            language={language}
+            canEditVip={canEditVip}
+            onVipChanged={onVipChanged}
+          />
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ClientDetailsRow (details / table view)
+// ---------------------------------------------------------------------------
+
+function ClientDetailsRow({
+  row,
+  segment,
+  isOpen,
+  onToggleOpen,
+  canEditVip,
+  slug,
+  messages,
+  language,
+  onVipChanged,
+}: {
+  row: ClientProfileRow;
+  segment: Segment;
+  isOpen: boolean;
+  onToggleOpen: () => void;
+  canEditVip: boolean;
+  slug: string;
+  messages: ReceptionistMessages["clientProfiles"];
+  language: UserLanguage;
+  onVipChanged: (next: boolean) => void;
+}) {
+  const phoneDisplay = formatPhone(row.phone) ?? row.phone;
+  const isVip = segment === "vip";
+
+  const lastVisitDisplay =
+    row.visitCount === 0 || !row.lastVisitAt
+      ? "—"
+      : formatLastVisit(row.lastVisitAt, language);
+
+  return (
+    <>
+      <tr
+        data-testid={`client-row-${row.phone}`}
+        onClick={onToggleOpen}
+        aria-expanded={isOpen}
+        className={cn(
+          "cursor-pointer transition-colors",
+          isOpen
+            ? "bg-nq-primary/5"
+            : "hover:bg-nq-bg/40",
+        )}
+      >
+        {/* Name */}
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span
+              aria-hidden
+              className={cn(
+                "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                isVip
+                  ? "bg-nq-primary/15 text-nq-primary ring-1 ring-nq-primary/50"
+                  : "bg-nq-bg/70 text-nq-foreground ring-1 ring-nq-border/60",
+              )}
+            >
+              {initialsOf(row.name)}
+            </span>
+            <span className="truncate text-sm font-semibold text-nq-foreground">
+              {row.name?.trim() || messages.unknownName}
+            </span>
+          </div>
+        </td>
+
+        {/* Phone */}
+        <td className="px-4 py-3 font-mono text-xs tabular-nums text-nq-muted">
+          {phoneDisplay}
+        </td>
+
+        {/* Visits */}
+        <td className="px-4 py-3 text-right tabular-nums text-sm text-nq-foreground">
+          {row.visitCount}
+        </td>
+
+        {/* Last visit */}
+        <td className="px-4 py-3 text-right text-sm tabular-nums text-nq-muted">
+          {lastVisitDisplay}
+        </td>
+
+        {/* Spent */}
+        <td className="px-4 py-3 text-right tabular-nums text-sm text-nq-foreground">
+          {formatDollarsCompact(row.totalSpentCents)}
+        </td>
+
+        {/* VIP */}
+        <td className="px-4 py-3 text-center">
+          {isVip ? (
+            <span aria-label="VIP" className="text-sm text-nq-primary">
+              ⭐
+            </span>
+          ) : (
+            <span className="text-nq-border/40">—</span>
+          )}
+        </td>
+      </tr>
+
+      {isOpen ? (
+        <tr>
+          <td
+            colSpan={6}
+            className="border-t border-nq-border/30 bg-nq-bg/20 px-6 py-4"
+          >
+            <ClientDetailBody
+              row={row}
+              segment={segment}
+              slug={slug}
+              messages={messages}
+              language={language}
+              canEditVip={canEditVip}
+              onVipChanged={onVipChanged}
+            />
+          </td>
+        </tr>
+      ) : null}
+    </>
   );
 }
 

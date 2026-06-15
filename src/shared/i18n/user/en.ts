@@ -1692,6 +1692,21 @@ export type UserMessages = {
         not_found: string;
         server_error: string;
       };
+      /** View-mode toggle labels. */
+      viewModes: {
+        cards: string;
+        list: string;
+        details: string;
+      };
+      /** Column header labels for the "details" table view. */
+      tableColumns: {
+        name: string;
+        phone: string;
+        visits: string;
+        lastVisit: string;
+        spent: string;
+        vip: string;
+      };
     };
     /** Subscription pricing panel (`/dashboard/[slug]/settings`). */
     pricing: {
@@ -3548,6 +3563,19 @@ export const userEn: UserMessages = {
         forbidden: "Only the salon owner can change VIP status.",
         not_found: "Client profile not found.",
         server_error: "Could not save. Try again shortly.",
+      },
+      viewModes: {
+        cards: "Cards",
+        list: "List",
+        details: "Details",
+      },
+      tableColumns: {
+        name: "Name",
+        phone: "Phone",
+        visits: "Visits",
+        lastVisit: "Last visit",
+        spent: "Spent",
+        vip: "VIP",
       },
     },
     pricing: {
