@@ -1,5 +1,6 @@
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { complianceFooterHtml, listUnsubscribeHeaders } from "@/shared/lib/emailCompliance";
+import { googleCalendarUrl, buildIcs } from "@/shared/lib/calendarLinks";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { generateReminderToken } from "@/shared/noshow/generateReminderToken";
@@ -89,6 +90,7 @@ export function buildHtml(
   address?: string | null,
   salonPhone?: string | null,
   savedCard?: SavedCardInfo | null,
+  calendarUrl?: string | null,
 ): string {
   const eName = escapeHtml(input.clientName);
   const eSalon = escapeHtml(salonName);
@@ -209,6 +211,17 @@ export function buildHtml(
                 View Booking Status
               </a>
             </div>
+            ${
+              calendarUrl
+                ? `<!-- Add to calendar -->
+            <div style="margin:12px 0 0;text-align:center;">
+              <a href="${calendarUrl}" style="display:inline-block;padding:10px 24px;border:1px solid #ddd;color:#0B0C10;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;">
+                📅 Add to calendar
+              </a>
+              <p style="margin:6px 0 0;font-size:11px;color:#aaa;">Apple Mail · Outlook: open the attached invite</p>
+            </div>`
+                : ""
+            }
 
             ${
               manageLinks
@@ -292,10 +305,14 @@ export async function sendBookingConfirmationEmail(
     // (reminders_enabled) is off.
     const { data: cardRow } = await supabase
       .from("bookings")
-      .select("noshow_card_id, noshow_card_last4, noshow_card_brand, noshow_fee_cents")
+      .select("noshow_card_id, noshow_card_last4, noshow_card_brand, noshow_fee_cents, end_time_utc")
       .eq("id", input.bookingId)
       .maybeSingle();
     const hasCard = Boolean((cardRow as { noshow_card_id?: string | null } | null)?.noshow_card_id);
+    const bookingEndUtc =
+      typeof (cardRow as { end_time_utc?: string | null } | null)?.end_time_utc === "string"
+        ? String((cardRow as { end_time_utc: string }).end_time_utc)
+        : null;
 
     if (salonId && (salonRow?.reminders_enabled === true || hasCard)) {
       const startMs = Date.parse(input.startTimeUtc);
@@ -332,6 +349,24 @@ export async function sendBookingConfirmationEmail(
     const salonPhone =
       typeof salonRow?.salon_phone === "string" ? salonRow.salon_phone : null;
 
+    // "Add to calendar" — drops the appointment into the customer's phone
+    // calendar in one tap (a real no-show reducer). Google link for Gmail/Android
+    // + an .ics attachment that Apple Mail / Outlook auto-detect. End time from
+    // the booking; fall back to start + 60 min if unknown.
+    const startMsCal = Date.parse(input.startTimeUtc);
+    const endUtcCal =
+      bookingEndUtc ??
+      (Number.isFinite(startMsCal) ? new Date(startMsCal + 60 * 60 * 1000).toISOString() : input.startTimeUtc);
+    const calTitle = `${input.serviceName} · ${salonName}`;
+    const calDetails = `${input.serviceName}${input.staffName ? ` with ${input.staffName}` : ""} at ${salonName}. Manage: ${confirmUrl}`;
+    const calendarUrl = googleCalendarUrl({
+      title: calTitle, startUtc: input.startTimeUtc, endUtc: endUtcCal, location: address, details: calDetails,
+    });
+    const icsContent = buildIcs({
+      uid: `${input.bookingId}@nailiq.ca`,
+      title: calTitle, startUtc: input.startTimeUtc, endUtc: endUtcCal, location: address, details: calDetails,
+    });
+
     const html = buildHtml(
       salonName,
       input,
@@ -342,6 +377,7 @@ export async function sendBookingConfirmationEmail(
       address,
       salonPhone,
       savedCard,
+      calendarUrl,
     );
 
     // CASL: sender ID + physical mailing address + unsubscribe in every email.
@@ -359,6 +395,18 @@ export async function sendBookingConfirmationEmail(
       subject: `Booking confirmed — ${salonName}`,
       html: htmlWithFooter,
       headers: listUnsubscribeHeaders(to),
+      // .ics attachment → Apple Mail / Outlook show a one-tap "Add to Calendar".
+      ...(icsContent
+        ? {
+            attachments: [
+              {
+                filename: "appointment.ics",
+                content: Buffer.from(icsContent, "utf-8").toString("base64"),
+                contentType: "text/calendar; method=PUBLISH",
+              },
+            ],
+          }
+        : {}),
     });
 
     if (res.error) {
