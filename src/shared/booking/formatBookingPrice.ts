@@ -40,8 +40,3 @@ export function formatBookingPriceReceipt(
 export function formatGuestPriceUsd(priceCents: number | null): string | null {
   return formatCurrency(priceCents, "USD");
 }
-
-/** @deprecated Use `formatBookingPriceReceipt(cents, currency)`. */
-export function formatGuestPriceUsdReceipt(priceCents: number): string {
-  return formatCurrencyOrZero(priceCents, "USD");
-}
