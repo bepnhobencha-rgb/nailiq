@@ -98,6 +98,10 @@ function StampCardTab({
   const [rewardPercent, setRewardPercent] = useState(program?.reward_percent_off ?? 10);
   const [rewardAmount, setRewardAmount] = useState((program?.reward_amount_off_cents ?? 0) / 100);
   const [color, setColor] = useState(program?.color ?? "#D4AF37");
+  // Voucher validity (days). Empty → platform default (90). Per-salon.
+  const [voucherValidDays, setVoucherValidDays] = useState(
+    program?.voucher_valid_days ?? 90,
+  );
 
   function rewardLabel() {
     if (rewardType === "percent_off") return `${rewardPercent}% off`;
@@ -119,6 +123,7 @@ function StampCardTab({
         reward_percent_off: rewardType === "percent_off" ? rewardPercent : null,
         reward_amount_off_cents: rewardType === "amount_off" ? Math.round(rewardAmount * 100) : null,
         color,
+        voucher_valid_days: voucherValidDays,
       });
       setStatus(result.ok ? "saved" : "error");
       setTimeout(() => setStatus("idle"), 2500);
@@ -163,6 +168,23 @@ function StampCardTab({
           <label className={labelClass}>Minimum spend per visit ($)</label>
           <input type="number" className={inputClass} min={0} step={5} value={minSpend} onChange={(e) => setMinSpend(+e.target.value)} placeholder="0" />
           <p className="text-[10px] text-[#a1a1aa] mt-1">0 = no minimum</p>
+        </div>
+
+        <div>
+          <label className={labelClass}>Reward voucher valid for (days)</label>
+          <input
+            type="number"
+            className={inputClass}
+            min={7}
+            max={365}
+            step={1}
+            value={voucherValidDays}
+            onChange={(e) => setVoucherValidDays(+e.target.value)}
+            placeholder="90"
+          />
+          <p className="text-[10px] text-[#a1a1aa] mt-1">
+            How long a redeemed reward stays usable (7–365). Default 90.
+          </p>
         </div>
 
         <div>

@@ -12,6 +12,10 @@ export type LoyaltyProgram = {
   min_spend_cents: number;
   description: string | null;
   color: string;
+  /** Days a redeemed reward voucher stays valid. NULL → platform default
+   *  (DEFAULT_VOUCHER_VALID_DAYS). Per-salon so the expiry is configurable
+   *  without a code change. */
+  voucher_valid_days: number | null;
   created_at: string;
   updated_at: string;
 };
