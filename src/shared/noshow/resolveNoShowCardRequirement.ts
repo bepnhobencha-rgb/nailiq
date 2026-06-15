@@ -1,6 +1,7 @@
 "use server";
 
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
+import { parseCardGateRules, cardRequiredByHistory } from "@/shared/noshow/cardGateRules";
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { getSquareConfig } from "@/shared/integrations/square/client";
 
@@ -46,12 +47,13 @@ export async function resolveNoShowCardRequirement(args: {
     // Policy on the salon.
     const { data: salon } = await db
       .from("salons")
-      .select("noshow_protection_enabled, noshow_fee_percent, noshow_group_whole_party, noshow_deposit_escalation_threshold")
+      .select("noshow_protection_enabled, noshow_fee_percent, noshow_group_whole_party, noshow_deposit_escalation_threshold, noshow_require_new_customer, noshow_require_prior_noshow, noshow_min_noshow_count, noshow_require_high_risk")
       .eq("id", args.salonId)
       .maybeSingle();
     const s = (salon ?? {}) as Row;
     if (!s.noshow_protection_enabled) return { required: false };
     const percent = num(s.noshow_fee_percent) || 20;
+    const rules = parseCardGateRules(s);
     const wholeParty = s.noshow_group_whole_party !== false;
     const escalationThreshold =
       s.noshow_deposit_escalation_threshold == null
@@ -112,7 +114,8 @@ export async function resolveNoShowCardRequirement(args: {
         return { required: false };
       }
     }
-    if (!isNew && !hadNoShow) return { required: false };
+    void hadNoShow; // superseded by the configurable rule check below
+    if (!cardRequiredByHistory({ isNew, noShowCount }, rules)) return { required: false };
 
     // Public Web Payments SDK params.
     const cfg = await getSquareConfig(db, args.salonId);

@@ -12,6 +12,7 @@
  */
 import "server-only";
 import { looseServiceClient, type Row } from "./looseDb";
+import { parseCardGateRules, cardRequiredFull } from "@/shared/noshow/cardGateRules";
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
@@ -31,7 +32,7 @@ type Db = ReturnType<typeof looseServiceClient>;
 async function loadPolicy(db: Db, salonId: string) {
   const { data } = await db
     .from("salons")
-    .select("noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold, noshow_group_whole_party, noshow_deposit_escalation_threshold")
+    .select("noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold, noshow_group_whole_party, noshow_deposit_escalation_threshold, noshow_require_new_customer, noshow_require_prior_noshow, noshow_min_noshow_count, noshow_require_high_risk")
     .eq("id", salonId)
     .maybeSingle();
   const r = (data as Row) ?? {};
@@ -41,6 +42,8 @@ async function loadPolicy(db: Db, salonId: string) {
     threshold: num(r.noshow_risk_threshold) || 60,
     // NULL/undefined → true (default-on whole-party protection).
     wholeParty: r.noshow_group_whole_party !== false,
+    // Configurable "who is asked for a card" rules (default = legacy behavior).
+    rules: parseCardGateRules(r),
     // NULL → escalation OFF (opt-in). Set (1..10) → that many prior no-shows
     // force an upfront pay-to-confirm deposit instead of card-on-file.
     escalationThreshold:
@@ -147,16 +150,15 @@ export async function noShowCardDecision(
     return { required: false, feeCents: 0, reason: "escalated to deposit" };
   }
   const highRisk = risk >= policy.threshold;
-  // Must require a card whenever the CLIENT pre-booking gate
-  // (resolveNoShowCardRequirement) does — new OR prior no-show — PLUS the
-  // server-only high-risk trigger. If the server required LESS than the client,
-  // a customer who was shown the card form would have their booking cancelled
-  // at save time (the two gates must not diverge).
-  if (!isNew && !highRisk && !hadNoShow) {
+  // Configurable gate (same pure helper the CLIENT pre-booking gate uses, plus
+  // the server-only high-risk trigger). Server is always a superset of the
+  // client, so a customer shown the card form is never rejected at save time.
+  void hadNoShow; // superseded by rule-driven noShowCount check
+  if (!cardRequiredFull({ isNew, noShowCount, highRisk }, policy.rules)) {
     return {
       required: false,
       feeCents: 0,
-      reason: `returning, clean, risk ${risk} < ${policy.threshold}`,
+      reason: `not gated (risk ${risk} < ${policy.threshold})`,
     };
   }
 
