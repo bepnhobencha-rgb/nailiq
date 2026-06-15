@@ -6,6 +6,7 @@ import {
   type ReleaseFeatureMap,
 } from "@/components/layout/DashboardSidebar";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
+import { DashboardTopBar } from "@/components/layout/DashboardTopBar";
 import { AdminCopilot } from "@/components/dashboard/AdminCopilot";
 import { useSidebarCollapsed } from "@/shared/lib/useSidebarCollapsed";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
@@ -96,6 +97,7 @@ export function DashboardShell({
         // receptionist motion uses.
         className="min-h-dvh md:pl-[var(--nq-sidebar-w)] pb-16 md:pb-0 transition-[padding-left] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]"
       >
+        <DashboardTopBar slug={slug} />
         {children}
       </main>
       <MobileBottomNav
