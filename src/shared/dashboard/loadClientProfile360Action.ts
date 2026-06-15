@@ -2,6 +2,7 @@
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { inferReturnCadenceDays } from "@/shared/booking/returnRhythm";
 
 // ---------------------------------------------------------------------------
 // Exported types — UI agent depends on EXACT field names below
@@ -18,34 +19,6 @@ export type C360Booking = {
   channel: string | null;
 };
 
-/** Median days between a customer's distinct visit days — the real return
- *  rhythm, used as a fallback when the batch-computed cadence is missing.
- *  Returns null when there aren't enough visits (< 3) to infer one. */
-function inferCadenceDaysFromTimeline(
-  entries: { startUtc: string; status: string }[],
-): number | null {
-  const dayMs = 86_400_000;
-  const days = Array.from(
-    new Set(
-      entries
-        .filter((e) => e.status !== "cancelled" && e.status !== "pending")
-        .map((e) => Math.floor(Date.parse(e.startUtc) / dayMs))
-        .filter((n) => Number.isFinite(n)),
-    ),
-  ).sort((a, b) => a - b);
-  if (days.length < 3) return null;
-  const gaps: number[] = [];
-  for (let i = 1; i < days.length; i++) {
-    const g = days[i] - days[i - 1];
-    if (g >= 1 && g <= 183) gaps.push(g);
-  }
-  if (gaps.length === 0) return null;
-  gaps.sort((a, b) => a - b);
-  const mid = Math.floor(gaps.length / 2);
-  return gaps.length % 2 === 0
-    ? Math.round((gaps[mid - 1] + gaps[mid]) / 2)
-    : gaps[mid];
-}
 
 export type ClientProfile360 = {
   profile: {
@@ -543,7 +516,9 @@ export async function loadClientProfile360(
       const cadenceDays =
         rawCadence && rawCadence > 0
           ? rawCadence
-          : inferCadenceDaysFromTimeline(allTimeline);
+          : inferReturnCadenceDays(
+              allTimeline.map((e) => ({ start: e.startUtc, status: e.status })),
+            );
       const lastVisitUtc = allTimeline[0]?.startUtc ?? null;
       let nextPredictedAt = pt.next_predicted_at ?? null;
       if (
