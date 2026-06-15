@@ -82,6 +82,56 @@ export default function TermsPage() {
 
           <section>
             <h2 className="text-xl font-semibold text-nq-foreground">
+              Payments, deposits &amp; no-show fees
+            </h2>
+            <p className="mt-3">
+              NailIQ provides software that lets a salon collect deposits and
+              no-show fees and keep a card on file, using third-party payment
+              processors (Square, Stripe). For those charges the salon — not
+              NailIQ — is the <strong>merchant of record</strong>. The salon is
+              solely responsible for its cancellation, no-show and deposit
+              policy, for disclosing it to and obtaining consent from its
+              clients, for the amounts charged, for refunds, and for any
+              chargebacks or disputes. NailIQ does not process or hold funds and
+              is not a party to the transaction between a salon and its client.
+              Card details are handled by the processor under their
+              PCI-compliant systems; NailIQ stores only a payment token plus the
+              card brand and last four digits, and the customer&apos;s consent
+              record.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-nq-foreground">
+              Client communications
+            </h2>
+            <p className="mt-3">
+              The salon is responsible for obtaining its clients&apos; consent
+              to receive SMS and email and for compliance with applicable laws
+              (including Canada&apos;s CASL and the US TCPA/CAN-SPAM). NailIQ
+              provides opt-out mechanisms (e.g. STOP for SMS, an unsubscribe link
+              for email); salons must honour every opt-out.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-nq-foreground">
+              Disclaimer &amp; limitation of liability
+            </h2>
+            <p className="mt-3">
+              The service is provided on an &quot;as is&quot; and &quot;as
+              available&quot; basis without warranties of any kind. To the
+              maximum extent permitted by law, NailIQ is not liable for
+              indirect, incidental, or consequential damages, and is not
+              responsible for the relationship or any dispute between a salon and
+              its clients. NailIQ&apos;s total liability for any claim is limited
+              to the subscription fees you paid in the twelve months before the
+              claim.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-nq-foreground">
               Availability
             </h2>
             <p className="mt-3">
