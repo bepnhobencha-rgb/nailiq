@@ -418,23 +418,6 @@
     min-height: 100dvh;
     padding-bottom: env(safe-area-inset-bottom, 0);
   }
-
-  /* Kiosk / TV view — DashboardViewControls fullscreens the whole document
-     (so portaled drawers/forms/toasts on <body> still render) and flips this
-     class on <html>. Hide the dashboard chrome (sidebar / bottom-nav / Coco —
-     every direct child of the shell except <main>) and reclaim its space for a
-     clean wall-board read. Portals are siblings of the shell on <body>, so they
-     stay visible. */
-  html.nq-kiosk {
-    background: var(--color-nq-bg);
-  }
-  html.nq-kiosk [data-nq-shell] > :not(main) {
-    display: none !important;
-  }
-  html.nq-kiosk [data-nq-shell] > main {
-    padding-left: 0 !important;
-    padding-bottom: 0 !important;
-  }
 }
 
 @layer components {
