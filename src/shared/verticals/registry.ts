@@ -167,12 +167,162 @@ const HEAD_SPA: VerticalConfig = {
 };
 
 // ---------------------------------------------------------------------------
+// Additional verticals. Imagery reuses the verified wellness photo set as a
+// safe default (no broken images); a salon can override with its own photos.
+// Seed menus are concise sensible starters. Legal service-risk wording is
+// tailored per service type (the customer Booking Terms read differently).
+// ---------------------------------------------------------------------------
+
+const WELLNESS_IMAGERY = HEAD_SPA.bookingImagery;
+
+const HAIR_SALON: VerticalConfig = {
+  slug: "hair_salon",
+  label: { en: "Hair salon", vi: "Tiệm tóc" },
+  schemaType: "HairSalon",
+  aiDescriptor: "a hair salon",
+  legalServiceNoun: { en: "hair service", vi: "dịch vụ làm tóc" },
+  legalServiceRisk: {
+    en: "Some hair services use chemical products (colour, perms, relaxers, bleach). Please tell us about allergies, scalp/skin sensitivity, or recent chemical treatments; a patch test may be recommended.",
+    vi: "Một số dịch vụ tóc dùng hoá chất (nhuộm, uốn, duỗi, tẩy). Vui lòng báo về dị ứng, da đầu/da nhạy cảm hoặc đã làm hoá chất gần đây; có thể cần test thử trước.",
+  },
+  staffRoleLabel: { en: "Stylist", vi: "Thợ tóc" },
+  bookingImagery: WELLNESS_IMAGERY,
+  referenceImageEnabled: true,
+  seedServices: [
+    { name: "Women's Haircut", price_cents: 4500, duration_minutes: 45, buffer_minutes: 10 },
+    { name: "Men's Haircut", price_cents: 3000, duration_minutes: 30, buffer_minutes: 10 },
+    { name: "Blowout & Style", price_cents: 4000, duration_minutes: 40, buffer_minutes: 10 },
+    { name: "Full Colour", price_cents: 9000, duration_minutes: 120, buffer_minutes: 15 },
+    { name: "Highlights / Balayage", price_cents: 14000, duration_minutes: 150, buffer_minutes: 15 },
+    { name: "Root Touch-up", price_cents: 7000, duration_minutes: 90, buffer_minutes: 10 },
+  ],
+};
+
+const FACIAL_SKIN: VerticalConfig = {
+  slug: "facial",
+  label: { en: "Facial & skincare", vi: "Facial & chăm sóc da" },
+  schemaType: "DaySpa",
+  aiDescriptor: "a facial and skincare studio",
+  legalServiceNoun: { en: "facial / skincare service", vi: "dịch vụ facial / chăm sóc da" },
+  legalServiceRisk: {
+    en: "Facials apply products and treatments to the skin and can cause redness or reactions. Please tell us about allergies, skin conditions, recent peels/lasers, or retinoid/Accutane use before your service.",
+    vi: "Facial dùng sản phẩm và liệu trình lên da, có thể gây đỏ hoặc phản ứng. Vui lòng báo về dị ứng, tình trạng da, vừa peel/laser, hoặc đang dùng retinoid/Accutane.",
+  },
+  staffRoleLabel: { en: "Esthetician", vi: "Chuyên viên da" },
+  bookingImagery: WELLNESS_IMAGERY,
+  referenceImageEnabled: false,
+  seedServices: [
+    { name: "Express Facial", price_cents: 5000, duration_minutes: 30, buffer_minutes: 10 },
+    { name: "Signature Facial", price_cents: 8500, duration_minutes: 60, buffer_minutes: 10 },
+    { name: "Deep-Cleansing / Acne Facial", price_cents: 9500, duration_minutes: 75, buffer_minutes: 10 },
+    { name: "Anti-Aging Facial", price_cents: 12000, duration_minutes: 75, buffer_minutes: 15 },
+    { name: "Chemical Peel", price_cents: 11000, duration_minutes: 45, buffer_minutes: 15 },
+    { name: "Microdermabrasion", price_cents: 10000, duration_minutes: 60, buffer_minutes: 10 },
+  ],
+};
+
+const MASSAGE_SPA: VerticalConfig = {
+  slug: "massage",
+  label: { en: "Massage & spa", vi: "Massage & spa" },
+  schemaType: "DaySpa",
+  aiDescriptor: "a massage and spa studio",
+  legalServiceNoun: { en: "massage / spa service", vi: "dịch vụ massage / spa" },
+  legalServiceRisk: {
+    en: "Massage involves physical pressure. Please tell us about pregnancy, injuries, recent surgery, blood-pressure or other health conditions so we can adjust or recommend against a service.",
+    vi: "Massage có tác động lực. Vui lòng báo nếu đang mang thai, có chấn thương, vừa phẫu thuật, huyết áp hoặc tình trạng sức khoẻ khác để điều chỉnh hoặc tư vấn phù hợp.",
+  },
+  staffRoleLabel: { en: "Therapist", vi: "Kỹ thuật viên" },
+  bookingImagery: WELLNESS_IMAGERY,
+  referenceImageEnabled: false,
+  seedServices: [
+    { name: "Relaxation Massage (60 min)", price_cents: 8000, duration_minutes: 60, buffer_minutes: 10 },
+    { name: "Deep Tissue Massage (60 min)", price_cents: 9000, duration_minutes: 60, buffer_minutes: 10 },
+    { name: "Hot Stone Massage", price_cents: 11000, duration_minutes: 75, buffer_minutes: 15 },
+    { name: "Couples Massage", price_cents: 16000, duration_minutes: 60, buffer_minutes: 15 },
+    { name: "Foot Reflexology", price_cents: 5000, duration_minutes: 30, buffer_minutes: 5 },
+  ],
+};
+
+const WAXING: VerticalConfig = {
+  slug: "waxing",
+  label: { en: "Waxing & hair removal", vi: "Waxing & tẩy lông" },
+  schemaType: "HealthAndBeautyBusiness",
+  aiDescriptor: "a waxing and hair-removal studio",
+  legalServiceNoun: { en: "waxing service", vi: "dịch vụ waxing" },
+  legalServiceRisk: {
+    en: "Waxing removes hair from the skin and can cause redness, irritation or lifting. Please tell us about skin sensitivity, recent sun/tanning, or retinoid/Accutane use, which can make waxing unsafe.",
+    vi: "Waxing lấy lông khỏi da, có thể gây đỏ, kích ứng hoặc tróc da. Vui lòng báo về da nhạy cảm, vừa phơi nắng/tắm nắng, hoặc đang dùng retinoid/Accutane (có thể không nên wax).",
+  },
+  staffRoleLabel: { en: "Wax Specialist", vi: "Chuyên viên wax" },
+  bookingImagery: WELLNESS_IMAGERY,
+  referenceImageEnabled: false,
+  seedServices: [
+    { name: "Eyebrow Wax", price_cents: 1500, duration_minutes: 15, buffer_minutes: 5 },
+    { name: "Lip / Chin Wax", price_cents: 1200, duration_minutes: 10, buffer_minutes: 5 },
+    { name: "Underarm Wax", price_cents: 2000, duration_minutes: 15, buffer_minutes: 5 },
+    { name: "Full Leg Wax", price_cents: 6000, duration_minutes: 45, buffer_minutes: 10 },
+    { name: "Brazilian Wax", price_cents: 6500, duration_minutes: 30, buffer_minutes: 10 },
+  ],
+};
+
+const LASH_BROW: VerticalConfig = {
+  slug: "lash_brow",
+  label: { en: "Lash & brow", vi: "Mi & chân mày" },
+  schemaType: "HealthAndBeautyBusiness",
+  aiDescriptor: "a lash and brow studio",
+  legalServiceNoun: { en: "lash / brow service", vi: "dịch vụ mi / chân mày" },
+  legalServiceRisk: {
+    en: "Lash and brow services work near the eyes and use adhesives or tints that can cause irritation or allergic reaction. Please tell us about sensitivities; a patch test may be recommended.",
+    vi: "Dịch vụ mi/chân mày làm gần mắt và dùng keo/thuốc nhuộm có thể gây kích ứng hoặc dị ứng. Vui lòng báo về nhạy cảm; có thể cần test thử trước.",
+  },
+  staffRoleLabel: { en: "Lash & Brow Artist", vi: "Chuyên viên mi & mày" },
+  bookingImagery: WELLNESS_IMAGERY,
+  referenceImageEnabled: true,
+  seedServices: [
+    { name: "Classic Lash Set", price_cents: 9000, duration_minutes: 90, buffer_minutes: 10 },
+    { name: "Volume Lash Set", price_cents: 12000, duration_minutes: 120, buffer_minutes: 15 },
+    { name: "Lash Fill", price_cents: 5500, duration_minutes: 60, buffer_minutes: 10 },
+    { name: "Lash Lift & Tint", price_cents: 7000, duration_minutes: 60, buffer_minutes: 10 },
+    { name: "Brow Lamination", price_cents: 6500, duration_minutes: 45, buffer_minutes: 10 },
+    { name: "Brow Tint & Shape", price_cents: 3500, duration_minutes: 30, buffer_minutes: 5 },
+  ],
+};
+
+const BARBERSHOP: VerticalConfig = {
+  slug: "barbershop",
+  label: { en: "Barbershop", vi: "Tiệm cắt tóc nam" },
+  schemaType: "HairSalon",
+  aiDescriptor: "a barbershop",
+  legalServiceNoun: { en: "barbering service", vi: "dịch vụ cắt tóc nam" },
+  legalServiceRisk: {
+    en: "Barbering uses clippers and razors near the skin. Please tell us about skin sensitivity, conditions, or recent injuries before your service.",
+    vi: "Cắt tóc nam dùng tông đơ và dao cạo gần da. Vui lòng báo về da nhạy cảm, tình trạng da hoặc vết thương gần đây.",
+  },
+  staffRoleLabel: { en: "Barber", vi: "Thợ cắt tóc" },
+  bookingImagery: WELLNESS_IMAGERY,
+  referenceImageEnabled: true,
+  seedServices: [
+    { name: "Haircut", price_cents: 3000, duration_minutes: 30, buffer_minutes: 5 },
+    { name: "Haircut & Beard Trim", price_cents: 4000, duration_minutes: 45, buffer_minutes: 10 },
+    { name: "Beard Trim & Shape", price_cents: 2000, duration_minutes: 20, buffer_minutes: 5 },
+    { name: "Hot Towel Shave", price_cents: 3500, duration_minutes: 30, buffer_minutes: 10 },
+    { name: "Kids Haircut", price_cents: 2500, duration_minutes: 25, buffer_minutes: 5 },
+  ],
+};
+
+// ---------------------------------------------------------------------------
 // Registry + resolver
 // ---------------------------------------------------------------------------
 
 export const VERTICALS: Record<string, VerticalConfig> = {
   [NAIL_SALON.slug]: NAIL_SALON,
   [HEAD_SPA.slug]: HEAD_SPA,
+  [HAIR_SALON.slug]: HAIR_SALON,
+  [FACIAL_SKIN.slug]: FACIAL_SKIN,
+  [MASSAGE_SPA.slug]: MASSAGE_SPA,
+  [WAXING.slug]: WAXING,
+  [LASH_BROW.slug]: LASH_BROW,
+  [BARBERSHOP.slug]: BARBERSHOP,
 };
 
 /** Default vertical for legacy rows and brand-new registrations. */
