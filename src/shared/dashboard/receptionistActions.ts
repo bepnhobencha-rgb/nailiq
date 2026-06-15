@@ -749,7 +749,7 @@ export async function cancelDeskBooking(
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .in("status", ["pending", "confirmed", "in_progress"])
-    .select("id")
+    .select("id, service_id")
     .maybeSingle();
 
   if (upErr) {
@@ -801,6 +801,31 @@ export async function cancelDeskBooking(
   // Wix call runs to completion after the response (a bare `void` can be cut off by the
   // serverless freeze) without blocking the desk.
   after(() => pushWixCancel(ctx.salon.id, bookingId));
+
+  // Slot recovery — flag the next matching waitlist entry + send them the claim
+  // link. Mirrors the same pattern used in markNoShowBooking. Best-effort;
+  // never fail the cancel on a notify hiccup.
+  try {
+    const svcId = (updated as { service_id?: string | null }).service_id;
+    const svc = createServiceRoleClient();
+    const { data: wl } = await svc.rpc("notify_waitlist_for_no_show", {
+      p_booking_id: bookingId,
+    });
+    const row = Array.isArray(wl) ? wl[0] : wl;
+    if (row?.entry_id && svcId) {
+      const { notifyWaitlistForSlot } =
+        await import("@/shared/noshow/waitlistAutoFill");
+      await notifyWaitlistForSlot({
+        salonId: ctx.salon.id,
+        salonName: String(row.salon_name ?? ctx.salon.name ?? ""),
+        serviceId: String(svcId),
+        serviceName: String(row.service_name ?? ""),
+        bookingDateYmd: String(row.booking_date ?? "").slice(0, 10),
+      });
+    }
+  } catch (e) {
+    console.error("[cancelDeskBooking] waitlist", e);
+  }
 
   // Mutually-agreed cancel → refund the Square deposit (if any). Keep otherwise
   // (forfeit). Refund failure doesn't undo the cancel — surfaced so the desk can
