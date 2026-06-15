@@ -67,4 +67,9 @@ export interface PaymentProvider {
     reason: string;
     idempotencyKey: string;
   }): Promise<RefundResult>;
+
+  /** Remove a saved card so it can never be charged again. Square disables the
+   *  card; Stripe detaches the payment method. Required by the card networks'
+   *  stored-credential rules (the cardholder must be able to cancel). */
+  removeSavedCard(input: { cardId: string; customerId: string }): Promise<void>;
 }

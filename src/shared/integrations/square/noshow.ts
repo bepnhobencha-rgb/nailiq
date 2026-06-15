@@ -140,14 +140,36 @@ export async function saveNoShowCardForBooking(
     sourceToken: sourceId,
   });
 
+  // Server-authored consent evidence: the exact terms the customer agreed to,
+  // captured at save time (amount + currency + plain-English policy). Stored as
+  // proof for a chargeback dispute — never trust the client to supply this.
+  const { data: salonRow } = await db
+    .from("salons")
+    .select("currency_code")
+    .eq("id", str(b.salon_id))
+    .maybeSingle();
+  const currency = String((salonRow as Row | null)?.currency_code || "USD").trim().toUpperCase() || "USD";
+  const feeStr = `${(decision.feeCents / 100).toFixed(2)} ${currency}`;
+  const consentMeta = {
+    policyText: `Cardholder authorized this salon to keep this card on file and to charge a no-show fee of ${feeStr} only if they do not show up for this appointment. No charge is made at booking. The cardholder may remove the card at any time.`,
+    feeCents: decision.feeCents,
+    currency,
+    cardBrand: saved.brand,
+    cardLast4: saved.last4,
+    capturedAt: new Date().toISOString(),
+  };
+
   await db
     .from("bookings")
     .update({
       noshow_card_id: saved.cardId,
       noshow_customer_id: saved.customerId,
+      noshow_card_last4: saved.last4,
+      noshow_card_brand: saved.brand,
       noshow_fee_cents: decision.feeCents,
       noshow_charge_status: "saved",
       noshow_consent_at: new Date().toISOString(),
+      noshow_consent_meta: consentMeta,
     } as never)
     .eq("id", bookingId);
 

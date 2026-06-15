@@ -253,9 +253,40 @@ export async function chargeSavedCard(
     autocomplete: true,
     note: opts.note,
     reference_id: opts.referenceId,
+    // Stored-credential / merchant-initiated flags. The no-show fee is charged
+    // while the customer is NOT present, against a card they previously agreed
+    // to keep on file → customer_initiated:false marks it merchant-initiated
+    // (MIT) and seller_keyed_in:false says we're charging a vaulted card, not
+    // typing one (not MOTO). Correct flagging is the card networks' required
+    // basis for winning a no-show chargeback dispute.
+    customer_details: { customer_initiated: false, seller_keyed_in: false },
   });
   const p = (json.payment as Record<string, unknown>) ?? {};
   return { paymentId: String(p.id ?? ""), status: String(p.status ?? "") };
+}
+
+/** List a customer's saved cards on file (enabled only by default). Used by
+ *  returning-customer card reuse + the customer-facing card manager. */
+export async function listCards(
+  cfg: SquareConfig,
+  customerId: string,
+): Promise<Array<{ cardId: string; last4: string; brand: string; expMonth?: number; expYear?: number }>> {
+  const json = await squareReq(cfg, "GET", `/cards?customer_id=${encodeURIComponent(customerId)}`);
+  const cards = (json.cards as Record<string, unknown>[] | undefined) ?? [];
+  return cards.map((c) => ({
+    cardId: String(c.id ?? ""),
+    last4: String(c.last_4 ?? ""),
+    brand: String(c.card_brand ?? ""),
+    expMonth: typeof c.exp_month === "number" ? c.exp_month : undefined,
+    expYear: typeof c.exp_year === "number" ? c.exp_year : undefined,
+  }));
+}
+
+/** Disable (remove) a saved card on file. Square has no hard delete — a
+ *  disabled card can never be charged again, which is the removal path the
+ *  stored-credential rules require us to offer the cardholder. */
+export async function disableCard(cfg: SquareConfig, cardId: string): Promise<void> {
+  await squareReq(cfg, "POST", `/cards/${encodeURIComponent(cardId)}/disable`);
 }
 
 /** Refund a payment (used to return a deposit on a mutually-agreed cancel). */

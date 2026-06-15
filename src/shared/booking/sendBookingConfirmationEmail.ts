@@ -74,6 +74,9 @@ function buildConfirmationUrl(shopSlug: string, bookingId: string): string {
 /** Self-serve reschedule/cancel links built from a reminder token. */
 export type ManageLinks = { reschedule: string; cancel: string };
 
+/** Saved no-show card disclosure for the email (display fields only). */
+export type SavedCardInfo = { brand: string; last4: string; feeLabel: string; manageUrl: string };
+
 /** Exported for unit tests — pure render, no I/O. */
 export function buildHtml(
   salonName: string,
@@ -84,6 +87,7 @@ export function buildHtml(
   manageLinks: ManageLinks | null,
   address?: string | null,
   salonPhone?: string | null,
+  savedCard?: SavedCardInfo | null,
 ): string {
   const eName = escapeHtml(input.clientName);
   const eSalon = escapeHtml(salonName);
@@ -129,6 +133,20 @@ export function buildHtml(
         <td style="padding:6px 0;color:#666;font-size:14px;width:120px;">Total</td>
         <td style="padding:6px 0;font-size:14px;font-weight:600;">${escapeHtml(priceStr)}</td>
        </tr>`
+    : "";
+
+  // Saved-card disclosure. Card-network stored-credential rules require us to
+  // tell the cardholder we kept their card on file, what it'll be used for, and
+  // give them a way to remove it. Display brand + last4 only (never the PAN).
+  const cardBlock = savedCard
+    ? `<div style="margin:18px 0 0;padding:16px;border:1px solid #e6e0cf;border-radius:8px;background:#fbf8ef;">
+              <p style="margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9a8a52;">Card on file</p>
+              <p style="margin:0 0 8px;font-size:14px;color:#333;line-height:1.45;">
+                To hold your spot we securely saved your card <strong>${escapeHtml(savedCard.brand || "card")} •••• ${escapeHtml(savedCard.last4)}</strong>.
+                You're only charged <strong>${escapeHtml(savedCard.feeLabel)}</strong> if you don't show up — nothing otherwise.
+              </p>
+              <a href="${savedCard.manageUrl}" style="display:inline-block;padding:9px 18px;background:#0B0C10;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;font-size:13px;">Manage or remove card</a>
+            </div>`
     : "";
 
   return `<!doctype html>
@@ -180,6 +198,9 @@ export function buildHtml(
 
             <!-- Location + directions -->
             ${locationBlock}
+
+            <!-- Saved card on file -->
+            ${cardBlock}
 
             <!-- CTA -->
             <div style="margin:24px 0 0;text-align:center;">
@@ -260,9 +281,22 @@ export async function sendBookingConfirmationEmail(
     // after booking. Best-effort: if the token can't be minted we fall back to
     // the "contact the salon" copy.
     let manageLinks: ManageLinks | null = null;
+    let savedCard: SavedCardInfo | null = null;
     const salonId =
       typeof salonRow?.id === "string" ? salonRow.id : null;
-    if (salonId && salonRow?.reminders_enabled === true) {
+
+    // Look up a saved no-show card so we can disclose it + offer removal. The
+    // card-management link is a stored-credential requirement, so we mint a
+    // token whenever a card is on file — even if reschedule/cancel self-service
+    // (reminders_enabled) is off.
+    const { data: cardRow } = await supabase
+      .from("bookings")
+      .select("noshow_card_id, noshow_card_last4, noshow_card_brand, noshow_fee_cents")
+      .eq("id", input.bookingId)
+      .maybeSingle();
+    const hasCard = Boolean((cardRow as { noshow_card_id?: string | null } | null)?.noshow_card_id);
+
+    if (salonId && (salonRow?.reminders_enabled === true || hasCard)) {
       const startMs = Date.parse(input.startTimeUtc);
       const expiresAt = Number.isFinite(startMs)
         ? new Date(startMs + SELF_SERVE_GRACE_MS).toISOString()
@@ -270,10 +304,25 @@ export async function sendBookingConfirmationEmail(
       const token = await generateReminderToken(input.bookingId, salonId, { expiresAt });
       if (token) {
         const origin = getEmailOrigin();
-        manageLinks = {
-          reschedule: `${origin}/booking/reschedule?token=${token.id}`,
-          cancel: `${origin}/booking/cancel?token=${token.id}`,
-        };
+        if (salonRow?.reminders_enabled === true) {
+          manageLinks = {
+            reschedule: `${origin}/booking/reschedule?token=${token.id}`,
+            cancel: `${origin}/booking/cancel?token=${token.id}`,
+          };
+        }
+        if (hasCard) {
+          const c = cardRow as {
+            noshow_card_last4?: string | null;
+            noshow_card_brand?: string | null;
+            noshow_fee_cents?: number | null;
+          };
+          savedCard = {
+            brand: c.noshow_card_brand ?? "",
+            last4: c.noshow_card_last4 ?? "",
+            feeLabel: formatCurrency(c.noshow_fee_cents ?? 0, currencyCode) ?? `${((c.noshow_fee_cents ?? 0) / 100).toFixed(2)} ${currencyCode}`,
+            manageUrl: `${origin}/booking/card?token=${token.id}`,
+          };
+        }
       }
     }
 
@@ -291,6 +340,7 @@ export async function sendBookingConfirmationEmail(
       manageLinks,
       address,
       salonPhone,
+      savedCard,
     );
 
     const res = await resend.emails.send({
