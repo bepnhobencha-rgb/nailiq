@@ -2416,6 +2416,9 @@ export async function addDeskAppointment(
     status: "confirmed",
     source: "appointment",
     source_channel: "desk",
+    // Desk-created now — stamp so the drawer's "Đặt lúc" line renders instantly
+    // (reconciled by the canonical row on the background reload).
+    created_at: new Date().toISOString(),
     service_id: serviceId,
     service_name: mainServiceName,
     service_duration_minutes: Number(svc.duration_minutes ?? 0),

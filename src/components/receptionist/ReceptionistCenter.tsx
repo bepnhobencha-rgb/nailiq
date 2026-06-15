@@ -1445,6 +1445,37 @@ function ReceptionistCenterInner({
         ? messages.receptionist.drawer.sourceWalkin
         : messages.receptionist.drawer.sourceAppointment;
 
+    // "Book ở đâu" — friendly label for the granular origin channel
+    // (online | desk | walkin | wix | square | voice | phone | appointment).
+    // Falls back to null for legacy rows so the drawer can show sourceLabel.
+    const channelLabel = ((): string | null => {
+      switch (b.source_channel) {
+        case "online":
+          return language === "vi" ? "🌐 Khách đặt online" : "🌐 Online booking";
+        case "desk":
+          return language === "vi" ? "🧑‍💼 Lễ tân đặt tại quầy" : "🧑‍💼 Front desk";
+        case "walkin":
+          return language === "vi" ? "🚶 Khách vãng lai" : "🚶 Walk-in";
+        case "wix":
+          return "🔗 Wix";
+        case "square":
+          return "⬛ Square";
+        case "voice":
+          return language === "vi" ? "📞 Tổng đài AI" : "📞 Voice AI";
+        case "phone":
+          return language === "vi" ? "📞 Gọi điện thoại" : "📞 Phone";
+        case "appointment":
+          return language === "vi" ? "📅 Hẹn trước" : "📅 Appointment";
+        default:
+          return null;
+      }
+    })();
+
+    // "Khi nào book" — when the booking was created, in salon tz.
+    const bookedAtLine = b.created_at
+      ? formatInSalonTz(b.created_at, timezone, "datetime")
+      : null;
+
     return {
       clientName: b.client_name,
       telHref,
@@ -1456,6 +1487,8 @@ function ReceptionistCenterInner({
       status: b.status,
       statusLabel: bookingStatusLabel(messages, b.status),
       sourceLabel,
+      channelLabel,
+      bookedAtLine,
       // Reuse the timeline-chip flag — same server-derived signal,
       // same heart icon meaning. Drives the "Khách yêu cầu thợ này"
       // line under the source label.
