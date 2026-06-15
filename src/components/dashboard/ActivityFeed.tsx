@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityItem, ActivityKind } from "@/shared/dashboard/loadActivityFeedAction";
 
 const KIND_ICON: Record<ActivityKind, string> = {
@@ -58,12 +58,20 @@ export function ActivityFeed({ slug, items }: { slug: string; items: ActivityIte
   // marker on mount (for styling), then advance it to now so this same set reads
   // as "seen" next visit (and the bell badge clears).
   const seenKey = `activity-seen:${slug}`;
-  const [prevSeenMs, setPrevSeenMs] = useState<number>(() => Date.now());
+  // 0 = treat everything as unread (bold) until we've read the persisted marker.
+  const [prevSeenMs, setPrevSeenMs] = useState<number>(0);
+  const initedRef = useRef(false);
   useEffect(() => {
+    // Run the read-then-advance ONCE, even under React StrictMode's double-invoke
+    // (otherwise the 2nd run reads the marker the 1st run just wrote → all dim).
+    if (initedRef.current) return;
+    initedRef.current = true;
     try {
       const prev = window.localStorage.getItem(seenKey);
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPrevSeenMs(prev ? Date.parse(prev) : 0);
+      // Advance the marker AFTER capturing the previous value, so the items shown
+      // in THIS view read as seen (dimmed) on the next visit.
       window.localStorage.setItem(seenKey, new Date().toISOString());
     } catch {
       /* storage blocked → everything reads as seen */
