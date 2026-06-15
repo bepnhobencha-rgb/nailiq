@@ -322,6 +322,51 @@ export async function updateReminderSettings(
   return { ok: true };
 }
 
+/**
+ * Per-direction, per-operation Square sync toggles (owner-only). PULL =
+ * Square→NailIQ, PUSH = NailIQ→Square; each of create/update/cancel is an
+ * independent switch on the salon's square_integrations row. Writes only the
+ * keys provided.
+ */
+export async function updateSquareSyncSettings(
+  slug: string,
+  settings: {
+    sync_pull_create?: boolean;
+    sync_pull_update?: boolean;
+    sync_pull_cancel?: boolean;
+    sync_push_create?: boolean;
+    sync_push_update?: boolean;
+    sync_push_cancel?: boolean;
+  },
+): Promise<{ ok: boolean; error?: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx || ctx.role !== "owner") return { ok: false, error: "unauthorized" };
+
+  const allowed = [
+    "sync_pull_create",
+    "sync_pull_update",
+    "sync_pull_cancel",
+    "sync_push_create",
+    "sync_push_update",
+    "sync_push_cancel",
+  ] as const;
+  const patch: Record<string, boolean> = {};
+  for (const k of allowed) {
+    if (typeof settings[k] === "boolean") patch[k] = settings[k] as boolean;
+  }
+  if (Object.keys(patch).length === 0) return { ok: true };
+
+  const supabase = createServiceRoleClient();
+  // Only updates an EXISTING Square connection row — a salon without Square has
+  // nothing to toggle (the .eq matches zero rows, a safe no-op).
+  const { error } = await supabase
+    .from("square_integrations" as never)
+    .update(patch as never)
+    .eq("salon_id", ctx.salon.id);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 /** Update the provider choice + no-show card-on-file policy (provider-agnostic).
  *  Owner only. Provider is locked elsewhere once a card exists; this just sets it. */
 export async function updateNoShowCardSettings(

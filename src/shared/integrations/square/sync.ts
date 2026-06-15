@@ -183,7 +183,12 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
 
       const updates: Record<string, unknown> = {};
       if (!deskOwned && localStatus !== targetStatus) {
-        updates.status = targetStatus;
+        // A Square→NailIQ status change is a CANCEL (→ pull_cancel toggle) or any
+        // other status move (→ pull_update toggle); admin can switch each off.
+        const isCancel = targetStatus === "cancelled";
+        if (isCancel ? cfg.sync.pullCancel : cfg.sync.pullUpdate) {
+          updates.status = targetStatus;
+        }
       }
 
       // RESCHEDULE sync (Square → NailIQ): Square's ListBookings has no
@@ -200,7 +205,7 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
       const timeMoved =
         Date.parse(str(existing.start_time_utc)) !== startMs ||
         Date.parse(str(existing.end_time_utc)) !== endMs;
-      if (!deskOwned && RENDER_STATUS.has(targetStatus) && timeMoved) {
+      if (!deskOwned && RENDER_STATUS.has(targetStatus) && timeMoved && cfg.sync.pullUpdate) {
         updates.start_time_utc = newStart;
         updates.end_time_utc = newEnd;
       }
@@ -238,6 +243,7 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
 
     // new booking: only materialise active ones (skip brand-new already-cancelled)
     if (!RENDER_STATUS.has(targetStatus)) { skipped++; continue; }
+    if (!cfg.sync.pullCreate) { skipped++; continue; } // pull-create toggle off
 
     const preferred = seg?.team_member_id ? tmToStaff.get(seg.team_member_id) : undefined;
     const order = preferred ? [preferred, ...activeStaff.filter((x) => x !== preferred)] : activeStaff;
@@ -287,6 +293,7 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
   // the fetched list (skipped below), and once we cancel here the next pull is a
   // no-op (NailIQ is already cancelled). One failed cancel is logged, not fatal.
   let cancelledInSquare = 0;
+  if (cfg.sync.pushCancel) {
   // Safety rail for a DESTRUCTIVE write: a data glitch that mass-marks bookings
   // cancelled must never mass-cancel a salon's real Square calendar. Cap pushes
   // per run far above the legit cancel rate in a 5-min window; if we hit it,
@@ -324,16 +331,17 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
       console.error("[squareSync] cancel push failed", sqId, e);
     }
   }
+  } // end push-cancel toggle
 
   // ── Reverse sync, Tầng 2: push NailIQ-CREATED bookings into Square (opt-in) ─
   // So a booking made in NailIQ (desk/online/group) also lands on the Square
   // calendar — otherwise the slot looks free there and Square can double-book it.
-  // OFF by default (cfg.reverseCreateEnabled): a mirrored booking may trigger
+  // OFF by default (cfg.sync.pushCreate): a mirrored booking may trigger
   // Square's own customer confirmation, so the salon must align notification
   // settings first (else the guest is double-texted). square_booking_id IS NULL
   // ⟺ NailIQ-origin (Square-origin rows are always created WITH the id).
   let createdInSquare = 0;
-  if (cfg.reverseCreateEnabled) {
+  if (cfg.sync.pushCreate) {
     const MAX_CREATE_PUSH_PER_RUN = 10;
     // NailIQ service → Square variation (by normalized item name, first match) + version.
     const varByNorm = new Map<string, { variationId: string; version: number }>();
