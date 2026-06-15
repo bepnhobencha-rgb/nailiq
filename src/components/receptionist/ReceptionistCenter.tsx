@@ -1576,6 +1576,13 @@ function ReceptionistCenterInner({
       // Square deposits config (stable per session, like currencyCode) + the
       // dashboard language so the desk can request + text a deposit link.
       depositsEnabled: data.salon.depositsEnabled,
+      // No-show card-on-file (charge only on no-show) — surface the protection
+      // at the desk. Data already loaded on the booking row.
+      cardOnFile: !!b.noshow_card_id,
+      noshowFeeLine:
+        b.noshow_fee_cents != null
+          ? formatCurrency(b.noshow_fee_cents, data.salon.currencyCode)
+          : null,
       language,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ARCHITECTURE_LOCK: data.salon.currencyCode is intentionally omitted; it never changes within a session and adding it would cause memo churn
