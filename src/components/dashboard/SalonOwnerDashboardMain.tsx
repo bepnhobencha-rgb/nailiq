@@ -63,6 +63,14 @@ export function SalonOwnerDashboardMain({
   const t = messages.salonDashboard;
   const td = messages.ownerDashboard;
   const [elapsedMinutes, setElapsedMinutes] = useState(0);
+  // `toLocaleTimeString` formats differently on the server (Node) vs the
+  // browser (locale + device TZ), which fails hydration on the upcoming list.
+  // Render a placeholder through hydration, then the real time after mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration-safe mounted flag
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const update = () => {
@@ -280,9 +288,9 @@ export function SalonOwnerDashboardMain({
                           ) : null}
                           <div className="relative z-[1] flex w-full min-w-0 flex-wrap items-baseline justify-between gap-2">
                           <span className="text-sm font-medium tabular-nums text-nq-foreground">
-                            {b.start_time_utc
+                            {b.start_time_utc && mounted
                               ? new Date(b.start_time_utc).toLocaleTimeString(
-                                  undefined,
+                                  "en-US",
                                   { hour: "2-digit", minute: "2-digit" },
                                 )
                               : "—"}
