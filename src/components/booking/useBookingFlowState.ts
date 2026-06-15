@@ -1216,7 +1216,7 @@ export function useBookingFlowState(
   }, [step, cardRequirement, otpSessionId, salon.id]);
 
   const onConfirm = useCallback(async (
-    extra?: { noShowCardSourceId?: string; noShowConsent?: boolean; noShowReuseSavedCard?: boolean },
+    extra?: { noShowCardSourceId?: string; noShowConsent?: boolean; noShowReuseSavedCard?: boolean; healthAck?: boolean },
   ) => {
     if (!serviceId || !timeSlot || !staffId) return;
     setError(null);
@@ -1294,6 +1294,7 @@ export function useBookingFlowState(
         noShowCardSourceId: extra?.noShowCardSourceId,
         noShowReuseSavedCard: extra?.noShowReuseSavedCard,
         noShowConsent: extra?.noShowConsent,
+        healthAck: extra?.healthAck,
       });
       // Link a paid deposit to the freshly-created booking (server re-verifies
       // the PaymentIntent with Stripe). Best-effort: the webhook is the backstop.

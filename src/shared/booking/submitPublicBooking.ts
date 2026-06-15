@@ -78,6 +78,9 @@ export type BookingParams = {
   noShowReuseSavedCard?: boolean;
   /** Customer agreed to the no-show policy + card-on-file authorization. */
   noShowConsent?: boolean;
+  /** Customer ticked the mandatory health acknowledgment (massage/head spa/etc).
+   *  Stamps bookings.health_ack_at server-side as duty-of-care evidence. */
+  healthAck?: boolean;
 };
 
 export type BookingResult = {
@@ -896,6 +899,7 @@ export async function submitPublicBooking(
           staffRequested: customerRequestedStaff,
           verificationMethod: params.verificationMethod || undefined,
           otpSessionId: params.otpSessionId ?? undefined,
+          healthAck: params.healthAck === true,
         },
       });
     } catch (e) {

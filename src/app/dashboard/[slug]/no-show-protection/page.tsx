@@ -19,7 +19,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
   const sb = (await import("@/shared/lib/supabase/serviceRole")).createServiceRoleClient();
   const { data: salonRow } = await sb
     .from("salons" as never)
-    .select("name, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, deposit_hold_grace_minutes, cancellation_policy, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_details_submitted, payment_provider, noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold")
+    .select("name, vertical, health_ack_required, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, deposit_hold_grace_minutes, cancellation_policy, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_details_submitted, payment_provider, noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold")
     .eq("id", ctx.salon.id)
     .maybeSingle();
   // deposit_enabled lives on square_integrations (a salon only has a row once
@@ -33,6 +33,8 @@ export default async function NoShowProtectionPage({ params }: Props) {
 
   const row = salonRow as {
     name?: string | null;
+    vertical?: string | null;
+    health_ack_required?: boolean | null;
     reminders_enabled?: boolean;
     reminder_24h_enabled?: boolean;
     reminder_3h_enabled?: boolean;
@@ -58,6 +60,10 @@ export default async function NoShowProtectionPage({ params }: Props) {
   const policyEn = resolvePolicy(row?.cancellation_policy, "en", policySalonName);
   const policyVi = resolvePolicy(row?.cancellation_policy, "vi", policySalonName);
 
+  // Effective health-ack requirement: salon override ?? per-vertical default.
+  const { healthAckRequired } = await import("@/shared/lib/healthAck");
+  const healthAckEff = healthAckRequired(row?.health_ack_required, row?.vertical);
+
   const result = await loadNoShowDashboard(slug);
   if (!result.ok) redirect(`/dashboard/${slug}`);
 
@@ -77,6 +83,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
       depositHoldGraceMinutes={row?.deposit_hold_grace_minutes ?? 30}
       cancellationPolicyEn={policyEn}
       cancellationPolicyVi={policyVi}
+      healthAckEffective={healthAckEff}
       connectHasAccount={Boolean(row?.stripe_connect_account_id)}
       connectChargesEnabled={row?.stripe_connect_charges_enabled ?? false}
       connectDetailsSubmitted={row?.stripe_connect_details_submitted ?? false}

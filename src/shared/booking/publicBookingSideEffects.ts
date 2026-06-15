@@ -26,6 +26,8 @@ type StampInput = {
   verificationMethod?: string;
   /** OTP session that verified it (audit trail). */
   otpSessionId?: string | null;
+  /** Customer ticked the mandatory health acknowledgment → stamp health_ack_at. */
+  healthAck?: boolean;
 };
 
 /**
@@ -68,6 +70,7 @@ export async function runPublicBookingSideEffects(args: {
         upd.verification_completed_at = new Date().toISOString();
         if (s.otpSessionId) upd.otp_session_id = s.otpSessionId;
       }
+      if (s.healthAck) upd.health_ack_at = new Date().toISOString();
       if (Object.keys(upd).length > 0) {
         jobs.push(
           (async () => {
