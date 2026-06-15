@@ -414,6 +414,13 @@ export async function autoAttachReturningCard(
  *  no-show. Idempotent and safe to call on bookings without a saved card. */
 export async function chargeNoShowFee(
   bookingId: string,
+  opts?: {
+    /** Appended to the idempotency key. The first charge uses the stable key
+     *  (double-charge-safe on a network retry). A deliberate RETRY of a failed
+     *  charge must pass a fresh suffix, else Square dedups the key and just
+     *  replays the original decline instead of re-attempting. */
+    idempotencySuffix?: string;
+  },
 ): Promise<{ charged: boolean; reason: string; paymentId?: string }> {
   const db = looseServiceClient();
   const { data } = await db
@@ -441,7 +448,7 @@ export async function chargeNoShowFee(
       cardId: str(b.noshow_card_id),
       customerId: str(b.noshow_customer_id),
       amountCents: feeCents,
-      idempotencyKey: `noshow:${bookingId}`, // stable → provider dedups a double-charge
+      idempotencyKey: `noshow:${bookingId}${opts?.idempotencySuffix ? `:${opts.idempotencySuffix}` : ""}`,
       note: "No-show fee",
       referenceId: `booking:${bookingId}`,
     });
