@@ -168,6 +168,10 @@ export interface ReceptionistCenterData {
     /** Raw source channel ("voice" | "online" | "phone" | "walkin" |
      * "appointment" | …) preserved for the compact source icon. */
     source_channel: string | null;
+    /** When this booking was CREATED (not the appointment time). Drives the
+     * drawer "Đặt lúc / Booked" line so the desk sees when + via which channel
+     * the booking was placed. */
+    created_at: string | null;
     service_id: string;
     service_name: string;
     service_duration_minutes: number;
@@ -746,6 +750,7 @@ export async function loadReceptionistCenterData(
       status,
       source,
       booking_channel,
+      created_at,
       service_id,
       price_cents,
       joined_queue_at,
@@ -848,6 +853,7 @@ export async function loadReceptionistCenterData(
     status: string;
     source: string | null;
     booking_channel: string | null;
+    created_at: string | null;
     service_id: string;
     price_cents: number | null;
     joined_queue_at: string | null;
@@ -1183,6 +1189,7 @@ export async function loadReceptionistCenterData(
           : typeof row.source === "string" && row.source.trim()
             ? row.source.trim().toLowerCase()
             : null,
+      created_at: row.created_at ?? null,
       service_id: row.service_id,
       service_name: svc?.name ?? "—",
       service_duration_minutes: Number(svc?.duration_minutes ?? 0),

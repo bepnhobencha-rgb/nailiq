@@ -230,6 +230,13 @@ export type BookingDetailDrawerModel = {
   status: BookingStatus;
   statusLabel: string;
   sourceLabel: string;
+  /** "Book ở đâu" — friendly label for the granular origin channel
+   * (🌐 Online / 🧑‍💼 Front desk / 🚶 Walk-in / 🔗 Wix / ⬛ Square / 📞 Voice).
+   * Null for legacy rows → fall back to `sourceLabel`. */
+  channelLabel: string | null;
+  /** "Khi nào book" — when the booking was created (salon tz, datetime).
+   * Null when `created_at` is missing. */
+  bookedAtLine: string | null;
   /** When true, render a "Khách yêu cầu thợ này" line under the
    * source. Drives operator awareness without forcing them to scan
    * the staff_request_note (which may be empty for online bookings). */
@@ -519,8 +526,8 @@ export function BookingDetailDrawer({
                   {copy.sectionGuest}
                 </p>
                 <p className="text-base font-semibold text-nq-foreground">{displayCustomerName(model.clientName, copy.removedGuest)}</p>
-                <p className="text-nq-muted">
-                  <span className="text-nq-muted">{model.sourceLabel}</span>
+                <p className="text-nq-muted" data-testid="booking-drawer-channel">
+                  <span className="text-nq-muted">{model.channelLabel ?? model.sourceLabel}</span>
                 </p>
                 {model.staffRequestedByClient ? (
                   <p
@@ -658,6 +665,19 @@ export function BookingDetailDrawer({
               >
                 {model.scheduleLine}
               </p>
+              {/* "Khi nào book + book ở đâu" — when the booking was placed and
+                  via which channel, so the desk can tell an online self-booking
+                  from a front-desk entry without digging. */}
+              {model.bookedAtLine ? (
+                <p
+                  className="text-xs text-nq-muted"
+                  data-testid="booking-drawer-booked-at"
+                >
+                  {model.language === "vi" ? "Đặt lúc " : "Booked "}
+                  {model.bookedAtLine}
+                  {model.channelLabel ? <> · {model.channelLabel}</> : null}
+                </p>
+              ) : null}
               <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
                 {copy.sectionStatus}
               </p>
