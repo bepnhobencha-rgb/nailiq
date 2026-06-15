@@ -148,10 +148,15 @@ async function requireDeskRole(slug: string) {
  *
  * Auth: owner / senior / admin / receptionist. nail_tech is explicitly denied.
  * All salon-specific queries are scoped with `.eq("salon_id", ctx.salon.id)`.
+ *
+ * @param lang - Language for the cached AI summary. Defaults to "vi". When the
+ *   requested lang differs from what's cached, aiSummary is returned null so
+ *   the UI triggers a fresh generateClient360Summary call with the correct lang.
  */
 export async function loadClientProfile360(
   slug: string,
   clientPhone: string,
+  lang: "en" | "vi" = "vi",
 ): Promise<LoadClientProfile360Result> {
   // Auth gate — nail_tech returns null → forbidden
   const ctx = await requireDeskRole(slug);
@@ -671,11 +676,14 @@ export async function loadClientProfile360(
 
   // ── 11. AI Summary — salon-scoped cache in client_ai_summaries ──
   //   PK (salon_id, client_profile_id) → no cross-tenant leak.
+  //   The `lang` column (added by migration 20260615070000_client_ai_summaries_lang)
+  //   ensures we only return a cached summary if it was generated in the
+  //   requested language; otherwise null forces a fresh generation.
   let aiSummary: ClientProfile360["aiSummary"] = null;
   if (clientProfileId) {
     const { data: summaryRow } = await supabase
       .from("client_ai_summaries" as never)
-      .select("summary_text, next_action, visit_count, computed_at")
+      .select("summary_text, next_action, visit_count, computed_at, lang")
       .eq("salon_id", salonId)
       .eq("client_profile_id", clientProfileId)
       .maybeSingle();
@@ -685,14 +693,19 @@ export async function loadClientProfile360(
       next_action?: string | null;
       visit_count?: number | null;
       computed_at?: string | null;
+      lang?: string | null;
     } | null;
 
-    // Only return the cached summary if its visit_count matches the current
-    // computed visitCount (else it's stale → null, forces regeneration).
+    // Return cached summary only when:
+    //  - visit_count matches current (not stale), AND
+    //  - lang matches the requested language (not wrong language).
+    // Either mismatch → null → UI calls generateClient360Summary with correct lang.
+    const cachedLang = s?.lang ?? "vi"; // pre-migration rows default to "vi"
     if (
       s &&
       typeof s.visit_count === "number" &&
       s.visit_count === visitCount &&
+      cachedLang === lang &&
       typeof s.summary_text === "string" &&
       typeof s.next_action === "string" &&
       typeof s.computed_at === "string"
@@ -740,12 +753,17 @@ const HAIKU_MODEL = "claude-haiku-4-5-20251001";
  * Auth: same as loadClientProfile360 (owner/senior/admin/receptionist;
  * nail_tech denied).
  *
+ * @param lang - Language for the summary. Defaults to "vi". The model is
+ *   instructed to respond in the requested language; the result is stored with
+ *   the lang column so loadClientProfile360 can serve the right cached version.
+ *
  * Returns ok:true with text/nextAction/computedAt on success, or
  * ok:false with an error message on any failure (auth, AI, DB).
  */
 export async function generateClient360Summary(
   slug: string,
   clientPhone: string,
+  lang: "en" | "vi" = "vi",
 ): Promise<GenerateClient360SummaryResult> {
   // Auth gate
   const ctx = await requireDeskRole(slug);
@@ -889,8 +907,15 @@ export async function generateClient360Summary(
       ? Math.round((noShowCount / (completedCount + noShowCount)) * 100)
       : 0;
 
-  // Build prompt
-  const prompt = `You are a salon front-desk assistant. Based on this client snapshot, write a brief 360° summary and a specific next-action recommendation for the front-desk team.
+  // Build prompt — include language instruction so the model writes in the
+  // requested language. Both fields are capped short to prevent truncation
+  // even at the conservative max_tokens budget.
+  const langInstruction =
+    lang === "vi"
+      ? "Respond in Vietnamese (tiếng Việt)."
+      : "Respond in English.";
+
+  const prompt = `You are a salon front-desk assistant. Based on this client snapshot, write a brief 360° summary and a specific next-action recommendation for the front-desk team. ${langInstruction}
 
 Client: ${clientName}${isVip ? " (VIP)" : ""}
 Phone: ${clientPhone}
@@ -902,7 +927,7 @@ Last visit: ${lastVisitDate ?? "never"}${lastServiceName ? ` (${lastServiceName}
 Preferred contact: ${preferredChannel}
 
 Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
-{"summary": "max 160 chars describing who this client is and their value", "nextAction": "max 120 chars specific action the front-desk should take next"}`;
+{"summary": "one sentence, max 160 chars", "nextAction": "one action, max 120 chars"}`;
 
   // Call Claude Haiku
   const anthropicKey = process.env.ANTHROPIC_API_KEY?.trim();
@@ -923,7 +948,11 @@ Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
       },
       body: JSON.stringify({
         model: HAIKU_MODEL,
-        max_tokens: 200,
+        // 512 tokens is enough for the short JSON output while preventing
+        // the truncation that previously cut the response mid-word at 200.
+        // The tightened prompt (summary ≤160 chars, nextAction ≤120 chars)
+        // ensures the JSON stays well within this budget.
+        max_tokens: 512,
         messages: [{ role: "user", content: prompt }],
       }),
     });
@@ -966,6 +995,9 @@ Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
   const clientProfileId = (profileRes.data as ProfileRow | null)?.id ?? null;
   if (clientProfileId) {
     try {
+      // Include `lang` so loadClientProfile360 can serve the right cached
+      // version per requested language (column added by migration
+      // 20260615070000_client_ai_summaries_lang).
       await supabase
         .from("client_ai_summaries" as never)
         .upsert(
@@ -976,6 +1008,7 @@ Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
             next_action: nextAction,
             visit_count: completedCount,
             computed_at: computedAt,
+            lang,
           } as never,
           { onConflict: "salon_id,client_profile_id" },
         );

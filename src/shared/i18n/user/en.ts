@@ -1783,6 +1783,23 @@ export type UserMessages = {
         statusNoShow: string;
         statusConfirmed: string;
         statusInProgress: string;
+        /** In-app SMS composer */
+        composePlaceholder: string;
+        composeSend: string;
+        composeCancel: string;
+        composeCharCount: (used: number, max: number) => string;
+        composeSent: string;
+        composeSentSuppressed: string;
+        composeError: (msg: string) => string;
+        /** AI card — regenerate button */
+        regenerateSummary: string;
+        /** Rebook-invite message template — parameters are optional, omitted when null */
+        rebookInviteTemplate: (opts: {
+          firstName: string;
+          service: string | null;
+          staff: string | null;
+          bookingUrl: string;
+        }) => string;
       };
     };
     /** Subscription pricing panel (`/dashboard/[slug]/settings`). */
@@ -3718,6 +3735,21 @@ export const userEn: UserMessages = {
         statusNoShow: "No-show",
         statusConfirmed: "Confirmed",
         statusInProgress: "In progress",
+        composePlaceholder: "Type your message…",
+        composeSend: "Send",
+        composeCancel: "Cancel",
+        composeCharCount: (used: number, max: number) => `${used} / ${max}`,
+        composeSent: "Message sent ✓",
+        composeSentSuppressed: "Sent (test environment — not billed)",
+        composeError: (msg: string) => `Failed to send: ${msg}`,
+        regenerateSummary: "Regenerate",
+        rebookInviteTemplate: ({ firstName, service, staff, bookingUrl }) => {
+          const parts = [`Hi ${firstName}! We'd love to see you again at Hi-Lite.`];
+          if (service) parts.push(`Your favourite service: ${service}.`);
+          if (staff) parts.push(`Book with ${staff}.`);
+          parts.push(`Book here: ${bookingUrl}`);
+          return parts.join(" ");
+        },
       },
     },
     pricing: {

@@ -1755,6 +1755,21 @@ export const userVi: UserMessages = {
         statusNoShow: "Vắng mặt",
         statusConfirmed: "Đã xác nhận",
         statusInProgress: "Đang làm",
+        composePlaceholder: "Nhập tin nhắn…",
+        composeSend: "Gửi",
+        composeCancel: "Huỷ",
+        composeCharCount: (used: number, max: number) => `${used} / ${max}`,
+        composeSent: "Đã gửi tin nhắn ✓",
+        composeSentSuppressed: "Đã gửi (môi trường test — không tính phí)",
+        composeError: (msg: string) => `Gửi thất bại: ${msg}`,
+        regenerateSummary: "Tạo lại tóm tắt",
+        rebookInviteTemplate: ({ firstName, service, staff, bookingUrl }) => {
+          const parts = [`Chào ${firstName}! Hi-Lite mời bạn ghé tiệm lại nhé.`];
+          if (service) parts.push(`Dịch vụ bạn hay chọn: ${service}.`);
+          if (staff) parts.push(`Đặt lịch với ${staff}.`);
+          parts.push(`Đặt lịch tại: ${bookingUrl}`);
+          return parts.join(" ");
+        },
       },
     },
     pricing: {
