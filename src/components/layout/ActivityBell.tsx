@@ -78,16 +78,12 @@ export function ActivityBell() {
 
   const open = useCallback(() => {
     if (!slug) return;
-    if (seenKey) {
-      try {
-        window.localStorage.setItem(seenKey, new Date().toISOString());
-      } catch {
-        /* storage blocked */
-      }
-    }
+    // Don't advance the seen-marker here — the Activity page itself reads the
+    // OLD marker to bold the unread rows, then marks them seen. Just clear the
+    // badge optimistically; the next poll confirms it once the page marks seen.
     setCount(0);
     router.push(`/dashboard/${slug}/activity`);
-  }, [slug, seenKey, router]);
+  }, [slug, router]);
 
   if (!visible || !slug) return null;
 
