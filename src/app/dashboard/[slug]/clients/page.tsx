@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { ClientProfilesPanel } from "@/components/dashboard/ClientProfilesPanel";
 import { ClientDedupePanel } from "@/components/dashboard/ClientDedupePanel";
 import { TopHostsPanel } from "@/components/dashboard/TopHostsPanel";
+import { MultiNamePhonePanel } from "@/components/dashboard/MultiNamePhonePanel";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { parseClientSegmentSettings } from "@/shared/dashboard/clientSegmentSettings";
 
@@ -49,8 +50,9 @@ export default async function ClientsPage({ params }: PageProps) {
 
   return (
     <main className="mx-auto w-full max-w-[var(--max-nq-desktop)] px-[var(--pad-nq-section-mobile)] py-6 md:px-6">
-      {/* Owner-only insights: top group hosts (reward connectors) + merge/dedupe. */}
+      {/* Owner-only insights: top group hosts, one-number-many-names cleanup, merge. */}
       {ctx.role === "owner" ? <TopHostsPanel slug={slug} /> : null}
+      {ctx.role === "owner" ? <MultiNamePhonePanel slug={slug} /> : null}
       {ctx.role === "owner" ? <ClientDedupePanel slug={slug} /> : null}
       <ClientProfilesPanel
         slug={slug}

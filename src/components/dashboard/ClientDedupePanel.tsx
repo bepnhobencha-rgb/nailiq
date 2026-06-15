@@ -12,7 +12,7 @@ const COPY = {
   en: {
     title: "Merge duplicate clients",
     subtitle:
-      "Same person under more than one record (different numbers, name variants). Review and merge — history and visits combine into the one you keep.",
+      "Same person under two phone numbers — matched by shared email (not by name, since different people often share a name). Review and merge; history and visits combine into the one you keep.",
     scan: "Scan for duplicates",
     scanning: "Scanning…",
     aiToggle: "Use AI ranking",
@@ -29,7 +29,7 @@ const COPY = {
   vi: {
     title: "Gộp khách trùng",
     subtitle:
-      "Cùng một người nhưng có nhiều hồ sơ (số khác nhau, tên viết khác). Xem và gộp — lịch sử & lượt ghé dồn về hồ sơ bạn giữ.",
+      "Cùng một người dùng hai số — khớp qua email chung (KHÔNG theo tên, vì khách trùng tên là bình thường). Xem và gộp; lịch sử & lượt ghé dồn về hồ sơ bạn giữ.",
     scan: "Quét khách trùng",
     scanning: "Đang quét…",
     aiToggle: "Dùng AI xếp hạng",

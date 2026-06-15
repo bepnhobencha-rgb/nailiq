@@ -42,22 +42,6 @@ export type MergeResult =
 
 const MAX_PAIRS = 40; // bound AI cost + UI length
 
-/** Lowercase, strip diacritics, collapse to alphanumerics+space. */
-function normName(raw: string | null): string {
-  return (raw ?? "")
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function isPlaceholder(name: string | null): boolean {
-  const n = (name ?? "").trim();
-  return n === "" || /^(guest|kh[aá]ch|khach)\s*\d+$/i.test(n);
-}
-
 function pairKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
@@ -68,9 +52,7 @@ export async function findDuplicateClients(
 ): Promise<FindDuplicatesResult> {
   const lang = opts?.lang === "vi" ? "vi" : "en";
   const reasonCopy =
-    lang === "vi"
-      ? { email: "Cùng email", name: "Tên gần giống" }
-      : { email: "Same email", name: "Similar name" };
+    lang === "vi" ? { email: "Cùng email" } : { email: "Same email" };
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
   if (resolved.role !== "owner") return { ok: false, error: "forbidden" };
@@ -114,21 +96,16 @@ export async function findDuplicateClients(
       lastVisitAt: r.last_visit_at?.trim() ? String(r.last_visit_at) : null,
     }));
 
-  // Bucket by email and by normalized name. Different phone numbers in the same
-  // bucket are merge candidates (same phone is already one profile).
+  // Bucket by EMAIL only — the one hard cross-phone signal for "same person,
+  // different number". NAME is deliberately NOT used to suggest merges: distinct
+  // customers commonly share a name, so name-based merges would collapse two
+  // different real people. Phone is already the identity key (one row per phone).
   const byEmail = new Map<string, DedupeIdentity[]>();
-  const byName = new Map<string, DedupeIdentity[]>();
   for (const id of ids) {
     if (id.email) {
       const arr = byEmail.get(id.email) ?? [];
       arr.push(id);
       byEmail.set(id.email, arr);
-    }
-    const nn = normName(id.name);
-    if (nn && !isPlaceholder(id.name)) {
-      const arr = byName.get(nn) ?? [];
-      arr.push(id);
-      byName.set(nn, arr);
     }
   }
 
@@ -151,8 +128,7 @@ export async function findDuplicateClients(
       }
     }
   }
-  for (const g of byEmail.values()) if (g.length > 1) addPairsFrom(g, 0.85, reasonCopy.email);
-  for (const g of byName.values()) if (g.length > 1) addPairsFrom(g, 0.5, reasonCopy.name);
+  for (const g of byEmail.values()) if (g.length > 1) addPairsFrom(g, 0.9, reasonCopy.email);
 
   // Cap to bound cost; strongest heuristic first.
   candidates.sort((x, y) => y.score - x.score);
@@ -197,14 +173,16 @@ async function scorePairsWithAi(
   }));
 
   const prompt =
-    "You are de-duplicating salon customer records. For each pair, judge whether " +
-    "A and B are the SAME person (different phone numbers are expected for a real " +
-    'duplicate). Return ONLY a JSON array, one object per pair: ' +
-    '{"i":<index>,"samePerson":<0..1>,"suggestedName":<clean canonical display ' +
-    'name or null>,"reason":<short>}. Same email is strong evidence. Near-identical ' +
-    "names (accent/spacing/case variants, nicknames) are moderate evidence. " +
-    "suggestedName: the best-formatted version of the shared name (proper case, " +
-    "keep diacritics), or null if unsure. Write the `reason` field in " +
+    "You are de-duplicating salon customer records. Each pair already SHARES AN " +
+    "EMAIL (the strong signal) but has different phone numbers — judge whether A " +
+    "and B are the SAME person. IMPORTANT: a matching or similar NAME is NOT " +
+    "evidence on its own (different customers commonly share a name); rely on the " +
+    "shared email and any other corroboration. A clearly different name on the " +
+    "same email can still be the same person (a shared family email) — stay near " +
+    "0.5 when unsure rather than high. Return ONLY a JSON array, one object per " +
+    'pair: {"i":<index>,"samePerson":<0..1>,"suggestedName":<clean canonical ' +
+    'display name or null>,"reason":<short>}. suggestedName: best-formatted name ' +
+    "(proper case, keep diacritics) or null. Write `reason` in " +
     (lang === "vi" ? "Vietnamese" : "English") +
     ".\n\nPairs:\n" +
     JSON.stringify(items);
