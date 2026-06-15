@@ -194,11 +194,17 @@ export async function lookupClientByPhone(
     }
   }
 
-  // No profile row AND no bookings in this salon → genuinely new
-  // customer. Return found=false so the form can show "Khách mới".
+  // No profile row AND no REAL visit in this salon → genuinely new
+  // customer. Return found=false so the form shows "Khách mới".
+  //
+  // `visitCount` already excludes cancelled bookings (see loop above), so a
+  // phone whose only history is a cancelled/abandoned booking — and which has
+  // no profile row — is correctly treated as new. Previously this used the raw
+  // `bookings.length`, so a single leftover cancelled row made the desk forms
+  // claim "✨ Khách quen — đã điền sẵn" while filling nothing (no profile name).
   const profile = profileRes.data;
   const hasProfile = !!profile;
-  const hasHistory = bookings.length > 0;
+  const hasHistory = visitCount > 0;
   if (!hasProfile && !hasHistory) {
     return { ok: true, found: false, phone };
   }

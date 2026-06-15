@@ -377,7 +377,11 @@ export default function DeskGroupForm({
       });
       const res = await lookupClientByPhone(slug, phone);
       if (seq !== lookupSeq.current) return;
-      if (res.ok && res.found) {
+      // A name to show only if the profile actually carries one (a known
+      // customer can exist without a stored name, e.g. an old import). Don't
+      // claim "đã điền sẵn" when we filled nothing.
+      const resolvedName = res.ok && res.found ? (res.profile.name ?? "").trim() : "";
+      if (res.ok && res.found && resolvedName) {
         const p = res.profile;
         setMembers((prev) => {
           const next = prev.slice();
@@ -385,7 +389,7 @@ export default function DeskGroupForm({
           if (!lead) return prev;
           next[0] = {
             ...lead,
-            name: lead.name || p.name || "",
+            name: lead.name || resolvedName,
             serviceId: lead.serviceId || p.top_service?.id || "",
             preferredStaffId: lead.preferredStaffId ?? p.top_staff?.id ?? null,
           };
