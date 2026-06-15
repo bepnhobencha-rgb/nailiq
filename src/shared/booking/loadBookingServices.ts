@@ -76,6 +76,9 @@ export type BookingSalonMeta = {
   /** Whether the booking flow offers the optional reference-image upload.
    *  Resolved from salons.reference_image_enabled ?? vertical default. */
   referenceImageEnabled: boolean;
+  /** `salons.health_ack_required` override (NULL → vertical default). Drives the
+   *  mandatory health-acknowledgment tick for body/treatment services. */
+  healthAckRequired: boolean | null;
 };
 
 export type BookingLoadData = {
@@ -415,6 +418,12 @@ export async function loadBookingServicesForSalonSlug(
             ? ((salon as { vertical?: string }).vertical as string).trim()
             : "") || "nail_salon";
         return resolveVertical(vslug).referenceImageEnabled;
+      })(),
+      // `salons.health_ack_required` (migration 20260616200000). NULL/undefined →
+      // null so the flow falls back to the per-vertical default.
+      healthAckRequired: (() => {
+        const v = (salon as { health_ack_required?: unknown }).health_ack_required;
+        return typeof v === "boolean" ? v : null;
       })(),
     },
   };

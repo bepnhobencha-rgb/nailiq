@@ -38,6 +38,8 @@ type Props = {
   /** Admin-editable cancellation/no-show/deposit policy (effective text, bilingual). */
   cancellationPolicyEn: string;
   cancellationPolicyVi: string;
+  /** Effective health-acknowledgment requirement (salon override ?? vertical default). */
+  healthAckEffective: boolean;
   connectHasAccount: boolean;
   connectChargesEnabled: boolean;
   connectDetailsSubmitted: boolean;
@@ -102,6 +104,7 @@ export function NoShowProtectionHub({
   depositHoldGraceMinutes: initialGrace,
   cancellationPolicyEn: initialPolicyEn,
   cancellationPolicyVi: initialPolicyVi,
+  healthAckEffective: initialHealthAck,
   connectHasAccount,
   connectChargesEnabled,
   connectDetailsSubmitted,
@@ -131,6 +134,7 @@ export function NoShowProtectionHub({
   const [policyEn, setPolicyEn] = useState(initialPolicyEn);
   const [policyVi, setPolicyVi] = useState(initialPolicyVi);
   const [grace, setGrace] = useState(String(initialGrace));
+  const [healthAck, setHealthAck] = useState(initialHealthAck);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [waivedIds, setWaivedIds] = useState<Set<string>>(new Set());
   // No-show card-on-file policy (provider-agnostic) + provider choice.
@@ -178,6 +182,7 @@ export function NoShowProtectionHub({
         deposit_enabled: depositEnabled,
         deposit_hold_grace_minutes: parseInt(grace, 10) || 30,
         cancellation_policy: { en: policyEn, vi: policyVi },
+        health_ack_required: healthAck,
       });
       setSaveMsg("Settings saved");
       setTimeout(() => setSaveMsg(null), 3000);
@@ -450,6 +455,23 @@ export function NoShowProtectionHub({
                     className="mt-1 w-full rounded-lg border border-nq-border/40 bg-nq-bg px-3 py-2 text-sm text-nq-text focus:outline-none focus:border-nq-primary/50"
                   />
                 </div>
+
+                {/* Mandatory health-acknowledgment tick at booking (pregnancy /
+                    injuries / conditions) — duty-of-care for body/treatment
+                    services. Defaults ON for massage/head spa/facial/waxing. */}
+                <label className="mt-3 flex items-start gap-2 text-sm text-nq-text">
+                  <input
+                    type="checkbox"
+                    data-testid="health-ack-toggle"
+                    checked={healthAck}
+                    onChange={(e) => setHealthAck(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-nq-gold"
+                  />
+                  <span>
+                    Bắt khách xác nhận sức khoẻ (mang thai/chấn thương) khi đặt · Require health
+                    acknowledgment at booking
+                  </span>
+                </label>
 
                 <button
                   onClick={saveSettings}

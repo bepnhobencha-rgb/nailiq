@@ -59,6 +59,12 @@ export type VerticalConfig = {
    */
   intakeHint?: { en: string; vi: string };
   /**
+   * Whether this vertical defaults to REQUIRING the health-acknowledgment tick at
+   * booking (body/treatment services with real contraindications, e.g. pregnancy).
+   * `salons.health_ack_required` overrides this per salon. Omit → false.
+   */
+  healthAckDefault?: boolean;
+  /**
    * Customer-facing label for the operational `nail_tech` staff role.
    * (The DB enum value stays `nail_tech` as a stable internal key; only the
    * display label changes per vertical.)
@@ -163,6 +169,7 @@ const HEAD_SPA: VerticalConfig = {
     en: "Optional — pregnancy, scalp sensitivity, allergies, neck/back issues, anything we should know.",
     vi: "Không bắt buộc — mang thai, da đầu nhạy cảm, dị ứng, vấn đề cổ/lưng, điều cần lưu ý.",
   },
+  healthAckDefault: true,
   staffRoleLabel: { en: "Therapist", vi: "Kỹ thuật viên" },
   // Calm head-spa / wellness imagery (verified Unsplash, no nail photos).
   bookingImagery: {
@@ -224,6 +231,7 @@ const FACIAL_SKIN: VerticalConfig = {
     en: "Optional — pregnancy, allergies, skin conditions, recent peels/lasers or retinoid use.",
     vi: "Không bắt buộc — mang thai, dị ứng, tình trạng da, vừa peel/laser hoặc đang dùng retinoid.",
   },
+  healthAckDefault: true,
   staffRoleLabel: { en: "Esthetician", vi: "Chuyên viên da" },
   bookingImagery: WELLNESS_IMAGERY,
   referenceImageEnabled: false,
@@ -251,6 +259,7 @@ const MASSAGE_SPA: VerticalConfig = {
     en: "Optional — pregnancy, injuries, recent surgery, blood pressure or other health conditions, allergies.",
     vi: "Không bắt buộc — mang thai, chấn thương, vừa phẫu thuật, huyết áp hoặc tình trạng sức khoẻ khác, dị ứng.",
   },
+  healthAckDefault: true,
   staffRoleLabel: { en: "Therapist", vi: "Kỹ thuật viên" },
   bookingImagery: WELLNESS_IMAGERY,
   referenceImageEnabled: false,
@@ -277,6 +286,7 @@ const WAXING: VerticalConfig = {
     en: "Optional — pregnancy, skin sensitivity, recent sun/tanning, retinoid/Accutane use, allergies.",
     vi: "Không bắt buộc — mang thai, da nhạy cảm, vừa phơi/tắm nắng, đang dùng retinoid/Accutane, dị ứng.",
   },
+  healthAckDefault: true,
   staffRoleLabel: { en: "Wax Specialist", vi: "Chuyên viên wax" },
   bookingImagery: WELLNESS_IMAGERY,
   referenceImageEnabled: false,

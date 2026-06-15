@@ -35,6 +35,7 @@ export function BookingFlowConfirmPanel({
   t,
   shopLabel,
   shopSlug,
+  healthAckText,
   service,
   confirmTimeLabel,
   staffSummaryLabel,
@@ -68,6 +69,8 @@ export function BookingFlowConfirmPanel({
   t: BookingMessages;
   shopLabel: string;
   shopSlug: string;
+  /** When set, a mandatory health-acknowledgment tick is shown and gates confirm. */
+  healthAckText?: string | null;
   service: BookingServiceItem;
   confirmTimeLabel: string;
   staffSummaryLabel: string;
@@ -96,7 +99,7 @@ export function BookingFlowConfirmPanel({
   onClearAddons: () => void;
   onBack: () => void;
   onConfirm: (
-    extra?: { noShowCardSourceId?: string; noShowConsent?: boolean; noShowReuseSavedCard?: boolean },
+    extra?: { noShowCardSourceId?: string; noShowConsent?: boolean; noShowReuseSavedCard?: boolean; healthAck?: boolean },
   ) => void | Promise<void>;
   /** Option A no-show card gate, resolved BEFORE booking. When required, the card
    *  is captured here and must be entered before the booking can be confirmed. */
@@ -117,6 +120,9 @@ export function BookingFlowConfirmPanel({
   const cardRequired = cardRequirement?.required === true;
   const hasSavedCard = savedCard?.hasSavedCard === true;
   const [noShowConsent, setNoShowConsent] = useState(false);
+  // Mandatory health-acknowledgment (massage/head spa/facial/waxing). Gates confirm.
+  const healthAckOn = Boolean(healthAckText);
+  const [healthAck, setHealthAck] = useState(false);
   // When a saved card exists, default to reusing it; the customer can switch to
   // entering a new one.
   const [useDifferentCard, setUseDifferentCard] = useState(false);
@@ -125,11 +131,12 @@ export function BookingFlowConfirmPanel({
   const [cardError, setCardError] = useState<string | null>(null);
 
   async function handleConfirm() {
+    const ack = healthAckOn ? healthAck : undefined;
     if (cardRequired) {
       setCardError(null);
       // One-tap reuse of the saved card — no new tokenization.
       if (reuseSaved) {
-        await onConfirm({ noShowReuseSavedCard: true, noShowConsent: true });
+        await onConfirm({ noShowReuseSavedCard: true, noShowConsent: true, healthAck: ack });
         return;
       }
       const token = await cardRef.current?.tokenize();
@@ -137,10 +144,10 @@ export function BookingFlowConfirmPanel({
         setCardError(t.noShowCardError ?? "Please check your card details.");
         return;
       }
-      await onConfirm({ noShowCardSourceId: token, noShowConsent: true });
+      await onConfirm({ noShowCardSourceId: token, noShowConsent: true, healthAck: ack });
       return;
     }
-    await onConfirm();
+    await onConfirm({ healthAck: ack });
   }
 
   const customerRows = [
@@ -496,6 +503,19 @@ export function BookingFlowConfirmPanel({
           </>
         ) : null}
 
+        {healthAckOn ? (
+          <label className="mt-4 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+            <input
+              type="checkbox"
+              data-testid="confirm-health-ack"
+              checked={healthAck}
+              onChange={(e) => setHealthAck(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+            />
+            <span>{healthAckText}</span>
+          </label>
+        ) : null}
+
         <div className="mt-4 flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <Button
             type="button"
@@ -509,7 +529,7 @@ export function BookingFlowConfirmPanel({
           <LuxuryBookingCta
             className="lg:min-w-[14rem]"
             data-testid="confirm-booking-btn"
-            disabled={submitting || !smsConsent || (cardRequired && !noShowConsent)}
+            disabled={submitting || !smsConsent || (cardRequired && !noShowConsent) || (healthAckOn && !healthAck)}
             onClick={handleConfirm}
           >
             <span>{submitting ? t.submitting : t.confirmBooking}</span>

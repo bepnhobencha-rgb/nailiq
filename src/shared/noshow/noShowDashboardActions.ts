@@ -200,6 +200,8 @@ export async function updateReminderSettings(
     deposit_enabled?: boolean;
     /** Bilingual cancellation/no-show policy { en, vi }. */
     cancellation_policy?: { en?: string; vi?: string };
+    /** Override the per-vertical health-acknowledgment requirement (salons col). */
+    health_ack_required?: boolean;
   },
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);

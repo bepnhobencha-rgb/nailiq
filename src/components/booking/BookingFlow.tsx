@@ -30,6 +30,7 @@ import {
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import { resolveVertical } from "@/shared/verticals/registry";
+import { healthAckRequired, healthAckText } from "@/shared/lib/healthAck";
 import { formatBookingPriceReceipt } from "@/shared/booking/formatBookingPrice";
 import { salonTimezoneAbbreviation } from "@/shared/lib/salonTime";
 import {
@@ -125,6 +126,10 @@ export function BookingFlow({
   const reducedMotion = useReducedMotion();
   const vertical = resolveVertical(salon.vertical);
   const techRoleLabel = vertical.staffRoleLabel[language];
+  // Mandatory health-acknowledgment text (null = not required for this salon).
+  const healthAckTextStr = healthAckRequired(salon.healthAckRequired, salon.vertical)
+    ? healthAckText(language, salon.name)
+    : null;
   const flow = useBookingFlowState(
     t,
     shopSlug,
@@ -482,6 +487,7 @@ export function BookingFlow({
             t={t}
             shopLabel={flow.shopLabel}
             shopSlug={shopSlug}
+            healthAckText={healthAckTextStr}
             service={flow.service}
             confirmTimeLabel={
               slotsTimezoneAbbr
