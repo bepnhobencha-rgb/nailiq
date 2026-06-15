@@ -423,6 +423,24 @@ export async function sendBookingConfirmationEmail(
     } else {
       console.log("[sendBookingConfirmationEmail] sent ok id=", res.data?.id);
     }
+
+    // Log to the activity feed (Email tab). Best-effort — never block the send.
+    if (salonId) {
+      try {
+        const { logNotification } = await import("@/shared/lib/notificationLog");
+        await logNotification({
+          bookingId: input.bookingId,
+          salonId,
+          notificationType: "booking_confirmation",
+          channel: "email",
+          bodyPreview: `Email xác nhận → ${input.clientEmail}`,
+          ok: !res.error,
+          errorMessage: res.error ? String(res.error.message ?? res.error) : null,
+        });
+      } catch {
+        /* logging is non-critical */
+      }
+    }
   } catch (e) {
     console.error("[sendBookingConfirmationEmail] threw", e);
   }
