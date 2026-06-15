@@ -830,6 +830,9 @@ export async function submitGroupBooking(
   // inside the SECURITY DEFINER RPC; failure only loses the
   // itemized breakdown, not the booking itself.
   const bookingIdList = result.booking_ids.map((s) => String(s));
+  // NOTE: no-show card flagging for the GROUP lead is done server-side in
+  // createDeskGroup (desk path); this function also runs in the browser
+  // (online group wizard) so it must NOT import the server-only gate here.
 
   // Group committed — now single-use-consume the OTP session (fire-and-forget).
   if (otpToConsume) {

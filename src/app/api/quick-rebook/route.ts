@@ -242,6 +242,15 @@ export async function POST(req: Request) {
     } catch {
       /* best-effort */
     }
+    // Unified no-show card gate (quick-rebook creates without a card capture).
+    try {
+      const { ensureNoShowCardRequirement } = await import(
+        "@/shared/noshow/ensureNoShowCardRequirement"
+      );
+      await ensureNoShowCardRequirement(bookingId);
+    } catch {
+      /* best-effort */
+    }
   }
 
   return NextResponse.json({

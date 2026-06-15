@@ -43,6 +43,7 @@ import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
+import { ensureNoShowCardRequirement } from "@/shared/noshow/ensureNoShowCardRequirement";
 import {
   createDepositForBooking,
   refundDeposit,
@@ -997,7 +998,7 @@ export async function createDeskGroup(
     /* mint failed → submitGroupBooking will surface otp_required, handled by UI */
   }
 
-  return submitGroupBooking({
+  const result = await submitGroupBooking({
     shopSlug: slug,
     members: input.members,
     idempotencyKey: input.idempotencyKey,
@@ -1005,6 +1006,15 @@ export async function createDeskGroup(
     language: input.language,
     otpSessionId,
   });
+
+  // Unified no-show card gate (desk group): only the lead carries a phone, so
+  // flag the lead booking. Server-side here (submitGroupBooking is also called
+  // from the browser, so the server-only gate can't live inside it).
+  const leadId =
+    result.ok && Array.isArray(result.bookingIds) ? result.bookingIds[0] : null;
+  if (leadId) await ensureNoShowCardRequirement(leadId);
+
+  return result;
 }
 
 /**
@@ -2368,6 +2378,11 @@ export async function addDeskAppointment(
     },
   });
 
+  // Unified no-show card gate: a desk/phone booking skips the online card
+  // capture, so flag "needs card" the same way every other path does. Flag
+  // only — the desk decides whether to text the save-card link.
+  await ensureNoShowCardRequirement(bookingId);
+
   // Confirmation to the customer, gated by the receptionist's notify choice
   // (legacy callers without `notify` keep the always-send behavior). Reuses the
   // existing rich SMS + email confirmation routes.
@@ -2482,6 +2497,9 @@ export async function addDeskAppointment(
     // Desk-created booking has no card-on-file yet (no-show protection is
     // captured online for new/high-risk customers).
     noshow_card_id: null,
+    // Flag is set server-side by ensureNoShowCardRequirement just after create;
+    // the background reload reconciles the badge. Optimistic = not-yet-flagged.
+    noshow_card_required: false,
     noshow_fee_cents: null,
     noshow_charge_status: null,
   };
