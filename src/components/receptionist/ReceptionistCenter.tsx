@@ -1616,6 +1616,9 @@ function ReceptionistCenterInner({
           ? formatCurrency(b.noshow_fee_cents, data.salon.currencyCode)
           : null,
       language,
+      // Party/group composition — the drawer lazily loads the members when set.
+      groupId: b.group_id ?? null,
+      seatTogether: b.seat_together === true,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ARCHITECTURE_LOCK: data.salon.currencyCode is intentionally omitted; it never changes within a session and adding it would cause memo churn
   }, [
@@ -1658,6 +1661,10 @@ function ReceptionistCenterInner({
       // the entire receptionist surface.
       staffRequestedByClient:
         messages.receptionist.queue.addForm.staffRequestedByClient,
+      groupSectionTitle: d.groupSectionTitle,
+      groupOrganizedBy: d.groupOrganizedBy,
+      groupOrganizerBadge: d.groupOrganizerBadge,
+      groupSeatTogether: d.groupSeatTogether,
     };
   }, [messages]);
 
@@ -3558,6 +3565,7 @@ function ReceptionistCenterInner({
       <BookingDetailDrawer
         open={drawerBookingId !== null && detailModel !== null}
         model={detailModel}
+        slug={slug}
         onClose={() => setDrawerBookingId(null)}
         copy={drawerCopy}
         viewerRole={viewerRole}

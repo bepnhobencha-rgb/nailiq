@@ -1214,6 +1214,9 @@ export const userVi: UserMessages = {
       cancelConfirmNo: "Giữ lại",
       cancelling: "Đang huỷ…",
       cancelError: "Huỷ không được — thử lại",
+      notifyLabel: "Báo cho người tổ chức",
+      notifySms: "SMS",
+      notifyEmail: "Email",
     },
     roleBadge: {
       ownerView: "Chủ tiệm",
@@ -1470,6 +1473,10 @@ export const userVi: UserMessages = {
       priceSection: "Giá",
       noNotesHint: "Không có ghi chú",
       sectionAddon: "Dịch vụ thêm",
+      groupSectionTitle: (n: number) => `👥 Nhóm ${n} người`,
+      groupOrganizedBy: (name: string) => `Người tổ chức: ${name}`,
+      groupOrganizerBadge: "Tổ chức",
+      groupSeatTogether: "Ngồi chung 💕",
     },
     edit: {
       modeTitle: "Sửa booking",

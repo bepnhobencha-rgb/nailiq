@@ -1063,7 +1063,14 @@ export async function createDeskGroup(
  */
 export async function cancelDeskGroup(
   slug: string,
-  input: { salonId: string; groupId: string },
+  input: {
+    salonId: string;
+    groupId: string;
+    /** Channels to notify the organizer on. Only the organizer row (member 0)
+     *  carries contact info, so we enqueue ONE cancel notification for it —
+     *  mirrors cancelDeskBooking. Omitted/empty → no customer notification. */
+    notify?: { sms?: boolean; email?: boolean };
+  },
 ): Promise<
   { ok: true; cancelledCount: number } | { ok: false; error: string }
 > {
@@ -1110,6 +1117,42 @@ export async function cancelDeskGroup(
       eventType: "booking_cancelled",
       payload: { reason: "desk_group_cancel", groupId },
     });
+  }
+
+  // Notify the organizer (best-effort). Only member 0 carries a phone/email, so
+  // enqueue ONE cancel notification for that lead row — same durable-queue +
+  // 20s grace pattern as cancelDeskBooking. The cron only sends on channels the
+  // booking actually has contact for.
+  const notifySms = input.notify?.sms === true;
+  const notifyEmail = input.notify?.email === true;
+  if (notifySms || notifyEmail) {
+    try {
+      const sr = createServiceRoleClient();
+      const { data: lead } = await sr
+        .from("bookings")
+        .select("id")
+        .eq("salon_id", ctx.salon.id)
+        .eq("group_id", groupId)
+        .or("client_phone.not.is.null,client_email.not.is.null")
+        .limit(1)
+        .maybeSingle();
+      if (lead?.id) {
+        const sendAfter = new Date(Date.now() + 20_000).toISOString();
+        const { error: enqErr } = await sr
+          .from("scheduled_notifications")
+          .insert({
+            salon_id: ctx.salon.id,
+            booking_id: String(lead.id),
+            event: "cancel",
+            channels: { sms: notifySms, email: notifyEmail },
+            send_after: sendAfter,
+          } as never);
+        if (enqErr)
+          console.error("[cancelDeskGroup] enqueue notify failed", enqErr);
+      }
+    } catch (e) {
+      console.error("[cancelDeskGroup] notify", e);
+    }
   }
 
   // Wix write-back per row — best-effort, after the response is flushed.

@@ -1151,6 +1151,10 @@ export type UserMessages = {
       cancelConfirmNo: string;
       cancelling: string;
       cancelError: string;
+      /** Notify-the-organizer toggles shown in the cancel confirm box. */
+      notifyLabel: string;
+      notifySms: string;
+      notifyEmail: string;
     };
     /** Role-adaptive top-bar labels. */
     roleBadge: {
@@ -1479,6 +1483,11 @@ export type UserMessages = {
       noNotesHint: string;
       /** Heading for the optional add-on service row in the booking drawer. */
       sectionAddon: string;
+      /** Party/group composition section. */
+      groupSectionTitle: (n: number) => string;
+      groupOrganizedBy: (name: string) => string;
+      groupOrganizerBadge: string;
+      groupSeatTogether: string;
     };
     edit: {
       /** Section heading when editing from the drawer */
@@ -3286,6 +3295,9 @@ export const userEn: UserMessages = {
       cancelConfirmNo: "Keep",
       cancelling: "Cancelling…",
       cancelError: "Couldn't cancel — please try again",
+      notifyLabel: "Notify the organizer",
+      notifySms: "SMS",
+      notifyEmail: "Email",
     },
     roleBadge: {
       ownerView: "Owner view",
@@ -3548,6 +3560,10 @@ export const userEn: UserMessages = {
       priceSection: "Price",
       noNotesHint: "No notes",
       sectionAddon: "Add-on",
+      groupSectionTitle: (n: number) => `👥 Party of ${n}`,
+      groupOrganizedBy: (name: string) => `Organized by ${name}`,
+      groupOrganizerBadge: "Organizer",
+      groupSeatTogether: "Seated together 💕",
     },
     edit: {
       modeTitle: "Edit booking",

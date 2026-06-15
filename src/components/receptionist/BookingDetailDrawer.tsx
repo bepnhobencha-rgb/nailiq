@@ -20,6 +20,10 @@ import { DepositLinkModal } from "./DepositLinkModal";
 import { requestDepositLink } from "@/shared/dashboard/receptionistActions";
 import { sendSaveCardLink } from "@/shared/dashboard/sendSaveCardLinkAction";
 import type { BookingCustomerContext } from "@/shared/dashboard/loadBookingCustomerContextAction";
+import {
+  loadGroupMembersAction,
+  type GroupMember,
+} from "@/shared/dashboard/loadGroupMembersAction";
 
 function depositErrorLabel(code: string, lang: "en" | "vi"): string {
   if (code.startsWith("risk "))
@@ -376,11 +380,18 @@ export type BookingDetailDrawerModel = {
   noshowFeeLine: string | null;
   /** Dashboard language — drives the deposit SMS copy + the deposit modal/button text. */
   language: "en" | "vi";
+  /** Group/party this booking belongs to (null = solo booking). Drives the
+   *  "who's going with whom" party section, lazily loaded when the drawer opens. */
+  groupId: string | null;
+  /** Party asked to be seated together (couple / 💕). */
+  seatTogether: boolean;
 };
 
 export interface BookingDetailDrawerProps {
   open: boolean;
   model: BookingDetailDrawerModel | null;
+  /** Salon slug — used to lazily load the party composition for group bookings. */
+  slug?: string;
   onClose: () => void;
   copy: {
     title: string;
@@ -408,6 +419,11 @@ export interface BookingDetailDrawerProps {
     nonePrice: string;
     /** "❤️ Khách yêu cầu thợ này" line under the source label. */
     staffRequestedByClient: string;
+    /** Party/group composition section ("who's going with whom"). */
+    groupSectionTitle: (n: number) => string;
+    groupOrganizedBy: (name: string) => string;
+    groupOrganizerBadge: string;
+    groupSeatTogether: string;
   };
   /** Lazy "customer launchpad" context (creator / allergies / return cadence),
    *  loaded by the parent when the drawer opens. `undefined` = still loading,
@@ -503,6 +519,7 @@ export interface BookingDetailDrawerProps {
 export function BookingDetailDrawer({
   open,
   model,
+  slug,
   onClose,
   copy,
   customerContext,
@@ -527,11 +544,39 @@ export function BookingDetailDrawer({
   // switches to a different booking, so an unrelated open never leaks
   // the previous customer's full digits.
   const [phoneRevealed, setPhoneRevealed] = useState(false);
+  // Party composition ("who's going with whom"), lazily loaded for group bookings.
+  const [party, setParty] = useState<{
+    members: GroupMember[];
+    organizerName: string | null;
+  } | null>(null);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- portal target is only available client-side
     setPortalEl(document.body);
   }, []);
+
+  useEffect(() => {
+    const gid = model?.groupId;
+    if (!open || !gid || !slug) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale party when the drawer closes / rebinds to a solo booking
+      setParty(null);
+      return;
+    }
+    let alive = true;
+    void loadGroupMembersAction(slug, gid)
+      .then((r) => {
+        if (!alive) return;
+        setParty(
+          r.ok ? { members: r.members, organizerName: r.organizerName } : null,
+        );
+      })
+      .catch(() => {
+        if (alive) setParty(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [open, model?.groupId, slug]);
 
   const handleClose = useCallback(() => {
     setEditMode(false);
@@ -864,6 +909,55 @@ export function BookingDetailDrawer({
               </p>
               <p className="font-medium text-nq-foreground">{model.staffName}</p>
             </section>
+
+            {/* Party composition — "who's going with whom". Lazily loaded for
+                group bookings; only shown for a real multi-person party. */}
+            {party && party.members.length > 1 ? (
+              <section
+                className="space-y-2 border-t border-nq-muted/15 pt-4"
+                data-testid="drawer-party-section"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+                  {copy.groupSectionTitle(party.members.length)}
+                </p>
+                {party.organizerName ? (
+                  <p className="text-xs text-nq-muted">
+                    {copy.groupOrganizedBy(party.organizerName)}
+                  </p>
+                ) : null}
+                {model.seatTogether ? (
+                  <p className="text-xs font-medium text-nq-primary">
+                    {copy.groupSeatTogether}
+                  </p>
+                ) : null}
+                <ul className="space-y-1.5">
+                  {party.members.map((m) => (
+                    <li
+                      key={m.bookingId}
+                      className="flex items-start gap-2 text-sm"
+                    >
+                      <span className="shrink-0 tabular-nums text-nq-muted/70">
+                        {m.startDisplay}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="flex items-center gap-1.5 font-medium text-nq-foreground">
+                          <span className="truncate">{m.name}</span>
+                          {m.isOrganizer ? (
+                            <span className="shrink-0 rounded bg-nq-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-nq-primary">
+                              {copy.groupOrganizerBadge}
+                            </span>
+                          ) : null}
+                        </p>
+                        <p className="truncate text-xs text-nq-muted">
+                          {m.serviceName}
+                          {m.staffName ? ` · ${m.staffName}` : ""}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
 
             <section className="space-y-1 border-t border-nq-muted/15 pt-4">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
