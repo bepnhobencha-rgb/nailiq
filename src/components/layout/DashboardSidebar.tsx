@@ -208,7 +208,9 @@ export function DashboardSidebar({
           {
             key: "front-desk",
             label: t.frontDesk,
-            href: `${dashRoot}/center`,
+            // Force the day grid (the live board). Without ?view=day a stored
+            // week/month from a prior Calendar visit would reopen here.
+            href: `${dashRoot}/center?view=day`,
             icon: LayoutGrid,
             match: (p) => p.startsWith(`${dashRoot}/center`),
             hidden: featureOff("receptionist_center"),
@@ -216,8 +218,8 @@ export function DashboardSidebar({
           {
             key: "queue",
             label: t.walkinQueue,
-            // Center anchors a queue panel; deep-link via #queue.
-            href: `${dashRoot}/center#queue`,
+            // Queue panel renders only in the day view — force it + deep-link #queue.
+            href: `${dashRoot}/center?view=day#queue`,
             icon: Clock,
             match: () => false,
             hidden:
