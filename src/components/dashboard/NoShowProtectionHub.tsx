@@ -29,6 +29,10 @@ type Props = {
   depositPctNoShow: number;
   depositPctHighValue: number;
   depositPctNewCustomer: number;
+  /** Master ON/OFF for Square deposits (square_integrations.deposit_enabled). */
+  depositEnabled: boolean;
+  /** Grace minutes before an unpaid deposit-held slot auto-releases. */
+  depositHoldGraceMinutes: number;
   connectHasAccount: boolean;
   connectChargesEnabled: boolean;
   connectDetailsSubmitted: boolean;
@@ -89,6 +93,8 @@ export function NoShowProtectionHub({
   depositPctNoShow: initialPctNoShow,
   depositPctHighValue: initialPctHighValue,
   depositPctNewCustomer: initialPctNewCustomer,
+  depositEnabled: initialDepositEnabled,
+  depositHoldGraceMinutes: initialGrace,
   connectHasAccount,
   connectChargesEnabled,
   connectDetailsSubmitted,
@@ -110,6 +116,8 @@ export function NoShowProtectionHub({
   const [pctNoShow, setPctNoShow] = useState(String(initialPctNoShow));
   const [pctHighValue, setPctHighValue] = useState(String(initialPctHighValue));
   const [pctNewCustomer, setPctNewCustomer] = useState(String(initialPctNewCustomer));
+  const [depositEnabled, setDepositEnabled] = useState(initialDepositEnabled);
+  const [grace, setGrace] = useState(String(initialGrace));
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [waivedIds, setWaivedIds] = useState<Set<string>>(new Set());
   // No-show card-on-file policy (provider-agnostic) + provider choice.
@@ -154,6 +162,8 @@ export function NoShowProtectionHub({
         deposit_pct_no_show: parseInt(pctNoShow, 10),
         deposit_pct_high_value: parseInt(pctHighValue, 10),
         deposit_pct_new_customer: parseInt(pctNewCustomer, 10),
+        deposit_enabled: depositEnabled,
+        deposit_hold_grace_minutes: parseInt(grace, 10) || 30,
       });
       setSaveMsg("Settings saved");
       setTimeout(() => setSaveMsg(null), 3000);
@@ -338,6 +348,32 @@ export function NoShowProtectionHub({
                     className="w-24 rounded-lg border border-nq-border/40 bg-nq-bg px-3 py-1.5 text-sm text-nq-text focus:outline-none focus:border-nq-gold/50"
                   />
                 </div>
+                {/* Master ON/OFF for Square deposits + the pay-to-confirm grace
+                    window. Both admin-set (no hardcode). */}
+                <label className="mt-3 flex items-center gap-2 text-sm text-nq-text">
+                  <input
+                    type="checkbox"
+                    data-testid="deposit-enabled-toggle"
+                    checked={depositEnabled}
+                    onChange={(e) => setDepositEnabled(e.target.checked)}
+                    className="h-4 w-4 accent-nq-gold"
+                  />
+                  <span>Bật thu cọc (Square) / Enable deposits</span>
+                </label>
+                <label className="mt-1 flex items-center gap-2 text-sm text-nq-text">
+                  <span className="whitespace-nowrap text-xs text-nq-muted">
+                    Giữ chỗ chờ cọc (phút) / Hold grace
+                  </span>
+                  <input
+                    type="number"
+                    min="5"
+                    max="1440"
+                    data-testid="deposit-grace-input"
+                    value={grace}
+                    onChange={(e) => setGrace(e.target.value)}
+                    className="ml-auto w-20 rounded-lg border border-nq-border/40 bg-nq-bg px-2 py-1.5 text-sm text-nq-text focus:outline-none focus:border-nq-gold/50"
+                  />
+                </label>
                 {/* Deposit % per trigger — de-hardcoded; charged on the salon's
                     Stripe (Phase 2). 0 = no deposit for that trigger. */}
                 <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-3">
