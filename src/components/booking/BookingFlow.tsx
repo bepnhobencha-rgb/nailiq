@@ -508,6 +508,7 @@ export function BookingFlow({
             onBack={flow.backToInfo}
             onConfirm={(extra) => void flow.onConfirm(extra)}
             cardRequirement={flow.cardRequirement}
+            savedCard={flow.savedCard}
             smsConsent={flow.smsConsent}
             setSmsConsent={flow.setSmsConsent}
             onApplyVoucher={flow.handleApplyVoucher}

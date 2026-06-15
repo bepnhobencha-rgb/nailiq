@@ -13,6 +13,8 @@
 import "server-only";
 import { looseServiceClient, type Row } from "./looseDb";
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
+import { getSquareConfig, findSquareCustomerByPhone, listCards } from "./client";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
@@ -174,6 +176,100 @@ export async function saveNoShowCardForBooking(
     .eq("id", bookingId);
 
   return { ok: true, reason: "saved", last4: saved.last4 };
+}
+
+/** Attach a returning customer's EXISTING saved card to this booking — no new
+ *  card entry. Server-authoritative + OTP-gated: we re-validate the OTP session,
+ *  take the phone FROM the session (never the client), look up the Square
+ *  customer + their card ourselves, and stamp it on the booking. The client
+ *  never supplies a card id, so it can't point us at someone else's card. */
+export async function reuseNoShowCardForBooking(
+  bookingId: string,
+  otpSessionId: string,
+  consent: boolean,
+): Promise<{ ok: boolean; reason: string; last4?: string }> {
+  if (!consent) return { ok: false, reason: "consent required" };
+  if (!otpSessionId) return { ok: false, reason: "otp required" };
+
+  const db = looseServiceClient();
+  const { data } = await db
+    .from("bookings")
+    .select("id, salon_id, client_phone, noshow_card_id")
+    .eq("id", bookingId)
+    .maybeSingle();
+  const b = data as Row | null;
+  if (!b) return { ok: false, reason: "booking not found" };
+  if (b.noshow_card_id) return { ok: true, reason: "already saved" }; // idempotent
+
+  const decision = await noShowCardDecision(bookingId);
+  if (!decision.required) return { ok: false, reason: decision.reason };
+
+  // OTP gate: session must exist, match THIS salon, be unconsumed + unexpired,
+  // and its verified phone must equal the booking's phone.
+  const sb = createServiceRoleClient();
+  const { data: sessRow } = await sb
+    .from("phone_otp_sessions" as never)
+    .select("phone, salon_id, expires_at, consumed_at")
+    .eq("id", otpSessionId)
+    .maybeSingle();
+  const sess = sessRow as
+    | { phone: string; salon_id: string; expires_at: string; consumed_at: string | null }
+    | null;
+  if (!sess) return { ok: false, reason: "otp invalid" };
+  if (sess.salon_id !== str(b.salon_id)) return { ok: false, reason: "otp salon mismatch" };
+  if (sess.consumed_at) return { ok: false, reason: "otp consumed" };
+  if (Date.parse(sess.expires_at) < Date.now()) return { ok: false, reason: "otp expired" };
+  const sessionPhone = (sess.phone || "").replace(/\D/g, "");
+  const bookingPhone = str(b.client_phone).replace(/\D/g, "");
+  if (!sessionPhone || sessionPhone !== bookingPhone) {
+    return { ok: false, reason: "otp phone mismatch" };
+  }
+
+  // Square only.
+  const provider = await resolvePaymentProvider(str(b.salon_id));
+  if (!provider || provider.kind !== "square") {
+    return { ok: false, reason: "reuse unsupported for provider" };
+  }
+  const cfg = await getSquareConfig(db, str(b.salon_id));
+  const customerId = await findSquareCustomerByPhone(cfg, sessionPhone);
+  if (!customerId) return { ok: false, reason: "no saved customer" };
+  const cards = await listCards(cfg, customerId);
+  const card = cards[0];
+  if (!card || !card.cardId) return { ok: false, reason: "no saved card" };
+
+  // Server-authored consent evidence (mirrors the save path) + a reused flag.
+  const { data: salonRow } = await db
+    .from("salons")
+    .select("currency_code")
+    .eq("id", str(b.salon_id))
+    .maybeSingle();
+  const currency = String((salonRow as Row | null)?.currency_code || "USD").trim().toUpperCase() || "USD";
+  const feeStr = `${(decision.feeCents / 100).toFixed(2)} ${currency}`;
+  const consentMeta = {
+    policyText: `Cardholder authorized this salon to charge a no-show fee of ${feeStr} to their card on file (${card.brand} ending ${card.last4}) only if they do not show up for this appointment. No charge is made at booking. The cardholder may remove the card at any time.`,
+    feeCents: decision.feeCents,
+    currency,
+    cardBrand: card.brand,
+    cardLast4: card.last4,
+    reused: true,
+    capturedAt: new Date().toISOString(),
+  };
+
+  await db
+    .from("bookings")
+    .update({
+      noshow_card_id: card.cardId,
+      noshow_customer_id: customerId,
+      noshow_card_last4: card.last4,
+      noshow_card_brand: card.brand,
+      noshow_fee_cents: decision.feeCents,
+      noshow_charge_status: "saved",
+      noshow_consent_at: new Date().toISOString(),
+      noshow_consent_meta: consentMeta,
+    } as never)
+    .eq("id", bookingId);
+
+  return { ok: true, reason: "reused", last4: card.last4 };
 }
 
 /** Charge the saved card for the no-show fee. Called when a booking is marked

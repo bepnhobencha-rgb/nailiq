@@ -175,6 +175,44 @@ export async function createPaymentLink(
 // customer no-shows. Proven against sandbox: customer → CreateCard → CreatePayment.
 // ---------------------------------------------------------------------------
 
+/** Candidate phone formats to try against Square. Square stores/searches phone
+ *  numbers in E.164 (e.g. "+12368894243"), but our DB keeps digits ("12368894243"
+ *  / "2368894243"). Verified against prod: exact match needs the "+E.164" form.
+ *  We try the most likely first; de-duplicated, falsy dropped. */
+function phoneSearchCandidates(phone: string): string[] {
+  const digits = (phone || "").replace(/\D/g, "");
+  if (!digits) return [];
+  const last10 = digits.slice(-10);
+  const cands = [
+    `+${digits}`, // "+12368894243" (digits already carry country code)
+    digits.length === 10 ? `+1${digits}` : "", // 10-digit NANP → +1
+    last10.length === 10 ? `+1${last10}` : "", // strip extra prefix, NANP
+    digits, // bare digits (older records)
+  ].filter(Boolean);
+  return Array.from(new Set(cands));
+}
+
+/** Find an existing Square customer by phone — READ ONLY, never creates. Tries
+ *  E.164 variants (Square stores phones in E.164). Returns null when no match. */
+export async function findSquareCustomerByPhone(
+  cfg: SquareConfig,
+  phone: string,
+): Promise<string | null> {
+  for (const candidate of phoneSearchCandidates(phone)) {
+    try {
+      const found = await squareReq(cfg, "POST", "/customers/search", {
+        query: { filter: { phone_number: { exact: candidate } } },
+        limit: 1,
+      });
+      const hit = (found.customers as Array<{ id?: string }> | undefined)?.[0];
+      if (hit?.id) return hit.id;
+    } catch {
+      /* try next candidate */
+    }
+  }
+  return null;
+}
+
 /** Find-or-create a Square customer for this booking's contact. */
 export async function ensureSquareCustomer(
   cfg: SquareConfig,
@@ -182,17 +220,11 @@ export async function ensureSquareCustomer(
 ): Promise<string> {
   // Match on phone first (the salon's primary key for a guest). Best-effort —
   // a phone Square rejects (e.g. fictional 555 numbers) must not break saving.
+  // E.164-aware search (Square stores phones in E.164) avoids creating a
+  // duplicate customer for a returning guest.
   if (opts.phone) {
-    try {
-      const found = await squareReq(cfg, "POST", "/customers/search", {
-        query: { filter: { phone_number: { exact: opts.phone } } },
-        limit: 1,
-      });
-      const hit = (found.customers as Array<{ id?: string }> | undefined)?.[0];
-      if (hit?.id) return hit.id;
-    } catch {
-      /* unsearchable phone — fall through to create */
-    }
+    const existing = await findSquareCustomerByPhone(cfg, opts.phone);
+    if (existing) return existing;
   }
   const parts = (opts.name ?? "").trim().split(/\s+/);
   const base = {

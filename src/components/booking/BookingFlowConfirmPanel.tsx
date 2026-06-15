@@ -7,6 +7,7 @@ import {
   type ConfirmStepCardHandle,
 } from "@/components/booking/ConfirmStepCardCapture";
 import type { NoShowCardRequirement } from "@/shared/noshow/resolveNoShowCardRequirement";
+import type { SavedNoShowCard } from "@/shared/noshow/resolveSavedNoShowCard";
 import { Button } from "@/components/ui/Button";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
 import {
@@ -59,6 +60,7 @@ export function BookingFlowConfirmPanel({
   onApplyVoucher,
   onRemoveVoucher,
   cardRequirement,
+  savedCard,
   smsConsent,
   setSmsConsent,
 }: {
@@ -92,11 +94,13 @@ export function BookingFlowConfirmPanel({
   onClearAddons: () => void;
   onBack: () => void;
   onConfirm: (
-    extra?: { noShowCardSourceId?: string; noShowConsent?: boolean },
+    extra?: { noShowCardSourceId?: string; noShowConsent?: boolean; noShowReuseSavedCard?: boolean },
   ) => void | Promise<void>;
   /** Option A no-show card gate, resolved BEFORE booking. When required, the card
    *  is captured here and must be entered before the booking can be confirmed. */
   cardRequirement?: NoShowCardRequirement | null;
+  /** Đợt 2 — returning OTP-verified customer's saved card (one-tap reuse). */
+  savedCard?: SavedNoShowCard | null;
   /** SMS consent (collected at the phone gate). Confirm hides its own checkbox
    *  when already given; still gates the button on it as a safety net. */
   smsConsent: boolean;
@@ -109,13 +113,23 @@ export function BookingFlowConfirmPanel({
   // checkbox below is only a fallback shown when it wasn't given there.
   // Option A no-show card gate.
   const cardRequired = cardRequirement?.required === true;
+  const hasSavedCard = savedCard?.hasSavedCard === true;
   const [noShowConsent, setNoShowConsent] = useState(false);
+  // When a saved card exists, default to reusing it; the customer can switch to
+  // entering a new one.
+  const [useDifferentCard, setUseDifferentCard] = useState(false);
+  const reuseSaved = cardRequired && hasSavedCard && !useDifferentCard;
   const cardRef = useRef<ConfirmStepCardHandle>(null);
   const [cardError, setCardError] = useState<string | null>(null);
 
   async function handleConfirm() {
     if (cardRequired) {
       setCardError(null);
+      // One-tap reuse of the saved card — no new tokenization.
+      if (reuseSaved) {
+        await onConfirm({ noShowReuseSavedCard: true, noShowConsent: true });
+        return;
+      }
       const token = await cardRef.current?.tokenize();
       if (!token) {
         setCardError(t.noShowCardError ?? "Please check your card details.");
@@ -401,14 +415,61 @@ export function BookingFlowConfirmPanel({
 
         {cardRequired && cardRequirement?.required ? (
           <>
-            <ConfirmStepCardCapture
-              ref={cardRef}
-              applicationId={cardRequirement.applicationId}
-              locationId={cardRequirement.locationId}
-              environment={cardRequirement.environment}
-              feeLabel={formatBookingPrice(cardRequirement.feeCents, currency) ?? ""}
-              t={t}
-            />
+            {reuseSaved && savedCard?.hasSavedCard ? (
+              <div
+                className="mt-4 rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4"
+                data-testid="saved-card-reuse"
+              >
+                <p className="text-sm font-semibold text-[var(--booking-text)]">
+                  {t.noShowCardTitle ?? "Secure your appointment"}
+                </p>
+                <div className="mt-3 flex items-center gap-3 rounded-lg border border-[var(--booking-border)] bg-[var(--booking-bg-input)] px-3 py-3">
+                  <span aria-hidden className="text-base">💳</span>
+                  <span className="text-sm font-medium text-[var(--booking-text)]">
+                    {savedCard.brand || "Card"} •••• {savedCard.last4}
+                  </span>
+                  <span className="ml-auto rounded-full bg-[var(--salon-primary)]/15 px-2 py-0.5 text-[11px] font-semibold text-[var(--salon-primary)]">
+                    {t.noShowSavedCardOnFile ?? "On file"}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+                  {(t.noShowSavedCardDesc ??
+                    "We'll use your saved card. You're only charged {fee} if you don't show up — nothing now.").replace(
+                    "{fee}",
+                    formatBookingPrice(cardRequirement.feeCents, currency) ?? "",
+                  )}
+                </p>
+                <button
+                  type="button"
+                  data-testid="use-different-card"
+                  onClick={() => setUseDifferentCard(true)}
+                  className="mt-2 text-xs font-semibold text-[var(--salon-primary)] underline"
+                >
+                  {t.noShowUseDifferentCard ?? "Use a different card"}
+                </button>
+              </div>
+            ) : (
+              <>
+                <ConfirmStepCardCapture
+                  ref={cardRef}
+                  applicationId={cardRequirement.applicationId}
+                  locationId={cardRequirement.locationId}
+                  environment={cardRequirement.environment}
+                  feeLabel={formatBookingPrice(cardRequirement.feeCents, currency) ?? ""}
+                  t={t}
+                />
+                {hasSavedCard ? (
+                  <button
+                    type="button"
+                    data-testid="use-saved-card"
+                    onClick={() => setUseDifferentCard(false)}
+                    className="mt-2 text-xs font-semibold text-[var(--salon-primary)] underline"
+                  >
+                    {t.noShowUseSavedCard ?? "Use my saved card instead"}
+                  </button>
+                ) : null}
+              </>
+            )}
             <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
               <input
                 type="checkbox"

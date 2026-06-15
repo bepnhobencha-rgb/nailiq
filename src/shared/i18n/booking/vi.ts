@@ -55,6 +55,11 @@ export const bookingVi: BookingMessages = {
   noShowCardError: "Không lưu được thẻ. Vui lòng kiểm tra lại thông tin.",
   noShowConsent:
     "Tôi đồng ý với chính sách no-show và cho phép tiệm thu {fee} vào thẻ này chỉ khi tôi không đến.",
+  noShowSavedCardOnFile: "Đã lưu",
+  noShowSavedCardDesc:
+    "Sẽ dùng thẻ đã lưu của bạn. Bạn chỉ bị thu {fee} nếu không đến — không trừ gì bây giờ.",
+  noShowUseDifferentCard: "Dùng thẻ khác",
+  noShowUseSavedCard: "Dùng thẻ đã lưu của tôi",
   slotLoading: "Đang tải giờ trống…",
   noSlotsAvailable: "Hết giờ trống. Vui lòng chọn ngày khác.",
   slotsTimezoneLabel: "Giờ {tz}",
