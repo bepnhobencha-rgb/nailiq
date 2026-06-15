@@ -89,7 +89,7 @@ export async function createDepositForBooking(
   const db = looseServiceClient();
   const { data: bRow } = await db
     .from("bookings")
-    .select("id, salon_id, status, price_cents, no_show_risk_score, deposit_status, deposit_amount_cents, square_payment_link_id, deposit_link_url, client_name, client_phone")
+    .select("id, salon_id, status, price_cents, no_show_risk_score, deposit_status, deposit_amount_cents, square_payment_link_id, deposit_link_url, client_name, client_phone, noshow_card_required, noshow_card_id")
     .eq("id", bookingId)
     .maybeSingle();
   const b = bRow as Row | null;
@@ -112,6 +112,19 @@ export async function createDepositForBooking(
 
   const risk = num(b.no_show_risk_score);
   const manual = opts?.manual === true;
+
+  // No-show card supersedes the deposit (same rule as the online path in
+  // evaluateBookingNoShow): if this booking already requires / has a card on
+  // file — charged only on a confirmed no-show — don't ALSO auto-create an
+  // up-front deposit for the same risk. A manual desk request still goes
+  // through: the receptionist explicitly chose it (human override).
+  if (
+    !manual &&
+    (b.noshow_card_required === true || b.noshow_card_id != null)
+  ) {
+    return { required: false, reason: "superseded by no-show card on file" };
+  }
+
   if (!manual && risk < policy.threshold) {
     return { required: false, reason: `risk ${risk} < threshold ${policy.threshold}` };
   }
