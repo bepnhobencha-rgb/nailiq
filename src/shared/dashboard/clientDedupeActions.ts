@@ -55,7 +55,8 @@ export async function findDuplicateClients(
     lang === "vi" ? { email: "Cùng email" } : { email: "Same email" };
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
-  if (resolved.role !== "owner") return { ok: false, error: "forbidden" };
+  if (resolved.role !== "owner" && resolved.role !== "admin")
+    return { ok: false, error: "forbidden" };
 
   let admin;
   try {
@@ -252,7 +253,8 @@ export async function mergeClientProfilesAction(
 ): Promise<MergeResult> {
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
-  if (resolved.role !== "owner") return { ok: false, error: "forbidden" };
+  if (resolved.role !== "owner" && resolved.role !== "admin")
+    return { ok: false, error: "forbidden" };
   if (!keepId || !dropId || keepId === dropId) {
     return { ok: false, error: "invalid_args" };
   }

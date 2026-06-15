@@ -36,7 +36,8 @@ export async function loadMultiNamePhones(
 ): Promise<LoadMultiNamePhonesResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (ctx.role !== "owner" && ctx.role !== "admin")
+    return { ok: false, error: "forbidden" };
 
   let admin;
   try {
@@ -89,7 +90,8 @@ export async function setClientName(
 ): Promise<SetClientNameResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (ctx.role !== "owner" && ctx.role !== "admin")
+    return { ok: false, error: "forbidden" };
 
   const canonical = toCanonicalPhone(phone);
   const cleanName = (name ?? "").trim().slice(0, 200);
