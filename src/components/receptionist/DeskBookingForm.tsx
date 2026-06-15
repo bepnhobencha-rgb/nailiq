@@ -85,6 +85,9 @@ type Props = {
   initialYmd?: string;
   /** Desired time label, e.g. "2:00 PM" — auto-selected once it appears free. */
   initialSlotLabel?: string;
+  /** Customer prefill for one-tap rebook from the booking drawer. */
+  initialPhone?: string;
+  initialName?: string;
   /** Per-salon notify config — drives the "notify customer?" panel defaults. */
   notifySettings: StaffNotificationSettings;
   /** Viewport coords of the originating grid click. When set (desktop), the form
@@ -236,6 +239,8 @@ export default function DeskBookingForm({
   initialStaffId,
   initialYmd,
   initialSlotLabel,
+  initialPhone,
+  initialName,
   notifySettings,
   anchor,
 }: Props) {
@@ -252,8 +257,8 @@ export default function DeskBookingForm({
   const [data, setData] = useState<LoadData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [phone, setPhone] = useState("");
-  const [name, setName] = useState("");
+  const [phone, setPhone] = useState(initialPhone ?? "");
+  const [name, setName] = useState(initialName ?? "");
   const [email, setEmail] = useState("");
   const [serviceId, setServiceId] = useState(initialServiceId ?? "");
   const [addonIds, setAddonIds] = useState<string[]>([]);

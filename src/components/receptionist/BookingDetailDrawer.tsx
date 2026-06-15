@@ -18,6 +18,7 @@ import type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
 import { EditBookingForm, type EditBookingFormBooking } from "./EditBookingForm";
 import { DepositLinkModal } from "./DepositLinkModal";
 import { requestDepositLink } from "@/shared/dashboard/receptionistActions";
+import type { BookingCustomerContext } from "@/shared/dashboard/loadBookingCustomerContextAction";
 
 function depositErrorLabel(code: string, lang: "en" | "vi"): string {
   if (code.startsWith("risk "))
@@ -167,6 +168,28 @@ function statusBadgeVariant(status: BookingStatus): BadgeVariant {
     case "cancelled":
       return "neutral"; // low-arousal muted / slate
   }
+}
+
+/** Localized salon-role label for the "Booked by … · <role>" creator line. */
+function roleLabel(role: string, lang: "en" | "vi"): string {
+  const map: Record<string, [string, string]> = {
+    owner: ["Owner", "Chủ tiệm"],
+    admin: ["Manager", "Quản lý"],
+    senior: ["Senior", "Thợ chính"],
+    receptionist: ["Receptionist", "Lễ tân"],
+    nail_tech: ["Technician", "Thợ"],
+  };
+  const hit = map[role];
+  return hit ? (lang === "vi" ? hit[1] : hit[0]) : role;
+}
+
+/** Render a return-cadence in human terms ("every ~4 weeks" / "mỗi ~4 tuần"). */
+function cadenceLabel(days: number, lang: "en" | "vi"): string {
+  if (days >= 12) {
+    const weeks = Math.round(days / 7);
+    return lang === "vi" ? `mỗi ~${weeks} tuần` : `every ~${weeks} weeks`;
+  }
+  return lang === "vi" ? `mỗi ~${days} ngày` : `every ~${days} days`;
 }
 
 /** Inline "actual final price" editor for variable-priced bookings. Self-contained
@@ -322,6 +345,18 @@ export interface BookingDetailDrawerProps {
     /** "❤️ Khách yêu cầu thợ này" line under the source label. */
     staffRequestedByClient: string;
   };
+  /** Lazy "customer launchpad" context (creator / allergies / return cadence),
+   *  loaded by the parent when the drawer opens. `undefined` = still loading,
+   *  `null` = unavailable (no phone / error). */
+  customerContext?: BookingCustomerContext | null;
+  /** True while {@link customerContext} is being fetched. */
+  customerContextLoading?: boolean;
+  /** Open the full Customer 360 profile + history for this guest. Present only
+   *  when the booking has a phone to look up. */
+  onViewProfile?: () => void;
+  /** One-tap "book the next visit" — opens the desk form prefilled with this
+   *  customer at their usual rhythm. Present only when a phone exists. */
+  onRebookNext?: () => void;
   /** Caller's `salon_members.role` — gates Edit (Cancel is gated upstream). */
   viewerRole: SalonMemberRole;
   /**
@@ -406,6 +441,10 @@ export function BookingDetailDrawer({
   model,
   onClose,
   copy,
+  customerContext,
+  customerContextLoading = false,
+  onViewProfile,
+  onRebookNext,
   viewerRole,
   isOffline = false,
   offlineEditDisabledHint,
@@ -546,6 +585,40 @@ export function BookingDetailDrawer({
                 <p className="text-nq-muted" data-testid="booking-drawer-channel">
                   <span className="text-nq-muted">{model.channelLabel ?? model.sourceLabel}</span>
                 </p>
+                {/* "Ai đặt hẹn này" — creator of a manual booking (or self-book). */}
+                {customerContext?.creatorName ? (
+                  <p className="text-xs text-nq-muted" data-testid="booking-drawer-created-by">
+                    {model.language === "vi" ? "Đặt bởi " : "Booked by "}
+                    <span className="font-medium text-nq-foreground">
+                      {customerContext.creatorName}
+                    </span>
+                    {customerContext.creatorRole ? (
+                      <> · {roleLabel(customerContext.creatorRole, model.language)}</>
+                    ) : null}
+                  </p>
+                ) : customerContext?.isSelfBooked ? (
+                  <p className="text-xs text-nq-muted" data-testid="booking-drawer-created-by">
+                    {model.language === "vi" ? "Khách tự đặt" : "Self-booked by guest"}
+                  </p>
+                ) : customerContext?.creatorRole ? (
+                  <p className="text-xs text-nq-muted" data-testid="booking-drawer-created-by">
+                    {model.language === "vi" ? "Đặt bởi " : "Booked by "}
+                    {roleLabel(customerContext.creatorRole, model.language)}
+                  </p>
+                ) : null}
+                {/* ⚠️ Allergy — safety-critical, surfaced at the top of the card. */}
+                {customerContext?.allergies ? (
+                  <p
+                    className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg border border-red-400/40 bg-red-400/10 px-2.5 py-1 text-[13px] font-medium text-red-300"
+                    data-testid="booking-drawer-allergy"
+                  >
+                    <span aria-hidden>⚠️</span>
+                    <span>
+                      {model.language === "vi" ? "Dị ứng: " : "Allergy: "}
+                      {customerContext.allergies}
+                    </span>
+                  </p>
+                ) : null}
                 {model.staffRequestedByClient ? (
                   <p
                     className="inline-flex items-center gap-1.5 text-nq-foreground"
@@ -599,6 +672,62 @@ export function BookingDetailDrawer({
                   </div>
                 ) : null}
               </section>
+
+            {/* ── Customer launchpad — history + return rhythm + one-tap rebook.
+                Only rendered when a phone exists (onViewProfile/onRebookNext set). */}
+            {(onViewProfile || onRebookNext) ? (
+              <section
+                className="space-y-2 border-t border-nq-muted/15 pt-4"
+                data-testid="booking-drawer-launchpad"
+              >
+                {customerContextLoading && customerContext === undefined ? (
+                  <p className="text-xs text-nq-muted">
+                    {model.language === "vi" ? "Đang tải hồ sơ khách…" : "Loading customer…"}
+                  </p>
+                ) : null}
+                {customerContext?.cadenceDays != null ? (
+                  <p className="text-sm text-nq-foreground" data-testid="booking-drawer-cadence">
+                    <span aria-hidden>⏱ </span>
+                    {model.language === "vi" ? "Thường quay lại " : "Usually returns "}
+                    <span className="font-semibold">
+                      {cadenceLabel(customerContext.cadenceDays, model.language)}
+                    </span>
+                    {customerContext.visitCount > 0 ? (
+                      <span className="text-nq-muted">
+                        {model.language === "vi"
+                          ? ` · ${customerContext.visitCount} lần ghé`
+                          : ` · ${customerContext.visitCount} visits`}
+                      </span>
+                    ) : null}
+                  </p>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  {onViewProfile ? (
+                    <button
+                      type="button"
+                      onClick={onViewProfile}
+                      data-testid="booking-drawer-view-profile"
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-nq-muted/40 px-3 text-sm font-medium text-nq-foreground transition hover:border-nq-muted hover:bg-nq-muted/10"
+                    >
+                      <span aria-hidden>👤</span>
+                      {model.language === "vi" ? "Hồ sơ & lịch sử" : "Profile & history"}
+                      <span aria-hidden>→</span>
+                    </button>
+                  ) : null}
+                  {onRebookNext ? (
+                    <button
+                      type="button"
+                      onClick={onRebookNext}
+                      data-testid="booking-drawer-rebook-next"
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-nq-primary/45 bg-nq-primary/12 px-3 text-sm font-semibold text-nq-primary transition hover:bg-nq-primary/20"
+                    >
+                      <span aria-hidden>📅</span>
+                      {model.language === "vi" ? "Đặt hẹn kế tiếp" : "Book next visit"}
+                    </button>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
 
             <section className="space-y-1 border-t border-nq-muted/15 pt-4">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">

@@ -150,6 +150,11 @@ import { AttentionChipBar } from "@/components/receptionist/AttentionChipBar";
 import DeskBookingForm from "@/components/receptionist/DeskBookingForm";
 import DeskGroupForm from "@/components/receptionist/DeskGroupForm";
 import type { PartyCard } from "@/shared/dashboard/loadPartyCardsAction";
+import { ClientProfile360Drawer } from "@/components/dashboard/ClientProfile360Drawer";
+import {
+  loadBookingCustomerContext,
+  type BookingCustomerContext,
+} from "@/shared/dashboard/loadBookingCustomerContextAction";
 
 export type ReceptionistCenterProps = {
   slug: string;
@@ -459,6 +464,32 @@ function ReceptionistCenterInner({
 
   const [drawerBookingId, setDrawerBookingId] = useState<string | null>(null);
 
+  // Customer 360 profile drawer — opened from the booking detail drawer's
+  // "Profile & history" button. Keyed by the guest's phone.
+  const [open360Phone, setOpen360Phone] = useState<string | null>(null);
+
+  // Lazy "customer launchpad" context (creator / allergies / return cadence)
+  // for the open booking. `undefined` = loading, `null` = unavailable.
+  const [customerContext, setCustomerContext] = useState<
+    BookingCustomerContext | null | undefined
+  >(undefined);
+  useEffect(() => {
+    const id = drawerBookingId;
+    if (!id) {
+      setCustomerContext(undefined);
+      return;
+    }
+    let cancelled = false;
+    setCustomerContext(undefined);
+    void loadBookingCustomerContext(slug, id).then((res) => {
+      if (cancelled) return;
+      setCustomerContext(res.ok ? res.context : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [drawerBookingId, slug]);
+
   // Deep-link `?booking=<id>` (e.g. Coco's "open this appointment" link): open
   // that booking's detail drawer once on mount. The page already loaded the
   // matching `?date`, so the booking is in this day's data. One-shot via a ref
@@ -751,11 +782,15 @@ function ReceptionistCenterInner({
   // Prefill for the desk form when opened by clicking an empty grid slot
   // (staff + day + time). Null when opened via the header button (blank form).
   const [deskPrefill, setDeskPrefill] = useState<{
-    staffId: string;
-    ymd: string;
-    slotLabel: string;
+    staffId?: string;
+    ymd?: string;
+    slotLabel?: string;
     /** Click coords → the form opens as a card anchored at the clicked cell. */
     anchor?: { x: number; y: number };
+    /** Customer prefill for one-tap rebook from the booking drawer. */
+    phone?: string;
+    name?: string;
+    serviceId?: string;
   } | null>(null);
   // Desk group booking — gated on the per-salon `group_booking` flag (same
   // flag the PartyCardPanel uses). Mounts DeskGroupForm which reuses the
@@ -2679,6 +2714,9 @@ function ReceptionistCenterInner({
                   initialStaffId={deskPrefill?.staffId}
                   initialYmd={deskPrefill?.ymd}
                   initialSlotLabel={deskPrefill?.slotLabel}
+                  initialServiceId={deskPrefill?.serviceId}
+                  initialPhone={deskPrefill?.phone}
+                  initialName={deskPrefill?.name}
                   anchor={deskPrefill?.anchor}
                   onClose={() => {
                     setDeskBookingOpen(false);
@@ -3502,6 +3540,46 @@ function ReceptionistCenterInner({
               }
             : undefined
         }
+        customerContext={customerContext}
+        customerContextLoading={customerContext === undefined}
+        onViewProfile={
+          openDrawerBooking?.client_phone
+            ? () => setOpen360Phone(openDrawerBooking.client_phone)
+            : undefined
+        }
+        onRebookNext={
+          openDrawerBooking?.client_phone
+            ? () => {
+                const b = openDrawerBooking;
+                const next = customerContext?.nextSuggestedAt ?? null;
+                setDeskPrefill({
+                  phone: b.client_phone ?? undefined,
+                  name: b.client_name ?? undefined,
+                  serviceId:
+                    customerContext?.usualServiceId ?? b.service_id ?? undefined,
+                  staffId:
+                    customerContext?.usualStaffId ?? b.staff_id ?? undefined,
+                  ymd: next ? salonYmdOfUtc(next, timezone) : undefined,
+                });
+                setDrawerBookingId(null);
+                setDeskBookingOpen(true);
+              }
+            : undefined
+        }
+      />
+
+      {/* Customer 360 — full profile, history, preferences (allergies),
+          return pattern + loyalty. Opened from the booking drawer. */}
+      <ClientProfile360Drawer
+        slug={slug}
+        clientPhone={open360Phone}
+        viewerRole={viewerRole}
+        onClose={() => setOpen360Phone(null)}
+        onBookAgain={(phone) => {
+          setOpen360Phone(null);
+          setDeskPrefill({ phone, name: openDrawerBooking?.client_name ?? undefined });
+          setDeskBookingOpen(true);
+        }}
       />
 
       {depositCancel ? (
