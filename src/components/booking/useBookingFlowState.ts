@@ -121,6 +121,8 @@ export function useBookingFlowState(
   /** Booking surface language — forwarded to the booking so the
    *  confirmation SMS is sent in the language the customer chose. */
   language: "en" | "vi" = "vi",
+  /** SMS consent captured at the phone gate — pre-satisfies confirm. */
+  initialSmsConsent: boolean = false,
 ) {
   const capability = useMemo(
     () => buildCapabilityMap(capabilityRows),
@@ -223,6 +225,9 @@ export function useBookingFlowState(
   // Option A no-show card gate — resolved when the customer reaches the confirm
   // step (before any booking exists) so the card form can render in-step.
   const [cardRequirement, setCardRequirement] = useState<NoShowCardRequirement | null>(null);
+  // SMS consent — captured at the phone gate; pre-satisfies confirm so it isn't
+  // asked twice. Confirm still requires it (gates the button) as a safety net.
+  const [smsConsent, setSmsConsent] = useState(initialSmsConsent);
   const [waitlistSlotJoined, setWaitlistSlotJoined] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [serviceError, setServiceError] = useState<string | null>(null);
@@ -1675,6 +1680,8 @@ export function useBookingFlowState(
     handleAddToCalendar,
     onConfirm,
     cardRequirement,
+    smsConsent,
+    setSmsConsent,
     submitWaitlistSlotUnavailable,
     backToPhone,
     backToService,

@@ -101,6 +101,9 @@ type BookingFlowProps = {
   initialReturningCustomer?: ReturningCustomer | null;
   /** Name captured at the gate (returning name or new-customer typed). */
   initialName?: string;
+  /** SMS consent captured at the gate (after the phone). Pre-satisfies the
+   *  confirm-step consent so it isn't asked twice. */
+  initialSmsConsent?: boolean;
 };
 
 export function BookingFlow({
@@ -117,6 +120,7 @@ export function BookingFlow({
   initialPhone = "",
   initialReturningCustomer = null,
   initialName = "",
+  initialSmsConsent = false,
 }: BookingFlowProps) {
   const reducedMotion = useReducedMotion();
   const vertical = resolveVertical(salon.vertical);
@@ -135,6 +139,7 @@ export function BookingFlow({
     initialReturningCustomer,
     initialName,
     language,
+    initialSmsConsent,
   );
 
   const [loyaltyCard, setLoyaltyCard] = useState<LoyaltyCard | null>(null);
@@ -503,6 +508,8 @@ export function BookingFlow({
             onBack={flow.backToInfo}
             onConfirm={(extra) => void flow.onConfirm(extra)}
             cardRequirement={flow.cardRequirement}
+            smsConsent={flow.smsConsent}
+            setSmsConsent={flow.setSmsConsent}
             onApplyVoucher={flow.handleApplyVoucher}
             onRemoveVoucher={flow.handleRemoveVoucher}
           />
