@@ -16,13 +16,14 @@ export default async function BookingTermsPage({ params }: Props) {
   const { slug } = await params;
   const { data } = await createServiceRoleClient()
     .from("salons" as never)
-    .select("name")
+    .select("name, vertical")
     .eq("slug", slug)
     .maybeSingle();
   if (!data) notFound();
-  const salonName = ((data as { name?: string | null }).name ?? "").trim() || slug;
-  const en = bookingTerms("en", salonName);
-  const vi = bookingTerms("vi", salonName);
+  const row = data as { name?: string | null; vertical?: string | null };
+  const salonName = (row.name ?? "").trim() || slug;
+  const en = bookingTerms("en", salonName, row.vertical);
+  const vi = bookingTerms("vi", salonName, row.vertical);
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-2xl bg-white px-5 py-12 text-neutral-800">

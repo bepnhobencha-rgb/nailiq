@@ -44,6 +44,13 @@ export type VerticalConfig = {
    */
   aiDescriptor: string;
   /**
+   * Service-type noun + service-risk sentence used in the customer-facing legal
+   * templates (Cancellation Policy + Booking Terms), so a nail salon reads
+   * differently from a head spa. Bilingual.
+   */
+  legalServiceNoun: { en: string; vi: string };
+  legalServiceRisk: { en: string; vi: string };
+  /**
    * Customer-facing label for the operational `nail_tech` staff role.
    * (The DB enum value stays `nail_tech` as a stable internal key; only the
    * display label changes per vertical.)
@@ -117,6 +124,11 @@ const NAIL_SALON: VerticalConfig = {
   label: { en: "Nail salon", vi: "Tiệm nail" },
   schemaType: "NailSalon",
   aiDescriptor: "a nail salon",
+  legalServiceNoun: { en: "nail service", vi: "dịch vụ làm nail" },
+  legalServiceRisk: {
+    en: "Some nail services use chemical products and tools. Please tell us about any allergies, skin/nail conditions, or recent injuries before your service.",
+    vi: "Một số dịch vụ nail dùng hoá chất và dụng cụ. Vui lòng báo trước về dị ứng, tình trạng da/móng hoặc vết thương gần đây.",
+  },
   staffRoleLabel: { en: "Nail Tech", vi: "Thợ nail" },
   // No heroTagline → falls through to the existing i18n copy in both langs.
   // Preserves the historical hardcoded booking imagery for nail salons.
@@ -134,6 +146,11 @@ const HEAD_SPA: VerticalConfig = {
   label: { en: "Head spa", vi: "Head spa" },
   schemaType: "DaySpa",
   aiDescriptor: "a head spa offering scalp and relaxation treatments",
+  legalServiceNoun: { en: "head spa treatment", vi: "dịch vụ head spa" },
+  legalServiceRisk: {
+    en: "Some scalp/hair treatments use products and warm water. Please tell us about scalp sensitivity, allergies, or any health conditions (e.g. neck/back) before your treatment.",
+    vi: "Một số liệu trình da đầu/tóc dùng sản phẩm và nước ấm. Vui lòng báo trước về da đầu nhạy cảm, dị ứng hoặc tình trạng sức khoẻ (vd cổ/lưng).",
+  },
   staffRoleLabel: { en: "Therapist", vi: "Kỹ thuật viên" },
   // Calm head-spa / wellness imagery (verified Unsplash, no nail photos).
   bookingImagery: {
