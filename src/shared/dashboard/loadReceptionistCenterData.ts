@@ -155,8 +155,10 @@ export interface ReceptionistCenterData {
    * because their desired slot was full. Surfaced in the Receptionist Center
    * next to the walk-in queue so staff can invite a waiting customer in one
    * tap (sends them the claim link via SMS). Scoped to this salon, from the
-   * salon-timezone "today" (`selectedDate`) onward, FIFO by `created_at`. Only
-   * `waiting` / `notified` entries (claimed/expired are done).
+   * salon-timezone "today" (`selectedDate`) onward, FIFO by `created_at`.
+   * Surfaces `waiting` / `notified` entries (staff invite them) AND
+   * recently-`claimed` entries (claimed_at within the last 24h, regardless of
+   * booking_date) so staff convert a grabbed slot into a real appointment.
    */
   onlineWaitlist: Array<{
     id: string;
@@ -166,7 +168,9 @@ export interface ReceptionistCenterData {
     bookingDate: string; // YYYY-MM-DD
     preferredSlotLabel: string | null;
     phone: string;
-    status: string; // 'waiting' | 'notified'
+    status: string; // 'waiting' | 'notified' | 'claimed'
+    /** When the customer claimed the slot (status='claimed'); null otherwise. */
+    claimedAt: string | null;
     createdAt: string;
   }>;
   bookingsForDay: Array<{
@@ -1153,13 +1157,45 @@ export async function loadReceptionistCenterData(
       // selectedDate) onward, only actionable statuses, FIFO. Service-role
       // client (booking_waitlist_entries is RLS-locked). Never throws — a
       // failure leaves onlineWaitlist empty so the RC load is unaffected.
+      type WlRow = {
+        id: string;
+        service_id: string | null;
+        booking_date: string | null;
+        preferred_slot_label: string | null;
+        client_name: string | null;
+        client_phone: string | null;
+        status: string | null;
+        claimed_at: string | null;
+        created_at: string | null;
+      };
+      const pushWlRow = (r: WlRow) => {
+        const serviceId = r.service_id != null ? String(r.service_id) : "";
+        const slot =
+          typeof r.preferred_slot_label === "string" &&
+          r.preferred_slot_label.trim().length > 0
+            ? r.preferred_slot_label.trim()
+            : null;
+        onlineWaitlist.push({
+          id: String(r.id),
+          clientName: String(r.client_name ?? ""),
+          serviceId,
+          serviceName: serviceNameById.get(serviceId) ?? "—",
+          bookingDate: String(r.booking_date ?? "").slice(0, 10),
+          preferredSlotLabel: slot,
+          phone: String(r.client_phone ?? ""),
+          status: String(r.status ?? "waiting"),
+          claimedAt: r.claimed_at ? String(r.claimed_at) : null,
+          createdAt: String(r.created_at ?? ""),
+        });
+      };
+      const WL_SELECT =
+        "id, service_id, booking_date, preferred_slot_label, client_name, client_phone, status, claimed_at, created_at";
       try {
         const svc = createServiceRoleClient();
+        // Actionable (waiting / notified) — from selected day onward, FIFO.
         const { data: wlRows, error: wlErr } = await svc
           .from("booking_waitlist_entries")
-          .select(
-            "id, service_id, booking_date, preferred_slot_label, client_name, client_phone, status, created_at",
-          )
+          .select(WL_SELECT)
           .eq("salon_id", ctx.salon.id)
           .in("status", ["waiting", "notified"])
           .gte("booking_date", dateYmd)
@@ -1168,33 +1204,32 @@ export async function loadReceptionistCenterData(
         if (wlErr) {
           console.error("[loadReceptionistCenterData] online_waitlist", wlErr);
         } else {
-          for (const r of (wlRows ?? []) as unknown as Array<{
-            id: string;
-            service_id: string | null;
-            booking_date: string | null;
-            preferred_slot_label: string | null;
-            client_name: string | null;
-            client_phone: string | null;
-            status: string | null;
-            created_at: string | null;
-          }>) {
-            const serviceId = r.service_id != null ? String(r.service_id) : "";
-            const slot =
-              typeof r.preferred_slot_label === "string" &&
-              r.preferred_slot_label.trim().length > 0
-                ? r.preferred_slot_label.trim()
-                : null;
-            onlineWaitlist.push({
-              id: String(r.id),
-              clientName: String(r.client_name ?? ""),
-              serviceId,
-              serviceName: serviceNameById.get(serviceId) ?? "—",
-              bookingDate: String(r.booking_date ?? "").slice(0, 10),
-              preferredSlotLabel: slot,
-              phone: String(r.client_phone ?? ""),
-              status: String(r.status ?? "waiting"),
-              createdAt: String(r.created_at ?? ""),
-            });
+          for (const r of (wlRows ?? []) as unknown as WlRow[]) pushWlRow(r);
+        }
+
+        // Recently claimed (last 24h, any booking_date) — staff must convert
+        // these into a real appointment. Sorted claimed_at desc (most recent
+        // first). Separate query so the FIFO ordering of waiting/notified is
+        // untouched; failure here leaves the actionable list intact.
+        const claimedSince = new Date(
+          Date.now() - 24 * 60 * 60 * 1000,
+        ).toISOString();
+        const { data: claimedRows, error: claimedErr } = await svc
+          .from("booking_waitlist_entries")
+          .select(WL_SELECT)
+          .eq("salon_id", ctx.salon.id)
+          .eq("status", "claimed")
+          .gte("claimed_at", claimedSince)
+          .order("claimed_at", { ascending: false })
+          .limit(50);
+        if (claimedErr) {
+          console.error(
+            "[loadReceptionistCenterData] online_waitlist_claimed",
+            claimedErr,
+          );
+        } else {
+          for (const r of (claimedRows ?? []) as unknown as WlRow[]) {
+            pushWlRow(r);
           }
         }
       } catch (e) {

@@ -15,9 +15,12 @@ type WaitlistEntry = ReceptionistCenterData["onlineWaitlist"][number];
 export interface OnlineWaitlistPanelProps {
   slug: string;
   entries: WaitlistEntry[];
+  /** Open the prefilled desk booking form for a claimed waitlist entry so
+   *  staff confirm time/staff and create the real appointment. */
+  onCreateBooking?: (entry: WaitlistEntry) => void;
 }
 
-type RowStatus = "waiting" | "notified";
+type RowStatus = "waiting" | "notified" | "claimed";
 
 type ToastState = { kind: "success" | "info" | "error"; text: string } | null;
 
@@ -33,7 +36,11 @@ function initialOf(name: string): string {
  * `useUserLanguage`; no hardcoded user-facing strings (toast/labels live in
  * the user i18n dictionaries under `receptionist.waitlist`).
  */
-export function OnlineWaitlistPanel({ slug, entries }: OnlineWaitlistPanelProps) {
+export function OnlineWaitlistPanel({
+  slug,
+  entries,
+  onCreateBooking,
+}: OnlineWaitlistPanelProps) {
   const router = useRouter();
   const { language } = useUserLanguage();
   const t = getUserMessages(language).receptionist.waitlist;
@@ -84,6 +91,8 @@ export function OnlineWaitlistPanel({ slug, entries }: OnlineWaitlistPanelProps)
   }
 
   function effectiveStatus(entry: WaitlistEntry): RowStatus {
+    // A claimed row is terminal for this panel (no optimistic override applies).
+    if (entry.status === "claimed") return "claimed";
     const override = statusById[entry.id];
     if (override) return override;
     return entry.status === "notified" ? "notified" : "waiting";
@@ -109,6 +118,7 @@ export function OnlineWaitlistPanel({ slug, entries }: OnlineWaitlistPanelProps)
           {entries.map((entry) => {
             const status = effectiveStatus(entry);
             const isNotified = status === "notified";
+            const isClaimed = status === "claimed";
             const isPending = pendingId === entry.id;
             const name = displayCustomerName(entry.clientName, removedGuest);
             const subline =
@@ -119,12 +129,22 @@ export function OnlineWaitlistPanel({ slug, entries }: OnlineWaitlistPanelProps)
               <li
                 key={entry.id}
                 data-testid={`waitlist-entry-${entry.id}`}
-                className="rounded-xl border border-nq-border/40 bg-nq-bg/40 p-2.5"
+                className={cn(
+                  "rounded-xl border p-2.5",
+                  isClaimed
+                    ? "border-nq-success/40 bg-nq-success/5"
+                    : "border-nq-border/40 bg-nq-bg/40",
+                )}
               >
                 <div className="flex items-start gap-2.5">
                   <span
                     aria-hidden
-                    className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-nq-primary/15 text-xs font-semibold text-nq-primary"
+                    className={cn(
+                      "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                      isClaimed
+                        ? "bg-nq-success/15 text-nq-success"
+                        : "bg-nq-primary/15 text-nq-primary",
+                    )}
                   >
                     {initialOf(name)}
                   </span>
@@ -136,41 +156,64 @@ export function OnlineWaitlistPanel({ slug, entries }: OnlineWaitlistPanelProps)
                       <span
                         className={cn(
                           "shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium",
-                          isNotified
-                            ? "border-nq-primary/30 bg-nq-primary/10 text-nq-primary"
-                            : "border-nq-border/40 text-nq-muted",
+                          isClaimed
+                            ? "border-nq-success/40 bg-nq-success/10 text-nq-success"
+                            : isNotified
+                              ? "border-nq-primary/30 bg-nq-primary/10 text-nq-primary"
+                              : "border-nq-border/40 text-nq-muted",
                         )}
                       >
-                        {isNotified ? t.invited : t.statusWaiting}
+                        {isClaimed
+                          ? t.claimed
+                          : isNotified
+                            ? t.invited
+                            : t.statusWaiting}
                       </span>
                     </div>
                     <p className="mt-0.5 truncate text-xs text-nq-muted">
                       {subline}
                     </p>
-                    <button
-                      type="button"
-                      disabled={isPending}
-                      onClick={() => void onInvite(entry)}
-                      data-testid={`waitlist-invite-${entry.id}`}
-                      className={cn(
-                        "mt-2 inline-flex min-h-11 w-full items-center justify-center rounded-lg px-3 text-sm font-semibold transition-opacity",
-                        isNotified
-                          ? "border border-nq-primary/40 bg-transparent text-nq-primary hover:bg-nq-primary/10"
-                          : "bg-nq-primary text-nq-bg hover:opacity-95",
-                        isPending && "pointer-events-none opacity-60",
-                      )}
-                    >
-                      {isPending ? (
-                        <span
-                          aria-hidden
-                          className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-                        />
-                      ) : isNotified ? (
-                        t.inviteAgain
-                      ) : (
-                        t.inviteNow
-                      )}
-                    </button>
+                    {/* Staff need the phone to follow up on a claimed slot. */}
+                    {isClaimed && entry.phone.trim() ? (
+                      <p className="mt-0.5 truncate font-mono text-xs text-nq-muted">
+                        {entry.phone}
+                      </p>
+                    ) : null}
+                    {isClaimed ? (
+                      <button
+                        type="button"
+                        onClick={() => onCreateBooking?.(entry)}
+                        data-testid={`waitlist-create-${entry.id}`}
+                        className="mt-2 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-nq-primary px-3 text-sm font-semibold text-nq-bg transition-opacity hover:opacity-95"
+                      >
+                        {t.createBooking}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={isPending}
+                        onClick={() => void onInvite(entry)}
+                        data-testid={`waitlist-invite-${entry.id}`}
+                        className={cn(
+                          "mt-2 inline-flex min-h-11 w-full items-center justify-center rounded-lg px-3 text-sm font-semibold transition-opacity",
+                          isNotified
+                            ? "border border-nq-primary/40 bg-transparent text-nq-primary hover:bg-nq-primary/10"
+                            : "bg-nq-primary text-nq-bg hover:opacity-95",
+                          isPending && "pointer-events-none opacity-60",
+                        )}
+                      >
+                        {isPending ? (
+                          <span
+                            aria-hidden
+                            className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+                          />
+                        ) : isNotified ? (
+                          t.inviteAgain
+                        ) : (
+                          t.inviteNow
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
               </li>
