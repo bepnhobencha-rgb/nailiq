@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/client";
 import { getActivityUnreadCount } from "@/shared/dashboard/loadActivityFeedAction";
@@ -21,19 +21,16 @@ export function ActivityBell() {
   const [count, setCount] = useState(0);
   const [visible, setVisible] = useState(false);
   const seenKey = slug ? `activity-seen:${slug}` : null;
+  // Stable session baseline used only when no marker is persisted yet — keeps the
+  // first-load badge from blasting the whole history WITHOUT writing the marker.
+  const baselineRef = useRef<string>(new Date().toISOString());
 
   const getSeen = useCallback((): string => {
-    if (!seenKey) return new Date().toISOString();
-    const v = typeof window !== "undefined" ? window.localStorage.getItem(seenKey) : null;
-    if (v) return v;
-    // First visit → start from "now" so the badge doesn't blast the whole history.
-    const now = new Date().toISOString();
-    try {
-      window.localStorage.setItem(seenKey, now);
-    } catch {
-      /* storage blocked */
-    }
-    return now;
+    if (!seenKey || typeof window === "undefined") return baselineRef.current;
+    // The Activity PAGE is the sole owner of the seen-marker. The bell only reads
+    // it — writing here would make the first /activity visit treat everything as
+    // already seen (dimmed).
+    return window.localStorage.getItem(seenKey) || baselineRef.current;
   }, [seenKey]);
 
   const refresh = useCallback(async () => {
