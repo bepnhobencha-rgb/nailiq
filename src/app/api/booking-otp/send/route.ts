@@ -26,11 +26,15 @@ export async function POST(req: Request) {
   const supabase = createServiceRoleClient();
   const { data: salon } = await supabase
     .from("salons")
-    .select("id, phone_otp_enabled")
+    .select("id, name, phone_otp_enabled")
     .eq("slug", shopSlug)
     .maybeSingle();
 
-  if (!salon || !(salon as unknown as { phone_otp_enabled: boolean }).phone_otp_enabled) {
+  const salonRow = salon as unknown as {
+    name?: string | null;
+    phone_otp_enabled: boolean;
+  } | null;
+  if (!salonRow || !salonRow.phone_otp_enabled) {
     return NextResponse.json({ error: "otp_not_enabled" }, { status: 400 });
   }
 
@@ -40,7 +44,9 @@ export async function POST(req: Request) {
   }
 
   const e164 = `+${phoneOk.digits}`;
-  const result = await sendVerification(e164);
+  // Show the salon's own name in the OTP message instead of the generic Verify
+  // Service name, so the customer recognizes who's texting them.
+  const result = await sendVerification(e164, salonRow.name ?? undefined);
 
   if (!result.ok) {
     console.error("[booking-otp/send] sendVerification failed", result.error);
