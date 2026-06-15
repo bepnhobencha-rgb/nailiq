@@ -133,11 +133,15 @@ export async function sendVerification(
 
   try {
     let res = await post(Boolean(fn));
-    // A rejected brand name must NEVER block the customer's code — on a 400 with
-    // a custom name, retry plain (default friendly name).
-    if (!res.ok && res.status === 400 && fn) {
+    // A rejected brand name must NEVER block the customer's code. Verify plans
+    // that don't allow custom friendly names return 403 / code 60204 ("Custom
+    // friendly name not allowed"); an invalid name returns 400 — in EITHER case
+    // retry plain (default friendly name). Before this, only 400 was retried, so
+    // 60204 fell through → every booking OTP 500'd platform-wide after the
+    // salon-name feature shipped.
+    if (!res.ok && (res.status === 400 || res.status === 403) && fn) {
       console.warn(
-        "[sendVerification] 400 with CustomFriendlyName — retrying without it",
+        "[sendVerification] CustomFriendlyName rejected — retrying without it",
       );
       res = await post(false);
     }
