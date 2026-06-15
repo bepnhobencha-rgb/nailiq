@@ -75,6 +75,7 @@ export function DashboardShell({
 
   return (
     <div
+      data-nq-shell
       className="min-h-dvh bg-nq-bg"
       style={{ ["--nq-sidebar-w" as string]: sidebarWidth }}
     >
