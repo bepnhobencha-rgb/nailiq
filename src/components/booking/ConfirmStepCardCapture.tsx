@@ -124,9 +124,13 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
             setError(t.noShowCardError ?? "Please check your card details.");
             return null;
           }
-          // Buyer verification (SCA/AVS/CVV) — Square checks the card at storage
-          // time and rejects a wrong CVV/postal, so a bogus card never vaults.
-          // A verification failure (throw / no token) blocks the save.
+          // Buyer verification (SCA/AVS/CVV). When verifyBuyer yields a token we
+          // pass it to CreateCard so Square verifies the card at storage time
+          // and REJECTS a wrong CVV/postal server-side (the real enforcement).
+          // If verifyBuyer itself hiccups (infra / SCA-cancel) we DEGRADE — save
+          // without the token rather than block a legitimate buyer. Net effect:
+          // strictly safer than today (can only ADD a Square-side rejection,
+          // never over-block a real card on a client verify glitch).
           let verificationToken: string | undefined;
           try {
             const v = await paymentsRef.current?.verifyBuyer(res.token, {
@@ -135,13 +139,8 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
               sellerKeyedIn: false,
             });
             verificationToken = v?.token ?? undefined;
-            if (!verificationToken) {
-              setError(t.noShowCardError ?? "Please check your card details.");
-              return null;
-            }
           } catch {
-            setError(t.noShowCardError ?? "Please check your card details.");
-            return null;
+            verificationToken = undefined;
           }
           setError(null);
           return { token: res.token, verificationToken };

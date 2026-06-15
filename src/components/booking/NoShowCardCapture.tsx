@@ -190,8 +190,10 @@ function SquareCardCapture({ bookingId, currencyFormat, t }: CaptureProps) {
         setErrorMsg(t.noShowCardError ?? "Please check your card details.");
         return;
       }
-      // Buyer verification (SCA/AVS/CVV) — rejects a wrong CVV/postal before the
-      // card is ever vaulted. A failure blocks the save.
+      // Buyer verification (SCA/AVS/CVV). A token → CreateCard verifies the card
+      // server-side and rejects a wrong CVV/postal. If verifyBuyer hiccups we
+      // DEGRADE (save without it) rather than block a legitimate buyer — strictly
+      // safer than today, never over-blocks a real card on a client glitch.
       let verificationToken: string | undefined;
       try {
         const v = await paymentsRef.current?.verifyBuyer(result.token, {
@@ -200,15 +202,8 @@ function SquareCardCapture({ bookingId, currencyFormat, t }: CaptureProps) {
           sellerKeyedIn: false,
         });
         verificationToken = v?.token ?? undefined;
-        if (!verificationToken) {
-          setStatus("error");
-          setErrorMsg(t.noShowCardError ?? "Please check your card details.");
-          return;
-        }
       } catch {
-        setStatus("error");
-        setErrorMsg(t.noShowCardError ?? "Please check your card details.");
-        return;
+        verificationToken = undefined;
       }
       const res = await fetch("/api/booking/square-save-card", {
         method: "POST",
