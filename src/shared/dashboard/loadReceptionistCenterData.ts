@@ -3,7 +3,7 @@ import type { Database } from "@/lib/database.types";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
-import { salonDayRangeUtc } from "@/shared/lib/salonTime";
+import { salonDayRangeUtc, salonYmdOfUtc } from "@/shared/lib/salonTime";
 import {
   DAY_KEYS,
   parseOpeningHours,
@@ -176,6 +176,24 @@ export interface ReceptionistCenterData {
      *  the manual path matches what auto-book would have done. */
     offeredStaffId: string | null;
     createdAt: string;
+  }>;
+  /**
+   * Active "soft holds" on the grid from the online-waitlist offer flow.
+   * When a booking is cancelled the freed slot is texted to the next online
+   * waitlist customer with a 20-minute window to claim. During that window the
+   * booking is gone (cell looks EMPTY), so we surface a SOFT, informational
+   * marker on the grid cell — "⏳ Đang mời khách chờ · đến HH:MM" — so staff
+   * don't give the slot to a walk-in. Rows are `booking_waitlist_entries` with
+   * `status='notified'` + a concrete offered staff/time and `notified_at`
+   * within the last 20 minutes. Filtered to the selected day in salon tz.
+   */
+  waitlistOffers: Array<{
+    id: string;
+    staffId: string;
+    startUtc: string;
+    endUtc: string;
+    expiresAtUtc: string; // notified_at + 20 minutes
+    serviceName: string;
   }>;
   bookingsForDay: Array<{
     id: string;
@@ -1033,6 +1051,8 @@ export async function loadReceptionistCenterData(
   // join). Populated in the concurrent enrichment block below; falls back to
   // [] on any error so a waitlist hiccup never breaks the RC load.
   const onlineWaitlist: ReceptionistCenterData["onlineWaitlist"] = [];
+  // Active waitlist-offer soft holds for the selected day (populated below).
+  const waitlistOffers: ReceptionistCenterData["waitlistOffers"] = [];
   const serviceNameById = new Map<string, string>();
   for (const s of serviceRows ?? []) {
     if (s.id) serviceNameById.set(String(s.id), String(s.name ?? ""));
@@ -1240,6 +1260,79 @@ export async function loadReceptionistCenterData(
         }
       } catch (e) {
         console.error("[loadReceptionistCenterData] online_waitlist", e);
+      }
+    })(),
+    (async () => {
+      // Active waitlist-offer soft holds (booking_waitlist_entries with
+      // status='notified' + a concrete offered staff/time + notified_at within
+      // the last 20 minutes). These power the grid's "Đang mời khách chờ"
+      // marker so a freed-but-offered cell isn't given to a walk-in. Captured
+      // regardless of the auto-book flag → useful for ALL salons. Service-role
+      // client (table is RLS-locked). Never throws — failure leaves the marker
+      // list empty so the RC load is unaffected.
+      try {
+        const svc = createServiceRoleClient();
+        const offerCutoff = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+        const { data: offerRows, error: offerErr } = await svc
+          .from("booking_waitlist_entries")
+          .select(
+            "id, offered_staff_id, offered_start_utc, offered_end_utc, notified_at, service_id",
+          )
+          .eq("salon_id", ctx.salon.id)
+          .eq("status", "notified")
+          .not("offered_staff_id", "is", null)
+          .not("offered_start_utc", "is", null)
+          .not("offered_end_utc", "is", null)
+          .gt("notified_at", offerCutoff)
+          .limit(100);
+        if (offerErr) {
+          console.error(
+            "[loadReceptionistCenterData] waitlist_offers",
+            offerErr,
+          );
+        } else {
+          for (const r of (offerRows ?? []) as unknown as Array<{
+            id: string;
+            offered_staff_id: string | null;
+            offered_start_utc: string | null;
+            offered_end_utc: string | null;
+            notified_at: string | null;
+            service_id: string | null;
+          }>) {
+            const staffId =
+              r.offered_staff_id != null ? String(r.offered_staff_id) : "";
+            const startUtc =
+              r.offered_start_utc != null ? String(r.offered_start_utc) : "";
+            const endUtc =
+              r.offered_end_utc != null ? String(r.offered_end_utc) : "";
+            const notifiedAt =
+              r.notified_at != null ? String(r.notified_at) : "";
+            if (!staffId || !startUtc || !endUtc || !notifiedAt) continue;
+            // Keep only offers whose freed slot falls on the selected day in
+            // the salon timezone (same comparison the grid uses to bucket
+            // bookings by day).
+            const notifiedMs = Date.parse(notifiedAt);
+            let offerDay: string;
+            try {
+              offerDay = salonYmdOfUtc(startUtc, salonRow.timezone);
+            } catch {
+              continue;
+            }
+            if (offerDay !== dateYmd || Number.isNaN(notifiedMs)) continue;
+            const serviceId =
+              r.service_id != null ? String(r.service_id) : "";
+            waitlistOffers.push({
+              id: String(r.id),
+              staffId,
+              startUtc,
+              endUtc,
+              expiresAtUtc: new Date(notifiedMs + 20 * 60_000).toISOString(),
+              serviceName: serviceNameById.get(serviceId) ?? "—",
+            });
+          }
+        }
+      } catch (e) {
+        console.error("[loadReceptionistCenterData] waitlist_offers", e);
       }
     })(),
   ]);
@@ -1452,6 +1545,7 @@ export async function loadReceptionistCenterData(
         })) ?? [],
       walkinQueue,
       onlineWaitlist,
+      waitlistOffers,
       bookingsForDay,
       noShowsToday,
       capabilityRows,

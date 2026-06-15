@@ -163,6 +163,13 @@ export interface StaffTimelineGridProps {
     /** Localized word shown on the display-only closing-time marker
      *  (e.g. "Close" / "Đóng cửa"). */
     closingLabel: string;
+    /** Soft waitlist-offer marker: title ("Đang mời khách chờ" /
+     *  "Offering to waitlist"). Optional — falls back to a bilingual
+     *  inline default keyed off `language` when omitted. */
+    waitlistOffer?: string;
+    /** Soft waitlist-offer marker: expiry suffix ("đến HH:MM" /
+     *  "until HH:MM"). Optional — inline fallback like above. */
+    waitlistOfferUntil?: (time: string) => string;
     /** Localized label for a redacted/removed customer ("[removed]" in DB). */
     removedGuest: string;
     /**
@@ -255,6 +262,21 @@ export interface StaffTimelineGridProps {
     feeCents: number | null;
     chargeStatus: string | null;
     hasCard: boolean;
+  }>;
+  /**
+   * Active online-waitlist "soft holds" to render as informational markers.
+   * When a cancelled booking's freed slot has been texted to a waiting online
+   * customer (20-min claim window), the cell looks empty — these dashed amber
+   * ribbons tell staff "đang mời khách chờ" so they don't give it to a walk-in.
+   * The marker is `pointer-events-none` so staff CAN still override the cell.
+   */
+  waitlistOffers?: Array<{
+    id: string;
+    staffId: string;
+    startUtc: string;
+    endUtc: string;
+    expiresAtUtc: string;
+    serviceName: string;
   }>;
   /** Called when the "Start" inline button is clicked on a late block. */
   onStartBooking?: (bookingId: string) => void;
@@ -434,6 +456,7 @@ function StaffTimelineGridImpl({
   compactBookingIcons = false,
   autoNoShowMinutes,
   noShowTombstones,
+  waitlistOffers,
   onStartBooking,
   language = "en",
   onTombstoneUndo,
@@ -1618,6 +1641,54 @@ function StaffTimelineGridImpl({
                                 : undefined
                             }
                           />
+                        );
+                      })}
+                    {/* Soft waitlist-offer markers — a cancelled booking's freed
+                        slot is being texted to a waiting online customer (20-min
+                        claim window), so the cell looks empty. A dashed amber
+                        ribbon tells staff "đang mời khách chờ" so they don't give
+                        it to a walk-in. `pointer-events-none` is CRITICAL: the
+                        empty cell underneath must stay clickable so staff can
+                        still override the soft hold. */}
+                    {(waitlistOffers ?? [])
+                      .filter((o) => o.staffId === s.id)
+                      .map((o) => {
+                        const startMin = utcIsoToSalonMinutesFromMidnight(
+                          o.startUtc,
+                          timezone,
+                        );
+                        const leftPx =
+                          ((startMin - hourStart * 60) / SLOT_MINUTES) *
+                          SLOT_PX;
+                        const widthPx =
+                          ((Date.parse(o.endUtc) - Date.parse(o.startUtc)) /
+                            60000 /
+                            SLOT_MINUTES) *
+                          SLOT_PX;
+                        const expiryTime = labels.formatTimeLabel(
+                          o.expiresAtUtc,
+                        );
+                        const title =
+                          labels.waitlistOffer ??
+                          (language === "vi"
+                            ? "Đang mời khách chờ"
+                            : "Offering to waitlist");
+                        const untilLabel = labels.waitlistOfferUntil
+                          ? labels.waitlistOfferUntil(expiryTime)
+                          : language === "vi"
+                            ? `đến ${expiryTime}`
+                            : `until ${expiryTime}`;
+                        return (
+                          <div
+                            key={o.id}
+                            className="pointer-events-none absolute inset-y-0 z-[1] flex items-center overflow-hidden rounded-md border border-dashed border-nq-primary/50 bg-nq-primary/10 px-1"
+                            style={{ left: leftPx, width: widthPx }}
+                            aria-hidden
+                          >
+                            <span className="truncate text-[10px] leading-tight text-nq-primary">
+                              ⏳ {title} · {untilLabel}
+                            </span>
+                          </div>
                         );
                       })}
                     {ghostEl}
