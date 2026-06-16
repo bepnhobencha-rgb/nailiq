@@ -28,6 +28,7 @@ import {
   type StaffCapabilityMap,
 } from "@/shared/booking/staffCapability";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { createPartyLink } from "@/shared/booking/partyLinkActions";
 import type { GroupSyncMode } from "@/shared/booking/loadGroupSmartSchedule";
 
@@ -92,6 +93,9 @@ export async function POST(req: NextRequest) {
     }
     if (toolName === "confirm_group_booking") {
       return handleConfirmGroupBooking(supabase, salonSlug, toolArgs, sessionId, req);
+    }
+    if (toolName === "join_waitlist") {
+      return handleJoinWaitlist(supabase, salonSlug, toolArgs);
     }
 
     return NextResponse.json({ error: "unknown_tool", toolName }, { status: 400 });
@@ -899,6 +903,108 @@ async function handleRescheduleBooking(
     newTimeSlot: newSlot,
     clientName:  (booking as { client_name: string }).client_name,
     message:     "Lịch hẹn đã được dời thành công. Booking ID giữ nguyên.",
+  });
+}
+
+// ─── join_waitlist ───────────────────────────────────────────────────────────
+// Add a customer to the booking waitlist for a service on a given date when no
+// slot is available. Mirrors the online waitlist path (submitPublicWaitlistEntry)
+// but runs server-side with the service-role client. Writes via the same
+// create_public_waitlist_entry RPC, so voice entries land in the Receptionist
+// Center waitlist panel and the auto-fill/notify pipeline exactly like online
+// ones. Records interest only — never creates a booking.
+async function handleJoinWaitlist(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  salonSlug: string,
+  args: Record<string, unknown>,
+) {
+  const serviceId     = args.service_id     as string | undefined;
+  const date          = args.date           as string | undefined; // YYYY-MM-DD
+  const customerName  = args.customer_name  as string | undefined;
+  const customerPhone = args.customer_phone as string | undefined;
+  const staffId       = (args.staff_id      as string | undefined) ?? BOOKING_ANY_STAFF_ID;
+  const preferredTime = (args.preferred_time as string | undefined) ?? "";
+
+  if (!serviceId || !date || !customerName || !customerPhone) {
+    return NextResponse.json(
+      { error: "missing_required_args: service_id, date, customer_name, customer_phone" },
+      { status: 400 },
+    );
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return NextResponse.json({ error: "invalid_date: expected YYYY-MM-DD" }, { status: 400 });
+  }
+
+  const phoneOk = validateGuestPhone(customerPhone);
+  if (!phoneOk.ok) {
+    return NextResponse.json({ error: "invalid_phone" }, { status: 400 });
+  }
+  const nameTrimmed = customerName.trim();
+  if (!isValidCustomerName(nameTrimmed)) {
+    return NextResponse.json({ error: "invalid_name" }, { status: 400 });
+  }
+
+  // Load salon → id; also fetch service for a friendly read-back + ownership check.
+  const { data: salon } = await supabase
+    .from("salons")
+    .select("id")
+    .eq("slug", salonSlug)
+    .single();
+  if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+
+  const { data: service } = await supabase
+    .from("services")
+    .select("name")
+    .eq("id", serviceId)
+    .eq("salon_id", salon.id)
+    .single();
+  if (!service) return NextResponse.json({ error: "service_not_found" }, { status: 404 });
+
+  const staffUuid =
+    staffId === BOOKING_ANY_STAFF_ID || staffId === "any" || !staffId.trim()
+      ? null
+      : staffId;
+
+  const { data: rpcRows, error: rpcErr } = await supabase.rpc(
+    "create_public_waitlist_entry",
+    {
+      p_salon_id:             salon.id,
+      p_service_id:           serviceId,
+      p_staff_id:             staffUuid,
+      p_booking_date:         date,
+      p_preferred_slot_label: preferredTime,
+      p_client_name:          nameTrimmed,
+      p_client_phone:         phoneOk.digits,
+      // Same semantic reason the online flow uses when the wanted slot is full,
+      // so the waitlist loader/UI treats voice entries identically.
+      p_source:               "slot_unavailable",
+      p_client_email:         null,
+    },
+  );
+
+  if (rpcErr) {
+    console.error("[voice/join_waitlist] RPC error:", rpcErr);
+    return NextResponse.json({ error: "waitlist_failed", detail: rpcErr.message }, { status: 500 });
+  }
+
+  const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+  const waitlistId =
+    row && typeof row === "object" && "id" in row && row.id != null
+      ? String((row as { id: unknown }).id)
+      : "";
+  if (!waitlistId) {
+    return NextResponse.json({ error: "waitlist_empty" }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    success:     true,
+    waitlistId,
+    serviceName: (service as { name: string }).name,
+    date,
+    preferredTime: preferredTime || null,
+    message:
+      "Added to the waitlist. The customer will get an SMS if a matching slot opens up. " +
+      "This is NOT a confirmed booking — tell them you'll notify them if something frees up.",
   });
 }
 

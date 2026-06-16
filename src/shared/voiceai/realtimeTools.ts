@@ -250,6 +250,32 @@ export const REALTIME_TOOLS = [
       required: ["service_assignments", "date", "time", "mode", "organizer_name", "organizer_phone"],
     },
   },
+  // ─── Waitlist ─────────────────────────────────────────────────────────────
+  {
+    type: "function" as const,
+    name: "join_waitlist",
+    description:
+      "Add the customer to the WAITLIST for a service on a specific date when nothing is available — " +
+      "i.e. get_available_slots returned count 0, OR the exact time the customer wanted is full and they " +
+      "don't want any of the alternatives you offered. When a matching slot later frees up (a cancellation " +
+      "or no-show), the salon notifies the customer automatically by SMS so they can grab it.\n\n" +
+      "ONLY call this AFTER you have offered the real alternatives (other times that day, or another day) " +
+      "and the customer explicitly agrees to be put on the waitlist instead. Get verbal agreement first — " +
+      "e.g. 'Bạn muốn tôi ghi vào danh sách chờ, có chỗ trống sẽ nhắn tin cho bạn nhé?'\n\n" +
+      "This does NOT create a booking — it only records interest. Never tell the customer they are booked.",
+    parameters: {
+      type: "object" as const,
+      properties: {
+        service_id:     { type: "string", description: "Service ID from the services list in context." },
+        date:           { type: "string", description: "Wanted date in YYYY-MM-DD format. Resolve relative expressions (tomorrow, this Saturday, ngày mai...) using today's date from context." },
+        customer_name:  { type: "string", description: "Customer's full name as they stated it." },
+        customer_phone: { type: "string", description: "Customer's phone number, including country code if provided. The waitlist SMS goes here." },
+        staff_id:       { type: "string", description: "Staff ID if the customer wants a specific person, or 'any' / omit for no preference." },
+        preferred_time: { type: "string", description: "Optional. The specific time label the customer wanted, e.g. '2:00 PM', if they asked for one. Omit for a whole-day wait." },
+      },
+      required: ["service_id", "date", "customer_name", "customer_phone"],
+    },
+  },
   // ─── Call control ─────────────────────────────────────────────────────────
   {
     type: "function" as const,
