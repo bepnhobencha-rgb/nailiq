@@ -67,6 +67,15 @@ export async function GET(req: NextRequest) {
     } catch (e) {
       console.error("[square-sync] watchdog", salonId, e);
     }
+
+    // AI Win-back — draft a few "we miss you" suggestions for lapsed regulars.
+    // Self-gates on ai_winback + 30-day dedupe, so it's cheap to call here.
+    try {
+      const { runWinback } = await import("@/shared/winback/agentWinback");
+      await runWinback(salonId);
+    } catch (e) {
+      console.error("[square-sync] winback", salonId, e);
+    }
   }
 
   return NextResponse.json({ ok: true, results });

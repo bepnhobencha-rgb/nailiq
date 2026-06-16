@@ -16,7 +16,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
  * after gating here). Read-only.
  */
 
-export type ActivityKind = "event" | "sms" | "email" | "call" | "system" | "login" | "ai" | "watchdog";
+export type ActivityKind = "event" | "sms" | "email" | "call" | "system" | "login" | "ai" | "watchdog" | "winback";
 
 const PROTECTION_LABEL: Record<string, string> = {
   none: "không đòi gì",
@@ -182,6 +182,7 @@ export async function getActivityUnreadCount(
     "auth_events",
     "ai_policy_decisions",
     "watchdog_alerts",
+    "winback_suggestions",
   ];
   try {
     const results = await Promise.all(
@@ -219,7 +220,7 @@ export async function loadActivityFeed(
       .maybeSingle();
     const tz = (salonRow as { timezone?: string } | null)?.timezone || "America/Los_Angeles";
 
-    const [eventsRes, notifsRes, callsRes, auditRes, authRes, aiRes, watchdogRes] = await Promise.all([
+    const [eventsRes, notifsRes, callsRes, auditRes, authRes, aiRes, watchdogRes, winbackRes] = await Promise.all([
       db
         .from("booking_events" as never)
         .select("id, booking_id, actor_role, event_type, payload, created_at, bookings ( client_name, start_time_utc )")
@@ -259,6 +260,12 @@ export async function loadActivityFeed(
       db
         .from("watchdog_alerts" as never)
         .select("id, kind, severity, title, body, created_at")
+        .eq("salon_id", salonId)
+        .order("created_at", { ascending: false })
+        .limit(PER_SOURCE),
+      db
+        .from("winback_suggestions" as never)
+        .select("id, client_name, visit_count, channel, status, message, created_at")
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
@@ -449,6 +456,27 @@ export async function loadActivityFeed(
         bookingId: null,
         bookingDate: null,
         transcript: body && body.length > 90 ? body : null,
+      });
+    }
+
+    for (const r of (winbackRes.data ?? []) as Array<Record<string, unknown>>) {
+      const name = str(r.client_name).trim() || "khách";
+      const msg = str(r.message).trim();
+      const visits = str(r.visit_count);
+      const sent = str(r.status) === "sent";
+      items.push({
+        id: `wb-${str(r.id)}`,
+        kind: "winback",
+        when: str(r.created_at),
+        title: `💌 ${sent ? "Đã gửi" : "Gợi ý"} giữ khách — ${name}${visits ? ` (${visits} lần)` : ""}`,
+        subtitle: msg || null,
+        status: null,
+        actorRole: null,
+        bookingId: null,
+        bookingDate: null,
+        transcript: msg
+          ? `Khách: ${name} · đã đến ${visits || "?"} lần\nKênh đề xuất: ${str(r.channel) || "—"}\n\nLời nhắn AI soạn:\n${msg}`
+          : null,
       });
     }
 
