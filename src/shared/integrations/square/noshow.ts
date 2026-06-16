@@ -58,6 +58,12 @@ async function loadPolicy(db: Db, salonId: string) {
  * member with a card) when the salon uses whole-party protection, this is the
  * SUM of every member's service price — so the organizer's one card covers a
  * no-show fee for the whole party. Otherwise it's just this booking's own price.
+ *
+ * CANCELLED members are excluded: a guest who cancelled ahead of time gave
+ * notice and was removed from the party, so charging the organizer for their
+ * slot too would over-bill (e.g. 2 of 8 cancel early → the card must cover 6,
+ * not the original 8). Members who NO-SHOW still count — they were expected and
+ * didn't come, which is exactly what the fee protects against.
  */
 async function noShowBaseCents(
   db: Db,
@@ -69,9 +75,12 @@ async function noShowBaseCents(
   if (!wholeParty || !groupId) return { baseCents: own, partySize: 1 };
   const { data } = await db
     .from("bookings")
-    .select("price_cents")
+    .select("price_cents, status")
     .eq("group_id", groupId);
-  const rows = (data as Row[] | null) ?? [];
+  // Exclude cancelled members in JS (the loose Db query type has no .neq()).
+  const rows = ((data as Row[] | null) ?? []).filter(
+    (r) => str(r.status) !== "cancelled",
+  );
   if (rows.length <= 1) return { baseCents: own, partySize: rows.length || 1 };
   const total = rows.reduce((sum, r) => sum + num(r.price_cents), 0);
   return { baseCents: total > 0 ? total : own, partySize: rows.length };
