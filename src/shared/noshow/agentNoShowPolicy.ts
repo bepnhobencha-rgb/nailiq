@@ -269,7 +269,15 @@ export async function backfillNoShowShadow(salonId: string, cap = 5): Promise<vo
     const liveOn = flags?.ai_noshow_policy_live === true;
     if (!shadowOn && !liveOn) return;
 
-    const { data: done } = await db.from("ai_policy_decisions").select("booking_id").eq("salon_id", salonId).limit(1000);
+    // In LIVE mode, "already handled" means a booking already has a LIVE/override
+    // decision — a booking that only has a SHADOW row is upgraded to live once
+    // (so flipping the salon to live actually governs the upcoming book, not just
+    // bookings created afterward). In shadow-only mode, any prior row counts.
+    const decQuery = db.from("ai_policy_decisions").select("booking_id, mode").eq("salon_id", salonId);
+    const { data: done } = await (liveOn
+      ? decQuery.in("mode", ["live", "override"])
+      : decQuery
+    ).limit(1000);
     const seen = new Set(((done ?? []) as Row[]).map((r) => str(r.booking_id)));
 
     const { data: bookings } = await db
