@@ -397,8 +397,17 @@ export async function getOrder(cfg: SquareConfig, orderId: string): Promise<{ st
 
 /** Retrieve a single customer by id (for on-demand import during sync). */
 export async function getCustomer(cfg: SquareConfig, customerId: string): Promise<SquareCustomer | null> {
-  const json = await squareReq(cfg, "GET", `/customers/${customerId}`);
-  return (json.customer as SquareCustomer) ?? null;
+  // A deleted / missing Square customer (404) must NOT crash the whole sync —
+  // a cancelled booking can still reference a customer that was later removed.
+  // Treat any lookup failure as "unknown customer" (the sync falls back to a
+  // guest name) instead of throwing and aborting the salon's entire sync run.
+  try {
+    const json = await squareReq(cfg, "GET", `/customers/${encodeURIComponent(customerId)}`);
+    return (json.customer as SquareCustomer) ?? null;
+  } catch (e) {
+    console.warn("[getCustomer] lookup failed (treating as unknown)", customerId, e instanceof Error ? e.message : e);
+    return null;
+  }
 }
 
 /** Pull catalog ITEMs with their variations + price, flagging add-ons. */

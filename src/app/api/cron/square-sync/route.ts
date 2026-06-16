@@ -36,15 +36,6 @@ export async function GET(req: NextRequest) {
       const sync = await runSquareForwardSync(salonId);
       const deposits = await reconcileDeposits(salonId);
       const noShowFees = await reconcileNoShowFeeLinks(salonId);
-      // AI no-show policy agent (SHADOW) — Square-origin bookings never hit the
-      // NailIQ online hook, so evaluate a few here each run (self-gated on the
-      // salon's opt-in flag; fills the "AI" tab steadily). Best-effort.
-      try {
-        const { backfillNoShowShadow } = await import("@/shared/noshow/agentNoShowPolicy");
-        await backfillNoShowShadow(salonId);
-      } catch (e) {
-        console.error("[square-sync] shadow backfill", salonId, e);
-      }
       results[salonId] = { ...sync, deposits, noShowFees };
     } catch (e) {
       const msg = (e as Error).message;
@@ -54,6 +45,17 @@ export async function GET(req: NextRequest) {
         .from("square_integrations")
         .update({ last_error: msg, last_run_at: new Date().toISOString() })
         .eq("salon_id", salonId);
+    }
+
+    // AI no-show policy agent (SHADOW) — runs INDEPENDENTLY of the Square pull so
+    // a sync error never blocks it. Square-origin bookings never hit the NailIQ
+    // online hook, so evaluate a few here each run (self-gated on the salon's
+    // opt-in flag; fills the "AI" tab steadily). Best-effort.
+    try {
+      const { backfillNoShowShadow } = await import("@/shared/noshow/agentNoShowPolicy");
+      await backfillNoShowShadow(salonId);
+    } catch (e) {
+      console.error("[square-sync] shadow backfill", salonId, e);
     }
   }
 
