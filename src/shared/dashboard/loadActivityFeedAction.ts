@@ -265,7 +265,7 @@ export async function loadActivityFeed(
         .limit(PER_SOURCE),
       db
         .from("winback_suggestions" as never)
-        .select("id, client_name, visit_count, channel, status, message, created_at")
+        .select("id, client_name, visit_count, channel, status, message, kind, created_at")
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
@@ -464,18 +464,22 @@ export async function loadActivityFeed(
       const msg = str(r.message).trim();
       const visits = str(r.visit_count);
       const sent = str(r.status) === "sent";
+      const due = str(r.kind) === "due";
+      const verb = sent ? "Đã gửi" : "Gợi ý";
       items.push({
         id: `wb-${str(r.id)}`,
         kind: "winback",
         when: str(r.created_at),
-        title: `💌 ${sent ? "Đã gửi" : "Gợi ý"} giữ khách — ${name}${visits ? ` (${visits} lần)` : ""}`,
+        title: due
+          ? `⏰ ${verb} nhắc tới kỳ — ${name}${visits ? ` (${visits} lần)` : ""}`
+          : `💌 ${verb} giữ khách — ${name}${visits ? ` (${visits} lần)` : ""}`,
         subtitle: msg || null,
         status: null,
         actorRole: null,
         bookingId: null,
         bookingDate: null,
         transcript: msg
-          ? `Khách: ${name} · đã đến ${visits || "?"} lần\nKênh đề xuất: ${str(r.channel) || "—"}\n\nLời nhắn AI soạn:\n${msg}`
+          ? `Khách: ${name} · đã đến ${visits || "?"} lần · ${due ? "tới kỳ quay lại" : "lâu chưa quay lại"}\nKênh đề xuất: ${str(r.channel) || "—"}\n\nLời nhắn AI soạn:\n${msg}`
           : null,
       });
     }
