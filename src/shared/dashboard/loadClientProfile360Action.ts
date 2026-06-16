@@ -371,8 +371,21 @@ export async function loadClientProfile360(
     totalForRate > 0 ? Math.round((noShowCount / totalForRate) * 100) : 0;
 
   const visitCount = completedCount;
+  // Prefer REAL money paid (synced from Square Payments) over the sum of booking
+  // list-prices, which ignores tips, discounts, no-shows, walk-in upsells, etc.
+  let spentCents = lifetimeSpentCents;
+  if (profileRow?.id) {
+    const { data: spendRow } = await supabase
+      .from("salon_client_spend" as never)
+      .select("total_spend_cents")
+      .eq("salon_id", salonId)
+      .eq("client_profile_id", profileRow.id)
+      .maybeSingle();
+    const real = Number((spendRow as { total_spend_cents?: number } | null)?.total_spend_cents ?? 0);
+    if (real > 0) spentCents = real;
+  }
   const avgTicketCents =
-    visitCount > 0 ? Math.round(lifetimeSpentCents / visitCount) : 0;
+    visitCount > 0 ? Math.round(spentCents / visitCount) : 0;
 
   function topName(map: Map<string, number>): string | null {
     let best: string | null = null;
@@ -387,7 +400,7 @@ export async function loadClientProfile360(
   }
 
   const stats: ClientProfile360["stats"] = {
-    lifetimeSpentCents,
+    lifetimeSpentCents: spentCents,
     visitCount,
     avgTicketCents,
     firstVisitAt,
