@@ -172,6 +172,49 @@ export function BookingCalendarGrid({
     return out;
   }, [viewMonth]);
 
+  // Horizontal "near-term" strip: consecutive days starting TODAY, capped at
+  // 14 and never beyond the lead-time horizon. The strip is the default view
+  // (fast for soon bookings, no past clutter); the month grid lives behind a
+  // toggle. Noon-anchored to match daysInView and dodge DST edges.
+  const stripDays = useMemo(() => {
+    const count = Math.min(14, Math.max(1, windowDays));
+    const out: Date[] = [];
+    for (let i = 0; i < count; i++) {
+      const x = new Date(todayStart);
+      x.setDate(todayStart.getDate() + i);
+      x.setHours(12, 0, 0, 0);
+      out.push(x);
+    }
+    return out;
+  }, [todayStart, windowDays]);
+
+  // Union of the visible month's days and the strip days (deduped by YMD) so
+  // every strip chip gets a correct availability dot — the strip can show days
+  // from a month the grid isn't currently viewing.
+  const probeDays = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Date[] = [];
+    for (const d of [...daysInView, ...stripDays]) {
+      const ymd = bookingDateYmdFromLocalDate(d);
+      if (seen.has(ymd)) continue;
+      seen.add(ymd);
+      out.push(d);
+    }
+    return out;
+  }, [daysInView, stripDays]);
+
+  // Show the full month grid by default only when the current selection sits
+  // past the strip range (far-future pick) — otherwise the strip covers it and
+  // the grid stays collapsed. Computed once on mount; the toggle drives it after.
+  const [showGrid, setShowGrid] = useState<boolean>(() => {
+    if (!selectedDate) return false;
+    const lastStripDay = stripDays[stripDays.length - 1]!;
+    return (
+      startOfLocalDay(selectedDate).getTime() >
+      startOfLocalDay(lastStripDay).getTime()
+    );
+  });
+
   const week = parseOpeningHours(openingHoursRaw);
 
   function weekdayClosed(d: Date): boolean {
@@ -200,7 +243,7 @@ export function BookingCalendarGrid({
     }
     void (async () => {
       const results = await Promise.all(
-        daysInView.map(async (date) => {
+        probeDays.map(async (date) => {
           const ymd = bookingDateYmdFromLocalDate(date);
           const past = startOfLocalDay(date).getTime() < todayStart.getTime();
           const beyondWindow =
@@ -237,7 +280,7 @@ export function BookingCalendarGrid({
     staff,
     staffId,
     serviceTotalMinutes,
-    daysInView,
+    probeDays,
     todayStart,
     windowEnd,
   ]);
@@ -281,6 +324,108 @@ export function BookingCalendarGrid({
 
   return (
     <div className="mt-2">
+      {/* Near-term horizontal date strip — default fast path, no past days. */}
+      <div
+        className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        data-testid="date-strip"
+      >
+        {stripDays.map((date, idx) => {
+          const ymd = bookingDateYmdFromLocalDate(date);
+          const startMs = startOfLocalDay(date).getTime();
+          const beyondWindow = startMs > startOfLocalDay(windowEnd).getTime();
+          const closed = dayClosed(date);
+          const disabled = beyondWindow || closed;
+          const selected =
+            selectedDate !== null && sameLocalCalendarDay(date, selectedDate);
+          const exceptionClosed = isExceptionClosed(date);
+          const isFirst = idx === 0;
+          const hasSlotsHint = !disabled && slotHintByYmd[ymd] === true;
+          const topLabel = isFirst
+            ? t.dateTodayChip
+            : closed
+              ? exceptionClosed
+                ? t.dateHolidayShort
+                : t.dateClosedShort
+              : calendarDayAbbrev(date);
+
+          return (
+            <button
+              key={date.toISOString()}
+              type="button"
+              data-testid="date-strip-day"
+              data-ymd={ymd}
+              disabled={disabled}
+              aria-pressed={selected}
+              aria-label={`${String(date.getDate())} ${calendarDayAbbrev(date)}${
+                closed
+                  ? exceptionClosed
+                    ? ` ${t.dateHolidayLabel}`
+                    : ` ${t.dateClosedLabel}`
+                  : ""
+              }`}
+              onClick={() => onSelectDate(date)}
+              className={cn(
+                "flex min-h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl border px-1 py-2 text-center transition-colors",
+                disabled && "cursor-not-allowed opacity-35",
+                !disabled &&
+                  !selected &&
+                  "nq-booking-tile-interactive border-[var(--booking-border)] bg-[var(--booking-bg-input)] hover:border-[var(--booking-border)]",
+                selected &&
+                  !disabled &&
+                  "border-[var(--salon-primary)] bg-[var(--salon-primary)] text-[var(--booking-bg)] shadow-[0_0_24px_-10px_color-mix(in_srgb,var(--salon-primary)_55%,transparent)]",
+              )}
+            >
+              <span
+                className={cn(
+                  "text-[10px] font-medium uppercase leading-none sm:text-[11px]",
+                  selected
+                    ? "text-[var(--booking-bg)]/90"
+                    : "text-[var(--booking-text-muted)]",
+                )}
+              >
+                {topLabel}
+              </span>
+              <span
+                className={cn(
+                  "mt-0.5 text-[13px] font-semibold tabular-nums sm:text-sm",
+                  selected
+                    ? "text-[var(--booking-bg)]"
+                    : "text-[var(--booking-text)]",
+                )}
+              >
+                {date.getDate()}
+              </span>
+              {hasSlotsHint ? (
+                <div
+                  className="mx-auto mt-1 h-1 w-1 shrink-0 rounded-full bg-[var(--salon-primary)]"
+                  aria-hidden
+                />
+              ) : (
+                <span
+                  className="mt-1 block h-1 w-1 shrink-0 opacity-0"
+                  aria-hidden
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Toggle to reveal the full month grid for far-future booking. */}
+      <div className="mt-3 flex justify-center">
+        <button
+          type="button"
+          data-testid="date-toggle-calendar"
+          aria-expanded={showGrid}
+          onClick={() => setShowGrid((v) => !v)}
+          className="inline-flex items-center gap-1.5 rounded-full border border-[var(--booking-border)] px-3 py-1.5 text-[13px] font-medium text-[var(--booking-text-muted)] transition-colors hover:border-[var(--salon-primary)] hover:text-[var(--salon-primary)]"
+        >
+          📅 {showGrid ? t.dateHideCalendar : t.dateMoreDates}
+        </button>
+      </div>
+
+      {showGrid && (
+        <div className="mt-3">
       <div className="mb-3 flex items-center justify-between gap-3 sm:mb-4">
         <button
           type="button"
@@ -478,6 +623,8 @@ export function BookingCalendarGrid({
           {t.calendarLegendClosed}
         </span>
       </div>
+        </div>
+      )}
     </div>
   );
 }
