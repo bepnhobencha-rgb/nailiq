@@ -205,6 +205,11 @@ export function useBookingFlowState(
   const [upsellGapMinutes, setUpsellGapMinutes] = useState<number>(0);
 
   const [otpSessionId, setOtpSessionId] = useState<string | null>(null);
+  // The phone a live OTP session was verified for. Lets us SKIP re-showing the
+  // OTP step (and re-sending an SMS) when the customer revisits verify/back from
+  // confirm with the same phone already verified. Phone is captured at the gate
+  // and immutable downstream, so a session stays valid for the whole flow.
+  const [otpVerifiedPhone, setOtpVerifiedPhone] = useState<string | null>(null);
   const [depositPaymentIntentId, setDepositPaymentIntentId] = useState<string | null>(null);
   const [depositConnectedAccountId, setDepositConnectedAccountId] = useState<string | null>(null);
   const [verificationAction, setVerificationAction] = useState<VerificationAction>("none");
@@ -1072,8 +1077,11 @@ export function useBookingFlowState(
 
     setError(null);
     setStepDir(1);
-    // Always go through "verify" — it auto-routes to otp/confirm based on risk
-    setOtpSessionId(null);
+    // Always go through "verify" — it auto-routes to otp/confirm based on risk.
+    // Do NOT clear otpSessionId here: the phone can't change after the gate, so a
+    // session already verified for this phone stays valid. Clearing it made every
+    // info→verify pass (e.g. back-from-OTP then forward) re-trigger a fresh OTP +
+    // duplicate SMS. goVerifyDecided now skips OTP when the phone is already verified.
     setVerificationAction("none");
     setStep("verify");
   }, [
@@ -1098,7 +1106,14 @@ export function useBookingFlowState(
       if (action === "none") {
         setStep("confirm");
       } else if (action === "otp_optional" || action === "otp_required") {
-        setStep("otp");
+        // Already verified this exact phone in this session → don't re-prompt OTP
+        // or re-send an SMS; go straight to confirm. The submit re-validates the
+        // session server-side, so a stale/expired session still fails safe there.
+        if (otpSessionId && otpVerifiedPhone === clientPhone) {
+          setStep("confirm");
+        } else {
+          setStep("otp");
+        }
       } else {
         // deposit_required / deposit_or_otp → collect a deposit on the salon's
         // connected Stripe. The deposit panel self-skips to confirm if the salon
@@ -1106,12 +1121,13 @@ export function useBookingFlowState(
         setStep("deposit");
       }
     },
-    [],
+    [otpSessionId, otpVerifiedPhone, clientPhone],
   );
 
   // Customer skipped optional OTP — proceed to confirm unverified
   const goSkipOtp = useCallback(() => {
     setOtpSessionId(null);
+    setOtpVerifiedPhone(null);
     setStepDir(1);
     setStep("confirm");
   }, []);
@@ -1132,9 +1148,10 @@ export function useBookingFlowState(
 
   const goOtpNext = useCallback((sessionId: string) => {
     setOtpSessionId(sessionId);
+    setOtpVerifiedPhone(clientPhone);
     setStepDir(1);
     setStep("confirm");
-  }, []);
+  }, [clientPhone]);
 
   // OTP panel "Back" → returns to verify step (which auto-navigated to otp)
   const backFromOtpToInfo = useCallback(() => {
@@ -1157,6 +1174,7 @@ export function useBookingFlowState(
     setClientWebsite("");
     setSelectedAddonIds([]);
     setOtpSessionId(null);
+    setOtpVerifiedPhone(null);
     setVerificationAction("none");
     setVerificationLoading(false);
     setServiceId(null);
@@ -1461,6 +1479,7 @@ export function useBookingFlowState(
       ) {
         // OTP session missing or expired — send user back to OTP step.
         setOtpSessionId(null);
+        setOtpVerifiedPhone(null);
         setStepDir(-1);
         setStep("otp");
         setError(t.bookingErrors.otpRequired);
@@ -1616,8 +1635,13 @@ export function useBookingFlowState(
 
   const backToInfo = useCallback(() => {
     setStepDir(-1);
-    // confirm → otp/verify → info: always go back two steps through verify
-    if (verificationAction !== "none") {
+    // confirm → info. Only route back through the OTP step when the customer is
+    // NOT yet verified — re-showing OTP to an already-verified phone re-asked the
+    // code and re-sent an SMS. Verified (session for this phone) → straight to info.
+    if (
+      verificationAction !== "none" &&
+      !(otpSessionId && otpVerifiedPhone === clientPhone)
+    ) {
       setStep("otp");
     } else {
       setStep("info");
@@ -1625,7 +1649,7 @@ export function useBookingFlowState(
     setError(null);
     setInfoNameError(null);
     setInfoPhoneError(null);
-  }, [verificationAction]);
+  }, [verificationAction, otpSessionId, otpVerifiedPhone, clientPhone]);
 
   async function handleApplyVoucher(
     code: string,
