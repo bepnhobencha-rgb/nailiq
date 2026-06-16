@@ -117,6 +117,17 @@ export async function evaluateBookingNoShow(
       console.error("[evaluateBookingNoShow] card decision", e);
     }
 
+    // SHADOW: run the AI no-show policy agent alongside the rule and RECORD what
+    // it WOULD decide (no effect on this booking). Self-gated on the salon's
+    // opt-in flag (feature_flags.ai_noshow_policy_shadow), so only opted-in
+    // salons pay for the AI call. Best-effort — never blocks.
+    try {
+      const { runNoShowPolicyShadow } = await import("@/shared/noshow/agentNoShowPolicy");
+      void runNoShowPolicyShadow(body.bookingId);
+    } catch (e) {
+      console.error("[evaluateBookingNoShow] shadow agent", e);
+    }
+
     // Deposit applies only when the salon opted into deposits AND a card isn't
     // already the protection (card-on-file supersedes a deposit).
     const depositActive = depositEnabled && depositDecision.required && !cardRequired;
