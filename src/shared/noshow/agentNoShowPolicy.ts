@@ -116,6 +116,80 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
   };
 }
 
+export type SaveCardMessages = { sms: string; email: string };
+
+/**
+ * AI-drafts the customer-facing "save a card to hold your spot" message at SEND
+ * time, in the CUSTOMER's language (not always Vietnamese — Hi-Lite's guests are
+ * English). Two channels with different constraints:
+ *  - sms: ONE short line, no emoji, no link (the caller appends the real URL),
+ *    Twilio/A2P-friendly. Hard-clamped by guardSmsLine downstream.
+ *  - email: a couple of warm sentences (the email template wraps the CTA + link).
+ * Returns null on any failure → caller falls back to its fixed template.
+ */
+export async function draftSaveCardMessages(input: {
+  lang: "en" | "vi";
+  salonName: string;
+  clientName?: string | null;
+  serviceName?: string | null;
+}): Promise<SaveCardMessages | null> {
+  const ai = getClient();
+  if (!ai) return null;
+
+  const langLabel = input.lang === "vi" ? "tiếng Việt" : "English";
+  const who = (input.clientName ?? "").trim() || (input.lang === "vi" ? "khách" : "the guest");
+  const svc = (input.serviceName ?? "").trim();
+  const prompt = `Write two short, warm, professional appointment messages in ${langLabel} for a salon customer.
+
+Context: ${who} booked${svc ? ` "${svc}"` : ""} at ${input.salonName}. We ask them to save a card on file to hold the appointment — there is NO upfront charge; they are only charged a fee if they no-show.
+
+Rules:
+- "sms": ONE single line, MAX 200 characters, NO emojis, NO links/URLs (a link is appended automatically), MUST include the salon name "${input.salonName}", friendly + transactional.
+- "email": 1-2 warm sentences, NO emojis, NO links, NO greeting line — just explain that saving a card holds their spot with no upfront charge, only charged on a no-show.
+
+Return ONLY JSON: {"sms":"<message>","email":"<message>"}`;
+
+  try {
+    const resp = await ai.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 300,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+    const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
+    const parsed = JSON.parse(json) as Partial<SaveCardMessages>;
+    const sms = typeof parsed.sms === "string" ? parsed.sms.trim() : "";
+    const email = typeof parsed.email === "string" ? parsed.email.trim() : "";
+    if (!sms && !email) return null;
+    return { sms, email };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Deterministic SMS guard (the spine for the AI-drafted SMS). Enforces Twilio /
+ * A2P hygiene: collapse whitespace to one line, strip emojis + any model-invented
+ * links, require the salon name, clamp length, then append the REAL url. Returns
+ * null when the text is empty/too long → caller uses its fixed template. */
+export function guardSmsLine(text: string, salonName: string, url: string): string | null {
+  let t = (text || "").replace(/\s+/g, " ").trim();
+  // Strip emoji / pictographs (keep letters incl. diacritics, digits, punctuation).
+  t = t
+    .replace(
+      /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{200D}]/gu,
+      "",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+  // Remove any URL the model wrote — we control the link.
+  t = t.replace(/https?:\/\/\S+/gi, "").replace(/\s+/g, " ").trim();
+  if (!t || t.length > 280) return null;
+  // Brand identification (A2P): ensure the salon name is present.
+  if (!t.toLowerCase().includes(salonName.toLowerCase())) t = `${salonName}: ${t}`;
+  return `${t} ${url}`;
+}
+
 /** ① AI BRAIN — decide the protection + draft the ask. Returns null on failure. */
 export async function agentDecideNoShowPolicy(ctx: PolicyContext): Promise<AiPolicyDecision | null> {
   const ai = getClient();

@@ -59,7 +59,7 @@ export async function sendSaveCardLink(
   // early with a clear reason rather than texting a dead link.
   const { data: salon } = await ctx.supabase
     .from("salons")
-    .select("noshow_protection_enabled, email_links_enabled, address")
+    .select("noshow_protection_enabled, email_links_enabled, address, feature_flags")
     .eq("id", ctx.salon.id)
     .maybeSingle();
   if (!(salon as { noshow_protection_enabled?: boolean } | null)?.noshow_protection_enabled) {
@@ -81,6 +81,43 @@ export async function sendSaveCardLink(
   let smsSent: boolean | undefined;
   let emailSent: boolean | undefined;
 
+  // Default (fixed) templates — used when the salon hasn't opted into the AI
+  // policy agent, or the AI draft is unavailable/unsafe (fail-safe).
+  let smsBody = en
+    ? `${salonName}: Save a card to hold your appointment — you're only charged if you no-show: ${url}`
+    : `${salonName}: Lưu thẻ để giữ lịch hẹn — chỉ bị tính phí nếu bạn không đến: ${url}`;
+  let emailBody = en
+    ? "Save a card to hold your appointment — there's no upfront charge. You're only charged the no-show fee if you don't show up."
+    : "Lưu thẻ để giữ lịch hẹn — không thu phí trước. Bạn chỉ bị tính phí vắng mặt nếu không đến.";
+
+  // AI-personalised wording — only for salons opted into the no-show policy agent
+  // (live or shadow). The AI writes in the SEND language (so English guests get
+  // English, not the agent's default Vietnamese), and the SMS goes through a
+  // deterministic guard (length / no emoji / no stray link / brand). Any failure
+  // → keep the fixed templates above. Email can be richer (no SMS constraints).
+  const flags = (salon as { feature_flags?: Record<string, unknown> | null } | null)?.feature_flags;
+  const aiOptedIn =
+    flags?.ai_noshow_policy_live === true || flags?.ai_noshow_policy_shadow === true;
+  if (aiOptedIn) {
+    try {
+      const { draftSaveCardMessages, guardSmsLine } = await import(
+        "@/shared/noshow/agentNoShowPolicy"
+      );
+      const drafted = await draftSaveCardMessages({
+        lang: en ? "en" : "vi",
+        salonName,
+        clientName: (bk as { client_name?: string }).client_name ?? null,
+      });
+      if (drafted) {
+        const guardedSms = drafted.sms ? guardSmsLine(drafted.sms, salonName, url) : null;
+        if (guardedSms) smsBody = guardedSms;
+        if (drafted.email && drafted.email.length <= 600) emailBody = drafted.email;
+      }
+    } catch {
+      /* keep the fixed templates */
+    }
+  }
+
   // The "send link" intent. Deliver on EVERY channel we have — SMS often never
   // reaches US handsets (carrier filtering of link-SMS from unregistered A2P
   // numbers), so email is the parallel/fallback channel, not a nice-to-have.
@@ -89,11 +126,8 @@ export async function sendSaveCardLink(
     if (!phone && !canEmail) return { ok: false, error: "no_phone" };
 
     if (phone) {
-      const body = en
-        ? `${salonName}: Save a card to hold your appointment — you're only charged if you no-show: ${url}`
-        : `${salonName}: Lưu thẻ để giữ lịch hẹn — chỉ bị tính phí nếu bạn không đến: ${url}`;
       try {
-        const r = await sendSmsReminder(phone, body);
+        const r = await sendSmsReminder(phone, smsBody);
         smsSent = r.ok;
       } catch {
         smsSent = false;
@@ -110,9 +144,7 @@ export async function sendSaveCardLink(
         subject: en
           ? `Save a card to hold your appointment · ${salonName}`
           : `Lưu thẻ để giữ lịch hẹn · ${salonName}`,
-        bodyText: en
-          ? "Save a card to hold your appointment — there's no upfront charge. You're only charged the no-show fee if you don't show up."
-          : "Lưu thẻ để giữ lịch hẹn — không thu phí trước. Bạn chỉ bị tính phí vắng mặt nếu không đến.",
+        bodyText: emailBody,
         ctaLabel: en ? "Save a card" : "Lưu thẻ",
         url,
       });
