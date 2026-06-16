@@ -4,6 +4,7 @@ import { SalonSettingsHub } from "@/components/dashboard/SalonSettingsHub";
 import { parseDashboardModules } from "@/shared/dashboard/dashboardModules";
 import { parsePresetKey } from "@/shared/dashboard/dashboardPresets";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { loadOwnerSalons } from "@/shared/dashboard/salonOwnerActions";
 import { parseClientSegmentSettings } from "@/shared/dashboard/clientSegmentSettings";
 import { getSalonDomain } from "@/shared/dashboard/domainActions";
 import { normalizeBrandColor } from "@/shared/lib/brandColor";
@@ -120,6 +121,8 @@ export default async function SalonSettingsPage({ params }: Props) {
   const domainInfo = await getSalonDomain(slug);
   const { data: { user: authUser } } = await ctx.supabase.auth.getUser();
   const userEmail = authUser?.email ?? null;
+  const salonName = (ctx.salon.name ?? "").trim() || slug;
+  const ownerSalons = ctx.role === "owner" ? await loadOwnerSalons(slug) : [];
   const lookPresets = getLookPresetsForVertical(vertical);
   const staffSelectionEnabled = row?.staff_selection_enabled !== false;
   const bookingLeadMinutes = (() => {
@@ -174,6 +177,8 @@ export default async function SalonSettingsPage({ params }: Props) {
       clientAtRiskDays={clientSegments.atRiskDays}
       userEmail={userEmail}
       role={ctx.role}
+      salonName={salonName}
+      salons={ownerSalons}
     />
   );
 }
