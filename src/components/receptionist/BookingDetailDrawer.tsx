@@ -19,6 +19,7 @@ import { EditBookingForm, type EditBookingFormBooking } from "./EditBookingForm"
 import { DepositLinkModal } from "./DepositLinkModal";
 import { requestDepositLink } from "@/shared/dashboard/receptionistActions";
 import { sendSaveCardLink } from "@/shared/dashboard/sendSaveCardLinkAction";
+import { overrideNoShowPolicy } from "@/shared/dashboard/overrideNoShowPolicyAction";
 import { renameBookingClient } from "@/shared/dashboard/renameClientAction";
 import { updateBookingNote } from "@/shared/dashboard/editBookingNoteAction";
 import type { BookingCustomerContext } from "@/shared/dashboard/loadBookingCustomerContextAction";
@@ -110,6 +111,88 @@ function SaveCardButton({
         </p>
       ) : null}
     </>
+  );
+}
+
+/**
+ * Override the AI no-show policy agent's LIVE decision. The agent only sets the
+ * "needs a card" flag (it never charges), so a human at the desk can flip it:
+ * require a card the AI waived, or waive one it required. Logged + attributed
+ * via overrideNoShowPolicy. Renders the OPPOSITE of the current state so it's a
+ * one-tap correction.
+ */
+function OverrideCardButton({
+  slug,
+  bookingId,
+  currentRequired,
+  disabled,
+  offlineHint,
+  language,
+}: {
+  slug: string;
+  bookingId: string;
+  currentRequired: boolean;
+  disabled?: boolean;
+  offlineHint?: string;
+  language: "en" | "vi";
+}) {
+  const [required, setRequired] = useState(currentRequired);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState(false);
+  const en = language === "en";
+  // Flip to the opposite of the current requirement.
+  const next: "card" | "none" = required ? "none" : "card";
+  const label = required
+    ? en
+      ? "Waive card requirement"
+      : "Bỏ yêu cầu thẻ"
+    : en
+      ? "Require a card on file"
+      : "Yêu cầu lưu thẻ";
+
+  async function onPress() {
+    setBusy(true);
+    setError(false);
+    setDone(false);
+    try {
+      const r = await overrideNoShowPolicy(slug, { bookingId, decision: next });
+      if (r.ok) {
+        setRequired(r.cardRequired);
+        setDone(true);
+      } else {
+        setError(true);
+      }
+    } catch {
+      setError(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        disabled={disabled || busy}
+        title={disabled ? offlineHint : undefined}
+        data-testid="drawer-override-card"
+        onClick={() => void onPress()}
+        className="text-xs font-medium text-nq-muted underline decoration-dotted underline-offset-2 hover:text-nq-foreground disabled:opacity-50"
+      >
+        {busy ? (en ? "Saving…" : "Đang lưu…") : `🤖 ${label}`}
+      </button>
+      {done ? (
+        <p className="mt-1 text-xs font-semibold text-nq-success" role="status">
+          {en ? "✓ AI decision overridden" : "✓ Đã ghi đè quyết định AI"}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="mt-1 text-xs font-semibold text-nq-error" role="status">
+          {en ? "Couldn't save — try again." : "Không lưu được — thử lại."}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -1407,6 +1490,18 @@ export function BookingDetailDrawer({
                       <SaveCardButton
                         slug={deskEdit.slug}
                         bookingId={deskEdit.booking.id}
+                        disabled={isOffline}
+                        offlineHint={offlineEditDisabledHint}
+                        language={model.language}
+                      />
+                    ) : null}
+                    {/* Override the AI's card decision (flip require/waive). Only
+                        where the card mechanism is usable + no card saved yet. */}
+                    {deskEdit && model.depositsEnabled && !model.cardOnFile ? (
+                      <OverrideCardButton
+                        slug={deskEdit.slug}
+                        bookingId={deskEdit.booking.id}
+                        currentRequired={model.noshowCardRequired}
                         disabled={isOffline}
                         offlineHint={offlineEditDisabledHint}
                         language={model.language}
