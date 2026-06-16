@@ -251,7 +251,7 @@ export async function loadActivityFeed(
         .limit(PER_SOURCE),
       db
         .from("ai_policy_decisions" as never)
-        .select("id, mode, ai_protection, ai_fee_percent, ai_message, ai_reason, ai_confidence, rule_protection, created_at, bookings ( client_name, start_time_utc )")
+        .select("id, mode, ai_protection, ai_fee_percent, ai_message, ai_reason, ai_confidence, rule_protection, actor_user_id, created_at, bookings ( client_name, start_time_utc )")
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
@@ -315,9 +315,14 @@ export async function loadActivityFeed(
     }
 
     // Resolve actor user ids → staff names so config changes read "Mai · Đổi …".
+    // Includes AI-decision OVERRIDE actors so those rows can name who corrected
+    // the agent.
     const auditRows = (auditRes.data ?? []) as Array<Record<string, unknown>>;
+    const aiRows = (aiRes.data ?? []) as Array<Record<string, unknown>>;
     const auditUserIds = [
-      ...new Set(auditRows.map((r) => str(r.actor_user_id)).filter(Boolean)),
+      ...new Set(
+        [...auditRows, ...aiRows].map((r) => str(r.actor_user_id)).filter(Boolean),
+      ),
     ];
     const nameById = new Map<string, string>();
     if (auditUserIds.length > 0) {
@@ -375,28 +380,45 @@ export async function loadActivityFeed(
       });
     }
 
-    for (const r of (aiRes.data ?? []) as Array<Record<string, unknown>>) {
+    for (const r of aiRows) {
       const booking = r.bookings as { client_name?: string | null } | null;
       const name = (booking?.client_name ?? "").toString().trim() || "khách";
       const aiP = PROTECTION_LABEL[str(r.ai_protection)] ?? str(r.ai_protection);
       const ruleP = PROTECTION_LABEL[str(r.rule_protection)] ?? str(r.rule_protection);
-      const shadow = str(r.mode) === "shadow";
+      const mode = str(r.mode);
+      const shadow = mode === "shadow";
+      const override = mode === "override";
+      const actorName = r.actor_user_id ? nameById.get(str(r.actor_user_id)) : null;
       const pct = r.ai_fee_percent != null ? ` ${str(r.ai_fee_percent)}%` : "";
       const aiMsg = str(r.ai_message).trim();
+      // Title: shadow = "đề nghị (thử nghiệm)", live = "quyết định", override =
+      // "{nhân viên} ghi đè AI → ...".
+      const title = override
+        ? `✍️ ${actorName ? `${actorName} ` : ""}ghi đè AI → ${aiP} — ${name}`
+        : `🤖 AI ${shadow ? "(thử nghiệm) đề nghị" : "quyết định"} ${aiP} — ${name}`;
       // Full detail (shown when the row is expanded).
-      const detail = [
-        `Quyết định: ${aiP}${pct}  ·  Độ tự tin: ${str(r.ai_confidence) || "—"}`,
-        `Công thức cũ: ${ruleP || "—"}${ruleP && ruleP !== aiP ? "   ⚠️ AI khác công thức cũ" : ""}`,
-        ``,
-        `Lý do: ${str(r.ai_reason) || "—"}`,
-        ...(aiMsg ? ["", "Lời nhắn AI soạn cho khách:", aiMsg] : []),
-      ].join("\n");
+      const detail = override
+        ? [
+            `Người sửa: ${actorName || "nhân viên"}`,
+            `Đổi thành: ${aiP}  ·  Trước đó: ${ruleP || "—"}`,
+            ``,
+            `${str(r.ai_reason) || "—"}`,
+          ].join("\n")
+        : [
+            `Quyết định: ${aiP}${pct}  ·  Độ tự tin: ${str(r.ai_confidence) || "—"}`,
+            `Công thức cũ: ${ruleP || "—"}${ruleP && ruleP !== aiP ? "   ⚠️ AI khác công thức cũ" : ""}`,
+            ``,
+            `Lý do: ${str(r.ai_reason) || "—"}`,
+            ...(aiMsg ? ["", "Lời nhắn AI soạn cho khách:", aiMsg] : []),
+          ].join("\n");
       items.push({
         id: `ai-${str(r.id)}`,
         kind: "ai",
         when: str(r.created_at),
-        title: `🤖 AI ${shadow ? "(thử nghiệm) " : ""}đề nghị ${aiP} — ${name}`,
-        subtitle: `${str(r.ai_reason)}${ruleP ? ` · Rule cũ: ${ruleP}` : ""}${r.ai_confidence ? ` · tự tin: ${str(r.ai_confidence)}` : ""}`,
+        title,
+        subtitle: override
+          ? str(r.ai_reason)
+          : `${str(r.ai_reason)}${ruleP ? ` · Rule cũ: ${ruleP}` : ""}${r.ai_confidence ? ` · tự tin: ${str(r.ai_confidence)}` : ""}`,
         status: null,
         actorRole: null,
         bookingId: null,
