@@ -189,7 +189,19 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
         // A Square→NailIQ status change is a CANCEL (→ pull_cancel toggle) or any
         // other status move (→ pull_update toggle); admin can switch each off.
         const isCancel = targetStatus === "cancelled";
-        if (isCancel ? cfg.sync.pullCancel : cfg.sync.pullUpdate) {
+        // NEVER let a still-ACCEPTED Square booking REVIVE one cancelled in
+        // NailIQ. The cancel hasn't been pushed to Square yet — the reverse pass
+        // (Tầng 1) does that. Without this guard the forward pull flips it back
+        // to "confirmed" every run, AND the reverse-cancel then can't find it
+        // (no longer 'cancelled') → the cancel is lost and the booking
+        // "reappears 5 min after the desk cancels it". Square-origin cancels are
+        // unaffected (targetStatus would be 'cancelled' → isCancel path).
+        const wouldReviveLocalCancel =
+          localStatus === "cancelled" && targetStatus !== "cancelled";
+        if (
+          !wouldReviveLocalCancel &&
+          (isCancel ? cfg.sync.pullCancel : cfg.sync.pullUpdate)
+        ) {
           updates.status = targetStatus;
         }
       }
