@@ -217,3 +217,42 @@ export async function runNoShowPolicyShadow(bookingId: string): Promise<void> {
     console.error("[runNoShowPolicyShadow]", e);
   }
 }
+
+/**
+ * Backfill shadow decisions for a salon's EXISTING upcoming bookings — most
+ * Hi-Lite bookings arrive via the Square sync (not the NailIQ online flow), so
+ * the per-booking hook never fires for them. Called from the square-sync cron
+ * (prod, where ANTHROPIC_API_KEY exists). Self-gated on the salon's opt-in flag;
+ * caps the AI calls per run so the log fills steadily. Best-effort.
+ */
+export async function backfillNoShowShadow(salonId: string, cap = 5): Promise<void> {
+  try {
+    const db = looseServiceClient();
+    const { data: salon } = await db.from("salons").select("feature_flags").eq("id", salonId).maybeSingle();
+    const on = ((salon as Row | null)?.feature_flags as Record<string, unknown> | null)?.ai_noshow_policy_shadow === true;
+    if (!on) return;
+
+    const { data: done } = await db.from("ai_policy_decisions").select("booking_id").eq("salon_id", salonId).limit(1000);
+    const seen = new Set(((done ?? []) as Row[]).map((r) => str(r.booking_id)));
+
+    const { data: bookings } = await db
+      .from("bookings")
+      .select("id")
+      .eq("salon_id", salonId)
+      .in("status", ["confirmed", "pending"])
+      .gt("start_time_utc", new Date().toISOString())
+      .order("start_time_utc", { ascending: true })
+      .limit(80);
+
+    let ran = 0;
+    for (const b of (bookings ?? []) as Row[]) {
+      if (ran >= cap) break;
+      const id = str(b.id);
+      if (seen.has(id)) continue;
+      await runNoShowPolicyShadow(id);
+      ran++;
+    }
+  } catch (e) {
+    console.error("[backfillNoShowShadow]", e);
+  }
+}
