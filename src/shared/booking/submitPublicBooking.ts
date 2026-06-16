@@ -300,13 +300,12 @@ export async function submitPublicBooking(
       throw new Error("otp_invalid");
     }
 
-    // Mark as consumed via API — best-effort fire-and-forget so the session
-    // cannot be reused (not blocking the booking flow on failure).
-    void fetch("/api/booking-otp/consume-session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId }),
-    });
+    // NOTE: do NOT consume the session here. The saved-card REUSE path
+    // (reuseNoShowCardForBooking, below) re-validates this same session and
+    // requires it UNCONSUMED to re-derive the card by the verified phone.
+    // Consuming it now raced that check ("otp consumed" → reuse fails → the
+    // booking was cancelled and the customer saw "OTP không được"). The session
+    // is consumed at the END, after the card step (single-use still holds).
   }
 
   // Enforce per-plan monthly booking cap (landing-page promise).
@@ -769,6 +768,17 @@ export async function submitPublicBooking(
     if (!reused.ok) {
       throw new Error(`card_save_failed:${reused.reason ?? ""}`);
     }
+  }
+
+  // Consume the OTP session NOW — after the card/reuse step, which needs it
+  // unconsumed (see the validation note above). Single-use: best-effort
+  // fire-and-forget so a failure never blocks the committed booking.
+  if (salonPhoneOtpEnabled && params.otpSessionId) {
+    void fetch("/api/booking-otp/consume-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: String(params.otpSessionId).trim() }),
+    });
   }
 
   // booking_channel='online' + client_locale are stamped SERVER-SIDE in
