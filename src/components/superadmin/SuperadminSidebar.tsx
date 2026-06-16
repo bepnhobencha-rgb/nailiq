@@ -11,6 +11,7 @@ import {
   isPlaceholder,
   type SuperadminNavItem,
 } from "@/shared/superadmin/nav";
+import { SuperadminSignOutButton } from "@/components/superadmin/SuperadminSignOutButton";
 
 const COLLAPSE_KEY = "nailiq-superadmin-sidebar-collapsed";
 
@@ -113,11 +114,19 @@ export function SuperadminSidebar({ role }: Props) {
 
       <footer
         className={cn(
-          "shrink-0 border-t border-nq-border px-3 py-3 text-[11px] uppercase tracking-[0.12em] text-nq-muted",
-          collapsed && "px-2 text-center",
+          "shrink-0 border-t border-nq-border px-3 py-3",
+          collapsed ? "flex flex-col items-center gap-2 px-2" : "flex flex-col gap-2",
         )}
       >
-        {collapsed ? role.slice(0, 1).toUpperCase() : `Role: ${role}`}
+        <span
+          className={cn(
+            "text-[11px] uppercase tracking-[0.12em] text-nq-muted",
+            collapsed && "text-center",
+          )}
+        >
+          {collapsed ? role.slice(0, 1).toUpperCase() : `Role: ${role}`}
+        </span>
+        <SuperadminSignOutButton compact={collapsed} />
       </footer>
     </aside>
   );
