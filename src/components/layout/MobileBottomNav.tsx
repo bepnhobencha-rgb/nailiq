@@ -21,6 +21,9 @@ import type { ReleaseFeatureKey } from "@/shared/features/featureRegistry";
 type Props = {
   slug: string;
   walkinQueueCount?: number;
+  /** Count of overdue (in_progress, past end_time) bookings. When > 0 the
+   *  queue badge turns red — mirrors DashboardSidebar's `badgeTone` logic. */
+  overdueCount?: number;
   /** Salon-member role — gates the owner/admin-only Pulse tab. */
   role?: string;
   /** Release-feature visibility (PR2). Beta tabs hide when their key is
@@ -36,6 +39,7 @@ type Props = {
 export function MobileBottomNav({
   slug,
   walkinQueueCount = 0,
+  overdueCount = 0,
   role,
   releaseFeatures = {},
 }: Props) {
@@ -77,7 +81,10 @@ export function MobileBottomNav({
         href: `${dashRoot}/center?view=day#queue`,
         icon: Clock,
         match: () => false,
-        badge: walkinQueueCount,
+        // When overdue bookings exist the badge turns red (danger) to match
+        // the desktop sidebar's `badgeTone === "red"` logic.
+        badge: overdueCount > 0 ? overdueCount : walkinQueueCount,
+        badgeUrgent: overdueCount > 0,
       },
       {
         key: "clients",
@@ -85,6 +92,9 @@ export function MobileBottomNav({
         href: `${dashRoot}/clients`,
         icon: Users,
         match: (p: string) => p.startsWith(`${dashRoot}/clients`),
+        // nail_tech → /clients redirects them home; hide to avoid dead-end.
+        // Mirrors DashboardSidebar.tsx:263 `hidden: role === "nail_tech"`.
+        hidden: role === "nail_tech",
       },
       {
         key: "reports",
@@ -118,6 +128,7 @@ export function MobileBottomNav({
     t.walkinQueue,
     role,
     walkinQueueCount,
+    overdueCount,
     releaseFeatures,
   ]);
 
@@ -150,7 +161,8 @@ export function MobileBottomNav({
                   <Icon className="h-5 w-5" aria-hidden />
                   {showBadge ? (
                     <Badge
-                      variant="vip"
+                      // danger (red) when overdue bookings exist; vip (gold) otherwise.
+                      variant={tab.badgeUrgent ? "danger" : "vip"}
                       className="absolute -right-2 -top-1 h-4 min-w-4 px-1 text-[10px]"
                     >
                       {tab.badge}
