@@ -20,6 +20,8 @@ type BookingRow = {
   client_email: string | null;
   client_phone: string;
   start_time_utc: string;
+  no_show_risk_score: number | null;
+  client_locale: string | null;
   reminder_24h_sent_at: string | null;
   reminder_3h_sent_at: string | null;
   services: { name: string } | null;
@@ -32,27 +34,36 @@ type BookingRow = {
     reminder_24h_enabled: boolean;
     reminder_3h_enabled: boolean;
     sms_reminders_enabled: boolean;
+    feature_flags: Record<string, unknown> | null;
   } | null;
 };
 
-function buildSmsBody(
-  booking: BookingRow,
-  reminderType: "24h" | "3h",
-  confirmUrl: string,
-  rescheduleUrl: string,
-): string {
-  const when = reminderType === "24h" ? "tomorrow" : "in 3 hours";
-  const time = new Date(booking.start_time_utc).toLocaleString("en-US", {
+function smsTimeLabel(booking: BookingRow): string {
+  return new Date(booking.start_time_utc).toLocaleString("en-US", {
     timeZone: booking.salons?.timezone ?? "America/Los_Angeles",
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
   });
+}
+
+/** `aiLead`, when provided, replaces the fixed "Reminder: …" opening (the AI
+ *  already weaves in service/salon/when/time). Links + STOP stay deterministic. */
+function buildSmsBody(
+  booking: BookingRow,
+  reminderType: "24h" | "3h",
+  confirmUrl: string,
+  rescheduleUrl: string,
+  aiLead?: string | null,
+): string {
+  const when = reminderType === "24h" ? "tomorrow" : "in 3 hours";
+  const time = smsTimeLabel(booking);
   const service = booking.services?.name ?? "appointment";
   const salon = booking.salons?.name ?? "";
+  const lead = aiLead || `Reminder: Your ${service} at ${salon} is ${when} at ${time}.`;
   // Two segments is fine — the customer needs a reschedule link so they can
   // move the time instead of just no-showing, not only a confirm link.
-  return `Reminder: Your ${service} at ${salon} is ${when} at ${time}.\nConfirm: ${confirmUrl}\nReschedule: ${rescheduleUrl}\nReply STOP to opt out.`;
+  return `${lead}\nConfirm: ${confirmUrl}\nReschedule: ${rescheduleUrl}\nReply STOP to opt out.`;
 }
 
 export async function GET(req: Request) {
@@ -73,9 +84,10 @@ export async function GET(req: Request) {
   const window3hEnd    = new Date(now.getTime() +  3.25 * 60 * 60 * 1000).toISOString();
 
   const baseSelect = `id, salon_id, client_name, client_email, client_phone, start_time_utc,
+    no_show_risk_score, client_locale,
     reminder_24h_sent_at, reminder_3h_sent_at,
     services!bookings_service_id_fkey(name), staff(name),
-    salons(name, slug, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled)`;
+    salons(name, slug, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, feature_flags)`;
 
   // Fetch both email-eligible AND SMS-eligible bookings (no email filter here).
   const { data: need24h } = await supabase
@@ -139,7 +151,33 @@ export async function GET(req: Request) {
       const confirmUrl = `${SITE_URL}/booking/confirm?token=${token.id}`;
       const rescheduleUrl = `${SITE_URL}/booking/reschedule?token=${token.id}`;
       const toE164 = `+${booking.client_phone}`;
-      const body   = buildSmsBody(booking, reminderType, confirmUrl, rescheduleUrl);
+
+      // Smart reminder: AI personalises the lead line (tone adapts to no-show
+      // risk), gated on the salon's ai_smart_reminders opt-in. Guarded + falls
+      // back to the fixed template. Links + STOP stay deterministic.
+      let aiLead: string | null = null;
+      if ((salon.feature_flags as Record<string, unknown> | null)?.ai_smart_reminders === true) {
+        try {
+          const { draftReminderLead, guardReminderLead } = await import(
+            "@/shared/reminders/agentSmartReminder"
+          );
+          const lang: "en" | "vi" = String(booking.client_locale ?? "").toLowerCase().startsWith("vi") ? "vi" : "en";
+          const drafted = await draftReminderLead({
+            clientName: booking.client_name ?? "",
+            serviceName: booking.services?.name ?? "appointment",
+            salonName: salon.name ?? "",
+            whenLabel: reminderType === "24h" ? "tomorrow" : "in 3 hours",
+            timeLabel: smsTimeLabel(booking),
+            riskScore: booking.no_show_risk_score,
+            lang,
+          });
+          if (drafted) aiLead = guardReminderLead(drafted, salon.name ?? "");
+        } catch {
+          /* keep the fixed template */
+        }
+      }
+
+      const body   = buildSmsBody(booking, reminderType, confirmUrl, rescheduleUrl, aiLead);
       const statusCallbackUrl = `${SITE_URL}/api/twilio/status`;
       const result = await sendSmsReminder(toE164, body, { statusCallbackUrl });
       if (result.ok) anySuccess = true;
