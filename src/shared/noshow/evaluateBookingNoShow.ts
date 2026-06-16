@@ -103,16 +103,48 @@ export async function evaluateBookingNoShow(
     // a card is required we skip the deposit; the deposit stays only as the
     // fallback for salons that cannot capture a card (no provider / protection
     // off). New / high-risk + provider connected + protection on.
+    // Auto-escalation (opt-in): a customer with ≥ threshold PRIOR NO-SHOWS AT
+    // THIS SALON pays an upfront pay-to-confirm DEPOSIT instead of card-on-file.
+    // Counted PER-SALON to match the confirm + server card gates (a cross-salon
+    // lifetime count would disagree with them about who's escalated). Computed
+    // BEFORE the card step so an escalated customer is NEVER also given a card —
+    // a card + a held deposit would double-protect → double-charge.
+    const escThreshold = s.noshow_deposit_escalation_threshold;
+    let escalated = false;
+    if (escThreshold != null && depositEnabled) {
+      const { data: bk } = await supabase
+        .from("bookings" as never)
+        .select("client_phone")
+        .eq("id", body.bookingId)
+        .maybeSingle();
+      const phone = String(
+        (bk as { client_phone?: string | null } | null)?.client_phone ?? "",
+      ).trim();
+      if (phone.length >= 8) {
+        const { count } = await supabase
+          .from("bookings" as never)
+          .select("id", { count: "exact", head: true })
+          .eq("salon_id", body.salonId)
+          .eq("client_phone", phone)
+          .eq("status", "no_show")
+          .not("id", "eq", body.bookingId);
+        escalated = (count ?? 0) >= Number(escThreshold);
+      }
+    }
+
     let cardRequired = false;
     try {
       const { noShowCardDecision, autoAttachReturningCard } = await import(
         "@/shared/integrations/square/noshow"
       );
-      // Returning customer who already left a card → carry it forward so this
-      // visit stays protected without re-asking. Runs BEFORE the decision: once
-      // attached, noShowCardDecision returns "card already saved" (required:false).
-      await autoAttachReturningCard(body.bookingId);
-      cardRequired = (await noShowCardDecision(body.bookingId)).required;
+      // Escalated → DEPOSIT only: do NOT attach/keep a card (the supersede guard
+      // is bypassed by manual:true below, so attaching a card here would let
+      // BOTH a deposit and the card collect = double-charge). Non-escalated:
+      // carry forward a returning customer's card so they aren't re-asked.
+      if (!escalated) {
+        await autoAttachReturningCard(body.bookingId);
+        cardRequired = (await noShowCardDecision(body.bookingId)).required;
+      }
     } catch (e) {
       console.error("[evaluateBookingNoShow] card decision", e);
     }
@@ -128,9 +160,11 @@ export async function evaluateBookingNoShow(
       console.error("[evaluateBookingNoShow] shadow agent", e);
     }
 
-    // Deposit applies only when the salon opted into deposits AND a card isn't
-    // already the protection (card-on-file supersedes a deposit).
-    const depositActive = depositEnabled && depositDecision.required && !cardRequired;
+    // Plain deposit applies only when deposits are on, a card isn't the
+    // protection, AND we're not escalating (escalation uses the HELD deposit
+    // path below, not this "required" write).
+    const depositActive =
+      depositEnabled && depositDecision.required && !cardRequired && !escalated;
 
     await supabase
       .from("bookings" as never)
@@ -146,15 +180,12 @@ export async function evaluateBookingNoShow(
       })
       .eq("id", body.bookingId);
 
-    // Auto-escalation (opt-in): a customer with ≥ threshold prior no-shows is
-    // routed to a pay-to-confirm DEPOSIT — the slot is HELD (pending) and a
-    // Square pay link is texted/emailed; release-pending auto-cancels it if
-    // unpaid. This is the "guaranteed collection" tier for chronic no-show
-    // customers (they pay to hold, or the slot frees — never an unpaid no-show).
-    const escThreshold = s.noshow_deposit_escalation_threshold;
-    const escalated =
-      escThreshold != null && body.noShowCount >= Number(escThreshold);
-    if (escalated && depositEnabled && !cardRequired) {
+    // Escalation: HOLD the slot (pending) + text/email a Square pay-link;
+    // release-pending auto-cancels if unpaid. If the deposit can't be created,
+    // FALL BACK to flagging "needs card" so an escalated booking is never left
+    // silently unprotected (the card step was skipped at confirm).
+    if (escalated) {
+      let held = false;
       try {
         const { createDepositForBooking } = await import(
           "@/shared/integrations/square/deposits"
@@ -164,6 +195,7 @@ export async function evaluateBookingNoShow(
           manual: true,
         });
         if (dep.required && dep.url) {
+          held = true;
           await sendEscalationDepositLink(
             supabase,
             body.bookingId,
@@ -174,6 +206,16 @@ export async function evaluateBookingNoShow(
         }
       } catch (e) {
         console.error("[evaluateBookingNoShow] escalation deposit", e);
+      }
+      if (!held) {
+        await supabase
+          .from("bookings" as never)
+          .update({ noshow_card_required: true } as never)
+          .eq("id", body.bookingId)
+          .then(
+            () => {},
+            () => {},
+          );
       }
     }
   } catch (e) {

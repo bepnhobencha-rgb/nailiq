@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 
 import { Badge, type BadgeVariant } from "@/components/ui/Badge";
@@ -19,6 +19,8 @@ import { EditBookingForm, type EditBookingFormBooking } from "./EditBookingForm"
 import { DepositLinkModal } from "./DepositLinkModal";
 import { requestDepositLink } from "@/shared/dashboard/receptionistActions";
 import { sendSaveCardLink } from "@/shared/dashboard/sendSaveCardLinkAction";
+import { renameBookingClient } from "@/shared/dashboard/renameClientAction";
+import { updateBookingNote } from "@/shared/dashboard/editBookingNoteAction";
 import type { BookingCustomerContext } from "@/shared/dashboard/loadBookingCustomerContextAction";
 import {
   loadGroupMembersAction,
@@ -538,6 +540,18 @@ export function BookingDetailDrawer({
   deskEdit,
 }: BookingDetailDrawerProps) {
   const [editMode, setEditMode] = useState(false);
+  // Inline customer-name fix (fastest path for the desk — no page navigation).
+  const [nameEditing, setNameEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [nameOverride, setNameOverride] = useState<string | null>(null);
+  const [nameErr, setNameErr] = useState(false);
+  const [nameSaving, startNameSave] = useTransition();
+  // Inline appointment-note edit (booking-scoped; undefined override = unchanged).
+  const [noteEditing, setNoteEditing] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteOverride, setNoteOverride] = useState<string | null | undefined>(undefined);
+  const [noteErr, setNoteErr] = useState(false);
+  const [noteSaving, startNoteSave] = useTransition();
   const [portalEl, setPortalEl] = useState<HTMLElement | null>(null);
   // P0.8 — phone is masked by default; receptionist must explicitly
   // tap "Show number" to reveal. Resets whenever the drawer closes or
@@ -596,6 +610,12 @@ export function BookingDetailDrawer({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- exit edit mode + re-mask when drawer rebinds to a different booking
     setEditMode(false);
     setPhoneRevealed(false);
+    setNameEditing(false);
+    setNameOverride(null);
+    setNameErr(false);
+    setNoteEditing(false);
+    setNoteOverride(undefined);
+    setNoteErr(false);
   }, [deskEdit?.booking.id]);
 
   useEffect(() => {
@@ -620,6 +640,54 @@ export function BookingDetailDrawer({
     (deskEdit.booking.status === "pending" ||
       deskEdit.booking.status === "confirmed" ||
       deskEdit.booking.status === "in_progress");
+
+  // A name typo can need fixing on a booking of ANY status (incl. completed),
+  // so gate the rename on the front-desk role only, not the editable statuses.
+  const canEditName = deskEdit !== undefined && roleAllowsEditBooking(viewerRole);
+
+  const saveName = useCallback(() => {
+    const next = nameDraft.trim();
+    const bId = deskEdit?.booking.id;
+    if (!bId || !slug || next.length === 0) {
+      setNameErr(true);
+      return;
+    }
+    const bookingId: string = bId;
+    const slugStr: string = slug;
+    setNameErr(false);
+    startNameSave(async () => {
+      const r = await renameBookingClient(slugStr, { bookingId, name: next });
+      if (r.ok && r.name) {
+        setNameOverride(r.name);
+        setNameEditing(false);
+        if (deskEdit) void deskEdit.onBookingUpdated(deskEdit.booking);
+      } else {
+        setNameErr(true);
+      }
+    });
+  }, [nameDraft, deskEdit, slug]);
+
+  const saveNote = useCallback(() => {
+    const bId = deskEdit?.booking.id;
+    if (!bId || !slug) {
+      setNoteErr(true);
+      return;
+    }
+    const bookingId: string = bId;
+    const slugStr: string = slug;
+    const next = noteDraft; // allow empty → clears the note
+    setNoteErr(false);
+    startNoteSave(async () => {
+      const r = await updateBookingNote(slugStr, { bookingId, note: next });
+      if (r.ok) {
+        setNoteOverride(r.note ?? null);
+        setNoteEditing(false);
+        if (deskEdit) void deskEdit.onBookingUpdated(deskEdit.booking);
+      } else {
+        setNoteErr(true);
+      }
+    });
+  }, [noteDraft, deskEdit, slug]);
 
   const showFooter =
     (deskEdit !== undefined && editMode) ||
@@ -690,7 +758,75 @@ export function BookingDetailDrawer({
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
                   {copy.sectionGuest}
                 </p>
-                <p className="text-base font-semibold text-nq-foreground">{displayCustomerName(model.clientName, copy.removedGuest)}</p>
+                {nameEditing ? (
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <input
+                        autoFocus
+                        data-testid="drawer-name-input"
+                        value={nameDraft}
+                        disabled={nameSaving}
+                        onChange={(e) => {
+                          setNameDraft(e.target.value);
+                          setNameErr(false);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.nativeEvent.isComposing) return;
+                          if (e.key === "Enter") saveName();
+                          if (e.key === "Escape") setNameEditing(false);
+                        }}
+                        className={cn(
+                          "min-w-0 flex-1 rounded-lg border bg-nq-bg px-2 py-1 text-base font-semibold text-nq-foreground focus:outline-none focus:border-nq-primary/60",
+                          nameErr ? "border-nq-error/70" : "border-nq-border/50",
+                        )}
+                      />
+                      <button
+                        type="button"
+                        data-testid="drawer-name-save"
+                        disabled={nameSaving}
+                        onClick={saveName}
+                        className="rounded-lg bg-nq-primary px-2.5 py-1 text-xs font-semibold text-black disabled:opacity-50"
+                      >
+                        {nameSaving
+                          ? (model.language === "vi" ? "Đang lưu…" : "Saving…")
+                          : (model.language === "vi" ? "Lưu" : "Save")}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={nameSaving}
+                        onClick={() => { setNameEditing(false); setNameErr(false); }}
+                        className="text-xs text-nq-muted underline-offset-2 hover:underline"
+                      >
+                        {model.language === "vi" ? "Huỷ" : "Cancel"}
+                      </button>
+                    </div>
+                    {nameErr ? (
+                      <p className="text-xs text-nq-error" role="alert">
+                        {model.language === "vi" ? "Tên không hợp lệ hoặc lưu lỗi." : "Invalid name or save failed."}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <p className="text-base font-semibold text-nq-foreground">{displayCustomerName(nameOverride ?? model.clientName, copy.removedGuest)}</p>
+                    {canEditName ? (
+                      <button
+                        type="button"
+                        data-testid="drawer-name-edit"
+                        aria-label={model.language === "vi" ? "Sửa tên khách" : "Edit customer name"}
+                        title={model.language === "vi" ? "Sửa tên" : "Edit name"}
+                        onClick={() => {
+                          setNameDraft(nameOverride ?? model.clientName ?? "");
+                          setNameErr(false);
+                          setNameEditing(true);
+                        }}
+                        className="text-nq-muted hover:text-nq-foreground"
+                      >
+                        ✏️
+                      </button>
+                    ) : null}
+                  </div>
+                )}
                 {/* Channel (e.g. 🧑‍💼 Lễ tân đặt tại quầy) is shown once, in the
                     "Đặt lúc · <channel>" line of the schedule section — no longer
                     duplicated here under the guest name. */}
@@ -1055,12 +1191,74 @@ export function BookingDetailDrawer({
               <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
                 {copy.sectionNotes}
               </p>
-              {model.clientNotes?.trim() ? (
-                <p className="break-words whitespace-pre-wrap text-nq-foreground/95">
-                  {model.clientNotes}
-                </p>
+              {noteEditing ? (
+                <div className="space-y-1">
+                  <textarea
+                    autoFocus
+                    data-testid="drawer-note-input"
+                    value={noteDraft}
+                    disabled={noteSaving}
+                    rows={3}
+                    onChange={(e) => { setNoteDraft(e.target.value); setNoteErr(false); }}
+                    onKeyDown={(e) => { if (e.key === "Escape") setNoteEditing(false); }}
+                    className={cn(
+                      "w-full rounded-lg border bg-nq-bg px-2 py-1.5 text-sm text-nq-foreground focus:outline-none focus:border-nq-primary/60",
+                      noteErr ? "border-nq-error/70" : "border-nq-border/50",
+                    )}
+                    placeholder={model.language === "vi" ? "Ghi chú cho lịch hẹn này…" : "Note for this appointment…"}
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      data-testid="drawer-note-save"
+                      disabled={noteSaving}
+                      onClick={saveNote}
+                      className="rounded-lg bg-nq-primary px-2.5 py-1 text-xs font-semibold text-black disabled:opacity-50"
+                    >
+                      {noteSaving ? (model.language === "vi" ? "Đang lưu…" : "Saving…") : (model.language === "vi" ? "Lưu" : "Save")}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={noteSaving}
+                      onClick={() => { setNoteEditing(false); setNoteErr(false); }}
+                      className="text-xs text-nq-muted underline-offset-2 hover:underline"
+                    >
+                      {model.language === "vi" ? "Huỷ" : "Cancel"}
+                    </button>
+                    {noteErr ? (
+                      <span className="text-xs text-nq-error" role="alert">
+                        {model.language === "vi" ? "Lưu lỗi." : "Save failed."}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
               ) : (
-                <p className="italic text-nq-muted">{copy.noNotes}</p>
+                <div className="flex items-start gap-2">
+                  {(noteOverride !== undefined ? noteOverride : model.clientNotes)?.trim() ? (
+                    <p className="flex-1 break-words whitespace-pre-wrap text-nq-foreground/95">
+                      {noteOverride !== undefined ? noteOverride : model.clientNotes}
+                    </p>
+                  ) : (
+                    <p className="flex-1 italic text-nq-muted">{copy.noNotes}</p>
+                  )}
+                  {canEditName ? (
+                    <button
+                      type="button"
+                      data-testid="drawer-note-edit"
+                      aria-label={model.language === "vi" ? "Sửa ghi chú" : "Edit note"}
+                      title={model.language === "vi" ? "Sửa ghi chú" : "Edit note"}
+                      onClick={() => {
+                        const cur = noteOverride !== undefined ? noteOverride : model.clientNotes;
+                        setNoteDraft(cur ?? "");
+                        setNoteErr(false);
+                        setNoteEditing(true);
+                      }}
+                      className="shrink-0 text-nq-muted hover:text-nq-foreground"
+                    >
+                      ✏️
+                    </button>
+                  ) : null}
+                </div>
               )}
               </section>
             </div>

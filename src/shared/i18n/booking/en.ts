@@ -34,6 +34,12 @@ export const bookingEn = {
   dateClosedShort: "Closed",
   dateHolidayLabel: "Salon closed",
   dateHolidayShort: "Off",
+  /** Hybrid date picker: toggle that expands the full month grid below the strip. */
+  dateMoreDates: "More dates",
+  /** Hybrid date picker: collapse the month grid back to the strip. */
+  dateHideCalendar: "Hide calendar",
+  /** Hybrid date picker: first chip label for today. */
+  dateTodayChip: "Today",
   /** Calendar month navigation (e.g. "Previous month"). */
   calendarPrevMonthAria: "Previous month",
   calendarNextMonthAria: "Next month",
