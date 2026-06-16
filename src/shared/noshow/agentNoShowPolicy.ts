@@ -77,18 +77,29 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
   const salonId = str(b.salon_id);
   const phone = str(b.client_phone).replace(/\D/g, "");
 
-  const [{ data: svc }, { data: salon }, { data: profile }, provider] = await Promise.all([
+  const [{ data: svc }, { data: salon }, stats, { data: profile }, provider] = await Promise.all([
     b.service_id ? db.from("services").select("name").eq("id", str(b.service_id)).maybeSingle() : Promise.resolve({ data: null }),
     db.from("salons").select("vertical, noshow_protection_enabled, noshow_fee_percent, feature_flags").eq("id", salonId).maybeSingle(),
+    // Salon-scoped visit history from BOOKINGS — the client_profiles table is a
+    // GLOBAL identity table (no salon_id), so the old .eq("salon_id") filter
+    // matched nothing and made every customer look brand-new (→ the agent
+    // over-asked cards from loyal clean-record regulars). Mirror the rule's
+    // priorBookingStats: non-cancelled bookings at THIS salon for this phone.
     phone.length >= 8
-      ? db.from("client_profiles").select("visit_count, no_show_count, is_vip").eq("salon_id", salonId).eq("phone", phone).maybeSingle()
+      ? db.from("bookings").select("status").eq("salon_id", salonId).eq("client_phone", phone).not("id", "eq", str(b.id)).not("status", "eq", "cancelled").limit(50)
+      : Promise.resolve({ data: [] }),
+    // is_vip is a global per-customer attribute → look up by phone only.
+    phone.length >= 8
+      ? db.from("client_profiles").select("is_vip").eq("phone", phone).maybeSingle()
       : Promise.resolve({ data: null }),
     resolvePaymentProvider(salonId),
   ]);
 
   const s = (salon as Row | null) ?? {};
+  const historyRows = (stats.data ?? []) as Row[];
+  const visitCount = historyRows.length;
+  const noShowCount = historyRows.filter((r) => str(r.status) === "no_show").length;
   const p = (profile as Row | null) ?? {};
-  const visitCount = num(p.visit_count);
 
   return {
     bookingId: str(b.id),
@@ -102,7 +113,7 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
     hasPhone: phone.length >= 8,
     isNew: visitCount <= 0,
     visitCount,
-    noShowCount: num(p.no_show_count),
+    noShowCount,
     isVip: p.is_vip === true,
     vertical: str(s.vertical) || "nail salon",
     protectionEnabled: s.noshow_protection_enabled === true,
