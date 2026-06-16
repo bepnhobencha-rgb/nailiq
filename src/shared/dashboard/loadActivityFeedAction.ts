@@ -16,7 +16,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
  * after gating here). Read-only.
  */
 
-export type ActivityKind = "event" | "sms" | "email" | "call" | "system" | "login" | "ai";
+export type ActivityKind = "event" | "sms" | "email" | "call" | "system" | "login" | "ai" | "watchdog";
 
 const PROTECTION_LABEL: Record<string, string> = {
   none: "không đòi gì",
@@ -181,6 +181,7 @@ export async function getActivityUnreadCount(
     "system_audit",
     "auth_events",
     "ai_policy_decisions",
+    "watchdog_alerts",
   ];
   try {
     const results = await Promise.all(
@@ -218,7 +219,7 @@ export async function loadActivityFeed(
       .maybeSingle();
     const tz = (salonRow as { timezone?: string } | null)?.timezone || "America/Los_Angeles";
 
-    const [eventsRes, notifsRes, callsRes, auditRes, authRes, aiRes] = await Promise.all([
+    const [eventsRes, notifsRes, callsRes, auditRes, authRes, aiRes, watchdogRes] = await Promise.all([
       db
         .from("booking_events" as never)
         .select("id, booking_id, actor_role, event_type, payload, created_at, bookings ( client_name, start_time_utc )")
@@ -252,6 +253,12 @@ export async function loadActivityFeed(
       db
         .from("ai_policy_decisions" as never)
         .select("id, mode, ai_protection, ai_fee_percent, ai_message, ai_reason, ai_confidence, rule_protection, actor_user_id, created_at, bookings ( client_name, start_time_utc )")
+        .eq("salon_id", salonId)
+        .order("created_at", { ascending: false })
+        .limit(PER_SOURCE),
+      db
+        .from("watchdog_alerts" as never)
+        .select("id, kind, severity, title, body, created_at")
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
@@ -424,6 +431,24 @@ export async function loadActivityFeed(
         bookingId: null,
         bookingDate: null,
         transcript: detail,
+      });
+    }
+
+    const SEV_ICON: Record<string, string> = { critical: "🔴", warning: "🟠", info: "🔵" };
+    for (const r of (watchdogRes.data ?? []) as Array<Record<string, unknown>>) {
+      const sev = str(r.severity);
+      const body = str(r.body).trim();
+      items.push({
+        id: `wd-${str(r.id)}`,
+        kind: "watchdog",
+        when: str(r.created_at),
+        title: `${SEV_ICON[sev] ?? "🛡️"} ${str(r.title)}`,
+        subtitle: body || null,
+        status: null,
+        actorRole: null,
+        bookingId: null,
+        bookingDate: null,
+        transcript: body && body.length > 90 ? body : null,
       });
     }
 

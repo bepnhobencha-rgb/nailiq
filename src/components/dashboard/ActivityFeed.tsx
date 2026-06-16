@@ -12,6 +12,7 @@ const KIND_ICON: Record<ActivityKind, string> = {
   system: "⚙️",
   login: "🔑",
   ai: "🤖",
+  watchdog: "🛡️",
 };
 
 const TABS: { key: ActivityKind | "all"; label: string }[] = [
@@ -23,6 +24,7 @@ const TABS: { key: ActivityKind | "all"; label: string }[] = [
   { key: "system", label: "Hệ thống" },
   { key: "login", label: "Đăng nhập" },
   { key: "ai", label: "AI" },
+  { key: "watchdog", label: "Cảnh báo" },
 ];
 
 function timeAgo(iso: string): string {
@@ -144,7 +146,7 @@ export function ActivityFeed({ slug, items }: { slug: string; items: ActivityIte
                   {it.subtitle ? (
                     <p className={`mt-0.5 text-xs text-nq-muted ${open === it.id ? "" : "truncate"}`}>{it.subtitle}</p>
                   ) : null}
-                  {(it.kind === "call" || it.kind === "ai") && it.transcript ? (
+                  {(it.kind === "call" || it.kind === "ai" || it.kind === "watchdog") && it.transcript ? (
                     <button
                       type="button"
                       onClick={(e) => {
@@ -154,8 +156,8 @@ export function ActivityFeed({ slug, items }: { slug: string; items: ActivityIte
                       className="mt-1 text-[11px] font-semibold text-nq-primary"
                     >
                       {open === it.id
-                        ? it.kind === "ai" ? "Ẩn chi tiết" : "Ẩn bản ghi"
-                        : it.kind === "ai" ? "Xem chi tiết →" : "Xem bản ghi cuộc gọi"}
+                        ? it.kind === "call" ? "Ẩn bản ghi" : "Ẩn chi tiết"
+                        : it.kind === "call" ? "Xem bản ghi cuộc gọi" : "Xem chi tiết →"}
                     </button>
                   ) : null}
                   {open === it.id && it.transcript ? (

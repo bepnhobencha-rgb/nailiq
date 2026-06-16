@@ -57,6 +57,16 @@ export async function GET(req: NextRequest) {
     } catch (e) {
       console.error("[square-sync] shadow backfill", salonId, e);
     }
+
+    // AI Watchdog — proactive owner alerts. Self-throttles to ~once/12h and
+    // self-gates on the salon's ai_watchdog flag, so it's cheap to call every
+    // run. Independent of the sync result. Best-effort.
+    try {
+      const { runWatchdog } = await import("@/shared/watchdog/agentWatchdog");
+      await runWatchdog(salonId);
+    } catch (e) {
+      console.error("[square-sync] watchdog", salonId, e);
+    }
   }
 
   return NextResponse.json({ ok: true, results });
