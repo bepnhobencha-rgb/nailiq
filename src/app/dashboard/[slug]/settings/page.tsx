@@ -118,6 +118,8 @@ export default async function SalonSettingsPage({ params }: Props) {
       : "nail_salon";
 
   const domainInfo = await getSalonDomain(slug);
+  const { data: { user: authUser } } = await ctx.supabase.auth.getUser();
+  const userEmail = authUser?.email ?? null;
   const lookPresets = getLookPresetsForVertical(vertical);
   const staffSelectionEnabled = row?.staff_selection_enabled !== false;
   const bookingLeadMinutes = (() => {
@@ -170,6 +172,8 @@ export default async function SalonSettingsPage({ params }: Props) {
       winBackEnabled={winBackEnabled}
       clientNewMaxVisits={clientSegments.newMaxVisits}
       clientAtRiskDays={clientSegments.atRiskDays}
+      userEmail={userEmail}
+      role={ctx.role}
     />
   );
 }

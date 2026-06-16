@@ -1,5 +1,6 @@
 "use server";
 
+import { redirect } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getSuperAdminRole } from "@/shared/lib/superadmin";
@@ -64,6 +65,16 @@ export async function loginSuperadmin(
 export async function logoutSuperadmin(): Promise<void> {
   const supabase = await createClient();
   await supabase.auth.signOut();
+}
+
+/**
+ * Server action wired to the "Sign out" button in SuperadminSignOutButton.
+ * Delegates the actual sign-out to `logoutSuperadmin`, then hard-redirects to
+ * the login page so no stale session state lingers in the client.
+ */
+export async function signOutSuperadminAction(): Promise<void> {
+  await logoutSuperadmin();
+  redirect("/superadmin/login");
 }
 
 export type RequestPasswordResetResult =

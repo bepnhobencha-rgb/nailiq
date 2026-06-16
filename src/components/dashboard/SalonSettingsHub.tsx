@@ -48,6 +48,7 @@ import { StaffNotificationCard } from "@/components/dashboard/StaffNotificationC
 import { cn } from "@/shared/lib/cn";
 import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { MobileAccountCard } from "@/components/dashboard/MobileAccountCard";
 
 export function SalonSettingsHub({
   slug,
@@ -80,6 +81,8 @@ export function SalonSettingsHub({
   winBackEnabled,
   clientNewMaxVisits,
   clientAtRiskDays,
+  userEmail,
+  role,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -111,6 +114,8 @@ export function SalonSettingsHub({
   winBackEnabled: boolean;
   clientNewMaxVisits: number;
   clientAtRiskDays: number;
+  userEmail: string | null;
+  role: string;
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -641,6 +646,11 @@ export function SalonSettingsHub({
         ) : null}
         </SettingsCategory>
         ) : null}
+
+        {/* ══ Mobile-only: Account / Sign out ══════════════════
+            Desktop users reach Sign Out via the sidebar account menu.
+            This section is hidden on md+ screens. ══════════════ */}
+        <MobileAccountCard userEmail={userEmail} role={role} />
       </MobileStack>
     </ResponsiveShell>
   );

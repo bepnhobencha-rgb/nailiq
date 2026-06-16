@@ -4,6 +4,7 @@ import { createClient } from "@/shared/lib/supabase/server";
 import { getSuperAdminRole } from "@/shared/lib/superadmin";
 import { SuperadminSidebar } from "@/components/superadmin/SuperadminSidebar";
 import { SuperadminBottomNav } from "@/components/superadmin/SuperadminBottomNav";
+import { SuperadminTopBar } from "@/components/superadmin/SuperadminTopBar";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,8 @@ export default async function SuperadminShellLayout({
     <div className="min-h-dvh bg-nq-bg text-nq-foreground">
       <SuperadminSidebar role={role} />
       <SuperadminBottomNav role={role} />
+      {/* Mobile-only top bar with wordmark + sign-out; hidden at md+ where sidebar handles it */}
+      <SuperadminTopBar />
       <div className="md:pl-60 pb-14 md:pb-0">{children}</div>
     </div>
   );
