@@ -149,15 +149,21 @@ export async function evaluateBookingNoShow(
       console.error("[evaluateBookingNoShow] card decision", e);
     }
 
-    // SHADOW: run the AI no-show policy agent alongside the rule and RECORD what
-    // it WOULD decide (no effect on this booking). Self-gated on the salon's
-    // opt-in flag (feature_flags.ai_noshow_policy_shadow), so only opted-in
-    // salons pay for the AI call. Best-effort — never blocks.
-    try {
-      const { runNoShowPolicyShadow } = await import("@/shared/noshow/agentNoShowPolicy");
-      void runNoShowPolicyShadow(body.bookingId);
-    } catch (e) {
-      console.error("[evaluateBookingNoShow] shadow agent", e);
+    // AI no-show policy agent. SHADOW (ai_noshow_policy_shadow) only logs what it
+    // WOULD decide — no effect. LIVE (ai_noshow_policy_live) lets the guarded
+    // decision DRIVE the card flag, overriding the rule's `cardRequired` for this
+    // write (it still only sets "needs a card on file"; charging stays manual +
+    // consent-gated). Awaited so a live override lands in the single update below;
+    // returns null in shadow / on fallback → we keep the rule. Best-effort.
+    // (Skip when escalated — that path owns a held deposit, not a card.)
+    if (!escalated) {
+      try {
+        const { runNoShowPolicyAgent } = await import("@/shared/noshow/agentNoShowPolicy");
+        const agent = await runNoShowPolicyAgent(body.bookingId);
+        if (agent) cardRequired = agent.cardRequired;
+      } catch (e) {
+        console.error("[evaluateBookingNoShow] policy agent", e);
+      }
     }
 
     // Plain deposit applies only when deposits are on, a card isn't the

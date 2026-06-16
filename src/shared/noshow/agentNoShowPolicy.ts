@@ -41,8 +41,10 @@ export type PolicyContext = {
   providerConnected: boolean;
   defaultFeePercent: number;
   maxFeePercent: number;
-  /** salons.feature_flags.ai_noshow_policy_shadow — gates the (paid) AI call. */
+  /** salons.feature_flags.ai_noshow_policy_shadow — log-only (no effect). */
   aiShadowEnabled: boolean;
+  /** salons.feature_flags.ai_noshow_policy_live — AI decision DRIVES the flag. */
+  aiLiveEnabled: boolean;
 };
 
 export type AiPolicyDecision = {
@@ -109,6 +111,8 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
     maxFeePercent: 50,
     aiShadowEnabled:
       (s.feature_flags as Record<string, unknown> | null)?.ai_noshow_policy_shadow === true,
+    aiLiveEnabled:
+      (s.feature_flags as Record<string, unknown> | null)?.ai_noshow_policy_live === true,
   };
 }
 
@@ -178,14 +182,28 @@ export function clampAndGuard(ai: AiPolicyDecision | null, ctx: PolicyContext): 
 }
 
 /**
- * SHADOW MODE — run the agent alongside the existing rule and RECORD the
- * comparison, WITHOUT changing anything. Best-effort; never throws.
+ * Run the agent for one booking and LOG the decision vs the rule.
+ *
+ * - SHADOW (ai_noshow_policy_shadow): log only, `applied=false`, returns null →
+ *   the caller keeps the deterministic rule. Zero effect.
+ * - LIVE (ai_noshow_policy_live): the guarded decision DRIVES the card flag.
+ *   Returns `{ cardRequired }` so an in-flight caller (evaluateBookingNoShow)
+ *   applies it in its own update; when `applyToRow` is set (cron backfill, no
+ *   surrounding update) it also writes `noshow_card_required` directly.
+ *
+ * The AI still NEVER charges — live only sets the "needs a card on file" flag;
+ * the actual charge stays manual + consent-gated + idempotent downstream. If the
+ * guarded decision is unusable (low confidence / AI down / unsafe), live falls
+ * back to the rule (returns null). Best-effort; never throws.
  */
-export async function runNoShowPolicyShadow(bookingId: string): Promise<void> {
+export async function runNoShowPolicyAgent(
+  bookingId: string,
+  opts: { applyToRow?: boolean } = {},
+): Promise<{ cardRequired: boolean } | null> {
   try {
     const ctx = await gatherPolicyContext(bookingId);
-    if (!ctx) return;
-    if (!ctx.aiShadowEnabled) return; // salon hasn't opted into the shadow agent
+    if (!ctx) return null;
+    if (!ctx.aiShadowEnabled && !ctx.aiLiveEnabled) return null; // not opted in
 
     const aiRaw = await agentDecideNoShowPolicy(ctx);
     const ai = clampAndGuard(aiRaw, ctx);
@@ -199,38 +217,57 @@ export async function runNoShowPolicyShadow(bookingId: string): Promise<void> {
       /* leave as none */
     }
 
+    // LIVE only when the salon opted into live AND we have a usable decision.
+    const live = ctx.aiLiveEnabled && ai != null;
+    const cardRequired = ai != null && (ai.protection === "card" || ai.protection === "deposit");
+
     const db = createServiceRoleClient();
     await db.from("ai_policy_decisions" as never).insert({
       salon_id: ctx.salonId,
       booking_id: bookingId,
       agent: "noshow_policy",
-      mode: "shadow",
+      mode: live ? "live" : "shadow",
       ai_protection: ai?.protection ?? "none",
       ai_fee_percent: ai?.feePercent ?? null,
       ai_reason: ai?.reason ?? (aiRaw ? "(bị guard chặn)" : "(AI không phản hồi → dùng rule)"),
       ai_message: ai?.message ?? null,
       ai_confidence: ai?.confidence ?? null,
       rule_protection: ruleProtection,
-      applied: false,
+      applied: live,
     } as never);
+
+    if (!live) return null; // shadow (or guard fell back) → caller keeps the rule
+
+    // Apply directly when the caller has no surrounding write (cron backfill).
+    if (opts.applyToRow) {
+      await db
+        .from("bookings" as never)
+        .update({ noshow_card_required: cardRequired } as never)
+        .eq("id", bookingId);
+    }
+    return { cardRequired };
   } catch (e) {
-    console.error("[runNoShowPolicyShadow]", e);
+    console.error("[runNoShowPolicyAgent]", e);
+    return null;
   }
 }
 
 /**
- * Backfill shadow decisions for a salon's EXISTING upcoming bookings — most
+ * Backfill agent decisions for a salon's EXISTING upcoming bookings — most
  * Hi-Lite bookings arrive via the Square sync (not the NailIQ online flow), so
  * the per-booking hook never fires for them. Called from the square-sync cron
- * (prod, where ANTHROPIC_API_KEY exists). Self-gated on the salon's opt-in flag;
- * caps the AI calls per run so the log fills steadily. Best-effort.
+ * (prod, where ANTHROPIC_API_KEY exists). Self-gated on the salon's opt-in flag
+ * (shadow OR live); caps the AI calls per run so the log fills steadily. In LIVE
+ * mode it writes the card flag directly (applyToRow). Best-effort.
  */
 export async function backfillNoShowShadow(salonId: string, cap = 5): Promise<void> {
   try {
     const db = looseServiceClient();
     const { data: salon } = await db.from("salons").select("feature_flags").eq("id", salonId).maybeSingle();
-    const on = ((salon as Row | null)?.feature_flags as Record<string, unknown> | null)?.ai_noshow_policy_shadow === true;
-    if (!on) return;
+    const flags = (salon as Row | null)?.feature_flags as Record<string, unknown> | null;
+    const shadowOn = flags?.ai_noshow_policy_shadow === true;
+    const liveOn = flags?.ai_noshow_policy_live === true;
+    if (!shadowOn && !liveOn) return;
 
     const { data: done } = await db.from("ai_policy_decisions").select("booking_id").eq("salon_id", salonId).limit(1000);
     const seen = new Set(((done ?? []) as Row[]).map((r) => str(r.booking_id)));
@@ -249,7 +286,7 @@ export async function backfillNoShowShadow(salonId: string, cap = 5): Promise<vo
       if (ran >= cap) break;
       const id = str(b.id);
       if (seen.has(id)) continue;
-      await runNoShowPolicyShadow(id);
+      await runNoShowPolicyAgent(id, { applyToRow: liveOn });
       ran++;
     }
   } catch (e) {

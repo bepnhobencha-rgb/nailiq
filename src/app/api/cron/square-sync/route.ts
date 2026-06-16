@@ -47,10 +47,10 @@ export async function GET(req: NextRequest) {
         .eq("salon_id", salonId);
     }
 
-    // AI no-show policy agent (SHADOW) — runs INDEPENDENTLY of the Square pull so
-    // a sync error never blocks it. Square-origin bookings never hit the NailIQ
-    // online hook, so evaluate a few here each run (self-gated on the salon's
-    // opt-in flag; fills the "AI" tab steadily). Best-effort.
+    // AI no-show policy agent (shadow OR live) — runs INDEPENDENTLY of the Square
+    // pull so a sync error never blocks it. Square-origin bookings never hit the
+    // NailIQ online hook, so evaluate a few here each run (self-gated on the
+    // salon's opt-in flag; in live mode it sets the card flag). Best-effort.
     try {
       const { backfillNoShowShadow } = await import("@/shared/noshow/agentNoShowPolicy");
       await backfillNoShowShadow(salonId);
