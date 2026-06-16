@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { realNameOrEmpty } from "@/shared/booking/guestNamePlaceholder";
+import { getSalonDisplayName } from "@/shared/dashboard/salonClientName";
 import { isRateLimited, RATE_LIMIT_IDS } from "@/shared/lib/rateLimit";
 
 // ---------------------------------------------------------------------------
@@ -251,7 +252,10 @@ export async function GET(
     // most recent booking where the guest gave a real name — so a customer
     // who once booked as "Mai" is recognized even if a later group booking
     // overwrote the profile with "Guest 2".
-    let resolvedName = realNameOrEmpty(profile.name);
+    // This salon's renamed display name (tenant-isolated) wins over the shared
+    // profile name.
+    const salonOverrideName = await getSalonDisplayName(salonId, phoneDigits);
+    let resolvedName = salonOverrideName || realNameOrEmpty(profile.name);
     if (!resolvedName) {
       const { data: namedRows } = await supabase
         .from("bookings")
