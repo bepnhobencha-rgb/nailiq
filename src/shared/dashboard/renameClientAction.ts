@@ -9,18 +9,17 @@ import { isValidCustomerName } from "@/shared/lib/nameFormat";
  * Fix a customer's name from the booking drawer (the fastest path for a busy
  * receptionist — no navigating to a separate page).
  *
- * Identity-layer aware: the canonical name lives on `client_profiles` (phone-
- * keyed), while each booking stores a denormalized `client_name` for display /
- * search / conflict checks. We update BOTH so the fix sticks AND shows
- * immediately:
- *  - the linked profile's `name` (so future bookings auto-fill the corrected
- *    name), and
- *  - this SALON's bookings for that profile (so the corrected name shows on every
- *    appointment the salon sees). We deliberately do NOT rewrite OTHER salons'
- *    booking rows — `client_profiles` is shared by phone across tenants, so we
- *    only touch the canonical name + the caller salon's own rows.
+ * STRICTLY SALON-SCOPED (tenant isolation). `client_profiles` is shared by phone
+ * ACROSS salons, so we deliberately do NOT touch the canonical profile name — a
+ * receptionist at one salon must never change another salon's view of a
+ * customer. We only rewrite the denormalized `client_name` on THIS salon's own
+ * booking rows for that customer (matched by client_profile_id within the
+ * salon). A guest booking with no profile updates just that one booking.
  *
- * A guest booking with no profile updates just that one booking's name.
+ * Tradeoff: because the shared profile is untouched, this salon's profile-360 /
+ * typeahead / next-booking autofill (which read the shared profile name) still
+ * show the old name. Making those salon-specific without cross-tenant writes
+ * needs a per-salon display-name override (separate, larger change).
  */
 export async function renameBookingClient(
   slug: string,
@@ -49,14 +48,9 @@ export async function renameBookingClient(
 
   const profileId = (bk as { client_profile_id?: string | null }).client_profile_id ?? null;
 
+  // Salon-scoped write only. NEVER the shared client_profiles row.
   if (profileId) {
-    // Canonical name on the shared profile (so it sticks for future visits).
-    const { error: pe } = await sb
-      .from("client_profiles")
-      .update({ name } as never)
-      .eq("id", profileId);
-    if (pe) return { ok: false, error: pe.message };
-    // Backfill THIS salon's bookings for that profile (display everywhere here).
+    // All of THIS salon's bookings for that customer (past + future).
     const { error: be } = await sb
       .from("bookings")
       .update({ client_name: name } as never)
