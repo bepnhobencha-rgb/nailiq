@@ -49,6 +49,7 @@ import { cn } from "@/shared/lib/cn";
 import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { MobileAccountCard } from "@/components/dashboard/MobileAccountCard";
+import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
 
 export function SalonSettingsHub({
   slug,
@@ -83,6 +84,8 @@ export function SalonSettingsHub({
   clientAtRiskDays,
   userEmail,
   role,
+  salonName,
+  salons,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -116,6 +119,8 @@ export function SalonSettingsHub({
   clientAtRiskDays: number;
   userEmail: string | null;
   role: string;
+  salonName?: string;
+  salons?: OwnerSalonSummary[];
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -650,7 +655,13 @@ export function SalonSettingsHub({
         {/* ══ Mobile-only: Account / Sign out ══════════════════
             Desktop users reach Sign Out via the sidebar account menu.
             This section is hidden on md+ screens. ══════════════ */}
-        <MobileAccountCard userEmail={userEmail} role={role} />
+        <MobileAccountCard
+          userEmail={userEmail}
+          role={role}
+          slug={slug}
+          salonName={salonName}
+          salons={salons}
+        />
       </MobileStack>
     </ResponsiveShell>
   );

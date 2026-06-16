@@ -112,6 +112,7 @@ export function DashboardShell({
       <MobileBottomNav
         slug={slug}
         walkinQueueCount={walkinQueueCount}
+        overdueCount={overdueCount}
         role={role}
         releaseFeatures={releaseFeatures}
       />
