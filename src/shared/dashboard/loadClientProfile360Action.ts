@@ -3,6 +3,7 @@
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { inferReturnCadenceDays } from "@/shared/booking/returnRhythm";
+import { getSalonDisplayName } from "@/shared/dashboard/salonClientName";
 import { isFrontDeskRole } from "@/shared/lib/salonMemberRole";
 
 // ---------------------------------------------------------------------------
@@ -911,7 +912,10 @@ export async function generateClient360Summary(
     return (row as { name?: string | null } | null)?.name?.trim() || null;
   }
 
-  const clientName = profile?.name?.trim() || "Client";
+  // Prefer this salon's renamed display name (tenant-isolated override) over the
+  // shared profile name.
+  const overrideName = await getSalonDisplayName(salonId, clientPhone);
+  const clientName = overrideName || profile?.name?.trim() || "Client";
   const isVip = profile?.is_vip === true;
   const totalNoShows = Number(profile?.no_show_count ?? 0);
   const topService = topName(serviceCounts);

@@ -10,16 +10,13 @@ import { isValidCustomerName } from "@/shared/lib/nameFormat";
  * receptionist — no navigating to a separate page).
  *
  * STRICTLY SALON-SCOPED (tenant isolation). `client_profiles` is shared by phone
- * ACROSS salons, so we deliberately do NOT touch the canonical profile name — a
- * receptionist at one salon must never change another salon's view of a
- * customer. We only rewrite the denormalized `client_name` on THIS salon's own
- * booking rows for that customer (matched by client_profile_id within the
- * salon). A guest booking with no profile updates just that one booking.
- *
- * Tradeoff: because the shared profile is untouched, this salon's profile-360 /
- * typeahead / next-booking autofill (which read the shared profile name) still
- * show the old name. Making those salon-specific without cross-tenant writes
- * needs a per-salon display-name override (separate, larger change).
+ * ACROSS salons, so we NEVER touch the canonical profile name. We write two
+ * salon-local places: (1) the denormalized `client_name` on THIS salon's booking
+ * rows for that customer (grid / drawer / reports), and (2) a `salon_client_names`
+ * override (salon_id + phone) that profile-360 / typeahead / autofill prefer —
+ * so the corrected name shows everywhere WITHIN this salon while other tenants
+ * are completely unaffected. A guest booking with no profile updates just that
+ * one booking.
  */
 export async function renameBookingClient(
   slug: string,
@@ -40,13 +37,14 @@ export async function renameBookingClient(
   // Booking must be in the caller's salon (tenant isolation).
   const { data: bk } = await sb
     .from("bookings")
-    .select("id, client_profile_id")
+    .select("id, client_profile_id, client_phone")
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .maybeSingle();
   if (!(bk as { id?: string } | null)?.id) return { ok: false, error: "invalid_booking" };
 
   const profileId = (bk as { client_profile_id?: string | null }).client_profile_id ?? null;
+  const phone = String((bk as { client_phone?: string | null }).client_phone ?? "").trim();
 
   // Salon-scoped write only. NEVER the shared client_profiles row.
   if (profileId) {
@@ -57,6 +55,22 @@ export async function renameBookingClient(
       .eq("client_profile_id", profileId)
       .eq("salon_id", ctx.salon.id);
     if (be) return { ok: false, error: be.message };
+    // Per-salon display-name override so profile-360 / typeahead / autofill
+    // (which read the shared profile) show the corrected name WITHIN this salon,
+    // still never touching the cross-tenant client_profiles row.
+    if (phone) {
+      await sb
+        .from("salon_client_names" as never)
+        .upsert(
+          {
+            salon_id: ctx.salon.id,
+            phone,
+            display_name: name,
+            updated_at: new Date().toISOString(),
+          } as never,
+          { onConflict: "salon_id,phone" },
+        );
+    }
   } else {
     // Guest booking with no identity profile → just this booking.
     const { error: be } = await sb
