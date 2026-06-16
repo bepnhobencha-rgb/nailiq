@@ -5,6 +5,7 @@ import {
   evaluateBookingNoShow,
   type EvaluateBookingNoShowInput,
 } from "@/shared/noshow/evaluateBookingNoShow";
+import { sendOnlineSaveCardLink } from "@/shared/booking/sendOnlineSaveCardLink";
 import { sendBookingConfirmationEmail } from "@/shared/booking/sendBookingConfirmationEmail";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
@@ -51,7 +52,19 @@ export async function runPublicBookingSideEffects(args: {
 }): Promise<void> {
   after(async () => {
     const jobs: Promise<unknown>[] = [];
-    if (args.risk) jobs.push(evaluateBookingNoShow(args.risk));
+    if (args.risk) {
+      const bookingId = args.risk.bookingId;
+      // Sequential: evaluate (which may set noshow_card_required, incl. via the
+      // live AI policy agent), THEN auto-send the save-card link if the customer
+      // needs one but never captured a card inline (they've usually left the
+      // page by the time the requirement is decided). sendOnline… self-gates.
+      jobs.push(
+        (async () => {
+          await evaluateBookingNoShow(args.risk!);
+          await sendOnlineSaveCardLink(bookingId);
+        })(),
+      );
+    }
     if (args.email) {
       jobs.push(
         sendBookingConfirmationEmail(args.email).catch((e) =>
