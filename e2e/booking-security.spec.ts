@@ -34,6 +34,8 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
       .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
+    // Reveal the collapsed month grid (#593) before picking a grid day.
+    await page.locator('[data-testid="date-toggle-calendar"]').click();
     await page
       .locator('[data-testid="date-day"]:not([disabled])')
       .nth(1)
@@ -92,6 +94,8 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
       .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
+    // Reveal the collapsed month grid (#593) before picking a grid day.
+    await page.locator('[data-testid="date-toggle-calendar"]').click();
     await page
       .locator('[data-testid="date-day"]:not([disabled])')
       .nth(1)
@@ -133,6 +137,8 @@ async function navigateToBookingInfoStep(page: Page, testSlug: string) {
     .waitFor({ state: "visible", timeout: 15_000 });
   await page.locator('[data-testid="staff-item"]').first().click();
   await page.getByRole("button", { name: "Continue" }).first().click();
+  // Reveal the collapsed month grid (#593) before picking a grid day.
+  await page.locator('[data-testid="date-toggle-calendar"]').click();
   await page
     .locator('[data-testid="date-day"]:not([disabled])')
     .nth(1)

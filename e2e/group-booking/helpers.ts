@@ -242,6 +242,16 @@ export async function pickDateInCalendar(
   page: Page,
   ymd: string,
 ): Promise<void> {
+  // The month grid (with its month-nav) is collapsed behind the "📅 More dates"
+  // toggle (#593). Open it so calendar-next-month exists; the near-term strip
+  // also carries data-ymd, so close dates still resolve either way.
+  const gridToggle = page.getByTestId("date-toggle-calendar");
+  if (
+    (await gridToggle.count()) > 0 &&
+    (await gridToggle.getAttribute("aria-expanded")) !== "true"
+  ) {
+    await gridToggle.click();
+  }
   for (let i = 0; i < 12; i++) {
     const cell = page.locator(`[data-ymd="${ymd}"]`);
     if ((await cell.count()) > 0) {

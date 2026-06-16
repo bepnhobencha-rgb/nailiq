@@ -56,6 +56,9 @@ test("individual booking still works — golden path smoke test", async ({ page 
   await page.getByRole("button", { name: /continue/i }).first().click();
 
   // ── Step 3: Pick date ─────────────────────────────────────────
+  // The month grid is collapsed behind the "📅 More dates" toggle (#593); open
+  // it before using month navigation.
+  await page.getByTestId("date-toggle-calendar").click();
   // Navigate to next month to ensure multiple available dates exist
   // (end-of-month runs may have few remaining non-disabled cells).
   const calendarNextBtn = page.getByTestId("calendar-next-month");
