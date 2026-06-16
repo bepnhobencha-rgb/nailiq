@@ -13,6 +13,7 @@ const KIND_ICON: Record<ActivityKind, string> = {
   login: "🔑",
   ai: "🤖",
   watchdog: "🛡️",
+  winback: "💌",
 };
 
 const TABS: { key: ActivityKind | "all"; label: string }[] = [
@@ -25,6 +26,7 @@ const TABS: { key: ActivityKind | "all"; label: string }[] = [
   { key: "login", label: "Đăng nhập" },
   { key: "ai", label: "AI" },
   { key: "watchdog", label: "Cảnh báo" },
+  { key: "winback", label: "Giữ khách" },
 ];
 
 function timeAgo(iso: string): string {
@@ -146,7 +148,7 @@ export function ActivityFeed({ slug, items }: { slug: string; items: ActivityIte
                   {it.subtitle ? (
                     <p className={`mt-0.5 text-xs text-nq-muted ${open === it.id ? "" : "truncate"}`}>{it.subtitle}</p>
                   ) : null}
-                  {(it.kind === "call" || it.kind === "ai" || it.kind === "watchdog") && it.transcript ? (
+                  {(it.kind === "call" || it.kind === "ai" || it.kind === "watchdog" || it.kind === "winback") && it.transcript ? (
                     <button
                       type="button"
                       onClick={(e) => {
