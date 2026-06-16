@@ -6,6 +6,7 @@ import {
   type TopSpender,
 } from "@/shared/dashboard/topSpendersActions";
 import { setHostVip } from "@/shared/dashboard/topHostsActions";
+import { vipTierLabel } from "@/shared/dashboard/vipSpendTier";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { ClientProfile360Drawer } from "@/components/dashboard/ClientProfile360Drawer";
 
@@ -127,6 +128,9 @@ export function TopSpendersPanel({
                   ) : null}
                 </span>
                 <span className="block truncate text-xs text-nq-muted">
+                  {vipTierLabel(s.tier, language === "vi" ? "vi" : "en")
+                    ? `${vipTierLabel(s.tier, language === "vi" ? "vi" : "en")} · `
+                    : ""}
                   {tx.visits(s.paymentCount)}
                   {s.lastPaymentAt ? ` · ${tx.last} ${s.lastPaymentAt.slice(0, 10)}` : ""} · ··· {s.phone.slice(-4)}
                 </span>

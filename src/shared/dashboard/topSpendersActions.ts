@@ -3,6 +3,11 @@
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import {
+  parseVipSpendTiers,
+  spendTier,
+  type VipTier,
+} from "@/shared/dashboard/vipSpendTier";
 
 /**
  * "Top khách chi tiêu" — the salon's biggest spenders, by real money paid
@@ -16,6 +21,7 @@ export type TopSpender = {
   totalSpendCents: number;
   paymentCount: number;
   lastPaymentAt: string | null;
+  tier: VipTier;
 };
 
 export type LoadTopSpendersResult =
@@ -72,15 +78,25 @@ export async function loadTopSpenders(slug: string): Promise<LoadTopSpendersResu
     }
   }
 
+  // Per-salon VIP tier thresholds (NULL → code defaults).
+  const { data: salonRow } = await admin
+    .from("salons")
+    .select("vip_spend_tiers")
+    .eq("id", ctx.salon.id)
+    .maybeSingle();
+  const tiers = parseVipSpendTiers((salonRow as { vip_spend_tiers?: unknown } | null)?.vip_spend_tiers);
+
   const spenders: TopSpender[] = rows.map((r) => {
     const phone = String(r.client_profiles!.phone);
+    const totalSpendCents = Number(r.total_spend_cents ?? 0);
     return {
       phone,
       name: overrides.get(phone) || r.client_profiles?.name?.trim() || null,
       isVip: r.client_profiles?.is_vip === true,
-      totalSpendCents: Number(r.total_spend_cents ?? 0),
+      totalSpendCents,
       paymentCount: Number(r.payment_count ?? 0),
       lastPaymentAt: r.last_payment_at?.trim() ? String(r.last_payment_at) : null,
+      tier: spendTier(totalSpendCents, tiers),
     };
   });
 
