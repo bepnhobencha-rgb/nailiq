@@ -2,6 +2,7 @@
 
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { isFrontDeskRole } from "@/shared/lib/salonMemberRole";
 
 /**
  * Typeahead search for the receptionist booking form — find an EXISTING client
@@ -24,7 +25,7 @@ export type ClientSearchHit = {
 };
 
 export type ClientSearchResult =
-  | { ok: false; error: "unauthorized" | "server_error" }
+  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" }
   | { ok: true; hits: ClientSearchHit[] };
 
 const MIN_QUERY_LEN = 2;
@@ -35,6 +36,7 @@ export async function searchClients(
 ): Promise<ClientSearchResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isFrontDeskRole(ctx.role)) return { ok: false, error: "forbidden" };
 
   const q = (query ?? "").trim();
   // Need at least 2 chars (name) or digits (phone) to avoid dumping the book.

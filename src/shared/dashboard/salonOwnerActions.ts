@@ -826,6 +826,7 @@ export type UpdateBrandColorResult =
       ok: false;
       error:
         | "unauthorized"
+        | "forbidden"
         | "invalid_color"
         | "server_error";
     };
@@ -853,6 +854,7 @@ export async function updateBrandColor(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
 
   // Cast: `brand_color` is not yet in the auto-generated Supabase
   // types until the next regeneration.
@@ -873,7 +875,7 @@ export async function updateBrandColor(
 
 export type UpdateThemeModeResult =
   | { ok: true; themeMode: "dark" | "light" }
-  | { ok: false; error: "unauthorized" | "invalid_mode" | "server_error" };
+  | { ok: false; error: "unauthorized" | "forbidden" | "invalid_mode" | "server_error" };
 
 /**
  * Member-gated: writes `salons.theme_mode`. Mirrors the DB CHECK
@@ -896,6 +898,7 @@ export async function updateSalonThemeMode(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
 
   // Cast: `theme_mode` is not yet in the auto-generated Supabase
   // types until the next regeneration.
