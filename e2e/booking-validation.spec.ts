@@ -21,6 +21,8 @@ async function navigateToBookingInfo(page: Page, testSlug: string) {
   await page.locator('[data-testid="staff-item"]').first().click();
   await page.getByRole("button", { name: "Continue" }).first().click();
 
+  // Reveal the collapsed month grid (#593) before picking a grid day.
+  await page.locator('[data-testid="date-toggle-calendar"]').click();
   await page
     .locator('[data-testid="date-day"]:not([disabled])')
     .nth(1)

@@ -89,6 +89,8 @@ test.describe("Booking Flow — Phone OTP", () => {
     // "today" (rendered as `date-today`, not `date-day`). Advance a month until
     // a selectable `date-day` appears instead of assuming the default view has
     // one — keeps the OTP suite deterministic on the last day of the month.
+    // The month grid is collapsed behind the "📅 More dates" toggle (#593).
+    await page.locator('[data-testid="date-toggle-calendar"]').click();
     await page
       .locator('[data-testid="calendar-grid"]')
       .waitFor({ state: "visible", timeout: 15_000 });

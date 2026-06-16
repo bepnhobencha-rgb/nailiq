@@ -101,11 +101,16 @@ async function navigateToTimeStep(page: Page, slug: string) {
     .waitFor({ state: "visible", timeout: 15_000 });
   await page.locator('[data-testid="staff-item"]').first().click();
   await page.getByRole("button", { name: "Continue" }).first().click();
-  // Wait for the date calendar to animate in, then pick a selectable day. The
+  // The month grid is collapsed behind the "📅 More dates" toggle (#593); open
+  // it so the date-day grid below mounts. Then pick a selectable day. The
   // calendar opens on the first month with availability; late in the month a
   // salon open every day can still leave the current view with only "today"
   // (which renders as `date-today`, not `date-day`), so advance a month when no
   // selectable `date-day` is present.
+  await page
+    .locator('[data-testid="date-toggle-calendar"]')
+    .waitFor({ state: "visible", timeout: 15_000 });
+  await page.locator('[data-testid="date-toggle-calendar"]').click();
   await page
     .locator('[data-testid="calendar-grid"]')
     .waitFor({ state: "visible", timeout: 15_000 });
@@ -246,6 +251,8 @@ test.describe("Booking error scenarios — /[slug]", () => {
       .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
+    // Reveal the collapsed month grid (#593) before reading a grid day's data-ymd.
+    await page.locator('[data-testid="date-toggle-calendar"]').click();
     const pickedDateBtn = page
       .locator('[data-testid="date-day"]:not([disabled])')
       .first();
@@ -396,7 +403,9 @@ test.describe("Booking error scenarios — /[slug]", () => {
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    // Wait for calendar to render before inspecting specific date cells.
+    // Open the collapsed month grid (#593), then wait for it to render before
+    // inspecting specific date cells.
+    await page.locator('[data-testid="date-toggle-calendar"]').click();
     await page
       .locator('[data-testid="date-day"]')
       .first()
@@ -448,6 +457,8 @@ test.describe("Booking error scenarios — /[slug]", () => {
     await page.locator('[data-testid="any-staff-option"]').click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
+    // Past cells live only in the month grid (the strip starts today); open it.
+    await page.locator('[data-testid="date-toggle-calendar"]').click();
     const pastCells = page.locator('[data-testid="date-day"][data-past="true"]');
     const count = await pastCells.count();
     if (count === 0) {
@@ -504,6 +515,8 @@ test.describe("Booking error scenarios — /[slug]", () => {
     await page.locator('[data-testid="any-staff-option"]').click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
+    // Open the collapsed month grid (#593) to inspect the closed-date cell.
+    await page.locator('[data-testid="date-toggle-calendar"]').click();
     const cell = page.locator(
       `[data-testid="date-day"][data-ymd="${ymd}"]`,
     );
