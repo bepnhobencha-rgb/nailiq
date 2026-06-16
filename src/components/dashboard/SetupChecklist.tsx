@@ -18,10 +18,14 @@ export function SetupChecklist({
   salon,
   slug,
   language,
+  viewerEmail,
 }: {
   salon: SetupChecklistSalon;
   slug: string;
   language: UserLanguage;
+  /** Auth-level email (e.g. Google OAuth). Treated as satisfying the email
+   *  step so OAuth users aren't falsely marked incomplete. */
+  viewerEmail?: string | null;
 }) {
   const t = getUserMessages(language).ownerDashboard.setupChecklist;
   const openingHoursCustomized = isOpeningHoursCustomized(salon.opening_hours);
@@ -54,8 +58,10 @@ export function SetupChecklist({
     {
       key: "email",
       label: t.addEmail,
-      done: !!salon.email?.trim(),
-      href: "#email",
+      // Treat auth-level email (e.g. Google OAuth) as satisfying this step —
+      // OAuth users already have an email and should not be marked incomplete.
+      done: !!(salon.email?.trim() || viewerEmail?.trim()),
+      href: `/dashboard/${slug}/settings`,
     },
   ];
 

@@ -141,6 +141,7 @@ export function SalonOwnerDashboardMain({
             opening_hours: data.salon.opening_hours,
             email: data.salon.email,
           }}
+          viewerEmail={data.viewerEmail}
         />
       ) : null}
       <div className="mb-4 flex items-start justify-between gap-3">

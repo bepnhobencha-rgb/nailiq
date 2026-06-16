@@ -789,13 +789,17 @@ function SidebarRow({
 
 type RoleBadgeMap = {
   owner: string;
+  admin: string;
   senior: string;
   nail_tech: string;
+  receptionist: string;
 };
 
 function localizedRoleLabel(role: string, labels: RoleBadgeMap): string {
   if (role === "owner") return labels.owner;
+  if (role === "admin") return labels.admin;
   if (role === "senior") return labels.senior;
+  if (role === "receptionist") return labels.receptionist;
   if (role === "nail_tech") return labels.nail_tech;
   // Fallback for unknown / future roles — keep the raw role name so it's
   // still parseable rather than collapsing to an English placeholder.
