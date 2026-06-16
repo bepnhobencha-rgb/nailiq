@@ -76,6 +76,15 @@ export async function GET(req: NextRequest) {
     } catch (e) {
       console.error("[square-sync] winback", salonId, e);
     }
+
+    // AI Due-to-Rebook — nudge on-rhythm regulars coming due for their next
+    // visit. Self-gates on ai_rebook + shares win-back's 30-day dedupe.
+    try {
+      const { runRebook } = await import("@/shared/winback/agentRebook");
+      await runRebook(salonId);
+    } catch (e) {
+      console.error("[square-sync] rebook", salonId, e);
+    }
   }
 
   return NextResponse.json({ ok: true, results });
