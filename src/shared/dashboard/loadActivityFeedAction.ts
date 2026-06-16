@@ -16,7 +16,13 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
  * after gating here). Read-only.
  */
 
-export type ActivityKind = "event" | "sms" | "email" | "call" | "system" | "login";
+export type ActivityKind = "event" | "sms" | "email" | "call" | "system" | "login" | "ai";
+
+const PROTECTION_LABEL: Record<string, string> = {
+  none: "không đòi gì",
+  card: "yêu cầu lưu thẻ",
+  deposit: "yêu cầu đặt cọc",
+};
 
 /** Short, human device label from a user-agent string (for the login log). */
 function deviceLabel(ua: string): string {
@@ -174,6 +180,7 @@ export async function getActivityUnreadCount(
     "voice_ai_sessions",
     "system_audit",
     "auth_events",
+    "ai_policy_decisions",
   ];
   try {
     const results = await Promise.all(
@@ -211,7 +218,7 @@ export async function loadActivityFeed(
       .maybeSingle();
     const tz = (salonRow as { timezone?: string } | null)?.timezone || "America/Los_Angeles";
 
-    const [eventsRes, notifsRes, callsRes, auditRes, authRes] = await Promise.all([
+    const [eventsRes, notifsRes, callsRes, auditRes, authRes, aiRes] = await Promise.all([
       db
         .from("booking_events" as never)
         .select("id, booking_id, actor_role, event_type, payload, created_at, bookings ( client_name, start_time_utc )")
@@ -239,6 +246,12 @@ export async function loadActivityFeed(
       db
         .from("auth_events" as never)
         .select("id, event_type, actor_role, ip, user_agent, created_at")
+        .eq("salon_id", salonId)
+        .order("created_at", { ascending: false })
+        .limit(PER_SOURCE),
+      db
+        .from("ai_policy_decisions" as never)
+        .select("id, mode, ai_protection, ai_reason, ai_confidence, rule_protection, created_at, bookings ( client_name, start_time_utc )")
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
@@ -356,6 +369,26 @@ export async function loadActivityFeed(
         subtitle: `${dev}${ip ? ` · IP ${ip}` : ""}`,
         status: null,
         actorRole: r.actor_role ? str(r.actor_role) : null,
+        bookingId: null,
+        bookingDate: null,
+        transcript: null,
+      });
+    }
+
+    for (const r of (aiRes.data ?? []) as Array<Record<string, unknown>>) {
+      const booking = r.bookings as { client_name?: string | null } | null;
+      const name = (booking?.client_name ?? "").toString().trim() || "khách";
+      const aiP = PROTECTION_LABEL[str(r.ai_protection)] ?? str(r.ai_protection);
+      const ruleP = PROTECTION_LABEL[str(r.rule_protection)] ?? str(r.rule_protection);
+      const shadow = str(r.mode) === "shadow";
+      items.push({
+        id: `ai-${str(r.id)}`,
+        kind: "ai",
+        when: str(r.created_at),
+        title: `🤖 AI ${shadow ? "(thử nghiệm) " : ""}đề nghị ${aiP} — ${name}`,
+        subtitle: `${str(r.ai_reason)}${ruleP ? ` · Rule cũ: ${ruleP}` : ""}${r.ai_confidence ? ` · tự tin: ${str(r.ai_confidence)}` : ""}`,
+        status: null,
+        actorRole: null,
         bookingId: null,
         bookingDate: null,
         transcript: null,
