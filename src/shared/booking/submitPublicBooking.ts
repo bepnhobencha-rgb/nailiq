@@ -282,30 +282,53 @@ export async function submitPublicBooking(
   // reading unconsumed/non-expired sessions by UUID (the UUID is the capability token).
   const salonPhoneOtpEnabled =
     (salon as { phone_otp_enabled?: unknown }).phone_otp_enabled === true;
+  // The OTP session id actually used downstream (reuse + consume). Resolved from
+  // the client-passed id OR a valid session for the phone (see fallback below).
+  let resolvedOtpSessionId = "";
   if (salonPhoneOtpEnabled) {
-    const sessionId = (params.otpSessionId ?? "").trim();
-    if (!sessionId) throw new Error("otp_required");
+    const passedId = (params.otpSessionId ?? "").trim();
+    type OtpRow = { id: string; phone: string };
+    // The anon RLS policy `anon_read_valid_otp_session` only returns rows that
+    // are UNCONSUMED + UNEXPIRED — so any row we read here is already valid.
+    let otpSession: OtpRow | null = null;
 
-    const { data: otpSession } = await supabase
-      .from("phone_otp_sessions" as never)
-      .select("id, phone, consumed_at, expires_at")
-      .eq("id", sessionId)
-      .eq("salon_id", String(salon.id))
-      .maybeSingle() as { data: { id: string; phone: string; consumed_at: string | null; expires_at: string } | null };
-
-    if (!otpSession) throw new Error("otp_invalid");
-
-    // Phone must match the booking phone (digits only).
-    if (otpSession.phone !== phoneOk.digits) {
-      throw new Error("otp_invalid");
+    // 1) The session id the client passed (the normal path).
+    if (passedId) {
+      const { data } = (await supabase
+        .from("phone_otp_sessions" as never)
+        .select("id, phone")
+        .eq("id", passedId)
+        .eq("salon_id", String(salon.id))
+        .maybeSingle()) as { data: OtpRow | null };
+      if (data && data.phone === phoneOk.digits) otpSession = data;
     }
+
+    // 2) FALLBACK — the client can hold a STALE session id after re-verifying
+    //    (the id it remembers expired/was consumed by an earlier attempt), which
+    //    wrongly threw "phone verification required" even though the customer
+    //    DID just verify. Accept any still-valid session for THIS phone+salon:
+    //    a fresh verified session for the same number is the same proof of
+    //    phone control (you can't get one without receiving its code).
+    if (!otpSession) {
+      const { data } = (await supabase
+        .from("phone_otp_sessions" as never)
+        .select("id, phone")
+        .eq("salon_id", String(salon.id))
+        .eq("phone", phoneOk.digits)
+        .order("expires_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()) as { data: OtpRow | null };
+      if (data) otpSession = data;
+    }
+
+    if (!otpSession) throw new Error("otp_required");
+    // Use the RESOLVED session id everywhere downstream (reuse + consume).
+    resolvedOtpSessionId = otpSession.id;
 
     // NOTE: do NOT consume the session here. The saved-card REUSE path
     // (reuseNoShowCardForBooking, below) re-validates this same session and
     // requires it UNCONSUMED to re-derive the card by the verified phone.
-    // Consuming it now raced that check ("otp consumed" → reuse fails → the
-    // booking was cancelled and the customer saw "OTP không được"). The session
-    // is consumed at the END, after the card step (single-use still holds).
+    // Consume happens at the END, after the card step (single-use still holds).
   }
 
   // Enforce per-plan monthly booking cap (landing-page promise).
@@ -762,7 +785,7 @@ export async function submitPublicBooking(
     // server re-derives the card from the OTP-verified phone (no token sent).
     const reused = await reuseNoShowCardAction({
       bookingId,
-      otpSessionId: (params.otpSessionId ?? "").trim(),
+      otpSessionId: resolvedOtpSessionId,
       consent: params.noShowConsent === true,
     });
     if (!reused.ok) {
@@ -773,11 +796,11 @@ export async function submitPublicBooking(
   // Consume the OTP session NOW — after the card/reuse step, which needs it
   // unconsumed (see the validation note above). Single-use: best-effort
   // fire-and-forget so a failure never blocks the committed booking.
-  if (salonPhoneOtpEnabled && params.otpSessionId) {
+  if (salonPhoneOtpEnabled && resolvedOtpSessionId) {
     void fetch("/api/booking-otp/consume-session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: String(params.otpSessionId).trim() }),
+      body: JSON.stringify({ sessionId: resolvedOtpSessionId }),
     });
   }
 
