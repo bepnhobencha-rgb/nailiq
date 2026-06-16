@@ -766,8 +766,11 @@ export async function submitPublicBooking(
   }
 
   // Option A no-show card gate: a required-card booking captured the card IN the
-  // confirm step. Save it NOW — before any confirmation goes out. The action
-  // cancels the booking on failure, so we surface an error and send nothing.
+  // confirm step. Save it NOW — before any confirmation goes out. On failure we
+  // do NOT throw / cancel: a card glitch (Square lookup miss, network, declined
+  // verification) must never cost a real customer their slot. The action keeps
+  // the booking + flags `noshow_card_required` so the desk collects a card later
+  // (the "⚠️ needs card" badge). Booking proceeds; protection is desk-recoverable.
   if (params.noShowCardSourceId && bookingId) {
     const saved = await saveNoShowCardAction({
       bookingId,
@@ -776,20 +779,18 @@ export async function submitPublicBooking(
       verificationToken: params.noShowCardVerificationToken ?? undefined,
     });
     if (!saved.ok) {
-      // Carry the provider reason so the UI can show WHY (decline code) instead
-      // of a generic failure — critical for diagnosing real-card declines.
-      throw new Error(`card_save_failed:${saved.reason ?? ""}`);
+      console.error("[submitPublicBooking] card save failed — booking kept + flagged:", saved.reason, bookingId);
     }
   } else if (params.noShowReuseSavedCard && bookingId) {
-    // Returning OTP-verified customer reused their existing card on file. The
-    // server re-derives the card from the OTP-verified phone (no token sent).
+    // Returning OTP-verified customer reused their existing card on file. Same
+    // non-fatal contract — a reuse glitch flags the booking, never cancels it.
     const reused = await reuseNoShowCardAction({
       bookingId,
       otpSessionId: resolvedOtpSessionId,
       consent: params.noShowConsent === true,
     });
     if (!reused.ok) {
-      throw new Error(`card_save_failed:${reused.reason ?? ""}`);
+      console.error("[submitPublicBooking] card reuse failed — booking kept + flagged:", reused.reason, bookingId);
     }
   }
 
