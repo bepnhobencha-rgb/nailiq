@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ClientProfilesPanel } from "@/components/dashboard/ClientProfilesPanel";
 import { TopHostsPanel } from "@/components/dashboard/TopHostsPanel";
+import { TopSpendersPanel } from "@/components/dashboard/TopSpendersPanel";
 import { MultiNamePhonePanel } from "@/components/dashboard/MultiNamePhonePanel";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { parseClientSegmentSettings } from "@/shared/dashboard/clientSegmentSettings";
@@ -56,6 +57,7 @@ export default async function ClientsPage({ params }: PageProps) {
         const isManager = ctx.role === "owner" || ctx.role === "admin";
         return isManager ? (
           <>
+            <TopSpendersPanel slug={slug} viewerRole={ctx.role} />
             <TopHostsPanel slug={slug} viewerRole={ctx.role} />
             <MultiNamePhonePanel slug={slug} viewerRole={ctx.role} />
           </>
