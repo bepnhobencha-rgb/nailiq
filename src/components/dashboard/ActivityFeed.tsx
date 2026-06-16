@@ -142,9 +142,9 @@ export function ActivityFeed({ slug, items }: { slug: string; items: ActivityIte
                     ) : null}
                   </div>
                   {it.subtitle ? (
-                    <p className="mt-0.5 truncate text-xs text-nq-muted">{it.subtitle}</p>
+                    <p className={`mt-0.5 text-xs text-nq-muted ${open === it.id ? "" : "truncate"}`}>{it.subtitle}</p>
                   ) : null}
-                  {it.kind === "call" && it.transcript ? (
+                  {(it.kind === "call" || it.kind === "ai") && it.transcript ? (
                     <button
                       type="button"
                       onClick={(e) => {
@@ -153,7 +153,9 @@ export function ActivityFeed({ slug, items }: { slug: string; items: ActivityIte
                       }}
                       className="mt-1 text-[11px] font-semibold text-nq-primary"
                     >
-                      {open === it.id ? "Ẩn bản ghi" : "Xem bản ghi cuộc gọi"}
+                      {open === it.id
+                        ? it.kind === "ai" ? "Ẩn chi tiết" : "Ẩn bản ghi"
+                        : it.kind === "ai" ? "Xem chi tiết →" : "Xem bản ghi cuộc gọi"}
                     </button>
                   ) : null}
                   {open === it.id && it.transcript ? (

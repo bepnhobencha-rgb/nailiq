@@ -251,7 +251,7 @@ export async function loadActivityFeed(
         .limit(PER_SOURCE),
       db
         .from("ai_policy_decisions" as never)
-        .select("id, mode, ai_protection, ai_reason, ai_confidence, rule_protection, created_at, bookings ( client_name, start_time_utc )")
+        .select("id, mode, ai_protection, ai_fee_percent, ai_message, ai_reason, ai_confidence, rule_protection, created_at, bookings ( client_name, start_time_utc )")
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
@@ -381,6 +381,16 @@ export async function loadActivityFeed(
       const aiP = PROTECTION_LABEL[str(r.ai_protection)] ?? str(r.ai_protection);
       const ruleP = PROTECTION_LABEL[str(r.rule_protection)] ?? str(r.rule_protection);
       const shadow = str(r.mode) === "shadow";
+      const pct = r.ai_fee_percent != null ? ` ${str(r.ai_fee_percent)}%` : "";
+      const aiMsg = str(r.ai_message).trim();
+      // Full detail (shown when the row is expanded).
+      const detail = [
+        `Quyết định: ${aiP}${pct}  ·  Độ tự tin: ${str(r.ai_confidence) || "—"}`,
+        `Công thức cũ: ${ruleP || "—"}${ruleP && ruleP !== aiP ? "   ⚠️ AI khác công thức cũ" : ""}`,
+        ``,
+        `Lý do: ${str(r.ai_reason) || "—"}`,
+        ...(aiMsg ? ["", "Lời nhắn AI soạn cho khách:", aiMsg] : []),
+      ].join("\n");
       items.push({
         id: `ai-${str(r.id)}`,
         kind: "ai",
@@ -391,7 +401,7 @@ export async function loadActivityFeed(
         actorRole: null,
         bookingId: null,
         bookingDate: null,
-        transcript: null,
+        transcript: detail,
       });
     }
 
