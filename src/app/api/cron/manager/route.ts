@@ -105,6 +105,32 @@ export async function GET(req: Request): Promise<NextResponse> {
       }
     }
 
+    // VIP Care — birthday / milestone / inactive nudge at 08:00 salon local time
+    if (salonHour === 8 && flags.ai_vip_care) {
+      try {
+        const { runVipCare } = await import("@/shared/ai/agentVipCare");
+        await runVipCare(salon.id);
+        entry.vip_care = "ok";
+      } catch (e) {
+        console.error("[manager] vip_care", salon.slug, e);
+        entry.vip_care = String(e);
+      }
+    }
+
+    // Review Responder — poll Google Reviews every 4 hours (hours 8, 12, 16, 20)
+    if ([8, 12, 16, 20].includes(salonHour)) {
+      try {
+        const { runReviewResponder } = await import(
+          "@/shared/ai/agentReviewResponder"
+        );
+        await runReviewResponder(salon.id);
+        entry.review_responder = "ok";
+      } catch (e) {
+        console.error("[manager] review_responder", salon.slug, e);
+        entry.review_responder = String(e);
+      }
+    }
+
     results.push(entry);
   }
 

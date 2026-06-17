@@ -46,6 +46,7 @@ import { getUserMessages } from "@/shared/i18n/user";
 import { OwnerNotificationCard } from "@/components/dashboard/OwnerNotificationCard";
 import { StaffNotificationCard } from "@/components/dashboard/StaffNotificationCard";
 import { AIReportCard } from "@/components/dashboard/AIReportCard";
+import { GooglePlaceIdCard } from "@/components/dashboard/GooglePlaceIdCard";
 import { cn } from "@/shared/lib/cn";
 import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -72,6 +73,7 @@ export function SalonSettingsHub({
   reminder3hEnabled,
   smsRemindersEnabled,
   googleReviewUrl,
+  googlePlaceId,
   voiceAiEnabled,
   voiceAiPersonaName,
   vertical,
@@ -109,6 +111,7 @@ export function SalonSettingsHub({
   smsRemindersEnabled: boolean;
   bookingVerificationMode?: string;
   googleReviewUrl: string | null;
+  googlePlaceId: string | null;
   voiceAiEnabled: boolean;
   voiceAiPersonaName: string;
   vertical: string;
@@ -551,6 +554,14 @@ export function SalonSettingsHub({
           <GoogleReviewSettings
             slug={slug}
             initialValue={googleReviewUrl ?? ""}
+          />
+        ) : null}
+
+        {/* ── AI Review Responder — Google Place ID ───────────── */}
+        {canManageSalonSettings ? (
+          <GooglePlaceIdCard
+            slug={slug}
+            initialPlaceId={googlePlaceId}
           />
         ) : null}
 
