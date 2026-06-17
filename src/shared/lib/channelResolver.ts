@@ -25,10 +25,12 @@ export function resolveCustomerChannel(opts: {
   mode: CustomerChannelMode;
   /** Operational gate — true for non-US salons and US salons after A2P. Default true. */
   smsOutboundEnabled: boolean;
+  /** When false, all outbound email is suppressed regardless of mode. Default true. */
+  emailOutboundEnabled: boolean;
   customerEmail: string | null;
 }): ChannelDecision {
-  const { mode, smsOutboundEnabled, customerEmail } = opts;
-  const hasEmail = !!customerEmail?.trim();
+  const { mode, smsOutboundEnabled, emailOutboundEnabled, customerEmail } = opts;
+  const hasEmail = emailOutboundEnabled && !!customerEmail?.trim();
   const hasSms = smsOutboundEnabled;
 
   switch (mode) {

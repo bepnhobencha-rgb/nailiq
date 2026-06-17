@@ -12,6 +12,7 @@ import type { CustomerChannelMode } from "@/shared/lib/channelResolver";
 
 const DEFAULT: CustomerChannelSettings = {
   smsOutboundEnabled: true,
+  emailOutboundEnabled: true,
   customerChannel: "smart",
 };
 
@@ -89,6 +90,11 @@ export function CustomerChannelCard({ slug }: { slug: string }) {
     ? isVi ? "✅ SMS đang bật" : "✅ SMS outbound enabled"
     : isVi ? "⚠️ SMS đang tắt — khách không có email sẽ bị bỏ qua" : "⚠️ SMS disabled — customers with no email will be skipped";
 
+  const emailStatusColor = settings.emailOutboundEnabled ? "text-nq-success" : "text-nq-warning";
+  const emailStatusLabel = settings.emailOutboundEnabled
+    ? isVi ? "✅ Email đang bật" : "✅ Email outbound enabled"
+    : isVi ? "⚠️ Email đang tắt — khách chỉ nhận SMS" : "⚠️ Email disabled — customers receive SMS only";
+
   return (
     <section
       data-testid="customer-channel-card"
@@ -141,6 +147,35 @@ export function CustomerChannelCard({ slug }: { slug: string }) {
                 ? "Salon tại Mỹ cần đăng ký Twilio A2P 10DLC trước khi bật (Twilio Console → Messaging → Regulatory Compliance). Salon Canada và quốc gia khác: bật ngay."
                 : "US salons must complete Twilio A2P 10DLC registration first (Twilio Console → Messaging → Regulatory Compliance). Canada and other countries: enable immediately."}
             </p>
+          </div>
+
+          {/* Email outbound toggle */}
+          <div className="flex flex-col gap-2 rounded-lg border border-nq-border/60 bg-nq-surface-2 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
+              {isVi ? "Nhắn tin Email tự động" : "Automated Email"}
+            </p>
+            <p className={`text-sm font-medium ${emailStatusColor}`}>{emailStatusLabel}</p>
+            {!settings.emailOutboundEnabled && (
+              <p className="text-xs text-nq-muted">
+                {isVi
+                  ? "Khi tắt, tất cả email tự động bị chặn: xác nhận, nhắc hẹn, AI win-back, VIP care. Chỉ SMS được gửi."
+                  : "When off, all automated emails are suppressed: confirmations, reminders, AI win-back, VIP care. SMS only."}
+              </p>
+            )}
+            <label className="mt-1 flex cursor-pointer items-center gap-3">
+              <input
+                type="checkbox"
+                data-testid="email-outbound-toggle"
+                checked={settings.emailOutboundEnabled}
+                onChange={(e) =>
+                  setSettings((s) => ({ ...s, emailOutboundEnabled: e.target.checked }))
+                }
+                className="size-4 accent-nq-primary"
+              />
+              <span className="text-sm font-medium text-nq-foreground">
+                {isVi ? "Bật gửi email tự động" : "Enable automated email outbound"}
+              </span>
+            </label>
           </div>
 
           {/* Channel mode */}
@@ -204,32 +239,38 @@ export function CustomerChannelCard({ slug }: { slug: string }) {
 }
 
 function getEffectiveSummary(s: CustomerChannelSettings, isVi: boolean): string {
-  const { smsOutboundEnabled, customerChannel: channelOf } = s;
-  if (channelOf === "email_only") {
+  const { smsOutboundEnabled, emailOutboundEnabled, customerChannel: channelOf } = s;
+  if (!smsOutboundEnabled && !emailOutboundEnabled) {
     return isVi
-      ? "Chỉ dùng email. SMS hoàn toàn tắt."
-      : "Email only. SMS is completely disabled.";
+      ? "⛔ Cả SMS lẫn email đều tắt — khách không nhận được gì."
+      : "⛔ Both SMS and email are off — customers receive nothing.";
+  }
+  if (channelOf === "email_only") {
+    return emailOutboundEnabled
+      ? isVi ? "Chỉ dùng email. SMS hoàn toàn tắt." : "Email only. SMS is completely disabled."
+      : isVi ? "Email only nhưng email cũng đang tắt — khách không nhận được gì." : "Email only but email is also off — customers receive nothing.";
   }
   if (channelOf === "sms_only") {
     return smsOutboundEnabled
       ? isVi ? "Chỉ SMS. Email không gửi." : "SMS only. Email is skipped."
-      : isVi
-        ? "Chỉ SMS nhưng SMS đang tắt → tin nhắn có thể bị bỏ qua."
-        : "SMS only but SMS outbound is off → messages may be skipped.";
+      : isVi ? "Chỉ SMS nhưng SMS đang tắt → tin nhắn bị bỏ qua." : "SMS only but SMS is off → messages skipped.";
   }
   if (channelOf === "sms_and_email") {
-    return smsOutboundEnabled
-      ? isVi ? "SMS + Email song song khi có email khách." : "SMS + Email in parallel when customer email is on file."
-      : isVi
-        ? "Email khi có; SMS tắt."
-        : "Email when available; SMS off.";
+    const parts = [
+      smsOutboundEnabled ? (isVi ? "SMS" : "SMS") : null,
+      emailOutboundEnabled ? (isVi ? "Email" : "Email") : null,
+    ].filter(Boolean);
+    return parts.length
+      ? isVi ? `${parts.join(" + ")} song song khi có.` : `${parts.join(" + ")} in parallel when available.`
+      : isVi ? "Cả hai kênh đều tắt — khách không nhận được gì." : "Both channels off — customers receive nothing.";
   }
   // smart
-  return smsOutboundEnabled
-    ? isVi
-      ? "Email + SMS song song khi có email; SMS-only khi không có email."
-      : "Email + SMS when customer has email; SMS-only otherwise."
-    : isVi
-      ? "Email khi có; SMS tắt. Khách không có email sẽ bị bỏ qua."
-      : "Email when available; SMS off. Customers with no email are skipped.";
+  if (!smsOutboundEnabled) {
+    return emailOutboundEnabled
+      ? isVi ? "Email khi có; SMS tắt. Khách không có email sẽ bị bỏ qua." : "Email when available; SMS off. Customers with no email are skipped."
+      : isVi ? "Cả SMS lẫn email đều tắt." : "Both SMS and email are off.";
+  }
+  return emailOutboundEnabled
+    ? isVi ? "Email + SMS song song khi có email; SMS-only khi không có email." : "Email + SMS when customer has email; SMS-only otherwise."
+    : isVi ? "Chỉ SMS (email tắt)." : "SMS only (email disabled).";
 }
