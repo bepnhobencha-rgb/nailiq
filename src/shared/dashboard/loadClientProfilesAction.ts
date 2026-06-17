@@ -2,7 +2,7 @@
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { isOwner, isFrontDeskRole } from "@/shared/lib/salonMemberRole";
+import { isOwnerOrAdmin, isFrontDeskRole } from "@/shared/lib/salonMemberRole";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -144,7 +144,7 @@ export async function updateClientProfile(
 ): Promise<UpdateClientProfileResult> {
   const resolved = await getDashboardWriteClient(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
-  if (!isOwner(resolved.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(resolved.role)) return { ok: false, error: "forbidden" };
 
   const phone = String(input.phone ?? "").trim();
   if (!phone) return { ok: false, error: "not_found" };

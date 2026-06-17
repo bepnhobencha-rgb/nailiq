@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { hasFeature } from "@/lib/feature-gating";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import type { Database } from "@/lib/database.types";
 
 export const dynamic = "force-dynamic";
@@ -73,7 +74,7 @@ export default async function ReferralsPage({ params }: PageProps) {
   const { slug } = await params;
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) redirect("/register");
-  if (ctx.role !== "owner") redirect(`/dashboard/${encodeURIComponent(slug)}`);
+  if (!isOwnerOrAdmin(ctx.role)) redirect(`/dashboard/${encodeURIComponent(slug)}`);
 
   // Check plan gate
   const { data: planRow } = await ctx.supabase

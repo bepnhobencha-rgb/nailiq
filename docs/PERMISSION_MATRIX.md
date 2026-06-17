@@ -13,25 +13,38 @@ Legend for tables below:
 - **No** — Not allowed by policy even if incidental UI leakage exists until gated.
 - **Partial** — Allowed only under stated constraints or pending product differentiation (future-safe row).
 
-Architecture note: NailIQ evolves **additive roles** (`manager`, `trainee`, `viewer`, `accounting`, …). The matrix is written so new roles can extend rows without rewriting owner/senior/nail\_tech semantics.
+Architecture note: NailIQ evolves **additive roles** (`manager`, `trainee`, `viewer`, `accounting`, …). The matrix is written so new roles can extend rows without rewriting owner/admin/senior/receptionist/nail\_tech semantics.
 
 ---
 
 ## 1. Permission philosophy
 
-### Why role-based access matters operationally
+### Role hierarchy
 
-NailIQ runs at the **live counter**. Mistakes propagate as social cost: double-books, wrongful cancels, and silent denials fracture trust between reception, technicians, and clients. Roles model **who is accountable on the floor**—not ornamental titles.
+NailIQ has **5 salon-scoped roles**, ordered from highest to lowest authority:
 
-Operational roles separate:
+```
+owner  >  admin  >  senior  >  receptionist  >  nail_tech
+```
 
-- **Strategic ownership** — policy, commerce configuration, staffing authority, integrations, and tenancy risk.
-- **Desk execution** — moving the timeline and queue accurately under time pressure (see personas in `docs/UX_PRINCIPLES.md`).
-- **Chair-side consumption** — read-mostly clarity for technicians (“who’s next, how long, what service”).
+### The core principle: admin = owner minus billing and ownership
+
+**`admin` is `owner` with two capabilities removed:**
+
+1. **Billing and payment infrastructure** — Stripe subscription, Stripe Connect setup, and anything that touches the commercial relationship between the salon and NailIQ. These are ownership-level commitments.
+2. **Structural / ownership operations** — changing the salon's vertical, granting the `admin` role to others (no self-replication of elevated access), archiving the salon, or transferring ownership.
+
+Everything else an owner can do day-to-day — booking operations, client management, staff management (except role escalation), all settings, reports, AI, brand, domain — `admin` can also do. The intent is that a salon owner can hand the shop keys to a trusted manager (`admin`) without handing over the business itself.
+
+**`receptionist` is the front-desk operator role.** It covers the full booking and queue lifecycle — creating, editing, cancelling, completing, handling no-shows, managing the walk-in queue, and searching clients. It does not touch settings, reports, or client profile editing (VIP flags, notes). A receptionist keeps the desk running without needing access to anything that shapes the business.
+
+**`senior`** sits between `admin` and `receptionist`: full desk powers plus access to reports and the ability to edit past bookings. Still locked out of settings.
+
+**`nail_tech`** is read-only plus own schedule consumption.
 
 ### Server-first enforcement
 
-**Authoritative permission** is resolved **on the server** from the signed-in identity’s **membership in the target salon**. The client may hide or disable controls for speed and clarity, but **must not** be the only layer that prevents harm.
+**Authoritative permission** is resolved **on the server** from the signed-in identity's **membership in the target salon**. The client may hide or disable controls for speed and clarity, but **must not** be the only layer that prevents harm.
 
 **Row-level security** and other platform controls are a **backstop** (defense in depth). They do not replace explicit membership + role checks in mutating entry points.
 
@@ -42,35 +55,47 @@ Operational roles separate:
 | **UI (hide / disable)** | Reduces wrong taps, trains staff on scope, keeps dense surfaces calmer. |
 | **Server (enforce)** | Guarantees correctness when actions are replayed, scripted, or triggered from outdated clients. |
 
-**Rule:** If an action is **No** in the matrix for a role, the server path must **fail closed** with a typed outcome (see §7), not “succeed quietly” or “fail ambiguously.”
+**Rule:** If an action is **No** in the matrix for a role, the server path must **fail closed** with a typed outcome (see §7), not "succeed quietly" or "fail ambiguously."
 
 ---
 
-## 2. Current role definitions
+## 2. Role definitions
 
 Roles here are **salon membership roles** (what the account may do **for that salon**). They are distinct from **directory labels** used for roster display (e.g. job titles on staff cards).
 
 ### `owner`
 
 - **Who in a real salon:** The business owner or single accountable partner for P&L, policy, and legal relationship with NailIQ for that location.
-- **Typical actions:** Configure services and hours, manage staff records, review revenue and utilization, set desk modules, resolve escalations, transfer leadership when staff change.
-- **Must never access:** Another tenant’s data; member-only owner actions should not be available to non-owners (see matrix).
+- **Typical actions:** Configure services and hours, manage staff records, manage billing and Stripe Connect, review revenue and utilization, set desk modules, resolve escalations, grant/revoke admin roles, change vertical, transfer or archive salon.
+- **Must never access:** Another tenant's data; member-only owner actions should not be available to non-owners (see matrix).
+
+### `admin`
+
+- **Who in a real salon:** Trusted floor manager, head receptionist, or co-owner without P&L responsibility — someone who runs daily operations but doesn't hold the business relationship with NailIQ.
+- **Typical actions:** All booking and client operations, staff management (except role escalation), full settings management (services, hours, brand, domain, AI, no-show protection, referrals), reports, analytics.
+- **Must never access:** Billing / Stripe management, granting the `admin` role, changing the salon vertical, archiving or transferring the salon.
 
 ### `senior`
 
 - **Who in a real salon:** Lead receptionist, floor lead, or senior tech trusted to run the **desk** without altering business configuration.
-- **Typical actions:** Full booking and queue operations for the day—add walk-ins, assign, reschedule, cancel, move queue, advance chair flow—without changing core catalog or ownership.
-- **Must never access:** Ownership-only configuration (modules, permissions, staff membership administration, profile-of-record changes) per policy table.
+- **Typical actions:** Full booking and queue operations for the day — add walk-ins, assign, reschedule, cancel, move queue, advance chair flow — plus access to reports. Cannot change salon settings.
+- **Must never access:** Settings (any), billing, role management.
+
+### `receptionist`
+
+- **Who in a real salon:** Front-desk staff whose job is moving clients through the queue accurately and quickly.
+- **Typical actions:** Create, edit, cancel, complete, and no-show bookings; manage the walk-in queue; search clients. Stays entirely within the operational desk — no settings, no reports, no profile edits.
+- **Must never access:** Settings, reports, client profile editing (VIP status, notes), staff management.
 
 ### `nail_tech`
 
 - **Who in a real salon:** Service provider primarily working from the chair; may glance at assignments between clients.
-- **Typical actions:** Read schedules and assignments; optionally assist with **low-risk intake** only where policy explicitly permits (today: favor **read-only** schedule mutations; destructive or calendar-defacing actions belong to desk roles).
-- **Must never access:** Destructive schedule edits, cancellations, salon configuration, financial administration, exports, or permission management—anything that reallocates accountability away from designated desk/owner roles.
+- **Typical actions:** Read schedules and assignments; optionally assist with **low-risk intake** only where policy explicitly permits (today: favor **read-only**; destructive or calendar-defacing actions belong to desk roles).
+- **Must never access:** Destructive schedule edits, cancellations, salon configuration, financial administration, exports, or permission management.
 
 ---
 
-## 3. Permission matrix — current
+## 3. Permission matrix
 
 Interpretation hints:
 
@@ -80,58 +105,160 @@ Interpretation hints:
 
 Where a cell is **Partial**, an italic note explains bounds.
 
-### Bookings — desk / calendar mutations
+### 3.1 Quick-reference summary
 
-| Action | owner | senior | nail_tech |
-| --- | --- | --- | --- |
-| View all bookings (desk scope / tenant bookings the product loads for operations) | Yes | Yes | Yes |
-| Create booking _(desk: walk-in / manual intake paths)_ | Yes | Yes | Partial — _intake only if/WHEN explicitly allowed; destructive paths remain desk roles; server must converge to matrix_ |
-| Edit booking _(any teammate’s appointment)_ | Yes | Yes | No |
-| Edit booking _(own appointments only)_ | Partial — _not differentiated yet; behaves like “edit any”; future `trainee`/scoped tech may use this row_ | Partial — same | Partial — planned future scope; until then treat as **No** |
-| Cancel booking | Yes | Yes | No |
-| Mark no-show | Yes | Yes | No |
-| Reschedule booking | Yes | Yes | No |
+| Area | owner | admin | senior | receptionist | nail_tech |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| **Booking operations** | ✅ | ✅ | ✅ | ✅ | ❌ |
+| **Walk-in queue** | ✅ | ✅ | ✅ | ✅ | ❌ |
+| **Client search** | ✅ | ✅ | ✅ | ✅ | ❌ |
+| **Client profile editing** (VIP, notes) | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Staff management** (CRUD) | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Grant / revoke admin role** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Booking settings** | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Services & pricing** | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Voice AI settings** | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **No-show protection settings** | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Brand & domain** | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Public page editor** | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Reports & analytics** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Dashboard modules config** | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Change salon vertical** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Billing / Stripe subscription** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Stripe Connect setup** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Archive / transfer salon** | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+---
+
+### 3.2 Booking operations — desk / calendar mutations
+
+| Action | owner | admin | senior | receptionist | nail_tech |
+| --- | --- | --- | --- | --- | --- |
+| View all bookings (desk scope / tenant bookings the product loads for operations) | Yes | Yes | Yes | Yes | Yes |
+| Create booking _(desk: walk-in / manual intake paths)_ | Yes | Yes | Yes | Yes | Partial — _intake only if/WHEN explicitly allowed; server must converge to matrix_ |
+| Edit booking _(any teammate's appointment)_ | Yes | Yes | Yes | Yes | No |
+| Edit **past** booking _(after the appointment end time)_ | Yes | Yes | Yes | No | No |
+| Cancel booking | Yes | Yes | Yes | Yes | No |
+| Mark no-show | Yes | Yes | Yes | Yes | No |
+| Reschedule booking | Yes | Yes | Yes | Yes | No |
+| Complete booking | Yes | Yes | Yes | Yes | No |
 
 Operational alignment: **`nail_tech` is primarily read/consume on the mutable schedule.** Any exception for lightweight intake stays **narrow, explicit, and server-guarded.**
 
-### Queue — walk-ins and ordering
+`receptionist` has full forward-facing desk authority (create / edit / cancel / no-show / complete) but cannot retroactively edit past bookings — that requires `senior` or above.
 
-| Action | owner | senior | nail_tech |
-| --- | --- | --- | --- |
-| Add walk-in | Yes | Yes | Partial — _mirror “create booking”; default **No** until product explicitly adopts tech-assisted intake_ |
-| Reorder queue _(manual urgency / drag priority when supported)_ | Yes | Yes | No |
-| Assign staff to walk-in / slotting from queue | Yes | Yes | No |
+---
 
-FIFO or algorithmic urgency may order the queue automatically; **manual reorder** remains a privileged desk action under owner/senior.
+### 3.3 Queue — walk-ins and ordering
 
-### Dashboard — workspace & modules
+| Action | owner | admin | senior | receptionist | nail_tech |
+| --- | --- | --- | --- | --- | --- |
+| Add walk-in | Yes | Yes | Yes | Yes | Partial — _mirror "create booking"; default **No** until product explicitly adopts tech-assisted intake_ |
+| Reorder queue _(manual urgency / drag priority when supported)_ | Yes | Yes | Yes | Yes | No |
+| Assign staff to walk-in / slotting from queue | Yes | Yes | Yes | Yes | No |
 
-| Action | owner | senior | nail_tech |
-| --- | --- | --- | --- |
-| View KPI band / condensed stats on surfaces they legitimately route to | Yes | Yes | Yes |
-| View revenue _(per-client prices on blocks, totals when enabled)_ | Partial — toggled by salon **desk modules**; visibility obeys module config | Partial — same | Partial — same _(if shown at all on tech surfaces)_ |
-| Change workspace preset _(layout density / saved desk arrangement when feature lands)_ | Yes | Partial — may allow **personal** preset vs **salon-wide** preset when distinguished | Partial — read-only or inherit desk default _(product decision)_ |
-| Toggle dashboard modules _(salon-wide desk configuration)_ | Yes | No | No |
+FIFO or algorithmic urgency may order the queue automatically; **manual reorder** remains a desk action. Both `receptionist` and `senior`+ can do this.
 
-### Settings — configuration
+---
 
-| Action | owner | senior | nail_tech |
-| --- | --- | --- | --- |
-| Edit salon profile _(name-in-product, phones, branding fields, closures where applicable)_ | Yes | No | No |
-| Edit hours | Yes | No | No |
-| Edit services / catalog | Yes | No | No |
-| Manage staff roster / capabilities _(CRUD)_ | Yes | No | No |
-| View/edit permissions _(assign membership roles)_ | Yes | No | No |
+### 3.4 Client management
 
-**Policy:** Seniors and technicians should not mutate **salon-wide configuration**. If incidental UI exposes links, guards must return **forbidden**.
+| Action | owner | admin | senior | receptionist | nail_tech |
+| --- | --- | --- | --- | --- | --- |
+| Search / look up client | Yes | Yes | Yes | Yes | No |
+| View client profile (booking history, spend) | Yes | Yes | Yes | Partial — _booking history view only; no VIP/notes/spend tabs_ | No |
+| Edit VIP status / notes on client profile | Yes | Yes | Yes | No | No |
+| View client spend / lifetime value | Yes | Yes | Yes | No | No |
 
-### Reporting & export
+---
 
-| Action | owner | senior | nail_tech |
-| --- | --- | --- | --- |
-| View daily summary _(owner-oriented snapshot)_ | Yes | Partial — _surface-dependent; desk stats OK; owner-only aggregates **No**_ | Partial — _read-only glimpses consistent with routed UI_ |
-| View revenue report _(historical aggregates, not just ephemeral desk totals)_ | Yes | Partial — _explicit product decision when reports roll out_; default deny on sensitive slices | No |
-| Export data _(CSV/ledger/hand-off)_ | Yes | No | No |
+### 3.5 Staff management
+
+| Action | owner | admin | senior | receptionist | nail_tech |
+| --- | --- | --- | --- | --- | --- |
+| View staff list | Yes | Yes | Yes | No | No |
+| Add / remove staff | Yes | Yes | No | No | No |
+| Edit staff services / capabilities | Yes | Yes | No | No | No |
+| Invite staff (send onboarding) | Yes | Yes | No | No | No |
+| Grant / revoke `senior` or `receptionist` or `nail_tech` role | Yes | Yes | No | No | No |
+| Grant / revoke **`admin`** role | Yes | **No** | No | No | No |
+| Transfer ownership | Yes | No | No | No | No |
+
+`admin` can do all staff management **except** elevating someone to `admin` or higher. This prevents role self-replication.
+
+---
+
+### 3.6 Dashboard — workspace & modules
+
+| Action | owner | admin | senior | receptionist | nail_tech |
+| --- | --- | --- | --- | --- | --- |
+| View KPI band / condensed stats on surfaces they legitimately route to | Yes | Yes | Yes | Yes | Yes |
+| View revenue _(per-client prices on blocks, totals when enabled)_ | Partial — _toggled by salon desk modules_ | Partial — _same_ | Partial — _same_ | Partial — _same_ | Partial — _same_ |
+| Change workspace preset _(layout density / saved desk arrangement)_ | Yes | Yes | Partial — _personal preset only_ | Partial — _personal preset only_ | Partial — _read-only or inherit desk default_ |
+| Toggle **salon-wide** dashboard modules | Yes | Yes | No | No | No |
+| Activity feed & audit log | Yes | Yes | No | No | No |
+
+---
+
+### 3.7 Settings — booking & operations configuration
+
+| Action | owner | admin | senior | receptionist | nail_tech |
+| --- | --- | --- | --- | --- | --- |
+| Booking lead time / OTP / verification mode | Yes | Yes | No | No | No |
+| No-show protection settings | Yes | Yes | No | No | No |
+| Walk-in queue settings | Yes | Yes | No | No | No |
+| Win-back / segments / referral program | Yes | Yes | No | No | No |
+| Voice AI settings (persona, features) | Yes | Yes | No | No | No |
+
+---
+
+### 3.8 Settings — catalog & business configuration
+
+| Action | owner | admin | senior | receptionist | nail_tech |
+| --- | --- | --- | --- | --- | --- |
+| Edit salon profile _(name, phones, branding fields, closures)_ | Yes | Yes | No | No | No |
+| Edit hours | Yes | Yes | No | No | No |
+| Edit services / catalog | Yes | Yes | No | No | No |
+| Edit pricing | Yes | Yes | No | No | No |
+| Brand color + theme mode | Yes | Yes | No | No | No |
+| Domain connection | Yes | Yes | No | No | No |
+| Public page editor (sections, content) | Yes | Yes | No | No | No |
+| **Change salon vertical** _(nail salon → head spa → etc.)_ | Yes | **No** | No | No | No |
+
+---
+
+### 3.9 Settings — permissions & role management
+
+| Action | owner | admin | senior | receptionist | nail_tech |
+| --- | --- | --- | --- | --- | --- |
+| View membership list | Yes | Yes | No | No | No |
+| Assign `senior` / `receptionist` / `nail_tech` role | Yes | Yes | No | No | No |
+| Assign `admin` role | Yes | **No** | No | No | No |
+| Archive salon | Yes | **No** | No | No | No |
+
+---
+
+### 3.10 Billing & payment infrastructure
+
+| Action | owner | admin | senior | receptionist | nail_tech |
+| --- | --- | --- | --- | --- | --- |
+| View billing / subscription status | Yes | **No** | No | No | No |
+| Change plan / manage subscription | Yes | **No** | No | No | No |
+| Stripe Connect setup / disconnect | Yes | **No** | No | No | No |
+| View payment processing settings | Yes | **No** | No | No | No |
+
+All rows in this section are **owner-only without exception.**
+
+---
+
+### 3.11 Reporting & export
+
+| Action | owner | admin | senior | receptionist | nail_tech |
+| --- | --- | --- | --- | --- | --- |
+| View daily summary | Yes | Yes | Yes | Partial — _desk stats only; no revenue_ | Partial — _read-only glimpses consistent with routed UI_ |
+| View revenue report _(historical aggregates)_ | Yes | Yes | Yes | No | No |
+| View utilization / booking-source report | Yes | Yes | Yes | No | No |
+| Export data _(CSV / ledger / hand-off)_ | Yes | Yes | No | No | No |
 
 ---
 
@@ -141,15 +268,15 @@ These roles extend the matrix later as **additional columns**. Existing roles st
 
 ### `manager`
 
-- **Scope intent:** Multi-shift floor manager: full desk powers like `senior`, plus **delegated subset** of owner tasks (not full tenancy transfer)—e.g., staff overrides, approvals, refunds when POS lands, curated reports.
+- **Scope intent:** Multi-shift floor manager: full desk powers like `senior`, plus **delegated subset** of owner tasks (not full tenancy transfer) — e.g., staff overrides, approvals, refunds when POS lands, curated reports. Likely sits between `admin` and `senior` once differentiated.
 
 ### `trainee`
 
-- **Scope intent:** Probationary desk access—**paired actions**, limited cancellation/reschedule powers, immutable audit trail of overrides; optionally **scoped “own edits only”**.
+- **Scope intent:** Probationary desk access — **paired actions**, limited cancellation/reschedule powers, immutable audit trail of overrides; optionally **scoped "own edits only"**.
 
 ### `viewer`
 
-- **Scope intent:** Accountant, partner, auditor—read dashboards/reports/export **within granted slices**, **no** mutations, **no** PII-heavy exports unless explicitly toggled later.
+- **Scope intent:** Accountant, partner, auditor — read dashboards/reports/export **within granted slices**, **no** mutations, **no** PII-heavy exports unless explicitly toggled later.
 
 ### `accounting`
 
@@ -161,17 +288,18 @@ These roles extend the matrix later as **additional columns**. Existing roles st
 
 ### Assignment
 
-- **Changing** a member’s salon role is an **ownership-level** privilege (explicit owner-only tooling or supervised admin flows).
-- Invitations and onboarding may create membership, but role elevation above baseline staff must still satisfy owner policy.
+- **Changing** a member's salon role is an **ownership-level** privilege (explicit owner-only tooling or supervised admin flows).
+- `admin` may assign roles up to and including `senior` — they cannot self-replicate `admin` or higher.
+- Invitations and onboarding may create membership, but role elevation above `senior` must satisfy owner policy.
 
 ### One role per user per salon
 
 - A single user carries **exactly one** membership role **per salon**.
-- Users may belong to **multiple salons** with **different** roles in each—that is not multiple roles within one salon.
+- Users may belong to **multiple salons** with **different** roles in each — that is not multiple roles within one salon.
 
 ### Ownership transfer
 
-- Transfer is a **destructive-privilege sequence**: designate a **single** new owner, demote outgoing owner to a non-owning role (commonly `manager`/`senior`/`viewer`), and re-run permission caches if applicable.
+- Transfer is a **destructive-privilege sequence**: designate a **single** new owner, demote outgoing owner to a non-owning role (commonly `admin`/`senior`/`viewer`), and re-run permission caches if applicable.
 - Invariant: **at least one** `owner` (or contractual successor documented in product/legal) before outgoing owner loses owner powers.
 - Sensitive exports and integration secrets should rotate or be re-affirmed during transfer (**policy**, not UX detail).
 
@@ -184,19 +312,19 @@ These roles extend the matrix later as **additional columns**. Existing roles st
 | Pattern | Use when |
 | --- | --- |
 | **Hidden** | Action is meaningless or unsafe for role; avoids clutter (**prefer** over disabled for rare/destructive items). |
-| **Disabled (+ explanation)** | User should know capability exists salon-wide but **not for them**, or dependencies block it (hours closed, conflicting state)—pair with textual reason. |
-| **Visible-but-locked** | Training mode / upgrade path / rare discoverability (“Ask owner”)—still needs clear affordance explaining **why** |
+| **Disabled (+ explanation)** | User should know capability exists salon-wide but **not for them**, or dependencies block it (hours closed, conflicting state) — pair with textual reason. |
+| **Visible-but-locked** | Training mode / upgrade path / rare discoverability ("Ask owner") — still needs clear affordance explaining **why** |
 
 ### Error when unauthorized attempted
 
 Follow `docs/UX_PRINCIPLES.md §6 (Errors)` and **`Trust through feedback`**:
 
 - Prefer **explicit** failure over silent no-ops when a server action rejects.
-- Message pattern: short **cause** (“You don’t have permission to cancel bookings.”) + **next step** (“Ask an owner or lead reception.”)—localized copy via product i18n.
+- Message pattern: short **cause** ("You don't have permission to cancel bookings.") + **next step** ("Ask an owner or admin.") — localized copy via product i18n.
 
 ### No silent failures
 
-Blocked writes, suppressed buttons that still enqueue network work, optimistic UI that cannot reconcile—all violate operational trust.
+Blocked writes, suppressed buttons that still enqueue network work, optimistic UI that cannot reconcile — all violate operational trust.
 
 ---
 
@@ -207,7 +335,7 @@ Every **mutating** server-side entry handler (conceptually: booking/queue/catalo
 1. **Verify membership** — caller is authenticated and tied to **the salon targeted by the invocation** via authoritative membership resolution (never trust identifiers alone without membership join).
 2. **Check role** — compare resolved role against §3 Permission matrix (this document evolves as source of intent).
 3. **Return typed errors** using exactly:
-   - **`unauthorized`** — caller could not be established as an eligible member **for this salon/context** session (wrong tenant target, spoofed linkage, revoked session—**product maps all to humane copy**, not ambiguous empty success).
+   - **`unauthorized`** — caller could not be established as an eligible member **for this salon/context** session (wrong tenant target, spoofed linkage, revoked session — **product maps all to humane copy**, not ambiguous empty success).
    - **`forbidden`** — membership verified, **role insufficient** for the action.
 
    Stable string codes survive UI refactors so clients map consistently to localization keys.
@@ -222,7 +350,7 @@ Recommended extension points for future roles: central **pure policy functions**
 
 ## 8. Superadmin roles _(platform-level, added 2026-05-10)_
 
-**Scope clarification.** Sections §1–§7 govern **salon-scoped** roles: `owner`, `senior`, `nail_tech`. Those control what a member can do **inside one salon**. This §8 introduces a separate, **platform-scoped** role axis for internal NailIQ operators: support staff, billing analysts, founders. A single human may carry both — Huy is simultaneously `owner` of his pilot salon **and** `founder` of NailIQ — but the two axes are evaluated independently.
+**Scope clarification.** Sections §1–§7 govern **salon-scoped** roles: `owner`, `admin`, `senior`, `receptionist`, `nail_tech`. Those control what a member can do **inside one salon**. This §8 introduces a separate, **platform-scoped** role axis for internal NailIQ operators: support staff, billing analysts, founders. A single human may carry both — Huy is simultaneously `owner` of his pilot salon **and** `founder` of NailIQ — but the two axes are evaluated independently.
 
 Foundation lands incrementally; this section names the stable contract so future routes do not relitigate it.
 
@@ -298,4 +426,4 @@ The following are deliberately deferred to Phase 2 or later amendments:
 
 ---
 
-*Operational software fails loudly at the boundaries of authority; NailIQ’s desk depends on predictable enforcement under Friday-evening pressure. The platform tier depends on predictable enforcement under audit.*
+*Operational software fails loudly at the boundaries of authority; NailIQ's desk depends on predictable enforcement under Friday-evening pressure. The platform tier depends on predictable enforcement under audit.*

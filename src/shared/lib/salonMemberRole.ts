@@ -44,7 +44,8 @@ export function dashboardPathForRole(
   role: SalonMemberRole,
 ): string {
   const enc = encodeURIComponent(slug);
-  return role === "owner" ? `/dashboard/${enc}` : `/dashboard/${enc}/center`;
+  // admin now has full settings access — route to owner home/pulse, not front-desk center
+  return role === "owner" || role === "admin" ? `/dashboard/${enc}` : `/dashboard/${enc}/center`;
 }
 
 /**

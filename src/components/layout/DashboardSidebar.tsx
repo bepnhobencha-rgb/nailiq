@@ -364,8 +364,8 @@ export function DashboardSidebar({
             href: `${dashRoot}/activity`,
             icon: History,
             match: (p) => p.startsWith(`${dashRoot}/activity`),
-            // Full audit/comms log — owner only (matches the page gate).
-            hidden: role !== "owner",
+            // Full audit/comms log — owner + admin (matches the page gate).
+            hidden: role !== "owner" && role !== "admin",
           },
           {
             key: "messages",

@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/shared/lib/supabase/server";
-import { isOwner } from "@/shared/lib/salonMemberRole";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { sendEmailVerification } from "@/shared/dashboard/sendEmailVerification";
@@ -31,7 +31,7 @@ export async function addSalonEmail(
     return { ok: false, error: "unauthorized" };
   }
   // The salon's account/recovery email is owner-level config.
-  if (!isOwner(resolved.role)) {
+  if (!isOwnerOrAdmin(resolved.role)) {
     return { ok: false, error: "unauthorized" };
   }
 

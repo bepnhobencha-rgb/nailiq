@@ -6,7 +6,7 @@ import {
   type DnsRecord,
   type DomainStatus,
 } from "@/lib/vercelDomains";
-import { isOwner } from "@/shared/lib/salonMemberRole";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 
 // Lowercase hostname: 1+ labels + TLD. Blocks protocols, paths, spaces, ports.
 const DOMAIN_RE =
@@ -62,7 +62,7 @@ async function ownerCtx(slug: string): Promise<OwnerCtxResult> {
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
   return { ok: true, ctx };
 }
 

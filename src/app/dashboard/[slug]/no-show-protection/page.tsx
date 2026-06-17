@@ -4,6 +4,7 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { loadNoShowDashboard } from "@/shared/noshow/noShowDashboardActions";
 import { NoShowProtectionHub } from "@/components/dashboard/NoShowProtectionHub";
 import { SquareSyncCard } from "@/components/dashboard/SquareSyncCard";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -94,7 +95,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
     <NoShowProtectionHub
       slug={slug}
       salonId={ctx.salon.id}
-      isOwner={ctx.role === "owner"}
+      isOwner={isOwnerOrAdmin(ctx.role)}
       autoBookEnabled={row?.feature_flags?.waitlist_auto_book === true}
       remindersEnabled={row?.reminders_enabled ?? false}
       reminder24hEnabled={row?.reminder_24h_enabled ?? true}
@@ -130,7 +131,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
     />
     <SquareSyncCard
       slug={slug}
-      isOwner={ctx.role === "owner"}
+      isOwner={isOwnerOrAdmin(ctx.role)}
       connected={Boolean(sqRow)}
       merchantId={sq?.merchant_id ?? null}
       locationId={sq?.location_id ?? null}

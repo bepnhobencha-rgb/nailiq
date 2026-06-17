@@ -3,6 +3,7 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { VoiceSettingsForm } from "@/components/dashboard/VoiceSettingsForm";
 import type { VoiceAiSettingsInput } from "@/shared/dashboard/setupActions";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export default async function VoiceSetupPage({ params }: PageProps) {
   const { slug } = await params;
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) redirect("/register");
-  if (ctx.role !== "owner") redirect(`/dashboard/${slug}/setup`);
+  if (!isOwnerOrAdmin(ctx.role)) redirect(`/dashboard/${slug}/setup`);
 
   const { data: row } = await ctx.supabase
     .from("salons")

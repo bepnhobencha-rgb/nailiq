@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { loadActivityFeed } from "@/shared/dashboard/loadActivityFeedAction";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -15,7 +16,7 @@ export default async function ActivityPage({ params }: Props) {
   const { slug } = await params;
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) redirect("/register");
-  if (ctx.role !== "owner") redirect(`/dashboard/${slug}`);
+  if (!isOwnerOrAdmin(ctx.role)) redirect(`/dashboard/${slug}`);
 
   const res = await loadActivityFeed(slug);
   const items = res.ok ? res.items : [];

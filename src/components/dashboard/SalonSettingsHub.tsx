@@ -56,6 +56,7 @@ export function SalonSettingsHub({
   dashboardModules,
   dashboardPreset,
   canEditDashboardModules,
+  canManageSalonSettings,
   salonEmail,
   emailVerified,
   subscriptionPlan,
@@ -91,6 +92,8 @@ export function SalonSettingsHub({
   dashboardModules: DashboardModulesConfig;
   dashboardPreset: PresetKey;
   canEditDashboardModules: boolean;
+  /** owner OR admin — can view/edit all operational settings except Plan & module layout */
+  canManageSalonSettings: boolean;
   salonEmail: string | null;
   emailVerified: boolean;
   subscriptionPlan: SubscriptionPlan;
@@ -262,7 +265,7 @@ export function SalonSettingsHub({
           label={t.categories.jumpLabel}
           items={[
             { id: "cat-notifications", title: t.categories.notifications.title },
-            ...(canEditDashboardModules
+            ...(canManageSalonSettings
               ? [
                   { id: "cat-brand", title: t.categories.brand.title },
                   { id: "cat-booking", title: t.categories.booking.title },
@@ -270,8 +273,10 @@ export function SalonSettingsHub({
                     id: "cat-integrations",
                     title: t.categories.integrations.title,
                   },
-                  { id: "cat-plan", title: t.categories.plan.title },
                 ]
+              : []),
+            ...(canManageSalonSettings
+              ? [{ id: "cat-plan", title: t.categories.plan.title }]
               : []),
           ]}
         />
@@ -351,7 +356,7 @@ export function SalonSettingsHub({
         </p>
 
         {/* ── Reminder toggle ─────────────────────────────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <section
             data-testid="settings-reminder-toggle"
             className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-4"
@@ -444,16 +449,16 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ── Manager + staff notification cards ──────────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <OwnerNotificationCard slug={slug} />
         ) : null}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <StaffNotificationCard slug={slug} />
         ) : null}
         </SettingsCategory>
 
         {/* ══ Category: Brand & booking page ═══════════════════ */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
         <SettingsCategory
           id="cat-brand"
           title={t.categories.brand.title}
@@ -472,14 +477,14 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ══ Category: Booking & queue ════════════════════════ */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
         <SettingsCategory
           id="cat-booking"
           title={t.categories.booking.title}
           subtitle={t.categories.booking.subtitle}
         >
         {/* ── Let customers choose a provider ─────────────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <StaffSelectionSettings
             slug={slug}
             initialEnabled={staffSelectionEnabled}
@@ -487,7 +492,7 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ── Minimum advance notice (booking lead time) ──────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <BookingLeadSettings
             slug={slug}
             initialMinutes={bookingLeadMinutes}
@@ -495,7 +500,7 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ── Reference-image upload toggle ───────────────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <ReferenceImageSettings
             slug={slug}
             initialEnabled={referenceImageEnabled}
@@ -503,12 +508,12 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ── Auto no-show (opt-in) ───────────────────────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <AutoNoShowSettings slug={slug} initialMinutes={autoNoShowMinutes} />
         ) : null}
 
         {/* ── Client lifecycle segment thresholds ─────────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <ClientSegmentSettings
             slug={slug}
             initialNewMaxVisits={clientNewMaxVisits}
@@ -517,14 +522,14 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ── Win-back email after no-show ────────────────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <WinBackSettings slug={slug} initialEnabled={winBackEnabled} />
         ) : null}
         </SettingsCategory>
         ) : null}
 
         {/* ══ Category: Integrations ═══════════════════════════ */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
         <SettingsCategory
           id="cat-integrations"
           title={t.categories.integrations.title}
@@ -532,12 +537,12 @@ export function SalonSettingsHub({
           defaultOpen={false}
         >
         {/* ── Custom domain ───────────────────────────────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <DomainSettings slug={slug} initial={domainInfo} />
         ) : null}
 
         {/* ── Google Review URL ───────────────────────────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <GoogleReviewSettings
             slug={slug}
             initialValue={googleReviewUrl ?? ""}
@@ -545,26 +550,26 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ── Wix integration (self-service connect) ──────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <WixIntegrationSettings slug={slug} />
         ) : null}
 
         {/* ── Voice AI persona name (chỉ hiện khi voice AI được bật) ── */}
-        {canEditDashboardModules && voiceAiEnabled ? (
+        {canManageSalonSettings && voiceAiEnabled ? (
           <VoiceAiSettings slug={slug} initialName={voiceAiPersonaName} />
         ) : null}
         </SettingsCategory>
         ) : null}
 
         {/* ══ Category: Plan & advanced ════════════════════════ */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
         <SettingsCategory
           id="cat-plan"
           title={t.categories.plan.title}
           subtitle={t.categories.plan.subtitle}
           defaultOpen={false}
         >
-        {/* ── Subscription plan ───────────────────────────────── */}
+        {/* ── Subscription plan (owner-only: billing) ─────────── */}
         {canEditDashboardModules ? (
           <PricingPanel
             slug={slug}
@@ -574,7 +579,7 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ── Advanced settings (collapsible) ─────────────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <section className="mt-4">
             <button
               type="button"
@@ -598,17 +603,17 @@ export function SalonSettingsHub({
                 <WalkinAutoAssignSettings
                   slug={slug}
                   initialValue={walkinAutoAssign}
-                  canEdit={canEditDashboardModules}
+                  canEdit={canManageSalonSettings}
                 />
                 <QueueDisplayModeSettings
                   slug={slug}
                   initialValue={queueDisplayMode}
-                  canEdit={canEditDashboardModules}
+                  canEdit={canManageSalonSettings}
                 />
                 <PhoneOtpSettings
                   slug={slug}
                   initialValue={phoneOtpEnabled}
-                  canEdit={canEditDashboardModules}
+                  canEdit={canManageSalonSettings}
                 />
                 <BookingVerificationSettings
                   slug={slug}
@@ -620,7 +625,7 @@ export function SalonSettingsHub({
                       | "always_deposit"
                       | "deposit_first") ?? "never"
                   }
-                  canEdit={canEditDashboardModules}
+                  canEdit={canManageSalonSettings}
                   plan={
                     subscriptionPlan as "free" | "pro" | "studio" | "enterprise"
                   }
@@ -631,17 +636,17 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ── Power-user panels (only visible at ?advanced=true) ── */}
-        {advancedMode && canEditDashboardModules ? (
+        {advancedMode && canManageSalonSettings ? (
           <>
             <DashboardModulesSettings
               slug={slug}
               initialModules={dashboardModules}
-              canEdit={canEditDashboardModules}
+              canEdit={canManageSalonSettings}
             />
             <DashboardPresetSettings
               slug={slug}
               initialPreset={dashboardPreset}
-              canEdit={canEditDashboardModules}
+              canEdit={canManageSalonSettings}
             />
             <AuditLogViewer
               slug={slug}

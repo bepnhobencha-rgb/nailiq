@@ -1,7 +1,7 @@
 "use server";
 
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
-import { isOwner } from "@/shared/lib/salonMemberRole";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 /**
@@ -167,7 +167,7 @@ export async function getActivityUnreadCount(
   sinceIso: string,
 ): Promise<{ ok: true; count: number } | { ok: false }> {
   const resolved = await resolveSalonForDashboard(slug);
-  if (!resolved || !isOwner(resolved.role)) return { ok: false };
+  if (!resolved || !isOwnerOrAdmin(resolved.role)) return { ok: false };
   const since = Number.isFinite(Date.parse(sinceIso))
     ? new Date(Date.parse(sinceIso)).toISOString()
     : new Date(Date.now() - 86_400_000).toISOString();
@@ -207,7 +207,7 @@ export async function loadActivityFeed(
 ): Promise<LoadActivityFeedResult> {
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
-  if (!isOwner(resolved.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(resolved.role)) return { ok: false, error: "forbidden" };
 
   const salonId = resolved.salon.id;
   const db = createServiceRoleClient();
