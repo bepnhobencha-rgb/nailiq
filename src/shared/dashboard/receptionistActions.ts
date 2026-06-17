@@ -2919,3 +2919,78 @@ export async function inviteWaitlistEntry(
 
   return { ok: true, suppressed: smsResult.suppressed };
 }
+
+// ─── deskClaimPartySlotAction ──────────────────────────────────────
+
+export type DeskClaimResult =
+  | { ok: true }
+  | { ok: false; error: "unauthorized" | "invalid_input" | "not_found" | "already_claimed" | "expired" | "server_error" };
+
+/**
+ * Receptionist quick-claim: assigns a name (and optional phone) to an unclaimed
+ * party slot on behalf of a walk-in guest. Delegates atomicity to the same
+ * `claim_party_slot` RPC used by the guest self-claim flow.
+ *
+ * Security: caller must be an authenticated salon member (getDashboardWriteClient).
+ * The RPC itself validates the token + claim ID ownership.
+ */
+export async function deskClaimPartySlotAction(
+  slug: string,
+  claimId: string,
+  token: string,
+  memberName: string,
+  memberPhone?: string,
+): Promise<DeskClaimResult> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+
+  const nameTrim = memberName.trim();
+  if (!nameTrim || nameTrim.length > BOOKING_GUEST_NAME_MAX) {
+    return { ok: false, error: "invalid_input" };
+  }
+
+  const svc = createServiceRoleClient();
+
+  // Validate the claim belongs to this salon before submitting.
+  const { data: check } = await svc
+    .from("party_link_claims")
+    .select("id, party_links!inner(salon_id)")
+    .eq("id", claimId)
+    .maybeSingle();
+
+  const salonId = (check?.party_links as unknown as { salon_id: string } | null)?.salon_id;
+  if (!check || salonId !== ctx.salon.id) {
+    return { ok: false, error: "not_found" };
+  }
+
+  let phoneDigits: string | null = null;
+  if (memberPhone?.trim()) {
+    const phoneResult = validateGuestPhone(memberPhone.trim());
+    if (!phoneResult.ok) return { ok: false, error: "invalid_input" };
+    phoneDigits = phoneResult.digits;
+  }
+
+  const { data, error } = await svc.rpc("claim_party_slot", {
+    p_token: token,
+    p_claim_id: claimId,
+    p_member_name: nameTrim,
+    p_member_phone: phoneDigits,
+    p_reminder_opted_in: false,
+  });
+
+  if (error) {
+    Sentry.captureException(error, { extra: { slug, claimId } });
+    return { ok: false, error: "server_error" };
+  }
+
+  const result = data as Record<string, unknown>;
+  if (!result?.success) {
+    const code = result?.code as string | undefined;
+    if (code === "not_found") return { ok: false, error: "not_found" };
+    if (code === "expired") return { ok: false, error: "expired" };
+    if (code === "already_claimed") return { ok: false, error: "already_claimed" };
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true };
+}

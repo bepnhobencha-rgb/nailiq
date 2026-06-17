@@ -1158,6 +1158,15 @@ export type UserMessages = {
       statusConfirmed: string;
       statusPending: string;
       statusExpired: string;
+      /** Receptionist quick-claim: fill in a guest's name on their behalf. */
+      claimOnBehalf: string;
+      claimNameLabel: string;
+      claimNamePlaceholder: string;
+      claimPhoneLabel: string;
+      claimPhonePlaceholder: string;
+      claimSave: string;
+      claimCancel: string;
+      claimError: string;
       /** Cancel-whole-group action (owner/senior only). */
       cancelParty: string;
       cancelConfirm: (n: number) => string;
@@ -1507,6 +1516,7 @@ export type UserMessages = {
       groupOrganizedBy: (name: string) => string;
       groupOrganizerBadge: string;
       groupSeatTogether: string;
+      viewPartyCard?: string;
     };
     edit: {
       /** Section heading when editing from the drawer */
@@ -3264,9 +3274,9 @@ export const userEn: UserMessages = {
       prepareNext: (n: number) =>
         n === 1 ? "1 guest arriving in the next 30 min" : `${n} guests arriving in the next 30 min`,
       partyPendingNamed: (time: string, name: string) =>
-        `Today ${time} group: ${name} has not confirmed`,
+        `${name}'s party · ${time}: 1 guest hasn't claimed`,
       partyPendingCount: (time: string, n: number) =>
-        `Today ${time} group: ${n} guests pending`,
+        `${n} guests haven't claimed their slot · ${time}`,
       suggestWalkin: (name: string) => `${name} is available. You can add a walk-in.`,
       actionOpenQueue: "Open queue",
       actionAddWalkin: "+ Walk-in",
@@ -3315,6 +3325,14 @@ export const userEn: UserMessages = {
       statusConfirmed: "Confirmed",
       statusPending: "Pending",
       statusExpired: "Expired",
+      claimOnBehalf: "Assign name",
+      claimNameLabel: "Name",
+      claimNamePlaceholder: "Guest's name",
+      claimPhoneLabel: "Phone (optional)",
+      claimPhonePlaceholder: "+1 604 000 0000",
+      claimSave: "Save",
+      claimCancel: "Cancel",
+      claimError: "Couldn't save — please try again",
       cancelParty: "Cancel party",
       cancelConfirm: (n: number) => `Cancel all ${n} booking${n !== 1 ? "s" : ""} in this party?`,
       cancelConfirmYes: "Yes, cancel all",
@@ -3594,6 +3612,7 @@ export const userEn: UserMessages = {
       groupOrganizedBy: (name: string) => `Organized by ${name}`,
       groupOrganizerBadge: "Organizer",
       groupSeatTogether: "Seated together 💕",
+      viewPartyCard: "View group card →",
     },
     edit: {
       modeTitle: "Edit booking",

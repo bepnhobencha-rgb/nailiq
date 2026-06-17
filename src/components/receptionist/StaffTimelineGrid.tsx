@@ -1537,6 +1537,7 @@ function StaffTimelineGridImpl({
                           noShowCount={b.no_show_count ?? 0}
                           noShowRiskScore={b.no_show_risk_score ?? null}
                           isGroup={b.group_id != null}
+                          groupId={b.group_id ?? null}
                           seatTogether={b.seat_together === true}
                           compactIcons={compactBookingIcons}
                           isLate={isLate}

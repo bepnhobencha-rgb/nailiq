@@ -36,12 +36,14 @@ interface Props {
   labels: PartyCardLabels;
   /** Owner/senior only — gates the "Cancel party" action (server re-checks). */
   canCancel: boolean;
+  /** Receptionist quick-claim: called when staff fills in a guest name on behalf. */
+  onDeskClaim?: (claimId: string, token: string, memberName: string, memberPhone?: string) => Promise<{ ok: boolean }>;
 }
 
 /** Per-card lifecycle for the cancel-whole-group flow. */
 type CancelState = "idle" | "confirm" | "cancelling" | "error";
 
-export function PartyCardPanel({ initialCards, slug, salonId, currencyCode, labels, canCancel }: Props) {
+export function PartyCardPanel({ initialCards, slug, salonId, currencyCode, labels, canCancel, onDeskClaim }: Props) {
   const [cards, setCards] = useState<PartyCard[]>(initialCards);
   const [open, setOpen] = useState(initialCards.length > 0);
   const [isPending, startTransition] = useTransition();
@@ -181,6 +183,11 @@ export function PartyCardPanel({ initialCards, slug, salonId, currencyCode, labe
                     onCancelClick={() => setCancelState(card.groupId, "confirm")}
                     onCancelDismiss={() => setCancelState(card.groupId, "idle")}
                     onCancelConfirm={(notify) => handleCancelGroup(card, notify)}
+                    onDeskClaim={onDeskClaim ? (claimId, name, phone) =>
+                      onDeskClaim(claimId, card.token, name, phone).then((res) => {
+                        if (res.ok) void handleRefresh();
+                        return res;
+                      }) : undefined}
                   />
                 </li>
               ))}
@@ -205,6 +212,7 @@ function PartyCardItem({
   onCancelClick,
   onCancelDismiss,
   onCancelConfirm,
+  onDeskClaim,
 }: {
   card: PartyCard;
   currencyCode: Currency;
@@ -216,6 +224,7 @@ function PartyCardItem({
   onCancelClick: () => void;
   onCancelDismiss: () => void;
   onCancelConfirm: (notify: { sms: boolean; email: boolean }) => void;
+  onDeskClaim?: (claimId: string, memberName: string, memberPhone?: string) => Promise<{ ok: boolean }>;
 }) {
   const [slotsOpen, setSlotsOpen] = useState(false);
 
@@ -332,9 +341,9 @@ function PartyCardItem({
                   </li>,
                   ...card.slots
                     .filter((s) => s.waveNumber === wn)
-                    .map((slot) => <SlotRow key={slot.claimId} slot={slot} labels={labels} />),
+                    .map((slot) => <SlotRow key={slot.claimId} slot={slot} labels={labels} onDeskClaim={onDeskClaim} />),
                 ])
-            : card.slots.map((slot) => <SlotRow key={slot.claimId} slot={slot} labels={labels} />)}
+            : card.slots.map((slot) => <SlotRow key={slot.claimId} slot={slot} labels={labels} onDeskClaim={onDeskClaim} />)}
         </ul>
       )}
 
@@ -473,24 +482,121 @@ function PartyCancelControl({
 
 // ─── Slot Row ─────────────────────────────────────────────────────
 
-function SlotRow({ slot, labels }: { slot: PartyCardSlot; labels: PartyCardLabels }) {
+function SlotRow({
+  slot,
+  labels,
+  onDeskClaim,
+}: {
+  slot: PartyCardSlot;
+  labels: PartyCardLabels;
+  onDeskClaim?: (claimId: string, memberName: string, memberPhone?: string) => Promise<{ ok: boolean }>;
+}) {
+  const [claiming, setClaiming] = useState(false);
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
+
+  async function handleSave() {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    setError(false);
+    const res = await onDeskClaim!(slot.claimId, name.trim(), phone.trim() || undefined);
+    setBusy(false);
+    if (res.ok) {
+      setClaiming(false);
+      setName("");
+      setPhone("");
+    } else {
+      setError(true);
+    }
+  }
+
   return (
     <li
       data-testid={`party-slot-${slot.claimId}`}
-      className="flex items-center gap-2 text-[11px]"
+      className="flex flex-col gap-1 text-[11px]"
     >
-      <StatusBadge status={slot.claimed ? "confirmed" : "pending"} labels={labels} />
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-medium text-nq-foreground">
-          {slot.memberName ?? slot.guestLabel}
-        </p>
-        <p className="truncate text-nq-muted">
-          {slot.serviceName} · {slot.staffName}
-        </p>
-        <p className="text-nq-muted/70">
-          {slot.startDisplay} – {slot.endDisplay}
-        </p>
+      <div className="flex items-center gap-2">
+        <StatusBadge status={slot.claimed ? "confirmed" : "pending"} labels={labels} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium text-nq-foreground">
+            {slot.memberName ?? slot.guestLabel}
+          </p>
+          <p className="truncate text-nq-muted">
+            {slot.serviceName} · {slot.staffName}
+          </p>
+          <p className="text-nq-muted/70">
+            {slot.startDisplay} – {slot.endDisplay}
+          </p>
+        </div>
+        {!slot.claimed && onDeskClaim && !claiming ? (
+          <button
+            type="button"
+            onClick={() => setClaiming(true)}
+            data-testid={`party-slot-claim-btn-${slot.claimId}`}
+            className="shrink-0 rounded-md bg-nq-primary/10 px-2 py-1 text-[10px] font-semibold text-nq-primary hover:bg-nq-primary/20 transition-colors"
+          >
+            {labels.claimOnBehalf}
+          </button>
+        ) : null}
       </div>
+
+      {claiming ? (
+        <div
+          data-testid={`party-slot-claim-form-${slot.claimId}`}
+          className="ml-6 flex flex-col gap-1.5 rounded-md border border-nq-border/50 bg-nq-surface px-2.5 py-2"
+        >
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-medium text-nq-muted">{labels.claimNameLabel}</span>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={labels.claimNamePlaceholder}
+              maxLength={80}
+              autoFocus
+              className="rounded border border-nq-border/50 bg-nq-bg px-2 py-1 text-[11px] text-nq-foreground placeholder:text-nq-muted/60 focus:outline-none focus:ring-1 focus:ring-nq-primary/50"
+            />
+          </label>
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-medium text-nq-muted">{labels.claimPhoneLabel}</span>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder={labels.claimPhonePlaceholder}
+              className="rounded border border-nq-border/50 bg-nq-bg px-2 py-1 text-[11px] text-nq-foreground placeholder:text-nq-muted/60 focus:outline-none focus:ring-1 focus:ring-nq-primary/50"
+            />
+          </label>
+          {error ? (
+            <p className="text-[10px] text-nq-error">{labels.claimError}</p>
+          ) : null}
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              disabled={!name.trim() || busy}
+              onClick={handleSave}
+              data-testid={`party-slot-claim-save-${slot.claimId}`}
+              className={cn(
+                "flex-1 rounded-md py-1 text-[11px] font-semibold transition-colors",
+                "bg-nq-primary text-nq-background hover:opacity-90",
+                (!name.trim() || busy) && "opacity-50 cursor-not-allowed",
+              )}
+            >
+              {busy ? "…" : labels.claimSave}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => { setClaiming(false); setError(false); }}
+              className="flex-1 rounded-md border border-nq-border/50 py-1 text-[11px] font-semibold text-nq-muted hover:text-nq-foreground transition-colors"
+            >
+              {labels.claimCancel}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </li>
   );
 }

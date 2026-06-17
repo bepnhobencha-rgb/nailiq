@@ -509,6 +509,8 @@ export interface BookingDetailDrawerProps {
     groupOrganizedBy: (name: string) => string;
     groupOrganizerBadge: string;
     groupSeatTogether: string;
+    /** CTA to jump from the drawer to the Party Card panel for this group. */
+    viewPartyCard?: string;
   };
   /** Lazy "customer launchpad" context (creator / allergies / return cadence),
    *  loaded by the parent when the drawer opens. `undefined` = still loading,
@@ -519,6 +521,9 @@ export interface BookingDetailDrawerProps {
   /** Open the full Customer 360 profile + history for this guest. Present only
    *  when the booking has a phone to look up. */
   onViewProfile?: () => void;
+  /** Jump to the Party Card panel for this group booking. Only provided when
+   *  the booking belongs to a group and the Party Card strip is available. */
+  onViewPartyCard?: () => void;
   /** One-tap "book the next visit" — opens the desk form prefilled with this
    *  customer at their usual rhythm. Present only when a phone exists. */
   onRebookNext?: () => void;
@@ -610,6 +615,7 @@ export function BookingDetailDrawer({
   customerContext,
   customerContextLoading = false,
   onViewProfile,
+  onViewPartyCard,
   onRebookNext,
   viewerRole,
   isOffline = false,
@@ -1175,6 +1181,15 @@ export function BookingDetailDrawer({
                     </li>
                   ))}
                 </ul>
+                {onViewPartyCard && copy.viewPartyCard ? (
+                  <button
+                    type="button"
+                    onClick={onViewPartyCard}
+                    className="mt-2 w-full rounded-md border border-nq-primary/30 py-1.5 text-[11px] font-semibold text-nq-primary hover:bg-nq-primary/10 transition-colors"
+                  >
+                    {copy.viewPartyCard}
+                  </button>
+                ) : null}
               </section>
             ) : null}
 

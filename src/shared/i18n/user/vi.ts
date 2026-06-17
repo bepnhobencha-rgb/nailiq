@@ -1168,9 +1168,9 @@ export const userVi: UserMessages = {
       prepareNext: (n: number) =>
         n === 1 ? "1 khách sắp đến (30 phút tới)" : `${n} khách sắp đến (30 phút tới)`,
       partyPendingNamed: (time: string, name: string) =>
-        `Nhóm hôm nay ${time}: ${name} chưa xác nhận`,
+        `Nhóm ${name} · ${time}: 1 khách chưa nhận slot`,
       partyPendingCount: (time: string, n: number) =>
-        `Nhóm hôm nay ${time}: ${n} khách chưa xác nhận`,
+        `${n} khách chưa nhận slot · ${time}`,
       suggestWalkin: (name: string) => `${name} đang sẵn sàng. Có thể nhận khách walk-in.`,
       actionOpenQueue: "Mở hàng chờ",
       actionAddWalkin: "+ Walk-in",
@@ -1215,6 +1215,14 @@ export const userVi: UserMessages = {
       statusConfirmed: "Đã xác nhận",
       statusPending: "Chưa xác nhận",
       statusExpired: "Hết hạn",
+      claimOnBehalf: "Điền hộ",
+      claimNameLabel: "Tên",
+      claimNamePlaceholder: "Tên khách",
+      claimPhoneLabel: "Số điện thoại (không bắt buộc)",
+      claimPhonePlaceholder: "+1 604 000 0000",
+      claimSave: "Lưu",
+      claimCancel: "Hủy",
+      claimError: "Lưu không được — thử lại",
       cancelParty: "Huỷ cả nhóm",
       cancelConfirm: (n: number) => `Huỷ tất cả ${n} lịch trong nhóm này?`,
       cancelConfirmYes: "Xác nhận huỷ",
@@ -1488,6 +1496,7 @@ export const userVi: UserMessages = {
       groupOrganizedBy: (name: string) => `Người tổ chức: ${name}`,
       groupOrganizerBadge: "Tổ chức",
       groupSeatTogether: "Ngồi chung 💕",
+      viewPartyCard: "Xem thẻ nhóm →",
     },
     edit: {
       modeTitle: "Sửa booking",

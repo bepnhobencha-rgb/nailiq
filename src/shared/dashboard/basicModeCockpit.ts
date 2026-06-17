@@ -102,8 +102,12 @@ export type CockpitInputs = {
   pendingPartyCount: number;
   /** That party's start-time label (e.g. "5:00 PM"); null when none. */
   pendingPartyGroupTime: string | null;
-  /** The single unconfirmed guest's name when exactly one is pending. */
-  pendingPartyGuestName: string | null;
+  /**
+   * Organizer name of the soonest party with pending guests.
+   * Shown in alerts so the receptionist knows WHOSE party is incomplete,
+   * not just an anonymous "Guest 2".
+   */
+  pendingPartyOrganizerName: string | null;
   isSetupIncomplete: boolean;
   /** When false, the walk-in queue feature is off for this salon — the cockpit
    *  must not suggest walk-ins or surface queue actions. Defaults to enabled
@@ -119,9 +123,9 @@ export type CockpitLabels = {
   assignWaiting: (n: number) => string;
   assignWaitingNamed: (name: string) => string;
   prepareNext: (n: number) => string;
-  /** "Today {time} group: {name} has not confirmed" (single pending). */
+  /** "{name}'s party · {time}: 1 guest hasn't claimed" — name = organizer. */
   partyPendingNamed: (time: string, name: string) => string;
-  /** "Today {time} group: {n} guests pending" (multiple pending). */
+  /** "{n} guests haven't claimed their slot · {time}" (multiple pending). */
   partyPendingCount: (time: string, n: number) => string;
   suggestWalkin: (name: string) => string;
   // Action button labels
@@ -232,8 +236,8 @@ export function computeNextAction(
       ? {
           kind: "party_pending",
           text:
-            i.pendingPartyCount === 1 && i.pendingPartyGuestName
-              ? labels.partyPendingNamed(i.pendingPartyGroupTime, i.pendingPartyGuestName)
+            i.pendingPartyOrganizerName
+              ? labels.partyPendingNamed(i.pendingPartyGroupTime, i.pendingPartyOrganizerName)
               : labels.partyPendingCount(i.pendingPartyGroupTime, i.pendingPartyCount),
           tone: "warning",
           action: openParty,
@@ -341,8 +345,8 @@ export function computeCriticalAlerts(
     all.push({
       key: "party_change",
       text:
-        i.pendingPartyCount === 1 && i.pendingPartyGuestName
-          ? labels.partyPendingNamed(i.pendingPartyGroupTime, i.pendingPartyGuestName)
+        i.pendingPartyOrganizerName
+          ? labels.partyPendingNamed(i.pendingPartyGroupTime, i.pendingPartyOrganizerName)
           : labels.partyPendingCount(i.pendingPartyGroupTime, i.pendingPartyCount),
       tone: "warning",
       action: openParty,

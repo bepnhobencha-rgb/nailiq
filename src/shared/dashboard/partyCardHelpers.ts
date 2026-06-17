@@ -58,6 +58,8 @@ export type PartyCard = {
   slots: PartyCardSlot[];
   /** Number of pending change requests from guests (Part F). 0 when none. */
   pendingChangeRequestCount: number;
+  /** Name of the group organizer from party_links.organizer_name; null when not set. */
+  organizerName: string | null;
   /** Number of distinct waves (Phase 6). 1 for normal groups; >1 → show a
    *  "N waves" badge and group the slot list by wave. */
   waveCount: number;
@@ -92,6 +94,7 @@ export type RawPartyLink = {
   token: string;
   mode: string;
   expires_at: string;
+  organizer_name?: string | null;
 };
 
 // ─── Date window ─────────────────────────────────────────────────
@@ -193,5 +196,6 @@ export function buildPartyCard(
     slots,
     pendingChangeRequestCount,
     waveCount,
+    organizerName: partyLink.organizer_name?.trim() || null,
   };
 }

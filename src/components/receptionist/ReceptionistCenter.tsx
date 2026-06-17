@@ -92,6 +92,7 @@ import {
   undoWalkinAssignment,
   chargeNoShowFeeManual,
   waiveNoShowFee,
+  deskClaimPartySlotAction,
 } from "@/shared/dashboard/receptionistActions";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
 import { defaultNotifyOn } from "@/shared/dashboard/staffNotificationSettings";
@@ -1669,6 +1670,7 @@ function ReceptionistCenterInner({
       groupOrganizedBy: d.groupOrganizedBy,
       groupOrganizerBadge: d.groupOrganizerBadge,
       groupSeatTogether: d.groupSeatTogether,
+      viewPartyCard: d.viewPartyCard,
     };
   }, [messages]);
 
@@ -2108,13 +2110,9 @@ function ReceptionistCenterInner({
         a.groupStartUtcIso.localeCompare(b.groupStartUtcIso),
       )[0] ?? null;
   const pendingPartyGroupId = pendingPartyCard?.groupId ?? null;
-  const pendingPartyGuestName =
-    pendingPartyCard && pendingPartyCard.pendingCount === 1
-      ? (() => {
-          const slot = pendingPartyCard.slots.find((s) => !s.claimed);
-          return (slot?.memberName ?? slot?.guestLabel)?.trim() || null;
-        })()
-      : null;
+  // Use organizer name so the alert reads "Sarah's party · 2pm: 1 slot unclaimed"
+  // rather than the anonymous "Guest 2 hasn't confirmed" which gives no context.
+  const pendingPartyOrganizerName = pendingPartyCard?.organizerName ?? null;
 
   const cockpitInputs: CockpitInputs = {
     waitingCount: data.kpiSnapshot.waitingCount,
@@ -2136,7 +2134,7 @@ function ReceptionistCenterInner({
     ).length,
     pendingPartyCount: pendingPartyCard?.pendingCount ?? 0,
     pendingPartyGroupTime: pendingPartyCard?.groupStartDisplay ?? null,
-    pendingPartyGuestName,
+    pendingPartyOrganizerName,
     isSetupIncomplete,
     // Walk-in queue feature gate (page forces queue_panel off when the
     // walkin_queue feature is disabled) — suppresses walk-in/queue nudges.
@@ -3091,6 +3089,9 @@ function ReceptionistCenterInner({
               currencyCode={data.salon.currencyCode}
               labels={rcMessages.partyCard}
               canCancel={canCancelBooking(viewerRole)}
+              onDeskClaim={(claimId, token, memberName, memberPhone) =>
+                deskClaimPartySlotAction(slug, claimId, token, memberName, memberPhone)
+              }
             />
           </div>
         ) : null}
@@ -3609,6 +3610,24 @@ function ReceptionistCenterInner({
         model={detailModel}
         slug={slug}
         onClose={() => setDrawerBookingId(null)}
+        onViewPartyCard={
+          openDrawerBooking?.group_id
+            ? () => {
+                const gid = openDrawerBooking.group_id;
+                setDrawerBookingId(null);
+                setPartyRevealed(true);
+                setTimeout(() => {
+                  const card = gid
+                    ? document.getElementById(`party-card-${gid}`)
+                    : null;
+                  (card ?? document.getElementById("party-strip"))?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                  });
+                }, 50);
+              }
+            : undefined
+        }
         copy={drawerCopy}
         viewerRole={viewerRole}
         isOffline={isOffline}
