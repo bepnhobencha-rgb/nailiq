@@ -402,6 +402,12 @@ export type UserMessages = {
     /** OR divider in social buttons block. */
     orDivider: string;
     continueWithGoogle: string;
+    /** Helper line under the Google button (open layout). */
+    googleHelperText: string;
+    /** Label above the email section in open layout. */
+    emailSectionLabel: string;
+    /** Magic-link fallback link shown below the password form. */
+    forgotPasswordLinkText: string;
     /** Toggle reveals magic-link form (legacy "compact" layout). */
     otherOptions: string;
     /** Toggle when magic-link form is open (legacy "compact" layout). */
@@ -2611,15 +2617,17 @@ export const userEn: UserMessages = {
     errorNetwork: "Connection lost — check your network and try again.",
   },
   auth: {
-    signInOrSignUpTitle: "Sign in or sign up",
-    signInOrSignUpSubtext:
-      "Welcome to NailIQ — continue with Google, a magic link, or your password.",
+    signInOrSignUpTitle: "Get started with NailIQ",
+    signInOrSignUpSubtext: "Free 14 days · No credit card required · Ready in 2 minutes",
     orDivider: "or",
     continueWithGoogle: "Continue with Google",
+    googleHelperText: "Fastest · No password needed",
+    emailSectionLabel: "Sign in with email",
+    forgotPasswordLinkText: "Forgot password? Send a login link",
     otherOptions: "Other options",
     hideOptions: "Hide options",
     sendLoginLink: "Send login link",
-    sendSignupLink: "Send magic link",
+    sendSignupLink: "Send login link",
     emailLabel: "Email address",
     emailPlaceholder: "you@example.com",
     emailInvalid: "Enter a valid email address.",
@@ -2639,12 +2647,11 @@ export const userEn: UserMessages = {
     signUpButton: "Sign up",
     signingIn: "Signing in…",
     signingUp: "Creating account…",
-    showPasswordToggle: "Sign in with password",
-    hidePasswordToggle: "Use magic link instead",
-    signInFailed: "Incorrect email or password.",
-    signUpFailed: "Could not create your account. Try again.",
-    accountExists:
-      "An account with this email already exists. Try signing in instead.",
+    showPasswordToggle: "Sign in with email & password",
+    hidePasswordToggle: "Send a login link instead",
+    signInFailed: "Email or password is incorrect. Please try again.",
+    signUpFailed: "Could not create your account. Please try again.",
+    accountExists: "This email is already registered. Try signing in instead.",
     signUpConfirmEmailTitle: "Confirm your email",
     signUpConfirmEmailBody:
       "We sent a confirmation link to {email}. Click it to activate your account.",

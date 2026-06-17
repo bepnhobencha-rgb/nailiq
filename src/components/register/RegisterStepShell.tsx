@@ -15,6 +15,8 @@ type RegisterStepShellProps = {
   subtext?: string;
   /** Smaller, dev-only hint rendered under the subtext (gated by caller). */
   helperHint?: string;
+  /** Step progress indicator — shown as dots + "Bước X / Y" */
+  step?: { current: number; total: number };
 };
 
 /**
@@ -24,6 +26,7 @@ export function RegisterStepShell({
   title,
   subtext,
   helperHint,
+  step,
   children,
 }: RegisterStepShellProps) {
   const { language } = useUserLanguage();
@@ -42,7 +45,31 @@ export function RegisterStepShell({
             </Link>
             <AuthLanguageToggle />
           </div>
-          <h1 className="mt-8 text-balance text-2xl font-semibold tracking-tight text-nq-foreground sm:mt-10 lg:text-3xl">
+
+          {/* Step progress dots */}
+          {step ? (
+            <div className="mt-6 flex items-center gap-2">
+              {Array.from({ length: step.total }, (_, i) => (
+                <div
+                  key={i}
+                  className={`h-2 rounded-full transition-all ${
+                    i + 1 < step.current
+                      ? "w-4 bg-nq-primary/60"
+                      : i + 1 === step.current
+                        ? "w-6 bg-nq-primary"
+                        : "w-2 bg-nq-border"
+                  }`}
+                />
+              ))}
+              <span className="ml-1 text-xs text-nq-muted">
+                {language === "vi"
+                  ? `Bước ${step.current} / ${step.total}`
+                  : `Step ${step.current} of ${step.total}`}
+              </span>
+            </div>
+          ) : null}
+
+          <h1 className="mt-8 text-balance text-2xl font-semibold tracking-tight text-nq-foreground sm:mt-10 sm:text-3xl">
             {title}
           </h1>
           {subtext ? (
