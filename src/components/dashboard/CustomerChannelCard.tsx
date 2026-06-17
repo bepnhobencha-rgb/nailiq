@@ -11,7 +11,7 @@ import {
 import type { CustomerChannelMode } from "@/shared/lib/channelResolver";
 
 const DEFAULT: CustomerChannelSettings = {
-  smsA2pRegistered: false,
+  smsOutboundEnabled: true,
   customerChannel: "smart",
 };
 
@@ -20,36 +20,37 @@ const CHANNEL_OPTIONS: { value: CustomerChannelMode; labelEn: string; labelVi: s
     value: "smart",
     labelEn: "Smart (recommended)",
     labelVi: "Thông minh (khuyến nghị)",
-    descEn: "Email when available, SMS when A2P registered; skips if neither works.",
-    descVi: "Email khi có; SMS khi A2P đã đăng ký; bỏ qua nếu không có kênh nào.",
+    descEn: "Email when available, SMS when outbound is on; skips if neither works.",
+    descVi: "Email khi có; SMS khi bật; bỏ qua nếu không có kênh nào.",
   },
   {
     value: "sms_and_email",
     labelEn: "SMS + Email (parallel)",
     labelVi: "SMS + Email (song song)",
-    descEn: "Sends to both channels simultaneously — maximum reach post-A2P registration.",
-    descVi: "Gửi đồng thời cả hai kênh — phủ sóng tối đa sau khi đăng ký A2P.",
+    descEn: "Sends to both channels simultaneously — maximum reach.",
+    descVi: "Gửi đồng thời cả hai kênh — phủ sóng tối đa.",
   },
   {
     value: "email_only",
     labelEn: "Email only",
     labelVi: "Chỉ email",
-    descEn: "Skip SMS entirely. Good while A2P registration is pending.",
-    descVi: "Bỏ qua SMS hoàn toàn. Phù hợp khi chờ đăng ký A2P.",
+    descEn: "Skip SMS entirely. Good while waiting for US A2P registration.",
+    descVi: "Bỏ qua SMS hoàn toàn. Phù hợp khi chờ đăng ký A2P (Mỹ).",
   },
   {
     value: "sms_only",
     labelEn: "SMS only",
     labelVi: "Chỉ SMS",
-    descEn: "SMS only. Requires A2P registration to be effective in the US.",
-    descVi: "Chỉ SMS. Cần đăng ký A2P mới hiệu quả tại Mỹ.",
+    descEn: "SMS only. In the US, requires A2P 10DLC registration to avoid carrier filtering.",
+    descVi: "Chỉ SMS. Tại Mỹ cần đăng ký A2P 10DLC để không bị chặn.",
   },
 ];
 
 /**
  * Admin Settings card — customer communication channel preferences.
  * Controls whether automated messages use SMS, email, or both.
- * Also tracks A2P 10DLC registration status which gates all non-OTP SMS.
+ * `smsOutboundEnabled` is the operational gate (default ON — non-US salons
+ * work without any setup; US salons pending A2P should turn it OFF).
  */
 export function CustomerChannelCard({ slug }: { slug: string }) {
   const { language } = useUserLanguage();
@@ -83,12 +84,10 @@ export function CustomerChannelCard({ slug }: { slug: string }) {
     });
   }
 
-  const a2pStatusColor = settings.smsA2pRegistered
-    ? "text-nq-success"
-    : "text-nq-warning";
-  const a2pStatusLabel = settings.smsA2pRegistered
-    ? isVi ? "✅ Đã đăng ký A2P" : "✅ A2P Registered"
-    : isVi ? "⚠️ Chưa đăng ký A2P — SMS tự động có thể bị carriers Mỹ chặn" : "⚠️ A2P not registered — automated SMS may be silently filtered by US carriers";
+  const smsStatusColor = settings.smsOutboundEnabled ? "text-nq-success" : "text-nq-warning";
+  const smsStatusLabel = settings.smsOutboundEnabled
+    ? isVi ? "✅ SMS đang bật" : "✅ SMS outbound enabled"
+    : isVi ? "⚠️ SMS đang tắt — khách không có email sẽ bị bỏ qua" : "⚠️ SMS disabled — customers with no email will be skipped";
 
   return (
     <section
@@ -110,35 +109,38 @@ export function CustomerChannelCard({ slug }: { slug: string }) {
         </p>
       ) : (
         <div className="mt-4 flex flex-col gap-4">
-          {/* A2P registration status */}
+          {/* SMS outbound toggle */}
           <div className="flex flex-col gap-2 rounded-lg border border-nq-border/60 bg-nq-surface-2 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
-              {isVi ? "Đăng ký Twilio A2P 10DLC" : "Twilio A2P 10DLC Registration"}
+              {isVi ? "Nhắn tin SMS tự động" : "Automated SMS"}
             </p>
-            <p className={`text-sm font-medium ${a2pStatusColor}`}>{a2pStatusLabel}</p>
-            {!settings.smsA2pRegistered && (
+            <p className={`text-sm font-medium ${smsStatusColor}`}>{smsStatusLabel}</p>
+            {!settings.smsOutboundEnabled && (
               <p className="text-xs text-nq-muted">
                 {isVi
-                  ? "US carriers (AT&T, Verizon, T-Mobile) lọc yên lặng tin nhắn có link từ số chưa đăng ký A2P. Đăng ký tại Twilio Console → Messaging → Regulatory Compliance. Sau khi được duyệt, bật toggle bên dưới."
-                  : "US carriers silently filter link-bearing SMS from unregistered numbers. Register at Twilio Console → Messaging → Regulatory Compliance → A2P 10DLC. Once approved, toggle below."}
+                  ? "Khi tắt, AI agents và nhắc hẹn chỉ dùng email. Khách không có email sẽ bị bỏ qua tạm thời."
+                  : "When off, AI agents and reminders use email only. Customers with no email are temporarily skipped."}
               </p>
             )}
             <label className="mt-1 flex cursor-pointer items-center gap-3">
               <input
                 type="checkbox"
-                data-testid="a2p-registered-toggle"
-                checked={settings.smsA2pRegistered}
+                data-testid="sms-outbound-toggle"
+                checked={settings.smsOutboundEnabled}
                 onChange={(e) =>
-                  setSettings((s) => ({ ...s, smsA2pRegistered: e.target.checked }))
+                  setSettings((s) => ({ ...s, smsOutboundEnabled: e.target.checked }))
                 }
                 className="size-4 accent-nq-primary"
               />
               <span className="text-sm font-medium text-nq-foreground">
-                {isVi
-                  ? "A2P đã được phê duyệt — bật nhắn SMS tự động"
-                  : "A2P registration approved — enable automated SMS"}
+                {isVi ? "Bật gửi SMS tự động" : "Enable automated SMS outbound"}
               </span>
             </label>
+            <p className="text-xs text-nq-muted/70">
+              {isVi
+                ? "Salon tại Mỹ cần đăng ký Twilio A2P 10DLC trước khi bật (Twilio Console → Messaging → Regulatory Compliance). Salon Canada và quốc gia khác: bật ngay."
+                : "US salons must complete Twilio A2P 10DLC registration first (Twilio Console → Messaging → Regulatory Compliance). Canada and other countries: enable immediately."}
+            </p>
           </div>
 
           {/* Channel mode */}
@@ -202,32 +204,32 @@ export function CustomerChannelCard({ slug }: { slug: string }) {
 }
 
 function getEffectiveSummary(s: CustomerChannelSettings, isVi: boolean): string {
-  const { smsA2pRegistered, customerChannel: channelOf } = s;
+  const { smsOutboundEnabled, customerChannel: channelOf } = s;
   if (channelOf === "email_only") {
     return isVi
       ? "Chỉ dùng email. SMS hoàn toàn tắt."
       : "Email only. SMS is completely disabled.";
   }
   if (channelOf === "sms_only") {
-    return smsA2pRegistered
+    return smsOutboundEnabled
       ? isVi ? "Chỉ SMS. Email không gửi." : "SMS only. Email is skipped."
       : isVi
-        ? "Chỉ SMS nhưng A2P chưa đăng ký → tin nhắn có thể bị chặn."
-        : "SMS only but A2P not registered → messages may be silently dropped.";
+        ? "Chỉ SMS nhưng SMS đang tắt → tin nhắn có thể bị bỏ qua."
+        : "SMS only but SMS outbound is off → messages may be skipped.";
   }
   if (channelOf === "sms_and_email") {
-    return smsA2pRegistered
+    return smsOutboundEnabled
       ? isVi ? "SMS + Email song song khi có email khách." : "SMS + Email in parallel when customer email is on file."
       : isVi
-        ? "Email khi có; SMS tắt do A2P chưa đăng ký."
-        : "Email when available; SMS off (A2P not registered).";
+        ? "Email khi có; SMS tắt."
+        : "Email when available; SMS off.";
   }
   // smart
-  return smsA2pRegistered
+  return smsOutboundEnabled
     ? isVi
       ? "Email + SMS song song khi có email; SMS-only khi không có email."
       : "Email + SMS when customer has email; SMS-only otherwise."
     : isVi
-      ? "Email khi có; SMS tắt (chờ A2P). Khách không có email sẽ bị bỏ qua."
-      : "Email when available; SMS off (pending A2P). Customers with no email are skipped.";
+      ? "Email khi có; SMS tắt. Khách không có email sẽ bị bỏ qua."
+      : "Email when available; SMS off. Customers with no email are skipped.";
 }

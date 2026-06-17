@@ -1,11 +1,13 @@
 /**
  * Determines which channels to use when sending an automated message to a customer.
  *
- * US A2P 10DLC: until the salon completes Twilio registration, carrier filtering
- * silently drops link-bearing SMS. Use `sms_a2p_registered` to gate non-OTP SMS.
+ * `smsOutboundEnabled` (salons.sms_outbound_enabled, default TRUE) is the
+ * operational gate — true for all non-US salons and US salons that have
+ * completed Twilio A2P 10DLC registration. US salons waiting on A2P should
+ * set it to FALSE in Admin Settings to avoid silent carrier drops.
  *
- * Post-registration, admin can choose: smart (default), sms_only, email_only,
- * or sms_and_email (parallel).
+ * `sms_a2p_registered` is kept as a separate informational/compliance flag
+ * but does NOT control routing here.
  */
 
 export type CustomerChannelMode = "smart" | "sms_only" | "email_only" | "sms_and_email";
@@ -21,13 +23,13 @@ export interface ChannelDecision {
 
 export function resolveCustomerChannel(opts: {
   mode: CustomerChannelMode;
-  /** True once the salon has finished Twilio A2P 10DLC registration. */
-  smsA2pRegistered: boolean;
+  /** Operational gate — true for non-US salons and US salons after A2P. Default true. */
+  smsOutboundEnabled: boolean;
   customerEmail: string | null;
 }): ChannelDecision {
-  const { mode, smsA2pRegistered, customerEmail } = opts;
+  const { mode, smsOutboundEnabled, customerEmail } = opts;
   const hasEmail = !!customerEmail?.trim();
-  const hasSms = smsA2pRegistered;
+  const hasSms = smsOutboundEnabled;
 
   switch (mode) {
     case "sms_only":

@@ -164,7 +164,7 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
     const db = looseServiceClient();
     const { data: salon } = await db
       .from("salons")
-      .select("name, email, feature_flags, slug, sms_a2p_registered, customer_channel" as never)
+      .select("name, email, feature_flags, slug, sms_outbound_enabled, customer_channel" as never)
       .eq("id", salonId)
       .maybeSingle();
     const s = (salon as Row | null) ?? {};
@@ -173,7 +173,7 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
     const salonSlug = str(s.slug) || "";
     const salonReplyEmail = str(s.email) || null;
     const bookingUrl = `${SITE_URL}/${salonSlug}?ref=winback`;
-    const smsA2pRegistered = Boolean(s.sms_a2p_registered);
+    const smsOutboundEnabled = s.sms_outbound_enabled !== false; // default true (non-US salons work without A2P)
     const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
 
     const candidates = await gatherWinbackCandidates(salonId, cap);
@@ -187,7 +187,7 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
       // message that can't be delivered.
       const ch = resolveCustomerChannel({
         mode: customerChannelMode,
-        smsA2pRegistered,
+        smsOutboundEnabled,
         customerEmail: c.email,
       });
 
