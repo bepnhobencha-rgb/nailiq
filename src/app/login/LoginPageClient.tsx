@@ -14,7 +14,7 @@ import {
   REG_SESSION_PHONE_DIGITS_KEY,
 } from "@/shared/lib/registerSessionKeys";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
-import { sendEmailMagicLink, sendLoginOtp } from "@/shared/register/actions";
+import { sendLoginOtp } from "@/shared/register/actions";
 import {
   isRegisterPhoneDigitsValid,
   normalizeRegisterPhone,
@@ -43,11 +43,6 @@ export function LoginPageClient({
   // Phone state (SMS path)
   const [phoneRaw, setPhoneRaw] = useState("+1 ");
   const [phoneError, setPhoneError] = useState<string | null>(null);
-
-  // Email state (magic-link path)
-  const [emailRaw, setEmailRaw] = useState("");
-  const [emailError, setEmailError] = useState<string | null>(null);
-  const [emailSentTo, setEmailSentTo] = useState<string | null>(null);
 
   const [pending, startTransition] = useTransition();
   const [demoCode, setDemoCode] = useState<string | null>(null);
@@ -118,34 +113,6 @@ export function LoginPageClient({
     [phoneRaw, router, t.login.errorNetwork, t.register.phoneDigitsInvalid],
   );
 
-  // ── Email submit ──────────────────────────────────────────────────────────
-  const onEmailSubmit = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
-      const email = emailRaw.trim().toLowerCase();
-      if (!email || !email.includes("@") || email.length > 254) {
-        setEmailError(t.login.emailInvalid);
-        return;
-      }
-      setEmailError(null);
-      startTransition(async () => {
-        let result: Awaited<ReturnType<typeof sendEmailMagicLink>>;
-        try {
-          result = await sendEmailMagicLink(email);
-        } catch {
-          setEmailError(t.login.errorNetwork);
-          return;
-        }
-        if (!result.success) {
-          setEmailError(result.error);
-          return;
-        }
-        setEmailSentTo(email);
-      });
-    },
-    [emailRaw, t.login.emailInvalid, t.login.errorNetwork],
-  );
-
   // ── Branch 3: sign-in temporarily unavailable ─────────────────────────────
   if (bothDisabled) {
     return (
@@ -156,92 +123,15 @@ export function LoginPageClient({
     );
   }
 
-  // ── Branch 2: email magic-link path ───────────────────────────────────────
+  // ── Branch 2: email path — Google primary, password default, magic link fallback ──
   if (useEmailPath) {
-    if (emailSentTo) {
-      return (
-        <RegisterStepShell
-          title={t.login.emailLinkSentTitle}
-          subtext={t.login.emailLinkSentBody.replace("{email}", emailSentTo)}
-        >
-          <button
-            type="button"
-            className="mt-3 w-full min-h-11 text-center text-sm text-nq-primary-soft underline decoration-nq-primary/35 underline-offset-2 transition-opacity duration-150 hover:opacity-90"
-            onClick={() => {
-              setEmailSentTo(null);
-              setEmailRaw("");
-            }}
-          >
-            {t.login.emailLinkUseDifferent}
-          </button>
-        </RegisterStepShell>
-      );
-    }
-
     return (
       <RegisterStepShell
         title={t.login.emailEntryTitle}
         subtext={t.login.subtextEmail}
       >
         {confirmEmailBanner}
-        <form
-          onSubmit={onEmailSubmit}
-          method="post"
-          className="flex flex-col gap-6"
-        >
-          <div>
-            <Input
-              name="email"
-              type="email"
-              inputMode="email"
-              autoComplete="email"
-              placeholder={t.login.emailPlaceholder}
-              className="text-base"
-              value={emailRaw}
-              onChange={(ev) => {
-                setEmailRaw(ev.target.value);
-                if (emailError) setEmailError(null);
-              }}
-              aria-invalid={Boolean(emailError)}
-              error={Boolean(emailError)}
-              autoFocus
-            />
-            {emailError ? (
-              <p className="mt-2 text-sm text-nq-error" role="status">
-                {emailError}
-              </p>
-            ) : null}
-          </div>
-          <Button
-            type="submit"
-            size="lg"
-            className="w-full min-h-11"
-            loading={pending}
-            disabled={pending}
-          >
-            {pending ? t.login.sendingSigninLink : t.login.sendSigninLink}
-          </Button>
-
-          <p className="text-center text-sm">
-            <Link
-              href="/login/forgot-password"
-              className="inline-flex items-center gap-1.5 font-medium text-nq-primary hover:underline transition-opacity hover:opacity-80"
-              title="Reset your password"
-            >
-              <svg
-                className="w-4 h-4"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm0-13c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zm.5 8h-1V9h1v6z" />
-              </svg>
-              {t.login.forgotPasswordLink}
-            </Link>
-          </p>
-        </form>
-
-        <SocialAuthButtons mode="login" />
-
+        <SocialAuthButtons mode="login" layout="open" enablePassword={true} />
         <p className="mt-6 text-center text-sm text-nq-muted">
           {t.login.noSalonPrefix}
           <Link
