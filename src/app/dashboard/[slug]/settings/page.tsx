@@ -11,6 +11,7 @@ import { normalizeBrandColor } from "@/shared/lib/brandColor";
 import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { getLookPresetsForVertical } from "@/shared/verticals/lookPresets";
 import { resolveVertical } from "@/shared/verticals/registry";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -77,7 +78,11 @@ export default async function SalonSettingsPage({ params }: Props) {
 
   const dashboardModules = parseDashboardModules(row?.dashboard_modules);
   const dashboardPreset = parsePresetKey(row?.dashboard_preset);
+  // Module layout is structural — only owner can reorganize dashboard panels.
   const canEditDashboardModules = ctx.role === "owner";
+  // All operational settings (booking rules, voice AI, no-show, reminders…)
+  // are available to both owner and admin.
+  const canManageSalonSettings = isOwnerOrAdmin(ctx.role);
 
   const salonEmail =
     typeof row?.email === "string" && row.email.trim().length > 0
@@ -149,6 +154,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       dashboardModules={dashboardModules}
       dashboardPreset={dashboardPreset}
       canEditDashboardModules={canEditDashboardModules}
+      canManageSalonSettings={canManageSalonSettings}
       salonEmail={salonEmail}
       emailVerified={emailVerified}
       subscriptionPlan={subscriptionPlan}

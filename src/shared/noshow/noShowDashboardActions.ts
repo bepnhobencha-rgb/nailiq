@@ -3,6 +3,7 @@
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { attributeRecentAudit } from "@/shared/dashboard/attributeAudit";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 
 export type NoShowSummary = {
   unconfirmedCount: number;
@@ -261,7 +262,7 @@ export async function updateRemindersEnabled(
   enabled: boolean,
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
-  if (!ctx || ctx.role !== "owner") return { ok: false, error: "unauthorized" };
+  if (!ctx || !isOwnerOrAdmin(ctx.role)) return { ok: false, error: "unauthorized" };
 
   const supabase = createServiceRoleClient();
   const { error } = await supabase
@@ -282,7 +283,7 @@ export async function updateWaitlistAutoBook(
   enabled: boolean,
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
-  if (!ctx || ctx.role !== "owner") return { ok: false, error: "unauthorized" };
+  if (!ctx || !isOwnerOrAdmin(ctx.role)) return { ok: false, error: "unauthorized" };
 
   const supabase = createServiceRoleClient();
   const { data: row } = await supabase
@@ -328,7 +329,7 @@ export async function updateReminderSettings(
   },
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
-  if (!ctx || ctx.role !== "owner") return { ok: false, error: "unauthorized" };
+  if (!ctx || !isOwnerOrAdmin(ctx.role)) return { ok: false, error: "unauthorized" };
 
   // Clamp deposit percentages to 0–100 (defense-in-depth; the DB also CHECKs).
   const clampPct = (v: number | undefined) =>
@@ -392,7 +393,7 @@ export async function updateSquareSyncSettings(
   },
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
-  if (!ctx || ctx.role !== "owner") return { ok: false, error: "unauthorized" };
+  if (!ctx || !isOwnerOrAdmin(ctx.role)) return { ok: false, error: "unauthorized" };
 
   const allowed = [
     "sync_pull_create",
@@ -442,7 +443,7 @@ export async function updateNoShowCardSettings(
   },
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
-  if (!ctx || ctx.role !== "owner") return { ok: false, error: "unauthorized" };
+  if (!ctx || !isOwnerOrAdmin(ctx.role)) return { ok: false, error: "unauthorized" };
 
   const clampPct = (v: number) => Math.min(100, Math.max(0, Math.round(v)));
   const patch: Record<string, unknown> = {};
@@ -497,7 +498,7 @@ export async function waiveBookingDeposit(
   bookingId: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
-  if (!ctx || ctx.role !== "owner") return { ok: false, error: "unauthorized" };
+  if (!ctx || !isOwnerOrAdmin(ctx.role)) return { ok: false, error: "unauthorized" };
 
   const supabase = createServiceRoleClient();
   const { error } = await supabase

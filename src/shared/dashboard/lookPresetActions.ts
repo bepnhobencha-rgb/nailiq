@@ -1,7 +1,7 @@
 "use server";
 
 import { getLookPreset } from "@/shared/verticals/lookPresets";
-import { isOwner } from "@/shared/lib/salonMemberRole";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 
 export type ApplyLookPresetResult =
   | { ok: true; presetId: string }
@@ -22,7 +22,7 @@ export async function applyLookPreset(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   // Resolve the salon's vertical to scope the preset.
   const { data: vrow } = await ctx.supabase

@@ -1,7 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { isOwner } from "@/shared/lib/salonMemberRole";
+import { isOwner, isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { redirect } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -678,7 +678,7 @@ export async function updateDashboardModules(
   if (!ctx) {
     return { ok: false, error: "unauthorized" };
   }
-  if (!isOwner(ctx.role)) {
+  if (!isOwnerOrAdmin(ctx.role)) {
     return { ok: false, error: "forbidden" };
   }
 
@@ -745,7 +745,7 @@ export async function updateDashboardPreset(
   if (!ctx) {
     return { ok: false, error: "unauthorized" };
   }
-  if (!isOwner(ctx.role)) {
+  if (!isOwnerOrAdmin(ctx.role)) {
     return { ok: false, error: "forbidden" };
   }
 
@@ -797,7 +797,7 @@ export async function updateDashboardDensity(
   if (!ctx) {
     return { ok: false, error: "unauthorized" };
   }
-  if (!isOwner(ctx.role)) {
+  if (!isOwnerOrAdmin(ctx.role)) {
     return { ok: false, error: "forbidden" };
   }
 
@@ -854,7 +854,7 @@ export async function updateBrandColor(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   // Cast: `brand_color` is not yet in the auto-generated Supabase
   // types until the next regeneration.
@@ -898,7 +898,7 @@ export async function updateSalonThemeMode(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   // Cast: `theme_mode` is not yet in the auto-generated Supabase
   // types until the next regeneration.
@@ -940,7 +940,7 @@ export async function updateVoiceAiPersonaName(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error: upErr } = await ctx.supabase
     .from("salons")
@@ -1014,7 +1014,7 @@ export async function updateWinBackEnabled(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error } = await ctx.supabase
     .from("salons")
@@ -1048,7 +1048,7 @@ export async function updateAutoNoShowMinutes(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const m = Math.round(Number(minutes));
   if (!Number.isFinite(m) || m < 0 || m > 240) {
@@ -1091,7 +1091,7 @@ export async function updateClientSegmentSettings(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const clamped = parseClientSegmentSettings({
     new_max_visits: input.newMaxVisits,
@@ -1134,7 +1134,7 @@ export async function updateBookingLeadMinutes(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const m = Math.round(Number(minutes));
   if (!Number.isFinite(m) || m < 0 || m > 1440) {
@@ -1174,7 +1174,7 @@ export async function updateReferenceImageEnabled(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error } = await ctx.supabase
     .from("salons")
@@ -1208,7 +1208,7 @@ export async function updateStaffSelectionEnabled(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error } = await ctx.supabase
     .from("salons")
@@ -1254,7 +1254,7 @@ export async function updateWalkinAutoAssign(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   // Cast: `walkin_auto_assign` is not yet in the auto-generated
   // Supabase types until the next regeneration.
@@ -1288,7 +1288,7 @@ export async function updateQueueDisplayMode(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error: upErr } = await ctx.supabase
     .from("salons")
@@ -1320,7 +1320,7 @@ export async function updatePhoneOtpEnabled(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error: upErr } = await ctx.supabase
     .from("salons")
@@ -1356,7 +1356,7 @@ export async function updateBookingVerificationMode(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error: upErr } = await ctx.supabase
     .from("salons")
