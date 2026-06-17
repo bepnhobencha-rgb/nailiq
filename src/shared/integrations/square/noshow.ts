@@ -511,7 +511,7 @@ export async function chargeNoShowFee(
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
-    .select("id, salon_id, noshow_card_id, noshow_customer_id, noshow_fee_cents, noshow_charge_status, noshow_consent_at")
+    .select("id, salon_id, noshow_card_id, noshow_customer_id, noshow_fee_cents, noshow_charge_status, noshow_charge_attempts, noshow_consent_at")
     .eq("id", bookingId)
     .maybeSingle();
   const b = data as Row | null;
@@ -544,15 +544,22 @@ export async function chargeNoShowFee(
       .update({
         noshow_charge_status: charged ? "charged" : "failed",
         noshow_payment_id: pay.paymentId,
+        noshow_charge_attempts: num(b.noshow_charge_attempts) + 1,
+        noshow_charge_error: charged ? null : pay.status,
       } as never)
       .eq("id", bookingId);
     return { charged, reason: pay.status, paymentId: pay.paymentId };
   } catch (e) {
+    const errMsg = e instanceof Error ? e.message : "charge failed";
     await db
       .from("bookings")
-      .update({ noshow_charge_status: "failed" } as never)
+      .update({
+        noshow_charge_status: "failed",
+        noshow_charge_attempts: num(b.noshow_charge_attempts) + 1,
+        noshow_charge_error: errMsg,
+      } as never)
       .eq("id", bookingId);
-    return { charged: false, reason: e instanceof Error ? e.message : "charge failed" };
+    return { charged: false, reason: errMsg };
   }
 }
 
