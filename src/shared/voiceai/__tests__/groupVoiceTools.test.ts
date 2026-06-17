@@ -137,6 +137,10 @@ test("REALTIME_TOOLS includes confirm_group_booking", () => {
   assertTrue(TOOL_NAMES.includes("confirm_group_booking"), "tool must be registered");
 });
 
+test("REALTIME_TOOLS includes join_waitlist", () => {
+  assertTrue(TOOL_NAMES.includes("join_waitlist"), "tool must be registered");
+});
+
 test("REALTIME_TOOLS still includes all 5 individual tools", () => {
   for (const expected of [
     "get_available_slots",
@@ -147,7 +151,8 @@ test("REALTIME_TOOLS still includes all 5 individual tools", () => {
   ]) {
     assertTrue(TOOL_NAMES.includes(expected), `missing individual tool: ${expected}`);
   }
-  assertEqual(TOOL_NAMES.length, 7, "total tool count must be 7");
+  // 5 individual + 2 group (get/confirm) + join_waitlist + end_call = 9
+  assertEqual(TOOL_NAMES.length, 9, "total tool count must be 9");
 });
 
 // ─── 2. Tool schema validation ────────────────────────────────────
