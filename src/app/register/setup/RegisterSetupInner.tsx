@@ -41,11 +41,11 @@ const DEMO_SALON_DISPLAY_NAME = "Demo Salon";
  * salon owners in BC).
  */
 const TIMEZONE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: "America/Vancouver", label: "America/Vancouver (Pacific)" },
-  { value: "America/Edmonton", label: "America/Edmonton (Mountain)" },
-  { value: "America/Toronto", label: "America/Toronto (Eastern)" },
-  { value: "America/Los_Angeles", label: "America/Los_Angeles (Pacific)" },
-  { value: "Asia/Ho_Chi_Minh", label: "Asia/Ho_Chi_Minh (Việt Nam)" },
+  { value: "America/Vancouver", label: "BC · Vancouver (Pacific)" },
+  { value: "America/Edmonton", label: "Alberta · Edmonton (Mountain)" },
+  { value: "America/Toronto", label: "Ontario · Toronto (Eastern)" },
+  { value: "America/Los_Angeles", label: "California · Los Angeles (Pacific)" },
+  { value: "Asia/Ho_Chi_Minh", label: "Việt Nam (TP. Hồ Chí Minh)" },
 ];
 
 const DEFAULT_TIMEZONE = "America/Vancouver";
@@ -198,7 +198,7 @@ export default function RegisterSetupInner({
   );
 
   return (
-    <RegisterStepShell title={t.wizardTitle} subtext={t.wizardSubtext}>
+    <RegisterStepShell title={t.wizardTitle} subtext={t.wizardSubtext} step={{ current: 2, total: 3 }}>
       <form
         onSubmit={onSubmit}
         method="post"
@@ -207,7 +207,7 @@ export default function RegisterSetupInner({
         <div>
           <label
             htmlFor="register-setup-salon-name"
-            className="mb-2 block text-sm font-semibold text-nq-foreground"
+            className="mb-2 block text-base font-semibold text-nq-foreground"
           >
             {t.salonNameLabel}
           </label>
@@ -249,7 +249,7 @@ export default function RegisterSetupInner({
         <div>
           <label
             htmlFor="register-setup-slug"
-            className="mb-2 block text-sm font-semibold text-nq-foreground"
+            className="mb-2 block text-base font-semibold text-nq-foreground"
           >
             {t.slugLabel}
           </label>
@@ -295,7 +295,7 @@ export default function RegisterSetupInner({
         <div>
           <label
             htmlFor="register-setup-timezone"
-            className="mb-2 block text-sm font-semibold text-nq-foreground"
+            className="mb-2 block text-base font-semibold text-nq-foreground"
           >
             {t.timezoneLabel}
           </label>
@@ -332,7 +332,7 @@ export default function RegisterSetupInner({
         <Button
           type="submit"
           size="lg"
-          className="w-full min-h-11"
+          className="w-full min-h-[52px] text-base"
           disabled={!name.trim() || pending}
         >
           {pending ? t.submitCreating : t.submitCreate}

@@ -50,7 +50,8 @@ export function SocialAuthButtons({
   // In "compact" layout the email form starts collapsed; in "open" it's
   // always visible (the "Other options" toggle is suppressed).
   const [showEmail, setShowEmail] = useState(layout === "open");
-  const [showPassword, setShowPassword] = useState(false);
+  // Password form is default in open+enablePassword layout — familiar for older users.
+  const [showPassword, setShowPassword] = useState(layout === "open" && enablePassword);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [emailSentTo, setEmailSentTo] = useState<string | null>(null);
@@ -258,17 +259,28 @@ export function SocialAuthButtons({
 
   return (
     <div className="mt-6 flex flex-col gap-3">
+      {/* Google — primary action, large touch target */}
       <Button
         type="button"
         variant={layout === "open" ? "primary" : "secondary"}
         size="lg"
-        className="w-full min-h-11"
+        className="w-full min-h-[52px] gap-3 text-base"
         loading={pending && pendingAction === "google"}
         disabled={pending}
         onClick={onGoogle}
       >
+        {/* Google "G" logo */}
+        <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" aria-hidden="true">
+          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+        </svg>
         {t.continueWithGoogle}
       </Button>
+      {layout === "open" ? (
+        <p className="text-center text-xs text-nq-muted">{t.googleHelperText}</p>
+      ) : null}
 
       <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.18em] text-nq-muted">
         <span className="h-px flex-1 bg-nq-border" />
@@ -277,8 +289,7 @@ export function SocialAuthButtons({
       </div>
 
       {/* Compact layout keeps the legacy "Other options" toggle so /login
-          and existing surfaces don't change shape. The `open` layout
-          renders the email form inline. */}
+          and existing surfaces don't change shape. Open layout renders inline. */}
       {layout === "compact" ? (
         <button
           type="button"
@@ -297,18 +308,20 @@ export function SocialAuthButtons({
       ) : null}
 
       {showEmail ? (
-        <form
-          id={emailSectionId}
-          onSubmit={onMagicLink}
-          method="post"
-          className="flex flex-col gap-3"
-        >
+        <div id={emailSectionId} className="flex flex-col gap-3">
+          {/* In open+password mode: label above the email section */}
+          {passwordSupported ? (
+            <p className="text-sm font-semibold text-nq-foreground">{t.emailSectionLabel}</p>
+          ) : null}
+
+          {/* Email input — shared by both magic-link and password flows */}
           <Input
             type="email"
             inputMode="email"
             autoComplete="email"
             aria-label={t.emailLabel}
             placeholder={t.emailPlaceholder}
+            className="text-base min-h-[48px]"
             value={email}
             onChange={(ev) => {
               setEmail(ev.target.value);
@@ -318,48 +331,16 @@ export function SocialAuthButtons({
             error={Boolean(error)}
             autoFocus={layout === "compact"}
           />
-          <Button
-            type="submit"
-            variant={layout === "open" ? "secondary" : "ghost"}
-            size="md"
-            className="w-full min-h-11"
-            loading={pending && pendingAction === "magic"}
-            disabled={pending}
-          >
-            {magicLinkButtonLabel}
-          </Button>
-        </form>
-      ) : null}
 
-      {passwordSupported ? (
-        <>
-          <button
-            type="button"
-            aria-expanded={showPassword}
-            aria-controls={passwordSectionId}
-            data-testid="social-auth-password-toggle"
-            onClick={() => {
-              setError(null);
-              setInfo(null);
-              setShowPassword((prev) => !prev);
-            }}
-            className="self-center text-sm text-nq-muted underline-offset-4 transition hover:text-nq-foreground hover:underline"
-          >
-            {showPassword ? t.hidePasswordToggle : t.showPasswordToggle}
-          </button>
-          {showPassword ? (
-            <div
-              id={passwordSectionId}
-              className="flex flex-col gap-3 rounded-2xl border border-nq-border bg-nq-surface/40 p-3"
-            >
-              <label htmlFor="password-input" className="text-sm font-medium text-nq-foreground">
-                {t.passwordLabel}
-              </label>
+          {/* Password section — default open in open+password layout */}
+          {passwordSupported ? (
+            <div id={passwordSectionId} className="flex flex-col gap-3">
               <Input
                 id="password-input"
                 type="password"
-                autoComplete="current-password"
+                autoComplete={showPassword ? "current-password" : "new-password"}
                 placeholder={t.passwordPlaceholder}
+                className="text-base min-h-[48px]"
                 value={password}
                 onChange={(ev) => {
                   setPassword(ev.target.value);
@@ -368,9 +349,8 @@ export function SocialAuthButtons({
                 aria-invalid={Boolean(error)}
                 error={Boolean(error)}
               />
-              {password && (
-                <div className="space-y-2">
-                  {/* Password strength meter */}
+              {password ? (
+                <div className="space-y-1.5">
                   <div className="flex items-center gap-2">
                     <div className="flex-1 h-1.5 bg-nq-border rounded-full overflow-hidden">
                       <div
@@ -401,42 +381,62 @@ export function SocialAuthButtons({
                   </div>
                   <p className="text-xs text-nq-muted">{t.passwordRequirements}</p>
                 </div>
-              )}
+              ) : null}
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Button
                   type="button"
                   variant="primary"
                   size="md"
-                  className="w-full min-h-11"
+                  className="w-full min-h-[48px] text-base"
                   loading={pending && pendingAction === "signin"}
                   disabled={pending}
                   onClick={() => onPasswordSubmit("signin")}
                 >
-                  {pending && pendingAction === "signin"
-                    ? t.signingIn
-                    : t.signInButton}
+                  {pending && pendingAction === "signin" ? t.signingIn : t.signInButton}
                 </Button>
                 <Button
                   type="button"
                   variant="secondary"
                   size="md"
-                  className="w-full min-h-11"
+                  className="w-full min-h-[48px] text-base"
                   loading={pending && pendingAction === "signup"}
                   disabled={pending || !isPasswordAcceptable}
                   onClick={() => onPasswordSubmit("signup")}
                 >
-                  {pending && pendingAction === "signup"
-                    ? t.signingUp
-                    : t.signUpButton}
+                  {pending && pendingAction === "signup" ? t.signingUp : t.signUpButton}
                 </Button>
               </div>
+              {/* Magic-link as "forgot password" fallback */}
+              <form onSubmit={onMagicLink} method="post">
+                <button
+                  type="submit"
+                  disabled={pending}
+                  className="w-full min-h-[44px] text-sm text-nq-muted underline-offset-4 transition hover:text-nq-foreground hover:underline disabled:opacity-50"
+                >
+                  {pending && pendingAction === "magic" ? "…" : t.forgotPasswordLinkText}
+                </button>
+              </form>
             </div>
-          ) : null}
-        </>
+          ) : (
+            /* Compact / magic-link only mode */
+            <form onSubmit={onMagicLink} method="post">
+              <Button
+                type="submit"
+                variant={layout === "open" ? "secondary" : "ghost"}
+                size="md"
+                className="w-full min-h-[48px]"
+                loading={pending && pendingAction === "magic"}
+                disabled={pending}
+              >
+                {magicLinkButtonLabel}
+              </Button>
+            </form>
+          )}
+        </div>
       ) : null}
 
       {error ? (
-        <p className="text-sm text-nq-error" role="status">
+        <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-nq-error dark:bg-red-950/30" role="alert">
           {error}
         </p>
       ) : null}
