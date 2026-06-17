@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   updateRemindersEnabled,
@@ -8,12 +8,14 @@ import {
   updateNoShowCardSettings,
   updateWaitlistAutoBook,
   waiveBookingDeposit,
+  loadNoShowHistory,
 } from "@/shared/noshow/noShowDashboardActions";
 import type {
   NoShowSummary,
   UnconfirmedBooking,
   WaitlistOpportunity,
   UncollectedFee,
+  NoShowHistoryItem,
 } from "@/shared/noshow/noShowDashboardActions";
 import {
   chargeNoShowFeeManual,
@@ -278,6 +280,279 @@ function UncollectedFeesCard({
         })}
       </ul>
     </div>
+  );
+}
+
+const PERIODS = [
+  { label: "7 ngày", labelEn: "7 days", days: 7 },
+  { label: "30 ngày", labelEn: "30 days", days: 30 },
+  { label: "90 ngày", labelEn: "90 days", days: 90 },
+  { label: "Tất cả", labelEn: "All time", days: null },
+] as const;
+
+const STATUSES = [
+  { key: "all",      labelVi: "Tất cả",    labelEn: "All" },
+  { key: "charged",  labelVi: "✅ Đã thu",  labelEn: "✅ Charged" },
+  { key: "failed",   labelVi: "❌ Thất bại",labelEn: "❌ Failed" },
+  { key: "saved",    labelVi: "🔵 Chờ",     labelEn: "🔵 Pending" },
+  { key: "waived",   labelVi: "🟡 Bỏ qua", labelEn: "🟡 Waived" },
+] as const;
+
+function ChargeStatusBadge({ status, error }: { status: string | null; error: string | null }) {
+  if (!status) return <span className="text-xs text-nq-muted">—</span>;
+  const cfg: Record<string, { label: string; cls: string }> = {
+    charged:  { label: "✅ Đã thu",    cls: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30" },
+    failed:   { label: "❌ Thất bại",  cls: "text-red-400 bg-red-500/10 border-red-500/30" },
+    saved:    { label: "🔵 Chờ thu",   cls: "text-blue-400 bg-blue-500/10 border-blue-500/30" },
+    waived:   { label: "🟡 Bỏ qua",   cls: "text-amber-300 bg-amber-400/10 border-amber-400/30" },
+    deferred: { label: "⬜ Deferred",  cls: "text-nq-muted bg-nq-surface border-nq-border/40" },
+  };
+  const c = cfg[status] ?? { label: status, cls: "text-nq-muted bg-nq-surface border-nq-border/40" };
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${c.cls}`}>
+      {c.label}
+      {status === "failed" && error ? (
+        <span className="text-red-300/70"> · {error}</span>
+      ) : null}
+    </span>
+  );
+}
+
+function NoShowHistorySection({ slug, salonId, language }: { slug: string; salonId: string; language: "en" | "vi" }) {
+  const vi = language === "vi";
+  const [items, setItems] = useState<NoShowHistoryItem[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [days, setDays] = useState<number | null>(30);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [actionBusy, setActionBusy] = useState<Record<string, string | null>>({});
+  const [actionNote, setActionNote] = useState<Record<string, string>>({});
+  const PAGE = 20;
+
+  const salonSlug = slug;
+
+  async function fetchPage(newDays: number | null, newStatus: string, offset: number, append: boolean) {
+    if (offset === 0) setLoading(true); else setLoadingMore(true);
+    try {
+      const res = await loadNoShowHistory(salonSlug, { days: newDays, status: newStatus, offset, limit: PAGE });
+      if (res.ok && res.items) {
+        setItems((prev) => append ? [...prev, ...res.items!] : res.items!);
+        setHasMore(res.hasMore ?? false);
+      }
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }
+
+  // Auto-load on mount
+  useEffect(() => { void fetchPage(days, statusFilter, 0, false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handlePeriod(d: number | null) {
+    setDays(d);
+    setItems([]);
+    void fetchPage(d, statusFilter, 0, false);
+  }
+
+  function handleStatus(s: string) {
+    setStatusFilter(s);
+    setItems([]);
+    void fetchPage(days, s, 0, false);
+  }
+
+  async function retryCharge(id: string) {
+    setActionBusy((b) => ({ ...b, [id]: "retry" }));
+    setActionNote((n) => ({ ...n, [id]: "" }));
+    try {
+      const r = await chargeNoShowFeeManual(salonSlug, { salonId, bookingId: id });
+      if (r.ok && r.charged) {
+        setItems((prev) => prev.map((x) => x.id === id ? { ...x, chargeStatus: "charged", chargeError: null } : x));
+        setActionNote((n) => ({ ...n, [id]: vi ? "✓ Đã thu thành công" : "✓ Charged successfully" }));
+      } else {
+        setActionNote((n) => ({ ...n, [id]: vi ? "Vẫn bị từ chối" : "Still declined" }));
+      }
+    } catch {
+      setActionNote((n) => ({ ...n, [id]: vi ? "Lỗi, thử lại" : "Error, try again" }));
+    } finally {
+      setActionBusy((b) => ({ ...b, [id]: null }));
+    }
+  }
+
+  async function waive(id: string) {
+    setActionBusy((b) => ({ ...b, [id]: "waive" }));
+    try {
+      const r = await waiveNoShowFee(salonSlug, { salonId, bookingId: id });
+      if (r.ok) {
+        setItems((prev) => prev.map((x) => x.id === id ? { ...x, chargeStatus: "waived" } : x));
+      }
+    } finally {
+      setActionBusy((b) => ({ ...b, [id]: null }));
+    }
+  }
+
+  async function sendLink(id: string) {
+    setActionBusy((b) => ({ ...b, [id]: "link" }));
+    setActionNote((n) => ({ ...n, [id]: "" }));
+    try {
+      const r = await sendNoShowFeeLink(salonSlug, { salonId, bookingId: id, sendSms: true, language });
+      setActionNote((n) => ({
+        ...n,
+        [id]: r.ok
+          ? (r.smsSent || r.emailSent ? (vi ? "✓ Đã gửi link" : "✓ Link sent") : (vi ? "✓ Đã tạo link" : "✓ Link created"))
+          : (vi ? "Không tạo được link" : "Couldn't create link"),
+      }));
+    } catch {
+      setActionNote((n) => ({ ...n, [id]: vi ? "Lỗi, thử lại" : "Error, try again" }));
+    } finally {
+      setActionBusy((b) => ({ ...b, [id]: null }));
+    }
+  }
+
+  return (
+    <section className="mt-8">
+      <h2 className="mb-3 text-xs font-medium uppercase tracking-widest text-nq-primary">
+        {vi ? "Lịch sử no-show" : "No-Show History"}
+      </h2>
+
+      {/* Period filter */}
+      <div className="flex flex-wrap gap-1.5">
+        {PERIODS.map((p) => (
+          <button
+            key={String(p.days)}
+            type="button"
+            onClick={() => handlePeriod(p.days)}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+              days === p.days
+                ? "border-nq-primary/60 bg-nq-primary/15 text-nq-primary"
+                : "border-nq-border/40 text-nq-muted hover:text-nq-foreground"
+            }`}
+          >
+            {vi ? p.label : p.labelEn}
+          </button>
+        ))}
+      </div>
+
+      {/* Status filter */}
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {STATUSES.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            onClick={() => handleStatus(s.key)}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+              statusFilter === s.key
+                ? "border-nq-primary/60 bg-nq-primary/15 text-nq-primary"
+                : "border-nq-border/40 text-nq-muted hover:text-nq-foreground"
+            }`}
+          >
+            {vi ? s.labelVi : s.labelEn}
+          </button>
+        ))}
+      </div>
+
+      {/* List */}
+      <div className="mt-3">
+        {loading ? (
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-20 animate-pulse rounded-xl bg-nq-surface/60" />
+            ))}
+          </div>
+        ) : items.length === 0 ? (
+          <div className="rounded-xl border border-nq-border/30 bg-nq-surface/40 py-10 text-center text-sm text-nq-muted">
+            {vi ? "Không có lịch no-show trong khoảng thời gian này." : "No no-shows in this period."}
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {items.map((item) => {
+              const busy = actionBusy[item.id] ?? null;
+              const isFailed = item.chargeStatus === "failed";
+              return (
+                <li
+                  key={item.id}
+                  className="rounded-xl border border-nq-border/40 bg-nq-surface p-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <p className="text-sm font-medium text-nq-foreground">{item.clientName}</p>
+                        {item.clientPhone && (
+                          <p className="text-xs text-nq-muted">{item.clientPhone}</p>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-xs text-nq-muted">
+                        {item.serviceName}
+                        {item.staffName !== "—" ? ` · ${item.staffName}` : ""}
+                        {item.startTimeUtc ? ` · ${formatTime(item.startTimeUtc)}` : ""}
+                      </p>
+                      {(item.cardBrand || item.cardLast4) && (
+                        <p className="mt-0.5 text-xs text-nq-muted">
+                          {item.cardBrand ?? "Card"} ····{item.cardLast4 ?? ""}
+                          {item.chargeAttempts > 0 ? ` · ${item.chargeAttempts}× tried` : ""}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      {item.feeCents != null && item.feeCents > 0 && (
+                        <p className="text-sm font-semibold tabular-nums text-nq-foreground">
+                          ${(item.feeCents / 100).toFixed(2)}
+                        </p>
+                      )}
+                      <ChargeStatusBadge status={item.chargeStatus} error={item.chargeError} />
+                    </div>
+                  </div>
+
+                  {actionNote[item.id] && (
+                    <p className="mt-1.5 text-[11px] text-nq-primary">{actionNote[item.id]}</p>
+                  )}
+
+                  {isFailed && (
+                    <div className="mt-2 flex gap-1.5">
+                      <button
+                        type="button"
+                        disabled={busy !== null}
+                        onClick={() => void retryCharge(item.id)}
+                        className="flex-1 rounded-md bg-red-500/15 py-1.5 text-[11px] font-semibold text-red-300 transition-colors hover:bg-red-500/25 disabled:opacity-50"
+                      >
+                        {busy === "retry" ? (vi ? "Đang thu…" : "Charging…") : (vi ? "Thử thu lại" : "Retry")}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy !== null}
+                        onClick={() => void sendLink(item.id)}
+                        className="flex-1 rounded-md border border-nq-primary/40 py-1.5 text-[11px] font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:opacity-50"
+                      >
+                        {busy === "link" ? (vi ? "Đang gửi…" : "Sending…") : (vi ? "Gửi link" : "Send link")}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy !== null}
+                        onClick={() => void waive(item.id)}
+                        className="flex-1 rounded-md border border-nq-border/50 py-1.5 text-[11px] font-semibold text-nq-muted transition-colors hover:text-nq-foreground disabled:opacity-50"
+                      >
+                        {busy === "waive" ? (vi ? "Đang bỏ…" : "Waiving…") : (vi ? "Bỏ qua" : "Waive")}
+                      </button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {hasMore && !loading && (
+          <button
+            type="button"
+            disabled={loadingMore}
+            onClick={() => void fetchPage(days, statusFilter, items.length, true)}
+            className="mt-3 w-full rounded-xl border border-nq-border/40 py-2.5 text-xs font-medium text-nq-muted transition-colors hover:text-nq-foreground disabled:opacity-50"
+          >
+            {loadingMore ? (vi ? "Đang tải…" : "Loading…") : (vi ? "Xem thêm" : "Load more")}
+          </button>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -1036,10 +1311,13 @@ export function NoShowProtectionHub({
         )}
 
         {unconfirmed.length === 0 && waitlist.length === 0 && (
-          <div className="mt-12 text-center text-sm text-nq-muted">
+          <div className="mt-6 text-center text-sm text-nq-muted">
             <p>All clear — no unconfirmed bookings in the next 48 hours.</p>
           </div>
         )}
+
+        {/* No-show history — always visible, self-loads */}
+        <NoShowHistorySection slug={slug} salonId={salonId} language={language} />
       </MobileStack>
     </ResponsiveShell>
   );

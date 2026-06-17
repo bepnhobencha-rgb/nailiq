@@ -492,6 +492,102 @@ export async function updateNoShowCardSettings(
   return { ok: true };
 }
 
+// ─── No-Show History ──────────────────────────────────────────────────────────
+
+export type NoShowHistoryItem = {
+  id: string;
+  clientName: string;
+  clientPhone: string | null;
+  serviceName: string;
+  staffName: string;
+  startTimeUtc: string;
+  feeCents: number | null;
+  chargeStatus: string | null;
+  chargeError: string | null;
+  chargeAttempts: number;
+  cardLast4: string | null;
+  cardBrand: string | null;
+  groupId: string | null;
+};
+
+export async function loadNoShowHistory(
+  slug: string,
+  opts?: {
+    days?: number | null; // null = all time
+    status?: string;      // "all" | "charged" | "failed" | "deferred" | "waived"
+    offset?: number;
+    limit?: number;
+  },
+): Promise<{ ok: boolean; items?: NoShowHistoryItem[]; hasMore?: boolean; error?: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+
+  const supabase = createServiceRoleClient();
+  const salonId = String(ctx.salon.id);
+  const pageSize = opts?.limit ?? 20;
+  const offset = opts?.offset ?? 0;
+
+  // Fetch one extra row to detect hasMore without a COUNT query.
+  // All filters applied via `as never` to bypass outdated generated types.
+  const base = supabase
+    .from("bookings" as never)
+    .select(
+      "id, client_name, client_phone, start_time_utc, noshow_fee_cents, noshow_charge_status, noshow_charge_error, noshow_charge_attempts, noshow_card_last4, noshow_card_brand, group_id, services!bookings_service_id_fkey(name), staff(name)" as never,
+    )
+    .eq("salon_id" as never, salonId)
+    .eq("status" as never, "no_show")
+    .order("start_time_utc" as never, { ascending: false });
+
+  const withDate = opts?.days != null
+    ? base.gte("start_time_utc" as never, new Date(Date.now() - opts.days * 86_400_000).toISOString())
+    : base;
+
+  const withStatus = opts?.status && opts.status !== "all"
+    ? withDate.eq("noshow_charge_status" as never, opts.status)
+    : withDate;
+
+  const { data, error } = await withStatus.range(offset, offset + pageSize) as unknown as
+    { data: unknown[] | null; error: { message: string } | null };
+
+  if (error) return { ok: false, error: error.message };
+
+  type Raw = {
+    id: string;
+    client_name: string | null;
+    client_phone: string | null;
+    start_time_utc: string | null;
+    noshow_fee_cents: number | null;
+    noshow_charge_status: string | null;
+    noshow_charge_error: string | null;
+    noshow_charge_attempts: number | null;
+    noshow_card_last4: string | null;
+    noshow_card_brand: string | null;
+    group_id: string | null;
+    services: { name: string } | null;
+    staff: { name: string } | null;
+  };
+
+  const rows = (data ?? []) as Raw[];
+  const hasMore = rows.length > pageSize;
+  const items: NoShowHistoryItem[] = rows.slice(0, pageSize).map((r) => ({
+    id: r.id,
+    clientName: r.client_name?.trim() || "—",
+    clientPhone: r.client_phone ?? null,
+    serviceName: r.services?.name ?? "—",
+    staffName: r.staff?.name ?? "—",
+    startTimeUtc: r.start_time_utc ?? "",
+    feeCents: r.noshow_fee_cents,
+    chargeStatus: r.noshow_charge_status,
+    chargeError: r.noshow_charge_error,
+    chargeAttempts: r.noshow_charge_attempts ?? 0,
+    cardLast4: r.noshow_card_last4,
+    cardBrand: r.noshow_card_brand,
+    groupId: r.group_id,
+  }));
+
+  return { ok: true, items, hasMore };
+}
+
 /** Mark a booking's deposit as waived (owner override). */
 export async function waiveBookingDeposit(
   slug: string,
