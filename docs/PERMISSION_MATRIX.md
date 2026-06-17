@@ -112,7 +112,7 @@ Where a cell is **Partial**, an italic note explains bounds.
 | **Booking operations** | ✅ | ✅ | ✅ | ✅ | ❌ |
 | **Walk-in queue** | ✅ | ✅ | ✅ | ✅ | ❌ |
 | **Client search** | ✅ | ✅ | ✅ | ✅ | ❌ |
-| **Client profile editing** (VIP, notes) | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Client profile editing** (name, VIP, notes) | ✅ | ✅ | ✅ | ✅ | ❌ |
 | **Staff management** (CRUD) | ✅ | ✅ | ❌ | ❌ | ❌ |
 | **Grant / revoke admin role** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Booking settings** | ✅ | ✅ | ❌ | ❌ | ❌ |
@@ -167,7 +167,8 @@ FIFO or algorithmic urgency may order the queue automatically; **manual reorder*
 | --- | --- | --- | --- | --- | --- |
 | Search / look up client | Yes | Yes | Yes | Yes | No |
 | View client profile (booking history, spend) | Yes | Yes | Yes | Partial — _booking history view only; no VIP/notes/spend tabs_ | No |
-| Edit VIP status / notes on client profile | Yes | Yes | Yes | No | No |
+| Edit client name / phone on profile | Yes | Yes | Yes | Yes | No |
+| Edit VIP status / notes on client profile | Yes | Yes | Yes | Yes | No |
 | View client spend / lifetime value | Yes | Yes | Yes | No | No |
 
 ---
