@@ -186,6 +186,7 @@ export function SalonSettingsHub({
     { href: `${base}/staff`, label: t.sectionStaff },
     { href: `${base}/hours`, label: t.sectionHours },
     { href: `${base}/address`, label: t.sectionAddress },
+    { href: `${base}/manager-briefing`, label: t.sectionAiManager },
   ];
 
   const myPageHref = `/dashboard/${encodeURIComponent(slug)}/settings/my-page`;

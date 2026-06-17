@@ -691,6 +691,7 @@ export const userVi: UserMessages = {
     sectionStaff: "Nhân viên",
     sectionHours: "Giờ mở cửa",
     sectionAddress: "Địa chỉ tiệm",
+    sectionAiManager: "Cấu hình AI Manager",
     categories: {
       brand: {
         title: "Thương hiệu & trang đặt lịch",
