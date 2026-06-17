@@ -8,6 +8,7 @@ export default function CancelBookingPage() {
   const token = searchParams?.get("token") ?? "";
   const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [code, setCode] = useState("");
+  const [salonSlug, setSalonSlug] = useState<string | null>(null);
 
   async function handleCancel() {
     if (!token) { setState("error"); setCode("missing_token"); return; }
@@ -19,8 +20,9 @@ export default function CancelBookingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       });
-      const json = (await res.json()) as { ok?: boolean; code?: string };
+      const json = (await res.json()) as { ok?: boolean; code?: string; salonSlug?: string | null };
       if (json.ok) {
+        if (json.salonSlug) setSalonSlug(json.salonSlug);
         setState("done");
       } else {
         setState("error");
@@ -45,6 +47,16 @@ export default function CancelBookingPage() {
           <p className="mt-3 text-sm text-nq-muted">
             Your appointment has been cancelled. We hope to see you again soon.
           </p>
+          {salonSlug && (
+            <div className="mt-6">
+              <a
+                href={`/${salonSlug}?ref=cancel_page`}
+                className="inline-block rounded-xl border border-nq-border/60 bg-nq-surface px-6 py-3 text-sm font-medium text-white transition hover:bg-nq-border/20"
+              >
+                📅 Book another time
+              </a>
+            </div>
+          )}
         </div>
       </Shell>
     );

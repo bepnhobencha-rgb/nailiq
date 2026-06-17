@@ -140,9 +140,16 @@ export async function POST(req: Request) {
   // "Get directions" Google button stays in the confirmation EMAIL.
   const salonAddress = (salon as { address?: string | null }).address?.trim() || "";
   const addrLine = salonAddress ? `\n📍 ${salonAddress}` : "";
-  const message = baseMessage + addrLine;
 
   const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+  // Manage-booking link — lets the customer reschedule or cancel from the SMS
+  // without hunting through email. Uses the /wait page which has Reschedule +
+  // Cancel buttons. Only added for individual (non-group) bookings with a slug.
+  const manageLink =
+    salonSlug && bookingId && !isGroup
+      ? `\nManage: ${SITE_URL}/${salonSlug}/wait/${bookingId}`
+      : "";
+  const message = baseMessage + addrLine + manageLink;
   const statusCallbackUrl = `${SITE_URL}/api/twilio/status`;
   const result = await sendSmsReminder(clientPhone, message, { statusCallbackUrl, salonIsTest, lang: lang === "en" ? "en" : "vi" });
 

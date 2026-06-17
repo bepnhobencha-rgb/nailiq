@@ -125,14 +125,15 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
     const db = looseServiceClient();
     const { data: salon } = await db
       .from("salons")
-      .select("name, feature_flags, slug, sms_a2p_registered, customer_channel" as never)
+      .select("name, email, feature_flags, slug, sms_a2p_registered, customer_channel" as never)
       .eq("id", salonId)
       .maybeSingle();
     const s = (salon as Row | null) ?? {};
     if ((s.feature_flags as Record<string, unknown> | null)?.ai_rebook !== true) return;
     const salonName = str(s.name) || "our salon";
     const salonSlug = str(s.slug) || "";
-    const bookingUrl = `${SITE_URL}/${salonSlug}`;
+    const salonReplyEmail = str(s.email) || null;
+    const bookingUrl = `${SITE_URL}/${salonSlug}?ref=rebook`;
     const smsA2pRegistered = Boolean(s.sms_a2p_registered);
     const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
 
@@ -170,7 +171,7 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
         if (resend) {
           const esc = (x: string) => x.replace(/[<>&"]/g, (c2) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c2] ?? c2));
           const html = `<div style="max-width:480px;margin:0 auto;font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a"><p style="font-size:15px;line-height:1.7;margin:0 0 16px">${esc(message)}</p><a href="${bookingUrl}" style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:14px">Book now</a><p style="font-size:12px;color:#999;margin-top:20px">${esc(salonName)}</p></div>`;
-          const { error } = await resend.emails.send({ from: getResendFrom(), to: c.email, subject: `Time for your next visit at ${salonName}`, html, text: `${message}\n\n${bookingUrl}` });
+          const { error } = await resend.emails.send({ from: getResendFrom(), to: c.email, subject: `Time for your next visit at ${salonName}`, html, text: `${message}\n\n${bookingUrl}`, ...(salonReplyEmail ? { replyTo: salonReplyEmail } : {}) });
           ok = ok || !error;
         }
       }

@@ -30,6 +30,7 @@ type BookingRow = {
     name: string;
     slug: string;
     timezone: string | null;
+    email: string | null;
     reminders_enabled: boolean;
     reminder_24h_enabled: boolean;
     reminder_3h_enabled: boolean;
@@ -87,7 +88,7 @@ export async function GET(req: Request) {
     no_show_risk_score, client_locale,
     reminder_24h_sent_at, reminder_3h_sent_at,
     services!bookings_service_id_fkey(name), staff(name),
-    salons(name, slug, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, feature_flags)`;
+    salons(name, slug, email, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, feature_flags)`;
 
   // Fetch both email-eligible AND SMS-eligible bookings (no email filter here).
   const { data: need24h } = await supabase
@@ -141,6 +142,7 @@ export async function GET(req: Request) {
         businessDescriptor: resolveVertical(
           (salon as { vertical?: string | null }).vertical,
         ).aiDescriptor,
+        salonContactEmail: (salon as { email?: string | null }).email ?? null,
       });
       if (result.ok) anySuccess = true;
       else errors++;

@@ -292,7 +292,7 @@ export async function sendBookingConfirmationEmail(
     const supabase = createServiceRoleClient();
     const { data: salonRow } = await supabase
       .from("salons")
-      .select("id, name, timezone, currency, reminders_enabled, address, salon_phone")
+      .select("id, name, timezone, currency, reminders_enabled, address, salon_phone, email")
       .eq("slug", input.shopSlug)
       .maybeSingle();
 
@@ -369,6 +369,13 @@ export async function sendBookingConfirmationEmail(
       typeof salonRow?.address === "string" ? salonRow.address : null;
     const salonPhone =
       typeof salonRow?.salon_phone === "string" ? salonRow.salon_phone : null;
+    // Owner/booking reply email: customers who hit Reply should reach the salon,
+    // not noreply@nailiq.ca. We use the salon's auth email as a best-effort
+    // replyTo — if not set, we omit it and the customer's reply goes to From.
+    const salonReplyEmail =
+      typeof (salonRow as { email?: unknown } | null)?.email === "string"
+        ? String((salonRow as { email: string }).email).trim() || null
+        : null;
 
     // "Add to calendar" — drops the appointment into the customer's phone
     // calendar in one tap (a real no-show reducer). Google link for Gmail/Android
@@ -422,6 +429,7 @@ export async function sendBookingConfirmationEmail(
       subject: `Booking confirmed — ${salonName}`,
       html: htmlWithFooter,
       headers: listUnsubscribeHeaders(to),
+      ...(salonReplyEmail ? { replyTo: salonReplyEmail } : {}),
       // .ics attachment → Apple Mail / Outlook show a one-tap "Add to Calendar".
       ...(icsContent
         ? {

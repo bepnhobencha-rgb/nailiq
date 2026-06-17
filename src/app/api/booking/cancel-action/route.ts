@@ -29,6 +29,7 @@ export async function POST(req: Request) {
 
   type BookingMeta = { salon_id: string; service_id: string; start_time_utc: string };
   let bookingMeta: BookingMeta | null = null;
+  let salonSlug: string | null = null;
   if (tr) {
     const { data: bRow } = await supabase
       .from("bookings" as never)
@@ -36,6 +37,14 @@ export async function POST(req: Request) {
       .eq("id", tr.booking_id)
       .maybeSingle();
     bookingMeta = bRow as BookingMeta | null;
+    if (bookingMeta?.salon_id) {
+      const { data: salonRow } = await supabase
+        .from("salons" as never)
+        .select("slug")
+        .eq("id", bookingMeta.salon_id)
+        .maybeSingle();
+      salonSlug = (salonRow as { slug?: string | null } | null)?.slug?.trim() ?? null;
+    }
   }
 
   const { data, error } = await supabase.rpc("cancel_booking_as_customer" as never, {
@@ -82,5 +91,5 @@ export async function POST(req: Request) {
     });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, salonSlug });
 }

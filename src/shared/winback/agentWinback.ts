@@ -128,6 +128,7 @@ async function sendWinbackEmail(
   salonName: string,
   message: string,
   bookingUrl: string,
+  salonReplyEmail?: string | null,
 ): Promise<boolean> {
   const resend = getResendClient();
   if (!resend) return false;
@@ -143,6 +144,7 @@ async function sendWinbackEmail(
     subject: `${salonName} — we'd love to see you again`,
     html,
     text: `${message}\n\n${bookingUrl}\n\n${salonName}`,
+    ...(salonReplyEmail ? { replyTo: salonReplyEmail } : {}),
   });
   return !error;
 }
@@ -157,14 +159,15 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
     const db = looseServiceClient();
     const { data: salon } = await db
       .from("salons")
-      .select("name, feature_flags, slug, sms_a2p_registered, customer_channel" as never)
+      .select("name, email, feature_flags, slug, sms_a2p_registered, customer_channel" as never)
       .eq("id", salonId)
       .maybeSingle();
     const s = (salon as Row | null) ?? {};
     if ((s.feature_flags as Record<string, unknown> | null)?.ai_winback !== true) return;
     const salonName = str(s.name) || "our salon";
     const salonSlug = str(s.slug) || "";
-    const bookingUrl = `${SITE_URL}/${salonSlug}`;
+    const salonReplyEmail = str(s.email) || null;
+    const bookingUrl = `${SITE_URL}/${salonSlug}?ref=winback`;
     const smsA2pRegistered = Boolean(s.sms_a2p_registered);
     const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
 
@@ -205,7 +208,7 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
         ok = await sendWinbackSms(c.phone, message, bookingUrl);
       }
       if (ch.email && c.email) {
-        const emailOk = await sendWinbackEmail(c.email, c.name, salonName, message, bookingUrl);
+        const emailOk = await sendWinbackEmail(c.email, c.name, salonName, message, bookingUrl, salonReplyEmail);
         // Count as delivered if at least one channel succeeded.
         ok = ok || emailOk;
       }
