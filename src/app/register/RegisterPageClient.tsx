@@ -29,6 +29,7 @@ export function RegisterPageClient() {
       subtext={t.signInOrSignUpSubtext}
       helperHint={t.registerMicrotrust}
       showBrandPanel
+      step={{ current: 1, total: 3 }}
     >
       <SocialAuthButtons mode="register" layout="open" enablePassword />
     </RegisterStepShell>

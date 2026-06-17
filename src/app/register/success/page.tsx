@@ -66,7 +66,7 @@ function RegisterSuccessInner() {
   const [slugAdjBefore, slugAdjAfter] = t.slugAdjusted.split("{slug}");
 
   return (
-    <RegisterStepShell title={t.title} subtext={t.subtext}>
+    <RegisterStepShell title={t.title} subtext={t.subtext} step={{ current: 3, total: 3 }}>
       <div className="flex flex-col gap-5">
         {slugAdjusted ? (
           <p className="rounded-2xl border border-nq-border/50 bg-nq-surface/40 px-4 py-3 text-center text-sm leading-relaxed text-nq-muted">
