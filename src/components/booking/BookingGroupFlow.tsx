@@ -33,6 +33,7 @@ import { BookingCalendarGrid } from "@/components/booking/BookingCalendarGrid";
 import { BookingFlowOtpPanel } from "@/components/booking/BookingFlowOtpPanel";
 import { BOOKING_STEP_EASE } from "@/components/booking/bookingMotion";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
+import { GROUP_TOGETHER_THRESHOLD_MIN } from "@/shared/booking/groupSchedulerCore";
 import { bookingDateYmdFromLocalDate } from "@/shared/booking/bookingConfirmLabels";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import {
@@ -1509,6 +1510,7 @@ export function BookingGroupFlow({
           currencyCode={salon.currencyCode}
           date={date}
           timezone={salon.timezone}
+          togetherThresholdMin={salon.groupTogetherThresholdMin}
           syncMode={syncMode}
           showStaff={salon.staffSelectionEnabled !== false}
           onSelect={(idx) => {
@@ -2712,6 +2714,7 @@ function ArrangementStep({
   currencyCode,
   date,
   timezone,
+  togetherThresholdMin,
   syncMode,
   showStaff,
   onSelect,
@@ -2737,6 +2740,9 @@ function ArrangementStep({
   date: string;
   /** FIX 06 — quick-pick labels resolve to salon-local weekdays. */
   timezone: string;
+  /** Per-salon togetherness threshold (minutes) for the partial-vs-all-together
+   *  ordering. */
+  togetherThresholdMin: number;
   /** Phase 1: sync mode, forwarded to ArrangementCard for label copy. */
   syncMode: GroupSyncMode;
   /** When false (salon hides staff selection) staff names are omitted. */
@@ -2802,6 +2808,7 @@ function ArrangementStep({
           groupCopy={groupCopy}
           date={date}
           timezone={timezone}
+          togetherThresholdMin={togetherThresholdMin}
           /* Task #05 — pass alternatives when present so the
            * empty state can offer split / earlier-today /
            * next-date cards instead of dead-ending. */
@@ -3093,6 +3100,7 @@ function EmptyState({
   groupCopy,
   date,
   timezone,
+  togetherThresholdMin,
   alternatives,
   onRetry,
   onBack,
@@ -3107,6 +3115,8 @@ function EmptyState({
   date: string;
   /** Salon IANA tz. */
   timezone: string;
+  /** Per-salon togetherness threshold (minutes). */
+  togetherThresholdMin: number;
   /** Task #05 — null when reason ≠ no_slots; otherwise the 3
    *  alternative records (any subset may itself be null when the
    *  corresponding sub-query timed out / found no candidate). */
@@ -3153,6 +3163,7 @@ function EmptyState({
         groupCopy={groupCopy}
         date={date}
         timezone={timezone}
+        togetherThresholdMin={togetherThresholdMin}
         onPickDate={onPickDate}
         onPickEarlier={onPickEarlier}
         onPickSplit={onPickSplit}
@@ -3216,6 +3227,7 @@ function AlternativesPanel({
   groupCopy,
   date,
   timezone,
+  togetherThresholdMin,
   onPickDate,
   onPickEarlier,
   onPickSplit,
@@ -3226,6 +3238,8 @@ function AlternativesPanel({
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
   date: string;
   timezone: string;
+  /** Per-salon togetherness threshold (minutes); falls back to the default. */
+  togetherThresholdMin: number;
   onPickDate: (ymd: string) => void;
   onPickEarlier: (kind: "morning" | "afternoon" | "evening") => void;
   onPickSplit: (split: NonNullable<GroupAlternatives["splitOption"]>) => void;
@@ -3249,10 +3263,72 @@ function AlternativesPanel({
   const next = alternatives.nextAvailableDate;
   const earlier = alternatives.earlierToday;
 
+  // Pha 1 — togetherness-aware ordering. Measure how far apart the split's
+  // main group and the late member start (both are wall-clock "HH:MM").
+  const hmToMin = (hm: string): number => {
+    const [h, m] = hm.split(":").map(Number);
+    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : NaN;
+  };
+  const splitGapMin = split
+    ? Math.abs(hmToMin(split.lateTime) - hmToMin(split.mainTime))
+    : NaN;
+  // When the split keeps everyone within the threshold it still feels
+  // "together" → offer it first. When the gap is larger it reads as a real
+  // split → lead with an all-together-different-time option instead.
+  const threshold =
+    Number.isFinite(togetherThresholdMin) && togetherThresholdMin >= 0
+      ? togetherThresholdMin
+      : GROUP_TOGETHER_THRESHOLD_MIN;
+  const splitStaysTogether =
+    split !== null &&
+    Number.isFinite(splitGapMin) &&
+    splitGapMin <= threshold;
+
   // Header capacity hint — pulled from the split sub-query when
   // present, since that's the only one that knows "N-1 fit at
   // mainTime". When split is null we surface the generic title.
   const showCapacityHint = split !== null;
+
+  const splitCard = split ? (
+    <AlternativeCard
+      testid="group-alt-split"
+      icon="👥"
+      title={(groupCopy.groupSplitOption ?? "{n} together at {time}, {late} more by {lateTime}")
+        .replace("{n}", String(split.mainSize))
+        .replace("{time}", split.mainTime)
+        .replace("{late}", String(split.lateCount))
+        .replace("{lateTime}", split.lateTime)}
+      subtitle={
+        splitStaysTogether
+          ? (groupCopy.groupSplitStillTogether ??
+              "Still together — just {gap} min apart ✨").replace(
+              "{gap}",
+              String(splitGapMin),
+            )
+          : (groupCopy.groupSplitDone ?? "Everyone done by {time}").replace(
+              "{time}",
+              split.assignments[split.assignments.length - 1]?.endDisplay ?? "",
+            )
+      }
+      ctaLabel={groupCopy.groupChooseOption ?? "Choose this option →"}
+      onClick={() => onPickSplit(split)}
+    />
+  ) : null;
+
+  const earlierCard = earlier ? (
+    <AlternativeCard
+      testid="group-alt-earlier"
+      icon="🕙"
+      title={(groupCopy.groupEarlierToday ?? "Same day at {time} — {n} people together")
+        .replace("{n}", String(earlier.arrangement.assignments.length))
+        .replace("{time}", earlier.time)}
+      subtitle={null}
+      ctaLabel={groupCopy.groupChooseOption ?? "Choose this option →"}
+      // The scheduler reports exactly which window this arrangement lands in
+      // (morning/afternoon/evening) — flip the selection deterministically.
+      onClick={() => onPickEarlier(earlier.arrivalKind)}
+    />
+  ) : null;
 
   return (
     <div
@@ -3275,47 +3351,20 @@ function AlternativesPanel({
         ) : null}
       </div>
 
-      {split ? (
-        <AlternativeCard
-          testid="group-alt-split"
-          icon="👥"
-          title={(groupCopy.groupSplitOption ?? "{n} people at {time}, {name} at {lateTime}")
-            .replace("{n}", String(split.mainSize))
-            .replace("{time}", split.mainTime)
-            .replace("{name}", split.lateMemberName)
-            .replace("{lateTime}", split.lateTime)}
-          subtitle={(groupCopy.groupSplitDone ?? "Everyone done by {time}").replace(
-            "{time}",
-            split.assignments[split.assignments.length - 1]?.endDisplay ?? "",
-          )}
-          ctaLabel={groupCopy.groupChooseOption ?? "Choose this option →"}
-          onClick={() => onPickSplit(split)}
-        />
-      ) : null}
-
-      {/* Same-day alternative FIRST — keeping the customer on the day they
-          asked for (just a different time) converts far better than pushing
-          them to the next day. */}
-      {earlier ? (
-        <AlternativeCard
-          testid="group-alt-earlier"
-          icon="🕙"
-          title={(earlier.arrangement.isWaveBooking
-            ? (groupCopy.groupEarlierTodayWaves ??
-              "Same day — {n} people in {waves} waves from {time}")
-            : (groupCopy.groupEarlierToday ??
-              "Same day at {time} — {n} people together"))
-            .replace("{n}", String(earlier.arrangement.assignments.length))
-            .replace("{waves}", String(earlier.arrangement.waveCount))
-            .replace("{time}", earlier.time)}
-          subtitle={null}
-          ctaLabel={groupCopy.groupChooseOption ?? "Choose this option →"}
-          // The scheduler reports exactly which window this arrangement lands
-          // in (morning/afternoon/evening) — flip the selection to it
-          // deterministically, no before/after-noon guessing.
-          onClick={() => onPickEarlier(earlier.arrivalKind)}
-        />
-      ) : null}
+      {/* Togetherness-aware order: a small offset still feels "together" so
+          we lead with the split; a larger gap reads as a real split, so we
+          lead with an all-together-different-time option instead. */}
+      {splitStaysTogether ? (
+        <>
+          {splitCard}
+          {earlierCard}
+        </>
+      ) : (
+        <>
+          {earlierCard}
+          {splitCard}
+        </>
+      )}
 
       {next ? (
         <AlternativeCard
@@ -3337,6 +3386,24 @@ function AlternativesPanel({
           ctaLabel={groupCopy.groupChooseOption ?? "Choose this option →"}
           onClick={() => onPickDate(next.date)}
         />
+      ) : null}
+
+      {/* Explicit "keep us together" escape hatch — when a partial/split is on
+          offer, let the customer decline the small offset in one tap and jump
+          straight to an all-together time (same-day preferred, else next day). */}
+      {split && (earlier || next) ? (
+        <button
+          type="button"
+          data-testid="group-alt-prefer-together"
+          onClick={() => {
+            if (earlier) onPickEarlier(earlier.arrivalKind);
+            else if (next) onPickDate(next.date);
+          }}
+          className="w-full rounded-xl border border-nq-primary/40 bg-nq-primary/5 px-4 py-3 text-sm font-medium text-nq-primary transition-colors hover:bg-nq-primary/10"
+        >
+          {groupCopy.groupPreferAllTogether ??
+            "I'd rather everyone start at the same time →"}
+        </button>
       ) : null}
 
       <div className="flex gap-2 pt-1">

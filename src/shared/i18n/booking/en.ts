@@ -508,9 +508,10 @@ export const bookingEn = {
     /** Split-option card title. `{n}` = main size, `{time}` =
      *  main wall-time, `{name}` = late member name, `{lateTime}` =
      *  late wall-time. */
-    groupSplitOption: "{n} people at {time}, {name} at {lateTime}",
+    groupSplitOption: "{n} together at {time}, {late} more by {lateTime}",
     /** Split-option card subtitle — "Everyone done by HH:MM". */
     groupSplitDone: "Everyone done by {time}",
+    groupSplitStillTogether: "Still together — just {gap} min apart ✨",
     /** Next-available-date card title. `{label}` = "Tomorrow" or
      *  localized weekday+day, `{n}` = full group size, `{time}` =
      *  earliest start wall-time on that day. */
@@ -526,6 +527,7 @@ export const bookingEn = {
     groupEarlierTodayWaves: "Same day — {n} people in {waves} waves from {time}",
     /** Per-card "Choose this option →" CTA label. */
     groupChooseOption: "Choose this option →",
+    groupPreferAllTogether: "I'd rather everyone start at the same time →",
     /** "Try a different date" — last-resort back-out shown
      *  alongside the cards. Distinct from the legacy
      *  `schedulingTryDate` so PMs can tune it without affecting

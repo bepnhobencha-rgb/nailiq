@@ -73,6 +73,10 @@ export type BookingSalonMeta = {
   staffSelectionEnabled: boolean;
   /** `salons.booking_lead_minutes` — minimum same-day advance notice. Default 15. */
   bookingLeadMinutes: number;
+  /** `salons.group_together_threshold_minutes` — group members within this
+   *  spread still count as "together"; drives the partial-vs-all-together
+   *  ordering in the group flow. Default 30. */
+  groupTogetherThresholdMin: number;
   /** Whether the booking flow offers the optional reference-image upload.
    *  Resolved from salons.reference_image_enabled ?? vertical default. */
   referenceImageEnabled: boolean;
@@ -410,6 +414,15 @@ export async function loadBookingServicesForSalonSlug(
           (salon as { booking_lead_minutes?: unknown }).booking_lead_minutes,
         );
         return Number.isFinite(v) && v >= 0 ? Math.round(v) : 15;
+      })(),
+      // `salons.group_together_threshold_minutes` (migration 20260608130000).
+      // Default 30.
+      groupTogetherThresholdMin: (() => {
+        const v = Number(
+          (salon as { group_together_threshold_minutes?: unknown })
+            .group_together_threshold_minutes,
+        );
+        return Number.isFinite(v) && v >= 0 ? Math.round(v) : 30;
       })(),
       // Per-salon override; NULL falls back to the vertical's default.
       referenceImageEnabled: (() => {
