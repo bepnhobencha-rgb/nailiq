@@ -4,7 +4,8 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import type { CustomerChannelMode } from "@/shared/lib/channelResolver";
 
 export interface CustomerChannelSettings {
-  smsA2pRegistered: boolean;
+  smsOutboundEnabled: boolean;
+  emailOutboundEnabled: boolean;
   customerChannel: CustomerChannelMode;
 }
 
@@ -16,15 +17,17 @@ export async function getCustomerChannelSettings(
     if (!ctx) return { ok: false };
     const { data } = await ctx.supabase
       .from("salons")
-      .select("sms_a2p_registered, customer_channel" as never)
+      .select("sms_outbound_enabled, email_outbound_enabled, customer_channel" as never)
       .eq("id", ctx.salon.id)
       .maybeSingle();
     if (!data) return { ok: false };
+    const d = data as { sms_outbound_enabled?: boolean | null; email_outbound_enabled?: boolean | null; customer_channel?: string };
     return {
       ok: true,
       settings: {
-        smsA2pRegistered: Boolean((data as { sms_a2p_registered?: boolean }).sms_a2p_registered),
-        customerChannel: ((data as { customer_channel?: string }).customer_channel || "smart") as CustomerChannelMode,
+        smsOutboundEnabled: d.sms_outbound_enabled !== false,
+        emailOutboundEnabled: d.email_outbound_enabled !== false,
+        customerChannel: (d.customer_channel || "smart") as CustomerChannelMode,
       },
     };
   } catch {
@@ -43,7 +46,8 @@ export async function saveCustomerChannelSettings(
     const { error } = await ctx.supabase
       .from("salons")
       .update({
-        sms_a2p_registered: settings.smsA2pRegistered,
+        sms_outbound_enabled: settings.smsOutboundEnabled,
+        email_outbound_enabled: settings.emailOutboundEnabled,
         customer_channel: settings.customerChannel,
       } as never)
       .eq("id", ctx.salon.id);

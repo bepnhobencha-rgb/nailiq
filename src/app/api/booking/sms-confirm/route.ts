@@ -72,7 +72,7 @@ export async function POST(req: Request) {
   // Check if SMS is enabled for this salon
   const { data: salon } = await db
     .from("salons")
-    .select("name, slug, subscription_plan, plan_override, address")
+    .select("name, slug, subscription_plan, plan_override, address, email_outbound_enabled")
     .eq("id", salonId)
     .maybeSingle();
 
@@ -179,11 +179,13 @@ export async function POST(req: Request) {
     errorMessage: result.error,
   });
 
+  const emailOutboundEnabled = (salon as { email_outbound_enabled?: boolean | null }).email_outbound_enabled !== false;
+
   // Email confirmation — parallel channel when customer has an email on file
   // and the rich email wasn't already sent by submitPublicBooking (e.g. desk
   // bookings, or online bookings where the customer skipped the email field).
   // Best-effort: never blocks the SMS response.
-  if (clientEmailOnFile && !isGroup && serviceName && staffName) {
+  if (emailOutboundEnabled && clientEmailOnFile && !isGroup && serviceName && staffName) {
     void (async () => {
       // Only send if no email confirmation was logged yet for this booking.
       const { count } = await db

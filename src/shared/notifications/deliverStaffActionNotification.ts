@@ -65,7 +65,7 @@ export async function deliverStaffActionNotification(
 
   const { data: salonRow } = await supabase
     .from("salons")
-    .select("name, phone, timezone, default_notification_locale")
+    .select("name, phone, timezone, default_notification_locale, email_outbound_enabled")
     .eq("id", input.salonId)
     .maybeSingle();
   const salon = (salonRow ?? {}) as {
@@ -73,7 +73,9 @@ export async function deliverStaffActionNotification(
     phone?: string | null;
     timezone?: string | null;
     default_notification_locale?: string | null;
+    email_outbound_enabled?: boolean | null;
   };
+  const emailOutboundEnabled = salon.email_outbound_enabled !== false;
 
   const locale: SupportedLocale =
     input.localeOverride ??
@@ -133,7 +135,7 @@ export async function deliverStaffActionNotification(
     }
   }
 
-  if (input.channels.email && row.client_email) {
+  if (emailOutboundEnabled && input.channels.email && row.client_email) {
     const subject = buildStaffActionEmailSubject(input.event, locale, vars.salonName);
     const body = buildStaffActionSms(input.event, locale, vars);
     const client = getResendClient();

@@ -88,7 +88,7 @@ export async function GET(req: Request) {
     no_show_risk_score, client_locale,
     reminder_24h_sent_at, reminder_3h_sent_at,
     services!bookings_service_id_fkey(name), staff(name),
-    salons(name, slug, email, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, feature_flags)`;
+    salons(name, slug, email, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, email_outbound_enabled, feature_flags)`;
 
   // Fetch both email-eligible AND SMS-eligible bookings (no email filter here).
   const { data: need24h } = await supabase
@@ -117,7 +117,8 @@ export async function GET(req: Request) {
     if (reminderType === "24h" && !salon.reminder_24h_enabled) return;
     if (reminderType === "3h"  && !salon.reminder_3h_enabled)  return;
 
-    const wantsEmail = !!booking.client_email;
+    const emailOutboundEnabled = (salon as { email_outbound_enabled?: boolean | null }).email_outbound_enabled !== false;
+    const wantsEmail = emailOutboundEnabled && !!booking.client_email;
     const wantsSms   = salon.sms_reminders_enabled && !!booking.client_phone;
 
     if (!wantsEmail && !wantsSms) return;
