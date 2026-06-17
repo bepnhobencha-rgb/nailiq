@@ -400,8 +400,8 @@ export function BookingBlock(props: BookingBlockProps) {
     styles.root,
     // Walkin accent: only when not a group (group color takes priority).
     isWalkin && showWalkinAccent && !groupAccent && "border-l-[3px] border-nq-primary",
-    // Group accent: dynamic color via inline style below, but we need the width class here.
-    groupAccent && "border-l-[3px]",
+    // Group accent border-width is in inline style (not className) so Tailwind v4
+    // layer ordering can't override it with the STATUS_STYLES `border` shorthand.
     isCompleted && "opacity-70",
     // While dragging, hide the ORIGINAL block so only the moving dashed ghost
     // (with the live snap time) shows — one clean block instead of two.
@@ -414,7 +414,9 @@ export function BookingBlock(props: BookingBlockProps) {
     left: leftPx,
     width: Math.max(0, widthPx - 4),
     ...(minHeightPx !== undefined ? { minHeight: minHeightPx } : {}),
-    ...(groupAccent ? { borderLeftColor: groupAccent } : {}),
+    ...(groupAccent
+      ? { borderLeftWidth: "3px", borderLeftStyle: "solid", borderLeftColor: groupAccent }
+      : {}),
   };
 
   const inner = (
