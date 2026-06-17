@@ -119,17 +119,17 @@ export const userVi: UserMessages = {
     registrationDisabledBody:
       "Hiện tại chúng tôi không thể nhận đăng ký mới. Vui lòng thử lại sau.",
     success: {
-      title: "Tiệm của bạn đã hoạt động!",
+      title: "Tiệm đã tạo xong!",
       subtext:
-        "Bạn có thể nhận lịch ngay — chia sẻ link đến những nơi khách đã từng nhắn cho bạn.",
+        "Hoàn thành thiết lập để kích hoạt trang đặt lịch.",
       slugAdjusted:
         "Đường dẫn bạn chọn đã có người dùng, nên chúng tôi giữ {slug} cho bạn.",
       callout:
-        "Khách đã có thể đặt lịch trên trang của bạn — mở trang một lần để kiểm tra, rồi gửi link qua Instagram hoặc SMS.",
+        "3 bước nhanh trên dashboard: thêm dịch vụ, nhân viên, địa chỉ — rồi link đặt lịch sẽ mở.",
       salonOwnerLabel: "Chủ tiệm",
-      goToDashboard: "Vào bảng điều khiển",
+      goToDashboard: "Vào bảng điều khiển →",
       dashboardHint:
-        "Nếu hồ sơ tiệm chưa hoàn thiện, bảng điều khiển sẽ hiển thị danh sách thiết lập (dịch vụ, nhân viên, giờ mở, địa chỉ) trước khi đề xuất nhận lịch thật.",
+        "Link đặt lịch sẽ hiện sau khi bạn hoàn thành thiết lập.",
       bookingLinkLabel: "Link đặt lịch công khai",
       copyLink: "Sao chép link",
       copied: "Đã chép",
