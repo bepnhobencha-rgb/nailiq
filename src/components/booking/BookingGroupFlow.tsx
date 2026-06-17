@@ -50,6 +50,11 @@ import {
   resolveNoShowCardRequirement,
   type NoShowCardRequirement,
 } from "@/shared/noshow/resolveNoShowCardRequirement";
+import { NoShowCardCapture } from "./NoShowCardCapture";
+import {
+  resolveSavedNoShowCard,
+  type SavedNoShowCard,
+} from "@/shared/noshow/resolveSavedNoShowCard";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { formatPhoneInputProgressive } from "@/shared/lib/phoneFormat";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
@@ -1377,6 +1382,7 @@ export function BookingGroupFlow({
     return (
       <SuccessPanel
         groupCopy={groupCopy}
+        t={t}
         successResult={successResult}
         members={members}
         services={services}
@@ -1387,6 +1393,9 @@ export function BookingGroupFlow({
         seatTogether={seatTogether}
         partyLinkUrl={partyLinkUrl}
         partyLinkFailed={partyLinkFailed}
+        currencyCode={salon.currencyCode}
+        otpSessionId={otpSessionId}
+        salonId={salon.id}
       />
     );
   }
@@ -3967,6 +3976,7 @@ function ConfirmStep({
 
 function SuccessPanel({
   groupCopy,
+  t,
   successResult,
   members,
   services,
@@ -3977,8 +3987,12 @@ function SuccessPanel({
   seatTogether,
   partyLinkUrl,
   partyLinkFailed,
+  currencyCode,
+  otpSessionId,
+  salonId,
 }: {
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
+  t: BookingMessages;
   successResult: { groupId: string; bookingIds: string[] };
   showStaff: boolean;
   /** Couple/group asked to be seated together — warm confirmation line. */
@@ -3997,11 +4011,37 @@ function SuccessPanel({
   partyLinkUrl: string | null;
   /** True when createPartyLink returned ok:false or threw — triggers non-blocking warning. */
   partyLinkFailed: boolean;
+  /** Salon currency — for the no-show card-capture fee label. */
+  currencyCode: BookingSalonMeta["currencyCode"];
+  /** OTP session id (organizer) — gates one-tap reuse of a saved card. */
+  otpSessionId: string | null;
+  /** Salon id — needed to resolve the organizer's saved card on file. */
+  salonId: string;
 }) {
   const arrangement =
     scheduleResult && scheduleResult.ok
       ? scheduleResult.arrangements[selectedArrangementIdx]
       : null;
+
+  // Resolve the organizer's saved card on file (if any) so the no-show capture
+  // can offer one-tap reuse instead of fresh entry — mirroring the single flow.
+  const leadBookingId = successResult.bookingIds[0];
+  const [savedCard, setSavedCard] = useState<SavedNoShowCard | null>(null);
+  useEffect(() => {
+    if (!leadBookingId || !otpSessionId) return;
+    let alive = true;
+    resolveSavedNoShowCard({ salonId, otpSessionId })
+      .then((r) => {
+        if (alive) setSavedCard(r);
+      })
+      .catch(() => {
+        if (alive) setSavedCard(null); // best-effort: fall back to fresh entry
+      });
+    return () => {
+      alive = false;
+    };
+  }, [leadBookingId, otpSessionId, salonId]);
+
   return (
     <section
       data-testid="booking-group-success"
@@ -4061,8 +4101,20 @@ function SuccessPanel({
         </p>
       ) : null}
 
-      {/* No-show card is now captured at the CONFIRM step (Option A — like the
-          individual flow), not here after success. */}
+      {/* No-show card capture for the organizer (lead booking carries the
+          phone). Self-gates: renders the card form only when the lead is
+          risk-flagged + Square is configured — same as the individual flow. */}
+      {successResult.bookingIds[0] ? (
+        <div className="mt-5 text-left">
+          <NoShowCardCapture
+            bookingId={successResult.bookingIds[0]}
+            currencyFormat={(cents) => formatCurrency(cents, currencyCode) ?? ""}
+            t={t}
+            savedCard={savedCard}
+            otpSessionId={otpSessionId}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }

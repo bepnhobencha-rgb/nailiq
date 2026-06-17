@@ -9,6 +9,102 @@ import {
   useStripe,
 } from "@stripe/react-stripe-js";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
+import type { SavedNoShowCard } from "@/shared/noshow/resolveSavedNoShowCard";
+import { reuseNoShowCardAction } from "@/shared/noshow/saveNoShowCardAction";
+
+/**
+ * Saved-card reuse tile for the Stripe path. The reuse action is
+ * provider-agnostic (re-derives the card from the OTP-verified phone
+ * server-side), so we can offer one-tap reuse here too without touching Stripe
+ * Elements. Mirrors the Square reuse tile in NoShowCardCapture.tsx.
+ */
+function StripeSavedCardReuseTile({
+  bookingId,
+  otpSessionId,
+  savedCard,
+  feeLabel,
+  t,
+  onUseDifferent,
+  onSaved,
+}: {
+  bookingId: string;
+  otpSessionId: string;
+  savedCard: { hasSavedCard: true; brand: string; last4: string };
+  feeLabel: string;
+  t: BookingMessages;
+  onUseDifferent: () => void;
+  onSaved: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  async function onReuse() {
+    if (saving) return;
+    setSaving(true);
+    setErrorMsg(null);
+    try {
+      const r = await reuseNoShowCardAction({ bookingId, otpSessionId, consent: true });
+      if (r.ok) {
+        onSaved();
+      } else {
+        setErrorMsg(t.noShowCardError ?? "Could not use your saved card.");
+      }
+    } catch {
+      setErrorMsg(t.noShowCardError ?? "Could not use your saved card.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="mt-5 rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4 sm:p-5"
+      data-testid="saved-card-reuse"
+    >
+      <p className="text-sm font-semibold text-[var(--booking-text)]">
+        {t.noShowCardTitle ?? "Secure your appointment"}
+      </p>
+      <div className="mt-3 flex items-center gap-3 rounded-lg border border-[var(--booking-border)] bg-[var(--booking-bg-input)] px-3 py-3">
+        <span aria-hidden className="text-base">💳</span>
+        <span className="text-sm font-medium text-[var(--booking-text)]">
+          {savedCard.brand || "Card"} •••• {savedCard.last4}
+        </span>
+        <span className="ml-auto rounded-full bg-[var(--salon-primary)]/15 px-2 py-0.5 text-[11px] font-semibold text-[var(--salon-primary)]">
+          {t.noShowSavedCardOnFile ?? "On file"}
+        </span>
+      </div>
+      <p className="mt-2 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+        {(t.noShowSavedCardDesc ??
+          "We'll use your saved card. You're only charged {fee} if you don't show up — nothing now.").replace(
+          "{fee}",
+          feeLabel,
+        )}
+      </p>
+      {errorMsg ? (
+        <p className="mt-2 text-xs text-nq-error" role="alert">
+          {errorMsg}
+        </p>
+      ) : null}
+      <button
+        type="button"
+        onClick={onReuse}
+        disabled={saving}
+        data-testid="noshow-card-reuse-confirm"
+        className="mt-3 h-11 w-full rounded-xl bg-[var(--salon-primary)] text-sm font-semibold text-white disabled:opacity-50"
+      >
+        {saving ? (t.noShowCardSaving ?? "Saving…") : (t.noShowCardSave ?? "Use saved card")}
+      </button>
+      <button
+        type="button"
+        data-testid="use-different-card"
+        onClick={onUseDifferent}
+        className="mt-2 text-xs font-semibold text-[var(--salon-primary)] underline"
+      >
+        {t.noShowUseDifferentCard ?? "Use a different card"}
+      </button>
+    </div>
+  );
+}
 
 /**
  * Stripe one-tap no-show card capture. The Payment Element renders Apple Pay /
@@ -131,18 +227,25 @@ export function NoShowCardCaptureStripe({
   publishableKey,
   feeLabel,
   t,
+  savedCard,
+  otpSessionId,
 }: {
   bookingId: string;
   clientSecret: string;
   publishableKey: string;
   feeLabel: string;
   t: BookingMessages;
+  /** Returning OTP-verified customer's card on file — enables one-tap reuse. */
+  savedCard?: SavedNoShowCard | null;
+  /** OTP session id — required for the server-authoritative reuse action. */
+  otpSessionId?: string | null;
 }) {
   const stripePromise = useMemo(
     () => (publishableKey ? loadStripe(publishableKey) : null),
     [publishableKey],
   );
   const [saved, setSaved] = useState(false);
+  const [useDifferentCard, setUseDifferentCard] = useState(false);
 
   if (saved) {
     return (
@@ -159,6 +262,23 @@ export function NoShowCardCaptureStripe({
       </div>
     );
   }
+
+  // Returning customer with a card on file → one-tap reuse (provider-agnostic
+  // action), unless they chose to enter a different card.
+  if (savedCard?.hasSavedCard && otpSessionId && !useDifferentCard) {
+    return (
+      <StripeSavedCardReuseTile
+        bookingId={bookingId}
+        otpSessionId={otpSessionId}
+        savedCard={savedCard}
+        feeLabel={feeLabel}
+        t={t}
+        onUseDifferent={() => setUseDifferentCard(true)}
+        onSaved={() => setSaved(true)}
+      />
+    );
+  }
+
   if (!stripePromise) return null;
 
   return (
