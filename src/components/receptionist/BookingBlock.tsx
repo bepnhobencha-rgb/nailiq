@@ -68,6 +68,17 @@ const GROUP_PALETTE = [
   "#06b6d4", // cyan
 ] as const;
 
+// Narrow blocks clip long names mid-character with overflow-wrap:normal.
+// Show "First L." for medium blocks, first name only for very narrow ones.
+// Full name is always in tooltipTitle (hover) and the detail drawer.
+function formatDisplayName(name: string, widthPx: number): string {
+  if (widthPx >= 160) return name;
+  const parts = name.trim().split(/\s+/);
+  if (parts.length <= 1) return name;
+  if (widthPx >= 100) return `${parts[0]} ${parts[parts.length - 1][0]}.`;
+  return parts[0];
+}
+
 function groupColorFromId(groupId: string): string {
   let h = 0;
   for (let i = 0; i < groupId.length; i++) {
@@ -547,7 +558,7 @@ export function BookingBlock(props: BookingBlockProps) {
                 ⚠
               </span>
             ) : null}
-            {clientName}
+            {formatDisplayName(clientName, widthPx)}
           </p>
           {showMetaLine ? (
             <p className={cn("truncate text-[11px] leading-snug", styles.meta)}>

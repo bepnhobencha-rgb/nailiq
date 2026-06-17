@@ -226,7 +226,9 @@ function PartyCardItem({
   onCancelConfirm: (notify: { sms: boolean; email: boolean }) => void;
   onDeskClaim?: (claimId: string, memberName: string, memberPhone?: string) => Promise<{ ok: boolean }>;
 }) {
-  const [slotsOpen, setSlotsOpen] = useState(false);
+  // Auto-expand slots when today's group has unclaimed members so reception
+  // sees immediately who hasn't confirmed without needing to click.
+  const [slotsOpen, setSlotsOpen] = useState(!card.expired && card.pendingCount > 0);
 
   return (
     <div

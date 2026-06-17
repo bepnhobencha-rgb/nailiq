@@ -1566,7 +1566,7 @@ export async function loadReceptionistCenterData(
   };
 }
 
-const COMING_UP_WINDOW_MINUTES = 30;
+const COMING_UP_WINDOW_MINUTES = 60;
 const POPULAR_SERVICE_MAX = 3;
 const POPULAR_SERVICE_MIN_BOOKINGS = 2;
 
