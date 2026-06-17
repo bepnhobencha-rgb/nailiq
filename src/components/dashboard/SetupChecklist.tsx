@@ -5,6 +5,7 @@ import { isOpeningHoursCustomized } from "@/shared/dashboard/openingHoursDefault
 import { getUserMessages } from "@/shared/i18n/user";
 import type { UserLanguage } from "@/shared/i18n/user/types";
 import { cn } from "@/shared/lib/cn";
+import { resolveVertical } from "@/shared/verticals/registry";
 
 export type SetupChecklistSalon = {
   services_count: number;
@@ -12,6 +13,7 @@ export type SetupChecklistSalon = {
   address: string | null;
   opening_hours: unknown;
   email: string | null;
+  vertical?: string | null;
 };
 
 export function SetupChecklist({
@@ -30,34 +32,46 @@ export function SetupChecklist({
   const t = getUserMessages(language).ownerDashboard.setupChecklist;
   const openingHoursCustomized = isOpeningHoursCustomized(salon.opening_hours);
 
+  const verticalConfig = resolveVertical(salon.vertical);
+  const serviceHint = verticalConfig.seedServices
+    .slice(0, 3)
+    .map((s) => s.name)
+    .join(", ");
+  const egPrefix = language === "vi" ? "vd." : "e.g.";
+
   const items = [
     {
       key: "services",
       label: t.addServices,
+      hint: serviceHint ? `${egPrefix} ${serviceHint}` : undefined,
       done: salon.services_count > 1,
       href: `/dashboard/${slug}/setup/services`,
     },
     {
       key: "staff",
       label: t.addStaff,
+      hint: undefined,
       done: salon.staff_count > 1,
       href: `/dashboard/${slug}/setup/staff`,
     },
     {
       key: "hours",
       label: t.setHours,
+      hint: undefined,
       done: openingHoursCustomized,
       href: `/dashboard/${slug}/setup/hours`,
     },
     {
       key: "address",
       label: t.addAddress,
+      hint: undefined,
       done: !!salon.address?.trim(),
       href: `/dashboard/${slug}/setup/address`,
     },
     {
       key: "email",
       label: t.addEmail,
+      hint: undefined,
       // Treat auth-level email (e.g. Google OAuth) as satisfying this step —
       // OAuth users already have an email and should not be marked incomplete.
       done: !!(salon.email?.trim() || viewerEmail?.trim()),
@@ -138,8 +152,15 @@ export function SetupChecklist({
                 >
                   +
                 </span>
-                <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-nq-foreground group-hover:text-nq-primary">
-                  {item.label}
+                <span className="min-w-0 flex-1 leading-snug">
+                  <span className="block text-sm font-medium text-nq-foreground group-hover:text-nq-primary">
+                    {item.label}
+                  </span>
+                  {item.hint ? (
+                    <span className="block text-xs text-nq-muted/70">
+                      {item.hint}
+                    </span>
+                  ) : null}
                 </span>
                 <span
                   aria-hidden

@@ -56,7 +56,7 @@ import { ACTIVE_GRID_STATUSES } from "@/shared/types";
  *  at the time of writing; the column itself exists. Here we read
  *  the value through `as { … }` casts at the call site instead. */
 const SALON_DASHBOARD_SELECT =
-  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, subscription_plan, plan_override, feature_flags, voice_ai_enabled, basic_mode_forced";
+  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, subscription_plan, plan_override, feature_flags, voice_ai_enabled, basic_mode_forced, vertical";
 
 type SalonRow = {
   id: string;
@@ -93,6 +93,8 @@ type SalonRow = {
   /** `salons.basic_mode_forced` — when true, Basic Mode is auto-enabled and
    *  locked for the Receptionist board. Flows to `preFetchedSalon`. */
   basic_mode_forced?: boolean | null;
+  /** Business vertical slug (e.g. "nail_salon", "head_spa"). */
+  vertical?: string | null;
 };
 
 async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
@@ -325,6 +327,7 @@ export type LoadSalonDashboardResult =
         salon_phone: string | null;
         opening_hours: unknown | null;
         profile_complete: boolean;
+        vertical: string | null;
       };
       setup: {
         services_count: number;
@@ -431,6 +434,7 @@ export async function loadSalonOwnerDashboard(
       salon_phone: salon.salon_phone ?? null,
       opening_hours: salon.opening_hours ?? null,
       profile_complete: !!salon.profile_complete,
+      vertical: typeof salon.vertical === "string" ? salon.vertical : null,
     },
     setup: {
       services_count: servicesCount ?? 0,

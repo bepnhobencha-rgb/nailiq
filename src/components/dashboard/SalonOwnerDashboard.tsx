@@ -391,6 +391,7 @@ export function SalonOwnerDashboard({
               address: data.salon.address,
               opening_hours: data.salon.opening_hours,
               email: data.salon.email,
+              vertical: data.salon.vertical,
             }}
             slug={slug}
             language={language}
