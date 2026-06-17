@@ -25,6 +25,7 @@ export type WinbackCandidate = {
   visits: number;
   lastVisit: string;
   noShows: number;
+  usualService: string | null;
 };
 
 let client: Anthropic | null = null;
@@ -72,6 +73,7 @@ export async function gatherWinbackCandidates(
       visits: num(r.visits),
       lastVisit: str(r.last_visit),
       noShows: num(r.no_shows),
+      usualService: str(r.usual_service) || null,
     });
     if (out.length >= limit) break;
   }
@@ -89,12 +91,15 @@ export async function agentDraftWinback(
 
   const weeks = Math.max(1, Math.round((Date.now() - Date.parse(c.lastVisit)) / (7 * 864e5)));
   const langLabel = lang === "vi" ? "tiếng Việt" : "English";
+  const serviceHint = c.usualService
+    ? ` They usually get "${c.usualService}".`
+    : "";
   const prompt = `Write a short, warm, genuine win-back message in ${langLabel} for a salon customer who hasn't been in for a while. Make them feel remembered, not sold to.
 
-Customer: ${c.name}, visited ${c.visits} times before, last visit about ${weeks} weeks ago.
+Customer: ${c.name}, visited ${c.visits} times before, last visit about ${weeks} weeks ago.${serviceHint}
 Salon: ${salonName}.
 
-Rules: 1-2 sentences, friendly + personal, mention the salon by name, gently invite them to come back, NO emojis, NO links (those are added when sent). Return ONLY the message text, nothing else.`;
+Rules: 1-2 sentences, friendly + personal, mention the salon by name, if a service is given naturally reference it (e.g. "ready for your next Hi-Lite Royal?"), gently invite them to come back, NO emojis, NO links (those are added when sent). Return ONLY the message text, nothing else.`;
 
   try {
     const resp = await ai.messages.create({
@@ -178,26 +183,32 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
     let sentCount = 0;
 
     for (const c of candidates) {
-      const lang: "en" | "vi" = "en";
-      const message = await agentDraftWinback(c, salonName, lang);
-      if (!message) continue;
-
+      // Resolve channel BEFORE drafting — no point spending AI tokens on a
+      // message that can't be delivered.
       const ch = resolveCustomerChannel({
         mode: customerChannelMode,
         smsA2pRegistered,
         customerEmail: c.email,
       });
 
-      // Skip this candidate entirely when neither channel is available — don't
-      // waste Anthropic credits on a draft that can't reach anyone. The dedupe
-      // guard (winback_suggestions last-30-days) is NOT written for skipped
-      // candidates so they'll be retried once the salon gains a channel.
       if (ch.noChannel) {
         console.warn(
           `[runWinback] no channel for ${c.name} (${c.phone}) — reason: ${ch.reason}. Add email or complete A2P.`,
         );
+        void svc.from("ai_actions_log" as never).insert({
+          salon_id: salonId,
+          agent: "winback",
+          action_type: "skipped_no_channel",
+          target_id: null,
+          payload: { name: c.name, phone: c.phone, reason: ch.reason },
+          undo_deadline: null,
+        } as never);
         continue;
       }
+
+      const lang: "en" | "vi" = "en";
+      const message = await agentDraftWinback(c, salonName, lang);
+      if (!message) continue;
 
       // Derive a single canonical channel for logging (prefer email to record deliverability).
       const channel: "sms" | "email" = ch.email ? "email" : "sms";
