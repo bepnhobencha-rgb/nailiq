@@ -2,6 +2,7 @@ import { after } from "next/server";
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
+import { logBookingEvent } from "@/shared/dashboard/auditLog";
 
 export async function POST(req: Request) {
   let body: { token?: string };
@@ -51,6 +52,18 @@ export async function POST(req: Request) {
 
   if (!row?.ok) {
     return NextResponse.json({ ok: false, code: row?.code ?? "unknown" }, { status: 400 });
+  }
+
+  // Audit log — customer cancelled via email link
+  if (tr && bookingMeta) {
+    void logBookingEvent({
+      bookingId: tr.booking_id,
+      salonId: bookingMeta.salon_id,
+      actorUserId: null,
+      actorRole: "public_guest",
+      eventType: "booking_cancelled",
+      payload: { reason: "customer_email_link" },
+    });
   }
 
   // Fire waitlist notification email after response is sent

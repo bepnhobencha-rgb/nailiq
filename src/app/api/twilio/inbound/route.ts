@@ -181,6 +181,15 @@ export async function POST(req: NextRequest) {
   });
 
   if (ok) {
+    const { logBookingEvent } = await import("@/shared/dashboard/auditLog");
+    void logBookingEvent({
+      bookingId: booking.id,
+      salonId: booking.salon_id,
+      actorUserId: null,
+      actorRole: "public_guest",
+      eventType: "booking_cancelled",
+      payload: { reason: "sms_cancel" },
+    });
     const bookingDateYmd = booking.start_time_utc.split("T")[0];
     after(async () => {
       const { notifyWaitlistForSlot } = await import("@/shared/noshow/waitlistAutoFill");
