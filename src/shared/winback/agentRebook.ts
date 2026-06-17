@@ -5,6 +5,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
+import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 
 /**
  * AI "Due to Rebook" — the proactive sibling of win-back. Win-back chases
@@ -124,14 +125,17 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
     const db = looseServiceClient();
     const { data: salon } = await db
       .from("salons")
-      .select("name, feature_flags, slug" as never)
+      .select("name, email, feature_flags, slug, sms_a2p_registered, customer_channel" as never)
       .eq("id", salonId)
       .maybeSingle();
     const s = (salon as Row | null) ?? {};
     if ((s.feature_flags as Record<string, unknown> | null)?.ai_rebook !== true) return;
     const salonName = str(s.name) || "our salon";
     const salonSlug = str(s.slug) || "";
-    const bookingUrl = `${SITE_URL}/${salonSlug}`;
+    const salonReplyEmail = str(s.email) || null;
+    const bookingUrl = `${SITE_URL}/${salonSlug}?ref=rebook`;
+    const smsA2pRegistered = Boolean(s.sms_a2p_registered);
+    const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
 
     const candidates = await gatherRebookCandidates(salonId, cap);
     if (candidates.length === 0) return;
@@ -140,23 +144,45 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
     let sentCount = 0;
 
     for (const c of candidates) {
+      // Resolve channel BEFORE drafting — no point spending AI tokens on a
+      // message that can't be delivered.
+      const ch = resolveCustomerChannel({
+        mode: customerChannelMode,
+        smsA2pRegistered,
+        customerEmail: c.email,
+      });
+
+      if (ch.noChannel) {
+        console.warn(`[runRebook] no channel for ${c.name} — reason: ${ch.reason}`);
+        void svc.from("ai_actions_log" as never).insert({
+          salon_id: salonId,
+          agent: "rebook",
+          action_type: "skipped_no_channel",
+          target_id: null,
+          payload: { name: c.name, phone: c.phone, reason: ch.reason },
+          undo_deadline: null,
+        } as never);
+        continue;
+      }
+
       const lang: "en" | "vi" = "en";
       const message = await agentDraftRebook(c, salonName, lang);
       if (!message) continue;
 
-      const channel: "sms" | "email" = c.email ? "email" : "sms";
+      const channel: "sms" | "email" = ch.email ? "email" : "sms";
 
       let ok = false;
-      if (channel === "sms") {
+      if (ch.sms) {
         const r = await sendSmsReminder(c.phone, `${message}\n${bookingUrl}`, { lang });
         ok = r.ok;
-      } else if (c.email) {
+      }
+      if (ch.email && c.email) {
         const resend = getResendClient();
         if (resend) {
-          const esc = (x: string) => x.replace(/[<>&"]/g, (ch) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[ch] ?? ch));
+          const esc = (x: string) => x.replace(/[<>&"]/g, (c2) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c2] ?? c2));
           const html = `<div style="max-width:480px;margin:0 auto;font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a"><p style="font-size:15px;line-height:1.7;margin:0 0 16px">${esc(message)}</p><a href="${bookingUrl}" style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:14px">Book now</a><p style="font-size:12px;color:#999;margin-top:20px">${esc(salonName)}</p></div>`;
-          const { error } = await resend.emails.send({ from: getResendFrom(), to: c.email, subject: `Time for your next visit at ${salonName}`, html, text: `${message}\n\n${bookingUrl}` });
-          ok = !error;
+          const { error } = await resend.emails.send({ from: getResendFrom(), to: c.email, subject: `Time for your next visit at ${salonName}`, html, text: `${message}\n\n${bookingUrl}`, ...(salonReplyEmail ? { replyTo: salonReplyEmail } : {}) });
+          ok = ok || !error;
         }
       }
 
@@ -188,7 +214,7 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
         agent: "rebook",
         action_type: `sent_${channel}`,
         target_id: suggestionId,
-        payload: { name: c.name, channel, message_preview: message.slice(0, 120) },
+        payload: { name: c.name, channel, reason: ch.reason, message_preview: message.slice(0, 120) },
         undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       } as never);
     }

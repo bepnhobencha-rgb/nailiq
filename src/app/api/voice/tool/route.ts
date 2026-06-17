@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
+import { logBookingEvent } from "@/shared/dashboard/auditLog";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { computeTimeSlots } from "@/shared/booking/getAvailableTimeSlots";
 import { parseOpeningHours, type DayKey, type OpeningHoursWeek } from "@/shared/dashboard/openingHoursDefaults";
@@ -615,6 +616,18 @@ async function handleCancelBooking(
       return NextResponse.json({ error: "cancel_failed", detail: cancelErr.message }, { status: 500 });
     }
 
+    // Audit log — one entry per booking in the group
+    ids.forEach((id) =>
+      void logBookingEvent({
+        bookingId: id,
+        salonId: String(salon.id),
+        actorUserId: null,
+        actorRole: "system",
+        eventType: "booking_cancelled",
+        payload: { reason: "voice_ai_group_cancel", group_id: groupIdArg },
+      }),
+    );
+
     // Owner/admin "cancelled" alert — one email for the group (first booking).
     if (ids[0]) {
       void sendOwnerBookingNotification({
@@ -671,6 +684,15 @@ async function handleCancelBooking(
     console.error("[voice/cancel_booking] update error:", updateErr);
     return NextResponse.json({ error: "cancel_failed", detail: updateErr.message }, { status: 500 });
   }
+
+  void logBookingEvent({
+    bookingId: bookingId!,
+    salonId: String(salon.id),
+    actorUserId: null,
+    actorRole: "system",
+    eventType: "booking_cancelled",
+    payload: { reason: "voice_ai_cancel" },
+  });
 
   // Owner/admin "cancelled" alert (opt-in, fire-and-forget).
   void sendOwnerBookingNotification({

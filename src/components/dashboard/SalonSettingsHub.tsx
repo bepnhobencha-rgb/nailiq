@@ -46,6 +46,7 @@ import type { PresetKey } from "@/shared/dashboard/dashboardPresets";
 import { getUserMessages } from "@/shared/i18n/user";
 import { OwnerNotificationCard } from "@/components/dashboard/OwnerNotificationCard";
 import { StaffNotificationCard } from "@/components/dashboard/StaffNotificationCard";
+import { CustomerChannelCard } from "@/components/dashboard/CustomerChannelCard";
 import { AIReportCard } from "@/components/dashboard/AIReportCard";
 import { GooglePlaceIdCard } from "@/components/dashboard/GooglePlaceIdCard";
 import { cn } from "@/shared/lib/cn";
@@ -454,6 +455,11 @@ export function SalonSettingsHub({
               </div>
             )}
           </section>
+        ) : null}
+
+        {/* ── Customer channel (SMS / email / A2P status) ─────── */}
+        {canManageSalonSettings ? (
+          <CustomerChannelCard slug={slug} />
         ) : null}
 
         {/* ── Manager + staff notification cards ──────────────── */}

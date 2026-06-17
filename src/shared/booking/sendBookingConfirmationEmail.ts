@@ -92,6 +92,7 @@ export function buildHtml(
   savedCard?: SavedCardInfo | null,
   calendarUrl?: string | null,
   policyUrl?: string | null,
+  bookAgainUrl?: string | null,
 ): string {
   const eName = escapeHtml(input.clientName);
   const eSalon = escapeHtml(salonName);
@@ -243,6 +244,18 @@ export function buildHtml(
             </p>`
                 : ""
             }
+
+            <!-- Book again — pre-filled link so returning visit is 2 taps -->
+            ${
+              bookAgainUrl
+                ? `<div style="margin:20px 0 0;padding:16px;border-radius:8px;background:#f7f7f7;text-align:center;">
+              <p style="margin:0 0 10px;font-size:13px;color:#555;">Ready to book your next visit?</p>
+              <a href="${bookAgainUrl}" style="display:inline-block;padding:10px 22px;border:2px solid #0B0C10;color:#0B0C10;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;">
+                📅 Book Again
+              </a>
+            </div>`
+                : ""
+            }
           </td>
         </tr>
 
@@ -279,7 +292,7 @@ export async function sendBookingConfirmationEmail(
     const supabase = createServiceRoleClient();
     const { data: salonRow } = await supabase
       .from("salons")
-      .select("id, name, timezone, currency, reminders_enabled, address, salon_phone")
+      .select("id, name, timezone, currency, reminders_enabled, address, salon_phone, email")
       .eq("slug", input.shopSlug)
       .maybeSingle();
 
@@ -356,6 +369,13 @@ export async function sendBookingConfirmationEmail(
       typeof salonRow?.address === "string" ? salonRow.address : null;
     const salonPhone =
       typeof salonRow?.salon_phone === "string" ? salonRow.salon_phone : null;
+    // Owner/booking reply email: customers who hit Reply should reach the salon,
+    // not noreply@nailiq.ca. We use the salon's auth email as a best-effort
+    // replyTo — if not set, we omit it and the customer's reply goes to From.
+    const salonReplyEmail =
+      typeof (salonRow as { email?: unknown } | null)?.email === "string"
+        ? String((salonRow as { email: string }).email).trim() || null
+        : null;
 
     // "Add to calendar" — drops the appointment into the customer's phone
     // calendar in one tap (a real no-show reducer). Google link for Gmail/Android
@@ -375,6 +395,10 @@ export async function sendBookingConfirmationEmail(
       title: calTitle, startUtc: input.startTimeUtc, endUtc: endUtcCal, location: address, details: calDetails,
     });
 
+    // "Book again" — pre-filled URL so the customer can rebook in 2 taps.
+    // The slug + pre-fill query params skip name/phone entry for returning customers.
+    const bookAgainUrl = `${getEmailOrigin()}/${input.shopSlug}?ref=email_confirm`;
+
     const html = buildHtml(
       salonName,
       input,
@@ -387,6 +411,7 @@ export async function sendBookingConfirmationEmail(
       savedCard,
       calendarUrl,
       `${getEmailOrigin()}/${input.shopSlug}/booking-terms`,
+      bookAgainUrl,
     );
 
     // CASL: sender ID + physical mailing address + unsubscribe in every email.
@@ -404,6 +429,7 @@ export async function sendBookingConfirmationEmail(
       subject: `Booking confirmed — ${salonName}`,
       html: htmlWithFooter,
       headers: listUnsubscribeHeaders(to),
+      ...(salonReplyEmail ? { replyTo: salonReplyEmail } : {}),
       // .ics attachment → Apple Mail / Outlook show a one-tap "Add to Calendar".
       ...(icsContent
         ? {

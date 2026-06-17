@@ -2,6 +2,7 @@ import { after } from "next/server";
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
+import { logBookingEvent } from "@/shared/dashboard/auditLog";
 
 export async function POST(req: Request) {
   let body: { token?: string };
@@ -28,6 +29,7 @@ export async function POST(req: Request) {
 
   type BookingMeta = { salon_id: string; service_id: string; start_time_utc: string };
   let bookingMeta: BookingMeta | null = null;
+  let salonSlug: string | null = null;
   if (tr) {
     const { data: bRow } = await supabase
       .from("bookings" as never)
@@ -35,6 +37,14 @@ export async function POST(req: Request) {
       .eq("id", tr.booking_id)
       .maybeSingle();
     bookingMeta = bRow as BookingMeta | null;
+    if (bookingMeta?.salon_id) {
+      const { data: salonRow } = await supabase
+        .from("salons" as never)
+        .select("slug")
+        .eq("id", bookingMeta.salon_id)
+        .maybeSingle();
+      salonSlug = (salonRow as { slug?: string | null } | null)?.slug?.trim() ?? null;
+    }
   }
 
   const { data, error } = await supabase.rpc("cancel_booking_as_customer" as never, {
@@ -53,6 +63,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, code: row?.code ?? "unknown" }, { status: 400 });
   }
 
+  // Audit log — customer cancelled via email link
+  if (tr && bookingMeta) {
+    void logBookingEvent({
+      bookingId: tr.booking_id,
+      salonId: bookingMeta.salon_id,
+      actorUserId: null,
+      actorRole: "public_guest",
+      eventType: "booking_cancelled",
+      payload: { reason: "customer_email_link" },
+    });
+  }
+
   // Fire waitlist notification email after response is sent
   if (bookingMeta) {
     const { salon_id, service_id, start_time_utc } = bookingMeta;
@@ -69,5 +91,5 @@ export async function POST(req: Request) {
     });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, salonSlug });
 }

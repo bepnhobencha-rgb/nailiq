@@ -17,6 +17,9 @@ export type ReminderEmailInput = {
   /** Vertical AI descriptor (e.g. "a head spa…") for the reminder wording —
    *  replaces the old hardcoded "a nail salon". */
   businessDescriptor?: string;
+  /** Salon owner/booking email for Reply-To header. When the customer hits
+   *  Reply the message lands at the salon, not noreply@nailiq.ca. */
+  salonContactEmail?: string | null;
 };
 
 const SITE_URL =
@@ -171,6 +174,7 @@ export async function sendReminderEmail(
       subject: `Reminder: your ${input.serviceName} at ${input.salonName}`,
       html,
       headers: listUnsubscribeHeaders(input.clientEmail),
+      ...(input.salonContactEmail ? { replyTo: input.salonContactEmail } : {}),
     });
 
     if (error) {

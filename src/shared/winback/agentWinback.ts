@@ -5,6 +5,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
+import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 
 /**
  * AI Win-back — find lapsed regulars and draft a warm, personalised "we miss
@@ -24,6 +25,7 @@ export type WinbackCandidate = {
   visits: number;
   lastVisit: string;
   noShows: number;
+  usualService: string | null;
 };
 
 let client: Anthropic | null = null;
@@ -71,6 +73,7 @@ export async function gatherWinbackCandidates(
       visits: num(r.visits),
       lastVisit: str(r.last_visit),
       noShows: num(r.no_shows),
+      usualService: str(r.usual_service) || null,
     });
     if (out.length >= limit) break;
   }
@@ -88,12 +91,15 @@ export async function agentDraftWinback(
 
   const weeks = Math.max(1, Math.round((Date.now() - Date.parse(c.lastVisit)) / (7 * 864e5)));
   const langLabel = lang === "vi" ? "tiếng Việt" : "English";
+  const serviceHint = c.usualService
+    ? ` They usually get "${c.usualService}".`
+    : "";
   const prompt = `Write a short, warm, genuine win-back message in ${langLabel} for a salon customer who hasn't been in for a while. Make them feel remembered, not sold to.
 
-Customer: ${c.name}, visited ${c.visits} times before, last visit about ${weeks} weeks ago.
+Customer: ${c.name}, visited ${c.visits} times before, last visit about ${weeks} weeks ago.${serviceHint}
 Salon: ${salonName}.
 
-Rules: 1-2 sentences, friendly + personal, mention the salon by name, gently invite them to come back, NO emojis, NO links (those are added when sent). Return ONLY the message text, nothing else.`;
+Rules: 1-2 sentences, friendly + personal, mention the salon by name, if a service is given naturally reference it (e.g. "ready for your next Hi-Lite Royal?"), gently invite them to come back, NO emojis, NO links (those are added when sent). Return ONLY the message text, nothing else.`;
 
   try {
     const resp = await ai.messages.create({
@@ -127,6 +133,7 @@ async function sendWinbackEmail(
   salonName: string,
   message: string,
   bookingUrl: string,
+  salonReplyEmail?: string | null,
 ): Promise<boolean> {
   const resend = getResendClient();
   if (!resend) return false;
@@ -142,6 +149,7 @@ async function sendWinbackEmail(
     subject: `${salonName} — we'd love to see you again`,
     html,
     text: `${message}\n\n${bookingUrl}\n\n${salonName}`,
+    ...(salonReplyEmail ? { replyTo: salonReplyEmail } : {}),
   });
   return !error;
 }
@@ -156,14 +164,17 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
     const db = looseServiceClient();
     const { data: salon } = await db
       .from("salons")
-      .select("name, feature_flags, slug" as never)
+      .select("name, email, feature_flags, slug, sms_a2p_registered, customer_channel" as never)
       .eq("id", salonId)
       .maybeSingle();
     const s = (salon as Row | null) ?? {};
     if ((s.feature_flags as Record<string, unknown> | null)?.ai_winback !== true) return;
     const salonName = str(s.name) || "our salon";
     const salonSlug = str(s.slug) || "";
-    const bookingUrl = `${SITE_URL}/${salonSlug}`;
+    const salonReplyEmail = str(s.email) || null;
+    const bookingUrl = `${SITE_URL}/${salonSlug}?ref=winback`;
+    const smsA2pRegistered = Boolean(s.sms_a2p_registered);
+    const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
 
     const candidates = await gatherWinbackCandidates(salonId, cap);
     if (candidates.length === 0) return;
@@ -172,19 +183,46 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
     let sentCount = 0;
 
     for (const c of candidates) {
+      // Resolve channel BEFORE drafting — no point spending AI tokens on a
+      // message that can't be delivered.
+      const ch = resolveCustomerChannel({
+        mode: customerChannelMode,
+        smsA2pRegistered,
+        customerEmail: c.email,
+      });
+
+      if (ch.noChannel) {
+        console.warn(
+          `[runWinback] no channel for ${c.name} (${c.phone}) — reason: ${ch.reason}. Add email or complete A2P.`,
+        );
+        void svc.from("ai_actions_log" as never).insert({
+          salon_id: salonId,
+          agent: "winback",
+          action_type: "skipped_no_channel",
+          target_id: null,
+          payload: { name: c.name, phone: c.phone, reason: ch.reason },
+          undo_deadline: null,
+        } as never);
+        continue;
+      }
+
       const lang: "en" | "vi" = "en";
       const message = await agentDraftWinback(c, salonName, lang);
       if (!message) continue;
 
-      const channel: "sms" | "email" = c.email ? "email" : "sms";
+      // Derive a single canonical channel for logging (prefer email to record deliverability).
+      const channel: "sms" | "email" = ch.email ? "email" : "sms";
 
-      // Send to customer first; only log if successful
-      const ok =
-        channel === "sms"
-          ? await sendWinbackSms(c.phone, message, bookingUrl)
-          : c.email
-            ? await sendWinbackEmail(c.email, c.name, salonName, message, bookingUrl)
-            : false;
+      // Send to customer first; only log if successful.
+      let ok = false;
+      if (ch.sms) {
+        ok = await sendWinbackSms(c.phone, message, bookingUrl);
+      }
+      if (ch.email && c.email) {
+        const emailOk = await sendWinbackEmail(c.email, c.name, salonName, message, bookingUrl, salonReplyEmail);
+        // Count as delivered if at least one channel succeeded.
+        ok = ok || emailOk;
+      }
 
       if (!ok) continue;
       sentCount++;
@@ -215,7 +253,7 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
         agent: "winback",
         action_type: `sent_${channel}`,
         target_id: suggestionId,
-        payload: { name: c.name, channel, message_preview: message.slice(0, 120) },
+        payload: { name: c.name, channel, reason: ch.reason, message_preview: message.slice(0, 120) },
         undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       } as never);
     }

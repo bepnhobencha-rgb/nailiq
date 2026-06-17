@@ -111,30 +111,40 @@ export async function POST(req: NextRequest) {
   const db = createServiceRoleClient();
 
   // The booking this reply is about: soonest upcoming pending/confirmed booking
-  // for this phone that actually got a reminder.
-  const { data: bk } = await db
+  // for this phone. Prefer bookings that received a reminder (confirmation/winback/rebook);
+  // fall back to any upcoming booking so a customer can confirm/cancel even if
+  // the reminder SMS was the very first contact (e.g. win-back replies).
+  const nowIso = new Date().toISOString();
+  const baseQuery = db
     .from("bookings")
-    .select("id, salon_id, service_id, start_time_utc, status")
+    .select("id, salon_id, service_id, start_time_utc, status, reminder_24h_sent_at, reminder_3h_sent_at, sms_confirmation_sent_at")
     .eq("client_phone", phone)
     .in("status", ["pending", "confirmed"])
-    .gte("start_time_utc", new Date().toISOString())
-    .or("reminder_24h_sent_at.not.is.null,reminder_3h_sent_at.not.is.null")
+    .gte("start_time_utc", nowIso)
     .order("start_time_utc", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .limit(5);
 
-  if (!bk) {
+  const { data: bkRows } = await baseQuery;
+  const rows = (bkRows ?? []) as Array<{
+    id: string; salon_id: string; service_id: string; start_time_utc: string; status: string;
+    reminder_24h_sent_at: string | null; reminder_3h_sent_at: string | null; sms_confirmation_sent_at: string | null;
+  }>;
+
+  // Prefer the booking that actually received an SMS (reminder or confirmation).
+  const bkWithSms = rows.find(
+    (r) => r.reminder_24h_sent_at || r.reminder_3h_sent_at || r.sms_confirmation_sent_at,
+  );
+  const bkRow = bkWithSms ?? rows[0] ?? null;
+
+  if (!bkRow) {
     return twiml(
       "We couldn't find an upcoming appointment for this number. Please call the salon for help.",
     );
   }
 
-  const booking = bk as {
-    id: string;
-    salon_id: string;
-    service_id: string;
-    start_time_utc: string;
-  };
+  const bk = bkRow;
+
+  const booking = bk;
 
   const { data: salonRow } = await db
     .from("salons")
@@ -181,6 +191,15 @@ export async function POST(req: NextRequest) {
   });
 
   if (ok) {
+    const { logBookingEvent } = await import("@/shared/dashboard/auditLog");
+    void logBookingEvent({
+      bookingId: booking.id,
+      salonId: booking.salon_id,
+      actorUserId: null,
+      actorRole: "public_guest",
+      eventType: "booking_cancelled",
+      payload: { reason: "sms_cancel" },
+    });
     const bookingDateYmd = booking.start_time_utc.split("T")[0];
     after(async () => {
       const { notifyWaitlistForSlot } = await import("@/shared/noshow/waitlistAutoFill");

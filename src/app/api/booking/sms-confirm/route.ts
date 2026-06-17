@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { logNotification } from "@/shared/lib/notificationLog";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { sendBookingConfirmationEmail } from "@/shared/booking/sendBookingConfirmationEmail";
 
 export const dynamic = "force-dynamic";
 
@@ -91,10 +92,11 @@ export async function POST(req: Request) {
 
   const { data: profile } = await db
     .from("client_profiles")
-    .select("id")
+    .select("id, email")
     .eq("phone", clientPhone)
     .is("deleted_at", null)
     .maybeSingle();
+  const clientEmailOnFile = (profile as { email?: string | null } | null)?.email?.trim() || null;
 
   let lang = requestedLang ?? "vi";
   if (profile) {
@@ -138,9 +140,16 @@ export async function POST(req: Request) {
   // "Get directions" Google button stays in the confirmation EMAIL.
   const salonAddress = (salon as { address?: string | null }).address?.trim() || "";
   const addrLine = salonAddress ? `\n📍 ${salonAddress}` : "";
-  const message = baseMessage + addrLine;
 
   const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+  // Manage-booking link — lets the customer reschedule or cancel from the SMS
+  // without hunting through email. Uses the /wait page which has Reschedule +
+  // Cancel buttons. Only added for individual (non-group) bookings with a slug.
+  const manageLink =
+    salonSlug && bookingId && !isGroup
+      ? `\nManage: ${SITE_URL}/${salonSlug}/wait/${bookingId}`
+      : "";
+  const message = baseMessage + addrLine + manageLink;
   const statusCallbackUrl = `${SITE_URL}/api/twilio/status`;
   const result = await sendSmsReminder(clientPhone, message, { statusCallbackUrl, salonIsTest, lang: lang === "en" ? "en" : "vi" });
 
@@ -169,6 +178,34 @@ export async function POST(req: Request) {
     ok: result.ok,
     errorMessage: result.error,
   });
+
+  // Email confirmation — parallel channel when customer has an email on file
+  // and the rich email wasn't already sent by submitPublicBooking (e.g. desk
+  // bookings, or online bookings where the customer skipped the email field).
+  // Best-effort: never blocks the SMS response.
+  if (clientEmailOnFile && !isGroup && serviceName && staffName) {
+    void (async () => {
+      // Only send if no email confirmation was logged yet for this booking.
+      const { count } = await db
+        .from("booking_notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("booking_id", bookingId)
+        .eq("notification_type", "booking_confirmation")
+        .eq("channel", "email");
+      if ((count ?? 0) === 0) {
+        await sendBookingConfirmationEmail({
+          bookingId,
+          shopSlug: salonSlug,
+          clientName: clientName ?? "Guest",
+          clientEmail: clientEmailOnFile,
+          serviceName: serviceName!,
+          staffName: staffName!,
+          startTimeUtc,
+          totalPriceCents: null,
+        });
+      }
+    })();
+  }
 
   return NextResponse.json({ ok: result.ok, error: result.error });
 }

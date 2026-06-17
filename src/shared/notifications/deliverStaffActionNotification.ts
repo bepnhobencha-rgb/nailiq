@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { unsubscribeUrl, listUnsubscribeHeaders } from "@/shared/lib/emailCompliance";
+import { logNotification } from "@/shared/lib/notificationLog";
 import {
   resolveCustomerLocale,
   type SupportedLocale,
@@ -115,6 +116,17 @@ export async function deliverStaffActionNotification(
       try {
         const r = await sendSmsReminder(row.client_phone, body, { lang: locale === "en" ? "en" : "vi" });
         smsSent = r.ok;
+        void logNotification({
+          bookingId: input.bookingId,
+          salonId: input.salonId,
+          notificationType: "booking_confirmation",
+          channel: "sms",
+          clientPhone: row.client_phone,
+          messageSid: r.messageSid,
+          bodyPreview: body,
+          ok: r.ok,
+          errorMessage: r.error,
+        });
       } catch (e) {
         console.error("[deliverStaffActionNotification] sms", e);
       }
@@ -140,6 +152,17 @@ export async function deliverStaffActionNotification(
           headers: listUnsubscribeHeaders(to),
         });
         emailSent = !res.error;
+        void logNotification({
+          bookingId: input.bookingId,
+          salonId: input.salonId,
+          notificationType: "booking_confirmation",
+          channel: "email",
+          clientPhone: to,
+          messageSid: res.data?.id,
+          bodyPreview: subject,
+          ok: emailSent,
+          errorMessage: res.error ? String(res.error) : null,
+        });
       } catch (e) {
         console.error("[deliverStaffActionNotification] email", e);
       }

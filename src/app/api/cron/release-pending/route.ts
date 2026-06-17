@@ -5,6 +5,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { logBookingEvent } from "@/shared/dashboard/auditLog";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -38,6 +39,16 @@ export async function GET(req: NextRequest) {
   const released = data?.length ?? 0;
   if (released > 0) {
     console.log(`[release-pending] cancelled ${released} unverified pending bookings`);
+    (data as Array<{ id: string; salon_id: string }>).forEach((row) =>
+      void logBookingEvent({
+        bookingId: row.id,
+        salonId: row.salon_id,
+        actorUserId: null,
+        actorRole: "system",
+        eventType: "booking_cancelled",
+        payload: { reason: "unverified_pending_timeout" },
+      }),
+    );
   }
 
   // Hold-until-card: release a FUTURE booking that was required to leave a card
@@ -54,13 +65,23 @@ export async function GET(req: NextRequest) {
     .in("status", ["confirmed", "pending"])
     .lt("created_at", cardCutoff)
     .gt("start_time_utc", nowIso)
-    .select("id");
+    .select("id, salon_id");
   if (cardErr) {
     console.error("[release-pending] card-release error", cardErr);
   }
   const cardReleased = cardData?.length ?? 0;
   if (cardReleased > 0) {
     console.log(`[release-pending] cancelled ${cardReleased} no-card bookings`);
+    (cardData as Array<{ id: string; salon_id: string }>).forEach((row) =>
+      void logBookingEvent({
+        bookingId: row.id,
+        salonId: row.salon_id,
+        actorUserId: null,
+        actorRole: "system",
+        eventType: "booking_cancelled",
+        payload: { reason: "noshow_card_not_provided" },
+      }),
+    );
   }
 
   // Pay-deposit-to-confirm: release a FUTURE booking whose slot was held pending a
@@ -102,8 +123,22 @@ export async function GET(req: NextRequest) {
         .from("bookings")
         .update({ status: "cancelled", deposit_hold: false } as never)
         .in("id", toCancel);
-      if (depErr) console.error("[release-pending] deposit-release error", depErr);
-      else depositReleased = toCancel.length;
+      if (depErr) {
+        console.error("[release-pending] deposit-release error", depErr);
+      } else {
+        depositReleased = toCancel.length;
+        toCancel.forEach((id) => {
+          const salonId = depRows.find((r) => r.id === id)?.salon_id ?? "";
+          void logBookingEvent({
+            bookingId: id,
+            salonId,
+            actorUserId: null,
+            actorRole: "system",
+            eventType: "booking_cancelled",
+            payload: { reason: "deposit_not_paid_timeout" },
+          });
+        });
+      }
     }
   }
   if (depositReleased > 0) {
