@@ -80,6 +80,7 @@ import {
   addWalkinToQueue,
   assignWalkinToSlot,
   cancelDeskBooking,
+  cancelDeskGroup,
   restoreCancelledBooking,
   approveWixBooking,
   declineWixBooking,
@@ -610,6 +611,9 @@ function ReceptionistCenterInner({
   } | null>(null);
   // Cancel-confirm with the "notify the customer?" panel (non-deposit path).
   const [notifyCancel, setNotifyCancel] = useState<{ id: string } | null>(null);
+  // For a booking that is one member of a party, the cancel modal lets the staff
+  // choose to cancel just this person or the whole party. Default: just this one.
+  const [cancelScope, setCancelScope] = useState<"this" | "whole">("this");
   const [notifyCancelChannels, setNotifyCancelChannels] =
     useState<NotifyChannels>({
       sms: false,
@@ -1801,6 +1805,43 @@ function ReceptionistCenterInner({
     }
   };
 
+  // Cancel EVERY active member of a party in one go (group-aware cancel). Mirrors
+  // the single-booking path but hits cancelDeskGroup; no 8s undo (a bulk restore
+  // isn't offered — same as the PartyCardPanel group cancel).
+  const doCancelGroup = async (
+    groupId: string,
+    notifyChannels?: NotifyChannels,
+  ) => {
+    const notifyChannelsResolved =
+      notifyChannels ??
+      (defaultNotifyOn(data.salon.staffNotificationSettings, "cancel")
+        ? {
+            sms: data.salon.staffNotificationSettings.channels.sms,
+            email: data.salon.staffNotificationSettings.channels.email,
+          }
+        : { sms: false, email: false });
+
+    setDrawerBusy(true);
+    try {
+      const r = await cancelDeskGroup(slug, {
+        salonId: data.salon.id,
+        groupId,
+        notify: notifyChannelsResolved,
+      });
+      if (!r.ok) {
+        setShakeMessage(mutationMessage(messages.receptionist, r.error));
+      } else {
+        // Whole party cancelled — close the drawer and reload; the grid visibly
+        // empties every member's slot, which is its own confirmation.
+        setDrawerBookingId(null);
+        await reloadCurrentDay();
+        router.refresh();
+      }
+    } finally {
+      setDrawerBusy(false);
+    }
+  };
+
   const doCancelBooking = async (
     id: string,
     refundDeposit: boolean,
@@ -1900,6 +1941,7 @@ function ReceptionistCenterInner({
       sms: on && settings.channels.sms,
       email: on && settings.channels.email,
     });
+    setCancelScope("this");
     setNotifyCancel({ id });
   };
 
@@ -3754,6 +3796,20 @@ function ReceptionistCenterInner({
             const hasPhone = !!(b.client_phone && b.client_phone.trim());
             const hasEmail = !!(b.client_email && b.client_email.trim());
             const n = rcMessages.notify;
+            // Group-aware cancel: count the still-cancellable members of this
+            // party (same group_id, today's grid). >1 → offer "this / whole party".
+            const groupId = b.group_id ?? null;
+            const partySize = groupId
+              ? data.bookingsForDay.filter(
+                  (x) =>
+                    x.group_id === groupId &&
+                    (x.status === "pending" ||
+                      x.status === "confirmed" ||
+                      x.status === "in_progress"),
+                ).length
+              : 0;
+            const isGroup = !!groupId && partySize > 1;
+            const cancelWhole = isGroup && cancelScope === "whole";
             return (
               <Modal
                 isOpen
@@ -3763,6 +3819,46 @@ function ReceptionistCenterInner({
                 description={n.cancelDesc}
               >
                 <div className="flex flex-col gap-3 py-1">
+                  {isGroup ? (
+                    <div
+                      className="flex flex-col gap-2 rounded-lg border border-nq-primary/30 bg-nq-primary/5 p-2.5"
+                      data-testid="cancel-group-scope"
+                    >
+                      <p className="text-[12px] font-medium text-nq-foreground">
+                        {n.groupBanner(partySize)}
+                      </p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          data-testid="cancel-scope-this"
+                          aria-pressed={cancelScope === "this"}
+                          onClick={() => setCancelScope("this")}
+                          className={cn(
+                            "rounded-md px-2 py-1.5 text-[12px] font-semibold transition-colors",
+                            cancelScope === "this"
+                              ? "bg-nq-primary text-nq-background"
+                              : "bg-nq-surface text-nq-muted hover:text-nq-foreground",
+                          )}
+                        >
+                          {n.cancelThisOne}
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="cancel-scope-whole"
+                          aria-pressed={cancelScope === "whole"}
+                          onClick={() => setCancelScope("whole")}
+                          className={cn(
+                            "rounded-md px-2 py-1.5 text-[12px] font-semibold transition-colors",
+                            cancelScope === "whole"
+                              ? "bg-nq-error text-white"
+                              : "bg-nq-surface text-nq-muted hover:text-nq-foreground",
+                          )}
+                        >
+                          {n.cancelWholeParty(partySize)}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                   <NotifyCustomerPanel
                     value={notifyCancelChannels}
                     onChange={setNotifyCancelChannels}
@@ -3793,10 +3889,16 @@ function ReceptionistCenterInner({
                           email: notifyCancelChannels.email && hasEmail,
                         };
                         setNotifyCancel(null);
-                        void doCancelBooking(id, false, ch);
+                        if (cancelWhole && groupId) {
+                          void doCancelGroup(groupId, ch);
+                        } else {
+                          void doCancelBooking(id, false, ch);
+                        }
                       }}
                     >
-                      {n.confirmCancel}
+                      {cancelWhole
+                        ? n.confirmCancelGroup(partySize)
+                        : n.confirmCancel}
                     </Button>
                     <Button
                       type="button"

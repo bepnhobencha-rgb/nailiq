@@ -1443,6 +1443,11 @@ export type UserMessages = {
       cancelDesc: string;
       confirmCancel: string;
       keep: string;
+      /** Group-aware cancel: shown when the booking is one member of a party. */
+      groupBanner: (n: number) => string;
+      cancelThisOne: string;
+      cancelWholeParty: (n: number) => string;
+      confirmCancelGroup: (n: number) => string;
     };
     drawer: {
       title: string;
@@ -3529,6 +3534,10 @@ export const userEn: UserMessages = {
       cancelDesc: "Choose whether to let the customer know.",
       confirmCancel: "Cancel appointment",
       keep: "Keep",
+      groupBanner: (n) => `👥 This guest is part of a party of ${n}.`,
+      cancelThisOne: "Just this person",
+      cancelWholeParty: (n) => `Whole party (${n})`,
+      confirmCancelGroup: (n) => `Cancel whole party (${n})`,
     },
     drawer: {
       title: "Booking",

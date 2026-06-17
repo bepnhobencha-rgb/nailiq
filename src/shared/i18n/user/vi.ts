@@ -1441,6 +1441,10 @@ export const userVi: UserMessages = {
       cancelDesc: "Chọn có báo cho khách hay không.",
       confirmCancel: "Huỷ lịch hẹn",
       keep: "Giữ lại",
+      groupBanner: (n) => `👥 Khách này thuộc nhóm ${n} người.`,
+      cancelThisOne: "Chỉ người này",
+      cancelWholeParty: (n) => `Cả nhóm (${n})`,
+      confirmCancelGroup: (n) => `Huỷ cả nhóm (${n})`,
     },
     drawer: {
       title: "Lịch hẹn",
