@@ -389,9 +389,15 @@ function computeHourRange(
   if (includeNowIso) {
     const m = salonNowMinutes(timezone, includeNowIso);
     if (Number.isFinite(m)) {
-      startH = Math.min(startH, Math.floor(m / 60));
-      // +1 slot so "now" near the hour edge still has a column to its right.
-      endH = Math.max(endH, Math.ceil((m + SLOT_MINUTES) / 60));
+      // Only widen for "now" when the current salon time falls within open hours.
+      // Off-hours "now" (e.g. 4 am when salon opens at 9 am) must not stretch
+      // the grid backwards — that's confusing to staff viewing the day.
+      const nowH = Math.floor(m / 60);
+      if (nowH >= baseStartHour && nowH < baseEndHour) {
+        startH = Math.min(startH, nowH);
+        // +1 slot so "now" near the hour edge still has a column to its right.
+        endH = Math.max(endH, Math.ceil((m + SLOT_MINUTES) / 60));
+      }
     }
   }
   startH = Math.max(0, startH);
