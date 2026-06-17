@@ -299,6 +299,14 @@ export async function runVipCare(salonId: string): Promise<void> {
           const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, smsA2pRegistered, salonReplyEmail);
           if (!ok && reason.startsWith("no_channel")) {
             console.warn(`[runVipCare] no channel for ${client.name} — ${reason}`);
+            await svc.from("ai_actions_log" as never).insert({
+              salon_id: salonId,
+              agent: "vip_care",
+              action_type: "skipped_no_channel",
+              target_id: client.id,
+              payload: { name: client.name, event: "birthday", reason },
+              undo_deadline: null,
+            } as never);
           }
           if (ok) {
             sentCount++;
@@ -324,6 +332,14 @@ export async function runVipCare(salonId: string): Promise<void> {
         const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, smsA2pRegistered, salonReplyEmail);
         if (!ok && reason.startsWith("no_channel")) {
           console.warn(`[runVipCare] no channel for ${client.name} (milestone ${milestone}) — ${reason}`);
+          await svc.from("ai_actions_log" as never).insert({
+            salon_id: salonId,
+            agent: "vip_care",
+            action_type: "skipped_no_channel",
+            target_id: client.id,
+            payload: { name: client.name, event: `milestone_${milestone}`, reason },
+            undo_deadline: null,
+          } as never);
         }
         if (ok) {
           sentCount++;
@@ -347,6 +363,14 @@ export async function runVipCare(salonId: string): Promise<void> {
           const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, smsA2pRegistered, salonReplyEmail);
           if (!ok && reason.startsWith("no_channel")) {
             console.warn(`[runVipCare] no channel for ${client.name} — ${reason}`);
+            await svc.from("ai_actions_log" as never).insert({
+              salon_id: salonId,
+              agent: "vip_care",
+              action_type: "skipped_no_channel",
+              target_id: client.id,
+              payload: { name: client.name, event: "vip_inactive", reason, days_since: daysSince },
+              undo_deadline: null,
+            } as never);
           }
           if (ok) {
             sentCount++;

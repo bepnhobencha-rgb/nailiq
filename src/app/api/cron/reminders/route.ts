@@ -146,6 +146,14 @@ export async function GET(req: Request) {
       });
       if (result.ok) anySuccess = true;
       else errors++;
+      void logNotification({
+        bookingId: booking.id,
+        salonId: booking.salon_id,
+        notificationType: reminderType === "24h" ? "reminder_24h" : "reminder_3h",
+        channel: "email",
+        clientPhone: booking.client_email,
+        ok: result.ok,
+      });
     }
 
     // SMS channel

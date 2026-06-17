@@ -499,7 +499,7 @@ export async function loadActivityFeed(
           ? `⏰ ${verb} nhắc tới kỳ — ${name}${visits ? ` (${visits} lần)` : ""}`
           : `💌 ${verb} giữ khách — ${name}${visits ? ` (${visits} lần)` : ""}`,
         subtitle: msg || null,
-        status: null,
+        status: str(r.status) || null,
         actorRole: null,
         bookingId: null,
         bookingDate: null,

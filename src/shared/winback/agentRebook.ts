@@ -144,10 +144,8 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
     let sentCount = 0;
 
     for (const c of candidates) {
-      const lang: "en" | "vi" = "en";
-      const message = await agentDraftRebook(c, salonName, lang);
-      if (!message) continue;
-
+      // Resolve channel BEFORE drafting — no point spending AI tokens on a
+      // message that can't be delivered.
       const ch = resolveCustomerChannel({
         mode: customerChannelMode,
         smsA2pRegistered,
@@ -156,8 +154,20 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
 
       if (ch.noChannel) {
         console.warn(`[runRebook] no channel for ${c.name} — reason: ${ch.reason}`);
+        void svc.from("ai_actions_log" as never).insert({
+          salon_id: salonId,
+          agent: "rebook",
+          action_type: "skipped_no_channel",
+          target_id: null,
+          payload: { name: c.name, phone: c.phone, reason: ch.reason },
+          undo_deadline: null,
+        } as never);
         continue;
       }
+
+      const lang: "en" | "vi" = "en";
+      const message = await agentDraftRebook(c, salonName, lang);
+      if (!message) continue;
 
       const channel: "sms" | "email" = ch.email ? "email" : "sms";
 
