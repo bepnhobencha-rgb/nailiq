@@ -585,6 +585,10 @@ export const userVi: UserMessages = {
     resetPasswordInvalidLink: "Link đặt lại này đã hết hạn. Yêu cầu một cái mới.",
     resetPasswordServerError: "Có lỗi xảy ra. Thử lại.",
     resetPasswordStrengthHint: "Độ mạnh mật khẩu: ",
+    brandTagline: "Quản lý salon thông minh — dành riêng cho bạn",
+    brandBullet1: "Miễn phí 14 ngày · Không cần thẻ tín dụng",
+    brandBullet2: "Cài xong và chạy được trong 2 phút",
+    brandBullet3: "Được xây dựng riêng cho salon người Việt ở Bắc Mỹ",
   },
   chooseSalon: {
     title: "Chọn tiệm của bạn",

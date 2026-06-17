@@ -129,6 +129,7 @@ export function LoginPageClient({
       <RegisterStepShell
         title={t.login.emailEntryTitle}
         subtext={t.login.subtextEmail}
+        showBrandPanel
       >
         {confirmEmailBanner}
         <SocialAuthButtons mode="login" layout="open" enablePassword={true} />

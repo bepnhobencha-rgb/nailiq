@@ -479,6 +479,11 @@ export type UserMessages = {
     resetPasswordInvalidLink: string;
     resetPasswordServerError: string;
     resetPasswordStrengthHint: string;
+    /** Desktop brand panel (left column on /login and /register entry). */
+    brandTagline: string;
+    brandBullet1: string;
+    brandBullet2: string;
+    brandBullet3: string;
   };
   /** Multi-salon picker (`/choose-salon`). Shown when an authenticated user
    * has more than one `salon_members` row. Single-salon users skip it. */
@@ -2678,6 +2683,10 @@ export const userEn: UserMessages = {
     resetPasswordInvalidLink: "This reset link has expired. Request a new one.",
     resetPasswordServerError: "Something went wrong. Try again.",
     resetPasswordStrengthHint: "Password strength: ",
+    brandTagline: "Smart salon management — built for you",
+    brandBullet1: "Free 14 days · No credit card needed",
+    brandBullet2: "Up and running in under 2 minutes",
+    brandBullet3: "Made for Vietnamese-owned salons in North America",
   },
   chooseSalon: {
     title: "Choose your salon",
