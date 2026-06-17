@@ -45,6 +45,8 @@ export type PolicyContext = {
   aiShadowEnabled: boolean;
   /** salons.feature_flags.ai_noshow_policy_live — AI decision DRIVES the flag. */
   aiLiveEnabled: boolean;
+  /** Primary language for customer-facing messages ("en" | "vi"). Defaults to "en". */
+  language: "en" | "vi";
 };
 
 export type AiPolicyDecision = {
@@ -79,7 +81,7 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
 
   const [{ data: svc }, { data: salon }, stats, { data: profile }, provider] = await Promise.all([
     b.service_id ? db.from("services").select("name").eq("id", str(b.service_id)).maybeSingle() : Promise.resolve({ data: null }),
-    db.from("salons").select("vertical, noshow_protection_enabled, noshow_fee_percent, feature_flags").eq("id", salonId).maybeSingle(),
+    db.from("salons").select("vertical, noshow_protection_enabled, noshow_fee_percent, feature_flags, default_notification_locale").eq("id", salonId).maybeSingle(),
     // Salon-scoped visit history from BOOKINGS — the client_profiles table is a
     // GLOBAL identity table (no salon_id), so the old .eq("salon_id") filter
     // matched nothing and made every customer look brand-new (→ the agent
@@ -124,6 +126,9 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
       (s.feature_flags as Record<string, unknown> | null)?.ai_noshow_policy_shadow === true,
     aiLiveEnabled:
       (s.feature_flags as Record<string, unknown> | null)?.ai_noshow_policy_live === true,
+    // Salon's primary language for customer-facing messages. Falls back to "en"
+    // (Hi-Lite's guests are English; Vietnamese-first salons set this to "vi").
+    language: str(s.default_notification_locale).startsWith("vi") ? "vi" : "en",
   };
 }
 
@@ -206,8 +211,16 @@ export async function agentDecideNoShowPolicy(ctx: PolicyContext): Promise<AiPol
   const ai = getClient();
   if (!ai) return null;
 
-  const when = new Date(ctx.startTimeUtc).toLocaleString("vi-VN", { timeZone: "America/Los_Angeles" });
-  const prompt = `Bạn là quản lý phụ trách chính sách chống no-show cho một ${ctx.vertical}. Quyết định mức bảo vệ cho lượt hẹn này một cách LINH HOẠT và NHÂN VĂN (giữ trải nghiệm cao cấp cho khách quen, chặt với rủi ro thật), KHÔNG máy móc theo ngưỡng.
+  const isVi = ctx.language === "vi";
+  const locale = isVi ? "vi-VN" : "en-US";
+  const when = new Date(ctx.startTimeUtc).toLocaleString(locale, { timeZone: "America/Los_Angeles" });
+
+  // Build prompt in the salon's primary language so the customer-facing message
+  // (the "reason" and "message" fields) comes out in the right tongue.
+  // English path: Hi-Lite and other EN-primary salons get an English prompt.
+  // Vietnamese path: VN salons keep the original warm Vietnamese framing.
+  const prompt = isVi
+    ? `Bạn là quản lý phụ trách chính sách chống no-show cho một ${ctx.vertical}. Quyết định mức bảo vệ cho lượt hẹn này một cách LINH HOẠT và NHÂN VĂN (giữ trải nghiệm cao cấp cho khách quen, chặt với rủi ro thật), KHÔNG máy móc theo ngưỡng.
 
 Lựa chọn:
 - "none": tin khách, không đòi gì.
@@ -222,7 +235,23 @@ Bối cảnh:
 
 Nếu chọn card/deposit, soạn 1 lời nhắn ngắn, ấm áp, lịch sự cho khách bằng tiếng Việt (xưng hô thân thiện).
 
-Chỉ trả JSON: {"protection":"none|card|deposit","feePercent":<0-${ctx.maxFeePercent}>,"reason":"<1 câu tiếng Việt vì sao>","message":"<lời nhắn hoặc null>","confidence":"low|medium|high"}`;
+Chỉ trả JSON: {"protection":"none|card|deposit","feePercent":<0-${ctx.maxFeePercent}>,"reason":"<1 câu tiếng Việt vì sao>","message":"<lời nhắn hoặc null>","confidence":"low|medium|high"}`
+    : `You are the no-show policy manager for a ${ctx.vertical}. Decide protection for this appointment FLEXIBLY and HUMANELY (preserve a premium experience for loyal regulars, be firm for real risks), NOT by rigid thresholds.
+
+Options:
+- "none": trust the customer, require nothing.
+- "card": require a card on file (only charged on a confirmed no-show).
+- "deposit": require an upfront deposit.
+
+Context:
+- Customer: ${ctx.clientName} | ${ctx.isNew ? "NEW CUSTOMER" : `returning, ${ctx.visitCount} visit(s)`} | prior no-shows: ${ctx.noShowCount} | VIP: ${ctx.isVip}
+- Contact: ${ctx.hasPhone ? "has phone" : "NO PHONE"}, ${ctx.hasEmail ? "has email" : "no email"}
+- Appointment: ${ctx.serviceName}, ~$${(ctx.priceCents / 100).toFixed(0)}, at ${when}, channel: ${ctx.channel}
+- Salon: no-show protection ${ctx.protectionEnabled ? "ON" : "OFF"}, payment gateway ${ctx.providerConnected ? "connected" : "NOT connected"}, default fee ${ctx.defaultFeePercent}%.
+
+If card/deposit selected, write a short, warm, professional message to the customer in English.
+
+Return ONLY JSON: {"protection":"none|card|deposit","feePercent":<0-${ctx.maxFeePercent}>,"reason":"<1 sentence reason>","message":"<message or null>","confidence":"low|medium|high"}`;
 
   try {
     const resp = await ai.messages.create({
