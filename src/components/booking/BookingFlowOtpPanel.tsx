@@ -13,6 +13,13 @@ import { cn } from "@/shared/lib/cn";
 
 const RESEND_COOLDOWN_S = 60;
 
+// Module-level memory of the last SMS-OTP send per `${shopSlug}:${phone}`, so a
+// remount of this panel (customer steps Back to the info step then Forward again
+// before verifying) does NOT fire a second SMS while the first code is still
+// valid. Survives component unmount within the same page session; the server
+// cooldown is the cross-tab / cross-reload authority.
+const lastSmsSentAt = new Map<string, number>();
+
 function maskPhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   if (digits.length < 4) return phone;
@@ -79,8 +86,12 @@ export function BookingFlowOtpPanel({
   const codeInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  function startCooldown() {
-    setCooldown(RESEND_COOLDOWN_S);
+  // Key for the per-phone "recently sent" guard. Digits-only so format variants
+  // (spaces / +1) map to the same entry.
+  const otpKey = `${shopSlug}:${clientPhone.replace(/\D/g, "")}`;
+
+  function startCooldown(seconds: number = RESEND_COOLDOWN_S) {
+    setCooldown(seconds);
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       setCooldown((s) => {
@@ -99,7 +110,7 @@ export function BookingFlowOtpPanel({
   // file (belt-and-suspenders — SMS link/code often filtered by US carriers, so
   // the email makes sure the code reaches the customer somewhere).
   useEffect(() => {
-    void sendCode();
+    void sendCode({ auto: true });
     if (canEmail && isEmailish(onFileEmail)) void sendEmailCode(onFileEmail);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -125,9 +136,21 @@ export function BookingFlowOtpPanel({
     });
   }
 
-  function sendCode() {
+  function sendCode(opts?: { auto?: boolean }) {
     setError(null);
     startSendTransition(async () => {
+      // Auto-send on (re)mount: if we already texted this phone < cooldown ago
+      // (customer stepped Back to edit info then Forward again), skip the
+      // duplicate SMS — the prior code is still valid — and just restore the UI.
+      // A manual resend click is never skipped here (server still throttles it).
+      const last = lastSmsSentAt.get(otpKey) ?? 0;
+      const elapsedS = Math.floor((Date.now() - last) / 1000);
+      if (opts?.auto && last && elapsedS < RESEND_COOLDOWN_S) {
+        setSent(true);
+        startCooldown(RESEND_COOLDOWN_S - elapsedS);
+        setTimeout(() => codeInputRef.current?.focus(), 100);
+        return;
+      }
       try {
         const res = await fetch("/api/booking-otp/send", {
           method: "POST",
@@ -140,6 +163,7 @@ export function BookingFlowOtpPanel({
           return;
         }
         setSent(true);
+        lastSmsSentAt.set(otpKey, Date.now());
         startCooldown();
         setTimeout(() => codeInputRef.current?.focus(), 100);
       } catch {
@@ -270,7 +294,7 @@ export function BookingFlowOtpPanel({
           <button
             type="button"
             disabled={cooldown > 0 || isSending}
-            onClick={sendCode}
+            onClick={() => sendCode()}
             className="text-sm text-[var(--salon-primary)] underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSending ? t.otpSending : resendLabel}
