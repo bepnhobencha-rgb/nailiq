@@ -1,5 +1,6 @@
 "use client";
 
+import type React from "react";
 import { Star, Heart, Users, Palette, HeartHandshake, Clock, Play } from "lucide-react";
 
 import { Badge } from "@/components/ui/Badge";
@@ -54,6 +55,26 @@ import { type LatenessTier } from "./lateness";
  */
 
 const PULSE_PERIOD_SEC = 2.0; // see `BookingCard.tsx` BOOKING_MOTION.pulsePeriodSec — same operational rhythm.
+
+// Deterministic group color from UUID — 6 distinct hues that read well on both
+// light/dark status backgrounds. Walkin gold (nq-primary) is intentionally
+// excluded so the group band never clashes with the walk-in accent.
+const GROUP_PALETTE = [
+  "#6366f1", // indigo
+  "#10b981", // emerald
+  "#f43f5e", // rose
+  "#f59e0b", // amber
+  "#8b5cf6", // violet
+  "#06b6d4", // cyan
+] as const;
+
+function groupColorFromId(groupId: string): string {
+  let h = 0;
+  for (let i = 0; i < groupId.length; i++) {
+    h = (h * 31 + groupId.charCodeAt(i)) & 0xffff;
+  }
+  return GROUP_PALETTE[h % GROUP_PALETTE.length];
+}
 
 export interface BookingBlockProps {
   bookingId: string;
@@ -144,6 +165,12 @@ export interface BookingBlockProps {
    * the 👥 marker in the icon stack so receptionists can identify
    * grouped bookings at a glance. */
   isGroup?: boolean;
+  /**
+   * UUID of the group this booking belongs to. When provided alongside
+   * `isGroup`, a deterministic accent color is applied to the left border
+   * so all members of the same group share the same color on the timeline.
+   */
+  groupId?: string | null;
   /** Group/couple asked to be seated next to each other (migration
    * 20260607100000). Renders a 💕 marker so reception knows to set up
    * adjacent beds + a shared curtain. */
@@ -274,6 +301,7 @@ export function BookingBlock(props: BookingBlockProps) {
     noShowRiskScore = null,
     isLate = false,
     isGroup = false,
+    groupId = null,
     seatTogether = false,
     compactIcons = false,
     iconLabels = DEFAULT_ICON_LABELS,
@@ -356,6 +384,10 @@ export function BookingBlock(props: BookingBlockProps) {
   // two-line client name (P0: names must never truncate) clears the block
   // padding. Density still drives the grid floor (Simple 56px, Balanced
   // 52px, Pro 44px) without breaking the timeline math.
+  // Group color: deterministic accent from group UUID, shown as a 3px left border.
+  // Takes priority over the walkin gold border so the group association is always visible.
+  const groupAccent = isGroup && groupId ? groupColorFromId(groupId) : null;
+
   const isDraggable = !!onPointerDown && (status === "pending" || status === "confirmed");
   const commonClass = cn(
     // pointer-events-auto: the timeline wraps blocks in a pointer-events-none
@@ -366,7 +398,10 @@ export function BookingBlock(props: BookingBlockProps) {
     "pointer-events-auto absolute top-1.5 bottom-1.5 rounded-lg px-2.5 py-1.5 text-left shadow-none transition-[transform,box-shadow,opacity] duration-[var(--duration-nq-fast)] ease-[var(--ease-nq-out)] motion-safe:hover:-translate-y-px motion-safe:hover:shadow-nq-card",
     minHeightPx === undefined && "min-h-[3.25rem]",
     styles.root,
-    isWalkin && showWalkinAccent && "border-l-[3px] border-nq-primary",
+    // Walkin accent: only when not a group (group color takes priority).
+    isWalkin && showWalkinAccent && !groupAccent && "border-l-[3px] border-nq-primary",
+    // Group accent: dynamic color via inline style below, but we need the width class here.
+    groupAccent && "border-l-[3px]",
     isCompleted && "opacity-70",
     // While dragging, hide the ORIGINAL block so only the moving dashed ghost
     // (with the live snap time) shows — one clean block instead of two.
@@ -375,11 +410,12 @@ export function BookingBlock(props: BookingBlockProps) {
     onClick && !isDraggable && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
   );
 
-  const style = {
+  const style: React.CSSProperties = {
     left: leftPx,
     width: Math.max(0, widthPx - 4),
     ...(minHeightPx !== undefined ? { minHeight: minHeightPx } : {}),
-  } as const;
+    ...(groupAccent ? { borderLeftColor: groupAccent } : {}),
+  };
 
   const inner = (
     <>

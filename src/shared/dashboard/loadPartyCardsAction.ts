@@ -71,7 +71,7 @@ export async function loadPartyCardsAction(
   // 3. Fetch party links for this salon (multi-tenant filter).
   const { data: partyLinks, error: linkErr } = await db
     .from("party_links")
-    .select("id, group_id, token, mode, expires_at")
+    .select("id, group_id, token, mode, expires_at, organizer_name")
     .eq("salon_id", salonId);
 
   if (linkErr) {

@@ -68,7 +68,7 @@ const base: CockpitInputs = {
   smsFailedCount: 0,
   pendingPartyCount: 0,
   pendingPartyGroupTime: null,
-  pendingPartyGuestName: null,
+  pendingPartyOrganizerName: null,
   isSetupIncomplete: false,
 };
 
@@ -135,7 +135,7 @@ test("party pending after upcoming (uses group time + count copy)", () => {
 
 test("single party pending uses named copy", () => {
   const a = computeNextAction(
-    { ...base, pendingPartyCount: 1, pendingPartyGroupTime: "5:00 PM", pendingPartyGuestName: "Huy" },
+    { ...base, pendingPartyCount: 1, pendingPartyGroupTime: "5:00 PM", pendingPartyOrganizerName: "Huy" },
     labels,
   );
   assertEqual(a?.text, "party-named:5:00 PM:Huy");
@@ -230,7 +230,7 @@ test("no-staff-for-waiting bottleneck surfaces as alert", () => {
 
 test("party pending surfaces as alert with open_party + named copy", () => {
   const r = computeCriticalAlerts(
-    { ...base, pendingPartyCount: 1, pendingPartyGroupTime: "5:00 PM", pendingPartyGuestName: "Huy" },
+    { ...base, pendingPartyCount: 1, pendingPartyGroupTime: "5:00 PM", pendingPartyOrganizerName: "Huy" },
     labels,
   );
   assertEqual(r.shown[0]!.key, "party_change");
