@@ -105,6 +105,20 @@ export async function GET(req: Request): Promise<NextResponse> {
       }
     }
 
+    // Social Content — draft caption Mon/Wed/Fri at 08:00 salon local time
+    if (salonHour === 8 && flags.ai_social_content) {
+      try {
+        const { runSocialContent } = await import(
+          "@/shared/ai/agentSocialContent"
+        );
+        await runSocialContent(salon.id);
+        entry.social_content = "ok";
+      } catch (e) {
+        console.error("[manager] social_content", salon.slug, e);
+        entry.social_content = String(e);
+      }
+    }
+
     // VIP Care — birthday / milestone / inactive nudge at 08:00 salon local time
     if (salonHour === 8 && flags.ai_vip_care) {
       try {
