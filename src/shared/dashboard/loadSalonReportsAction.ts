@@ -1,6 +1,7 @@
 "use server";
 
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { salonDayRangeUtc, salonToday } from "@/shared/lib/salonTime";
@@ -86,7 +87,7 @@ export async function loadSalonReports(
 ): Promise<LoadSalonReportsResult> {
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
-  if (resolved.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(resolved.role)) return { ok: false, error: "forbidden" };
 
   // Release flag `advanced_reports` (Beta, default OFF). Refuse the load
   // even though nav/route gating hides the surface (defense-in-depth).

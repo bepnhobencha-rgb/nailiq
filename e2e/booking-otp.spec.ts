@@ -89,6 +89,8 @@ test.describe("Booking Flow — Phone OTP", () => {
     // "today" (rendered as `date-today`, not `date-day`). Advance a month until
     // a selectable `date-day` appears instead of assuming the default view has
     // one — keeps the OTP suite deterministic on the last day of the month.
+    // The month grid is collapsed behind the "📅 More dates" toggle (#593).
+    await page.locator('[data-testid="date-toggle-calendar"]').click();
     await page
       .locator('[data-testid="calendar-grid"]')
       .waitFor({ state: "visible", timeout: 15_000 });
@@ -208,5 +210,64 @@ test.describe("Booking Flow — Phone OTP", () => {
     await expect(
       page.locator('[data-testid="booking-success"]'),
     ).toBeVisible({ timeout: 20_000 });
+  });
+
+  // Regression — a phone already verified in THIS session must never be sent
+  // back through the OTP step (re-asked to enter a code) nor re-texted a new SMS
+  // when the customer navigates Back from confirm and forward again. Before the
+  // fix, goInfoDone wiped the session and backToInfo routed verified users to the
+  // OTP step, so each round-trip fired a duplicate SMS + a redundant prompt.
+  test("verified phone is not re-prompted or re-texted on back/forward", async ({
+    page,
+  }) => {
+    let sendCount = 0;
+    await page.route("**/api/booking-otp/send", async (route) => {
+      if (route.request().method() === "POST") sendCount += 1;
+      await route.continue();
+    });
+
+    await walkToInfoStep(page);
+    await page.getByRole("button", { name: "Continue" }).first().click();
+
+    // OTP step → verify with the demo code → confirm.
+    await expect(page.locator("#otp-code")).toBeEnabled({ timeout: 15_000 });
+    await fillReactInput(page.locator("#otp-code"), OTP_DEMO_CODE);
+    await page.getByRole("button", { name: /xác thực|verify/i }).last().click();
+
+    const confirmBtn = page.getByTestId("confirm-booking-btn");
+    await expect(confirmBtn).toBeVisible({ timeout: 15_000 });
+    const sendsAfterVerify = sendCount; // the single auto-send for the SMS code
+
+    // Back from confirm → must land on INFO (name field), NOT re-show the OTP step.
+    await page.getByRole("button", { name: /← back|back|quay l/i }).click();
+    await expect(page.locator('input[name="clientName"]')).toBeVisible({
+      timeout: 8_000,
+    });
+    await expect(page.locator("#otp-code")).toHaveCount(0);
+
+    // Forward again → verify re-runs but must SKIP OTP (already verified) and
+    // land straight on confirm, with NO additional SMS send.
+    await page.getByRole("button", { name: "Continue" }).first().click();
+    await expect(confirmBtn).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("#otp-code")).toHaveCount(0);
+    expect(sendCount).toBe(sendsAfterVerify);
+  });
+
+  // Regression — the SMS send endpoint must throttle duplicate sends server-side
+  // (the client cooldown is bypassable). Two rapid sends to the same phone: the
+  // first is accepted, the second is rejected 429 rate_limited. Runs in demo mode
+  // (the guard sits before the demo short-circuit), so no real SMS is sent.
+  test("server throttles duplicate SMS sends to the same phone", async ({
+    request,
+  }) => {
+    const phone = uniqueOtpPhone();
+    const data = { phone, shopSlug: testSlug };
+
+    const r1 = await request.post("/api/booking-otp/send", { data });
+    expect(r1.status()).toBe(200);
+
+    const r2 = await request.post("/api/booking-otp/send", { data });
+    expect(r2.status()).toBe(429);
+    expect((await r2.json()).error).toBe("rate_limited");
   });
 });

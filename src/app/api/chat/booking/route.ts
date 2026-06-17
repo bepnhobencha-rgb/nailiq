@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/shared/lib/supabase/server";
 import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
 import { resolveVertical } from "@/shared/verticals/registry";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 
 let anthropicClient: Anthropic | null = null;
 function getClient(): Anthropic | null {
@@ -73,7 +74,7 @@ export async function POST(req: NextRequest) {
     .map((s) => {
       const price = s.price_cents ? `$${(s.price_cents / 100).toFixed(0)}` : "";
       // Match the booking page, which shows service time + buffer (totalMinutes).
-      const mins = (Number(s.duration_minutes) || 0) + (Number(s.buffer_minutes) || 0);
+      const mins = serviceBlockMinutes(s.duration_minutes, s.buffer_minutes);
       return `- ${s.name}${mins ? ` (${mins} min)` : ""}${price ? ` — ${price}` : ""}`;
     })
     .join("\n");

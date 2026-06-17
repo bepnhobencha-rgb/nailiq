@@ -318,6 +318,7 @@ export type UserMessages = {
   /** Dashboard app-shell navigation (sidebar + mobile bottom bar). */
   nav: {
     frontDesk: string;
+    pulse: string;
     calendar: string;
     clients: string;
     services: string;
@@ -343,6 +344,10 @@ export type UserMessages = {
     /** Sidebar footer trigger + dropdown header for the salon switcher
      * (rendered only when the owner has > 1 owner-memberships). */
     switchSalon: string;
+    /** Card Disputes nav item (owner/admin only). */
+    disputes: string;
+    /** Activity / communications log nav item (owner only). */
+    activity: string;
   };
   /** Phone-OTP login flow (`/login`, `/login/verify`). Distinct from
    * `register.*` so the two flows can diverge without cross-talk. */
@@ -591,6 +596,16 @@ export type UserMessages = {
     sectionStaff: string;
     sectionHours: string;
     sectionAddress: string;
+    sectionAiManager: string;
+    /** Collapsible category headers that group the settings panels. */
+    categories: {
+      brand: { title: string; subtitle: string };
+      booking: { title: string; subtitle: string };
+      notifications: { title: string; subtitle: string };
+      integrations: { title: string; subtitle: string };
+      plan: { title: string; subtitle: string };
+      jumpLabel: string;
+    };
     /** Owner/admin email alerts for booking events. */
     ownerNotifications: {
       title: string;
@@ -619,6 +634,26 @@ export type UserMessages = {
       testErrorNoRecipients: string;
       testErrorNoResend: string;
       testErrorGeneric: string;
+    };
+    /** Customer-notification defaults for STAFF actions (create/reschedule/cancel). */
+    staffNotifications: {
+      title: string;
+      subtitle: string;
+      loading: string;
+      enabledLabel: string;
+      channelsHeading: string;
+      smsLabel: string;
+      emailLabel: string;
+      eventsHeading: string;
+      eventsHint: string;
+      eventLabels: { create: string; reschedule: string; cancel: string };
+      languageHeading: string;
+      languageHint: string;
+      langEn: string;
+      langVi: string;
+      save: string;
+      saved: string;
+      saveError: string;
     };
     hintRecoveryEmail: string;
     /** Recovery-email verification status block (Settings hub). */
@@ -1119,6 +1154,10 @@ export type UserMessages = {
       cancelConfirmNo: string;
       cancelling: string;
       cancelError: string;
+      /** Notify-the-organizer toggles shown in the cancel confirm box. */
+      notifyLabel: string;
+      notifySms: string;
+      notifyEmail: string;
     };
     /** Role-adaptive top-bar labels. */
     roleBadge: {
@@ -1324,6 +1363,29 @@ export type UserMessages = {
         };
       };
     };
+    /** Online waitlist panel in the Receptionist Center (next to the walk-in
+     *  queue). Staff see online customers waiting for a full slot and invite
+     *  one in a single tap (texts them the claim link via SMS). Shared by the
+     *  No-Show hub's waitlist section. */
+    waitlist: {
+      title: string;
+      inviteNow: string;
+      inviteAgain: string;
+      /** Status pill — already invited. */
+      invited: string;
+      /** Status pill — still waiting. */
+      statusWaiting: string;
+      /** Status pill — customer grabbed the freed slot. */
+      claimed: string;
+      /** Primary action on a claimed row — open the prefilled desk form. */
+      createBooking: string;
+      /** Compact empty state. */
+      empty: string;
+      /** Toasts. `{name}` is the customer's name. */
+      invitedToast: (name: string) => string;
+      suppressedToast: (name: string) => string;
+      errorToast: string;
+    };
     walkin: {
       invalidPhone: string;
       phoneRequired: string;
@@ -1334,6 +1396,8 @@ export type UserMessages = {
     grid: {
       conflictWith: (clientName: string) => string;
       overflowMessage: string;
+      /** Label on the display-only closing-time marker at the right edge of the grid. */
+      closingLabel: string;
       conflictShake: string;
       /** Toast shown when a drag-to-reschedule is rejected, keyed by reason. */
       rescheduleFailed: {
@@ -1363,6 +1427,27 @@ export type UserMessages = {
       assignedMiddle: string;
       cancelledPrefix: string;
       cancelUndoFailed: string;
+    };
+    /** "Notify the customer?" panel + cancel-confirm copy. */
+    notify: {
+      heading: string;
+      sms: string;
+      email: string;
+      previewTitle: string;
+      willNotNotify: string;
+      noPhone: string;
+      noEmail: string;
+      langEn: string;
+      langVi: string;
+      cancelTitle: string;
+      cancelDesc: string;
+      confirmCancel: string;
+      keep: string;
+      /** Group-aware cancel: shown when the booking is one member of a party. */
+      groupBanner: (n: number) => string;
+      cancelThisOne: string;
+      cancelWholeParty: (n: number) => string;
+      confirmCancelGroup: (n: number) => string;
     };
     drawer: {
       title: string;
@@ -1406,6 +1491,11 @@ export type UserMessages = {
       noNotesHint: string;
       /** Heading for the optional add-on service row in the booking drawer. */
       sectionAddon: string;
+      /** Party/group composition section. */
+      groupSectionTitle: (n: number) => string;
+      groupOrganizedBy: (name: string) => string;
+      groupOrganizerBadge: string;
+      groupSeatTogether: string;
     };
     edit: {
       /** Section heading when editing from the drawer */
@@ -1604,6 +1694,29 @@ export type UserMessages = {
       vipBadge: string;
       /** "{visits} visit(s) · last {lastVisit}" — collapsed-row summary. */
       summaryLine: (visits: number, lastVisit: string) => string;
+      /** Segment filter chips + per-card status badges. */
+      segments: {
+        all: string;
+        vip: string;
+        new: string;
+        regular: string;
+        atRisk: string;
+      };
+      /** "{n} of {total}" footer when results are filtered/paginated. */
+      countLabel: (shown: number, total: number) => string;
+      loadMore: string;
+      /** Total directory count label — e.g. "9,496 clients". */
+      totalCountLabel: (total: number) => string;
+      /** Pagination: "Page X of Y". */
+      pageLabel: (page: number, totalPages: number) => string;
+      prevPage: string;
+      nextPage: string;
+      /** Shown when an imported-only client has no bookings yet. */
+      noVisitsYet: string;
+      /** Compact stat labels on the card. */
+      statVisits: string;
+      statSpent: string;
+      statLastVisit: string;
       totalSpent: string;
       email: string;
       notes: string;
@@ -1620,6 +1733,115 @@ export type UserMessages = {
         forbidden: string;
         not_found: string;
         server_error: string;
+      };
+      /** View-mode toggle labels. */
+      viewModes: {
+        cards: string;
+        list: string;
+        details: string;
+      };
+      /** Column header labels for the "details" table view. */
+      tableColumns: {
+        name: string;
+        phone: string;
+        visits: string;
+        lastVisit: string;
+        spent: string;
+        vip: string;
+      };
+      /** Customer 360 full-profile drawer. */
+      profile360: {
+        title: string;
+        close: string;
+        loading: string;
+        error: string;
+        /** Hero KPIs */
+        lifetimeSpent: string;
+        visits: string;
+        avgTicket: string;
+        lastVisit: string;
+        clientSince: (date: string) => string;
+        /** AI summary card */
+        aiSummaryTitle: string;
+        aiGenerating: string;
+        aiNextAction: string;
+        bookAgain: string;
+        /** Reliability */
+        reliabilityTitle: string;
+        completed: string;
+        noShow: string;
+        cancelled: string;
+        noShowRate: (pct: number) => string;
+        /** Favorites & pattern */
+        favoritesTitle: string;
+        topService: string;
+        topStaff: string;
+        patternTitle: string;
+        usualPattern: (weekday: string, hour: number, days: number) => string;
+        nextPredicted: string;
+        /** Preferences */
+        preferencesTitle: string;
+        allergiesWarning: string;
+        favoriteColors: string;
+        favoriteStyles: string;
+        language: string;
+        commChannel: string;
+        consentsTitle: string;
+        consentSms: string;
+        consentEmail: string;
+        consentAi: string;
+        /** Money */
+        moneyTitle: string;
+        loyaltyStamps: string;
+        loyaltyRewards: string;
+        activeVouchers: string;
+        expiresOn: (date: string) => string;
+        /** Timeline */
+        timelineTitle: string;
+        upcomingTitle: string;
+        showMore: string;
+        /** Engagement */
+        reviewsTitle: string;
+        notificationsTitle: string;
+        aiEngagementTitle: string;
+        chatCount: string;
+        voiceCount: string;
+        lastInteraction: string;
+        /** Footer actions */
+        actionBookAgain: string;
+        actionMessage: string;
+        actionEdit: string;
+        actionClose: string;
+        /** Weekday names (Sun=0) */
+        weekdays: [string, string, string, string, string, string, string];
+        /** Channel icon labels */
+        channelOnline: string;
+        channelWalkin: string;
+        channelVoice: string;
+        channelDesk: string;
+        /** Status labels */
+        statusCompleted: string;
+        statusCancelled: string;
+        statusNoShow: string;
+        statusConfirmed: string;
+        statusInProgress: string;
+        /** In-app SMS composer */
+        composePlaceholder: string;
+        composeSend: string;
+        composeCancel: string;
+        composeCharCount: (used: number, max: number) => string;
+        composeSent: string;
+        composeSentSuppressed: string;
+        composeError: (msg: string) => string;
+        /** AI card — regenerate button */
+        regenerateSummary: string;
+        /** Rebook-invite message template — parameters are optional, omitted when null */
+        rebookInviteTemplate: (opts: {
+          firstName: string;
+          service: string | null;
+          staff: string | null;
+          bookingUrl: string;
+        }) => string;
       };
     };
     /** Subscription pricing panel (`/dashboard/[slug]/settings`). */
@@ -1744,11 +1966,124 @@ export type UserMessages = {
       manageCtaSettings: string;
       upgradeError: string;
     };
+    /** No-show fee charge/waive modal (shown when booking has a card on file). */
+    noShowFeeModal: {
+      title: string;
+      desc: (amount: string) => string;
+      charge: (amount: string) => string;
+      waive: string;
+      cancel: string;
+    };
+    /** Grid lateness/tombstone labels. */
+    latenessGrid: {
+      /** Inline Start button aria-label and visible label. */
+      startShort: string;
+      /** "Auto no-show at {time}" for late/critical badge when auto is ON. */
+      autoNoShowAt: (time: string) => string;
+      /** Badge label when auto is OFF and tier=late. */
+      late: string;
+      /** Badge label when auto is OFF and tier=critical. */
+      veryLate: string;
+      /** Tombstone aria-label template. */
+      tombstoneAria: (clientName: string) => string;
+      /** Tombstone popover: undo action label. */
+      tombstoneUndo: string;
+      /** Tombstone popover: charge action. */
+      tombstoneCharge: (amount: string) => string;
+      /** Tombstone popover: waive fee. */
+      tombstoneWaive: string;
+      /** Tombstone status: "Charged {amount}". */
+      tombstoneCharged: (amount: string) => string;
+      /** Tombstone status: "Waived". */
+      tombstoneWaived: string;
+      /** Tombstone status: charge failed. */
+      tombstoneFailed: string;
+      /** Tombstone status: "Unpaid {amount} — tap to charge". */
+      tombstoneUnpaid: (amount: string) => string;
+      /** Tombstone status: "No-show" (no card). */
+      tombstoneNoCard: string;
+    };
   };
   /** Shown when a NailIQ booking is blocked because the Wix-connected
    *  staff resource already has an overlapping active booking on Wix
    *  (created within the 2-minute polling window). */
   wixSlotTaken: string;
+  /** `/dashboard/[slug]/disputes` — Card Disputes report (owner/admin only). */
+  disputes: {
+    /** Page <h1> + sidebar nav label. */
+    pageTitle: string;
+    /** One-line intro under the heading. */
+    intro: string;
+    /** Nav label (sidebar). */
+    navLabel: string;
+    /** Alert when needsResponse > 0. {n} = count. */
+    needsResponseAlert: (n: number) => string;
+    /** Empty state (good news). */
+    emptyTitle: string;
+    emptyBody: string;
+    /** Loading / error states. */
+    loading: string;
+    errorGeneric: string;
+    /** Status pill labels. */
+    status: {
+      needs_response: string;
+      under_review: string;
+      won: string;
+      lost: string;
+      warning_needs_response: string;
+      warning_closed: string;
+    };
+    /** Evidence-due countdown. {n} = days remaining. */
+    evidenceDueIn: (n: number) => string;
+    evidenceOverdue: string;
+    /** Evidence bundle section headings. */
+    evidenceTitle: string;
+    evidenceLoading: string;
+    evidenceError: string;
+    sectionConsent: string;
+    sectionCharge: string;
+    sectionBooking: string;
+    sectionCustomer: string;
+    sectionNoShow: string;
+    sectionNotifications: string;
+    /** No consent warning. */
+    noConsentWarning: string;
+    /** Field labels inside the evidence bundle. */
+    fields: {
+      consentAt: string;
+      chargeAmount: string;
+      paymentRef: string;
+      service: string;
+      staff: string;
+      time: string;
+      bookingStatus: string;
+      price: string;
+      clientName: string;
+      phone: string;
+      email: string;
+      visitCount: string;
+      noShowAt: string;
+      noShowBy: string;
+      notifType: string;
+      notifChannel: string;
+      notifStatus: string;
+      notifSentAt: string;
+    };
+    /** "Copy evidence bundle" button. */
+    copyEvidence: string;
+    copiedEvidence: string;
+    /** Provider badge. */
+    providerStripe: string;
+    providerSquare: string;
+    /** Column/row labels in the list. */
+    labelClient: string;
+    labelAmount: string;
+    labelReason: string;
+    labelStatus: string;
+    labelOpened: string;
+    labelEvidenceDue: string;
+    noInfo: string;
+  };
 };
 
 export const userEn: UserMessages = {
@@ -2215,6 +2550,7 @@ export const userEn: UserMessages = {
   },
   nav: {
     frontDesk: "Live Board",
+    pulse: "Pulse",
     calendar: "Calendar",
     clients: "Customers",
     services: "Services",
@@ -2235,6 +2571,8 @@ export const userEn: UserMessages = {
     primaryNav: "Primary navigation",
     switchSalon: "Switch salon",
     loyalty: "Loyalty & Gifts",
+    disputes: "Card Disputes",
+    activity: "Activity",
   },
   login: {
     title: "Sign in",
@@ -2441,6 +2779,30 @@ export const userEn: UserMessages = {
     sectionStaff: "Staff",
     sectionHours: "Opening hours",
     sectionAddress: "Salon address",
+    sectionAiManager: "AI Manager setup",
+    categories: {
+      brand: {
+        title: "Brand & booking page",
+        subtitle: "How your salon looks to customers",
+      },
+      booking: {
+        title: "Booking & queue",
+        subtitle: "Rules for how appointments are made",
+      },
+      notifications: {
+        title: "Notifications & reminders",
+        subtitle: "Emails, reminders & no-show follow-ups",
+      },
+      integrations: {
+        title: "Integrations",
+        subtitle: "Domain, Google, Wix & Voice AI",
+      },
+      plan: {
+        title: "Plan & advanced",
+        subtitle: "Subscription and power-user settings",
+      },
+      jumpLabel: "Jump to",
+    },
     ownerNotifications: {
       title: "Manager email alerts",
       subtitle:
@@ -2468,6 +2830,31 @@ export const userEn: UserMessages = {
       testErrorNoRecipients: "No recipients yet — add an email or enable owners/admins.",
       testErrorNoResend: "Email service not configured.",
       testErrorGeneric: "Could not send the test email.",
+    },
+    staffNotifications: {
+      title: "Customer notifications",
+      subtitle:
+        "When staff create, reschedule, or cancel a booking, choose whether the customer is notified — and in which language.",
+      loading: "Loading…",
+      enabledLabel: "Offer the “notify customer?” step on staff actions",
+      channelsHeading: "Channels offered",
+      smsLabel: "Text (SMS)",
+      emailLabel: "Email",
+      eventsHeading: "Notify the customer by default when…",
+      eventsHint: "Staff can still toggle this per booking.",
+      eventLabels: {
+        create: "Booking created at the desk",
+        reschedule: "Booking rescheduled",
+        cancel: "Booking cancelled",
+      },
+      languageHeading: "Default language",
+      languageHint:
+        "Online bookings always use the language the customer chose on the site.",
+      langEn: "English",
+      langVi: "Vietnamese",
+      save: "Save",
+      saved: "Saved.",
+      saveError: "Could not save. Please try again.",
     },
     hintRecoveryEmail:
       "To add or change recovery email for your account, use the banner on your dashboard.",
@@ -2918,6 +3305,9 @@ export const userEn: UserMessages = {
       cancelConfirmNo: "Keep",
       cancelling: "Cancelling…",
       cancelError: "Couldn't cancel — please try again",
+      notifyLabel: "Notify the organizer",
+      notifySms: "SMS",
+      notifyEmail: "Email",
     },
     roleBadge: {
       ownerView: "Owner view",
@@ -3076,6 +3466,20 @@ export const userEn: UserMessages = {
         },
       },
     },
+    waitlist: {
+      title: "Waitlist",
+      inviteNow: "Invite now",
+      inviteAgain: "Invite again",
+      invited: "Invited",
+      statusWaiting: "Waiting",
+      claimed: "✅ Claimed",
+      createBooking: "Create booking",
+      empty: "No one on the waitlist",
+      invitedToast: (name) => `Invited ${name} by SMS`,
+      suppressedToast: (name) =>
+        `Marked ${name} invited — SMS disabled in this environment`,
+      errorToast: "Could not send the invite. Please try again.",
+    },
     walkin: {
       invalidPhone:
         "Phone number invalid. Examples: +1 (604) 555-1234 or +84901234567",
@@ -3089,6 +3493,7 @@ export const userEn: UserMessages = {
       conflictWith: (clientName: string) =>
         `${clientName.trim() ? `⚠ Busy — ${clientName}` : "⚠ Slot conflict"}`,
       overflowMessage: "⚠ Past closing hours",
+      closingLabel: "Close",
       conflictShake:
         "That slot overlaps another booking. Choose another slot or time.",
       rescheduleFailed: {
@@ -3114,6 +3519,25 @@ export const userEn: UserMessages = {
       assignedMiddle: "→",
       cancelledPrefix: "Cancelled:",
       cancelUndoFailed: "Cannot undo — appointment already past or staff just booked.",
+    },
+    notify: {
+      heading: "Notify customer",
+      sms: "Text (SMS)",
+      email: "Email",
+      previewTitle: "Preview",
+      willNotNotify: "Customer won't be notified.",
+      noPhone: "no phone",
+      noEmail: "no email",
+      langEn: "in English",
+      langVi: "in Vietnamese",
+      cancelTitle: "Cancel appointment?",
+      cancelDesc: "Choose whether to let the customer know.",
+      confirmCancel: "Cancel appointment",
+      keep: "Keep",
+      groupBanner: (n) => `👥 This guest is part of a party of ${n}.`,
+      cancelThisOne: "Just this person",
+      cancelWholeParty: (n) => `Whole party (${n})`,
+      confirmCancelGroup: (n) => `Cancel whole party (${n})`,
     },
     drawer: {
       title: "Booking",
@@ -3150,6 +3574,10 @@ export const userEn: UserMessages = {
       priceSection: "Price",
       noNotesHint: "No notes",
       sectionAddon: "Add-on",
+      groupSectionTitle: (n: number) => `👥 Party of ${n}`,
+      groupOrganizedBy: (name: string) => `Organized by ${name}`,
+      groupOrganizerBadge: "Organizer",
+      groupSeatTogether: "Seated together 💕",
     },
     edit: {
       modeTitle: "Edit booking",
@@ -3331,14 +3759,32 @@ export const userEn: UserMessages = {
       pageTitle: "Clients",
       sectionTitle: "Recent clients",
       sectionIntro:
-        "Last 50 clients sorted by their most recent visit. Search by name or phone.",
-      searchPlaceholder: "Search clients…",
+        "Full client directory — search by name or phone number.",
+      searchPlaceholder: "Search by name or phone number…",
       loading: "Loading clients…",
       empty: "No clients yet.",
       unknownName: "(unnamed)",
       vipBadge: "VIP",
       summaryLine: (visits, lastVisit) =>
         `${visits} ${visits === 1 ? "visit" : "visits"} · last ${lastVisit}`,
+      segments: {
+        all: "All",
+        vip: "VIP",
+        new: "New",
+        regular: "Regular",
+        atRisk: "At-risk",
+      },
+      countLabel: (shown, total) => `${shown} of ${total}`,
+      loadMore: "Show more",
+      totalCountLabel: (total) =>
+        `${total.toLocaleString()} ${total === 1 ? "client" : "clients"}`,
+      pageLabel: (page, totalPages) => `Page ${page} of ${totalPages}`,
+      prevPage: "Previous",
+      nextPage: "Next",
+      noVisitsYet: "No visits yet",
+      statVisits: "Visits",
+      statSpent: "Spent",
+      statLastVisit: "Last visit",
       totalSpent: "Total spent",
       email: "Email",
       notes: "Notes",
@@ -3357,6 +3803,99 @@ export const userEn: UserMessages = {
         forbidden: "Only the salon owner can change VIP status.",
         not_found: "Client profile not found.",
         server_error: "Could not save. Try again shortly.",
+      },
+      viewModes: {
+        cards: "Cards",
+        list: "List",
+        details: "Details",
+      },
+      tableColumns: {
+        name: "Name",
+        phone: "Phone",
+        visits: "Visits",
+        lastVisit: "Last visit",
+        spent: "Spent",
+        vip: "VIP",
+      },
+      profile360: {
+        title: "Customer Profile",
+        close: "Close",
+        loading: "Loading profile…",
+        error: "Could not load profile. Try again.",
+        lifetimeSpent: "Lifetime",
+        visits: "Visits",
+        avgTicket: "Avg ticket",
+        lastVisit: "Last visit",
+        clientSince: (date: string) => `Client since ${date}`,
+        aiSummaryTitle: "AI Summary",
+        aiGenerating: "Generating summary…",
+        aiNextAction: "Suggested action",
+        bookAgain: "Book again",
+        reliabilityTitle: "Reliability",
+        completed: "Completed",
+        noShow: "No-show",
+        cancelled: "Cancelled",
+        noShowRate: (pct: number) => `${pct}% no-show rate`,
+        favoritesTitle: "Favorites",
+        topService: "Favourite service",
+        topStaff: "Favourite staff",
+        patternTitle: "Visit pattern",
+        usualPattern: (weekday: string, hour: number, days: number) =>
+          `Usually ${weekday} ~${hour}:00, every ${days} days`,
+        nextPredicted: "Next predicted visit",
+        preferencesTitle: "Preferences",
+        allergiesWarning: "⚠ Allergies / sensitivities",
+        favoriteColors: "Favourite colours",
+        favoriteStyles: "Favourite styles",
+        language: "Language",
+        commChannel: "Preferred contact",
+        consentsTitle: "Consents",
+        consentSms: "SMS",
+        consentEmail: "Email",
+        consentAi: "AI",
+        moneyTitle: "Money",
+        loyaltyStamps: "Stamps",
+        loyaltyRewards: "Rewards",
+        activeVouchers: "Active vouchers",
+        expiresOn: (date: string) => `Expires ${date}`,
+        timelineTitle: "Visit history",
+        upcomingTitle: "Upcoming",
+        showMore: "Show more",
+        reviewsTitle: "Reviews",
+        notificationsTitle: "Notifications",
+        aiEngagementTitle: "AI engagement",
+        chatCount: "Chats",
+        voiceCount: "Voice calls",
+        lastInteraction: "Last interaction",
+        actionBookAgain: "Book again",
+        actionMessage: "Message",
+        actionEdit: "Edit",
+        actionClose: "Close",
+        weekdays: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+        channelOnline: "Online",
+        channelWalkin: "Walk-in",
+        channelVoice: "Voice AI",
+        channelDesk: "Desk",
+        statusCompleted: "Completed",
+        statusCancelled: "Cancelled",
+        statusNoShow: "No-show",
+        statusConfirmed: "Confirmed",
+        statusInProgress: "In progress",
+        composePlaceholder: "Type your message…",
+        composeSend: "Send",
+        composeCancel: "Cancel",
+        composeCharCount: (used: number, max: number) => `${used} / ${max}`,
+        composeSent: "Message sent ✓",
+        composeSentSuppressed: "Sent (test environment — not billed)",
+        composeError: (msg: string) => `Failed to send: ${msg}`,
+        regenerateSummary: "Regenerate",
+        rebookInviteTemplate: ({ firstName, service, staff, bookingUrl }) => {
+          const parts = [`Hi ${firstName}! We'd love to see you again at Hi-Lite.`];
+          if (service) parts.push(`Your favourite service: ${service}.`);
+          if (staff) parts.push(`Book with ${staff}.`);
+          parts.push(`Book here: ${bookingUrl}`);
+          return parts.join(" ");
+        },
       },
     },
     pricing: {
@@ -3472,7 +4011,92 @@ export const userEn: UserMessages = {
       upgradeError:
         "Couldn't start checkout. Try again from Settings → Billing.",
     },
+    noShowFeeModal: {
+      title: "No-show fee",
+      desc: (amount: string) => `A fee of ${amount} is saved on this booking's card.`,
+      charge: (amount: string) => `Charge ${amount} now`,
+      waive: "Waive fee",
+      cancel: "Cancel (mark no-show, decide later)",
+    },
+    latenessGrid: {
+      startShort: "Start",
+      autoNoShowAt: (time: string) => `Auto no-show at ${time}`,
+      late: "Late",
+      veryLate: "Very late",
+      tombstoneAria: (clientName: string) => `No-show: ${clientName}`,
+      tombstoneUndo: "Undo no-show",
+      tombstoneCharge: (amount: string) => `Charge ${amount}`,
+      tombstoneWaive: "Waive fee",
+      tombstoneCharged: (amount: string) => `Charged ${amount}`,
+      tombstoneWaived: "Waived",
+      tombstoneFailed: "Charge failed",
+      tombstoneUnpaid: (amount: string) => `Unpaid ${amount} — tap to charge`,
+      tombstoneNoCard: "No-show",
+    },
   },
   wixSlotTaken:
     "Sorry, this time slot was just booked by someone else. Please choose a different time.",
+  disputes: {
+    pageTitle: "Card Disputes",
+    intro: "Review and respond to card disputes filed by your customers.",
+    navLabel: "Card Disputes",
+    needsResponseAlert: (n: number) =>
+      `${n} dispute${n === 1 ? "" : "s"} require${n === 1 ? "s" : ""} your response`,
+    emptyTitle: "No disputes — great news!",
+    emptyBody: "No card disputes have been filed against your salon.",
+    loading: "Loading disputes…",
+    errorGeneric: "Could not load disputes. Please try again.",
+    status: {
+      needs_response: "Needs Response",
+      under_review: "Under Review",
+      won: "Won",
+      lost: "Lost",
+      warning_needs_response: "Action required",
+      warning_closed: "Closed",
+    },
+    evidenceDueIn: (n: number) =>
+      `${n} day${n === 1 ? "" : "s"} left to respond`,
+    evidenceOverdue: "Response deadline passed",
+    evidenceTitle: "Evidence Bundle",
+    evidenceLoading: "Loading evidence…",
+    evidenceError: "Could not load evidence. Please try again.",
+    sectionConsent: "Policy Consent",
+    sectionCharge: "Charge",
+    sectionBooking: "Booking",
+    sectionCustomer: "Customer",
+    sectionNoShow: "No-Show Record",
+    sectionNotifications: "Notifications Sent",
+    noConsentWarning: "No consent on file — difficult to win without this",
+    fields: {
+      consentAt: "Agreed at",
+      chargeAmount: "Amount",
+      paymentRef: "Payment ref",
+      service: "Service",
+      staff: "Staff",
+      time: "Time",
+      bookingStatus: "Status",
+      price: "Price",
+      clientName: "Name",
+      phone: "Phone",
+      email: "Email",
+      visitCount: "Visit count",
+      noShowAt: "Marked at",
+      noShowBy: "Marked by",
+      notifType: "Type",
+      notifChannel: "Channel",
+      notifStatus: "Status",
+      notifSentAt: "Sent at",
+    },
+    copyEvidence: "Copy evidence bundle",
+    copiedEvidence: "Copied!",
+    providerStripe: "Stripe",
+    providerSquare: "Square",
+    labelClient: "Client",
+    labelAmount: "Amount",
+    labelReason: "Reason",
+    labelStatus: "Status",
+    labelOpened: "Opened",
+    labelEvidenceDue: "Evidence due",
+    noInfo: "—",
+  },
 };

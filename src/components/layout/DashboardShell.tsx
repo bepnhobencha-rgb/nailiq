@@ -6,6 +6,9 @@ import {
   type ReleaseFeatureMap,
 } from "@/components/layout/DashboardSidebar";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
+import { DashboardTopBar } from "@/components/layout/DashboardTopBar";
+import { PwaRegister } from "@/components/layout/PwaRegister";
+import { DashboardViewControls } from "@/components/layout/DashboardViewControls";
 import { AdminCopilot } from "@/components/dashboard/AdminCopilot";
 import { useSidebarCollapsed } from "@/shared/lib/useSidebarCollapsed";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
@@ -75,6 +78,7 @@ export function DashboardShell({
       className="min-h-dvh bg-nq-bg"
       style={{ ["--nq-sidebar-w" as string]: sidebarWidth }}
     >
+      <PwaRegister />
       <DashboardSidebar
         slug={slug}
         role={role}
@@ -96,11 +100,20 @@ export function DashboardShell({
         // receptionist motion uses.
         className="min-h-dvh md:pl-[var(--nq-sidebar-w)] pb-16 md:pb-0 transition-[padding-left] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]"
       >
-        {children}
+        <DashboardTopBar slug={slug} />
+        {/* The view controls (refresh + fullscreen) live here, fixed top-right
+            on every page. Fullscreen now targets the whole document so the
+            sidebar/nav + portaled drawers all stay usable. */}
+        <div id="nq-dashboard-content">
+          <DashboardViewControls />
+          {children}
+        </div>
       </main>
       <MobileBottomNav
         slug={slug}
         walkinQueueCount={walkinQueueCount}
+        overdueCount={overdueCount}
+        role={role}
         releaseFeatures={releaseFeatures}
       />
       {/* Coco — in-admin AI assistant. Gated by the admin_copilot release

@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ClientProfilesPanel } from "@/components/dashboard/ClientProfilesPanel";
+import { TopHostsPanel } from "@/components/dashboard/TopHostsPanel";
+import { TopSpendersPanel } from "@/components/dashboard/TopSpendersPanel";
+import { MultiNamePhonePanel } from "@/components/dashboard/MultiNamePhonePanel";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { parseClientSegmentSettings } from "@/shared/dashboard/clientSegmentSettings";
 
 export const dynamic = "force-dynamic";
 
@@ -33,9 +37,38 @@ export default async function ClientsPage({ params }: PageProps) {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
 
+  // Per-salon lifecycle thresholds (Admin Settings). NULL row → app defaults.
+  const { data: segRow } = await ctx.supabase
+    .from("salons")
+    .select("client_segment_settings")
+    .eq("id", ctx.salon.id)
+    .maybeSingle();
+  const seg = parseClientSegmentSettings(
+    (segRow as { client_segment_settings?: unknown } | null)
+      ?.client_segment_settings,
+  );
+
   return (
     <main className="mx-auto w-full max-w-[var(--max-nq-desktop)] px-[var(--pad-nq-section-mobile)] py-6 md:px-6">
-      <ClientProfilesPanel slug={slug} viewerRole={ctx.role} />
+      {/* Manager insights (owner + admin): top group hosts (click → who they
+          brought / when / what) + one-number-many-names cleanup. Front-desk
+          roles don't manage customer identity. */}
+      {(() => {
+        const isManager = ctx.role === "owner" || ctx.role === "admin";
+        return isManager ? (
+          <>
+            <TopSpendersPanel slug={slug} viewerRole={ctx.role} />
+            <TopHostsPanel slug={slug} viewerRole={ctx.role} />
+            <MultiNamePhonePanel slug={slug} viewerRole={ctx.role} />
+          </>
+        ) : null;
+      })()}
+      <ClientProfilesPanel
+        slug={slug}
+        viewerRole={ctx.role}
+        newMaxVisits={seg.newMaxVisits}
+        atRiskDays={seg.atRiskDays}
+      />
     </main>
   );
 }

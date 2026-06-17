@@ -1,7 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { motion } from "@/shared/lib/motionClient";
+import {
+  ConfirmStepCardCapture,
+  type ConfirmStepCardHandle,
+} from "@/components/booking/ConfirmStepCardCapture";
+import type { NoShowCardRequirement } from "@/shared/noshow/resolveNoShowCardRequirement";
+import type { SavedNoShowCard } from "@/shared/noshow/resolveSavedNoShowCard";
 import { Button } from "@/components/ui/Button";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
 import {
@@ -28,6 +34,8 @@ export type AppliedVoucher = {
 export function BookingFlowConfirmPanel({
   t,
   shopLabel,
+  shopSlug,
+  healthAckText,
   service,
   confirmTimeLabel,
   staffSummaryLabel,
@@ -53,9 +61,16 @@ export function BookingFlowConfirmPanel({
   onConfirm,
   onApplyVoucher,
   onRemoveVoucher,
+  cardRequirement,
+  savedCard,
+  smsConsent,
+  setSmsConsent,
 }: {
   t: BookingMessages;
   shopLabel: string;
+  shopSlug: string;
+  /** When set, a mandatory health-acknowledgment tick is shown and gates confirm. */
+  healthAckText?: string | null;
   service: BookingServiceItem;
   confirmTimeLabel: string;
   staffSummaryLabel: string;
@@ -83,13 +98,62 @@ export function BookingFlowConfirmPanel({
   onAddonRepickTime: (id: string) => void;
   onClearAddons: () => void;
   onBack: () => void;
-  onConfirm: () => void | Promise<void>;
+  onConfirm: (
+    extra?: { noShowCardSourceId?: string; noShowCardVerificationToken?: string; noShowConsent?: boolean; noShowReuseSavedCard?: boolean; healthAck?: boolean },
+  ) => void | Promise<void>;
+  /** Option A no-show card gate, resolved BEFORE booking. When required, the card
+   *  is captured here and must be entered before the booking can be confirmed. */
+  cardRequirement?: NoShowCardRequirement | null;
+  /** Đợt 2 — returning OTP-verified customer's saved card (one-tap reuse). */
+  savedCard?: SavedNoShowCard | null;
+  /** SMS consent (collected at the phone gate). Confirm hides its own checkbox
+   *  when already given; still gates the button on it as a safety net. */
+  smsConsent: boolean;
+  setSmsConsent: (v: boolean) => void;
 }) {
   const [voucherInput, setVoucherInput] = useState("");
   const [voucherError, setVoucherError] = useState<string | null>(null);
   const [voucherLoading, setVoucherLoading] = useState(false);
-  // QA BUG-03 — express SMS consent (CASL/TCPA). Required before confirming.
-  const [smsConsent, setSmsConsent] = useState(false);
+  // SMS consent (CASL/TCPA) now comes from the phone gate via props; the local
+  // checkbox below is only a fallback shown when it wasn't given there.
+  // Option A no-show card gate.
+  const cardRequired = cardRequirement?.required === true;
+  const hasSavedCard = savedCard?.hasSavedCard === true;
+  const [noShowConsent, setNoShowConsent] = useState(false);
+  // Mandatory health-acknowledgment (massage/head spa/facial/waxing). Gates confirm.
+  const healthAckOn = Boolean(healthAckText);
+  const [healthAck, setHealthAck] = useState(false);
+  // When a saved card exists, default to reusing it; the customer can switch to
+  // entering a new one.
+  const [useDifferentCard, setUseDifferentCard] = useState(false);
+  const reuseSaved = cardRequired && hasSavedCard && !useDifferentCard;
+  const cardRef = useRef<ConfirmStepCardHandle>(null);
+  const [cardError, setCardError] = useState<string | null>(null);
+
+  async function handleConfirm() {
+    const ack = healthAckOn ? healthAck : undefined;
+    if (cardRequired) {
+      setCardError(null);
+      // One-tap reuse of the saved card — no new tokenization.
+      if (reuseSaved) {
+        await onConfirm({ noShowReuseSavedCard: true, noShowConsent: true, healthAck: ack });
+        return;
+      }
+      const result = await cardRef.current?.tokenize();
+      if (!result) {
+        setCardError(t.noShowCardError ?? "Please check your card details.");
+        return;
+      }
+      await onConfirm({
+        noShowCardSourceId: result.token,
+        noShowCardVerificationToken: result.verificationToken,
+        noShowConsent: true,
+        healthAck: ack,
+      });
+      return;
+    }
+    await onConfirm({ healthAck: ack });
+  }
 
   const customerRows = [
     { label: t.summaryClientName, value: clientName.trim() || "—" },
@@ -235,7 +299,7 @@ export function BookingFlowConfirmPanel({
                 type="text"
                 value={voucherInput}
                 onChange={(e) => { setVoucherInput(e.target.value.toUpperCase()); setVoucherError(null); }}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleApply(); } }}
+                onKeyDown={(e) => { if (e.nativeEvent.isComposing || e.keyCode === 229) return; if (e.key === "Enter") { e.preventDefault(); void handleApply(); } }}
                 placeholder={t.voucherPlaceholder}
                 maxLength={32}
                 className="nq-booking-glass h-12 min-w-0 flex-1 rounded-xl border border-[var(--booking-border)] bg-[var(--booking-bg-input)] px-3 text-sm text-[var(--booking-text)] placeholder:text-[var(--booking-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--salon-primary)]/40"
@@ -348,16 +412,114 @@ export function BookingFlowConfirmPanel({
           </p>
         ) : null}
 
-        <label className="mt-5 flex cursor-pointer items-start gap-2.5 border-t border-[var(--booking-border)]/25 pt-5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
-          <input
-            type="checkbox"
-            data-testid="sms-consent"
-            checked={smsConsent}
-            onChange={(e) => setSmsConsent(e.target.checked)}
-            className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
-          />
-          <span>{t.smsConsent}</span>
-        </label>
+        {/* SMS consent is collected at the phone gate; show this only as a
+            fallback if it wasn't given there. */}
+        {!smsConsent ? (
+          <label className="mt-5 flex cursor-pointer items-start gap-2.5 border-t border-[var(--booking-border)]/25 pt-5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+            <input
+              type="checkbox"
+              data-testid="sms-consent"
+              checked={smsConsent}
+              onChange={(e) => setSmsConsent(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+            />
+            <span>{t.smsConsent}</span>
+          </label>
+        ) : null}
+
+        {cardRequired && cardRequirement?.required ? (
+          <>
+            {reuseSaved && savedCard?.hasSavedCard ? (
+              <div
+                className="mt-4 rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4"
+                data-testid="saved-card-reuse"
+              >
+                <p className="text-sm font-semibold text-[var(--booking-text)]">
+                  {t.noShowCardTitle ?? "Secure your appointment"}
+                </p>
+                <div className="mt-3 flex items-center gap-3 rounded-lg border border-[var(--booking-border)] bg-[var(--booking-bg-input)] px-3 py-3">
+                  <span aria-hidden className="text-base">💳</span>
+                  <span className="text-sm font-medium text-[var(--booking-text)]">
+                    {savedCard.brand || "Card"} •••• {savedCard.last4}
+                  </span>
+                  <span className="ml-auto rounded-full bg-[var(--salon-primary)]/15 px-2 py-0.5 text-[11px] font-semibold text-[var(--salon-primary)]">
+                    {t.noShowSavedCardOnFile ?? "On file"}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+                  {(t.noShowSavedCardDesc ??
+                    "We'll use your saved card. You're only charged {fee} if you don't show up — nothing now.").replace(
+                    "{fee}",
+                    formatBookingPrice(cardRequirement.feeCents, currency) ?? "",
+                  )}
+                </p>
+                <button
+                  type="button"
+                  data-testid="use-different-card"
+                  onClick={() => setUseDifferentCard(true)}
+                  className="mt-2 text-xs font-semibold text-[var(--salon-primary)] underline"
+                >
+                  {t.noShowUseDifferentCard ?? "Use a different card"}
+                </button>
+              </div>
+            ) : (
+              <>
+                <ConfirmStepCardCapture
+                  ref={cardRef}
+                  applicationId={cardRequirement.applicationId}
+                  locationId={cardRequirement.locationId}
+                  environment={cardRequirement.environment}
+                  feeLabel={formatBookingPrice(cardRequirement.feeCents, currency) ?? ""}
+                  t={t}
+                />
+                {hasSavedCard ? (
+                  <button
+                    type="button"
+                    data-testid="use-saved-card"
+                    onClick={() => setUseDifferentCard(false)}
+                    className="mt-2 text-xs font-semibold text-[var(--salon-primary)] underline"
+                  >
+                    {t.noShowUseSavedCard ?? "Use my saved card instead"}
+                  </button>
+                ) : null}
+              </>
+            )}
+            <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+              <input
+                type="checkbox"
+                data-testid="confirm-noshow-consent"
+                checked={noShowConsent}
+                onChange={(e) => setNoShowConsent(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+              />
+              <span>
+                {(t.noShowConsent ??
+                  "I agree to the no-show policy and authorize this salon to charge {fee} to this card only if I don't show up.").replace(
+                  "{fee}",
+                  formatBookingPrice(cardRequirement.feeCents, currency) ?? "",
+                )}
+              </span>
+            </label>
+            {cardError ? (
+              <p className="mt-2 text-xs text-nq-error" role="alert">
+                {cardError}
+              </p>
+            ) : null}
+          </>
+        ) : null}
+
+        {healthAckOn ? (
+          <label className="mt-4 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+            <input
+              type="checkbox"
+              data-testid="confirm-health-ack"
+              checked={healthAck}
+              onChange={(e) => setHealthAck(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+            />
+            <span>{healthAckText}</span>
+          </label>
+        ) : null}
 
         <div className="mt-4 flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <Button
@@ -372,12 +534,21 @@ export function BookingFlowConfirmPanel({
           <LuxuryBookingCta
             className="lg:min-w-[14rem]"
             data-testid="confirm-booking-btn"
-            disabled={submitting || !smsConsent}
-            onClick={onConfirm}
+            disabled={submitting || !smsConsent || (cardRequired && !noShowConsent) || (healthAckOn && !healthAck)}
+            onClick={handleConfirm}
           >
             <span>{submitting ? t.submitting : t.confirmBooking}</span>
           </LuxuryBookingCta>
         </div>
+        {/* Passive agreement to the customer Booking Terms + the salon's
+            Cancellation Policy (links). Confirming the booking = agreement. */}
+        <p className="mt-3 text-center text-[11px] leading-relaxed text-[var(--booking-text-muted)]" data-testid="confirm-terms-notice">
+          {t.confirmTermsAgree ?? "By confirming, you agree to the"}{" "}
+          <a href={`/${shopSlug}/booking-terms`} target="_blank" rel="noreferrer" className="underline">
+            {t.confirmTermsLink ?? "Booking Terms & Cancellation Policy"}
+          </a>
+          .
+        </p>
         <div
           className="pb-[max(env(safe-area-inset-bottom),0px)] pt-1"
           aria-hidden="true"

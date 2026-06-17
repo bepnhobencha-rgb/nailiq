@@ -19,18 +19,41 @@
  * `addDeskAppointment` (conflict-safe RPC) and fires the same confirmation.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   addDeskAppointment,
   getDeskBookingData,
 } from "@/shared/dashboard/receptionistActions";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
+import {
+  searchClients,
+  type ClientSearchHit,
+} from "@/shared/dashboard/searchClientsAction";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
+import { addonLabel } from "@/shared/booking/serviceLabels";
+import { salonToday } from "@/shared/lib/salonTime";
+import { ymdToLocalNoon } from "@/shared/lib/localDateYmd";
 import {
   getAvailableTimeSlots,
   type TimeSlot,
 } from "@/shared/booking/getAvailableTimeSlots";
+import {
+  NotifyCustomerPanel,
+  type NotifyChannels,
+} from "./NotifyCustomerPanel";
+import {
+  type StaffNotificationSettings,
+  defaultNotifyOn,
+} from "@/shared/dashboard/staffNotificationSettings";
+import { buildStaffActionSms } from "@/shared/notifications/staffActionMessages";
 
 type LoadData = Extract<
   Awaited<ReturnType<typeof getDeskBookingData>>,
@@ -46,6 +69,10 @@ type DeskCreatedBooking = Extract<
 type Props = {
   slug: string;
   salonId: string;
+  /** Salon IANA timezone (e.g. "America/Los_Angeles"). The default booking
+   * date is "today" in THIS zone, not the receptionist's device zone — a VN
+   * device (UTC+7) would otherwise default an LA salon to tomorrow. */
+  timezone: string;
   /** Dashboard language — matches the rest of the receptionist center. */
   language: "en" | "vi";
   onClose: () => void;
@@ -59,6 +86,15 @@ type Props = {
   initialYmd?: string;
   /** Desired time label, e.g. "2:00 PM" — auto-selected once it appears free. */
   initialSlotLabel?: string;
+  /** Customer prefill for one-tap rebook from the booking drawer. */
+  initialPhone?: string;
+  initialName?: string;
+  /** Per-salon notify config — drives the "notify customer?" panel defaults. */
+  notifySettings: StaffNotificationSettings;
+  /** Viewport coords of the originating grid click. When set (desktop), the form
+   *  opens as a CARD anchored next to the clicked cell so the grid stays visible
+   *  — instead of a centered modal that covers it. */
+  anchor?: { x: number; y: number };
 };
 
 // Bilingual copy kept local to the form (UI labels, not config) so it stays
@@ -89,11 +125,25 @@ const COPY = {
     submitting: "Creating…",
     submitError: "Couldn't create the appointment. Try again.",
     newCustomer: "New customer.",
-    returning: (vip: string, visits: string) => `✨ Returning customer${vip}${visits} — info filled in.`,
+    returning: (vip: string, visits: string) =>
+      `✨ Returning customer${vip}${visits} — info filled in.`,
     vipTag: " · VIP",
     visitsTag: (n: number) => ` · ${n} visits`,
+    searchHint: "Existing clients — pick one, or keep typing to create new",
+    noName: "(no name)",
     prefillHint: (time: string, staff: string) =>
       `${time}${staff ? ` · ${staff}` : ""} — pick a service to confirm.`,
+    notify: {
+      heading: "Notify customer",
+      sms: "Text (SMS)",
+      email: "Email",
+      previewTitle: "Preview",
+      willNotNotify: "Customer won't be notified.",
+      noPhone: "no phone",
+      noEmail: "no email",
+      langEn: "in English",
+      langVi: "in Vietnamese",
+    },
     errors: {
       invalid_name: "Invalid name.",
       invalid_name_chars: "Name has invalid characters.",
@@ -105,6 +155,7 @@ const COPY = {
       no_staff_available: "No active staff can do this service.",
       invalid_date: "Please choose a date.",
       invalid_time: "Please choose a time.",
+      time_in_past: "That time is in the past — pick a later time.",
       time_slot_taken: "That time was just taken — pick another.",
       booking_limit_reached: "You've hit your plan's booking limit.",
       unauthorized: "You don't have permission to create bookings.",
@@ -135,11 +186,25 @@ const COPY = {
     submitting: "Đang tạo lịch…",
     submitError: "Không tạo được lịch. Thử lại.",
     newCustomer: "Khách mới.",
-    returning: (vip: string, visits: string) => `✨ Khách quen${vip}${visits} — đã điền sẵn.`,
+    returning: (vip: string, visits: string) =>
+      `✨ Khách quen${vip}${visits} — đã điền sẵn.`,
     vipTag: " · VIP",
     visitsTag: (n: number) => ` · ${n} lần ghé`,
+    searchHint: "Khách có sẵn — chọn 1, hoặc gõ tiếp để tạo khách mới",
+    noName: "(chưa có tên)",
     prefillHint: (time: string, staff: string) =>
       `${time}${staff ? ` · ${staff}` : ""} — chọn dịch vụ để xác nhận.`,
+    notify: {
+      heading: "Báo cho khách",
+      sms: "Tin nhắn (SMS)",
+      email: "Email",
+      previewTitle: "Xem trước",
+      willNotNotify: "Khách sẽ không được báo.",
+      noPhone: "chưa có SĐT",
+      noEmail: "chưa có email",
+      langEn: "bằng tiếng Anh",
+      langVi: "bằng tiếng Việt",
+    },
     errors: {
       invalid_name: "Tên không hợp lệ.",
       invalid_name_chars: "Tên chứa ký tự không hợp lệ.",
@@ -151,6 +216,7 @@ const COPY = {
       no_staff_available: "Không có thợ đang làm cho dịch vụ này.",
       invalid_date: "Vui lòng chọn ngày.",
       invalid_time: "Vui lòng chọn giờ.",
+      time_in_past: "Giờ này đã qua — chọn giờ muộn hơn.",
       time_slot_taken: "Giờ này vừa có người đặt — chọn giờ khác.",
       booking_limit_reached: "Đã đạt giới hạn lịch của gói hiện tại.",
       unauthorized: "Bạn không có quyền tạo lịch.",
@@ -158,19 +224,11 @@ const COPY = {
   },
 } as const;
 
-function ymdToLocalNoon(ymd: string): Date {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(y, (m ?? 1) - 1, d ?? 1, 12, 0, 0);
-}
-
-function todayYmd(): string {
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
-}
 
 export default function DeskBookingForm({
   slug,
   salonId,
+  timezone,
   language,
   onClose,
   onCreated,
@@ -178,20 +236,37 @@ export default function DeskBookingForm({
   initialStaffId,
   initialYmd,
   initialSlotLabel,
+  initialPhone,
+  initialName,
+  notifySettings,
+  anchor,
 }: Props) {
   const tx = COPY[language === "vi" ? "vi" : "en"];
+  // "Notify customer?" channels for the booking confirmation — pre-checked per
+  // the salon's smart per-event default for 'create'.
+  const [notifyChannels, setNotifyChannels] = useState<NotifyChannels>(() => {
+    const on = defaultNotifyOn(notifySettings, "create");
+    return {
+      sms: on && notifySettings.channels.sms,
+      email: on && notifySettings.channels.email,
+    };
+  });
   const [data, setData] = useState<LoadData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [phone, setPhone] = useState("");
-  const [name, setName] = useState("");
+  const [phone, setPhone] = useState(initialPhone ?? "");
+  const [name, setName] = useState(initialName ?? "");
   const [email, setEmail] = useState("");
   const [serviceId, setServiceId] = useState(initialServiceId ?? "");
   const [addonIds, setAddonIds] = useState<string[]>([]);
   const [staffId, setStaffId] = useState(initialStaffId ?? "");
   const [staffRequested, setStaffRequested] = useState(false);
-  // Default to today (not an empty "yyyy-mm-dd" placeholder) when not prefilled.
-  const [ymd, setYmd] = useState(initialYmd ?? todayYmd());
+  // Default to the salon's local "today" (not the device's) when not prefilled —
+  // a receptionist on a UTC+7 device would otherwise default an LA salon to
+  // tomorrow. salonToday resolves the calendar date in the salon timezone.
+  const [ymd, setYmd] = useState(
+    initialYmd ?? salonToday(timezone, new Date().toISOString()),
+  );
   const [slotLabel, setSlotLabel] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -204,6 +279,9 @@ export default function DeskBookingForm({
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [lookupMsg, setLookupMsg] = useState<string | null>(null);
+  // Existing-client typeahead on the name field.
+  const [clientHits, setClientHits] = useState<ClientSearchHit[]>([]);
+  const [showHits, setShowHits] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Portal target — the modal must escape the (transformed) Front-Desk header,
@@ -211,6 +289,43 @@ export default function DeskBookingForm({
   const [mounted, setMounted] = useState(false);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only mount flag for the portal
   useEffect(() => setMounted(true), []);
+
+  // Esc closes the form (QA: modal couldn't be dismissed with Esc).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Anchored-card mode: when opened from a grid click on a wide screen, render
+  // as a card next to the clicked cell (grid stays visible) instead of a
+  // centered modal. Mobile / header-button (no anchor) → modal.
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const isWideScreen =
+    mounted && typeof window !== "undefined" && window.innerWidth >= 700;
+  const anchored = !!anchor && isWideScreen;
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  // Clamp the card to the viewport, re-measuring as its height changes (slots /
+  // notify panel appear). Prefer the side of the click with more room.
+  useLayoutEffect(() => {
+    if (!anchored || !anchor || !popoverRef.current) return;
+    const r = popoverRef.current.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const M = 8;
+    const GAP = 14;
+    let left = anchor.x + GAP;
+    if (left + r.width > vw - M) left = anchor.x - r.width - GAP;
+    left = Math.max(M, Math.min(left, vw - r.width - M));
+    let top = anchor.y - 28;
+    top = Math.max(M, Math.min(top, vh - r.height - M));
+    setPos((prev) =>
+      prev && prev.left === left && prev.top === top ? prev : { left, top },
+    );
+  });
 
   // Load services / staff / salon meta once.
   useEffect(() => {
@@ -320,6 +435,11 @@ export default function DeskBookingForm({
       staffId,
       staffList: capableStaff,
       serviceDurationMinutes: blockMinutes,
+      // The last booking's trailing buffer may run past close (cleanup, no next
+      // customer) — recover that end-of-day slot. Single-service only; with
+      // add-ons we keep the conservative whole-block fit (trailing = 0).
+      trailingBufferMinutes:
+        addonIds.length === 0 ? (service.bufferMinutes ?? 0) : 0,
       closedDateYmdSet,
       shortestServiceMinutes,
       leadMinutes: data.salon.bookingLeadMinutes,
@@ -328,13 +448,17 @@ export default function DeskBookingForm({
       .then((res) => {
         if (cancelled) return;
         setSlots(res);
-        // Auto-select the time the receptionist clicked on the grid, once.
+        // Keep the PREFERRED time (the grid-clicked time, or one the
+        // receptionist picked) selected across service / staff / add-on changes,
+        // as long as it's still bookable. Previously this fired once then wiped
+        // the ref, so choosing a service after clicking a slot dropped the time
+        // and left nothing selected. Only give up if the time is unavailable.
         const want = desiredSlotRef.current;
-        if (want) {
-          const match = res.find((s) => s.available && s.label === want);
-          if (match) setSlotLabel(match.label);
-          desiredSlotRef.current = "";
-        }
+        const match = want
+          ? res.find((s) => s.available && s.label === want)
+          : null;
+        setSlotLabel(match ? match.label : "");
+        if (want && !match) desiredSlotRef.current = "";
       })
       .finally(() => {
         if (!cancelled) setSlotsLoading(false);
@@ -342,7 +466,17 @@ export default function DeskBookingForm({
     return () => {
       cancelled = true;
     };
-  }, [data, service, staffId, ymd, salonId, capableStaff, closedDateYmdSet, shortestServiceMinutes, blockMinutes]);
+  }, [
+    data,
+    service,
+    staffId,
+    ymd,
+    salonId,
+    capableStaff,
+    closedDateYmdSet,
+    shortestServiceMinutes,
+    blockMinutes,
+  ]);
 
   // Returning-customer recognition (debounced).
   const lookupSeq = useRef(0);
@@ -377,6 +511,48 @@ export default function DeskBookingForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- name/email/serviceId/staffId read as "fill only when empty"; re-running on their change would loop
   }, [phone, slug]);
 
+  // Existing-client typeahead: as the receptionist types a NAME, surface this
+  // salon's matching clients so they pick the known identity instead of minting
+  // a near-duplicate. Skipped while the name was just auto-filled from a phone
+  // lookup (selectedHitRef) to avoid reopening the dropdown over a picked client.
+  const searchSeq = useRef(0);
+  const selectedHitRef = useRef(false);
+  useEffect(() => {
+    if (selectedHitRef.current) {
+      selectedHitRef.current = false;
+      return;
+    }
+    const term = name.trim();
+    if (term.length < 2) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear hits when term too short
+      setClientHits([]);
+      return;
+    }
+    const seq = ++searchSeq.current;
+    const t = setTimeout(async () => {
+      const res = await searchClients(slug, term);
+      if (seq !== searchSeq.current) return;
+      if (res.ok) {
+        setClientHits(res.hits);
+        setShowHits(res.hits.length > 0);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [name, slug]);
+
+  const pickClient = useCallback(
+    (hit: ClientSearchHit) => {
+      // Fill identity from the chosen profile; the phone effect then fills the
+      // rest (top service/staff, returning-customer hint).
+      selectedHitRef.current = true;
+      if (hit.name) setName(hit.name);
+      setPhone(hit.phone);
+      setShowHits(false);
+      setClientHits([]);
+    },
+    [],
+  );
+
   const toggleAddon = useCallback((id: string) => {
     setAddonIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
@@ -401,7 +577,8 @@ export default function DeskBookingForm({
       serviceId,
       addonServiceIds: addonIds,
       staffId,
-      staffRequestedByClient: staffId !== BOOKING_ANY_STAFF_ID && staffRequested,
+      staffRequestedByClient:
+        staffId !== BOOKING_ANY_STAFF_ID && staffRequested,
       bookingDateYmd: ymd,
       timeSlot: slotLabel,
       clientName: name.trim(),
@@ -409,6 +586,10 @@ export default function DeskBookingForm({
       clientEmail: email.trim() || null,
       clientNotes: notes.trim() || null,
       language,
+      notify: {
+        sms: notifyChannels.sms && phone.replace(/\D/g, "").length >= 10,
+        email: notifyChannels.email && !!email.trim(),
+      },
     });
     setSubmitting(false);
     if (res.ok) {
@@ -417,7 +598,26 @@ export default function DeskBookingForm({
     } else {
       setError(tx.errors[res.error] ?? tx.submitError);
     }
-  }, [canSubmit, slug, salonId, serviceId, addonIds, staffId, staffRequested, ymd, slotLabel, name, phone, email, notes, language, onCreated, onClose, tx]);
+  }, [
+    canSubmit,
+    slug,
+    salonId,
+    serviceId,
+    addonIds,
+    staffId,
+    staffRequested,
+    ymd,
+    slotLabel,
+    name,
+    phone,
+    email,
+    notes,
+    language,
+    notifyChannels,
+    onCreated,
+    onClose,
+    tx,
+  ]);
 
   const inputCls =
     "w-full rounded-md border border-nq-muted/30 bg-nq-bg px-3 py-2 text-sm text-nq-foreground outline-none focus:border-nq-primary/60";
@@ -426,20 +626,51 @@ export default function DeskBookingForm({
   if (!mounted) return null;
   return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center"
+      // Anchored mode: transparent full-screen catcher (grid stays VISIBLE;
+      // outside-click closes). Modal mode: centered with a dark backdrop.
+      className={
+        anchored
+          ? "fixed inset-0 z-[60]"
+          : "fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center"
+      }
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-xl border border-nq-muted/25 bg-nq-surface p-5 shadow-xl"
+        ref={popoverRef}
+        className={
+          anchored
+            ? "fixed z-[61] w-[min(24rem,calc(100vw-1rem))] overflow-y-auto rounded-xl border border-nq-muted/25 bg-nq-surface p-5 shadow-2xl"
+            : "w-full max-w-md rounded-xl border border-nq-muted/25 bg-nq-surface p-5 shadow-xl"
+        }
+        style={
+          anchored
+            ? {
+                left: pos?.left ?? (anchor ? anchor.x + 14 : 0),
+                top: pos?.top ?? (anchor ? Math.max(8, anchor.y - 28) : 0),
+                maxHeight: "calc(100dvh - 16px)",
+              }
+            : undefined
+        }
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-1 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-nq-foreground">{tx.heading}</h2>
-          <button onClick={onClose} className="text-nq-muted hover:text-nq-foreground" aria-label={tx.close}>
+          <h2 className="text-base font-semibold text-nq-foreground">
+            {tx.heading}
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-nq-muted hover:text-nq-foreground"
+            aria-label={tx.close}
+          >
             ✕
           </button>
         </div>
-        {prefilled && initialSlotLabel && !slotLabel ? (
+        {prefilled && initialSlotLabel && !slotLabel && ymd === initialYmd ? (
+          // The prefill hint shows the time the receptionist CLICKED on the grid.
+          // Only show it while still on the clicked day — once they change the
+          // date the clicked time no longer applies, and leaving it up made the
+          // hinted time disagree with the times the picker suggests for the new
+          // date.
           <p className="mb-3 text-xs font-medium text-nq-primary">
             {tx.prefillHint(initialSlotLabel, prefillStaffName)}
           </p>
@@ -462,12 +693,60 @@ export default function DeskBookingForm({
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
               />
-              {lookupMsg ? <p className="mt-1 text-[11px] text-nq-muted">{lookupMsg}</p> : null}
+              {lookupMsg ? (
+                <p className="mt-1 text-[11px] text-nq-muted">{lookupMsg}</p>
+              ) : null}
             </div>
 
-            <div>
+            <div className="relative">
               <label className={labelCls}>{tx.name}</label>
-              <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} />
+              <input
+                className={inputCls}
+                value={name}
+                autoComplete="off"
+                onChange={(e) => setName(e.target.value)}
+                onFocus={() => {
+                  if (clientHits.length > 0) setShowHits(true);
+                }}
+                onBlur={() => {
+                  // Delay so an onMouseDown pick registers before the list hides.
+                  setTimeout(() => setShowHits(false), 150);
+                }}
+              />
+              {showHits && clientHits.length > 0 ? (
+                <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-lg border border-nq-border bg-nq-surface shadow-lg">
+                  <p className="border-b border-nq-border px-3 py-1.5 text-[11px] text-nq-muted">
+                    {tx.searchHint}
+                  </p>
+                  <ul className="max-h-56 overflow-y-auto">
+                    {clientHits.map((h) => (
+                      <li key={h.phone}>
+                        <button
+                          type="button"
+                          // onMouseDown (not onClick) fires before the input's
+                          // onBlur, so the pick isn't swallowed by the hide.
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            pickClient(h);
+                          }}
+                          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-nq-primary/5"
+                        >
+                          <span className="min-w-0 flex-1 truncate font-medium text-nq-text">
+                            {h.name || tx.noName}
+                            {h.isVip ? (
+                              <span className="ml-1 text-amber-500">★</span>
+                            ) : null}
+                          </span>
+                          <span className="shrink-0 text-xs text-nq-muted">
+                            ··· {h.phone.slice(-4)}
+                            {h.visitCount > 0 ? tx.visitsTag(h.visitCount) : ""}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
 
             <div>
@@ -515,8 +794,7 @@ export default function DeskBookingForm({
                         }`}
                       >
                         {on ? "✓ " : "+ "}
-                        {a.name}
-                        {a.priceDisplay ? ` · ${a.priceDisplay}` : ""}
+                        {addonLabel(a)}
                       </button>
                     );
                   })}
@@ -532,8 +810,12 @@ export default function DeskBookingForm({
                 onChange={(e) => setStaffId(e.target.value)}
                 disabled={!serviceId}
               >
-                <option value="">{serviceId ? tx.selectStaff : tx.selectServiceFirst}</option>
-                {serviceId ? <option value={BOOKING_ANY_STAFF_ID}>{tx.anyStaff}</option> : null}
+                <option value="">
+                  {serviceId ? tx.selectStaff : tx.selectServiceFirst}
+                </option>
+                {serviceId ? (
+                  <option value={BOOKING_ANY_STAFF_ID}>{tx.anyStaff}</option>
+                ) : null}
                 {capableStaff.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -558,7 +840,7 @@ export default function DeskBookingForm({
               <input
                 type="date"
                 className={inputCls}
-                min={todayYmd()}
+                min={salonToday(timezone, new Date().toISOString())}
                 value={ymd}
                 onChange={(e) => setYmd(e.target.value)}
                 disabled={!staffId}
@@ -580,7 +862,12 @@ export default function DeskBookingForm({
                         <button
                           key={s.label}
                           type="button"
-                          onClick={() => setSlotLabel(s.label)}
+                          onClick={() => {
+                            // Becomes the new preferred time so a later add-on
+                            // change keeps it selected (sticky, like the grid click).
+                            setSlotLabel(s.label);
+                            desiredSlotRef.current = s.label;
+                          }}
                           className={`rounded px-1 py-1.5 text-xs transition ${
                             slotLabel === s.label
                               ? "bg-nq-primary text-white"
@@ -597,8 +884,42 @@ export default function DeskBookingForm({
 
             <div>
               <label className={labelCls}>{tx.notes}</label>
-              <input className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} />
+              <input
+                className={inputCls}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
             </div>
+
+            {serviceId && slotLabel ? (
+              <NotifyCustomerPanel
+                value={notifyChannels}
+                onChange={setNotifyChannels}
+                hasPhone={phone.replace(/\D/g, "").length >= 10}
+                hasEmail={!!email.trim()}
+                previewText={buildStaffActionSms("create", language, {
+                  customerName: name.trim(),
+                  salonName: data?.salon.name ?? "",
+                  serviceName: service?.name ?? "",
+                  whenLabel: `${new Intl.DateTimeFormat(
+                    language === "vi" ? "vi-VN" : "en-US",
+                    { weekday: "short", month: "short", day: "numeric" },
+                  ).format(ymdToLocalNoon(ymd))} · ${slotLabel}`,
+                  salonPhone: null,
+                })}
+                labels={{
+                  heading: tx.notify.heading,
+                  sms: tx.notify.sms,
+                  email: tx.notify.email,
+                  previewTitle: tx.notify.previewTitle,
+                  willNotNotify: tx.notify.willNotNotify,
+                  noPhone: tx.notify.noPhone,
+                  noEmail: tx.notify.noEmail,
+                  languageNote:
+                    language === "vi" ? tx.notify.langVi : tx.notify.langEn,
+                }}
+              />
+            ) : null}
 
             {error ? <p className="text-xs text-nq-error">{error}</p> : null}
 

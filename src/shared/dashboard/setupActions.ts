@@ -1,6 +1,7 @@
 "use server";
 
 import * as Sentry from "@sentry/nextjs";
+import { isOwner, isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { cookies } from "next/headers";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -457,7 +458,7 @@ export async function addService(
   if (!r) return fail("unauthorized");
   // Salon config is management-only (owner/admin) — defense-in-depth so a
   // front-desk role can't mutate it by calling the action directly.
-  if (r.role !== "owner" && r.role !== "admin") return fail("forbidden");
+  if (!isOwnerOrAdmin(r.role)) return fail("forbidden");
 
   const demoGate = await verifyDemoSetupSlug(slug, r.kind);
   if (demoGate) return demoGate;
@@ -643,7 +644,7 @@ export async function updateService(
   if (!r) return fail("unauthorized");
   // Salon config is management-only (owner/admin) — defense-in-depth so a
   // front-desk role can't mutate it by calling the action directly.
-  if (r.role !== "owner" && r.role !== "admin") return fail("forbidden");
+  if (!isOwnerOrAdmin(r.role)) return fail("forbidden");
 
   const demoGate = await verifyDemoSetupSlug(slug, r.kind);
   if (demoGate) return demoGate;
@@ -798,7 +799,7 @@ export async function deleteService(
   if (!r) return fail("unauthorized");
   // Salon config is management-only (owner/admin) — defense-in-depth so a
   // front-desk role can't mutate it by calling the action directly.
-  if (r.role !== "owner" && r.role !== "admin") return fail("forbidden");
+  if (!isOwnerOrAdmin(r.role)) return fail("forbidden");
 
   const demoGate = await verifyDemoSetupSlug(slug, r.kind);
   if (demoGate) return demoGate;
@@ -874,7 +875,7 @@ export async function addStaff(
   if (!r) return fail("unauthorized");
   // Salon config is management-only (owner/admin) — defense-in-depth so a
   // front-desk role can't mutate it by calling the action directly.
-  if (r.role !== "owner" && r.role !== "admin") return fail("forbidden");
+  if (!isOwnerOrAdmin(r.role)) return fail("forbidden");
 
   const demoGate = await verifyDemoSetupSlug(slug, r.kind);
   if (demoGate) return demoGate;
@@ -962,7 +963,7 @@ export async function updateStaff(
   if (!r) return fail("unauthorized");
   // Salon config is management-only (owner/admin) — defense-in-depth so a
   // front-desk role can't mutate it by calling the action directly.
-  if (r.role !== "owner" && r.role !== "admin") return fail("forbidden");
+  if (!isOwnerOrAdmin(r.role)) return fail("forbidden");
 
   const demoGate = await verifyDemoSetupSlug(slug, r.kind);
   if (demoGate) return demoGate;
@@ -1051,7 +1052,7 @@ export async function deleteStaff(
   if (!r) return fail("unauthorized");
   // Salon config is management-only (owner/admin) — defense-in-depth so a
   // front-desk role can't mutate it by calling the action directly.
-  if (r.role !== "owner" && r.role !== "admin") return fail("forbidden");
+  if (!isOwnerOrAdmin(r.role)) return fail("forbidden");
 
   const demoGate = await verifyDemoSetupSlug(slug, r.kind);
   if (demoGate) return demoGate;
@@ -1148,7 +1149,7 @@ export async function updateOpeningHours(
   const r = await resolveSalonForDashboard(slugTrimmed);
   if (!r) return fail("unauthorized");
   // Salon config is management-only (owner/admin).
-  if (r.role !== "owner" && r.role !== "admin") return fail("forbidden");
+  if (!isOwnerOrAdmin(r.role)) return fail("forbidden");
 
   const salonId = String(r.salon.id ?? "").trim();
   if (!salonId) {
@@ -1293,7 +1294,7 @@ export async function updateAddress(
   if (!r) return fail("unauthorized");
   // Salon config is management-only (owner/admin) — defense-in-depth so a
   // front-desk role can't mutate it by calling the action directly.
-  if (r.role !== "owner" && r.role !== "admin") return fail("forbidden");
+  if (!isOwnerOrAdmin(r.role)) return fail("forbidden");
 
   const demoGate = await verifyDemoSetupSlug(slug, r.kind);
   if (demoGate) return demoGate;
@@ -1417,6 +1418,12 @@ export async function getDashboardWriteClient(slug: string): Promise<
       kind: "member" | "demo_cookie";
       /** `salon_members.role` for this user-salon pair. Demo-cookie path is `"owner"`. */
       role: SalonMemberRole;
+      /**
+       * Auth user id of the acting member, or `null` for the demo-cookie
+       * path (no real auth user). Passed to `logBookingEvent` so
+       * `booking_events.actor_user_id` records who performed a desk action.
+       */
+      userId: string | null;
       supabase: GenericSupabase;
     }
 > {
@@ -1431,6 +1438,7 @@ export async function getDashboardWriteClient(slug: string): Promise<
     salon: r.salon,
     kind: r.kind,
     role: r.role,
+    userId: r.viewerUserId,
     supabase,
   };
 }
@@ -1448,7 +1456,7 @@ export async function updateVoiceAiSettings(
 ): Promise<{ ok: true } | { error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { error: "unauthorized" };
-  if (ctx.role !== "owner") return { error: "owner_only" };
+  if (!isOwner(ctx.role)) return { error: "owner_only" };
 
   const VALID_VOICES = [
     "alloy", "ash", "ballad", "cedar", "coral",

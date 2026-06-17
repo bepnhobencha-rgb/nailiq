@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { editBookingAction } from "@/shared/dashboard/editBookingAction";
 import { getDeskBookingData } from "@/shared/dashboard/receptionistActions";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
+import { addonLabel } from "@/shared/booking/serviceLabels";
 import {
   getAvailableTimeSlots,
   type TimeSlot,
@@ -20,6 +22,7 @@ import {
   salonWallTimeToUtcIso,
   utcIsoToSalonMinutesFromMidnight,
 } from "@/shared/lib/salonTime";
+import { ymdToLocalNoon } from "@/shared/lib/localDateYmd";
 import type { SalonDashboardBooking } from "@/shared/types";
 import { cn } from "@/shared/lib/cn";
 import { formatCurrency, formatServicePrice } from "@/shared/lib/currencyFormat";
@@ -67,13 +70,6 @@ function slotLabelToMinutes(label: string): number | null {
   const total = h * 60 + min;
   if (!Number.isFinite(total) || total < 0 || total >= 24 * 60) return null;
   return total;
-}
-
-/** Local-noon Date for a YYYY-MM-DD (passed to getAvailableTimeSlots as the
- *  selectedDate anchor — same convention as DeskBookingForm). */
-function ymdToLocalNoon(ymd: string): Date {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(y, (m ?? 1) - 1, d ?? 1, 12, 0, 0);
 }
 
 function sameUtcInstant(a: string, b: string): boolean {
@@ -244,15 +240,17 @@ export function EditBookingForm({
     if (!selectedAddonSvc) return 0;
     const dur = Math.max(0, Math.round(Number(selectedAddonSvc.durationMinutes ?? 0)));
     const buf = Math.max(0, Math.round(Number(selectedAddonSvc.bufferMinutes ?? 0)));
-    return dur + buf;
+    return serviceBlockMinutes(dur, buf);
   }, [selectedAddonSvc]);
 
   /** Total service span (main duration + buffer + add-on span). Drives both the
    *  availability grid and the end-time preview. */
   const totalSpanMinutes = useMemo(() => {
     if (!selectedSvc) return 0;
-    const mainTotal =
-      Number(selectedSvc.duration_minutes) + Number(selectedSvc.buffer_minutes);
+    const mainTotal = serviceBlockMinutes(
+      selectedSvc.duration_minutes,
+      selectedSvc.buffer_minutes,
+    );
     if (!Number.isFinite(mainTotal) || mainTotal < 1) return 0;
     return mainTotal + addonSpanMinutes;
   }, [selectedSvc, addonSpanMinutes]);
@@ -311,6 +309,11 @@ export function EditBookingForm({
       staffId: selectedStaff,
       staffList: slotStaffList,
       serviceDurationMinutes: totalSpanMinutes,
+      // Trailing buffer may run past close for the last appointment (no next
+      // booking). Single-service only; with an add-on, keep the whole-block fit.
+      trailingBufferMinutes: selectedAddon
+        ? 0
+        : Math.max(0, Math.round(Number(selectedSvc?.buffer_minutes ?? 0))),
       closedDateYmdSet,
       shortestServiceMinutes,
       leadMinutes: deskData.salon.bookingLeadMinutes,
@@ -574,7 +577,7 @@ export function EditBookingForm({
             {/* Add-ons only (is_addon) — never the main-service catalog. */}
             {(deskData?.addOns ?? []).map((s) => (
               <option key={s.id} value={s.id}>
-                {`${s.name} · ${s.durationMinutes}m${s.priceDisplay ? ` · ${s.priceDisplay}` : ""}`}
+                {addonLabel(s)}
               </option>
             ))}
           </select>

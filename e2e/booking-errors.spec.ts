@@ -101,11 +101,16 @@ async function navigateToTimeStep(page: Page, slug: string) {
     .waitFor({ state: "visible", timeout: 15_000 });
   await page.locator('[data-testid="staff-item"]').first().click();
   await page.getByRole("button", { name: "Continue" }).first().click();
-  // Wait for the date calendar to animate in, then pick a selectable day. The
+  // The month grid is collapsed behind the "📅 More dates" toggle (#593); open
+  // it so the date-day grid below mounts. Then pick a selectable day. The
   // calendar opens on the first month with availability; late in the month a
   // salon open every day can still leave the current view with only "today"
   // (which renders as `date-today`, not `date-day`), so advance a month when no
   // selectable `date-day` is present.
+  await page
+    .locator('[data-testid="date-toggle-calendar"]')
+    .waitFor({ state: "visible", timeout: 15_000 });
+  await page.locator('[data-testid="date-toggle-calendar"]').click();
   await page
     .locator('[data-testid="calendar-grid"]')
     .waitFor({ state: "visible", timeout: 15_000 });
@@ -246,6 +251,8 @@ test.describe("Booking error scenarios — /[slug]", () => {
       .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
+    // Reveal the collapsed month grid (#593) before reading a grid day's data-ymd.
+    await page.locator('[data-testid="date-toggle-calendar"]').click();
     const pickedDateBtn = page
       .locator('[data-testid="date-day"]:not([disabled])')
       .first();
@@ -396,7 +403,9 @@ test.describe("Booking error scenarios — /[slug]", () => {
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    // Wait for calendar to render before inspecting specific date cells.
+    // Open the collapsed month grid (#593), then wait for it to render before
+    // inspecting specific date cells.
+    await page.locator('[data-testid="date-toggle-calendar"]').click();
     await page
       .locator('[data-testid="date-day"]')
       .first()
@@ -448,6 +457,8 @@ test.describe("Booking error scenarios — /[slug]", () => {
     await page.locator('[data-testid="any-staff-option"]').click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
+    // Past cells live only in the month grid (the strip starts today); open it.
+    await page.locator('[data-testid="date-toggle-calendar"]').click();
     const pastCells = page.locator('[data-testid="date-day"][data-past="true"]');
     const count = await pastCells.count();
     if (count === 0) {
@@ -504,6 +515,8 @@ test.describe("Booking error scenarios — /[slug]", () => {
     await page.locator('[data-testid="any-staff-option"]').click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
+    // Open the collapsed month grid (#593) to inspect the closed-date cell.
+    await page.locator('[data-testid="date-toggle-calendar"]').click();
     const cell = page.locator(
       `[data-testid="date-day"][data-ymd="${ymd}"]`,
     );
@@ -739,7 +752,7 @@ test.describe("Booking error scenarios — /[slug]", () => {
   // 18. End-of-day overflow: with hours 09:00–17:00, the 45-minute seed
   //    service plus 10-minute buffer should not produce any slot whose
   //    label starts at 16:30 or later (would end at 17:25, past close).
-  test("edge-18: slots that would overflow closing time are not offered", async ({
+  test("edge-18: slots that would run the SERVICE past closing time are not offered", async ({
     page,
   }) => {
     await setSalonRow(PRIMARY_SLUG, { opening_hours: STANDARD_HOURS });
@@ -758,10 +771,14 @@ test.describe("Booking error scenarios — /[slug]", () => {
       if (meridiem === "PM" && h !== 12) h += 12;
       if (meridiem === "AM" && h === 12) h = 0;
       const minutesFromClose = (17 - h) * 60 - minute;
+      // The 45-min SERVICE must finish by 17:00; the 10-min trailing buffer
+      // (reset gap for the NEXT booking) may run past close for the last
+      // appointment of the day. So the last bookable start is 16:15 — 45 min
+      // before close — not 16:05.
       expect(
         minutesFromClose,
-        `slot ${label} overflows closing time (45min svc + 10min buffer = 55min needed before 17:00)`,
-      ).toBeGreaterThanOrEqual(55);
+        `slot ${label} runs the 45min service past closing time (needs 45min before 17:00; trailing buffer may spill past close)`,
+      ).toBeGreaterThanOrEqual(45);
     }
   });
 

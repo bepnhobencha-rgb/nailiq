@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { resolveVertical } from "@/shared/verticals/registry";
 import {
@@ -224,7 +225,7 @@ export async function analyzeMenuImage(
   // AI menu analysis/import writes the service menu + spends AI credits —
   // management-only (owner/admin). Uses "unauthorized" to match the result
   // type's error union.
-  if (ctx.role !== "owner" && ctx.role !== "admin")
+  if (!isOwnerOrAdmin(ctx.role))
     return { ok: false, error: "unauthorized" };
 
   // ~4MB base64 ≈ 3MB binary; Anthropic accepts up to 5MB
@@ -271,7 +272,7 @@ export async function analyzeMenuImageUrl(
   // AI menu analysis/import writes the service menu + spends AI credits —
   // management-only (owner/admin). Uses "unauthorized" to match the result
   // type's error union.
-  if (ctx.role !== "owner" && ctx.role !== "admin")
+  if (!isOwnerOrAdmin(ctx.role))
     return { ok: false, error: "unauthorized" };
 
   // Validate URL (http/https only)
@@ -320,7 +321,7 @@ export async function bulkImportAIServices(
   // AI menu analysis/import writes the service menu + spends AI credits —
   // management-only (owner/admin). Uses "unauthorized" to match the result
   // type's error union.
-  if (ctx.role !== "owner" && ctx.role !== "admin")
+  if (!isOwnerOrAdmin(ctx.role))
     return { ok: false, error: "unauthorized" };
 
   if (services.length === 0) return { ok: true, imported: 0 };

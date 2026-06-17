@@ -36,7 +36,14 @@ export type AttentionGroupSummary = {
   unconfirmed: number;
 };
 
-type ChipKey = "overdue" | "noshow" | "groups";
+type ChipKey = "overdue" | "noshow" | "groups" | "waitlist";
+
+export type AttentionWaitlistSummary = {
+  /** Active waitlist entries (waiting + notified + recently claimed). */
+  total: number;
+  /** Entries the customer already claimed → staff must create the booking. */
+  claimed: number;
+};
 
 export function AttentionChipBar({
   language,
@@ -44,6 +51,8 @@ export function AttentionChipBar({
   noShowsToday,
   groupSummary,
   groupsContent,
+  waitlistSummary,
+  waitlistContent,
   busy,
   removedLabel,
   formatTime,
@@ -58,6 +67,10 @@ export function AttentionChipBar({
   groupSummary: AttentionGroupSummary | null;
   /** Rendered inside the groups dropdown (e.g. <PartyCardPanel/>). */
   groupsContent: ReactNode | null;
+  /** Online-waitlist counts driving the "Chờ chỗ" chip + its badge. */
+  waitlistSummary: AttentionWaitlistSummary | null;
+  /** Rendered inside the waitlist dropdown (the <OnlineWaitlistPanel/>). */
+  waitlistContent: ReactNode | null;
   busy: boolean;
   removedLabel: string;
   formatTime: (utcIso: string) => string;
@@ -72,6 +85,8 @@ export function AttentionChipBar({
   const hasOverdue = overdue.length > 0;
   const hasNoShow = noShowsToday.length > 0;
   const hasGroups = !!groupSummary && groupsContent != null && groupSummary.active > 0;
+  const hasWaitlist =
+    !!waitlistSummary && waitlistContent != null && waitlistSummary.total > 0;
 
   // Close the dropdown on Escape for keyboard users.
   useEffect(() => {
@@ -84,7 +99,7 @@ export function AttentionChipBar({
   }, [open]);
 
   // Nothing to surface → don't take any space at all.
-  if (!hasOverdue && !hasNoShow && !hasGroups) return null;
+  if (!hasOverdue && !hasNoShow && !hasGroups && !hasWaitlist) return null;
 
   const toggle = (key: ChipKey) => setOpen((cur) => (cur === key ? null : key));
 
@@ -129,6 +144,24 @@ export function AttentionChipBar({
             subBadge={
               groupSummary!.unconfirmed > 0
                 ? `${groupSummary!.unconfirmed} ${vi ? "chưa xác nhận" : "unconfirmed"}`
+                : null
+            }
+          />
+        ) : null}
+
+        {hasWaitlist ? (
+          <Chip
+            testId="attention-chip-waitlist"
+            active={open === "waitlist"}
+            tone="primary"
+            pulse={waitlistSummary!.claimed > 0}
+            onClick={() => toggle("waitlist")}
+            icon="⏳"
+            label={vi ? "Chờ chỗ" : "Waitlist"}
+            count={waitlistSummary!.total}
+            subBadge={
+              waitlistSummary!.claimed > 0
+                ? `${waitlistSummary!.claimed} ${vi ? "cần tạo lịch" : "to book"}`
                 : null
             }
           />
@@ -223,6 +256,10 @@ export function AttentionChipBar({
 
             {open === "groups" ? (
               <div className="p-1.5">{groupsContent}</div>
+            ) : null}
+
+            {open === "waitlist" ? (
+              <div className="p-1.5">{waitlistContent}</div>
             ) : null}
           </div>
         </>

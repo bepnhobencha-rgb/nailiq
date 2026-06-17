@@ -2,7 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
-import { salonDayRangeUtc } from "@/shared/lib/salonTime";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
+import { salonDayRangeUtc, salonYmdOfUtc } from "@/shared/lib/salonTime";
 import {
   DAY_KEYS,
   parseOpeningHours,
@@ -30,6 +31,10 @@ import {
   parseDensityLevel,
   type DensityLevel,
 } from "@/shared/dashboard/dashboardDensity";
+import {
+  parseStaffNotificationSettings,
+  type StaffNotificationSettings,
+} from "@/shared/dashboard/staffNotificationSettings";
 
 type DashboardSupabaseClient = SupabaseClient<Database>;
 
@@ -64,6 +69,20 @@ export interface ReceptionistCenterData {
      */
     openMinutes: number | null;
     closeMinutes: number | null;
+    /**
+     * Per-salon staff-action customer-notification config (channels offered +
+     * smart per-event notify defaults + default language). Drives the
+     * "notify the customer?" decision when staff create / reschedule / cancel.
+     */
+    staffNotificationSettings: StaffNotificationSettings;
+    /**
+     * `salons.auto_no_show_minutes` — minutes past start after which the cron
+     * auto-marks a never-started booking as no_show (0/null = off). Drives the
+     * grid's lateness-escalation countdown ("auto no-show at H:MM"). When off,
+     * the grid still escalates on fixed 10/20-minute milestones (visual only,
+     * no auto promise). The cron NEVER charges — that's the desk's call.
+     */
+    autoNoShowMinutes: number | null;
   };
   staff: Array<{
     id: string;
@@ -131,10 +150,60 @@ export interface ReceptionistCenterData {
     walkin_request_tags: QueueRequestTag[];
     party_size: number | null;
   }>;
+  /**
+   * Online customers who joined the waitlist (`booking_waitlist_entries`)
+   * because their desired slot was full. Surfaced in the Receptionist Center
+   * next to the walk-in queue so staff can invite a waiting customer in one
+   * tap (sends them the claim link via SMS). Scoped to this salon, from the
+   * salon-timezone "today" (`selectedDate`) onward, FIFO by `created_at`.
+   * Surfaces `waiting` / `notified` entries (staff invite them) AND
+   * recently-`claimed` entries (claimed_at within the last 24h, regardless of
+   * booking_date) so staff convert a grabbed slot into a real appointment.
+   */
+  onlineWaitlist: Array<{
+    id: string;
+    clientName: string;
+    serviceId: string;
+    serviceName: string;
+    bookingDate: string; // YYYY-MM-DD
+    preferredSlotLabel: string | null;
+    phone: string;
+    status: string; // 'waiting' | 'notified' | 'claimed'
+    /** When the customer claimed the slot (status='claimed'); null otherwise. */
+    claimedAt: string | null;
+    /** Staff the freed slot was offered to (`offered_staff_id`), when a concrete
+     *  slot was freed; null otherwise. Lets "Tạo lịch" prefill the freed tech so
+     *  the manual path matches what auto-book would have done. */
+    offeredStaffId: string | null;
+    createdAt: string;
+  }>;
+  /**
+   * Active "soft holds" on the grid from the online-waitlist offer flow.
+   * When a booking is cancelled the freed slot is texted to the next online
+   * waitlist customer with a 20-minute window to claim. During that window the
+   * booking is gone (cell looks EMPTY), so we surface a SOFT, informational
+   * marker on the grid cell — "⏳ Đang mời khách chờ · đến HH:MM" — so staff
+   * don't give the slot to a walk-in. Rows are `booking_waitlist_entries` with
+   * `status='notified'` + a concrete offered staff/time and `notified_at`
+   * within the last 20 minutes. Filtered to the selected day in salon tz.
+   */
+  waitlistOffers: Array<{
+    id: string;
+    staffId: string;
+    startUtc: string;
+    endUtc: string;
+    expiresAtUtc: string; // notified_at + 20 minutes
+    serviceName: string;
+  }>;
   bookingsForDay: Array<{
     id: string;
     client_name: string;
     client_phone: string | null;
+    /** For the staff-action notify panel: is the Email channel offerable? */
+    client_email: string | null;
+    /** Site language captured at online-booking time; drives the notify
+     *  preview locale (null for desk-created → salon default / English). */
+    client_locale: string | null;
     client_notes: string | null;
     staff_id: string;
     start_time_utc: string;
@@ -144,6 +213,10 @@ export interface ReceptionistCenterData {
     /** Raw source channel ("voice" | "online" | "phone" | "walkin" |
      * "appointment" | …) preserved for the compact source icon. */
     source_channel: string | null;
+    /** When this booking was CREATED (not the appointment time). Drives the
+     * drawer "Đặt lúc / Booked" line so the desk sees when + via which channel
+     * the booking was placed. */
+    created_at: string | null;
     service_id: string;
     service_name: string;
     service_duration_minutes: number;
@@ -229,6 +302,19 @@ export interface ReceptionistCenterData {
     /** Wix booking id if this booking was synced from Wix. Drives the desk Approve/Decline
      * buttons on a Wix-origin pending card (status='pending' + non-null here). */
     wix_booking_id: string | null;
+    /** Square card-on-file saved for this booking's no-show fee. Non-null →
+     * the desk's no-show action offers a "charge $X / waive" choice. */
+    noshow_card_id: string | null;
+    /** True when this booking SHOULD have a no-show card but doesn't yet —
+     * flagged at creation across all paths (desk/group/voice/...). Drives the
+     * "⚠️ needs card" badge + gates the desk "send save-card link" button. */
+    noshow_card_required: boolean;
+    /** Fee (cents) that would be collected if this booking no-shows. Set when a
+     * card was saved at booking time (risk-gated). */
+    noshow_fee_cents: number | null;
+    /** No-show fee lifecycle: 'saved' (card on file, uncharged) | 'charged' |
+     * 'failed' | 'waived'. Null = no fee on this booking. */
+    noshow_charge_status: string | null;
   }>;
   /** Per-staff service whitelist for this salon. `null` = no rows → all-capable fallback. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
@@ -241,8 +327,18 @@ export interface ReceptionistCenterData {
     id: string;
     clientName: string;
     startTimeUtc: string;
+    /** Service end (for the grid tombstone's span/position). */
+    endTimeUtc: string;
     serviceName: string;
     staffName: string | null;
+    /** Staff row the no-show belonged to — places the tombstone in the grid. */
+    staffId: string | null;
+    /** No-show fee (cents) on file, if a card was saved. Null = none. */
+    feeCents: number | null;
+    /** Fee lifecycle: 'saved'|'charged'|'failed'|'waived' | null. */
+    chargeStatus: string | null;
+    /** True when a Square card is on file (a fee can still be collected). */
+    hasCard: boolean;
   }>;
   /**
    * Top services by booking frequency on the selected day, ordered by count
@@ -566,7 +662,7 @@ export async function loadReceptionistCenterData(
         // (20260512000000 / 20260511100000) — not in auto-generated
         // types yet, hence the `as never` cast on the SELECT string.
         // basic_mode_forced: auto-enable Basic Mode for receptionist if salon config requires it
-        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced, opening_hours" as never,
+        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced, opening_hours, staff_notification_settings, auto_no_show_minutes" as never,
       )
       .eq("id", ctx.salon.id)
       .maybeSingle();
@@ -611,6 +707,17 @@ export async function loadReceptionistCenterData(
     basicModeForced: (salonData as any).basic_mode_forced === true,
     depositsEnabled,
     ...openingHoursForDay(salonData.opening_hours, dateYmd),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- types not regenerated yet (see basic_mode_forced TODO above)
+    staffNotificationSettings: parseStaffNotificationSettings(
+      (salonData as any).staff_notification_settings,
+    ),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- types not regenerated yet (see basic_mode_forced TODO above)
+    autoNoShowMinutes: (() => {
+      const v = (salonData as any).auto_no_show_minutes;
+      if (v == null) return null;
+      const n = Math.round(Number(v));
+      return Number.isFinite(n) && n > 0 ? n : null;
+    })(),
   };
 
   const rawDashboardModules = parseDashboardModules(
@@ -681,6 +788,8 @@ export async function loadReceptionistCenterData(
       id,
       client_name,
       client_phone,
+      client_email,
+      client_locale,
       client_notes,
       staff_request_note,
       staff_requested_by_client,
@@ -690,6 +799,7 @@ export async function loadReceptionistCenterData(
       status,
       source,
       booking_channel,
+      created_at,
       service_id,
       price_cents,
       joined_queue_at,
@@ -706,6 +816,10 @@ export async function loadReceptionistCenterData(
       deposit_status,
       deposit_amount_cents,
       wix_booking_id,
+      noshow_card_id,
+      noshow_card_required,
+      noshow_fee_cents,
+      noshow_charge_status,
       services!bookings_service_id_fkey ( name, duration_minutes, buffer_minutes ),
       addon:services!bookings_addon_service_id_fkey ( name, duration_minutes, buffer_minutes )
     `,
@@ -778,6 +892,8 @@ export async function loadReceptionistCenterData(
     id: string;
     client_name: string;
     client_phone: string | null;
+    client_email: string | null;
+    client_locale: string | null;
     client_notes: string | null;
     staff_request_note: string | null;
     staff_requested_by_client: boolean | null;
@@ -787,6 +903,7 @@ export async function loadReceptionistCenterData(
     status: string;
     source: string | null;
     booking_channel: string | null;
+    created_at: string | null;
     service_id: string;
     price_cents: number | null;
     joined_queue_at: string | null;
@@ -811,7 +928,7 @@ export async function loadReceptionistCenterData(
     const bRaw = Number(svc?.buffer_minutes ?? 0);
     const d = Number.isFinite(dRaw) ? Math.round(dRaw) : 0;
     const buf = Number.isFinite(bRaw) ? Math.round(bRaw) : 0;
-    const spanMin = Number.isFinite(d + buf) && d + buf > 0 ? d + buf : 0;
+    const spanMin = Math.max(0, serviceBlockMinutes(d, buf));
     const partyRaw = Number(row.party_size);
     const partySize =
       Number.isFinite(partyRaw) && partyRaw >= 1 && partyRaw <= 50
@@ -934,8 +1051,19 @@ export async function loadReceptionistCenterData(
   const noShowByPhone = new Map<string, number>();
   // Today's no-shows (separate from the active grid statuses).
   const noShowsToday: ReceptionistCenterData["noShowsToday"] = [];
-  // These three enrichment round-trips are mutually independent (they only need
-  // the day's bookings already in hand) — run them concurrently, not serially.
+  // Online waitlist (booking_waitlist_entries) for the Receptionist Center
+  // panel. Service name resolved from the already-loaded catalog (no extra
+  // join). Populated in the concurrent enrichment block below; falls back to
+  // [] on any error so a waitlist hiccup never breaks the RC load.
+  const onlineWaitlist: ReceptionistCenterData["onlineWaitlist"] = [];
+  // Active waitlist-offer soft holds for the selected day (populated below).
+  const waitlistOffers: ReceptionistCenterData["waitlistOffers"] = [];
+  const serviceNameById = new Map<string, string>();
+  for (const s of serviceRows ?? []) {
+    if (s.id) serviceNameById.set(String(s.id), String(s.name ?? ""));
+  }
+  // These enrichment round-trips are mutually independent (they only need
+  // the day's bookings / catalog already in hand) — run them concurrently.
   await Promise.all([
     (async () => {
     const dayBookingIds = (bookingsRows ?? [])
@@ -1008,7 +1136,7 @@ export async function loadReceptionistCenterData(
     const { data, error } = await ctx.supabase
       .from("bookings")
       .select(
-        "id, client_name, start_time_utc, services!bookings_service_id_fkey(name), staff(name)",
+        "id, client_name, start_time_utc, end_time_utc, staff_id, noshow_fee_cents, noshow_card_id, noshow_charge_status, services!bookings_service_id_fkey(name), staff(name)",
       )
       .eq("salon_id", ctx.salon.id)
       .gte("start_time_utc", startUtc)
@@ -1022,18 +1150,195 @@ export async function loadReceptionistCenterData(
         id: string;
         client_name: string | null;
         start_time_utc: string;
+        end_time_utc: string | null;
+        staff_id: string | null;
+        noshow_fee_cents: number | null;
+        noshow_card_id: string | null;
+        noshow_charge_status: string | null;
         services?: { name?: string | null } | null;
         staff?: { name?: string | null } | null;
       }>) {
+        const feeCents =
+          r.noshow_fee_cents == null || !Number.isFinite(Number(r.noshow_fee_cents))
+            ? null
+            : Number(r.noshow_fee_cents);
         noShowsToday.push({
           id: String(r.id),
           clientName: r.client_name ?? "",
           startTimeUtc: r.start_time_utc,
+          endTimeUtc: r.end_time_utc ?? r.start_time_utc,
           serviceName: r.services?.name ?? "",
           staffName: r.staff?.name ?? null,
+          staffId: r.staff_id != null ? String(r.staff_id) : null,
+          feeCents,
+          chargeStatus:
+            typeof r.noshow_charge_status === "string" && r.noshow_charge_status
+              ? r.noshow_charge_status
+              : null,
+          hasCard:
+            typeof r.noshow_card_id === "string" && r.noshow_card_id.length > 0,
         });
       }
     }
+    })(),
+    (async () => {
+      // Online waitlist for THIS salon, from the salon-tz "today" (dateYmd ==
+      // selectedDate) onward, only actionable statuses, FIFO. Service-role
+      // client (booking_waitlist_entries is RLS-locked). Never throws — a
+      // failure leaves onlineWaitlist empty so the RC load is unaffected.
+      type WlRow = {
+        id: string;
+        service_id: string | null;
+        booking_date: string | null;
+        preferred_slot_label: string | null;
+        client_name: string | null;
+        client_phone: string | null;
+        status: string | null;
+        claimed_at: string | null;
+        offered_staff_id: string | null;
+        created_at: string | null;
+      };
+      const pushWlRow = (r: WlRow) => {
+        const serviceId = r.service_id != null ? String(r.service_id) : "";
+        const slot =
+          typeof r.preferred_slot_label === "string" &&
+          r.preferred_slot_label.trim().length > 0
+            ? r.preferred_slot_label.trim()
+            : null;
+        onlineWaitlist.push({
+          id: String(r.id),
+          clientName: String(r.client_name ?? ""),
+          serviceId,
+          serviceName: serviceNameById.get(serviceId) ?? "—",
+          bookingDate: String(r.booking_date ?? "").slice(0, 10),
+          preferredSlotLabel: slot,
+          phone: String(r.client_phone ?? ""),
+          status: String(r.status ?? "waiting"),
+          claimedAt: r.claimed_at ? String(r.claimed_at) : null,
+          offeredStaffId: r.offered_staff_id ? String(r.offered_staff_id) : null,
+          createdAt: String(r.created_at ?? ""),
+        });
+      };
+      const WL_SELECT =
+        "id, service_id, booking_date, preferred_slot_label, client_name, client_phone, status, claimed_at, offered_staff_id, created_at";
+      try {
+        const svc = createServiceRoleClient();
+        // Actionable (waiting / notified) — from selected day onward, FIFO.
+        const { data: wlRows, error: wlErr } = await svc
+          .from("booking_waitlist_entries")
+          .select(WL_SELECT)
+          .eq("salon_id", ctx.salon.id)
+          .in("status", ["waiting", "notified"])
+          .gte("booking_date", dateYmd)
+          .order("created_at", { ascending: true })
+          .limit(50);
+        if (wlErr) {
+          console.error("[loadReceptionistCenterData] online_waitlist", wlErr);
+        } else {
+          for (const r of (wlRows ?? []) as unknown as WlRow[]) pushWlRow(r);
+        }
+
+        // Recently claimed (last 24h, any booking_date) — staff must convert
+        // these into a real appointment. Sorted claimed_at desc (most recent
+        // first). Separate query so the FIFO ordering of waiting/notified is
+        // untouched; failure here leaves the actionable list intact.
+        const claimedSince = new Date(
+          Date.now() - 24 * 60 * 60 * 1000,
+        ).toISOString();
+        const { data: claimedRows, error: claimedErr } = await svc
+          .from("booking_waitlist_entries")
+          .select(WL_SELECT)
+          .eq("salon_id", ctx.salon.id)
+          .eq("status", "claimed")
+          .gte("claimed_at", claimedSince)
+          .order("claimed_at", { ascending: false })
+          .limit(50);
+        if (claimedErr) {
+          console.error(
+            "[loadReceptionistCenterData] online_waitlist_claimed",
+            claimedErr,
+          );
+        } else {
+          for (const r of (claimedRows ?? []) as unknown as WlRow[]) {
+            pushWlRow(r);
+          }
+        }
+      } catch (e) {
+        console.error("[loadReceptionistCenterData] online_waitlist", e);
+      }
+    })(),
+    (async () => {
+      // Active waitlist-offer soft holds (booking_waitlist_entries with
+      // status='notified' + a concrete offered staff/time + notified_at within
+      // the last 20 minutes). These power the grid's "Đang mời khách chờ"
+      // marker so a freed-but-offered cell isn't given to a walk-in. Captured
+      // regardless of the auto-book flag → useful for ALL salons. Service-role
+      // client (table is RLS-locked). Never throws — failure leaves the marker
+      // list empty so the RC load is unaffected.
+      try {
+        const svc = createServiceRoleClient();
+        const offerCutoff = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+        const { data: offerRows, error: offerErr } = await svc
+          .from("booking_waitlist_entries")
+          .select(
+            "id, offered_staff_id, offered_start_utc, offered_end_utc, notified_at, service_id",
+          )
+          .eq("salon_id", ctx.salon.id)
+          .eq("status", "notified")
+          .not("offered_staff_id", "is", null)
+          .not("offered_start_utc", "is", null)
+          .not("offered_end_utc", "is", null)
+          .gt("notified_at", offerCutoff)
+          .limit(100);
+        if (offerErr) {
+          console.error(
+            "[loadReceptionistCenterData] waitlist_offers",
+            offerErr,
+          );
+        } else {
+          for (const r of (offerRows ?? []) as unknown as Array<{
+            id: string;
+            offered_staff_id: string | null;
+            offered_start_utc: string | null;
+            offered_end_utc: string | null;
+            notified_at: string | null;
+            service_id: string | null;
+          }>) {
+            const staffId =
+              r.offered_staff_id != null ? String(r.offered_staff_id) : "";
+            const startUtc =
+              r.offered_start_utc != null ? String(r.offered_start_utc) : "";
+            const endUtc =
+              r.offered_end_utc != null ? String(r.offered_end_utc) : "";
+            const notifiedAt =
+              r.notified_at != null ? String(r.notified_at) : "";
+            if (!staffId || !startUtc || !endUtc || !notifiedAt) continue;
+            // Keep only offers whose freed slot falls on the selected day in
+            // the salon timezone (same comparison the grid uses to bucket
+            // bookings by day).
+            const notifiedMs = Date.parse(notifiedAt);
+            let offerDay: string;
+            try {
+              offerDay = salonYmdOfUtc(startUtc, salonRow.timezone);
+            } catch {
+              continue;
+            }
+            if (offerDay !== dateYmd || Number.isNaN(notifiedMs)) continue;
+            const serviceId =
+              r.service_id != null ? String(r.service_id) : "";
+            waitlistOffers.push({
+              id: String(r.id),
+              staffId,
+              startUtc,
+              endUtc,
+              expiresAtUtc: new Date(notifiedMs + 20 * 60_000).toISOString(),
+              serviceName: serviceNameById.get(serviceId) ?? "—",
+            });
+          }
+        }
+      } catch (e) {
+        console.error("[loadReceptionistCenterData] waitlist_offers", e);
+      }
     })(),
   ]);
 
@@ -1086,6 +1391,8 @@ export async function loadReceptionistCenterData(
       id: row.id,
       client_name: row.client_name,
       client_phone: row.client_phone ?? null,
+      client_email: row.client_email ?? null,
+      client_locale: row.client_locale ?? null,
       client_notes: row.client_notes ?? null,
       staff_id: staffId,
       start_time_utc: st,
@@ -1102,6 +1409,7 @@ export async function loadReceptionistCenterData(
           : typeof row.source === "string" && row.source.trim()
             ? row.source.trim().toLowerCase()
             : null,
+      created_at: row.created_at ?? null,
       service_id: row.service_id,
       service_name: svc?.name ?? "—",
       service_duration_minutes: Number(svc?.duration_minutes ?? 0),
@@ -1166,6 +1474,23 @@ export async function loadReceptionistCenterData(
         const v = (row as { wix_booking_id?: unknown }).wix_booking_id;
         return typeof v === "string" && v.length > 0 ? v : null;
       })(),
+      noshow_card_id: (() => {
+        const v = (row as { noshow_card_id?: unknown }).noshow_card_id;
+        return typeof v === "string" && v.length > 0 ? v : null;
+      })(),
+      noshow_card_required:
+        (row as { noshow_card_required?: unknown }).noshow_card_required === true,
+      noshow_fee_cents: (() => {
+        const v = (row as { noshow_fee_cents?: unknown }).noshow_fee_cents;
+        if (v == null) return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      })(),
+      noshow_charge_status: (() => {
+        const v = (row as { noshow_charge_status?: unknown })
+          .noshow_charge_status;
+        return typeof v === "string" && v.length > 0 ? v : null;
+      })(),
     };
   });
 
@@ -1226,6 +1551,8 @@ export async function loadReceptionistCenterData(
           created_at: s.created_at,
         })) ?? [],
       walkinQueue,
+      onlineWaitlist,
+      waitlistOffers,
       bookingsForDay,
       noShowsToday,
       capabilityRows,

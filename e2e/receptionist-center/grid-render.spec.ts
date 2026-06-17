@@ -67,8 +67,9 @@ test.describe("Receptionist grid render + ghost", () => {
 
     await expect(page.getByTestId("booking-detail-drawer")).toBeVisible();
 
-    page.once("dialog", (d) => d.accept());
+    // Cancel now opens the "notify the customer?" confirm — accept it to cancel.
     await page.getByTestId("drawer-cancel-booking").click();
+    await page.getByTestId("notify-cancel-confirm").click();
 
     await expect(block).toHaveCount(0, { timeout: 15_000 });
 

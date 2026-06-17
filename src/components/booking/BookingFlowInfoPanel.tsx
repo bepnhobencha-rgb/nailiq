@@ -22,6 +22,7 @@ function maskEmail(email: string): string {
 
 export function BookingFlowInfoPanel({
   t,
+  notesHint,
   clientName,
   clientEmail,
   clientNotes,
@@ -53,6 +54,8 @@ export function BookingFlowInfoPanel({
   onNext,
 }: {
   t: BookingMessages;
+  /** Vertical-aware notes hint (prompts pregnancy/health for relevant services). */
+  notesHint: string;
   clientName: string;
   clientEmail: string;
   clientNotes: string;
@@ -247,6 +250,12 @@ export function BookingFlowInfoPanel({
                           type="button"
                           variant="ghost"
                           size="sm"
+                          // The shared ghost variant paints `text-nq-foreground`
+                          // (light, for the DARK dashboard) which washes out to
+                          // near-white on the LIGHT booking theme. Force the
+                          // booking-theme text + a light hover bg so "No thanks"
+                          // is clearly legible next to the gold primary.
+                          className="text-[var(--booking-text)] hover:bg-[var(--booking-bg-input)] hover:text-[var(--booking-text)]"
                           onClick={() => onDismissPreferredStaff?.()}
                         >
                           {t.returningCustomer.dismissPreferredStaff}
@@ -299,14 +308,32 @@ export function BookingFlowInfoPanel({
             </p>
           ) : null}
         </div>
-        <div>
+        <div
+          className={cn(
+            "rounded-xl transition-colors",
+            // Highlight to nudge adding an email (reschedule link + offers) while
+            // it's still empty; calms down once filled.
+            !clientEmail.trim() &&
+              "-mx-3 border border-[var(--salon-primary)]/35 bg-[var(--salon-primary)]/[0.05] px-3 py-3",
+          )}
+        >
           <label
             htmlFor="booking-info-email"
-            className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
+            className="mb-1 block text-sm font-medium text-[var(--booking-text)]"
           >
             {t.clientEmailLabel}
           </label>
-          <p className="mb-2 text-xs text-[var(--booking-text-muted)]">{t.clientEmailHint}</p>
+          <p
+            className={cn(
+              "mb-2 text-xs",
+              clientEmail.trim()
+                ? "text-[var(--booking-text-muted)]"
+                : "font-medium text-[var(--salon-primary)]",
+            )}
+          >
+            {clientEmail.trim() ? "" : "✨ "}
+            {t.clientEmailHint}
+          </p>
           <input
             id="booking-info-email"
             ref={emailRef}
@@ -344,7 +371,7 @@ export function BookingFlowInfoPanel({
           >
             {t.clientNotesLabel}
           </label>
-          <p className="mb-2 text-xs text-[var(--booking-text-muted)]">{t.clientNotesOptionalHint}</p>
+          <p className="mb-2 text-xs text-[var(--booking-text-muted)]">{notesHint}</p>
           <textarea
             id="booking-info-notes"
             name="clientNotes"

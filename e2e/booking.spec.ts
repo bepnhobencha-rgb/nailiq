@@ -34,6 +34,9 @@ test.describe("Booking Flow", () => {
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
+    // The month grid is now collapsed behind a "📅 More dates" toggle (#593);
+    // reveal it before picking a specific grid day.
+    await page.locator('[data-testid="date-toggle-calendar"]').click();
     await page
       .locator('[data-testid="date-day"]:not([disabled])')
       .nth(1)
@@ -76,6 +79,8 @@ test.describe("Booking Flow", () => {
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
+    // Reveal the collapsed month grid (#593) before picking a grid day.
+    await page.locator('[data-testid="date-toggle-calendar"]').click();
     await page
       .locator('[data-testid="date-day"]:not([disabled])')
       .nth(1)
@@ -104,6 +109,9 @@ test.describe("Booking Flow", () => {
     await page.locator('[data-testid="any-staff-option"]').click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
+    // The near-term strip shows first (#593); open the full month grid to
+    // exercise month navigation + the today marker.
+    await page.locator('[data-testid="date-toggle-calendar"]').click();
     // The calendar opens on the first month that has availability, so there is
     // always at least one selectable day on arrival.
     await expect(

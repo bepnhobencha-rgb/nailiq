@@ -1,6 +1,8 @@
 import { type ReactNode } from "react";
+import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";
 import { DashboardShell } from "@/components/layout/DashboardShell";
+import { getSalonPwaInfo } from "@/shared/dashboard/salonPwaInfo";
 import { ImpersonationBanner } from "@/components/impersonation/ImpersonationBanner";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { loadOwnerSalons } from "@/shared/dashboard/salonOwnerActions";
@@ -16,6 +18,37 @@ type Props = {
   children: ReactNode;
   params: Promise<{ slug: string }>;
 };
+
+/**
+ * Installable-PWA metadata so the salon dashboard adds to the phone home
+ * screen as its own branded app (per-tenant manifest + generated icon),
+ * launching standalone (no browser chrome). iOS uses the apple-* tags;
+ * Android uses the manifest + service worker (registered in the shell).
+ */
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { slug } = await params;
+  const seg = encodeURIComponent(slug);
+  const info = await getSalonPwaInfo(slug);
+  const name = info?.name ?? "NailIQ";
+  return {
+    title: { default: `${name} — Dashboard`, template: `%s · ${name}` },
+    manifest: `/dashboard/${seg}/manifest.webmanifest`,
+    appleWebApp: {
+      capable: true,
+      title: name,
+      statusBarStyle: "black-translucent",
+    },
+    icons: {
+      icon: `/dashboard/${seg}/icon?size=192`,
+      apple: `/dashboard/${seg}/icon?size=180`,
+    },
+  };
+}
+
+export async function generateViewport(): Promise<Viewport> {
+  // Dark status bar matches the dashboard for a seamless standalone look.
+  return { themeColor: "#0B0C10" };
+}
 
 /**
  * App-shell for `/dashboard/[slug]/*`. Resolves salon membership once

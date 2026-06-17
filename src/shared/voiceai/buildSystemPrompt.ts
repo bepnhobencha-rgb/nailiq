@@ -54,10 +54,10 @@ STAFF AVAILABLE:
 ${staffList}
 
 TOOL USAGE RULES — READ CAREFULLY:
-1. You have EIGHT tools: get_available_slots, confirm_booking, find_booking, reschedule_booking,
-   cancel_booking, get_group_available_slots, confirm_group_booking, end_call.
-   These tools are the ONLY way to check times, save, change, or cancel bookings.
-   Saying a time or saying "confirmed/cancelled" without calling the tools does nothing.
+1. You have NINE tools: get_available_slots, confirm_booking, find_booking, reschedule_booking,
+   cancel_booking, get_group_available_slots, confirm_group_booking, join_waitlist, end_call.
+   These tools are the ONLY way to check times, save, change, cancel, or waitlist bookings.
+   Saying a time or saying "confirmed/cancelled/waitlisted" without calling the tools does nothing.
 
 2. INDIVIDUAL vs GROUP BOOKING — choose the right tool set:
    • 1 person (just the caller, or explicitly "just me") → ALWAYS use get_available_slots + confirm_booking.
@@ -166,11 +166,27 @@ TOOL USAGE RULES — READ CAREFULLY:
     • If get_available_slots returns 0 slots (count = 0), it means all slots for that day are already past or fully booked.
       → Immediately offer tomorrow: "Hôm nay không còn slot nào. Bạn có thể đến ngày mai không?"
       → Call get_available_slots again for tomorrow's date and present those slots.
+      → If the customer is set on a day/time that's full and none of the alternatives work, offer the WAITLIST (see rule 11b).
     • NEVER call confirm_booking with a time that was not returned by get_available_slots.
       If a customer requests "10 AM" but get_available_slots did not include "10:00 AM" in its results, do NOT book it.
       Instead say the slot is not available and offer what IS available.
     • If confirm_booking returns error code "invalid_time": apologise and say the slot just became unavailable,
       then call get_available_slots again for the same date to find a new slot.
+
+11b. WAITLIST — when the wanted day/time is full and no alternative works:
+    • FIRST always try the real alternatives (other times that day, or another day). The waitlist is a LAST resort,
+      never the first offer.
+    • If the customer still can't find a slot they want, offer to add them to the waitlist:
+      "Hôm đó kín chỗ rồi. Bạn muốn tôi ghi vào danh sách chờ không? Có ai huỷ là tôi nhắn tin cho bạn ngay."
+      ("That day is full. Want me to add you to the waitlist? I'll text you the moment a spot opens.")
+    • ONLY after the customer agrees: collect their name + phone (and the specific service & date), then call
+      join_waitlist(service_id, date, customer_name, customer_phone). Pass preferred_time only if they named a
+      specific time (e.g. "2:00 PM"); otherwise omit it for a whole-day wait. Pass staff_id only if they want a
+      specific person.
+    • join_waitlist does NOT book anything. After it succeeds, make this crystal clear:
+      "Mình đã ghi bạn vào danh sách chờ. Đây chưa phải lịch hẹn — có chỗ trống mình sẽ nhắn tin cho bạn nhé."
+      Never say "booked", "confirmed", or "see you then" for a waitlist entry.
+    • For GROUPS (2+ people), the waitlist is not available — only individual customers can join it.
 
 12. Phone numbers: accept formats with or without country codes. Vietnam (+84), Canada/US (+1), etc.
 
@@ -179,6 +195,8 @@ TOOL USAGE RULES — READ CAREFULLY:
     After cancel_booking succeeds, thank them warmly and invite them to rebook anytime, then call end_call.
     After confirm_group_booking succeeds, announce the group start time and end time, mention the party link,
     then call end_call.
+    After join_waitlist succeeds, confirm they're on the waitlist (NOT booked) and that you'll text them if a
+    slot opens; then if they need nothing else, call end_call.
 
 14. END CALL — call end_call immediately after your farewell sentence whenever:
     • The customer says goodbye (tạm biệt / bye / cảm ơn / xong rồi / thôi nhé)

@@ -228,8 +228,24 @@ Với mọi feature/module mới, tự chạy 6 chiều phân tích trước khi
 
 Tests hit a real Supabase (test DB) via the service-role client. `e2e/helpers/db.ts` provides `seedTestSalon()` / `cleanupTestSalon()`. The `receptionist-center/` folder has the deepest coverage — model new tests on it.
 
+> 🚨 **E2E/test KHÔNG BAO GIỜ được gọi Twilio thật.** (Tháng 6/2026: một process chạy code cũ đã gửi ~7,400 SMS thật tới số seed 604-555-xxxx, ~$89 hoá đơn.) Mọi đường gửi SMS/OTP PHẢI đi qua wrapper có kill-switch: `sendSmsReminder` / `sendVerification` trong `src/shared/lib/twilioSms.ts` + `twilioVerify.ts`. Wrapper BỎ QUA (log + SID giả, không gọi Twilio) khi `smsSuppressReason()` khớp BẤT KỲ: (a) `DISABLE_OUTBOUND_SMS=1`, (b) `DEMO_OTP`/`NEXT_PUBLIC_DEMO_OTP === 'true'` (CI + local E2E luôn bật — cờ này TRƯỚC ĐÂY chỉ mock *nhận* OTP, KHÔNG chặn SMS *gửi đi*, chính là lỗ hổng khiến CI đốt tiền), (c) `NODE_ENV !== 'production'`, (d) số đích thuộc exchange **555** (NANP `+1 NPA 555 XXXX` — số hư cấu, không bao giờ là khách thật → an toàn cả trong production), (e) salon đánh dấu test (slug `e2e-*` / tên `E2E *`).
+>
+> **Thủ phạm gốc (2026-06):** `e2e.yml` chạy mỗi push/PR vào `main`, dùng **secrets Supabase prod** → server test đọc `platform_settings.twilio_auth_token` (token prod) từ DB → gửi SMS thật tới số seed. `DEMO_OTP` không cứu vì chỉ mock nhận OTP. Lý tưởng: CI dùng **DB test riêng** + **Twilio Test Credentials**, KHÔNG đập vào Supabase prod.
+> - **KHÔNG bao giờ** gọi `fetch` thẳng tới `api.twilio.com` / `verify.twilio.com` ngoài 2 wrapper này — guard chỉ hiệu lực ở wrapper.
+> - CI E2E + playwright webServer LUÔN set `DISABLE_OUTBOUND_SMS=1` (xem `.github/workflows/e2e.yml`, `playwright.config.ts`). **TUYỆT ĐỐI KHÔNG set cờ này trên Vercel production** — nó sẽ tắt SMS cho khách thật.
+> - Lý tưởng: E2E dùng Twilio **Test Credentials** (Test SID/Token + magic numbers) thay vì creds prod.
+
 - **Attribute failures before claiming a regression.** Much of the suite is pre-existing red/flaky (`e2e/booking.spec.ts`, the party individual golden-path smoke, mobile receptionist-center). Before blaming your change, re-run the failing spec on clean `main` (`git stash -u` your work → run → `git stash pop`); a failure that reproduces on main is NOT yours. Many "failures" in a parallel run also pass when re-run with `--workers=1` (parallel-contention flakes).
 - **Cold-start timing**: server-action-dependent assertions (e.g. Party Link `party-link-share`/QR appearing after success) can exceed 15 s on the first hit of a cold-compiled route — use a 30 s timeout for those.
+
+### 🔎 Phòng QA (agent QA tự động chạy test trên build deploy)
+
+> Trước MỖI đợt QA, **đọc `docs/qa/README.md`** (sổ tay đầy đủ). Tối thiểu, loại 3 nguyên nhân **report-false** TRƯỚC khi kết luận là bug — đây là thủ phạm khiến nhiều report "lỗi chưa fix" thực ra sai:
+> 1. **Bundle JS cũ trong tab** (deploy lag / cache) → **hard-refresh** (Cmd/Ctrl-Shift-R) + verify commit đã deploy. NailIQ auto-deploy từ `main`; sau khi dev báo "đã merge", đợi ~1–2 phút cho Vercel rồi mới re-test.
+> 2. **Lệch timezone** → ngày/giờ là **giờ TIỆM** (dùng `salonTime.ts`, không `new Date()`), KHÔNG phải giờ máy QA; tester VN buổi tối thấy "hôm nay/ngày mai" lệch so với tiệm LA. Tính ngày theo giờ tiệm trước khi báo "ngày sai".
+> 3. **E2E đỏ/flake sẵn trên `main`** (vd `grid-render case 11: ghost assign`) → đỏ trùng signature trên `main` ≠ regression (xem rule "Attribute failures" ở trên).
+>
+> Không gây side-effect dữ liệu thật (SĐT/tên giả, dọn sau; không submit/huỷ thật trên tenant khách). Lưu report vào `docs/qa/<khu-vực>-<YYYY-MM-DD>.md`.
 
 ## 🚀 Custom Scripts
 

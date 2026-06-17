@@ -45,9 +45,13 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { createClient } from "@/shared/lib/supabase/client";
 import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
-import { BookingDetailDrawer, type BookingDetailDrawerModel } from "./BookingDetailDrawer";
+import {
+  BookingDetailDrawer,
+  type BookingDetailDrawerModel,
+} from "./BookingDetailDrawer";
 import { ConnectionBanner, type ConnectionState } from "./ConnectionBanner";
 import { DateSwitcher } from "./DateSwitcher";
+import { ViewedDateChip } from "./ViewedDateChip";
 import { DensitySlider } from "./DensitySlider";
 import { KPIBar } from "./KPIBar";
 import { BasicCockpit } from "./BasicCockpit";
@@ -61,6 +65,7 @@ import { StatusPill } from "./StatusPill";
 import { TVModeView } from "./TVModeView";
 import { UndoToast } from "./UndoToast";
 import { WalkinQueueSidebar, type QueueItem } from "./WalkinQueueSidebar";
+import { OnlineWaitlistPanel } from "./OnlineWaitlistPanel";
 import { WeekView, mondayYmdOf, shiftWeek } from "./WeekView";
 import { MonthView, firstOfMonth, shiftMonth } from "./MonthView";
 import type { BookingsRangeHint } from "@/shared/dashboard/getBookingsForRangeAction";
@@ -75,6 +80,7 @@ import {
   addWalkinToQueue,
   assignWalkinToSlot,
   cancelDeskBooking,
+  cancelDeskGroup,
   restoreCancelledBooking,
   approveWixBooking,
   declineWixBooking,
@@ -84,8 +90,17 @@ import {
   undoCancelBooking,
   cancelWaitingWalkin,
   undoWalkinAssignment,
+  chargeNoShowFeeManual,
+  waiveNoShowFee,
 } from "@/shared/dashboard/receptionistActions";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
+import { defaultNotifyOn } from "@/shared/dashboard/staffNotificationSettings";
+import {
+  NotifyCustomerPanel,
+  type NotifyChannels,
+} from "./NotifyCustomerPanel";
+import { resolveCustomerLocale } from "@/shared/notifications/resolveCustomerLocale";
+import { buildStaffActionSms } from "@/shared/notifications/staffActionMessages";
 import { getStaffAvailability } from "@/shared/dashboard/availabilityEngine";
 import {
   type UpdateBookingStatusResult,
@@ -93,7 +108,10 @@ import {
 } from "@/shared/dashboard/salonOwnerActions";
 import { editBookingAction } from "@/shared/dashboard/editBookingAction";
 import { getUserMessages } from "@/shared/i18n/user";
-import { checkBookingConflict, type ConflictCheckBooking } from "@/shared/lib/conflictCheck";
+import {
+  checkBookingConflict,
+  type ConflictCheckBooking,
+} from "@/shared/lib/conflictCheck";
 import { cn } from "@/shared/lib/cn";
 import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import { cleanPhone, formatPhone } from "@/shared/lib/phoneFormat";
@@ -109,12 +127,18 @@ import {
 import { logSalonRushEvent } from "@/shared/dashboard/rushHourEvent";
 import {
   canCancelBooking,
+  canChangeBookingStatus,
   canMarkNoShow,
   canEditBooking,
   canUndoCancel,
   type SalonMemberRole,
 } from "@/shared/lib/salonMemberRole";
-import { formatInSalonTz, salonDateOffset, salonToday, salonYmdOfUtc } from "@/shared/lib/salonTime";
+import {
+  formatInSalonTz,
+  salonDateOffset,
+  salonToday,
+  salonYmdOfUtc,
+} from "@/shared/lib/salonTime";
 import { useSoundAlerts } from "@/shared/lib/useSoundAlerts";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import {
@@ -128,6 +152,11 @@ import { AttentionChipBar } from "@/components/receptionist/AttentionChipBar";
 import DeskBookingForm from "@/components/receptionist/DeskBookingForm";
 import DeskGroupForm from "@/components/receptionist/DeskGroupForm";
 import type { PartyCard } from "@/shared/dashboard/loadPartyCardsAction";
+import { ClientProfile360Drawer } from "@/components/dashboard/ClientProfile360Drawer";
+import {
+  loadBookingCustomerContext,
+  type BookingCustomerContext,
+} from "@/shared/dashboard/loadBookingCustomerContextAction";
 
 export type ReceptionistCenterProps = {
   slug: string;
@@ -137,7 +166,9 @@ export type ReceptionistCenterProps = {
   viewerRole: SalonMemberRole;
   /** Free-tier monthly booking-cap status. `null` if the loader
    *  couldn't fetch it (transient error — banner stays hidden). */
-  bookingLimitStatus?: import("@/shared/dashboard/loadBookingLimitStatus").BookingLimitStatus | null;
+  bookingLimitStatus?:
+    | import("@/shared/dashboard/loadBookingLimitStatus").BookingLimitStatus
+    | null;
   /** Party cards for today + 7 days. Empty array if none or service-role key unavailable. */
   partyCards?: PartyCard[];
   /** Release flag `group_booking` (PR2). When false, the party-card strip is
@@ -183,7 +214,10 @@ function updateBookingStatusToastMessage(
   }
 }
 
-function bookingStatusLabel(messages: ReturnType<typeof getUserMessages>, status: BookingStatus) {
+function bookingStatusLabel(
+  messages: ReturnType<typeof getUserMessages>,
+  status: BookingStatus,
+) {
   const d = messages.salonDashboard;
   switch (status) {
     case "pending":
@@ -218,8 +252,15 @@ function serviceSlotMinutes(
   serviceId: string,
   services: ReceptionistCenterData["services"],
 ): number | null {
-  const sid = String(serviceId ?? "").trim().toLowerCase();
-  const s = services.find((row) => String(row.id ?? "").trim().toLowerCase() === sid);
+  const sid = String(serviceId ?? "")
+    .trim()
+    .toLowerCase();
+  const s = services.find(
+    (row) =>
+      String(row.id ?? "")
+        .trim()
+        .toLowerCase() === sid,
+  );
   if (!s) return null;
   const dRaw = Number(s.duration_minutes);
   const bRaw = Number(s.buffer_minutes);
@@ -255,15 +296,24 @@ type UndoToastState = {
   type: "assign" | "cancel";
 };
 
-function ReceptionistGateError({ code }: { code: LoadReceptionistCenterError }) {
+function ReceptionistGateError({
+  code,
+}: {
+  code: LoadReceptionistCenterError;
+}) {
   const { language, setLanguage } = useUserLanguage();
   const messages = useMemo(() => getUserMessages(language), [language]);
 
   return (
     <div className="mx-auto flex max-w-[var(--max-nq-mobile)] flex-col gap-4 px-[var(--pad-nq-section-mobile)] py-10 text-center text-sm">
-      <p className="text-nq-error">{loadErrorCopy(messages.receptionist, code)}</p>
+      <p className="text-nq-error">
+        {loadErrorCopy(messages.receptionist, code)}
+      </p>
       <div className="flex justify-center">
-        <UserLanguageToggle language={language} onLanguageChange={setLanguage} />
+        <UserLanguageToggle
+          language={language}
+          onLanguageChange={setLanguage}
+        />
       </div>
     </div>
   );
@@ -281,7 +331,9 @@ function ReceptionistCenterInner({
   slug: string;
   initialOk: ReceptionistCenterData;
   viewerRole: SalonMemberRole;
-  bookingLimitStatus: import("@/shared/dashboard/loadBookingLimitStatus").BookingLimitStatus | null;
+  bookingLimitStatus:
+    | import("@/shared/dashboard/loadBookingLimitStatus").BookingLimitStatus
+    | null;
   partyCards: PartyCard[];
   groupBookingEnabled: boolean;
   tvModeEnabled: boolean;
@@ -316,10 +368,21 @@ function ReceptionistCenterInner({
     dashboardModules: initialOk.dashboardModules,
   }));
 
+  // The day the user is actually viewing — the source of truth for reloads.
+  const viewedYmdRef = useRef(data.selectedDate);
+  viewedYmdRef.current = data.selectedDate;
+
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync local data when initialOk reloads from server
-    setData({ ...initialOk, selectedDate: initialOk.selectedDate });
-    setLastSyncedIso(new Date().toISOString());
+    // Only adopt server-provided data when it's for the day the user is viewing.
+    // A revalidatePath() / router.refresh() re-runs the loader for its DEFAULT
+    // day (today); without this guard it would yank the grid back to today after
+    // acting on a future day (drag-reschedule, edit, etc.). When the server day
+    // differs, keep the viewed day — reloadCurrentDay already refreshed it.
+    if (initialOk.selectedDate === viewedYmdRef.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync local data when initialOk reloads from server
+      setData({ ...initialOk, selectedDate: initialOk.selectedDate });
+      setLastSyncedIso(new Date().toISOString());
+    }
   }, [initialOk]);
 
   const [dateOffset, setDateOffset] = useState<-1 | 0 | 1>(0);
@@ -396,10 +459,53 @@ function ReceptionistCenterInner({
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [data.salon.timezone, data.selectedDate, nowIso]);
 
-  const [assigningWalkinId, setAssigningWalkinId] = useState<string | null>(null);
+  const [assigningWalkinId, setAssigningWalkinId] = useState<string | null>(
+    null,
+  );
   const [dayLoading, setDayLoading] = useState(false);
 
   const [drawerBookingId, setDrawerBookingId] = useState<string | null>(null);
+
+  // Customer 360 profile drawer — opened from the booking detail drawer's
+  // "Profile & history" button. Keyed by the guest's phone.
+  const [open360Phone, setOpen360Phone] = useState<string | null>(null);
+
+  // Lazy "customer launchpad" context (creator / allergies / return cadence)
+  // for the open booking. `undefined` = loading, `null` = unavailable.
+  const [customerContext, setCustomerContext] = useState<
+    BookingCustomerContext | null | undefined
+  >(undefined);
+  useEffect(() => {
+    const id = drawerBookingId;
+    if (!id) {
+      setCustomerContext(undefined);
+      return;
+    }
+    let cancelled = false;
+    setCustomerContext(undefined);
+    void loadBookingCustomerContext(slug, id).then((res) => {
+      if (cancelled) return;
+      setCustomerContext(res.ok ? res.context : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [drawerBookingId, slug]);
+
+  // Deep-link `?booking=<id>` (e.g. Coco's "open this appointment" link): open
+  // that booking's detail drawer once on mount. The page already loaded the
+  // matching `?date`, so the booking is in this day's data. One-shot via a ref
+  // so closing the drawer doesn't immediately re-open it.
+  const urlBookingParam = searchParams?.get("booking") ?? null;
+  const didOpenUrlBookingRef = useRef(false);
+  useEffect(() => {
+    if (didOpenUrlBookingRef.current || !urlBookingParam) return;
+    if (data.bookingsForDay.some((b) => b.id === urlBookingParam)) {
+      didOpenUrlBookingRef.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot deep-link open
+      setDrawerBookingId(urlBookingParam);
+    }
+  }, [urlBookingParam, data.bookingsForDay]);
 
   // E2E hydration signal: renders only after the first client-side effect,
   // confirming React has fully hydrated and all event handlers are registered.
@@ -420,12 +526,17 @@ function ReceptionistCenterInner({
   const errorToastTimerRef = useRef<number | null>(null);
   const showErrorToast = useCallback((message: string) => {
     setErrorToast(message);
-    if (errorToastTimerRef.current) window.clearTimeout(errorToastTimerRef.current);
-    errorToastTimerRef.current = window.setTimeout(() => setErrorToast(null), 4500);
+    if (errorToastTimerRef.current)
+      window.clearTimeout(errorToastTimerRef.current);
+    errorToastTimerRef.current = window.setTimeout(
+      () => setErrorToast(null),
+      4500,
+    );
   }, []);
   useEffect(
     () => () => {
-      if (errorToastTimerRef.current) window.clearTimeout(errorToastTimerRef.current);
+      if (errorToastTimerRef.current)
+        window.clearTimeout(errorToastTimerRef.current);
     },
     [],
   );
@@ -439,12 +550,14 @@ function ReceptionistCenterInner({
 
   useEffect(() => {
     return () => {
-      if (undoTimerRef.current !== null) window.clearInterval(undoTimerRef.current);
+      if (undoTimerRef.current !== null)
+        window.clearInterval(undoTimerRef.current);
     };
   }, []);
 
   useEffect(() => {
-    if (undoTimerRef.current !== null) window.clearInterval(undoTimerRef.current);
+    if (undoTimerRef.current !== null)
+      window.clearInterval(undoTimerRef.current);
     undoTimerRef.current = null;
     if (!undoState) return;
 
@@ -458,7 +571,8 @@ function ReceptionistCenterInner({
     }, 1000);
 
     return () => {
-      if (undoTimerRef.current !== null) window.clearInterval(undoTimerRef.current);
+      if (undoTimerRef.current !== null)
+        window.clearInterval(undoTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ARCHITECTURE_LOCK: intentionally keyed on undoVisible (boolean) not undoState object; prevents timer restart on secondsRemaining ticks
   }, [undoVisible]);
@@ -483,8 +597,28 @@ function ReceptionistCenterInner({
   // so re-clicking the tab while already on the page did nothing.
 
   const [drawerBusy, setDrawerBusy] = useState(false);
+  // No-show fee charge/waive modal — shown when a no-show'd booking has a Square
+  // card on file (declared here, above the TV-mode early return, so the hook
+  // order is stable). The charge/waive decision is wired in `triggerMarkNoShow`.
+  const [noShowChargeModal, setNoShowChargeModal] = useState<{
+    bookingId: string;
+    feeCents: number;
+  } | null>(null);
   // Pending desk-cancel that hit a paid deposit → ask refund-or-keep first.
-  const [depositCancel, setDepositCancel] = useState<{ id: string; amountCents: number } | null>(null);
+  const [depositCancel, setDepositCancel] = useState<{
+    id: string;
+    amountCents: number;
+  } | null>(null);
+  // Cancel-confirm with the "notify the customer?" panel (non-deposit path).
+  const [notifyCancel, setNotifyCancel] = useState<{ id: string } | null>(null);
+  // For a booking that is one member of a party, the cancel modal lets the staff
+  // choose to cancel just this person or the whole party. Default: just this one.
+  const [cancelScope, setCancelScope] = useState<"this" | "whole">("this");
+  const [notifyCancelChannels, setNotifyCancelChannels] =
+    useState<NotifyChannels>({
+      sms: false,
+      email: false,
+    });
 
   // Realtime connection-state machine. Default 'connected' — assume
   // online until the Supabase channel subscribe-callback flips us to
@@ -519,7 +653,9 @@ function ReceptionistCenterInner({
   // Sound alerts (Web Audio, generated tones only). Hook is a no-op
   // when `dashboard_modules.sound_alerts` is off; honors browser
   // autoplay policy via lazy AudioContext + first-gesture unlock.
-  const { playAlert, isUnlocked: isSoundUnlocked } = useSoundAlerts(data.dashboardModules);
+  const { playAlert, isUnlocked: isSoundUnlocked } = useSoundAlerts(
+    data.dashboardModules,
+  );
 
   const staffNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -576,6 +712,11 @@ function ReceptionistCenterInner({
           seat_together: b.seat_together === true,
           addon_count: b.addons?.length ?? 0,
           no_show_count: b.client_no_show_count ?? 0,
+          no_show_risk_score: b.no_show_risk_score ?? null,
+          buffer_minutes: b.service_buffer_minutes,
+          noshow_card_id: b.noshow_card_id ?? null,
+          noshow_fee_cents: b.noshow_fee_cents ?? null,
+          noshow_charge_status: b.noshow_charge_status ?? null,
         },
       ];
     });
@@ -609,7 +750,9 @@ function ReceptionistCenterInner({
     };
   }, [slug, nowIso, queueItems.length]);
 
-  const inProgressToday = data.bookingsForDay.filter((b) => b.status === "in_progress").length;
+  const inProgressToday = data.bookingsForDay.filter(
+    (b) => b.status === "in_progress",
+  ).length;
 
   // Walk-in slide-over toggle state — see DASHBOARD_LAYOUT_RULES §11.
   // The hook handles the auto-open contract (waiting > 0 → open
@@ -644,9 +787,15 @@ function ReceptionistCenterInner({
   // Prefill for the desk form when opened by clicking an empty grid slot
   // (staff + day + time). Null when opened via the header button (blank form).
   const [deskPrefill, setDeskPrefill] = useState<{
-    staffId: string;
-    ymd: string;
-    slotLabel: string;
+    staffId?: string;
+    ymd?: string;
+    slotLabel?: string;
+    /** Click coords → the form opens as a card anchored at the clicked cell. */
+    anchor?: { x: number; y: number };
+    /** Customer prefill for one-tap rebook from the booking drawer. */
+    phone?: string;
+    name?: string;
+    serviceId?: string;
   } | null>(null);
   // Desk group booking — gated on the per-salon `group_booking` flag (same
   // flag the PartyCardPanel uses). Mounts DeskGroupForm which reuses the
@@ -656,6 +805,37 @@ function ReceptionistCenterInner({
     setQueuePanelOpen(true);
     setAddFocusNonce((n) => n + 1);
   }, [setQueuePanelOpen]);
+
+  // Create a real appointment from a claimed waitlist entry — reuse the
+  // desk-prefill mechanism (same as onRebookNext): open the existing
+  // DeskBookingForm prefilled so staff confirm time/staff and book. Shared by
+  // the waitlist panel (in the queue drawer) and the attention-chip dropdown.
+  const createBookingFromClaim = useCallback(
+    (entry: {
+      phone: string;
+      clientName: string;
+      serviceId: string;
+      bookingDate: string;
+      preferredSlotLabel: string | null;
+      offeredStaffId: string | null;
+    }) => {
+      setDeskPrefill({
+        phone: entry.phone || undefined,
+        name: entry.clientName || undefined,
+        serviceId: entry.serviceId || undefined,
+        ymd: entry.bookingDate || undefined,
+        // The customer's preferred time ("3:30 PM") — the form auto-selects it
+        // IF still free, else shows the open times so staff pick another. Saves
+        // re-typing; staff just assign a tech and confirm.
+        slotLabel: entry.preferredSlotLabel || undefined,
+        // Prefill the freed tech when the slot carried one — matches what the
+        // flag-on auto-book path would have assigned (manual parity).
+        staffId: entry.offeredStaffId || undefined,
+      });
+      setDeskBookingOpen(true);
+    },
+    [],
+  );
 
   // Open the queue panel when the sidebar "Hàng chờ" (clock) tab deep-links to
   // #queue — on mount AND on every hashchange (so re-clicking while already on
@@ -667,9 +847,15 @@ function ReceptionistCenterInner({
       if (window.location.hash !== "#queue") return;
       setQueuePanelOpen(true);
       window.requestAnimationFrame(() => {
-        document.getElementById("queue")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        document
+          .getElementById("queue")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
-      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      window.history.replaceState(
+        null,
+        "",
+        window.location.pathname + window.location.search,
+      );
     };
     const raf = window.requestAnimationFrame(openFromHash); // mount (keeps setState out of the effect body)
     window.addEventListener("hashchange", openFromHash);
@@ -785,8 +971,12 @@ function ReceptionistCenterInner({
     assigningWalkinId !== null
       ? (() => {
           const qi = queueItems.find((x) => x.id === assigningWalkinId);
-          const span = qi ? walkinEffectiveSpanMinutes(qi, data.services) : null;
-          return qi !== undefined && span !== null && qi.client_name.trim().length
+          const span = qi
+            ? walkinEffectiveSpanMinutes(qi, data.services)
+            : null;
+          return qi !== undefined &&
+            span !== null &&
+            qi.client_name.trim().length
             ? {
                 queueItemId: qi.id,
                 clientName: qi.client_name.trim(),
@@ -869,7 +1059,10 @@ function ReceptionistCenterInner({
 
   // eslint-disable-next-line react-hooks/preserve-manual-memoization -- ARCHITECTURE_LOCK: memoization could not be preserved; used by handlers declared earlier in component scope
   const reloadCurrentDay = useCallback(async () => {
-    const ymd = salonDateOffset(timezone, dateOffset, nowIsoRef.current);
+    // Reload the day the user is actually viewing — NOT one derived from
+    // dateOffset (which only spans yesterday/today/tomorrow, so a date-picked
+    // day or any offset drift would reload the wrong day, snapping to today).
+    const ymd = viewedYmdRef.current;
     const res = await loadReceptionistCenterDataAction(slug, ymd);
     if (res.ok) {
       setData(res.data);
@@ -879,7 +1072,7 @@ function ReceptionistCenterInner({
     }
     // Keep Week/Month views in sync with this mutation (QA #5).
     setCalendarRefreshNonce((n) => n + 1);
-  }, [slug, timezone, dateOffset, messages.receptionist, markSynced]);
+  }, [slug, messages.receptionist, markSynced]);
 
   /**
    * Called when a booking chip is clicked from Week or Month view.
@@ -906,7 +1099,9 @@ function ReceptionistCenterInner({
     const assignBookingId = assigningWalkinId;
     if (!assignBookingId || assignedSlot === null) return;
     const qi = queueItems.find((x) => x.id === assignBookingId);
-    const spanMinutes = qi ? walkinEffectiveSpanMinutes(qi, data.services) : null;
+    const spanMinutes = qi
+      ? walkinEffectiveSpanMinutes(qi, data.services)
+      : null;
     if (!qi || spanMinutes === null || spanMinutes < 1) {
       setShakeMessage(messages.receptionist.actionErrorFallback);
       return;
@@ -939,8 +1134,10 @@ function ReceptionistCenterInner({
       return;
     }
 
-    const staffName = staffNameById.get(staffId)?.trim() || messages.receptionist.drawer.none;
-    const svcName = qi.service_name?.trim() || messages.receptionist.drawer.none;
+    const staffName =
+      staffNameById.get(staffId)?.trim() || messages.receptionist.drawer.none;
+    const svcName =
+      qi.service_name?.trim() || messages.receptionist.drawer.none;
     const headline = `${messages.receptionist.undo.assignedPrefix} ${qi.client_name.trim()} ${messages.receptionist.undo.assignedMiddle} ${staffName}`;
     const startLabel = formatInSalonTz(slotStartUtc, timezone, "time");
     const detailLine = `${startLabel} · ${svcName}`;
@@ -977,6 +1174,8 @@ function ReceptionistCenterInner({
 
   const undoCancel = async () => {
     if (!undoState) return;
+    // undoCancelBooking restores the booking AND flips the queued cancel
+    // notification to 'cancelled' server-side, so the customer is never texted.
     const res = await undoCancelBooking(slug, {
       salonId: data.salon.id,
       bookingId: undoState.bookingId,
@@ -989,7 +1188,8 @@ function ReceptionistCenterInner({
     router.refresh();
   };
 
-  const onUndoToastUndo = undoState?.type === "cancel" ? undoCancel : undoAssign;
+  const onUndoToastUndo =
+    undoState?.type === "cancel" ? undoCancel : undoAssign;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1180,7 +1380,8 @@ function ReceptionistCenterInner({
     const b = data.bookingsForDay.find((x) => x.id === id);
     if (!b) return null;
 
-    const staffName = staffNameById.get(b.staff_id) ?? messages.receptionist.drawer.none;
+    const staffName =
+      staffNameById.get(b.staff_id) ?? messages.receptionist.drawer.none;
 
     let telHref: string | null = null;
     let phoneDisplay: string | null = null;
@@ -1286,12 +1487,24 @@ function ReceptionistCenterInner({
 
     // Checkout summary: when a deposit was paid, show it + the balance the
     // receptionist still charges on the Square POS (price − deposit).
-    const depositPaidCents = b.deposit_status === "paid" ? (b.deposit_amount_cents ?? 0) : 0;
+    const depositPaidCents =
+      b.deposit_status === "paid" ? (b.deposit_amount_cents ?? 0) : 0;
     const depositPaidLine =
-      depositPaidCents > 0 ? formatCurrency(depositPaidCents, data.salon.currencyCode) : null;
+      depositPaidCents > 0
+        ? formatCurrency(depositPaidCents, data.salon.currencyCode)
+        : null;
     const remainingLine =
       depositPaidCents > 0 && totalCents != null
-        ? formatCurrency(Math.max(0, totalCents - depositPaidCents), data.salon.currencyCode)
+        ? formatCurrency(
+            Math.max(0, totalCents - depositPaidCents),
+            data.salon.currencyCode,
+          )
+        : null;
+    // Awaiting-deposit: a link was sent but not yet paid → the slot is held as
+    // "Chờ cọc", not a firm "Xác nhận". Surfaced as its own badge in the drawer.
+    const depositAwaitingLine =
+      b.deposit_status === "required" && (b.deposit_amount_cents ?? 0) > 0
+        ? formatCurrency(b.deposit_amount_cents ?? 0, data.salon.currencyCode)
         : null;
 
     const addonServiceName = b.addon_service_name?.trim()
@@ -1310,6 +1523,37 @@ function ReceptionistCenterInner({
         ? messages.receptionist.drawer.sourceWalkin
         : messages.receptionist.drawer.sourceAppointment;
 
+    // "Book ở đâu" — friendly label for the granular origin channel
+    // (online | desk | walkin | wix | square | voice | phone | appointment).
+    // Falls back to null for legacy rows so the drawer can show sourceLabel.
+    const channelLabel = ((): string | null => {
+      switch (b.source_channel) {
+        case "online":
+          return language === "vi" ? "🌐 Khách đặt online" : "🌐 Online booking";
+        case "desk":
+          return language === "vi" ? "🧑‍💼 Lễ tân đặt tại quầy" : "🧑‍💼 Front desk";
+        case "walkin":
+          return language === "vi" ? "🚶 Khách vãng lai" : "🚶 Walk-in";
+        case "wix":
+          return "🔗 Wix";
+        case "square":
+          return "⬛ Square";
+        case "voice":
+          return language === "vi" ? "📞 Tổng đài AI" : "📞 Voice AI";
+        case "phone":
+          return language === "vi" ? "📞 Gọi điện thoại" : "📞 Phone";
+        case "appointment":
+          return language === "vi" ? "📅 Hẹn trước" : "📅 Appointment";
+        default:
+          return null;
+      }
+    })();
+
+    // "Khi nào book" — when the booking was created, in salon tz.
+    const bookedAtLine = b.created_at
+      ? formatInSalonTz(b.created_at, timezone, "datetime")
+      : null;
+
     return {
       clientName: b.client_name,
       telHref,
@@ -1321,6 +1565,8 @@ function ReceptionistCenterInner({
       status: b.status,
       statusLabel: bookingStatusLabel(messages, b.status),
       sourceLabel,
+      channelLabel,
+      bookedAtLine,
       // Reuse the timeline-chip flag — same server-derived signal,
       // same heart icon meaning. Drives the "Khách yêu cầu thợ này"
       // line under the source label.
@@ -1346,7 +1592,13 @@ function ReceptionistCenterInner({
                   : `after · +${a.duration_minutes}m`,
             }))
           : addonServiceName
-            ? [{ name: addonServiceName, price_cents: addonCents, timingLabel: null }]
+            ? [
+                {
+                  name: addonServiceName,
+                  price_cents: addonCents,
+                  timingLabel: null,
+                },
+              ]
             : [],
       verificationMethod: b.verification_method ?? null,
       smsFailedAt: b.sms_confirmation_failed_at ?? null,
@@ -1355,10 +1607,22 @@ function ReceptionistCenterInner({
       depositStatus: b.deposit_status ?? null,
       depositPaidLine,
       remainingLine,
+      depositAwaitingLine,
       // Square deposits config (stable per session, like currencyCode) + the
       // dashboard language so the desk can request + text a deposit link.
       depositsEnabled: data.salon.depositsEnabled,
+      // No-show card-on-file (charge only on no-show) — surface the protection
+      // at the desk. Data already loaded on the booking row.
+      cardOnFile: !!b.noshow_card_id,
+      noshowCardRequired: b.noshow_card_required === true,
+      noshowFeeLine:
+        b.noshow_fee_cents != null
+          ? formatCurrency(b.noshow_fee_cents, data.salon.currencyCode)
+          : null,
       language,
+      // Party/group composition — the drawer lazily loads the members when set.
+      groupId: b.group_id ?? null,
+      seatTogether: b.seat_together === true,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ARCHITECTURE_LOCK: data.salon.currencyCode is intentionally omitted; it never changes within a session and adding it would cause memo churn
   }, [
@@ -1401,6 +1665,10 @@ function ReceptionistCenterInner({
       // the entire receptionist surface.
       staffRequestedByClient:
         messages.receptionist.queue.addForm.staffRequestedByClient,
+      groupSectionTitle: d.groupSectionTitle,
+      groupOrganizedBy: d.groupOrganizedBy,
+      groupOrganizerBadge: d.groupOrganizerBadge,
+      groupSeatTogether: d.groupSeatTogether,
     };
   }, [messages]);
 
@@ -1537,13 +1805,70 @@ function ReceptionistCenterInner({
     }
   };
 
-  const doCancelBooking = async (id: string, refundDeposit: boolean) => {
+  // Cancel EVERY active member of a party in one go (group-aware cancel). Mirrors
+  // the single-booking path but hits cancelDeskGroup; no 8s undo (a bulk restore
+  // isn't offered — same as the PartyCardPanel group cancel).
+  const doCancelGroup = async (
+    groupId: string,
+    notifyChannels?: NotifyChannels,
+  ) => {
+    const notifyChannelsResolved =
+      notifyChannels ??
+      (defaultNotifyOn(data.salon.staffNotificationSettings, "cancel")
+        ? {
+            sms: data.salon.staffNotificationSettings.channels.sms,
+            email: data.salon.staffNotificationSettings.channels.email,
+          }
+        : { sms: false, email: false });
+
+    setDrawerBusy(true);
+    try {
+      const r = await cancelDeskGroup(slug, {
+        salonId: data.salon.id,
+        groupId,
+        notify: notifyChannelsResolved,
+      });
+      if (!r.ok) {
+        setShakeMessage(mutationMessage(messages.receptionist, r.error));
+      } else {
+        // Whole party cancelled — close the drawer and reload; the grid visibly
+        // empties every member's slot, which is its own confirmation.
+        setDrawerBookingId(null);
+        await reloadCurrentDay();
+        router.refresh();
+      }
+    } finally {
+      setDrawerBusy(false);
+    }
+  };
+
+  const doCancelBooking = async (
+    id: string,
+    refundDeposit: boolean,
+    notifyChannels?: NotifyChannels,
+  ) => {
     const b = data.bookingsForDay.find((x) => x.id === id);
     if (
       !b ||
-      !(b.status === "pending" || b.status === "confirmed" || b.status === "in_progress")
+      !(
+        b.status === "pending" ||
+        b.status === "confirmed" ||
+        b.status === "in_progress"
+      )
     )
       return;
+
+    // Notify channels for the cancel — explicit panel choice, else the salon's
+    // smart per-event default (the deposit path has no panel). The server
+    // ENQUEUES this with a 20s grace; hitting Undo cancels the queued send.
+    const notifyChannelsResolved =
+      notifyChannels ??
+      (defaultNotifyOn(data.salon.staffNotificationSettings, "cancel")
+        ? {
+            sms: data.salon.staffNotificationSettings.channels.sms,
+            email: data.salon.staffNotificationSettings.channels.email,
+          }
+        : { sms: false, email: false });
 
     setDrawerBusy(true);
     try {
@@ -1551,6 +1876,7 @@ function ReceptionistCenterInner({
         salonId: data.salon.id,
         bookingId: id,
         refundDeposit,
+        notify: notifyChannelsResolved,
       });
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
@@ -1567,12 +1893,14 @@ function ReceptionistCenterInner({
 
         // Undo toast (8s). Skipped after a refund — a returned deposit isn't
         // re-collected by restoring, so undo would leave booking + no deposit.
+        // Undo also cancels the queued cancel notification server-side.
         if (!refundDeposit) {
           const u = messages.receptionist.undo;
           const startLabel = b.start_time_utc
             ? formatInSalonTz(b.start_time_utc, timezone, "time")
             : "";
-          const svcName = b.service_name?.trim() || messages.receptionist.drawer.none;
+          const svcName =
+            b.service_name?.trim() || messages.receptionist.drawer.none;
           setUndoState({
             bookingId: id,
             headline: `${u.cancelledPrefix} ${displayCustomerName(b.client_name, messages.receptionist.removedGuest)}`,
@@ -1593,7 +1921,11 @@ function ReceptionistCenterInner({
     const b = data.bookingsForDay.find((x) => x.id === id);
     if (
       !b ||
-      !(b.status === "pending" || b.status === "confirmed" || b.status === "in_progress")
+      !(
+        b.status === "pending" ||
+        b.status === "confirmed" ||
+        b.status === "in_progress"
+      )
     )
       return;
     // A paid Square deposit forces a refund-or-keep decision before cancelling.
@@ -1601,7 +1933,16 @@ function ReceptionistCenterInner({
       setDepositCancel({ id, amountCents: b.deposit_amount_cents ?? 0 });
       return;
     }
-    void doCancelBooking(id, false);
+    // Otherwise open the cancel-confirm with the "notify the customer?" panel,
+    // pre-checked per the salon's smart per-event default for cancel.
+    const settings = data.salon.staffNotificationSettings;
+    const on = defaultNotifyOn(settings, "cancel");
+    setNotifyCancelChannels({
+      sms: on && settings.channels.sms,
+      email: on && settings.channels.email,
+    });
+    setCancelScope("this");
+    setNotifyCancel({ id });
   };
 
   const rcMessages = messages.receptionist;
@@ -1661,6 +2002,20 @@ function ReceptionistCenterInner({
             (n, c) => n + c.pendingCount + c.pendingChangeRequestCount,
             0,
           ),
+        }
+      : null;
+
+  // ── Online-waitlist summary for the AttentionChipBar "Chờ chỗ" chip ──
+  // Glanceable so staff never miss it (the panel itself lives at the bottom
+  // of the Hàng chờ drawer, which is easy to overlook). `claimed` drives a
+  // pulsing "N cần tạo lịch" badge — those customers grabbed a slot and need
+  // a real appointment created.
+  const waitlistSummary =
+    data.onlineWaitlist.length > 0
+      ? {
+          total: data.onlineWaitlist.length,
+          claimed: data.onlineWaitlist.filter((w) => w.status === "claimed")
+            .length,
         }
       : null;
 
@@ -1746,10 +2101,12 @@ function ReceptionistCenterInner({
         (c) =>
           !c.expired &&
           c.pendingCount > 0 &&
-          formatInSalonTz(c.groupStartUtcIso, timezone, "date") === todaySalonDate,
+          formatInSalonTz(c.groupStartUtcIso, timezone, "date") ===
+            todaySalonDate,
       )
-      .sort((a, b) => a.groupStartUtcIso.localeCompare(b.groupStartUtcIso))[0] ??
-    null;
+      .sort((a, b) =>
+        a.groupStartUtcIso.localeCompare(b.groupStartUtcIso),
+      )[0] ?? null;
   const pendingPartyGroupId = pendingPartyCard?.groupId ?? null;
   const pendingPartyGuestName =
     pendingPartyCard && pendingPartyCard.pendingCount === 1
@@ -1775,8 +2132,7 @@ function ReceptionistCenterInner({
     firstNotStartedName,
     firstNotStartedTimeLabel,
     smsFailedCount: data.bookingsForDay.filter(
-      (b) =>
-        b.sms_confirmation_failed_at != null && b.status !== "cancelled",
+      (b) => b.sms_confirmation_failed_at != null && b.status !== "cancelled",
     ).length,
     pendingPartyCount: pendingPartyCard?.pendingCount ?? 0,
     pendingPartyGroupTime: pendingPartyCard?.groupStartDisplay ?? null,
@@ -1812,7 +2168,9 @@ function ReceptionistCenterInner({
   // (the walk-in form lives inside it); party scrolls the party strip into
   // view; overdue opens the overdue booking's detail drawer (it's a desk
   // booking, NOT a queue item — opening the queue here was the dead-click bug).
-  const onCockpitAction = (target: import("@/shared/dashboard/basicModeCockpit").CockpitActionTarget) => {
+  const onCockpitAction = (
+    target: import("@/shared/dashboard/basicModeCockpit").CockpitActionTarget,
+  ) => {
     if (target === "open_overdue") {
       if (firstOverdueId) setDrawerBookingId(firstOverdueId);
       return;
@@ -1866,7 +2224,10 @@ function ReceptionistCenterInner({
     if (!id) return;
     setDrawerBusy(true);
     try {
-      const r = await approveWixBooking(slug, { salonId: data.salon.id, bookingId: id });
+      const r = await approveWixBooking(slug, {
+        salonId: data.salon.id,
+        bookingId: id,
+      });
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
@@ -1884,7 +2245,10 @@ function ReceptionistCenterInner({
     if (!id) return;
     setDrawerBusy(true);
     try {
-      const r = await declineWixBooking(slug, { salonId: data.salon.id, bookingId: id });
+      const r = await declineWixBooking(slug, {
+        salonId: data.salon.id,
+        bookingId: id,
+      });
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
@@ -1903,20 +2267,25 @@ function ReceptionistCenterInner({
         busy: drawerBusy,
         onPress: () => void onDrawerApproveWix(),
       }
-    : openDrawerBooking?.status === "pending" ||
-        openDrawerBooking?.status === "confirmed"
-      ? {
-          label: rcMessages.drawer.startService,
-          busy: drawerBusy,
-          onPress: () => void onDrawerPrimaryAction(),
-        }
-      : openDrawerBooking?.status === "in_progress"
+    : !canChangeBookingStatus(viewerRole)
+      ? // View-only roles (nail_tech) can't advance status — hide the
+        // Start/Complete button so it matches the server-side gate in
+        // updateBookingStatus (no button that would just error).
+        undefined
+      : openDrawerBooking?.status === "pending" ||
+          openDrawerBooking?.status === "confirmed"
         ? {
-            label: rcMessages.drawer.markComplete,
+            label: rcMessages.drawer.startService,
             busy: drawerBusy,
             onPress: () => void onDrawerPrimaryAction(),
           }
-        : undefined;
+        : openDrawerBooking?.status === "in_progress"
+          ? {
+              label: rcMessages.drawer.markComplete,
+              busy: drawerBusy,
+              onPress: () => void onDrawerPrimaryAction(),
+            }
+          : undefined;
 
   const drawerDeclineAction = isWixPending
     ? {
@@ -1926,11 +2295,15 @@ function ReceptionistCenterInner({
       }
     : undefined;
 
-  const handleMarkNoShow = async (id: string) => {
+  const handleMarkNoShow = async (id: string, chargeFee?: boolean) => {
     if (!id) return;
     setDrawerBusy(true);
     try {
-      const r = await markNoShowBooking(slug, { salonId: data.salon.id, bookingId: id });
+      const r = await markNoShowBooking(slug, {
+        salonId: data.salon.id,
+        bookingId: id,
+        ...(chargeFee !== undefined ? { chargeFee } : {}),
+      });
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
@@ -1942,14 +2315,106 @@ function ReceptionistCenterInner({
       setDrawerBusy(false);
     }
   };
-  const onDrawerMarkNoShow = () => void handleMarkNoShow(drawerBookingId ?? "");
+
+  // Check if booking has a card + fee before marking no-show; show the
+  // charge/waive modal if so. Plain functions (NOT hooks) — they live after the
+  // component's early `return` for TV mode, where calling useState/useCallback
+  // would violate the rules of hooks. `noShowChargeModal` state is declared up
+  // with the other useState hooks above the early return.
+  const triggerMarkNoShow = (id: string) => {
+    const b = data.bookingsForDay.find((x) => x.id === id);
+    if (
+      b &&
+      b.noshow_card_id &&
+      b.noshow_fee_cents &&
+      b.noshow_fee_cents > 0 &&
+      b.noshow_charge_status !== "charged" &&
+      b.noshow_charge_status !== "waived"
+    ) {
+      setNoShowChargeModal({ bookingId: id, feeCents: b.noshow_fee_cents });
+    } else {
+      void handleMarkNoShow(id);
+    }
+  };
+
+  const onDrawerMarkNoShow = () =>
+    void triggerMarkNoShow(drawerBookingId ?? "");
+
+  // Inline "Start" handler — confirmed/pending → in_progress straight from the grid.
+  const handleStartBooking = async (bookingId: string) => {
+    const r = await updateBookingStatus(bookingId, "in_progress", slug);
+    if (!r.ok) {
+      setShakeMessage(
+        updateBookingStatusToastMessage(messages.receptionist, r),
+      );
+      return;
+    }
+    await reloadCurrentDay();
+    router.refresh();
+  };
+
+  // Tombstone handlers — undo / charge / waive from the grid ribbon popover.
+  const handleTombstoneUndo = async (bookingId: string) => {
+    if (!bookingId) return;
+    setDrawerBusy(true);
+    try {
+      const r = await undoNoShowBooking(slug, {
+        salonId: data.salon.id,
+        bookingId,
+      });
+      if (!r.ok) {
+        setShakeMessage(mutationMessage(messages.receptionist, r.error));
+      } else {
+        setDrawerBookingId(null);
+        await reloadCurrentDay();
+        router.refresh();
+      }
+    } finally {
+      setDrawerBusy(false);
+    }
+  };
+
+  const handleTombstoneCharge = async (bookingId: string) => {
+    setDrawerBusy(true);
+    try {
+      const r = await chargeNoShowFeeManual(slug, {
+        salonId: data.salon.id,
+        bookingId,
+      });
+      if (!r.ok) setShakeMessage(messages.receptionist.actionErrorFallback);
+      else {
+        await reloadCurrentDay();
+        router.refresh();
+      }
+    } finally {
+      setDrawerBusy(false);
+    }
+  };
+
+  const handleTombstoneWaive = async (bookingId: string) => {
+    setDrawerBusy(true);
+    try {
+      const r = await waiveNoShowFee(slug, {
+        salonId: data.salon.id,
+        bookingId,
+      });
+      if (!r.ok) setShakeMessage(messages.receptionist.actionErrorFallback);
+      else {
+        await reloadCurrentDay();
+        router.refresh();
+      }
+    } finally {
+      setDrawerBusy(false);
+    }
+  };
 
   // No-show: only for a confirmed / in-progress booking whose start time has passed
   // (you can't no-show a future appointment). Front desk: owner/admin/senior/receptionist.
   const drawerNoShowAction =
     openDrawerBooking &&
     canMarkNoShow(viewerRole) &&
-    (openDrawerBooking.status === "confirmed" || openDrawerBooking.status === "in_progress") &&
+    (openDrawerBooking.status === "confirmed" ||
+      openDrawerBooking.status === "in_progress") &&
     new Date(openDrawerBooking.start_time_utc).getTime() < Date.now()
       ? {
           label: rcMessages.drawer.noShow,
@@ -2064,7 +2529,8 @@ function ReceptionistCenterInner({
   // Final-price entry: only when the booking's service is variable-priced
   // ('from'/'range'), the viewer may edit, and the booking isn't cancelled.
   const drawerServicePriceType = openDrawerBooking
-    ? data.services.find((s) => s.id === openDrawerBooking.service_id)?.price_type
+    ? data.services.find((s) => s.id === openDrawerBooking.service_id)
+        ?.price_type
     : undefined;
   const drawerFinalPriceAction =
     openDrawerBooking &&
@@ -2093,7 +2559,13 @@ function ReceptionistCenterInner({
         )}
       >
         {/* Hydration signal for E2E: only rendered after React useEffect fires. */}
-        {rcHydrated && <span data-testid="rc-hydrated" aria-hidden="true" style={{ display: "none" }} />}
+        {rcHydrated && (
+          <span
+            data-testid="rc-hydrated"
+            aria-hidden="true"
+            style={{ display: "none" }}
+          />
+        )}
         {bookingLimitStatus && !bookingLimitStatus.isUnlimited ? (
           <div className="shrink-0 border-b border-nq-border/30 px-[var(--pad-nq-section-mobile)] py-2 md:px-6">
             <div className="mx-auto w-full max-w-[var(--max-nq-desktop)]">
@@ -2140,10 +2612,14 @@ function ReceptionistCenterInner({
                   ← {rcMessages.navOwnerDashboard}
                 </Link>
                 <h1 className="truncate text-lg font-semibold text-nq-foreground md:text-xl">
-                  {basicModeActive ? rcMessages.basicMode.pageTitle : rcMessages.title}
+                  {basicModeActive
+                    ? rcMessages.basicMode.pageTitle
+                    : rcMessages.title}
                 </h1>
               </div>
-              <p className="truncate text-xs text-nq-muted md:text-sm">{data.salon.name}</p>
+              <p className="truncate text-xs text-nq-muted md:text-sm">
+                {data.salon.name}
+              </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               {/* Status pill duplicates the Now Bar's Waiting + In service
@@ -2269,35 +2745,35 @@ function ReceptionistCenterInner({
                   Day/Week/Month toggle is hidden there (Yesterday/Today/
                   Tomorrow remains). Balanced/Advanced keep the toggle. */}
               {basicModeActive ? null : (
-              <div
-                role="tablist"
-                aria-label={rcMessages.viewMode.ariaLabel}
-                data-testid="view-mode-toggle"
-                data-rush-fade
-                className="inline-flex overflow-hidden rounded-md border border-nq-border bg-nq-surface text-xs font-medium"
-              >
-                {(["day", "week", "month"] as const).map((mode) => {
-                  const active = viewMode === mode;
-                  return (
-                    <button
-                      key={mode}
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      data-testid={`view-mode-${mode}`}
-                      onClick={() => onChangeViewMode(mode)}
-                      className={cn(
-                        "px-2.5 py-1 transition-colors",
-                        active
-                          ? "bg-nq-primary/15 text-nq-primary"
-                          : "text-nq-muted hover:text-nq-foreground",
-                      )}
-                    >
-                      {rcMessages.viewMode[mode]}
-                    </button>
-                  );
-                })}
-              </div>
+                <div
+                  role="tablist"
+                  aria-label={rcMessages.viewMode.ariaLabel}
+                  data-testid="view-mode-toggle"
+                  data-rush-fade
+                  className="inline-flex overflow-hidden rounded-md border border-nq-border bg-nq-surface text-xs font-medium"
+                >
+                  {(["day", "week", "month"] as const).map((mode) => {
+                    const active = viewMode === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        data-testid={`view-mode-${mode}`}
+                        onClick={() => onChangeViewMode(mode)}
+                        className={cn(
+                          "px-2.5 py-1 transition-colors",
+                          active
+                            ? "bg-nq-primary/15 text-nq-primary"
+                            : "text-nq-muted hover:text-nq-foreground",
+                        )}
+                      >
+                        {rcMessages.viewMode[mode]}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
               {/*
                * Prominent "+ Walk-in" CTA (P1 desk feedback: the queue
@@ -2342,10 +2818,16 @@ function ReceptionistCenterInner({
                 <DeskBookingForm
                   slug={slug}
                   salonId={data.salon.id}
+                  timezone={data.salon.timezone}
                   language={language}
+                  notifySettings={data.salon.staffNotificationSettings}
                   initialStaffId={deskPrefill?.staffId}
                   initialYmd={deskPrefill?.ymd}
                   initialSlotLabel={deskPrefill?.slotLabel}
+                  initialServiceId={deskPrefill?.serviceId}
+                  initialPhone={deskPrefill?.phone}
+                  initialName={deskPrefill?.name}
+                  anchor={deskPrefill?.anchor}
                   onClose={() => {
                     setDeskBookingOpen(false);
                     setDeskPrefill(null);
@@ -2394,6 +2876,7 @@ function ReceptionistCenterInner({
                   slug={slug}
                   salonId={data.salon.id}
                   language={language}
+                  timezone={data.salon.timezone}
                   onClose={() => setDeskGroupOpen(false)}
                   onCreated={() => {
                     void reloadCurrentDay();
@@ -2473,22 +2956,31 @@ function ReceptionistCenterInner({
                   loader. In Week/Month it was a dead click (QA M8), so hide it
                   outside Day view. */}
               {viewMode === "day" ? (
-                <DateSwitcher
-                  selectedOffset={dateOffset}
-                  onChange={(next) => void onDateSwitchChange(next)}
-                  labels={rcMessages.dateSwitcher}
-                />
+                <>
+                  {/* Always-visible date anchor — tells you which day you're
+                      viewing, especially after drilling in from Month view. */}
+                  <ViewedDateChip
+                    ymd={data.selectedDate}
+                    language={language}
+                    isToday={isViewingToday}
+                  />
+                  <DateSwitcher
+                    selectedOffset={dateOffset}
+                    onChange={(next) => void onDateSwitchChange(next)}
+                    labels={rcMessages.dateSwitcher}
+                  />
+                </>
               ) : null}
               {/*
-                * Subtle pulse-dot replaces the prior "Loading day..."
-                * text. QA reported the text "lingered too long" — really
-                * the abrupt show/hide flickered + the bare text gave no
-                * visual continuity with the date-switcher's
-                * `pointer-events-none opacity-60` cue. The dot pulses
-                * via existing motion tokens and `animate-pulse` so it
-                * reads as a calm in-progress signal; full text stays
-                * reachable as the aria-label for screen readers.
-                */}
+               * Subtle pulse-dot replaces the prior "Loading day..."
+               * text. QA reported the text "lingered too long" — really
+               * the abrupt show/hide flickered + the bare text gave no
+               * visual continuity with the date-switcher's
+               * `pointer-events-none opacity-60` cue. The dot pulses
+               * via existing motion tokens and `animate-pulse` so it
+               * reads as a calm in-progress signal; full text stays
+               * reachable as the aria-label for screen readers.
+               */}
               {dayLoading ? (
                 <span
                   role="status"
@@ -2631,6 +3123,7 @@ function ReceptionistCenterInner({
             firstYmd={monthFirstYmd}
             timezone={timezone}
             todayYmd={salonToday(timezone, nowIso)}
+            language={language}
             messages={rcMessages.monthView}
             removedGuest={rcMessages.removedGuest}
             hint={calendarHint}
@@ -2721,120 +3214,195 @@ function ReceptionistCenterInner({
             onNextWeek={() => setWeekMondayYmd((m) => shiftWeek(m, 1))}
           />
         ) : (
-        <div
-          // Day-view body now full-width on every viewport. The walk-in
-          // queue moved into a fixed slide-over (DASHBOARD_LAYOUT_RULES
-          // §11) so the timeline owns the row. When the slide-over is
-          // open AND the viewport is md+, we add right-padding equal to
-          // the panel width (320px) so the grid shrinks to make room
-          // instead of being covered by the panel.
-          className="mx-auto flex h-full min-h-[min(100dvh-8rem,48rem)] w-full flex-1 flex-col gap-0"
-        >
-          <section
-            className={cn(
-              "flex min-h-[min(50dvh,28rem)] min-w-0 flex-1 flex-col border-t border-nq-muted/20",
-              "transition-[padding-right] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]",
-              // Arbitrary value (`md:pr-[20rem]`) instead of `md:pr-80`
-              // so Tailwind always emits the rule even if the static
-              // utility hash changes between versions. Same 320px.
-              isViewingToday && modules.queue_panel && queuePanelOpen
-                ? "md:pr-[20rem]"
-                : "",
-            )}
+          <div
+            // Day-view body now full-width on every viewport. The walk-in
+            // queue moved into a fixed slide-over (DASHBOARD_LAYOUT_RULES
+            // §11) so the timeline owns the row. When the slide-over is
+            // open AND the viewport is md+, we add right-padding equal to
+            // the panel width (320px) so the grid shrinks to make room
+            // instead of being covered by the panel.
+            className="mx-auto flex h-full min-h-[min(100dvh-8rem,48rem)] w-full flex-1 flex-col gap-0"
           >
-            <AttentionChipBar
-              language={language === "vi" ? "vi" : "en"}
-              overdue={attentionOverdue}
-              noShowsToday={noShowsTodayList}
-              groupSummary={groupSummary}
-              groupsContent={
-                showGroupsChip ? (
-                  <PartyCardPanel
-                    initialCards={partyCards}
-                    slug={slug}
-                    salonId={data.salon.id}
-                    currencyCode={data.salon.currencyCode}
-                    labels={rcMessages.partyCard}
-                    canCancel={canCancelBooking(viewerRole)}
-                  />
-                ) : null
-              }
-              busy={drawerBusy}
-              removedLabel={attentionRemovedLabel}
-              formatTime={(utcIso) => formatInSalonTz(utcIso, timezone, "time")}
-              displayName={displayCustomerName}
-              onOpenBooking={(id) => setDrawerBookingId(id)}
-              onMarkNoShow={(id) => void handleMarkNoShow(id)}
-              onUndoNoShow={(id) => void handleUndoNoShow(id)}
-            />
-
-            <StaffTimelineGrid
-              compactBookingIcons={basicModeActive}
-              staff={gridStaff}
-              bookings={gridBookings}
-              assigning={assignedSlot}
-              selectedDate={data.selectedDate}
-              openMinutes={data.salon.openMinutes}
-              closeMinutes={data.salon.closeMinutes}
-              timezone={timezone}
-              nowIso={nowIso}
-              isViewingToday={isViewingToday}
-              jumpToNowTrigger={jumpToNowTrigger}
-              existingBookings={gridBookings}
-              onBookingClick={(id) => setDrawerBookingId(id)}
-              onSlotClick={(staffId, utc) => void onWalkinAssignSlot(staffId, utc)}
-              onEmptySlotClick={(staffId, ymd, slotLabel) => {
-                // Click an empty grid slot → open the desk form prefilled.
-                setDeskPrefill({ staffId, ymd, slotLabel });
-                setDeskBookingOpen(true);
-              }}
-              onRescheduleBooking={async (bookingId, newStaffId, newStartUtc) => {
-                const booking = data.bookingsForDay.find((b) => b.id === bookingId);
-                if (!booking) return { ok: false, error: "not_found" };
-                const result = await editBookingAction(slug, {
-                  salonId: data.salon.id,
-                  bookingId,
-                  newStartTimeUtc: newStartUtc,
-                  newStaffId,
-                  newServiceId: booking.service_id,
-                  newAddonServiceId: booking.addon_service_id ?? null,
-                });
-                if (result.ok) {
-                  router.refresh();
-                  return { ok: true };
+            <section
+              className={cn(
+                "flex min-h-[min(50dvh,28rem)] min-w-0 flex-1 flex-col border-t border-nq-muted/20",
+                "transition-[padding-right] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]",
+                // Arbitrary value (`md:pr-[20rem]`) instead of `md:pr-80`
+                // so Tailwind always emits the rule even if the static
+                // utility hash changes between versions. Same 320px.
+                isViewingToday && modules.queue_panel && queuePanelOpen
+                  ? "md:pr-[20rem]"
+                  : "",
+              )}
+            >
+              <AttentionChipBar
+                language={language === "vi" ? "vi" : "en"}
+                overdue={attentionOverdue}
+                noShowsToday={noShowsTodayList}
+                groupSummary={groupSummary}
+                groupsContent={
+                  showGroupsChip ? (
+                    <PartyCardPanel
+                      initialCards={partyCards}
+                      slug={slug}
+                      salonId={data.salon.id}
+                      currencyCode={data.salon.currencyCode}
+                      labels={rcMessages.partyCard}
+                      canCancel={canCancelBooking(viewerRole)}
+                    />
+                  ) : null
                 }
-                // Surface WHY the drop snapped back, instead of failing silently.
-                const failCopy = rcMessages.grid.rescheduleFailed;
-                const reason =
-                  result.error === "past_date"
-                    ? failCopy.past_date
-                    : result.error === "slot_conflict"
-                      ? failCopy.slot_conflict
-                      : result.error === "staff_cannot_perform_service"
-                        ? failCopy.staff_cannot_perform_service
-                        : failCopy.generic;
-                showErrorToast(reason);
-                return { ok: false, error: result.error };
-              }}
-              labels={{
-                formatTimeLabel: (utcIso: string) => formatInSalonTz(utcIso, timezone, "shortTime"),
-                conflictWith: rcMessages.grid.conflictWith,
-                overflowMessage: rcMessages.grid.overflowMessage,
-                bookingIcon: rcMessages.grid.bookingIcon,
-                removedGuest: rcMessages.removedGuest,
-              }}
-              showStaffPerformanceDetail={modules.staff_performance}
-              showTimelineHeatmap={modules.timeline_heatmap}
-              showBookingPrices={modules.revenue_today && densityConfig.showPriceInBlock}
-              showWalkinAccent={modules.vip_indicators}
-              currencyCode={data.salon.currencyCode}
-              showBookingMetaLine={densityConfig.showMetaLine}
-              showBookingTimeRange={densityConfig.showTimeRangeInBlock}
-              bookingBlockMinHeightPx={densityConfig.bookingBlockMinHeight}
-              timeSlotMinutesVisualHint={densityConfig.timeSlotMinutes}
-            />
-          </section>
-        </div>
+                waitlistSummary={waitlistSummary}
+                waitlistContent={
+                  waitlistSummary ? (
+                    <OnlineWaitlistPanel
+                      slug={slug}
+                      entries={data.onlineWaitlist}
+                      onCreateBooking={createBookingFromClaim}
+                    />
+                  ) : null
+                }
+                busy={drawerBusy}
+                removedLabel={attentionRemovedLabel}
+                formatTime={(utcIso) =>
+                  formatInSalonTz(utcIso, timezone, "time")
+                }
+                displayName={displayCustomerName}
+                onOpenBooking={(id) => setDrawerBookingId(id)}
+                onMarkNoShow={(id) => void triggerMarkNoShow(id)}
+                onUndoNoShow={(id) => void handleUndoNoShow(id)}
+              />
+
+              <StaffTimelineGrid
+                compactBookingIcons={basicModeActive}
+                staff={gridStaff}
+                bookings={gridBookings}
+                assigning={assignedSlot}
+                selectedDate={data.selectedDate}
+                openMinutes={data.salon.openMinutes}
+                closeMinutes={data.salon.closeMinutes}
+                timezone={timezone}
+                nowIso={nowIso}
+                isViewingToday={isViewingToday}
+                jumpToNowTrigger={jumpToNowTrigger}
+                existingBookings={gridBookings}
+                onBookingClick={(id) => setDrawerBookingId(id)}
+                onSlotClick={(staffId, utc) =>
+                  void onWalkinAssignSlot(staffId, utc)
+                }
+                onEmptySlotClick={(staffId, ymd, slotLabel, anchor) => {
+                  // Click an empty grid slot → open the desk form as a card
+                  // anchored at the click (grid stays visible).
+                  setDeskPrefill({ staffId, ymd, slotLabel, anchor });
+                  setDeskBookingOpen(true);
+                }}
+                onRescheduleBooking={
+                  // Drag-to-reschedule is an EDIT, so only wire it for roles that
+                  // can edit (owner/admin/senior/receptionist). Without this gate
+                  // view-only nail_tech could grab-drag a block; the server would
+                  // reject it (`canEditBooking`) and it would snap back with an
+                  // "unauthorized" toast — a confusing UI/server split. Passing
+                  // `undefined` hides the drag affordance so the UI matches the
+                  // server gate (mirrors the Start/Complete button gate in #404).
+                  canEditBooking(viewerRole)
+                    ? async (bookingId, newStaffId, newStartUtc) => {
+                        const booking = data.bookingsForDay.find(
+                          (b) => b.id === bookingId,
+                        );
+                        if (!booking) return { ok: false, error: "not_found" };
+                        const result = await editBookingAction(slug, {
+                          salonId: data.salon.id,
+                          bookingId,
+                          newStartTimeUtc: newStartUtc,
+                          newStaffId,
+                          newServiceId: booking.service_id,
+                          newAddonServiceId: booking.addon_service_id ?? null,
+                          // Drag has no confirm dialog → notify per the salon's
+                          // smart per-event default for reschedule.
+                          notify: defaultNotifyOn(
+                            data.salon.staffNotificationSettings,
+                            "reschedule",
+                          )
+                            ? {
+                                sms: data.salon.staffNotificationSettings
+                                  .channels.sms,
+                                email:
+                                  data.salon.staffNotificationSettings.channels
+                                    .email,
+                              }
+                            : { sms: false, email: false },
+                        });
+                        if (result.ok) {
+                          // Reload the CURRENTLY-VIEWED day (respects dateOffset)
+                          // like every other mutation — `router.refresh()` re-ran
+                          // the server loader's default day and snapped the view
+                          // back to today after dragging on a future day.
+                          await reloadCurrentDay();
+                          return { ok: true };
+                        }
+                        // Surface WHY the drop snapped back, instead of failing silently.
+                        const failCopy = rcMessages.grid.rescheduleFailed;
+                        const reason =
+                          result.error === "past_date"
+                            ? failCopy.past_date
+                            : result.error === "slot_conflict"
+                              ? failCopy.slot_conflict
+                              : result.error === "staff_cannot_perform_service"
+                                ? failCopy.staff_cannot_perform_service
+                                : failCopy.generic;
+                        showErrorToast(reason);
+                        return { ok: false, error: result.error };
+                      }
+                    : undefined
+                }
+                labels={{
+                  formatTimeLabel: (utcIso: string) =>
+                    formatInSalonTz(utcIso, timezone, "shortTime"),
+                  conflictWith: rcMessages.grid.conflictWith,
+                  overflowMessage: rcMessages.grid.overflowMessage,
+                  closingLabel: rcMessages.grid.closingLabel,
+                  waitlistOffer:
+                    language === "vi"
+                      ? "Đang mời khách chờ"
+                      : "Offering to waitlist",
+                  waitlistOfferUntil: (time: string) =>
+                    language === "vi" ? `đến ${time}` : `until ${time}`,
+                  bookingIcon: {
+                    ...rcMessages.grid.bookingIcon,
+                    startShort: rcMessages.latenessGrid.startShort,
+                    autoNoShowAt: rcMessages.latenessGrid.autoNoShowAt,
+                    lateChip: rcMessages.latenessGrid.late,
+                    veryLateChip: rcMessages.latenessGrid.veryLate,
+                  },
+                  removedGuest: rcMessages.removedGuest,
+                  latenessGrid: rcMessages.latenessGrid,
+                }}
+                showStaffPerformanceDetail={modules.staff_performance}
+                showTimelineHeatmap={modules.timeline_heatmap}
+                showBookingPrices={
+                  modules.revenue_today && densityConfig.showPriceInBlock
+                }
+                showWalkinAccent={modules.vip_indicators}
+                currencyCode={data.salon.currencyCode}
+                showBookingMetaLine={densityConfig.showMetaLine}
+                showBookingTimeRange={densityConfig.showTimeRangeInBlock}
+                bookingBlockMinHeightPx={densityConfig.bookingBlockMinHeight}
+                timeSlotMinutesVisualHint={densityConfig.timeSlotMinutes}
+                autoNoShowMinutes={data.salon.autoNoShowMinutes}
+                noShowTombstones={noShowsTodayList}
+                waitlistOffers={data.waitlistOffers}
+                onStartBooking={
+                  canChangeBookingStatus(viewerRole)
+                    ? (id) => void handleStartBooking(id)
+                    : undefined
+                }
+                language={language === "vi" ? "vi" : "en"}
+                onTombstoneUndo={(id) => void handleTombstoneUndo(id)}
+                onTombstoneCharge={(id) => void handleTombstoneCharge(id)}
+                onTombstoneWaive={(id) => void handleTombstoneWaive(id)}
+              />
+            </section>
+          </div>
         )}
       </div>
 
@@ -2903,7 +3471,7 @@ function ReceptionistCenterInner({
                 onCheckAvailability={
                   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- ARCHITECTURE_LOCK: staffId from prop not used; availability checked per-service not per-staff
                   ({ staffId: _staffId, serviceId }) =>
-                  getStaffAvailability(slug, serviceId)
+                    getStaffAvailability(slug, serviceId)
                 }
                 staffOptions={data.staff.map((s) => ({
                   id: s.id,
@@ -2920,7 +3488,9 @@ function ReceptionistCenterInner({
                 onCancelAssign={() => setAssigningWalkinId(null)}
                 addFormDisabled={isSetupIncomplete}
                 isOffline={isOffline}
-                offlineAddDisabledHint={rcMessages.connection.offlineAddDisabled}
+                offlineAddDisabledHint={
+                  rcMessages.connection.offlineAddDisabled
+                }
                 showQuickAdd={modules.quick_add}
                 focusAddNonce={addFocusNonce}
                 showWaitTime={modules.wait_time}
@@ -2951,11 +3521,9 @@ function ReceptionistCenterInner({
                   waitHeroSuffix: rcMessages.queue.waitHeroSuffix,
                   vipAria: rcMessages.queue.vipAria,
                   readyAroundShort: rcMessages.queue.readyAroundShort,
-                  requestedByClientLine:
-                    rcMessages.queue.requestedByClientLine,
+                  requestedByClientLine: rcMessages.queue.requestedByClientLine,
                   overloadBanner: rcMessages.queue.overloadBanner,
-                  overloadBannerDismiss:
-                    rcMessages.queue.overloadBannerDismiss,
+                  overloadBannerDismiss: rcMessages.queue.overloadBannerDismiss,
                   softHoldButton: rcMessages.queue.softHoldButton,
                   softHoldClear: rcMessages.queue.softHoldClear,
                   softHoldLabel: rcMessages.queue.softHoldLabel,
@@ -2971,6 +3539,14 @@ function ReceptionistCenterInner({
                     invalidNameChars: rcMessages.walkin.invalidNameChars,
                   },
                 }}
+              />
+              {/* Online waitlist — staff see online customers waiting for a
+                  full slot right below the walk-in queue and invite one in a
+                  single tap (texts them the claim link via SMS). */}
+              <OnlineWaitlistPanel
+                slug={slug}
+                entries={data.onlineWaitlist}
+                onCreateBooking={createBookingFromClaim}
               />
             </div>
           </aside>
@@ -3031,6 +3607,7 @@ function ReceptionistCenterInner({
       <BookingDetailDrawer
         open={drawerBookingId !== null && detailModel !== null}
         model={detailModel}
+        slug={slug}
         onClose={() => setDrawerBookingId(null)}
         copy={drawerCopy}
         viewerRole={viewerRole}
@@ -3057,19 +3634,25 @@ function ReceptionistCenterInner({
                   status: openDrawerBooking.status,
                   source: openDrawerBooking.source,
                   service_name: openDrawerBooking.service_name,
-                  staff_name: staffNameById.get(openDrawerBooking.staff_id) ?? null,
+                  staff_name:
+                    staffNameById.get(openDrawerBooking.staff_id) ?? null,
                   price_cents: openDrawerBooking.price_cents ?? 0,
                   staff_id: openDrawerBooking.staff_id,
                   service_id: openDrawerBooking.service_id,
                   addon_service_id: openDrawerBooking.addon_service_id,
                   addon_service_name: openDrawerBooking.addon_service_name,
-                  addon_duration_minutes: openDrawerBooking.addon_duration_minutes,
+                  addon_duration_minutes:
+                    openDrawerBooking.addon_duration_minutes,
                   addon_buffer_minutes: openDrawerBooking.addon_buffer_minutes,
                   addon_price_cents: openDrawerBooking.addon_price_cents,
-                  verification_method: openDrawerBooking.verification_method ?? null,
-                  sms_confirmation_sent_at: openDrawerBooking.sms_confirmation_sent_at ?? null,
-                  sms_confirmation_failed_at: openDrawerBooking.sms_confirmation_failed_at ?? null,
-                  no_show_risk_score: openDrawerBooking.no_show_risk_score ?? null,
+                  verification_method:
+                    openDrawerBooking.verification_method ?? null,
+                  sms_confirmation_sent_at:
+                    openDrawerBooking.sms_confirmation_sent_at ?? null,
+                  sms_confirmation_failed_at:
+                    openDrawerBooking.sms_confirmation_failed_at ?? null,
+                  no_show_risk_score:
+                    openDrawerBooking.no_show_risk_score ?? null,
                   seat_together: openDrawerBooking.seat_together === true,
                 },
                 staff: data.staff.map((s) => ({ id: s.id, name: s.name })),
@@ -3094,6 +3677,46 @@ function ReceptionistCenterInner({
               }
             : undefined
         }
+        customerContext={customerContext}
+        customerContextLoading={customerContext === undefined}
+        onViewProfile={
+          openDrawerBooking?.client_phone
+            ? () => setOpen360Phone(openDrawerBooking.client_phone)
+            : undefined
+        }
+        onRebookNext={
+          openDrawerBooking?.client_phone
+            ? () => {
+                const b = openDrawerBooking;
+                const next = customerContext?.nextSuggestedAt ?? null;
+                setDeskPrefill({
+                  phone: b.client_phone ?? undefined,
+                  name: b.client_name ?? undefined,
+                  serviceId:
+                    customerContext?.usualServiceId ?? b.service_id ?? undefined,
+                  staffId:
+                    customerContext?.usualStaffId ?? b.staff_id ?? undefined,
+                  ymd: next ? salonYmdOfUtc(next, timezone) : undefined,
+                });
+                setDrawerBookingId(null);
+                setDeskBookingOpen(true);
+              }
+            : undefined
+        }
+      />
+
+      {/* Customer 360 — full profile, history, preferences (allergies),
+          return pattern + loyalty. Opened from the booking drawer. */}
+      <ClientProfile360Drawer
+        slug={slug}
+        clientPhone={open360Phone}
+        viewerRole={viewerRole}
+        onClose={() => setOpen360Phone(null)}
+        onBookAgain={(phone) => {
+          setOpen360Phone(null);
+          setDeskPrefill({ phone, name: openDrawerBooking?.client_name ?? undefined });
+          setDeskBookingOpen(true);
+        }}
       />
 
       {depositCancel ? (
@@ -3131,11 +3754,213 @@ function ReceptionistCenterInner({
             >
               Giữ cọc &amp; huỷ
             </Button>
-            <Button type="button" variant="secondary" onClick={() => setDepositCancel(null)}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setDepositCancel(null)}
+            >
               Đóng
             </Button>
           </div>
         </Modal>
+      ) : null}
+
+      {notifyCancel
+        ? (() => {
+            const b = data.bookingsForDay.find((x) => x.id === notifyCancel.id);
+            if (!b) return null;
+            const settings = data.salon.staffNotificationSettings;
+            const locale = resolveCustomerLocale({
+              clientLocale: b.client_locale,
+              salonDefaultLocale: settings.defaultLocale,
+            });
+            const whenLabel = new Intl.DateTimeFormat(
+              locale === "vi" ? "vi-VN" : "en-US",
+              {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+                hour12: true,
+                timeZone: timezone,
+              },
+            ).format(new Date(Date.parse(b.start_time_utc)));
+            const previewText = buildStaffActionSms("cancel", locale, {
+              customerName: (b.client_name ?? "").trim(),
+              salonName: data.salon.name,
+              serviceName: b.service_name ?? "",
+              whenLabel,
+              salonPhone: null,
+            });
+            const hasPhone = !!(b.client_phone && b.client_phone.trim());
+            const hasEmail = !!(b.client_email && b.client_email.trim());
+            const n = rcMessages.notify;
+            // Group-aware cancel: count the still-cancellable members of this
+            // party (same group_id, today's grid). >1 → offer "this / whole party".
+            const groupId = b.group_id ?? null;
+            const partySize = groupId
+              ? data.bookingsForDay.filter(
+                  (x) =>
+                    x.group_id === groupId &&
+                    (x.status === "pending" ||
+                      x.status === "confirmed" ||
+                      x.status === "in_progress"),
+                ).length
+              : 0;
+            const isGroup = !!groupId && partySize > 1;
+            const cancelWhole = isGroup && cancelScope === "whole";
+            return (
+              <Modal
+                isOpen
+                onClose={() => setNotifyCancel(null)}
+                size="sm"
+                title={n.cancelTitle}
+                description={n.cancelDesc}
+              >
+                <div className="flex flex-col gap-3 py-1">
+                  {isGroup ? (
+                    <div
+                      className="flex flex-col gap-2 rounded-lg border border-nq-primary/30 bg-nq-primary/5 p-2.5"
+                      data-testid="cancel-group-scope"
+                    >
+                      <p className="text-[12px] font-medium text-nq-foreground">
+                        {n.groupBanner(partySize)}
+                      </p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          data-testid="cancel-scope-this"
+                          aria-pressed={cancelScope === "this"}
+                          onClick={() => setCancelScope("this")}
+                          className={cn(
+                            "rounded-md px-2 py-1.5 text-[12px] font-semibold transition-colors",
+                            cancelScope === "this"
+                              ? "bg-nq-primary text-nq-background"
+                              : "bg-nq-surface text-nq-muted hover:text-nq-foreground",
+                          )}
+                        >
+                          {n.cancelThisOne}
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="cancel-scope-whole"
+                          aria-pressed={cancelScope === "whole"}
+                          onClick={() => setCancelScope("whole")}
+                          className={cn(
+                            "rounded-md px-2 py-1.5 text-[12px] font-semibold transition-colors",
+                            cancelScope === "whole"
+                              ? "bg-nq-error text-white"
+                              : "bg-nq-surface text-nq-muted hover:text-nq-foreground",
+                          )}
+                        >
+                          {n.cancelWholeParty(partySize)}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  <NotifyCustomerPanel
+                    value={notifyCancelChannels}
+                    onChange={setNotifyCancelChannels}
+                    hasPhone={hasPhone}
+                    hasEmail={hasEmail}
+                    previewText={previewText}
+                    labels={{
+                      heading: n.heading,
+                      sms: n.sms,
+                      email: n.email,
+                      previewTitle: n.previewTitle,
+                      willNotNotify: n.willNotNotify,
+                      noPhone: n.noPhone,
+                      noEmail: n.noEmail,
+                      languageNote: locale === "vi" ? n.langVi : n.langEn,
+                    }}
+                  />
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      type="button"
+                      variant="danger"
+                      loading={drawerBusy}
+                      data-testid="notify-cancel-confirm"
+                      onClick={() => {
+                        const id = notifyCancel.id;
+                        const ch = {
+                          sms: notifyCancelChannels.sms && hasPhone,
+                          email: notifyCancelChannels.email && hasEmail,
+                        };
+                        setNotifyCancel(null);
+                        if (cancelWhole && groupId) {
+                          void doCancelGroup(groupId, ch);
+                        } else {
+                          void doCancelBooking(id, false, ch);
+                        }
+                      }}
+                    >
+                      {cancelWhole
+                        ? n.confirmCancelGroup(partySize)
+                        : n.confirmCancel}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => setNotifyCancel(null)}
+                    >
+                      {n.keep}
+                    </Button>
+                  </div>
+                </div>
+              </Modal>
+            );
+          })()
+        : null}
+
+      {/* No-show fee charge/waive modal — shown when the booking has a Square card on file. */}
+      {noShowChargeModal ? (
+        <Modal
+          isOpen={!!noShowChargeModal}
+          onClose={() => setNoShowChargeModal(null)}
+          size="sm"
+          title={rcMessages.noShowFeeModal.title}
+          description={rcMessages.noShowFeeModal.desc(
+            formatCurrency(noShowChargeModal.feeCents, data.salon.currencyCode) ?? "",
+          )}
+          footer={
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                className="w-full rounded-xl bg-nq-warning/90 px-4 py-3 text-sm font-semibold text-white transition-all hover:bg-nq-warning active:scale-[0.98]"
+                onClick={() => {
+                  const id = noShowChargeModal.bookingId;
+                  setNoShowChargeModal(null);
+                  void handleMarkNoShow(id, true);
+                }}
+              >
+                {rcMessages.noShowFeeModal.charge(
+                  formatCurrency(noShowChargeModal.feeCents, data.salon.currencyCode) ?? "",
+                )}
+              </button>
+              <button
+                type="button"
+                className="w-full rounded-xl border border-nq-border px-4 py-3 text-sm font-medium text-nq-muted transition-colors hover:bg-nq-surface/60"
+                onClick={() => {
+                  const id = noShowChargeModal.bookingId;
+                  setNoShowChargeModal(null);
+                  void handleMarkNoShow(id, false);
+                }}
+              >
+                {rcMessages.noShowFeeModal.waive}
+              </button>
+              <button
+                type="button"
+                className="w-full px-4 py-2 text-sm text-nq-muted transition-colors hover:text-nq-foreground"
+                onClick={() => setNoShowChargeModal(null)}
+              >
+                {rcMessages.noShowFeeModal.cancel}
+              </button>
+            </div>
+          }
+          showCloseButton={false}
+        />
       ) : null}
     </>
   );

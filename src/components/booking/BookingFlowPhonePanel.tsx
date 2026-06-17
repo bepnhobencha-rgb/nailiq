@@ -248,6 +248,9 @@ export function BookingFlowPhonePanel({
                       size="sm"
                       onClick={onContinue}
                       data-testid="phone-step-rebook-change"
+                      // Ghost text-nq-foreground washes out on the light booking
+                      // theme — force booking-theme text so it stays legible.
+                      className="text-[var(--booking-text)] hover:bg-[var(--booking-bg-input)] hover:text-[var(--booking-text)]"
                     >
                       {t.rebookChange}
                     </Button>

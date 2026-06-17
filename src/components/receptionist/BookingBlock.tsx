@@ -1,6 +1,6 @@
 "use client";
 
-import { Star, Heart, Users, Palette, HeartHandshake } from "lucide-react";
+import { Star, Heart, Users, Palette, HeartHandshake, Clock, Play } from "lucide-react";
 
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/shared/lib/cn";
@@ -11,6 +11,7 @@ import {
   bookingSourceIcon,
   type BookingSourceLabels,
 } from "@/shared/booking/bookingSourceIcon";
+import { type LatenessTier } from "./lateness";
 
 /**
  * Booking timeline cell.
@@ -120,6 +121,13 @@ export interface BookingBlockProps {
   hasStaffRequest?: boolean;
   /** Number of add-ons on the booking — renders a "+N" badge on the chip. */
   addonCount?: number;
+  /** Width (px) of the trailing reset buffer baked into this block's span.
+   * When > 0, a faint hatched overlay marks the tail so the desk can tell
+   * service time from the cleanup gap. Purely visual — schedule math (the
+   * full span incl. buffer) is unchanged. */
+  bufferWidthPx?: number;
+  /** Buffer length in minutes — drives the hatched tail's tooltip text. */
+  bufferMinutes?: number;
   /** Client's lifetime no-show count — shows a ⚠ badge for repeat offenders (≥2). */
   noShowCount?: number;
   /** AI no-show risk score (0–100) for this booking. A score ≥70 on a
@@ -157,7 +165,21 @@ export interface BookingBlockProps {
     seatTogether?: string;
     /** Localized source labels for the compact source icon (a11y title). */
     source?: BookingSourceLabels;
+    /** "Start" — inline start button label (used as aria-label too). */
+    startShort?: string;
+    /** "Auto no-show at {time}" template. */
+    autoNoShowAt?: (time: string) => string;
+    /** "Late" badge text. */
+    lateChip?: string;
+    /** "Very late" badge text. */
+    veryLateChip?: string;
   };
+  /** Lateness tier for confirmed/pending past start (null = not late / not applicable). */
+  latenessTier?: LatenessTier;
+  /** Wall-clock time when the cron will auto-mark no_show (in salon tz) — shown in the badge. */
+  autoNoShowAtLabel?: string;
+  /** Called when the inline "Start" button is tapped (only provided when viewer can change status). */
+  onStart?: () => void;
   /**
    * Optional full source label for the hover tooltip (e.g. "Source: Walk-in").
    * The detail drawer carries the authoritative source label; this is a
@@ -236,6 +258,8 @@ export function BookingBlock(props: BookingBlockProps) {
     priceCents,
     leftPx,
     widthPx,
+    bufferWidthPx = 0,
+    bufferMinutes = 0,
     onClick,
     showPrice = true,
     showMetaLine = true,
@@ -257,6 +281,9 @@ export function BookingBlock(props: BookingBlockProps) {
     currencyCode,
     onPointerDown,
     isDragging = false,
+    latenessTier = null,
+    autoNoShowAtLabel,
+    onStart,
   } = props;
 
   const reduced = useReducedMotion();
@@ -273,6 +300,17 @@ export function BookingBlock(props: BookingBlockProps) {
   const isWalkin = source === "walkin";
   const isCompleted = status === "completed";
 
+  // Lateness escalation only applies to a not-yet-started booking past its start
+  // (confirmed/pending). `isLate` (in_progress past END) is a separate overlay.
+  const showLateness =
+    latenessTier !== null &&
+    status !== "in_progress" &&
+    status !== "completed";
+  // Compact source-icon-stack clock marker for late/critical (paired with the
+  // ring so the signal isn't hue-only). `due` stays calm — ring only.
+  const showLateIcon = showLateness && latenessTier !== "due";
+  const showStartButton = onStart !== undefined && showLateness;
+
   // Compact service label (display-only); full name stays in the tooltip + drawer.
   const serviceLabel = serviceShortName(serviceName);
 
@@ -285,9 +323,21 @@ export function BookingBlock(props: BookingBlockProps) {
     isVip ||
     hasStaffRequest ||
     isLate ||
+    showLateIcon ||
     hasDesign ||
     isGroup ||
     seatTogether;
+
+  const lateChipLabel =
+    latenessTier === "critical"
+      ? (iconLabels as { veryLateChip?: string })?.veryLateChip ?? "Very late"
+      : (iconLabels as { lateChip?: string })?.lateChip ?? "Late";
+  const autoNoShowTip =
+    showLateness && autoNoShowAtLabel
+      ? (iconLabels as { autoNoShowAt?: (t: string) => string })?.autoNoShowAt?.(
+          autoNoShowAtLabel,
+        ) ?? `Auto no-show at ${autoNoShowAtLabel}`
+      : null;
 
   // Lightweight hover tooltip carrying the un-truncated essentials so the
   // icon-only / short-name compaction never hides operational info.
@@ -296,6 +346,7 @@ export function BookingBlock(props: BookingBlockProps) {
     serviceName,
     sourceMeta ? `Source: ${sourceMeta.label}` : null,
     sourceLabelFull && !sourceMeta ? sourceLabelFull : null,
+    showLateness ? autoNoShowTip ?? lateChipLabel : null,
   ]
     .filter(Boolean)
     .join("\n");
@@ -317,7 +368,9 @@ export function BookingBlock(props: BookingBlockProps) {
     styles.root,
     isWalkin && showWalkinAccent && "border-l-[3px] border-nq-primary",
     isCompleted && "opacity-70",
-    isDragging && "opacity-40 shadow-nq-card scale-[0.97]",
+    // While dragging, hide the ORIGINAL block so only the moving dashed ghost
+    // (with the live snap time) shows — one clean block instead of two.
+    isDragging && "opacity-0",
     isDraggable && "cursor-grab touch-none select-none",
     onClick && !isDraggable && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
   );
@@ -345,8 +398,90 @@ export function BookingBlock(props: BookingBlockProps) {
         />
       ) : null}
 
+      {/* Lateness escalation ring (confirmed/pending past start) — RING ONLY, no
+          floating badge: the countdown lives in the tooltip + the icon-stack
+          clock so dense blocks stay clean. `isLate` (in_progress past end) is a
+          separate overlay above. due = soft amber · late = amber · critical =
+          pulsing red. */}
+      {showLateness ? (
+        latenessTier === "critical" ? (
+          <motion.span
+            aria-hidden
+            data-testid={`booking-block-lateness-${bookingId}`}
+            className="pointer-events-none absolute inset-0 rounded-lg ring-2 ring-nq-error"
+            initial={{ opacity: 0.55 }}
+            animate={reduced ? undefined : { opacity: [0.55, 1, 0.55] }}
+            transition={{
+              duration: PULSE_PERIOD_SEC,
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
+          />
+        ) : (
+          <span
+            aria-hidden
+            data-testid={`booking-block-lateness-${bookingId}`}
+            className={cn(
+              "pointer-events-none absolute inset-0 rounded-lg ring-2",
+              latenessTier === "late" ? "ring-nq-warning" : "ring-nq-warning/55",
+            )}
+          />
+        )
+      ) : null}
+
+      {/* Inline "Start" — compact icon-only play button so it never crowds the
+          client/service/time text on a dense block (gated on viewer can-change-
+          status + lateness). Stops propagation so it doesn't open the drawer. */}
+      {showStartButton ? (
+        <button
+          type="button"
+          aria-label={
+            (iconLabels as { startShort?: string })?.startShort ?? "Start"
+          }
+          title={(iconLabels as { startShort?: string })?.startShort ?? "Start"}
+          data-testid={`booking-block-start-${bookingId}`}
+          className="pointer-events-auto absolute bottom-1 right-1 z-[2] flex h-6 w-6 items-center justify-center rounded-full bg-nq-success text-white shadow-sm ring-1 ring-black/10 transition-transform hover:scale-110 active:scale-95"
+          onClick={(e) => {
+            e.stopPropagation();
+            onStart?.();
+          }}
+        >
+          <Play size={11} strokeWidth={2.5} fill="currentColor" />
+        </button>
+      ) : null}
+
+      {bufferWidthPx >= 3 ? (
+        // Reset/cleanup buffer tail — a faint hatched strip at the block's
+        // right edge with a dashed divider at the service-end boundary, so the
+        // desk reads where the actual service stops and the buffer begins.
+        // currentColor stripes keep it visible on every status background +
+        // dark mode; pointer-events-none so it never blocks click/drag.
+        <span
+          aria-hidden
+          data-testid={`booking-block-buffer-${bookingId}`}
+          title={
+            bufferMinutes > 0
+              ? `Đệm dọn dẹp ${bufferMinutes} phút`
+              : "Đệm dọn dẹp"
+          }
+          className="pointer-events-none absolute inset-y-0 right-0 rounded-r-lg border-l border-dashed border-current/40 opacity-25"
+          style={{
+            width: bufferWidthPx,
+            backgroundImage:
+              "repeating-linear-gradient(45deg, currentColor 0, currentColor 1.5px, transparent 1.5px, transparent 6px)",
+          }}
+        />
+      ) : null}
+
       <div className="relative flex min-w-0 gap-2">
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div
+          className={cn(
+            "flex min-w-0 flex-1 flex-col",
+            // Reserve room at the bottom-right for the icon-only Start button so
+            // it never overlaps the service/time text on a dense block.
+            showStartButton && "pr-7",
+          )}
+        >
           {/* `break-words` removed: it split names mid-word in narrow cells
               ("Liam (O…", "Gue…"). A 2-line clamp wraps at word boundaries
               (multi-word names stay readable) and ellipsizes the 2nd line;
@@ -411,6 +546,19 @@ export function BookingBlock(props: BookingBlockProps) {
                 : "flex-col",
             )}
           >
+            {showLateIcon ? (
+              <Clock
+                size={13}
+                strokeWidth={2.5}
+                aria-label={lateChipLabel}
+                className={
+                  latenessTier === "critical"
+                    ? "text-[var(--color-nq-error)]"
+                    : "text-[var(--color-nq-warning)]"
+                }
+                data-testid={`booking-block-icon-late-${bookingId}`}
+              />
+            ) : null}
             {sourceMeta ? (
               <sourceMeta.Icon
                 size={13}

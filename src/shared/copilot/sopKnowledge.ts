@@ -17,10 +17,14 @@ the LIVE CONTEXT when building a link.
 ## Roles (salon_members.role)
 - owner — full access: operations, staff, services, settings, reports, billing.
 - admin — like owner for day-to-day management (no billing/ownership changes).
-- senior — front-desk + can edit/cancel bookings.
-- receptionist — front-desk operations: check-in, walk-ins, mark no-show. Cannot
-  edit the service/staff catalog or salon settings.
-- nail_tech — view-only on the schedule; cannot modify bookings.
+- senior — front-desk staff.
+- receptionist — front-desk staff.
+- nail_tech — view-only on the schedule; can see bookings but cannot change them.
+**Front-desk booking actions** (start a service, mark complete, mark no-show,
+create a desk "+ New appointment", edit/reschedule, cancel, and undo a cancel)
+are all available to owner, admin, senior, AND receptionist. nail_tech can only
+look. **Salon setup** (services, staff, opening hours, settings, reports) is
+owner/admin only; only the owner controls billing and can grant the admin role.
 If a user's role can't reach an area, tell them to ask the owner/admin — do not
 walk them through an action they can't perform.
 
@@ -37,12 +41,15 @@ The live operational board, updated in real time. Three zones:
 3. Walk-in queue (right) — walk-in guests waiting to be seated.
 Use this page to run the day: seat walk-ins, start/finish services, mark
 no-shows, see who is free.
-The **"+ New appointment"** button (day view) books a phone-in customer for a
-FUTURE date/time: enter the phone (returning customers auto-fill), pick service →
-staff → date → an available time. It's created as a confirmed booking with the
-same conflict checks and confirmation SMS/email as a public booking — use it when
-a customer calls in. The separate "+ Walk-in" button is for same-day in-person
-guests only.
+The **"+ New appointment"** button (day view) books a phone-in customer: enter
+the phone (returning customers auto-fill), pick service → staff → date → an
+available time. The date defaults to **today in the salon's timezone** (not the
+device's), so a staff member abroad still starts on the salon's today. You cannot
+pick a past date, and the time list only shows times still to come — a slot that
+has already passed is never offered or bookable (the server rejects it too). It's
+created as a confirmed booking with the same conflict checks and confirmation
+SMS/email as a public booking — use it when a customer calls in. The separate
+"+ Walk-in" button is for same-day in-person guests only.
 
 ### Booking lifecycle (status values)
 - pending — booked but not yet confirmed (e.g. Wix-origin or awaiting verify).
@@ -74,8 +81,8 @@ this flow. Completed bookings appear on the Front Desk and calendar.
 
 ## D. Calendar / booking list
 Day / week / month calendar plus a booking list to review and manage upcoming
-and past appointments. Owner/admin/senior can edit and cancel; nail_tech is
-view-only.
+and past appointments. Front-desk roles (owner, admin, senior, receptionist) can
+edit and cancel; nail_tech is view-only.
 
 ## E. Clients — /dashboard/<slug>/clients
 Customer list and profiles (history, contact, notes, no-show history). Use this
@@ -87,8 +94,15 @@ and their status (active = bookable; inactive/pending = offline). A booking can
 only be assigned to a staff member who is active and capable of that service.
 
 ## G. Services (catalog) — managed in Settings
-Each service has a name, duration, buffer time, and price. Duration + buffer is
-the total time the slot occupies. Soft-deleted services stop being bookable.
+Each service has a name, duration, buffer time, and price. The buffer is a
+reset/cleanup gap reserved AFTER the service before the next booking on the same
+staff — so a booking's block on the grid = duration + buffer (the buffer shows as
+a faint hatched strip at the tail end of the block). The buffer keeps the next
+booking from starting too soon, but it does NOT block the last appointment of the
+day: only the SERVICE has to finish by closing time — its buffer may run a little
+past close (there's no next customer to reset for). So e.g. a 60-min service with
+a 5-min buffer at a salon that closes at 7:00 PM can still start at 6:00 PM.
+Soft-deleted services stop being bookable.
 
 ## H. Settings — /dashboard/<slug>/settings
 Salon settings hub: brand/profile, contact, opening hours, services, staff,
@@ -142,7 +156,18 @@ customer for a Google review, by email and text, linking to the salon's Google
 review page. This needs the salon's Google review URL set in Settings and is
 available on Pro and higher plans. Each booking is only asked once.
 
-## N. Language
-The whole dashboard is bilingual EN/VI; users toggle their own language. Reply
-in the language the user is writing in.
+## N. Language (EN / VI)
+The whole dashboard is bilingual. Each person picks their OWN language — it is a
+per-user setting (saved in their browser), so changing it does NOT affect other
+staff. Two ways:
+1) Manually: the **EN / VI** pill in the top-right of the header — tap **VI** for
+   Vietnamese, **EN** for English. It switches instantly, no reload.
+2) One-tap from you (PREFERRED — actually does it, don't just describe): give a
+   deep-link to the page they're on with \`?setLang=vi\` (or \`?setLang=en\`)
+   appended. Tapping it switches the dashboard language immediately. Example for
+   Vietnamese: [Chuyển sang tiếng Việt](/dashboard/SLUG/center?setLang=vi) — use
+   the real slug and a page the user's role can reach. Always offer this link
+   when someone asks how to change language; never guess menu paths.
+
+Reply in the language the user is writing in.
 `;

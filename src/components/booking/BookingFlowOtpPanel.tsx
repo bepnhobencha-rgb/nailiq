@@ -13,16 +13,36 @@ import { cn } from "@/shared/lib/cn";
 
 const RESEND_COOLDOWN_S = 60;
 
+// Module-level memory of the last SMS-OTP send per `${shopSlug}:${phone}`, so a
+// remount of this panel (customer steps Back to the info step then Forward again
+// before verifying) does NOT fire a second SMS while the first code is still
+// valid. Survives component unmount within the same page session; the server
+// cooldown is the cross-tab / cross-reload authority.
+const lastSmsSentAt = new Map<string, number>();
+
 function maskPhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   if (digits.length < 4) return phone;
   return "••• ••• " + digits.slice(-4);
 }
 
+function maskEmail(email: string): string {
+  const [user, domain] = email.split("@");
+  if (!domain) return email;
+  const head = user.slice(0, 1);
+  return `${head}•••@${domain}`;
+}
+
+function isEmailish(s: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
+}
+
 export function BookingFlowOtpPanel({
   t,
   shopSlug,
   clientPhone,
+  clientEmail,
+  emailChannelEnabled,
   stepDir,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- prop kept for API consistency with other BookingFlow panels; not needed by OTP panel
   reducedMotion: _reducedMotion,
@@ -35,6 +55,10 @@ export function BookingFlowOtpPanel({
   t: BookingMessages;
   shopSlug: string;
   clientPhone: string;
+  /** Email captured at the Info step (if any) — enables the email fallback. */
+  clientEmail?: string;
+  /** Salon's email-channel master (salons.email_links_enabled). */
+  emailChannelEnabled?: boolean;
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
   stepTransition: { duration: number; ease: [number, number, number, number] };
@@ -51,11 +75,23 @@ export function BookingFlowOtpPanel({
   const [sent, setSent] = useState(false);
   const [isSending, startSendTransition] = useTransition();
   const [isVerifying, startVerifyTransition] = useTransition();
+  // Email fallback state. `emailUsed` is the address a code was emailed to — sent
+  // alongside the verify request so the server also checks the email-code store.
+  const onFileEmail = (clientEmail ?? "").trim();
+  const canEmail = Boolean(emailChannelEnabled);
+  const [emailUsed, setEmailUsed] = useState<string>("");
+  const [showEmailInput, setShowEmailInput] = useState(false);
+  const [emailInput, setEmailInput] = useState("");
+  const [isEmailing, startEmailTransition] = useTransition();
   const codeInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  function startCooldown() {
-    setCooldown(RESEND_COOLDOWN_S);
+  // Key for the per-phone "recently sent" guard. Digits-only so format variants
+  // (spaces / +1) map to the same entry.
+  const otpKey = `${shopSlug}:${clientPhone.replace(/\D/g, "")}`;
+
+  function startCooldown(seconds: number = RESEND_COOLDOWN_S) {
+    setCooldown(seconds);
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       setCooldown((s) => {
@@ -70,15 +106,51 @@ export function BookingFlowOtpPanel({
 
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
-  // Auto-send on mount
+  // Auto-send on mount: SMS always; ALSO email the code when an address is on
+  // file (belt-and-suspenders — SMS link/code often filtered by US carriers, so
+  // the email makes sure the code reaches the customer somewhere).
   useEffect(() => {
-    void sendCode();
+    void sendCode({ auto: true });
+    if (canEmail && isEmailish(onFileEmail)) void sendEmailCode(onFileEmail);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function sendCode() {
+  function sendEmailCode(addr: string) {
+    const email = addr.trim();
+    if (!isEmailish(email)) return;
+    startEmailTransition(async () => {
+      try {
+        const res = await fetch("/api/booking-otp/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: clientPhone, shopSlug, channel: "email", email }),
+        });
+        const body = (await res.json()) as { ok?: boolean; error?: string };
+        if (res.ok && body.ok) {
+          setEmailUsed(email);
+          setShowEmailInput(false);
+        }
+      } catch {
+        /* email fallback is best-effort — SMS still works */
+      }
+    });
+  }
+
+  function sendCode(opts?: { auto?: boolean }) {
     setError(null);
     startSendTransition(async () => {
+      // Auto-send on (re)mount: if we already texted this phone < cooldown ago
+      // (customer stepped Back to edit info then Forward again), skip the
+      // duplicate SMS — the prior code is still valid — and just restore the UI.
+      // A manual resend click is never skipped here (server still throttles it).
+      const last = lastSmsSentAt.get(otpKey) ?? 0;
+      const elapsedS = Math.floor((Date.now() - last) / 1000);
+      if (opts?.auto && last && elapsedS < RESEND_COOLDOWN_S) {
+        setSent(true);
+        startCooldown(RESEND_COOLDOWN_S - elapsedS);
+        setTimeout(() => codeInputRef.current?.focus(), 100);
+        return;
+      }
       try {
         const res = await fetch("/api/booking-otp/send", {
           method: "POST",
@@ -91,6 +163,7 @@ export function BookingFlowOtpPanel({
           return;
         }
         setSent(true);
+        lastSmsSentAt.set(otpKey, Date.now());
         startCooldown();
         setTimeout(() => codeInputRef.current?.focus(), 100);
       } catch {
@@ -111,7 +184,7 @@ export function BookingFlowOtpPanel({
         const res = await fetch("/api/booking-otp/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone: clientPhone, code: trimmed, shopSlug }),
+          body: JSON.stringify({ phone: clientPhone, code: trimmed, shopSlug, email: emailUsed || undefined }),
         });
         const body = (await res.json()) as {
           ok?: boolean;
@@ -163,6 +236,15 @@ export function BookingFlowOtpPanel({
           <span className="font-medium text-[var(--booking-text)]">
             {maskPhone(clientPhone)}
           </span>
+          {emailUsed ? (
+            <>
+              {" "}
+              {t.otpAndEmail}{" "}
+              <span className="font-medium text-[var(--booking-text)]">
+                {maskEmail(emailUsed)}
+              </span>
+            </>
+          ) : null}
         </p>
       ) : (
         <p className="mt-1 text-sm text-[var(--booking-text-muted)]">
@@ -191,6 +273,7 @@ export function BookingFlowOtpPanel({
               setError(null);
             }}
             onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
               if (e.key === "Enter" && !isVerifying) onVerify();
             }}
             placeholder={t.otpCodePlaceholder}
@@ -211,7 +294,7 @@ export function BookingFlowOtpPanel({
           <button
             type="button"
             disabled={cooldown > 0 || isSending}
-            onClick={sendCode}
+            onClick={() => sendCode()}
             className="text-sm text-[var(--salon-primary)] underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSending ? t.otpSending : resendLabel}
@@ -232,7 +315,65 @@ export function BookingFlowOtpPanel({
           </p>
         ) : null}
 
-        {error ? null : null}
+        {/* Email fallback — only when the salon's email channel is on. The happy
+            path (SMS arrives) never needs this; it rescues a customer whose text
+            never came (US carrier filtering) and captures a real email. */}
+        {canEmail && sent ? (
+          emailUsed ? (
+            <p
+              data-testid="otp-email-sent"
+              className="text-xs text-[var(--booking-text-muted)]"
+            >
+              ✓ {t.otpEmailSent}{" "}
+              <span className="font-medium text-[var(--booking-text)]">
+                {maskEmail(emailUsed)}
+              </span>
+            </p>
+          ) : showEmailInput ? (
+            <div className="space-y-2">
+              <label
+                htmlFor="otp-email"
+                className="block text-xs font-medium text-[var(--booking-text)]"
+              >
+                {t.otpEmailInputLabel}
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="otp-email"
+                  data-testid="otp-email-input"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  placeholder={t.otpEmailPlaceholder}
+                  className="min-w-0 flex-1 rounded-lg border border-[var(--booking-border)] bg-[var(--booking-bg-input)] px-3 py-2 text-sm text-[var(--booking-text)] placeholder:text-[var(--booking-text-muted)]/40 focus:outline-none focus:ring-2 focus:ring-[var(--salon-primary)]/60"
+                />
+                <button
+                  type="button"
+                  data-testid="otp-email-send"
+                  disabled={isEmailing || !isEmailish(emailInput)}
+                  onClick={() => sendEmailCode(emailInput)}
+                  className="whitespace-nowrap rounded-lg bg-[var(--salon-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  {isEmailing ? t.otpEmailSending : t.otpEmailSendCta}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              data-testid="otp-email-fallback"
+              onClick={() => {
+                setShowEmailInput(true);
+                setEmailInput(onFileEmail);
+              }}
+              className="text-left text-xs text-[var(--salon-primary)] underline-offset-2 hover:underline"
+            >
+              {t.otpEmailFallbackCta}
+            </button>
+          )
+        ) : null}
 
         <div className="flex gap-3">
           <Button
@@ -241,9 +382,11 @@ export function BookingFlowOtpPanel({
             size="md"
             onClick={onBack}
             disabled={isVerifying}
-            className="flex-1"
+            // Ghost paints text-nq-foreground (light, for the dark dashboard) —
+            // washes out on the light booking theme. Force booking-theme text.
+            className="flex-1 text-[var(--booking-text)] hover:bg-[var(--booking-bg-input)] hover:text-[var(--booking-text)]"
           >
-            ← Back
+            ← {t.back}
           </Button>
           <LuxuryBookingCta
             disabled={!sent || isVerifying || code.trim().length < 4}

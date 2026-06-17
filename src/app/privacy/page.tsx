@@ -84,6 +84,38 @@ export default function PrivacyPage() {
 
           <section>
             <h2 className="text-xl font-semibold text-nq-foreground">
+              Payment information
+            </h2>
+            <p className="mt-3">
+              When a salon collects a deposit or keeps a card on file for a
+              no-show fee, the payment is processed by Square or Stripe under
+              their PCI-compliant systems. NailIQ <strong>never stores your full
+              card number</strong> — only a payment token and the card&apos;s
+              brand and last four digits (to show you which card is on file),
+              plus a record that you consented and the policy you agreed to. You
+              can remove a saved card at any time from the link in your booking
+              confirmation. The salon is the merchant for these charges.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-nq-foreground">
+              International storage &amp; US residents
+            </h2>
+            <p className="mt-3">
+              Some data is stored on servers located in the United States
+              (Supabase, Vercel). By using NailIQ you consent to this
+              cross-border transfer; while stored in the US, data may be subject
+              to access under US law. If you are a California resident, you have
+              rights under the CCPA/CPRA to know what we hold, request deletion,
+              and opt out of any &quot;sale&quot; of personal information — we do
+              not sell personal information. We will notify affected users and
+              the relevant authorities of a privacy breach as required by law.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-nq-foreground">
               We do not sell your data
             </h2>
             <p className="mt-3">

@@ -605,6 +605,12 @@ export async function verifyRegisterOtp(
     return { ok: false, reason: "server_error" };
   }
   if (finalized.kind === "dashboard") {
+    // Audit the login (who / when / device / IP) for the owner Activity log.
+    void (await import("@/shared/dashboard/recordAuthEvent")).recordAuthEvent({
+      event: "login",
+      slug: finalized.slug,
+      role: finalized.role,
+    });
     return {
       ok: true,
       next: "dashboard",

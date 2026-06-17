@@ -1,9 +1,10 @@
 import * as Sentry from "@sentry/nextjs";
-import { after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import type { SalonDashboardBooking } from "@/shared/types";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import {
   type BookingRowDb,
@@ -36,6 +37,10 @@ export type EditBookingInput = {
    * the salon's catalog and contributes to span + price recompute.
    */
   newAddonServiceId?: string | null;
+  /** Channels to notify the customer on when the START TIME changes (a
+   *  reschedule). Omitted → SMS only (legacy behavior). The edit form / drag
+   *  pass the receptionist's choice; an unchecked channel isn't sent. */
+  notify?: { sms?: boolean; email?: boolean };
 };
 
 export type EditBookingError =
@@ -129,9 +134,13 @@ export async function performEditBooking(
 
   const bookingData = booking as any;
   const st =
-    bookingData.start_time_utc != null ? String(bookingData.start_time_utc).trim() : "";
+    bookingData.start_time_utc != null
+      ? String(bookingData.start_time_utc).trim()
+      : "";
   const en =
-    bookingData.end_time_utc != null ? String(bookingData.end_time_utc).trim() : "";
+    bookingData.end_time_utc != null
+      ? String(bookingData.end_time_utc).trim()
+      : "";
   if (!st || !en) {
     return { ok: false, error: "server_error" };
   }
@@ -245,7 +254,7 @@ export async function performEditBooking(
     if (!Number.isFinite(aBuf) || aBuf < 0) {
       return { ok: false, error: "server_error" };
     }
-    addonSpanMin = aDur + aBuf;
+    addonSpanMin = serviceBlockMinutes(aDur, aBuf);
     const aPrice =
       addonSvcData.price_cents != null
         ? Math.round(Number(addonSvcData.price_cents))
@@ -253,18 +262,19 @@ export async function performEditBooking(
     addonPriceCents = Number.isFinite(aPrice ?? NaN) ? aPrice : null;
   }
 
-  const totalMin = duration + buffer + addonSpanMin;
+  const totalMin = serviceBlockMinutes(duration, buffer) + addonSpanMin;
   const endMs = startMs + totalMin * 60 * 1000;
   const slotEndUtc = new Date(endMs).toISOString();
 
-  const price = svcData.price_cents != null ? Math.round(Number(svcData.price_cents)) : null;
+  const price =
+    svcData.price_cents != null
+      ? Math.round(Number(svcData.price_cents))
+      : null;
   const priceCents = Number.isFinite(price ?? NaN) ? price : null;
 
   const { data: existing, error: exErr } = await supabase
     .from("bookings")
-    .select(
-      "id, staff_id, start_time_utc, end_time_utc, status, client_name",
-    )
+    .select("id, staff_id, start_time_utc, end_time_utc, status, client_name")
     .eq("salon_id", salonId)
     .eq("staff_id", newStaffId)
     .in("status", ["pending", "confirmed", "in_progress", "completed"]);
@@ -278,7 +288,7 @@ export async function performEditBooking(
     staffId: newStaffId,
     startUtcIso: slotStartUtc,
     endUtcIso: slotEndUtc,
-    existingBookings: ((existing ?? []) as any) as ConflictCheckBooking[],
+    existingBookings: (existing ?? []) as any as ConflictCheckBooking[],
     excludeBookingId: bookingId,
   });
   if (conflict !== null) {
@@ -319,6 +329,9 @@ export async function performEditBooking(
     end_time_utc: slotEndUtc,
     service_id: newServiceId,
     price_cents: priceCents,
+    // Mark this as a NailIQ-side edit so the Square reschedule sync knows NailIQ
+    // owns the latest change (last-writer-wins vs the Square booking's updated_at).
+    local_updated_at: new Date().toISOString(),
   };
   if (input.newAddonServiceId !== undefined) {
     baseUpdate.addon_service_id = effectiveAddonId;
@@ -405,23 +418,30 @@ export async function performEditBooking(
       previousStartUtc: st || null,
     });
 
-    // Customer SMS — in the language they booked in. The reschedule-sms edge
-    // function self-resolves phone / salon / service / locale + template from
-    // the booking id, so we just hand it the id (it already sees the committed
-    // new start_time_utc). after() so it never blocks the desk response;
-    // best-effort — a failure only skips the SMS, the edit already succeeded.
-    after(async () => {
-      const { error: smsErr } = await supabase.functions.invoke(
-        "reschedule-sms",
-        { body: { booking_id: bookingId } },
-      );
-      if (smsErr) {
+    // Customer reschedule notification → the durable queue (same path as
+    // cancel): a 1-min cron delivers it via deliverStaffActionNotification, in
+    // the resolved language, on the chosen channels. Legacy callers (no
+    // `notify`) keep the SMS-only behavior. Service-role insert — the
+    // scheduled_notifications table is RLS-locked to service-role.
+    const notifySms = input.notify ? input.notify.sms === true : true;
+    const notifyEmail = input.notify ? input.notify.email === true : false;
+    if (notifySms || notifyEmail) {
+      const sr = createServiceRoleClient();
+      const { error: enqErr } = await sr
+        .from("scheduled_notifications")
+        .insert({
+          salon_id: salonId,
+          booking_id: bookingId,
+          event: "reschedule",
+          channels: { sms: notifySms, email: notifyEmail },
+          send_after: new Date(Date.now() + 5_000).toISOString(),
+        } as never);
+      if (enqErr)
         console.error(
-          "[performEditBooking] reschedule-sms dispatch failed",
-          smsErr,
+          "[performEditBooking] enqueue reschedule notify failed",
+          enqErr,
         );
-      }
-    });
+    }
   }
 
   return {

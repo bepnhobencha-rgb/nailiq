@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
+import { addonLabel } from "@/shared/booking/serviceLabels";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import type {
   BookingSalonMeta,
@@ -41,6 +42,14 @@ import {
   type OpeningHoursWeek,
 } from "@/shared/dashboard/openingHoursDefaults";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
+import {
+  ConfirmStepCardCapture,
+  type ConfirmStepCardHandle,
+} from "./ConfirmStepCardCapture";
+import {
+  resolveNoShowCardRequirement,
+  type NoShowCardRequirement,
+} from "@/shared/noshow/resolveNoShowCardRequirement";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { formatPhoneInputProgressive } from "@/shared/lib/phoneFormat";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
@@ -96,6 +105,31 @@ import type { ReturningCustomer } from "@/components/booking/useBookingFlowState
 const ARRIVAL_PRESETS: ReadonlyArray<
   Exclude<GroupArrivalPreference, { kind: "specific" }>["kind"]
 > = ["morning", "afternoon", "evening"];
+
+/** Time-of-day bucket for "now" in the salon's timezone, so the arrival window
+ *  pre-focuses the period the customer is most likely thinking of (open at 11am
+ *  → Morning; at 12–5 → Afternoon; after 5 → Evening). */
+function currentArrivalPeriod(
+  tz: string,
+): Exclude<GroupArrivalPreference, { kind: "specific" }>["kind"] {
+  let h = 12;
+  try {
+    const part = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz || "America/Los_Angeles",
+      hour: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(new Date())
+      .find((p) => p.type === "hour");
+    h = Number(part?.value ?? "12");
+  } catch {
+    /* fall back to noon */
+  }
+  if (!Number.isFinite(h)) h = 12;
+  if (h < 12) return "morning";
+  if (h < 17) return "afternoon";
+  return "evening";
+}
 
 type Step = 1 | 2 | 3 | 4 | 5 | "success";
 
@@ -178,6 +212,9 @@ type BookingGroupFlowProps = {
   initialOrganizer?: ReturningCustomer | null;
   /** Name captured at the gate → pre-fills Guest 1. */
   initialName?: string;
+  /** SMS consent captured at the phone gate → pre-satisfies the group confirm
+   *  so the customer doesn't tick the SAME consent twice. */
+  initialSmsConsent?: boolean;
   /** Booking-surface language → carried into the shared Party Link URL. */
   language?: "en" | "vi";
 };
@@ -194,6 +231,7 @@ export function BookingGroupFlow({
   initialPhone = "",
   initialOrganizer = null,
   initialName = "",
+  initialSmsConsent = false,
   language = "vi",
 }: BookingGroupFlowProps) {
   const router = useRouter();
@@ -225,9 +263,16 @@ export function BookingGroupFlow({
   /** Target finish time HH:MM (24h, salon-local) — only used when
    *  syncMode === "sync_finish". */
   const [finishTime, setFinishTime] = useState("");
+  // Pre-focus the arrival window on the period matching the current salon-local
+  // time (open at 11am → Morning, 12pm → Afternoon, …) so the customer's most
+  // likely choice is already selected.
+  const nowArrivalPeriod = useMemo(
+    () => currentArrivalPeriod(salon.timezone),
+    [salon.timezone],
+  );
   const [arrivalKind, setArrivalKind] = useState<
     GroupArrivalPreference["kind"]
-  >("morning");
+  >(() => currentArrivalPeriod(salon.timezone));
   const [specificTime, setSpecificTime] = useState("");
   // Phone-first: pre-fill from the type-switcher gate when provided.
   const [primaryPhone, setPrimaryPhone] = useState(initialPhone ?? "");
@@ -275,6 +320,18 @@ export function BookingGroupFlow({
   // the proof into the re-submit.
   const [otpSessionId, setOtpSessionId] = useState<string | null>(null);
   const [otpPanelOpen, setOtpPanelOpen] = useState(false);
+  // No-show card capture at CONFIRM (Option A — like the individual flow):
+  // a new/risky organizer must leave a card BEFORE the group is created, not
+  // after success. cardRequirement is resolved pre-booking by organizer phone.
+  const [cardRequirement, setCardRequirement] =
+    useState<NoShowCardRequirement | null>(null);
+  const [noShowConsent, setNoShowConsent] = useState(false);
+  const cardRef = useRef<ConfirmStepCardHandle>(null);
+  // Holds the tokenized card across a possible OTP round-trip (the card iframe
+  // unmounts when the OTP panel replaces the confirm step).
+  const cardTokenRef = useRef<string | null>(null);
+  // Square buyer-verification token (SCA/AVS/CVV) paired with the card token.
+  const cardVerificationRef = useRef<string | null>(null);
   const [successResult, setSuccessResult] = useState<{
     groupId: string;
     bookingIds: string[];
@@ -385,6 +442,39 @@ export function BookingGroupFlow({
     return openingWeek[key];
   }, [openingWeek, date]);
   const isSelectedDayClosed = !!dayHours?.closed;
+
+  // Pre-fill "Specific time" with the current salon-local time (rounded up to
+  // the next 15 min, clamped to that day's open hours) the first time the
+  // customer picks "Specific time" — so they confirm/nudge a sensible value
+  // instead of starting from an empty field. Functional setState keeps any
+  // value the customer already typed or intentionally cleared.
+  useEffect(() => {
+    if (arrivalKind !== "specific") return;
+    setSpecificTime((cur) => {
+      if (cur !== "") return cur;
+      const tz = salon.timezone || "America/Los_Angeles";
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).formatToParts(new Date());
+      const h = Number(parts.find((p) => p.type === "hour")?.value ?? "12");
+      const m = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+      let mins = Math.ceil((h * 60 + m) / 15) * 15;
+      const toMin = (s?: string): number | null => {
+        const [hh, mm] = (s ?? "").split(":").map(Number);
+        return Number.isFinite(hh) ? hh * 60 + (mm || 0) : null;
+      };
+      const open = (!dayHours?.closed ? toMin(dayHours?.open) : null) ?? 9 * 60;
+      const close =
+        (!dayHours?.closed ? toMin(dayHours?.close) : null) ?? 19 * 60;
+      if (mins < open || mins >= close) mins = open;
+      const hh = String(Math.floor(mins / 60)).padStart(2, "0");
+      const mm = String(mins % 60).padStart(2, "0");
+      return `${hh}:${mm}`;
+    });
+  }, [arrivalKind, salon.timezone, dayHours]);
 
   // Totals — sum of service prices + add-on prices; max member
   // effective duration (svc block + sequential add-on block).
@@ -497,6 +587,44 @@ export function BookingGroupFlow({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [primaryPhone, salon.id]);
+
+  // Pre-booking no-show card requirement for the organizer (Option A). Resolved
+  // at the confirm step from the organizer's phone + service, exactly like the
+  // individual flow — drives the card-entry form shown BEFORE the group is
+  // created.
+  useEffect(() => {
+    if (step !== 5) {
+      return;
+    }
+    const svcId = members[0]?.serviceId;
+    const v = validateGuestPhone(primaryPhone.trim());
+    if (!svcId || !v.ok) {
+      // Deliberate reset when inputs go invalid — not a render-loop.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCardRequirement(null);
+      return;
+    }
+    let alive = true;
+    void resolveNoShowCardRequirement({
+      salonId: salon.id,
+      serviceId: svcId,
+      clientPhone: v.digits,
+      // Whole-party protection: the organizer's card fee covers every member's
+      // service, so show the party total upfront (matches what's saved/charged).
+      groupServiceIds: members
+        .map((m) => m.serviceId)
+        .filter((id): id is string => Boolean(id)),
+    })
+      .then((r) => {
+        if (alive) setCardRequirement(r);
+      })
+      .catch(() => {
+        if (alive) setCardRequirement(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [step, primaryPhone, members, salon.id]);
 
   // ── Helpers ────────────────────────────────────────────────────
   function applySize(n: number) {
@@ -785,6 +913,30 @@ export function BookingGroupFlow({
       submittingRef.current = false;
       return;
     }
+    // Option A — capture the organizer's card BEFORE creating the group (only
+    // when required). Tokenize once and hold it across a possible OTP round-trip
+    // (the card iframe unmounts when the OTP panel replaces the confirm step).
+    if (cardRequirement?.required && !cardTokenRef.current) {
+      if (!noShowConsent) {
+        // Safety net — the confirm button is already disabled until consent is
+        // ticked, so this only fires on a programmatic submit.
+        setErrorMessage(
+          t.noShowCardError ??
+            "Vui lòng đồng ý chính sách no-show để tiếp tục.",
+        );
+        submittingRef.current = false;
+        return;
+      }
+      const result = await cardRef.current?.tokenize();
+      if (!result) {
+        setErrorMessage(t.noShowCardError ?? "Vui lòng kiểm tra thông tin thẻ.");
+        submittingRef.current = false;
+        return;
+      }
+      cardTokenRef.current = result.token;
+      cardVerificationRef.current = result.verificationToken ?? null;
+    }
+
     setErrorMessage(null);
     setSubmitting(true);
     try {
@@ -809,10 +961,17 @@ export function BookingGroupFlow({
           const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
           const time24 = `${hh}:${mm}`;
           const guestLbl = groupCopy?.groupGuestLabel ?? "Guest";
+          // Identity Layer: ONLY the organizer (member 0) carries the contact
+          // phone/email. Other guests have no contact of their own, so we send
+          // an empty phone — the server marks them is_party_member instead of
+          // copying the organizer's number onto their rows (the root cause of
+          // one phone fanning out into dozens of mismatched names). They link
+          // to a real profile later via the party-claim link.
+          const isOrganizer = a.memberIndex === 0;
           return {
             name: draft.name.trim() || `${guestLbl} ${a.memberIndex + 1}`,
-            phone: primaryPhone,
-            email: primaryEmail.trim() || undefined,
+            phone: isOrganizer ? primaryPhone : "",
+            email: isOrganizer ? primaryEmail.trim() || undefined : undefined,
             serviceId: draft.serviceId,
             staffId: a.staffId,
             date,
@@ -845,6 +1004,50 @@ export function BookingGroupFlow({
       if (res.ok) {
         setSuccessResult({ groupId: res.groupId, bookingIds: res.bookingIds });
         setStep("success");
+        // No-show card for the organizer (lead = members[0], the only row with
+        // a phone). Option A: a card captured at the confirm step is saved to
+        // the lead now. CRITICAL — this must NOT silently fail: the booking is
+        // already created, so a swallowed save error would leave a confirmed
+        // group with no card and nobody the wiser. We AWAIT the save and, on any
+        // failure, flag the lead so the desk collects the card manually (never a
+        // silent loss). The flag endpoint is also the path when no card was
+        // captured (not required → no-op).
+        const leadId = res.bookingIds?.[0];
+        const flagForDesk = (id: string) =>
+          fetch("/api/booking/flag-noshow-card", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bookingId: id }),
+          }).catch(() => {});
+        if (leadId) {
+          const token = cardTokenRef.current;
+          if (token) {
+            let saved = false;
+            try {
+              const resp = await fetch("/api/booking/square-save-card", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  bookingId: leadId,
+                  sourceId: token,
+                  consent: true,
+                  verificationToken: cardVerificationRef.current ?? undefined,
+                }),
+              });
+              const json = (await resp.json().catch(() => ({}))) as { ok?: boolean };
+              saved = resp.ok && json.ok === true;
+            } catch {
+              saved = false;
+            }
+            if (!saved) {
+              await flagForDesk(leadId);
+            }
+          } else {
+            await flagForDesk(leadId);
+          }
+        }
+        cardTokenRef.current = null;
+        cardVerificationRef.current = null;
         // FIX 08 — drop the `?mode=group` query so a browser back
         // from the success panel lands on the clean booking home
         // rather than the filled-form mid-state. `router.replace`
@@ -1173,7 +1376,6 @@ export function BookingGroupFlow({
   if (step === "success" && successResult) {
     return (
       <SuccessPanel
-        t={t}
         groupCopy={groupCopy}
         successResult={successResult}
         members={members}
@@ -1258,6 +1460,7 @@ export function BookingGroupFlow({
           syncMode={syncMode}
           finishTime={finishTime}
           arrivalKind={arrivalKind}
+          nowPeriod={nowArrivalPeriod}
           specificTime={specificTime}
           isSelectedDayClosed={isSelectedDayClosed}
           stepErrors={stepErrors}
@@ -1534,6 +1737,12 @@ export function BookingGroupFlow({
           onEmailChange={setPrimaryEmail}
           onBack={() => goToStep(4)}
           onSubmit={() => void onSubmit()}
+          initialSmsConsent={initialSmsConsent}
+          cardRequirement={cardRequirement}
+          cardRef={cardRef}
+          noShowConsent={noShowConsent}
+          onNoShowConsentChange={setNoShowConsent}
+          currencyCode={salon.currencyCode}
         />
       ) : null}
     </section>
@@ -1811,12 +2020,6 @@ function ServiceStaffStep({
           <div className="flex flex-wrap gap-2">
             {addOns.map((a) => {
               const selected = groupAddonIds.has(a.id);
-              const timingTag = a.addonConcurrent
-                ? " · ✨ +0′"
-                : a.durationMinutes > 0
-                  ? ` · +${a.durationMinutes}′`
-                  : "";
-              const priceTag = a.priceDisplay ? ` · ${a.priceDisplay}` : "";
               return (
                 <button
                   key={a.id}
@@ -1831,9 +2034,7 @@ function ServiceStaffStep({
                       : "border-[var(--booking-border)] bg-[var(--booking-bg-input)] text-[var(--booking-text-muted)]",
                   )}
                 >
-                  {a.name}
-                  {timingTag}
-                  {priceTag}
+                  {addonLabel(a)}
                 </button>
               );
             })}
@@ -2130,14 +2331,7 @@ function MemberCard({
             <div className="flex flex-wrap gap-2">
               {addOns.map((a) => {
                 const selected = member.addonServiceIds.includes(a.id);
-                // Build the chip label: name + timing tag + price.
-                const timingTag = a.addonConcurrent
-                  ? " · ✨ +0′"
-                  : a.durationMinutes > 0
-                    ? ` · +${a.durationMinutes}′`
-                    : "";
-                const priceTag = a.priceDisplay ? ` · ${a.priceDisplay}` : "";
-                const label = `${a.name}${timingTag}${priceTag}`;
+                const label = addonLabel(a);
                 return (
                   <button
                     key={a.id}
@@ -2178,6 +2372,7 @@ function DateArrivalStep({
   syncMode,
   finishTime,
   arrivalKind,
+  nowPeriod,
   specificTime,
   isSelectedDayClosed,
   stepErrors,
@@ -2203,6 +2398,7 @@ function DateArrivalStep({
   /** Salon-local HH:MM finish time; only relevant in sync_finish mode. */
   finishTime: string;
   arrivalKind: GroupArrivalPreference["kind"];
+  nowPeriod: Exclude<GroupArrivalPreference, { kind: "specific" }>["kind"];
   specificTime: string;
   isSelectedDayClosed: boolean;
   stepErrors: Set<string>;
@@ -2424,6 +2620,11 @@ function DateArrivalStep({
                     {emoji}
                   </span>
                   {label}
+                  {k === nowPeriod ? (
+                    <span className="ml-2 inline-block rounded-full bg-[var(--salon-primary)]/15 px-2 py-0.5 text-[10px] font-semibold text-[var(--salon-primary)]">
+                      🕐 {groupCopy.arrivalNow ?? "Now"}
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
@@ -2723,7 +2924,12 @@ function ArrangementCard({
           : groupCopy.schedulingFinishEarly ?? "Earliest possible ⚡"
       : arrangement.kind === "earliest"
         ? groupCopy.schedulingEarly ?? "Earliest"
-        : startQualifier;
+        // sync_start options are a TIME picker — lead with the start time so the
+        // distinct choices (2:00 · 2:30 · 3:00) are scannable at a glance. Keep
+        // the spread qualifier only when members are actually staggered.
+        : startSpreadMin > 0
+          ? `${arrangement.groupStartDisplay} · ${startQualifier}`
+          : arrangement.groupStartDisplay;
   const icon = arrangement.isWaveBooking
     ? "🌊"
     : arrangement.kind === "best"
@@ -3306,6 +3512,12 @@ function ConfirmStep({
   onEmailChange,
   onBack,
   onSubmit,
+  initialSmsConsent,
+  cardRequirement,
+  cardRef,
+  noShowConsent,
+  onNoShowConsentChange,
+  currencyCode,
 }: {
   t: BookingMessages;
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
@@ -3344,6 +3556,18 @@ function ConfirmStep({
   onEmailChange: (v: string) => void;
   onBack: () => void;
   onSubmit: () => void;
+  /** SMS consent already given at the phone gate → pre-satisfies confirm. */
+  initialSmsConsent: boolean;
+  /** No-show card requirement for the organizer (Option A — captured here,
+   *  before the group is created). Null while loading / not required. */
+  cardRequirement: NoShowCardRequirement | null;
+  /** Imperative handle to tokenize the entered card at submit time. */
+  cardRef: React.RefObject<ConfirmStepCardHandle | null>;
+  /** No-show policy consent (separate from SMS consent). */
+  noShowConsent: boolean;
+  onNoShowConsentChange: (v: boolean) => void;
+  /** Salon currency — for the no-show card fee label. */
+  currencyCode: BookingSalonMeta["currencyCode"];
 }) {
   const dateDisplay = useMemo(() => {
     // Display the chosen date in salon-tz long form. The
@@ -3355,7 +3579,9 @@ function ConfirmStep({
   }, [arrangement, date, timezone]);
 
   // QA BUG-03 — express SMS consent, required before confirming the party.
-  const [smsConsent, setSmsConsent] = useState(false);
+  // Pre-satisfied from the phone gate (initialSmsConsent) so the customer
+  // doesn't tick the same consent twice (gate + group confirm).
+  const [smsConsent, setSmsConsent] = useState(initialSmsConsent);
 
   if (!arrangement) {
     return (
@@ -3641,16 +3867,58 @@ function ConfirmStep({
         </p>
       ) : null}
 
-      <label className="mb-3 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
-        <input
-          type="checkbox"
-          data-testid="group-sms-consent"
-          checked={smsConsent}
-          onChange={(e) => setSmsConsent(e.target.checked)}
-          className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
-        />
-        <span>{t.smsConsent}</span>
-      </label>
+      {/* Option A — no-show card for the organizer, captured BEFORE the group
+          is created (mirrors the individual confirm panel). The card is
+          tokenized at submit and saved to the lead booking on success, so a
+          confirmed party is already protected — never an afterthought on the
+          success screen. */}
+      {cardRequirement?.required ? (
+        <div className="mb-4 rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4">
+          <p className="text-sm font-semibold text-[var(--booking-text)]">
+            {t.noShowCardTitle ?? "Secure your appointment"}
+          </p>
+          <ConfirmStepCardCapture
+            ref={cardRef}
+            applicationId={cardRequirement.applicationId}
+            locationId={cardRequirement.locationId}
+            environment={cardRequirement.environment}
+            feeLabel={formatCurrency(cardRequirement.feeCents, currencyCode) ?? ""}
+            t={t}
+          />
+          <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+            <input
+              type="checkbox"
+              data-testid="group-noshow-consent"
+              checked={noShowConsent}
+              onChange={(e) => onNoShowConsentChange(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+            />
+            <span>
+              {(t.noShowConsent ??
+                "I agree to the no-show policy and authorize this salon to charge {fee} to this card only if I don't show up.").replace(
+                "{fee}",
+                formatCurrency(cardRequirement.feeCents, currencyCode) ?? "",
+              )}
+            </span>
+          </label>
+        </div>
+      ) : null}
+
+      {/* SMS consent is captured at the phone gate; only show it here as a
+          fallback when it wasn't already given (mirrors the individual confirm
+          panel) — never ask the customer to tick the same consent twice. */}
+      {!smsConsent ? (
+        <label className="mb-3 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+          <input
+            type="checkbox"
+            data-testid="group-sms-consent"
+            checked={smsConsent}
+            onChange={(e) => setSmsConsent(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+          />
+          <span>{t.smsConsent}</span>
+        </label>
+      ) : null}
 
       <StickyFooter
         leftLabel={groupCopy.groupTotal ?? groupCopy.totalLabel ?? "Total"}
@@ -3680,7 +3948,12 @@ function ConfirmStep({
         </Button>
         <LuxuryBookingCta
           onClick={onSubmit}
-          disabled={submitting || !contactReady || !smsConsent}
+          disabled={
+            submitting ||
+            !contactReady ||
+            !smsConsent ||
+            (cardRequirement?.required === true && !noShowConsent)
+          }
           data-testid="group-confirm"
         >
           {submitting ? groupCopy.submittingGroup : groupCopy.confirmGroup}
@@ -3693,7 +3966,6 @@ function ConfirmStep({
 // ─── Success ─────────────────────────────────────────────────────
 
 function SuccessPanel({
-  t,
   groupCopy,
   successResult,
   members,
@@ -3706,7 +3978,6 @@ function SuccessPanel({
   partyLinkUrl,
   partyLinkFailed,
 }: {
-  t: BookingMessages;
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
   successResult: { groupId: string; bookingIds: string[] };
   showStaff: boolean;
@@ -3790,7 +4061,8 @@ function SuccessPanel({
         </p>
       ) : null}
 
-      {t ? null : null}
+      {/* No-show card is now captured at the CONFIRM step (Option A — like the
+          individual flow), not here after success. */}
     </section>
   );
 }

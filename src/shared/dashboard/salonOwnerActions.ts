@@ -1,6 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
+import { isOwner, isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { redirect } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -15,6 +16,7 @@ import {
   isDemoSlugPinBypassed,
 } from "@/shared/lib/demoOtpMode";
 import {
+  canChangeBookingStatus,
   normalizeSalonMemberRole,
   type SalonMemberRole,
 } from "@/shared/lib/salonMemberRole";
@@ -170,6 +172,12 @@ export async function resolveSalonForDashboard(
        * viewer already has an email tied to the auth account.
        */
       viewerEmail: string | null;
+      /**
+       * Auth user id of the logged-in member, or `null` for the
+       * demo-cookie path (no real auth user). Threaded into the audit
+       * log so `booking_events.actor_user_id` records who acted.
+       */
+      viewerUserId: string | null;
     }
   | null
 > {
@@ -180,6 +188,7 @@ export async function resolveSalonForDashboard(
       kind: "member",
       role: memberHit.role,
       viewerEmail: memberHit.viewerEmail,
+      viewerUserId: memberHit.viewerUserId,
     };
   }
 
@@ -193,6 +202,7 @@ export async function resolveSalonForDashboard(
       kind: "demo_cookie",
       role: "owner",
       viewerEmail: null,
+      viewerUserId: null,
     };
   }
 
@@ -202,7 +212,12 @@ export async function resolveSalonForDashboard(
 async function getSalonIfMember(
   slug: string,
 ): Promise<
-  | { salon: SalonRow; role: SalonMemberRole; viewerEmail: string | null }
+  | {
+      salon: SalonRow;
+      role: SalonMemberRole;
+      viewerEmail: string | null;
+      viewerUserId: string;
+    }
   | null
 > {
   const supabase = await createClient();
@@ -291,6 +306,9 @@ async function getSalonIfMember(
     },
     role,
     viewerEmail,
+    // Auth user id of the logged-in member — threaded into the audit log
+    // so `booking_events.actor_user_id` records WHO performed a desk action.
+    viewerUserId: user.id,
   };
 }
 
@@ -443,6 +461,15 @@ export async function updateBookingStatus(
     return { ok: false, error: "unauthorized" };
   }
 
+  // Front-desk role gate. Previously ANY member (incl. view-only nail_tech)
+  // could flip a booking to in_progress/completed — an ungated path that let
+  // a test-click wrongly close a Hi-Lite appointment. Mirror the no-show /
+  // desk-booking permission set (owner/admin/senior/receptionist). Demo-cookie
+  // path resolves to role "owner" so it still passes.
+  if (!canChangeBookingStatus(resolved.role)) {
+    return { ok: false, error: "unauthorized" };
+  }
+
   const { salon, kind } = resolved;
   const supabase =
     kind === "demo_cookie"
@@ -500,7 +527,9 @@ export async function updateBookingStatus(
   void logBookingEvent({
     bookingId,
     salonId: salon.id,
-    actorUserId: null,
+    // Null on the demo-cookie path (no real auth user); the member path
+    // records the acting user so a desk status change is attributable.
+    actorUserId: resolved.viewerUserId,
     actorRole: (kind === "demo_cookie"
       ? "demo_cookie"
       : (resolved.role as ActorRole)) satisfies ActorRole,
@@ -613,6 +642,10 @@ export async function loadOwnerSalons(
  */
 export async function signOutAction(): Promise<never> {
   const supabase = await createClient();
+  // Audit BEFORE signOut, while the session (and getUser) is still live.
+  await (await import("@/shared/dashboard/recordAuthEvent")).recordAuthEvent({
+    event: "logout",
+  });
   await supabase.auth.signOut();
   redirect("/login");
 }
@@ -645,7 +678,7 @@ export async function updateDashboardModules(
   if (!ctx) {
     return { ok: false, error: "unauthorized" };
   }
-  if (ctx.role !== "owner") {
+  if (!isOwnerOrAdmin(ctx.role)) {
     return { ok: false, error: "forbidden" };
   }
 
@@ -712,7 +745,7 @@ export async function updateDashboardPreset(
   if (!ctx) {
     return { ok: false, error: "unauthorized" };
   }
-  if (ctx.role !== "owner") {
+  if (!isOwnerOrAdmin(ctx.role)) {
     return { ok: false, error: "forbidden" };
   }
 
@@ -764,7 +797,7 @@ export async function updateDashboardDensity(
   if (!ctx) {
     return { ok: false, error: "unauthorized" };
   }
-  if (ctx.role !== "owner") {
+  if (!isOwnerOrAdmin(ctx.role)) {
     return { ok: false, error: "forbidden" };
   }
 
@@ -793,6 +826,7 @@ export type UpdateBrandColorResult =
       ok: false;
       error:
         | "unauthorized"
+        | "forbidden"
         | "invalid_color"
         | "server_error";
     };
@@ -820,6 +854,7 @@ export async function updateBrandColor(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   // Cast: `brand_color` is not yet in the auto-generated Supabase
   // types until the next regeneration.
@@ -840,7 +875,7 @@ export async function updateBrandColor(
 
 export type UpdateThemeModeResult =
   | { ok: true; themeMode: "dark" | "light" }
-  | { ok: false; error: "unauthorized" | "invalid_mode" | "server_error" };
+  | { ok: false; error: "unauthorized" | "forbidden" | "invalid_mode" | "server_error" };
 
 /**
  * Member-gated: writes `salons.theme_mode`. Mirrors the DB CHECK
@@ -863,6 +898,7 @@ export async function updateSalonThemeMode(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   // Cast: `theme_mode` is not yet in the auto-generated Supabase
   // types until the next regeneration.
@@ -904,7 +940,7 @@ export async function updateVoiceAiPersonaName(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error: upErr } = await ctx.supabase
     .from("salons")
@@ -946,7 +982,7 @@ export async function updateSalonVertical(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwner(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error: upErr } = await ctx.supabase
     .from("salons")
@@ -978,7 +1014,7 @@ export async function updateWinBackEnabled(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error } = await ctx.supabase
     .from("salons")
@@ -1012,7 +1048,7 @@ export async function updateAutoNoShowMinutes(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const m = Math.round(Number(minutes));
   if (!Number.isFinite(m) || m < 0 || m > 240) {
@@ -1029,6 +1065,53 @@ export async function updateAutoNoShowMinutes(
     return { ok: false, error: "server_error" };
   }
   return { ok: true, minutes: m };
+}
+
+/* ───────────── Clients lifecycle thresholds (new / at-risk) ───────────── */
+
+export type UpdateClientSegmentResult =
+  | { ok: true; newMaxVisits: number; atRiskDays: number }
+  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" };
+
+/**
+ * Owner-only: writes `salons.client_segment_settings` (jsonb). Controls how the
+ * Clients page buckets customers — "New" (≤ newMaxVisits visits) and "At-risk"
+ * (no visit in atRiskDays). Values are clamped by parseClientSegmentSettings so
+ * out-of-range input falls back to the defaults rather than being rejected.
+ */
+export async function updateClientSegmentSettings(
+  slug: string,
+  input: { newMaxVisits: number; atRiskDays: number },
+): Promise<UpdateClientSegmentResult> {
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const { parseClientSegmentSettings, toClientSegmentJson } = await import(
+    "@/shared/dashboard/clientSegmentSettings"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
+
+  const clamped = parseClientSegmentSettings({
+    new_max_visits: input.newMaxVisits,
+    at_risk_days: input.atRiskDays,
+  });
+
+  const { error } = await ctx.supabase
+    .from("salons")
+    .update({ client_segment_settings: toClientSegmentJson(clamped) } as never)
+    .eq("id", ctx.salon.id);
+
+  if (error) {
+    console.error("[updateClientSegmentSettings]", error);
+    return { ok: false, error: "server_error" };
+  }
+  return {
+    ok: true,
+    newMaxVisits: clamped.newMaxVisits,
+    atRiskDays: clamped.atRiskDays,
+  };
 }
 
 /* ───────────── Booking lead time (min advance notice) ───────────── */
@@ -1051,7 +1134,7 @@ export async function updateBookingLeadMinutes(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const m = Math.round(Number(minutes));
   if (!Number.isFinite(m) || m < 0 || m > 1440) {
@@ -1129,7 +1212,7 @@ export async function updateReferenceImageEnabled(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error } = await ctx.supabase
     .from("salons")
@@ -1163,7 +1246,7 @@ export async function updateStaffSelectionEnabled(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error } = await ctx.supabase
     .from("salons")
@@ -1209,7 +1292,7 @@ export async function updateWalkinAutoAssign(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   // Cast: `walkin_auto_assign` is not yet in the auto-generated
   // Supabase types until the next regeneration.
@@ -1243,7 +1326,7 @@ export async function updateQueueDisplayMode(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error: upErr } = await ctx.supabase
     .from("salons")
@@ -1275,7 +1358,7 @@ export async function updatePhoneOtpEnabled(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error: upErr } = await ctx.supabase
     .from("salons")
@@ -1311,7 +1394,7 @@ export async function updateBookingVerificationMode(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error: upErr } = await ctx.supabase
     .from("salons")

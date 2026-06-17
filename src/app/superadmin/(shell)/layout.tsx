@@ -4,6 +4,7 @@ import { createClient } from "@/shared/lib/supabase/server";
 import { getSuperAdminRole } from "@/shared/lib/superadmin";
 import { SuperadminSidebar } from "@/components/superadmin/SuperadminSidebar";
 import { SuperadminBottomNav } from "@/components/superadmin/SuperadminBottomNav";
+import { SuperadminTopBar } from "@/components/superadmin/SuperadminTopBar";
 
 export const dynamic = "force-dynamic";
 
@@ -44,10 +45,28 @@ export default async function SuperadminShellLayout({
     notFound();
   }
 
+  // Soft two-factor gate: ONLY superadmins who have enrolled a verified TOTP
+  // factor are challenged (nextLevel resolves to 'aal2'). An un-enrolled account
+  // resolves to 'aal1' and is never prompted — so this can't lock anyone out.
+  // The challenge page lives at /superadmin/mfa (outside this shell group) so
+  // it isn't itself gated (no redirect loop). FAIL-OPEN: any error resolving the
+  // assurance level lets the request through rather than locking the panel.
+  let needsMfa = false;
+  try {
+    const { data: aal } =
+      await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    needsMfa = aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2";
+  } catch {
+    needsMfa = false;
+  }
+  if (needsMfa) redirect("/superadmin/mfa");
+
   return (
     <div className="min-h-dvh bg-nq-bg text-nq-foreground">
       <SuperadminSidebar role={role} />
       <SuperadminBottomNav role={role} />
+      {/* Mobile-only top bar with wordmark + sign-out; hidden at md+ where sidebar handles it */}
+      <SuperadminTopBar />
       <div className="md:pl-60 pb-14 md:pb-0">{children}</div>
     </div>
   );

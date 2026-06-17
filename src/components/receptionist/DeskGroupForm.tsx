@@ -22,8 +22,13 @@
  * ReceptionistCenter) on the same per-salon flag.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
+import {
+  loadLastGroup,
+  type RebookMember,
+} from "@/shared/dashboard/loadLastGroupAction";
 import {
   getDeskBookingData,
   createDeskGroup,
@@ -34,11 +39,13 @@ import {
   type GroupSmartScheduleResult,
 } from "@/shared/booking/loadGroupSmartSchedule";
 import type { GroupBookingMember } from "@/shared/booking/submitGroupBooking";
+import { addonLabel } from "@/shared/booking/serviceLabels";
 import {
   buildCapabilityMap,
   filterStaffCapableForService,
 } from "@/shared/booking/staffCapability";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
+import { salonToday } from "@/shared/lib/salonTime";
 import { GROUP_MAX_SIZE } from "@/shared/config/constants";
 import { MAX_WAVES } from "@/shared/booking/groupSchedulerCore";
 
@@ -55,6 +62,10 @@ type Props = {
   salonId: string;
   /** Dashboard language — matches the rest of the receptionist center. */
   language: "en" | "vi";
+  /** Salon IANA timezone — the date picker defaults/min must be the salon's
+   *  "today", not the device's (a VN +7 device would otherwise default an LA
+   *  salon to tomorrow). Mirrors DeskBookingForm. */
+  timezone: string;
   onClose: () => void;
   onCreated: () => void;
 };
@@ -75,7 +86,10 @@ const MIN_SIZE = 2;
 // per-salon from the loaded active staff so the desk and online never disagree.
 function maxGroupSizeFor(activeStaffCount: number): number {
   if (activeStaffCount <= 0) return MIN_SIZE;
-  return Math.max(MIN_SIZE, Math.min(activeStaffCount * MAX_WAVES, GROUP_MAX_SIZE));
+  return Math.max(
+    MIN_SIZE,
+    Math.min(activeStaffCount * MAX_WAVES, GROUP_MAX_SIZE),
+  );
 }
 
 // Bilingual copy kept local to the form (UI labels, not config) so it stays
@@ -88,6 +102,8 @@ const COPY = {
     loading: "Loading…",
     peopleLabel: "How many people?",
     member: (n: number) => `Guest ${n}`,
+    lead: "lead",
+    applyToAll: "Apply this service to everyone",
     namePlaceholder: (n: number) => `Guest ${n}`,
     nameLabel: "Name (optional)",
     service: "Service *",
@@ -95,9 +111,16 @@ const COPY = {
     staff: "Staff",
     anyStaff: "Any available",
     addons: "Add-ons (optional)",
-    organizer: "Organizer",
+    groupDetails: "Group details",
     phone: "Phone number * (one number for the whole group)",
-    organizerName: "Organizer name (optional)",
+    leadPhone: "Phone number * (the lead's — used for the whole group)",
+    returning: (vip: string, visits: string) =>
+      `✨ Returning customer${vip}${visits} — info filled in.`,
+    newCustomer: "New customer.",
+    vipTag: " · VIP",
+    visitsTag: (n: number) => ` · ${n} visits`,
+    rebookPill: (n: number) => `🔁 Rebook last group of ${n}`,
+    rebookDone: "Group prefilled — pick a date.",
     email: "Email (optional — for the confirmation)",
     date: "Date *",
     arrival: "Arrival time *",
@@ -151,6 +174,8 @@ const COPY = {
     loading: "Đang tải…",
     peopleLabel: "Mấy người?",
     member: (n: number) => `Khách ${n}`,
+    lead: "đại diện",
+    applyToAll: "Áp dụng dịch vụ này cho cả nhóm",
     namePlaceholder: (n: number) => `Khách ${n}`,
     nameLabel: "Tên (tuỳ chọn)",
     service: "Dịch vụ *",
@@ -158,9 +183,16 @@ const COPY = {
     staff: "Thợ",
     anyStaff: "Thợ nào cũng được",
     addons: "Dịch vụ thêm (tuỳ chọn)",
-    organizer: "Người đại diện",
+    groupDetails: "Thông tin chung",
     phone: "Số điện thoại * (1 số dùng cho cả nhóm)",
-    organizerName: "Tên người đại diện (tuỳ chọn)",
+    leadPhone: "Số điện thoại * (của đại diện — dùng cho cả nhóm)",
+    returning: (vip: string, visits: string) =>
+      `✨ Khách quen${vip}${visits} — đã điền sẵn.`,
+    newCustomer: "Khách mới.",
+    vipTag: " · VIP",
+    visitsTag: (n: number) => ` · ${n} lần ghé`,
+    rebookPill: (n: number) => `🔁 Đặt lại nhóm ${n} người gần nhất`,
+    rebookDone: "Đã điền sẵn nhóm — chọn ngày là xong.",
     email: "Email (tuỳ chọn — để gửi xác nhận)",
     date: "Ngày *",
     arrival: "Giờ đến *",
@@ -209,13 +241,15 @@ const COPY = {
   },
 } as const;
 
-function todayYmd(): string {
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
-}
-
 // `salonId` is passed to createDeskGroup for its salon-scope auth check.
-export default function DeskGroupForm({ slug, salonId, language, onClose, onCreated }: Props) {
+export default function DeskGroupForm({
+  slug,
+  salonId,
+  language,
+  timezone,
+  onClose,
+  onCreated,
+}: Props) {
   const tx = COPY[language === "vi" ? "vi" : "en"];
   const [data, setData] = useState<LoadData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -227,9 +261,16 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
   ]);
 
   const [phone, setPhone] = useState("");
-  const [organizerName, setOrganizerName] = useState("");
   const [email, setEmail] = useState("");
-  const [ymd, setYmd] = useState(todayYmd());
+  const [leadLookupMsg, setLeadLookupMsg] = useState<string | null>(null);
+  // "Đặt lại nhóm gần nhất": last group this lead organized, offered as a prefill.
+  const [lastGroup, setLastGroup] = useState<RebookMember[] | null>(null);
+  const [rebookMsg, setRebookMsg] = useState<string | null>(null);
+  // Default to the salon's local "today" (not the device's) — a VN +7 device
+  // would otherwise default an LA salon to tomorrow + show past slots.
+  const [ymd, setYmd] = useState(() =>
+    salonToday(timezone, new Date().toISOString()),
+  );
   const [arrivalKind, setArrivalKind] = useState<ArrivalKind>("morning");
   const [specificTime, setSpecificTime] = useState("");
   const [seatTogether, setSeatTogether] = useState(true);
@@ -317,6 +358,82 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
     [capability],
   );
 
+  // Returning-customer recognition for the LEAD (đại diện), phone-first — mirrors
+  // DeskBookingForm + the online group flow. Looking up the lead's phone fills
+  // Guest 1's name (and service/staff when empty) so the receptionist doesn't
+  // retype a known customer. Debounced; only fills blank fields.
+  const lookupSeq = useRef(0);
+  useEffect(() => {
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 8) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear hint when phone too short
+      setLeadLookupMsg(null);
+      setLastGroup(null);
+      return;
+    }
+    const seq = ++lookupSeq.current;
+    const t = setTimeout(async () => {
+      // Offer to rebook the last group this lead organized (>= 2 members).
+      void loadLastGroup(slug, phone).then((g) => {
+        if (seq !== lookupSeq.current) return;
+        setLastGroup(
+          g.ok && g.found && g.memberCount >= 2 ? g.members : null,
+        );
+      });
+      const res = await lookupClientByPhone(slug, phone);
+      if (seq !== lookupSeq.current) return;
+      // A name to show only if the profile actually carries one (a known
+      // customer can exist without a stored name, e.g. an old import). Don't
+      // claim "đã điền sẵn" when we filled nothing.
+      const resolvedName = res.ok && res.found ? (res.profile.name ?? "").trim() : "";
+      if (res.ok && res.found && resolvedName) {
+        const p = res.profile;
+        setMembers((prev) => {
+          const next = prev.slice();
+          const lead = next[0];
+          if (!lead) return prev;
+          next[0] = {
+            ...lead,
+            name: lead.name || resolvedName,
+            serviceId: lead.serviceId || p.top_service?.id || "",
+            preferredStaffId: lead.preferredStaffId ?? p.top_staff?.id ?? null,
+          };
+          return next;
+        });
+        if (p.email && !email) setEmail(p.email);
+        setLeadLookupMsg(
+          tx.returning(
+            p.is_vip ? tx.vipTag : "",
+            p.visit_count ? tx.visitsTag(p.visit_count) : "",
+          ),
+        );
+      } else {
+        setLeadLookupMsg(tx.newCustomer);
+      }
+    }, 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fill-when-empty; re-running on members/email change would loop
+  }, [phone, slug]);
+
+  // Prefill the whole party from the lead's last group (one tap), then the
+  // receptionist just picks a date. Clamped to the per-salon size ceiling.
+  const applyLastGroup = useCallback(() => {
+    if (!lastGroup || lastGroup.length === 0) return;
+    const clamped = lastGroup.slice(0, Math.max(MIN_SIZE, Math.min(maxSize, lastGroup.length)));
+    setSize(clamped.length);
+    setMembers(
+      clamped.map((m) => ({
+        name: m.name,
+        serviceId: m.serviceId,
+        preferredStaffId: m.preferredStaffId,
+        addonServiceIds: m.addonServiceIds.slice(),
+      })),
+    );
+    setScheduleResult(null);
+    setError(null);
+    setRebookMsg(tx.rebookDone);
+  }, [lastGroup, maxSize, tx]);
+
   const toggleAddon = useCallback((i: number, addonId: string) => {
     setMembers((prev) => {
       const next = prev.slice();
@@ -332,8 +449,31 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
     setScheduleResult(null);
   }, []);
 
+  // Quick-fill: copy the lead (guest 1)'s service + add-ons to everyone — the
+  // common "whole group wants the same thing" case. Preferred staff is reset to
+  // auto for the copied guests (one tech can't serve all at once, and the lead's
+  // tech may not even do the new service); each guest can still override after.
+  const applyServiceToAll = useCallback(() => {
+    setMembers((prev) => {
+      const lead = prev[0];
+      if (!lead?.serviceId) return prev;
+      return prev.map((m, idx) =>
+        idx === 0
+          ? m
+          : {
+              ...m,
+              serviceId: lead.serviceId,
+              addonServiceIds: [...lead.addonServiceIds],
+              preferredStaffId: null,
+            },
+      );
+    });
+    setScheduleResult(null);
+  }, []);
+
   const arrivalPref: GroupArrivalPreference = useMemo(() => {
-    if (arrivalKind === "specific") return { kind: "specific", time: specificTime };
+    if (arrivalKind === "specific")
+      return { kind: "specific", time: specificTime };
     return { kind: arrivalKind };
   }, [arrivalKind, specificTime]);
 
@@ -421,11 +561,16 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
           const hh = parts.find((p) => p.type === "hour")?.value ?? "00";
           const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
           const time24 = `${hh}:${mm}`;
+          // Identity Layer: only the lead/đại diện (member 0) carries the
+          // contact phone+email. Other guests have no contact of their own, so
+          // they go in with an empty phone and the server marks them
+          // is_party_member — instead of copying the lead's number onto every
+          // row (the root cause of one phone fanning out into many names).
+          const isLead = a.memberIndex === 0;
           return {
             name: draft?.name.trim() || tx.namePlaceholder(a.memberIndex + 1),
-            // One organizer phone for every member (same as the public flow).
-            phone,
-            email: email.trim() || undefined,
+            phone: isLead ? phone : "",
+            email: isLead ? email.trim() || undefined : undefined,
             serviceId: draft?.serviceId ?? "",
             staffId: a.staffId,
             date: ymd,
@@ -502,7 +647,9 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-nq-foreground">{tx.heading}</h2>
+          <h2 className="text-base font-semibold text-nq-foreground">
+            {tx.heading}
+          </h2>
           <button
             onClick={onClose}
             className="text-nq-muted hover:text-nq-foreground"
@@ -522,18 +669,19 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
             <div>
               <label className={labelCls}>{tx.peopleLabel}</label>
               <div className="flex flex-wrap gap-1.5">
-                {Array.from({ length: maxSize - MIN_SIZE + 1 }, (_, k) => k + MIN_SIZE).map(
-                  (n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => applySize(n)}
-                      className={pillCls(size === n)}
-                    >
-                      {n}
-                    </button>
-                  ),
-                )}
+                {Array.from(
+                  { length: maxSize - MIN_SIZE + 1 },
+                  (_, k) => k + MIN_SIZE,
+                ).map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => applySize(n)}
+                    className={pillCls(size === n)}
+                  >
+                    {n}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -552,7 +700,45 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
                   >
                     <p className="mb-2 text-xs font-semibold text-nq-foreground">
                       {tx.member(i + 1)}
+                      {i === 0 ? (
+                        <span className="ml-1 font-normal text-nq-primary">
+                          · {tx.lead}
+                        </span>
+                      ) : null}
                     </p>
+                    {/* Lead enters phone FIRST (phone-first) — one number for the
+                        whole group, with returning-customer recognition. */}
+                    {i === 0 ? (
+                      <div className="mb-2">
+                        <input
+                          className={inputCls}
+                          inputMode="tel"
+                          placeholder="+1 (604) 555-1234"
+                          aria-label={tx.leadPhone}
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                        />
+                        {leadLookupMsg ? (
+                          <p className="mt-1 text-[11px] text-nq-primary">
+                            {leadLookupMsg}
+                          </p>
+                        ) : null}
+                        {/* One-tap: prefill the lead's last group for a new date. */}
+                        {lastGroup && lastGroup.length >= 2 ? (
+                          <button
+                            type="button"
+                            onClick={applyLastGroup}
+                            data-testid="rebook-last-group"
+                            className="mt-2 rounded-full border border-nq-primary/50 bg-nq-primary/10 px-3 py-1.5 text-xs font-medium text-nq-primary hover:bg-nq-primary/20"
+                          >
+                            {tx.rebookPill(lastGroup.length)}
+                          </button>
+                        ) : null}
+                        {rebookMsg ? (
+                          <p className="mt-1 text-[11px] text-nq-muted">{rebookMsg}</p>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <input
                       className={`${inputCls} mb-2`}
                       placeholder={tx.namePlaceholder(i + 1)}
@@ -560,11 +746,25 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
                       value={m.name}
                       onChange={(e) => patchMember(i, { name: e.target.value })}
                     />
+                    {/* Lead's email (optional) lives with their contact info, not
+                        in a separate section — auto-filled by the phone lookup. */}
+                    {i === 0 ? (
+                      <input
+                        className={`${inputCls} mb-2`}
+                        inputMode="email"
+                        placeholder={tx.email}
+                        aria-label={tx.email}
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                      />
+                    ) : null}
                     <select
                       className={`${inputCls} mb-2`}
                       aria-label={tx.service}
                       value={m.serviceId}
-                      onChange={(e) => patchMember(i, { serviceId: e.target.value })}
+                      onChange={(e) =>
+                        patchMember(i, { serviceId: e.target.value })
+                      }
                     >
                       <option value="">{tx.selectService}</option>
                       {data.services.map((s) => (
@@ -594,7 +794,9 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
                     </select>
                     {data.addOns.length > 0 ? (
                       <div>
-                        <p className="mb-1 text-[11px] text-nq-muted">{tx.addons}</p>
+                        <p className="mb-1 text-[11px] text-nq-muted">
+                          {tx.addons}
+                        </p>
                         <div className="flex flex-wrap gap-1.5">
                           {data.addOns.map((a) => {
                             const on = m.addonServiceIds.includes(a.id);
@@ -605,54 +807,42 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
                                 onClick={() => toggleAddon(i, a.id)}
                                 className={pillCls(on)}
                               >
-                                {a.name}
+                                {on ? "✓ " : "+ "}
+                                {addonLabel(a)}
                               </button>
                             );
                           })}
                         </div>
                       </div>
                     ) : null}
+                    {i === 0 && members.length > 1 && m.serviceId ? (
+                      <button
+                        type="button"
+                        data-testid="group-apply-service-to-all"
+                        onClick={applyServiceToAll}
+                        className="mt-2 w-full rounded-md border border-nq-primary/40 bg-nq-primary/10 py-1.5 text-xs font-semibold text-nq-primary transition hover:bg-nq-primary/15"
+                      >
+                        ↓ {tx.applyToAll}
+                      </button>
+                    ) : null}
                   </div>
                 );
               })}
             </div>
 
-            {/* Step 3 — shared organizer + date + arrival */}
+            {/* Step 3 — group-level scheduling. Contact info (phone/name/email)
+                lives entirely in the lead block above; there is no separate
+                organizer name/email here (it duplicated the lead + was unused). */}
             <div className="space-y-3 rounded-lg border border-nq-muted/20 bg-nq-bg p-3">
-              <p className="text-xs font-semibold text-nq-foreground">{tx.organizer}</p>
-              <div>
-                <label className={labelCls}>{tx.phone}</label>
-                <input
-                  className={inputCls}
-                  inputMode="tel"
-                  placeholder="+1 (604) 555-1234"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className={labelCls}>{tx.organizerName}</label>
-                <input
-                  className={inputCls}
-                  value={organizerName}
-                  onChange={(e) => setOrganizerName(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className={labelCls}>{tx.email}</label>
-                <input
-                  className={inputCls}
-                  inputMode="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
+              <p className="text-xs font-semibold text-nq-foreground">
+                {tx.groupDetails}
+              </p>
               <div>
                 <label className={labelCls}>{tx.date}</label>
                 <input
                   type="date"
                   className={`${inputCls} [color-scheme:dark]`}
-                  min={todayYmd()}
+                  min={salonToday(timezone, new Date().toISOString())}
                   value={ymd}
                   onChange={(e) => {
                     setYmd(e.target.value);
@@ -772,7 +962,9 @@ export default function DeskGroupForm({ slug, salonId, language, onClose, onCrea
                               : ""}
                           </span>
                           {total ? (
-                            <span className="text-xs text-nq-muted">{total}</span>
+                            <span className="text-xs text-nq-muted">
+                              {total}
+                            </span>
                           ) : null}
                         </div>
                         <ul className="mt-1.5 space-y-0.5">

@@ -30,25 +30,36 @@ import { BookingLeadSettings } from "@/components/dashboard/BookingLeadSettings"
 import { GroupTogetherSettings } from "@/components/dashboard/GroupTogetherSettings";
 import { ReferenceImageSettings } from "@/components/dashboard/ReferenceImageSettings";
 import { AutoNoShowSettings } from "@/components/dashboard/AutoNoShowSettings";
+import { ClientSegmentSettings } from "@/components/dashboard/ClientSegmentSettings";
 import { WinBackSettings } from "@/components/dashboard/WinBackSettings";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
+import {
+  SettingsCategory,
+  SettingsJumpBar,
+} from "@/components/dashboard/SettingsCategory";
 import { Badge } from "@/components/ui/Badge";
 import { GearIcon } from "@/components/ui/icons/GearIcon";
 import type { DashboardModulesConfig } from "@/shared/dashboard/dashboardModules";
 import type { PresetKey } from "@/shared/dashboard/dashboardPresets";
 import { getUserMessages } from "@/shared/i18n/user";
 import { OwnerNotificationCard } from "@/components/dashboard/OwnerNotificationCard";
+import { StaffNotificationCard } from "@/components/dashboard/StaffNotificationCard";
+import { AIReportCard } from "@/components/dashboard/AIReportCard";
+import { GooglePlaceIdCard } from "@/components/dashboard/GooglePlaceIdCard";
 import { cn } from "@/shared/lib/cn";
 import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { MobileAccountCard } from "@/components/dashboard/MobileAccountCard";
+import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
 
 export function SalonSettingsHub({
   slug,
   dashboardModules,
   dashboardPreset,
   canEditDashboardModules,
+  canManageSalonSettings,
   salonEmail,
   emailVerified,
   subscriptionPlan,
@@ -63,6 +74,7 @@ export function SalonSettingsHub({
   reminder3hEnabled,
   smsRemindersEnabled,
   googleReviewUrl,
+  googlePlaceId,
   voiceAiEnabled,
   voiceAiPersonaName,
   vertical,
@@ -74,11 +86,19 @@ export function SalonSettingsHub({
   referenceImageEnabled,
   autoNoShowMinutes,
   winBackEnabled,
+  clientNewMaxVisits,
+  clientAtRiskDays,
+  userEmail,
+  role,
+  salonName,
+  salons,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
   dashboardPreset: PresetKey;
   canEditDashboardModules: boolean;
+  /** owner OR admin — can view/edit all operational settings except Plan & module layout */
+  canManageSalonSettings: boolean;
   salonEmail: string | null;
   emailVerified: boolean;
   subscriptionPlan: SubscriptionPlan;
@@ -93,6 +113,7 @@ export function SalonSettingsHub({
   smsRemindersEnabled: boolean;
   bookingVerificationMode?: string;
   googleReviewUrl: string | null;
+  googlePlaceId: string | null;
   voiceAiEnabled: boolean;
   voiceAiPersonaName: string;
   vertical: string;
@@ -104,6 +125,12 @@ export function SalonSettingsHub({
   referenceImageEnabled: boolean;
   autoNoShowMinutes: number;
   winBackEnabled: boolean;
+  clientNewMaxVisits: number;
+  clientAtRiskDays: number;
+  userEmail: string | null;
+  role: string;
+  salonName?: string;
+  salons?: OwnerSalonSummary[];
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -166,6 +193,7 @@ export function SalonSettingsHub({
     { href: `${base}/staff`, label: t.sectionStaff },
     { href: `${base}/hours`, label: t.sectionHours },
     { href: `${base}/address`, label: t.sectionAddress },
+    { href: `${base}/manager-briefing`, label: t.sectionAiManager },
   ];
 
   const myPageHref = `/dashboard/${encodeURIComponent(slug)}/settings/my-page`;
@@ -221,7 +249,9 @@ export function SalonSettingsHub({
                 )}
               >
                 <span>{label}</span>
-                <span className="shrink-0 text-nq-muted" aria-hidden>→</span>
+                <span className="shrink-0 text-nq-muted" aria-hidden>
+                  →
+                </span>
               </Link>
             </li>
           ))}
@@ -233,9 +263,38 @@ export function SalonSettingsHub({
           className="mt-2 flex min-h-[3.25rem] touch-manipulation items-center justify-between gap-4 rounded-2xl border border-[#d4af37]/30 bg-[#d4af37]/5 px-4 py-3 text-base font-medium text-[#d4af37] ring-1 ring-inset ring-[#d4af37]/10 transition-colors hover:border-[#d4af37]/50 hover:bg-[#d4af37]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37]/45"
         >
           <span>My Page</span>
-          <span className="shrink-0" aria-hidden>→</span>
+          <span className="shrink-0" aria-hidden>
+            →
+          </span>
         </Link>
 
+        {/* ── Jump bar — quick anchors to each category ───────── */}
+        <SettingsJumpBar
+          label={t.categories.jumpLabel}
+          items={[
+            { id: "cat-notifications", title: t.categories.notifications.title },
+            ...(canManageSalonSettings
+              ? [
+                  { id: "cat-brand", title: t.categories.brand.title },
+                  { id: "cat-booking", title: t.categories.booking.title },
+                  {
+                    id: "cat-integrations",
+                    title: t.categories.integrations.title,
+                  },
+                ]
+              : []),
+            ...(canManageSalonSettings
+              ? [{ id: "cat-plan", title: t.categories.plan.title }]
+              : []),
+          ]}
+        />
+
+        {/* ══ Category: Notifications & reminders ══════════════ */}
+        <SettingsCategory
+          id="cat-notifications"
+          title={t.categories.notifications.title}
+          subtitle={t.categories.notifications.subtitle}
+        >
         {/* ── Email verification ──────────────────────────────── */}
         <section
           data-testid="settings-email-verification"
@@ -265,7 +324,9 @@ export function SalonSettingsHub({
           ) : null}
           {salonEmail ? (
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="break-all text-sm text-nq-foreground">{salonEmail}</span>
+              <span className="break-all text-sm text-nq-foreground">
+                {salonEmail}
+              </span>
               {emailVerified ? (
                 <Badge
                   data-testid="settings-email-verified-badge"
@@ -287,10 +348,14 @@ export function SalonSettingsHub({
               )}
             </div>
           ) : (
-            <p className="mt-2 text-sm text-nq-muted">{t.emailVerification.noEmailHint}</p>
+            <p className="mt-2 text-sm text-nq-muted">
+              {t.emailVerification.noEmailHint}
+            </p>
           )}
           {salonEmail && !emailVerified ? (
-            <p className="mt-1 text-xs text-nq-muted">{t.emailVerification.pendingHint}</p>
+            <p className="mt-1 text-xs text-nq-muted">
+              {t.emailVerification.pendingHint}
+            </p>
           ) : null}
         </section>
 
@@ -299,15 +364,19 @@ export function SalonSettingsHub({
         </p>
 
         {/* ── Reminder toggle ─────────────────────────────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <section
             data-testid="settings-reminder-toggle"
             className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-4"
           >
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-nq-foreground">{t.reminders.autoTitle}</p>
-                <p className="mt-0.5 text-xs text-nq-muted">{t.reminders.autoHint}</p>
+                <p className="text-sm font-semibold text-nq-foreground">
+                  {t.reminders.autoTitle}
+                </p>
+                <p className="mt-0.5 text-xs text-nq-muted">
+                  {t.reminders.autoHint}
+                </p>
               </div>
               <Toggle
                 checked={reminderOn}
@@ -324,16 +393,33 @@ export function SalonSettingsHub({
               aria-expanded={reminderAdvOpen}
             >
               {t.reminders.advancedToggle}
-              <span aria-hidden className="text-[10px]">{reminderAdvOpen ? "▲" : "▼"}</span>
+              <span aria-hidden className="text-[10px]">
+                {reminderAdvOpen ? "▲" : "▼"}
+              </span>
             </button>
 
             {reminderAdvOpen && (
               <div className="mt-3 flex flex-col gap-3 border-t border-nq-border/20 pt-3">
                 {(
                   [
-                    { key: "24h", label: t.reminders.email24h, checked: adv24h, set: setAdv24h },
-                    { key: "3h",  label: t.reminders.email3h,  checked: adv3h,  set: setAdv3h },
-                    { key: "sms", label: t.reminders.sms3h,    checked: advSms, set: setAdvSms },
+                    {
+                      key: "24h",
+                      label: t.reminders.email24h,
+                      checked: adv24h,
+                      set: setAdv24h,
+                    },
+                    {
+                      key: "3h",
+                      label: t.reminders.email3h,
+                      checked: adv3h,
+                      set: setAdv3h,
+                    },
+                    {
+                      key: "sms",
+                      label: t.reminders.sms3h,
+                      checked: advSms,
+                      set: setAdvSms,
+                    },
                   ] as const
                 ).map(({ key, label, checked, set }) => (
                   <label
@@ -360,7 +446,9 @@ export function SalonSettingsHub({
                     {reminderPending ? t.reminders.saving : t.reminders.save}
                   </button>
                   {advSaved ? (
-                    <span className="text-xs text-nq-success">{t.reminders.saved}</span>
+                    <span className="text-xs text-nq-success">
+                      {t.reminders.saved}
+                    </span>
                   ) : null}
                 </div>
               </div>
@@ -368,23 +456,46 @@ export function SalonSettingsHub({
           </section>
         ) : null}
 
-        {/* ── Business type (vertical) ────────────────────────── */}
-        {canEditDashboardModules ? (
-          <BusinessTypeSettings slug={slug} initialVertical={vertical} />
+        {/* ── Manager + staff notification cards ──────────────── */}
+        {canManageSalonSettings ? (
+          <OwnerNotificationCard slug={slug} />
         ) : null}
+        {canManageSalonSettings ? (
+          <StaffNotificationCard slug={slug} />
+        ) : null}
+        {canManageSalonSettings ? (
+          <AIReportCard slug={slug} />
+        ) : null}
+        </SettingsCategory>
 
-        {/* ── Booking page style (look presets) ───────────────── */}
-        {canEditDashboardModules ? (
+        {/* ══ Category: Brand & booking page ═══════════════════ */}
+        {canManageSalonSettings ? (
+        <SettingsCategory
+          id="cat-brand"
+          title={t.categories.brand.title}
+          subtitle={t.categories.brand.subtitle}
+        >
+          {/* ── Business type (vertical) ──────────────────────── */}
+          <BusinessTypeSettings slug={slug} initialVertical={vertical} />
+          {/* ── Booking page style (look presets) ─────────────── */}
           <LookPresetPicker
             slug={slug}
             presets={lookPresets}
             currentBrandColor={brandColor}
             currentThemeMode={themeMode}
           />
+        </SettingsCategory>
         ) : null}
 
+        {/* ══ Category: Booking & queue ════════════════════════ */}
+        {canManageSalonSettings ? (
+        <SettingsCategory
+          id="cat-booking"
+          title={t.categories.booking.title}
+          subtitle={t.categories.booking.subtitle}
+        >
         {/* ── Let customers choose a provider ─────────────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <StaffSelectionSettings
             slug={slug}
             initialEnabled={staffSelectionEnabled}
@@ -392,8 +503,11 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ── Minimum advance notice (booking lead time) ──────── */}
-        {canEditDashboardModules ? (
-          <BookingLeadSettings slug={slug} initialMinutes={bookingLeadMinutes} />
+        {canManageSalonSettings ? (
+          <BookingLeadSettings
+            slug={slug}
+            initialMinutes={bookingLeadMinutes}
+          />
         ) : null}
 
         {/* ── Group booking "togetherness" threshold ──────────── */}
@@ -405,7 +519,7 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ── Reference-image upload toggle ───────────────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <ReferenceImageSettings
             slug={slug}
             initialEnabled={referenceImageEnabled}
@@ -413,46 +527,76 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ── Auto no-show (opt-in) ───────────────────────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <AutoNoShowSettings slug={slug} initialMinutes={autoNoShowMinutes} />
         ) : null}
 
-        {/* ── Win-back email after no-show ────────────────────── */}
-        {canEditDashboardModules ? (
-          <WinBackSettings slug={slug} initialEnabled={winBackEnabled} />
+        {/* ── Client lifecycle segment thresholds ─────────────── */}
+        {canManageSalonSettings ? (
+          <ClientSegmentSettings
+            slug={slug}
+            initialNewMaxVisits={clientNewMaxVisits}
+            initialAtRiskDays={clientAtRiskDays}
+          />
         ) : null}
 
+        {/* ── Win-back email after no-show ────────────────────── */}
+        {canManageSalonSettings ? (
+          <WinBackSettings slug={slug} initialEnabled={winBackEnabled} />
+        ) : null}
+        </SettingsCategory>
+        ) : null}
+
+        {/* ══ Category: Integrations ═══════════════════════════ */}
+        {canManageSalonSettings ? (
+        <SettingsCategory
+          id="cat-integrations"
+          title={t.categories.integrations.title}
+          subtitle={t.categories.integrations.subtitle}
+          defaultOpen={false}
+        >
         {/* ── Custom domain ───────────────────────────────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <DomainSettings slug={slug} initial={domainInfo} />
         ) : null}
 
         {/* ── Google Review URL ───────────────────────────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <GoogleReviewSettings
             slug={slug}
             initialValue={googleReviewUrl ?? ""}
           />
         ) : null}
 
-        {/* ── Wix integration (self-service connect) ──────────── */}
-        {canEditDashboardModules ? <WixIntegrationSettings slug={slug} /> : null}
-
-        {/* ── Voice AI persona name (chỉ hiện khi voice AI được bật) ── */}
-        {canEditDashboardModules && voiceAiEnabled ? (
-          <VoiceAiSettings
+        {/* ── AI Review Responder — Google Place ID ───────────── */}
+        {canManageSalonSettings ? (
+          <GooglePlaceIdCard
             slug={slug}
-            initialName={voiceAiPersonaName}
+            initialPlaceId={googlePlaceId}
           />
         ) : null}
 
-        {/* ── Pricing ─────────────────────────────────────────── */}
-        {canEditDashboardModules ? (
-          <div className="mt-4">
-            <OwnerNotificationCard slug={slug} />
-          </div>
+        {/* ── Wix integration (self-service connect) ──────────── */}
+        {canManageSalonSettings ? (
+          <WixIntegrationSettings slug={slug} />
         ) : null}
 
+        {/* ── Voice AI persona name (chỉ hiện khi voice AI được bật) ── */}
+        {canManageSalonSettings && voiceAiEnabled ? (
+          <VoiceAiSettings slug={slug} initialName={voiceAiPersonaName} />
+        ) : null}
+        </SettingsCategory>
+        ) : null}
+
+        {/* ══ Category: Plan & advanced ════════════════════════ */}
+        {canManageSalonSettings ? (
+        <SettingsCategory
+          id="cat-plan"
+          title={t.categories.plan.title}
+          subtitle={t.categories.plan.subtitle}
+          defaultOpen={false}
+        >
+        {/* ── Subscription plan (owner-only: billing) ─────────── */}
         {canEditDashboardModules ? (
           <PricingPanel
             slug={slug}
@@ -462,7 +606,7 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ── Advanced settings (collapsible) ─────────────────── */}
-        {canEditDashboardModules ? (
+        {canManageSalonSettings ? (
           <section className="mt-4">
             <button
               type="button"
@@ -471,7 +615,9 @@ export function SalonSettingsHub({
               aria-expanded={advancedOpen}
             >
               <span>Advanced settings</span>
-              <span aria-hidden className="text-xs">{advancedOpen ? "▲" : "▼"}</span>
+              <span aria-hidden className="text-xs">
+                {advancedOpen ? "▲" : "▼"}
+              </span>
             </button>
 
             {advancedOpen && (
@@ -484,23 +630,32 @@ export function SalonSettingsHub({
                 <WalkinAutoAssignSettings
                   slug={slug}
                   initialValue={walkinAutoAssign}
-                  canEdit={canEditDashboardModules}
+                  canEdit={canManageSalonSettings}
                 />
                 <QueueDisplayModeSettings
                   slug={slug}
                   initialValue={queueDisplayMode}
-                  canEdit={canEditDashboardModules}
+                  canEdit={canManageSalonSettings}
                 />
                 <PhoneOtpSettings
                   slug={slug}
                   initialValue={phoneOtpEnabled}
-                  canEdit={canEditDashboardModules}
+                  canEdit={canManageSalonSettings}
                 />
                 <BookingVerificationSettings
                   slug={slug}
-                  initialMode={(bookingVerificationMode as "never" | "auto" | "always_otp" | "always_deposit" | "deposit_first") ?? "never"}
-                  canEdit={canEditDashboardModules}
-                  plan={subscriptionPlan as "free" | "pro" | "studio" | "enterprise"}
+                  initialMode={
+                    (bookingVerificationMode as
+                      | "never"
+                      | "auto"
+                      | "always_otp"
+                      | "always_deposit"
+                      | "deposit_first") ?? "never"
+                  }
+                  canEdit={canManageSalonSettings}
+                  plan={
+                    subscriptionPlan as "free" | "pro" | "studio" | "enterprise"
+                  }
                 />
               </div>
             )}
@@ -508,17 +663,17 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ── Power-user panels (only visible at ?advanced=true) ── */}
-        {advancedMode && canEditDashboardModules ? (
+        {advancedMode && canManageSalonSettings ? (
           <>
             <DashboardModulesSettings
               slug={slug}
               initialModules={dashboardModules}
-              canEdit={canEditDashboardModules}
+              canEdit={canManageSalonSettings}
             />
             <DashboardPresetSettings
               slug={slug}
               initialPreset={dashboardPreset}
-              canEdit={canEditDashboardModules}
+              canEdit={canManageSalonSettings}
             />
             <AuditLogViewer
               slug={slug}
@@ -526,6 +681,19 @@ export function SalonSettingsHub({
             />
           </>
         ) : null}
+        </SettingsCategory>
+        ) : null}
+
+        {/* ══ Mobile-only: Account / Sign out ══════════════════
+            Desktop users reach Sign Out via the sidebar account menu.
+            This section is hidden on md+ screens. ══════════════ */}
+        <MobileAccountCard
+          userEmail={userEmail}
+          role={role}
+          slug={slug}
+          salonName={salonName}
+          salons={salons}
+        />
       </MobileStack>
     </ResponsiveShell>
   );

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveNoShowCardForBooking } from "@/shared/integrations/square/noshow";
+import { isRateLimited, RATE_LIMIT_IDS } from "@/shared/lib/rateLimit";
+import { isOverRateLimit, clientIp } from "@/shared/lib/inAppRateLimit";
 
 export const runtime = "nodejs";
 
@@ -9,7 +11,12 @@ export const runtime = "nodejs";
  * Saves the card on file (no charge) so a no-show fee can be taken later.
  */
 export async function POST(req: NextRequest) {
-  let body: { bookingId?: string; sourceId?: string };
+  let body: {
+    bookingId?: string;
+    sourceId?: string;
+    consent?: boolean;
+    verificationToken?: string;
+  };
   try {
     body = await req.json();
   } catch {
@@ -17,11 +24,36 @@ export async function POST(req: NextRequest) {
   }
   const bookingId = String(body.bookingId ?? "");
   const sourceId = String(body.sourceId ?? "");
+  const consent = body.consent === true;
+  const verificationToken = body.verificationToken
+    ? String(body.verificationToken)
+    : undefined;
   if (!bookingId || !sourceId) {
     return NextResponse.json({ ok: false, error: "missing_fields" }, { status: 400 });
   }
+  // Anti card-testing — two layers: the Vercel WAF rule (fail-open until the
+  // rule exists) AND an app-level DB limiter (enforces on any plan): 6 attempts
+  // per IP+booking per minute.
+  const ip = clientIp(req);
+  if (
+    (await isRateLimited(RATE_LIMIT_IDS.cardSave, {
+      request: req,
+      rateLimitKey: `card-save:${bookingId}`,
+    })) ||
+    (await isOverRateLimit(`card-save:${ip}:${bookingId}`, 6, 60))
+  ) {
+    return NextResponse.json({ ok: false, error: "rate_limited" }, { status: 429 });
+  }
+  if (!consent) {
+    return NextResponse.json({ ok: false, error: "consent_required" }, { status: 400 });
+  }
   try {
-    const r = await saveNoShowCardForBooking(bookingId, sourceId);
+    const r = await saveNoShowCardForBooking(
+      bookingId,
+      sourceId,
+      consent,
+      verificationToken,
+    );
     return NextResponse.json(r, { status: r.ok ? 200 : 400 });
   } catch (e) {
     console.error("[square-save-card] error", e);

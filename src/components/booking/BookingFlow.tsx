@@ -30,6 +30,7 @@ import {
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import { resolveVertical } from "@/shared/verticals/registry";
+import { healthAckRequired, healthAckText } from "@/shared/lib/healthAck";
 import { formatBookingPriceReceipt } from "@/shared/booking/formatBookingPrice";
 import { salonTimezoneAbbreviation } from "@/shared/lib/salonTime";
 import {
@@ -101,6 +102,9 @@ type BookingFlowProps = {
   initialReturningCustomer?: ReturningCustomer | null;
   /** Name captured at the gate (returning name or new-customer typed). */
   initialName?: string;
+  /** SMS consent captured at the gate (after the phone). Pre-satisfies the
+   *  confirm-step consent so it isn't asked twice. */
+  initialSmsConsent?: boolean;
 };
 
 export function BookingFlow({
@@ -117,10 +121,15 @@ export function BookingFlow({
   initialPhone = "",
   initialReturningCustomer = null,
   initialName = "",
+  initialSmsConsent = false,
 }: BookingFlowProps) {
   const reducedMotion = useReducedMotion();
   const vertical = resolveVertical(salon.vertical);
   const techRoleLabel = vertical.staffRoleLabel[language];
+  // Mandatory health-acknowledgment text (null = not required for this salon).
+  const healthAckTextStr = healthAckRequired(salon.healthAckRequired, salon.vertical)
+    ? healthAckText(language, salon.name, salon.vertical)
+    : null;
   const flow = useBookingFlowState(
     t,
     shopSlug,
@@ -135,6 +144,7 @@ export function BookingFlow({
     initialReturningCustomer,
     initialName,
     language,
+    initialSmsConsent,
   );
 
   const [loyaltyCard, setLoyaltyCard] = useState<LoyaltyCard | null>(null);
@@ -381,6 +391,9 @@ export function BookingFlow({
             clientEmail={flow.clientEmail}
             waitlistSubmitting={flow.waitlistSubmitting}
             waitlistSlotJoined={flow.waitlistSlotJoined}
+            waitlistPreferredTime={flow.waitlistPreferredTime}
+            onWaitlistPreferredTimeChange={flow.setWaitlistPreferredTime}
+            waitlistTimeOptions={flow.waitlistTimeOptions}
             waitlistContactInvalid={flow.guestContactInvalid}
             scarcityHint={scarcityHint}
             error={flow.error}
@@ -396,6 +409,7 @@ export function BookingFlow({
         {flow.step === "info" ? (
           <BookingFlowInfoPanel
             t={t}
+            notesHint={vertical.intakeHint?.[language] ?? t.clientNotesOptionalHint}
             clientName={flow.clientName}
             clientEmail={flow.clientEmail}
             clientNotes={flow.clientNotes}
@@ -449,6 +463,8 @@ export function BookingFlow({
             t={t}
             shopSlug={shopSlug}
             clientPhone={flow.clientPhone}
+            clientEmail={flow.clientEmail}
+            emailChannelEnabled={salon.emailLinksEnabled !== false}
             stepDir={flow.stepDir}
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}
@@ -475,6 +491,8 @@ export function BookingFlow({
           <BookingFlowConfirmPanel
             t={t}
             shopLabel={flow.shopLabel}
+            shopSlug={shopSlug}
+            healthAckText={healthAckTextStr}
             service={flow.service}
             confirmTimeLabel={
               slotsTimezoneAbbr
@@ -501,7 +519,11 @@ export function BookingFlow({
             onAddonRepickTime={flow.addAddonAndRepickTime}
             onClearAddons={() => flow.setSelectedAddonIds([])}
             onBack={flow.backToInfo}
-            onConfirm={() => void flow.onConfirm()}
+            onConfirm={(extra) => void flow.onConfirm(extra)}
+            cardRequirement={flow.cardRequirement}
+            savedCard={flow.savedCard}
+            smsConsent={flow.smsConsent}
+            setSmsConsent={flow.setSmsConsent}
             onApplyVoucher={flow.handleApplyVoucher}
             onRemoveVoucher={flow.handleRemoveVoucher}
           />

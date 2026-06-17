@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { isOwner, isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
@@ -116,10 +117,10 @@ export async function addStaffMemberAction(
   if (!ctx) {
     return { success: false, error: "Not authorized for this salon" };
   }
-  if (ctx.role !== "owner" && ctx.role !== "admin") {
+  if (!isOwnerOrAdmin(ctx.role)) {
     return { success: false, error: "Only an owner or admin can add staff" };
   }
-  if (role === "admin" && ctx.role !== "owner") {
+  if (role === "admin" && !isOwner(ctx.role)) {
     return { success: false, error: "Only the owner can add an admin" };
   }
 

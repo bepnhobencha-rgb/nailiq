@@ -26,19 +26,37 @@ import {
   canUndoCancel,
 } from "@/shared/lib/salonMemberRole";
 import { loadBookingServicesForSalonSlug } from "@/shared/booking/loadBookingServices";
-import { salonWallTimeToUtcIso, salonDayRangeUtc } from "@/shared/lib/salonTime";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
+import {
+  salonWallTimeToUtcIso,
+  salonDayRangeUtc,
+} from "@/shared/lib/salonTime";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { pickBestStaffAmongFree } from "@/shared/booking/pickBestStaffAmongFree";
-import { buildCapabilityMap, filterStaffCapableForServices } from "@/shared/booking/staffCapability";
+import {
+  buildCapabilityMap,
+  filterStaffCapableForServices,
+} from "@/shared/booking/staffCapability";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
-import { createDepositForBooking, refundDeposit } from "@/shared/integrations/square/deposits";
+import { handleBookingProtection } from "@/shared/noshow/handleBookingProtection";
+import {
+  createDepositForBooking,
+  refundDeposit,
+} from "@/shared/integrations/square/deposits";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
-import { pushWixCancel, pushWixConfirm, pushWixDecline, pushWixCreate } from "@/shared/integrations/wix/writeback";
+import { sendCustomerLinkEmail } from "@/shared/lib/sendCustomerLinkEmail";
+import { logNotification } from "@/shared/lib/notificationLog";
+import {
+  pushWixCancel,
+  pushWixConfirm,
+  pushWixDecline,
+  pushWixCreate,
+} from "@/shared/integrations/wix/writeback";
 import {
   type EditBookingInput,
   type EditBookingResult,
@@ -77,6 +95,13 @@ function ctxActorRole(ctx: {
   // member ctx — role is one of the salon_members enum values, all of
   // which are valid ActorRole keys.
   return ctx.role as ActorRole;
+}
+
+/** Acting auth user id for the audit log. `null` on the demo-cookie path
+ * (no real auth user) — mirrors `ctxActorRole`'s demo handling so a desk
+ * action is attributed to a specific user whenever one exists. */
+function ctxActorUserId(ctx: { userId: string | null }): string | null {
+  return ctx.userId;
 }
 
 type OkBooking = { ok: true; bookingId: string };
@@ -166,10 +191,7 @@ export async function addWalkinToQueue(
       feature_flags: planFields.feature_flags,
     });
   } catch (e) {
-    if (
-      e instanceof Error &&
-      e.message === "monthly_booking_limit_reached"
-    ) {
+    if (e instanceof Error && e.message === "monthly_booking_limit_reached") {
       return fail("monthly_booking_limit_reached");
     }
     throw e;
@@ -278,7 +300,7 @@ export async function addWalkinToQueue(
   void logBookingEvent({
     bookingId: bid,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "walkin_added",
     payload: {
@@ -296,7 +318,7 @@ export async function addWalkinToQueue(
   void logBookingEvent({
     bookingId: bid,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "queue_joined",
     payload: { serviceId },
@@ -352,14 +374,16 @@ export async function assignWalkinToSlot(
 
   const { data: booking, error: bkErr } = await supabase
     .from("bookings")
-    .select(`
+    .select(
+      `
       id,
       salon_id,
       status,
       source,
       service_id,
       services!bookings_service_id_fkey ( duration_minutes, buffer_minutes )
-    `)
+    `,
+    )
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .maybeSingle();
@@ -397,24 +421,20 @@ export async function assignWalkinToSlot(
   };
   const join = booking.services as SvcDur | SvcDur[] | null | undefined;
   const serviceRow = Array.isArray(join) ? join[0] : join;
-  const duration = Math.round(
-    Number(serviceRow?.duration_minutes ?? 0),
-  );
+  const duration = Math.round(Number(serviceRow?.duration_minutes ?? 0));
   const buffer = Math.round(Number(serviceRow?.buffer_minutes ?? 0));
   if (!Number.isFinite(duration) || duration < 1) {
     return fail("invalid_duration");
   }
   if (!Number.isFinite(buffer) || buffer < 0) return fail("invalid_buffer");
 
-  const totalMin = duration + buffer;
+  const totalMin = serviceBlockMinutes(duration, buffer);
   const endMs = startMs + totalMin * 60 * 1000;
   const slotEndUtc = new Date(endMs).toISOString();
 
   const { data: existing, error: exErr } = await supabase
     .from("bookings")
-    .select(
-      "id, staff_id, start_time_utc, end_time_utc, status, client_name",
-    )
+    .select("id, staff_id, start_time_utc, end_time_utc, status, client_name")
     .eq("salon_id", ctx.salon.id)
     .eq("staff_id", staffId)
     .in("status", ["pending", "confirmed", "in_progress", "completed"]);
@@ -498,7 +518,7 @@ export async function assignWalkinToSlot(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_status_changed",
     payload: {
@@ -514,7 +534,7 @@ export async function assignWalkinToSlot(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "queue_assigned",
     payload: { staffId, slotStartUtc },
@@ -562,7 +582,7 @@ export async function cancelWaitingWalkin(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_cancelled",
     payload: { from: "waiting", reason: "walkin_removed" },
@@ -571,7 +591,7 @@ export async function cancelWaitingWalkin(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "queue_left",
     payload: { reason: "walkin_removed" },
@@ -627,7 +647,7 @@ export async function undoWalkinAssignment(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_status_changed",
     payload: { from: "confirmed", to: "waiting", reason: "undo_assign" },
@@ -682,7 +702,7 @@ export async function markWalkinInProgress(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_status_changed",
     payload: { from: "confirmed", to: "in_progress", startedAt },
@@ -694,8 +714,19 @@ export async function markWalkinInProgress(
 /** Grid / desk: pending | confirmed | in_progress → cancelled (atomic `status` guard). */
 export async function cancelDeskBooking(
   slug: string,
-  input: { salonId: string; bookingId: string; refundDeposit?: boolean },
-): Promise<{ ok: true; depositRefunded?: boolean; depositRefundError?: string } | { ok: false; error: string }> {
+  input: {
+    salonId: string;
+    bookingId: string;
+    refundDeposit?: boolean;
+    /** Channels to notify the customer on. When set, the cancel notification is
+     *  ENQUEUED (not sent inline) with a short grace window so an Undo can cancel
+     *  it before the cron delivers it. Omitted/empty → no customer notification. */
+    notify?: { sms?: boolean; email?: boolean };
+  },
+): Promise<
+  | { ok: true; depositRefunded?: boolean; depositRefundError?: string }
+  | { ok: false; error: string }
+> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
 
@@ -721,7 +752,7 @@ export async function cancelDeskBooking(
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .in("status", ["pending", "confirmed", "in_progress"])
-    .select("id")
+    .select("id, service_id")
     .maybeSingle();
 
   if (upErr) {
@@ -743,23 +774,72 @@ export async function cancelDeskBooking(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_cancelled",
     payload: { reason: "desk_cancel" },
   });
+
+  // Enqueue the customer cancel notification with a 20s grace window. A durable
+  // queue (not a client timer): survives the tab closing, the cron delivers it,
+  // and undoCancelBooking flips it to 'cancelled' if the desk reverses within
+  // the window. Service-role insert (RLS denies anon/auth on this table).
+  const notifySms = input.notify?.sms === true;
+  const notifyEmail = input.notify?.email === true;
+  if (notifySms || notifyEmail) {
+    const sr = createServiceRoleClient();
+    const sendAfter = new Date(Date.now() + 20_000).toISOString();
+    const { error: enqErr } = await sr.from("scheduled_notifications").insert({
+      salon_id: ctx.salon.id,
+      booking_id: bookingId,
+      event: "cancel",
+      channels: { sms: notifySms, email: notifyEmail },
+      send_after: sendAfter,
+    } as never);
+    if (enqErr)
+      console.error("[cancelDeskBooking] enqueue notify failed", enqErr);
+  }
 
   // Write-back: if this booking came from Wix, cancel it there too. after() guarantees the
   // Wix call runs to completion after the response (a bare `void` can be cut off by the
   // serverless freeze) without blocking the desk.
   after(() => pushWixCancel(ctx.salon.id, bookingId));
 
+  // Slot recovery — flag the next matching waitlist entry + send them the claim
+  // link. Mirrors the same pattern used in markNoShowBooking. Best-effort;
+  // never fail the cancel on a notify hiccup.
+  try {
+    const svcId = (updated as { service_id?: string | null }).service_id;
+    const svc = createServiceRoleClient();
+    const { data: wl } = await svc.rpc("notify_waitlist_for_no_show", {
+      p_booking_id: bookingId,
+    });
+    const row = Array.isArray(wl) ? wl[0] : wl;
+    if (row?.entry_id && svcId) {
+      const { notifyWaitlistForSlot } =
+        await import("@/shared/noshow/waitlistAutoFill");
+      await notifyWaitlistForSlot({
+        salonId: ctx.salon.id,
+        salonName: String(row.salon_name ?? ctx.salon.name ?? ""),
+        serviceId: String(svcId),
+        serviceName: String(row.service_name ?? ""),
+        bookingDateYmd: String(row.booking_date ?? "").slice(0, 10),
+      });
+    }
+  } catch (e) {
+    console.error("[cancelDeskBooking] waitlist", e);
+  }
+
   // Mutually-agreed cancel → refund the Square deposit (if any). Keep otherwise
   // (forfeit). Refund failure doesn't undo the cancel — surfaced so the desk can
   // refund manually in Square.
   if (input.refundDeposit) {
     const r = await refundDeposit(bookingId);
-    return { ok: true, depositRefunded: r.ok, depositRefundError: r.ok ? undefined : r.reason };
+    return {
+      ok: true,
+      depositRefunded: r.ok,
+      depositRefundError: r.ok ? undefined : r.reason,
+    };
   }
 
   return { ok: true };
@@ -784,7 +864,7 @@ async function sendDepositSms(args: {
       ? `${salon}: Please pay your ${amount} deposit to hold your appointment: ${args.url}`
       : `${salon}: Vui lòng đặt cọc ${amount} để giữ lịch hẹn của bạn: ${args.url}`;
   try {
-    const res = await sendSmsReminder(phone, body);
+    const res = await sendSmsReminder(phone, body, { lang: args.language === "en" ? "en" : "vi" });
     return res.ok;
   } catch {
     return false;
@@ -809,32 +889,46 @@ export async function requestDepositLink(
     sendSms?: boolean;
     /** Dashboard language for the SMS copy. */
     language?: "en" | "vi";
+    /** Hold the slot only until the deposit is paid — auto-cancel a FUTURE
+     *  booking if unpaid past the grace window. Default ON (pay-to-confirm). */
+    hold?: boolean;
   },
 ): Promise<
-  | { ok: true; url: string; amountCents: number; smsSent?: boolean }
+  | { ok: true; url: string; amountCents: number; smsSent?: boolean; emailSent?: boolean }
   | { ok: false; error: string }
 > {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
-  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+  if (ctx.salon.id !== String(input.salonId).trim())
+    return fail("salon_mismatch");
 
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
   // Scope check: the booking must be visible in the caller's salon (RLS client).
-  // Pull the phone too so we can text the link without a second round-trip.
+  // Pull phone + email so we can deliver the link on both channels in one pass.
   const { data: bk } = await ctx.supabase
     .from("bookings")
-    .select("id, client_phone")
+    .select("id, client_phone, client_email, client_name")
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .maybeSingle();
   if (!bk?.id) return fail("invalid_booking");
 
+  const { data: salonRow } = await ctx.supabase
+    .from("salons")
+    .select("email_links_enabled, address")
+    .eq("id", ctx.salon.id)
+    .maybeSingle();
+
   try {
-    const r = await createDepositForBooking(bookingId, { manual: input.manual === true });
+    const r = await createDepositForBooking(bookingId, {
+      manual: input.manual === true,
+      hold: input.hold,
+    });
     if (!r.required || !r.url) return fail(r.reason || "deposit_not_required");
 
+    const en = input.language === "en";
     let smsSent: boolean | undefined;
     if (input.sendSms) {
       smsSent = await sendDepositSms({
@@ -842,12 +936,145 @@ export async function requestDepositLink(
         salonName: ctx.salon.name,
         amountCents: r.amountCents ?? 0,
         url: r.url,
-        language: input.language === "en" ? "en" : "vi",
+        language: en ? "en" : "vi",
       });
     }
-    return { ok: true, url: r.url, amountCents: r.amountCents ?? 0, smsSent };
+
+    // Parallel email channel — same link, resilient to US SMS link filtering.
+    // Only when the desk chose to notify the customer (sendSms = the notify
+    // intent); if they only want the on-screen QR, don't email unprompted.
+    let emailSent: boolean | undefined;
+    const emailEnabled =
+      (salonRow as { email_links_enabled?: boolean } | null)?.email_links_enabled !== false;
+    const email = String((bk as { client_email?: string }).client_email ?? "").trim();
+    if (input.sendSms && emailEnabled && email) {
+      const salonName = ctx.salon.name?.trim() || "NailIQ";
+      const amount = `$${((r.amountCents ?? 0) / 100).toFixed(2)}`;
+      const er = await sendCustomerLinkEmail({
+        email,
+        clientName: (bk as { client_name?: string }).client_name ?? null,
+        salonName,
+        salonAddress: (salonRow as { address?: string | null } | null)?.address ?? null,
+        lang: en ? "en" : "vi",
+        subject: en
+          ? `Pay your ${amount} deposit to hold your appointment · ${salonName}`
+          : `Đặt cọc ${amount} để giữ lịch hẹn · ${salonName}`,
+        bodyText: en
+          ? `Please pay your ${amount} deposit to confirm and hold your appointment.`
+          : `Vui lòng đặt cọc ${amount} để xác nhận và giữ lịch hẹn của bạn.`,
+        ctaLabel: en ? `Pay ${amount} deposit` : `Đặt cọc ${amount}`,
+        url: r.url,
+      });
+      emailSent = er.ok;
+    }
+
+    return { ok: true, url: r.url, amountCents: r.amountCents ?? 0, smsSent, emailSent };
   } catch (e) {
     console.error("[requestDepositLink]", e);
+    return fail("server_error");
+  }
+}
+
+/**
+ * Desk: send the customer a Square link to pay their own no-show fee — the
+ * recovery path when the saved card just won't charge. Front-desk gated; mirrors
+ * requestDepositLink's SMS+email delivery. The fee flips to 'charged' when the
+ * link is paid (reconcileNoShowFeeLinks in the square-sync cron).
+ */
+export async function sendNoShowFeeLink(
+  slug: string,
+  input: {
+    salonId: string;
+    bookingId: string;
+    sendSms?: boolean;
+    language?: "en" | "vi";
+  },
+): Promise<
+  | { ok: true; url: string; amountCents: number; smsSent?: boolean; emailSent?: boolean }
+  | { ok: false; error: string }
+> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (!canMarkNoShow(ctx.role)) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim())
+    return fail("salon_mismatch");
+  const bookingId = String(input.bookingId ?? "").trim();
+  if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+
+  const { data: bk } = await ctx.supabase
+    .from("bookings")
+    .select("id, client_phone, client_email, client_name")
+    .eq("id", bookingId)
+    .eq("salon_id", ctx.salon.id)
+    .maybeSingle();
+  if (!bk?.id) return fail("invalid_booking");
+
+  const { data: salonRow } = await ctx.supabase
+    .from("salons")
+    .select("email_links_enabled, address")
+    .eq("id", ctx.salon.id)
+    .maybeSingle();
+
+  try {
+    const { createNoShowFeeLink } = await import(
+      "@/shared/integrations/square/noshow"
+    );
+    const r = await createNoShowFeeLink(bookingId);
+    if (!r.ok || !r.url) return fail(r.reason || "fee_link_failed");
+
+    const en = input.language === "en";
+    const amount = `$${((r.amountCents ?? 0) / 100).toFixed(2)}`;
+    const salon = ctx.salon.name?.trim() || "NailIQ";
+
+    let smsSent: boolean | undefined;
+    if (input.sendSms) {
+      const phone = String((bk as { client_phone?: string }).client_phone ?? "").trim();
+      if (phone) {
+        const body = en
+          ? `${salon}: Please pay your ${amount} no-show fee: ${r.url}`
+          : `${salon}: Vui lòng thanh toán phí no-show ${amount}: ${r.url}`;
+        try {
+          smsSent = (await sendSmsReminder(phone, body, { lang: en ? "en" : "vi" })).ok;
+        } catch {
+          smsSent = false;
+        }
+      }
+    }
+
+    let emailSent: boolean | undefined;
+    const emailEnabled =
+      (salonRow as { email_links_enabled?: boolean } | null)?.email_links_enabled !== false;
+    const email = String((bk as { client_email?: string }).client_email ?? "").trim();
+    if (input.sendSms && emailEnabled && email) {
+      const er = await sendCustomerLinkEmail({
+        email,
+        clientName: (bk as { client_name?: string }).client_name ?? null,
+        salonName: salon,
+        salonAddress: (salonRow as { address?: string | null } | null)?.address ?? null,
+        lang: en ? "en" : "vi",
+        subject: en
+          ? `Pay your ${amount} no-show fee · ${salon}`
+          : `Thanh toán phí no-show ${amount} · ${salon}`,
+        bodyText: en
+          ? `Please pay the ${amount} no-show fee for your missed appointment.`
+          : `Vui lòng thanh toán phí no-show ${amount} cho lịch hẹn đã lỡ.`,
+        ctaLabel: en ? `Pay ${amount}` : `Thanh toán ${amount}`,
+        url: r.url,
+      });
+      emailSent = er.ok;
+    }
+
+    void logBookingEvent({
+      bookingId,
+      salonId: ctx.salon.id,
+      actorUserId: ctxActorUserId(ctx),
+      actorRole: ctxActorRole(ctx),
+      eventType: "booking_status_changed",
+      payload: { reason: "desk_send_noshow_fee_link" },
+    });
+    return { ok: true, url: r.url, amountCents: r.amountCents ?? 0, smsSent, emailSent };
+  } catch (e) {
+    console.error("[sendNoShowFeeLink]", e);
     return fail("server_error");
   }
 }
@@ -875,10 +1102,13 @@ export async function createDeskGroup(
     seatTogether?: boolean;
     language?: "en" | "vi";
   },
-): Promise<GroupBookingResult | { ok: false; reason: "unauthorized" | "salon_mismatch" }> {
+): Promise<
+  GroupBookingResult | { ok: false; reason: "unauthorized" | "salon_mismatch" }
+> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, reason: "unauthorized" };
-  if (!canCreateDeskBooking(ctx.role)) return { ok: false, reason: "unauthorized" };
+  if (!canCreateDeskBooking(ctx.role))
+    return { ok: false, reason: "unauthorized" };
   if (ctx.salon.id !== String(input.salonId).trim()) {
     return { ok: false, reason: "salon_mismatch" };
   }
@@ -891,7 +1121,10 @@ export async function createDeskGroup(
       .select("phone_otp_enabled")
       .eq("id", ctx.salon.id)
       .maybeSingle();
-    if ((srow as { phone_otp_enabled?: boolean } | null)?.phone_otp_enabled === true) {
+    if (
+      (srow as { phone_otp_enabled?: boolean } | null)?.phone_otp_enabled ===
+      true
+    ) {
       const v = validateGuestPhone(input.members[0]?.phone ?? "");
       if (v.ok) {
         const { data: otpRow } = await db
@@ -906,7 +1139,7 @@ export async function createDeskGroup(
     /* mint failed → submitGroupBooking will surface otp_required, handled by UI */
   }
 
-  return submitGroupBooking({
+  const result = await submitGroupBooking({
     shopSlug: slug,
     members: input.members,
     idempotencyKey: input.idempotencyKey,
@@ -914,6 +1147,15 @@ export async function createDeskGroup(
     language: input.language,
     otpSessionId,
   });
+
+  // Unified no-show protection gate (desk group): only the lead carries a phone,
+  // so protect the lead booking. Server-side here (submitGroupBooking is also
+  // called from the browser, so the server-only gate can't live inside it).
+  const leadId =
+    result.ok && Array.isArray(result.bookingIds) ? result.bookingIds[0] : null;
+  if (leadId) await handleBookingProtection(leadId, ctx.salon.id, "group");
+
+  return result;
 }
 
 /**
@@ -925,8 +1167,17 @@ export async function createDeskGroup(
  */
 export async function cancelDeskGroup(
   slug: string,
-  input: { salonId: string; groupId: string },
-): Promise<{ ok: true; cancelledCount: number } | { ok: false; error: string }> {
+  input: {
+    salonId: string;
+    groupId: string;
+    /** Channels to notify the organizer on. Only the organizer row (member 0)
+     *  carries contact info, so we enqueue ONE cancel notification for it —
+     *  mirrors cancelDeskBooking. Omitted/empty → no customer notification. */
+    notify?: { sms?: boolean; email?: boolean };
+  },
+): Promise<
+  { ok: true; cancelledCount: number } | { ok: false; error: string }
+> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
 
@@ -965,11 +1216,47 @@ export async function cancelDeskGroup(
     void logBookingEvent({
       bookingId,
       salonId: ctx.salon.id,
-      actorUserId: null,
+      actorUserId: ctxActorUserId(ctx),
       actorRole: ctxActorRole(ctx),
       eventType: "booking_cancelled",
       payload: { reason: "desk_group_cancel", groupId },
     });
+  }
+
+  // Notify the organizer (best-effort). Only member 0 carries a phone/email, so
+  // enqueue ONE cancel notification for that lead row — same durable-queue +
+  // 20s grace pattern as cancelDeskBooking. The cron only sends on channels the
+  // booking actually has contact for.
+  const notifySms = input.notify?.sms === true;
+  const notifyEmail = input.notify?.email === true;
+  if (notifySms || notifyEmail) {
+    try {
+      const sr = createServiceRoleClient();
+      const { data: lead } = await sr
+        .from("bookings")
+        .select("id")
+        .eq("salon_id", ctx.salon.id)
+        .eq("group_id", groupId)
+        .or("client_phone.not.is.null,client_email.not.is.null")
+        .limit(1)
+        .maybeSingle();
+      if (lead?.id) {
+        const sendAfter = new Date(Date.now() + 20_000).toISOString();
+        const { error: enqErr } = await sr
+          .from("scheduled_notifications")
+          .insert({
+            salon_id: ctx.salon.id,
+            booking_id: String(lead.id),
+            event: "cancel",
+            channels: { sms: notifySms, email: notifyEmail },
+            send_after: sendAfter,
+          } as never);
+        if (enqErr)
+          console.error("[cancelDeskGroup] enqueue notify failed", enqErr);
+      }
+    } catch (e) {
+      console.error("[cancelDeskGroup] notify", e);
+    }
   }
 
   // Wix write-back per row — best-effort, after the response is flushed.
@@ -991,7 +1278,8 @@ export async function approveWixBooking(
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
   if (!canCancelBooking(ctx.role)) return fail("unauthorized");
-  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+  if (ctx.salon.id !== String(input.salonId).trim())
+    return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
@@ -1013,7 +1301,7 @@ export async function approveWixBooking(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_status_changed",
     payload: { from: "pending", to: "confirmed", reason: "wix_approve" },
@@ -1030,7 +1318,8 @@ export async function declineWixBooking(
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
   if (!canCancelBooking(ctx.role)) return fail("unauthorized");
-  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+  if (ctx.salon.id !== String(input.salonId).trim())
+    return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
@@ -1052,7 +1341,7 @@ export async function declineWixBooking(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_cancelled",
     payload: { reason: "wix_decline" },
@@ -1068,12 +1357,27 @@ export async function declineWixBooking(
  */
 export async function markNoShowBooking(
   slug: string,
-  input: { salonId: string; bookingId: string },
+  input: {
+    salonId: string;
+    bookingId: string;
+    /**
+     * Per-mark fee decision (decision B — the desk chooses, we never silently
+     * auto-bill):
+     *   true      → charge the saved Square card-on-file now (idempotent).
+     *   false     → waive: stamp 'waived' so the no-show tombstone shows the
+     *               fee was intentionally skipped.
+     *   undefined → leave the saved card untouched ('saved') so the desk can
+     *               still collect later from the tombstone ("Chưa thu — bấm để
+     *               thu"). The 1-tap overdue path lands here.
+     */
+    chargeFee?: boolean;
+  },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
   if (!canMarkNoShow(ctx.role)) return fail("unauthorized");
-  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+  if (ctx.salon.id !== String(input.salonId).trim())
+    return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
@@ -1107,7 +1411,9 @@ export async function markNoShowBooking(
 
   // Feed the no-show risk engine — best-effort, never fail the desk action on this.
   if (updated.client_phone) {
-    const { error: bumpErr } = await svc.rpc("bump_client_no_show", { p_phone: updated.client_phone });
+    const { error: bumpErr } = await svc.rpc("bump_client_no_show", {
+      p_phone: updated.client_phone,
+    });
     if (bumpErr) console.error("[markNoShowBooking] bump", bumpErr);
   }
 
@@ -1120,9 +1426,8 @@ export async function markNoShowBooking(
     });
     const row = Array.isArray(wl) ? wl[0] : wl;
     if (row?.entry_id && svcId) {
-      const { notifyWaitlistForSlot } = await import(
-        "@/shared/noshow/waitlistAutoFill"
-      );
+      const { notifyWaitlistForSlot } =
+        await import("@/shared/noshow/waitlistAutoFill");
       await notifyWaitlistForSlot({
         salonId: ctx.salon.id,
         salonName: String(row.salon_name ?? ""),
@@ -1135,25 +1440,41 @@ export async function markNoShowBooking(
     console.error("[markNoShowBooking] waitlist", e);
   }
 
-  // No-show fee — charge the saved Square card-on-file if this booking has one.
+  // No-show fee — the desk decides per-mark whether to collect (decision B).
   // Idempotent (stable idempotency key) + best-effort; never fail the desk action.
-  try {
-    const { chargeNoShowFee } = await import(
-      "@/shared/integrations/square/noshow"
-    );
-    await chargeNoShowFee(bookingId);
-  } catch (e) {
-    console.error("[markNoShowBooking] noshow-fee", e);
+  if (input.chargeFee === true) {
+    try {
+      const { chargeNoShowFee } =
+        await import("@/shared/integrations/square/noshow");
+      await chargeNoShowFee(bookingId);
+    } catch (e) {
+      console.error("[markNoShowBooking] noshow-fee", e);
+    }
+  } else if (input.chargeFee === false) {
+    // Waive — stamp 'waived' when a card is on file and nothing's been charged
+    // yet, so the tombstone reads as a deliberate skip (not an unbilled debt).
+    const { error: waiveErr } = await ctx.supabase
+      .from("bookings")
+      .update({ noshow_charge_status: "waived" } as never)
+      .eq("id", bookingId)
+      .eq("salon_id", ctx.salon.id)
+      .not("noshow_card_id", "is", null)
+      .neq("noshow_charge_status", "charged");
+    if (waiveErr) console.error("[markNoShowBooking] waive", waiveErr);
   }
 
   // Win-back — a friendly "we missed you, rebook" email (retention over
   // penalty). Opt-out via salons.winback_enabled. Best-effort, off the response
   // path; never fails the desk action.
-  const winbackEmail = (updated as { client_email?: string | null }).client_email;
+  const winbackEmail = (updated as { client_email?: string | null })
+    .client_email;
   if (winbackEmail && winbackEmail.trim()) {
-    const clientName = String((updated as { client_name?: string | null }).client_name ?? "");
+    const clientName = String(
+      (updated as { client_name?: string | null }).client_name ?? "",
+    );
     const svcName = String(
-      (updated as { services?: { name?: string | null } | null }).services?.name ?? "",
+      (updated as { services?: { name?: string | null } | null }).services
+        ?.name ?? "",
     );
     after(async () => {
       try {
@@ -1168,9 +1489,8 @@ export async function markNoShowBooking(
           winback_enabled?: boolean | null;
         };
         if (s.winback_enabled === false || !s.slug) return;
-        const { sendWinBackEmail } = await import(
-          "@/shared/noshow/sendWinBackEmail"
-        );
+        const { sendWinBackEmail } =
+          await import("@/shared/noshow/sendWinBackEmail");
         await sendWinBackEmail({
           clientName,
           clientEmail: winbackEmail,
@@ -1187,10 +1507,19 @@ export async function markNoShowBooking(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_status_changed",
-    payload: { to: "no_show", reason: "desk_no_show" },
+    payload: {
+      to: "no_show",
+      reason: "desk_no_show",
+      fee:
+        input.chargeFee === true
+          ? "charged"
+          : input.chargeFee === false
+            ? "waived"
+            : "deferred",
+    },
   });
   return { ok: true };
 }
@@ -1208,7 +1537,8 @@ export async function undoNoShowBooking(
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
   if (!canMarkNoShow(ctx.role)) return fail("unauthorized");
-  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+  if (ctx.salon.id !== String(input.salonId).trim())
+    return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
@@ -1245,10 +1575,120 @@ export async function undoNoShowBooking(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_status_changed",
     payload: { to: "confirmed", reason: "undo_no_show" },
+  });
+  return { ok: true };
+}
+
+/**
+ * Collect the saved no-show fee on demand — for a booking already marked
+ * `no_show` whose card was left uncharged (auto-marked by the SQL cron, or a
+ * desk mark that deferred the decision). Idempotent: `chargeNoShowFee` guards a
+ * stable Square idempotency key + a 'charged' status check, so double-taps and
+ * retries never double-bill. Front-desk roles only; audit-logged.
+ */
+export async function chargeNoShowFeeManual(
+  slug: string,
+  input: { salonId: string; bookingId: string },
+): Promise<
+  { ok: true; charged: boolean; reason: string } | { ok: false; error: string }
+> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (!canMarkNoShow(ctx.role)) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim())
+    return fail("salon_mismatch");
+  const bookingId = String(input.bookingId ?? "").trim();
+  if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+
+  // Gate on the row first — only a no_show booking in THIS salon is chargeable
+  // here. chargeNoShowFee itself is salon-agnostic + idempotent, so the row
+  // check is what scopes the action to the authenticated desk.
+  const { data: row } = await ctx.supabase
+    .from("bookings")
+    .select("id, status, noshow_charge_status")
+    .eq("id", bookingId)
+    .eq("salon_id", ctx.salon.id)
+    .maybeSingle();
+  if (!row?.id) return fail("invalid_booking");
+  if ((row as { status?: string }).status !== "no_show")
+    return fail("invalid_state");
+
+  try {
+    const { chargeNoShowFee } =
+      await import("@/shared/integrations/square/noshow");
+    // A RETRY of a previously-failed charge needs a fresh idempotency suffix,
+    // else Square replays the original decline instead of re-attempting (the
+    // card may since have funds). First-time charges keep the stable key.
+    const isRetry =
+      (row as { noshow_charge_status?: string }).noshow_charge_status ===
+      "failed";
+    const res = await chargeNoShowFee(
+      bookingId,
+      isRetry ? { idempotencySuffix: crypto.randomUUID() } : undefined,
+    );
+    void logBookingEvent({
+      bookingId,
+      salonId: ctx.salon.id,
+      actorUserId: ctxActorUserId(ctx),
+      actorRole: ctxActorRole(ctx),
+      eventType: "booking_status_changed",
+      payload: {
+        reason: "desk_charge_noshow_fee",
+        charged: res.charged,
+        detail: res.reason,
+      },
+    });
+    return { ok: true, charged: res.charged, reason: res.reason };
+  } catch (e) {
+    console.error("[chargeNoShowFeeManual]", e);
+    return fail("server_error");
+  }
+}
+
+/**
+ * Waive the saved no-show fee — stamp 'waived' so the tombstone reflects a
+ * deliberate skip (e.g. a loyal guest who was just late). Does NOT refund an
+ * already-charged fee (a charged card is a Square-side refund, out of scope).
+ * Front-desk roles only; audit-logged.
+ */
+export async function waiveNoShowFee(
+  slug: string,
+  input: { salonId: string; bookingId: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (!canMarkNoShow(ctx.role)) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim())
+    return fail("salon_mismatch");
+  const bookingId = String(input.bookingId ?? "").trim();
+  if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+
+  const { data: updated, error: upErr } = await ctx.supabase
+    .from("bookings")
+    .update({ noshow_charge_status: "waived" } as never)
+    .eq("id", bookingId)
+    .eq("salon_id", ctx.salon.id)
+    .eq("status", "no_show")
+    .neq("noshow_charge_status", "charged")
+    .select("id")
+    .maybeSingle();
+  if (upErr) {
+    console.error("[waiveNoShowFee]", upErr);
+    return fail("server_error");
+  }
+  if (!updated?.id) return fail("invalid_state");
+
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: ctxActorUserId(ctx),
+    actorRole: ctxActorRole(ctx),
+    eventType: "booking_status_changed",
+    payload: { reason: "desk_waive_noshow_fee" },
   });
   return { ok: true };
 }
@@ -1266,12 +1706,17 @@ export async function setBookingFinalPrice(
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
   if (!canEditBooking(ctx.role)) return fail("unauthorized");
-  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+  if (ctx.salon.id !== String(input.salonId).trim())
+    return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
   const priceCents = Math.round(Number(input.priceCents));
-  if (!Number.isFinite(priceCents) || priceCents < 0 || priceCents > 100_000_00) {
+  if (
+    !Number.isFinite(priceCents) ||
+    priceCents < 0 ||
+    priceCents > 100_000_00
+  ) {
     return fail("invalid_price");
   }
 
@@ -1292,7 +1737,7 @@ export async function setBookingFinalPrice(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_price_set",
     payload: { priceCents, reason: "final_price" },
@@ -1319,7 +1764,8 @@ export async function undoCancelBooking(
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
   if (!canUndoCancel(ctx.role)) return fail("unauthorized");
-  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+  if (ctx.salon.id !== String(input.salonId).trim())
+    return fail("salon_mismatch");
 
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
@@ -1339,10 +1785,27 @@ export async function undoCancelBooking(
   }
   if (!updated?.id) return fail("invalid_state");
 
+  // The booking is restored → cancel any still-pending cancel notification so
+  // the customer is never texted about a cancel that was undone.
+  {
+    const sr = createServiceRoleClient();
+    const { error: cancelErr } = await sr
+      .from("scheduled_notifications")
+      .update({ status: "cancelled" } as never)
+      .eq("booking_id", bookingId)
+      .eq("event", "cancel")
+      .eq("status", "pending");
+    if (cancelErr)
+      console.error(
+        "[undoCancelBooking] cancel pending notify failed",
+        cancelErr,
+      );
+  }
+
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_restored",
     payload: { reason: "undo_cancel" },
@@ -1354,7 +1817,7 @@ export async function undoCancelBooking(
 /**
  * Restore a cancelled booking back to "confirmed".
  * Guards:
- *   - Only owner / senior (canUndoCancel)
+ *   - Front-desk roles only: owner / admin / senior / receptionist (canUndoCancel)
  *   - Booking must be cancelled (not already active)
  *   - start_time_utc must still be in the future (≥ now + 1 min)
  *   - No active booking conflict for the same staff at that time
@@ -1366,7 +1829,8 @@ export async function restoreCancelledBooking(
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
   if (!canUndoCancel(ctx.role)) return fail("unauthorized");
-  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+  if (ctx.salon.id !== String(input.salonId).trim())
+    return fail("salon_mismatch");
 
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
@@ -1423,7 +1887,7 @@ export async function restoreCancelledBooking(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_restored",
     payload: { reason: "desk_restore" },
@@ -1450,10 +1914,9 @@ export async function editBooking(
     ctx.supabase as SupabaseClient<Database>,
     ctx.salon.id,
     input,
-    { role: ctxActorRole(ctx), userId: null },
+    { role: ctxActorRole(ctx), userId: ctxActorUserId(ctx) },
   );
 }
-
 
 /**
  * Composite "assign immediately" path used by the smart walk-in form
@@ -1565,7 +2028,6 @@ export async function addWalkinAndAssign(
   return created;
 }
 
-
 /* ───────────────────────── Soft hold (PR #104) ───────────────────────── */
 
 const SOFT_HOLD_DEFAULT_MINUTES = 10;
@@ -1597,7 +2059,9 @@ export async function setSoftHold(
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
-  const requested = Number.isFinite(input.minutes) ? Math.round(input.minutes!) : SOFT_HOLD_DEFAULT_MINUTES;
+  const requested = Number.isFinite(input.minutes)
+    ? Math.round(input.minutes!)
+    : SOFT_HOLD_DEFAULT_MINUTES;
   const minutes = Math.max(1, Math.min(SOFT_HOLD_MAX_MINUTES, requested));
   const holdUntilIso = new Date(Date.now() + minutes * 60_000).toISOString();
 
@@ -1621,7 +2085,7 @@ export async function setSoftHold(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "soft_hold_set",
     payload: { minutes, holdUntilIso },
@@ -1638,7 +2102,11 @@ export async function setSoftHold(
  */
 export async function clearSoftHold(
   slug: string,
-  input: { salonId: string; bookingId: string; reason?: "expired" | "returned" },
+  input: {
+    salonId: string;
+    bookingId: string;
+    reason?: "expired" | "returned";
+  },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
@@ -1663,7 +2131,7 @@ export async function clearSoftHold(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "soft_hold_expired",
     payload: { reason: input.reason ?? "returned" },
@@ -1678,8 +2146,15 @@ export async function clearSoftHold(
  * dates, lead minutes). Auth-gated; the available-slot grid is computed
  * client-side from this, exactly like the public booking flow.
  */
-export async function getDeskBookingData(slug: string): Promise<
-  | { ok: true; data: NonNullable<Awaited<ReturnType<typeof loadBookingServicesForSalonSlug>>> }
+export async function getDeskBookingData(
+  slug: string,
+): Promise<
+  | {
+      ok: true;
+      data: NonNullable<
+        Awaited<ReturnType<typeof loadBookingServicesForSalonSlug>>
+      >;
+    }
   | { ok: false; error: string }
 > {
   const ctx = await getDashboardWriteClient(slug);
@@ -1722,15 +2197,20 @@ export async function addDeskAppointment(
     clientEmail?: string | null;
     clientNotes?: string | null;
     language?: "en" | "vi";
+    /** Which channels to confirm the booking on. Omitted → both (legacy
+     *  behavior). The form's notify panel passes the receptionist's choice. */
+    notify?: { sms?: boolean; email?: boolean };
   },
 ): Promise<OkDeskBooking | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
-  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+  if (ctx.salon.id !== String(input.salonId).trim())
+    return fail("salon_mismatch");
   if (!canCreateDeskBooking(ctx.role)) return fail("unauthorized");
 
   const clientName = String(input.clientName ?? "").trim();
-  if (!clientName || clientName.length > BOOKING_GUEST_NAME_MAX) return fail("invalid_name");
+  if (!clientName || clientName.length > BOOKING_GUEST_NAME_MAX)
+    return fail("invalid_name");
   if (!isValidCustomerName(clientName)) return fail("invalid_name_chars");
 
   const phoneOk = validateGuestPhone(String(input.clientPhone ?? "").trim());
@@ -1749,20 +2229,27 @@ export async function addDeskAppointment(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) return fail("invalid_date");
 
   const startMinutes = parseTimeSlotToMinutes(String(input.timeSlot ?? ""));
-  if (!Number.isFinite(startMinutes) || startMinutes < 0) return fail("invalid_time");
+  if (!Number.isFinite(startMinutes) || startMinutes < 0)
+    return fail("invalid_time");
 
   let clientEmail: string | null = null;
   const emailRaw = String(input.clientEmail ?? "").trim();
   if (emailRaw) {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw)) return fail("invalid_email");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw))
+      return fail("invalid_email");
     clientEmail = emailRaw.toLowerCase();
   }
-  const clientNotes = String(input.clientNotes ?? "").trim().slice(0, 500) || null;
+  const clientNotes =
+    String(input.clientNotes ?? "")
+      .trim()
+      .slice(0, 500) || null;
 
   // De-dupe + sanitize add-on ids; an add-on can't be the main service.
   const addonIds: string[] = Array.isArray(input.addonServiceIds)
     ? Array.from(
-        new Set(input.addonServiceIds.map((s) => String(s).trim()).filter(isUuidLike)),
+        new Set(
+          input.addonServiceIds.map((s) => String(s).trim()).filter(isUuidLike),
+        ),
       )
     : [];
   if (addonIds.includes(serviceId)) return fail("invalid_addon");
@@ -1794,7 +2281,9 @@ export async function addDeskAppointment(
   // Authoritative service duration + price (don't trust the client).
   const { data: svcRow } = await db
     .from("services")
-    .select("name, duration_minutes, buffer_minutes, price_cents, salon_id, deleted_at")
+    .select(
+      "name, duration_minutes, buffer_minutes, price_cents, salon_id, deleted_at",
+    )
     .eq("id", serviceId)
     .maybeSingle();
   const svc = svcRow as {
@@ -1805,7 +2294,8 @@ export async function addDeskAppointment(
     salon_id?: string;
     deleted_at?: string | null;
   } | null;
-  if (!svc || svc.salon_id !== ctx.salon.id || svc.deleted_at) return fail("invalid_service");
+  if (!svc || svc.salon_id !== ctx.salon.id || svc.deleted_at)
+    return fail("invalid_service");
 
   // Add-on durations extend the block (concurrent ones add $0 time); prices sum
   // into the email total. Validated server-side: must be this salon's live,
@@ -1831,7 +2321,9 @@ export async function addDeskAppointment(
   if (addonIds.length > 0) {
     const { data: addRows } = await db
       .from("services")
-      .select("id, name, duration_minutes, buffer_minutes, price_cents, is_addon, addon_timing, salon_id, deleted_at")
+      .select(
+        "id, name, duration_minutes, buffer_minutes, price_cents, is_addon, addon_timing, salon_id, deleted_at",
+      )
       .in("id", addonIds);
     const byId = new Map(
       (addRows ?? []).map((r) => [String((r as { id: string }).id), r]),
@@ -1849,16 +2341,24 @@ export async function addDeskAppointment(
             deleted_at?: string | null;
           }
         | undefined;
-      if (!a || a.salon_id !== ctx.salon.id || a.deleted_at || a.is_addon !== true) {
+      if (
+        !a ||
+        a.salon_id !== ctx.salon.id ||
+        a.deleted_at ||
+        a.is_addon !== true
+      ) {
         return fail("invalid_addon");
       }
-      const block = (Number(a.duration_minutes) || 0) + (Number(a.buffer_minutes) || 0);
+      const block = serviceBlockMinutes(a.duration_minutes, a.buffer_minutes);
       if (block <= 0) return fail("invalid_addon");
       const concurrent = a.addon_timing === "concurrent";
       if (!concurrent) addonBlockMin += block;
       addonPriceCents += a.price_cents != null ? Number(a.price_cents) : 0;
       const addonName = String(a.name ?? "");
-      const addonDuration = Math.max(0, Math.round(Number(a.duration_minutes) || 0));
+      const addonDuration = Math.max(
+        0,
+        Math.round(Number(a.duration_minutes) || 0),
+      );
       const addonPrice = a.price_cents != null ? Number(a.price_cents) : null;
       optimisticAddons.push({
         name: addonName,
@@ -1872,7 +2372,10 @@ export async function addDeskAppointment(
           name: addonName,
           price_cents: addonPrice,
           duration_minutes: addonDuration,
-          buffer_minutes: Math.max(0, Math.round(Number(a.buffer_minutes) || 0)),
+          buffer_minutes: Math.max(
+            0,
+            Math.round(Number(a.buffer_minutes) || 0),
+          ),
         };
       }
     }
@@ -1880,10 +2383,23 @@ export async function addDeskAppointment(
 
   const timezone = ctx.salon.timezone;
   const startUtcIso = salonWallTimeToUtcIso(dateYmd, startMinutes, timezone);
-  const totalMin = (svc.duration_minutes ?? 0) + (svc.buffer_minutes ?? 0) + addonBlockMin;
-  const endUtcIso = new Date(Date.parse(startUtcIso) + totalMin * 60_000).toISOString();
+  const totalMin =
+    serviceBlockMinutes(svc.duration_minutes, svc.buffer_minutes) +
+    addonBlockMin;
+  const endUtcIso = new Date(
+    Date.parse(startUtcIso) + totalMin * 60_000,
+  ).toISOString();
   const slotStartMs = Date.parse(startUtcIso);
   const slotEndMs = Date.parse(endUtcIso);
+
+  // Reject past-time bookings (defense-in-depth). The client grid already hides
+  // past slots, but a stale client — or a receptionist whose DEVICE is in a
+  // timezone ahead of the salon, so the form defaulted to the wrong day — must
+  // never be able to create an appointment in the past. 60s grace absorbs clock
+  // skew; anything older (e.g. a 9 AM slot picked at 4 PM) is refused.
+  if (Number.isFinite(slotStartMs) && slotStartMs < Date.now() - 60_000) {
+    return fail("time_in_past");
+  }
 
   // Resolve the staff to book. ALWAYS restrict to active + capable providers so
   // we mirror the public slot grid and never oversell via an inactive staff row.
@@ -1903,14 +2419,21 @@ export async function addDeskAppointment(
   const { data: capRows } = await db
     .from("staff_services")
     .select("staff_id, service_id")
-    .in("staff_id", activeStaff.map((s) => s.id));
+    .in(
+      "staff_id",
+      activeStaff.map((s) => s.id),
+    );
   const capability = buildCapabilityMap(
     (capRows ?? []).map((r) => ({
       staff_id: String((r as { staff_id: string }).staff_id),
       service_id: String((r as { service_id: string }).service_id),
     })),
   );
-  const capableStaff = filterStaffCapableForServices(activeStaff, capability, requiredServiceIds);
+  const capableStaff = filterStaffCapableForServices(
+    activeStaff,
+    capability,
+    requiredServiceIds,
+  );
   if (capableStaff.length === 0) return fail("no_staff_available");
 
   let resolvedStaffId: string;
@@ -1918,24 +2441,27 @@ export async function addDeskAppointment(
   if (isAnyStaff) {
     // Auto-assign: pick the freest capable provider for this exact block.
     const range = salonDayRangeUtc(dateYmd, timezone);
-    const { data: occRaw } = await db.rpc("public_booking_occupancy_for_range", {
-      p_salon_id: ctx.salon.id,
-      p_start: range.startUtc,
-      p_end: range.endUtc,
-    } as never);
-    const occupancy = (Array.isArray(occRaw) ? occRaw : []).map(
-      (row) => ({
-        staffId: String((row as { staff_id: string }).staff_id),
-        startMs: Date.parse((row as { start_time_utc: string }).start_time_utc),
-        endMs: Date.parse((row as { end_time_utc: string }).end_time_utc),
-      }),
+    const { data: occRaw } = await db.rpc(
+      "public_booking_occupancy_for_range",
+      {
+        p_salon_id: ctx.salon.id,
+        p_start: range.startUtc,
+        p_end: range.endUtc,
+      } as never,
     );
+    const occupancy = (Array.isArray(occRaw) ? occRaw : []).map((row) => ({
+      staffId: String((row as { staff_id: string }).staff_id),
+      startMs: Date.parse((row as { start_time_utc: string }).start_time_utc),
+      endMs: Date.parse((row as { end_time_utc: string }).end_time_utc),
+    }));
     const freeIds = capableStaff
       .map((s) => s.id)
       .filter(
         (id) =>
           !occupancy.some(
-            (o) => o.staffId === id && intervalsOverlapMs(slotStartMs, slotEndMs, o.startMs, o.endMs),
+            (o) =>
+              o.staffId === id &&
+              intervalsOverlapMs(slotStartMs, slotEndMs, o.startMs, o.endMs),
           ),
       );
     if (freeIds.length === 0) return fail("time_slot_taken");
@@ -1955,30 +2481,37 @@ export async function addDeskAppointment(
     staffName = chosen.name;
   }
 
-  const { data: rpcData, error: rpcErr } = await db.rpc("create_public_booking", {
-    p_salon_id: ctx.salon.id,
-    p_service_id: serviceId,
-    p_staff_id: resolvedStaffId,
-    p_client_name: clientName,
-    p_client_phone: canonicalPhone,
-    p_start_time_utc: startUtcIso,
-    p_end_time_utc: endUtcIso,
-    p_status: "confirmed",
-    p_price_cents: svc.price_cents ?? null,
-    p_client_notes: clientNotes,
-    p_client_email: clientEmail,
-  } as never);
+  const { data: rpcData, error: rpcErr } = await db.rpc(
+    "create_public_booking",
+    {
+      p_salon_id: ctx.salon.id,
+      p_service_id: serviceId,
+      p_staff_id: resolvedStaffId,
+      p_client_name: clientName,
+      p_client_phone: canonicalPhone,
+      p_start_time_utc: startUtcIso,
+      p_end_time_utc: endUtcIso,
+      p_status: "confirmed",
+      p_price_cents: svc.price_cents ?? null,
+      p_client_notes: clientNotes,
+      p_client_email: clientEmail,
+    } as never,
+  );
   if (rpcErr) {
     const code = (rpcErr as { code?: string }).code;
     if (code === "P0002" || code === "23P01") return fail("time_slot_taken");
     console.error("[addDeskAppointment] rpc error", rpcErr);
     return fail("server_error");
   }
-  const result = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as
-    | { success?: boolean; booking_id?: string; code?: string }
-    | null;
+  const result = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as {
+    success?: boolean;
+    booking_id?: string;
+    code?: string;
+  } | null;
   if (!result?.success || !result.booking_id) {
-    return fail(result?.code === "slot_conflict" ? "time_slot_taken" : "server_error");
+    return fail(
+      result?.code === "slot_conflict" ? "time_slot_taken" : "server_error",
+    );
   }
   const bookingId = result.booking_id;
 
@@ -2025,7 +2558,7 @@ export async function addDeskAppointment(
   void logBookingEvent({
     bookingId,
     salonId: ctx.salon.id,
-    actorUserId: null,
+    actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
     eventType: "booking_created",
     payload: {
@@ -2038,35 +2571,50 @@ export async function addDeskAppointment(
     },
   });
 
-  // Same confirmation as a public booking (SMS always, email when given).
-  const base = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+  // Unified no-show protection gate: a desk/phone booking skips the online card
+  // capture, so flag "needs card" the same way every other path does. Flag
+  // only — the desk decides whether to text the save-card link.
+  await handleBookingProtection(bookingId, ctx.salon.id, "desk");
+
+  // Confirmation to the customer, gated by the receptionist's notify choice
+  // (legacy callers without `notify` keep the always-send behavior). Reuses the
+  // existing rich SMS + email confirmation routes.
+  const notifyCreateSms = input.notify ? input.notify.sms === true : true;
+  const notifyCreateEmail = input.notify ? input.notify.email === true : true;
+  const base =
+    (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
   const serviceName = svc.name ?? "";
   const totalPriceCents = (svc.price_cents ?? 0) + addonPriceCents;
   after(async () => {
-    try {
-      await fetch(`${base}/api/booking/sms-confirm`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bookingId,
-          salonId: ctx.salon.id,
-          clientPhone: canonicalPhone,
-          clientName,
-          serviceName,
-          staffName,
-          startTimeUtc: startUtcIso,
-          language: input.language ?? null,
-        }),
-      });
-    } catch {
-      /* best-effort */
+    if (notifyCreateSms) {
+      try {
+        await fetch(`${base}/api/booking/sms-confirm`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bookingId,
+            salonId: ctx.salon.id,
+            clientPhone: canonicalPhone,
+            clientName,
+            serviceName,
+            staffName,
+            startTimeUtc: startUtcIso,
+            language: input.language ?? null,
+          }),
+        });
+      } catch {
+        /* best-effort */
+      }
     }
-    if (clientEmail) {
+    if (notifyCreateEmail && clientEmail) {
       const secret = (process.env.INTERNAL_API_SECRET ?? "").trim();
       try {
         await fetch(`${base}/api/booking-email`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "x-internal-secret": secret },
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-secret": secret,
+          },
           body: JSON.stringify({
             bookingId,
             shopSlug: slug,
@@ -2097,6 +2645,8 @@ export async function addDeskAppointment(
     id: bookingId,
     client_name: clientName,
     client_phone: canonicalPhone,
+    client_email: clientEmail ?? null,
+    client_locale: input.language ?? null,
     client_notes: clientNotes,
     staff_id: resolvedStaffId,
     start_time_utc: startUtcIso,
@@ -2104,11 +2654,17 @@ export async function addDeskAppointment(
     status: "confirmed",
     source: "appointment",
     source_channel: "desk",
+    // Desk-created now — stamp so the drawer's "Đặt lúc" line renders instantly
+    // (reconciled by the canonical row on the background reload).
+    created_at: new Date().toISOString(),
     service_id: serviceId,
     service_name: mainServiceName,
     service_duration_minutes: Number(svc.duration_minutes ?? 0),
     price_cents: svc.price_cents ?? null,
-    service_buffer_minutes: Math.max(0, Math.round(Number(svc.buffer_minutes ?? 0))),
+    service_buffer_minutes: Math.max(
+      0,
+      Math.round(Number(svc.buffer_minutes ?? 0)),
+    ),
     joined_queue_at: null,
     addon_service_id: firstAddon?.id ?? null,
     addon_service_name: firstAddon?.name ?? null,
@@ -2131,7 +2687,235 @@ export async function addDeskAppointment(
     deposit_status: null,
     deposit_amount_cents: null,
     wix_booking_id: null,
+    // Desk-created booking has no card-on-file yet (no-show protection is
+    // captured online for new/high-risk customers).
+    noshow_card_id: null,
+    // Flag is set server-side by ensureNoShowCardRequirement just after create;
+    // the background reload reconciles the badge. Optimistic = not-yet-flagged.
+    noshow_card_required: false,
+    noshow_fee_cents: null,
+    noshow_charge_status: null,
   };
 
   return { ok: true, bookingId, booking: optimisticBooking };
+}
+
+/** Origin the customer waitlist claim link is built on (same convention as
+ *  waitlistAutoFill). Falls back to the production host. */
+const WAITLIST_SITE_URL =
+  (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+
+/**
+ * Receptionist "Invite now" — text a waitlisted online customer the claim link
+ * the moment staff decide to offer them a slot. The customer joined
+ * `booking_waitlist_entries` because their desired slot was full; this flips
+ * the entry to `notified`, mints a claim token if needed, and SMSes the
+ * 20-minute claim link via Twilio.
+ *
+ * Auth mirrors `cancelDeskBooking`: front-desk roles only
+ * (owner/admin/senior/receptionist). Idempotent — re-inviting a `notified`
+ * entry just re-sends with the same token. The SMS body is Vietnamese by
+ * design (most salons are VN-facing) and ASCII-only so Twilio sends a single
+ * GSM-7 segment.
+ */
+export async function inviteWaitlistEntry(
+  slug: string,
+  entryId: string,
+): Promise<{ ok: boolean; suppressed?: boolean; error?: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "forbidden" };
+  // Same front-desk gate as cancelDeskBooking (owner/admin/senior/receptionist).
+  if (!canCancelBooking(ctx.role)) return { ok: false, error: "forbidden" };
+
+  const id = String(entryId ?? "").trim();
+  if (!id || !isUuidLike(id)) return { ok: false, error: "not_found" };
+
+  // Service-role: booking_waitlist_entries is RLS-locked. Load defensively by
+  // id AND salon_id (tenant isolation) — never trust the id alone.
+  const svc = createServiceRoleClient();
+  const { data: entry, error: loadErr } = await svc
+    .from("booking_waitlist_entries")
+    .select(
+      "id, service_id, client_name, client_phone, client_email, booking_date, claim_token, status, offered_staff_id, offered_start_utc",
+    )
+    .eq("id", id)
+    .eq("salon_id", ctx.salon.id)
+    .maybeSingle();
+
+  if (loadErr) {
+    console.error("[inviteWaitlistEntry] load", loadErr);
+    return { ok: false, error: "server_error" };
+  }
+  const row = entry as {
+    id: string;
+    service_id: string | null;
+    client_name: string | null;
+    client_phone: string | null;
+    client_email: string | null;
+    booking_date: string | null;
+    claim_token: string | null;
+    status: string | null;
+    offered_staff_id: string | null;
+    offered_start_utc: string | null;
+  } | null;
+  if (!row?.id) return { ok: false, error: "not_found" };
+
+  const phone = String(row.client_phone ?? "").trim();
+  const inviteEmail = String(row.client_email ?? "").trim();
+  // Need at least one channel to reach the customer (email is the resilient
+  // fallback when US carriers filter the link-SMS).
+  if (!phone && !inviteEmail) return { ok: false, error: "no_phone" };
+
+  // Resolve service + salon names for the SMS copy.
+  let serviceName = "";
+  const serviceId = row.service_id ? String(row.service_id) : "";
+  if (serviceId) {
+    const { data: svcRow } = await svc
+      .from("services")
+      .select("name")
+      .eq("id", serviceId)
+      .eq("salon_id", ctx.salon.id)
+      .maybeSingle();
+    serviceName = String((svcRow as { name?: string } | null)?.name ?? "");
+  }
+  const salonName = String(ctx.salon.name ?? "").trim() || "NailIQ";
+  const bookingDate = String(row.booking_date ?? "").slice(0, 10);
+
+  // Idempotent token: reuse an existing one (re-invite) or mint a fresh one.
+  const token = row.claim_token ?? crypto.randomUUID();
+
+  const claimUrl = `${WAITLIST_SITE_URL}/booking/waitlist-claim?token=${token}`;
+
+  // When the DB freed a concrete slot (offered_staff_id + offered_start_utc),
+  // name the staff + time so the customer knows exactly what they're claiming.
+  // Time is formatted in the salon tz (from ctx.salon.timezone, no extra query),
+  // ASCII-only ("2:00 PM") so the body stays a single GSM-7 segment.
+  let offeredSuffix = "";
+  if (row.offered_staff_id && row.offered_start_utc) {
+    const startMs = Date.parse(row.offered_start_utc);
+    if (Number.isFinite(startMs)) {
+      const { data: staffRow } = await svc
+        .from("staff")
+        .select("name")
+        .eq("id", row.offered_staff_id)
+        .maybeSingle();
+      const staffName = String(
+        (staffRow as { name?: string | null } | null)?.name ?? "",
+      ).trim();
+      if (staffName) {
+        const timeZone = String(ctx.salon.timezone ?? "").trim() || "UTC";
+        let time = "";
+        try {
+          time = new Intl.DateTimeFormat("en-US", {
+            timeZone,
+            hour: "numeric",
+            minute: "2-digit",
+          }).format(new Date(startMs));
+        } catch {
+          time = "";
+        }
+        if (time) offeredSuffix = ` luc ${time} voi ${staffName}`;
+      }
+    }
+  }
+
+  // ASCII-only Vietnamese (no diacritics, no emoji) → single GSM-7 segment.
+  const body = `${salonName}: Co cho trong ${serviceName} ngay ${bookingDate}${offeredSuffix}. Giu cho trong 20 phut: ${claimUrl}`;
+
+  // Resolve the salon's notification language so the auto-appended opt-out line
+  // matches it ('vi' → "Nhắn STOP để ngừng nhận tin."). Best-effort: any read
+  // failure defaults to English. The VN-ASCII body above is fixed by design.
+  let smsLang: "en" | "vi" = "en";
+  let emailEnabled = true;
+  let salonAddress: string | null = null;
+  try {
+    const { data: langRow } = await svc
+      .from("salons")
+      .select("default_notification_locale, email_links_enabled, address" as never)
+      .eq("id", ctx.salon.id)
+      .maybeSingle();
+    const locale = String(
+      (langRow as { default_notification_locale?: unknown } | null)
+        ?.default_notification_locale ?? "",
+    ).toLowerCase();
+    smsLang = locale === "vi" ? "vi" : "en";
+    emailEnabled =
+      (langRow as { email_links_enabled?: boolean } | null)?.email_links_enabled !== false;
+    salonAddress =
+      (langRow as { address?: string | null } | null)?.address ?? null;
+  } catch {
+    /* default 'en' + email on */
+  }
+
+  // Send FIRST, then record. A suppressed send (dev/CI/test/fictional number)
+  // returns ok:true and still counts as "handled". A genuine failure
+  // (twilio_not_configured / Twilio error) must NOT mark the entry notified
+  // ON ITS OWN — but a successful EMAIL still reaches the customer, so the
+  // entry counts as notified if EITHER channel landed.
+  const smsResult = phone
+    ? await sendSmsReminder(phone, body, { lang: smsLang })
+    : { ok: false, suppressed: false, messageSid: null as string | null, error: "no_phone" };
+
+  // Parallel email channel — same claim link, resilient to US SMS link filtering.
+  let emailOk = false;
+  if (emailEnabled && inviteEmail) {
+    const er = await sendCustomerLinkEmail({
+      email: inviteEmail,
+      clientName: row.client_name,
+      salonName,
+      salonAddress,
+      lang: smsLang,
+      subject:
+        smsLang === "en"
+          ? `A spot opened up for your ${serviceName || "appointment"} · ${salonName}`
+          : `Có chỗ trống cho ${serviceName || "lịch hẹn"} của bạn · ${salonName}`,
+      bodyText:
+        smsLang === "en"
+          ? `Good news — a spot opened up${serviceName ? ` for ${serviceName}` : ""}${bookingDate ? ` on ${bookingDate}` : ""}. It's held for 20 minutes — claim it now.`
+          : `Tin vui — vừa có chỗ trống${serviceName ? ` cho ${serviceName}` : ""}${bookingDate ? ` ngày ${bookingDate}` : ""}. Chỗ được giữ trong 20 phút — nhận ngay.`,
+      ctaLabel: smsLang === "en" ? "Claim this spot" : "Nhận chỗ này",
+      url: claimUrl,
+      respectOptOut: true,
+    });
+    emailOk = er.ok;
+  }
+
+  // Log to booking_notifications (booking_id is null — the entry isn't a
+  // booking yet). Best-effort; never fail the invite on a logging hiccup.
+  try {
+    await logNotification({
+      bookingId: null,
+      salonId: ctx.salon.id,
+      notificationType: "waitlist_invite",
+      channel: "sms",
+      clientPhone: phone,
+      messageSid: smsResult.messageSid ?? null,
+      bodyPreview: body,
+      ok: smsResult.ok,
+      errorMessage: smsResult.ok ? null : smsResult.error ?? null,
+    });
+  } catch (e) {
+    console.error("[inviteWaitlistEntry] logNotification", e);
+  }
+
+  if (!smsResult.ok && !emailOk) {
+    // Neither channel landed — nothing recorded, the row stays 'waiting'.
+    return { ok: false, error: smsResult.error ?? "sms_failed" };
+  }
+
+  const { error: upErr } = await svc
+    .from("booking_waitlist_entries")
+    .update({
+      status: "notified",
+      notified_at: new Date().toISOString(),
+      claim_token: token,
+    } as never)
+    .eq("id", id)
+    .eq("salon_id", ctx.salon.id);
+  if (upErr) {
+    console.error("[inviteWaitlistEntry] update", upErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true, suppressed: smsResult.suppressed };
 }

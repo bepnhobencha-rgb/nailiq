@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 
 import { Badge, type BadgeVariant } from "@/components/ui/Badge";
@@ -18,6 +18,15 @@ import type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
 import { EditBookingForm, type EditBookingFormBooking } from "./EditBookingForm";
 import { DepositLinkModal } from "./DepositLinkModal";
 import { requestDepositLink } from "@/shared/dashboard/receptionistActions";
+import { sendSaveCardLink } from "@/shared/dashboard/sendSaveCardLinkAction";
+import { overrideNoShowPolicy } from "@/shared/dashboard/overrideNoShowPolicyAction";
+import { renameBookingClient } from "@/shared/dashboard/renameClientAction";
+import { updateBookingNote } from "@/shared/dashboard/editBookingNoteAction";
+import type { BookingCustomerContext } from "@/shared/dashboard/loadBookingCustomerContextAction";
+import {
+  loadGroupMembersAction,
+  type GroupMember,
+} from "@/shared/dashboard/loadGroupMembersAction";
 
 function depositErrorLabel(code: string, lang: "en" | "vi"): string {
   if (code.startsWith("risk "))
@@ -41,6 +50,152 @@ function depositErrorLabel(code: string, lang: "en" | "vi"): string {
  *  receptionist chooses (manual → bypasses the no-show-risk gate), then show it
  *  as a QR AND offer to text it to the customer. Kept here so the drawer stays
  *  the single owner of the deposit UI. */
+/** Desk "save a card to hold the spot" — texts the customer a one-tap
+ *  card-capture link (charge only on no-show). The wow no-show flow: no
+ *  upfront payment for the customer, automatic protection for the salon. */
+function SaveCardButton({
+  slug,
+  bookingId,
+  disabled,
+  offlineHint,
+  language,
+}: {
+  slug: string;
+  bookingId: string;
+  disabled?: boolean;
+  offlineHint?: string;
+  language: "en" | "vi";
+}) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<"sent" | "error" | null>(null);
+
+  async function onPress() {
+    setBusy(true);
+    setResult(null);
+    try {
+      const r = await sendSaveCardLink(slug, { bookingId, sendSms: true, language });
+      setResult(r.ok && r.smsSent ? "sent" : "error");
+    } catch {
+      setResult("error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="secondary"
+        loading={busy}
+        disabled={disabled}
+        title={disabled ? offlineHint : undefined}
+        data-testid="drawer-save-card-link"
+        className="mt-2 w-full sm:w-full"
+        onClick={() => void onPress()}
+      >
+        {language === "en" ? "💳 Text save-card link" : "💳 Gửi link lưu thẻ"}
+      </Button>
+      {result === "sent" ? (
+        <p className="text-xs font-semibold text-nq-success" role="status">
+          {language === "en"
+            ? "✓ Save-card link sent by SMS"
+            : "✓ Đã gửi link lưu thẻ qua SMS"}
+        </p>
+      ) : null}
+      {result === "error" ? (
+        <p className="text-xs font-semibold text-nq-error" role="status">
+          {language === "en"
+            ? "Couldn't send the link — check the phone number."
+            : "Không gửi được link — kiểm tra số điện thoại."}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * Override the AI no-show policy agent's LIVE decision. The agent only sets the
+ * "needs a card" flag (it never charges), so a human at the desk can flip it:
+ * require a card the AI waived, or waive one it required. Logged + attributed
+ * via overrideNoShowPolicy. Renders the OPPOSITE of the current state so it's a
+ * one-tap correction.
+ */
+function OverrideCardButton({
+  slug,
+  bookingId,
+  currentRequired,
+  disabled,
+  offlineHint,
+  language,
+}: {
+  slug: string;
+  bookingId: string;
+  currentRequired: boolean;
+  disabled?: boolean;
+  offlineHint?: string;
+  language: "en" | "vi";
+}) {
+  const [required, setRequired] = useState(currentRequired);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState(false);
+  const en = language === "en";
+  // Flip to the opposite of the current requirement.
+  const next: "card" | "none" = required ? "none" : "card";
+  const label = required
+    ? en
+      ? "Waive card requirement"
+      : "Bỏ yêu cầu thẻ"
+    : en
+      ? "Require a card on file"
+      : "Yêu cầu lưu thẻ";
+
+  async function onPress() {
+    setBusy(true);
+    setError(false);
+    setDone(false);
+    try {
+      const r = await overrideNoShowPolicy(slug, { bookingId, decision: next });
+      if (r.ok) {
+        setRequired(r.cardRequired);
+        setDone(true);
+      } else {
+        setError(true);
+      }
+    } catch {
+      setError(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        disabled={disabled || busy}
+        title={disabled ? offlineHint : undefined}
+        data-testid="drawer-override-card"
+        onClick={() => void onPress()}
+        className="text-xs font-medium text-nq-muted underline decoration-dotted underline-offset-2 hover:text-nq-foreground disabled:opacity-50"
+      >
+        {busy ? (en ? "Saving…" : "Đang lưu…") : `🤖 ${label}`}
+      </button>
+      {done ? (
+        <p className="mt-1 text-xs font-semibold text-nq-success" role="status">
+          {en ? "✓ AI decision overridden" : "✓ Đã ghi đè quyết định AI"}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="mt-1 text-xs font-semibold text-nq-error" role="status">
+          {en ? "Couldn't save — try again." : "Không lưu được — thử lại."}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function DepositButton({
   slug,
   salonId,
@@ -66,8 +221,11 @@ function DepositButton({
     setError(null);
     try {
       // manual: a human at the desk decided a deposit is warranted → skip the
-      // server's no-show-risk gate.
-      const r = await requestDepositLink(slug, { salonId, bookingId, manual: true, language });
+      // server's no-show-risk gate. hold:false → request a deposit without
+      // flipping the booking to pending (the "hold / pay-to-confirm" variant
+      // was removed: unused at the desk + its auto-cancel cron isn't wired,
+      // so it left bookings stuck "pending"; see no-show card-on-file plan).
+      const r = await requestDepositLink(slug, { salonId, bookingId, manual: true, hold: false, language });
       if (r.ok) setModal({ url: r.url, amountCents: r.amountCents });
       else setError(depositErrorLabel(r.error, language));
     } catch {
@@ -85,6 +243,7 @@ function DepositButton({
         salonId,
         bookingId,
         manual: true,
+        hold: false,
         sendSms: true,
         language,
       });
@@ -150,6 +309,28 @@ function statusBadgeVariant(status: BookingStatus): BadgeVariant {
     case "cancelled":
       return "neutral"; // low-arousal muted / slate
   }
+}
+
+/** Localized salon-role label for the "Booked by … · <role>" creator line. */
+function roleLabel(role: string, lang: "en" | "vi"): string {
+  const map: Record<string, [string, string]> = {
+    owner: ["Owner", "Chủ tiệm"],
+    admin: ["Manager", "Quản lý"],
+    senior: ["Senior", "Thợ chính"],
+    receptionist: ["Receptionist", "Lễ tân"],
+    nail_tech: ["Technician", "Thợ"],
+  };
+  const hit = map[role];
+  return hit ? (lang === "vi" ? hit[1] : hit[0]) : role;
+}
+
+/** Render a return-cadence in human terms ("every ~4 weeks" / "mỗi ~4 tuần"). */
+function cadenceLabel(days: number, lang: "en" | "vi"): string {
+  if (days >= 12) {
+    const weeks = Math.round(days / 7);
+    return lang === "vi" ? `mỗi ~${weeks} tuần` : `every ~${weeks} weeks`;
+  }
+  return lang === "vi" ? `mỗi ~${days} ngày` : `every ~${days} days`;
 }
 
 /** Inline "actual final price" editor for variable-priced bookings. Self-contained
@@ -230,6 +411,13 @@ export type BookingDetailDrawerModel = {
   status: BookingStatus;
   statusLabel: string;
   sourceLabel: string;
+  /** "Book ở đâu" — friendly label for the granular origin channel
+   * (🌐 Online / 🧑‍💼 Front desk / 🚶 Walk-in / 🔗 Wix / ⬛ Square / 📞 Voice).
+   * Null for legacy rows → fall back to `sourceLabel`. */
+  channelLabel: string | null;
+  /** "Khi nào book" — when the booking was created (salon tz, datetime).
+   * Null when `created_at` is missing. */
+  bookedAtLine: string | null;
   /** When true, render a "Khách yêu cầu thợ này" line under the
    * source. Drives operator awareness without forcing them to scan
    * the staff_request_note (which may be empty for online bookings). */
@@ -261,15 +449,34 @@ export type BookingDetailDrawerModel = {
   depositPaidLine: string | null;
   /** Formatted balance still to charge on the POS (price − deposit); null when no deposit. */
   remainingLine: string | null;
+  /** Formatted deposit owed but NOT yet paid (deposit_status='required') — the
+   *  slot is "Chờ cọc", shown as an amber badge; null when none. */
+  depositAwaitingLine: string | null;
   /** Square deposits enabled for this salon — gates the desk "request deposit" action. */
   depositsEnabled: boolean;
+  /** No-show card-on-file saved for this booking (charge only on no-show).
+   *  Surfaces the existing protection at the desk as a green badge. */
+  cardOnFile: boolean;
+  /** Booking was flagged "needs a no-show card" at creation (any path) but has
+   *  none yet → drives the "⚠️ needs card" badge + gates the send-link button. */
+  noshowCardRequired: boolean;
+  /** Formatted no-show fee that would be charged if they no-show (e.g. "$25.00");
+   *  null when no fee/card is set. */
+  noshowFeeLine: string | null;
   /** Dashboard language — drives the deposit SMS copy + the deposit modal/button text. */
   language: "en" | "vi";
+  /** Group/party this booking belongs to (null = solo booking). Drives the
+   *  "who's going with whom" party section, lazily loaded when the drawer opens. */
+  groupId: string | null;
+  /** Party asked to be seated together (couple / 💕). */
+  seatTogether: boolean;
 };
 
 export interface BookingDetailDrawerProps {
   open: boolean;
   model: BookingDetailDrawerModel | null;
+  /** Salon slug — used to lazily load the party composition for group bookings. */
+  slug?: string;
   onClose: () => void;
   copy: {
     title: string;
@@ -297,7 +504,24 @@ export interface BookingDetailDrawerProps {
     nonePrice: string;
     /** "❤️ Khách yêu cầu thợ này" line under the source label. */
     staffRequestedByClient: string;
+    /** Party/group composition section ("who's going with whom"). */
+    groupSectionTitle: (n: number) => string;
+    groupOrganizedBy: (name: string) => string;
+    groupOrganizerBadge: string;
+    groupSeatTogether: string;
   };
+  /** Lazy "customer launchpad" context (creator / allergies / return cadence),
+   *  loaded by the parent when the drawer opens. `undefined` = still loading,
+   *  `null` = unavailable (no phone / error). */
+  customerContext?: BookingCustomerContext | null;
+  /** True while {@link customerContext} is being fetched. */
+  customerContextLoading?: boolean;
+  /** Open the full Customer 360 profile + history for this guest. Present only
+   *  when the booking has a phone to look up. */
+  onViewProfile?: () => void;
+  /** One-tap "book the next visit" — opens the desk form prefilled with this
+   *  customer at their usual rhythm. Present only when a phone exists. */
+  onRebookNext?: () => void;
   /** Caller's `salon_members.role` — gates Edit (Cancel is gated upstream). */
   viewerRole: SalonMemberRole;
   /**
@@ -380,8 +604,13 @@ export interface BookingDetailDrawerProps {
 export function BookingDetailDrawer({
   open,
   model,
+  slug,
   onClose,
   copy,
+  customerContext,
+  customerContextLoading = false,
+  onViewProfile,
+  onRebookNext,
   viewerRole,
   isOffline = false,
   offlineEditDisabledHint,
@@ -394,17 +623,57 @@ export function BookingDetailDrawer({
   deskEdit,
 }: BookingDetailDrawerProps) {
   const [editMode, setEditMode] = useState(false);
+  // Inline customer-name fix (fastest path for the desk — no page navigation).
+  const [nameEditing, setNameEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [nameOverride, setNameOverride] = useState<string | null>(null);
+  const [nameErr, setNameErr] = useState(false);
+  const [nameSaving, startNameSave] = useTransition();
+  // Inline appointment-note edit (booking-scoped; undefined override = unchanged).
+  const [noteEditing, setNoteEditing] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteOverride, setNoteOverride] = useState<string | null | undefined>(undefined);
+  const [noteErr, setNoteErr] = useState(false);
+  const [noteSaving, startNoteSave] = useTransition();
   const [portalEl, setPortalEl] = useState<HTMLElement | null>(null);
   // P0.8 — phone is masked by default; receptionist must explicitly
   // tap "Show number" to reveal. Resets whenever the drawer closes or
   // switches to a different booking, so an unrelated open never leaks
   // the previous customer's full digits.
   const [phoneRevealed, setPhoneRevealed] = useState(false);
+  // Party composition ("who's going with whom"), lazily loaded for group bookings.
+  const [party, setParty] = useState<{
+    members: GroupMember[];
+    organizerName: string | null;
+  } | null>(null);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- portal target is only available client-side
     setPortalEl(document.body);
   }, []);
+
+  useEffect(() => {
+    const gid = model?.groupId;
+    if (!open || !gid || !slug) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale party when the drawer closes / rebinds to a solo booking
+      setParty(null);
+      return;
+    }
+    let alive = true;
+    void loadGroupMembersAction(slug, gid)
+      .then((r) => {
+        if (!alive) return;
+        setParty(
+          r.ok ? { members: r.members, organizerName: r.organizerName } : null,
+        );
+      })
+      .catch(() => {
+        if (alive) setParty(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [open, model?.groupId, slug]);
 
   const handleClose = useCallback(() => {
     setEditMode(false);
@@ -424,6 +693,12 @@ export function BookingDetailDrawer({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- exit edit mode + re-mask when drawer rebinds to a different booking
     setEditMode(false);
     setPhoneRevealed(false);
+    setNameEditing(false);
+    setNameOverride(null);
+    setNameErr(false);
+    setNoteEditing(false);
+    setNoteOverride(undefined);
+    setNoteErr(false);
   }, [deskEdit?.booking.id]);
 
   useEffect(() => {
@@ -448,6 +723,54 @@ export function BookingDetailDrawer({
     (deskEdit.booking.status === "pending" ||
       deskEdit.booking.status === "confirmed" ||
       deskEdit.booking.status === "in_progress");
+
+  // A name typo can need fixing on a booking of ANY status (incl. completed),
+  // so gate the rename on the front-desk role only, not the editable statuses.
+  const canEditName = deskEdit !== undefined && roleAllowsEditBooking(viewerRole);
+
+  const saveName = useCallback(() => {
+    const next = nameDraft.trim();
+    const bId = deskEdit?.booking.id;
+    if (!bId || !slug || next.length === 0) {
+      setNameErr(true);
+      return;
+    }
+    const bookingId: string = bId;
+    const slugStr: string = slug;
+    setNameErr(false);
+    startNameSave(async () => {
+      const r = await renameBookingClient(slugStr, { bookingId, name: next });
+      if (r.ok && r.name) {
+        setNameOverride(r.name);
+        setNameEditing(false);
+        if (deskEdit) void deskEdit.onBookingUpdated(deskEdit.booking);
+      } else {
+        setNameErr(true);
+      }
+    });
+  }, [nameDraft, deskEdit, slug]);
+
+  const saveNote = useCallback(() => {
+    const bId = deskEdit?.booking.id;
+    if (!bId || !slug) {
+      setNoteErr(true);
+      return;
+    }
+    const bookingId: string = bId;
+    const slugStr: string = slug;
+    const next = noteDraft; // allow empty → clears the note
+    setNoteErr(false);
+    startNoteSave(async () => {
+      const r = await updateBookingNote(slugStr, { bookingId, note: next });
+      if (r.ok) {
+        setNoteOverride(r.note ?? null);
+        setNoteEditing(false);
+        if (deskEdit) void deskEdit.onBookingUpdated(deskEdit.booking);
+      } else {
+        setNoteErr(true);
+      }
+    });
+  }, [noteDraft, deskEdit, slug]);
 
   const showFooter =
     (deskEdit !== undefined && editMode) ||
@@ -518,10 +841,112 @@ export function BookingDetailDrawer({
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
                   {copy.sectionGuest}
                 </p>
-                <p className="text-base font-semibold text-nq-foreground">{displayCustomerName(model.clientName, copy.removedGuest)}</p>
-                <p className="text-nq-muted">
-                  <span className="text-nq-muted">{model.sourceLabel}</span>
-                </p>
+                {nameEditing ? (
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <input
+                        autoFocus
+                        data-testid="drawer-name-input"
+                        value={nameDraft}
+                        disabled={nameSaving}
+                        onChange={(e) => {
+                          setNameDraft(e.target.value);
+                          setNameErr(false);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.nativeEvent.isComposing) return;
+                          if (e.key === "Enter") saveName();
+                          if (e.key === "Escape") setNameEditing(false);
+                        }}
+                        className={cn(
+                          "min-w-0 flex-1 rounded-lg border bg-nq-bg px-2 py-1 text-base font-semibold text-nq-foreground focus:outline-none focus:border-nq-primary/60",
+                          nameErr ? "border-nq-error/70" : "border-nq-border/50",
+                        )}
+                      />
+                      <button
+                        type="button"
+                        data-testid="drawer-name-save"
+                        disabled={nameSaving}
+                        onClick={saveName}
+                        className="rounded-lg bg-nq-primary px-2.5 py-1 text-xs font-semibold text-black disabled:opacity-50"
+                      >
+                        {nameSaving
+                          ? (model.language === "vi" ? "Đang lưu…" : "Saving…")
+                          : (model.language === "vi" ? "Lưu" : "Save")}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={nameSaving}
+                        onClick={() => { setNameEditing(false); setNameErr(false); }}
+                        className="text-xs text-nq-muted underline-offset-2 hover:underline"
+                      >
+                        {model.language === "vi" ? "Huỷ" : "Cancel"}
+                      </button>
+                    </div>
+                    {nameErr ? (
+                      <p className="text-xs text-nq-error" role="alert">
+                        {model.language === "vi" ? "Tên không hợp lệ hoặc lưu lỗi." : "Invalid name or save failed."}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <p className="text-base font-semibold text-nq-foreground">{displayCustomerName(nameOverride ?? model.clientName, copy.removedGuest)}</p>
+                    {canEditName ? (
+                      <button
+                        type="button"
+                        data-testid="drawer-name-edit"
+                        aria-label={model.language === "vi" ? "Sửa tên khách" : "Edit customer name"}
+                        title={model.language === "vi" ? "Sửa tên" : "Edit name"}
+                        onClick={() => {
+                          setNameDraft(nameOverride ?? model.clientName ?? "");
+                          setNameErr(false);
+                          setNameEditing(true);
+                        }}
+                        className="text-nq-muted hover:text-nq-foreground"
+                      >
+                        ✏️
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+                {/* Channel (e.g. 🧑‍💼 Lễ tân đặt tại quầy) is shown once, in the
+                    "Đặt lúc · <channel>" line of the schedule section — no longer
+                    duplicated here under the guest name. */}
+                {/* "Ai đặt hẹn này" — creator of a manual booking (or self-book). */}
+                {customerContext?.creatorName ? (
+                  <p className="text-xs text-nq-muted" data-testid="booking-drawer-created-by">
+                    {model.language === "vi" ? "Đặt bởi " : "Booked by "}
+                    <span className="font-medium text-nq-foreground">
+                      {customerContext.creatorName}
+                    </span>
+                    {customerContext.creatorRole ? (
+                      <> · {roleLabel(customerContext.creatorRole, model.language)}</>
+                    ) : null}
+                  </p>
+                ) : customerContext?.isSelfBooked ? (
+                  <p className="text-xs text-nq-muted" data-testid="booking-drawer-created-by">
+                    {model.language === "vi" ? "Khách tự đặt" : "Self-booked by guest"}
+                  </p>
+                ) : customerContext?.creatorRole ? (
+                  <p className="text-xs text-nq-muted" data-testid="booking-drawer-created-by">
+                    {model.language === "vi" ? "Đặt bởi " : "Booked by "}
+                    {roleLabel(customerContext.creatorRole, model.language)}
+                  </p>
+                ) : null}
+                {/* ⚠️ Allergy — safety-critical, surfaced at the top of the card. */}
+                {customerContext?.allergies ? (
+                  <p
+                    className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg border border-red-400/40 bg-red-400/10 px-2.5 py-1 text-[13px] font-medium text-red-300"
+                    data-testid="booking-drawer-allergy"
+                  >
+                    <span aria-hidden>⚠️</span>
+                    <span>
+                      {model.language === "vi" ? "Dị ứng: " : "Allergy: "}
+                      {customerContext.allergies}
+                    </span>
+                  </p>
+                ) : null}
                 {model.staffRequestedByClient ? (
                   <p
                     className="inline-flex items-center gap-1.5 text-nq-foreground"
@@ -575,6 +1000,62 @@ export function BookingDetailDrawer({
                   </div>
                 ) : null}
               </section>
+
+            {/* ── Customer launchpad — history + return rhythm + one-tap rebook.
+                Only rendered when a phone exists (onViewProfile/onRebookNext set). */}
+            {(onViewProfile || onRebookNext) ? (
+              <section
+                className="space-y-2 border-t border-nq-muted/15 pt-4"
+                data-testid="booking-drawer-launchpad"
+              >
+                {customerContextLoading && customerContext === undefined ? (
+                  <p className="text-xs text-nq-muted">
+                    {model.language === "vi" ? "Đang tải hồ sơ khách…" : "Loading customer…"}
+                  </p>
+                ) : null}
+                {customerContext?.cadenceDays != null ? (
+                  <p className="text-sm text-nq-foreground" data-testid="booking-drawer-cadence">
+                    <span aria-hidden>⏱ </span>
+                    {model.language === "vi" ? "Thường quay lại " : "Usually returns "}
+                    <span className="font-semibold">
+                      {cadenceLabel(customerContext.cadenceDays, model.language)}
+                    </span>
+                    {customerContext.visitCount > 0 ? (
+                      <span className="text-nq-muted">
+                        {model.language === "vi"
+                          ? ` · ${customerContext.visitCount} lần ghé`
+                          : ` · ${customerContext.visitCount} visits`}
+                      </span>
+                    ) : null}
+                  </p>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  {onViewProfile ? (
+                    <button
+                      type="button"
+                      onClick={onViewProfile}
+                      data-testid="booking-drawer-view-profile"
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-nq-muted/40 px-3 text-sm font-medium text-nq-foreground transition hover:border-nq-muted hover:bg-nq-muted/10"
+                    >
+                      <span aria-hidden>👤</span>
+                      {model.language === "vi" ? "Hồ sơ & lịch sử" : "Profile & history"}
+                      <span aria-hidden>→</span>
+                    </button>
+                  ) : null}
+                  {onRebookNext ? (
+                    <button
+                      type="button"
+                      onClick={onRebookNext}
+                      data-testid="booking-drawer-rebook-next"
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-nq-primary/45 bg-nq-primary/12 px-3 text-sm font-semibold text-nq-primary transition hover:bg-nq-primary/20"
+                    >
+                      <span aria-hidden>📅</span>
+                      {model.language === "vi" ? "Đặt hẹn kế tiếp" : "Book next visit"}
+                    </button>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
 
             <section className="space-y-1 border-t border-nq-muted/15 pt-4">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
@@ -648,6 +1129,55 @@ export function BookingDetailDrawer({
               <p className="font-medium text-nq-foreground">{model.staffName}</p>
             </section>
 
+            {/* Party composition — "who's going with whom". Lazily loaded for
+                group bookings; only shown for a real multi-person party. */}
+            {party && party.members.length > 1 ? (
+              <section
+                className="space-y-2 border-t border-nq-muted/15 pt-4"
+                data-testid="drawer-party-section"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+                  {copy.groupSectionTitle(party.members.length)}
+                </p>
+                {party.organizerName ? (
+                  <p className="text-xs text-nq-muted">
+                    {copy.groupOrganizedBy(party.organizerName)}
+                  </p>
+                ) : null}
+                {model.seatTogether ? (
+                  <p className="text-xs font-medium text-nq-primary">
+                    {copy.groupSeatTogether}
+                  </p>
+                ) : null}
+                <ul className="space-y-1.5">
+                  {party.members.map((m) => (
+                    <li
+                      key={m.bookingId}
+                      className="flex items-start gap-2 text-sm"
+                    >
+                      <span className="shrink-0 tabular-nums text-nq-muted/70">
+                        {m.startDisplay}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="flex items-center gap-1.5 font-medium text-nq-foreground">
+                          <span className="truncate">{m.name}</span>
+                          {m.isOrganizer ? (
+                            <span className="shrink-0 rounded bg-nq-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-nq-primary">
+                              {copy.groupOrganizerBadge}
+                            </span>
+                          ) : null}
+                        </p>
+                        <p className="truncate text-xs text-nq-muted">
+                          {m.serviceName}
+                          {m.staffName ? ` · ${m.staffName}` : ""}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+
             <section className="space-y-1 border-t border-nq-muted/15 pt-4">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
                 {copy.sectionWhen}
@@ -658,6 +1188,19 @@ export function BookingDetailDrawer({
               >
                 {model.scheduleLine}
               </p>
+              {/* "Khi nào book + book ở đâu" — when the booking was placed and
+                  via which channel, so the desk can tell an online self-booking
+                  from a front-desk entry without digging. */}
+              {model.bookedAtLine ? (
+                <p
+                  className="text-xs text-nq-muted"
+                  data-testid="booking-drawer-booked-at"
+                >
+                  {model.language === "vi" ? "Đặt lúc " : "Booked "}
+                  {model.bookedAtLine}
+                  {model.channelLabel ? <> · {model.channelLabel}</> : null}
+                </p>
+              ) : null}
               <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
                 {copy.sectionStatus}
               </p>
@@ -672,11 +1215,30 @@ export function BookingDetailDrawer({
               </div>
 
               {/* Verification + SMS + no-show-history badges */}
-              {(model.smsFailedAt || model.verificationMethod || model.depositPaidLine || (model.noShowRiskScore != null && model.noShowRiskScore >= 70) || model.noShowHistoryCount > 0) ? (
+              {(model.smsFailedAt || model.verificationMethod || model.depositPaidLine || model.cardOnFile || model.noshowCardRequired || model.depositAwaitingLine || (model.noShowRiskScore != null && model.noShowRiskScore >= 70) || model.noShowHistoryCount > 0) ? (
                 <div className="mt-2 flex flex-wrap gap-1.5">
+                  {model.depositAwaitingLine ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-400" data-testid="drawer-deposit-awaiting-badge">
+                      ⏳ Chờ cọc {model.depositAwaitingLine}
+                    </span>
+                  ) : null}
                   {model.depositPaidLine ? (
                     <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400" data-testid="drawer-deposit-paid-badge">
                       💰 Đã cọc {model.depositPaidLine}
+                    </span>
+                  ) : null}
+                  {model.cardOnFile ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400" data-testid="drawer-card-on-file-badge">
+                      💳 {model.language === "vi" ? "Đã lưu thẻ" : "Card on file"}
+                      {model.noshowFeeLine
+                        ? (model.language === "vi"
+                            ? ` · phí no-show ${model.noshowFeeLine}`
+                            : ` · no-show fee ${model.noshowFeeLine}`)
+                        : ""}
+                    </span>
+                  ) : model.noshowCardRequired ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-400" data-testid="drawer-card-needed-badge">
+                      ⚠ {model.language === "vi" ? "Cần lưu thẻ — chưa có" : "Needs card — none yet"}
                     </span>
                   ) : null}
                   {model.smsFailedAt ? (
@@ -712,12 +1274,74 @@ export function BookingDetailDrawer({
               <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
                 {copy.sectionNotes}
               </p>
-              {model.clientNotes?.trim() ? (
-                <p className="break-words whitespace-pre-wrap text-nq-foreground/95">
-                  {model.clientNotes}
-                </p>
+              {noteEditing ? (
+                <div className="space-y-1">
+                  <textarea
+                    autoFocus
+                    data-testid="drawer-note-input"
+                    value={noteDraft}
+                    disabled={noteSaving}
+                    rows={3}
+                    onChange={(e) => { setNoteDraft(e.target.value); setNoteErr(false); }}
+                    onKeyDown={(e) => { if (e.key === "Escape") setNoteEditing(false); }}
+                    className={cn(
+                      "w-full rounded-lg border bg-nq-bg px-2 py-1.5 text-sm text-nq-foreground focus:outline-none focus:border-nq-primary/60",
+                      noteErr ? "border-nq-error/70" : "border-nq-border/50",
+                    )}
+                    placeholder={model.language === "vi" ? "Ghi chú cho lịch hẹn này…" : "Note for this appointment…"}
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      data-testid="drawer-note-save"
+                      disabled={noteSaving}
+                      onClick={saveNote}
+                      className="rounded-lg bg-nq-primary px-2.5 py-1 text-xs font-semibold text-black disabled:opacity-50"
+                    >
+                      {noteSaving ? (model.language === "vi" ? "Đang lưu…" : "Saving…") : (model.language === "vi" ? "Lưu" : "Save")}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={noteSaving}
+                      onClick={() => { setNoteEditing(false); setNoteErr(false); }}
+                      className="text-xs text-nq-muted underline-offset-2 hover:underline"
+                    >
+                      {model.language === "vi" ? "Huỷ" : "Cancel"}
+                    </button>
+                    {noteErr ? (
+                      <span className="text-xs text-nq-error" role="alert">
+                        {model.language === "vi" ? "Lưu lỗi." : "Save failed."}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
               ) : (
-                <p className="italic text-nq-muted">{copy.noNotes}</p>
+                <div className="flex items-start gap-2">
+                  {(noteOverride !== undefined ? noteOverride : model.clientNotes)?.trim() ? (
+                    <p className="flex-1 break-words whitespace-pre-wrap text-nq-foreground/95">
+                      {noteOverride !== undefined ? noteOverride : model.clientNotes}
+                    </p>
+                  ) : (
+                    <p className="flex-1 italic text-nq-muted">{copy.noNotes}</p>
+                  )}
+                  {canEditName ? (
+                    <button
+                      type="button"
+                      data-testid="drawer-note-edit"
+                      aria-label={model.language === "vi" ? "Sửa ghi chú" : "Edit note"}
+                      title={model.language === "vi" ? "Sửa ghi chú" : "Edit note"}
+                      onClick={() => {
+                        const cur = noteOverride !== undefined ? noteOverride : model.clientNotes;
+                        setNoteDraft(cur ?? "");
+                        setNoteErr(false);
+                        setNoteEditing(true);
+                      }}
+                      className="shrink-0 text-nq-muted hover:text-nq-foreground"
+                    >
+                      ✏️
+                    </button>
+                  ) : null}
+                </div>
               )}
               </section>
             </div>
@@ -851,11 +1475,33 @@ export function BookingDetailDrawer({
                     ) : null}
                     {deskEdit &&
                     model.depositsEnabled &&
-                    model.verificationMethod !== "deposit" ? (
+                    model.verificationMethod !== "deposit" &&
+                    !model.cardOnFile ? (
                       <DepositButton
                         slug={deskEdit.slug}
                         salonId={deskEdit.salonId}
                         bookingId={deskEdit.booking.id}
+                        disabled={isOffline}
+                        offlineHint={offlineEditDisabledHint}
+                        language={model.language}
+                      />
+                    ) : null}
+                    {deskEdit && model.depositsEnabled && model.noshowCardRequired && !model.cardOnFile ? (
+                      <SaveCardButton
+                        slug={deskEdit.slug}
+                        bookingId={deskEdit.booking.id}
+                        disabled={isOffline}
+                        offlineHint={offlineEditDisabledHint}
+                        language={model.language}
+                      />
+                    ) : null}
+                    {/* Override the AI's card decision (flip require/waive). Only
+                        where the card mechanism is usable + no card saved yet. */}
+                    {deskEdit && model.depositsEnabled && !model.cardOnFile ? (
+                      <OverrideCardButton
+                        slug={deskEdit.slug}
+                        bookingId={deskEdit.booking.id}
+                        currentRequired={model.noshowCardRequired}
                         disabled={isOffline}
                         offlineHint={offlineEditDisabledHint}
                         language={model.language}

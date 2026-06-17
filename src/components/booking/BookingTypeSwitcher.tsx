@@ -123,9 +123,15 @@ export function BookingTypeSwitcher({
   // New-customer name captured at the gate (when the phone isn't
   // recognized) so identity (phone + name) is collected once, up front.
   const [entryName, setEntryName] = useState("");
+  // SMS consent (CASL/TCPA) — collected at the gate, right after the phone
+  // (where the OTP SMS gets sent). The flow only reveals after it's given, and
+  // it's passed into BookingFlow so confirm doesn't ask again.
+  const [entrySmsConsent, setEntrySmsConsent] = useState(false);
   const entryLookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const entryValidation = validateGuestPhone(entryPhoneRaw.trim());
   const entryPhone = entryValidation.ok ? entryPhoneRaw.trim() : "";
+  // Ready to enter the flow: valid phone AND SMS consent given.
+  const gateReady = Boolean(entryPhone) && entrySmsConsent;
   // Debounced commit of the typed name so the flow (keyed on identity)
   // doesn't remount on every keystroke — it picks the name up ~400ms
   // after typing stops, or immediately on blur (see the name input).
@@ -272,6 +278,21 @@ export function BookingTypeSwitcher({
           ) : null}
         </div>
       ) : null}
+
+      {/* SMS consent (CASL/TCPA) — right after the phone, before the flow opens.
+          Required to proceed (the OTP SMS is sent next). */}
+      {entryPhone && !entryLoading ? (
+        <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+          <input
+            type="checkbox"
+            data-testid="sms-consent"
+            checked={entrySmsConsent}
+            onChange={(e) => setEntrySmsConsent(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+          />
+          <span>{t.smsConsent}</span>
+        </label>
+      ) : null}
     </div>
   );
 
@@ -285,7 +306,7 @@ export function BookingTypeSwitcher({
         {/* Phone-first: the flow (which starts at "service", skipping its
             own phone step) only renders once a phone is entered at the
             gate — so the gate is the single phone input, never two. */}
-        {entryPhone ? (
+        {gateReady ? (
           <BookingFlow
             key={`ind-${entryPhone}-${entryNameResolved}`}
             t={t}
@@ -301,6 +322,7 @@ export function BookingTypeSwitcher({
             initialPhone={entryPhone}
             initialReturningCustomer={entryCustomer}
             initialName={entryNameResolved}
+            initialSmsConsent={entrySmsConsent}
           />
         ) : null}
       </div>
@@ -317,7 +339,7 @@ export function BookingTypeSwitcher({
           single phone input (the individual flow then starts at
           "service", skipping its own phone step → never two inputs). */}
       {phoneGate}
-      {entryPhone ? (
+      {gateReady ? (
       <>
       {/* Heading + pill stacked. Was previously an inline-flex pill
           on its own line with no heading — easy to miss on first
@@ -378,6 +400,7 @@ export function BookingTypeSwitcher({
           initialPhone={entryPhone}
           initialReturningCustomer={entryCustomer}
           initialName={entryNameResolved}
+            initialSmsConsent={entrySmsConsent}
         />
       ) : (
         <BookingGroupFlow
@@ -393,6 +416,7 @@ export function BookingTypeSwitcher({
           initialPhone={entryPhone}
           initialOrganizer={entryCustomer}
           initialName={entryNameResolved}
+          initialSmsConsent={entrySmsConsent}
           language={language}
         />
       )}

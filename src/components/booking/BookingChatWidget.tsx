@@ -127,6 +127,9 @@ export function BookingChatWidget({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // Don't send mid-IME-composition (Vietnamese Telex/VNI): the committing
+      // Enter would send + clear, then compositionend re-inserts the last word.
+      if (e.nativeEvent.isComposing || e.keyCode === 229) return;
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         void send();

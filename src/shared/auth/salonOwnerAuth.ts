@@ -127,14 +127,14 @@ export type CompletePasswordResetResult =
  *   3. Sign out so the recovery session is consumed — the owner
  *      then signs in fresh with the new credentials.
  *
- * Minimum password length is 6. Anything weaker is surfaced
+ * Minimum password length is 8 (matches the UI). Anything weaker is surfaced
  * as `weak_password` so the UI can show actionable guidance rather
  * than a generic "server error."
  */
 export async function completeSalonOwnerPasswordReset(
   newPassword: string,
 ): Promise<CompletePasswordResetResult> {
-  if (!newPassword || newPassword.length < 6) {
+  if (!newPassword || newPassword.length < 8) {
     return { ok: false, error: "weak_password" };
   }
 

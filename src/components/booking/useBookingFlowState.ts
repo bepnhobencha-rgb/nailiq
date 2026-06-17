@@ -11,6 +11,14 @@ import {
   submitPublicBooking,
 } from "@/shared/booking/submitPublicBooking";
 import { submitPublicWaitlistEntry } from "@/shared/booking/submitPublicWaitlist";
+import {
+  resolveNoShowCardRequirement,
+  type NoShowCardRequirement,
+} from "@/shared/noshow/resolveNoShowCardRequirement";
+import {
+  resolveSavedNoShowCard,
+  type SavedNoShowCard,
+} from "@/shared/noshow/resolveSavedNoShowCard";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import {
   bookingDateYmdFromLocalDate,
@@ -19,6 +27,7 @@ import {
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import {
   getAvailableTimeSlots,
+  minutesToLabel,
   type TimeSlot,
 } from "@/shared/booking/getAvailableTimeSlots";
 import type {
@@ -117,6 +126,8 @@ export function useBookingFlowState(
   /** Booking surface language — forwarded to the booking so the
    *  confirmation SMS is sent in the language the customer chose. */
   language: "en" | "vi" = "vi",
+  /** SMS consent captured at the phone gate — pre-satisfies confirm. */
+  initialSmsConsent: boolean = false,
 ) {
   const capability = useMemo(
     () => buildCapabilityMap(capabilityRows),
@@ -171,6 +182,9 @@ export function useBookingFlowState(
     initialReturningCustomer?.email ?? "",
   );
   const [clientNotes, setClientNotes] = useState("");
+  /** Waitlist "Preferred time" — optional. Empty string = "any time" → the
+   *  submit sends preferredSlotLabel: null (unchanged legacy behavior). */
+  const [waitlistPreferredTime, setWaitlistPreferredTime] = useState<string>("");
   /** Task #09-11 — honeypot field, never shown to humans (CSS-hidden +
    *  `tabIndex=-1` + `aria-hidden`). Bots autofilling every `<input>`
    *  in the form will put something here; `submitPublicBooking`
@@ -191,6 +205,11 @@ export function useBookingFlowState(
   const [upsellGapMinutes, setUpsellGapMinutes] = useState<number>(0);
 
   const [otpSessionId, setOtpSessionId] = useState<string | null>(null);
+  // The phone a live OTP session was verified for. Lets us SKIP re-showing the
+  // OTP step (and re-sending an SMS) when the customer revisits verify/back from
+  // confirm with the same phone already verified. Phone is captured at the gate
+  // and immutable downstream, so a session stays valid for the whole flow.
+  const [otpVerifiedPhone, setOtpVerifiedPhone] = useState<string | null>(null);
   const [depositPaymentIntentId, setDepositPaymentIntentId] = useState<string | null>(null);
   const [depositConnectedAccountId, setDepositConnectedAccountId] = useState<string | null>(null);
   const [verificationAction, setVerificationAction] = useState<VerificationAction>("none");
@@ -216,6 +235,15 @@ export function useBookingFlowState(
 
   const [submitting, setSubmitting] = useState(false);
   const [waitlistSubmitting, setWaitlistSubmitting] = useState(false);
+  // Option A no-show card gate — resolved when the customer reaches the confirm
+  // step (before any booking exists) so the card form can render in-step.
+  const [cardRequirement, setCardRequirement] = useState<NoShowCardRequirement | null>(null);
+  // Đợt 2 — returning OTP-verified customer's saved card (one-tap reuse). Null =
+  // not looked up / none; only populated when a card is required AND OTP-verified.
+  const [savedCard, setSavedCard] = useState<SavedNoShowCard | null>(null);
+  // SMS consent — captured at the phone gate; pre-satisfies confirm so it isn't
+  // asked twice. Confirm still requires it (gates the button) as a safety net.
+  const [smsConsent, setSmsConsent] = useState(initialSmsConsent);
   const [waitlistSlotJoined, setWaitlistSlotJoined] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [serviceError, setServiceError] = useState<string | null>(null);
@@ -519,6 +547,12 @@ export function useBookingFlowState(
       // add-on at confirm) the grid only offers times that fit everything.
       serviceDurationMinutes:
         service.totalMinutes + selectedAddonsSlotMin + pendingAddonMin,
+      // NOTE: trailing-buffer spill past close is DISABLED. create_public_booking
+      // rejects any booking whose end (service + buffer) is after close
+      // (outside_hours), so offering a buffer-spill slot produced a slot the
+      // server always refused ("Could not complete booking"). Require the whole
+      // block to fit before close so availability matches create.
+      trailingBufferMinutes: 0,
       closedDateYmdSet,
       shortestServiceMinutes,
       leadMinutes: salon.bookingLeadMinutes,
@@ -569,6 +603,44 @@ export function useBookingFlowState(
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset when key inputs change
     setWaitlistSlotJoined(false);
   }, [selectedDate, staffId, serviceId, salon.id]);
+
+  /**
+   * Hourly time labels for the selected day's open window — drives the
+   * optional waitlist "Preferred time" select. Empty when the salon is
+   * closed that day (or no hours configured) → the select is hidden.
+   * Marks step every 60 min from the first whole hour at/after open, and
+   * stop strictly before close (so we never offer a slot at closing time).
+   */
+  const waitlistTimeOptions = useMemo<string[]>(() => {
+    const week = parseOpeningHours(salon.opening_hours);
+    if (!week) return [];
+    const dayKey = (["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const)[
+      selectedDate.getDay()
+    ];
+    const day = week[dayKey];
+    if (!day || day.closed) return [];
+    const [openH, openM] = day.open.split(":").map((n) => parseInt(n, 10));
+    const [closeH, closeM] = day.close.split(":").map((n) => parseInt(n, 10));
+    if (
+      Number.isNaN(openH) ||
+      Number.isNaN(openM) ||
+      Number.isNaN(closeH) ||
+      Number.isNaN(closeM)
+    ) {
+      return [];
+    }
+    const openMin = openH * 60 + openM;
+    const closeMin = closeH * 60 + closeM;
+    const out: string[] = [];
+    for (
+      let mark = Math.ceil(openMin / 60) * 60;
+      mark < closeMin;
+      mark += 60
+    ) {
+      out.push(minutesToLabel(mark));
+    }
+    return out;
+  }, [salon.opening_hours, selectedDate]);
 
   useEffect(() => {
     if (!timeSlot) return;
@@ -1005,8 +1077,11 @@ export function useBookingFlowState(
 
     setError(null);
     setStepDir(1);
-    // Always go through "verify" — it auto-routes to otp/confirm based on risk
-    setOtpSessionId(null);
+    // Always go through "verify" — it auto-routes to otp/confirm based on risk.
+    // Do NOT clear otpSessionId here: the phone can't change after the gate, so a
+    // session already verified for this phone stays valid. Clearing it made every
+    // info→verify pass (e.g. back-from-OTP then forward) re-trigger a fresh OTP +
+    // duplicate SMS. goVerifyDecided now skips OTP when the phone is already verified.
     setVerificationAction("none");
     setStep("verify");
   }, [
@@ -1031,7 +1106,14 @@ export function useBookingFlowState(
       if (action === "none") {
         setStep("confirm");
       } else if (action === "otp_optional" || action === "otp_required") {
-        setStep("otp");
+        // Already verified this exact phone in this session → don't re-prompt OTP
+        // or re-send an SMS; go straight to confirm. The submit re-validates the
+        // session server-side, so a stale/expired session still fails safe there.
+        if (otpSessionId && otpVerifiedPhone === clientPhone) {
+          setStep("confirm");
+        } else {
+          setStep("otp");
+        }
       } else {
         // deposit_required / deposit_or_otp → collect a deposit on the salon's
         // connected Stripe. The deposit panel self-skips to confirm if the salon
@@ -1039,12 +1121,13 @@ export function useBookingFlowState(
         setStep("deposit");
       }
     },
-    [],
+    [otpSessionId, otpVerifiedPhone, clientPhone],
   );
 
   // Customer skipped optional OTP — proceed to confirm unverified
   const goSkipOtp = useCallback(() => {
     setOtpSessionId(null);
+    setOtpVerifiedPhone(null);
     setStepDir(1);
     setStep("confirm");
   }, []);
@@ -1065,9 +1148,10 @@ export function useBookingFlowState(
 
   const goOtpNext = useCallback((sessionId: string) => {
     setOtpSessionId(sessionId);
+    setOtpVerifiedPhone(clientPhone);
     setStepDir(1);
     setStep("confirm");
-  }, []);
+  }, [clientPhone]);
 
   // OTP panel "Back" → returns to verify step (which auto-navigated to otp)
   const backFromOtpToInfo = useCallback(() => {
@@ -1090,6 +1174,7 @@ export function useBookingFlowState(
     setClientWebsite("");
     setSelectedAddonIds([]);
     setOtpSessionId(null);
+    setOtpVerifiedPhone(null);
     setVerificationAction("none");
     setVerificationLoading(false);
     setServiceId(null);
@@ -1099,6 +1184,7 @@ export function useBookingFlowState(
     setTimeSlots([]);
     setError(null);
     setWaitlistSlotJoined(false);
+    setWaitlistPreferredTime("");
     setInfoNameError(null);
     setInfoPhoneError(null);
     setInfoEmailError(null);
@@ -1150,7 +1236,49 @@ export function useBookingFlowState(
     }
   }, [bookingResult, service, shopLabel]);
 
-  const onConfirm = useCallback(async () => {
+  // Resolve the no-show card requirement when the customer reaches confirm —
+  // before any booking exists — so the card form can render in the confirm step.
+  useEffect(() => {
+    if (step !== "confirm" || !serviceId) return;
+    const v = validateGuestPhone(clientPhone.trim());
+    if (!v.ok) {
+      setCardRequirement(null);
+      return;
+    }
+    let alive = true;
+    void resolveNoShowCardRequirement({
+      salonId: salon.id,
+      serviceId,
+      clientPhone: v.digits,
+    })
+      .then((r) => alive && setCardRequirement(r))
+      .catch(() => alive && setCardRequirement(null));
+    return () => {
+      alive = false;
+    };
+  }, [step, serviceId, clientPhone, salon.id]);
+
+  // Đợt 2 — once a card is required AND the phone is OTP-verified, check whether
+  // this returning customer already has a card on file so the confirm step can
+  // offer one-tap reuse. OTP-gated by construction (needs otpSessionId; the
+  // server reads the phone from the session, never the client).
+  useEffect(() => {
+    if (step !== "confirm" || cardRequirement?.required !== true || !otpSessionId) {
+      setSavedCard(null);
+      return;
+    }
+    let alive = true;
+    void resolveSavedNoShowCard({ salonId: salon.id, otpSessionId })
+      .then((r) => alive && setSavedCard(r))
+      .catch(() => alive && setSavedCard(null));
+    return () => {
+      alive = false;
+    };
+  }, [step, cardRequirement, otpSessionId, salon.id]);
+
+  const onConfirm = useCallback(async (
+    extra?: { noShowCardSourceId?: string; noShowCardVerificationToken?: string; noShowConsent?: boolean; noShowReuseSavedCard?: boolean; healthAck?: boolean },
+  ) => {
     if (!serviceId || !timeSlot || !staffId) return;
     setError(null);
     const name = clientName.trim();
@@ -1224,6 +1352,11 @@ export function useBookingFlowState(
           verificationAction === "none" ? "none"
           : otpSessionId ? "otp"
           : undefined,
+        noShowCardSourceId: extra?.noShowCardSourceId,
+        noShowCardVerificationToken: extra?.noShowCardVerificationToken,
+        noShowReuseSavedCard: extra?.noShowReuseSavedCard,
+        noShowConsent: extra?.noShowConsent,
+        healthAck: extra?.healthAck,
       });
       // Link a paid deposit to the freshly-created booking (server re-verifies
       // the PaymentIntent with Stripe). Best-effort: the webhook is the backstop.
@@ -1268,6 +1401,9 @@ export function useBookingFlowState(
             staffId: staffId ?? BOOKING_ANY_STAFF_ID,
             staffList: capableStaff,
             serviceDurationMinutes: service.totalMinutes,
+            // Disabled (see other call site): create rejects buffer-spill-past-close
+            // slots, so require the whole block to fit before close.
+            trailingBufferMinutes: 0,
             closedDateYmdSet,
             shortestServiceMinutes,
             leadMinutes: salon.bookingLeadMinutes,
@@ -1302,6 +1438,17 @@ export function useBookingFlowState(
         setError(t.submitError);
       } else if (
         err instanceof Error &&
+        err.message.startsWith("card_save_failed")
+      ) {
+        // Card couldn't be saved → booking was cancelled server-side. Stay on
+        // the confirm step so the customer can re-enter the card. Show the
+        // provider reason (decline code) to aid diagnosis.
+        const reason = err.message.slice("card_save_failed:".length).trim();
+        setError(
+          (t.noShowCardError ?? t.submitError) + (reason ? ` — ${reason}` : ""),
+        );
+      } else if (
+        err instanceof Error &&
         err.message === "invalid_name_chars"
       ) {
         setError(t.bookingErrors.invalidNameChars);
@@ -1332,6 +1479,7 @@ export function useBookingFlowState(
       ) {
         // OTP session missing or expired — send user back to OTP step.
         setOtpSessionId(null);
+        setOtpVerifiedPhone(null);
         setStepDir(-1);
         setStep("otp");
         setError(t.bookingErrors.otpRequired);
@@ -1420,7 +1568,7 @@ export function useBookingFlowState(
         serviceId,
         staffId,
         bookingDateYmd: bookingDateYmdFromLocalDate(selectedDate),
-        preferredSlotLabel: null,
+        preferredSlotLabel: waitlistPreferredTime.trim() || null,
         clientName: name,
         clientPhone: phone,
         clientEmail: clientEmail.trim() || undefined,
@@ -1442,6 +1590,7 @@ export function useBookingFlowState(
     clientName,
     clientPhone,
     clientEmail,
+    waitlistPreferredTime,
     selectedDate,
     serviceId,
     shopSlug,
@@ -1486,8 +1635,13 @@ export function useBookingFlowState(
 
   const backToInfo = useCallback(() => {
     setStepDir(-1);
-    // confirm → otp/verify → info: always go back two steps through verify
-    if (verificationAction !== "none") {
+    // confirm → info. Only route back through the OTP step when the customer is
+    // NOT yet verified — re-showing OTP to an already-verified phone re-asked the
+    // code and re-sent an SMS. Verified (session for this phone) → straight to info.
+    if (
+      verificationAction !== "none" &&
+      !(otpSessionId && otpVerifiedPhone === clientPhone)
+    ) {
       setStep("otp");
     } else {
       setStep("info");
@@ -1495,7 +1649,7 @@ export function useBookingFlowState(
     setError(null);
     setInfoNameError(null);
     setInfoPhoneError(null);
-  }, [verificationAction]);
+  }, [verificationAction, otpSessionId, otpVerifiedPhone, clientPhone]);
 
   async function handleApplyVoucher(
     code: string,
@@ -1563,6 +1717,9 @@ export function useBookingFlowState(
     submitting,
     waitlistSubmitting,
     waitlistSlotJoined,
+    waitlistPreferredTime,
+    setWaitlistPreferredTime,
+    waitlistTimeOptions,
     error,
     serviceError,
     bookingResult,
@@ -1621,6 +1778,10 @@ export function useBookingFlowState(
     resetAfterDone,
     handleAddToCalendar,
     onConfirm,
+    cardRequirement,
+    savedCard,
+    smsConsent,
+    setSmsConsent,
     submitWaitlistSlotUnavailable,
     backToPhone,
     backToService,

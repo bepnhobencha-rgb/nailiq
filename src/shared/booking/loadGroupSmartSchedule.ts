@@ -54,6 +54,7 @@ import {
   isStaffCapableForService,
   type StaffCapabilityMap,
 } from "@/shared/booking/staffCapability";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import {
   ALTERNATIVE_QUERY_TIMEOUT_MS,
   ALTERNATIVE_SEARCH_DAYS,
@@ -280,6 +281,11 @@ function hmToMinutes(hm: string): number | null {
 // SLOT_STEP_MIN is imported from groupSchedulerCore.
 const BEST_SPREAD_LIMIT_MIN = 15;
 const ALT_SPREAD_LIMIT_MIN = 30;
+// Group customers pick a TIME — surface several distinct start times across the
+// window (not three staffing variants around one anchor). Cap the count so the
+// card list stays scannable, and space them apart so the choices feel real.
+const MAX_TIME_OPTIONS = 5;
+const MIN_TIME_GAP_MIN = 30;
 
 /** Map an arrival pill onto a [minStart, maxStart] window in
  *  minutes-from-midnight, then clamp against opening hours. The
@@ -309,7 +315,13 @@ function windowForArrival(
   } else if (pref.kind === "specific") {
     const t = hmToMinutes(pref.time);
     if (t === null) return null;
-    lo = Math.max(openMin, t - 90);
+    // Honor the time the customer explicitly picked: anchor AT it and only nudge
+    // FORWARD for capacity (waves can start a bit later when staff are full) —
+    // never schedule the group EARLIER than the time they chose. Previously this
+    // opened a ±90-min window, so the auto-selected "earliest" arrangement could
+    // land up to 90 min BEFORE the requested time (felt like the picker was
+    // ignored and a different time was recommended).
+    lo = Math.max(openMin, t);
     hi = Math.min(closeMin, t + 90);
   }
   if (hi <= lo) return null;
@@ -527,7 +539,7 @@ export async function loadGroupSmartSchedule(
 
     if (isAddon) {
       // Register as add-on. Skip zero-block add-ons gracefully.
-      const block = dur + buf;
+      const block = serviceBlockMinutes(dur, buf);
       const concurrent = rTyped.addon_timing === "concurrent";
       addonById.set(String(r.id), {
         block,
@@ -562,7 +574,7 @@ export async function loadGroupSmartSchedule(
     serviceById.set(String(r.id), {
       id: String(r.id),
       name: String(r.name ?? ""),
-      totalMin: dur + buf,
+      totalMin: serviceBlockMinutes(dur, buf),
       bufferMin: buf,
       priceCents: r.price_cents != null ? Number(r.price_cents) : null,
     });
@@ -893,6 +905,47 @@ function findArrangementsInWindow(
   }
   if (anchors.length === 0) return [];
 
+  // ── PASS 1 — distinct START-TIME options (customer picks a time) ──────────
+  // Walk the window and offer up to MAX_TIME_OPTIONS aligned arrangements at
+  // times spaced ≥ MIN_TIME_GAP_MIN apart (e.g. 2:00 · 2:30 · 3:00), each
+  // keeping everyone's preferred staff. This is what a group customer actually
+  // wants: real time choices, not three staffing variants around one anchor.
+  const timeOptions: GroupArrangement[] = [];
+  let lastAcceptedStartMs = -Infinity;
+  for (const anchorMs of anchors) {
+    if (timeOptions.length >= MAX_TIME_OPTIONS) break;
+    // Space options out so we don't show 2:00 / 2:15 / 2:30 (no real choice).
+    if (anchorMs - lastAcceptedStartMs < MIN_TIME_GAP_MIN * 60_000) continue;
+    const aligned = tryAlignedArrangement(
+      anchorMs,
+      ctx.resolvedMembers,
+      ctx.staffList,
+      ctx.staffById,
+      ctx.capability,
+      ctx.existing,
+      true,
+    );
+    if (!aligned) continue;
+    const arr = buildArrangement(
+      timeOptions.length === 0 ? "best" : "alternative",
+      aligned,
+      ctx.resolvedMembers,
+      ctx.staffById,
+      ctx.timezone,
+    );
+    // Aligned arrangements are tight by construction; guard defensively.
+    if (arr.spreadMinutes > BEST_SPREAD_LIMIT_MIN) continue;
+    timeOptions.push(arr);
+    lastAcceptedStartMs = anchorMs;
+  }
+  if (timeOptions.length > 0) {
+    return timeOptions;
+  }
+
+  // ── PASS 2 (fallback) — the group can't all start together anywhere in the
+  // window (not enough free staff for an aligned start). Keep the original
+  // best / staggered / earliest-by-any-staff search so the booking still
+  // completes instead of dead-ending.
   let bestArrangement: GroupArrangement | null = null;
   let altArrangement: GroupArrangement | null = null;
   let earliestArrangement: GroupArrangement | null = null;

@@ -13,7 +13,7 @@ import { LoyaltyDashboardWidget } from "@/components/dashboard/LoyaltyDashboardW
 import { NotificationsRealtimeWidget } from "@/components/dashboard/NotificationsRealtimeWidget";
 import type { SalonOwnerDashboardViewPayload } from "@/components/dashboard/salonDashboardFormat";
 import { getUserMessages } from "@/shared/i18n/user";
-import { maskPhoneDigits } from "@/shared/lib/maskPhone";
+import { formatPhone } from "@/shared/lib/phoneFormat";
 import { bookingIdsEqual } from "@/shared/lib/bookingIdsEqual";
 import { cn } from "@/shared/lib/cn";
 import type { SalonDashboardBooking } from "@/shared/types";
@@ -63,6 +63,14 @@ export function SalonOwnerDashboardMain({
   const t = messages.salonDashboard;
   const td = messages.ownerDashboard;
   const [elapsedMinutes, setElapsedMinutes] = useState(0);
+  // `toLocaleTimeString` formats differently on the server (Node) vs the
+  // browser (locale + device TZ), which fails hydration on the upcoming list.
+  // Render a placeholder through hydration, then the real time after mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration-safe mounted flag
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const update = () => {
@@ -84,9 +92,11 @@ export function SalonOwnerDashboardMain({
   }, [language, elapsedMinutes]);
 
   const profileComplete = data.salon.profile_complete;
-  const salonPhoneMasked = maskPhoneDigits(
-    String(data.salon.phone ?? "").replace(/\D/g, ""),
-  );
+  // The salon's OWN contact number, shown only to its authenticated
+  // owner/admin — display it in full (formatted). Masking applies to a
+  // customer's PII, not the salon's own number (that just hid the owner's
+  // own phone from themselves with no way to reveal it).
+  const salonPhoneDisplay = formatPhone(data.salon.phone);
   const bookingHref = `/${encodeURIComponent(slug)}`;
 
   const busy = isLoading || manualRefreshing || showDataSkeleton;
@@ -131,6 +141,7 @@ export function SalonOwnerDashboardMain({
             opening_hours: data.salon.opening_hours,
             email: data.salon.email,
           }}
+          viewerEmail={data.viewerEmail}
         />
       ) : null}
       <div className="mb-4 flex items-start justify-between gap-3">
@@ -147,7 +158,7 @@ export function SalonOwnerDashboardMain({
           </p>
           <p className="mt-1 text-sm font-medium text-nq-foreground">
             {t.phone}:{" "}
-            <span className="tabular-nums text-nq-muted">{salonPhoneMasked}</span>
+            <span className="tabular-nums text-nq-muted">{salonPhoneDisplay}</span>
           </p>
           {profileComplete ? (
             <p className="mt-3 rounded-xl border border-nq-success/35 bg-nq-success/12 px-3 py-2 text-sm font-medium text-nq-success">
@@ -280,9 +291,9 @@ export function SalonOwnerDashboardMain({
                           ) : null}
                           <div className="relative z-[1] flex w-full min-w-0 flex-wrap items-baseline justify-between gap-2">
                           <span className="text-sm font-medium tabular-nums text-nq-foreground">
-                            {b.start_time_utc
+                            {b.start_time_utc && mounted
                               ? new Date(b.start_time_utc).toLocaleTimeString(
-                                  undefined,
+                                  "en-US",
                                   { hour: "2-digit", minute: "2-digit" },
                                 )
                               : "—"}

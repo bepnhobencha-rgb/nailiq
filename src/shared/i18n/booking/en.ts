@@ -34,6 +34,12 @@ export const bookingEn = {
   dateClosedShort: "Closed",
   dateHolidayLabel: "Salon closed",
   dateHolidayShort: "Off",
+  /** Hybrid date picker: toggle that expands the full month grid below the strip. */
+  dateMoreDates: "More dates",
+  /** Hybrid date picker: collapse the month grid back to the strip. */
+  dateHideCalendar: "Hide calendar",
+  /** Hybrid date picker: first chip label for today. */
+  dateTodayChip: "Today",
   /** Calendar month navigation (e.g. "Previous month"). */
   calendarPrevMonthAria: "Previous month",
   calendarNextMonthAria: "Next month",
@@ -52,6 +58,13 @@ export const bookingEn = {
   noShowCardSaving: "Saving…",
   noShowCardSaved: "Card saved — you're only charged {fee} if you no-show.",
   noShowCardError: "Could not save the card. Please check your details.",
+  noShowConsent:
+    "I agree to the no-show policy and authorize this salon to charge {fee} to this card only if I don't show up.",
+  noShowSavedCardOnFile: "On file",
+  noShowSavedCardDesc:
+    "We'll use your saved card. You're only charged {fee} if you don't show up — nothing now.",
+  noShowUseDifferentCard: "Use a different card",
+  noShowUseSavedCard: "Use my saved card instead",
   slotLoading: "Loading times…",
   noSlotsAvailable: "No open slots that day. Try another date.",
   /** `{tz}` = short timezone abbreviation, e.g. "PDT", "GMT+7". Hidden if abbreviation unavailable. */
@@ -59,6 +72,8 @@ export const bookingEn = {
   next: "Continue",
   back: "Back",
   confirmBooking: "Confirm booking",
+  confirmTermsAgree: "By confirming, you agree to the",
+  confirmTermsLink: "Booking Terms & Cancellation Policy",
   submitting: "Submitting…",
   smsConsent:
     "I agree to receive SMS appointment confirmations & reminders. Msg & data rates may apply; reply STOP to opt out.",
@@ -153,6 +168,14 @@ export const bookingEn = {
   otpVerified: "Phone verified ✓",
   otpSkip: "Skip",
   otpOptionalHint: "Verifying your phone helps reduce no-shows (optional)",
+  /** Email-fallback for the OTP when the SMS doesn't arrive. */
+  otpAndEmail: "and email",
+  otpEmailFallbackCta: "Didn't get the text? Email me the code",
+  otpEmailInputLabel: "Enter your email to get the code",
+  otpEmailPlaceholder: "you@email.com",
+  otpEmailSendCta: "Send code by email",
+  otpEmailSent: "We also emailed your code",
+  otpEmailSending: "Emailing code…",
   verifyingBooking: "Checking booking…",
   clientNameLabel: "Your name",
   clientPhoneLabel: "Phone number",
@@ -161,7 +184,7 @@ export const bookingEn = {
   /** Placeholder for contact step — NANP Canadian example; guests may enter any valid E.164. */
   clientPhonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
   clientEmailLabel: "Email (optional)",
-  clientEmailHint: "Receive booking confirmation by email.",
+  clientEmailHint: "Recommended — get a link to reschedule or cancel your appointment, plus member-only offers.",
   clientNotesLabel: "Special notes",
   clientNotesOptionalHint: "Optional — allergies, design ideas, parking, etc.",
   waitlistNotifyCta: "Notify me if a slot opens",
@@ -169,6 +192,8 @@ export const bookingEn = {
   waitlistJoined:
     "You're on the list. We'll text you if something opens.",
   waitlistError: "Couldn't save your request. Try again.",
+  waitlistPreferredTimeLabel: "Preferred time (optional)",
+  waitlistAnyTime: "Any time",
   /** Legacy banner copy when both fields are empty on Continue (prefer field-level bookingErrors.*). */
   contactRequiredError: "Please enter your name and phone.",
   pastTimeError:
@@ -341,6 +366,7 @@ export const bookingEn = {
     finishTimeRequired: "Please set a target finish time.",
     /** Step 3 — arrival-window heading. */
     arrivalQuestion: "When would you like to arrive?",
+    arrivalNow: "Now",
     arrivalMorning: "Morning · 9 AM – 12 PM",
     arrivalAfternoon: "Afternoon · 12 PM – 5 PM",
     arrivalEvening: "Evening · 5 PM – close",

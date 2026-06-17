@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
+import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
 import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
 import { hmToMinutes } from "@/shared/booking/hmToMinutes";
@@ -17,6 +18,8 @@ import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { createClient } from "@/shared/lib/supabase/client";
+import { runPublicBookingSideEffects } from "@/shared/booking/publicBookingSideEffects";
+import { saveNoShowCardAction, reuseNoShowCardAction } from "@/shared/noshow/saveNoShowCardAction";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 
 export type BookingParams = {
@@ -63,6 +66,25 @@ export type BookingParams = {
   /** Booking-surface language. Forwarded to the confirmation SMS so it's
    *  sent in the language the customer chose (defaults to vi server-side). */
   language?: "en" | "vi";
+  /** Option A no-show card gate: Web Payments SDK card token captured IN the
+   *  confirm step. When present, the card is saved server-side right after the
+   *  booking is created and BEFORE any confirmation (SMS/email) — if the save
+   *  fails the booking is cancelled and the customer sees an error. */
+  noShowCardSourceId?: string | null;
+  /** SCA/AVS/CVV verification token (Square `verifyBuyer`) paired with
+   *  `noShowCardSourceId`. Passed to CreateCard so Square verifies the card at
+   *  storage time (rejects a wrong CVV/postal). */
+  noShowCardVerificationToken?: string | null;
+  /** Option A reuse path: returning OTP-verified customer chose to reuse their
+   *  EXISTING saved card instead of entering a new one. No card token is sent —
+   *  the server re-derives the card from the OTP-verified phone. Ignored if
+   *  `noShowCardSourceId` is also present (a new card wins). */
+  noShowReuseSavedCard?: boolean;
+  /** Customer agreed to the no-show policy + card-on-file authorization. */
+  noShowConsent?: boolean;
+  /** Customer ticked the mandatory health acknowledgment (massage/head spa/etc).
+   *  Stamps bookings.health_ack_at server-side as duty-of-care evidence. */
+  healthAck?: boolean;
 };
 
 export type BookingResult = {
@@ -260,31 +282,53 @@ export async function submitPublicBooking(
   // reading unconsumed/non-expired sessions by UUID (the UUID is the capability token).
   const salonPhoneOtpEnabled =
     (salon as { phone_otp_enabled?: unknown }).phone_otp_enabled === true;
+  // The OTP session id actually used downstream (reuse + consume). Resolved from
+  // the client-passed id OR a valid session for the phone (see fallback below).
+  let resolvedOtpSessionId = "";
   if (salonPhoneOtpEnabled) {
-    const sessionId = (params.otpSessionId ?? "").trim();
-    if (!sessionId) throw new Error("otp_required");
+    const passedId = (params.otpSessionId ?? "").trim();
+    type OtpRow = { id: string; phone: string };
+    // The anon RLS policy `anon_read_valid_otp_session` only returns rows that
+    // are UNCONSUMED + UNEXPIRED — so any row we read here is already valid.
+    let otpSession: OtpRow | null = null;
 
-    const { data: otpSession } = await supabase
-      .from("phone_otp_sessions" as never)
-      .select("id, phone, consumed_at, expires_at")
-      .eq("id", sessionId)
-      .eq("salon_id", String(salon.id))
-      .maybeSingle() as { data: { id: string; phone: string; consumed_at: string | null; expires_at: string } | null };
-
-    if (!otpSession) throw new Error("otp_invalid");
-
-    // Phone must match the booking phone (digits only).
-    if (otpSession.phone !== phoneOk.digits) {
-      throw new Error("otp_invalid");
+    // 1) The session id the client passed (the normal path).
+    if (passedId) {
+      const { data } = (await supabase
+        .from("phone_otp_sessions" as never)
+        .select("id, phone")
+        .eq("id", passedId)
+        .eq("salon_id", String(salon.id))
+        .maybeSingle()) as { data: OtpRow | null };
+      if (data && data.phone === phoneOk.digits) otpSession = data;
     }
 
-    // Mark as consumed via API — best-effort fire-and-forget so the session
-    // cannot be reused (not blocking the booking flow on failure).
-    void fetch("/api/booking-otp/consume-session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId }),
-    });
+    // 2) FALLBACK — the client can hold a STALE session id after re-verifying
+    //    (the id it remembers expired/was consumed by an earlier attempt), which
+    //    wrongly threw "phone verification required" even though the customer
+    //    DID just verify. Accept any still-valid session for THIS phone+salon:
+    //    a fresh verified session for the same number is the same proof of
+    //    phone control (you can't get one without receiving its code).
+    if (!otpSession) {
+      const { data } = (await supabase
+        .from("phone_otp_sessions" as never)
+        .select("id, phone")
+        .eq("salon_id", String(salon.id))
+        .eq("phone", phoneOk.digits)
+        .order("expires_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()) as { data: OtpRow | null };
+      if (data) otpSession = data;
+    }
+
+    if (!otpSession) throw new Error("otp_required");
+    // Use the RESOLVED session id everywhere downstream (reuse + consume).
+    resolvedOtpSessionId = otpSession.id;
+
+    // NOTE: do NOT consume the session here. The saved-card REUSE path
+    // (reuseNoShowCardForBooking, below) re-validates this same session and
+    // requires it UNCONSUMED to re-derive the card by the verified phone.
+    // Consume happens at the END, after the card step (single-use still holds).
   }
 
   // Enforce per-plan monthly booking cap (landing-page promise).
@@ -367,7 +411,7 @@ export async function submitPublicBooking(
 
   const mainBlockMin = comboOverride
     ? comboOverride.durationMinutes
-    : (Number(service.duration_minutes) || 0) + (Number(service.buffer_minutes) || 0);
+    : serviceBlockMinutes(service.duration_minutes, service.buffer_minutes);
 
   let addonBlockMin = 0;
   type AddonRow = { id: string; name: string; price_cents: number | null };
@@ -396,9 +440,10 @@ export async function submitPublicBooking(
         | { id: string; name: string; duration_minutes?: unknown; buffer_minutes?: unknown; price_cents?: unknown; is_addon?: unknown; addon_timing?: unknown }
         | undefined;
       if (!addSvc || addSvc.is_addon !== true) throw new Error("addon_not_found");
-      const block =
-        (Number(addSvc.duration_minutes) || 0) +
-        (Number(addSvc.buffer_minutes) || 0);
+      const block = serviceBlockMinutes(
+        addSvc.duration_minutes,
+        addSvc.buffer_minutes,
+      );
       if (block <= 0) throw new Error("invalid_addon");
       // Concurrent add-ons run alongside the main service → add $0 time to the
       // appointment block; only sequential ones extend the end time.
@@ -427,10 +472,17 @@ export async function submitPublicBooking(
     const openM = hmToMinutes(dayCfg.open);
     const closeM = hmToMinutes(dayCfg.close);
     const endMinsOfDay = startMinsOfDay + totalBlockMin;
+    // The trailing buffer may run past close for the last booking (cleanup, no
+    // next customer) — only the SERVICE must finish by close. Single-service
+    // only; with add-ons keep the conservative whole-block fit. Mirrors the
+    // client grid's `trailingBufferMinutes`.
+    const closingTrailingBuffer =
+      addonBlockMin === 0 ? Number(service.buffer_minutes) || 0 : 0;
+    const serviceEndMinsOfDay = endMinsOfDay - closingTrailingBuffer;
     if (closeM <= openM) throw new Error("outside_opening_hours");
     if (
       startMinsOfDay < openM ||
-      endMinsOfDay > closeM ||
+      serviceEndMinsOfDay > closeM ||
       endMinsOfDay <= startMinsOfDay
     ) {
       throw new Error("outside_opening_hours");
@@ -713,24 +765,52 @@ export async function submitPublicBooking(
     throw new Error("booking_rpc_empty");
   }
 
-  // Stamp booking_channel = 'online' (the RPC leaves it null). Reports use it
-  // to separate online bookings from desk / Square / Wix / voice. We fold in
-  // client_locale on the SAME best-effort UPDATE so the confirmation /
-  // reschedule SMS goes out in the language the customer was browsing. A
-  // failure here only loses the stamp — the SMS sender falls back to
-  // customer_preferences.preferred_language, so the booking is never at risk.
-  if (bookingId) {
-    const stamp: { booking_channel: string; client_locale?: string } = {
-      booking_channel: "online",
-    };
-    if (params.language) stamp.client_locale = params.language;
-    const { error: chErr } = await supabase
-      .from("bookings")
-      .update(stamp as never)
-      .eq("id", bookingId);
-    if (chErr) {
-      console.error("[submitPublicBooking] booking_channel/locale stamp failed", chErr);
+  // Option A no-show card gate: a required-card booking captured the card IN the
+  // confirm step. Save it NOW — before any confirmation goes out. On failure we
+  // do NOT throw / cancel: a card glitch (Square lookup miss, network, declined
+  // verification) must never cost a real customer their slot. The action keeps
+  // the booking + flags `noshow_card_required` so the desk collects a card later
+  // (the "⚠️ needs card" badge). Booking proceeds; protection is desk-recoverable.
+  if (params.noShowCardSourceId && bookingId) {
+    const saved = await saveNoShowCardAction({
+      bookingId,
+      sourceId: params.noShowCardSourceId,
+      consent: params.noShowConsent === true,
+      verificationToken: params.noShowCardVerificationToken ?? undefined,
+    });
+    if (!saved.ok) {
+      console.error("[submitPublicBooking] card save failed — booking kept + flagged:", saved.reason, bookingId);
     }
+  } else if (params.noShowReuseSavedCard && bookingId) {
+    // Returning OTP-verified customer reused their existing card on file. Same
+    // non-fatal contract — a reuse glitch flags the booking, never cancels it.
+    const reused = await reuseNoShowCardAction({
+      bookingId,
+      otpSessionId: resolvedOtpSessionId,
+      consent: params.noShowConsent === true,
+    });
+    if (!reused.ok) {
+      console.error("[submitPublicBooking] card reuse failed — booking kept + flagged:", reused.reason, bookingId);
+    }
+  }
+
+  // Consume the OTP session NOW — after the card/reuse step, which needs it
+  // unconsumed (see the validation note above). Single-use: best-effort
+  // fire-and-forget so a failure never blocks the committed booking.
+  if (salonPhoneOtpEnabled && resolvedOtpSessionId) {
+    void fetch("/api/booking-otp/consume-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: resolvedOtpSessionId }),
+    });
+  }
+
+  // booking_channel='online' + client_locale are stamped SERVER-SIDE in
+  // runPublicBookingSideEffects below. The RPC leaves booking_channel null, and
+  // a browser anon `.update()` silently no-ops (UPDATE grant but no RLS UPDATE
+  // policy → 0 rows, no error), which is why every online booking saved as
+  // null channel. Reports use the channel; the SMS sender uses client_locale.
+  if (bookingId) {
     // Notify owner/admin of the new booking (opt-in, fire-and-forget).
     void sendOwnerBookingNotification({
       salonId: String(salon.id),
@@ -757,102 +837,75 @@ export async function submitPublicBooking(
     }
   }
 
-  // Best-effort: stamp the staff-requested flag for the RPC path.
-  // The `create_public_booking` RPC currently has a fixed parameter
-  // list that doesn't include this field; rather than gate the
-  // feature on a SQL function migration, we follow up with an UPDATE
-  // when the customer picked a specific staff. Failures here are
-  // logged but don't fail the booking — the chip just renders
-  // without a heart, identical to the prior behavior.
-  if (customerRequestedStaff && bookingId) {
-    const { error: stampErr } = await supabase
-      .from("bookings")
-      .update({ staff_requested_by_client: true } as never)
-      .eq("id", bookingId);
-    if (stampErr) {
-      const err = new Error(stampErr.message);
-      err.name = "StaffRequestedFlagStampError";
-      Sentry.captureException(err, {
-        tags: {
-          "booking.rpc": "staff_requested_flag",
-          "booking.rpc.failure": "post_insert_stamp",
-        },
-        extra: { bookingId, message: stampErr.message },
-      });
-    }
-  }
+  // staff_requested_by_client (the ❤️ chip) is stamped SERVER-SIDE in
+  // runPublicBookingSideEffects below — same reason as booking_channel: a browser
+  // anon UPDATE silently no-ops under RLS, so this flag never persisted online.
 
   // TODO Phase 2 WOW:
   // - Check client_profiles when guest enters phone
   // - Auto-fill name if already known
   // - Suggest preferred_staff_id (favorite tech)
   // - Show "Welcome back [name]!"
-  try {
-    // Per-phone snapshot via SECURITY DEFINER RPC — anon can no longer read
-    // client_profiles directly (cross-tenant PII lockdown, migration
-    // 20260609120000); the RPC returns only this one phone's row.
-    const { data: snapshotRows } = await supabase.rpc(
-      "get_booking_client_snapshot" as never,
-      { p_phone: phoneOk.digits } as never,
-    );
-    const existingProfile = (Array.isArray(snapshotRows)
-      ? snapshotRows[0]
-      : null) as { visit_count?: number | null } | null;
-
-    const nextVisits = (existingProfile?.visit_count ?? 0) + 1;
-
-    const { error: profileUpsertErr } = await supabase
-      .from("client_profiles")
-      .upsert(
-        {
-          phone: phoneOk.digits,
-          name: nameTrimmed,
-          preferred_staff_id: resolvedStaffId,
-          last_service_date: new Date().toISOString(),
-          visit_count: nextVisits,
-        },
-        { onConflict: "phone" },
-      );
-
-    if (profileUpsertErr) {
-      const err = new Error(profileUpsertErr.message);
-      err.name = "ClientProfilesUpsertError";
-      Sentry.captureException(err, {
-        tags: {
-          "booking.rpc": "client_profiles",
-          "booking.rpc.failure": "upsert_best_effort",
-        },
-        extra: { message: profileUpsertErr.message },
-      });
+  // Identity resolve (name / visit_count / last_service_date / preferred_staff
+  // + bookings.client_profile_id FK stamp) now happens INSIDE
+  // create_public_booking via resolve_client_profile() — atomic + server-
+  // authoritative (migration 20260614110000). The old best-effort browser
+  // upsert that did all of that was removed (under RLS it could silently no-op,
+  // and keeping it would double-count visit_count).
+  //
+  // We KEEP only the "verify once, trust" stamp: on an OTP-verified booking,
+  // record phone_verified_at so future bookings can skip OTP
+  // (determine_booking_verification). It writes a single column — never
+  // visit_count — so it cannot double-count. By now the RPC has already
+  // upserted the profile row, so this only updates the existing row.
+  if (params.verificationMethod === "otp") {
+    try {
+      const { error: verifyStampErr } = await supabase
+        .from("client_profiles")
+        .upsert(
+          {
+            phone: phoneOk.digits,
+            phone_verified_at: new Date().toISOString(),
+          } as never,
+          { onConflict: "phone" },
+        );
+      if (verifyStampErr) {
+        const err = new Error(verifyStampErr.message);
+        err.name = "ClientProfilesVerifyStampError";
+        Sentry.captureException(err, {
+          tags: {
+            "booking.rpc": "client_profiles",
+            "booking.rpc.failure": "verify_stamp_best_effort",
+          },
+          extra: { message: verifyStampErr.message },
+        });
+      }
+    } catch {
+      /* booking succeeded; verify stamp is best-effort */
     }
-  } catch {
-    /* booking succeeded; profile update is best-effort */
   }
 
-  // Evaluate deposit requirement + AI risk score — fire-and-forget via server route
-  // (scoreNoShowRisk uses @anthropic-ai/sdk which is Node.js-only, can't run in browser).
+  // Post-commit side-effects (deposit eval + AI no-show risk + card-required
+  // flag, and the confirmation email) run in a SERVER ACTION. This flow executes
+  // in the browser (anon Supabase client for RLS-scoped inserts), so the old
+  // client→internal-route fetches sent an empty INTERNAL_API_SECRET and were
+  // rejected on EVERY online booking (risk 401, email 403): no risk was ever
+  // scored and no confirmation email ever sent. A server action has the server
+  // env + uses after(), so it runs these directly without the HTTP/secret hop.
   void (async () => {
     try {
       const { data: depositRows } = await supabase.rpc(
         "get_booking_client_snapshot" as never,
-        { p_phone: phoneOk.digits } as never,
+        // Salon-scoped: only recognizes a phone that has booked at THIS salon,
+        // so the snapshot can't be used as a cross-tenant phone→PII oracle.
+        { p_salon_id: String(salon.id), p_phone: phoneOk.digits } as never,
       );
       const cp = (Array.isArray(depositRows) ? depositRows[0] : null) as {
         no_show_count?: number; is_vip?: boolean; visit_count?: number;
       } | null;
 
-      const appUrl =
-        typeof window !== "undefined"
-          ? "" // same-origin relative — avoids www/non-www cross-origin "Failed to fetch"
-          : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
-      const secret = (process.env.INTERNAL_API_SECRET ?? "").trim();
-      await fetch(`${appUrl}/api/booking/noshow-evaluate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-internal-secret": secret,
-        },
-        body: JSON.stringify({
+      await runPublicBookingSideEffects({
+        risk: {
           bookingId,
           clientName: nameTrimmed,
           serviceName: service.name as string,
@@ -864,44 +917,34 @@ export async function submitPublicBooking(
           isVip: cp?.is_vip ?? false,
           hasEmail: !!emailToStore,
           svcPriceCents: priceSnapshot ?? 0,
-        }),
+        },
+        email: emailToStore
+          ? {
+              bookingId,
+              shopSlug,
+              clientName: nameTrimmed,
+              clientEmail: emailToStore,
+              serviceName: service.name as string,
+              addonServiceName: addonRow?.name ?? null,
+              staffName: resolvedStaffName,
+              startTimeUtc: startLocal.toISOString(),
+              totalPriceCents: totalPriceCents > 0 ? totalPriceCents : null,
+            }
+          : undefined,
+        stamp: {
+          bookingId,
+          bookingChannel: "online",
+          clientLocale: params.language || undefined,
+          staffRequested: customerRequestedStaff,
+          verificationMethod: params.verificationMethod || undefined,
+          otpSessionId: params.otpSessionId ?? undefined,
+          healthAck: params.healthAck === true,
+        },
       });
     } catch (e) {
-      console.error("[submitPublicBooking] noshow-evaluate dispatch failed", e);
+      console.error("[submitPublicBooking] side-effects dispatch failed", e);
     }
   })();
-
-  // Send confirmation email via a dedicated Route Handler that uses after()
-  // to guarantee delivery even after the server action returns.
-  if (emailToStore) {
-    try {
-      const appUrl =
-        typeof window !== "undefined"
-          ? "" // same-origin relative — avoids www/non-www cross-origin "Failed to fetch"
-          : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
-      const secret = (process.env.INTERNAL_API_SECRET ?? "").trim();
-      await fetch(`${appUrl}/api/booking-email`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-internal-secret": secret,
-        },
-        body: JSON.stringify({
-          bookingId,
-          shopSlug,
-          clientName: nameTrimmed,
-          clientEmail: emailToStore,
-          serviceName: service.name as string,
-          addonServiceName: addonRow?.name ?? null,
-          staffName: resolvedStaffName,
-          startTimeUtc: startLocal.toISOString(),
-          totalPriceCents: totalPriceCents > 0 ? totalPriceCents : null,
-        }),
-      });
-    } catch (e) {
-      console.error("[submitPublicBooking] booking-email dispatch failed", e);
-    }
-  }
 
   // Fire-and-forget: redeem voucher
   if (params.voucherRedemption?.voucher_id && bookingId) {
@@ -956,16 +999,10 @@ export async function submitPublicBooking(
     body: JSON.stringify({ bookingId, salonId: String(salon.id) }),
   }).catch(() => {/* best-effort */});
 
-  // Record verification method on booking (smart verification audit trail)
-  if (params.verificationMethod && bookingId) {
-    void supabase
-      .from("bookings")
-      .update({
-        verification_method: params.verificationMethod,
-        verification_completed_at: new Date().toISOString(),
-      } as never)
-      .eq("id", bookingId);
-  }
+  // verification_method + verification_completed_at + otp_session_id are stamped
+  // SERVER-SIDE in runPublicBookingSideEffects above (a browser anon UPDATE here
+  // silently no-op'd under RLS, so it never persisted — front desk saw online
+  // OTP-verified bookings as "unverified").
 
   // Fire-and-forget: tag booking with combo ID for analytics
   if (comboOverride?.comboId && bookingId) {

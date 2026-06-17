@@ -62,10 +62,10 @@ export function PartyCardPanel({ initialCards, slug, salonId, currencyCode, labe
     setCancelStates((prev) => ({ ...prev, [groupId]: state }));
   }
 
-  function handleCancelGroup(card: PartyCard) {
+  function handleCancelGroup(card: PartyCard, notify: { sms: boolean; email: boolean }) {
     setCancelState(card.groupId, "cancelling");
     startCancelTransition(async () => {
-      const result = await cancelDeskGroup(slug, { salonId, groupId: card.groupId });
+      const result = await cancelDeskGroup(slug, { salonId, groupId: card.groupId, notify });
       if (result.ok) {
         // Refresh from the server so the cancelled party drops off the strip.
         const refreshed = await loadPartyCardsAction(slug);
@@ -180,7 +180,7 @@ export function PartyCardPanel({ initialCards, slug, salonId, currencyCode, labe
                     cancelState={cancelStates[card.groupId] ?? "idle"}
                     onCancelClick={() => setCancelState(card.groupId, "confirm")}
                     onCancelDismiss={() => setCancelState(card.groupId, "idle")}
-                    onCancelConfirm={() => handleCancelGroup(card)}
+                    onCancelConfirm={(notify) => handleCancelGroup(card, notify)}
                   />
                 </li>
               ))}
@@ -215,7 +215,7 @@ function PartyCardItem({
   cancelState: CancelState;
   onCancelClick: () => void;
   onCancelDismiss: () => void;
-  onCancelConfirm: () => void;
+  onCancelConfirm: (notify: { sms: boolean; email: boolean }) => void;
 }) {
   const [slotsOpen, setSlotsOpen] = useState(false);
 
@@ -385,8 +385,14 @@ function PartyCancelControl({
   cancelState: CancelState;
   onCancelClick: () => void;
   onCancelDismiss: () => void;
-  onCancelConfirm: () => void;
+  onCancelConfirm: (notify: { sms: boolean; email: boolean }) => void;
 }) {
+  // Notify-the-organizer intent, captured alongside the cancel confirm. Both
+  // default ON (the common case — let the party know it's off). The server only
+  // sends on channels the organizer actually has contact for.
+  const [notifySms, setNotifySms] = useState(true);
+  const [notifyEmail, setNotifyEmail] = useState(true);
+
   if (cancelState === "confirm" || cancelState === "cancelling" || cancelState === "error") {
     const busy = cancelState === "cancelling";
     return (
@@ -397,6 +403,32 @@ function PartyCancelControl({
         <p className="text-[11px] font-medium text-nq-foreground">
           {labels.cancelConfirm(card.totalSlots)}
         </p>
+        {/* Notify-the-organizer toggles */}
+        <div className="mt-2 flex items-center gap-3 text-[11px] text-nq-muted">
+          <span>{labels.notifyLabel}</span>
+          <label className="flex cursor-pointer items-center gap-1">
+            <input
+              type="checkbox"
+              checked={notifySms}
+              disabled={busy}
+              onChange={(e) => setNotifySms(e.target.checked)}
+              data-testid={`party-card-notify-sms-${card.groupId}`}
+              className="h-3.5 w-3.5 accent-nq-primary"
+            />
+            {labels.notifySms}
+          </label>
+          <label className="flex cursor-pointer items-center gap-1">
+            <input
+              type="checkbox"
+              checked={notifyEmail}
+              disabled={busy}
+              onChange={(e) => setNotifyEmail(e.target.checked)}
+              data-testid={`party-card-notify-email-${card.groupId}`}
+              className="h-3.5 w-3.5 accent-nq-primary"
+            />
+            {labels.notifyEmail}
+          </label>
+        </div>
         {cancelState === "error" && (
           <p className="mt-1 text-[10px] text-nq-error">{labels.cancelError}</p>
         )}
@@ -404,7 +436,7 @@ function PartyCancelControl({
           <button
             type="button"
             disabled={busy}
-            onClick={onCancelConfirm}
+            onClick={() => onCancelConfirm({ sms: notifySms, email: notifyEmail })}
             data-testid={`party-card-cancel-yes-${card.groupId}`}
             className={cn(
               "flex-1 rounded-md py-1.5 text-[11px] font-semibold transition-colors",

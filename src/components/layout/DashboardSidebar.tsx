@@ -6,9 +6,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Calendar,
   Camera,
+  Gavel,
   Gift,
+  History,
   Package,
   ChevronLeft,
+  Activity,
   ChevronRight,
   Check,
   ChevronUp,
@@ -26,6 +29,7 @@ import {
   Users,
 } from "lucide-react";
 import { LogoutButton } from "@/components/dashboard/LogoutButton";
+import { GlobalLanguageToggle } from "@/components/user/GlobalLanguageToggle";
 import { cn } from "@/shared/lib/cn";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -195,9 +199,20 @@ export function DashboardSidebar({
         key: "live",
         items: [
           {
+            // Owner/admin remote command view — the away decision-maker's home.
+            key: "pulse",
+            label: t.pulse,
+            href: `${dashRoot}/pulse`,
+            icon: Activity,
+            match: (p) => p.startsWith(`${dashRoot}/pulse`),
+            hidden: role !== "owner" && role !== "admin",
+          },
+          {
             key: "front-desk",
             label: t.frontDesk,
-            href: `${dashRoot}/center`,
+            // Force the day grid (the live board). Without ?view=day a stored
+            // week/month from a prior Calendar visit would reopen here.
+            href: `${dashRoot}/center?view=day`,
             icon: LayoutGrid,
             match: (p) => p.startsWith(`${dashRoot}/center`),
             hidden: featureOff("receptionist_center"),
@@ -205,8 +220,8 @@ export function DashboardSidebar({
           {
             key: "queue",
             label: t.walkinQueue,
-            // Center anchors a queue panel; deep-link via #queue.
-            href: `${dashRoot}/center#queue`,
+            // Queue panel renders only in the day view — force it + deep-link #queue.
+            href: `${dashRoot}/center?view=day#queue`,
             icon: Clock,
             match: () => false,
             hidden:
@@ -335,6 +350,24 @@ export function DashboardSidebar({
             hidden: true,
           },
           {
+            key: "disputes",
+            label: t.disputes,
+            href: `${dashRoot}/disputes`,
+            icon: Gavel,
+            match: (p) => p.startsWith(`${dashRoot}/disputes`),
+            // Financial data — owner + admin only (matches the page gate).
+            hidden: role !== "owner" && role !== "admin",
+          },
+          {
+            key: "activity",
+            label: t.activity,
+            href: `${dashRoot}/activity`,
+            icon: History,
+            match: (p) => p.startsWith(`${dashRoot}/activity`),
+            // Full audit/comms log — owner + admin (matches the page gate).
+            hidden: role !== "owner" && role !== "admin",
+          },
+          {
             key: "messages",
             label: t.messages,
             href: null,
@@ -375,14 +408,18 @@ export function DashboardSidebar({
     ];
   }, [
       dashRoot,
+      role,
+      t.activity,
       t.calendar,
       t.clients,
+      t.disputes,
       t.frontDesk,
       t.loyalty,
       t.marketing,
       t.messages,
       t.messagesSoonBadge,
       t.noShowProtection,
+      t.pulse,
       t.reports,
       t.photos,
       t.combos,
@@ -636,6 +673,15 @@ export function DashboardSidebar({
               </>
             ) : null}
 
+            {/* Language — switches every surface (UI + server + AI) in lockstep */}
+            <div className="my-1 border-t border-nq-border/30" />
+            <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+                {language === "vi" ? "Ngôn ngữ" : "Language"}
+              </span>
+              <GlobalLanguageToggle />
+            </div>
+
             {/* Sign out */}
             <div className="my-1 border-t border-nq-border/30" />
             <div className="px-2 py-1">
@@ -743,13 +789,17 @@ function SidebarRow({
 
 type RoleBadgeMap = {
   owner: string;
+  admin: string;
   senior: string;
   nail_tech: string;
+  receptionist: string;
 };
 
 function localizedRoleLabel(role: string, labels: RoleBadgeMap): string {
   if (role === "owner") return labels.owner;
+  if (role === "admin") return labels.admin;
   if (role === "senior") return labels.senior;
+  if (role === "receptionist") return labels.receptionist;
   if (role === "nail_tech") return labels.nail_tech;
   // Fallback for unknown / future roles — keep the raw role name so it's
   // still parseable rather than collapsing to an English placeholder.

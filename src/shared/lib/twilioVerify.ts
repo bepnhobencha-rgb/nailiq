@@ -8,6 +8,8 @@
  * @see https://www.twilio.com/docs/verify/api/verification-check
  */
 
+import { smsSuppressReason } from "@/shared/lib/twilioSms";
+
 type TwilioCreds = {
   accountSid: string;
   authToken: string;
@@ -67,10 +69,31 @@ function parseTwilioJson(text: string): Record<string, unknown> {
 }
 
 /**
+ * Sanitize a salon name for Twilio Verify's `CustomFriendlyName` (max 30 chars;
+ * keep letters/numbers/spaces only so stray punctuation can't trip the API).
+ * Returns "" when nothing usable remains.
+ */
+function sanitizeFriendlyName(name: string): string {
+  return name
+    .normalize("NFC")
+    .replace(/[^\p{L}\p{N} ]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 30);
+}
+
+/**
  * Start an SMS verification for an E.164 number (must include leading "+").
+ *
+ * `friendlyName` (e.g. the salon name) is shown in the OTP message
+ * ("Your <friendlyName> verification code is: 123456") via Twilio's per-request
+ * `CustomFriendlyName`. It is sanitized; if Twilio rejects it (HTTP 400) we
+ * retry WITHOUT it so a brand name can never block a customer's OTP. Omit it to
+ * fall back to the Verify Service's default friendly name.
  */
 export async function sendVerification(
   e164Phone: string,
+  friendlyName?: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const creds = await getTwilioCreds();
   if (!creds) {
@@ -83,18 +106,45 @@ export async function sendVerification(
     return { ok: false, error: "Invalid phone format." };
   }
 
+  // KILL-SWITCH: never bill real Twilio Verify for disabled-env / non-prod /
+  // fictional 555 seed numbers. Same guard as outbound SMS — see smsSuppressReason.
+  const suppressReason = smsSuppressReason(e164Phone);
+  if (suppressReason) {
+    console.warn(`[sendVerification] SUPPRESSED OTP (${suppressReason}) — no real Twilio call`);
+    return { ok: true };
+  }
+
   const auth = `Basic ${Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString("base64")}`;
   const url = `https://verify.twilio.com/v2/Services/${encodeURIComponent(creds.verifyServiceSid)}/Verifications`;
+  const fn = friendlyName ? sanitizeFriendlyName(friendlyName) : "";
 
-  try {
-    const res = await fetch(url, {
+  const post = (withName: boolean) => {
+    const params: Record<string, string> = { To: e164Phone, Channel: "sms" };
+    if (withName && fn) params.CustomFriendlyName = fn;
+    return fetch(url, {
       method: "POST",
       headers: {
         Authorization: auth,
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({ To: e164Phone, Channel: "sms" }).toString(),
+      body: new URLSearchParams(params).toString(),
     });
+  };
+
+  try {
+    let res = await post(Boolean(fn));
+    // A rejected brand name must NEVER block the customer's code. Verify plans
+    // that don't allow custom friendly names return 403 / code 60204 ("Custom
+    // friendly name not allowed"); an invalid name returns 400 — in EITHER case
+    // retry plain (default friendly name). Before this, only 400 was retried, so
+    // 60204 fell through → every booking OTP 500'd platform-wide after the
+    // salon-name feature shipped.
+    if (!res.ok && (res.status === 400 || res.status === 403) && fn) {
+      console.warn(
+        "[sendVerification] CustomFriendlyName rejected — retrying without it",
+      );
+      res = await post(false);
+    }
 
     const text = await res.text();
     if (!res.ok) {

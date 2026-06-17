@@ -71,11 +71,19 @@ export async function POST(req: Request) {
   // Check if SMS is enabled for this salon
   const { data: salon } = await db
     .from("salons")
-    .select("name, subscription_plan, plan_override, address")
+    .select("name, slug, subscription_plan, plan_override, address")
     .eq("id", salonId)
     .maybeSingle();
 
   if (!salon) return NextResponse.json({ ok: false, error: "salon_not_found" }, { status: 404 });
+
+  // Defense-in-depth for the Twilio kill-switch: flag E2E/test salons so
+  // sendSmsReminder suppresses real SMS even if a seed number ever slips past
+  // the 555-exchange guard. E2E fixtures use slugs prefixed "e2e-" / names
+  // starting "E2E " (e.g. "E2E Group Salon") — no real tenant does.
+  const salonSlug = (salon as { slug?: string | null }).slug ?? "";
+  const salonIsTest =
+    /^e2e[-_]/i.test(salonSlug) || /^e2e\b/i.test(salon.name ?? "");
 
   // Language precedence: the language the customer just chose at booking
   // wins; else their stored preference; else Vietnamese.
@@ -124,18 +132,17 @@ export async function POST(req: Request) {
       ? `✅ Booked! ${serviceName}${staff} at ${salonName} · ${dateStr}. Reply STOP to opt out.`
       : `✅ Đã đặt lịch! ${serviceName} tại ${salonName} · ${dateStr}. Nhắn STOP để huỷ nhận tin.`;
 
-  // Append a Google Maps directions link (built from the salon address — no
-  // extra column). One short line so the customer can navigate; the pin emoji
-  // reads in any language. Adds an SMS segment, worth it for confirmations.
+  // Append the salon ADDRESS as plain text (not a long Google Maps URL): phones
+  // auto-link a street address → tap opens the user's default maps app, and it's
+  // far shorter than an encoded maps URL (saves an SMS segment). The full
+  // "Get directions" Google button stays in the confirmation EMAIL.
   const salonAddress = (salon as { address?: string | null }).address?.trim() || "";
-  const mapsLine = salonAddress
-    ? `\n📍 https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(salonAddress)}`
-    : "";
-  const message = baseMessage + mapsLine;
+  const addrLine = salonAddress ? `\n📍 ${salonAddress}` : "";
+  const message = baseMessage + addrLine;
 
   const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
   const statusCallbackUrl = `${SITE_URL}/api/twilio/status`;
-  const result = await sendSmsReminder(clientPhone, message, { statusCallbackUrl });
+  const result = await sendSmsReminder(clientPhone, message, { statusCallbackUrl, salonIsTest, lang: lang === "en" ? "en" : "vi" });
 
   // Track on bookings row (legacy columns kept for now)
   void db

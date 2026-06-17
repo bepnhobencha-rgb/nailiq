@@ -394,6 +394,7 @@ export function SalonOwnerDashboard({
             }}
             slug={slug}
             language={language}
+            viewerEmail={data.viewerEmail}
           />
         </div>
       </ResponsiveShell>

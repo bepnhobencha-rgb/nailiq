@@ -4,11 +4,14 @@ import { SalonSettingsHub } from "@/components/dashboard/SalonSettingsHub";
 import { parseDashboardModules } from "@/shared/dashboard/dashboardModules";
 import { parsePresetKey } from "@/shared/dashboard/dashboardPresets";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { loadOwnerSalons } from "@/shared/dashboard/salonOwnerActions";
+import { parseClientSegmentSettings } from "@/shared/dashboard/clientSegmentSettings";
 import { getSalonDomain } from "@/shared/dashboard/domainActions";
 import { normalizeBrandColor } from "@/shared/lib/brandColor";
 import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { getLookPresetsForVertical } from "@/shared/verticals/lookPresets";
 import { resolveVertical } from "@/shared/verticals/registry";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -31,7 +34,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, group_together_threshold_minutes, reference_image_enabled, auto_no_show_minutes, winback_enabled",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, google_place_id, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, group_together_threshold_minutes, reference_image_enabled, auto_no_show_minutes, winback_enabled, client_segment_settings",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -61,6 +64,7 @@ export default async function SalonSettingsPage({ params }: Props) {
         sms_reminders_enabled?: unknown;
         booking_verification_mode?: unknown;
         google_review_url?: unknown;
+        google_place_id?: unknown;
         voice_ai_enabled?: unknown;
         voice_ai_persona_name?: unknown;
         vertical?: unknown;
@@ -70,12 +74,17 @@ export default async function SalonSettingsPage({ params }: Props) {
         reference_image_enabled?: unknown;
         auto_no_show_minutes?: unknown;
         winback_enabled?: unknown;
+        client_segment_settings?: unknown;
       }
     | null;
 
   const dashboardModules = parseDashboardModules(row?.dashboard_modules);
   const dashboardPreset = parsePresetKey(row?.dashboard_preset);
+  // Module layout is structural — only owner can reorganize dashboard panels.
   const canEditDashboardModules = ctx.role === "owner";
+  // All operational settings (booking rules, voice AI, no-show, reminders…)
+  // are available to both owner and admin.
+  const canManageSalonSettings = isOwnerOrAdmin(ctx.role);
 
   const salonEmail =
     typeof row?.email === "string" && row.email.trim().length > 0
@@ -102,6 +111,10 @@ export default async function SalonSettingsPage({ params }: Props) {
     typeof row?.google_review_url === "string" && row.google_review_url.trim().length > 0
       ? row.google_review_url.trim()
       : null;
+  const googlePlaceId =
+    typeof row?.google_place_id === "string" && row.google_place_id.trim().length > 0
+      ? row.google_place_id.trim()
+      : null;
   const voiceAiEnabled = row?.voice_ai_enabled === true;
   const voiceAiPersonaName =
     typeof row?.voice_ai_persona_name === "string" && row.voice_ai_persona_name.trim().length > 0
@@ -117,6 +130,10 @@ export default async function SalonSettingsPage({ params }: Props) {
       : "nail_salon";
 
   const domainInfo = await getSalonDomain(slug);
+  const { data: { user: authUser } } = await ctx.supabase.auth.getUser();
+  const userEmail = authUser?.email ?? null;
+  const salonName = (ctx.salon.name ?? "").trim() || slug;
+  const ownerSalons = ctx.role === "owner" ? await loadOwnerSalons(slug) : [];
   const lookPresets = getLookPresetsForVertical(vertical);
   const staffSelectionEnabled = row?.staff_selection_enabled !== false;
   const bookingLeadMinutes = (() => {
@@ -138,6 +155,8 @@ export default async function SalonSettingsPage({ params }: Props) {
   })();
   // Win-back defaults ON (column default true); only explicit false disables.
   const winBackEnabled = row?.winback_enabled !== false;
+  // Clients lifecycle thresholds (NULL → app defaults).
+  const clientSegments = parseClientSegmentSettings(row?.client_segment_settings);
 
   return (
     <SalonSettingsHub
@@ -145,6 +164,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       dashboardModules={dashboardModules}
       dashboardPreset={dashboardPreset}
       canEditDashboardModules={canEditDashboardModules}
+      canManageSalonSettings={canManageSalonSettings}
       salonEmail={salonEmail}
       emailVerified={emailVerified}
       subscriptionPlan={subscriptionPlan}
@@ -159,6 +179,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       smsRemindersEnabled={smsRemindersEnabled}
       bookingVerificationMode={bookingVerificationMode}
       googleReviewUrl={googleReviewUrl}
+      googlePlaceId={googlePlaceId}
       voiceAiEnabled={voiceAiEnabled}
       voiceAiPersonaName={voiceAiPersonaName}
       vertical={vertical}
@@ -170,6 +191,12 @@ export default async function SalonSettingsPage({ params }: Props) {
       referenceImageEnabled={referenceImageEnabled}
       autoNoShowMinutes={autoNoShowMinutes}
       winBackEnabled={winBackEnabled}
+      clientNewMaxVisits={clientSegments.newMaxVisits}
+      clientAtRiskDays={clientSegments.atRiskDays}
+      userEmail={userEmail}
+      role={ctx.role}
+      salonName={salonName}
+      salons={ownerSalons}
     />
   );
 }

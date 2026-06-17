@@ -13,6 +13,9 @@ export type NotificationType =
   | "reminder_24h"
   | "reminder_3h"
   | "review_request"
+  // Receptionist "invite now" — texting a waitlisted customer the claim link
+  // when a slot opens. booking_id is null (the entry isn't a booking yet).
+  | "waitlist_invite"
   // Inbound customer SMS replies handled by /api/twilio/inbound.
   | "inbound_confirm"
   | "inbound_cancel";

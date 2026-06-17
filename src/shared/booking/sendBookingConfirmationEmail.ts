@@ -1,4 +1,6 @@
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
+import { complianceFooterHtml, listUnsubscribeHeaders } from "@/shared/lib/emailCompliance";
+import { googleCalendarUrl, buildIcs } from "@/shared/lib/calendarLinks";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { generateReminderToken } from "@/shared/noshow/generateReminderToken";
@@ -74,6 +76,9 @@ function buildConfirmationUrl(shopSlug: string, bookingId: string): string {
 /** Self-serve reschedule/cancel links built from a reminder token. */
 export type ManageLinks = { reschedule: string; cancel: string };
 
+/** Saved no-show card disclosure for the email (display fields only). */
+export type SavedCardInfo = { brand: string; last4: string; feeLabel: string; manageUrl: string };
+
 /** Exported for unit tests — pure render, no I/O. */
 export function buildHtml(
   salonName: string,
@@ -84,6 +89,9 @@ export function buildHtml(
   manageLinks: ManageLinks | null,
   address?: string | null,
   salonPhone?: string | null,
+  savedCard?: SavedCardInfo | null,
+  calendarUrl?: string | null,
+  policyUrl?: string | null,
 ): string {
   const eName = escapeHtml(input.clientName);
   const eSalon = escapeHtml(salonName);
@@ -129,6 +137,20 @@ export function buildHtml(
         <td style="padding:6px 0;color:#666;font-size:14px;width:120px;">Total</td>
         <td style="padding:6px 0;font-size:14px;font-weight:600;">${escapeHtml(priceStr)}</td>
        </tr>`
+    : "";
+
+  // Saved-card disclosure. Card-network stored-credential rules require us to
+  // tell the cardholder we kept their card on file, what it'll be used for, and
+  // give them a way to remove it. Display brand + last4 only (never the PAN).
+  const cardBlock = savedCard
+    ? `<div style="margin:18px 0 0;padding:16px;border:1px solid #e6e0cf;border-radius:8px;background:#fbf8ef;">
+              <p style="margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9a8a52;">Card on file</p>
+              <p style="margin:0 0 8px;font-size:14px;color:#333;line-height:1.45;">
+                To hold your spot we securely saved your card <strong>${escapeHtml(savedCard.brand || "card")} •••• ${escapeHtml(savedCard.last4)}</strong>.
+                You're only charged <strong>${escapeHtml(savedCard.feeLabel)}</strong> if you don't show up — nothing otherwise.
+              </p>
+              <a href="${savedCard.manageUrl}" style="display:inline-block;padding:9px 18px;background:#0B0C10;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;font-size:13px;">Manage or remove card</a>
+            </div>`
     : "";
 
   return `<!doctype html>
@@ -181,12 +203,26 @@ export function buildHtml(
             <!-- Location + directions -->
             ${locationBlock}
 
+            <!-- Saved card on file -->
+            ${cardBlock}
+
             <!-- CTA -->
             <div style="margin:24px 0 0;text-align:center;">
               <a href="${confirmUrl}" style="display:inline-block;padding:12px 28px;background:#D4AF37;color:#0B0C10;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;">
                 View Booking Status
               </a>
             </div>
+            ${
+              calendarUrl
+                ? `<!-- Add to calendar -->
+            <div style="margin:12px 0 0;text-align:center;">
+              <a href="${calendarUrl}" style="display:inline-block;padding:10px 24px;border:1px solid #ddd;color:#0B0C10;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;">
+                📅 Add to calendar
+              </a>
+              <p style="margin:6px 0 0;font-size:11px;color:#aaa;">Apple Mail · Outlook: open the attached invite</p>
+            </div>`
+                : ""
+            }
 
             ${
               manageLinks
@@ -199,6 +235,13 @@ export function buildHtml(
                 : `<p style="margin:20px 0 0;font-size:13px;color:#888;text-align:center;">
               Need to reschedule? Contact <strong>${eSalon}</strong>${ePhone && telHref ? ` at <a href="tel:${telHref}" style="color:#0B0C10;font-weight:600;text-decoration:underline;">${ePhone}</a>` : ""} directly.
             </p>`
+            }
+            ${
+              policyUrl
+                ? `<p style="margin:8px 0 0;font-size:12px;color:#aaa;text-align:center;">
+              <a href="${policyUrl}" style="color:#aaa;text-decoration:underline;">Booking terms &amp; cancellation policy · Điều khoản đặt lịch &amp; chính sách huỷ</a>
+            </p>`
+                : ""
             }
           </td>
         </tr>
@@ -260,9 +303,26 @@ export async function sendBookingConfirmationEmail(
     // after booking. Best-effort: if the token can't be minted we fall back to
     // the "contact the salon" copy.
     let manageLinks: ManageLinks | null = null;
+    let savedCard: SavedCardInfo | null = null;
     const salonId =
       typeof salonRow?.id === "string" ? salonRow.id : null;
-    if (salonId && salonRow?.reminders_enabled === true) {
+
+    // Look up a saved no-show card so we can disclose it + offer removal. The
+    // card-management link is a stored-credential requirement, so we mint a
+    // token whenever a card is on file — even if reschedule/cancel self-service
+    // (reminders_enabled) is off.
+    const { data: cardRow } = await supabase
+      .from("bookings")
+      .select("noshow_card_id, noshow_card_last4, noshow_card_brand, noshow_fee_cents, end_time_utc")
+      .eq("id", input.bookingId)
+      .maybeSingle();
+    const hasCard = Boolean((cardRow as { noshow_card_id?: string | null } | null)?.noshow_card_id);
+    const bookingEndUtc =
+      typeof (cardRow as { end_time_utc?: string | null } | null)?.end_time_utc === "string"
+        ? String((cardRow as { end_time_utc: string }).end_time_utc)
+        : null;
+
+    if (salonId && (salonRow?.reminders_enabled === true || hasCard)) {
       const startMs = Date.parse(input.startTimeUtc);
       const expiresAt = Number.isFinite(startMs)
         ? new Date(startMs + SELF_SERVE_GRACE_MS).toISOString()
@@ -270,10 +330,25 @@ export async function sendBookingConfirmationEmail(
       const token = await generateReminderToken(input.bookingId, salonId, { expiresAt });
       if (token) {
         const origin = getEmailOrigin();
-        manageLinks = {
-          reschedule: `${origin}/booking/reschedule?token=${token.id}`,
-          cancel: `${origin}/booking/cancel?token=${token.id}`,
-        };
+        if (salonRow?.reminders_enabled === true) {
+          manageLinks = {
+            reschedule: `${origin}/booking/reschedule?token=${token.id}`,
+            cancel: `${origin}/booking/cancel?token=${token.id}`,
+          };
+        }
+        if (hasCard) {
+          const c = cardRow as {
+            noshow_card_last4?: string | null;
+            noshow_card_brand?: string | null;
+            noshow_fee_cents?: number | null;
+          };
+          savedCard = {
+            brand: c.noshow_card_brand ?? "",
+            last4: c.noshow_card_last4 ?? "",
+            feeLabel: formatCurrency(c.noshow_fee_cents ?? 0, currencyCode) ?? `${((c.noshow_fee_cents ?? 0) / 100).toFixed(2)} ${currencyCode}`,
+            manageUrl: `${origin}/booking/card?token=${token.id}`,
+          };
+        }
       }
     }
 
@@ -281,6 +356,24 @@ export async function sendBookingConfirmationEmail(
       typeof salonRow?.address === "string" ? salonRow.address : null;
     const salonPhone =
       typeof salonRow?.salon_phone === "string" ? salonRow.salon_phone : null;
+
+    // "Add to calendar" — drops the appointment into the customer's phone
+    // calendar in one tap (a real no-show reducer). Google link for Gmail/Android
+    // + an .ics attachment that Apple Mail / Outlook auto-detect. End time from
+    // the booking; fall back to start + 60 min if unknown.
+    const startMsCal = Date.parse(input.startTimeUtc);
+    const endUtcCal =
+      bookingEndUtc ??
+      (Number.isFinite(startMsCal) ? new Date(startMsCal + 60 * 60 * 1000).toISOString() : input.startTimeUtc);
+    const calTitle = `${input.serviceName} · ${salonName}`;
+    const calDetails = `${input.serviceName}${input.staffName ? ` with ${input.staffName}` : ""} at ${salonName}. Manage: ${confirmUrl}`;
+    const calendarUrl = googleCalendarUrl({
+      title: calTitle, startUtc: input.startTimeUtc, endUtc: endUtcCal, location: address, details: calDetails,
+    });
+    const icsContent = buildIcs({
+      uid: `${input.bookingId}@nailiq.ca`,
+      title: calTitle, startUtc: input.startTimeUtc, endUtc: endUtcCal, location: address, details: calDetails,
+    });
 
     const html = buildHtml(
       salonName,
@@ -291,19 +384,62 @@ export async function sendBookingConfirmationEmail(
       manageLinks,
       address,
       salonPhone,
+      savedCard,
+      calendarUrl,
+      `${getEmailOrigin()}/${input.shopSlug}/booking-terms`,
+    );
+
+    // CASL: sender ID + physical mailing address + unsubscribe in every email.
+    // Booking confirmation is transactional → always sent (no suppression check),
+    // but still carries the compliance footer + List-Unsubscribe header.
+    const to = input.clientEmail.trim();
+    const htmlWithFooter = html.replace(
+      "</body>",
+      `${complianceFooterHtml({ email: to, salonName, salonAddress: address })}</body>`,
     );
 
     const res = await resend.emails.send({
       from: getResendFrom(),
-      to: input.clientEmail.trim(),
+      to,
       subject: `Booking confirmed — ${salonName}`,
-      html,
+      html: htmlWithFooter,
+      headers: listUnsubscribeHeaders(to),
+      // .ics attachment → Apple Mail / Outlook show a one-tap "Add to Calendar".
+      ...(icsContent
+        ? {
+            attachments: [
+              {
+                filename: "appointment.ics",
+                content: Buffer.from(icsContent, "utf-8").toString("base64"),
+                contentType: "text/calendar; method=PUBLISH",
+              },
+            ],
+          }
+        : {}),
     });
 
     if (res.error) {
       console.error("[sendBookingConfirmationEmail] resend error", res.error);
     } else {
       console.log("[sendBookingConfirmationEmail] sent ok id=", res.data?.id);
+    }
+
+    // Log to the activity feed (Email tab). Best-effort — never block the send.
+    if (salonId) {
+      try {
+        const { logNotification } = await import("@/shared/lib/notificationLog");
+        await logNotification({
+          bookingId: input.bookingId,
+          salonId,
+          notificationType: "booking_confirmation",
+          channel: "email",
+          bodyPreview: `Email xác nhận → ${input.clientEmail}`,
+          ok: !res.error,
+          errorMessage: res.error ? String(res.error.message ?? res.error) : null,
+        });
+      } catch {
+        /* logging is non-critical */
+      }
     }
   } catch (e) {
     console.error("[sendBookingConfirmationEmail] threw", e);

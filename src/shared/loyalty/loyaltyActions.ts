@@ -10,6 +10,20 @@ type ActionResult<T = void> =
   | { ok: true; data: T }
   | { ok: false; error: string };
 
+/** Platform default voucher validity (days) when a program hasn't set its own. */
+const DEFAULT_VOUCHER_VALID_DAYS = 90;
+const VOUCHER_VALID_DAYS_MIN = 7;
+const VOUCHER_VALID_DAYS_MAX = 365;
+
+/** Expiry ISO for a freshly-issued reward voucher, per the program's
+ *  configured validity (falls back to the platform default). */
+function voucherExpiryIso(
+  program: Pick<LoyaltyProgram, "voucher_valid_days">,
+): string {
+  const days = program.voucher_valid_days ?? DEFAULT_VOUCHER_VALID_DAYS;
+  return new Date(Date.now() + days * 86_400_000).toISOString();
+}
+
 async function requirePremiumSalon(slug: string) {
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { resolved: null, error: "unauthorized" as const };
@@ -71,6 +85,8 @@ export async function createOrUpdateLoyaltyProgram(
     min_spend_cents: number;
     description?: string | null;
     color: string;
+    /** Days a redeemed voucher stays valid. Omit/null → platform default. */
+    voucher_valid_days?: number | null;
   },
 ): Promise<{ ok: boolean; error?: string; program?: LoyaltyProgram }> {
   const { resolved, error } = await requirePremiumSalon(slug);
@@ -96,6 +112,13 @@ export async function createOrUpdateLoyaltyProgram(
     min_spend_cents: Math.max(0, input.min_spend_cents),
     description: input.description?.trim() || null,
     color: /^#[0-9A-Fa-f]{6}$/.test(input.color) ? input.color : "#D4AF37",
+    voucher_valid_days:
+      input.voucher_valid_days == null
+        ? null
+        : Math.min(
+            VOUCHER_VALID_DAYS_MAX,
+            Math.max(VOUCHER_VALID_DAYS_MIN, Math.round(input.voucher_valid_days)),
+          ),
   };
 
   const { data, error: dbErr } = await supabase
@@ -247,7 +270,7 @@ export async function redeemReward(
   }
 
   const code = `LYL-${crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
-  const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+  const expiresAt = voucherExpiryIso(typedProgram);
 
   const voucherPatch: Record<string, unknown> = {
     salon_id: salonId,
@@ -362,7 +385,7 @@ export async function issueLoyaltyVoucherIfEarned(
   const typedProgram = program as LoyaltyProgram;
 
   const code = `LYL-${crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
-  const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+  const expiresAt = voucherExpiryIso(typedProgram);
 
   const voucherPatch: Record<string, unknown> = {
     salon_id: salonId,

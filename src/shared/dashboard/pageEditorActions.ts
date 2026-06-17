@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
@@ -14,7 +15,7 @@ export async function updatePublicSectionsEnabled(
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error } = await ctx.supabase
     .from("salons")
@@ -36,7 +37,7 @@ export async function updateSectionContent(
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error } = await ctx.supabase
     .from("salon_page_sections" as never)
@@ -60,7 +61,7 @@ export async function toggleSectionVisibility(
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error } = await ctx.supabase
     .from("salon_page_sections" as never)

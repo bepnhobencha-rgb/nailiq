@@ -14,6 +14,7 @@ import type { ReceptionistMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
 import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import { formatInSalonTz } from "@/shared/lib/salonTime";
+import { ymdToLocalDate, localDateToYmd } from "@/shared/lib/localDateYmd";
 
 /**
  * Read-only month-calendar grid for the Receptionist Center.
@@ -32,19 +33,7 @@ import { formatInSalonTz } from "@/shared/lib/salonTime";
 const TOP_BOOKINGS_PER_DAY = 3;
 const RANGE_FETCH_TIMEOUT_MS = 20_000;
 
-// ─── Date helpers ────────────────────────────────────────────────────────────
-
-function ymdToLocalDate(ymd: string): Date {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(y, (m ?? 1) - 1, d ?? 1);
-}
-
-function localDateToYmd(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+// ─── Date helpers (device-local YMD↔Date) live in @/shared/lib/localDateYmd ──
 
 /** First day of the month (YYYY-MM-01) for any YMD in that month. */
 export function firstOfMonth(ymd: string): string {
@@ -95,10 +84,10 @@ function buildMonthGrid(firstYmd: string): Array<{ ymd: string; inMonth: boolean
   return cells;
 }
 
-/** Long date label for the panel header, e.g. "Tuesday, 27 May". */
-function formatDayLabel(ymd: string): string {
+/** Long date label for the panel header, localized (e.g. "Thứ Ba, 27 tháng 5"). */
+function formatDayLabel(ymd: string, language: "en" | "vi"): string {
   const d = ymdToLocalDate(ymd);
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", {
     weekday: "long",
     day: "numeric",
     month: "long",
@@ -120,6 +109,8 @@ export interface MonthViewProps {
   timezone: string;
   /** Today (salon-local) for highlighting. */
   todayYmd: string;
+  /** UI language for the localized day-panel date label. */
+  language: "en" | "vi";
   messages: ReceptionistMessages["monthView"];
   /** Localized label for a redacted/removed customer ("[removed]" in DB). */
   removedGuest: string;
@@ -150,7 +141,13 @@ export interface MonthViewProps {
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 /** Weekday header labels Mon–Sun (short). */
-const WEEKDAY_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+/** Localized short weekday names, Mon→Sun (2024-01-01 is a Monday). */
+function localizedWeekdays(locale: string): string[] {
+  const fmt = new Intl.DateTimeFormat(locale, { weekday: "short" });
+  return Array.from({ length: 7 }, (_, i) =>
+    fmt.format(new Date(2024, 0, 1 + i)),
+  );
+}
 
 const PANEL_SPRING = { type: "spring", damping: 26, stiffness: 300 } as const;
 const LAYOUT_SPRING = { type: "spring", damping: 30, stiffness: 280 } as const;
@@ -162,6 +159,7 @@ export function MonthView({
   firstYmd,
   timezone,
   todayYmd,
+  language,
   messages,
   removedGuest,
   onDayClick,
@@ -194,6 +192,7 @@ export function MonthView({
 
   // Close panel when navigating to a different month.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset panel on month change
     setSelectedYmd(null);
   }, [firstYmd]);
 
@@ -246,13 +245,15 @@ export function MonthView({
     };
   }, [slug, firstYmd, lastYmd, inMonthYmds, hint, refreshNonce]);
 
+  const locale = language === "vi" ? "vi-VN" : "en-US";
+  const weekdayHeaders = useMemo(() => localizedWeekdays(locale), [locale]);
   const monthLabel = useMemo(() => {
     const d = ymdToLocalDate(firstYmd);
-    return new Intl.DateTimeFormat("en-US", {
+    return new Intl.DateTimeFormat(locale, {
       month: "long",
       year: "numeric",
     }).format(d);
-  }, [firstYmd]);
+  }, [firstYmd, locale]);
 
   const panelOpen = selectedYmd !== null;
   const panelState = selectedYmd ? (days[selectedYmd] ?? { kind: "loading" as const }) : null;
@@ -312,7 +313,7 @@ export function MonthView({
         >
           {/* Weekday column headers */}
           <div className="mb-1 grid grid-cols-7 gap-1 text-center">
-            {WEEKDAY_HEADERS.map((h) => (
+            {weekdayHeaders.map((h) => (
               <div
                 key={h}
                 className="text-[10px] font-semibold uppercase tracking-wide text-nq-muted"
@@ -412,6 +413,7 @@ export function MonthView({
               <DayDetailPanel
                 ymd={selectedYmd}
                 timezone={timezone}
+                language={language}
                 state={panelState ?? { kind: "loading" }}
                 messages={messages}
                 removedGuest={removedGuest}
@@ -444,6 +446,7 @@ function statusVariant(
 function DayDetailPanel({
   ymd,
   timezone,
+  language,
   state,
   messages,
   removedGuest,
@@ -453,6 +456,7 @@ function DayDetailPanel({
 }: {
   ymd: string;
   timezone: string;
+  language: "en" | "vi";
   state: DayState;
   messages: ReceptionistMessages["monthView"];
   removedGuest: string;
@@ -478,7 +482,7 @@ function DayDetailPanel({
     return c;
   }, [sorted]);
 
-  const dayLabel = formatDayLabel(ymd);
+  const dayLabel = formatDayLabel(ymd, language);
 
   return (
     <Card

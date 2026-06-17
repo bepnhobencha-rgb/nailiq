@@ -1,223 +1,129 @@
 "use server";
 
-import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
+import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { isOwnerOrAdmin, isFrontDeskRole } from "@/shared/lib/salonMemberRole";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 export type ClientProfileRow = {
+  /** `client_profile_id` from RPC; may be null for imported-only contacts.
+   *  Falls back to phone for stable React keys. */
   id: string;
   name: string | null;
   phone: string;
   email: string | null;
   isVip: boolean;
   notes: string | null;
-  /** Visit count for THIS salon (derived from bookings, not the cross-salon
-   *  `client_profiles.visit_count` column which is a global counter). */
+  /** Total completed visit count for this salon (from RPC). */
   visitCount: number;
-  /** Most recent booking start_time_utc for this salon, ISO. `null` when
-   *  the client has no completed/confirmed bookings here. */
+  /** ISO timestamp of the most recent visit; null for import-only clients. */
   lastVisitAt: string | null;
-  /** Sum of price_cents + addon_price_cents on completed bookings for
-   *  this salon. */
+  /** Sum of price_cents + addon_price_cents on completed bookings. */
   totalSpentCents: number;
 };
 
 export type LoadClientProfilesResult =
-  | { ok: true; rows: ClientProfileRow[] }
+  | {
+      ok: true;
+      clients: ClientProfileRow[];
+      total: number;
+      page: number;
+      pageSize: number;
+    }
   | { ok: false; error: "unauthorized" | "forbidden" | "server_error" };
 
-const PAGE_SIZE = 50;
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const DEFAULT_PAGE_SIZE = 25;
+
+// ---------------------------------------------------------------------------
+// loadClientProfiles — server-side search + pagination via RPC
+// ---------------------------------------------------------------------------
 
 /**
- * Owner+senior viewer for client profiles. Per `PERMISSION_MATRIX §3`,
- * client metadata is operational data the desk needs (`Yes` for both
- * owner and senior); nail_tech is denied here because the surface
- * exposes phones/emails and aggregate spend.
+ * Desk-role viewer for the salon's full client directory.
  *
- * Read path: distinct phones from `bookings` for this salon → join
- * cross-salon `client_profiles` (phone-keyed) → aggregate per-salon
- * visit count + last-visit + total spent from the same bookings rows.
- * No new salon-scoped table required.
+ * Delegates to the `search_salon_clients` RPC (security definer, service-role
+ * only) which returns a single page of de-duped clients ordered by name, with
+ * a `total_count` column for pagination. Import-only contacts (from Square /
+ * membership imports) show visit_count=0 / null last_visit and are included.
  *
- * Returns the most recent `PAGE_SIZE` clients sorted by lastVisitAt
- * (descending). Search filtering is performed client-side per the
- * spec — keeps the action simple; full-text search across phone/name
- * is a follow-up.
+ * Auth: owner / senior / admin / receptionist may view. nail_tech is denied
+ * (surface exposes phones/emails and aggregate spend).
  */
 export async function loadClientProfiles(
   slug: string,
+  opts?: { search?: string; page?: number; pageSize?: number },
 ): Promise<LoadClientProfilesResult> {
-  const resolved = await resolveSalonForDashboard(slug);
-  if (!resolved) return { ok: false, error: "unauthorized" };
-  // Desk roles may view client profiles (owner / senior / admin /
-  // receptionist). nail_tech is denied — the surface exposes phones/emails
-  // and aggregate spend. Editing (notes/VIP) stays owner-only below.
-  if (
-    resolved.role !== "owner" &&
-    resolved.role !== "senior" &&
-    resolved.role !== "admin" &&
-    resolved.role !== "receptionist"
-  ) {
+  // Auth gate: verify the viewer is a desk role.
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isFrontDeskRole(ctx.role)) {
     return { ok: false, error: "forbidden" };
   }
 
+  // Clamp / default pagination params.
+  const rawPage = opts?.page ?? 1;
+  const rawPageSize = opts?.pageSize ?? DEFAULT_PAGE_SIZE;
+  const page = Math.max(1, Math.floor(rawPage));
+  const pageSize = Math.min(100, Math.max(1, Math.floor(rawPageSize)));
+  const offset = (page - 1) * pageSize;
+  const search = (opts?.search ?? "").trim();
+
   const supabase = createServiceRoleClient();
 
-  // Pull all this salon's bookings that have a phone — we need them to
-  // aggregate per-salon visit/spend counts even for clients that haven't
-  // backfilled into `client_profiles` yet (the upsert in
-  // `submitPublicBooking` only populates on **public** flow successes).
-  // Cancelled rows still count as a "visit attempt" for the receptionist
-  // operationally; spend filters to `completed`.
-  const { data: bookings, error: bookingsErr } = await supabase
-    .from("bookings")
-    .select(
-      "client_phone, client_name, status, start_time_utc, price_cents, addon_price_cents",
-    )
-    .eq("salon_id", resolved.salon.id)
-    .not("client_phone", "is", null);
+  const { data, error } = await supabase.rpc("search_salon_clients", {
+    p_salon_id: ctx.salon.id,
+    p_search: search,
+    p_limit: pageSize,
+    p_offset: offset,
+  });
 
-  if (bookingsErr) {
-    console.error("[loadClientProfiles] bookings", bookingsErr);
+  if (error) {
+    console.error("[loadClientProfiles] search_salon_clients RPC error", error);
     return { ok: false, error: "server_error" };
   }
 
-  type AggRow = {
+  // No rows → empty page.
+  const rows = (data ?? []) as Array<{
+    client_profile_id: string | null;
+    phone: string;
     name: string | null;
-    visitCount: number;
-    lastVisitMs: number; // most recent COMPLETED visit (never a future date)
-    nextVisitMs: number; // soonest upcoming booking (for sort tie-break)
-    totalSpentCents: number;
-  };
-  const agg = new Map<string, AggRow>();
-  const now = Date.now();
+    email: string | null;
+    is_vip: boolean | null;
+    notes: string | null;
+    visit_count: number | null;
+    last_visit: string | null;
+    total_spent_cents: number | null;
+    total_count: number | null;
+  }>;
 
-  for (const b of bookings ?? []) {
-    const phone = String(b.client_phone ?? "").trim();
-    if (!phone) continue;
-    const cur = agg.get(phone) ?? {
-      name: null as string | null,
-      visitCount: 0,
-      lastVisitMs: 0,
-      nextVisitMs: 0,
-      totalSpentCents: 0,
-    };
-    if (cur.name === null && typeof b.client_name === "string") {
-      cur.name = b.client_name.trim() || null;
-    }
-    const startMs = Date.parse(String(b.start_time_utc ?? ""));
-    const status = String(b.status ?? "");
-    if (status === "completed") {
-      // A real, past visit: count it, track the most recent one, add spend.
-      // (A completed booking is always in the past, so lastVisit can never be
-      // a future date — fixes the "last visit shows a future date" bug. Visit
-      // count now matches the spend basis too — both are completed-only.)
-      cur.visitCount += 1;
-      if (Number.isFinite(startMs) && startMs > cur.lastVisitMs) {
-        cur.lastVisitMs = startMs;
-      }
-      const main =
-        b.price_cents != null && Number.isFinite(Number(b.price_cents))
-          ? Number(b.price_cents)
-          : 0;
-      const addon =
-        b.addon_price_cents != null &&
-        Number.isFinite(Number(b.addon_price_cents))
-          ? Number(b.addon_price_cents)
-          : 0;
-      cur.totalSpentCents += main + addon;
-    } else if (
-      status !== "cancelled" &&
-      status !== "no_show" &&
-      Number.isFinite(startMs) &&
-      startMs > now
-    ) {
-      // Upcoming appointment — track the soonest so clients with future
-      // bookings (e.g. freshly imported) still sort sensibly.
-      if (cur.nextVisitMs === 0 || startMs < cur.nextVisitMs) {
-        cur.nextVisitMs = startMs;
-      }
-    }
-    agg.set(phone, cur);
-  }
+  const total = rows.length > 0 ? Number(rows[0]!.total_count ?? 0) : 0;
 
-  if (agg.size === 0) return { ok: true, rows: [] };
+  const clients: ClientProfileRow[] = rows.map((r) => ({
+    // Use profile id when available; fall back to phone for import-only rows.
+    id: r.client_profile_id ?? r.phone,
+    name: r.name ?? null,
+    phone: r.phone,
+    email: r.email ?? null,
+    isVip: Boolean(r.is_vip),
+    notes: r.notes ?? null,
+    visitCount: Number(r.visit_count ?? 0),
+    lastVisitAt: r.last_visit ?? null,
+    totalSpentCents: Number(r.total_spent_cents ?? 0),
+  }));
 
-  const phones = Array.from(agg.keys());
-  // `email`, `notes`, `is_vip` are not yet in the auto-generated DB
-  // types (added by the 20260509210000 migration); cast the select so
-  // the projection still typechecks. Becomes a typed call on next type
-  // regeneration.
-  type ProfilesQuery = {
-    is: (col: string, val: null) => ProfilesQuery;
-    in: (
-      col: string,
-      vals: string[],
-    ) => Promise<{
-      data:
-        | Array<{
-            id: string;
-            phone: string;
-            name: string | null;
-            email: string | null;
-            notes: string | null;
-            is_vip: boolean | null;
-          }>
-        | null;
-      error: { message: string } | null;
-    }>;
-  };
-  const profilesBuilder = supabase.from("client_profiles") as unknown as {
-    select: (cols: string) => ProfilesQuery;
-  };
-  const { data: profiles, error: profilesErr } = await profilesBuilder
-    .select("id, phone, name, email, notes, is_vip")
-    .is("deleted_at", null)
-    .in("phone", phones);
-
-  if (profilesErr) {
-    console.error("[loadClientProfiles] client_profiles", profilesErr);
-    return { ok: false, error: "server_error" };
-  }
-
-  type ProfileRow = NonNullable<typeof profiles>[number];
-  const profileByPhone = new Map<string, ProfileRow>();
-  for (const p of profiles ?? []) {
-    profileByPhone.set(String(p.phone), p);
-  }
-
-  // Sort by most-recent actual visit (desc); among clients with no past
-  // visits, soonest upcoming appointment first — so freshly-imported clients
-  // (future bookings only) stay visible instead of all sinking to the bottom.
-  const sortedPhones = phones.slice().sort((pa, pb) => {
-    const a = agg.get(pa)!;
-    const b = agg.get(pb)!;
-    if (b.lastVisitMs !== a.lastVisitMs) return b.lastVisitMs - a.lastVisitMs;
-    const an = a.nextVisitMs || Number.POSITIVE_INFINITY;
-    const bn = b.nextVisitMs || Number.POSITIVE_INFINITY;
-    return an - bn;
-  });
-
-  const rows: ClientProfileRow[] = sortedPhones.map((phone) => {
-    const a = agg.get(phone)!;
-    const p = profileByPhone.get(phone);
-    return {
-      // Stable id: profile row id when known, else the phone (read-only
-      // surface anyway; the panel uses this for React keys).
-      id: p?.id ?? phone,
-      name: p?.name ?? a.name,
-      phone,
-      email: p?.email ?? null,
-      isVip: Boolean(p?.is_vip),
-      notes: p?.notes ?? null,
-      visitCount: a.visitCount,
-      lastVisitAt:
-        a.lastVisitMs > 0 ? new Date(a.lastVisitMs).toISOString() : null,
-      totalSpentCents: a.totalSpentCents,
-    };
-  });
-
-  return { ok: true, rows: rows.slice(0, PAGE_SIZE) };
+  return { ok: true, clients, total, page, pageSize };
 }
+
+// ---------------------------------------------------------------------------
+// updateClientProfile — owner-only metadata write (unchanged)
+// ---------------------------------------------------------------------------
 
 export type UpdateClientProfileResult =
   | { ok: true }
@@ -236,17 +142,20 @@ export async function updateClientProfile(
   slug: string,
   input: { phone: string; isVip?: boolean; notes?: string | null },
 ): Promise<UpdateClientProfileResult> {
-  const resolved = await resolveSalonForDashboard(slug);
+  const resolved = await getDashboardWriteClient(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
-  if (resolved.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isFrontDeskRole(resolved.role)) return { ok: false, error: "forbidden" };
 
   const phone = String(input.phone ?? "").trim();
   if (!phone) return { ok: false, error: "not_found" };
 
-  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  const patch: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
   if (typeof input.isVip === "boolean") patch.is_vip = input.isVip;
   if (input.notes !== undefined) {
-    patch.notes = input.notes === null ? null : String(input.notes).slice(0, 2000);
+    patch.notes =
+      input.notes === null ? null : String(input.notes).slice(0, 2000);
   }
 
   const supabase = createServiceRoleClient();

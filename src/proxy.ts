@@ -121,6 +121,17 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  // PWA assets — per-tenant web manifest + generated app icon. Public by
+  // design (they only expose the salon name + brand colour already shown on
+  // the booking site), so skip the dashboard auth gate: the OS fetches these
+  // with no session cookie when the owner installs the dashboard to their
+  // home screen, and an auth redirect there would break installation.
+  if (
+    /^\/dashboard\/[^/]+\/(manifest\.webmanifest|icon)$/.test(pathnameEarly)
+  ) {
+    return NextResponse.next();
+  }
+
   // Task #09-10 — rate-limit checks at the proxy layer.
   //
   // These call `@vercel/firewall.checkRateLimit(id)` which looks up the

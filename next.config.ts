@@ -12,12 +12,24 @@ const nextConfig: NextConfig = {
   async headers() {
     const cspDirectives = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.vercel-scripts.com https://*.sentry.io https://js.stripe.com",
-      "style-src 'self' 'unsafe-inline'",
+      // Square Web Payments SDK (card-on-file) requires web.squarecdn.com in
+      // script/frame/connect + pci-connect for tokenization + its font hosts
+      // (per https://developer.squareup.com/docs/web-payments/content-security-policy).
+      // Both production + sandbox domains so any salon environment works.
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.vercel-scripts.com https://*.sentry.io https://js.stripe.com https://web.squarecdn.com https://sandbox.web.squarecdn.com",
+      // Square's Web Payments SDK injects an EXTERNAL stylesheet (card-wrapper.css)
+      // from web.squarecdn.com into the parent doc — 'unsafe-inline' alone blocks
+      // it and card.attach() throws "unexpected error" (card box never renders).
+      // Square's CSP doc omits this; found via repro. Needs the host in style-src.
+      "style-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com",
       "img-src 'self' data: blob: https:",
-      "font-src 'self' data:",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://api.stripe.com https://api.openai.com wss://api.openai.com",
-      "frame-src https://js.stripe.com https://hooks.stripe.com",
+      "font-src 'self' data: https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://api.stripe.com https://api.openai.com wss://api.openai.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com",
+      "frame-src https://js.stripe.com https://hooks.stripe.com https://web.squarecdn.com https://sandbox.web.squarecdn.com",
+      // Square's Web Payments SDK spins up a Web Worker from a blob: URL; without
+      // worker-src it falls back to script-src and is blocked (console error).
+      // Card still renders, but allow it so nothing is degraded.
+      "worker-src 'self' blob:",
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",
