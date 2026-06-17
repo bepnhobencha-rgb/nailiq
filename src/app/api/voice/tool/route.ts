@@ -391,13 +391,13 @@ async function handleConfirmBooking(
       bookingId,
       event: "new",
     });
-    // Unified no-show card gate — a voice booking has no in-session card
-    // capture, so flag "needs card" like the other non-online paths.
+    // Unified no-show protection gate — runs AI agent when opted-in, falls
+    // back to hard rules otherwise.  Voice has no in-session card capture.
     try {
-      const { ensureNoShowCardRequirement } = await import(
-        "@/shared/noshow/ensureNoShowCardRequirement"
+      const { handleBookingProtection } = await import(
+        "@/shared/noshow/handleBookingProtection"
       );
-      await ensureNoShowCardRequirement(bookingId);
+      await handleBookingProtection(bookingId, String(salon.id), "voice");
     } catch { /* best-effort */ }
   }
 
@@ -1509,12 +1509,13 @@ async function handleConfirmGroupBooking(
         .update({ source: "voice", booking_channel: "voice" } as never)
         .in("id", bookingIds);
     } catch { /* best-effort */ }
-    // Unified no-show card gate — flag the lead (only it carries a phone).
+    // Unified no-show protection gate — runs AI agent when opted-in, falls
+    // back to hard rules otherwise.  Flag the lead (only it carries a phone).
     try {
-      const { ensureNoShowCardRequirement } = await import(
-        "@/shared/noshow/ensureNoShowCardRequirement"
+      const { handleBookingProtection } = await import(
+        "@/shared/noshow/handleBookingProtection"
       );
-      await ensureNoShowCardRequirement(bookingIds[0]);
+      await handleBookingProtection(bookingIds[0], ctx.salonId, "voice");
     } catch { /* best-effort */ }
     // Owner/admin "new booking" alert — one email for the group (first booking).
     if (bookingIds[0]) {

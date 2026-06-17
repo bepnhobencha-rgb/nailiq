@@ -47,44 +47,8 @@ export async function GET(req: NextRequest) {
         .eq("salon_id", salonId);
     }
 
-    // AI no-show policy agent (shadow OR live) — runs INDEPENDENTLY of the Square
-    // pull so a sync error never blocks it. Square-origin bookings never hit the
-    // NailIQ online hook, so evaluate a few here each run (self-gated on the
-    // salon's opt-in flag; in live mode it sets the card flag). Best-effort.
-    try {
-      const { backfillNoShowShadow } = await import("@/shared/noshow/agentNoShowPolicy");
-      await backfillNoShowShadow(salonId);
-    } catch (e) {
-      console.error("[square-sync] shadow backfill", salonId, e);
-    }
-
-    // AI Watchdog — proactive owner alerts. Self-throttles to ~once/12h and
-    // self-gates on the salon's ai_watchdog flag, so it's cheap to call every
-    // run. Independent of the sync result. Best-effort.
-    try {
-      const { runWatchdog } = await import("@/shared/watchdog/agentWatchdog");
-      await runWatchdog(salonId);
-    } catch (e) {
-      console.error("[square-sync] watchdog", salonId, e);
-    }
-
-    // AI Win-back — draft a few "we miss you" suggestions for lapsed regulars.
-    // Self-gates on ai_winback + 30-day dedupe, so it's cheap to call here.
-    try {
-      const { runWinback } = await import("@/shared/winback/agentWinback");
-      await runWinback(salonId);
-    } catch (e) {
-      console.error("[square-sync] winback", salonId, e);
-    }
-
-    // AI Due-to-Rebook — nudge on-rhythm regulars coming due for their next
-    // visit. Self-gates on ai_rebook + shares win-back's 30-day dedupe.
-    try {
-      const { runRebook } = await import("@/shared/winback/agentRebook");
-      await runRebook(salonId);
-    } catch (e) {
-      console.error("[square-sync] rebook", salonId, e);
-    }
+    // AI agents (watchdog, winback, rebook, noshow backfill) moved to
+    // /api/cron/manager — runs hourly across ALL salons, not just Square ones.
   }
 
   return NextResponse.json({ ok: true, results });

@@ -43,7 +43,7 @@ import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
-import { ensureNoShowCardRequirement } from "@/shared/noshow/ensureNoShowCardRequirement";
+import { handleBookingProtection } from "@/shared/noshow/handleBookingProtection";
 import {
   createDepositForBooking,
   refundDeposit,
@@ -1148,12 +1148,12 @@ export async function createDeskGroup(
     otpSessionId,
   });
 
-  // Unified no-show card gate (desk group): only the lead carries a phone, so
-  // flag the lead booking. Server-side here (submitGroupBooking is also called
-  // from the browser, so the server-only gate can't live inside it).
+  // Unified no-show protection gate (desk group): only the lead carries a phone,
+  // so protect the lead booking. Server-side here (submitGroupBooking is also
+  // called from the browser, so the server-only gate can't live inside it).
   const leadId =
     result.ok && Array.isArray(result.bookingIds) ? result.bookingIds[0] : null;
-  if (leadId) await ensureNoShowCardRequirement(leadId);
+  if (leadId) await handleBookingProtection(leadId, ctx.salon.id, "group");
 
   return result;
 }
@@ -2571,10 +2571,10 @@ export async function addDeskAppointment(
     },
   });
 
-  // Unified no-show card gate: a desk/phone booking skips the online card
+  // Unified no-show protection gate: a desk/phone booking skips the online card
   // capture, so flag "needs card" the same way every other path does. Flag
   // only — the desk decides whether to text the save-card link.
-  await ensureNoShowCardRequirement(bookingId);
+  await handleBookingProtection(bookingId, ctx.salon.id, "desk");
 
   // Confirmation to the customer, gated by the receptionist's notify choice
   // (legacy callers without `notify` keep the always-send behavior). Reuses the
