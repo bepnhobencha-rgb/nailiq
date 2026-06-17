@@ -2215,17 +2215,17 @@ export const userEn: UserMessages = {
     registrationDisabledBody:
       "We're unable to accept new registrations at this time. Please try again later.",
     success: {
-      title: "Your salon is live!",
+      title: "Salon created!",
       subtext:
-        "You can take bookings immediately — share your link anywhere clients already message you.",
+        "Complete a quick setup to activate your booking page.",
       slugAdjusted:
         "Your first-choice URL was taken, so we reserved {slug} for you.",
       callout:
-        "Guests book on your page now — open it once to confirm everything feels right, then drop the link in Instagram or SMS.",
+        "3 quick steps on your dashboard: add services, staff, and address — then your booking link goes live.",
       salonOwnerLabel: "Salon owner",
-      goToDashboard: "Go to Dashboard",
+      goToDashboard: "Go to Dashboard →",
       dashboardHint:
-        "If your profile isn't complete yet, the dashboard shows a setup checklist (services, staff, hours, address) before real bookings are recommended.",
+        "Your booking link will appear once setup is complete.",
       bookingLinkLabel: "Public booking link",
       copyLink: "Copy link",
       copied: "Copied",
