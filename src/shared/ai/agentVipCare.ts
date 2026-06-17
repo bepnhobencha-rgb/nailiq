@@ -5,6 +5,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
+import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 
 /**
  * AI VIP Care — proactive outreach to high-value customers.
@@ -214,29 +215,45 @@ async function sendMessage(
   client: VipClient,
   message: string,
   bookingUrl: string,
-): Promise<{ ok: boolean; channel: "sms" | "email" }> {
-  const channel: "sms" | "email" = client.email ? "email" : "sms";
-  const fullText = `${message}\n${bookingUrl}`;
+  channelMode: CustomerChannelMode,
+  smsA2pRegistered: boolean,
+): Promise<{ ok: boolean; channel: "sms" | "email"; reason: string }> {
+  const ch = resolveCustomerChannel({
+    mode: channelMode,
+    smsA2pRegistered,
+    customerEmail: client.email,
+  });
 
-  if (channel === "sms") {
-    const r = await sendSmsReminder(client.phone, fullText, { lang: "en" });
-    return { ok: r.ok, channel };
+  if (ch.noChannel) {
+    return { ok: false, channel: "sms", reason: ch.reason };
   }
 
-  const resend = getResendClient();
-  if (!resend || !client.email) return { ok: false, channel };
+  const fullText = `${message}\n${bookingUrl}`;
+  let ok = false;
 
-  const esc = (x: string) =>
-    x.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] ?? c));
-  const html = `<div style="max-width:480px;margin:0 auto;font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a"><p style="font-size:15px;line-height:1.7;margin:0 0 16px">${esc(message)}</p><a href="${bookingUrl}" style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:14px">Book now</a></div>`;
-  const { error } = await resend.emails.send({
-    from: getResendFrom(),
-    to: client.email,
-    subject: message.slice(0, 80),
-    html,
-    text: fullText,
-  });
-  return { ok: !error, channel };
+  if (ch.sms) {
+    const r = await sendSmsReminder(client.phone, fullText, { lang: "en" });
+    ok = r.ok;
+  }
+  if (ch.email && client.email) {
+    const resend = getResendClient();
+    if (resend) {
+      const esc = (x: string) =>
+        x.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] ?? c));
+      const html = `<div style="max-width:480px;margin:0 auto;font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a"><p style="font-size:15px;line-height:1.7;margin:0 0 16px">${esc(message)}</p><a href="${bookingUrl}" style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:14px">Book now</a></div>`;
+      const { error } = await resend.emails.send({
+        from: getResendFrom(),
+        to: client.email,
+        subject: message.slice(0, 80),
+        html,
+        text: fullText,
+      });
+      ok = ok || !error;
+    }
+  }
+
+  const channel: "sms" | "email" = ch.email ? "email" : "sms";
+  return { ok, channel, reason: ch.reason };
 }
 
 export async function runVipCare(salonId: string): Promise<void> {
@@ -244,7 +261,7 @@ export async function runVipCare(salonId: string): Promise<void> {
     const db = looseServiceClient();
     const { data: salon } = await db
       .from("salons" as never)
-      .select("name, slug, feature_flags" as never)
+      .select("name, slug, feature_flags, sms_a2p_registered, customer_channel" as never)
       .eq("id" as never, salonId)
       .maybeSingle();
 
@@ -254,6 +271,8 @@ export async function runVipCare(salonId: string): Promise<void> {
 
     const salonName = str(s.name) || "our salon";
     const salonSlug = str(s.slug) || "";
+    const smsA2pRegistered = Boolean(s.sms_a2p_registered);
+    const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
     const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
     const bookingUrl = `${SITE_URL}/${salonSlug}`;
 
@@ -274,7 +293,10 @@ export async function runVipCare(salonId: string): Promise<void> {
         const days = daysUntilBirthday(client.dateOfBirth);
         if (days === 7) {
           const msg = await draftMessage("birthday", client, salonName);
-          const { ok, channel } = await sendMessage(client, msg, bookingUrl);
+          const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, smsA2pRegistered);
+          if (!ok && reason.startsWith("no_channel")) {
+            console.warn(`[runVipCare] no channel for ${client.name} — ${reason}`);
+          }
           if (ok) {
             sentCount++;
             await svc.from("ai_actions_log" as never).insert({
@@ -282,7 +304,7 @@ export async function runVipCare(salonId: string): Promise<void> {
               agent: "vip_care",
               action_type: "birthday",
               target_id: client.id,
-              payload: { name: client.name, channel, preview: msg.slice(0, 120) },
+              payload: { name: client.name, channel, reason, preview: msg.slice(0, 120) },
               undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
             } as never);
           }
@@ -296,7 +318,10 @@ export async function runVipCare(salonId: string): Promise<void> {
         if (client.visitCount < milestone || client.visitCount > milestone + 1) continue;
         // Fire when visits == milestone (allow +1 buffer so cron doesn't miss by 1)
         const msg = await draftMessage("milestone", client, salonName, milestone);
-        const { ok, channel } = await sendMessage(client, msg, bookingUrl);
+        const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, smsA2pRegistered);
+        if (!ok && reason.startsWith("no_channel")) {
+          console.warn(`[runVipCare] no channel for ${client.name} (milestone ${milestone}) — ${reason}`);
+        }
         if (ok) {
           sentCount++;
           await svc.from("ai_actions_log" as never).insert({
@@ -304,7 +329,7 @@ export async function runVipCare(salonId: string): Promise<void> {
             agent: "vip_care",
             action_type: `milestone_${milestone}`,
             target_id: client.id,
-            payload: { name: client.name, channel, visit_count: milestone, preview: msg.slice(0, 120) },
+            payload: { name: client.name, channel, reason, visit_count: milestone, preview: msg.slice(0, 120) },
             undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
           } as never);
         }
@@ -316,7 +341,10 @@ export async function runVipCare(salonId: string): Promise<void> {
         const daysSince = Math.floor((Date.now() - Date.parse(client.lastVisitAt)) / 864e5);
         if (daysSince >= 30 && daysSince < 60) {
           const msg = await draftMessage("vip_inactive", client, salonName);
-          const { ok, channel } = await sendMessage(client, msg, bookingUrl);
+          const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, smsA2pRegistered);
+          if (!ok && reason.startsWith("no_channel")) {
+            console.warn(`[runVipCare] no channel for ${client.name} — ${reason}`);
+          }
           if (ok) {
             sentCount++;
             await svc.from("ai_actions_log" as never).insert({
@@ -324,7 +352,7 @@ export async function runVipCare(salonId: string): Promise<void> {
               agent: "vip_care",
               action_type: "vip_inactive",
               target_id: client.id,
-              payload: { name: client.name, channel, days_since: daysSince, preview: msg.slice(0, 120) },
+              payload: { name: client.name, channel, reason, days_since: daysSince, preview: msg.slice(0, 120) },
               undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
             } as never);
           }

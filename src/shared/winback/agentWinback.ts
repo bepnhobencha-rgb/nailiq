@@ -5,6 +5,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
+import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 
 /**
  * AI Win-back — find lapsed regulars and draft a warm, personalised "we miss
@@ -156,7 +157,7 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
     const db = looseServiceClient();
     const { data: salon } = await db
       .from("salons")
-      .select("name, feature_flags, slug" as never)
+      .select("name, feature_flags, slug, sms_a2p_registered, customer_channel" as never)
       .eq("id", salonId)
       .maybeSingle();
     const s = (salon as Row | null) ?? {};
@@ -164,6 +165,8 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
     const salonName = str(s.name) || "our salon";
     const salonSlug = str(s.slug) || "";
     const bookingUrl = `${SITE_URL}/${salonSlug}`;
+    const smsA2pRegistered = Boolean(s.sms_a2p_registered);
+    const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
 
     const candidates = await gatherWinbackCandidates(salonId, cap);
     if (candidates.length === 0) return;
@@ -176,15 +179,36 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
       const message = await agentDraftWinback(c, salonName, lang);
       if (!message) continue;
 
-      const channel: "sms" | "email" = c.email ? "email" : "sms";
+      const ch = resolveCustomerChannel({
+        mode: customerChannelMode,
+        smsA2pRegistered,
+        customerEmail: c.email,
+      });
 
-      // Send to customer first; only log if successful
-      const ok =
-        channel === "sms"
-          ? await sendWinbackSms(c.phone, message, bookingUrl)
-          : c.email
-            ? await sendWinbackEmail(c.email, c.name, salonName, message, bookingUrl)
-            : false;
+      // Skip this candidate entirely when neither channel is available — don't
+      // waste Anthropic credits on a draft that can't reach anyone. The dedupe
+      // guard (winback_suggestions last-30-days) is NOT written for skipped
+      // candidates so they'll be retried once the salon gains a channel.
+      if (ch.noChannel) {
+        console.warn(
+          `[runWinback] no channel for ${c.name} (${c.phone}) — reason: ${ch.reason}. Add email or complete A2P.`,
+        );
+        continue;
+      }
+
+      // Derive a single canonical channel for logging (prefer email to record deliverability).
+      const channel: "sms" | "email" = ch.email ? "email" : "sms";
+
+      // Send to customer first; only log if successful.
+      let ok = false;
+      if (ch.sms) {
+        ok = await sendWinbackSms(c.phone, message, bookingUrl);
+      }
+      if (ch.email && c.email) {
+        const emailOk = await sendWinbackEmail(c.email, c.name, salonName, message, bookingUrl);
+        // Count as delivered if at least one channel succeeded.
+        ok = ok || emailOk;
+      }
 
       if (!ok) continue;
       sentCount++;
@@ -215,7 +239,7 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
         agent: "winback",
         action_type: `sent_${channel}`,
         target_id: suggestionId,
-        payload: { name: c.name, channel, message_preview: message.slice(0, 120) },
+        payload: { name: c.name, channel, reason: ch.reason, message_preview: message.slice(0, 120) },
         undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       } as never);
     }
