@@ -243,9 +243,14 @@ function PartyCardItem({
       {/* Card header */}
       <div className="flex items-start justify-between gap-2 px-3 pt-3">
         <div className="min-w-0">
-          <p className="truncate text-xs font-semibold text-nq-foreground">
+          <p className="truncate text-[10px] text-nq-muted">
             {card.groupDateDisplay}
           </p>
+          {card.organizerName ? (
+            <p className="truncate text-sm font-semibold text-nq-foreground leading-tight">
+              {card.organizerName}
+            </p>
+          ) : null}
           <p className="text-[11px] text-nq-muted">
             {card.groupStartDisplay} – {card.groupEndDisplay}
           </p>
