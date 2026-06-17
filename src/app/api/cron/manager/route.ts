@@ -131,6 +131,24 @@ export async function GET(req: Request): Promise<NextResponse> {
       }
     }
 
+    // Chiến Lược Gia — weekly strategist on Sunday 21:00 salon local time
+    if (salonHour === 21) {
+      const todayYmd = new Intl.DateTimeFormat("en-CA", {
+        timeZone: tz,
+        weekday: "short",
+      }).format(new Date());
+      if (todayYmd === "Sun") {
+        try {
+          const { runStrategist } = await import("@/shared/ai/agentStrategist");
+          await runStrategist(salon.id);
+          entry.strategist = "ok";
+        } catch (e) {
+          console.error("[manager] strategist", salon.slug, e);
+          entry.strategist = String(e);
+        }
+      }
+    }
+
     // Review Responder — poll Google Reviews every 4 hours (hours 8, 12, 16, 20)
     if ([8, 12, 16, 20].includes(salonHour)) {
       try {
