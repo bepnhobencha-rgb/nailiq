@@ -6,6 +6,7 @@
  */
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { salonNowMinutes } from "@/shared/lib/salonTime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   // no need to filter here. Selecting slug for readable result logs.
   const { data: salons, error } = await supabase
     .from("salons")
-    .select("id, slug, feature_flags");
+    .select("id, slug, feature_flags, timezone");
 
   if (error) {
     console.error("[manager] load salons", error);
@@ -36,6 +37,8 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   for (const salon of salons) {
     const flags = (salon.feature_flags ?? {}) as Record<string, boolean>;
+    const tz = (salon as { timezone?: string }).timezone ?? "America/Los_Angeles";
+    const salonHour = Math.floor(salonNowMinutes(tz) / 60);
     const entry: Record<string, unknown> = { salon: salon.slug };
 
     // AI no-show policy shadow/live backfill
@@ -85,6 +88,78 @@ export async function GET(req: Request): Promise<NextResponse> {
       } catch (e) {
         console.error("[manager] rebook", salon.slug, e);
         entry.rebook = String(e);
+      }
+    }
+
+    // Báo Cáo Viên — daily report at 21:00 salon local time
+    if (salonHour === 21) {
+      try {
+        const { runDailyReport } = await import(
+          "@/shared/ai/agentDailyReport"
+        );
+        await runDailyReport(salon.id);
+        entry.daily_report = "ok";
+      } catch (e) {
+        console.error("[manager] daily_report", salon.slug, e);
+        entry.daily_report = String(e);
+      }
+    }
+
+    // Social Content — draft caption Mon/Wed/Fri at 08:00 salon local time
+    if (salonHour === 8 && flags.ai_social_content) {
+      try {
+        const { runSocialContent } = await import(
+          "@/shared/ai/agentSocialContent"
+        );
+        await runSocialContent(salon.id);
+        entry.social_content = "ok";
+      } catch (e) {
+        console.error("[manager] social_content", salon.slug, e);
+        entry.social_content = String(e);
+      }
+    }
+
+    // VIP Care — birthday / milestone / inactive nudge at 08:00 salon local time
+    if (salonHour === 8 && flags.ai_vip_care) {
+      try {
+        const { runVipCare } = await import("@/shared/ai/agentVipCare");
+        await runVipCare(salon.id);
+        entry.vip_care = "ok";
+      } catch (e) {
+        console.error("[manager] vip_care", salon.slug, e);
+        entry.vip_care = String(e);
+      }
+    }
+
+    // Chiến Lược Gia — weekly strategist on Sunday 21:00 salon local time
+    if (salonHour === 21) {
+      const todayYmd = new Intl.DateTimeFormat("en-CA", {
+        timeZone: tz,
+        weekday: "short",
+      }).format(new Date());
+      if (todayYmd === "Sun") {
+        try {
+          const { runStrategist } = await import("@/shared/ai/agentStrategist");
+          await runStrategist(salon.id);
+          entry.strategist = "ok";
+        } catch (e) {
+          console.error("[manager] strategist", salon.slug, e);
+          entry.strategist = String(e);
+        }
+      }
+    }
+
+    // Review Responder — poll Google Reviews every 4 hours (hours 8, 12, 16, 20)
+    if ([8, 12, 16, 20].includes(salonHour)) {
+      try {
+        const { runReviewResponder } = await import(
+          "@/shared/ai/agentReviewResponder"
+        );
+        await runReviewResponder(salon.id);
+        entry.review_responder = "ok";
+      } catch (e) {
+        console.error("[manager] review_responder", salon.slug, e);
+        entry.review_responder = String(e);
       }
     }
 

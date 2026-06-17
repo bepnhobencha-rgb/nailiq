@@ -70,6 +70,8 @@ export type ActivityItem = {
   bookingDate: string | null;
   /** Full call transcript (call rows only). */
   transcript: string | null;
+  /** ai_actions_log id — present when this item can be undone within its window. */
+  undoActionId?: string | null;
 };
 
 export type LoadActivityFeedResult =
@@ -183,6 +185,7 @@ export async function getActivityUnreadCount(
     "ai_policy_decisions",
     "watchdog_alerts",
     "winback_suggestions",
+    "ai_actions_log",
   ];
   try {
     const results = await Promise.all(
@@ -220,7 +223,8 @@ export async function loadActivityFeed(
       .maybeSingle();
     const tz = (salonRow as { timezone?: string } | null)?.timezone || "America/Los_Angeles";
 
-    const [eventsRes, notifsRes, callsRes, auditRes, authRes, aiRes, watchdogRes, winbackRes] = await Promise.all([
+    const now = new Date().toISOString();
+    const [eventsRes, notifsRes, callsRes, auditRes, authRes, aiRes, watchdogRes, winbackRes, aiActionsRes] = await Promise.all([
       db
         .from("booking_events" as never)
         .select("id, booking_id, actor_role, event_type, payload, created_at, bookings ( client_name, start_time_utc )")
@@ -269,7 +273,26 @@ export async function loadActivityFeed(
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
+      // ACT+UNDO: fetch ai_actions_log entries for winback/rebook that are still
+      // within their undo window so we can surface the Undo button on matching items.
+      db
+        .from("ai_actions_log" as never)
+        .select("id, agent, target_id, undo_deadline, undone_at, created_at")
+        .eq("salon_id", salonId)
+        .in("agent", ["winback", "rebook"])
+        .gt("undo_deadline", now)
+        .is("undone_at", null)
+        .order("created_at", { ascending: false })
+        .limit(50),
     ]);
+
+    // Build lookup: winback_suggestion.id → ai_action.id (for undo button)
+    const undoMap = new Map<string, string>();
+    for (const r of (aiActionsRes.data ?? []) as Array<Record<string, unknown>>) {
+      const targetId = str(r.target_id);
+      const actionId = str(r.id);
+      if (targetId && actionId) undoMap.set(targetId, actionId);
+    }
 
     const items: ActivityItem[] = [];
 
@@ -466,8 +489,10 @@ export async function loadActivityFeed(
       const sent = str(r.status) === "sent";
       const due = str(r.kind) === "due";
       const verb = sent ? "Đã gửi" : "Gợi ý";
+      const suggestionId = str(r.id);
+      const undoActionId = (sent && suggestionId) ? (undoMap.get(suggestionId) ?? null) : null;
       items.push({
-        id: `wb-${str(r.id)}`,
+        id: `wb-${suggestionId}`,
         kind: "winback",
         when: str(r.created_at),
         title: due
@@ -481,6 +506,7 @@ export async function loadActivityFeed(
         transcript: msg
           ? `Khách: ${name} · đã đến ${visits || "?"} lần · ${due ? "tới kỳ quay lại" : "lâu chưa quay lại"}\nKênh đề xuất: ${str(r.channel) || "—"}\n\nLời nhắn AI soạn:\n${msg}`
           : null,
+        undoActionId,
       });
     }
 

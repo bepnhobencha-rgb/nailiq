@@ -34,7 +34,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, reference_image_enabled, auto_no_show_minutes, winback_enabled, client_segment_settings",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, google_place_id, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, reference_image_enabled, auto_no_show_minutes, winback_enabled, client_segment_settings",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -64,6 +64,7 @@ export default async function SalonSettingsPage({ params }: Props) {
         sms_reminders_enabled?: unknown;
         booking_verification_mode?: unknown;
         google_review_url?: unknown;
+        google_place_id?: unknown;
         voice_ai_enabled?: unknown;
         voice_ai_persona_name?: unknown;
         vertical?: unknown;
@@ -108,6 +109,10 @@ export default async function SalonSettingsPage({ params }: Props) {
   const googleReviewUrl =
     typeof row?.google_review_url === "string" && row.google_review_url.trim().length > 0
       ? row.google_review_url.trim()
+      : null;
+  const googlePlaceId =
+    typeof row?.google_place_id === "string" && row.google_place_id.trim().length > 0
+      ? row.google_place_id.trim()
       : null;
   const voiceAiEnabled = row?.voice_ai_enabled === true;
   const voiceAiPersonaName =
@@ -169,6 +174,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       smsRemindersEnabled={smsRemindersEnabled}
       bookingVerificationMode={bookingVerificationMode}
       googleReviewUrl={googleReviewUrl}
+      googlePlaceId={googlePlaceId}
       voiceAiEnabled={voiceAiEnabled}
       voiceAiPersonaName={voiceAiPersonaName}
       vertical={vertical}

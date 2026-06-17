@@ -596,6 +596,7 @@ export type UserMessages = {
     sectionStaff: string;
     sectionHours: string;
     sectionAddress: string;
+    sectionAiManager: string;
     /** Collapsible category headers that group the settings panels. */
     categories: {
       brand: { title: string; subtitle: string };
@@ -2773,6 +2774,7 @@ export const userEn: UserMessages = {
     sectionStaff: "Staff",
     sectionHours: "Opening hours",
     sectionAddress: "Salon address",
+    sectionAiManager: "AI Manager setup",
     categories: {
       brand: {
         title: "Brand & booking page",

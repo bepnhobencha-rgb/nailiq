@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { ActivityItem, ActivityKind } from "@/shared/dashboard/loadActivityFeedAction";
+import { undoAiAction } from "@/shared/ai/undoAiAction";
 
 const KIND_ICON: Record<ActivityKind, string> = {
   event: "🗓️",
@@ -58,6 +59,8 @@ function StatusBadge({ status }: { status: string }) {
 export function ActivityFeed({ slug, items }: { slug: string; items: ActivityItem[] }) {
   const [tab, setTab] = useState<ActivityKind | "all">("all");
   const [open, setOpen] = useState<string | null>(null);
+  const [undoneIds, setUndoneIds] = useState<Set<string>>(new Set());
+  const [undoing, startUndo] = useTransition();
 
   // Read/unread like email: items newer than the last time the owner opened the
   // log show BOLD; already-seen ones are dimmed. Capture the PREVIOUS last-seen
@@ -166,6 +169,25 @@ export function ActivityFeed({ slug, items }: { slug: string; items: ActivityIte
                     <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap rounded-xl bg-nq-border/20 p-3 text-[11px] leading-relaxed text-nq-foreground">
                       {it.transcript}
                     </pre>
+                  ) : null}
+                  {it.undoActionId && !undoneIds.has(it.undoActionId) ? (
+                    <button
+                      type="button"
+                      disabled={undoing}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const actionId = it.undoActionId!;
+                        startUndo(async () => {
+                          const r = await undoAiAction(slug, actionId);
+                          if (r.ok) setUndoneIds((s) => new Set(s).add(actionId));
+                        });
+                      }}
+                      className="mt-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 transition-colors hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-400"
+                    >
+                      ↩ Undo (60 phút)
+                    </button>
+                  ) : it.undoActionId && undoneIds.has(it.undoActionId) ? (
+                    <span className="mt-1.5 inline-block text-[11px] text-nq-muted">↩ Đã undo</span>
                   ) : null}
                 </div>
                 <span className="shrink-0 text-[10px] tabular-nums text-nq-muted">

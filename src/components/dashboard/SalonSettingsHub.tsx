@@ -45,6 +45,8 @@ import type { PresetKey } from "@/shared/dashboard/dashboardPresets";
 import { getUserMessages } from "@/shared/i18n/user";
 import { OwnerNotificationCard } from "@/components/dashboard/OwnerNotificationCard";
 import { StaffNotificationCard } from "@/components/dashboard/StaffNotificationCard";
+import { AIReportCard } from "@/components/dashboard/AIReportCard";
+import { GooglePlaceIdCard } from "@/components/dashboard/GooglePlaceIdCard";
 import { cn } from "@/shared/lib/cn";
 import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -71,6 +73,7 @@ export function SalonSettingsHub({
   reminder3hEnabled,
   smsRemindersEnabled,
   googleReviewUrl,
+  googlePlaceId,
   voiceAiEnabled,
   voiceAiPersonaName,
   vertical,
@@ -108,6 +111,7 @@ export function SalonSettingsHub({
   smsRemindersEnabled: boolean;
   bookingVerificationMode?: string;
   googleReviewUrl: string | null;
+  googlePlaceId: string | null;
   voiceAiEnabled: boolean;
   voiceAiPersonaName: string;
   vertical: string;
@@ -186,6 +190,7 @@ export function SalonSettingsHub({
     { href: `${base}/staff`, label: t.sectionStaff },
     { href: `${base}/hours`, label: t.sectionHours },
     { href: `${base}/address`, label: t.sectionAddress },
+    { href: `${base}/manager-briefing`, label: t.sectionAiManager },
   ];
 
   const myPageHref = `/dashboard/${encodeURIComponent(slug)}/settings/my-page`;
@@ -455,6 +460,9 @@ export function SalonSettingsHub({
         {canManageSalonSettings ? (
           <StaffNotificationCard slug={slug} />
         ) : null}
+        {canManageSalonSettings ? (
+          <AIReportCard slug={slug} />
+        ) : null}
         </SettingsCategory>
 
         {/* ══ Category: Brand & booking page ═══════════════════ */}
@@ -546,6 +554,14 @@ export function SalonSettingsHub({
           <GoogleReviewSettings
             slug={slug}
             initialValue={googleReviewUrl ?? ""}
+          />
+        ) : null}
+
+        {/* ── AI Review Responder — Google Place ID ───────────── */}
+        {canManageSalonSettings ? (
+          <GooglePlaceIdCard
+            slug={slug}
+            initialPlaceId={googlePlaceId}
           />
         ) : null}
 
