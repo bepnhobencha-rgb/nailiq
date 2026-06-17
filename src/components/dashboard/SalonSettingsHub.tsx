@@ -45,6 +45,7 @@ import type { PresetKey } from "@/shared/dashboard/dashboardPresets";
 import { getUserMessages } from "@/shared/i18n/user";
 import { OwnerNotificationCard } from "@/components/dashboard/OwnerNotificationCard";
 import { StaffNotificationCard } from "@/components/dashboard/StaffNotificationCard";
+import { AIReportCard } from "@/components/dashboard/AIReportCard";
 import { cn } from "@/shared/lib/cn";
 import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -455,6 +456,9 @@ export function SalonSettingsHub({
         ) : null}
         {canManageSalonSettings ? (
           <StaffNotificationCard slug={slug} />
+        ) : null}
+        {canManageSalonSettings ? (
+          <AIReportCard slug={slug} />
         ) : null}
         </SettingsCategory>
 
