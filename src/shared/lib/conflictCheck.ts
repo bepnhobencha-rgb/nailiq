@@ -5,6 +5,9 @@ export interface ConflictCheckBooking {
   status: string;
   id: string;
   client_name: string;
+  /** Optional resource dimension (beds/chairs/stations). Present only when the
+   *  caller selected it for resource-mode salons. */
+  resource_id?: string | null;
 }
 
 function isSkippedStatus(status: string): boolean {
@@ -74,6 +77,36 @@ export function checkBookingConflict(args: {
     if (newStart < exEnd && newEnd > exStart) {
       return b;
     }
+  }
+
+  return null;
+}
+
+/**
+ * Resource-dimension twin of `checkBookingConflict`: returns the first booking
+ * occupying the same resource (bed/chair) in an overlapping interval. Mirrors
+ * the `bookings_resource_no_overlap` GIST (excludes cancelled / waiting /
+ * no_show). App-level UX pre-flight only — the DB constraint is the real guard.
+ */
+export function checkResourceConflict(args: {
+  resourceId: string;
+  startUtcIso: string;
+  endUtcIso: string;
+  existingBookings: ConflictCheckBooking[];
+  excludeBookingId?: string;
+}): ConflictCheckBooking | null {
+  const newStart = parseIsoMs(args.startUtcIso);
+  const newEnd = parseIsoMs(args.endUtcIso);
+  if (newStart === null || newEnd === null) return null;
+
+  for (const b of args.existingBookings) {
+    if (args.excludeBookingId !== undefined && b.id === args.excludeBookingId) continue;
+    if (!b.resource_id || b.resource_id !== args.resourceId) continue;
+    if (b.status === "cancelled" || b.status === "waiting" || b.status === "no_show") continue;
+    const exStart = parseIsoMs(b.start_time_utc);
+    const exEnd = parseIsoMs(b.end_time_utc);
+    if (exStart === null || exEnd === null) continue;
+    if (newStart < exEnd && newEnd > exStart) return b;
   }
 
   return null;

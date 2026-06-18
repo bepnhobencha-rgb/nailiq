@@ -6,6 +6,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
+import { getResourceMode, resolveFreeResource } from "@/shared/booking/resolveResource";
 import {
   type BookingRowDb,
   DASHBOARD_BOOKING_SELECT,
@@ -50,6 +51,8 @@ export type EditBookingError =
   | "slot_conflict"
   | "staff_cannot_perform_service"
   | "server_error"
+  /** Resource-mode salon: every bed/chair is occupied for the new time. */
+  | "no_resource_available"
   /** Caller's `salon_members.role` is not allowed to edit (e.g. `nail_tech`).
    * Existing `EditBookingForm` switch falls through to the generic server-
    * error message, which is fine — the UI already hides the form for that
@@ -336,6 +339,21 @@ export async function performEditBooking(
   if (input.newAddonServiceId !== undefined) {
     baseUpdate.addon_service_id = effectiveAddonId;
     baseUpdate.addon_price_cents = addonPriceCents;
+  }
+
+  // Resource-mode: keep the booking's current resource if still free at the new
+  // time (exclude self), otherwise reassign to a free one.
+  const editResMode = await getResourceMode(supabase, salonId);
+  if (editResMode.enabled) {
+    const { data: cur } = await supabase
+      .from("bookings")
+      .select("resource_id")
+      .eq("id", bookingId)
+      .maybeSingle();
+    const preferred = (cur as { resource_id?: string | null } | null)?.resource_id ?? null;
+    const rr = await resolveFreeResource(supabase, salonId, slotStartUtc, slotEndUtc, preferred, bookingId);
+    if (!rr.resourceId) return { ok: false, error: "no_resource_available" };
+    baseUpdate.resource_id = rr.resourceId;
   }
 
   const { data: updated, error: upErr } = await supabase

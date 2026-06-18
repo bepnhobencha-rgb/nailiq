@@ -315,6 +315,12 @@ export interface ReceptionistCenterData {
     /** No-show fee lifecycle: 'saved' (card on file, uncharged) | 'charged' |
      * 'failed' | 'waived'. Null = no fee on this booking. */
     noshow_charge_status: string | null;
+    /** Assigned resource id (bed/chair/station). Null when resources_enabled is off
+     * or no resource was auto-assigned. */
+    resource_id: string | null;
+    /** Human-readable resource name ("Bed 3") for the booking block badge.
+     * Null when no resource is assigned. */
+    resource_name: string | null;
   }>;
   /** Per-staff service whitelist for this salon. `null` = no rows → all-capable fallback. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
@@ -820,6 +826,8 @@ export async function loadReceptionistCenterData(
       noshow_card_required,
       noshow_fee_cents,
       noshow_charge_status,
+      resource_id,
+      resource:salon_resources ( id, name, kind ),
       services!bookings_service_id_fkey ( name, duration_minutes, buffer_minutes ),
       addon:services!bookings_addon_service_id_fkey ( name, duration_minutes, buffer_minutes )
     `,
@@ -912,6 +920,8 @@ export async function loadReceptionistCenterData(
     addon_price_cents: number | null;
     services: ServiceJoinMinimal | ServiceJoinMinimal[] | null;
     addon: ServiceJoinMinimal | ServiceJoinMinimal[] | null;
+    resource_id: string | null;
+    resource: { id: string; name: string; kind: string } | { id: string; name: string; kind: string }[] | null;
   }> | null;
 
   const rawQueueRows: Array<{
@@ -1490,6 +1500,13 @@ export async function loadReceptionistCenterData(
         const v = (row as { noshow_charge_status?: unknown })
           .noshow_charge_status;
         return typeof v === "string" && v.length > 0 ? v : null;
+      })(),
+      resource_id: row.resource_id ?? null,
+      resource_name: (() => {
+        const r = row.resource;
+        if (!r) return null;
+        const rec = Array.isArray(r) ? r[0] : r;
+        return rec?.name ?? null;
       })(),
     };
   });

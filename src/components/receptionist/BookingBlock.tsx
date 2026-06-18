@@ -228,6 +228,9 @@ export interface BookingBlockProps {
   onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void;
   /** True while this block is being dragged — renders semi-transparent. */
   isDragging?: boolean;
+  /** Assigned resource name ("Bed 3") shown as a small pill under the service line.
+   * Only rendered when resources_enabled is on for the salon. */
+  resourceName?: string | null;
 }
 
 /**
@@ -323,6 +326,7 @@ export function BookingBlock(props: BookingBlockProps) {
     latenessTier = null,
     autoNoShowAtLabel,
     onStart,
+    resourceName,
   } = props;
 
   const reduced = useReducedMotion();
@@ -571,6 +575,17 @@ export function BookingBlock(props: BookingBlockProps) {
                   +{addonCount}
                 </span>
               ) : null}
+            </p>
+          ) : null}
+          {resourceName ? (
+            <p
+              className={cn(
+                "truncate text-[10px] leading-snug font-medium opacity-70",
+                styles.meta,
+              )}
+              title={resourceName}
+            >
+              🛏 {resourceName}
             </p>
           ) : null}
           {showTimeRange ? (

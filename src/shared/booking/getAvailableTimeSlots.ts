@@ -175,6 +175,17 @@ export function computeTimeSlots(args: {
   /** Salon IANA timezone — when set, slots are computed in salon wall-clock
    *  time (device-tz-independent). Omit → legacy local/UTC-frame behavior. */
   timezone?: string;
+  /**
+   * Per-staff shift windows for the selected day. When present, a staff member's
+   * available slot range is narrowed to their shift start/end (in salon-tz minutes
+   * from midnight). Staff with no entry fall back to full salon hours.
+   * Salons without any configured shifts skip this entirely (backward-compat).
+   */
+  staffShiftWindows?: ReadonlyMap<string, { startMin: number; endMin: number }>;
+  /** Staff IDs blocked for the selected date (one-off unavailability). These
+   *  staff are excluded from "any staff" selection and make specific-staff
+   *  slots completely unavailable. */
+  staffUnavailableIds?: ReadonlySet<string>;
 }): TimeSlot[] {
   const {
     openingHoursRaw,
@@ -189,6 +200,8 @@ export function computeTimeSlots(args: {
     shortestServiceMinutes,
     leadMs = BOOKING_BUFFER_MS,
     timezone,
+    staffShiftWindows,
+    staffUnavailableIds,
   } = args;
 
   const durationMin = Math.max(1, Math.round(Number(serviceDurationMinutes) || 1));
@@ -239,15 +252,34 @@ export function computeTimeSlots(args: {
     return true;
   }
 
+  // Returns true when the given slot falls within the staff member's shift
+  // window for this day (or when no shift windows are configured — backward-
+  // compat). `slotStartMin` is salon-tz minutes from midnight.
+  function isWithinShift(staffUuid: string, slotStartMin: number, slotEndMin: number): boolean {
+    if (!staffShiftWindows || staffShiftWindows.size === 0) return true;
+    const win = staffShiftWindows.get(staffUuid);
+    if (!win) return true; // no shift row for this staff → fall back to salon hours
+    return slotStartMin >= win.startMin && slotEndMin <= win.endMin;
+  }
+
   function slotAvailableForSelection(
     slotStartMs: number,
     slotEndMs: number,
+    slotStartMin: number,
+    slotEndMin: number,
   ): boolean {
     if (staffId !== BOOKING_ANY_STAFF_ID) {
+      if (staffUnavailableIds?.has(staffId)) return false;
+      if (!isWithinShift(staffId, slotStartMin, slotEndMin)) return false;
       return isStaffFree(staffId, slotStartMs, slotEndMs);
     }
     if (staffList.length === 0) return false;
-    return staffList.some((s) => isStaffFree(s.id, slotStartMs, slotEndMs));
+    return staffList.some(
+      (s) =>
+        !staffUnavailableIds?.has(s.id) &&
+        isWithinShift(s.id, slotStartMin, slotEndMin) &&
+        isStaffFree(s.id, slotStartMs, slotEndMs),
+    );
   }
 
   // `base` = local midnight of the selected day (timezone-aware anchor).
@@ -314,7 +346,7 @@ export function computeTimeSlots(args: {
     // Guard: past + buffer (today only).
     if (isToday && slotStartMs < nowMs + leadMs) continue;
 
-    const available = slotAvailableForSelection(slotStartMs, slotEndMs);
+    const available = slotAvailableForSelection(slotStartMs, slotEndMs, mins, mins + durationMin);
     slotMap.set(slotStartMs, { label, available });
   }
 
@@ -374,7 +406,7 @@ export function computeTimeSlots(args: {
     if (isToday && slotStartMs < nowMs + leadMs) continue;
 
     // Only inject when the slot is genuinely free.
-    const available = slotAvailableForSelection(slotStartMs, slotEndMs);
+    const available = slotAvailableForSelection(slotStartMs, slotEndMs, endMins, endMins + durationMin);
     if (!available) continue;
 
     slotMap.set(slotStartMs, { label, available: true });
@@ -483,6 +515,47 @@ export async function getAvailableTimeSlots(
     occupancy = occData as OccupancyRow[];
   }
 
+  // Fetch staff shifts + unavailability for this day (optional — tables may
+  // not exist on older deploys or salon may have no rows, both are fine).
+  let staffShiftWindows: Map<string, { startMin: number; endMin: number }> | undefined;
+  let staffUnavailableIds: Set<string> | undefined;
+
+  try {
+    const dayKey = dayKeyFromLocalDate(selectedDate);
+
+    const [shiftRes, unavailRes] = await Promise.all([
+      supabase
+        .from("staff_shifts")
+        .select("staff_id, start_time, end_time")
+        .eq("salon_id", salonId)
+        .eq("day_of_week", dayKey)
+        .eq("is_active", true),
+      supabase
+        .from("staff_unavailability")
+        .select("staff_id")
+        .eq("salon_id", salonId)
+        .eq("date", ymd),
+    ]);
+
+    if (!shiftRes.error && Array.isArray(shiftRes.data) && shiftRes.data.length > 0) {
+      staffShiftWindows = new Map();
+      for (const row of shiftRes.data as { staff_id: string; start_time: string; end_time: string }[]) {
+        staffShiftWindows.set(row.staff_id, {
+          startMin: hmToMinutes(row.start_time),
+          endMin: hmToMinutes(row.end_time),
+        });
+      }
+    }
+
+    if (!unavailRes.error && Array.isArray(unavailRes.data) && unavailRes.data.length > 0) {
+      staffUnavailableIds = new Set(
+        (unavailRes.data as { staff_id: string }[]).map((r) => r.staff_id),
+      );
+    }
+  } catch {
+    // Shift tables may not exist on older deploys — degrade gracefully
+  }
+
   return computeTimeSlots({
     openingHoursRaw,
     selectedDate,
@@ -499,6 +572,8 @@ export async function getAvailableTimeSlots(
         ? Math.max(0, Math.round(leadMinutes)) * 60_000
         : BOOKING_BUFFER_MS,
     timezone,
+    staffShiftWindows,
+    staffUnavailableIds,
   });
 }
 

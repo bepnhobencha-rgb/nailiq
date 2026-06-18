@@ -93,6 +93,22 @@ export type VerticalConfig = {
   referenceImageEnabled: boolean;
   /** Default catalogue seeded for a brand-new salon of this vertical. */
   seedServices: VerticalSeedService[];
+  /**
+   * Per-vertical defaults for the optional RESOURCE layer (beds/chairs/stations).
+   * The resource layer is opt-in per salon (`salons.resources_enabled`), so this
+   * only supplies sensible labels + a seed list + the natural grid axis when the
+   * owner turns it on. Omit → vertical has no resource preset (resource layer off).
+   */
+  resourceDefaults?: {
+    /** salon_resources.kind to use for the seeded/primary resource. */
+    kind: "station" | "chair" | "bed" | "backwash" | "room" | "other";
+    /** Customer-facing label for one resource. */
+    label: { en: string; vi: string };
+    /** Suggested resource names seeded when the owner enables the layer. */
+    seedNames: string[];
+    /** Natural timeline axis for this vertical when resources are enabled. */
+    gridAxis: "staff" | "resource";
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -153,6 +169,12 @@ const NAIL_SALON: VerticalConfig = {
   },
   referenceImageEnabled: true,
   seedServices: NAIL_SALON_SEED,
+  resourceDefaults: {
+    kind: "station",
+    label: { en: "Station", vi: "Bàn/Ghế" },
+    seedNames: ["Station 1", "Station 2", "Station 3", "Station 4", "Station 5", "Station 6"],
+    gridAxis: "staff", // nail: tech usually fixed to a station → staff axis reads naturally
+  },
 };
 
 const HEAD_SPA: VerticalConfig = {
@@ -183,6 +205,12 @@ const HEAD_SPA: VerticalConfig = {
   },
   referenceImageEnabled: false,
   seedServices: HEAD_SPA_SEED,
+  resourceDefaults: {
+    kind: "bed",
+    label: { en: "Bed", vi: "Giường" },
+    seedNames: ["Bed 1", "Bed 2", "Bed 3", "Bed 4", "Bed 5", "Bed 6", "Bed 7"],
+    gridAxis: "resource", // head spa: therapists rotate between fixed beds → resource axis
+  },
 };
 
 // ---------------------------------------------------------------------------
