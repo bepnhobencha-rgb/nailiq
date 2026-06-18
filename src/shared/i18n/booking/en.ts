@@ -146,6 +146,8 @@ export const bookingEn = {
       "Name contains invalid characters.",
     invalidEmail:
       "Email format invalid. Example: jane@email.com",
+    emailRequired:
+      "Please enter your email — you'll use it to reschedule or cancel your booking.",
     serviceRequired: "Please select a service to continue.",
     monthlyLimitReached:
       "This salon has reached its monthly online booking limit. Please call the salon to book.",
@@ -183,8 +185,8 @@ export const bookingEn = {
   clientPhoneHint: "✨ Returning customer? Your info will load automatically.",
   /** Placeholder for contact step — NANP Canadian example; guests may enter any valid E.164. */
   clientPhonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
-  clientEmailLabel: "Email (optional)",
-  clientEmailHint: "Recommended — get a link to reschedule or cancel your appointment, plus member-only offers.",
+  clientEmailLabel: "Email",
+  clientEmailHint: "We'll send you a link to reschedule or cancel your appointment — and member-only offers.",
   clientNotesLabel: "Special notes",
   clientNotesOptionalHint: "Optional — allergies, design ideas, parking, etc.",
   waitlistNotifyCta: "Notify me if a slot opens",

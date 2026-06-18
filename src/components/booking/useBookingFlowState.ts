@@ -385,9 +385,11 @@ export function useBookingFlowState(
     if (nameT.length < 2 || nameT.length > BOOKING_GUEST_NAME_MAX) return true;
     if (!isValidCustomerName(nameT)) return true;
     if (!validateGuestPhone(clientPhone).ok) return true;
-    /* Email is optional — empty is fine. Only invalid when provided + malformed. */
+    /* Email is REQUIRED for online (manual) bookings — it carries the
+       self-serve reschedule/cancel link and future member offers. Walk-in
+       (desk) and voice flows use their own submit paths and stay optional. */
     const emailT = clientEmail.trim();
-    if (emailT.length > 0 && !isValidEmailFormat(emailT)) return true;
+    if (emailT.length === 0 || !isValidEmailFormat(emailT)) return true;
     return false;
   }, [clientName, clientPhone, clientEmail]);
 
@@ -1289,13 +1291,15 @@ export function useBookingFlowState(
     const nameTooLong = name.length > BOOKING_GUEST_NAME_MAX;
     const nameWrongChars =
       !nameEmpty && !nameTooShort && !nameTooLong && !isValidCustomerName(name);
-    const emailInvalid = email.length > 0 && !isValidEmailFormat(email);
+    const emailEmpty = email.length === 0;
+    const emailInvalid = !emailEmpty && !isValidEmailFormat(email);
     if (
       nameEmpty ||
       nameTooShort ||
       nameTooLong ||
       nameWrongChars ||
       !validateGuestPhone(phone).ok ||
+      emailEmpty ||
       emailInvalid
     ) {
       setError(
@@ -1307,11 +1311,13 @@ export function useBookingFlowState(
               ? t.bookingErrors.nameTooLong
               : nameWrongChars
                 ? t.bookingErrors.invalidNameChars
-                : emailInvalid
-                  ? t.bookingErrors.invalidEmail
-                  : phone.length === 0
-                    ? t.bookingErrors.phoneRequired
-                    : t.bookingErrors.invalidPhone,
+                : phone.length === 0
+                  ? t.bookingErrors.phoneRequired
+                  : !validateGuestPhone(phone).ok
+                    ? t.bookingErrors.invalidPhone
+                    : emailEmpty
+                      ? t.bookingErrors.emailRequired
+                      : t.bookingErrors.invalidEmail,
       );
       return;
     }

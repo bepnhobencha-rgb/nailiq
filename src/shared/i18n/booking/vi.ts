@@ -133,6 +133,8 @@ export const bookingVi: BookingMessages = {
     nameTooLong: "Tên không được quá 100 ký tự.",
     invalidNameChars: "Tên chứa ký tự không hợp lệ.",
     invalidEmail: "Email không hợp lệ. Ví dụ: jane@email.com",
+    emailRequired:
+      "Vui lòng nhập email — bạn sẽ dùng nó để đổi hoặc huỷ lịch hẹn.",
     serviceRequired: "Vui lòng chọn dịch vụ để tiếp tục.",
     monthlyLimitReached:
       "Tiệm đã đạt giới hạn đặt lịch online tháng này. Vui lòng gọi điện thoại để đặt.",
@@ -167,8 +169,8 @@ export const bookingVi: BookingMessages = {
   clientPhoneLabel: "Số điện thoại",
   clientPhoneHint: "✨ Khách quen? Thông tin của bạn sẽ tự động điền vào.",
   clientPhonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
-  clientEmailLabel: "Email (không bắt buộc)",
-  clientEmailHint: "Nên thêm — nhận link đổi/huỷ lịch hẹn và ưu đãi riêng cho khách.",
+  clientEmailLabel: "Email",
+  clientEmailHint: "Chúng tôi sẽ gửi link để bạn tự đổi/huỷ lịch hẹn — kèm ưu đãi riêng cho khách.",
   clientNotesLabel: "Ghi chú",
   clientNotesOptionalHint:
     "Không bắt buộc — dị ứng, ý tưởng thiết kế, chỗ đỗ xe, v.v.",
