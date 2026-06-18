@@ -6,6 +6,10 @@ import { parsePresetKey } from "@/shared/dashboard/dashboardPresets";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { loadOwnerSalons } from "@/shared/dashboard/salonOwnerActions";
 import { parseClientSegmentSettings } from "@/shared/dashboard/clientSegmentSettings";
+import {
+  AI_AGENT_FLAG_KEYS,
+  type AiAgentFlags,
+} from "@/shared/dashboard/aiAgentTypes";
 import { getSalonDomain } from "@/shared/dashboard/domainActions";
 import { normalizeBrandColor } from "@/shared/lib/brandColor";
 import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
@@ -34,7 +38,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, google_place_id, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, group_together_threshold_minutes, reference_image_enabled, auto_no_show_minutes, winback_enabled, client_segment_settings",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, google_place_id, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, group_together_threshold_minutes, reference_image_enabled, auto_no_show_minutes, winback_enabled, client_segment_settings, feature_flags",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -75,6 +79,7 @@ export default async function SalonSettingsPage({ params }: Props) {
         auto_no_show_minutes?: unknown;
         winback_enabled?: unknown;
         client_segment_settings?: unknown;
+        feature_flags?: unknown;
       }
     | null;
 
@@ -157,6 +162,11 @@ export default async function SalonSettingsPage({ params }: Props) {
   const winBackEnabled = row?.winback_enabled !== false;
   // Clients lifecycle thresholds (NULL → app defaults).
   const clientSegments = parseClientSegmentSettings(row?.client_segment_settings);
+  // AI agent feature flags from salons.feature_flags JSONB (all default OFF).
+  const rawFlags = (row?.feature_flags ?? {}) as Record<string, unknown>;
+  const aiFlags = Object.fromEntries(
+    AI_AGENT_FLAG_KEYS.map((k) => [k, rawFlags[k] === true]),
+  ) as AiAgentFlags;
 
   return (
     <SalonSettingsHub
@@ -193,6 +203,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       winBackEnabled={winBackEnabled}
       clientNewMaxVisits={clientSegments.newMaxVisits}
       clientAtRiskDays={clientSegments.atRiskDays}
+      aiFlags={aiFlags}
       userEmail={userEmail}
       role={ctx.role}
       salonName={salonName}
