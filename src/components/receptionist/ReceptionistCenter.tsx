@@ -718,6 +718,7 @@ function ReceptionistCenterInner({
           noshow_card_id: b.noshow_card_id ?? null,
           noshow_fee_cents: b.noshow_fee_cents ?? null,
           noshow_charge_status: b.noshow_charge_status ?? null,
+          resource_name: b.resource_name ?? null,
         },
       ];
     });

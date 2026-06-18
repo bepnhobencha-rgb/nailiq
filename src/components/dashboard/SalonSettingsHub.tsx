@@ -20,6 +20,7 @@ import { PricingPanel } from "@/components/dashboard/PricingPanel";
 import { GoogleReviewSettings } from "@/components/dashboard/GoogleReviewSettings";
 import { WixIntegrationSettings } from "@/components/dashboard/WixIntegrationSettings";
 import { ResourceSettings } from "@/components/dashboard/ResourceSettings";
+import { StaffShiftHub } from "@/components/dashboard/StaffShiftHub";
 import { VoiceAiSettings } from "@/components/dashboard/VoiceAiSettings";
 import { BusinessTypeSettings } from "@/components/dashboard/BusinessTypeSettings";
 import { DomainSettings } from "@/components/dashboard/DomainSettings";
@@ -613,6 +614,14 @@ export function SalonSettingsHub({
             initialAxis={primaryGridAxis}
             vertical={vertical}
           />
+        ) : null}
+
+        {/* ── Staff shifts (weekly schedule) ──────────────────── */}
+        {canEditDashboardModules ? (
+          <section className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-4">
+            <h3 className="mb-1 text-sm font-semibold text-nq-foreground">Staff Shifts</h3>
+            <StaffShiftHub slug={slug} />
+          </section>
         ) : null}
 
         {/* ── Wix integration (self-service connect) ──────────── */}

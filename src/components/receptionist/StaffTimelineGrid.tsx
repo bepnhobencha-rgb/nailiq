@@ -106,6 +106,9 @@ export interface GridBooking {
   noshow_charge_status?: string | null;
   noshow_card_id?: string | null;
   noshow_fee_cents?: number | null;
+  /** Assigned resource name ("Bed 3") — shown as a small pill badge under the service name.
+   * Only populated when resources_enabled is on for the salon. */
+  resource_name?: string | null;
 }
 
 export interface StaffTimelineGridProps {
@@ -1542,6 +1545,7 @@ function StaffTimelineGridImpl({
                           compactIcons={compactBookingIcons}
                           isLate={isLate}
                           iconLabels={labels.bookingIcon}
+                          resourceName={b.resource_name}
                           isDragging={isBeingDragged}
                           latenessTier={latenessTier}
                           autoNoShowAtLabel={autoNoShowAtLabel}
