@@ -5,6 +5,7 @@ import { sendReminderEmail } from "@/shared/noshow/sendReminderEmail";
 import { resolveVertical } from "@/shared/verticals/registry";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { logNotification } from "@/shared/lib/notificationLog";
+import { reminderLang, buildReminderSmsBody } from "@/shared/reminders/reminderSmsBody";
 
 /** Vercel Cron calls this route every 15 minutes with the CRON_SECRET header. */
 export const runtime = "nodejs";
@@ -30,7 +31,6 @@ type BookingRow = {
     name: string;
     slug: string;
     timezone: string | null;
-    email: string | null;
     reminders_enabled: boolean;
     reminder_24h_enabled: boolean;
     reminder_3h_enabled: boolean;
@@ -49,7 +49,9 @@ function smsTimeLabel(booking: BookingRow): string {
 }
 
 /** `aiLead`, when provided, replaces the fixed "Reminder: …" opening (the AI
- *  already weaves in service/salon/when/time). Links + STOP stay deterministic. */
+ *  already weaves in service/salon/when/time). Links + STOP stay deterministic.
+ *  Language follows the booking's client_locale (VI for vi* locales, else EN);
+ *  copy lives in `@/shared/reminders/reminderSmsBody`. */
 function buildSmsBody(
   booking: BookingRow,
   reminderType: "24h" | "3h",
@@ -57,14 +59,16 @@ function buildSmsBody(
   rescheduleUrl: string,
   aiLead?: string | null,
 ): string {
-  const when = reminderType === "24h" ? "tomorrow" : "in 3 hours";
-  const time = smsTimeLabel(booking);
-  const service = booking.services?.name ?? "appointment";
-  const salon = booking.salons?.name ?? "";
-  const lead = aiLead || `Reminder: Your ${service} at ${salon} is ${when} at ${time}.`;
-  // Two segments is fine — the customer needs a reschedule link so they can
-  // move the time instead of just no-showing, not only a confirm link.
-  return `${lead}\nConfirm: ${confirmUrl}\nReschedule: ${rescheduleUrl}\nReply STOP to opt out.`;
+  return buildReminderSmsBody({
+    lang: reminderLang(booking.client_locale),
+    reminderType,
+    serviceName: booking.services?.name ?? "",
+    salonName: booking.salons?.name ?? "",
+    timeLabel: smsTimeLabel(booking),
+    confirmUrl,
+    rescheduleUrl,
+    aiLead,
+  });
 }
 
 export async function GET(req: Request) {
@@ -88,7 +92,7 @@ export async function GET(req: Request) {
     no_show_risk_score, client_locale,
     reminder_24h_sent_at, reminder_3h_sent_at,
     services!bookings_service_id_fkey(name), staff(name),
-    salons(name, slug, email, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, email_outbound_enabled, feature_flags)`;
+    salons(name, slug, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, feature_flags)`;
 
   // Fetch both email-eligible AND SMS-eligible bookings (no email filter here).
   const { data: need24h } = await supabase
@@ -117,8 +121,7 @@ export async function GET(req: Request) {
     if (reminderType === "24h" && !salon.reminder_24h_enabled) return;
     if (reminderType === "3h"  && !salon.reminder_3h_enabled)  return;
 
-    const emailOutboundEnabled = (salon as { email_outbound_enabled?: boolean | null }).email_outbound_enabled !== false;
-    const wantsEmail = emailOutboundEnabled && !!booking.client_email;
+    const wantsEmail = !!booking.client_email;
     const wantsSms   = salon.sms_reminders_enabled && !!booking.client_phone;
 
     if (!wantsEmail && !wantsSms) return;
@@ -143,18 +146,9 @@ export async function GET(req: Request) {
         businessDescriptor: resolveVertical(
           (salon as { vertical?: string | null }).vertical,
         ).aiDescriptor,
-        salonContactEmail: (salon as { email?: string | null }).email ?? null,
       });
       if (result.ok) anySuccess = true;
       else errors++;
-      void logNotification({
-        bookingId: booking.id,
-        salonId: booking.salon_id,
-        notificationType: reminderType === "24h" ? "reminder_24h" : "reminder_3h",
-        channel: "email",
-        clientPhone: booking.client_email,
-        ok: result.ok,
-      });
     }
 
     // SMS channel
