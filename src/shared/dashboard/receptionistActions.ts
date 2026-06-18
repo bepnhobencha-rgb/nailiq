@@ -2721,6 +2721,8 @@ export async function addDeskAppointment(
     noshow_card_required: false,
     noshow_fee_cents: null,
     noshow_charge_status: null,
+    resource_id: resolvedResourceId,
+    resource_name: null,
   };
 
   return { ok: true, bookingId, booking: optimisticBooking };
