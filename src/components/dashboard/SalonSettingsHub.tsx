@@ -32,6 +32,8 @@ import { ReferenceImageSettings } from "@/components/dashboard/ReferenceImageSet
 import { AutoNoShowSettings } from "@/components/dashboard/AutoNoShowSettings";
 import { ClientSegmentSettings } from "@/components/dashboard/ClientSegmentSettings";
 import { WinBackSettings } from "@/components/dashboard/WinBackSettings";
+import { AiManagerHub } from "@/components/dashboard/AiManagerHub";
+import type { AiAgentFlags } from "@/shared/dashboard/aiAgentTypes";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
@@ -89,6 +91,7 @@ export function SalonSettingsHub({
   winBackEnabled,
   clientNewMaxVisits,
   clientAtRiskDays,
+  aiFlags,
   userEmail,
   role,
   salonName,
@@ -128,6 +131,7 @@ export function SalonSettingsHub({
   winBackEnabled: boolean;
   clientNewMaxVisits: number;
   clientAtRiskDays: number;
+  aiFlags: AiAgentFlags;
   userEmail: string | null;
   role: string;
   salonName?: string;
@@ -185,6 +189,7 @@ export function SalonSettingsHub({
   }
 
   const { language } = useUserLanguage();
+  const vi = language === "vi";
   const messages = getUserMessages(language);
   const t = messages.salonSettings;
   const base = `/dashboard/${encodeURIComponent(slug)}/setup`;
@@ -278,6 +283,7 @@ export function SalonSettingsHub({
               ? [
                   { id: "cat-brand", title: t.categories.brand.title },
                   { id: "cat-booking", title: t.categories.booking.title },
+                  { id: "cat-ai-manager", title: vi ? "AI Quản Lý" : "AI Manager" },
                   {
                     id: "cat-integrations",
                     title: t.categories.integrations.title,
@@ -550,6 +556,18 @@ export function SalonSettingsHub({
         {canManageSalonSettings ? (
           <WinBackSettings slug={slug} initialEnabled={winBackEnabled} />
         ) : null}
+        </SettingsCategory>
+        ) : null}
+
+        {/* ══ Category: AI Manager ═════════════════════════════ */}
+        {canManageSalonSettings ? (
+        <SettingsCategory
+          id="cat-ai-manager"
+          title={vi ? "AI Quản Lý" : "AI Manager"}
+          subtitle={vi ? "Bật/tắt từng agent AI cho tiệm" : "Toggle AI agents for your salon"}
+          defaultOpen={false}
+        >
+          <AiManagerHub slug={slug} initialFlags={aiFlags} />
         </SettingsCategory>
         ) : null}
 

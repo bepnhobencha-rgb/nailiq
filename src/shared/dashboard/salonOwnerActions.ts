@@ -1412,3 +1412,48 @@ export async function updateBookingVerificationMode(
 
   return { ok: true };
 }
+
+/* ───────────── AI agent feature flags ───────────── */
+
+// Types live in aiAgentTypes.ts (no "use server") so client components can import them.
+export type { AiAgentFlagKey, AiAgentFlags } from "@/shared/dashboard/aiAgentTypes";
+import type { AiAgentFlagKey } from "@/shared/dashboard/aiAgentTypes";
+
+export type UpdateAiAgentFlagResult =
+  | { ok: true }
+  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" };
+
+/** Owner/admin: merge a single AI agent flag into salons.feature_flags JSONB. */
+export async function updateAiAgentFlag(
+  slug: string,
+  flagKey: AiAgentFlagKey,
+  enabled: boolean,
+): Promise<UpdateAiAgentFlagResult> {
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
+
+  // Read current flags then merge — safe for low-concurrency settings writes.
+  const { data: row } = await ctx.supabase
+    .from("salons")
+    .select("feature_flags")
+    .eq("id", ctx.salon.id)
+    .maybeSingle();
+
+  const current = (row?.feature_flags ?? {}) as Record<string, boolean>;
+  const merged = { ...current, [flagKey]: enabled };
+
+  const { error } = await ctx.supabase
+    .from("salons")
+    .update({ feature_flags: merged } as never)
+    .eq("id", ctx.salon.id);
+
+  if (error) {
+    console.error("[updateAiAgentFlag]", flagKey, error);
+    return { ok: false, error: "server_error" };
+  }
+  return { ok: true };
+}
