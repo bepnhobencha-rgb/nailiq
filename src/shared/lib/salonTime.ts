@@ -55,6 +55,21 @@ function parseUtcMs(utcIso: string): number {
   return ms;
 }
 
+/**
+ * Resolve the "now" instant for helpers that accept an OPTIONAL `nowIso`.
+ *
+ * An omitted value means "use the current time". A blank string is treated
+ * identically: client components that SSR-render with an empty placeholder
+ * (e.g. `useState<string>("")` to avoid a React #418 hydration mismatch on
+ * `new Date()`) pass `""` during the server pass. Without this, every
+ * `salonToday("", …)` / `salonNowMinutes("", …)` call would throw
+ * "invalid ISO string" and crash SSR (React #419). A non-blank but
+ * malformed value still throws — that's a real bug worth surfacing.
+ */
+function resolveNowMs(nowIso?: string): number {
+  return nowIso != null && nowIso.trim() !== "" ? parseUtcMs(nowIso) : Date.now();
+}
+
 function ymdInTimeZone(ms: number, timeZone: string): string {
   const dtf = new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -162,8 +177,7 @@ export function formatInSalonTz(
  * Get YYYY-MM-DD for "today" in the given salon timezone.
  */
 export function salonToday(timezone: string, nowIso?: string): string {
-  const ms = nowIso !== undefined ? parseUtcMs(nowIso) : Date.now();
-  return ymdInTimeZone(ms, timezone);
+  return ymdInTimeZone(resolveNowMs(nowIso), timezone);
 }
 
 /**
@@ -259,8 +273,7 @@ export function salonWallTimeToUtcIso(
  * Used for "now line" position on grid.
  */
 export function salonNowMinutes(timezone: string, nowIso?: string): number {
-  const ms = nowIso !== undefined ? parseUtcMs(nowIso) : Date.now();
-  return salonMinutesFromMidnightAt(ms, timezone);
+  return salonMinutesFromMidnightAt(resolveNowMs(nowIso), timezone);
 }
 
 /**
