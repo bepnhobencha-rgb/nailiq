@@ -5,6 +5,33 @@ Newest entries on top.
 
 ---
 
+## 2026-06-19 — A2P guardrail: US SMS auto-routes to email until registered (Minh lesson #1)
+
+**Status.** Code in PR `fix/minh-a2p-sms-guardrail` (draft). Stopgap live: Hi-Lite `sms_outbound_enabled` set FALSE via Supabase MCP on 2026-06-19.
+
+**Context.** Live QA found the AI Manager ("Minh") winback agent sent **13 real SMS** to US customers for `hilite-anaheim`, a salon with `sms_a2p_registered = false`. US A2P 10DLC unregistered SMS is silently carrier-dropped and can still incur Twilio fees. The system *recorded* `sms_a2p_registered = false` but **did not act on it** — routing used only the manual `sms_outbound_enabled` flag (default TRUE), which nobody had flipped. `channelResolver.ts` explicitly noted the A2P flag "does NOT control routing." Net: Minh measured outcomes but had no feedback loop to stop a known-bad channel — it would repeat for the next US salon.
+
+**Decision.** Wire the compliance flag into routing so the system self-protects:
+- `resolveCustomerChannel` gains optional `smsA2pRegistered` + `customerPhone` (default to pre-guardrail behaviour → existing callers unchanged). When the destination is a **US** number (`isUsPhone`, new `src/shared/lib/phoneRegion.ts`) **and** `smsA2pRegistered === false`, SMS is treated as unavailable → smart mode falls back to email (`email_a2p_fallback`).
+- Non-US numbers (CA/VN/etc.) and A2P-registered salons are unaffected.
+- Wired into `agentWinback` first (the agent that fired). **Follow-up:** wire the same params into `agentFirstVisit`, `agentRebook`, `vip_care`, reminders, `sendReviewRequest` (tracked in `docs/SPEC-minh-learning-loop.md`).
+
+**Why this is "lesson #1".** It is the first concrete instance of turning an incident into a durable, system-enforced rule rather than a one-off manual fix — the seed of the Minh learning loop (see SPEC). One incident → one guardrail that can never silently repeat.
+
+**Verification.** `npm run typecheck` green. Preview-first (cost/customer path): merge after PM review. Check Twilio Console messaging logs (17–18/06) for the 13 sends' error codes (30034 = blocked) + price.
+
+---
+
+## 2026-06-19 — Duplicate booking-confirmation emails + wrong salon name
+
+**Status.** Code in PR `fix/duplicate-confirmation-email` (draft). Migration index `booking_notifications_confirmation_once` applied to prod via Supabase MCP.
+
+**Context.** Live booking on `hilite-anaheim` produced **2 identical confirmation emails** (1s apart), both titled with the slug `hilite-anaheim` instead of "Hi-Lite Head Spa". Root cause: `sendBookingConfirmationEmail` selected a non-existent `currency` column (real: `currency_code`) → salon lookup errored → `salonRow = null` → (a) the email notification log was skipped, defeating the `/api/booking/sms-confirm` dedup guard (which counts email rows) so both it and `publicBookingSideEffects` sent; (b) the email fell back to slug name / Vancouver tz / CAD.
+
+**Decision.** `currency` → `currency_code`; plus a race-proof claim-before-send (`claimNotificationOnce` + partial unique index on `(booking_id, channel) where notification_type='booking_confirmation'`). First sender wins, the other skips.
+
+---
+
 ## 2026-05-06 — Demo registration is restricted to a single shared `demo-salon`
 
 **Status.** Resolved by PR #16 (`cd4a948`).

@@ -164,7 +164,7 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
     const db = looseServiceClient();
     const { data: salon } = await db
       .from("salons")
-      .select("name, email, feature_flags, slug, sms_outbound_enabled, email_outbound_enabled, customer_channel" as never)
+      .select("name, email, feature_flags, slug, sms_outbound_enabled, sms_a2p_registered, email_outbound_enabled, customer_channel" as never)
       .eq("id", salonId)
       .maybeSingle();
     const s = (salon as Row | null) ?? {};
@@ -174,6 +174,7 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
     const salonReplyEmail = str(s.email) || null;
     const bookingUrl = `${SITE_URL}/${salonSlug}?ref=winback`;
     const smsOutboundEnabled = s.sms_outbound_enabled !== false; // default true (non-US salons work without A2P)
+    const smsA2pRegistered = s.sms_a2p_registered === true; // US A2P 10DLC status
     const emailOutboundEnabled = s.email_outbound_enabled !== false; // default true
     const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
 
@@ -191,6 +192,8 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
         smsOutboundEnabled,
         emailOutboundEnabled,
         customerEmail: c.email,
+        smsA2pRegistered,
+        customerPhone: c.phone,
       });
 
       if (ch.noChannel) {
