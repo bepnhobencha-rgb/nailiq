@@ -8,6 +8,7 @@ import type { ServiceCategory } from "@/shared/booking/serviceCategory";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { cn } from "@/shared/lib/cn";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
+import { formatCurrency, type Currency } from "@/shared/lib/currencyFormat";
 import {
   bookingStepVariants,
   type BookingMotionDir,
@@ -102,6 +103,7 @@ export function BookingFlowServicePanel({
   reducedMotion,
   stepTransition,
   categories,
+  currencyCode,
   onSelectService,
   onSelectCombo,
   onNext,
@@ -112,6 +114,8 @@ export function BookingFlowServicePanel({
   combos?: readonly BookingComboItem[];
   serviceId: string | null;
   selectedComboId?: string | null;
+  /** Salon's currency for combo price/savings display (defaults handled by formatCurrency). */
+  currencyCode?: Currency | string | null;
   error: string | null;
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
@@ -356,9 +360,9 @@ export function BookingFlowServicePanel({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {combos.map((combo) => {
               const selected = selectedComboId === combo.id;
-              const dollars = (combo.priceCents / 100).toFixed(0);
+              const priceLabel = formatCurrency(combo.priceCents, currencyCode) ?? "";
               const savings = combo.discountCents > 0
-                ? `Save $${(combo.discountCents / 100).toFixed(0)}`
+                ? `Save ${formatCurrency(combo.discountCents, currencyCode) ?? ""}`
                 : null;
               return (
                 <button
@@ -393,7 +397,7 @@ export function BookingFlowServicePanel({
                     {combo.priceCents > 0 ? (
                       <>
                         <span aria-hidden>·</span>
-                        <span className="font-semibold text-[var(--salon-primary)]">${dollars}</span>
+                        <span className="font-semibold text-[var(--salon-primary)]">{priceLabel}</span>
                       </>
                     ) : null}
                   </div>

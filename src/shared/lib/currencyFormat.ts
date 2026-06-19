@@ -16,7 +16,16 @@
  * we read it back in the same currency.
  */
 
-export const SUPPORTED_CURRENCIES = ["CAD", "USD", "VND"] as const;
+export const SUPPORTED_CURRENCIES = [
+  // North America
+  "USD", "CAD", "MXN",
+  // Europe
+  "EUR", "GBP", "CHF",
+  // Asia-Pacific / Middle East
+  "AUD", "NZD", "SGD", "HKD", "JPY", "AED",
+  // Vietnam (diaspora salons)
+  "VND",
+] as const;
 export type Currency = (typeof SUPPORTED_CURRENCIES)[number];
 export const DEFAULT_CURRENCY: Currency = "CAD";
 
@@ -34,8 +43,18 @@ export function parseCurrency(value: unknown): Currency {
 /** Locale used to render each currency. Picked to match the salon's
  *  home market so the symbol placement and decimal mark feel native. */
 const LOCALE_BY_CURRENCY: Record<Currency, string> = {
-  CAD: "en-CA",
   USD: "en-US",
+  CAD: "en-CA",
+  MXN: "es-MX",
+  EUR: "en-IE",
+  GBP: "en-GB",
+  CHF: "de-CH",
+  AUD: "en-AU",
+  NZD: "en-NZ",
+  SGD: "en-SG",
+  HKD: "en-HK",
+  JPY: "ja-JP",
+  AED: "en-AE",
   VND: "vi-VN",
 };
 
@@ -43,8 +62,18 @@ const LOCALE_BY_CURRENCY: Record<Currency, string> = {
  *  is whole-đồng only — `Intl` handles this automatically when we set
  *  the right `minimumFractionDigits`. */
 const FRACTION_DIGITS: Record<Currency, number> = {
-  CAD: 2,
   USD: 2,
+  CAD: 2,
+  MXN: 2,
+  EUR: 2,
+  GBP: 2,
+  CHF: 2,
+  AUD: 2,
+  NZD: 2,
+  SGD: 2,
+  HKD: 2,
+  JPY: 0,
+  AED: 2,
   VND: 0,
 };
 
