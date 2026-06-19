@@ -348,6 +348,8 @@ export type UserMessages = {
     disputes: string;
     /** Activity / communications log nav item (owner only). */
     activity: string;
+    /** Minh approval requests nav item (owner/admin only). */
+    approvals: string;
   };
   /** Phone-OTP login flow (`/login`, `/login/verify`). Distinct from
    * `register.*` so the two flows can diverge without cross-talk. */
@@ -2594,6 +2596,7 @@ export const userEn: UserMessages = {
     loyalty: "Loyalty & Gifts",
     disputes: "Card Disputes",
     activity: "Activity",
+    approvals: "Việc chờ duyệt",
   },
   login: {
     title: "Sign in",

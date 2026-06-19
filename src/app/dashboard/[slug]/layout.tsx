@@ -13,6 +13,7 @@ import {
   resolveFeatureVisibility,
 } from "@/shared/features/featureRegistry";
 import { loadPlatformDisabledFeatures } from "@/shared/features/platformFeatureFlags";
+import { getPendingApprovals } from "@/shared/ai/approvalRequests";
 
 type Props = {
   children: ReactNode;
@@ -127,7 +128,7 @@ export default async function DashboardSlugLayout({
     ctx.salon.timezone,
   );
 
-  const [waitingRes, overdueRes] = await Promise.all([
+  const [waitingRes, overdueRes, pendingApprovals] = await Promise.all([
     ctx.supabase
       .from("bookings")
       .select("id", { count: "exact", head: true })
@@ -140,9 +141,14 @@ export default async function DashboardSlugLayout({
       .eq("salon_id", ctx.salon.id)
       .eq("status", "in_progress")
       .lt("end_time_utc", new Date().toISOString()),
+    // Only fetch pending approvals for owners/admins who can act on them
+    (ctx.role === "owner" || ctx.role === "admin")
+      ? getPendingApprovals(ctx.salon.id)
+      : Promise.resolve([]),
   ]);
   const walkinQueueCount = waitingRes.count ?? 0;
   const overdueCount = overdueRes.count ?? 0;
+  const pendingApprovalsCount = pendingApprovals.length;
 
   const { data: planRow } = await ctx.supabase
     .from("salons")
@@ -176,6 +182,7 @@ export default async function DashboardSlugLayout({
         salons={salons}
         walkinQueueCount={walkinQueueCount}
         overdueCount={overdueCount}
+        pendingApprovalsCount={pendingApprovalsCount}
         subscriptionPlan={subscriptionPlan}
         releaseFeatures={releaseFeatures}
         userEmail={userEmail}
