@@ -5,11 +5,11 @@ import { cleanupTestSalon } from "../helpers/db";
 import { seedGroupTestSalon } from "./helpers";
 
 /**
- * Regression: a "Guest N" / "Khách N" placeholder that leaked into
- * client_profiles.name (from an un-named group member) must NOT be
- * surfaced as the customer's name. The gate treats such a profile as
- * "returning but needs a name" — it shows the name field instead of
- * greeting them "Welcome back, Guest 1".
+ * Privacy (S1): the public phone gate must NEVER surface a stored name —
+ * real OR a "Guest N"/"Khách N" placeholder — to anyone who simply types a
+ * phone number. Every recognized phone gets a GENERIC "Welcome back!" plus
+ * the name field (so the customer supplies their own name); the stored name
+ * is only ever revealed after OTP verification, never at the gate.
  */
 
 const SLUG = "e2e-guestname";
@@ -23,7 +23,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
-test.describe("Gate — placeholder profile name is not surfaced", () => {
+test.describe("Gate — no stored name is surfaced pre-OTP (privacy S1)", () => {
   test.beforeAll(async () => {
     const fx = await seedGroupTestSalon(SLUG);
     await supabase.from("client_profiles").upsert(
@@ -55,43 +55,46 @@ test.describe("Gate — placeholder profile name is not surfaced", () => {
     await cleanupTestSalon(SLUG);
   });
 
-  test('"Guest 1" profile → no greeting, name field shown instead', async ({
+  test('"Guest 1" placeholder profile → generic greeting, name never shown', async ({
     page,
   }) => {
     await page.goto(`/${SLUG}`);
     await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
 
     await page.getByTestId("booking-entry-phone").fill(`+${POLLUTED_PHONE}`);
-    // No "Welcome back, Guest 1" — the placeholder is suppressed.
+    // Recognized generically + name field shown; the "Guest 1" placeholder
+    // (like any stored name) is never surfaced.
     await expect(page.getByTestId("booking-entry-name")).toBeVisible({
       timeout: 10_000,
     });
-    await expect(page.getByTestId("booking-entry-recognized")).toHaveCount(0);
+    const recognized = page.getByTestId("booking-entry-recognized");
+    await expect(recognized).toBeVisible();
+    await expect(recognized).not.toContainText("Guest 1");
   });
 
-  test("real name profile → greeting shows, no name field", async ({
+  test("real-name profile → generic greeting, name withheld pre-OTP", async ({
     page,
   }) => {
     await page.goto(`/${SLUG}`);
     await page.getByTestId("booking-entry-phone").fill(`+${REAL_PHONE}`);
-    await expect(page.getByTestId("booking-entry-recognized")).toContainText(
-      "Real Name",
-      { timeout: 10_000 },
-    );
-    await expect(page.getByTestId("booking-entry-name")).toHaveCount(0);
+    const recognized = page.getByTestId("booking-entry-recognized");
+    await expect(recognized).toBeVisible({ timeout: 10_000 });
+    // The real stored name must NOT leak to a phone-only lookup.
+    await expect(recognized).not.toContainText("Real Name");
+    await expect(page.getByTestId("booking-entry-name")).toBeVisible();
   });
 
-  test("placeholder profile but real name on a booking → fallback greets them", async ({
+  test("profile with a past real name → still withheld at the gate", async ({
     page,
   }) => {
     await page.goto(`/${SLUG}`);
     await page.getByTestId("booking-entry-phone").fill(`+${FALLBACK_PHONE}`);
-    // The profile name is "Khách 2" but the lookup falls back to the
-    // real booking name "Linda Real".
-    await expect(page.getByTestId("booking-entry-recognized")).toContainText(
-      "Linda Real",
-      { timeout: 10_000 },
-    );
-    await expect(page.getByTestId("booking-entry-name")).toHaveCount(0);
+    // Neither the placeholder ("Khách 2") nor the real booking name
+    // ("Linda Real") is surfaced — recognition stays generic.
+    const recognized = page.getByTestId("booking-entry-recognized");
+    await expect(recognized).toBeVisible({ timeout: 10_000 });
+    await expect(recognized).not.toContainText("Linda Real");
+    await expect(recognized).not.toContainText("Khách 2");
+    await expect(page.getByTestId("booking-entry-name")).toBeVisible();
   });
 });

@@ -189,7 +189,7 @@ export function BookingFlowInfoPanel({
               <div className="flex items-start gap-3">
                 {/* Avatar circle showing first letter of name */}
                 <div className="w-10 h-10 rounded-full bg-nq-primary/20 text-nq-primary flex items-center justify-center font-semibold text-base shrink-0">
-                  {returningCustomer.name.charAt(0).toUpperCase()}
+                  {returningCustomer.name ? returningCustomer.name.charAt(0).toUpperCase() : "👋"}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -202,9 +202,11 @@ export function BookingFlowInfoPanel({
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-[var(--booking-text-muted)] mt-0.5">
-                    {t.returningCustomer.visitCount.replace("{n}", String(returningCustomer.visitCount))}
-                  </p>
+                  {returningCustomer.visitCount != null && returningCustomer.visitCount > 0 && (
+                    <p className="text-sm text-[var(--booking-text-muted)] mt-0.5">
+                      {t.returningCustomer.visitCount.replace("{n}", String(returningCustomer.visitCount))}
+                    </p>
+                  )}
                   {returningCustomer.email && (
                     <p className="text-xs text-[var(--booking-text-muted)] mt-0.5">
                       {maskEmail(returningCustomer.email)}
@@ -214,7 +216,7 @@ export function BookingFlowInfoPanel({
               </div>
 
               {/* Preferred staff section */}
-              {returningCustomer.preferredStaffId !== null && returningCustomer.preferredStaffName !== null && (() => {
+              {returningCustomer.preferredStaffId != null && returningCustomer.preferredStaffName != null && (() => {
                 const staffId = returningCustomer.preferredStaffId!;
                 const staffName = returningCustomer.preferredStaffName!;
                 // User already selected their preferred staff — show confirmation

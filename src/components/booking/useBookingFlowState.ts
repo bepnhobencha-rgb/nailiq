@@ -61,13 +61,20 @@ import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimi
 
 export type ReturningCustomer = {
   found: true;
-  name: string;
-  email: string | null;
   isVip: boolean;
-  visitCount: number;
-  preferredStaffId: string | null;
-  preferredStaffName: string | null;
-  lastBooking: {
+  // ── PII (identity + history) ────────────────────────────────────────────
+  // Populated ONLY after the customer proves phone ownership (OTP). The public
+  // pre-auth lookup at /api/customer/[phone] returns just { found, isVip } —
+  // otherwise anyone could type a phone and read the owner's real name, visit
+  // count and usual technician (PII enumeration, QA S1). Kept optional so a
+  // post-verification fetch can light these up later without re-touching every
+  // consumer.
+  name?: string;
+  email?: string | null;
+  visitCount?: number;
+  preferredStaffId?: string | null;
+  preferredStaffName?: string | null;
+  lastBooking?: {
     serviceId: string;
     serviceName: string;
     staffId: string | null;
@@ -502,13 +509,12 @@ export function useBookingFlowState(
           if (data.found) {
             setReturningCustomer(data as ReturningCustomer);
             setPreferredStaffDismissed(false); // reset dismiss when new profile loaded
-            // Auto-fill name only if empty (don't overwrite what the user typed)
-            setClientName((prev) => (!prev.trim() ? (data as ReturningCustomer).name : prev));
-            // Auto-fill email only if empty
+            // Name/email are NOT returned by the public lookup (privacy fix S1);
+            // guard anyway so a future post-OTP fetch can auto-fill when empty.
+            const name = (data as ReturningCustomer).name;
+            if (name) setClientName((prev) => (!prev.trim() ? name : prev));
             const email = (data as ReturningCustomer).email;
-            if (email) {
-              setClientEmail((prev) => (!prev.trim() ? email : prev));
-            }
+            if (email) setClientEmail((prev) => (!prev.trim() ? email : prev));
           } else {
             setReturningCustomer(null);
           }

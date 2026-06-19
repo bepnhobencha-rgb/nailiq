@@ -80,7 +80,7 @@ export function BookingFlowPhonePanel({
   const continueDisabled = phoneTrimmed.length === 0 || phoneLocallyInvalid;
 
   const hasRebook =
-    returningCustomer !== null && returningCustomer.lastBooking !== null;
+    returningCustomer !== null && returningCustomer.lastBooking != null;
 
   return (
     <motion.section
@@ -175,12 +175,12 @@ export function BookingFlowPhonePanel({
               <div className="flex items-start gap-3">
                 {/* First-letter avatar */}
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-nq-primary/20 text-base font-semibold text-nq-primary">
-                  {returningCustomer.name.charAt(0).toUpperCase()}
+                  {returningCustomer.name ? returningCustomer.name.charAt(0).toUpperCase() : "👋"}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-semibold text-[var(--booking-text)]">
-                      {returningCustomer.name}
+                      {returningCustomer.name || t.returningCustomer.welcomeBack}
                     </span>
                     {returningCustomer.isVip && (
                       <span className="inline-flex items-center gap-1 rounded-full border border-nq-warning/30 bg-nq-warning/15 px-2 py-0.5 text-[11px] font-semibold text-nq-warning">
@@ -188,17 +188,19 @@ export function BookingFlowPhonePanel({
                       </span>
                     )}
                   </div>
-                  <p className="mt-0.5 text-xs text-[var(--booking-text-muted)]">
-                    {t.returningCustomer.visitCount.replace(
-                      "{n}",
-                      String(returningCustomer.visitCount),
-                    )}
-                  </p>
+                  {returningCustomer.visitCount != null && returningCustomer.visitCount > 0 && (
+                    <p className="mt-0.5 text-xs text-[var(--booking-text-muted)]">
+                      {t.returningCustomer.visitCount.replace(
+                        "{n}",
+                        String(returningCustomer.visitCount),
+                      )}
+                    </p>
+                  )}
                 </div>
               </div>
 
               {/* ── Rebook section — only when lastBooking is present ── */}
-              {returningCustomer.lastBooking !== null && (
+              {returningCustomer.lastBooking != null && (
                 <div className="mt-4">
                   {/* Section divider label */}
                   <p className="mb-3 text-center text-xs text-[var(--booking-text-muted)]">

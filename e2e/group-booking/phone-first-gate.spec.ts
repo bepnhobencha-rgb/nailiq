@@ -45,12 +45,13 @@ test.describe("Phone-first entry gate", () => {
     const gate = page.getByTestId("booking-phone-gate");
     await expect(gate).toBeVisible();
 
-    // Enter the returning customer's phone → recognized greeting.
+    // Enter the returning customer's phone → recognized, but PRIVACY (S1):
+    // the greeting is generic and must NOT reveal the stored name to anyone
+    // who merely types a phone number.
     await page.getByTestId("booking-entry-phone").fill(`+${PHONE}`);
-    await expect(page.getByTestId("booking-entry-recognized")).toContainText(
-      NAME,
-      { timeout: 10_000 },
-    );
+    const recognized = page.getByTestId("booking-entry-recognized");
+    await expect(recognized).toBeVisible({ timeout: 10_000 });
+    await expect(recognized).not.toContainText(NAME);
 
     // Switch to Individual → the flow should start on service selection
     // (phone step skipped because the gate already captured it).
