@@ -2103,19 +2103,28 @@ function ReceptionistCenterInner({
   // clearer party alert ("Today {time} group: {name}/{n} not confirmed") and
   // its focus-the-group action. Restricted to today so the "today" copy is
   // accurate and operationally relevant for the front desk.
-  const todaySalonDate = formatInSalonTz(nowIso, timezone, "date");
-  const pendingPartyCard =
-    (partyCards ?? [])
-      .filter(
-        (c) =>
-          !c.expired &&
-          c.pendingCount > 0 &&
-          formatInSalonTz(c.groupStartUtcIso, timezone, "date") ===
-            todaySalonDate,
-      )
-      .sort((a, b) =>
-        a.groupStartUtcIso.localeCompare(b.groupStartUtcIso),
-      )[0] ?? null;
+  // `nowIso` is "" during the SSR pass (deliberate — avoids a React #418
+  // hydration mismatch on the live timestamp). `formatInSalonTz` throws on an
+  // empty ISO, so skip this today-only alert until the client populates the
+  // real time after mount. Without the guard, SSR crashes with
+  // "salonTime: invalid ISO string" → React #419 (the whole Center fails to
+  // render). The alert is meaningless without "now" anyway, and the client
+  // re-renders immediately once nowIso ticks in.
+  const todaySalonDate = nowIso ? formatInSalonTz(nowIso, timezone, "date") : "";
+  const pendingPartyCard = !nowIso
+    ? null
+    : (partyCards ?? [])
+        .filter(
+          (c) =>
+            !c.expired &&
+            c.pendingCount > 0 &&
+            c.groupStartUtcIso &&
+            formatInSalonTz(c.groupStartUtcIso, timezone, "date") ===
+              todaySalonDate,
+        )
+        .sort((a, b) =>
+          a.groupStartUtcIso.localeCompare(b.groupStartUtcIso),
+        )[0] ?? null;
   const pendingPartyGroupId = pendingPartyCard?.groupId ?? null;
   // Use organizer name so the alert reads "Sarah's party · 2pm: 1 slot unclaimed"
   // rather than the anonymous "Guest 2 hasn't confirmed" which gives no context.
@@ -3023,7 +3032,13 @@ function ReceptionistCenterInner({
         <ConnectionBanner
           state={connectionState}
           labels={rcMessages.connection}
-          lastUpdatedLabel={formatInSalonTz(lastSyncedIso, timezone, "time")}
+          lastUpdatedLabel={
+            // lastSyncedIso starts "" on the SSR pass (seeded from nowIso);
+            // formatInSalonTz throws on an empty ISO. The client fills it in
+            // right after mount, and the banner only surfaces when
+            // reconnecting/offline, so an empty label during SSR is harmless.
+            lastSyncedIso ? formatInSalonTz(lastSyncedIso, timezone, "time") : ""
+          }
           onReload={() => window.location.reload()}
         />
 
