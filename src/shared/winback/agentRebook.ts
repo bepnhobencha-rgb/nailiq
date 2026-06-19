@@ -125,7 +125,7 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
     const db = looseServiceClient();
     const { data: salon } = await db
       .from("salons")
-      .select("name, email, feature_flags, slug, sms_outbound_enabled, email_outbound_enabled, customer_channel" as never)
+      .select("name, email, feature_flags, slug, sms_outbound_enabled, sms_a2p_registered, email_outbound_enabled, customer_channel" as never)
       .eq("id", salonId)
       .maybeSingle();
     const s = (salon as Row | null) ?? {};
@@ -136,6 +136,7 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
     const bookingUrl = `${SITE_URL}/${salonSlug}?ref=rebook`;
     const smsOutboundEnabled = s.sms_outbound_enabled !== false; // default true
     const emailOutboundEnabled = s.email_outbound_enabled !== false; // default true
+    const smsA2pRegistered = s.sms_a2p_registered === true; // US A2P 10DLC status
     const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
 
     const candidates = await gatherRebookCandidates(salonId, cap);
@@ -152,6 +153,8 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
         smsOutboundEnabled,
         emailOutboundEnabled,
         customerEmail: c.email,
+        smsA2pRegistered,
+        customerPhone: c.phone,
       });
 
       if (ch.noChannel) {

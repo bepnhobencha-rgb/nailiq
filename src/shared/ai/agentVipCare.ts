@@ -219,12 +219,15 @@ async function sendMessage(
   smsOutboundEnabled: boolean,
   emailOutboundEnabled: boolean,
   salonReplyEmail?: string | null,
+  smsA2pRegistered?: boolean,
 ): Promise<{ ok: boolean; channel: "sms" | "email"; reason: string }> {
   const ch = resolveCustomerChannel({
     mode: channelMode,
     smsOutboundEnabled,
     emailOutboundEnabled,
     customerEmail: client.email,
+    smsA2pRegistered,
+    customerPhone: client.phone,
   });
 
   if (ch.noChannel) {
@@ -265,7 +268,7 @@ export async function runVipCare(salonId: string): Promise<void> {
     const db = looseServiceClient();
     const { data: salon } = await db
       .from("salons" as never)
-      .select("name, email, slug, feature_flags, sms_outbound_enabled, email_outbound_enabled, customer_channel" as never)
+      .select("name, email, slug, feature_flags, sms_outbound_enabled, sms_a2p_registered, email_outbound_enabled, customer_channel" as never)
       .eq("id" as never, salonId)
       .maybeSingle();
 
@@ -278,6 +281,7 @@ export async function runVipCare(salonId: string): Promise<void> {
     const salonReplyEmail = str(s.email) || null;
     const smsOutboundEnabled = s.sms_outbound_enabled !== false; // default true
     const emailOutboundEnabled = s.email_outbound_enabled !== false; // default true
+    const smsA2pRegistered = s.sms_a2p_registered === true; // US A2P 10DLC status
     const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
     const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
     const bookingUrl = `${SITE_URL}/${salonSlug}?ref=vip`;
@@ -299,7 +303,7 @@ export async function runVipCare(salonId: string): Promise<void> {
         const days = daysUntilBirthday(client.dateOfBirth);
         if (days === 7) {
           const msg = await draftMessage("birthday", client, salonName);
-          const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, smsOutboundEnabled, emailOutboundEnabled, salonReplyEmail);
+          const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, smsOutboundEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
           if (!ok && reason.startsWith("no_channel")) {
             console.warn(`[runVipCare] no channel for ${client.name} — ${reason}`);
             await svc.from("ai_actions_log" as never).insert({
@@ -332,7 +336,7 @@ export async function runVipCare(salonId: string): Promise<void> {
         if (client.visitCount < milestone || client.visitCount > milestone + 1) continue;
         // Fire when visits == milestone (allow +1 buffer so cron doesn't miss by 1)
         const msg = await draftMessage("milestone", client, salonName, milestone);
-        const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, smsOutboundEnabled, emailOutboundEnabled, salonReplyEmail);
+        const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, smsOutboundEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
         if (!ok && reason.startsWith("no_channel")) {
           console.warn(`[runVipCare] no channel for ${client.name} (milestone ${milestone}) — ${reason}`);
           await svc.from("ai_actions_log" as never).insert({
@@ -363,7 +367,7 @@ export async function runVipCare(salonId: string): Promise<void> {
         const daysSince = Math.floor((Date.now() - Date.parse(client.lastVisitAt)) / 864e5);
         if (daysSince >= 30 && daysSince < 60) {
           const msg = await draftMessage("vip_inactive", client, salonName);
-          const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, smsOutboundEnabled, emailOutboundEnabled, salonReplyEmail);
+          const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, smsOutboundEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
           if (!ok && reason.startsWith("no_channel")) {
             console.warn(`[runVipCare] no channel for ${client.name} — ${reason}`);
             await svc.from("ai_actions_log" as never).insert({
