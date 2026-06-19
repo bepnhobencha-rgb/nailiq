@@ -63,6 +63,26 @@ function monthHeaderLabel(d: Date): string {
   return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
 
+// Slot-availability tiers drive the per-day dot colour and whether an open day
+// is still bookable. Counts come from `getAvailableTimeSlotsCount`.
+//   open    (> LIMITED_MAX)  → green  "plenty"
+//   limited (1..LIMITED_MAX) → amber  "filling up"
+//   full    (0, day is open) → red    not bookable (dead-end prevention)
+type AvailTier = "open" | "limited" | "full";
+const LIMITED_MAX = 3;
+function tierFromCount(n: number): AvailTier {
+  if (n <= 0) return "full";
+  if (n <= LIMITED_MAX) return "limited";
+  return "open";
+}
+// Hard-coded so the dot reads the same on every salon theme (the brand var is
+// reused for "selected" fills and would collide with the green "open" signal).
+const TIER_DOT_COLOR: Record<AvailTier, string> = {
+  open: "#3a9d5a",
+  limited: "#c9a227",
+  full: "#c0392b",
+};
+
 export function BookingCalendarGrid({
   t,
   salonId,
@@ -172,6 +192,25 @@ export function BookingCalendarGrid({
     return out;
   }, [viewMonth]);
 
+  // When viewing the CURRENT month, drop the fully-past weeks above the current
+  // week so the grid opens on "this week" instead of leading with rows of dimmed
+  // past days (Huy: "những ngày quá khứ trống lỗng vậy sao"). Past days that fall
+  // inside the current week stay visible but dimmed/disabled — no empty holes.
+  // Future months render in full from day 1.
+  const gridDays = useMemo(() => {
+    const isCurrentMonth =
+      viewMonth.getFullYear() === todayStart.getFullYear() &&
+      viewMonth.getMonth() === todayStart.getMonth();
+    if (!isCurrentMonth) return daysInView;
+    const mondayOffset = (todayStart.getDay() + 6) % 7;
+    const monday = new Date(todayStart);
+    monday.setDate(todayStart.getDate() - mondayOffset);
+    const mondayMs = startOfLocalDay(monday).getTime();
+    return daysInView.filter(
+      (d) => startOfLocalDay(d).getTime() >= mondayMs,
+    );
+  }, [daysInView, viewMonth, todayStart]);
+
   // Horizontal "near-term" strip: consecutive days starting TODAY, capped at
   // 14 and never beyond the lead-time horizon. The strip is the default view
   // (fast for soon bookings, no past clutter); the month grid lives behind a
@@ -194,14 +233,14 @@ export function BookingCalendarGrid({
   const probeDays = useMemo(() => {
     const seen = new Set<string>();
     const out: Date[] = [];
-    for (const d of [...daysInView, ...stripDays]) {
+    for (const d of [...gridDays, ...stripDays]) {
       const ymd = bookingDateYmdFromLocalDate(d);
       if (seen.has(ymd)) continue;
       seen.add(ymd);
       out.push(d);
     }
     return out;
-  }, [daysInView, stripDays]);
+  }, [gridDays, stripDays]);
 
   // Show the full month grid by default only when the current selection sits
   // past the strip range (far-future pick) — otherwise the strip covers it and
@@ -230,15 +269,18 @@ export function BookingCalendarGrid({
     return weekdayClosed(d) || isExceptionClosed(d);
   }
 
-  const [slotHintByYmd, setSlotHintByYmd] = useState<Record<string, boolean>>(
+  // Per-day open-slot COUNT (not just boolean) so the dot can colour by tier
+  // and "full" (open but 0 slots) days can be disabled. Key present only for
+  // probed, open, in-window days; absence = unknown (still loading).
+  const [slotCountByYmd, setSlotCountByYmd] = useState<Record<string, number>>(
     {},
   );
 
   useEffect(() => {
     let cancelled = false;
     if (!salonId || serviceTotalMinutes <= 0 || staff.length === 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale slot hints when inputs become incomplete
-      setSlotHintByYmd({});
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale slot counts when inputs become incomplete
+      setSlotCountByYmd({});
       return;
     }
     void (async () => {
@@ -250,7 +292,7 @@ export function BookingCalendarGrid({
             startOfLocalDay(date).getTime() >
             startOfLocalDay(windowEnd).getTime();
           if (past || beyondWindow || dayClosed(date)) {
-            return { ymd, hasSlots: false };
+            return { ymd, count: null as number | null };
           }
           const n = await getAvailableTimeSlotsCount({
             salonId,
@@ -261,13 +303,13 @@ export function BookingCalendarGrid({
             serviceDurationMinutes: serviceTotalMinutes,
             closedDateYmdSet,
           });
-          return { ymd, hasSlots: n > 0 };
+          return { ymd, count: n };
         }),
       );
       if (cancelled) return;
-      const next: Record<string, boolean> = {};
-      for (const r of results) next[r.ymd] = r.hasSlots;
-      setSlotHintByYmd(next);
+      const next: Record<string, number> = {};
+      for (const r of results) if (r.count !== null) next[r.ymd] = r.count;
+      setSlotCountByYmd(next);
     })();
     return () => {
       cancelled = true;
@@ -285,7 +327,7 @@ export function BookingCalendarGrid({
     windowEnd,
   ]);
 
-  const first = daysInView[0]!;
+  const first = gridDays[0]!;
   const leadPad = (first.getDay() + 6) % 7;
 
   type Cell =
@@ -301,7 +343,7 @@ export function BookingCalendarGrid({
       };
   const cells: Cell[] = [];
   for (let i = 0; i < leadPad; i++) cells.push({ kind: "empty" });
-  for (const date of daysInView) {
+  for (const date of gridDays) {
     const startMs = startOfLocalDay(date).getTime();
     const past = startMs < todayStart.getTime();
     const beyondWindow = startMs > startOfLocalDay(windowEnd).getTime();
@@ -322,8 +364,60 @@ export function BookingCalendarGrid({
   const canPrev = viewMonth.getTime() > minMonth.getTime();
   const canNext = viewMonth.getTime() < maxMonth.getTime();
 
+  // Earliest probed, in-window day that still has at least one open slot →
+  // powers the "soonest available" jump button. Probed set always covers the
+  // next 14 days (strip) plus the visible month, so a near-term opening is found
+  // even when this week is full.
+  const soonestAvailable = useMemo(() => {
+    let best: Date | null = null;
+    for (const d of probeDays) {
+      const c = slotCountByYmd[bookingDateYmdFromLocalDate(d)];
+      if (c !== undefined && c > 0 && (!best || d.getTime() < best.getTime())) {
+        best = d;
+      }
+    }
+    return best;
+  }, [probeDays, slotCountByYmd]);
+
+  const soonestSelected =
+    soonestAvailable !== null &&
+    selectedDate !== null &&
+    sameLocalCalendarDay(soonestAvailable, selectedDate);
+
+  function jumpToSoonest() {
+    if (!soonestAvailable) return;
+    onSelectDate(soonestAvailable);
+    const m = startOfMonth(soonestAvailable);
+    if (m.getTime() >= minMonth.getTime() && m.getTime() <= maxMonth.getTime()) {
+      setViewMonth(m);
+    }
+  }
+
   return (
     <div className="mt-2">
+      {/* "Soonest available" jump — appears when a near-term opening exists and
+          isn't already the picked day. Lets a guest skip a full this-week. */}
+      {soonestAvailable && !soonestSelected ? (
+        <button
+          type="button"
+          data-testid="calendar-soonest"
+          onClick={jumpToSoonest}
+          className="mb-2 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors"
+          style={{
+            borderColor: "color-mix(in srgb, " + TIER_DOT_COLOR.open + " 45%, transparent)",
+            color: TIER_DOT_COLOR.open,
+          }}
+        >
+          <span
+            className="h-1.5 w-1.5 rounded-full"
+            style={{ backgroundColor: TIER_DOT_COLOR.open }}
+            aria-hidden
+          />
+          {t.calendarSoonest}: {calendarDayAbbrev(soonestAvailable)}{" "}
+          {soonestAvailable.getDate()}/{soonestAvailable.getMonth() + 1}
+        </button>
+      ) : null}
+
       {/* Near-term horizontal date strip — default fast path, no past days. */}
       <div
         className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -334,12 +428,17 @@ export function BookingCalendarGrid({
           const startMs = startOfLocalDay(date).getTime();
           const beyondWindow = startMs > startOfLocalDay(windowEnd).getTime();
           const closed = dayClosed(date);
-          const disabled = beyondWindow || closed;
+          const count = slotCountByYmd[ymd];
+          const tier = count === undefined ? null : tierFromCount(count);
+          const full = tier === "full";
+          const disabled = beyondWindow || closed || full;
           const selected =
             selectedDate !== null && sameLocalCalendarDay(date, selectedDate);
           const exceptionClosed = isExceptionClosed(date);
           const isFirst = idx === 0;
-          const hasSlotsHint = !disabled && slotHintByYmd[ymd] === true;
+          // Coloured dot for any open day with a known tier (incl. red "full").
+          const dotColor =
+            !beyondWindow && !closed && tier ? TIER_DOT_COLOR[tier] : null;
           const topLabel = isFirst
             ? t.dateTodayChip
             : closed
@@ -395,9 +494,10 @@ export function BookingCalendarGrid({
               >
                 {date.getDate()}
               </span>
-              {hasSlotsHint ? (
+              {dotColor && !selected ? (
                 <div
-                  className="mx-auto mt-1 h-1 w-1 shrink-0 rounded-full bg-[var(--salon-primary)]"
+                  className="mx-auto mt-1 h-1 w-1 shrink-0 rounded-full"
+                  style={{ backgroundColor: dotColor }}
                   aria-hidden
                 />
               ) : (
@@ -518,12 +618,17 @@ export function BookingCalendarGrid({
             cell;
           const selected =
             selectedDate !== null && sameLocalCalendarDay(date, selectedDate);
-          const disabled = past || beyondWindow || closed;
+          const ymd = bookingDateYmdFromLocalDate(date);
+          const count = slotCountByYmd[ymd];
+          const tier =
+            past || beyondWindow || closed || count === undefined
+              ? null
+              : tierFromCount(count);
+          const full = tier === "full";
+          const disabled = past || beyondWindow || closed || full;
           const labelDay = String(date.getDate());
           const abbrev = calendarDayAbbrev(date);
-          const ymd = bookingDateYmdFromLocalDate(date);
-          const hasSlotsHint =
-            !past && !beyondWindow && !closed && slotHintByYmd[ymd] === true;
+          const dotColor = tier ? TIER_DOT_COLOR[tier] : null;
 
           return (
             <button
@@ -588,9 +693,10 @@ export function BookingCalendarGrid({
               >
                 {labelDay}
               </span>
-              {hasSlotsHint ? (
+              {dotColor && !selected ? (
                 <div
-                  className="mt-1 h-1 w-1 shrink-0 rounded-full bg-[var(--salon-primary)] mx-auto"
+                  className="mt-1 h-1 w-1 shrink-0 rounded-full mx-auto"
+                  style={{ backgroundColor: dotColor }}
                   aria-hidden
                 />
               ) : (
@@ -610,10 +716,27 @@ export function BookingCalendarGrid({
       >
         <span className="inline-flex items-center gap-1.5">
           <span
-            className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--salon-primary)]"
+            className="inline-block h-1.5 w-1.5 rounded-full"
+            style={{ backgroundColor: TIER_DOT_COLOR.open }}
             aria-hidden
           />
           {t.calendarLegendAvailable}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            className="inline-block h-1.5 w-1.5 rounded-full"
+            style={{ backgroundColor: TIER_DOT_COLOR.limited }}
+            aria-hidden
+          />
+          {t.calendarLegendLimited}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            className="inline-block h-1.5 w-1.5 rounded-full"
+            style={{ backgroundColor: TIER_DOT_COLOR.full }}
+            aria-hidden
+          />
+          {t.calendarLegendFull}
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span

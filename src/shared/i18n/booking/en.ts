@@ -44,8 +44,14 @@ export const bookingEn = {
   calendarPrevMonthAria: "Previous month",
   calendarNextMonthAria: "Next month",
   /** Calendar legend below grid. */
-  calendarLegendAvailable: "Slots available",
+  calendarLegendAvailable: "Open",
+  /** Amber tier: only a few slots left. */
+  calendarLegendLimited: "Filling up",
+  /** Red tier: open day but fully booked. */
+  calendarLegendFull: "Full",
   calendarLegendClosed: "Closed",
+  /** "Soonest available" jump button label. */
+  calendarSoonest: "Soonest available",
   /** `{n}` = number of open slot buttons for that day. */
   scarcityFewSlots: "Only {n} open times left — this day is filling up.",
   /** Live-availability teaser (#7): scarcity hint + soonest open time. */
