@@ -666,6 +666,8 @@ export default function DeskBookingForm({
     onCreated,
     onClose,
     tx,
+    resourceId,
+    data,
   ]);
 
   const inputCls =

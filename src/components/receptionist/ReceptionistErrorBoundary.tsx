@@ -36,6 +36,8 @@ export interface ReceptionistErrorBoundaryProps {
 
 interface State {
   hasError: boolean;
+  /** True when the error was caused by a session expiry redirect (non-JSON server response). */
+  isSessionExpired: boolean;
   /** Increments on retry to remount children. */
   retryNonce: number;
 }
@@ -44,13 +46,32 @@ export class ReceptionistErrorBoundary extends Component<
   ReceptionistErrorBoundaryProps,
   State
 > {
-  state: State = { hasError: false, retryNonce: 0 };
+  state: State = { hasError: false, isSessionExpired: false, retryNonce: 0 };
 
-  static getDerivedStateFromError(): Partial<State> {
-    return { hasError: true };
+  static getDerivedStateFromError(error: Error): Partial<State> {
+    // "An unexpected response was received from the server." is the Next.js
+    // error thrown when a Server Action returns an HTML redirect (e.g. to
+    // /login) instead of the expected JSON. This always means the session
+    // expired — redirect straight to login so staff aren't shown a confusing
+    // "Retry" card.
+    const isSessionExpired =
+      error.message?.includes("unexpected response") ||
+      error.message?.includes("NEXT_REDIRECT");
+    if (isSessionExpired && typeof window !== "undefined") {
+      window.location.href = "/login";
+    }
+    return { hasError: true, isSessionExpired };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
+    // Don't log session-expiry redirects to Sentry — they're expected behaviour,
+    // not bugs. The 420+ occurrences in error_logs were all session expirations.
+    if (
+      error.message?.includes("unexpected response") ||
+      error.message?.includes("NEXT_REDIRECT")
+    ) {
+      return;
+    }
     Sentry.captureException(error, {
       tags: {
         "nailiq.surface": "receptionist_center",
@@ -74,6 +95,12 @@ export class ReceptionistErrorBoundary extends Component<
 
   render(): ReactNode {
     if (this.state.hasError) {
+      // Session expired → window.location.href = "/login" already fired in
+      // getDerivedStateFromError. Render a blank screen while the redirect
+      // completes so staff don't see the error UI flash.
+      if (this.state.isSessionExpired) {
+        return null;
+      }
       const { labels } = this.props;
       return (
         <div className="mx-auto flex min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] items-center justify-center px-4 py-10">
