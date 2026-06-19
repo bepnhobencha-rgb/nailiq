@@ -9,8 +9,8 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import type { SalonIntelligenceProfile } from "@/shared/ai/types";
 
-// TODO: import buildSip from "@/shared/ai/buildSip" once Agent 1 ships it.
-// For now we write the profile directly inside confirmManagerBriefingAction.
+// SIP is written by confirmManagerBriefingAction from the conversation output.
+// buildSip.ts handles the programmatic (non-conversational) rebuild path.
 
 export type BriefingMessage = { role: "user" | "assistant"; content: string };
 

@@ -1489,3 +1489,42 @@ export async function updateAiManagerInstructions(
   }
   return { ok: true };
 }
+
+// ─── Owner notification settings ────────────────────────────────────────────
+
+export type UpdateOwnerNotifResult =
+  | { ok: true }
+  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" };
+
+export async function updateOwnerNotificationSettings(
+  slug: string,
+  settings: {
+    channel: "email" | "sms" | "both";
+    phone: string;
+  },
+): Promise<UpdateOwnerNotifResult> {
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
+
+  // Normalize phone to E.164 if provided
+  const rawPhone = settings.phone.replace(/\s/g, "");
+  const phone = rawPhone.length > 0 ? rawPhone : null;
+
+  const { error } = await ctx.supabase
+    .from("salons")
+    .update({
+      owner_notification_channel: settings.channel,
+      owner_phone: phone,
+    } as never)
+    .eq("id", ctx.salon.id);
+
+  if (error) {
+    console.error("[updateOwnerNotificationSettings]", error);
+    return { ok: false, error: "server_error" };
+  }
+  return { ok: true };
+}

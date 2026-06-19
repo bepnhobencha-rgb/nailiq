@@ -96,6 +96,8 @@ export function SalonSettingsHub({
   clientAtRiskDays,
   aiFlags,
   aiManagerInstructions,
+  ownerNotifChannel,
+  ownerPhone,
   userEmail,
   role,
   salonName,
@@ -142,6 +144,8 @@ export function SalonSettingsHub({
   clientAtRiskDays: number;
   aiFlags: AiAgentFlags;
   aiManagerInstructions?: string | null;
+  ownerNotifChannel: "email" | "sms" | "both";
+  ownerPhone: string | null;
   userEmail: string | null;
   role: string;
   salonName?: string;
@@ -595,7 +599,7 @@ export function SalonSettingsHub({
           subtitle={vi ? "Bật/tắt từng agent AI cho tiệm" : "Toggle AI agents for your salon"}
           defaultOpen={false}
         >
-          <AiManagerHub slug={slug} initialFlags={aiFlags} initialInstructions={aiManagerInstructions} />
+          <AiManagerHub slug={slug} initialFlags={aiFlags} initialInstructions={aiManagerInstructions} initialNotifChannel={ownerNotifChannel} initialOwnerPhone={ownerPhone ?? ""} />
         </SettingsCategory>
         ) : null}
 
