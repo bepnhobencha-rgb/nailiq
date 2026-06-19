@@ -125,6 +125,18 @@ export function formatInSalonTz(
   timezone: string,
   format: "time" | "date" | "datetime" | "shortTime",
 ): string {
+  // Blank/empty input is the SSR-placeholder case: client components render
+  // with an empty time string (e.g. `nowIso`/`lastSyncedIso` seeded as "" to
+  // avoid a React #418 hydration mismatch on `new Date()`), and that same ""
+  // flows through this formatter during the server pass and the first client
+  // render. A display formatter MUST degrade to an empty label here rather
+  // than throw — a single unguarded call site otherwise crashes the entire
+  // receptionist surface (React #419). The empty SSR label matches the empty
+  // first-client-render label, so hydration stays consistent; the real time
+  // appears once the client effect populates it. A NON-blank but malformed
+  // value still throws via parseUtcMs below — that's a genuine data bug worth
+  // surfacing, not the benign placeholder case.
+  if (utcIso == null || utcIso.trim() === "") return "";
   const d = new Date(parseUtcMs(utcIso));
 
   if (format === "time") {
