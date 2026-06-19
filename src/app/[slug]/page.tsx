@@ -306,6 +306,9 @@ async function PublicBookingRouteBody({
           <BookingChatWidget salonId={load.salon.id} t={t} />
         ) : null}
 
+        {/* TEMPORARILY HIDDEN per request — gift-card purchase link on the
+            booking page. To restore, delete this comment wrapper so the block
+            renders again. (The /[slug]/gift page itself still exists.)
         <div className="mx-auto w-full max-w-[1200px] px-4 pb-8 text-center sm:px-6 lg:px-8">
           <a
             href={`/${normalizedSlug}/gift`}
@@ -314,6 +317,7 @@ async function PublicBookingRouteBody({
             🎁 {t.giftCardPageLink}
           </a>
         </div>
+        */}
       </div>
     </>
   );
