@@ -90,6 +90,16 @@ const AGENTS: AgentDef[] = [
     descVi:
       "Nhận ra sinh nhật, kỷ niệm, cột mốc trung thành — soạn lời chúc ấm áp để khách VIP cảm thấy được trân trọng.",
   },
+  {
+    key: "ai_first_visit_nurture",
+    icon: "🌱",
+    nameEn: "First Visit → Second Visit",
+    nameVi: "Lần đầu → Lần hai",
+    descEn:
+      "80% of first-time clients never return. This agent follows up with 3 warm, personalised touchpoints to turn new guests into regulars — and stops the moment they rebook.",
+    descVi:
+      "80% khách lần đầu không quay lại. Agent này gửi 3 tin nhắn ấm áp, cá nhân hóa để biến khách mới thành khách quen — và tự dừng ngay khi họ đặt lại.",
+  },
 ];
 
 function AgentToggle({

@@ -163,6 +163,20 @@ export async function GET(req: Request): Promise<NextResponse> {
       }
     }
 
+    // First-visit nurture — runs daily at 10:00 salon time (after morning rush)
+    if (salonHour === 10 && flags.ai_first_visit_nurture) {
+      try {
+        const { runFirstVisitNurture } = await import(
+          "@/shared/firstvisit/agentFirstVisit"
+        );
+        await runFirstVisitNurture(salon.id);
+        entry.first_visit = "ok";
+      } catch (e) {
+        console.error("[manager] first_visit", salon.slug, e);
+        entry.first_visit = String(e);
+      }
+    }
+
     results.push(entry);
   }
 
