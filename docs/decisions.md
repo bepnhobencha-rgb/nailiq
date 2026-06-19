@@ -5,6 +5,16 @@ Newest entries on top.
 
 ---
 
+## 2026-06-19 — minh_lessons: lesson store for AI learning loop (Bước 1)
+
+**Status.** Migration applied to prod. Code in `feat/minh-lessons`.
+
+**Context.** Per `SPEC-minh-learning-loop §3A`. Converts hardcoded guardrails into DB records that agents read before acting, enabling runtime rule changes without deploys.
+
+**Decision.** `minh_lessons` table (scope/condition jsonb/rule/confidence) + `getLessons()` + `findChannelLesson()`. Agents call `getLessons()` first then fall through to code guardrails as backup. Lesson #1 (A2P) seeded as the canonical example. `agentWinback` wired as proof-of-concept: reads channel lessons once per run, logs `lesson_id` when a lesson blocks SMS for a candidate.
+
+---
+
 ## 2026-06-19 — A2P guardrail: US SMS auto-routes to email until registered (Minh lesson #1)
 
 **Status.** Code in PR `fix/minh-a2p-sms-guardrail` (draft). Stopgap live: Hi-Lite `sms_outbound_enabled` set FALSE via Supabase MCP on 2026-06-19.

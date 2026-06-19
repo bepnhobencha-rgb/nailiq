@@ -6,6 +6,8 @@ import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
+import { getLessons, findChannelLesson } from "@/shared/ai/lessons";
+import { phoneRegion } from "@/shared/lib/phoneRegion";
 
 /**
  * AI Win-back — find lapsed regulars and draft a warm, personalised "we miss
@@ -181,15 +183,29 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
     const candidates = await gatherWinbackCandidates(salonId, cap);
     if (candidates.length === 0) return;
 
+    // Load channel lessons once per run (global + per-salon, cached 5 min).
+    const channelLessons = await getLessons(salonId, "channel");
+
     const svc = createServiceRoleClient();
     let sentCount = 0;
 
     for (const c of candidates) {
+      // Check DB lessons FIRST — lesson #1: US + unregistered A2P → prefer email.
+      // This mirrors the code guardrail in channelResolver but reads from the DB
+      // so the rule can be adjusted without a code deploy.
+      const country = phoneRegion(c.phone) ?? "";
+      const lessonBlock = findChannelLesson(channelLessons, {
+        country,
+        a2pRegistered: smsA2pRegistered,
+      });
+      // Apply lesson: treat SMS as disabled for this candidate when a lesson fires.
+      const effectiveSmsOutboundEnabled = lessonBlock ? false : smsOutboundEnabled;
+
       // Resolve channel BEFORE drafting — no point spending AI tokens on a
       // message that can't be delivered.
       const ch = resolveCustomerChannel({
         mode: customerChannelMode,
-        smsOutboundEnabled,
+        smsOutboundEnabled: effectiveSmsOutboundEnabled,
         emailOutboundEnabled,
         customerEmail: c.email,
         smsA2pRegistered,
@@ -205,7 +221,12 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
           agent: "winback",
           action_type: "skipped_no_channel",
           target_id: null,
-          payload: { name: c.name, phone: c.phone, reason: ch.reason },
+          payload: {
+            name: c.name,
+            phone: c.phone,
+            reason: ch.reason,
+            ...(lessonBlock ? { lesson_id: lessonBlock.id } : {}),
+          },
           undo_deadline: null,
         } as never);
         continue;
