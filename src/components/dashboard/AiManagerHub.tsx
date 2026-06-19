@@ -100,6 +100,16 @@ const AGENTS: AgentDef[] = [
     descVi:
       "80% khách lần đầu không quay lại. Agent này gửi 3 tin nhắn ấm áp, cá nhân hóa để biến khách mới thành khách quen — và tự dừng ngay khi họ đặt lại.",
   },
+  {
+    key: "ai_unified_digest",
+    icon: "📋",
+    nameEn: "Unified Daily Digest",
+    nameVi: "Bản tổng kết cuối ngày",
+    descEn:
+      "Replaces all individual agent emails with one cohesive end-of-day briefing in the Manager's voice: what happened, what AI did, what to watch tomorrow.",
+    descVi:
+      "Gộp tất cả email riêng lẻ từ các agent thành 1 bản tổng kết duy nhất lúc 21:00, viết bằng giọng Quản Lý: hôm nay thế nào, AI đã làm gì, ngày mai cần chú ý gì.",
+  },
 ];
 
 function AgentToggle({
