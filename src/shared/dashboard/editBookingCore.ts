@@ -42,6 +42,10 @@ export type EditBookingInput = {
    *  reschedule). Omitted → SMS only (legacy behavior). The edit form / drag
    *  pass the receptionist's choice; an unchecked channel isn't sent. */
   notify?: { sms?: boolean; email?: boolean };
+  /** Explicit bed/chair override chosen by the receptionist.
+   *  `null` = release current bed and auto-assign a free one.
+   *  `undefined` = keep current booking's bed as the preferred one (default). */
+  newResourceId?: string | null;
 };
 
 export type EditBookingError =
@@ -341,16 +345,21 @@ export async function performEditBooking(
     baseUpdate.addon_price_cents = addonPriceCents;
   }
 
-  // Resource-mode: keep the booking's current resource if still free at the new
-  // time (exclude self), otherwise reassign to a free one.
+  // Resource-mode: honour the receptionist's explicit bed pick (newResourceId),
+  // otherwise keep the booking's current bed as the preferred fallback.
   const editResMode = await getResourceMode(supabase, salonId);
   if (editResMode.enabled) {
-    const { data: cur } = await supabase
-      .from("bookings")
-      .select("resource_id")
-      .eq("id", bookingId)
-      .maybeSingle();
-    const preferred = (cur as { resource_id?: string | null } | null)?.resource_id ?? null;
+    let preferred: string | null;
+    if (input.newResourceId !== undefined) {
+      preferred = input.newResourceId; // receptionist chose a specific bed (or null = auto)
+    } else {
+      const { data: cur } = await supabase
+        .from("bookings")
+        .select("resource_id")
+        .eq("id", bookingId)
+        .maybeSingle();
+      preferred = (cur as { resource_id?: string | null } | null)?.resource_id ?? null;
+    }
     const rr = await resolveFreeResource(supabase, salonId, slotStartUtc, slotEndUtc, preferred, bookingId);
     if (!rr.resourceId) return { ok: false, error: "no_resource_available" };
     baseUpdate.resource_id = rr.resourceId;

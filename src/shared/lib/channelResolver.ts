@@ -1,13 +1,19 @@
+import { isUsPhone } from "@/shared/lib/phoneRegion";
+
 /**
  * Determines which channels to use when sending an automated message to a customer.
  *
- * `smsOutboundEnabled` (salons.sms_outbound_enabled, default TRUE) is the
- * operational gate — true for all non-US salons and US salons that have
- * completed Twilio A2P 10DLC registration. US salons waiting on A2P should
- * set it to FALSE in Admin Settings to avoid silent carrier drops.
+ * `smsOutboundEnabled` (salons.sms_outbound_enabled, default TRUE) is the manual
+ * operational gate.
  *
- * `sms_a2p_registered` is kept as a separate informational/compliance flag
- * but does NOT control routing here.
+ * A2P 10DLC guardrail (lesson #1 — see docs/decisions.md 2026-06-19): a US
+ * destination number whose salon has NOT completed A2P registration
+ * (`sms_a2p_registered = false`) is auto-routed to EMAIL regardless of the
+ * manual flag. This stops the system from silently carrier-dropping US SMS (and
+ * incurring Twilio fees) without anyone remembering to flip `sms_outbound_enabled`.
+ * Non-US numbers and A2P-registered salons are unaffected. The params are
+ * optional and default to the pre-guardrail behaviour, so existing callers that
+ * don't pass them are unchanged.
  */
 
 export type CustomerChannelMode = "smart" | "sms_only" | "email_only" | "sms_and_email";
@@ -28,10 +34,18 @@ export function resolveCustomerChannel(opts: {
   /** When false, all outbound email is suppressed regardless of mode. Default true. */
   emailOutboundEnabled: boolean;
   customerEmail: string | null;
+  /** A2P 10DLC registration status. Default true (back-compat). */
+  smsA2pRegistered?: boolean;
+  /** Destination phone — used to detect US numbers that require A2P. Optional. */
+  customerPhone?: string | null;
 }): ChannelDecision {
   const { mode, smsOutboundEnabled, emailOutboundEnabled, customerEmail } = opts;
   const hasEmail = emailOutboundEnabled && !!customerEmail?.trim();
-  const hasSms = smsOutboundEnabled;
+  // US + not-yet-A2P-registered → SMS is unsafe (carrier-dropped + billable).
+  // Defaults preserve old behaviour: undefined a2p flag is treated as registered.
+  const a2pBlocksUs =
+    opts.smsA2pRegistered === false && isUsPhone(opts.customerPhone);
+  const hasSms = smsOutboundEnabled && !a2pBlocksUs;
 
   switch (mode) {
     case "sms_only":

@@ -5,6 +5,59 @@ Newest entries on top.
 
 ---
 
+## 2026-06-19 — Minh Learning Loop Bước 2: feedback signals (channel failures + outcomes)
+
+**Status.** Code in `feat/minh-feedback-loop`.
+
+**Context.** Per `SPEC-minh-learning-loop §3B`. Closes the loop: Twilio failure rates and agent conversion outcomes now flow back into `minh_lessons` automatically.
+
+**Decision.**
+- `analyzeChannelFailures()`: queries `booking_notifications` for a salon's last 7d SMS sends. If fail rate >50% and sample ≥5, auto-creates a `channel` lesson (`prefer_email`). Uses error codes 30034/30007 (A2P carrier rejection) as additional failure signals. Idempotent — skips if an active lesson already exists.
+- `analyzeAgentOutcomes()`: reads `ai_actions_log` outcomes for last 30d. Agents with <5% conversion rate (min 10 resolved actions) trigger a `decreaseLessonConfidence()` call (delta 0.05) on any `timing`/`channel`/`segment` lessons scoped to them. Minor delta by design — needs sustained poor performance to deactivate.
+- `lessonMutations.ts`: `createLesson` / `decreaseLessonConfidence` / `deactivateLesson` helpers. Lessons auto-deactivate when confidence drops below 0.2. Source field preserves deactivation reason for audit trail.
+- `channelCostTracker.ts`: per-channel cost accumulator (SMS ~$0.0079, email ~$0.001) — feeds digest in a future step.
+- Both analysers run in daily cron `/api/cron/minh-learn` at 03:00 UTC. Summary logged to `ai_actions_log` when lessons change.
+- Code guardrails in `channelResolver.ts` remain as backstop.
+
+---
+
+## 2026-06-19 — minh_lessons: lesson store for AI learning loop (Bước 1)
+
+**Status.** Migration applied to prod. Code in `feat/minh-lessons`.
+
+**Context.** Per `SPEC-minh-learning-loop §3A`. Converts hardcoded guardrails into DB records that agents read before acting, enabling runtime rule changes without deploys.
+
+**Decision.** `minh_lessons` table (scope/condition jsonb/rule/confidence) + `getLessons()` + `findChannelLesson()`. Agents call `getLessons()` first then fall through to code guardrails as backup. Lesson #1 (A2P) seeded as the canonical example. `agentWinback` wired as proof-of-concept: reads channel lessons once per run, logs `lesson_id` when a lesson blocks SMS for a candidate.
+
+---
+
+## 2026-06-19 — A2P guardrail: US SMS auto-routes to email until registered (Minh lesson #1)
+
+**Status.** Code in PR `fix/minh-a2p-sms-guardrail` (draft). Stopgap live: Hi-Lite `sms_outbound_enabled` set FALSE via Supabase MCP on 2026-06-19.
+
+**Context.** Live QA found the AI Manager ("Minh") winback agent sent **13 real SMS** to US customers for `hilite-anaheim`, a salon with `sms_a2p_registered = false`. US A2P 10DLC unregistered SMS is silently carrier-dropped and can still incur Twilio fees. The system *recorded* `sms_a2p_registered = false` but **did not act on it** — routing used only the manual `sms_outbound_enabled` flag (default TRUE), which nobody had flipped. `channelResolver.ts` explicitly noted the A2P flag "does NOT control routing." Net: Minh measured outcomes but had no feedback loop to stop a known-bad channel — it would repeat for the next US salon.
+
+**Decision.** Wire the compliance flag into routing so the system self-protects:
+- `resolveCustomerChannel` gains optional `smsA2pRegistered` + `customerPhone` (default to pre-guardrail behaviour → existing callers unchanged). When the destination is a **US** number (`isUsPhone`, new `src/shared/lib/phoneRegion.ts`) **and** `smsA2pRegistered === false`, SMS is treated as unavailable → smart mode falls back to email (`email_a2p_fallback`).
+- Non-US numbers (CA/VN/etc.) and A2P-registered salons are unaffected.
+- Wired into `agentWinback` first (the agent that fired). **Follow-up:** wire the same params into `agentFirstVisit`, `agentRebook`, `vip_care`, reminders, `sendReviewRequest` (tracked in `docs/SPEC-minh-learning-loop.md`).
+
+**Why this is "lesson #1".** It is the first concrete instance of turning an incident into a durable, system-enforced rule rather than a one-off manual fix — the seed of the Minh learning loop (see SPEC). One incident → one guardrail that can never silently repeat.
+
+**Verification.** `npm run typecheck` green. Preview-first (cost/customer path): merge after PM review. Check Twilio Console messaging logs (17–18/06) for the 13 sends' error codes (30034 = blocked) + price.
+
+---
+
+## 2026-06-19 — Duplicate booking-confirmation emails + wrong salon name
+
+**Status.** Code in PR `fix/duplicate-confirmation-email` (draft). Migration index `booking_notifications_confirmation_once` applied to prod via Supabase MCP.
+
+**Context.** Live booking on `hilite-anaheim` produced **2 identical confirmation emails** (1s apart), both titled with the slug `hilite-anaheim` instead of "Hi-Lite Head Spa". Root cause: `sendBookingConfirmationEmail` selected a non-existent `currency` column (real: `currency_code`) → salon lookup errored → `salonRow = null` → (a) the email notification log was skipped, defeating the `/api/booking/sms-confirm` dedup guard (which counts email rows) so both it and `publicBookingSideEffects` sent; (b) the email fell back to slug name / Vancouver tz / CAD.
+
+**Decision.** `currency` → `currency_code`; plus a race-proof claim-before-send (`claimNotificationOnce` + partial unique index on `(booking_id, channel) where notification_type='booking_confirmation'`). First sender wins, the other skips.
+
+---
+
 ## 2026-05-06 — Demo registration is restricted to a single shared `demo-salon`
 
 **Status.** Resolved by PR #16 (`cd4a948`).
