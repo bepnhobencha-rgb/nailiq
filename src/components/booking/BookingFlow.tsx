@@ -335,6 +335,7 @@ export function BookingFlow({
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}
             categories={categories}
+            currencyCode={salon.currencyCode}
             onSelectService={flow.setServiceId}
             onSelectCombo={flow.setSelectedCombo}
             selectedComboId={flow.selectedComboId}
