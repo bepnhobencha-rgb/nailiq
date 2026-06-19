@@ -1,55 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { realNameOrEmpty } from "@/shared/booking/guestNamePlaceholder";
-import { getSalonDisplayName } from "@/shared/dashboard/salonClientName";
-import { isRateLimited, RATE_LIMIT_IDS } from "@/shared/lib/rateLimit";
-
-// ---------------------------------------------------------------------------
-// Response types — exported so callers can import them
-// ---------------------------------------------------------------------------
-
-export type CustomerLookupHit = {
-  found: true;
-  name: string;
-  email: string | null;
-  isVip: boolean;
-  visitCount: number;
-  preferredStaffId: string | null;
-  preferredStaffName: string | null;
-  lastBooking: {
-    serviceId: string;
-    serviceName: string;
-    staffId: string | null;
-    staffName: string | null;
-    /** 0=Sunday … 6=Saturday, in salon timezone */
-    dayOfWeek: number;
-    /** e.g. "11:00 AM" — formatted in salon timezone */
-    timeLabel: string;
-    /** ISO date string of the last visit */
-    lastVisitDate: string;
-  } | null;
-};
-
-export type CustomerLookupResponse = CustomerLookupHit | { found: false };
-
-// ---------------------------------------------------------------------------
-// Simple UUID v4 / UUID-like validation (36 chars, hex + dashes)
-// ---------------------------------------------------------------------------
-const UUID_REGEX = /^[0-9a-f-]{36}$/i;
+import { isOverRateLimit, clientIp } from "@/shared/lib/inAppRateLimit";
 
 // ---------------------------------------------------------------------------
 // GET /api/customer/[phone]?salon_id=<uuid>
+//
+// PRE-AUTH RECOGNITION ONLY. This endpoint is PUBLIC and UNAUTHENTICATED, so it
+// must never return the customer's PII. It answers a single low-sensitivity
+// question — "has this phone booked here before, and is it a VIP?" — used to
+// show a warm generic "Welcome back!" at the booking gate.
+//
+// It deliberately does NOT return name, visit count, usual technician, email,
+// or last-booking details. Returning any of those let anyone type a phone
+// number and read the owner's real identity + visit history (PII enumeration —
+// QA S1). The personalization (name auto-fill, "rebook with your usual tech")
+// must come from a POST-verification fetch once the customer proves they own
+// the phone via OTP — not from this anonymous lookup.
 // ---------------------------------------------------------------------------
+
+export type CustomerLookupHit = { found: true; isVip: boolean };
+export type CustomerLookupResponse = CustomerLookupHit | { found: false };
+
+// Simple UUID v4 / UUID-like validation (36 chars, hex + dashes)
+const UUID_REGEX = /^[0-9a-f-]{36}$/i;
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ phone: string }> },
 ) {
-  // 0. Rate-limit — this endpoint is a PII-enumeration target (returns a
-  // returning customer's name for any phone). Legit booking calls it a few
-  // times; a scraper hits it thousands of times. Backed by a Vercel WAF rule
-  // for "customer-lookup"; fail-open until the rule exists.
-  if (await isRateLimited(RATE_LIMIT_IDS.customerLookup, { request: _req })) {
+  // 0. Rate-limit — bulk-enumeration defence. DB-backed (atomic fixed-window
+  // via the `rate_limit_hit` RPC) so it actually enforces on any Vercel plan,
+  // unlike the WAF hook which is a no-op until a dashboard rule exists. A legit
+  // booking calls this a handful of times; a scraper hits it continuously.
+  // Fails open on a limiter outage — never blocks a real booking.
+  const ip = clientIp(_req);
+  if (await isOverRateLimit(`customer-lookup:${ip}`, 30, 60)) {
     return NextResponse.json<CustomerLookupResponse>({ found: false }, { status: 429 });
   }
 
@@ -71,10 +56,10 @@ export async function GET(
   try {
     const supabase = createServiceRoleClient();
 
-    // 3. Verify salon exists and is not archived; also fetch timezone for formatting
+    // 3. Verify salon exists and is not archived
     const { data: salon, error: salonError } = await supabase
       .from("salons")
-      .select("id, archived_at, timezone")
+      .select("id, archived_at")
       .eq("id", salonId)
       .is("archived_at", null)
       .maybeSingle();
@@ -87,10 +72,11 @@ export async function GET(
       return NextResponse.json<CustomerLookupResponse>({ found: false });
     }
 
-    // 4. Look up client profile by phone (global — cross-salon by design)
+    // 4. Look up the client profile by phone (global — cross-salon by design).
+    // Only `is_vip` is surfaced; name/history are intentionally NOT selected.
     const { data: profileData, error: profileError } = await supabase
       .from("client_profiles")
-      .select("name, email, is_vip, visit_count, preferred_staff_id, deleted_at")
+      .select("is_vip, deleted_at")
       .eq("phone", phoneDigits)
       .is("deleted_at", null)
       .maybeSingle();
@@ -100,196 +86,30 @@ export async function GET(
       return NextResponse.json<CustomerLookupResponse>({ found: false });
     }
 
-    // Cast to the subset we care about (deleted_at already filtered, not returned)
-    let profile = profileData as {
-      name: string | null;
-      email: string | null;
-      is_vip: boolean;
-      visit_count: number | null;
-      preferred_staff_id: string | null;
-    } | null;
-
-    // Fallback recognition: a customer served only at the DESK (or imported from
-    // Square/Wix) has bookings but NO client_profiles row — that table is only
-    // written by the online flow. Without this, every desk/imported regular is a
-    // stranger online (name never auto-fills). Synthesize a profile from booking
-    // history so rebook recognition works for EVERY past customer regardless of
-    // channel. Read-only; name is resolved from bookings in step 8, visitCount
-    // from completed bookings here.
-    if (!profile) {
-      const { data: anyRow } = await supabase
-        .from("bookings")
-        .select("id")
-        .eq("salon_id", salonId)
-        .eq("client_phone", phoneDigits)
-        .not("status", "eq", "cancelled")
-        .limit(1);
-      if (!anyRow || anyRow.length === 0) {
-        return NextResponse.json<CustomerLookupResponse>({ found: false });
-      }
-      const { count: completedCount } = await supabase
-        .from("bookings")
-        .select("id", { count: "exact", head: true })
-        .eq("salon_id", salonId)
-        .eq("client_phone", phoneDigits)
-        .eq("status", "completed");
-      profile = {
-        name: null, // resolved from booking history in step 8
-        email: null,
-        is_vip: false,
-        visit_count: completedCount ?? 0,
-        preferred_staff_id: null,
-      };
+    if (profileData) {
+      return NextResponse.json<CustomerLookupResponse>({
+        found: true,
+        isVip: (profileData as { is_vip?: boolean }).is_vip ?? false,
+      });
     }
 
-    // Capture salon timezone for date formatting (fallback to Vancouver as default)
-    const salonTimezone =
-      (salon as { timezone?: string }).timezone ?? "America/Vancouver";
-
-    // 5. Optionally resolve preferred staff name (must belong to this salon)
-    let preferredStaffId: string | null = profile.preferred_staff_id ?? null;
-    let preferredStaffName: string | null = null;
-
-    if (preferredStaffId) {
-      const { data: staffData, error: staffError } = await supabase
-        .from("staff")
-        .select("id, name")
-        .eq("id", preferredStaffId)
-        .eq("salon_id", salonId)
-        .is("deleted_at", null)
-        .maybeSingle();
-
-      if (staffError) {
-        console.error("[customer-lookup] staff query error", staffError);
-        // Non-fatal — just clear preferred staff
-        preferredStaffId = null;
-        preferredStaffName = null;
-      } else if (!staffData) {
-        // Staff belongs to a different salon or has been deleted
-        preferredStaffId = null;
-        preferredStaffName = null;
-      } else {
-        preferredStaffName = staffData.name;
-      }
-    }
-
-    // 6. Query last completed booking for this phone + salon
-    const { data: lastBookingRow } = await supabase
+    // 5. Fallback recognition: a customer served only at the DESK (or imported
+    // from Square/Wix) has bookings but NO client_profiles row — that table is
+    // only written by the online flow. Recognise them so a generic "Welcome
+    // back!" still shows. No PII is returned (isVip stays false).
+    const { data: anyRow } = await supabase
       .from("bookings")
-      .select("service_id, staff_id, start_time_utc")
+      .select("id")
       .eq("salon_id", salonId)
       .eq("client_phone", phoneDigits)
-      .eq("status", "completed")
-      .order("start_time_utc", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .not("status", "eq", "cancelled")
+      .limit(1);
 
-    const bRow = lastBookingRow as {
-      service_id?: string | null;
-      staff_id?: string | null;
-      start_time_utc?: string | null;
-    } | null;
-
-    // 7. Resolve service name + staff name for last booking
-    let lastBooking: CustomerLookupHit["lastBooking"] = null;
-
-    if (bRow?.service_id && bRow?.start_time_utc) {
-      // Resolve service name
-      const { data: svc } = await supabase
-        .from("services")
-        .select("id, name")
-        .eq("id", bRow.service_id)
-        .maybeSingle();
-
-      if (svc) {
-        // Resolve staff name (must belong to this salon)
-        let lastBookingStaffId: string | null = bRow.staff_id ?? null;
-        let lastBookingStaffName: string | null = null;
-
-        if (lastBookingStaffId) {
-          const { data: stf } = await supabase
-            .from("staff")
-            .select("id, name")
-            .eq("id", lastBookingStaffId)
-            .eq("salon_id", salonId)
-            .maybeSingle();
-
-          if (stf) {
-            lastBookingStaffName = stf.name;
-          } else {
-            // Staff not found in this salon — treat as no staff preference
-            lastBookingStaffId = null;
-          }
-        }
-
-        // Compute dayOfWeek and timeLabel in salon timezone
-        const startDate = new Date(bRow.start_time_utc);
-        const dayOfWeek = new Date(
-          startDate.toLocaleString("en-US", { timeZone: salonTimezone }),
-        ).getDay(); // 0=Sun … 6=Sat
-        const timeLabel = startDate.toLocaleTimeString("en-US", {
-          hour: "numeric",
-          minute: "2-digit",
-          hour12: true,
-          timeZone: salonTimezone,
-        });
-
-        lastBooking = {
-          serviceId: bRow.service_id,
-          serviceName: svc.name,
-          staffId: lastBookingStaffId,
-          staffName: lastBookingStaffName,
-          dayOfWeek,
-          timeLabel,
-          lastVisitDate: bRow.start_time_utc,
-        };
-      }
+    if (!anyRow || anyRow.length === 0) {
+      return NextResponse.json<CustomerLookupResponse>({ found: false });
     }
 
-    // 8. Resolve the display name. Never surface a "Guest N" / "Khách N"
-    // placeholder (those leaked into client_profiles from un-named group
-    // members). If the profile name is empty/placeholder, fall back to the
-    // most recent booking where the guest gave a real name — so a customer
-    // who once booked as "Mai" is recognized even if a later group booking
-    // overwrote the profile with "Guest 2".
-    // This salon's renamed display name (tenant-isolated) wins over the shared
-    // profile name.
-    const salonOverrideName = await getSalonDisplayName(salonId, phoneDigits);
-    let resolvedName = salonOverrideName || realNameOrEmpty(profile.name);
-    if (!resolvedName) {
-      const { data: namedRows } = await supabase
-        .from("bookings")
-        .select("client_name, start_time_utc")
-        .eq("client_phone", phoneDigits)
-        .order("start_time_utc", { ascending: false })
-        .limit(25);
-      for (const r of namedRows ?? []) {
-        const real = realNameOrEmpty((r as { client_name?: string | null }).client_name);
-        if (real) {
-          resolvedName = real;
-          break;
-        }
-      }
-    }
-
-    // 9. Return safe subset — cap visitCount at 99 for display purposes
-    const visitCount = Math.min(profile.visit_count ?? 0, 99);
-
-    return NextResponse.json<CustomerLookupResponse>({
-      found: true,
-      name: resolvedName,
-      // PII hardening (QA BUG-01): never return the customer's email to this
-      // public, unauth endpoint — it's the most abusable PII for spam/phishing
-      // and email is optional at booking anyway. Name stays for the rebook UX
-      // (rate-limited above); masking/OTP-gating the name is a separate product
-      // decision. The field is kept (always null) so callers don't break.
-      email: null,
-      isVip: profile.is_vip ?? false,
-      visitCount,
-      preferredStaffId,
-      preferredStaffName,
-      lastBooking,
-    });
+    return NextResponse.json<CustomerLookupResponse>({ found: true, isVip: false });
   } catch (e) {
     console.error("[customer-lookup] unexpected error", e);
     // Fail safe — never expose internal errors to public callers

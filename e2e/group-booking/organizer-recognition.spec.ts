@@ -14,7 +14,8 @@ import {
  * Step-5 organizer recognition + success-screen QR self-claim.
  *
  * A: when the primary-contact phone matches a returning customer
- *    (`client_profiles`), the confirm step greets them by name + VIP.
+ *    (`client_profiles`), the confirm step greets them — but PRIVACY (S1):
+ *    generically, WITHOUT revealing the stored name pre-OTP.
  * B: the success screen renders a scan-to-join QR for the Party Link
  *    so each guest can confirm their own slot.
  */
@@ -82,10 +83,11 @@ test.describe("Group booking — organizer recognition + QR", () => {
       .waitFor({ state: "visible" });
     await page.getByTestId("group-primary-phone").fill(`+${ORGANIZER_PHONE_DIGITS}`);
 
-    // A — greeting card recognizes them by name.
+    // A — greeting card recognizes them, but PRIVACY (S1): it greets
+    // generically and must NOT reveal the stored name pre-OTP.
     const greeting = page.getByTestId("group-organizer-recognized");
     await expect(greeting).toBeVisible({ timeout: 10_000 });
-    await expect(greeting).toContainText(ORGANIZER_NAME);
+    await expect(greeting).not.toContainText(ORGANIZER_NAME);
 
     // Submit → success.
     await page.getByTestId("group-sms-consent").check();

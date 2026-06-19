@@ -564,7 +564,10 @@ export function BookingGroupFlow({
             // Auto-fill Guest 1's name only with a REAL name and only if
             // it's still the default "{label} 1" placeholder — never
             // overwrite a typed name, never fill an empty/placeholder.
-            const recognizedName = (data as ReturningCustomer).name.trim();
+            // Name is NOT returned by the public lookup (privacy fix S1), so
+            // this no longer auto-fills Guest 1 from a phone alone. Guarded for
+            // a future post-OTP fetch that could supply it.
+            const recognizedName = ((data as ReturningCustomer).name ?? "").trim();
             const lbl = groupCopy?.groupGuestLabel ?? "Guest";
             const def0 = `${lbl} 1`;
             if (recognizedName) {
@@ -3727,7 +3730,7 @@ function ConfirmStep({
         </p>
 
         {/* Organizer recognition — greet returning guests by name. */}
-        {organizer && organizer.name.trim() ? (
+        {organizer ? (
           <div
             data-testid="group-organizer-recognized"
             className="flex items-start gap-2 rounded-xl border border-[var(--salon-primary)]/40 bg-[var(--salon-primary)]/5 px-3 py-2.5"
@@ -3737,29 +3740,36 @@ function ConfirmStep({
             </span>
             <span className="min-w-0">
               <span className="block text-sm font-semibold">
-                {(groupCopy.organizerGreeting ?? "Welcome back, {name}!").replace(
-                  "{name}",
-                  organizer.name,
-                )}
+                {/* Name/visits/usual are NOT revealed pre-OTP (privacy fix S1) —
+                    fall back to a generic greeting. The name path stays for a
+                    future post-verification fetch. */}
+                {organizer.name?.trim()
+                  ? (groupCopy.organizerGreeting ?? "Welcome back, {name}!").replace(
+                      "{name}",
+                      organizer.name,
+                    )
+                  : t.returningCustomer.welcomeBack}
                 {organizer.isVip ? (
                   <span className="ml-1.5 rounded-full bg-[var(--salon-primary)]/15 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-[var(--salon-primary)]">
                     {groupCopy.organizerVip ?? "VIP"}
                   </span>
                 ) : null}
               </span>
-              <span className="mt-0.5 block text-xs text-[var(--booking-text-muted)]">
-                {organizer.visitCount > 0
-                  ? (groupCopy.organizerReturning ?? "Returning guest · {n} visits").replace(
-                      "{n}",
-                      String(organizer.visitCount),
-                    )
-                  : null}
-                {organizer.lastBooking
-                  ? `${organizer.visitCount > 0 ? " · " : ""}${(
-                      groupCopy.organizerUsual ?? "Usual: {service}"
-                    ).replace("{service}", organizer.lastBooking.serviceName)}`
-                  : null}
-              </span>
+              {(organizer.visitCount ?? 0) > 0 || organizer.lastBooking ? (
+                <span className="mt-0.5 block text-xs text-[var(--booking-text-muted)]">
+                  {(organizer.visitCount ?? 0) > 0
+                    ? (groupCopy.organizerReturning ?? "Returning guest · {n} visits").replace(
+                        "{n}",
+                        String(organizer.visitCount ?? 0),
+                      )
+                    : null}
+                  {organizer.lastBooking
+                    ? `${(organizer.visitCount ?? 0) > 0 ? " · " : ""}${(
+                        groupCopy.organizerUsual ?? "Usual: {service}"
+                      ).replace("{service}", organizer.lastBooking.serviceName)}`
+                    : null}
+                </span>
+              ) : null}
             </span>
           </div>
         ) : organizerLoading ? (
