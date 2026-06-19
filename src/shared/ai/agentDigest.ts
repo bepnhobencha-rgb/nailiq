@@ -5,6 +5,7 @@ import { salonToday, salonDayRangeUtc } from "@/shared/lib/salonTime";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { parseOwnerNotificationSettings } from "@/shared/dashboard/ownerNotificationSettings";
 import { getOutcomeStats } from "@/shared/ai/agentOutcomeTracker";
+import { getPendingApprovals } from "@/shared/ai/approvalRequests";
 
 /**
  * Unified Daily Digest — ONE email per day in the Manager's voice.
@@ -131,6 +132,7 @@ function buildContext(
   todayYmd: string,
   outcomeLines: string[],
   instructions: string | null,
+  pendingApprovalSummaries: string[],
 ): string {
   const revenue = (stats.revenueCents / 100).toFixed(0);
 
@@ -155,6 +157,9 @@ function buildContext(
   }
 
   const alertLines = alerts.map((al) => `[${al.severity.toUpperCase()}] ${al.summary}`);
+  const approvalsSection = pendingApprovalSummaries.length > 0
+    ? `\nVIỆC CHỜ MINH DUYỆT (${pendingApprovalSummaries.length}):\n${pendingApprovalSummaries.map((s) => `- ${s}`).join("\n")}\nXem chi tiết: /dashboard/{slug}/approvals`
+    : "";
 
   return `Ngày: ${todayYmd}
 Tiệm: ${salonName}
@@ -174,7 +179,7 @@ CHỈ ĐẠO TỪ CHỦ TIỆM:
 ${instructions?.trim() || "Không có chỉ đạo đặc biệt."}
 
 CẢNH BÁO (nếu có):
-${alertLines.length > 0 ? alertLines.join("\n") : "Không có cảnh báo."}`;
+${alertLines.length > 0 ? alertLines.join("\n") : "Không có cảnh báo."}${approvalsSection}`;
 }
 
 async function draftDigest(context: string, salonName: string, lang: "en" | "vi"): Promise<string | null> {
@@ -219,11 +224,18 @@ Rules:
 
 // ─── Email send (bypasses sendOwnerAlert suppression) ─────────────────────────
 
+type PendingApprovalDigestItem = {
+  summary: string;
+  approve_token: string;
+  decline_token: string;
+};
+
 async function sendDigestEmail(
   salonId: string,
   salonName: string,
   body: string,
   todayYmd: string,
+  pendingApprovals?: PendingApprovalDigestItem[],
 ): Promise<void> {
   const db = createServiceRoleClient();
   const resend = getResendClient();
@@ -283,9 +295,25 @@ async function sendDigestEmail(
     .map((p) => `<p style="margin:0 0 14px;line-height:1.75">${esc(p.replace(/\n/g, " "))}</p>`)
     .join("");
 
+  // Append clickable approve/decline cards for any pending normal-urgency approvals
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://nailiq.ca";
+  const pendingHtml = (pendingApprovals ?? []).length > 0
+    ? `<hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+<p style="font-size:13px;font-weight:700;color:#374151;margin:0 0 12px">
+  ${(pendingApprovals ?? []).length} việc chờ Minh duyệt:
+</p>
+${(pendingApprovals ?? []).map((r) => `
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;margin:0 0 10px">
+  <p style="margin:0 0 10px;font-size:14px;color:#111">${esc(r.summary.slice(0, 120))}${r.summary.length > 120 ? "…" : ""}</p>
+  <a href="${appUrl}/api/ai/approve?token=${r.approve_token}" style="background:#16a34a;color:#fff;padding:8px 16px;border-radius:6px;text-decoration:none;display:inline-block;margin:0 6px 0 0;font-size:13px;font-weight:600">✓ Đồng ý</a>
+  <a href="${appUrl}/api/ai/approve?token=${r.decline_token}" style="background:#dc2626;color:#fff;padding:8px 16px;border-radius:6px;text-decoration:none;display:inline-block;font-size:13px;font-weight:600">✗ Từ chối</a>
+</div>`).join("")}`
+    : "";
+
   const html = `<div style="max-width:540px;margin:0 auto;font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a;padding:8px">
   <p style="font-size:11px;color:#999;margin:0 0 20px;text-transform:uppercase;letter-spacing:.08em">${salonName} · ${todayYmd}</p>
   <div style="font-size:15px">${paragraphs}</div>
+  ${pendingHtml}
   <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
   <p style="font-size:12px;color:#aaa;margin:0">— Quản Lý AI · ${salonName}</p>
 </div>`;
@@ -334,23 +362,37 @@ export async function runDigest(salonId: string): Promise<void> {
     if (existing) return; // already sent today
 
     // Gather data in parallel
-    const [stats, agentActions, alerts, outcomeStats] = await Promise.all([
+    const [stats, agentActions, alerts, outcomeStats, pendingApprovals] = await Promise.all([
       getBookingStats(salonId, tz),
       getTodayAgentActions(salonId, tz),
       getTodayWatchdogAlerts(salonId, tz),
       getOutcomeStats(salonId),
+      getPendingApprovals(salonId),
     ]);
 
     const instructions = s.ai_manager_instructions ?? null;
     const outcomeLines = outcomeStats.map(
       (o) => `${o.label}: ${o.sent} gửi → ${o.converted} quay lại (${o.pct}%)`,
     );
+    // Normal-urgency pending approvals surface in digest as a summary section
+    const pendingApprovalSummaries = pendingApprovals
+      .filter((r) => r.urgency === "normal")
+      .map((r) => r.summary.slice(0, 100) + (r.summary.length > 100 ? "…" : ""));
 
-    const context = buildContext(salonName, stats, agentActions, alerts, todayYmd, outcomeLines, instructions);
+    const context = buildContext(salonName, stats, agentActions, alerts, todayYmd, outcomeLines, instructions, pendingApprovalSummaries);
     const body = await draftDigest(context, salonName, "vi");
     if (!body) return;
 
-    await sendDigestEmail(salonId, salonName, body, todayYmd);
+    // Pass normal-urgency approvals so the digest email renders one-tap buttons
+    const digestApprovals = pendingApprovals
+      .filter((r) => r.urgency === "normal")
+      .map((r) => ({
+        summary: r.summary,
+        approve_token: r.approve_token,
+        decline_token: r.decline_token,
+      }));
+
+    await sendDigestEmail(salonId, salonName, body, todayYmd, digestApprovals);
 
     // Log so we don't send twice
     await db.from("ai_actions_log" as never).insert({

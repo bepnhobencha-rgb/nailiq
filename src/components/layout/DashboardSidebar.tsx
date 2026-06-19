@@ -27,6 +27,7 @@ import {
   TrendingUp,
   UserCheck,
   Users,
+  ClipboardCheck,
 } from "lucide-react";
 import { LogoutButton } from "@/components/dashboard/LogoutButton";
 import { GlobalLanguageToggle } from "@/components/user/GlobalLanguageToggle";
@@ -74,6 +75,8 @@ type Props = {
   onToggleCollapsed: () => void;
   /** Authenticated user's email address for the user profile card in sidebar footer. */
   userEmail?: string | null;
+  /** Count of pending Minh approval requests (owner/admin only). */
+  pendingApprovalsCount?: number;
 };
 
 type NavItem = {
@@ -130,6 +133,7 @@ export function DashboardSidebar({
   walkinQueueCount = 0,
   overdueCount = 0,
   messagesCount = 0,
+  pendingApprovalsCount = 0,
   salons,
   collapsed,
   onToggleCollapsed,
@@ -368,6 +372,17 @@ export function DashboardSidebar({
             hidden: role !== "owner" && role !== "admin",
           },
           {
+            key: "approvals",
+            label: t.approvals,
+            href: `${dashRoot}/approvals`,
+            icon: ClipboardCheck,
+            match: (p) => p.startsWith(`${dashRoot}/approvals`),
+            // Minh approval requests — owner + admin only.
+            hidden: role !== "owner" && role !== "admin",
+            badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined,
+            badgeTone: "red" as const,
+          },
+          {
             key: "messages",
             label: t.messages,
             href: null,
@@ -410,6 +425,7 @@ export function DashboardSidebar({
       dashRoot,
       role,
       t.activity,
+      t.approvals,
       t.calendar,
       t.clients,
       t.disputes,
@@ -430,6 +446,7 @@ export function DashboardSidebar({
       t.walkinQueue,
       walkinQueueCount,
       overdueCount,
+      pendingApprovalsCount,
       subscriptionPlan,
       releaseFeatures,
     ],
