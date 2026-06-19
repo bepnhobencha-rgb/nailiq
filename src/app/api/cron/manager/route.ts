@@ -163,8 +163,9 @@ export async function GET(req: Request): Promise<NextResponse> {
       }
     }
 
-    // First-visit nurture — runs daily at 10:00 salon time (after morning rush)
-    if (salonHour === 10 && flags.ai_first_visit_nurture) {
+    // First-visit nurture — runs daily at 20:00 salon time (30 min after Hi-Lite close)
+    // Detects same-day first visits so warmth message arrives the same evening
+    if (salonHour === 20 && flags.ai_first_visit_nurture) {
       try {
         const { runFirstVisitNurture } = await import(
           "@/shared/firstvisit/agentFirstVisit"

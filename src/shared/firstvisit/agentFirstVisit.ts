@@ -168,18 +168,19 @@ async function detectFirstVisits(salonId: string): Promise<
   }[]
 > {
   const db = looseServiceClient();
-  // Yesterday window (salon-scoped; good enough — cron runs daily)
-  const yesterday = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
+  // Same-day window — cron runs at 20:00 salon time, 30 min after close.
+  // Detecting today's visits means warmth message arrives the same evening.
   const today = new Date().toISOString().slice(0, 10);
+  const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
 
-  // Completed bookings from yesterday
+  // Completed bookings from today
   const { data: recent } = await db
     .from("bookings")
     .select("id, guest_phone, guest_name, guest_email, service_name, start_time")
     .eq("salon_id", salonId)
     .eq("status", "completed")
-    .gte("start_time", `${yesterday}T00:00:00`)
-    .lt("start_time", `${today}T00:00:00`);
+    .gte("start_time", `${today}T00:00:00`)
+    .lt("start_time", `${tomorrow}T00:00:00`);
 
   const rows = (recent ?? []) as Row[];
   if (rows.length === 0) return [];
