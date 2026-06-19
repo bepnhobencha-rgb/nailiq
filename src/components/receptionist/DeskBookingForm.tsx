@@ -31,6 +31,7 @@ import { createPortal } from "react-dom";
 import {
   addDeskAppointment,
   getDeskBookingData,
+  getResourceAvailability,
 } from "@/shared/dashboard/receptionistActions";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
 import {
@@ -39,7 +40,7 @@ import {
 } from "@/shared/dashboard/searchClientsAction";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { addonLabel } from "@/shared/booking/serviceLabels";
-import { salonToday } from "@/shared/lib/salonTime";
+import { salonToday, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 import { ymdToLocalNoon } from "@/shared/lib/localDateYmd";
 import {
   getAvailableTimeSlots,
@@ -144,6 +145,11 @@ const COPY = {
       langEn: "in English",
       langVi: "in Vietnamese",
     },
+    resource: "Bed / Room",
+    resourceAuto: "Auto",
+    resourceLoading: "Checking availability…",
+    resourceAvailable: "✓",
+    resourceBusy: "✗",
     errors: {
       invalid_name: "Invalid name.",
       invalid_name_chars: "Name has invalid characters.",
@@ -205,6 +211,11 @@ const COPY = {
       langEn: "bằng tiếng Anh",
       langVi: "bằng tiếng Việt",
     },
+    resource: "Giường / Phòng",
+    resourceAuto: "Tự động",
+    resourceLoading: "Đang kiểm tra…",
+    resourceAvailable: "✓",
+    resourceBusy: "✗",
     errors: {
       invalid_name: "Tên không hợp lệ.",
       invalid_name_chars: "Tên chứa ký tự không hợp lệ.",
@@ -269,6 +280,12 @@ export default function DeskBookingForm({
   );
   const [slotLabel, setSlotLabel] = useState("");
   const [notes, setNotes] = useState("");
+  // Bed/resource picker state (resource-mode salons only).
+  const [resourceId, setResourceId] = useState<string | null>(null);
+  const [resourceOptions, setResourceOptions] = useState<
+    { id: string; name: string; displayOrder: number; isAvailable: boolean }[]
+  >([]);
+  const [resourceLoading, setResourceLoading] = useState(false);
 
   // Desired time from a grid click — auto-selected once it shows up free in the
   // freshly-computed slot grid (the grid cell is 30 min, the form grid 15 min,
@@ -411,6 +428,37 @@ export default function DeskBookingForm({
     () => (data ? Math.min(...data.services.map((s) => s.totalMinutes)) : 0),
     [data],
   );
+
+  // Fetch bed availability when slot is selected (resource-mode salons only).
+  useEffect(() => {
+    if (!data?.salon.resourcesEnabled || !slotLabel || !ymd || blockMinutes <= 0) {
+      setResourceOptions([]);
+      return;
+    }
+    const m = slotLabel.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!m) return;
+    let h = Number(m[1]) % 12;
+    if (m[3].toUpperCase() === "PM") h += 12;
+    const startMin = h * 60 + Number(m[2]);
+    const startUtc = salonWallTimeToUtcIso(ymd, startMin, timezone);
+    const endMs = Date.parse(startUtc) + blockMinutes * 60 * 1000;
+    if (Number.isNaN(endMs)) return;
+    const endUtc = new Date(endMs).toISOString();
+    let cancelled = false;
+    setResourceLoading(true);
+    void getResourceAvailability(slug, startUtc, endUtc).then((res) => {
+      if (cancelled) return;
+      if (res.ok) setResourceOptions(res.resources);
+      setResourceLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [data, slotLabel, ymd, blockMinutes, timezone, slug]);
+
+  // Reset resource choice when key booking inputs change.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- reset bed pick when the slot/day/staff changes
+  useEffect(() => { setResourceId(null); }, [slotLabel, ymd, staffId]);
 
   // Name of the prefilled staff (for the smart header). "" when "any" / blank.
   const prefillStaffName = useMemo(() => {
@@ -590,6 +638,7 @@ export default function DeskBookingForm({
         sms: notifyChannels.sms && phone.replace(/\D/g, "").length >= 10,
         email: notifyChannels.email && !!email.trim(),
       },
+      ...(data?.salon.resourcesEnabled ? { resourceId } : {}),
     });
     setSubmitting(false);
     if (res.ok) {
@@ -877,6 +926,52 @@ export default function DeskBookingForm({
                           {s.label}
                         </button>
                       ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {/* Bed/chair picker — resource-mode salons only, shown once slot is chosen */}
+            {data?.salon.resourcesEnabled && slotLabel ? (
+              <div>
+                <label className={labelCls}>{tx.resource}</label>
+                {resourceLoading ? (
+                  <p className="text-xs text-nq-muted">{tx.resourceLoading}</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setResourceId(null)}
+                      className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                        resourceId === null
+                          ? "border-nq-primary bg-nq-primary text-white"
+                          : "border-nq-muted/40 bg-nq-surface text-nq-foreground hover:border-nq-primary/40"
+                      }`}
+                    >
+                      {tx.resourceAuto}
+                    </button>
+                    {resourceOptions.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        disabled={!r.isAvailable}
+                        onClick={() => {
+                          if (r.isAvailable) setResourceId(r.id);
+                        }}
+                        className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                          resourceId === r.id
+                            ? "border-nq-primary bg-nq-primary text-white"
+                            : r.isAvailable
+                              ? "border-nq-muted/40 bg-nq-surface text-nq-foreground hover:border-nq-primary/40"
+                              : "cursor-not-allowed border-nq-muted/20 bg-nq-bg text-nq-muted/50 line-through"
+                        }`}
+                      >
+                        🛏 {r.name}{" "}
+                        <span className={r.isAvailable ? "text-green-400" : "text-nq-muted/40"}>
+                          {r.isAvailable ? tx.resourceAvailable : tx.resourceBusy}
+                        </span>
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>

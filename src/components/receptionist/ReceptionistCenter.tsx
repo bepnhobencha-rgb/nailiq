@@ -3674,6 +3674,7 @@ function ReceptionistCenterInner({
                   no_show_risk_score:
                     openDrawerBooking.no_show_risk_score ?? null,
                   seat_together: openDrawerBooking.seat_together === true,
+                  resource_id: openDrawerBooking.resource_id ?? null,
                 },
                 staff: data.staff.map((s) => ({ id: s.id, name: s.name })),
                 services: data.services.map((s) => ({

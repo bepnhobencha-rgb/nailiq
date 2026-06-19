@@ -2156,6 +2156,77 @@ export async function clearSoftHold(
  * dates, lead minutes). Auth-gated; the available-slot grid is computed
  * client-side from this, exactly like the public booking flow.
  */
+/**
+ * Returns each active resource (bed/chair) with a real-time availability flag
+ * for the given UTC window. Used by the desk bed-picker dropdown.
+ * Pass `excludeBookingId` when editing an existing booking so self-conflict is ignored.
+ */
+export async function getResourceAvailability(
+  slug: string,
+  startUtcIso: string,
+  endUtcIso: string,
+  excludeBookingId?: string,
+): Promise<
+  | {
+      ok: true;
+      resources: {
+        id: string;
+        name: string;
+        displayOrder: number;
+        isAvailable: boolean;
+      }[];
+    }
+  | { ok: false; error: string }
+> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  const db = createServiceRoleClient();
+  const { data: resRows } = await db
+    .from("salon_resources" as never)
+    .select("id, name, display_order")
+    .eq("salon_id" as never, ctx.salon.id)
+    .eq("status" as never, "active")
+    .is("deleted_at" as never, null)
+    .order("display_order" as never, { ascending: true });
+  const rows = (resRows ?? []) as {
+    id: string;
+    name: string;
+    display_order: number;
+  }[];
+  if (rows.length === 0) return { ok: true, resources: [] };
+
+  const { data: conflicts } = await db
+    .from("bookings")
+    .select("id, resource_id")
+    .in(
+      "resource_id",
+      rows.map((r) => r.id),
+    )
+    .not("status", "in", "(cancelled,waiting,no_show)")
+    .lt("start_time_utc", endUtcIso)
+    .gt("end_time_utc", startUtcIso);
+
+  const busyIds = new Set<string>(
+    (conflicts ?? [])
+      .filter(
+        (c) =>
+          !excludeBookingId ||
+          (c as { id: string }).id !== excludeBookingId,
+      )
+      .map((c) => (c as { resource_id: string }).resource_id),
+  );
+
+  return {
+    ok: true,
+    resources: rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      displayOrder: r.display_order,
+      isAvailable: !busyIds.has(r.id),
+    })),
+  };
+}
+
 export async function getDeskBookingData(
   slug: string,
 ): Promise<
@@ -2210,6 +2281,9 @@ export async function addDeskAppointment(
     /** Which channels to confirm the booking on. Omitted → both (legacy
      *  behavior). The form's notify panel passes the receptionist's choice. */
     notify?: { sms?: boolean; email?: boolean };
+    /** Explicit bed/chair to assign. `null` = auto-assign first free one.
+     *  `undefined` = also auto-assign (backwards compat). */
+    resourceId?: string | null;
   },
 ): Promise<OkDeskBooking | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
@@ -2500,7 +2574,7 @@ export async function addDeskAppointment(
       ctx.salon.id,
       startUtcIso,
       endUtcIso,
-      (input as { resourceId?: string }).resourceId ?? null,
+      input.resourceId ?? null,
     );
     if (!rr.resourceId) return fail("no_resource_available");
     resolvedResourceId = rr.resourceId;

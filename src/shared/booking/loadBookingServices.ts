@@ -86,6 +86,8 @@ export type BookingSalonMeta = {
   /** `salons.email_links_enabled` (default true). Gates the OTP email fallback
    *  + link emails. NULL/undefined treated as true by consumers. */
   emailLinksEnabled: boolean | null;
+  /** True when `salons.resources_enabled` is on — beds/chairs must be assigned. */
+  resourcesEnabled: boolean;
 };
 
 export type BookingLoadData = {
@@ -100,6 +102,8 @@ export type BookingLoadData = {
   /** Per-staff service whitelist. `null` = salon has no rows → all-capable fallback. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
   salon: BookingSalonMeta;
+  /** Active beds/chairs/stations for resource-mode salons. Empty otherwise. */
+  resources: { id: string; name: string; displayOrder: number }[];
 };
 
 /**
@@ -308,6 +312,22 @@ export async function loadBookingServicesForSalonSlug(
     durationMinutes: Number(c.duration_minutes) || 60,
   }));
 
+  const salonResourcesEnabled =
+    (salon as { resources_enabled?: unknown }).resources_enabled === true;
+  let resources: { id: string; name: string; displayOrder: number }[] = [];
+  if (salonResourcesEnabled) {
+    const { data: rRows } = await client
+      .from("salon_resources" as never)
+      .select("id, name, display_order")
+      .eq("salon_id" as never, salonId)
+      .eq("status" as never, "active")
+      .is("deleted_at" as never, null)
+      .order("display_order" as never, { ascending: true });
+    resources = ((rRows ?? []) as { id: string; name: string; display_order: number }[]).map(
+      (r) => ({ id: r.id, name: r.name, displayOrder: r.display_order }),
+    );
+  }
+
   return {
     canonicalSlug,
     services,
@@ -315,6 +335,7 @@ export async function loadBookingServicesForSalonSlug(
     combos,
     staff,
     capabilityRows,
+    resources,
     salon: {
       id: salonId,
       name: String((salon as { name?: string }).name ?? ""),
@@ -445,6 +466,7 @@ export async function loadBookingServicesForSalonSlug(
         const v = (salon as { email_links_enabled?: unknown }).email_links_enabled;
         return typeof v === "boolean" ? v : null;
       })(),
+      resourcesEnabled: salonResourcesEnabled,
     },
   };
 }

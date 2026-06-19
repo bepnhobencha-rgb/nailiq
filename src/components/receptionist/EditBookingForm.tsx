@@ -4,7 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { editBookingAction } from "@/shared/dashboard/editBookingAction";
-import { getDeskBookingData } from "@/shared/dashboard/receptionistActions";
+import {
+  getDeskBookingData,
+  getResourceAvailability,
+} from "@/shared/dashboard/receptionistActions";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { addonLabel } from "@/shared/booking/serviceLabels";
 import {
@@ -39,6 +42,8 @@ export type EditBookingFormBooking = SalonDashboardBooking & {
   addon_duration_minutes: number | null;
   addon_buffer_minutes: number | null;
   addon_price_cents: number | null;
+  /** Currently-assigned resource (bed/chair) id. Null when no resource or resources_enabled=false. */
+  resource_id?: string | null;
 };
 
 type DeskData = Extract<
@@ -168,6 +173,14 @@ export function EditBookingForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Bed/resource picker state (resource-mode salons only).
+  const originalResourceId = booking.resource_id ?? null;
+  const [resourceId, setResourceId] = useState<string | null>(originalResourceId);
+  const [resourceOptions, setResourceOptions] = useState<
+    { id: string; name: string; displayOrder: number; isAvailable: boolean }[]
+  >([]);
+  const [resourceLoading, setResourceLoading] = useState(false);
+
   // Salon meta (opening hours / closures / lead time) + add-ons — fetched once,
   // exactly like DeskBookingForm, so the grid shows REAL open times.
   const [deskData, setDeskData] = useState<DeskData | null>(null);
@@ -264,6 +277,31 @@ export function EditBookingForm({
     () => (deskData ? Math.min(...deskData.services.map((s) => s.totalMinutes)) : 0),
     [deskData],
   );
+
+  // Fetch bed availability whenever the selected slot changes (resource-mode only).
+  // Placed after totalSpanMinutes + selectedSvc to avoid temporal dead zone.
+  useEffect(() => {
+    if (!deskData?.salon.resourcesEnabled || !selectedSlotLabel || !selectedSvc) {
+      setResourceOptions([]);
+      return;
+    }
+    const startMin = slotLabelToMinutes(selectedSlotLabel);
+    if (startMin == null) return;
+    const startUtc = salonWallTimeToUtcIso(selectedDay, startMin, timezone);
+    const endMs = Date.parse(startUtc) + totalSpanMinutes * 60 * 1000;
+    if (Number.isNaN(endMs)) return;
+    const endUtc = new Date(endMs).toISOString();
+    let cancelled = false;
+    setResourceLoading(true);
+    void getResourceAvailability(slug, startUtc, endUtc, bookingId).then((res) => {
+      if (cancelled) return;
+      if (res.ok) setResourceOptions(res.resources);
+      setResourceLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [deskData, selectedSlotLabel, selectedDay, totalSpanMinutes, timezone, slug, bookingId, selectedSvc]);
 
   // getAvailableTimeSlots wants `BookingStaffItem` (incl. job_role). The edit
   // form's `staff` prop is {id,name} only, so recover job_role from deskData
@@ -414,7 +452,8 @@ export function EditBookingForm({
       !sameUtcInstant(proposedStartUtc, booking.start_time_utc)) ||
     selectedStaff !== originalStaff ||
     selectedService !== originalService ||
-    selectedAddon !== originalAddon;
+    selectedAddon !== originalAddon ||
+    resourceId !== originalResourceId;
 
   // Block Save on a past day (mirrors the server past_date guard + the grid
   // drag-drop). Keep it day-level, NOT "selected slot must be in the freshly
@@ -448,6 +487,8 @@ export function EditBookingForm({
       // preserve. Always-defined here (controlled select) so the
       // server takes the new-value branch even when unchanged.
       newAddonServiceId: selectedAddon === "" ? null : selectedAddon,
+      // Pass bed pick only when resources are shown; undefined = keep current.
+      ...(deskData?.salon.resourcesEnabled ? { newResourceId: resourceId } : {}),
     });
 
     setSaving(false);
@@ -635,6 +676,58 @@ export function EditBookingForm({
           )}
         </div>
       </div>
+
+      {/* Bed picker — shown only for resource-mode salons once a slot is chosen */}
+      {deskData?.salon.resourcesEnabled && selectedSlotLabel ? (
+        <div className="block space-y-1.5">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+            {"Bed / Room"}
+          </span>
+          {resourceLoading ? (
+            <p className="text-xs text-nq-muted">
+              {"Checking availability…"}
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setResourceId(null)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-xs transition",
+                  resourceId === null
+                    ? "border-nq-primary bg-nq-primary text-white"
+                    : "border-nq-muted/40 bg-nq-surface text-nq-foreground hover:border-nq-primary/40",
+                )}
+              >
+                {"Auto"}
+              </button>
+              {resourceOptions.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  disabled={!r.isAvailable && resourceId !== r.id}
+                  onClick={() => {
+                    if (r.isAvailable) setResourceId(r.id);
+                  }}
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-xs transition",
+                    resourceId === r.id
+                      ? "border-nq-primary bg-nq-primary text-white"
+                      : r.isAvailable
+                        ? "border-nq-muted/40 bg-nq-surface text-nq-foreground hover:border-nq-primary/40"
+                        : "cursor-not-allowed border-nq-muted/20 bg-nq-bg text-nq-muted/50 line-through",
+                  )}
+                >
+                  🛏 {r.name}{" "}
+                  <span className={r.isAvailable ? "text-green-400" : "text-nq-muted/40"}>
+                    {r.isAvailable ? "✓" : "✗"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
 
       <div className="space-y-1 text-sm text-nq-muted">
         <p>
