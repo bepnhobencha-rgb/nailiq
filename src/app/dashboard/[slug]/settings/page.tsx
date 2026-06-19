@@ -39,7 +39,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, google_place_id, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, group_together_threshold_minutes, reference_image_enabled, auto_no_show_minutes, winback_enabled, client_segment_settings, feature_flags, resources_enabled, primary_grid_axis, ai_manager_instructions, sms_outbound_enabled, email_outbound_enabled, sms_a2p_registered",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, google_place_id, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, group_together_threshold_minutes, reference_image_enabled, auto_no_show_minutes, winback_enabled, client_segment_settings, feature_flags, resources_enabled, primary_grid_axis, ai_manager_instructions, sms_outbound_enabled, email_outbound_enabled, sms_a2p_registered, owner_notification_channel, owner_phone",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -86,6 +86,8 @@ export default async function SalonSettingsPage({ params }: Props) {
         sms_outbound_enabled?: unknown;
         email_outbound_enabled?: unknown;
         sms_a2p_registered?: unknown;
+        owner_notification_channel?: unknown;
+        owner_phone?: unknown;
       }
     | null;
 
@@ -176,6 +178,14 @@ export default async function SalonSettingsPage({ params }: Props) {
   const aiManagerInstructions = (row as { ai_manager_instructions?: string | null } | null)
     ?.ai_manager_instructions ?? null;
 
+  const ownerNotifChannel = (
+    ["email", "sms", "both"].includes(String(row?.owner_notification_channel ?? ""))
+      ? row?.owner_notification_channel
+      : "email"
+  ) as "email" | "sms" | "both";
+  const ownerPhone =
+    typeof row?.owner_phone === "string" ? row.owner_phone : null;
+
   const resourcesEnabled = row?.resources_enabled === true;
   const primaryGridAxis: "staff" | "resource" =
     row?.primary_grid_axis === "resource" ? "resource" : "staff";
@@ -223,6 +233,8 @@ export default async function SalonSettingsPage({ params }: Props) {
       clientAtRiskDays={clientSegments.atRiskDays}
       aiFlags={aiFlags}
       aiManagerInstructions={aiManagerInstructions}
+      ownerNotifChannel={ownerNotifChannel}
+      ownerPhone={ownerPhone}
       userEmail={userEmail}
       role={ctx.role}
       salonName={salonName}
