@@ -226,33 +226,43 @@ async function sendDigestEmail(
     .eq("id", salonId)
     .maybeSingle();
 
-  const settings = parseOwnerNotificationSettings(
-    (salonRow as { owner_notification_settings?: unknown } | null)?.owner_notification_settings,
-  );
+  const rawSettings = (salonRow as { owner_notification_settings?: Record<string, unknown> } | null)
+    ?.owner_notification_settings ?? {};
+  const settings = parseOwnerNotificationSettings(rawSettings);
   if (!settings.enabled) return;
 
-  // Resolve owner/admin emails
-  const { data: members } = await db
-    .from("salon_members")
-    .select("user_id, role")
-    .eq("salon_id", salonId)
-    .in("role", ["owner", "admin"]);
+  // digest_emails override: if set, send only to those addresses.
+  // Falls back to all owner/admin members + customEmails when not configured.
+  const digestEmailsOverride = Array.isArray(rawSettings.digest_emails)
+    ? (rawSettings.digest_emails as string[]).filter(Boolean)
+    : null;
 
-  const userIds = [...new Set(
-    ((members ?? []) as { user_id: string }[]).map((m) => m.user_id).filter(Boolean),
-  )];
+  let recipients: string[];
+  if (digestEmailsOverride && digestEmailsOverride.length > 0) {
+    recipients = [...new Set(digestEmailsOverride.map((e) => e.toLowerCase()))];
+  } else {
+    const { data: members } = await db
+      .from("salon_members")
+      .select("user_id, role")
+      .eq("salon_id", salonId)
+      .in("role", ["owner", "admin"]);
 
-  const emails = (
-    await Promise.all(
-      userIds.map(async (uid) => {
-        const { data, error } = await db.auth.admin.getUserById(uid);
-        return error ? null : (data.user?.email ?? null);
-      }),
-    )
-  ).filter((e): e is string => !!e);
+    const userIds = [...new Set(
+      ((members ?? []) as { user_id: string }[]).map((m) => m.user_id).filter(Boolean),
+    )];
 
-  for (const e of settings.customEmails) emails.push(e);
-  const recipients = [...new Set(emails.map((e) => e.toLowerCase()))];
+    const emails = (
+      await Promise.all(
+        userIds.map(async (uid) => {
+          const { data, error } = await db.auth.admin.getUserById(uid);
+          return error ? null : (data.user?.email ?? null);
+        }),
+      )
+    ).filter((e): e is string => !!e);
+
+    for (const e of settings.customEmails) emails.push(e);
+    recipients = [...new Set(emails.map((e) => e.toLowerCase()))];
+  }
   if (recipients.length === 0) return;
 
   const esc = (s: string) =>
