@@ -5,6 +5,21 @@ Newest entries on top.
 
 ---
 
+## 2026-06-19 — Minh Learning Loop Bước 3: approval_requests + owner notification (§3D + §3E)
+
+**Status.** Migration applied to prod (`fshmobzyjhmtvndobwsy`). Code in `feat/minh-approval-requests`.
+
+**Context.** Per SPEC §3D-3E. "Không để việc chờ duyệt nằm im" — urgent actions email owner immediately with one-tap approve/decline; normal ones batched into 21:00 digest.
+
+**Decision.** `approval_requests` table (urgency/approve_token/decline_token/expires_at); `/api/ai/approve?token=...` for no-login decision; dashboard `/approvals` page; declined → lesson `policy` scope with confidence 0.7.
+
+- **Token auth:** each row has two opaque 64-hex tokens (approve / decline). Knowing the token IS the authorization — no login required. Tokens are single-use (status flips to approved/declined immediately).
+- **Expiry:** urgent defaults 4h, normal 48h. Cron `minh-learn` marks expired rows + sends one reminder after 24h.
+- **Learning loop:** a decline auto-creates a `minh_lessons` entry (`scope=policy`) so Minh reduces proposals of that action type.
+- **Digest integration:** normal-urgency pending approvals appear in the 21:00 digest email with inline one-tap buttons (same token URLs).
+
+---
+
 ## 2026-06-19 — Minh Learning Loop Bước 2: feedback signals (channel failures + outcomes)
 
 **Status.** Code in `feat/minh-feedback-loop`.

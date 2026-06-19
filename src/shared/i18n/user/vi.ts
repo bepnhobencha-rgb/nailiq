@@ -486,6 +486,7 @@ export const userVi: UserMessages = {
     loyalty: "Loyalty & Quà tặng",
     disputes: "Tranh chấp thẻ",
     activity: "Nhật ký",
+    approvals: "Việc chờ duyệt",
   },
   login: {
     title: "Đăng nhập",

@@ -27,6 +27,8 @@ type Props = {
   overdueCount?: number;
   /** Optional badge count for the Messages nav row (placeholder). */
   messagesCount?: number;
+  /** Pending Minh approval requests count (owner/admin only). */
+  pendingApprovalsCount?: number;
   /** Owner-only: salons this user owns; sidebar renders a switcher
    * dropdown when there are 2+. Pass `[]` to disable the switcher. */
   salons?: OwnerSalonSummary[];
@@ -59,6 +61,7 @@ export function DashboardShell({
   walkinQueueCount,
   overdueCount,
   messagesCount,
+  pendingApprovalsCount,
   salons,
   subscriptionPlan,
   releaseFeatures,
@@ -86,6 +89,7 @@ export function DashboardShell({
         walkinQueueCount={walkinQueueCount}
         overdueCount={overdueCount}
         messagesCount={messagesCount}
+        pendingApprovalsCount={pendingApprovalsCount}
         salons={salons}
         collapsed={collapsed}
         onToggleCollapsed={toggle}
