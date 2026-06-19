@@ -17,6 +17,11 @@ export function EmbedFrameBridge() {
     const post = (type: string, payload: Record<string, unknown> = {}) =>
       window.parent.postMessage({ source: "nailiq-embed", type, ...payload }, "*");
 
+    // Ensure html/body don't show a browser-default dark bg below .nq-booking-embed
+    // (happens when system is in dark mode and iframe height > booking content height).
+    document.documentElement.style.background = "white";
+    document.body.style.background = "white";
+
     // Measure the CONTENT wrapper, not the document — the root layout's
     // `body.min-h-dvh` makes documentElement.scrollHeight track the iframe's own
     // height (circular), which would defeat auto-resize.
