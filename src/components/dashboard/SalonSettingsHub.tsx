@@ -58,6 +58,7 @@ import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { MobileAccountCard } from "@/components/dashboard/MobileAccountCard";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
+import { MessagingSettings } from "@/app/dashboard/[slug]/settings/MessagingSettings";
 
 export function SalonSettingsHub({
   slug,
@@ -101,6 +102,9 @@ export function SalonSettingsHub({
   salons,
   resourcesEnabled,
   primaryGridAxis,
+  smsOutboundEnabled,
+  emailOutboundEnabled,
+  smsA2pRegistered,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -144,6 +148,12 @@ export function SalonSettingsHub({
   salons?: OwnerSalonSummary[];
   resourcesEnabled: boolean;
   primaryGridAxis: "staff" | "resource";
+  /** Operator-level SMS kill-switch (default ON). */
+  smsOutboundEnabled: boolean;
+  /** Operator-level email kill-switch (default ON). */
+  emailOutboundEnabled: boolean;
+  /** Whether A2P 10DLC registration is complete (superadmin-set; read-only here). */
+  smsA2pRegistered: boolean;
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -474,6 +484,16 @@ export function SalonSettingsHub({
         {/* ── Customer channel (SMS / email / A2P status) ─────── */}
         {canManageSalonSettings ? (
           <CustomerChannelCard slug={slug} />
+        ) : null}
+
+        {/* ── Messaging & Email master toggles + A2P badge ─────── */}
+        {canManageSalonSettings ? (
+          <MessagingSettings
+            slug={slug}
+            initialSmsEnabled={smsOutboundEnabled}
+            initialEmailEnabled={emailOutboundEnabled}
+            smsA2pRegistered={smsA2pRegistered}
+          />
         ) : null}
 
         {/* ── Manager + staff notification cards ──────────────── */}

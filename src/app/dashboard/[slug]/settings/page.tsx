@@ -16,6 +16,7 @@ import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { getLookPresetsForVertical } from "@/shared/verticals/lookPresets";
 import { resolveVertical } from "@/shared/verticals/registry";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import { MessagingSettings } from "./MessagingSettings";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -38,7 +39,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, google_place_id, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, group_together_threshold_minutes, reference_image_enabled, auto_no_show_minutes, winback_enabled, client_segment_settings, feature_flags, resources_enabled, primary_grid_axis, ai_manager_instructions",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, google_place_id, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, group_together_threshold_minutes, reference_image_enabled, auto_no_show_minutes, winback_enabled, client_segment_settings, feature_flags, resources_enabled, primary_grid_axis, ai_manager_instructions, sms_outbound_enabled, email_outbound_enabled, sms_a2p_registered",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -82,6 +83,9 @@ export default async function SalonSettingsPage({ params }: Props) {
         feature_flags?: unknown;
         resources_enabled?: unknown;
         primary_grid_axis?: unknown;
+        sms_outbound_enabled?: unknown;
+        email_outbound_enabled?: unknown;
+        sms_a2p_registered?: unknown;
       }
     | null;
 
@@ -176,6 +180,12 @@ export default async function SalonSettingsPage({ params }: Props) {
   const primaryGridAxis: "staff" | "resource" =
     row?.primary_grid_axis === "resource" ? "resource" : "staff";
 
+  // Messaging & Email settings — default ON when column is null (pre-migration safety).
+  const smsOutboundEnabled = row?.sms_outbound_enabled !== false;
+  const emailOutboundEnabled = row?.email_outbound_enabled !== false;
+  // A2P registration: only set by superadmin; read-only for salon owner/admin.
+  const smsA2pRegistered = row?.sms_a2p_registered === true;
+
   return (
     <SalonSettingsHub
       slug={slug}
@@ -219,6 +229,9 @@ export default async function SalonSettingsPage({ params }: Props) {
       salons={ownerSalons}
       resourcesEnabled={resourcesEnabled}
       primaryGridAxis={primaryGridAxis}
+      smsOutboundEnabled={smsOutboundEnabled}
+      emailOutboundEnabled={emailOutboundEnabled}
+      smsA2pRegistered={smsA2pRegistered}
     />
   );
 }
