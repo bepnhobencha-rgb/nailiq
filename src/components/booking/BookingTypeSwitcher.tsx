@@ -6,7 +6,7 @@ import {
   type ReturningCustomer,
 } from "@/components/booking/useBookingFlowState";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
-import { formatPhoneInputProgressive } from "@/shared/lib/phoneFormat";
+import CountryPhoneField from "@/components/booking/CountryPhoneField";
 import type { BookingComboItem, BookingServiceItem } from "@/shared/booking/catalog";
 import type { ServiceCategorySummary } from "@/shared/booking/loadServiceCategories";
 import type {
@@ -211,18 +211,13 @@ export function BookingTypeSwitcher({
       >
         {t.clientPhoneLabel}
       </label>
-      <input
+      <CountryPhoneField
         id="booking-entry-phone"
-        type="tel"
-        inputMode="tel"
-        autoComplete="tel"
-        data-testid="booking-entry-phone"
+        testId="booking-entry-phone"
         value={entryPhoneRaw}
-        placeholder={t.clientPhonePlaceholder}
-        onChange={(e) =>
-          setEntryPhoneRaw(formatPhoneInputProgressive(e.target.value))
-        }
-        className="nq-booking-field"
+        onChange={setEntryPhoneRaw}
+        salonTimezone={salon.timezone}
+        language={language}
       />
       {recognizedWithName ? (
         <p
