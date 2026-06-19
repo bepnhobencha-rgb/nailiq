@@ -368,6 +368,14 @@ export function DashboardSidebar({
             hidden: role !== "owner" && role !== "admin",
           },
           {
+            key: "manager",
+            label: "Nhật ký Minh",
+            href: `${dashRoot}/manager`,
+            icon: Sparkles,
+            match: (p) => p.startsWith(`${dashRoot}/manager`),
+            hidden: role !== "owner" && role !== "admin",
+          },
+          {
             key: "messages",
             label: t.messages,
             href: null,

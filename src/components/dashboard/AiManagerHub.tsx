@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition, useRef, useCallback } from "react";
 import { updateAiAgentFlag, updateAiManagerInstructions } from "@/shared/dashboard/salonOwnerActions";
 import type { AiAgentFlagKey, AiAgentFlags } from "@/shared/dashboard/aiAgentTypes";
@@ -265,14 +266,24 @@ export function AiManagerHub({ slug, initialFlags, initialInstructions }: Props)
       data-testid="settings-ai-manager-hub"
       className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-4"
     >
-      <p className="mb-1 text-xs font-medium uppercase tracking-wider text-nq-muted">
-        {vi ? "Minh — AI Quản Lý" : "Minh — AI Manager"}
-      </p>
-      <p className="mb-4 text-xs text-nq-muted">
-        {vi
-          ? "Bật/tắt từng agent AI. Mỗi agent tự điều tiết — bật an toàn mà không lo spam."
-          : "Toggle each AI agent on or off. Every agent self-throttles — safe to enable without risk of over-messaging."}
-      </p>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-nq-muted">
+            {vi ? "Minh — AI Quản Lý" : "Minh — AI Manager"}
+          </p>
+          <p className="mt-0.5 text-xs text-nq-muted">
+            {vi
+              ? "Bật/tắt từng agent AI. Mỗi agent tự điều tiết — bật an toàn mà không lo spam."
+              : "Toggle each AI agent on or off. Every agent self-throttles — safe to enable without risk of over-messaging."}
+          </p>
+        </div>
+        <Link
+          href={`/dashboard/${slug}/manager`}
+          className="shrink-0 rounded-full border border-nq-border/30 px-3 py-1 text-xs text-nq-muted transition-colors hover:border-nq-primary/40 hover:text-nq-primary"
+        >
+          {vi ? "Nhật ký →" : "Activity →"}
+        </Link>
+      </div>
 
       <div className="divide-y divide-nq-border/20">
         {AGENTS.map((agent) => (
