@@ -1457,3 +1457,35 @@ export async function updateAiAgentFlag(
   }
   return { ok: true };
 }
+
+/* ───────────── AI Manager instructions ───────────── */
+
+export type UpdateAiManagerInstructionsResult =
+  | { ok: true }
+  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" };
+
+/** Owner/admin: save standing instructions for Minh (max 1000 chars). */
+export async function updateAiManagerInstructions(
+  slug: string,
+  instructions: string,
+): Promise<UpdateAiManagerInstructionsResult> {
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
+
+  const trimmed = instructions.trim().slice(0, 1000);
+
+  const { error } = await ctx.supabase
+    .from("salons")
+    .update({ ai_manager_instructions: trimmed || null } as never)
+    .eq("id", ctx.salon.id);
+
+  if (error) {
+    console.error("[updateAiManagerInstructions]", error);
+    return { ok: false, error: "server_error" };
+  }
+  return { ok: true };
+}

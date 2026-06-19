@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { updateAiAgentFlag } from "@/shared/dashboard/salonOwnerActions";
+import { useState, useTransition, useRef, useCallback } from "react";
+import { updateAiAgentFlag, updateAiManagerInstructions } from "@/shared/dashboard/salonOwnerActions";
 import type { AiAgentFlagKey, AiAgentFlags } from "@/shared/dashboard/aiAgentTypes";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 type Props = {
   slug: string;
   initialFlags: AiAgentFlags;
+  initialInstructions?: string | null;
 };
 
 type AgentDef = {
@@ -108,7 +109,7 @@ const AGENTS: AgentDef[] = [
     descEn:
       "Replaces all individual agent emails with one cohesive end-of-day briefing in the Manager's voice: what happened, what AI did, what to watch tomorrow.",
     descVi:
-      "Gộp tất cả email riêng lẻ từ các agent thành 1 bản tổng kết duy nhất lúc 21:00, viết bằng giọng Quản Lý: hôm nay thế nào, AI đã làm gì, ngày mai cần chú ý gì.",
+      "Gộp tất cả email riêng lẻ từ các agent thành 1 bản tổng kết duy nhất lúc 21:00, viết bằng giọng Minh: hôm nay thế nào, AI đã làm gì, ngày mai cần chú ý gì.",
   },
 ];
 
@@ -169,7 +170,93 @@ function AgentToggle({
   );
 }
 
-export function AiManagerHub({ slug, initialFlags }: Props) {
+function InstructionsField({
+  slug,
+  initialValue,
+  vi,
+}: {
+  slug: string;
+  initialValue: string;
+  vi: boolean;
+}) {
+  const [value, setValue] = useState(initialValue);
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [, startTransition] = useTransition();
+
+  const save = useCallback(
+    (text: string) => {
+      setStatus("saving");
+      startTransition(async () => {
+        const res = await updateAiManagerInstructions(slug, text);
+        setStatus(res.ok ? "saved" : "error");
+        setTimeout(() => setStatus("idle"), 2000);
+      });
+    },
+    [slug],
+  );
+
+  function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const v = e.target.value;
+    setValue(v);
+    setStatus("idle");
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => save(v), 1000);
+  }
+
+  const remaining = 1000 - value.length;
+
+  return (
+    <div className="mt-4 border-t border-nq-border/20 pt-4">
+      <p className="mb-1 text-xs font-semibold text-nq-foreground">
+        {vi ? "🎯 Chỉ đạo cho Minh" : "🎯 Instructions for Minh"}
+      </p>
+      <p className="mb-2 text-xs text-nq-muted">
+        {vi
+          ? "Mục tiêu, ưu tiên, hoặc ràng buộc bạn muốn Minh ghi nhớ khi làm việc."
+          : "Goals, priorities, or constraints you want Minh to keep in mind."}
+      </p>
+      <textarea
+        value={value}
+        onChange={handleChange}
+        maxLength={1000}
+        rows={3}
+        placeholder={
+          vi
+            ? "VD: Tháng 7 tập trung head spa. Ưu tiên khách lần đầu. Không nhắn SMS cuối tuần."
+            : "E.g. July focus: head spa. Prioritise first-time guests. No SMS on weekends."
+        }
+        className="w-full resize-none rounded-lg border border-nq-border/30 bg-nq-surface/50 px-3 py-2 text-xs text-nq-foreground placeholder:text-nq-muted/50 focus:outline-none focus:ring-1 focus:ring-nq-primary/50"
+      />
+      <div className="mt-1 flex items-center justify-between">
+        <span className="text-xs text-nq-muted/60">
+          {remaining} {vi ? "ký tự còn lại" : "chars left"}
+        </span>
+        <span
+          className={`text-xs transition-opacity ${
+            status === "idle" ? "opacity-0" : "opacity-100"
+          } ${
+            status === "saved"
+              ? "text-green-400"
+              : status === "error"
+                ? "text-red-400"
+                : "text-nq-muted"
+          }`}
+        >
+          {status === "saving"
+            ? (vi ? "Đang lưu..." : "Saving...")
+            : status === "saved"
+              ? (vi ? "Đã lưu ✓" : "Saved ✓")
+              : status === "error"
+                ? (vi ? "Lỗi lưu" : "Save failed")
+                : ""}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export function AiManagerHub({ slug, initialFlags, initialInstructions }: Props) {
   const { language } = useUserLanguage();
   const vi = language === "vi";
 
@@ -179,7 +266,7 @@ export function AiManagerHub({ slug, initialFlags }: Props) {
       className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-4"
     >
       <p className="mb-1 text-xs font-medium uppercase tracking-wider text-nq-muted">
-        {vi ? "AI Quản Lý" : "AI Manager"}
+        {vi ? "Minh — AI Quản Lý" : "Minh — AI Manager"}
       </p>
       <p className="mb-4 text-xs text-nq-muted">
         {vi
@@ -198,6 +285,12 @@ export function AiManagerHub({ slug, initialFlags }: Props) {
           />
         ))}
       </div>
+
+      <InstructionsField
+        slug={slug}
+        initialValue={initialInstructions ?? ""}
+        vi={vi}
+      />
     </section>
   );
 }

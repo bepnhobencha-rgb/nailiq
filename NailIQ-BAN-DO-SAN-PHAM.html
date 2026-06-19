@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NailIQ — Bản đồ sản phẩm &amp; Lộ trình phiên bản</title>
+<style>
+  :root{
+    --gold:#D4AF37; --gold-soft:#E7C964;
+    --bg:#0B0C10; --surface:#111318; --surface2:#171a21; --line:#262a33;
+    --text:#F4F5F7; --muted:#9aa0ac; --muted2:#6b7280;
+    --green:#3ECf8e; --amber:#F2B84b; --red:#F2685c; --blue:#5b9dff; --violet:#a78bfa;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:linear-gradient(180deg,#0B0C10,#0d0f14 40%,#0B0C10);
+    color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Apple Color Emoji",sans-serif;
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:0 20px 100px}
+  header.hero{padding:64px 20px 40px; text-align:center; max-width:1080px; margin:0 auto}
+  .kicker{color:var(--gold); letter-spacing:.18em; text-transform:uppercase; font-size:12px; font-weight:700}
+  h1{font-size:clamp(28px,5vw,44px); line-height:1.15; margin:14px 0 10px; font-weight:800}
+  h1 .g{color:var(--gold)}
+  .sub{color:var(--muted); font-size:clamp(15px,2.4vw,18px); max-width:680px; margin:0 auto}
+  .meta{color:var(--muted2); font-size:13px; margin-top:18px}
+
+  section{margin-top:54px}
+  h2{font-size:clamp(21px,3.4vw,28px); margin:0 0 6px; font-weight:800; display:flex; align-items:center; gap:10px}
+  h2 .num{display:inline-grid; place-items:center; width:34px; height:34px; border-radius:9px; background:rgba(212,175,55,.12); color:var(--gold); font-size:15px; border:1px solid rgba(212,175,55,.3)}
+  .lead{color:var(--muted); margin:0 0 22px; max-width:760px}
+
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:22px 22px}
+  .card + .card{margin-top:14px}
+
+  .philo{background:linear-gradient(135deg,rgba(212,175,55,.10),rgba(212,175,55,.02)); border:1px solid rgba(212,175,55,.28)}
+  .philo h3{margin:0 0 8px; font-size:18px}
+  .twocol{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+  @media(max-width:760px){.twocol{grid-template-columns:1fr}}
+  .vs{padding:16px 18px; border-radius:13px; background:var(--surface2); border:1px solid var(--line)}
+  .vs h4{margin:0 0 6px; font-size:15px; display:flex; align-items:center; gap:8px}
+  .vs.infinite h4{color:var(--violet)} .vs.finite h4{color:var(--green)}
+  .vs p{margin:0; color:var(--muted); font-size:14px}
+
+  .big{background:linear-gradient(135deg,rgba(62,207,142,.10),rgba(62,207,142,.02)); border:1px solid rgba(62,207,142,.3)}
+  .big strong{color:var(--green)}
+
+  /* version columns */
+  .ver-grid{display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px}
+  @media(max-width:860px){.ver-grid{grid-template-columns:1fr}}
+  .ver{border-radius:16px; padding:20px; border:1px solid var(--line); background:var(--surface)}
+  .ver.v1{border-color:rgba(62,207,142,.45); background:linear-gradient(180deg,rgba(62,207,142,.07),transparent)}
+  .ver.v2{border-color:rgba(91,157,255,.4); background:linear-gradient(180deg,rgba(91,157,255,.06),transparent)}
+  .ver.v3{border-color:rgba(167,139,250,.4); background:linear-gradient(180deg,rgba(167,139,250,.06),transparent)}
+  .ver .tag{font-weight:800; font-size:13px; letter-spacing:.05em; text-transform:uppercase}
+  .ver.v1 .tag{color:var(--green)} .ver.v2 .tag{color:var(--blue)} .ver.v3 .tag{color:var(--violet)}
+  .ver h3{margin:6px 0 2px; font-size:19px}
+  .ver .when{font-size:13px; color:var(--muted2); margin-bottom:12px}
+  .ver ul{margin:0; padding-left:18px}
+  .ver li{margin:7px 0; font-size:14px; color:var(--text)}
+  .ver li span{color:var(--muted)}
+
+  /* status legend + feature table */
+  .legend{display:flex; flex-wrap:wrap; gap:10px; margin:0 0 18px}
+  .pill{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; padding:5px 11px; border-radius:999px; border:1px solid var(--line); background:var(--surface2); color:var(--muted)}
+  .dot{width:9px; height:9px; border-radius:50%; display:inline-block}
+  .d-done{background:var(--green)} .d-wip{background:var(--amber)} .d-spec{background:var(--blue)} .d-block{background:var(--red)} .d-defer{background:var(--muted2)}
+
+  .feat{width:100%; border-collapse:collapse; font-size:14px}
+  .feat th{text-align:left; color:var(--muted2); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.05em; padding:8px 10px; border-bottom:1px solid var(--line)}
+  .feat td{padding:11px 10px; border-bottom:1px solid var(--line); vertical-align:top}
+  .feat tr:last-child td{border-bottom:none}
+  .feat .nm{font-weight:600}
+  .feat .ds{color:var(--muted); font-size:13px}
+  .badge{font-size:11.5px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap; display:inline-block}
+  .b-done{background:rgba(62,207,142,.14); color:var(--green); border:1px solid rgba(62,207,142,.3)}
+  .b-wip{background:rgba(242,184,75,.13); color:var(--amber); border:1px solid rgba(242,184,75,.3)}
+  .b-spec{background:rgba(91,157,255,.13); color:var(--blue); border:1px solid rgba(91,157,255,.3)}
+  .b-block{background:rgba(242,104,92,.13); color:var(--red); border:1px solid rgba(242,104,92,.3)}
+  .b-defer{background:rgba(107,114,128,.16); color:var(--muted); border:1px solid var(--line)}
+  .grp-h{font-size:13px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; padding:16px 10px 6px; color:var(--gold)}
+
+  /* DoD */
+  .dod h3{margin:0 0 4px; font-size:16px; color:var(--gold-soft)}
+  .dod .crit{list-style:none; padding:0; margin:8px 0 0}
+  .dod .crit li{padding:7px 0 7px 28px; position:relative; font-size:14px; border-top:1px solid var(--line)}
+  .dod .crit li:first-child{border-top:none}
+  .dod .crit li::before{content:"✓"; position:absolute; left:0; top:7px; color:var(--green); font-weight:800}
+
+  /* flow accordion */
+  details.flow{background:var(--surface); border:1px solid var(--line); border-radius:14px; margin-top:12px; overflow:hidden}
+  details.flow > summary{cursor:pointer; padding:16px 20px; font-weight:700; font-size:16px; display:flex; align-items:center; justify-content:space-between; list-style:none}
+  details.flow > summary::-webkit-details-marker{display:none}
+  details.flow > summary .chev{color:var(--muted2); transition:transform .2s}
+  details.flow[open] > summary .chev{transform:rotate(90deg)}
+  details.flow > summary .st{font-size:11.5px; font-weight:700; padding:3px 9px; border-radius:999px; margin-left:auto; margin-right:12px}
+  .flow-body{padding:4px 20px 22px}
+  .steps{counter-reset:s; list-style:none; padding:0; margin:0 0 16px}
+  .steps li{counter-increment:s; position:relative; padding:8px 0 8px 40px; font-size:14px; border-left:2px solid var(--line); margin-left:14px}
+  .steps li::before{content:counter(s); position:absolute; left:-14px; top:7px; width:26px; height:26px; border-radius:50%; background:var(--surface2); border:1px solid var(--gold); color:var(--gold); display:grid; place-items:center; font-size:12px; font-weight:800}
+  .steps li b{color:var(--text)} .steps li span{color:var(--muted)}
+  .formbox{background:var(--surface2); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-top:10px}
+  .formbox h5{margin:0 0 10px; font-size:13.5px; color:var(--gold-soft); letter-spacing:.03em}
+  .fields{width:100%; border-collapse:collapse; font-size:13px}
+  .fields td{padding:6px 8px; border-bottom:1px solid rgba(38,42,51,.6); vertical-align:top}
+  .fields tr:last-child td{border-bottom:none}
+  .fields .fn{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--gold-soft); font-size:12.5px; white-space:nowrap}
+  .fields .req{color:var(--red); font-weight:700; font-size:11px}
+  .fields .opt{color:var(--muted2); font-size:11px}
+  .fields .fd{color:var(--muted)}
+
+  /* go-live */
+  .gl{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+  @media(max-width:760px){.gl{grid-template-columns:1fr}}
+  .gl .col h4{margin:0 0 10px; font-size:15px; display:flex; gap:8px; align-items:center}
+  .chk{list-style:none; padding:0; margin:0}
+  .chk li{padding:9px 0 9px 30px; position:relative; font-size:14px; border-top:1px solid var(--line); color:var(--text)}
+  .chk li:first-child{border-top:none}
+  .chk li::before{content:"☐"; position:absolute; left:4px; top:8px; color:var(--gold); font-size:15px}
+  .chk li small{display:block; color:var(--muted2); font-size:12px}
+
+  .callout{border-left:3px solid var(--gold); padding:4px 0 4px 16px; margin:14px 0; color:var(--muted)}
+  .callout b{color:var(--text)}
+  footer{margin-top:60px; text-align:center; color:var(--muted2); font-size:13px; border-top:1px solid var(--line); padding-top:26px}
+  a{color:var(--gold-soft)}
+  .nowrap{white-space:nowrap}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="kicker">NailIQ · Tài liệu chiến lược</div>
+  <h1>Bản đồ sản phẩm &amp; <span class="g">Lộ trình phiên bản</span></h1>
+  <p class="sub">Toàn cảnh mọi chức năng đang có, luồng từ 0 → kết thúc, từng form nhập liệu — và một đường ranh rõ ràng: cái gì là <b style="color:var(--green)">v1 để chạy quảng cáo</b>, cái gì để dành v2/v3.</p>
+  <div class="meta">Lập từ chính code thật của dự án · 158.000 dòng · cập nhật 17/06/2026</div>
+</header>
+
+<div class="wrap">
+
+  <!-- 0. TRIẾT LÝ -->
+  <section id="triet-ly">
+    <h2><span class="num">0</span> Tại sao bạn thấy "làm hoài không xong"</h2>
+    <p class="lead">Trước khi xem bản đồ, cần gỡ đúng nút thắt. Vấn đề của bạn không phải tay nghề — code rất chắc. Vấn đề là chưa bao giờ có <b>vạch đích viết bằng chữ</b>.</p>
+
+    <div class="card philo">
+      <h3>Tầm nhìn thì vô hạn. Phiên bản thì hữu hạn.</h3>
+      <p style="color:var(--muted); margin:0 0 14px">Dân làm phần mềm chuyên nghiệp luôn tách bạch hai thứ này. Bạn đang lấy <i>tầm nhìn</i> làm <i>mục tiêu phiên bản</i> — nên theo định nghĩa, không bao giờ "tới đích".</p>
+      <div class="twocol">
+        <div class="vs infinite">
+          <h4>🌌 Tầm nhìn (Vision)</h4>
+          <p>"Một bộ não vận hành thay con người." Đây là sao Bắc Đẩu — 5 đến 10 năm, không bao giờ hoàn thành. Nó để <b>định hướng</b>, không phải để ship.</p>
+        </div>
+        <div class="vs finite">
+          <h4>🎯 Phiên bản (Release)</h4>
+          <p>Một lát cắt mỏng, <b>có ngày, bị đóng băng</b>. Bạn ship nó, rồi cắt lát tiếp theo. Bạn không "hoàn thành dự án" — bạn liên tục ship phiên bản hữu hạn hướng về tầm nhìn vô hạn.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h3 style="margin:0 0 8px; font-size:16px">Lý do bạn sửa đăng ký &amp; book online hoài không dứt</h3>
+      <p style="margin:0; color:var(--muted)">Vì chưa có <b style="color:var(--text)">"Định nghĩa XONG"</b> (acceptance criteria) viết ra giấy. Hiện giờ "xong" với bạn là một <i>cảm giác</i> — mà cảm giác thay đổi mỗi lần mở file lên. Khi có tiêu chí bằng chữ → đạt đủ → <b style="color:var(--text)">KHÓA flow lại</b>, không đụng nữa trừ khi khách thật gặp lỗi thật. Mục 3 bên dưới là các tiêu chí đó.</p>
+    </div>
+
+    <div class="card big" style="margin-top:14px">
+      <h3 style="margin:0 0 8px; font-size:17px">🔎 Sự thật sau khi quét code: sản phẩm của bạn đã <strong>hoàn chỉnh hơn bạn nghĩ rất nhiều</strong></h3>
+      <p style="margin:0; color:var(--muted)">Toàn bộ <b style="color:var(--text)">xương sống đã chạy được</b>: đăng ký/đăng nhập, salon tự setup, khách book online, quầy lễ tân quản lý lịch real-time, dashboard chủ tiệm, xác nhận SMS/email. Cái đang chặn bạn chạy quảng cáo <b style="color:var(--text)">không phải code</b> — mà là một vài việc cấu hình go-live (mục 5) và việc bạn chưa cho phép mình <b style="color:var(--text)">đóng băng &amp; tuyên bố XONG</b>.</p>
+    </div>
+  </section>
+
+  <!-- 1. VẠCH PHIÊN BẢN -->
+  <section id="vach-phien-ban">
+    <h2><span class="num">1</span> Vạch phiên bản — bản đồ chính</h2>
+    <p class="lead">Đây là đường ranh mình đề xuất với vai trò software lead. Nguyên tắc: <b>v1 = đủ để một tiệm vận hành thật và bạn chạy được quảng cáo</b>. Mọi thứ "wow nhưng chưa bắt buộc" đẩy sang sau.</p>
+
+    <div class="ver-grid">
+      <div class="ver v1">
+        <div class="tag">● v1 — Ship &amp; chạy ads</div>
+        <h3>Lõi vận hành tiệm</h3>
+        <div class="when">Mục tiêu: vài tuần · Hầu hết ĐÃ XONG</div>
+        <ul>
+          <li>Đăng ký &amp; đăng nhập <span>(SĐT/OTP + Google + email)</span></li>
+          <li>Salon tự setup <span>(địa chỉ · giờ · dịch vụ · thợ)</span></li>
+          <li>Khách book online cá nhân <span>(chọn dịch vụ→thợ→ngày→giờ→xác nhận)</span></li>
+          <li>Receptionist Center <span>(lịch real-time, walk-in, sửa/huỷ hẹn)</span></li>
+          <li>Dashboard chủ tiệm <span>(doanh thu hôm nay, hẹn trong ngày)</span></li>
+          <li>Xác nhận &amp; nhắc lịch SMS/Email</li>
+          <li>No-show cơ bản <span>(đánh dấu + lưu thẻ qua Square)</span></li>
+        </ul>
+      </div>
+      <div class="ver v2">
+        <div class="tag">● v2 — Tạo khác biệt</div>
+        <h3>Tự động &amp; thông minh</h3>
+        <div class="when">Sau khi có 3–5 tiệm trả tiền</div>
+        <ul>
+          <li>Đặt lịch nhóm + Party Link <span>(đã code, để sau khi lõi vững)</span></li>
+          <li>Tích hợp Square đầy đủ <span>(đồng bộ menu · lịch sử · win-back)</span></li>
+          <li>Thu phí no-show tự động <span>(charge + escalation UI)</span></li>
+          <li>AI Salon Manager / Owner Pulse <span>(báo cáo &amp; gợi ý hằng ngày)</span></li>
+          <li>Win-back khách cũ tự động</li>
+        </ul>
+      </div>
+      <div class="ver v3">
+        <div class="tag">● v3 — Bộ não vận hành</div>
+        <h3>Hướng tới tầm nhìn</h3>
+        <div class="when">Sau khi mô hình kinh doanh đã validated</div>
+        <ul>
+          <li>Voice AI lễ tân (Lily) <span>(nghe gọi, tự đặt hẹn)</span></li>
+          <li>Loyalty / rewards / VIP tiers</li>
+          <li>Đa chi nhánh · đa quốc gia</li>
+          <li>Phân tích nâng cao · dự báo churn</li>
+          <li>Marketing automation</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout">
+      <b>Quy tắc vàng để hết "sửa hoài":</b> sau khi v1 đóng băng, mọi ý tưởng mới KHÔNG được sửa vào v1 — nó đi thẳng vào danh sách v2. Bạn chỉ đụng lại v1 khi <b>một khách thật gặp một lỗi thật</b>. Đây là cách duy nhất để dừng vòng lặp nâng cấp vô tận.
+    </div>
+  </section>
+
+  <!-- 2. KHO CHỨC NĂNG -->
+  <section id="kho-chuc-nang">
+    <h2><span class="num">2</span> Kho chức năng &amp; trạng thái thật</h2>
+    <p class="lead">Toàn bộ chức năng tìm thấy trong code, kèm trạng thái thực tế. Đây là "kiểm kê kho" — để bạn nhìn một phát thấy hết, không sót, không mơ hồ.</p>
+
+    <div class="legend">
+      <span class="pill"><span class="dot d-done"></span> Đã chạy được</span>
+      <span class="pill"><span class="dot d-wip"></span> Đang dở (branch chưa merge)</span>
+      <span class="pill"><span class="dot d-block"></span> Chờ cấu hình ngoài</span>
+      <span class="pill"><span class="dot d-spec"></span> Mới có spec</span>
+      <span class="pill"><span class="dot d-defer"></span> Để dành</span>
+    </div>
+
+    <div class="card" style="padding:6px 10px">
+      <table class="feat">
+        <thead><tr><th style="width:34%">Chức năng</th><th>Mô tả ngắn</th><th style="width:130px">Trạng thái</th></tr></thead>
+        <tbody>
+          <tr><td colspan="3" class="grp-h">● v1 — Lõi vận hành</td></tr>
+          <tr><td class="nm">Đăng ký / Đăng nhập</td><td class="ds">SĐT+OTP, Google OAuth, email magic-link; gate vào dashboard</td><td><span class="badge b-done">Đã chạy</span></td></tr>
+          <tr><td class="nm">Setup wizard salon</td><td class="ds">Địa chỉ → giờ mở cửa → dịch vụ → thợ; cờ "profile_complete"</td><td><span class="badge b-done">Đã chạy</span></td></tr>
+          <tr><td class="nm">Book online cá nhân</td><td class="ds">6 bước: SĐT → dịch vụ → thợ → ngày → giờ → xác nhận</td><td><span class="badge b-done">Đã chạy</span></td></tr>
+          <tr><td class="nm">Receptionist Center</td><td class="ds">Lịch real-time 3 vùng, walk-in queue, kéo-thả, sửa/huỷ, drawer</td><td><span class="badge b-done">~95%</span></td></tr>
+          <tr><td class="nm">Dashboard chủ tiệm</td><td class="ds">Doanh thu hôm nay, hẹn trong ngày, checklist setup, QR chia sẻ</td><td><span class="badge b-done">Đã chạy</span></td></tr>
+          <tr><td class="nm">Settings hub</td><td class="ds">~7 nhóm cấu hình: booking, brand, kênh, AI, tài khoản</td><td><span class="badge b-done">~90%</span></td></tr>
+          <tr><td class="nm">Xác nhận / nhắc lịch SMS</td><td class="ds">Twilio, kill-switch sms_outbound_enabled, chặn số seed 555</td><td><span class="badge b-done">Đã chạy</span></td></tr>
+          <tr><td class="nm">Xác nhận / nhắc lịch Email</td><td class="ds">Resend, unsubscribe + compliance log</td><td><span class="badge b-done">Đã chạy</span></td></tr>
+          <tr><td class="nm">No-show cơ bản</td><td class="ds">Đánh dấu no-show, lưu thẻ qua Square, charge thủ công</td><td><span class="badge b-done">Lõi xong</span></td></tr>
+          <tr><td class="nm">Superadmin console</td><td class="ds">6 vai trò, bật/tắt flag, audit log, impersonation</td><td><span class="badge b-done">Lõi xong</span></td></tr>
+
+          <tr><td colspan="3" class="grp-h">● v2 — Tự động &amp; thông minh</td></tr>
+          <tr><td class="nm">Đặt lịch nhóm + Party Link</td><td class="ds">5 bước, AI sắp xếp giờ, link tự nhận chỗ; đã code v1+v2</td><td><span class="badge b-wip">Sau cờ Beta</span></td></tr>
+          <tr><td class="nm">Tích hợp Square (sync)</td><td class="ds">OAuth xong; đồng bộ menu/khách/lịch sử còn dở (Phase 2-3)</td><td><span class="badge b-block">Chờ OAuth app</span></td></tr>
+          <tr><td class="nm">Thu phí no-show tự động</td><td class="ds">UI escalation 🟡🟠🔴 + charge tự động đang làm</td><td><span class="badge b-wip">Đang dở</span></td></tr>
+          <tr><td class="nm">AI Salon Manager / Pulse</td><td class="ds">9 agent (báo cáo, win-back, review, VIP care); code skeleton có</td><td><span class="badge b-spec">Spec + skeleton</span></td></tr>
+          <tr><td class="nm">Thanh toán Stripe Connect</td><td class="ds">Khung code có; chưa nối vào luồng (Phase 2)</td><td><span class="badge b-block">Chờ kích hoạt</span></td></tr>
+
+          <tr><td colspan="3" class="grp-h">● v3 — Hướng tầm nhìn</td></tr>
+          <tr><td class="nm">Voice AI lễ tân (Lily)</td><td class="ds">Cá nhân đã chạy; mở rộng đặt nhóm đang làm</td><td><span class="badge b-wip">1 phần</span></td></tr>
+          <tr><td class="nm">Loyalty / rewards</td><td class="ds">Mới có cờ + agent VIP; chưa có UI &amp; schema</td><td><span class="badge b-defer">Để dành</span></td></tr>
+          <tr><td class="nm">Đa chi nhánh / đa quốc gia</td><td class="ds">Kích hoạt khi 30+ tiệm &amp; có khách hỏi</td><td><span class="badge b-defer">Để dành</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 3. ĐỊNH NGHĨA XONG -->
+  <section id="dinh-nghia-xong">
+    <h2><span class="num">3</span> "Định nghĩa XONG" cho các flow xương sống</h2>
+    <p class="lead">Đây là thứ bạn thiếu khiến sửa hoài. In ra, dán lên tường. Khi một flow đạt đủ các dấu ✓ này → <b>tuyên bố XONG, đóng băng, ngừng đụng vào.</b></p>
+
+    <div class="card dod">
+      <h3>✅ Đăng ký &amp; Đăng nhập — XONG khi:</h3>
+      <ul class="crit">
+        <li>Chủ tiệm mới nhập SĐT → nhận OTP → vào được dashboard, trên iPhone, dưới 60 giây</li>
+        <li>Đăng nhập lại bằng SĐT cũ → vào đúng tiệm (hoặc chọn tiệm nếu có nhiều)</li>
+        <li>Google &amp; email magic-link đều dẫn tới dashboard hoặc bước setup</li>
+        <li>Nhập sai OTP / hết hạn → hiện thông báo rõ ràng, không trắng trang</li>
+        <li>Đã có khách thật đăng ký thành công 1 lần mà không cần bạn can thiệp</li>
+      </ul>
+    </div>
+
+    <div class="card dod">
+      <h3>✅ Book online cá nhân — XONG khi:</h3>
+      <ul class="crit">
+        <li>Khách lạ vào link tiệm → đặt xong 1 lịch dưới 2 phút trên điện thoại</li>
+        <li>Không đặt được khi: ngoài giờ mở cửa, trùng giờ thợ, slot vừa bị người khác lấy</li>
+        <li>Đặt xong hiện màn xác nhận + khách nhận SMS/email</li>
+        <li>Lịch hiện ngay trên Receptionist Center của tiệm (real-time)</li>
+        <li>Khách quen nhập SĐT → tự nhận ra tên (welcome back)</li>
+      </ul>
+    </div>
+
+    <div class="card dod">
+      <h3>✅ Receptionist Center — XONG khi:</h3>
+      <ul class="crit">
+        <li>Lễ tân thấy toàn bộ lịch trong ngày theo cột từng thợ, có vạch "bây giờ"</li>
+        <li>Thêm khách walk-in vào hàng chờ + gán cho thợ trống</li>
+        <li>Sửa giờ/thợ/dịch vụ một hẹn, huỷ hẹn (có nút undo)</li>
+        <li>Đánh dấu no-show; bấm vào hẹn xem chi tiết khách</li>
+        <li>Chạy mượt trên iPad/tablet thật của tiệm trong 1 ca làm việc, không lỗi</li>
+      </ul>
+    </div>
+
+    <div class="callout"><b>Lưu ý quan trọng:</b> "XONG" không có nghĩa là "hoàn hảo". Nó có nghĩa là <b>đủ tốt để một tiệm thật dùng mà không kêu cứu</b>. Sự hoàn hảo đến từ phản hồi của khách thật — không phải từ việc bạn ngồi đoán và đánh bóng thêm.</div>
+  </section>
+
+  <!-- 4. LUỒNG CHI TIẾT -->
+  <section id="luong-chi-tiet">
+    <h2><span class="num">4</span> Luồng chi tiết 0 → kết thúc + form nhập liệu</h2>
+    <p class="lead">Phần bạn cần nhất: mỗi flow đi qua những bước nào, mỗi form gồm field gì. Bấm để mở từng cái. (Trích từ code thật.)</p>
+
+    <!-- Đăng ký -->
+    <details class="flow">
+      <summary><span>🔑 Đăng ký salon mới</span><span class="st b-done">Đã chạy</span><span class="chev">▸</span></summary>
+      <div class="flow-body">
+        <ol class="steps">
+          <li><b>Chọn cách đăng ký</b> <span>— /register · Google / Email magic-link / Email+mật khẩu (SĐT+OTP là đường cũ vẫn chạy)</span></li>
+          <li><b>Xác thực callback</b> <span>— /auth/callback · đã có tiệm → vào dashboard; chưa có → sang setup</span></li>
+          <li><b>Đặt tên &amp; URL salon</b> <span>— /register/setup · form bên dưới</span></li>
+          <li><b>Thành công</b> <span>— /register/success · nút "Đi tới Dashboard"</span></li>
+        </ol>
+        <div class="formbox">
+          <h5>FORM: Thiết lập salon (completeSalonRegistration)</h5>
+          <table class="fields">
+            <tr><td class="fn">salonName</td><td><span class="req">bắt buộc</span></td><td class="fd">Tên salon, ≤120 ký tự, hiển thị trên trang đặt lịch công khai</td></tr>
+            <tr><td class="fn">salonSlug</td><td><span class="req">bắt buộc</span></td><td class="fd">URL công khai, tự sinh từ tên, chỉ [a-z0-9-]</td></tr>
+            <tr><td class="fn">timezone</td><td><span class="req">bắt buộc</span></td><td class="fd">Múi giờ; mặc định America/Vancouver; gồm các TZ Canada/US/VN</td></tr>
+          </table>
+        </div>
+      </div>
+    </details>
+
+    <!-- Đăng nhập -->
+    <details class="flow">
+      <summary><span>🔓 Đăng nhập</span><span class="st b-done">Đã chạy</span><span class="chev">▸</span></summary>
+      <div class="flow-body">
+        <ol class="steps">
+          <li><b>Nhập số điện thoại</b> <span>— /login · pre-check SĐT phải thuộc chủ tiệm đã đăng ký</span></li>
+          <li><b>Nhập OTP 6 số</b> <span>— /login/verify · có "ghi nhớ thiết bị"</span></li>
+          <li><b>Vào dashboard</b> <span>— hoặc /choose-salon nếu là thành viên nhiều tiệm</span></li>
+        </ol>
+        <div class="formbox">
+          <h5>FORM: Nhập SĐT (sendLoginOtp) &amp; Verify (verifyLoginOtp)</h5>
+          <table class="fields">
+            <tr><td class="fn">phone</td><td><span class="req">bắt buộc</span></td><td class="fd">Định dạng E.164, 9–15 số, tự format khi gõ</td></tr>
+            <tr><td class="fn">code</td><td><span class="req">bắt buộc</span></td><td class="fd">6 chữ số, ô nhập tự nhảy</td></tr>
+            <tr><td class="fn">rememberDevice</td><td><span class="opt">tuỳ chọn</span></td><td class="fd">Checkbox, mặc định bật</td></tr>
+          </table>
+        </div>
+      </div>
+    </details>
+
+    <!-- Book cá nhân -->
+    <details class="flow">
+      <summary><span>📅 Khách book online (cá nhân)</span><span class="st b-done">Đã chạy</span><span class="chev">▸</span></summary>
+      <div class="flow-body">
+        <ol class="steps">
+          <li><b>Nhập SĐT</b> <span>— tra khách quen → tự điền tên + thẻ đã lưu</span></li>
+          <li><b>Chọn dịch vụ</b> <span>— theo nhóm; gợi ý add-on</span></li>
+          <li><b>Chọn thợ</b> <span>— "bất kỳ" hoặc thợ cụ thể (lọc theo khả năng)</span></li>
+          <li><b>Chọn ngày</b> <span>— lịch, khoá ngày đóng cửa</span></li>
+          <li><b>Chọn giờ</b> <span>— slot trống tính theo conflictCheck</span></li>
+          <li><b>Xác nhận</b> <span>— form thông tin bên dưới → tạo booking (RPC nguyên tử)</span></li>
+          <li><b>Màn xác nhận</b> <span>— QR theo dõi + file .ics + SMS/email</span></li>
+        </ol>
+        <div class="formbox">
+          <h5>FORM: Xác nhận đặt lịch (submitPublicBooking)</h5>
+          <table class="fields">
+            <tr><td class="fn">clientName</td><td><span class="req">bắt buộc</span></td><td class="fd">Tên khách; chặn ký tự lạ/XSS; ≤100</td></tr>
+            <tr><td class="fn">clientPhone</td><td><span class="req">bắt buộc</span></td><td class="fd">E.164, validateGuestPhone()</td></tr>
+            <tr><td class="fn">serviceId</td><td><span class="req">bắt buộc</span></td><td class="fd">Dịch vụ chính</td></tr>
+            <tr><td class="fn">staffId</td><td><span class="req">bắt buộc</span></td><td class="fd">"any" hoặc UUID thợ</td></tr>
+            <tr><td class="fn">timeSlot + date</td><td><span class="req">bắt buộc</span></td><td class="fd">Giờ "9:00 AM" + ngày YYYY-MM-DD</td></tr>
+            <tr><td class="fn">clientEmail</td><td><span class="opt">tuỳ chọn</span></td><td class="fd">Kiểm định dạng nếu nhập</td></tr>
+            <tr><td class="fn">clientNotes</td><td><span class="opt">tuỳ chọn</span></td><td class="fd">Ghi chú ≤500</td></tr>
+            <tr><td class="fn">addonServiceIds[]</td><td><span class="opt">tuỳ chọn</span></td><td class="fd">Dịch vụ kèm</td></tr>
+            <tr><td class="fn">healthAck</td><td><span class="opt">điều kiện</span></td><td class="fd">Bắt buộc nếu tiệm bật yêu cầu xác nhận sức khoẻ</td></tr>
+            <tr><td class="fn">noShowCardSourceId</td><td><span class="opt">điều kiện</span></td><td class="fd">Token thẻ Square nếu tiệm yêu cầu lưu thẻ</td></tr>
+            <tr><td class="fn">clientWebsite</td><td><span class="opt">honeypot</span></td><td class="fd">Bẫy bot — luôn để trống</td></tr>
+          </table>
+        </div>
+      </div>
+    </details>
+
+    <!-- Setup wizard -->
+    <details class="flow">
+      <summary><span>⚙️ Setup wizard salon</span><span class="st b-done">Đã chạy</span><span class="chev">▸</span></summary>
+      <div class="flow-body">
+        <ol class="steps">
+          <li><b>Địa chỉ</b> <span>— /setup/address</span></li>
+          <li><b>Giờ mở cửa</b> <span>— /setup/hours · 7 ngày + ngày đóng cửa</span></li>
+          <li><b>Dịch vụ</b> <span>— /setup/services · thêm/sửa/xoá menu</span></li>
+          <li><b>Thợ</b> <span>— /setup/staff · vai trò + khả năng từng dịch vụ</span></li>
+          <li><b>Hoàn tất</b> <span>— profile_complete khi có địa chỉ + ≥2 dịch vụ + ≥2 thợ</span></li>
+        </ol>
+        <div class="formbox">
+          <h5>FORM: Địa chỉ (updateAddress)</h5>
+          <table class="fields">
+            <tr><td class="fn">street / city / region / postal</td><td><span class="req">bắt buộc</span></td><td class="fd">Kiểm định theo từng quốc gia</td></tr>
+            <tr><td class="fn">country</td><td><span class="req">bắt buộc</span></td><td class="fd">Canada / US / VN…</td></tr>
+            <tr><td class="fn">phone</td><td><span class="req">bắt buộc</span></td><td class="fd">8–15 số, E.164</td></tr>
+            <tr><td class="fn">currency_code</td><td><span class="req">bắt buộc</span></td><td class="fd">CAD/USD/VND…</td></tr>
+            <tr><td class="fn">description</td><td><span class="opt">tuỳ chọn</span></td><td class="fd">AI tự viết nếu để trống</td></tr>
+          </table>
+        </div>
+        <div class="formbox">
+          <h5>FORM: Dịch vụ (addService) &amp; Thợ (addStaff)</h5>
+          <table class="fields">
+            <tr><td class="fn">Dịch vụ: name · price · duration · buffer · category</td><td><span class="req">bắt buộc</span></td><td class="fd">Giá cố định hoặc khoảng; cờ popular/featured/addon</td></tr>
+            <tr><td class="fn">Thợ: name · job_role · status · service capabilities</td><td><span class="req">bắt buộc</span></td><td class="fd">Vai trò owner/senior/nail_tech; chọn dịch vụ thợ làm được</td></tr>
+          </table>
+        </div>
+      </div>
+    </details>
+
+    <!-- Receptionist -->
+    <details class="flow">
+      <summary><span>🖥️ Receptionist Center (quầy lễ tân)</span><span class="st b-done">~95%</span><span class="chev">▸</span></summary>
+      <div class="flow-body">
+        <p style="color:var(--muted); font-size:14px; margin:6px 0 12px">Màn hình 3 vùng tại <b>/dashboard/[slug]/center</b>: cột thợ (trái) · lưới thời gian (giữa) · hàng chờ walk-in (phải). Real-time qua Supabase.</p>
+        <div class="formbox">
+          <h5>Hành động chính (đã có)</h5>
+          <table class="fields">
+            <tr><td class="fn">Thêm walk-in</td><td></td><td class="fd">SĐT (tra khách quen) · tên · dịch vụ · thợ yêu cầu · gán ngay hoặc vào hàng chờ</td></tr>
+            <tr><td class="fn">Sửa hẹn</td><td></td><td class="fd">Đổi giờ/thợ/dịch vụ/ghi chú; chỉ pending|confirmed; check trùng</td></tr>
+            <tr><td class="fn">Huỷ / No-show</td><td></td><td class="fd">Huỷ có nút undo 5s; đánh dấu no-show + tuỳ chọn thu phí</td></tr>
+            <tr><td class="fn">Kéo-thả lịch</td><td></td><td class="fd">Kéo block đổi giờ; kéo từ hàng chờ gán vào thợ</td></tr>
+            <tr><td class="fn">Drawer chi tiết</td><td></td><td class="fd">Xem khách, đổi giá cuối, gửi thông báo SMS/email</td></tr>
+          </table>
+        </div>
+        <p style="color:var(--muted2); font-size:13px; margin:10px 0 0">🟡 Đang dở: soft-hold giữ chỗ, party-card cho nhóm, UI escalation no-show.</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- 5. GO-LIVE -->
+  <section id="go-live">
+    <h2><span class="num">5</span> Cái thật sự chặn bạn chạy quảng cáo</h2>
+    <p class="lead">Không phải code. Là vài việc cấu hình. Làm xong danh sách này là bạn <b>mở khoá để chạy ads ngay</b> — không cần xây thêm tính năng nào.</p>
+
+    <div class="gl">
+      <div class="col card">
+        <h4>🔧 Cấu hình &amp; bảo mật</h4>
+        <ul class="chk">
+          <li>Supabase Auth: bật xác nhận email + chống mật khẩu rò rỉ</li>
+          <li>Vercel env: kiểm tra ANTHROPIC/STRIPE/SQUARE keys; <b>tắt DEMO_OTP</b> trên production<small>Đây là việc tối quan trọng — demo OTP lên prod là lỗ hổng</small></li>
+          <li>Rate-limit endpoint lưu thẻ (card-save) chống spam</li>
+          <li>Bật MFA cho superadmin (khuyến nghị)</li>
+        </ul>
+      </div>
+      <div class="col card">
+        <h4>💳 Thanh toán (cần Huy thao tác)</h4>
+        <ul class="chk">
+          <li>Tạo Square OAuth app → lấy Application ID + Secret<small>Mở khoá: lưu thẻ no-show, sau này sync menu/khách</small></li>
+          <li>Verify domain Apple Pay trên dashboard thanh toán</li>
+          <li>(v2) Kích hoạt Stripe Connect Express + KYC</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout" style="margin-top:18px">
+      <b>Thứ tự mình khuyên:</b> (1) Đóng băng v1 theo mục 3 → (2) làm xong checklist go-live này → (3) cho <b>1 tiệm thật chạy thử trọn vẹn 1 tuần</b> (Hi-Lite chẳng hạn) → (4) sửa đúng những gì khách thật vấp → (5) bật quảng cáo. Đừng xây thêm gì trong giai đoạn này.
+    </div>
+  </section>
+
+  <!-- 6. LỜI KHUYÊN -->
+  <section id="loi-khuyen">
+    <h2><span class="num">6</span> Lời khuyên của một người làm phần mềm lâu năm</h2>
+    <div class="card">
+      <p style="margin:0 0 14px"><b>1. Bạn đang ở vạch đích mà không biết.</b> Lõi v1 gần như đã xong. Cảm giác "chưa xong" đến từ việc so với <i>tầm nhìn</i>, không phải với <i>một sản phẩm bán được</i>. Hãy đo bằng thước đo thứ hai.</p>
+      <p style="margin:0 0 14px"><b>2. Đóng băng là một hành động kỷ luật, không phải bỏ cuộc.</b> Viết ra "v1 gồm đúng những cái này", rồi từ chối mọi thứ khác cho tới khi ship. Mỗi ý tưởng mới → ghi vào v2, không sửa vào v1.</p>
+      <p style="margin:0 0 14px"><b>3. Khách thật là người ra đề, không phải bạn.</b> Bạn sửa đăng ký/booking hoài vì đang tự đoán điều cần hoàn hảo. Cho 1 tiệm dùng thật → họ sẽ chỉ ra đúng 3 thứ cần sửa, thay vì 30 thứ bạn tưởng tượng.</p>
+      <p style="margin:0 0 14px"><b>4. Dọn 531 branch.</b> Đây là nguồn gây nhiễu tâm lý lớn — nhìn vào thấy "ngổn ngang chưa xong". Merge cái cần, xoá cái chết. Một cây git sạch giúp đầu óc sạch.</p>
+      <p style="margin:0"><b>5. Một nguồn sự thật duy nhất.</b> File này (hoặc bản cập nhật của nó) là bản đồ. Mỗi tuần nhìn lại 5 phút: v1 đã đóng băng chưa? checklist go-live tới đâu? Đừng để tài liệu tản mát ra 20 file QA nữa.</p>
+    </div>
+    <div class="callout" style="margin-top:16px">
+      Bạn không phải người lính đánh trận không có bản đồ nữa. Bản đồ đây rồi. Việc còn lại không phải xây thêm — mà là <b>can đảm vạch một đường, nói "tới đây là v1", và bước qua nó để gặp khách hàng.</b>
+    </div>
+  </section>
+
+  <footer>
+    NailIQ — Bản đồ sản phẩm &amp; Lộ trình phiên bản · Lập từ code thật ngày 17/06/2026<br/>
+    Tài liệu sống — cập nhật mỗi khi đóng băng một phiên bản hoặc hoàn tất một mốc go-live.
+  </footer>
+
+</div>
+</body>
+</html>

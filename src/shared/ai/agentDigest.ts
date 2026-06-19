@@ -4,6 +4,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { salonToday, salonDayRangeUtc } from "@/shared/lib/salonTime";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { parseOwnerNotificationSettings } from "@/shared/dashboard/ownerNotificationSettings";
+import { getOutcomeStats } from "@/shared/ai/agentOutcomeTracker";
 
 /**
  * Unified Daily Digest — ONE email per day in the Manager's voice.
@@ -128,6 +129,8 @@ function buildContext(
   agentActions: AgentSummary[],
   alerts: WatchdogAlert[],
   todayYmd: string,
+  outcomeLines: string[],
+  instructions: string | null,
 ): string {
   const revenue = (stats.revenueCents / 100).toFixed(0);
 
@@ -163,6 +166,12 @@ THỐNG KÊ HÔM NAY:
 
 VIỆC AI ĐÃ LÀM HÔM NAY:
 ${agentLines.length > 0 ? agentLines.join("\n") : "Không có hành động nào hôm nay."}
+
+HIỆU QUẢ 30 NGÀY QUA (% khách quay lại sau khi Minh liên hệ):
+${outcomeLines.length > 0 ? outcomeLines.join("\n") : "Chưa đủ dữ liệu (cần ít nhất 7 ngày sau khi gửi)."}
+
+CHỈ ĐẠO TỪ CHỦ TIỆM:
+${instructions?.trim() || "Không có chỉ đạo đặc biệt."}
 
 CẢNH BÁO (nếu có):
 ${alertLines.length > 0 ? alertLines.join("\n") : "Không có cảnh báo."}`;
@@ -298,11 +307,11 @@ export async function runDigest(salonId: string): Promise<void> {
 
     const { data: salonRow } = await db
       .from("salons" as never)
-      .select("name, feature_flags, timezone")
+      .select("name, feature_flags, timezone, ai_manager_instructions")
       .eq("id", salonId)
       .maybeSingle();
 
-    const s = salonRow as { name?: string; feature_flags?: Record<string, unknown>; timezone?: string } | null;
+    const s = salonRow as { name?: string; feature_flags?: Record<string, unknown>; timezone?: string; ai_manager_instructions?: string | null } | null;
     if (!s) return;
     if (s.feature_flags?.ai_unified_digest !== true) return;
 
@@ -325,13 +334,19 @@ export async function runDigest(salonId: string): Promise<void> {
     if (existing) return; // already sent today
 
     // Gather data in parallel
-    const [stats, agentActions, alerts] = await Promise.all([
+    const [stats, agentActions, alerts, outcomeStats] = await Promise.all([
       getBookingStats(salonId, tz),
       getTodayAgentActions(salonId, tz),
       getTodayWatchdogAlerts(salonId, tz),
+      getOutcomeStats(salonId),
     ]);
 
-    const context = buildContext(salonName, stats, agentActions, alerts, todayYmd);
+    const instructions = s.ai_manager_instructions ?? null;
+    const outcomeLines = outcomeStats.map(
+      (o) => `${o.label}: ${o.sent} gửi → ${o.converted} quay lại (${o.pct}%)`,
+    );
+
+    const context = buildContext(salonName, stats, agentActions, alerts, todayYmd, outcomeLines, instructions);
     const body = await draftDigest(context, salonName, "vi");
     if (!body) return;
 
