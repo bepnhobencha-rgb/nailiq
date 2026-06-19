@@ -134,6 +134,7 @@ export function BookingFlowConfirmPanel({
     const ack = healthAckOn ? healthAck : undefined;
     if (cardRequired) {
       setCardError(null);
+      cardRef.current?.clearError();
       // One-tap reuse of the saved card — no new tokenization.
       if (reuseSaved) {
         await onConfirm({ noShowReuseSavedCard: true, noShowConsent: true, healthAck: ack });

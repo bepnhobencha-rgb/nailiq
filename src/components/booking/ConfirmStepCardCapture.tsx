@@ -66,6 +66,9 @@ export type ConfirmStepCardHandle = {
    *  error is shown to the user). A wrong CVV/postal fails verification → null,
    *  so a bad card never gets saved. Called by the confirm button. */
   tokenize: () => Promise<{ token: string; verificationToken?: string } | null>;
+  /** Clears any stale error shown below the card form. The parent calls this
+   *  at the start of each confirm attempt so the user sees a clean slate. */
+  clearError: () => void;
 };
 
 type Props = {
@@ -100,6 +103,13 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
           const card = await payments.card();
           if (cancelled) return;
           await card.attach("#sq-confirm-card");
+          // Square fires 'errorChanged' when its own validation state changes.
+          // Use it to proactively clear our custom error so stale messages
+          // don't linger after the user corrects their card number.
+          try {
+            (card as unknown as { addEventListener: (e: string, h: () => void) => void })
+              .addEventListener("errorChanged", () => setError(null));
+          } catch { /* event not supported in all SDK versions — safe to ignore */ }
           cardRef.current = card;
           paymentsRef.current = payments;
           setReady(true);
@@ -113,6 +123,7 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
     }, [applicationId, locationId, environment, t.noShowCardError]);
 
     useImperativeHandle(ref, () => ({
+      clearError() { setError(null); },
       async tokenize() {
         if (!cardRef.current) {
           setError(t.noShowCardError ?? "Could not load the card form.");
@@ -154,11 +165,11 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
     return (
       <div className="mt-4 rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4">
         <p className="text-sm font-semibold text-[var(--booking-text)]">
-          {t.noShowCardTitle ?? "Secure your appointment"}
+          {t.noShowCardTitle ?? "Card required to confirm"}
         </p>
         <p className="mt-1 text-xs leading-relaxed text-[var(--booking-text-muted)]">
           {(t.noShowCardDesc ??
-            "Add a card to hold your spot. You're only charged {fee} if you don't show up — nothing now.").replace(
+            "A card on file is required to complete this booking. You'll only be charged {fee} if you miss your appointment — no charge today.").replace(
             "{fee}",
             feeLabel,
           )}
