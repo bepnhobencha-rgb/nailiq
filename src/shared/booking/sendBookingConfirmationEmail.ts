@@ -292,7 +292,7 @@ export async function sendBookingConfirmationEmail(
     const supabase = createServiceRoleClient();
     const { data: salonRow } = await supabase
       .from("salons")
-      .select("id, name, timezone, currency, reminders_enabled, address, salon_phone, email")
+      .select("id, name, timezone, currency_code, reminders_enabled, address, salon_phone, email")
       .eq("slug", input.shopSlug)
       .maybeSingle();
 
@@ -302,9 +302,35 @@ export async function sendBookingConfirmationEmail(
         ? salonRow.timezone.trim()
         : "America/Vancouver";
     const currencyCode =
-      typeof salonRow?.currency === "string" && salonRow.currency.trim()
-        ? salonRow.currency.trim()
+      typeof salonRow?.currency_code === "string" && salonRow.currency_code.trim()
+        ? salonRow.currency_code.trim()
         : "CAD";
+
+    const salonId =
+      typeof salonRow?.id === "string" ? salonRow.id : null;
+
+    // Idempotent claim BEFORE building/sending. Two paths send this email
+    // (publicBookingSideEffects + /api/booking/sms-confirm); the first to claim
+    // wins, the other gets "skip" and returns — no more duplicate confirmations.
+    const { claimNotificationOnce } = await import("@/shared/lib/notificationLog");
+    const claim = salonId
+      ? await claimNotificationOnce({
+          bookingId: input.bookingId,
+          salonId,
+          notificationType: "booking_confirmation",
+          channel: "email",
+          bodyPreview: `Email xác nhận → ${input.clientEmail}`,
+        })
+      : "unguarded";
+    if (claim === "skip") {
+      console.log(
+        "[sendBookingConfirmationEmail] duplicate suppressed for booking",
+        input.bookingId,
+      );
+      return;
+    }
+    const claimedRowId =
+      typeof claim === "string" && claim !== "unguarded" ? claim : null;
 
     const dateTimeStr = formatDateTimeForEmail(input.startTimeUtc, timezone);
     const confirmUrl = buildConfirmationUrl(input.shopSlug, input.bookingId);
@@ -317,8 +343,6 @@ export async function sendBookingConfirmationEmail(
     // the "contact the salon" copy.
     let manageLinks: ManageLinks | null = null;
     let savedCard: SavedCardInfo | null = null;
-    const salonId =
-      typeof salonRow?.id === "string" ? salonRow.id : null;
 
     // Look up a saved no-show card so we can disclose it + offer removal. The
     // card-management link is a stored-credential requirement, so we mint a
@@ -450,11 +474,18 @@ export async function sendBookingConfirmationEmail(
       console.log("[sendBookingConfirmationEmail] sent ok id=", res.data?.id);
     }
 
-    // Log to the activity feed (Email tab). Best-effort — never block the send.
-    if (salonId) {
-      try {
-        const { logNotification } = await import("@/shared/lib/notificationLog");
-        await logNotification({
+    // Resolve the claimed row to its final delivery state (Email tab). When we
+    // sent "unguarded" (no salonId to claim) fall back to a plain insert.
+    try {
+      const log = await import("@/shared/lib/notificationLog");
+      if (claimedRowId) {
+        await log.updateNotificationStatus(
+          claimedRowId,
+          !res.error,
+          res.error ? String(res.error.message ?? res.error) : null,
+        );
+      } else if (salonId) {
+        await log.logNotification({
           bookingId: input.bookingId,
           salonId,
           notificationType: "booking_confirmation",
@@ -463,9 +494,9 @@ export async function sendBookingConfirmationEmail(
           ok: !res.error,
           errorMessage: res.error ? String(res.error.message ?? res.error) : null,
         });
-      } catch {
-        /* logging is non-critical */
       }
+    } catch {
+      /* logging is non-critical */
     }
   } catch (e) {
     console.error("[sendBookingConfirmationEmail] threw", e);

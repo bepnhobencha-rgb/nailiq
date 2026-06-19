@@ -53,6 +53,17 @@ export async function GET(req: Request): Promise<NextResponse> {
         console.error("[manager] outcome_tracker", salon.slug, e);
         entry.outcome_tracker = String(e);
       }
+
+      // Rebuild SIP from live data if stale (>7 days or never built).
+      // Keeps the intelligence profile fresh without requiring owner action.
+      try {
+        const { rebuildSipIfStale } = await import("@/shared/ai/buildSip");
+        await rebuildSipIfStale(salon.id);
+        entry.sip = "ok";
+      } catch (e) {
+        console.error("[manager] sip rebuild", salon.slug, e);
+        entry.sip = String(e);
+      }
     }
 
     // AI no-show policy shadow/live backfill

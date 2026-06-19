@@ -52,9 +52,9 @@ export const bookingVi: BookingMessages = {
   calendarLegendClosed: "Nghỉ",
   scarcityFewSlots: "Chỉ còn {n} giờ trống — ngày này sắp đầy.",
   scarcityFewSlotsSoonest: "Chỉ còn {n} giờ trống — sớm nhất {time}.",
-  noShowCardTitle: "Giữ chỗ của bạn",
+  noShowCardTitle: "Cần thẻ để xác nhận",
   noShowCardDesc:
-    "Thêm thẻ để giữ chỗ. Bạn chỉ bị thu {fee} nếu không đến — không trừ gì bây giờ.",
+    "Bạn cần liên kết thẻ để hoàn tất đặt lịch này. Chỉ bị thu {fee} nếu không đến — không trừ gì hôm nay.",
   noShowCardSave: "Lưu thẻ",
   noShowCardSaving: "Đang lưu…",
   noShowCardSaved: "Đã lưu thẻ — chỉ thu {fee} nếu bạn không đến.",
@@ -63,7 +63,7 @@ export const bookingVi: BookingMessages = {
     "Tôi đồng ý với chính sách no-show và cho phép tiệm thu {fee} vào thẻ này chỉ khi tôi không đến.",
   noShowSavedCardOnFile: "Đã lưu",
   noShowSavedCardDesc:
-    "Sẽ dùng thẻ đã lưu của bạn. Bạn chỉ bị thu {fee} nếu không đến — không trừ gì bây giờ.",
+    "Sẽ dùng thẻ đã lưu của bạn. Chỉ bị thu {fee} nếu bạn không đến — không trừ gì hôm nay.",
   noShowUseDifferentCard: "Dùng thẻ khác",
   noShowUseSavedCard: "Dùng thẻ đã lưu của tôi",
   slotLoading: "Đang tải giờ trống…",
@@ -187,7 +187,7 @@ export const bookingVi: BookingMessages = {
   salonNotLiveHeading: "Tạm dừng nhận đặt lịch",
   salonNotLiveBody:
     "{shop} đang hoàn tất cài đặt và chưa nhận đặt lịch online. Vui lòng quay lại sau.",
-  upsellHeading: "Thợ của bạn còn rảnh {n} phút — muốn thêm dịch vụ không?",
+  upsellHeading: "Thêm dịch vụ vào lần này không? ({n} phút trống)",
   upsellNoThanks: "Không, cảm ơn",
   upsellToggleHint:
     "Chọn trước khi xác nhận để gộp chung với lịch đặt.",

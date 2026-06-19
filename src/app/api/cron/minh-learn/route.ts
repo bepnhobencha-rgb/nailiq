@@ -13,6 +13,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { analyzeChannelFailures } from "@/shared/ai/analyzeChannelFailures";
 import { analyzeAgentOutcomes } from "@/shared/ai/analyzeOutcomes";
 import { getChannelCostSummary } from "@/shared/ai/channelCostTracker";
+import { processExpiredAndRemind } from "@/shared/ai/approvalRequests";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -101,8 +102,19 @@ export async function GET(req: Request): Promise<NextResponse> {
     results.push(entry);
   }
 
+  // 4. Process expired approval requests + send reminders for stale pending ones
+  let expiredApprovals = 0;
+  let remindedApprovals = 0;
+  try {
+    const approvalResult = await processExpiredAndRemind();
+    expiredApprovals = approvalResult.expired;
+    remindedApprovals = approvalResult.reminded;
+  } catch (e) {
+    console.error("[minh-learn] approval_requests maintenance", e);
+  }
+
   // Summary log to ai_actions_log (global — salon_id null)
-  if (totalLessonsCreated > 0 || totalLessonsAdjusted > 0) {
+  if (totalLessonsCreated > 0 || totalLessonsAdjusted > 0 || expiredApprovals > 0 || remindedApprovals > 0) {
     await supabase.from("ai_actions_log" as never).insert({
       salon_id: null,
       agent: "minh_self_learn",
@@ -112,6 +124,8 @@ export async function GET(req: Request): Promise<NextResponse> {
         salons_processed: results.length,
         lessons_created: totalLessonsCreated,
         lessons_adjusted: totalLessonsAdjusted,
+        approvals_expired: expiredApprovals,
+        approvals_reminded: remindedApprovals,
         ran_at: new Date().toISOString(),
       },
     } as never);
@@ -122,6 +136,8 @@ export async function GET(req: Request): Promise<NextResponse> {
     processed: results.length,
     totalLessonsCreated,
     totalLessonsAdjusted,
+    expiredApprovals,
+    remindedApprovals,
     results,
   });
 }

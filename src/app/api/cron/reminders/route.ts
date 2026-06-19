@@ -6,6 +6,7 @@ import { resolveVertical } from "@/shared/verticals/registry";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { logNotification } from "@/shared/lib/notificationLog";
 import { reminderLang, buildReminderSmsBody } from "@/shared/reminders/reminderSmsBody";
+import { isUsPhone } from "@/shared/lib/phoneRegion";
 
 /** Vercel Cron calls this route every 15 minutes with the CRON_SECRET header. */
 export const runtime = "nodejs";
@@ -35,6 +36,7 @@ type BookingRow = {
     reminder_24h_enabled: boolean;
     reminder_3h_enabled: boolean;
     sms_reminders_enabled: boolean;
+    sms_a2p_registered: boolean | null;
     feature_flags: Record<string, unknown> | null;
   } | null;
 };
@@ -92,7 +94,7 @@ export async function GET(req: Request) {
     no_show_risk_score, client_locale,
     reminder_24h_sent_at, reminder_3h_sent_at,
     services!bookings_service_id_fkey(name), staff(name),
-    salons(name, slug, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, feature_flags)`;
+    salons(name, slug, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, sms_a2p_registered, feature_flags)`;
 
   // Fetch both email-eligible AND SMS-eligible bookings (no email filter here).
   const { data: need24h } = await supabase
@@ -122,7 +124,21 @@ export async function GET(req: Request) {
     if (reminderType === "3h"  && !salon.reminder_3h_enabled)  return;
 
     const wantsEmail = !!booking.client_email;
-    const wantsSms   = salon.sms_reminders_enabled && !!booking.client_phone;
+    const smsA2pRegistered = salon.sms_a2p_registered !== false; // default true — only explicit false blocks
+    let wantsSms   = salon.sms_reminders_enabled && !!booking.client_phone;
+    // A2P 10DLC guardrail: US numbers require A2P registration; skip SMS if not registered.
+    if (wantsSms && isUsPhone(booking.client_phone) && !smsA2pRegistered) {
+      wantsSms = false;
+      void logNotification({
+        bookingId: booking.id,
+        salonId: booking.salon_id,
+        notificationType: reminderType === "24h" ? "reminder_24h" : "reminder_3h",
+        channel: "sms",
+        clientPhone: `+${booking.client_phone}`,
+        ok: false,
+        errorMessage: "a2p_not_registered",
+      });
+    }
 
     if (!wantsEmail && !wantsSms) return;
 

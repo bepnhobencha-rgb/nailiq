@@ -51,9 +51,9 @@ export const bookingEn = {
   /** Live-availability teaser (#7): scarcity hint + soonest open time. */
   scarcityFewSlotsSoonest: "Only {n} open times left — soonest {time}.",
   // No-show protection — Square card-on-file (charged only on a no-show).
-  noShowCardTitle: "Secure your appointment",
+  noShowCardTitle: "Card required to confirm",
   noShowCardDesc:
-    "Add a card to hold your spot. You're only charged {fee} if you don't show up — nothing now.",
+    "A card on file is required to complete this booking. You'll only be charged {fee} if you miss your appointment — no charge today.",
   noShowCardSave: "Save card",
   noShowCardSaving: "Saving…",
   noShowCardSaved: "Card saved — you're only charged {fee} if you no-show.",
@@ -62,7 +62,7 @@ export const bookingEn = {
     "I agree to the no-show policy and authorize this salon to charge {fee} to this card only if I don't show up.",
   noShowSavedCardOnFile: "On file",
   noShowSavedCardDesc:
-    "We'll use your saved card. You're only charged {fee} if you don't show up — nothing now.",
+    "We'll use your saved card. You'll only be charged {fee} if you miss your appointment — no charge today.",
   noShowUseDifferentCard: "Use a different card",
   noShowUseSavedCard: "Use my saved card instead",
   slotLoading: "Loading times…",
@@ -208,7 +208,7 @@ export const bookingEn = {
   salonNotLiveBody:
     "{shop} is finishing setup and isn’t taking online bookings yet. Please check back soon.",
   /** `{n}` = staff free-gap minutes after the chosen service. */
-  upsellHeading: "Your tech is free for {n} more minutes — want to add a service?",
+  upsellHeading: "Add a service to your visit? ({n} min available)",
   upsellNoThanks: "No thanks",
   upsellToggleHint: "Pick one before you confirm to bundle it with your booking.",
   upsellAddonNeedsTime: "pick a time that fits →",

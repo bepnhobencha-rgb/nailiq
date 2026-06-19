@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition, useRef, useCallback } from "react";
-import { updateAiAgentFlag, updateAiManagerInstructions } from "@/shared/dashboard/salonOwnerActions";
+import { updateAiAgentFlag, updateAiManagerInstructions, updateOwnerNotificationSettings } from "@/shared/dashboard/salonOwnerActions";
 import type { AiAgentFlagKey, AiAgentFlags } from "@/shared/dashboard/aiAgentTypes";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
@@ -9,6 +10,8 @@ type Props = {
   slug: string;
   initialFlags: AiAgentFlags;
   initialInstructions?: string | null;
+  initialNotifChannel?: "email" | "sms" | "both";
+  initialOwnerPhone?: string;
 };
 
 type AgentDef = {
@@ -170,6 +173,107 @@ function AgentToggle({
   );
 }
 
+function NotificationSettingsField({
+  slug,
+  initialChannel,
+  initialPhone,
+  vi,
+}: {
+  slug: string;
+  initialChannel: "email" | "sms" | "both";
+  initialPhone: string;
+  vi: boolean;
+}) {
+  const [channel, setChannel] = useState<"email" | "sms" | "both">(initialChannel);
+  const [phone, setPhone] = useState(initialPhone);
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [, startTransition] = useTransition();
+
+  const save = useCallback(
+    (ch: "email" | "sms" | "both", ph: string) => {
+      setStatus("saving");
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
+        startTransition(async () => {
+          const res = await updateOwnerNotificationSettings(slug, { channel: ch, phone: ph });
+          setStatus(res.ok ? "saved" : "error");
+          setTimeout(() => setStatus("idle"), 2000);
+        });
+      }, 800);
+    },
+    [slug],
+  );
+
+  const CHANNELS: { value: "email" | "sms" | "both"; labelVi: string; labelEn: string }[] = [
+    { value: "email", labelVi: "Email", labelEn: "Email" },
+    { value: "sms", labelVi: "SMS", labelEn: "SMS" },
+    { value: "both", labelVi: "Cả hai", labelEn: "Both" },
+  ];
+
+  return (
+    <div className="mt-4 border-t border-nq-border/20 pt-4">
+      <p className="mb-1 text-xs font-semibold text-nq-foreground">
+        {vi ? "📬 Kênh nhận báo cáo từ Minh" : "📬 How Minh reaches you"}
+      </p>
+      <p className="mb-3 text-xs text-nq-muted">
+        {vi
+          ? "Minh gửi digest, cảnh báo và tin ACT+UNDO qua kênh này."
+          : "Minh sends daily digests, alerts, and ACT+UNDO notifications via this channel."}
+      </p>
+
+      <div className="mb-3 flex gap-2">
+        {CHANNELS.map((c) => (
+          <button
+            key={c.value}
+            type="button"
+            onClick={() => {
+              setChannel(c.value);
+              save(c.value, phone);
+            }}
+            className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+              channel === c.value
+                ? "border-nq-primary bg-nq-primary/10 text-nq-primary"
+                : "border-nq-border/30 text-nq-muted hover:border-nq-primary/30 hover:text-nq-foreground"
+            }`}
+          >
+            {vi ? c.labelVi : c.labelEn}
+          </button>
+        ))}
+      </div>
+
+      {(channel === "sms" || channel === "both") && (
+        <input
+          type="tel"
+          value={phone}
+          onChange={(e) => {
+            setPhone(e.target.value);
+            save(channel, e.target.value);
+          }}
+          placeholder={vi ? "+1 (604) 555-0100" : "+1 (604) 555-0100"}
+          className="w-full rounded-lg border border-nq-border/30 bg-nq-surface/50 px-3 py-2 text-xs text-nq-foreground placeholder:text-nq-muted/50 focus:outline-none focus:ring-1 focus:ring-nq-primary/50"
+        />
+      )}
+
+      <div className="mt-1 flex justify-end">
+        <span
+          className={`text-xs transition-opacity ${status === "idle" ? "opacity-0" : "opacity-100"} ${
+            status === "saved" ? "text-green-400" : status === "error" ? "text-red-400" : "text-nq-muted"
+          }`}
+        >
+          {status === "saving"
+            ? (vi ? "Đang lưu..." : "Saving...")
+            : status === "saved"
+              ? (vi ? "Đã lưu ✓" : "Saved ✓")
+              : status === "error"
+                ? (vi ? "Lỗi lưu" : "Save failed")
+                : ""}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function InstructionsField({
   slug,
   initialValue,
@@ -256,7 +360,7 @@ function InstructionsField({
   );
 }
 
-export function AiManagerHub({ slug, initialFlags, initialInstructions }: Props) {
+export function AiManagerHub({ slug, initialFlags, initialInstructions, initialNotifChannel = "email", initialOwnerPhone = "" }: Props) {
   const { language } = useUserLanguage();
   const vi = language === "vi";
 
@@ -265,14 +369,32 @@ export function AiManagerHub({ slug, initialFlags, initialInstructions }: Props)
       data-testid="settings-ai-manager-hub"
       className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-4"
     >
-      <p className="mb-1 text-xs font-medium uppercase tracking-wider text-nq-muted">
-        {vi ? "Minh — AI Quản Lý" : "Minh — AI Manager"}
-      </p>
-      <p className="mb-4 text-xs text-nq-muted">
-        {vi
-          ? "Bật/tắt từng agent AI. Mỗi agent tự điều tiết — bật an toàn mà không lo spam."
-          : "Toggle each AI agent on or off. Every agent self-throttles — safe to enable without risk of over-messaging."}
-      </p>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-nq-muted">
+            {vi ? "Minh — AI Quản Lý" : "Minh — AI Manager"}
+          </p>
+          <p className="mt-0.5 text-xs text-nq-muted">
+            {vi
+              ? "Bật/tắt từng agent AI. Mỗi agent tự điều tiết — bật an toàn mà không lo spam."
+              : "Toggle each AI agent on or off. Every agent self-throttles — safe to enable without risk of over-messaging."}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Link
+            href={`/dashboard/${slug}/setup/manager-briefing`}
+            className="rounded-full border border-nq-border/30 px-3 py-1 text-xs text-nq-muted transition-colors hover:border-nq-primary/40 hover:text-nq-primary"
+          >
+            {vi ? "Cấu hình →" : "Configure →"}
+          </Link>
+          <Link
+            href={`/dashboard/${slug}/manager`}
+            className="rounded-full border border-nq-border/30 px-3 py-1 text-xs text-nq-muted transition-colors hover:border-nq-primary/40 hover:text-nq-primary"
+          >
+            {vi ? "Nhật ký →" : "Activity →"}
+          </Link>
+        </div>
+      </div>
 
       <div className="divide-y divide-nq-border/20">
         {AGENTS.map((agent) => (
@@ -285,6 +407,13 @@ export function AiManagerHub({ slug, initialFlags, initialInstructions }: Props)
           />
         ))}
       </div>
+
+      <NotificationSettingsField
+        slug={slug}
+        initialChannel={initialNotifChannel}
+        initialPhone={initialOwnerPhone}
+        vi={vi}
+      />
 
       <InstructionsField
         slug={slug}

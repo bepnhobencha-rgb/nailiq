@@ -58,6 +58,7 @@ import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { MobileAccountCard } from "@/components/dashboard/MobileAccountCard";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
+import { MessagingSettings } from "@/app/dashboard/[slug]/settings/MessagingSettings";
 
 export function SalonSettingsHub({
   slug,
@@ -95,12 +96,17 @@ export function SalonSettingsHub({
   clientAtRiskDays,
   aiFlags,
   aiManagerInstructions,
+  ownerNotifChannel,
+  ownerPhone,
   userEmail,
   role,
   salonName,
   salons,
   resourcesEnabled,
   primaryGridAxis,
+  smsOutboundEnabled,
+  emailOutboundEnabled,
+  smsA2pRegistered,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -138,12 +144,20 @@ export function SalonSettingsHub({
   clientAtRiskDays: number;
   aiFlags: AiAgentFlags;
   aiManagerInstructions?: string | null;
+  ownerNotifChannel: "email" | "sms" | "both";
+  ownerPhone: string | null;
   userEmail: string | null;
   role: string;
   salonName?: string;
   salons?: OwnerSalonSummary[];
   resourcesEnabled: boolean;
   primaryGridAxis: "staff" | "resource";
+  /** Operator-level SMS kill-switch (default ON). */
+  smsOutboundEnabled: boolean;
+  /** Operator-level email kill-switch (default ON). */
+  emailOutboundEnabled: boolean;
+  /** Whether A2P 10DLC registration is complete (superadmin-set; read-only here). */
+  smsA2pRegistered: boolean;
 }) {
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
@@ -476,6 +490,16 @@ export function SalonSettingsHub({
           <CustomerChannelCard slug={slug} />
         ) : null}
 
+        {/* ── Messaging & Email master toggles + A2P badge ─────── */}
+        {canManageSalonSettings ? (
+          <MessagingSettings
+            slug={slug}
+            initialSmsEnabled={smsOutboundEnabled}
+            initialEmailEnabled={emailOutboundEnabled}
+            smsA2pRegistered={smsA2pRegistered}
+          />
+        ) : null}
+
         {/* ── Manager + staff notification cards ──────────────── */}
         {canManageSalonSettings ? (
           <OwnerNotificationCard slug={slug} />
@@ -575,7 +599,7 @@ export function SalonSettingsHub({
           subtitle={vi ? "Bật/tắt từng agent AI cho tiệm" : "Toggle AI agents for your salon"}
           defaultOpen={false}
         >
-          <AiManagerHub slug={slug} initialFlags={aiFlags} initialInstructions={aiManagerInstructions} />
+          <AiManagerHub slug={slug} initialFlags={aiFlags} initialInstructions={aiManagerInstructions} initialNotifChannel={ownerNotifChannel} initialOwnerPhone={ownerPhone ?? ""} />
         </SettingsCategory>
         ) : null}
 
