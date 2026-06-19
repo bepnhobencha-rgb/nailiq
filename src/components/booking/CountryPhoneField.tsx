@@ -5,6 +5,7 @@ import {
   PHONE_COUNTRIES,
   countryByIso,
   defaultPhoneCountry,
+  neighborCluster,
   toE164Input,
   type PhoneCountry,
 } from "@/shared/booking/phoneCountries";
@@ -53,26 +54,46 @@ export default function CountryPhoneField({
   language = "en",
   id = "country-phone",
   testId = "country-phone",
-  inputClassName = "nq-booking-field",
   autoComplete = "tel",
 }: Props) {
   const fallback = useMemo(
     () => defaultPhoneCountry(salonTimezone),
     [salonTimezone],
   );
+  // The salon's regional cluster (salon country + daily-crossing neighbours).
+  const cluster = useMemo(() => neighborCluster(fallback.iso), [fallback.iso]);
   const detected = useMemo(() => detectCountry(value, fallback), [value, fallback]);
 
-  const [iso, setIso] = useState<string>(detected?.country.iso ?? fallback.iso);
+  const initialIso = detected?.country.iso ?? fallback.iso;
+  const [iso, setIso] = useState<string>(initialIso);
   // National digits the user typed (display value of the text input).
   const [national, setNational] = useState<string>(detected?.national ?? "");
+  // Expand to the full worldwide list when the customer picks "Other", or when
+  // a prefilled number is from a country outside the salon's cluster.
+  const [showAll, setShowAll] = useState<boolean>(
+    !cluster.some((c) => c.iso === initialIso),
+  );
 
   const country = countryByIso(iso) ?? fallback;
+  const label = (c: PhoneCountry) => (language === "vi" ? c.nameVi : c.name);
 
   function emit(nextCountry: PhoneCountry, nextNational: string) {
     onChange(toE164Input(nextCountry, nextNational));
   }
 
   function onCountryChange(nextIso: string) {
+    if (nextIso === "__other__") {
+      setShowAll(true);
+      return;
+    }
+    if (nextIso === "__cluster__") {
+      setShowAll(false);
+      if (!cluster.some((c) => c.iso === iso)) {
+        setIso(fallback.iso);
+        emit(fallback, national);
+      }
+      return;
+    }
     setIso(nextIso);
     const c = countryByIso(nextIso) ?? fallback;
     emit(c, national);
@@ -94,17 +115,31 @@ export default function CountryPhoneField({
         value={iso}
         onChange={(e) => onCountryChange(e.target.value)}
         className="nq-booking-field"
-        style={{ width: "110px", flexShrink: 0 }}
+        style={{ width: showAll ? "150px" : "78px", flexShrink: 0 }}
       >
-        {PHONE_COUNTRIES.map((c) => (
-          <option
-            key={c.iso}
-            value={c.iso}
-            title={language === "vi" ? c.nameVi : c.name}
-          >
-            {c.iso} +{c.dial}
-          </option>
-        ))}
+        {showAll ? (
+          <>
+            <option value="__cluster__">
+              {language === "vi" ? "‹ Khu vực gần" : "‹ Nearby"}
+            </option>
+            {PHONE_COUNTRIES.map((c) => (
+              <option key={c.iso} value={c.iso} title={label(c)}>
+                {c.iso}  {label(c)}
+              </option>
+            ))}
+          </>
+        ) : (
+          <>
+            {cluster.map((c) => (
+              <option key={c.iso} value={c.iso} title={label(c)}>
+                {c.iso}
+              </option>
+            ))}
+            <option value="__other__">
+              {language === "vi" ? "Khác…" : "Other…"}
+            </option>
+          </>
+        )}
       </select>
 
       <div

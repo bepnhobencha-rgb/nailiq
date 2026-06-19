@@ -130,6 +130,31 @@ export function countryByIso(iso: string): PhoneCountry | undefined {
   return COUNTRY_BY_ISO.get(iso.toUpperCase());
 }
 
+// Regional clusters = countries whose residents plausibly cross borders and use
+// each other's salons (daily commuters, neighbours). The picker shows only the
+// salon's cluster by default (compact), with an "Other" escape to the full list.
+const REGION_CLUSTERS: readonly (readonly string[])[] = [
+  ["US", "CA", "MX"], // North America
+  ["GB", "IE"], // UK & Ireland
+  ["FR", "DE", "BE", "NL", "LU", "CH", "AT", "IT", "ES", "PT"], // Western/Central Europe
+  ["SE", "NO", "DK", "FI"], // Nordics
+  ["AE", "SA", "QA", "KW", "BH", "OM"], // Gulf
+  ["SG", "MY", "ID", "TH"], // Southeast Asia
+  ["AU", "NZ"], // Australia / New Zealand
+];
+
+/** The country cluster to show for a salon in `iso`, with the salon's own
+ *  country first. Falls back to just the salon's country when it isn't part of
+ *  a defined cluster. */
+export function neighborCluster(iso: string): PhoneCountry[] {
+  const up = iso.toUpperCase();
+  const found = REGION_CLUSTERS.find((c) => c.includes(up));
+  const order = found ? [up, ...found.filter((i) => i !== up)] : [up];
+  return order
+    .map((i) => countryByIso(i))
+    .filter((c): c is PhoneCountry => Boolean(c));
+}
+
 /** Resolve the default country for the picker from the salon's timezone.
  *  Always returns a valid country (falls back to US). */
 export function defaultPhoneCountry(timezone?: string | null): PhoneCountry {
