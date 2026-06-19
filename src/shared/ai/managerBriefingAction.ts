@@ -54,7 +54,7 @@ const SYSTEM_PROMPT = `Bạn là trợ lý AI đang thực hiện "Manager Brief
 2. Khách hàng chủ yếu là ai? Họ nói tiếng gì?
 3. No-show có phải vấn đề lớn không? Đang xử lý thế nào?
 4. Muốn liên hệ khách bao thường? Có giờ nào không nên nhắn không?
-5. Nếu tiệm là một người, họ nói chuyện thế nào — ấm áp hay chuyên nghiệp?
+5. Khi nhắn tin cho khách, bạn thích dùng giọng thế nào — thân mật như bạn bè, hay lịch sự chuyên nghiệp? Cho ví dụ câu nhắn bạn hay dùng nếu được.
 6. Hiện tại ưu tiên gì nhất — giữ khách cũ, kéo khách mới, hay tăng doanh thu?
 7. AI được tự làm gì không cần hỏi? Có thứ gì muốn luôn kiểm soát không?
 
