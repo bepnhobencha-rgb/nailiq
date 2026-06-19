@@ -344,7 +344,13 @@ function ReceptionistCenterInner({
   const { language, setLanguage } = useUserLanguage();
   const messages = useMemo(() => getUserMessages(language), [language]);
 
-  const [nowIso, setNowIso] = useState(() => new Date().toISOString());
+  // Empty-string initial value so SSR and client hydration produce the same
+  // output (same pattern as `originBaseUrl` below). Initialising with
+  // `new Date().toISOString()` makes the server-render timestamp differ from
+  // the client hydration timestamp → React #418 mismatch on overdue overlays,
+  // today-badge, and the now-line. After mount the useEffect sets the real time
+  // immediately, then ticks every minute as before.
+  const [nowIso, setNowIso] = useState<string>("");
   const nowIsoRef = useRef(nowIso);
   /* Sync ref via effect (not during render) so reloadCurrentDay's callback
      can read the latest value without including nowIso in its deps. */
@@ -353,9 +359,9 @@ function ReceptionistCenterInner({
   });
 
   useEffect(() => {
-    const tick = window.setInterval(() => {
-      setNowIso(new Date().toISOString());
-    }, 60_000);
+    const update = () => setNowIso(new Date().toISOString());
+    update(); // Populate immediately after hydration — then tick every minute.
+    const tick = window.setInterval(update, 60_000);
     return () => window.clearInterval(tick);
   }, []);
 
