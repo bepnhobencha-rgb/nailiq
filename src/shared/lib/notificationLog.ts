@@ -69,6 +69,78 @@ export async function logNotification(
   return (data as { id: string } | null)?.id ?? null;
 }
 
+/**
+ * Result of an idempotent claim attempt:
+ *  - string  → THIS caller won; row id to update once the send resolves.
+ *  - "skip"  → another path already owns this (booking, type, channel); do NOT send.
+ *  - "unguarded" → couldn't claim atomically (e.g. no salonId, or a non-unique
+ *                  DB error); proceed best-effort WITHOUT a row (avoids dropping
+ *                  a real send just because logging hiccuped).
+ */
+export type NotificationClaim = string | "skip" | "unguarded";
+
+/**
+ * Atomically claim the right to send a one-per-booking notification, relying on
+ * the partial unique index `(booking_id, channel) where notification_type =
+ * 'booking_confirmation'`. The first caller inserts a `status='sending'` row and
+ * wins; concurrent callers hit a 23505 unique violation and get "skip". This is
+ * what makes the two confirmation-email paths (publicBookingSideEffects +
+ * /api/booking/sms-confirm) race-proof — previously only one had a (racy) guard.
+ */
+export async function claimNotificationOnce(
+  params: Omit<LogNotificationParams, "ok">,
+): Promise<NotificationClaim> {
+  const supabase = createServiceRoleClient();
+  const row = {
+    booking_id: params.bookingId,
+    salon_id: params.salonId,
+    notification_type: params.notificationType,
+    channel: params.channel,
+    status: "sending",
+    client_phone: params.clientPhone ?? null,
+    twilio_message_sid: params.messageSid ?? null,
+    body_preview: params.bodyPreview ? params.bodyPreview.slice(0, 120) : null,
+    sent_at: null,
+    failed_at: null,
+    error_message: null,
+  };
+
+  const { data, error } = await supabase
+    .from("booking_notifications" as never)
+    .insert(row)
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    // 23505 = unique_violation → a concurrent path already claimed this slot.
+    if ((error as { code?: string }).code === "23505") return "skip";
+    // Any other error: don't silently drop a real customer notification.
+    console.error("[claimNotificationOnce]", error);
+    return "unguarded";
+  }
+  return (data as { id: string } | null)?.id ?? "unguarded";
+}
+
+/** Resolve a claimed `sending` row to its final delivery state. */
+export async function updateNotificationStatus(
+  id: string,
+  ok: boolean,
+  errorMessage?: string | null,
+): Promise<void> {
+  const supabase = createServiceRoleClient();
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from("booking_notifications" as never)
+    .update({
+      status: ok ? "sent" : "failed",
+      sent_at: ok ? now : null,
+      failed_at: ok ? null : now,
+      error_message: errorMessage ?? null,
+    })
+    .eq("id", id);
+  if (error) console.error("[updateNotificationStatus]", error);
+}
+
 /** Called by Twilio status webhook to update delivery status. */
 export async function updateNotificationBySid(
   messageSid: string,
