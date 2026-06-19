@@ -2,8 +2,6 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { sendSmsReminder } from "@/shared/lib/twilioSms";
-import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 
@@ -173,24 +171,7 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
 
       const channel: "sms" | "email" = ch.email ? "email" : "sms";
 
-      let ok = false;
-      if (ch.sms) {
-        const r = await sendSmsReminder(c.phone, `${message}\n${bookingUrl}`, { lang });
-        ok = r.ok;
-      }
-      if (ch.email && c.email) {
-        const resend = getResendClient();
-        if (resend) {
-          const esc = (x: string) => x.replace(/[<>&"]/g, (c2) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c2] ?? c2));
-          const html = `<div style="max-width:480px;margin:0 auto;font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a"><p style="font-size:15px;line-height:1.7;margin:0 0 16px">${esc(message)}</p><a href="${bookingUrl}" style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:14px">Book now</a><p style="font-size:12px;color:#999;margin-top:20px">${esc(salonName)}</p></div>`;
-          const { error } = await resend.emails.send({ from: getResendFrom(), to: c.email, subject: `Time for your next visit at ${salonName}`, html, text: `${message}\n\n${bookingUrl}`, ...(salonReplyEmail ? { replyTo: salonReplyEmail } : {}) });
-          ok = ok || !error;
-        }
-      }
-
-      if (!ok) continue;
-      sentCount++;
-
+      // Save as 'suggested' — owner reviews in Activity feed before sending.
       const { data: inserted } = await svc
         .from("winback_suggestions" as never)
         .insert({
@@ -204,7 +185,7 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
           lang,
           channel,
           message,
-          status: "sent",
+          status: "suggested",
         } as never)
         .select("id")
         .single();
@@ -214,19 +195,21 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
       await svc.from("ai_actions_log" as never).insert({
         salon_id: salonId,
         agent: "rebook",
-        action_type: `sent_${channel}`,
+        action_type: "suggestion_pending",
         target_id: suggestionId,
         payload: { name: c.name, channel, reason: ch.reason, message_preview: message.slice(0, 120) },
-        undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        undo_deadline: null,
       } as never);
+
+      sentCount++;
     }
 
     if (sentCount > 0) {
       void sendOwnerAlert(salonId, {
-        subject: `${salonName} — AI sent ${sentCount} rebook reminder${sentCount > 1 ? "s" : ""}`,
+        subject: `${salonName} — ${sentCount} rebook draft${sentCount > 1 ? "s" : ""} ready for review`,
         bodyText:
-          `AI Manager nhắc ${sentCount} khách tới kỳ ghé lại. ` +
-          `Undo được trong 60 phút từ Activity feed.`,
+          `AI Manager soạn ${sentCount} tin nhắc tái ghé, chờ bạn duyệt trước khi gửi. ` +
+          `Vào Activity → tab "Giữ khách" để xem và gửi.`,
       });
     }
   } catch (e) {

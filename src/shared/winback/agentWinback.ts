@@ -2,8 +2,6 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { sendSmsReminder } from "@/shared/lib/twilioSms";
-import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 
@@ -117,47 +115,10 @@ Rules: 1-2 sentences, friendly + personal, mention the salon by name, if a servi
 
 const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
 
-async function sendWinbackSms(
-  phone: string,
-  message: string,
-  bookingUrl: string,
-): Promise<boolean> {
-  const body = `${message}\n${bookingUrl}`;
-  const r = await sendSmsReminder(phone, body, { lang: "en" });
-  return r.ok;
-}
-
-async function sendWinbackEmail(
-  toEmail: string,
-  clientName: string,
-  salonName: string,
-  message: string,
-  bookingUrl: string,
-  salonReplyEmail?: string | null,
-): Promise<boolean> {
-  const resend = getResendClient();
-  if (!resend) return false;
-  const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] ?? c));
-  const html = `<div style="max-width:480px;margin:0 auto;font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a">
-  <p style="font-size:15px;line-height:1.7;margin:0 0 16px">${esc(message)}</p>
-  <a href="${bookingUrl}" style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:14px">Book now</a>
-  <p style="font-size:12px;color:#999;margin-top:20px">${esc(salonName)}</p>
-</div>`;
-  const { error } = await resend.emails.send({
-    from: getResendFrom(),
-    to: toEmail,
-    subject: `${salonName} — we'd love to see you again`,
-    html,
-    text: `${message}\n\n${bookingUrl}\n\n${salonName}`,
-    ...(salonReplyEmail ? { replyTo: salonReplyEmail } : {}),
-  });
-  return !error;
-}
-
 /**
- * Run win-back for one salon: opt-in (feature_flags.ai_winback), sends up to
- * `cap` messages per call with ACT+UNDO (60-min window). Logs to ai_actions_log.
- * 30-day dedupe means it goes quiet once the lapsed list is covered.
+ * Run win-back for one salon: opt-in (feature_flags.ai_winback), drafts up to
+ * `cap` messages per call and saves as 'suggested'. Owner reviews in Activity
+ * feed before anything is sent. 30-day dedupe prevents repeat suggestions.
  */
 export async function runWinback(salonId: string, cap = 3): Promise<void> {
   try {
@@ -212,24 +173,10 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
       const message = await agentDraftWinback(c, salonName, lang);
       if (!message) continue;
 
-      // Derive a single canonical channel for logging (prefer email to record deliverability).
+      // Derive a single canonical channel (prefer email for deliverability tracking).
       const channel: "sms" | "email" = ch.email ? "email" : "sms";
 
-      // Send to customer first; only log if successful.
-      let ok = false;
-      if (ch.sms) {
-        ok = await sendWinbackSms(c.phone, message, bookingUrl);
-      }
-      if (ch.email && c.email) {
-        const emailOk = await sendWinbackEmail(c.email, c.name, salonName, message, bookingUrl, salonReplyEmail);
-        // Count as delivered if at least one channel succeeded.
-        ok = ok || emailOk;
-      }
-
-      if (!ok) continue;
-      sentCount++;
-
-      // Persist suggestion as "sent"
+      // Save as 'suggested' — owner reviews in Activity feed before sending.
       const { data: inserted } = await svc
         .from("winback_suggestions" as never)
         .insert({
@@ -242,30 +189,31 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
           lang,
           channel,
           message,
-          status: "sent",
+          status: "suggested",
         } as never)
         .select("id")
         .single();
 
       const suggestionId = (inserted as { id?: string } | null)?.id ?? null;
 
-      // Audit trail with undo window
       await svc.from("ai_actions_log" as never).insert({
         salon_id: salonId,
         agent: "winback",
-        action_type: `sent_${channel}`,
+        action_type: "suggestion_pending",
         target_id: suggestionId,
         payload: { name: c.name, channel, reason: ch.reason, message_preview: message.slice(0, 120) },
-        undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        undo_deadline: null,
       } as never);
+
+      sentCount++;
     }
 
     if (sentCount > 0) {
       void sendOwnerAlert(salonId, {
-        subject: `${salonName} — AI sent ${sentCount} win-back message${sentCount > 1 ? "s" : ""}`,
+        subject: `${salonName} — ${sentCount} win-back draft${sentCount > 1 ? "s" : ""} ready for review`,
         bodyText:
-          `AI Manager gửi ${sentCount} tin nhắn giữ khách. ` +
-          `Bạn có 60 phút để undo từ Activity feed nếu cần.`,
+          `AI Manager soạn ${sentCount} tin nhắn giữ khách, chờ bạn duyệt trước khi gửi. ` +
+          `Vào Activity → tab "Giữ khách" để xem và gửi.`,
       });
     }
   } catch (e) {
