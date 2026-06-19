@@ -94,11 +94,15 @@ export default function CountryPhoneField({
         value={iso}
         onChange={(e) => onCountryChange(e.target.value)}
         className="nq-booking-field"
-        style={{ width: "auto", flexShrink: 0, paddingRight: "8px" }}
+        style={{ width: "110px", flexShrink: 0 }}
       >
         {PHONE_COUNTRIES.map((c) => (
-          <option key={c.iso} value={c.iso}>
-            {(language === "vi" ? c.nameVi : c.name)} +{c.dial}
+          <option
+            key={c.iso}
+            value={c.iso}
+            title={language === "vi" ? c.nameVi : c.name}
+          >
+            {c.iso} +{c.dial}
           </option>
         ))}
       </select>
