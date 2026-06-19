@@ -40,7 +40,10 @@ function extractText(content: Anthropic.Messages.ContentBlock[]): string {
 // ---------------------------------------------------------------------------
 // System prompt
 // ---------------------------------------------------------------------------
-const SYSTEM_PROMPT = `Bạn là trợ lý AI đang thực hiện "Manager Briefing" — một cuộc phỏng vấn ngắn để cấu hình AI Manager cho tiệm nail/spa. Mục tiêu là thu thập đủ thông tin để tạo ra một Salon Intelligence Profile (SIP).
+// System prompts — full 7-question vs. smart 2-question (when SIP exists)
+// ---------------------------------------------------------------------------
+
+const SYSTEM_PROMPT_COLD = `Bạn là Minh — AI Manager của NailIQ — đang thực hiện "Manager Briefing" để cấu hình cho tiệm nail/spa. Mục tiêu là thu thập đủ thông tin để tạo ra Salon Intelligence Profile (SIP).
 
 **Quy tắc quan trọng:**
 - Hỏi từng câu một, KHÔNG hỏi nhiều câu cùng lúc.
@@ -58,32 +61,67 @@ const SYSTEM_PROMPT = `Bạn là trợ lý AI đang thực hiện "Manager Brief
 6. Hiện tại ưu tiên gì nhất — giữ khách cũ, kéo khách mới, hay tăng doanh thu?
 7. AI được tự làm gì không cần hỏi? Có thứ gì muốn luôn kiểm soát không?
 
-**Khi đã thu thập đủ thông tin từ 7 câu trên:**
+**Khi đã thu thập đủ thông tin:**
 - Viết một câu tóm tắt ngắn xác nhận những gì bạn hiểu về tiệm.
-- Kết thúc tin nhắn bằng CHÍNH XÁC tag này (không thêm text sau tag):
+- Kết thúc bằng CHÍNH XÁC tag này (không thêm text sau tag):
+[SIP_DRAFT]: {JSON}`;
+
+/** Build a smart 2-question prompt when auto-SIP already exists. */
+function buildSmartSystemPrompt(sip: SalonIntelligenceProfile, salonName: string): string {
+  const verticalLabel: Record<string, string> = {
+    nail: "nail salon", head_spa: "head spa", massage: "massage", facial: "facial",
+    waxing: "waxing", multi: "dịch vụ đa dạng",
+  };
+  const strictnessLabel: Record<string, string> = {
+    lenient: "nhẹ nhàng", moderate: "vừa phải", strict: "nghiêm ngặt",
+  };
+  const voiceLabel: Record<string, string> = {
+    warm_casual: "thân mật, gần gũi",
+    warm_professional: "ấm áp, chuyên nghiệp",
+    luxury_formal: "sang trọng, lịch sự",
+    friendly_fun: "vui vẻ, thân thiện",
+  };
+
+  return `Bạn là Minh — AI Manager của NailIQ. Bạn đã tự học từ dữ liệu tiệm ${salonName} và có SIP (Salon Intelligence Profile) sẵn:
+
+**Những gì Minh đã biết từ data:**
+- Loại tiệm: ${verticalLabel[sip.vertical] ?? sip.vertical}
+- Ngôn ngữ chính: ${sip.language_primary}
+- Chính sách no-show: ${strictnessLabel[sip.noshow_strictness] ?? sip.noshow_strictness}
+- Giờ liên lạc: ${sip.contact_window}
+- Giọng điệu đang dùng: ${voiceLabel[sip.brand_voice] ?? sip.brand_voice}
+- Mục tiêu: ${sip.primary_goal}
+
+**Nhiệm vụ:** Chỉ cần hỏi 2 điều Minh không thể đoán từ data:
+
+**Câu 1 (giọng nhắn tin):** Hỏi: "Minh đã đoán tiệm bạn dùng giọng [voiceLabel[sip.brand_voice]]. Đúng không? Nếu muốn điều chỉnh, cho Minh xem ví dụ câu bạn thường nhắn khách nhé."
+**Câu 2 (quyền tự làm):** Hỏi: "Minh nên tự làm gì không cần hỏi bạn — và có thứ gì Minh cần xin phép trước không?"
+
+Sau khi có câu trả lời cho cả 2 câu, cập nhật SIP và xuất ngay.
+
+**Lấy SIP hiện tại làm nền, chỉ cập nhật brand_voice, tone_examples, auto_approve, escalate từ câu trả lời của owner.**
+
+Kết thúc bằng CHÍNH XÁC tag này:
 [SIP_DRAFT]: {JSON}
 
-Trong đó {JSON} là một JSON object hợp lệ với CÁC TRƯỜNG SAU (không thêm, không bỏ bớt):
+SIP JSON fields (giữ nguyên phần đã biết từ data, chỉ cập nhật những field liên quan đến 2 câu hỏi trên):
 {
-  "vertical": "nail" | "head_spa" | "massage" | "facial" | "waxing" | "multi",
+  "vertical": "${sip.vertical}",
   "brand_voice": "warm_casual" | "warm_professional" | "luxury_formal" | "friendly_fun",
-  "language_primary": "en" | "vi" | "zh" | "ko",
-  "language_secondary": "en" | "vi" | "zh" | "ko" | null,
-  "customer_demographic": "mô tả khách hàng ngắn gọn",
-  "noshow_strictness": "lenient" | "moderate" | "strict",
-  "contact_window": "HH:MM-HH:MM (ví dụ 9:00-20:00)",
-  "winback_cadence": "gentle" | "normal" | "aggressive",
-  "primary_goal": "retain_regulars" | "attract_new" | "maximize_revenue",
-  "auto_approve": ["send_reminders", "send_winback"] (mảng các action AI tự làm),
-  "escalate": ["charge_card", "change_price", "review_response_bad"] (mảng action cần hỏi owner),
-  "tone_examples": ["ví dụ câu AI sẽ nhắn khách"],
+  "language_primary": "${sip.language_primary}",
+  "language_secondary": ${JSON.stringify(sip.language_secondary ?? null)},
+  "customer_demographic": ${JSON.stringify(sip.customer_demographic ?? "")},
+  "noshow_strictness": "${sip.noshow_strictness}",
+  "contact_window": "${sip.contact_window}",
+  "winback_cadence": "${sip.winback_cadence}",
+  "primary_goal": "${sip.primary_goal}",
+  "auto_approve": [...],
+  "escalate": [...],
+  "tone_examples": [...],
   "built_at": "ISO string",
   "built_via": "manager_briefing"
+}`;
 }
-
-Ví dụ auto_approve options: "send_reminders", "send_winback", "respond_reviews_good"
-Ví dụ escalate options: "charge_card", "change_price", "review_response_bad", "cancel_booking"
-`;
 
 // ---------------------------------------------------------------------------
 // SIP parser — extracts JSON after [SIP_DRAFT]: tag
@@ -112,6 +150,8 @@ function parseSipDraft(text: string): SalonIntelligenceProfile | null {
 export async function runManagerBriefing(input: {
   slug: string;
   messages: BriefingMessage[];
+  existingSip?: SalonIntelligenceProfile | null;
+  salonName?: string;
 }): Promise<BriefingResult> {
   const ctx = await getDashboardWriteClient(input.slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
@@ -127,6 +167,11 @@ export async function runManagerBriefing(input: {
     };
   }
 
+  const systemPrompt =
+    input.existingSip
+      ? buildSmartSystemPrompt(input.existingSip, input.salonName ?? input.slug)
+      : SYSTEM_PROMPT_COLD;
+
   // Sanitise history: last 30 turns, trim each message to 2000 chars
   const convo: Anthropic.Messages.MessageParam[] = input.messages
     .slice(-30)
@@ -141,7 +186,7 @@ export async function runManagerBriefing(input: {
     const resp = await anthropic.messages.create({
       model: "claude-sonnet-4-5",
       max_tokens: 1500,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: convo,
     });
 

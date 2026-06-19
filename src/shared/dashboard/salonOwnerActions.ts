@@ -1436,14 +1436,15 @@ export async function updateAiAgentFlag(
   if (!ctx) return { ok: false, error: "unauthorized" };
   if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
-  // Read current flags then merge — safe for low-concurrency settings writes.
+  // Read current flags + ai_profile — safe for low-concurrency settings writes.
   const { data: row } = await ctx.supabase
     .from("salons")
-    .select("feature_flags")
+    .select("feature_flags, ai_profile")
     .eq("id", ctx.salon.id)
     .maybeSingle();
 
   const current = (row?.feature_flags ?? {}) as Record<string, boolean>;
+  const hadAnyAgent = Object.values(current).some(Boolean);
   const merged = { ...current, [flagKey]: enabled };
 
   const { error } = await ctx.supabase
@@ -1455,6 +1456,15 @@ export async function updateAiAgentFlag(
     console.error("[updateAiAgentFlag]", flagKey, error);
     return { ok: false, error: "server_error" };
   }
+
+  // First agent ever enabled + no SIP yet → fire-and-forget buildSip so
+  // Manager Briefing can open with "Minh đã tự học..." instead of blank slate.
+  if (enabled && !hadAnyAgent && !row?.ai_profile) {
+    import("@/shared/ai/buildSip")
+      .then(({ buildSip }) => buildSip(ctx.salon.id))
+      .catch((e) => console.error("[updateAiAgentFlag] buildSip", e));
+  }
+
   return { ok: true };
 }
 

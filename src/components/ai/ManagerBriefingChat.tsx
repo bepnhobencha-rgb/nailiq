@@ -1,8 +1,8 @@
 "use client";
 
 // ManagerBriefingChat — guided onboarding wizard in chat form.
-// The AI (Claude Sonnet) asks 7 questions about the salon, then generates a SIP draft.
-// When complete, SipReviewCard renders the review/edit/confirm flow.
+// When existingSip is provided (auto-learned from salon data), Minh opens with
+// what it already knows and only asks 2 focused questions instead of 7.
 
 import { useState, useRef, useEffect, useTransition } from "react";
 import { Send, Loader2, RotateCcw } from "lucide-react";
@@ -15,17 +15,36 @@ type Message = {
   content: string;
 };
 
-const GREETING =
-  "Xin chào! Mình là AI Manager của NailIQ 👋\n\nMình sẽ hỏi bạn 7 câu ngắn để hiểu tiệm của bạn — sau đó tự cấu hình để hỗ trợ việc nhắc lịch, giữ khách, và xử lý no-show đúng cách.\n\nBắt đầu nhé: Tiệm bạn làm dịch vụ gì? Ở đâu? Và có bao nhiêu nhân viên?";
+const GREETING_COLD =
+  "Xin chào! Mình là Minh — AI Manager của NailIQ 👋\n\nMình sẽ hỏi bạn vài câu ngắn để hiểu tiệm — sau đó tự cấu hình để hỗ trợ nhắc lịch, giữ khách, và xử lý no-show đúng cách.\n\nBắt đầu nhé: Tiệm bạn làm dịch vụ gì? Ở đâu? Và có bao nhiêu nhân viên?";
+
+function buildSmartGreeting(sip: SalonIntelligenceProfile, salonName: string): string {
+  const voiceLabel: Record<string, string> = {
+    warm_casual: "thân mật, gần gũi",
+    warm_professional: "ấm áp, chuyên nghiệp",
+    luxury_formal: "sang trọng, lịch sự",
+    friendly_fun: "vui vẻ, thân thiện",
+  };
+  const strictnessLabel: Record<string, string> = {
+    lenient: "nhẹ nhàng", moderate: "vừa phải", strict: "nghiêm ngặt",
+  };
+  return `Xin chào! Mình là Minh 👋\n\nMình đã tự tìm hiểu tiệm ${salonName} từ dữ liệu thực và đã tự cấu hình:\n• Loại tiệm: ${sip.vertical}\n• Chính sách no-show: ${strictnessLabel[sip.noshow_strictness] ?? sip.noshow_strictness}\n• Giọng điệu: ${voiceLabel[sip.brand_voice] ?? sip.brand_voice}\n• Liên lạc khách: ${sip.contact_window}\n\nChỉ còn 2 điều Minh chưa thể đoán từ data — trả lời xong là hoàn tất!\n\n**Câu 1:** Minh đoán tiệm bạn dùng giọng "${voiceLabel[sip.brand_voice] ?? sip.brand_voice}" khi nhắn tin cho khách. Đúng không? Nếu muốn điều chỉnh, cho Minh xem ví dụ câu bạn hay nhắn nhé.`;
+}
 
 type Props = {
   slug: string;
+  salonName: string;
+  existingSip?: SalonIntelligenceProfile | null;
   alreadyConfigured: boolean;
 };
 
-export function ManagerBriefingChat({ slug, alreadyConfigured }: Props) {
+export function ManagerBriefingChat({ slug, salonName, existingSip, alreadyConfigured }: Props) {
+  const initialGreeting = existingSip
+    ? buildSmartGreeting(existingSip, salonName)
+    : GREETING_COLD;
+
   const [messages, setMessages] = useState<Message[]>([
-    { role: "assistant", content: GREETING },
+    { role: "assistant", content: initialGreeting },
   ]);
   const [input, setInput] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -40,7 +59,7 @@ export function ManagerBriefingChat({ slug, alreadyConfigured }: Props) {
   }, [messages, sipDraft]);
 
   function handleReset() {
-    setMessages([{ role: "assistant", content: GREETING }]);
+    setMessages([{ role: "assistant", content: initialGreeting }]);
     setSipDraft(null);
     setInput("");
     setError(null);
@@ -56,7 +75,12 @@ export function ManagerBriefingChat({ slug, alreadyConfigured }: Props) {
     setInput("");
 
     startTransition(async () => {
-      const result = await runManagerBriefing({ slug, messages: updated });
+      const result = await runManagerBriefing({
+        slug,
+        messages: updated,
+        existingSip: existingSip ?? undefined,
+        salonName,
+      });
       if (!result.ok) {
         setError("Có lỗi xảy ra — vui lòng thử lại.");
         return;
@@ -87,9 +111,11 @@ export function ManagerBriefingChat({ slug, alreadyConfigured }: Props) {
         <div>
           <p className="text-sm font-semibold text-nq-foreground">Manager Briefing</p>
           <p className="text-xs text-nq-muted">
-            {alreadyConfigured
-              ? "Cấu hình lại AI Manager (7 câu hỏi)"
-              : "Cấu hình AI Manager lần đầu (7 câu hỏi)"}
+            {existingSip
+              ? "Minh đã tự học — xác nhận 2 điều là xong"
+              : alreadyConfigured
+                ? "Cập nhật cấu hình AI Manager"
+                : "Cấu hình AI Manager lần đầu"}
           </p>
         </div>
         <button
