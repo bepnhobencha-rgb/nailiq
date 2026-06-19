@@ -75,10 +75,15 @@ export async function sendOwnerAlert(
     const { data: salonRow } = await admin
       .from("salons")
       .select(
-        "name, owner_notification_settings, owner_notification_channel, owner_phone" as never,
+        "name, owner_notification_settings, owner_notification_channel, owner_phone, feature_flags" as never,
       )
       .eq("id", salonId)
       .maybeSingle();
+
+    // When unified digest is on, individual agent alerts are suppressed —
+    // the digest consolidates everything into one end-of-day email.
+    const flags = ((salonRow as { feature_flags?: Record<string, unknown> } | null)?.feature_flags) ?? {};
+    if (flags.ai_unified_digest === true) return;
     const salon = salonRow as SalonRow | null;
     if (!salon) return;
 

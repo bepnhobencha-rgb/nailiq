@@ -91,8 +91,8 @@ export async function GET(req: Request): Promise<NextResponse> {
       }
     }
 
-    // Báo Cáo Viên — daily report at 21:00 salon local time
-    if (salonHour === 21) {
+    // Báo Cáo Viên — daily report at 21:00; skipped when unified digest is on
+    if (salonHour === 21 && !flags.ai_unified_digest) {
       try {
         const { runDailyReport } = await import(
           "@/shared/ai/agentDailyReport"
@@ -102,6 +102,18 @@ export async function GET(req: Request): Promise<NextResponse> {
       } catch (e) {
         console.error("[manager] daily_report", salon.slug, e);
         entry.daily_report = String(e);
+      }
+    }
+
+    // Unified Digest — replaces Báo Cáo Viên + individual agent alerts at 21:00
+    if (salonHour === 21 && flags.ai_unified_digest) {
+      try {
+        const { runDigest } = await import("@/shared/ai/agentDigest");
+        await runDigest(salon.id);
+        entry.digest = "ok";
+      } catch (e) {
+        console.error("[manager] digest", salon.slug, e);
+        entry.digest = String(e);
       }
     }
 
