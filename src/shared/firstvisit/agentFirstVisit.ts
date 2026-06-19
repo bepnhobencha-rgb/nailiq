@@ -242,7 +242,7 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
 
     const { data: salon } = await db
       .from("salons")
-      .select("name, email, slug, feature_flags, sms_outbound_enabled, email_outbound_enabled, customer_channel, timezone" as never)
+      .select("name, email, slug, feature_flags, sms_outbound_enabled, sms_a2p_registered, email_outbound_enabled, customer_channel, timezone" as never)
       .eq("id", salonId)
       .maybeSingle();
 
@@ -255,6 +255,7 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
     const bookingUrl = `${SITE_URL}/${salonSlug}?ref=firstvisit`;
     const smsEnabled = s.sms_outbound_enabled !== false;
     const emailEnabled = s.email_outbound_enabled !== false;
+    const smsA2pRegistered = s.sms_a2p_registered === true; // US A2P 10DLC status
     const channelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
     const lang: "en" | "vi" = "en";
     const todayYmd = new Date().toISOString().slice(0, 10);
@@ -267,6 +268,8 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
         smsOutboundEnabled: smsEnabled,
         emailOutboundEnabled: emailEnabled,
         customerEmail: fv.email,
+        smsA2pRegistered,
+        customerPhone: fv.phone,
       });
       if (ch.noChannel) continue;
 
@@ -364,6 +367,8 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
         smsOutboundEnabled: smsEnabled,
         emailOutboundEnabled: emailEnabled,
         customerEmail: email,
+        smsA2pRegistered,
+        customerPhone: phone,
       });
       if (ch.noChannel) continue;
 
