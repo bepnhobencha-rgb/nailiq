@@ -6,6 +6,7 @@ import {
   getEffectivePlanLimits,
   type PlanCheckSalon,
 } from "@/shared/lib/subscriptionPlans";
+import { isUsPhone } from "@/shared/lib/phoneRegion";
 
 /**
  * Auto review request — Pro+ tier "Tự động xin đánh giá".
@@ -35,7 +36,7 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
         `
         id, salon_id, staff_id, service_id, client_email, client_phone,
         start_time_utc,
-        salons!inner ( id, name, slug, subscription_plan, plan_override, feature_flags, timezone, google_review_url, sms_reminders_enabled ),
+        salons!inner ( id, name, slug, subscription_plan, plan_override, feature_flags, timezone, google_review_url, sms_reminders_enabled, sms_a2p_registered ),
         services ( name ),
         staff ( name )
       `,
@@ -58,6 +59,7 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
       timezone: string | null;
       google_review_url?: string | null;
       sms_reminders_enabled?: boolean | null;
+      sms_a2p_registered?: boolean | null;
     };
     const salonRaw = (row as unknown as { salons: Salon | Salon[] | null })
       .salons;
@@ -186,14 +188,16 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
       console.error("[sendReviewRequest] resend threw", e);
     }
 
-    // SMS channel — send if salon has sms_reminders_enabled + booking has phone
+    // SMS channel — send if salon has sms_reminders_enabled + booking has phone.
+    // A2P 10DLC guardrail: skip SMS for US numbers when salon hasn't registered.
     const smsEnabled = salon.sms_reminders_enabled === true;
     const clientPhone =
       typeof (row as { client_phone?: string | null }).client_phone === "string"
         ? String((row as { client_phone: string }).client_phone).trim()
         : "";
+    const smsA2pRegistered = salon.sms_a2p_registered !== false; // default true
 
-    if (smsEnabled && clientPhone) {
+    if (smsEnabled && clientPhone && !(isUsPhone(clientPhone) && !smsA2pRegistered)) {
       const toE164 = clientPhone.startsWith("+")
         ? clientPhone
         : `+${clientPhone}`;
