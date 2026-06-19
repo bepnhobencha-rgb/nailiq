@@ -41,6 +41,20 @@ export async function GET(req: Request): Promise<NextResponse> {
     const salonHour = Math.floor(salonNowMinutes(tz) / 60);
     const entry: Record<string, unknown> = { salon: salon.slug };
 
+    // Outcome tracker — runs at 09:00, checks if Minh's actions led to bookings
+    if (salonHour === 9) {
+      try {
+        const { runOutcomeTracker } = await import(
+          "@/shared/ai/agentOutcomeTracker"
+        );
+        await runOutcomeTracker(salon.id);
+        entry.outcome_tracker = "ok";
+      } catch (e) {
+        console.error("[manager] outcome_tracker", salon.slug, e);
+        entry.outcome_tracker = String(e);
+      }
+    }
+
     // AI no-show policy shadow/live backfill
     if (flags.ai_noshow_policy_shadow || flags.ai_noshow_policy_live) {
       try {

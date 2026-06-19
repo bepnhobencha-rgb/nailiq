@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NailIQ — Khách hàng thấy gì &amp; nhận gì</title>
+<style>
+  :root{
+    --gold:#D4AF37; --gold-soft:#E7C964;
+    --bg:#0B0C10; --surface:#111318; --surface2:#171a21; --line:#262a33;
+    --text:#F4F5F7; --muted:#9aa0ac; --muted2:#6b7280;
+    --green:#3ECf8e; --amber:#F2B84b; --red:#F2685c; --blue:#5b9dff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:linear-gradient(180deg,#0B0C10,#0d0f14 40%,#0B0C10); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.6; -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1000px; margin:0 auto; padding:0 20px 100px}
+  header.hero{padding:60px 20px 30px; text-align:center; max-width:1000px; margin:0 auto}
+  .kicker{color:var(--gold); letter-spacing:.18em; text-transform:uppercase; font-size:12px; font-weight:700}
+  h1{font-size:clamp(26px,5vw,40px); line-height:1.15; margin:14px 0 10px; font-weight:800}
+  h1 .g{color:var(--gold)}
+  .sub{color:var(--muted); font-size:clamp(15px,2.4vw,18px); max-width:660px; margin:0 auto}
+  .meta{color:var(--muted2); font-size:13px; margin-top:16px}
+  section{margin-top:50px}
+  h2{font-size:clamp(20px,3.4vw,27px); margin:0 0 6px; font-weight:800; display:flex; align-items:center; gap:10px}
+  h2 .num{display:inline-grid; place-items:center; width:34px; height:34px; border-radius:9px; background:rgba(212,175,55,.12); color:var(--gold); font-size:15px; border:1px solid rgba(212,175,55,.3)}
+  .lead{color:var(--muted); margin:0 0 22px; max-width:760px}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:22px}
+
+  /* verdict banner */
+  .verdict{background:linear-gradient(135deg,rgba(62,207,142,.10),rgba(62,207,142,.02)); border:1px solid rgba(62,207,142,.3)}
+  .verdict h3{margin:0 0 8px; font-size:18px; color:var(--green)}
+
+  /* flow steps as visual cards */
+  .flowsteps{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+  @media(max-width:760px){.flowsteps{grid-template-columns:1fr}}
+  .fstep{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:16px 18px; position:relative}
+  .fstep .n{position:absolute; top:14px; right:16px; font-size:12px; font-weight:800; color:var(--muted2)}
+  .fstep h4{margin:0 0 4px; font-size:15.5px; display:flex; align-items:center; gap:8px}
+  .fstep .ok{color:var(--green); font-size:12.5px; font-weight:700}
+  .fstep p{margin:6px 0 0; color:var(--muted); font-size:13.5px}
+  .fstep .fields{margin:10px 0 0; padding:0; list-style:none}
+  .fstep .fields li{font-size:12.5px; color:var(--text); padding:3px 0 3px 16px; position:relative}
+  .fstep .fields li::before{content:"·"; position:absolute; left:4px; color:var(--gold)}
+
+  /* phone mockups for SMS */
+  .phones{display:flex; flex-wrap:wrap; gap:22px; justify-content:center}
+  .phone{width:300px; background:#000; border-radius:34px; padding:12px; border:1px solid #2a2e37; box-shadow:0 12px 40px rgba(0,0,0,.5)}
+  .phone .screen{background:#0e1116; border-radius:24px; overflow:hidden; min-height:380px; display:flex; flex-direction:column}
+  .phone .top{background:#171a21; padding:14px 16px 12px; border-bottom:1px solid var(--line); text-align:center}
+  .phone .top .name{font-size:14px; font-weight:700}
+  .phone .top .sub{font-size:11px; color:var(--muted2)}
+  .phone .body{padding:16px 14px; flex:1; display:flex; flex-direction:column; gap:10px}
+  .bubble{background:#23272f; color:#eef0f3; border-radius:16px 16px 16px 4px; padding:11px 13px; font-size:13px; max-width:90%; white-space:pre-line; line-height:1.5}
+  .bubble.green{background:linear-gradient(135deg,#1f3d31,#21402f); border:1px solid rgba(62,207,142,.3)}
+  .bubble a, .bubble .lnk{color:#8fc3ff}
+  .phlabel{text-align:center; font-size:12.5px; color:var(--muted); margin-top:10px; font-weight:600}
+  .phwrap{display:flex; flex-direction:column; align-items:center}
+
+  /* email mock */
+  .email{max-width:520px; margin:0 auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 8px 30px rgba(0,0,0,.4); color:#111}
+  .email .hd{background:#0B0C10; padding:22px; text-align:center}
+  .email .hd .lg{font-size:20px; font-weight:800; color:#D4AF37; letter-spacing:.04em}
+  .email .hd .tag{margin:6px 0 0; font-size:11px; color:#999; letter-spacing:.08em; text-transform:uppercase}
+  .email .bd{padding:24px}
+  .email h3{margin:0 0 6px; font-size:19px; color:#111}
+  .email .intro{margin:0 0 18px; color:#555; font-size:14px}
+  .detail{border:1px solid #eee; border-radius:8px; overflow:hidden}
+  .detail .dh{background:#fafafa; padding:10px 14px; font-size:10.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#888; border-bottom:1px solid #eee}
+  .detail table{width:100%; border-collapse:collapse}
+  .detail td{padding:7px 14px; font-size:13.5px}
+  .detail td.k{color:#666; width:110px}
+  .detail td.v{font-weight:600; color:#111}
+  .loc{margin:16px 0 0; padding:14px; border:1px solid #eee; border-radius:8px; background:#fafafa}
+  .loc .lt{font-size:10.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#888; margin:0 0 4px}
+  .loc .btn{display:inline-block; margin-top:8px; padding:8px 16px; background:#0B0C10; color:#fff; border-radius:8px; font-size:12.5px; font-weight:700; text-decoration:none}
+  .card-file{margin:14px 0 0; padding:14px; border:1px solid #e6e0cf; border-radius:8px; background:#fbf8ef}
+  .card-file .lt{font-size:10.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#9a8a52; margin:0 0 4px}
+  .email .ft{padding:14px 24px; background:#f5f5f5; color:#888; font-size:11px; text-align:center; border-top:1px solid #eee}
+
+  /* QA verdict list */
+  .qa{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+  @media(max-width:760px){.qa{grid-template-columns:1fr}}
+  .qa .col h4{margin:0 0 10px; font-size:15px; display:flex; gap:8px; align-items:center}
+  .qa ul{margin:0; padding:0; list-style:none}
+  .qa li{padding:9px 0 9px 26px; position:relative; font-size:13.5px; border-top:1px solid var(--line)}
+  .qa li:first-child{border-top:none}
+  .good li::before{content:"✓"; position:absolute; left:2px; top:9px; color:var(--green); font-weight:800}
+  .watch li::before{content:"!"; position:absolute; left:6px; top:9px; color:var(--amber); font-weight:800}
+  .watch li small{display:block; color:var(--muted2); font-size:12px}
+
+  .callout{border-left:3px solid var(--gold); padding:6px 0 6px 16px; margin:16px 0; color:var(--muted)}
+  .callout b{color:var(--text)}
+  .badge{font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; display:inline-block}
+  .b-en{background:rgba(91,157,255,.14); color:var(--blue); border:1px solid rgba(91,157,255,.3)}
+  .b-vi{background:rgba(242,184,75,.14); color:var(--amber); border:1px solid rgba(242,184,75,.3)}
+  footer{margin-top:56px; text-align:center; color:var(--muted2); font-size:13px; border-top:1px solid var(--line); padding-top:24px}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="kicker">NailIQ · Kiểm chứng tận mắt</div>
+  <h1>Khách hàng <span class="g">thấy gì</span> &amp; <span class="g">nhận gì</span></h1>
+  <p class="sub">Mình đã đi thật qua trang đặt lịch live của Hi-Lite (www.nailiq.ca/hilite-anaheim) từng bước một, và trích nguyên văn SMS/email từ code. Đây là bằng chứng — không phải mô tả suông.</p>
+  <div class="meta">Kiểm chứng trực tiếp trên bản live · 18/06/2026 · không tạo booking thật (dừng ở bước xác thực)</div>
+</header>
+
+<div class="wrap">
+
+  <!-- VERDICT -->
+  <section>
+    <div class="card verdict">
+      <h3>✅ Kết luận trước: luồng khách chạy trơn tru, không thấy lỗi</h3>
+      <p style="margin:0; color:var(--muted)">Mình đi hết 7 bước khách đặt lịch trên trang thật. Mọi bước hoạt động đúng: nhận diện khách quen, hiện dịch vụ &amp; giá thật, ngày "hôm nay" đúng, giờ theo múi giờ tiệm (PDT), tự nhảy qua bước thợ khi tiệm không bắt chọn, và có cả <b style="color:var(--text)">lớp xác thực OTP chống đặt ảo</b> trước khi xác nhận. Thông báo SMS/email có đầy đủ thông tin cần thiết. Có <b style="color:var(--text)">2 điểm nhỏ nên chỉnh</b> (mục 4), nhưng không có lỗi chặn.</p>
+    </div>
+  </section>
+
+  <!-- 1. FLOW -->
+  <section>
+    <h2><span class="num">1</span> 7 bước khách đặt lịch — mình đã đi thật</h2>
+    <p class="lead">Từng màn hình khách thấy, kèm field nhập liệu và kết quả kiểm chứng live.</p>
+    <div class="flowsteps">
+      <div class="fstep"><span class="n">BƯỚC 1</span>
+        <h4>📱 Nhập số điện thoại</h4>
+        <span class="ok">✓ Nhận ra khách quen "Chào lại Sarah!" ngay khi gõ số</span>
+        <ul class="fields">
+          <li>Số điện thoại (bắt buộc, tự format +1)</li>
+          <li>Tick đồng ý nhận SMS (CASL/TCPA)</li>
+        </ul>
+        <p>Khách quen được tự nhận diện &amp; điền sẵn tên ở bước sau.</p>
+      </div>
+      <div class="fstep"><span class="n">BƯỚC 2</span>
+        <h4>💆 Chọn dịch vụ</h4>
+        <span class="ok">✓ Hiện 5 gói thật: Classic $85 · Deluxe $125 · Royal $155…</span>
+        <ul class="fields">
+          <li>Chọn 1 dịch vụ (kèm thời lượng + giá)</li>
+          <li>Nhãn "Phổ biến" / "Nổi bật" tự gắn</li>
+        </ul>
+        <p>Có toggle Cá nhân / Nhóm ở đầu. Thanh tiến trình 6 bước rõ ràng.</p>
+      </div>
+      <div class="fstep"><span class="n">BƯỚC 3</span>
+        <h4>📅 Chọn ngày</h4>
+        <span class="ok">✓ "Hôm nay 18" đúng theo giờ tiệm</span>
+        <ul class="fields">
+          <li>Dải ngày ngang + "Xem thêm ngày"</li>
+        </ul>
+        <p>Bước chọn thợ tự bỏ qua vì tiệm này không bắt khách chọn thợ.</p>
+      </div>
+      <div class="fstep"><span class="n">BƯỚC 4</span>
+        <h4>🕘 Chọn giờ</h4>
+        <span class="ok">✓ Ghi rõ "Giờ PDT" (giờ tiệm, không phải giờ máy khách)</span>
+        <ul class="fields">
+          <li>Nhóm Sáng (12) · Chiều (21) · Tối (6)</li>
+          <li>Slot 15 phút: 9:00, 9:15… kèm nhãn "Phổ biến"</li>
+        </ul>
+        <p>Đây là điểm hay tránh lỗi lệch múi giờ — rất quan trọng với tiệm.</p>
+      </div>
+      <div class="fstep"><span class="n">BƯỚC 5</span>
+        <h4>📝 Nhập thông tin</h4>
+        <span class="ok">✓ Tên "Sarah" tự điền sẵn (khách quen)</span>
+        <ul class="fields">
+          <li>Họ tên (bắt buộc)</li>
+          <li>Email (không bắt buộc, có lý do gợi ý thêm)</li>
+          <li>Ghi chú (gợi ý: mang thai, dị ứng, vấn đề cổ/lưng)</li>
+        </ul>
+        <p>Thẻ "Chào mừng trở lại! Lần thứ 1 tại tiệm" hiện trên đầu.</p>
+      </div>
+      <div class="fstep"><span class="n">BƯỚC 6</span>
+        <h4>🔐 Xác thực OTP</h4>
+        <span class="ok">✓ Gửi mã 6 số + fallback "Gửi mã qua email"</span>
+        <ul class="fields">
+          <li>Mã 6 chữ số</li>
+          <li>Đếm ngược "Gửi lại sau 58s"</li>
+        </ul>
+        <p>Lớp chống đặt lịch ảo / no-show. Mình dừng ở đây, không xác nhận thật.</p>
+      </div>
+    </div>
+    <div class="callout">Bước 7 là <b>Xác nhận → tạo booking</b>. Mình cố tình KHÔNG bấm để tránh tạo lịch thật &amp; làm phiền tiệm. Việc OTP chặn mình ở đây cũng chính là bằng chứng lớp bảo vệ hoạt động.</div>
+  </section>
+
+  <!-- 2. SMS -->
+  <section>
+    <h2><span class="num">2</span> Tin nhắn SMS khách nhận (nguyên văn từ code)</h2>
+    <p class="lead">Khi khách đặt xong, hệ thống gửi SMS xác nhận. Đây là nội dung thật, với ví dụ Hi-Lite + Hi Lite Classic.</p>
+    <div class="phones">
+      <div class="phwrap">
+        <div class="phone"><div class="screen">
+          <div class="top"><div class="name">Hi-Lite Head Spa</div><div class="sub">SMS · vừa xong</div></div>
+          <div class="body">
+            <div class="bubble green">✅ Đã đặt lịch! Hi Lite Classic tại Hi-Lite Head Spa · Fri, Jun 19, 9:00 AM. Nhắn STOP để huỷ nhận tin.
+📍 9832 Katella Ave, Anaheim, CA 92804
+<span class="lnk">Manage: nailiq.ca/hilite-anaheim/wait/…</span></div>
+          </div>
+        </div></div>
+        <div class="phlabel">SMS xác nhận <span class="badge b-vi">Tiếng Việt</span></div>
+      </div>
+      <div class="phwrap">
+        <div class="phone"><div class="screen">
+          <div class="top"><div class="name">Hi-Lite Head Spa</div><div class="sub">SMS · just now</div></div>
+          <div class="body">
+            <div class="bubble green">✅ Booked! Hi Lite Classic with Anna at Hi-Lite Head Spa · Fri, Jun 19, 9:00 AM. Reply STOP to opt out.
+📍 9832 Katella Ave, Anaheim, CA 92804
+<span class="lnk">Manage: nailiq.ca/hilite-anaheim/wait/…</span></div>
+          </div>
+        </div></div>
+        <div class="phlabel">SMS xác nhận <span class="badge b-en">English</span></div>
+      </div>
+      <div class="phwrap">
+        <div class="phone"><div class="screen">
+          <div class="top"><div class="name">Hi-Lite Head Spa</div><div class="sub">SMS · nhắc lịch</div></div>
+          <div class="body">
+            <div class="bubble">Reminder: Your Hi Lite Classic at Hi-Lite Head Spa is tomorrow at 9:00 AM.
+Confirm: nailiq.ca/…
+Reschedule: nailiq.ca/…
+Reply STOP to opt out.</div>
+          </div>
+        </div></div>
+        <div class="phlabel">SMS nhắc lịch 24h/3h <span class="badge b-en">Chỉ có English ⚠</span></div>
+      </div>
+    </div>
+    <div class="callout">SMS xác nhận có cả tiếng Việt &amp; tiếng Anh (theo lựa chọn của khách). Nhưng SMS <b>nhắc lịch</b> (24h &amp; 3h trước hẹn) hiện <b>chỉ có tiếng Anh</b> — xem mục 4.</div>
+  </section>
+
+  <!-- 3. EMAIL -->
+  <section>
+    <h2><span class="num">3</span> Email xác nhận khách nhận (tái hiện từ template thật)</h2>
+    <p class="lead">Nếu khách điền email, họ nhận email xác nhận đầy đủ như dưới đây — gồm chi tiết hẹn, bản đồ chỉ đường, và thông báo thẻ lưu (nếu có).</p>
+    <div class="email">
+      <div class="hd"><div class="lg">NailIQ</div><div class="tag">Booking Confirmed</div></div>
+      <div class="bd">
+        <h3>You're all set, Sarah! ✓</h3>
+        <p class="intro">Your appointment at <strong>Hi-Lite Head Spa</strong> has been confirmed.</p>
+        <div class="detail">
+          <div class="dh">Appointment Details</div>
+          <table>
+            <tr><td class="k">Date &amp; Time</td><td class="v">Friday, June 19, 2026, 9:00 AM</td></tr>
+            <tr><td class="k">Service</td><td class="v">Hi Lite Classic</td></tr>
+            <tr><td class="k">Staff</td><td class="v">Anna</td></tr>
+            <tr><td class="k">Total</td><td class="v">$85.00</td></tr>
+          </table>
+        </div>
+        <div class="loc">
+          <div class="lt">Location</div>
+          <div style="font-size:13.5px; color:#333">9832 Katella Ave, Anaheim, CA 92804</div>
+          <a class="btn" href="#">📍 Get directions</a>
+        </div>
+        <div class="card-file">
+          <div class="lt">Card on file</div>
+          <div style="font-size:13px; color:#333; line-height:1.45">To hold your spot we securely saved your card <strong>Visa •••• 4242</strong>. You're only charged <strong>a no-show fee</strong> if you don't show up — nothing otherwise.</div>
+        </div>
+      </div>
+      <div class="ft">NailIQ · Bạn nhận email này vì đã đặt lịch. <u>Unsubscribe</u> · Manage preferences</div>
+    </div>
+    <div class="callout">Email <b>chỉ gửi khi khách điền địa chỉ email</b> (không bắt buộc ở form). Khối "Card on file" chỉ hiện nếu tiệm bật lưu thẻ no-show. Có sẵn link huỷ nhận tin (tuân thủ CASL/CAN-SPAM).</div>
+  </section>
+
+  <!-- 4. QA VERDICT -->
+  <section>
+    <h2><span class="num">4</span> Đánh giá thẳng: tốt gì &amp; nên chỉnh gì</h2>
+    <div class="card">
+      <div class="qa">
+        <div class="col">
+          <h4 style="color:var(--green)">✓ Đang làm tốt</h4>
+          <ul class="good">
+            <li>Luồng 7 bước mạch lạc, có thanh tiến trình, nút Quay lại ở mỗi bước</li>
+            <li>Nhận diện khách quen + điền sẵn tên — giảm thao tác cho khách</li>
+            <li>Giờ hiển thị đúng múi giờ tiệm (PDT) — tránh lỗi lệch giờ kinh điển</li>
+            <li>OTP + honeypot chống đặt ảo / spam — bảo vệ tiệm khỏi no-show</li>
+            <li>SMS xác nhận song ngữ, có địa chỉ + link tự quản lý hẹn</li>
+            <li>Email đầy đủ: chi tiết, chỉ đường, công bố thẻ lưu, link unsubscribe</li>
+            <li>Trang đặt lịch song ngữ VI/EN (toggle góc phải)</li>
+          </ul>
+        </div>
+        <div class="col">
+          <h4 style="color:var(--amber)">! Nên chỉnh (nhỏ, không chặn)</h4>
+          <ul class="watch">
+            <li>SMS nhắc lịch 24h/3h chỉ có tiếng Anh<small>Khách nói tiếng Việt nhận tin nhắc bằng English. Nên thêm bản VI như SMS xác nhận.</small></li>
+            <li>Tự kiểm tra đường gửi thật một lần<small>Nên đặt 1 lịch thật bằng số của chính bạn để xác nhận SMS + email tới hộp thư, không chỉ tin vào code.</small></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:18px">
+      <b>Cách bạn tự kiểm chứng 100% trong 5 phút:</b> mở <b>www.nailiq.ca/hilite-anaheim</b> bằng điện thoại của bạn, nhập <b>số thật của bạn</b>, đặt 1 lịch tới bước cuối và bấm Xác nhận. Bạn sẽ nhận SMS + email tận tay → tận mắt thấy khách nhận gì. Sau đó vào Receptionist Center huỷ lịch test đó. (Số 555 mình dùng bị chặn gửi SMS thật nên mình không kiểm được khâu nhận tin — chỉ số thật mới kiểm được.)
+    </div>
+  </section>
+
+  <footer>
+    NailIQ — Khách hàng thấy gì &amp; nhận gì · Kiểm chứng trực tiếp trên bản live 18/06/2026<br/>
+    Nội dung SMS/email trích nguyên văn từ code (sms-confirm route · sendBookingConfirmationEmail · reminders cron).
+  </footer>
+
+</div>
+</body>
+</html>

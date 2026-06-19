@@ -94,6 +94,7 @@ export function SalonSettingsHub({
   clientNewMaxVisits,
   clientAtRiskDays,
   aiFlags,
+  aiManagerInstructions,
   userEmail,
   role,
   salonName,
@@ -136,6 +137,7 @@ export function SalonSettingsHub({
   clientNewMaxVisits: number;
   clientAtRiskDays: number;
   aiFlags: AiAgentFlags;
+  aiManagerInstructions?: string | null;
   userEmail: string | null;
   role: string;
   salonName?: string;
@@ -573,7 +575,7 @@ export function SalonSettingsHub({
           subtitle={vi ? "Bật/tắt từng agent AI cho tiệm" : "Toggle AI agents for your salon"}
           defaultOpen={false}
         >
-          <AiManagerHub slug={slug} initialFlags={aiFlags} />
+          <AiManagerHub slug={slug} initialFlags={aiFlags} initialInstructions={aiManagerInstructions} />
         </SettingsCategory>
         ) : null}
 
