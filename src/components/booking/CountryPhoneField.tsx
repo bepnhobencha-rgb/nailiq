@@ -25,6 +25,16 @@ type Props = {
   autoComplete?: string;
 };
 
+/** Format 10 NANP digits as (xxx) xxx-xxxx for the national input display.
+ *  Handles partial entry gracefully so the cursor doesn't fight the user. */
+function formatNANPNational(raw: string): string {
+  const d = raw.replace(/\D/g, "").slice(0, 10);
+  if (d.length === 0) return "";
+  if (d.length < 4) return d;
+  if (d.length < 7) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
+  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+}
+
 /** Pick the country whose dial code is the longest prefix of the E.164 digits.
  *  For shared codes (+1 US/CA) prefer `preferred` when it also matches. */
 function detectCountry(value: string, preferred: PhoneCountry): {
@@ -67,7 +77,12 @@ export default function CountryPhoneField({
   const initialIso = detected?.country.iso ?? fallback.iso;
   const [iso, setIso] = useState<string>(initialIso);
   // National digits the user typed (display value of the text input).
-  const [national, setNational] = useState<string>(detected?.national ?? "");
+  // Pre-format NANP numbers so returning customers see "(604) 555-0123" not "6045550123".
+  const initialDial = detected?.country.dial ?? fallback.dial;
+  const initialNationalRaw = detected?.national ?? "";
+  const [national, setNational] = useState<string>(
+    initialDial === "1" ? formatNANPNational(initialNationalRaw) : initialNationalRaw,
+  );
   // Expand to the full worldwide list when the customer picks "Other", or when
   // a prefilled number is from a country outside the salon's cluster.
   const [showAll, setShowAll] = useState<boolean>(
@@ -100,11 +115,15 @@ export default function CountryPhoneField({
   }
 
   function onNationalChange(raw: string) {
-    // Keep digits + common separators so the cursor doesn't fight the user;
-    // toE164Input strips to digits for the stored value.
-    const cleaned = raw.replace(/[^\d\s()\-.]/g, "");
-    setNational(cleaned);
-    emit(country, cleaned);
+    // For NANP (+1) countries auto-format as (xxx) xxx-xxxx so the number
+    // looks familiar while typing. toE164Input strips non-digits for storage.
+    // For other countries, keep digits + common separators as-is.
+    const display =
+      country.dial === "1"
+        ? formatNANPNational(raw)
+        : raw.replace(/[^\d\s()\-.]/g, "");
+    setNational(display);
+    emit(country, display);
   }
 
   return (
