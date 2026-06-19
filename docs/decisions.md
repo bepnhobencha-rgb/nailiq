@@ -5,6 +5,22 @@ Newest entries on top.
 
 ---
 
+## 2026-06-19 — Minh Learning Loop Bước 2: feedback signals (channel failures + outcomes)
+
+**Status.** Code in `feat/minh-feedback-loop`.
+
+**Context.** Per `SPEC-minh-learning-loop §3B`. Closes the loop: Twilio failure rates and agent conversion outcomes now flow back into `minh_lessons` automatically.
+
+**Decision.**
+- `analyzeChannelFailures()`: queries `booking_notifications` for a salon's last 7d SMS sends. If fail rate >50% and sample ≥5, auto-creates a `channel` lesson (`prefer_email`). Uses error codes 30034/30007 (A2P carrier rejection) as additional failure signals. Idempotent — skips if an active lesson already exists.
+- `analyzeAgentOutcomes()`: reads `ai_actions_log` outcomes for last 30d. Agents with <5% conversion rate (min 10 resolved actions) trigger a `decreaseLessonConfidence()` call (delta 0.05) on any `timing`/`channel`/`segment` lessons scoped to them. Minor delta by design — needs sustained poor performance to deactivate.
+- `lessonMutations.ts`: `createLesson` / `decreaseLessonConfidence` / `deactivateLesson` helpers. Lessons auto-deactivate when confidence drops below 0.2. Source field preserves deactivation reason for audit trail.
+- `channelCostTracker.ts`: per-channel cost accumulator (SMS ~$0.0079, email ~$0.001) — feeds digest in a future step.
+- Both analysers run in daily cron `/api/cron/minh-learn` at 03:00 UTC. Summary logged to `ai_actions_log` when lessons change.
+- Code guardrails in `channelResolver.ts` remain as backstop.
+
+---
+
 ## 2026-06-19 — minh_lessons: lesson store for AI learning loop (Bước 1)
 
 **Status.** Migration applied to prod. Code in `feat/minh-lessons`.
