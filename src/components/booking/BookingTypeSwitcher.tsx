@@ -124,9 +124,9 @@ function GateOtpInline({
 
   if (stage === "idle") {
     return (
-      <div className="mt-4 border-t border-[var(--booking-border)] pt-4">
+      <div className="fade-in mt-4 space-y-2 border-t border-[var(--booking-border)] pt-4">
         {showEmailInput && emailLinksEnabled ? (
-          <div className="space-y-2">
+          <>
             <input
               type="email"
               autoComplete="email"
@@ -143,34 +143,36 @@ function GateOtpInline({
             >
               {sending ? t.otpEmailSending : t.otpEmailSendCta}
             </button>
-          </div>
+          </>
         ) : (
-          <button
-            type="button"
-            disabled={sending}
-            onClick={() => void sendCode("sms")}
-            className="nq-booking-btn-primary w-full"
-          >
-            {sending ? t.otpSending : t.otpSendCode}
-          </button>
+          <>
+            <button
+              type="button"
+              disabled={sending}
+              onClick={() => void sendCode("sms")}
+              className="nq-booking-btn-primary w-full"
+            >
+              {sending ? t.otpSending : t.otpSendCode}
+            </button>
+            {emailLinksEnabled ? (
+              <button
+                type="button"
+                onClick={() => setShowEmailInput(true)}
+                className="nq-booking-btn-ghost w-full"
+              >
+                {t.otpEmailFallbackCta}
+              </button>
+            ) : null}
+          </>
         )}
-        {error ? <p className="mt-1.5 text-xs text-red-500">{error}</p> : null}
-        {emailLinksEnabled && !showEmailInput ? (
-          <button
-            type="button"
-            onClick={() => setShowEmailInput(true)}
-            className="mt-2 block text-xs text-[var(--booking-text-muted)] underline"
-          >
-            {t.otpEmailFallbackCta}
-          </button>
-        ) : null}
+        {error ? <p className="mt-1 text-sm text-red-500">{error}</p> : null}
       </div>
     );
   }
 
   return (
-    <div className="mt-4 space-y-2 border-t border-[var(--booking-border)] pt-4">
-      <p className="text-xs text-[var(--booking-text-muted)]">
+    <div className="fade-in mt-4 space-y-2 border-t border-[var(--booking-border)] pt-4">
+      <p className="text-sm font-medium text-[var(--booking-text,var(--color-nq-foreground))] opacity-80">
         {t.otpStepSubheading} ···{phoneDigits.slice(-4)}
         {channel === "email" ? ` ${t.otpAndEmail ?? "& email"}` : ""}
       </p>
@@ -184,10 +186,10 @@ function GateOtpInline({
         value={code}
         placeholder={t.otpCodePlaceholder}
         onChange={(e) => onCodeChange(e.target.value)}
-        className="nq-booking-field w-full text-center text-xl tracking-[0.4em] font-mono"
+        className="nq-booking-field w-full text-center text-2xl tracking-[0.5em] font-mono"
         aria-label={t.otpCodeLabel}
       />
-      {error ? <p className="text-xs text-red-500">{error}</p> : null}
+      {error ? <p className="text-sm text-red-500">{error}</p> : null}
       <button
         type="button"
         disabled={verifying || code.length < 6}
@@ -200,13 +202,12 @@ function GateOtpInline({
         type="button"
         disabled={sending}
         onClick={() => { setCode(""); void sendCode(channel); }}
-        className="block w-full text-center text-xs text-[var(--booking-text-muted)] underline"
+        className="nq-booking-btn-ghost w-full"
       >
         {sending ? t.otpSending : t.otpResend}
       </button>
 
-      {/* Email fallback — visible after SMS is sent so customers who don't
-          receive the text can switch channels without starting over. */}
+      {/* Email fallback — visible after SMS is sent */}
       {emailLinksEnabled && channel === "sms" ? (
         showEmailInput ? (
           <div className="space-y-2 pt-1">
@@ -231,7 +232,7 @@ function GateOtpInline({
           <button
             type="button"
             onClick={() => setShowEmailInput(true)}
-            className="block w-full text-center text-xs text-[var(--booking-text-muted)] underline"
+            className="nq-booking-btn-ghost w-full"
           >
             {t.otpEmailFallbackCta}
           </button>
@@ -506,7 +507,7 @@ export function BookingTypeSwitcher({
       {/* SMS consent (CASL/TCPA) — right after the phone, before the flow opens.
           Required to proceed (the OTP SMS is sent next). */}
       {entryPhone && !entryLoading ? (
-        <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+        <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-sm leading-relaxed text-[var(--booking-text,var(--color-nq-foreground))] opacity-80">
           <input
             type="checkbox"
             data-testid="sms-consent"
@@ -529,7 +530,11 @@ export function BookingTypeSwitcher({
           onVerified={(sessionId) => { void handleGateOtpVerified(sessionId); }}
         />
       ) : gateOtpDone ? (
-        <p className="mt-4 border-t border-[var(--booking-border)] pt-3 text-sm font-medium text-[var(--salon-primary)]">
+        <p className="fade-in mt-4 flex items-center gap-1.5 border-t border-[var(--booking-border)] pt-3 text-sm font-semibold text-[var(--salon-primary)]">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="8" r="7.5" stroke="currentColor" strokeOpacity="0.35" />
+            <path d="M4.5 8.25L6.75 10.5L11.5 5.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
           {t.otpVerified}
         </p>
       ) : null}
