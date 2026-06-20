@@ -147,6 +147,12 @@ import {
   type DensityLevel,
 } from "@/shared/dashboard/dashboardDensity";
 import type { BookingStatus } from "@/shared/types";
+import {
+  DEFAULT_DRC_ACCENT,
+  deriveDrcPalette,
+  drcPaletteToCssVars,
+} from "@/shared/lib/drcTheme";
+import { DrcThemePicker } from "@/components/receptionist/DrcThemePicker";
 import { BookingLimitBanner } from "@/components/dashboard/BookingLimitBanner";
 import { PartyCardPanel } from "@/components/receptionist/PartyCardPanel";
 import { AttentionChipBar } from "@/components/receptionist/AttentionChipBar";
@@ -179,6 +185,8 @@ export type ReceptionistCenterProps = {
   /** Release flag `tv_mode` (PR2). When false, the TV-preset full-screen view
    *  is not taken even if `dashboard_preset === "tv"`. Defaults to `true`. */
   tvModeEnabled?: boolean;
+  /** Owner-chosen DRC accent hex color (saved in feature_flags.drc_accent_color). */
+  accentColor?: string | null;
 };
 
 function loadErrorCopy(
@@ -328,6 +336,7 @@ function ReceptionistCenterInner({
   partyCards,
   groupBookingEnabled,
   tvModeEnabled,
+  accentColor,
 }: {
   slug: string;
   initialOk: ReceptionistCenterData;
@@ -338,11 +347,17 @@ function ReceptionistCenterInner({
   partyCards: PartyCard[];
   groupBookingEnabled: boolean;
   tvModeEnabled: boolean;
+  accentColor: string | null;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { language, setLanguage } = useUserLanguage();
   const messages = useMemo(() => getUserMessages(language), [language]);
+
+  // DRC accent color theme — owner-chosen, saved in feature_flags.drc_accent_color.
+  // useState for optimistic updates: picker updates immediately, server action saves async.
+  const [drcAccent, setDrcAccent] = useState(accentColor ?? DEFAULT_DRC_ACCENT);
+  const drcCssVars = useMemo(() => drcPaletteToCssVars(deriveDrcPalette(drcAccent)), [drcAccent]);
 
   // Empty-string initial value so SSR and client hydration produce the same
   // output (same pattern as `originBaseUrl` below). Initialising with
@@ -2567,6 +2582,7 @@ function ReceptionistCenterInner({
       <div
         data-testid="receptionist-center-loaded"
         data-rush-mode={rush.active ? "on" : "off"}
+        style={drcCssVars}
         className={cn(
           "flex min-h-[100dvh] w-full flex-col bg-nq-bg",
           rush.active && "[&_[data-rush-fade]]:opacity-50",
@@ -2746,6 +2762,16 @@ function ReceptionistCenterInner({
                     labels={rcMessages.density}
                     onChanged={onDensityChanged}
                     onError={(msg) => setShakeMessage(msg)}
+                  />
+                </span>
+              ) : null}
+              {/* DRC color theme picker — owner-only, subtle palette icon */}
+              {viewerRole === "owner" && !basicModeActive ? (
+                <span data-rush-fade>
+                  <DrcThemePicker
+                    slug={slug}
+                    currentAccent={drcAccent}
+                    onAccentChange={setDrcAccent}
                   />
                 </span>
               ) : null}
@@ -4017,6 +4043,7 @@ export function ReceptionistCenter({
   partyCards,
   groupBookingEnabled = true,
   tvModeEnabled = true,
+  accentColor,
 }: ReceptionistCenterProps) {
   if (!initialResult.ok) {
     return <ReceptionistGateError code={initialResult.error} />;
@@ -4030,6 +4057,7 @@ export function ReceptionistCenter({
       partyCards={partyCards ?? []}
       groupBookingEnabled={groupBookingEnabled}
       tvModeEnabled={tvModeEnabled}
+      accentColor={accentColor ?? null}
     />
   );
 }

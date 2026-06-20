@@ -413,25 +413,28 @@ export function BookingBlock(props: BookingBlockProps) {
     "pointer-events-auto absolute top-1.5 bottom-1.5 rounded-lg px-2.5 py-1.5 text-left shadow-none transition-[transform,box-shadow,opacity] duration-[var(--duration-nq-fast)] ease-[var(--ease-nq-out)] motion-safe:hover:-translate-y-px motion-safe:hover:shadow-nq-card",
     minHeightPx === undefined && "min-h-[3.25rem]",
     styles.root,
-    // Walkin accent: only when not a group (group color takes priority).
-    isWalkin && showWalkinAccent && !groupAccent && "border-l-[3px] border-nq-primary",
-    // Group accent border-width is in inline style (not className) so Tailwind v4
-    // layer ordering can't override it with the STATUS_STYLES `border` shorthand.
     isCompleted && "opacity-70",
     // While dragging, hide the ORIGINAL block so only the moving dashed ghost
     // (with the live snap time) shows — one clean block instead of two.
     isDragging && "opacity-0",
     isDraggable && "cursor-grab touch-none select-none",
-    onClick && !isDraggable && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
+    onClick && !isDraggable && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--drc-accent,#c9a96e)]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg",
   );
+
+  // Left accent border priority:
+  //  1. Group color (deterministic per group_id — highest priority)
+  //  2. DRC theme accent (var(--drc-accent), cascades from root)
+  //  3. Fallback: NailIQ gold (#c9a96e)
+  // Applied via inline style so Tailwind's border shorthand in STATUS_STYLES can't override it.
+  const accentBorderColor = groupAccent ?? "var(--drc-accent, #c9a96e)";
 
   const style: React.CSSProperties = {
     left: leftPx,
     width: Math.max(0, widthPx - 4),
     ...(minHeightPx !== undefined ? { minHeight: minHeightPx } : {}),
-    ...(groupAccent
-      ? { borderLeftWidth: "3px", borderLeftStyle: "solid", borderLeftColor: groupAccent }
-      : {}),
+    borderLeftWidth: "3px",
+    borderLeftStyle: "solid",
+    borderLeftColor: accentBorderColor,
   };
 
   const inner = (
