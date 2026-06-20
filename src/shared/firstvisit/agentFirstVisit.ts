@@ -262,7 +262,26 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
 
     // ── 1. Detect new first-time visitors and enroll them ──────────────────
     const firstVisitors = await detectFirstVisits(salonId);
+
+    // Build a set of phones that have opted into marketing communications.
+    // First-visit nurture is marketing — only contact consented customers.
+    const allPhones = firstVisitors.map((fv) => fv.phone).filter(Boolean);
+    const consentedPhones = new Set<string>();
+    if (allPhones.length > 0) {
+      const { data: consentRows } = await svc
+        .from("client_profiles" as never)
+        .select("phone" as never)
+        .in("phone" as never, allPhones)
+        .not("marketing_consent_at" as never, "is", null);
+      for (const r of (consentRows ?? []) as unknown as Row[]) {
+        if (r.phone) consentedPhones.add(str(r.phone));
+      }
+    }
+
     for (const fv of firstVisitors) {
+      // Skip customers who haven't opted into marketing communications.
+      if (!consentedPhones.has(fv.phone)) continue;
+
       const ch = resolveCustomerChannel({
         mode: channelMode,
         smsOutboundEnabled: smsEnabled,
@@ -338,6 +357,19 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
       const step = Number(seq.step) as 1 | 2;
       const channel = str(seq.channel) as "sms" | "email";
       const firstVisitDate = str(seq.first_visit_date);
+
+      // Skip if customer revoked consent or never consented (existing sequences
+      // pre-date the consent column — check before each send).
+      if (!consentedPhones.has(phone)) {
+        const { data: cp } = await svc
+          .from("client_profiles" as never)
+          .select("marketing_consent_at" as never)
+          .eq("phone" as never, phone)
+          .maybeSingle();
+        if (!(cp as Row | null)?.marketing_consent_at) continue;
+        // Cache for this run
+        consentedPhones.add(phone);
+      }
 
       // Check conversion first — stop the sequence if they booked again
       const convertedId = await hasConverted(salonId, phone, firstVisitDate);

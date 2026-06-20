@@ -139,6 +139,9 @@ export function useBookingFlowState(
   language: "en" | "vi" = "vi",
   /** SMS consent captured at the phone gate — pre-satisfies confirm. */
   initialSmsConsent: boolean = false,
+  /** Marketing consent opt-in from the gate checkbox. Saved to client_profiles
+   *  after booking so Minh agents can contact the customer. */
+  initialMarketingConsent: boolean = false,
   /** OTP session verified at the phone gate (Option B). When set, the flow
    *  skips its own OTP step — the gate already verified the phone. */
   initialOtpSessionId: string | null = null,
@@ -263,6 +266,7 @@ export function useBookingFlowState(
   // SMS consent — captured at the phone gate; pre-satisfies confirm so it isn't
   // asked twice. Confirm still requires it (gates the button) as a safety net.
   const [smsConsent, setSmsConsent] = useState(initialSmsConsent);
+  const [marketingConsent, setMarketingConsent] = useState(initialMarketingConsent);
   const [waitlistSlotJoined, setWaitlistSlotJoined] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [serviceError, setServiceError] = useState<string | null>(null);
@@ -1010,6 +1014,7 @@ export function useBookingFlowState(
         clientNotes: clientNotes.trim(),
         verificationMethod: "none",
         language,
+        marketingConsent: marketingConsent || undefined,
       });
       setBookingResult({
         bookingId: result.bookingId,
@@ -1383,6 +1388,7 @@ export function useBookingFlowState(
         noShowReuseSavedCard: extra?.noShowReuseSavedCard,
         noShowConsent: extra?.noShowConsent,
         healthAck: extra?.healthAck,
+        marketingConsent: marketingConsent || undefined,
       });
       // Link a paid deposit to the freshly-created booking (server re-verifies
       // the PaymentIntent with Stripe). Best-effort: the webhook is the backstop.
@@ -1808,6 +1814,8 @@ export function useBookingFlowState(
     savedCard,
     smsConsent,
     setSmsConsent,
+    marketingConsent,
+    setMarketingConsent,
     submitWaitlistSlotUnavailable,
     backToPhone,
     backToService,

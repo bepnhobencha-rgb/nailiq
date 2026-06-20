@@ -85,6 +85,10 @@ export type BookingParams = {
   /** Customer ticked the mandatory health acknowledgment (massage/head spa/etc).
    *  Stamps bookings.health_ack_at server-side as duty-of-care evidence. */
   healthAck?: boolean;
+  /** Customer opted into marketing communications (win-back, rebook, VIP Care,
+   *  first-visit nurture). Stamps client_profiles.marketing_consent_at so Minh
+   *  agents can contact them. NULL / false = no consent → agents skip. */
+  marketingConsent?: boolean;
 };
 
 export type BookingResult = {
@@ -1026,6 +1030,21 @@ export async function submitPublicBooking(
         console.error("[submitPublicBooking] set-ref-image dispatch failed", e);
       }
     })();
+  }
+
+  // Fire-and-forget: stamp marketing consent on client_profiles so Minh
+  // agents can contact this customer. Upsert is idempotent — re-booking
+  // with consent checked updates the timestamp to the latest consent.
+  if (params.marketingConsent && phoneOk.digits) {
+    void supabase
+      .from("client_profiles")
+      .upsert(
+        { phone: phoneOk.digits, marketing_consent_at: new Date().toISOString() },
+        { onConflict: "phone" },
+      )
+      .then(({ error }) => {
+        if (error) console.error("[submitPublicBooking] marketing_consent upsert failed", error);
+      });
   }
 
   return {
