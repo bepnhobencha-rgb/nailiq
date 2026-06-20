@@ -489,10 +489,16 @@ export function DashboardSidebar({
     <aside
       // Hidden on mobile (bottom-bar takes over per §9.2).
       className={cn(
-        "hidden md:flex fixed inset-y-0 left-0 z-40 flex-col border-r border-nq-border/40 bg-nq-surface text-nq-foreground",
+        "hidden md:flex fixed inset-y-0 left-0 z-40 flex-col border-r border-nq-border/40 text-nq-foreground",
         // Width follows CSS var so DashboardShell main padding stays in sync.
         "w-[var(--nq-sidebar-w)]",
       )}
+      style={{
+        // When DRC is active it hoists --drc-page-bg onto <html>.
+        // Mix 20% of that colour into black → clearly darker than the DRC
+        // content area but tinted in the same colour family.
+        background: "color-mix(in srgb, var(--drc-page-bg, #111214) 20%, #000000 80%)",
+      }}
       aria-label={t.primaryNav}
     >
       {collapsed ? (

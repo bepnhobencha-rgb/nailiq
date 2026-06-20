@@ -367,6 +367,15 @@ function ReceptionistCenterInner({
     [drcAccent, drcBg],
   );
 
+  // Hoist --drc-page-bg to <html> so the sidebar (outside DRC's subtree)
+  // can tint itself to match. Cleared on unmount so other pages are unaffected.
+  useEffect(() => {
+    document.documentElement.style.setProperty("--drc-page-bg", drcBg);
+    return () => {
+      document.documentElement.style.removeProperty("--drc-page-bg");
+    };
+  }, [drcBg]);
+
   // Empty-string initial value so SSR and client hydration produce the same
   // output (same pattern as `originBaseUrl` below). Initialising with
   // `new Date().toISOString()` makes the server-render timestamp differ from
