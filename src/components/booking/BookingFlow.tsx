@@ -451,6 +451,7 @@ export function BookingFlow({
             t={t}
             salonId={salon.id}
             clientPhone={flow.clientPhone}
+            clientEmail={flow.clientEmail}
             serviceIds={flow.service ? [flow.service.id] : []}
             subtotalCents={flow.service?.priceCents ?? 0}
             stepDir={flow.stepDir}

@@ -11,6 +11,7 @@ type Props = {
   t: BookingMessages;
   salonId: string;
   clientPhone: string;
+  clientEmail?: string;
   serviceIds: string[];
   subtotalCents: number;
   stepDir: BookingMotionDir;
@@ -23,6 +24,7 @@ export function BookingFlowVerifyPanel({
   t,
   salonId,
   clientPhone,
+  clientEmail,
   serviceIds,
   subtotalCents,
   stepDir,
@@ -44,6 +46,7 @@ export function BookingFlowVerifyPanel({
           body: JSON.stringify({
             salon_id: salonId,
             client_phone: clientPhone,
+            client_email: clientEmail?.trim() || null,
             service_ids: serviceIds,
             subtotal_cents: subtotalCents,
           }),

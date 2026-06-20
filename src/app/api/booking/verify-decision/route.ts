@@ -8,11 +8,12 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as {
       salon_id?: string;
       client_phone?: string;
+      client_email?: string | null;
       service_ids?: string[];
       subtotal_cents?: number;
     };
 
-    const { salon_id, client_phone, service_ids, subtotal_cents } = body;
+    const { salon_id, client_phone, client_email, service_ids, subtotal_cents } = body;
     if (!salon_id || !client_phone) {
       return NextResponse.json({ error: "missing_params" }, { status: 400 });
     }
@@ -21,6 +22,7 @@ export async function POST(req: NextRequest) {
     const { data, error } = await supabase.rpc("determine_booking_verification", {
       p_salon_id:       salon_id,
       p_client_phone:   client_phone.replace(/\D/g, ""),
+      p_has_email:      Boolean(client_email?.trim()),
       p_service_ids:    service_ids ?? [],
       p_subtotal_cents: subtotal_cents ?? 0,
     });
