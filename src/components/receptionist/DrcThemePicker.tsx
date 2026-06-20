@@ -77,15 +77,21 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
 
       {open && (
         <>
-          {/* Backdrop — fixed so it covers the whole viewport, above grid z-index */}
+          {/* Backdrop — blocks ALL pointer events from grid below */}
           <div
-            className="fixed inset-0 z-[998]"
+            className="fixed inset-0 z-[9998]"
             onClick={() => setOpen(false)}
+            onMouseMove={(e) => e.stopPropagation()}
+            onMouseOver={(e) => e.stopPropagation()}
+            onMouseEnter={(e) => e.stopPropagation()}
+            onPointerMove={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
           />
 
-          {/* Popover — above backdrop and all grid layers */}
+          {/* Popover — on top of everything */}
           <div
-            className="z-[999] rounded-xl border border-[#2a2a2a] bg-[#111] p-4 shadow-2xl"
+            className="z-[9999] rounded-xl border border-[#2a2a2a] bg-[#111] p-4 shadow-2xl"
             style={{
               ...popoverStyle,
               maxHeight: "calc(100vh - 80px)",
