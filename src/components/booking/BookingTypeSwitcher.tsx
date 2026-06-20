@@ -138,12 +138,14 @@ export function BookingTypeSwitcher({
   const entryLookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const entryValidation = validateGuestPhone(entryPhoneRaw.trim());
   const entryPhone = entryValidation.ok ? entryPhoneRaw.trim() : "";
-  // Ready to enter the flow: valid phone + name (≥2 chars) + SMS consent.
-  // Name is required here so the OTP gate never fires with a blank identity —
-  // catching the missing-name error before the customer spends time on OTP.
-  // ≥2 matches the `nameTooShort` guard in onConfirm / submitPublicBooking.
-  const gateReady =
-    Boolean(entryPhone) && entryName.trim().length >= 2 && entrySmsConsent;
+  // Name is valid when the customer typed ≥2 chars, OR when a verified
+  // profile already supplies their name (post-OTP personalization).
+  // ≥2 matches the nameTooShort guard in onConfirm / submitPublicBooking.
+  const nameOk =
+    entryName.trim().length >= 2 ||
+    (entryCustomer?.name ?? "").trim().length >= 2;
+  // Ready to enter the flow: valid phone + name + SMS consent.
+  const gateReady = Boolean(entryPhone) && nameOk && entrySmsConsent;
   // Debounced commit of the typed name so the flow (keyed on identity)
   // doesn't remount on every keystroke — it picks the name up ~400ms
   // after typing stops, or immediately on blur (see the name input).
@@ -362,6 +364,26 @@ export function BookingTypeSwitcher({
     />
   ) : null;
 
+  // Shared props for BookingFlow — same in both individual-only and group-switcher paths.
+  const flowReady = gateReady && (!salon.phoneOtpEnabled || gateOtpDone);
+  const individualFlowProps = {
+    t,
+    shopSlug,
+    services,
+    addOns,
+    combos,
+    staff,
+    salon,
+    capabilityRows,
+    categories,
+    language,
+    initialPhone: entryPhone,
+    initialReturningCustomer: entryCustomer,
+    initialName: entryNameResolved,
+    initialSmsConsent: entrySmsConsent,
+    initialOtpSessionId: gateOtpSessionId,
+  } as const;
+
   if (!groupEnabled) {
     return (
       <div className="space-y-4">
@@ -370,27 +392,10 @@ export function BookingTypeSwitcher({
         )}
         {phoneGate}
         {gateOtpPanel}
-        {/* Phone-first: the flow only renders once the gate is cleared.
-            With OTP enabled: waits for gate OTP too (gateOtpDone).
-            Without OTP: renders as soon as phone+consent are ready. */}
-        {gateReady && (!salon.phoneOtpEnabled || gateOtpDone) ? (
+        {flowReady ? (
           <BookingFlow
             key={`ind-${entryPhone}-${entryNameResolved}`}
-            t={t}
-            shopSlug={shopSlug}
-            services={services}
-            addOns={addOns}
-            combos={combos}
-            staff={staff}
-            salon={salon}
-            capabilityRows={capabilityRows}
-            categories={categories}
-            language={language}
-            initialPhone={entryPhone}
-            initialReturningCustomer={entryCustomer}
-            initialName={entryNameResolved}
-            initialSmsConsent={entrySmsConsent}
-            initialOtpSessionId={gateOtpSessionId}
+            {...individualFlowProps}
           />
         ) : null}
       </div>
@@ -408,12 +413,8 @@ export function BookingTypeSwitcher({
           "service", skipping its own phone step → never two inputs). */}
       {phoneGate}
       {gateOtpPanel}
-      {gateReady && (!salon.phoneOtpEnabled || gateOtpDone) ? (
+      {flowReady ? (
       <>
-      {/* Heading + pill stacked. Was previously an inline-flex pill
-          on its own line with no heading — easy to miss on first
-          paint. Promoted to a small section so it's clearly part of
-          the booking flow, not site chrome. */}
       <p
         id="booking-type-heading"
         className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--booking-text-muted)]"
@@ -438,9 +439,6 @@ export function BookingTypeSwitcher({
               data-testid={`booking-type-${m}`}
               onClick={() => setMode(m)}
               className={cn(
-                // P2.4 — touch target 44px (was 40px). Matches the
-                // Apple HIG / WCAG 2.2 SC 2.5.5 recommendation and
-                // the rest of the booking surface.
                 "flex-1 min-h-11 rounded-full px-4 py-2 transition-colors",
                 active
                   ? "bg-[var(--salon-primary)] text-[var(--booking-bg)] shadow-sm"
@@ -456,21 +454,7 @@ export function BookingTypeSwitcher({
       {mode === "individual" ? (
         <BookingFlow
           key={`ind-${entryPhone}-${entryNameResolved}`}
-          t={t}
-          shopSlug={shopSlug}
-          services={services}
-          addOns={addOns}
-          combos={combos}
-          staff={staff}
-          salon={salon}
-          capabilityRows={capabilityRows}
-          categories={categories}
-          language={language}
-          initialPhone={entryPhone}
-          initialReturningCustomer={entryCustomer}
-          initialName={entryNameResolved}
-          initialSmsConsent={entrySmsConsent}
-          initialOtpSessionId={gateOtpSessionId}
+          {...individualFlowProps}
         />
       ) : (
         <BookingGroupFlow
