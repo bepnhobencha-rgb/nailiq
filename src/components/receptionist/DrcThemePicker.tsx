@@ -6,11 +6,13 @@ import { Palette, Check, RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import {
   FENG_SHUI_PRESETS,
+  DARK_BG_PRESETS,
   DEFAULT_DRC_ACCENT,
+  DEFAULT_DRC_BG,
   sanitizeHex,
   contrastFg,
 } from "@/shared/lib/drcTheme";
-import { saveDrcAccentColor } from "@/shared/dashboard/drcThemeAction";
+import { saveDrcAccentColor, saveDrcBgColor } from "@/shared/dashboard/drcThemeAction";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { getUserMessages } from "@/shared/i18n/user";
 
@@ -18,13 +20,23 @@ interface Props {
   slug: string;
   currentAccent: string;
   onAccentChange: (hex: string) => void;
+  currentBg: string;
+  onBgChange: (hex: string) => void;
 }
 
-export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
+export function DrcThemePicker({
+  slug,
+  currentAccent,
+  onAccentChange,
+  currentBg,
+  onBgChange,
+}: Props) {
   const [open, setOpen] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const [accentPending, startAccentTransition] = useTransition();
+  const [bgPending, startBgTransition] = useTransition();
   const [customHex, setCustomHex] = useState(currentAccent);
-  const [saved, setSaved] = useState(false);
+  const [accentSaved, setAccentSaved] = useState(false);
+  const [bgSaved, setBgSaved] = useState(false);
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
   const [mounted, setMounted] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -32,10 +44,11 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
   const { language } = useUserLanguage();
   const t = useMemo(() => getUserMessages(language).receptionist.themePicker, [language]);
 
-  // Ensure portal only renders client-side
+  const pending = accentPending || bgPending;
+  const saved = accentSaved || bgSaved;
+
   useEffect(() => { setMounted(true); }, []);
 
-  // Recalculate position whenever picker opens — anchored to button via fixed coords
   useEffect(() => {
     if (!open || !btnRef.current) return;
     const rect = btnRef.current.getBoundingClientRect();
@@ -46,25 +59,35 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
     setPopoverStyle({ top, left, width: popoverWidth });
   }, [open]);
 
-  function pick(hex: string) {
+  function pickAccent(hex: string) {
     onAccentChange(hex);
     setCustomHex(hex);
-    setSaved(false);
+    setAccentSaved(false);
     const isDefault = hex.toLowerCase() === DEFAULT_DRC_ACCENT.toLowerCase();
-    startTransition(async () => {
+    startAccentTransition(async () => {
       const result = await saveDrcAccentColor(slug, isDefault ? null : hex);
-      if (result.ok) setSaved(true);
+      if (result.ok) setAccentSaved(true);
     });
   }
 
-  function applyCustom() {
+  function pickBg(hex: string) {
+    onBgChange(hex);
+    setBgSaved(false);
+    const isDefault = hex.toLowerCase() === DEFAULT_DRC_BG.toLowerCase();
+    startBgTransition(async () => {
+      const result = await saveDrcBgColor(slug, isDefault ? null : hex);
+      if (result.ok) setBgSaved(true);
+    });
+  }
+
+  function applyCustomAccent() {
     const valid = sanitizeHex(customHex);
-    if (valid) pick(valid);
+    if (valid) pickAccent(valid);
   }
 
   const picker = open && mounted ? createPortal(
     <>
-      {/* Backdrop — rendered at body level, blocks ALL events from anything below */}
+      {/* Backdrop — blocks ALL events from anything below */}
       <div
         className="fixed inset-0"
         style={{ zIndex: 9998 }}
@@ -76,7 +99,7 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
         onTouchMove={(e) => e.stopPropagation()}
       />
 
-      {/* Popover — rendered at body level, above everything unconditionally */}
+      {/* Popover — rendered at body level, above everything */}
       <div
         className="fixed rounded-xl border border-[#2a2a2a] bg-[#111] p-4 shadow-2xl"
         style={{ ...popoverStyle, zIndex: 9999, maxHeight: "calc(100vh - 80px)", overflowY: "auto" }}
@@ -97,7 +120,7 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
           )}
         </div>
 
-        {/* Feng shui preset swatches — 4 per row */}
+        {/* ── Accent color presets ── */}
         <div className="mb-4 grid grid-cols-4 gap-2">
           {FENG_SHUI_PRESETS.map((p) => {
             const isActive = currentAccent.toLowerCase() === p.hex.toLowerCase();
@@ -106,7 +129,7 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
               <button
                 key={p.hex}
                 type="button"
-                onClick={() => pick(p.hex)}
+                onClick={() => pickAccent(p.hex)}
                 title={`${preset.label} — ${preset.desc}`}
                 className={cn(
                   "relative h-10 w-full rounded-lg transition-all duration-150 hover:scale-105 hover:shadow-md",
@@ -129,7 +152,7 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
           })}
         </div>
 
-        {/* Feng shui hint for active color */}
+        {/* Feng shui hint for active accent */}
         {(() => {
           const active = FENG_SHUI_PRESETS.find(
             (p) => p.hex.toLowerCase() === currentAccent.toLowerCase(),
@@ -144,10 +167,7 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
           );
         })()}
 
-        {/* Divider */}
-        <div className="mb-3 border-t border-[#2a2a2a]" />
-
-        {/* Custom color picker */}
+        {/* Custom accent */}
         <p className="mb-2 text-[11px] text-[#666]">{t.customLabel}</p>
         <div className="flex items-center gap-2">
           <input
@@ -168,22 +188,60 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
           </div>
           <button
             type="button"
-            onClick={applyCustom}
+            onClick={applyCustomAccent}
             disabled={!sanitizeHex(customHex) || pending}
             className="rounded-lg bg-[#2a2a2a] px-3 py-1.5 text-[12px] text-white transition-colors hover:bg-[#3a3a3a] disabled:opacity-40"
           >
             {t.applyButton}
           </button>
         </div>
-
-        {/* Reset to default */}
         <button
           type="button"
-          onClick={() => pick(DEFAULT_DRC_ACCENT)}
+          onClick={() => pickAccent(DEFAULT_DRC_ACCENT)}
           className="mt-3 flex w-full items-center justify-center gap-1.5 text-[11px] text-[#555] transition-colors hover:text-[#888]"
         >
           <RotateCcw size={10} />
           {t.resetButton}
+        </button>
+
+        {/* ── Background color ── */}
+        <div className="my-3 border-t border-[#2a2a2a]" />
+        <p className="mb-2 text-[11px] uppercase tracking-[2px] text-[#888]">
+          {t.bgTitle}
+        </p>
+        <div className="mb-3 grid grid-cols-6 gap-1.5">
+          {DARK_BG_PRESETS.map((p) => {
+            const isActive = currentBg.toLowerCase() === p.hex.toLowerCase();
+            return (
+              <button
+                key={p.hex}
+                type="button"
+                onClick={() => pickBg(p.hex)}
+                title={t.bgPresets[p.key]}
+                className={cn(
+                  "relative h-7 w-full rounded-md transition-all duration-150 hover:scale-105",
+                  isActive
+                    ? "ring-2 ring-white ring-offset-1 ring-offset-[#111]"
+                    : "ring-1 ring-white/10",
+                )}
+                style={{ backgroundColor: p.hex }}
+              >
+                {isActive && (
+                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
+                    ✓
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={() => pickBg(DEFAULT_DRC_BG)}
+          className="flex w-full items-center justify-center gap-1.5 text-[11px] text-[#555] transition-colors hover:text-[#888]"
+        >
+          <RotateCcw size={10} />
+          {t.bgReset}
         </button>
       </div>
     </>,

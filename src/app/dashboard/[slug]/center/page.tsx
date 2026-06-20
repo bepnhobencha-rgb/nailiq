@@ -87,6 +87,10 @@ export default async function ReceptionistCenterPage({
     typeof featureFlags?.drc_accent_color === "string"
       ? featureFlags.drc_accent_color
       : null;
+  const drcBgColor =
+    typeof featureFlags?.drc_bg_color === "string"
+      ? featureFlags.drc_bg_color
+      : null;
 
   // Hard URL enforcement: the sidebar hides the nav, but a direct visit to
   // /center must also be blocked when the feature is off. effective =
@@ -129,6 +133,7 @@ export default async function ReceptionistCenterPage({
         groupBookingEnabled={groupBookingEnabled}
         tvModeEnabled={tvModeEnabled}
         accentColor={drcAccentColor}
+        bgColor={drcBgColor}
       />
     </ReceptionistErrorBoundary>
   );

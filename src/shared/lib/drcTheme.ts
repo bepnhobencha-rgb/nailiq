@@ -4,9 +4,12 @@
  */
 
 export const DEFAULT_DRC_ACCENT = "#c9a96e"; // NailIQ gold
+export const DEFAULT_DRC_BG = "#0b0c10";     // NailIQ charcoal
 
 export type DrcPalette = {
   accent: string;
+  /** Owner-chosen background color for the DRC page. */
+  bgColor: string;
   /** 12% opacity tint — appointment block background overlay */
   accentSubtle: string;
   /** 40% opacity — block border */
@@ -30,6 +33,19 @@ export const FENG_SHUI_PRESETS: Array<{ hex: string; key: FengShuiPresetKey }> =
   { hex: DEFAULT_DRC_ACCENT, key: "nailiq_gold" },
 ];
 
+export type DarkBgPresetKey =
+  | "charcoal" | "navy" | "teal" | "forest" | "purple" | "crimson";
+
+/** Dark-only bg presets — luminance < 0.1, white text always readable. */
+export const DARK_BG_PRESETS: Array<{ hex: string; key: DarkBgPresetKey }> = [
+  { hex: DEFAULT_DRC_BG, key: "charcoal" },
+  { hex: "#0a1128",      key: "navy" },
+  { hex: "#071c1c",      key: "teal" },
+  { hex: "#0b1a0f",      key: "forest" },
+  { hex: "#110b1a",      key: "purple" },
+  { hex: "#1a0d0d",      key: "crimson" },
+];
+
 export function hexToRgb(hex: string): [number, number, number] {
   const clean = hex.replace("#", "").padEnd(6, "0");
   return [
@@ -50,14 +66,15 @@ export function contrastFg(bgHex: string): "#111111" | "#ffffff" {
   return getLuminance(bgHex) > 0.45 ? "#111111" : "#ffffff";
 }
 
-/** Derive a full safe palette from a single accent hex. */
-export function deriveDrcPalette(hex: string): DrcPalette {
-  const [r, g, b] = hexToRgb(hex);
+/** Derive a full safe palette from accent + optional background hex. */
+export function deriveDrcPalette(accentHex: string, bgHex?: string | null): DrcPalette {
+  const [r, g, b] = hexToRgb(accentHex);
   return {
-    accent: hex,
+    accent: accentHex,
+    bgColor: bgHex ?? DEFAULT_DRC_BG,
     accentSubtle: `rgba(${r},${g},${b},0.13)`,
     accentBorder: `rgba(${r},${g},${b},0.45)`,
-    accentFg: contrastFg(hex),
+    accentFg: contrastFg(accentHex),
   };
 }
 
@@ -68,6 +85,7 @@ export function drcPaletteToCssVars(p: DrcPalette): React.CSSProperties {
     "--drc-accent-subtle": p.accentSubtle,
     "--drc-accent-border": p.accentBorder,
     "--drc-accent-fg": p.accentFg,
+    "--drc-bg": p.bgColor,
   } as React.CSSProperties;
 }
 

@@ -1168,6 +1168,16 @@ export const userVi: UserMessages = {
         earth_brown: { label: "Thổ — Nâu 🟤", desc: "Ổn định, bền vững" },
         nailiq_gold: { label: "NailIQ Gold ✦", desc: "Mặc định" },
       },
+      bgTitle: "Nền DRC",
+      bgReset: "Về nền mặc định NailIQ",
+      bgPresets: {
+        charcoal: "Đen than (mặc định)",
+        navy: "Xanh đậm",
+        teal: "Xanh ngọc đậm",
+        forest: "Xanh rừng đậm",
+        purple: "Tím đậm",
+        crimson: "Đỏ thẫm đậm",
+      },
     },
     basicMode: {
       toggle: "Cơ bản",

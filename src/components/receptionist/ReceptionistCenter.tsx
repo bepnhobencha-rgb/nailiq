@@ -149,6 +149,7 @@ import {
 import type { BookingStatus } from "@/shared/types";
 import {
   DEFAULT_DRC_ACCENT,
+  DEFAULT_DRC_BG,
   deriveDrcPalette,
   drcPaletteToCssVars,
 } from "@/shared/lib/drcTheme";
@@ -187,6 +188,7 @@ export type ReceptionistCenterProps = {
   tvModeEnabled?: boolean;
   /** Owner-chosen DRC accent hex color (saved in feature_flags.drc_accent_color). */
   accentColor?: string | null;
+  bgColor?: string | null;
 };
 
 function loadErrorCopy(
@@ -337,6 +339,7 @@ function ReceptionistCenterInner({
   groupBookingEnabled,
   tvModeEnabled,
   accentColor,
+  bgColor,
 }: {
   slug: string;
   initialOk: ReceptionistCenterData;
@@ -348,6 +351,7 @@ function ReceptionistCenterInner({
   groupBookingEnabled: boolean;
   tvModeEnabled: boolean;
   accentColor: string | null;
+  bgColor: string | null;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -357,7 +361,11 @@ function ReceptionistCenterInner({
   // DRC accent color theme — owner-chosen, saved in feature_flags.drc_accent_color.
   // useState for optimistic updates: picker updates immediately, server action saves async.
   const [drcAccent, setDrcAccent] = useState(accentColor ?? DEFAULT_DRC_ACCENT);
-  const drcCssVars = useMemo(() => drcPaletteToCssVars(deriveDrcPalette(drcAccent)), [drcAccent]);
+  const [drcBg, setDrcBg] = useState(bgColor ?? DEFAULT_DRC_BG);
+  const drcCssVars = useMemo(
+    () => drcPaletteToCssVars(deriveDrcPalette(drcAccent, drcBg)),
+    [drcAccent, drcBg],
+  );
 
   // Empty-string initial value so SSR and client hydration produce the same
   // output (same pattern as `originBaseUrl` below). Initialising with
@@ -2582,9 +2590,9 @@ function ReceptionistCenterInner({
       <div
         data-testid="receptionist-center-loaded"
         data-rush-mode={rush.active ? "on" : "off"}
-        style={drcCssVars}
+        style={{ ...drcCssVars, backgroundColor: drcBg }}
         className={cn(
-          "flex min-h-[100dvh] w-full flex-col bg-nq-bg",
+          "flex min-h-[100dvh] w-full flex-col",
           rush.active && "[&_[data-rush-fade]]:opacity-50",
         )}
       >
@@ -2772,6 +2780,8 @@ function ReceptionistCenterInner({
                     slug={slug}
                     currentAccent={drcAccent}
                     onAccentChange={setDrcAccent}
+                    currentBg={drcBg}
+                    onBgChange={setDrcBg}
                   />
                 </span>
               ) : null}
@@ -4044,6 +4054,7 @@ export function ReceptionistCenter({
   groupBookingEnabled = true,
   tvModeEnabled = true,
   accentColor,
+  bgColor,
 }: ReceptionistCenterProps) {
   if (!initialResult.ok) {
     return <ReceptionistGateError code={initialResult.error} />;
@@ -4058,6 +4069,7 @@ export function ReceptionistCenter({
       groupBookingEnabled={groupBookingEnabled}
       tvModeEnabled={tvModeEnabled}
       accentColor={accentColor ?? null}
+      bgColor={bgColor ?? null}
     />
   );
 }

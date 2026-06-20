@@ -891,12 +891,13 @@ function StaffTimelineGridImpl({
       <div className="inline-flex min-w-max flex-row">
         <div
           className={cn(
-            "sticky left-0 z-[15] flex shrink-0 flex-col border-r border-nq-muted/25 bg-nq-bg",
+            "sticky left-0 z-[15] flex shrink-0 flex-col border-r border-nq-muted/25",
           )}
+          style={{ backgroundColor: "var(--drc-bg, #0b0c10)" }}
         >
           <div
-            className="sticky top-0 z-[25] shrink-0 bg-nq-bg"
-            style={{ width: STAFF_COL_WIDTH, height: TIME_HEADER_HEIGHT }}
+            className="sticky top-0 z-[25] shrink-0"
+            style={{ width: STAFF_COL_WIDTH, height: TIME_HEADER_HEIGHT, backgroundColor: "var(--drc-bg, #0b0c10)" }}
             aria-hidden
           />
 
@@ -941,7 +942,7 @@ function StaffTimelineGridImpl({
         <div className="flex flex-col" style={{ width: timelineWidthPx }}>
           <div
             className={cn(
-              "sticky top-0 z-12 flex shrink-0 bg-nq-bg/95 backdrop-blur-sm",
+              "sticky top-0 z-12 flex shrink-0 backdrop-blur-sm",
               // `relative` anchors the floating NOW-time bubble (below)
               // inside the time-header strip; combined with the strip's
               // existing `sticky top-0` this keeps the bubble visible
@@ -950,7 +951,7 @@ function StaffTimelineGridImpl({
               // the time axis).
               "relative",
             )}
-            style={{ height: TIME_HEADER_HEIGHT, width: timelineWidthPx }}
+            style={{ height: TIME_HEADER_HEIGHT, width: timelineWidthPx, backgroundColor: "var(--drc-bg, #0b0c10)" }}
           >
             {slotUtcList.map((utc, i) => {
               const isHourMark = i % 2 === 0;

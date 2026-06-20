@@ -1117,6 +1117,16 @@ export type UserMessages = {
         earth_brown: { label: string; desc: string };
         nailiq_gold: { label: string; desc: string };
       };
+      bgTitle: string;
+      bgReset: string;
+      bgPresets: {
+        charcoal: string;
+        navy: string;
+        teal: string;
+        forest: string;
+        purple: string;
+        crimson: string;
+      };
     };
     /** Basic Mode — Front Desk Cockpit (per-device view toggle). */
     basicMode: {
@@ -3296,6 +3306,16 @@ export const userEn: UserMessages = {
         water_purple: { label: "Water — Purple 🟣", desc: "Spirit, nobility" },
         earth_brown: { label: "Earth — Brown 🟤", desc: "Stability, resilience" },
         nailiq_gold: { label: "NailIQ Gold ✦", desc: "Default" },
+      },
+      bgTitle: "DRC Background",
+      bgReset: "Reset to NailIQ dark",
+      bgPresets: {
+        charcoal: "Charcoal (default)",
+        navy: "Deep Navy",
+        teal: "Dark Teal",
+        forest: "Dark Forest",
+        purple: "Dark Purple",
+        crimson: "Dark Crimson",
       },
     },
     basicMode: {
