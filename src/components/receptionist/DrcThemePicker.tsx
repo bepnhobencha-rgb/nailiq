@@ -77,15 +77,15 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
 
       {open && (
         <>
-          {/* Backdrop — fixed so it covers the whole viewport */}
+          {/* Backdrop — fixed so it covers the whole viewport, above grid z-index */}
           <div
-            className="fixed inset-0 z-40"
+            className="fixed inset-0 z-[998]"
             onClick={() => setOpen(false)}
           />
 
-          {/* Popover — fixed to escape backdrop-filter stacking context on header */}
+          {/* Popover — above backdrop and all grid layers */}
           <div
-            className="z-50 rounded-xl border border-[#2a2a2a] bg-[#111] p-4 shadow-2xl"
+            className="z-[999] rounded-xl border border-[#2a2a2a] bg-[#111] p-4 shadow-2xl"
             style={{
               ...popoverStyle,
               maxHeight: "calc(100vh - 80px)",
