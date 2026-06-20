@@ -146,12 +146,31 @@ function buildContext(
       .slice(0, 3)
       .join(", ");
 
+    const p0 = a.actions[0]?.payload ?? {};
     const label: Record<string, string> = {
       winback: `Kéo Về: gửi ${count} tin giữ khách${names ? ` (${names})` : ""}`,
       rebook: `Nhịp Tim: nhắc ${count} khách tái ghé${names ? ` (${names})` : ""}`,
       vip_care: `VIP Care: chăm sóc ${count} khách đặc biệt${names ? ` (${names})` : ""}`,
       first_visit: `Lần đầu: chào đón / nhắc ${count} khách mới${names ? ` (${names})` : ""}`,
       watchdog: `Radar: ghi nhận ${count} cảnh báo vận hành`,
+      revenue_report: (() => {
+        const rev = Math.round(num(p0.revenueCents) / 100);
+        const ticket = Math.round(num(p0.avgTicketCents) / 100);
+        const chg = num(p0.changeVsLastWeekPct);
+        return `Doanh Thu: tuần này $${rev} · ticket TB $${ticket} · ${chg >= 0 ? "+" : ""}${chg}% so tuần trước`;
+      })(),
+      staff_performance: (() => {
+        const alerts = num(p0.alertCount);
+        const staffCount = num(p0.staffCount);
+        return `Nhân Viên: ${staffCount} người · ${alerts > 0 ? `⚠️ ${alerts} cần chú ý` : "hiệu suất ổn định"}`;
+      })(),
+      cancellation_radar: (() => {
+        const rate = num(p0.cancellationRatePct);
+        const total = num(p0.cancelCount);
+        const spike = p0.spike === true;
+        const worstDay = str(p0.worstDow);
+        return `Huỷ Lịch: ${total} huỷ · tỷ lệ ${rate}%${spike ? " ⚠️ tăng bất thường" : ""}${worstDay ? ` · nhiều nhất: ${worstDay}` : ""}`;
+      })(),
     };
     agentLines.push(label[a.agent] ?? `${a.agent}: ${count} hành động`);
   }

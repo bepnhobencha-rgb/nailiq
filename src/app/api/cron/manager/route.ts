@@ -64,6 +64,41 @@ export async function GET(req: Request): Promise<NextResponse> {
         console.error("[manager] sip rebuild", salon.slug, e);
         entry.sip = String(e);
       }
+
+      // Cancellation Radar — daily check; spike alert any day, full report on Monday
+      try {
+        const { runCancellationRadar } = await import("@/shared/ai/agentCancellationRadar");
+        await runCancellationRadar(salon.id);
+        entry.cancellation_radar = "ok";
+      } catch (e) {
+        console.error("[manager] cancellation_radar", salon.slug, e);
+        entry.cancellation_radar = String(e);
+      }
+
+      // Revenue Report + Staff Performance — Monday only, weekly dedup
+      const todayAbbr = new Intl.DateTimeFormat("en-CA", {
+        timeZone: tz,
+        weekday: "short",
+      }).format(new Date());
+      if (todayAbbr === "Mon") {
+        try {
+          const { runRevenueReport } = await import("@/shared/ai/agentRevenue");
+          await runRevenueReport(salon.id);
+          entry.revenue_report = "ok";
+        } catch (e) {
+          console.error("[manager] revenue_report", salon.slug, e);
+          entry.revenue_report = String(e);
+        }
+
+        try {
+          const { runStaffPerformance } = await import("@/shared/ai/agentStaffPerformance");
+          await runStaffPerformance(salon.id);
+          entry.staff_performance = "ok";
+        } catch (e) {
+          console.error("[manager] staff_performance", salon.slug, e);
+          entry.staff_performance = String(e);
+        }
+      }
     }
 
     // AI no-show policy shadow/live backfill

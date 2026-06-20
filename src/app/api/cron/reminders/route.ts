@@ -7,6 +7,7 @@ import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { logNotification } from "@/shared/lib/notificationLog";
 import { reminderLang, buildReminderSmsBody } from "@/shared/reminders/reminderSmsBody";
 import { isUsPhone } from "@/shared/lib/phoneRegion";
+import { sendGroupReminderEmail, type GroupMember } from "@/shared/noshow/sendReminderEmail";
 
 /** Vercel Cron calls this route every 15 minutes with the CRON_SECRET header. */
 export const runtime = "nodejs";
@@ -26,6 +27,9 @@ type BookingRow = {
   client_locale: string | null;
   reminder_24h_sent_at: string | null;
   reminder_3h_sent_at: string | null;
+  group_id: string | null;
+  is_group_organizer: boolean | null;
+  status: string;
   services: { name: string } | null;
   staff: { name: string } | null;
   salons: {
@@ -91,8 +95,9 @@ export async function GET(req: Request) {
   const window3hEnd    = new Date(now.getTime() +  3.25 * 60 * 60 * 1000).toISOString();
 
   const baseSelect = `id, salon_id, client_name, client_email, client_phone, start_time_utc,
-    no_show_risk_score, client_locale,
+    no_show_risk_score, client_locale, status,
     reminder_24h_sent_at, reminder_3h_sent_at,
+    group_id, is_group_organizer,
     services!bookings_service_id_fkey(name), staff(name),
     salons(name, slug, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, sms_a2p_registered, feature_flags)`;
 
@@ -117,11 +122,118 @@ export async function GET(req: Request) {
   let sent3h = 0;
   let errors = 0;
 
+  /** Fetch all members of a group for the consolidated reminder. */
+  async function fetchGroupMembers(groupId: string): Promise<GroupMember[]> {
+    const { data } = await supabase
+      .from("bookings" as never)
+      .select("client_name, client_email, status, start_time_utc, services!bookings_service_id_fkey(name), staff(name)")
+      .eq("group_id", groupId)
+      .in("status", ["pending", "confirmed"])
+      .order("start_time_utc");
+    return ((data ?? []) as {
+      client_name: string;
+      client_email: string | null;
+      status: string;
+      start_time_utc: string;
+      services: { name: string } | null;
+      staff: { name: string } | null;
+    }[]).map((m) => ({
+      name: m.client_name,
+      serviceName: m.services?.name ?? "appointment",
+      staffName: m.staff?.name ?? "",
+      startTimeUtc: m.start_time_utc,
+      status: m.status,
+      email: m.client_email,
+    }));
+  }
+
+  /** Mark reminder sent for every member of a group (so they don't get individual emails later). */
+  async function markGroupReminderSent(groupId: string, reminderType: "24h" | "3h") {
+    const col = reminderType === "24h" ? "reminder_24h_sent_at" : "reminder_3h_sent_at";
+    await supabase
+      .from("bookings" as never)
+      .update({ [col]: new Date().toISOString() } as never)
+      .eq("group_id", groupId)
+      .in("status", ["pending", "confirmed"]);
+  }
+
+  async function processGroupReminder(booking: BookingRow, reminderType: "24h" | "3h") {
+    const salon = booking.salons!;
+    if (!booking.client_email || !booking.group_id) return;
+
+    const members = await fetchGroupMembers(booking.group_id);
+    const { resolveVertical } = await import("@/shared/verticals/registry");
+
+    const token = await generateReminderToken(booking.id, booking.salon_id);
+    if (!token) { errors++; return; }
+
+    const result = await sendGroupReminderEmail({
+      tokenId: token.id,
+      organizerName: booking.client_name,
+      organizerEmail: booking.client_email,
+      salonName: salon.name,
+      salonSlug: salon.slug,
+      reminderType,
+      timezone: (salon as { timezone?: string | null }).timezone ?? null,
+      businessDescriptor: resolveVertical((salon as { vertical?: string | null }).vertical).aiDescriptor,
+      members,
+    });
+
+    void logNotification({
+      bookingId: booking.id,
+      salonId: booking.salon_id,
+      notificationType: reminderType === "24h" ? "reminder_24h" : "reminder_3h",
+      channel: "email",
+      clientPhone: booking.client_phone ? `+${booking.client_phone}` : null,
+      messageSid: null,
+      bodyPreview: `Group reminder · party of ${members.length}`,
+      ok: result.ok,
+      errorMessage: result.error,
+    });
+
+    if (!result.ok) { errors++; return; }
+
+    // Mark all group members as reminded so they don't receive individual emails
+    await markGroupReminderSent(booking.group_id, reminderType);
+
+    // Send individual reminder to members with their own distinct email
+    for (const m of members) {
+      if (!m.email || m.email === booking.client_email) continue;
+      if (await import("@/shared/lib/emailCompliance").then((mod) => mod.isEmailSuppressed(m.email!))) continue;
+      const { sendReminderEmail } = await import("@/shared/noshow/sendReminderEmail");
+      const memberToken = await generateReminderToken(booking.id, booking.salon_id);
+      if (!memberToken) continue;
+      await sendReminderEmail({
+        tokenId: memberToken.id,
+        clientName: m.name,
+        clientEmail: m.email,
+        serviceName: m.serviceName,
+        staffName: m.staffName,
+        startTimeUtc: m.startTimeUtc,
+        salonName: salon.name,
+        salonSlug: salon.slug,
+        timezone: (salon as { timezone?: string | null }).timezone ?? null,
+        businessDescriptor: resolveVertical((salon as { vertical?: string | null }).vertical).aiDescriptor,
+      });
+    }
+
+    if (reminderType === "24h") sent24h++; else sent3h++;
+  }
+
   async function processReminder(booking: BookingRow, reminderType: "24h" | "3h") {
     const salon = booking.salons;
     if (!salon?.reminders_enabled) return;
     if (reminderType === "24h" && !salon.reminder_24h_enabled) return;
     if (reminderType === "3h"  && !salon.reminder_3h_enabled)  return;
+
+    // Group member (non-organizer): skip — handled via organizer's group email
+    if (booking.group_id && !booking.is_group_organizer) return;
+
+    // Group organizer: send consolidated group email
+    if (booking.group_id && booking.is_group_organizer) {
+      await processGroupReminder(booking, reminderType);
+      return;
+    }
 
     const wantsEmail = !!booking.client_email;
     const smsA2pRegistered = salon.sms_a2p_registered !== false; // default true — only explicit false blocks

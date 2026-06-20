@@ -679,18 +679,19 @@ export function EditBookingForm({
 
       {/* Bed picker — shown only for resource-mode salons once a slot is chosen */}
       {deskData?.salon.resourcesEnabled && selectedSlotLabel ? (
-        <div className="block space-y-1.5">
+        <div data-testid="edit-bed-picker" className="block space-y-1.5">
           <span className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
             {"Bed / Room"}
           </span>
           {resourceLoading ? (
-            <p className="text-xs text-nq-muted">
+            <p data-testid="edit-bed-loading" className="text-xs text-nq-muted">
               {"Checking availability…"}
             </p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
               <button
                 type="button"
+                data-testid="edit-bed-auto"
                 onClick={() => setResourceId(null)}
                 className={cn(
                   "rounded-full border px-2.5 py-1 text-xs transition",
@@ -705,6 +706,7 @@ export function EditBookingForm({
                 <button
                   key={r.id}
                   type="button"
+                  data-testid={`edit-bed-${r.id}`}
                   disabled={!r.isAvailable && resourceId !== r.id}
                   onClick={() => {
                     if (r.isAvailable) setResourceId(r.id);

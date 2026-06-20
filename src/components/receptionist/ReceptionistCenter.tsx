@@ -147,6 +147,12 @@ import {
   type DensityLevel,
 } from "@/shared/dashboard/dashboardDensity";
 import type { BookingStatus } from "@/shared/types";
+import {
+  DEFAULT_DRC_ACCENT,
+  deriveDrcPalette,
+  drcPaletteToCssVars,
+} from "@/shared/lib/drcTheme";
+import { DrcThemePicker } from "@/components/receptionist/DrcThemePicker";
 import { BookingLimitBanner } from "@/components/dashboard/BookingLimitBanner";
 import { PartyCardPanel } from "@/components/receptionist/PartyCardPanel";
 import { AttentionChipBar } from "@/components/receptionist/AttentionChipBar";
@@ -179,6 +185,8 @@ export type ReceptionistCenterProps = {
   /** Release flag `tv_mode` (PR2). When false, the TV-preset full-screen view
    *  is not taken even if `dashboard_preset === "tv"`. Defaults to `true`. */
   tvModeEnabled?: boolean;
+  /** Owner-chosen DRC accent hex color (saved in feature_flags.drc_accent_color). */
+  accentColor?: string | null;
 };
 
 function loadErrorCopy(
@@ -328,6 +336,7 @@ function ReceptionistCenterInner({
   partyCards,
   groupBookingEnabled,
   tvModeEnabled,
+  accentColor,
 }: {
   slug: string;
   initialOk: ReceptionistCenterData;
@@ -338,11 +347,17 @@ function ReceptionistCenterInner({
   partyCards: PartyCard[];
   groupBookingEnabled: boolean;
   tvModeEnabled: boolean;
+  accentColor: string | null;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { language, setLanguage } = useUserLanguage();
   const messages = useMemo(() => getUserMessages(language), [language]);
+
+  // DRC accent color theme — owner-chosen, saved in feature_flags.drc_accent_color.
+  // useState for optimistic updates: picker updates immediately, server action saves async.
+  const [drcAccent, setDrcAccent] = useState(accentColor ?? DEFAULT_DRC_ACCENT);
+  const drcCssVars = useMemo(() => drcPaletteToCssVars(deriveDrcPalette(drcAccent)), [drcAccent]);
 
   // Empty-string initial value so SSR and client hydration produce the same
   // output (same pattern as `originBaseUrl` below). Initialising with
@@ -453,13 +468,13 @@ function ReceptionistCenterInner({
 
   useEffect(() => {
     const tz = data.salon.timezone;
-    const today = salonDateOffset(tz, 0, nowIso);
+    const today = salonDateOffset(tz, 0, nowIso || undefined);
     /* eslint-disable react-hooks/set-state-in-effect -- reactive reconciliation of dateOffset against (selectedDate, today) */
     if (data.selectedDate === today) {
       setDateOffset(0);
     } else {
-      const yesterday = salonDateOffset(tz, -1, nowIso);
-      const tomorrow = salonDateOffset(tz, 1, nowIso);
+      const yesterday = salonDateOffset(tz, -1, nowIso || undefined);
+      const tomorrow = salonDateOffset(tz, 1, nowIso || undefined);
       if (data.selectedDate === yesterday) setDateOffset(-1);
       else if (data.selectedDate === tomorrow) setDateOffset(1);
     }
@@ -995,7 +1010,7 @@ function ReceptionistCenterInner({
       : null;
 
   const timezone = data.salon.timezone;
-  const isViewingToday = data.selectedDate === salonToday(timezone, nowIso);
+  const isViewingToday = data.selectedDate === salonToday(timezone, nowIso || undefined);
 
   // "Needs attention" strip (today only): bookings that are past their start but
   // still un-started (overdue → 1-tap no-show / arrived) + today's no-shows
@@ -1688,7 +1703,7 @@ function ReceptionistCenterInner({
     setDayLoading(true);
     setAssigningWalkinId(null);
     setUndoState(null);
-    const ymd = salonDateOffset(timezone, next, nowIso);
+    const ymd = salonDateOffset(timezone, next, nowIso || undefined);
     const res = await loadReceptionistCenterDataAction(slug, ymd);
     setDayLoading(false);
     if (!res.ok) {
@@ -2567,6 +2582,7 @@ function ReceptionistCenterInner({
       <div
         data-testid="receptionist-center-loaded"
         data-rush-mode={rush.active ? "on" : "off"}
+        style={drcCssVars}
         className={cn(
           "flex min-h-[100dvh] w-full flex-col bg-nq-bg",
           rush.active && "[&_[data-rush-fade]]:opacity-50",
@@ -2749,6 +2765,16 @@ function ReceptionistCenterInner({
                   />
                 </span>
               ) : null}
+              {/* DRC color theme picker — owner-only, subtle palette icon */}
+              {viewerRole === "owner" && !basicModeActive ? (
+                <span data-rush-fade>
+                  <DrcThemePicker
+                    slug={slug}
+                    currentAccent={drcAccent}
+                    onAccentChange={setDrcAccent}
+                  />
+                </span>
+              ) : null}
               {/* Day / Week view-mode toggle. Day is the live desk job;
                   Week is a read-only planning glance per
                   DASHBOARD_LAYOUT_RULES §3. Pair color with text label
@@ -2819,9 +2845,10 @@ function ReceptionistCenterInner({
                   size="sm"
                   data-testid="header-add-appointment"
                   onClick={() => {
-                    // Header button opens a BLANK form — clear any stale
-                    // grid-slot prefill first.
-                    setDeskPrefill(null);
+                    // Open a blank form on the currently-viewed date so a
+                    // receptionist booking ahead (viewing tomorrow) doesn't
+                    // land on today's date by default.
+                    setDeskPrefill({ ymd: data.selectedDate });
                     setDeskBookingOpen(true);
                   }}
                 >
@@ -3145,7 +3172,7 @@ function ReceptionistCenterInner({
             slug={slug}
             firstYmd={monthFirstYmd}
             timezone={timezone}
-            todayYmd={salonToday(timezone, nowIso)}
+            todayYmd={salonToday(timezone, nowIso || undefined)}
             language={language}
             messages={rcMessages.monthView}
             removedGuest={rcMessages.removedGuest}
@@ -3155,9 +3182,9 @@ function ReceptionistCenterInner({
               // Switch to Day view for the tapped date.
               onChangeViewMode("day");
               const tz = timezone;
-              const today = salonToday(tz, nowIso);
-              const yesterday = salonDateOffset(tz, -1, nowIso);
-              const tomorrow = salonDateOffset(tz, 1, nowIso);
+              const today = salonToday(tz, nowIso || undefined);
+              const yesterday = salonDateOffset(tz, -1, nowIso || undefined);
+              const tomorrow = salonDateOffset(tz, 1, nowIso || undefined);
               if (ymd === today) {
                 void onDateSwitchChange(0);
               } else if (ymd === yesterday) {
@@ -3181,7 +3208,7 @@ function ReceptionistCenterInner({
             }
             onPrevMonth={() => setMonthFirstYmd((m) => shiftMonth(m, -1))}
             onThisMonth={() =>
-              setMonthFirstYmd(firstOfMonth(salonToday(timezone, nowIso)))
+              setMonthFirstYmd(firstOfMonth(salonToday(timezone, nowIso || undefined)))
             }
             onNextMonth={() => setMonthFirstYmd((m) => shiftMonth(m, 1))}
           />
@@ -3190,7 +3217,7 @@ function ReceptionistCenterInner({
             slug={slug}
             mondayYmd={weekMondayYmd}
             timezone={timezone}
-            todayYmd={salonToday(timezone, nowIso)}
+            todayYmd={salonToday(timezone, nowIso || undefined)}
             messages={rcMessages.weekView}
             removedGuest={rcMessages.removedGuest}
             hint={calendarHint}
@@ -3202,9 +3229,9 @@ function ReceptionistCenterInner({
               // today since DateSwitcher only models -1/0/+1.
               onChangeViewMode("day");
               const tz = timezone;
-              const today = salonToday(tz, nowIso);
-              const yesterday = salonDateOffset(tz, -1, nowIso);
-              const tomorrow = salonDateOffset(tz, 1, nowIso);
+              const today = salonToday(tz, nowIso || undefined);
+              const yesterday = salonDateOffset(tz, -1, nowIso || undefined);
+              const tomorrow = salonDateOffset(tz, 1, nowIso || undefined);
               if (ymd === today) {
                 void onDateSwitchChange(0);
               } else if (ymd === yesterday) {
@@ -3232,7 +3259,7 @@ function ReceptionistCenterInner({
             }
             onPrevWeek={() => setWeekMondayYmd((m) => shiftWeek(m, -1))}
             onThisWeek={() =>
-              setWeekMondayYmd(mondayYmdOf(salonToday(timezone, nowIso)))
+              setWeekMondayYmd(mondayYmdOf(salonToday(timezone, nowIso || undefined)))
             }
             onNextWeek={() => setWeekMondayYmd((m) => shiftWeek(m, 1))}
           />
@@ -3380,7 +3407,7 @@ function ReceptionistCenterInner({
                 }
                 labels={{
                   formatTimeLabel: (utcIso: string) =>
-                    formatInSalonTz(utcIso, timezone, "shortTime"),
+                    utcIso ? formatInSalonTz(utcIso, timezone, "shortTime") : "",
                   conflictWith: rcMessages.grid.conflictWith,
                   overflowMessage: rcMessages.grid.overflowMessage,
                   closingLabel: rcMessages.grid.closingLabel,
@@ -4016,6 +4043,7 @@ export function ReceptionistCenter({
   partyCards,
   groupBookingEnabled = true,
   tvModeEnabled = true,
+  accentColor,
 }: ReceptionistCenterProps) {
   if (!initialResult.ok) {
     return <ReceptionistGateError code={initialResult.error} />;
@@ -4029,6 +4057,7 @@ export function ReceptionistCenter({
       partyCards={partyCards ?? []}
       groupBookingEnabled={groupBookingEnabled}
       tvModeEnabled={tvModeEnabled}
+      accentColor={accentColor ?? null}
     />
   );
 }

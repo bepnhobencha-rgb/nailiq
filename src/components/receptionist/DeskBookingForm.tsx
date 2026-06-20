@@ -935,14 +935,15 @@ export default function DeskBookingForm({
 
             {/* Bed/chair picker — resource-mode salons only, shown once slot is chosen */}
             {data?.salon.resourcesEnabled && slotLabel ? (
-              <div>
+              <div data-testid="desk-bed-picker">
                 <label className={labelCls}>{tx.resource}</label>
                 {resourceLoading ? (
-                  <p className="text-xs text-nq-muted">{tx.resourceLoading}</p>
+                  <p data-testid="desk-bed-loading" className="text-xs text-nq-muted">{tx.resourceLoading}</p>
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
                     <button
                       type="button"
+                      data-testid="desk-bed-auto"
                       onClick={() => setResourceId(null)}
                       className={`rounded-full border px-2.5 py-1 text-xs transition ${
                         resourceId === null
@@ -956,6 +957,7 @@ export default function DeskBookingForm({
                       <button
                         key={r.id}
                         type="button"
+                        data-testid={`desk-bed-${r.id}`}
                         disabled={!r.isAvailable}
                         onClick={() => {
                           if (r.isAvailable) setResourceId(r.id);

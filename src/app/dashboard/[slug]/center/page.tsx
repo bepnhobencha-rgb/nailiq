@@ -82,6 +82,11 @@ export default async function ReceptionistCenterPage({
   };
   const groupBookingEnabled = isReleaseFeatureEnabled(flagSalon, "group_booking");
   const tvModeEnabled = isReleaseFeatureEnabled(flagSalon, "tv_mode");
+  const featureFlags = flagSalon.feature_flags as Record<string, unknown> | null | undefined;
+  const drcAccentColor =
+    typeof featureFlags?.drc_accent_color === "string"
+      ? featureFlags.drc_accent_color
+      : null;
 
   // Hard URL enforcement: the sidebar hides the nav, but a direct visit to
   // /center must also be blocked when the feature is off. effective =
@@ -123,6 +128,7 @@ export default async function ReceptionistCenterPage({
         partyCards={partyCardsResult.ok ? partyCardsResult.cards : []}
         groupBookingEnabled={groupBookingEnabled}
         tvModeEnabled={tvModeEnabled}
+        accentColor={drcAccentColor}
       />
     </ReceptionistErrorBoundary>
   );
