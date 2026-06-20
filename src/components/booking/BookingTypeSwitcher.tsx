@@ -138,8 +138,12 @@ export function BookingTypeSwitcher({
   const entryLookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const entryValidation = validateGuestPhone(entryPhoneRaw.trim());
   const entryPhone = entryValidation.ok ? entryPhoneRaw.trim() : "";
-  // Ready to enter the flow: valid phone AND SMS consent given.
-  const gateReady = Boolean(entryPhone) && entrySmsConsent;
+  // Ready to enter the flow: valid phone + name (≥2 chars) + SMS consent.
+  // Name is required here so the OTP gate never fires with a blank identity —
+  // catching the missing-name error before the customer spends time on OTP.
+  // ≥2 matches the `nameTooShort` guard in onConfirm / submitPublicBooking.
+  const gateReady =
+    Boolean(entryPhone) && entryName.trim().length >= 2 && entrySmsConsent;
   // Debounced commit of the typed name so the flow (keyed on identity)
   // doesn't remount on every keystroke — it picks the name up ~400ms
   // after typing stops, or immediately on blur (see the name input).
