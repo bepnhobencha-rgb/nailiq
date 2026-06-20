@@ -220,6 +220,8 @@ type BookingGroupFlowProps = {
   /** SMS consent captured at the phone gate → pre-satisfies the group confirm
    *  so the customer doesn't tick the SAME consent twice. */
   initialSmsConsent?: boolean;
+  /** Marketing consent opt-in from the gate checkbox. */
+  initialMarketingConsent?: boolean;
   /** Booking-surface language → carried into the shared Party Link URL. */
   language?: "en" | "vi";
 };
@@ -237,6 +239,7 @@ export function BookingGroupFlow({
   initialOrganizer = null,
   initialName = "",
   initialSmsConsent = false,
+  initialMarketingConsent: _initialMarketingConsent = false,
   language = "vi",
 }: BookingGroupFlowProps) {
   const router = useRouter();

@@ -39,6 +39,7 @@ type VipClient = {
   isVip: boolean;
   visitCount: number; // completed bookings at THIS salon
   lastVisitAt: string | null; // ISO timestamp
+  marketingConsentAt: string | null;
 };
 
 async function loadVipClients(salonId: string): Promise<VipClient[]> {
@@ -70,7 +71,7 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
   // Load profile details
   const { data: profiles } = await (db as ReturnType<typeof looseServiceClient>)
     .from("client_profiles" as never)
-    .select("id, phone, name, email, date_of_birth, is_vip" as never)
+    .select("id, phone, name, email, date_of_birth, is_vip, marketing_consent_at" as never)
     .in("id" as never, ids);
 
   if (!profiles?.length) return [];
@@ -123,6 +124,7 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
       isVip: Boolean(p.is_vip),
       visitCount: visits,
       lastVisitAt: lastVisitMap.get(id) ?? null,
+      marketingConsentAt: p.marketing_consent_at ? str(p.marketing_consent_at) : null,
     });
   }
   return out;
@@ -298,6 +300,9 @@ export async function runVipCare(salonId: string): Promise<void> {
     let sentCount = 0;
 
     for (const client of clients) {
+      // Skip customers who haven't opted into marketing communications.
+      if (!client.marketingConsentAt) continue;
+
       // ── Birthday (7 days out) ─────────────────────────────────
       if (client.dateOfBirth && !existing.has(`birthday:${client.id}`)) {
         const days = daysUntilBirthday(client.dateOfBirth);

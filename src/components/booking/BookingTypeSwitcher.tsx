@@ -340,6 +340,7 @@ export function BookingTypeSwitcher({
   // (where the OTP SMS gets sent). The flow only reveals after it's given, and
   // it's passed into BookingFlow so confirm doesn't ask again.
   const [entrySmsConsent, setEntrySmsConsent] = useState(false);
+  const [entryMarketingConsent, setEntryMarketingConsent] = useState(false);
   // Option B — gate-first OTP: verify phone before entering the flow so the
   // OTP step inside the flow is skipped (no re-prompt, no re-SMS).
   const [gateOtpDone, setGateOtpDone] = useState(false);
@@ -523,6 +524,19 @@ export function BookingTypeSwitcher({
           <span>{t.smsConsent}</span>
         </label>
       ) : null}
+      {/* Optional marketing consent — must be separate from transactional SMS consent. */}
+      {entryPhone && !entryLoading ? (
+        <label className="mt-1 flex cursor-pointer items-start gap-2.5 text-sm leading-relaxed text-[var(--booking-text,var(--color-nq-foreground))] opacity-70">
+          <input
+            type="checkbox"
+            data-testid="marketing-consent"
+            checked={entryMarketingConsent}
+            onChange={(e) => setEntryMarketingConsent(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+          />
+          <span>{t.marketingConsent}</span>
+        </label>
+      ) : null}
 
       {/* OTP inline — appears INSIDE the card so the "Send code" button is
           always visible without scrolling. Only when salon has OTP enabled. */}
@@ -595,6 +609,7 @@ export function BookingTypeSwitcher({
     // Profile email takes precedence; gate OTP email is the fallback for new customers.
     initialEmail: entryCustomer?.email || gateOtpEmail || "",
     initialSmsConsent: entrySmsConsent,
+    initialMarketingConsent: entryMarketingConsent,
     initialOtpSessionId: gateOtpSessionId,
   } as const;
 
@@ -683,6 +698,7 @@ export function BookingTypeSwitcher({
           initialOrganizer={entryCustomer}
           initialName={entryNameResolved}
           initialSmsConsent={entrySmsConsent}
+          initialMarketingConsent={entryMarketingConsent}
           language={language}
         />
       )}

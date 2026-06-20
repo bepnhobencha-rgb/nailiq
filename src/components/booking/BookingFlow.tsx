@@ -108,6 +108,9 @@ type BookingFlowProps = {
   /** SMS consent captured at the gate (after the phone). Pre-satisfies the
    *  confirm-step consent so it isn't asked twice. */
   initialSmsConsent?: boolean;
+  /** Marketing consent opt-in captured at the gate. Saved to client_profiles
+   *  after booking so Minh agents can contact the customer. */
+  initialMarketingConsent?: boolean;
   /** OTP session verified at the phone gate (Option B gate-first OTP).
    *  When set, the flow skips its own OTP step — phone already verified. */
   initialOtpSessionId?: string | null;
@@ -129,6 +132,7 @@ export function BookingFlow({
   initialName = "",
   initialEmail = "",
   initialSmsConsent = false,
+  initialMarketingConsent = false,
   initialOtpSessionId = null,
 }: BookingFlowProps) {
   const reducedMotion = useReducedMotion();
@@ -154,6 +158,7 @@ export function BookingFlow({
     initialEmail,
     language,
     initialSmsConsent,
+    initialMarketingConsent,
     initialOtpSessionId,
   );
 
