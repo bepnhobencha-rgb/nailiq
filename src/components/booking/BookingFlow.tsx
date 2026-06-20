@@ -467,6 +467,7 @@ export function BookingFlow({
             clientPhone={flow.clientPhone}
             clientEmail={flow.clientEmail}
             emailChannelEnabled={salon.emailLinksEnabled !== false}
+            salonPhone={salon.salonPhone}
             stepDir={flow.stepDir}
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}

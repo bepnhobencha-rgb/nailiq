@@ -51,6 +51,7 @@ export function BookingFlowOtpPanel({
   onVerified,
   onSkip,
   onBack,
+  salonPhone,
 }: {
   t: BookingMessages;
   shopSlug: string;
@@ -59,6 +60,8 @@ export function BookingFlowOtpPanel({
   clientEmail?: string;
   /** Salon's email-channel master (salons.email_links_enabled). */
   emailChannelEnabled?: boolean;
+  /** Salon contact phone — shown as last-resort fallback when SMS and email both fail. */
+  salonPhone?: string | null;
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
   stepTransition: { duration: number; ease: [number, number, number, number] };
@@ -69,6 +72,7 @@ export function BookingFlowOtpPanel({
   onSkip?: () => void;
   onBack: () => void;
 }) {
+  const salonPhoneClean = salonPhone?.trim() || "";
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
@@ -368,11 +372,28 @@ export function BookingFlowOtpPanel({
                 setShowEmailInput(true);
                 setEmailInput(onFileEmail);
               }}
-              className="text-left text-xs text-[var(--salon-primary)] underline-offset-2 hover:underline"
+              className="flex w-full items-center gap-2 rounded-lg border border-[var(--booking-border)] bg-[var(--booking-bg-input)] px-3 py-2.5 text-left text-sm text-[var(--booking-text)] transition-colors hover:border-[var(--salon-primary)]/50"
             >
-              {t.otpEmailFallbackCta}
+              <span className="text-base">📧</span>
+              <span>{t.otpEmailFallbackCta}</span>
             </button>
           )
+        ) : null}
+
+        {/* Last-resort fallback: call the salon directly when both SMS and email fail */}
+        {salonPhoneClean && sent ? (
+          <div className="flex items-center justify-between rounded-lg border border-[var(--booking-border)] bg-[var(--booking-bg-input)] px-3 py-2.5">
+            <span className="text-sm text-[var(--booking-text-muted)]">
+              {t.otpCallSalonHint ?? "Still having trouble?"}
+            </span>
+            <a
+              href={`tel:${salonPhoneClean}`}
+              className="flex items-center gap-1.5 text-sm font-medium text-[var(--salon-primary)]"
+            >
+              <span>📞</span>
+              <span>{t.otpCallSalonCta ?? "Call us to book"}</span>
+            </a>
+          </div>
         ) : null}
 
         <div className="flex gap-3">
