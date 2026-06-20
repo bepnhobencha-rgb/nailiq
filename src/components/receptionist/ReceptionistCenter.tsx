@@ -2639,7 +2639,7 @@ function ReceptionistCenterInner({
             </div>
           </div>
         ) : null}
-        <header className="shrink-0 border-b border-nq-muted/20 bg-nq-surface/90 px-[var(--pad-nq-section-mobile)] py-3 backdrop-blur-sm md:px-6">
+        <header className="shrink-0 border-b border-nq-muted/20 px-[var(--pad-nq-section-mobile)] py-3 backdrop-blur-sm md:px-6" style={{ backgroundColor: "var(--drc-bg, #0b0c10)" }}>
           <div className="mx-auto flex w-full max-w-[var(--max-nq-desktop)] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2 gap-y-2">
