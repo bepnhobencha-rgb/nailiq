@@ -36,14 +36,14 @@ export const FENG_SHUI_PRESETS: Array<{ hex: string; key: FengShuiPresetKey }> =
 export type DarkBgPresetKey =
   | "charcoal" | "navy" | "teal" | "forest" | "purple" | "crimson";
 
-/** Dark-only bg presets — luminance < 0.1, white text always readable. */
+/** Dark-only bg presets — luminance ≤ 0.18, white text WCAG AA. More saturated so the color is visible. */
 export const DARK_BG_PRESETS: Array<{ hex: string; key: DarkBgPresetKey }> = [
-  { hex: DEFAULT_DRC_BG, key: "charcoal" },
-  { hex: "#0a1128",      key: "navy" },
-  { hex: "#071c1c",      key: "teal" },
-  { hex: "#0b1a0f",      key: "forest" },
-  { hex: "#110b1a",      key: "purple" },
-  { hex: "#1a0d0d",      key: "crimson" },
+  { hex: DEFAULT_DRC_BG, key: "charcoal" },  // #0b0c10 — neutral near-black
+  { hex: "#0a1a3e",      key: "navy" },       // midnight blue
+  { hex: "#073232",      key: "teal" },       // deep teal
+  { hex: "#0d2e16",      key: "forest" },     // dark forest
+  { hex: "#1f0d40",      key: "purple" },     // dark amethyst
+  { hex: "#3d0f0f",      key: "crimson" },    // deep crimson
 ];
 
 export function hexToRgb(hex: string): [number, number, number] {

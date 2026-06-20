@@ -219,7 +219,7 @@ export function DrcThemePicker({
                 onClick={() => pickBg(p.hex)}
                 title={t.bgPresets[p.key]}
                 className={cn(
-                  "relative h-7 w-full rounded-md transition-all duration-150 hover:scale-105",
+                  "relative h-9 w-full rounded-md transition-all duration-150 hover:scale-105",
                   isActive
                     ? "ring-2 ring-white ring-offset-1 ring-offset-[#111]"
                     : "ring-1 ring-white/10",
