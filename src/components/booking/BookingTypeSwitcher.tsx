@@ -16,7 +16,6 @@ import type {
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { BookingFlow } from "@/components/booking/BookingFlow";
 import { BookingGroupFlow } from "@/components/booking/BookingGroupFlow";
-import { BookingFlowOtpPanel } from "@/components/booking/BookingFlowOtpPanel";
 import { VoiceBookingButton } from "@/components/booking/VoiceBookingButton";
 import { cn } from "@/shared/lib/cn";
 import { GROUP_MAX_SIZE } from "@/shared/config/constants";
@@ -31,6 +30,183 @@ import { MAX_WAVES } from "@/shared/booking/groupSchedulerCore";
  * the toggle vanishes entirely below MIN_GROUP_SIZE.
  */
 const MIN_GROUP_SIZE = 2;
+
+// Compact OTP widget rendered INSIDE the phone gate card so the "Send code"
+// button is always visible without scrolling. Handles SMS + email fallback.
+function GateOtpInline({
+  t,
+  shopSlug,
+  phoneDigits,
+  emailLinksEnabled,
+  onVerified,
+}: {
+  t: BookingMessages;
+  shopSlug: string;
+  phoneDigits: string;
+  emailLinksEnabled?: boolean | null;
+  onVerified: (sessionId: string) => void;
+}) {
+  const [stage, setStage] = useState<"idle" | "sent">("idle");
+  const [channel, setChannel] = useState<"sms" | "email">("sms");
+  const [email, setEmail] = useState("");
+  const [showEmailInput, setShowEmailInput] = useState(false);
+  const [code, setCode] = useState("");
+  const [sending, setSending] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const codeRef = useRef<HTMLInputElement>(null);
+
+  async function sendCode(ch: "sms" | "email" = channel) {
+    setSending(true);
+    setError(null);
+    try {
+      const body: Record<string, string> = { shopSlug, phone: phoneDigits, channel: ch };
+      if (ch === "email") body.email = email.trim();
+      const r = await fetch("/api/booking-otp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await r.json()) as { ok?: boolean; error?: string };
+      if (data.ok) {
+        setChannel(ch);
+        setStage("sent");
+        setTimeout(() => codeRef.current?.focus(), 100);
+      } else {
+        setError(
+          data.error === "rate_limited"
+            ? (t.bookingErrors.otpExpired ?? "Too many attempts.")
+            : (t.bookingErrors.otpSendFailed ?? "Couldn't send code."),
+        );
+      }
+    } catch {
+      setError(t.bookingErrors.otpSendFailed ?? "Couldn't send code.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function verifyCode(c = code) {
+    const trimmed = c.replace(/\D/g, "");
+    if (trimmed.length < 6) return;
+    setVerifying(true);
+    setError(null);
+    try {
+      const body: Record<string, string> = { shopSlug, phone: phoneDigits, code: trimmed };
+      if (channel === "email") body.email = email.trim();
+      const r = await fetch("/api/booking-otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await r.json()) as { ok?: boolean; sessionId?: string; error?: string };
+      if (data.ok && data.sessionId) {
+        onVerified(data.sessionId);
+      } else {
+        setError(
+          data.error === "expired_or_max_attempts"
+            ? (t.bookingErrors.otpExpired ?? "Code expired.")
+            : (t.bookingErrors.otpInvalidCode ?? "Incorrect code."),
+        );
+      }
+    } catch {
+      setError(t.bookingErrors.otpInvalidCode ?? "Incorrect code.");
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  function onCodeChange(v: string) {
+    const d = v.replace(/\D/g, "").slice(0, 6);
+    setCode(d);
+    if (d.length === 6) void verifyCode(d);
+  }
+
+  if (stage === "idle") {
+    return (
+      <div className="mt-4 border-t border-[var(--booking-border)] pt-4">
+        {showEmailInput && emailLinksEnabled ? (
+          <div className="space-y-2">
+            <input
+              type="email"
+              autoComplete="email"
+              value={email}
+              placeholder={t.otpEmailPlaceholder}
+              onChange={(e) => setEmail(e.target.value)}
+              className="nq-booking-field w-full"
+            />
+            <button
+              type="button"
+              disabled={sending || !email.includes("@")}
+              onClick={() => void sendCode("email")}
+              className="nq-booking-btn-primary w-full"
+            >
+              {sending ? t.otpEmailSending : t.otpEmailSendCta}
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={sending}
+            onClick={() => void sendCode("sms")}
+            className="nq-booking-btn-primary w-full"
+          >
+            {sending ? t.otpSending : t.otpSendCode}
+          </button>
+        )}
+        {error ? <p className="mt-1.5 text-xs text-red-500">{error}</p> : null}
+        {emailLinksEnabled && !showEmailInput ? (
+          <button
+            type="button"
+            onClick={() => setShowEmailInput(true)}
+            className="mt-2 block text-xs text-[var(--booking-text-muted)] underline"
+          >
+            {t.otpEmailFallbackCta}
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 space-y-2 border-t border-[var(--booking-border)] pt-4">
+      <p className="text-xs text-[var(--booking-text-muted)]">
+        {t.otpStepSubheading} ···{phoneDigits.slice(-4)}
+        {channel === "email" ? ` ${t.otpAndEmail ?? "& email"}` : ""}
+      </p>
+      <input
+        ref={codeRef}
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        autoComplete="one-time-code"
+        maxLength={6}
+        value={code}
+        placeholder={t.otpCodePlaceholder}
+        onChange={(e) => onCodeChange(e.target.value)}
+        className="nq-booking-field w-full text-center text-xl tracking-[0.4em] font-mono"
+        aria-label={t.otpCodeLabel}
+      />
+      {error ? <p className="text-xs text-red-500">{error}</p> : null}
+      <button
+        type="button"
+        disabled={verifying || code.length < 6}
+        onClick={() => void verifyCode()}
+        className="nq-booking-btn-primary w-full"
+      >
+        {verifying ? t.otpVerifying : t.otpVerify}
+      </button>
+      <button
+        type="button"
+        disabled={sending}
+        onClick={() => { setCode(""); void sendCode(channel); }}
+        className="block w-full text-center text-xs text-[var(--booking-text-muted)] underline"
+      >
+        {t.otpResend}
+      </button>
+    </div>
+  );
+}
 
 /**
  * Public booking entry-type selector — wraps both single-guest and
@@ -310,6 +486,22 @@ export function BookingTypeSwitcher({
           <span>{t.smsConsent}</span>
         </label>
       ) : null}
+
+      {/* OTP inline — appears INSIDE the card so the "Send code" button is
+          always visible without scrolling. Only when salon has OTP enabled. */}
+      {gateReady && salon.phoneOtpEnabled && !gateOtpDone && entryValidation.ok ? (
+        <GateOtpInline
+          t={t}
+          shopSlug={shopSlug}
+          phoneDigits={entryValidation.digits}
+          emailLinksEnabled={salon.emailLinksEnabled}
+          onVerified={(sessionId) => { void handleGateOtpVerified(sessionId); }}
+        />
+      ) : gateOtpDone ? (
+        <p className="mt-4 border-t border-[var(--booking-border)] pt-3 text-sm font-medium text-[var(--salon-primary)]">
+          {t.otpVerified}
+        </p>
+      ) : null}
     </div>
   );
 
@@ -341,29 +533,6 @@ export function BookingTypeSwitcher({
     }
   }
 
-  // Option B: gate-first OTP panel — shown after phone+consent, before the flow.
-  // Only when salon.phoneOtpEnabled is true. Reuses the same OtpPanel component
-  // so email fallback + salon phone link work exactly as they do inside the flow.
-  const showGateOtp = gateReady && salon.phoneOtpEnabled && !gateOtpDone;
-  const gateOtpPanel = showGateOtp ? (
-    <BookingFlowOtpPanel
-      t={t}
-      shopSlug={shopSlug}
-      clientPhone={entryPhone}
-      emailChannelEnabled={salon.emailLinksEnabled !== false}
-      salonPhone={salon.salonPhone}
-      stepDir={1}
-      reducedMotion={false}
-      stepTransition={{ duration: 0.22, ease: [0.25, 0.46, 0.45, 0.94] }}
-      onVerified={(sessionId) => { void handleGateOtpVerified(sessionId); }}
-      onBack={() => {
-        // Back from gate OTP → return to phone entry (clear consent so the
-        // gate collapses back and the customer can re-enter their number).
-        setEntrySmsConsent(false);
-      }}
-    />
-  ) : null;
-
   // Shared props for BookingFlow — same in both individual-only and group-switcher paths.
   const flowReady = gateReady && (!salon.phoneOtpEnabled || gateOtpDone);
   const individualFlowProps = {
@@ -391,7 +560,6 @@ export function BookingTypeSwitcher({
           <VoiceBookingButton t={t} shopSlug={shopSlug} language={language} />
         )}
         {phoneGate}
-        {gateOtpPanel}
         {flowReady ? (
           <BookingFlow
             key={`ind-${entryPhone}-${entryNameResolved}`}
@@ -412,7 +580,6 @@ export function BookingTypeSwitcher({
           single phone input (the individual flow then starts at
           "service", skipping its own phone step → never two inputs). */}
       {phoneGate}
-      {gateOtpPanel}
       {flowReady ? (
       <>
       <p
