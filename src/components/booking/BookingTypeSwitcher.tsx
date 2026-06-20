@@ -132,6 +132,9 @@ export function BookingTypeSwitcher({
   // OTP step inside the flow is skipped (no re-prompt, no re-SMS).
   const [gateOtpDone, setGateOtpDone] = useState(false);
   const [gateOtpSessionId, setGateOtpSessionId] = useState<string | null>(null);
+  // Ref prevents the anonymous lookup callback from overwriting the full profile
+  // fetched after OTP verification.
+  const gateOtpVerifiedRef = useRef(false);
   const entryLookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const entryValidation = validateGuestPhone(entryPhoneRaw.trim());
   const entryPhone = entryValidation.ok ? entryPhoneRaw.trim() : "";
@@ -146,15 +149,17 @@ export function BookingTypeSwitcher({
     return () => clearTimeout(id);
   }, [entryName]);
 
-  // Identity passed into the flow → the name the customer types at the gate.
-  // A returning customer is recognised by `found`, but their stored name is
-  // NOT revealed pre-OTP (privacy fix S1), so the name always comes from what
-  // they type here. `entryCustomer?.name` stays in the expression as a no-op
-  // hook for a future post-verification fetch that could supply it.
+  // After gate OTP: entryCustomer.name holds the verified profile name (PII now
+  // safe to display). Before OTP / for new customers: fall back to what they typed.
   const entryNameResolved =
     (entryCustomer?.name ?? "").trim() || committedName.trim();
 
   useEffect(() => {
+    // Phone changed → reset gate OTP state so the new number must be re-verified.
+    setGateOtpDone(false);
+    setGateOtpSessionId(null);
+    gateOtpVerifiedRef.current = false;
+
     if (entryLookupTimer.current) {
       clearTimeout(entryLookupTimer.current);
       entryLookupTimer.current = null;
@@ -172,10 +177,12 @@ export function BookingTypeSwitcher({
         `/api/customer/${encodeURIComponent(v.digits)}?salon_id=${encodeURIComponent(salon.id)}`,
       )
         .then((r) => r.json() as Promise<ReturningCustomer | { found: false }>)
-        .then((data) =>
-          setEntryCustomer(data.found ? (data as ReturningCustomer) : null),
-        )
-        .catch(() => setEntryCustomer(null))
+        .then((data) => {
+          // Don't overwrite the full profile already fetched after OTP verification.
+          if (gateOtpVerifiedRef.current) return;
+          setEntryCustomer(data.found ? (data as ReturningCustomer) : null);
+        })
+        .catch(() => { if (!gateOtpVerifiedRef.current) setEntryCustomer(null); })
         .finally(() => setEntryLoading(false));
     }, 400);
     return () => {
@@ -223,15 +230,22 @@ export function BookingTypeSwitcher({
         language={language}
       />
       {entryCustomer ? (
-        // Generic warm recognition only — NO name/visits/usual-tech pre-OTP
-        // (privacy fix S1). "Welcome back!" + an optional VIP nod is enough to
-        // feel known without leaking who they are to anyone who types a phone.
+        // Pre-OTP: generic warm recognition (no PII leak — privacy fix S1).
+        // Post-OTP: profile name is known → personalized greeting.
         <p
           data-testid="booking-entry-recognized"
           className="mt-2 text-sm font-medium text-[var(--salon-primary)]"
         >
-          👋 {t.returningCustomer.welcomeBack}
+          {entryCustomer.name
+            ? (groupCopy.entryNewGreeting ?? "Hi {name}! 👋").replace(
+                "{name}",
+                entryCustomer.name,
+              )
+            : `👋 ${t.returningCustomer.welcomeBack}`}
           {entryCustomer.isVip ? ` · ${groupCopy.organizerVip ?? "VIP"}` : ""}
+          {typeof entryCustomer.visitCount === "number" && entryCustomer.visitCount > 0
+            ? ` · ${entryCustomer.visitCount}×`
+            : ""}
         </p>
       ) : (
         <p className="mt-1.5 text-xs text-[var(--booking-text-muted)]">
@@ -240,10 +254,9 @@ export function BookingTypeSwitcher({
       )}
       {entryLoading ? <span className="sr-only">…</span> : null}
 
-      {/* Name is captured here for everyone — new customers, and returning
-          ones whose name we no longer reveal pre-OTP (privacy fix S1) — so
-          identity is collected once, up front. */}
-      {entryPhone && !entryLoading ? (
+      {/* Name input: shown for new customers and returning ones before OTP.
+          After OTP verify the profile supplies the name → input hidden. */}
+      {entryPhone && !entryLoading && !entryCustomer?.name ? (
         <div className="mt-3">
           <label
             htmlFor="booking-entry-name"
@@ -294,6 +307,34 @@ export function BookingTypeSwitcher({
     </div>
   );
 
+  // Fetches the full customer profile after gate OTP verification and updates
+  // entryCustomer + entryName so the personalized greeting and flow pre-fills work.
+  async function handleGateOtpVerified(sessionId: string) {
+    setGateOtpSessionId(sessionId);
+    setGateOtpDone(true);
+    gateOtpVerifiedRef.current = true;
+
+    const v = validateGuestPhone(entryPhoneRaw.trim());
+    if (!v.ok) return;
+    try {
+      const r = await fetch(
+        `/api/customer/profile-verified?otp_session_id=${encodeURIComponent(sessionId)}&phone=${encodeURIComponent(v.digits)}&salon_id=${encodeURIComponent(salon.id)}`,
+      );
+      if (!r.ok) return;
+      const data = (await r.json()) as ReturningCustomer | { found: false };
+      if (data.found) {
+        setEntryCustomer(data as ReturningCustomer);
+        const name = (data as ReturningCustomer).name?.trim();
+        if (name && !entryName.trim()) {
+          setEntryName(name);
+          setCommittedName(name);
+        }
+      }
+    } catch {
+      // Non-fatal: flow opens without personalization on network error.
+    }
+  }
+
   // Option B: gate-first OTP panel — shown after phone+consent, before the flow.
   // Only when salon.phoneOtpEnabled is true. Reuses the same OtpPanel component
   // so email fallback + salon phone link work exactly as they do inside the flow.
@@ -308,10 +349,7 @@ export function BookingTypeSwitcher({
       stepDir={1}
       reducedMotion={false}
       stepTransition={{ duration: 0.22, ease: [0.25, 0.46, 0.45, 0.94] }}
-      onVerified={(sessionId) => {
-        setGateOtpSessionId(sessionId);
-        setGateOtpDone(true);
-      }}
+      onVerified={(sessionId) => { void handleGateOtpVerified(sessionId); }}
       onBack={() => {
         // Back from gate OTP → return to phone entry (clear consent so the
         // gate collapses back and the customer can re-enter their number).

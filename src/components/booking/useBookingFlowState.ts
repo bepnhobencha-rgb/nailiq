@@ -497,6 +497,14 @@ export function useBookingFlowState(
       lookupTimerRef.current = null;
     }
 
+    // Gate-verified: full profile was already fetched via profile-verified API and
+    // supplied through initialReturningCustomer. Skip the anonymous lookup which
+    // only returns { found, isVip } and would overwrite the rich profile.
+    if (initialOtpSessionId) {
+      setLookupLoading(false);
+      return;
+    }
+
     const phoneValidation = validateGuestPhone(clientPhone.trim());
     if (!phoneValidation.ok) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset when phone becomes invalid
