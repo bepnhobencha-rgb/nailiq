@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useRef, useEffect } from "react";
+import { useState, useTransition, useRef, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Palette, Check, RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
@@ -11,6 +11,8 @@ import {
   contrastFg,
 } from "@/shared/lib/drcTheme";
 import { saveDrcAccentColor } from "@/shared/dashboard/drcThemeAction";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { getUserMessages } from "@/shared/i18n/user";
 
 interface Props {
   slug: string;
@@ -26,6 +28,9 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
   const [mounted, setMounted] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
+
+  const { language } = useUserLanguage();
+  const t = useMemo(() => getUserMessages(language).receptionist.themePicker, [language]);
 
   // Ensure portal only renders client-side
   useEffect(() => { setMounted(true); }, []);
@@ -79,16 +84,16 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
         {/* Header */}
         <div className="mb-3 flex items-center justify-between">
           <p className="text-[11px] uppercase tracking-[2px] text-[#888]">
-            Màu sắc DRC
+            {t.title}
           </p>
           {saved && (
             <span className="flex items-center gap-1 text-[11px] text-[#4caf50]">
               <Check size={10} />
-              Đã lưu
+              {t.saved}
             </span>
           )}
           {pending && (
-            <span className="text-[11px] text-[#888]">Đang lưu…</span>
+            <span className="text-[11px] text-[#888]">{t.saving}</span>
           )}
         </div>
 
@@ -96,12 +101,13 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
         <div className="mb-4 grid grid-cols-4 gap-2">
           {FENG_SHUI_PRESETS.map((p) => {
             const isActive = currentAccent.toLowerCase() === p.hex.toLowerCase();
+            const preset = t.presets[p.key];
             return (
               <button
                 key={p.hex}
                 type="button"
                 onClick={() => pick(p.hex)}
-                title={`${p.label} — ${p.desc}`}
+                title={`${preset.label} — ${preset.desc}`}
                 className={cn(
                   "relative h-10 w-full rounded-lg transition-all duration-150 hover:scale-105 hover:shadow-md",
                   isActive
@@ -128,26 +134,28 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
           const active = FENG_SHUI_PRESETS.find(
             (p) => p.hex.toLowerCase() === currentAccent.toLowerCase(),
           );
-          return active ? (
+          if (!active) return null;
+          const preset = t.presets[active.key];
+          return (
             <p className="mb-3 text-[11px] leading-relaxed text-[#666]">
               <span style={{ color: currentAccent }}>✦</span>{" "}
-              {active.label} — {active.desc}
+              {preset.label} — {preset.desc}
             </p>
-          ) : null;
+          );
         })()}
 
         {/* Divider */}
         <div className="mb-3 border-t border-[#2a2a2a]" />
 
         {/* Custom color picker */}
-        <p className="mb-2 text-[11px] text-[#666]">Màu tùy chỉnh</p>
+        <p className="mb-2 text-[11px] text-[#666]">{t.customLabel}</p>
         <div className="flex items-center gap-2">
           <input
             type="color"
             value={customHex.startsWith("#") ? customHex : "#c9a96e"}
             onChange={(e) => setCustomHex(e.target.value)}
             className="h-8 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
-            title="Chọn màu tùy chỉnh"
+            title={t.colorPickerTitle}
           />
           <div
             className="h-8 flex-1 rounded-lg border border-[#2a2a2a] px-2 text-[12px] flex items-center"
@@ -164,7 +172,7 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
             disabled={!sanitizeHex(customHex) || pending}
             className="rounded-lg bg-[#2a2a2a] px-3 py-1.5 text-[12px] text-white transition-colors hover:bg-[#3a3a3a] disabled:opacity-40"
           >
-            Áp dụng
+            {t.applyButton}
           </button>
         </div>
 
@@ -175,7 +183,7 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
           className="mt-3 flex w-full items-center justify-center gap-1.5 text-[11px] text-[#555] transition-colors hover:text-[#888]"
         >
           <RotateCcw size={10} />
-          Về mặc định NailIQ
+          {t.resetButton}
         </button>
       </div>
     </>,
@@ -188,8 +196,8 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
         ref={btnRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
-        title="Đổi màu DRC"
-        aria-label="Đổi màu DRC"
+        title={t.openAria}
+        aria-label={t.openAria}
         className={cn(
           "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
           open ? "bg-white/15" : "hover:bg-white/10",
