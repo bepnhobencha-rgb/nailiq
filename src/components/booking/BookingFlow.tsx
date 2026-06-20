@@ -102,6 +102,9 @@ type BookingFlowProps = {
   initialReturningCustomer?: ReturningCustomer | null;
   /** Name captured at the gate (returning name or new-customer typed). */
   initialName?: string;
+  /** Email from gate OTP (email channel) — pre-fills the booking email
+   *  field so customers don't retype the same address for confirmation. */
+  initialEmail?: string;
   /** SMS consent captured at the gate (after the phone). Pre-satisfies the
    *  confirm-step consent so it isn't asked twice. */
   initialSmsConsent?: boolean;
@@ -124,6 +127,7 @@ export function BookingFlow({
   initialPhone = "",
   initialReturningCustomer = null,
   initialName = "",
+  initialEmail = "",
   initialSmsConsent = false,
   initialOtpSessionId = null,
 }: BookingFlowProps) {
@@ -147,6 +151,7 @@ export function BookingFlow({
     initialPhone,
     initialReturningCustomer,
     initialName,
+    initialEmail,
     language,
     initialSmsConsent,
     initialOtpSessionId,

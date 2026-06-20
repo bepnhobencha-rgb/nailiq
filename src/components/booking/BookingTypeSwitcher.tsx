@@ -44,7 +44,7 @@ function GateOtpInline({
   shopSlug: string;
   phoneDigits: string;
   emailLinksEnabled?: boolean | null;
-  onVerified: (sessionId: string) => void;
+  onVerified: (sessionId: string, otpEmail?: string) => void;
 }) {
   const [stage, setStage] = useState<"idle" | "sent">("idle");
   const [channel, setChannel] = useState<"sms" | "email">("sms");
@@ -101,7 +101,9 @@ function GateOtpInline({
       });
       const data = (await r.json()) as { ok?: boolean; sessionId?: string; error?: string };
       if (data.ok && data.sessionId) {
-        onVerified(data.sessionId);
+        // Pass the email address if this was an email-channel OTP so the
+        // booking form can pre-fill without asking the customer to retype it.
+        onVerified(data.sessionId, channel === "email" ? email.trim() : undefined);
       } else {
         setError(
           data.error === "expired_or_max_attempts"
@@ -342,6 +344,9 @@ export function BookingTypeSwitcher({
   // OTP step inside the flow is skipped (no re-prompt, no re-SMS).
   const [gateOtpDone, setGateOtpDone] = useState(false);
   const [gateOtpSessionId, setGateOtpSessionId] = useState<string | null>(null);
+  // Email used to receive the gate OTP code — pre-fills the booking email
+  // field so new customers don't retype the same address.
+  const [gateOtpEmail, setGateOtpEmail] = useState("");
   // Ref prevents the anonymous lookup callback from overwriting the full profile
   // fetched after OTP verification.
   const gateOtpVerifiedRef = useRef(false);
@@ -527,7 +532,7 @@ export function BookingTypeSwitcher({
           shopSlug={shopSlug}
           phoneDigits={entryValidation.digits}
           emailLinksEnabled={salon.emailLinksEnabled}
-          onVerified={(sessionId) => { void handleGateOtpVerified(sessionId); }}
+          onVerified={(sessionId, otpEmail) => { void handleGateOtpVerified(sessionId, otpEmail); }}
         />
       ) : gateOtpDone ? (
         <p className="fade-in mt-4 flex items-center gap-1.5 border-t border-[var(--booking-border)] pt-3 text-sm font-semibold text-[var(--salon-primary)]">
@@ -543,10 +548,12 @@ export function BookingTypeSwitcher({
 
   // Fetches the full customer profile after gate OTP verification and updates
   // entryCustomer + entryName so the personalized greeting and flow pre-fills work.
-  async function handleGateOtpVerified(sessionId: string) {
+  async function handleGateOtpVerified(sessionId: string, otpEmail?: string) {
     setGateOtpSessionId(sessionId);
     setGateOtpDone(true);
     gateOtpVerifiedRef.current = true;
+    // Store the email used for OTP delivery so new customers don't retype it.
+    if (otpEmail) setGateOtpEmail(otpEmail);
 
     const v = validateGuestPhone(entryPhoneRaw.trim());
     if (!v.ok) return;
@@ -585,6 +592,8 @@ export function BookingTypeSwitcher({
     initialPhone: entryPhone,
     initialReturningCustomer: entryCustomer,
     initialName: entryNameResolved,
+    // Profile email takes precedence; gate OTP email is the fallback for new customers.
+    initialEmail: entryCustomer?.email || gateOtpEmail || "",
     initialSmsConsent: entrySmsConsent,
     initialOtpSessionId: gateOtpSessionId,
   } as const;

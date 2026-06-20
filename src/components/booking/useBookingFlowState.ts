@@ -130,6 +130,10 @@ export function useBookingFlowState(
   /** Name captured at the gate — returning customer's name, or the
    *  name a new customer typed there. Pre-fills the info step. */
   initialName: string = "",
+  /** Email from gate OTP (email channel) or returning-customer profile.
+   *  Pre-fills the booking email field so new customers who used their
+   *  email to receive the OTP code don't have to type it again. */
+  initialEmail: string = "",
   /** Booking surface language — forwarded to the booking so the
    *  confirmation SMS is sent in the language the customer chose. */
   language: "en" | "vi" = "vi",
@@ -187,9 +191,10 @@ export function useBookingFlowState(
     initialName.trim() || (initialReturningCustomer?.name ?? ""),
   );
   const [clientPhone, setClientPhone] = useState(initialPhone ?? "");
-  /** B-10: optional. Empty stays empty — we never persist locally (privacy fix B-02). */
+  /** B-10: optional. Pre-filled from returning-customer profile OR the email
+   *  the customer used to receive the gate OTP code (so they don't retype it). */
   const [clientEmail, setClientEmail] = useState(
-    initialReturningCustomer?.email ?? "",
+    initialReturningCustomer?.email ?? initialEmail ?? "",
   );
   const [clientNotes, setClientNotes] = useState("");
   /** Waitlist "Preferred time" — optional. Empty string = "any time" → the
