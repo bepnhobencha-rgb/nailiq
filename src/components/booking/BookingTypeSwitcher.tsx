@@ -202,8 +202,41 @@ function GateOtpInline({
         onClick={() => { setCode(""); void sendCode(channel); }}
         className="block w-full text-center text-xs text-[var(--booking-text-muted)] underline"
       >
-        {t.otpResend}
+        {sending ? t.otpSending : t.otpResend}
       </button>
+
+      {/* Email fallback — visible after SMS is sent so customers who don't
+          receive the text can switch channels without starting over. */}
+      {emailLinksEnabled && channel === "sms" ? (
+        showEmailInput ? (
+          <div className="space-y-2 pt-1">
+            <input
+              type="email"
+              autoComplete="email"
+              value={email}
+              placeholder={t.otpEmailPlaceholder}
+              onChange={(e) => setEmail(e.target.value)}
+              className="nq-booking-field w-full"
+            />
+            <button
+              type="button"
+              disabled={sending || !email.includes("@")}
+              onClick={() => { setCode(""); void sendCode("email"); }}
+              className="nq-booking-btn-primary w-full"
+            >
+              {sending ? t.otpEmailSending : t.otpEmailSendCta}
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowEmailInput(true)}
+            className="block w-full text-center text-xs text-[var(--booking-text-muted)] underline"
+          >
+            {t.otpEmailFallbackCta}
+          </button>
+        )
+      ) : null}
     </div>
   );
 }
