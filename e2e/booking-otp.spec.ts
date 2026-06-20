@@ -45,6 +45,9 @@ test.describe("Booking Flow — Phone OTP", () => {
       slug: "e2e-otp-salon",
       name: "E2E OTP Salon",
       phone: "16045550001",
+      // Public contact number displayed as tel:// link on the OTP screen when
+      // SMS doesn't arrive (A2P mitigation). Separate from salons.phone (owner).
+      salon_phone: "16045550001",
       phone_otp_enabled: true,
       // always_otp ensures the verify-decision RPC routes every booking through
       // the OTP step regardless of risk score (needed for predictable E2E tests).
@@ -251,6 +254,41 @@ test.describe("Booking Flow — Phone OTP", () => {
     await expect(confirmBtn).toBeVisible({ timeout: 15_000 });
     await expect(page.locator("#otp-code")).toHaveCount(0);
     expect(sendCount).toBe(sendsAfterVerify);
+  });
+
+  // Salon phone fallback — after SMS is sent, the salon's tel:// link must be
+  // visible so customers can call to book when SMS + email both fail (A2P mitigation).
+  test("salon phone tel:// link visible on OTP screen after send", async ({
+    page,
+  }) => {
+    await walkToInfoStep(page);
+    await page.getByRole("button", { name: "Continue" }).first().click();
+
+    // Wait until OTP is auto-sent (input becomes enabled)
+    await expect(page.locator("#otp-code")).toBeEnabled({ timeout: 15_000 });
+
+    // The tel:// link should appear (salon seeded with phone "16045550001")
+    const callLink = page.locator('a[href^="tel:"]');
+    await expect(callLink).toBeVisible({ timeout: 8_000 });
+    const href = await callLink.getAttribute("href");
+    expect(href).toContain("16045550001");
+  });
+
+  // Email fallback button must be a visible card (not a tiny text link) so
+  // customers see it when SMS doesn't arrive.
+  test("email fallback card is visible when no email on file", async ({
+    page,
+  }) => {
+    await walkToInfoStep(page);
+    // No email filled in — email_links_enabled is true by default for the test salon
+    await page.getByRole("button", { name: "Continue" }).first().click();
+
+    await expect(page.locator("#otp-code")).toBeEnabled({ timeout: 15_000 });
+
+    // The fallback button (data-testid="otp-email-fallback") should be visible
+    await expect(
+      page.locator('[data-testid="otp-email-fallback"]'),
+    ).toBeVisible({ timeout: 8_000 });
   });
 
   // Regression — the SMS send endpoint must throttle duplicate sends server-side
