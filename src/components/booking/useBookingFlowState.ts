@@ -135,6 +135,9 @@ export function useBookingFlowState(
   language: "en" | "vi" = "vi",
   /** SMS consent captured at the phone gate — pre-satisfies confirm. */
   initialSmsConsent: boolean = false,
+  /** OTP session verified at the phone gate (Option B). When set, the flow
+   *  skips its own OTP step — the gate already verified the phone. */
+  initialOtpSessionId: string | null = null,
 ) {
   const capability = useMemo(
     () => buildCapabilityMap(capabilityRows),
@@ -211,12 +214,16 @@ export function useBookingFlowState(
   /** Staff free-gap minutes after the main service; surfaced in the upsell heading copy. */
   const [upsellGapMinutes, setUpsellGapMinutes] = useState<number>(0);
 
-  const [otpSessionId, setOtpSessionId] = useState<string | null>(null);
+  // When Option B gate-OTP is used, pre-seed the session so the flow's own
+  // OTP step is skipped (line ~1118: `otpSessionId && otpVerifiedPhone === clientPhone`).
+  const [otpSessionId, setOtpSessionId] = useState<string | null>(initialOtpSessionId);
   // The phone a live OTP session was verified for. Lets us SKIP re-showing the
   // OTP step (and re-sending an SMS) when the customer revisits verify/back from
   // confirm with the same phone already verified. Phone is captured at the gate
   // and immutable downstream, so a session stays valid for the whole flow.
-  const [otpVerifiedPhone, setOtpVerifiedPhone] = useState<string | null>(null);
+  const [otpVerifiedPhone, setOtpVerifiedPhone] = useState<string | null>(
+    initialOtpSessionId ? (initialPhone || null) : null,
+  );
   const [depositPaymentIntentId, setDepositPaymentIntentId] = useState<string | null>(null);
   const [depositConnectedAccountId, setDepositConnectedAccountId] = useState<string | null>(null);
   const [verificationAction, setVerificationAction] = useState<VerificationAction>("none");

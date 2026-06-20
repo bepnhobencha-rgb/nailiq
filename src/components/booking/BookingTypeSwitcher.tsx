@@ -16,6 +16,7 @@ import type {
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { BookingFlow } from "@/components/booking/BookingFlow";
 import { BookingGroupFlow } from "@/components/booking/BookingGroupFlow";
+import { BookingFlowOtpPanel } from "@/components/booking/BookingFlowOtpPanel";
 import { VoiceBookingButton } from "@/components/booking/VoiceBookingButton";
 import { cn } from "@/shared/lib/cn";
 import { GROUP_MAX_SIZE } from "@/shared/config/constants";
@@ -127,6 +128,10 @@ export function BookingTypeSwitcher({
   // (where the OTP SMS gets sent). The flow only reveals after it's given, and
   // it's passed into BookingFlow so confirm doesn't ask again.
   const [entrySmsConsent, setEntrySmsConsent] = useState(false);
+  // Option B — gate-first OTP: verify phone before entering the flow so the
+  // OTP step inside the flow is skipped (no re-prompt, no re-SMS).
+  const [gateOtpDone, setGateOtpDone] = useState(false);
+  const [gateOtpSessionId, setGateOtpSessionId] = useState<string | null>(null);
   const entryLookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const entryValidation = validateGuestPhone(entryPhoneRaw.trim());
   const entryPhone = entryValidation.ok ? entryPhoneRaw.trim() : "";
@@ -289,6 +294,32 @@ export function BookingTypeSwitcher({
     </div>
   );
 
+  // Option B: gate-first OTP panel — shown after phone+consent, before the flow.
+  // Only when salon.phoneOtpEnabled is true. Reuses the same OtpPanel component
+  // so email fallback + salon phone link work exactly as they do inside the flow.
+  const showGateOtp = gateReady && salon.phoneOtpEnabled && !gateOtpDone;
+  const gateOtpPanel = showGateOtp ? (
+    <BookingFlowOtpPanel
+      t={t}
+      shopSlug={shopSlug}
+      clientPhone={entryPhone}
+      emailChannelEnabled={salon.emailLinksEnabled !== false}
+      salonPhone={salon.salonPhone}
+      stepDir={1}
+      reducedMotion={false}
+      stepTransition={{ duration: 0.22, ease: [0.25, 0.46, 0.45, 0.94] }}
+      onVerified={(sessionId) => {
+        setGateOtpSessionId(sessionId);
+        setGateOtpDone(true);
+      }}
+      onBack={() => {
+        // Back from gate OTP → return to phone entry (clear consent so the
+        // gate collapses back and the customer can re-enter their number).
+        setEntrySmsConsent(false);
+      }}
+    />
+  ) : null;
+
   if (!groupEnabled) {
     return (
       <div className="space-y-4">
@@ -296,10 +327,11 @@ export function BookingTypeSwitcher({
           <VoiceBookingButton t={t} shopSlug={shopSlug} language={language} />
         )}
         {phoneGate}
-        {/* Phone-first: the flow (which starts at "service", skipping its
-            own phone step) only renders once a phone is entered at the
-            gate — so the gate is the single phone input, never two. */}
-        {gateReady ? (
+        {gateOtpPanel}
+        {/* Phone-first: the flow only renders once the gate is cleared.
+            With OTP enabled: waits for gate OTP too (gateOtpDone).
+            Without OTP: renders as soon as phone+consent are ready. */}
+        {gateReady && (!salon.phoneOtpEnabled || gateOtpDone) ? (
           <BookingFlow
             key={`ind-${entryPhone}-${entryNameResolved}`}
             t={t}
@@ -316,6 +348,7 @@ export function BookingTypeSwitcher({
             initialReturningCustomer={entryCustomer}
             initialName={entryNameResolved}
             initialSmsConsent={entrySmsConsent}
+            initialOtpSessionId={gateOtpSessionId}
           />
         ) : null}
       </div>
@@ -332,7 +365,8 @@ export function BookingTypeSwitcher({
           single phone input (the individual flow then starts at
           "service", skipping its own phone step → never two inputs). */}
       {phoneGate}
-      {gateReady ? (
+      {gateOtpPanel}
+      {gateReady && (!salon.phoneOtpEnabled || gateOtpDone) ? (
       <>
       {/* Heading + pill stacked. Was previously an inline-flex pill
           on its own line with no heading — easy to miss on first
@@ -393,7 +427,8 @@ export function BookingTypeSwitcher({
           initialPhone={entryPhone}
           initialReturningCustomer={entryCustomer}
           initialName={entryNameResolved}
-            initialSmsConsent={entrySmsConsent}
+          initialSmsConsent={entrySmsConsent}
+          initialOtpSessionId={gateOtpSessionId}
         />
       ) : (
         <BookingGroupFlow

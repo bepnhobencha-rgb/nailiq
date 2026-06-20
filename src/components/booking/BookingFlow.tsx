@@ -105,6 +105,9 @@ type BookingFlowProps = {
   /** SMS consent captured at the gate (after the phone). Pre-satisfies the
    *  confirm-step consent so it isn't asked twice. */
   initialSmsConsent?: boolean;
+  /** OTP session verified at the phone gate (Option B gate-first OTP).
+   *  When set, the flow skips its own OTP step — phone already verified. */
+  initialOtpSessionId?: string | null;
 };
 
 export function BookingFlow({
@@ -122,6 +125,7 @@ export function BookingFlow({
   initialReturningCustomer = null,
   initialName = "",
   initialSmsConsent = false,
+  initialOtpSessionId = null,
 }: BookingFlowProps) {
   const reducedMotion = useReducedMotion();
   const vertical = resolveVertical(salon.vertical);
@@ -145,6 +149,7 @@ export function BookingFlow({
     initialName,
     language,
     initialSmsConsent,
+    initialOtpSessionId,
   );
 
   const [loyaltyCard, setLoyaltyCard] = useState<LoyaltyCard | null>(null);
