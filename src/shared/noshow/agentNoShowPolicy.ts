@@ -47,6 +47,16 @@ export type PolicyContext = {
   aiLiveEnabled: boolean;
   /** Primary language for customer-facing messages ("en" | "vi"). Defaults to "en". */
   language: "en" | "vi";
+  // Group booking context — needed so the AI reasons about the whole-party fee,
+  // not just the organizer's single-slot price (PR #586: noshow_group_whole_party).
+  /** True when this booking belongs to a group with 2+ active members. */
+  isGroupBooking: boolean;
+  /** Number of active (non-cancelled) party members. 1 for solo bookings. */
+  partySize: number;
+  /** Sum of price_cents for all active members (= fee base when wholePartyFee). */
+  partyTotalCents: number;
+  /** Mirrors salons.noshow_group_whole_party — true = fee charged on whole party. */
+  wholePartyFee: boolean;
 };
 
 export type AiPolicyDecision = {
@@ -70,7 +80,7 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
-    .select("id, salon_id, client_name, client_phone, client_email, service_id, price_cents, start_time_utc, booking_channel, source")
+    .select("id, salon_id, client_name, client_phone, client_email, service_id, price_cents, start_time_utc, booking_channel, source, group_id")
     .eq("id", bookingId)
     .maybeSingle();
   const b = data as Row | null;
@@ -78,10 +88,11 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
 
   const salonId = str(b.salon_id);
   const phone = str(b.client_phone).replace(/\D/g, "");
+  const groupId = str(b.group_id);
 
-  const [{ data: svc }, { data: salon }, stats, { data: profile }, provider] = await Promise.all([
+  const [{ data: svc }, { data: salon }, stats, { data: profile }, provider, groupResult] = await Promise.all([
     b.service_id ? db.from("services").select("name").eq("id", str(b.service_id)).maybeSingle() : Promise.resolve({ data: null }),
-    db.from("salons").select("vertical, noshow_protection_enabled, noshow_fee_percent, feature_flags, default_notification_locale").eq("id", salonId).maybeSingle(),
+    db.from("salons").select("vertical, noshow_protection_enabled, noshow_fee_percent, feature_flags, default_notification_locale, noshow_group_whole_party").eq("id", salonId).maybeSingle(),
     // Salon-scoped visit history from BOOKINGS — the client_profiles table is a
     // GLOBAL identity table (no salon_id), so the old .eq("salon_id") filter
     // matched nothing and made every customer look brand-new (→ the agent
@@ -95,6 +106,11 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
       ? db.from("client_profiles").select("is_vip").eq("phone", phone).maybeSingle()
       : Promise.resolve({ data: null }),
     resolvePaymentProvider(salonId),
+    // Group booking: fetch all members so the agent sees the whole-party fee base.
+    // Mirrors the noShowBaseCents() logic in square/noshow.ts (PR #586).
+    groupId
+      ? db.from("bookings").select("price_cents, status").eq("group_id", groupId)
+      : Promise.resolve({ data: [] }),
   ]);
 
   const s = (salon as Row | null) ?? {};
@@ -102,6 +118,15 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
   const visitCount = historyRows.length;
   const noShowCount = historyRows.filter((r) => str(r.status) === "no_show").length;
   const p = (profile as Row | null) ?? {};
+
+  // Group context: mirrors noShowBaseCents() so the AI reasons on the real fee base.
+  const wholePartyFee = s.noshow_group_whole_party !== false;
+  const groupRows = ((groupResult.data ?? []) as Row[]).filter((r) => str(r.status) !== "cancelled");
+  const isGroupBooking = Boolean(groupId) && groupRows.length > 1;
+  const partySize = isGroupBooking ? groupRows.length : 1;
+  const partyTotalCents = isGroupBooking && wholePartyFee
+    ? groupRows.reduce((sum, r) => sum + num(r.price_cents), 0)
+    : num(b.price_cents);
 
   return {
     bookingId: str(b.id),
@@ -129,6 +154,10 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
     // Salon's primary language for customer-facing messages. Falls back to "en"
     // (Hi-Lite's guests are English; Vietnamese-first salons set this to "vi").
     language: str(s.default_notification_locale).startsWith("vi") ? "vi" : "en",
+    isGroupBooking,
+    partySize,
+    partyTotalCents,
+    wholePartyFee,
   };
 }
 
@@ -219,6 +248,13 @@ export async function agentDecideNoShowPolicy(ctx: PolicyContext): Promise<AiPol
   // (the "reason" and "message" fields) comes out in the right tongue.
   // English path: Hi-Lite and other EN-primary salons get an English prompt.
   // Vietnamese path: VN salons keep the original warm Vietnamese framing.
+  const groupLineVi = ctx.isGroupBooking
+    ? `- Đặt nhóm: ${ctx.partySize} người${ctx.wholePartyFee ? `, tổng giá trị đoàn ~$${(ctx.partyTotalCents / 100).toFixed(0)} (phí no-show tính toàn bộ đoàn, KHÔNG phải chỉ slot này)` : ""}.`
+    : "";
+  const groupLineEn = ctx.isGroupBooking
+    ? `- Group booking: party of ${ctx.partySize}${ctx.wholePartyFee ? `, total party value ~$${(ctx.partyTotalCents / 100).toFixed(0)} (no-show fee applies to the WHOLE party, not just this slot)` : ""}.`
+    : "";
+
   const prompt = isVi
     ? `Bạn là quản lý phụ trách chính sách chống no-show cho một ${ctx.vertical}. Quyết định mức bảo vệ cho lượt hẹn này một cách LINH HOẠT và NHÂN VĂN (giữ trải nghiệm cao cấp cho khách quen, chặt với rủi ro thật), KHÔNG máy móc theo ngưỡng.
 
@@ -230,8 +266,8 @@ Lựa chọn:
 Bối cảnh:
 - Khách: ${ctx.clientName} | ${ctx.isNew ? "KHÁCH MỚI" : `quay lại, đã đến ${ctx.visitCount} lần`} | số lần no-show trước: ${ctx.noShowCount} | VIP: ${ctx.isVip}
 - Liên hệ: ${ctx.hasPhone ? "có SĐT" : "KHÔNG SĐT"}, ${ctx.hasEmail ? "có email" : "không email"}
-- Lượt hẹn: ${ctx.serviceName}, giá ~$${(ctx.priceCents / 100).toFixed(0)}, lúc ${when}, kênh ${ctx.channel}
-- Tiệm: bảo vệ no-show ${ctx.protectionEnabled ? "BẬT" : "TẮT"}, cổng thanh toán ${ctx.providerConnected ? "đã nối" : "CHƯA nối"}, phí mặc định ${ctx.defaultFeePercent}%.
+- Lượt hẹn: ${ctx.serviceName}, giá slot ~$${(ctx.priceCents / 100).toFixed(0)}, lúc ${when}, kênh ${ctx.channel}
+${groupLineVi}- Tiệm: bảo vệ no-show ${ctx.protectionEnabled ? "BẬT" : "TẮT"}, cổng thanh toán ${ctx.providerConnected ? "đã nối" : "CHƯA nối"}, phí mặc định ${ctx.defaultFeePercent}%.
 
 Nếu chọn card/deposit, soạn 1 lời nhắn ngắn, ấm áp, lịch sự cho khách bằng tiếng Việt (xưng hô thân thiện).
 
@@ -246,8 +282,8 @@ Options:
 Context:
 - Customer: ${ctx.clientName} | ${ctx.isNew ? "NEW CUSTOMER" : `returning, ${ctx.visitCount} visit(s)`} | prior no-shows: ${ctx.noShowCount} | VIP: ${ctx.isVip}
 - Contact: ${ctx.hasPhone ? "has phone" : "NO PHONE"}, ${ctx.hasEmail ? "has email" : "no email"}
-- Appointment: ${ctx.serviceName}, ~$${(ctx.priceCents / 100).toFixed(0)}, at ${when}, channel: ${ctx.channel}
-- Salon: no-show protection ${ctx.protectionEnabled ? "ON" : "OFF"}, payment gateway ${ctx.providerConnected ? "connected" : "NOT connected"}, default fee ${ctx.defaultFeePercent}%.
+- Appointment: ${ctx.serviceName}, slot price ~$${(ctx.priceCents / 100).toFixed(0)}, at ${when}, channel: ${ctx.channel}
+${groupLineEn}- Salon: no-show protection ${ctx.protectionEnabled ? "ON" : "OFF"}, payment gateway ${ctx.providerConnected ? "connected" : "NOT connected"}, default fee ${ctx.defaultFeePercent}%.
 
 If card/deposit selected, write a short, warm, professional message to the customer in English.
 
