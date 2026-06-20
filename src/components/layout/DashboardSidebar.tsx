@@ -497,7 +497,7 @@ export function DashboardSidebar({
         // When DRC is active it hoists --drc-page-bg onto <html>.
         // Mix 20% of that colour into black → clearly darker than the DRC
         // content area but tinted in the same colour family.
-        background: "color-mix(in srgb, var(--drc-page-bg, #111214) 20%, #000000 80%)",
+        background: "color-mix(in srgb, var(--drc-page-bg, #111214) 40%, #000000 60%)",
       }}
       aria-label={t.primaryNav}
     >
