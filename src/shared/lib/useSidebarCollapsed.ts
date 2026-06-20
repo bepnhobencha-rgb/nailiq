@@ -10,11 +10,13 @@ import { useCallback, useEffect, useState } from "react";
 export const SIDEBAR_COLLAPSED_STORAGE_KEY = "nailiq-sidebar-collapsed";
 
 function readInitial(): boolean {
-  if (typeof window === "undefined") return false;
+  if (typeof window === "undefined") return true;
   try {
-    return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "1";
+    const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY);
+    // Default collapsed when no preference stored yet.
+    return stored === null ? true : stored === "1";
   } catch {
-    return false;
+    return true;
   }
 }
 

@@ -485,29 +485,32 @@ export function DashboardSidebar({
   // static "Soon" badge instead of a numeric count).
   void messagesCount;
 
+  // Hover-expand: when collapsed, hovering reveals the full sidebar as an
+  // overlay without shifting the main content (--nq-sidebar-w stays 4rem).
+  const [hoverOpen, setHoverOpen] = useState(false);
+  const showExpanded = !collapsed || hoverOpen;
+
   return (
     <aside
       // Hidden on mobile (bottom-bar takes over per §9.2).
       className={cn(
         "hidden md:flex fixed inset-y-0 left-0 z-40 flex-col border-r border-nq-border/40 text-nq-foreground",
-        // Width follows CSS var so DashboardShell main padding stays in sync.
-        "w-[var(--nq-sidebar-w)]",
+        "transition-[width] duration-200 ease-out overflow-hidden",
       )}
       style={{
+        width: showExpanded ? "15rem" : "4rem",
+        // Elevate the hover-expanded overlay so it clearly floats above content.
+        boxShadow: hoverOpen && collapsed ? "4px 0 24px rgba(0,0,0,0.5)" : undefined,
         // When DRC is active it hoists --drc-page-bg onto <html>.
-        // Mix 20% of that colour into black → clearly darker than the DRC
-        // content area but tinted in the same colour family.
-        background: "color-mix(in srgb, var(--drc-page-bg, #111214) 40%, #000000 60%)",
+        // 55% mix → sidebar is visibly tinted but clearly darker than DRC content.
+        background: "color-mix(in srgb, var(--drc-page-bg, #111214) 55%, #000000 45%)",
       }}
+      onMouseEnter={() => setHoverOpen(true)}
+      onMouseLeave={() => setHoverOpen(false)}
       aria-label={t.primaryNav}
     >
-      {collapsed ? (
-        // Collapsed: only the toggle, right-aligned within the 64px
-        // rail. The NQ logo + salon name don't fit at this width
-        // alongside a 36px button (NQ + gap + button = 80px > 40px
-        // content area), so we drop them. The toggle alone gives the
-        // user a clear way back to the expanded shell where both
-        // re-appear.
+      {!showExpanded ? (
+        // Icon-only rail: just the expand toggle
         <div className="flex items-center justify-end px-2 py-4 border-b border-nq-border/40">
           <button
             type="button"
@@ -566,7 +569,7 @@ export function DashboardSidebar({
                   <SidebarRow
                     item={item}
                     active={item.href ? item.match(pathname) : false}
-                    collapsed={collapsed}
+                    collapsed={!showExpanded}
                   />
                 </li>
               ))}
@@ -586,7 +589,7 @@ export function DashboardSidebar({
             !pathname.includes("/center") ? (
               <QuickAddWalkinButton
                 slug={slug}
-                collapsed={collapsed}
+                collapsed={!showExpanded}
                 label={t.quickAddWalkin}
               />
             ) : null}
@@ -604,19 +607,19 @@ export function DashboardSidebar({
           onClick={() => setUserMenuOpen((prev) => !prev)}
           aria-haspopup="menu"
           aria-expanded={userMenuOpen}
-          title={collapsed ? userEmail ?? "Account" : undefined}
+          title={!showExpanded ? userEmail ?? "Account" : undefined}
           className={cn(
             "flex w-full min-h-11 touch-manipulation items-center gap-3 rounded-lg px-2 py-2",
             "transition-colors hover:bg-nq-surface/80",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45",
-            collapsed ? "justify-center" : "",
+            !showExpanded ? "justify-center" : "",
             userMenuOpen ? "bg-nq-surface/80" : "",
           )}
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-nq-primary/20 text-xs font-semibold text-nq-primary">
             {userEmail?.charAt(0).toUpperCase() ?? "U"}
           </div>
-          {collapsed ? null : (
+          {!showExpanded ? null : (
             <>
               <div className="min-w-0 flex-1 text-left">
                 <p className="truncate text-sm font-medium text-nq-foreground">
@@ -643,7 +646,7 @@ export function DashboardSidebar({
             role="menu"
             className={cn(
               "absolute z-50 rounded-lg border border-nq-border/40 bg-nq-surface p-1 shadow-nq-card",
-              collapsed
+              !showExpanded
                 ? "bottom-2 left-[calc(100%+0.5rem)] w-60"
                 : "bottom-[calc(100%-0.25rem)] left-2 right-2",
             )}
