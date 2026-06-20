@@ -15,16 +15,20 @@ export type DrcPalette = {
   accentFg: string;
 };
 
-export const FENG_SHUI_PRESETS = [
-  { hex: "#c94040", label: "Hỏa — Đỏ 🔴", desc: "Nhiệt huyết, may mắn" },
-  { hex: "#d46b2a", label: "Hỏa — Cam 🟠", desc: "Năng động, tươi sáng" },
-  { hex: "#c9a030", label: "Kim — Vàng ⭐", desc: "Phát tài, thịnh vượng" },
-  { hex: "#2d7a4f", label: "Mộc — Xanh lá 🟢", desc: "Tăng trưởng, sinh khí" },
-  { hex: "#2d5a8f", label: "Thủy — Xanh lam 🔵", desc: "Bình an, trí tuệ" },
-  { hex: "#7a4a9f", label: "Thủy — Tím 🟣", desc: "Tâm linh, cao quý" },
-  { hex: "#8f6a3a", label: "Thổ — Nâu 🟤", desc: "Ổn định, bền vững" },
-  { hex: DEFAULT_DRC_ACCENT, label: "NailIQ Gold ✦", desc: "Mặc định" },
-] as const;
+export type FengShuiPresetKey =
+  | "fire_red" | "fire_orange" | "metal_gold" | "wood_green"
+  | "water_blue" | "water_purple" | "earth_brown" | "nailiq_gold";
+
+export const FENG_SHUI_PRESETS: Array<{ hex: string; key: FengShuiPresetKey }> = [
+  { hex: "#c94040", key: "fire_red" },
+  { hex: "#d46b2a", key: "fire_orange" },
+  { hex: "#c9a030", key: "metal_gold" },
+  { hex: "#2d7a4f", key: "wood_green" },
+  { hex: "#2d5a8f", key: "water_blue" },
+  { hex: "#7a4a9f", key: "water_purple" },
+  { hex: "#8f6a3a", key: "earth_brown" },
+  { hex: DEFAULT_DRC_ACCENT, key: "nailiq_gold" },
+];
 
 export function hexToRgb(hex: string): [number, number, number] {
   const clean = hex.replace("#", "").padEnd(6, "0");

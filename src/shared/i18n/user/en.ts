@@ -1097,6 +1097,27 @@ export type UserMessages = {
       /** Toast on failure (any error). */
       updateFailed: string;
     };
+    /** DRC color theme picker. */
+    themePicker: {
+      title: string;
+      saved: string;
+      saving: string;
+      customLabel: string;
+      applyButton: string;
+      resetButton: string;
+      openAria: string;
+      colorPickerTitle: string;
+      presets: {
+        fire_red: { label: string; desc: string };
+        fire_orange: { label: string; desc: string };
+        metal_gold: { label: string; desc: string };
+        wood_green: { label: string; desc: string };
+        water_blue: { label: string; desc: string };
+        water_purple: { label: string; desc: string };
+        earth_brown: { label: string; desc: string };
+        nailiq_gold: { label: string; desc: string };
+      };
+    };
     /** Basic Mode — Front Desk Cockpit (per-device view toggle). */
     basicMode: {
       toggle: string;
@@ -3256,6 +3277,26 @@ export const userEn: UserMessages = {
       ariaLabel: "Dashboard density — Simple, Balanced, or Pro",
       updated: (label: string) => `Density set to ${label}`,
       updateFailed: "Could not change density. Try again shortly.",
+    },
+    themePicker: {
+      title: "DRC Color",
+      saved: "Saved",
+      saving: "Saving…",
+      customLabel: "Custom color",
+      applyButton: "Apply",
+      resetButton: "Reset to NailIQ default",
+      openAria: "Change DRC color",
+      colorPickerTitle: "Pick a custom color",
+      presets: {
+        fire_red: { label: "Fire — Red 🔴", desc: "Passion, good luck" },
+        fire_orange: { label: "Fire — Orange 🟠", desc: "Energy, brightness" },
+        metal_gold: { label: "Metal — Gold ⭐", desc: "Wealth, prosperity" },
+        wood_green: { label: "Wood — Green 🟢", desc: "Growth, vitality" },
+        water_blue: { label: "Water — Blue 🔵", desc: "Peace, wisdom" },
+        water_purple: { label: "Water — Purple 🟣", desc: "Spirit, nobility" },
+        earth_brown: { label: "Earth — Brown 🟤", desc: "Stability, resilience" },
+        nailiq_gold: { label: "NailIQ Gold ✦", desc: "Default" },
+      },
     },
     basicMode: {
       toggle: "Basic",
