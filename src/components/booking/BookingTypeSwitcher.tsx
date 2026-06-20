@@ -314,12 +314,10 @@ export function BookingTypeSwitcher({
   const entryLookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const entryValidation = validateGuestPhone(entryPhoneRaw.trim());
   const entryPhone = entryValidation.ok ? entryPhoneRaw.trim() : "";
-  // Name is valid when the customer typed ≥2 chars, OR when a verified
-  // profile already supplies their name (post-OTP personalization).
-  // ≥2 matches the nameTooShort guard in onConfirm / submitPublicBooking.
-  const nameOk =
-    entryName.trim().length >= 2 ||
-    (entryCustomer?.name ?? "").trim().length >= 2;
+  // Returning customers (phone recognized) skip name entry — their name comes
+  // from the verified profile after OTP. New customers must type ≥2 chars.
+  // ≥2 matches the nameTooShort guard in submitPublicBooking.
+  const nameOk = Boolean(entryCustomer) || entryName.trim().length >= 2;
   // Ready to enter the flow: valid phone + name + SMS consent.
   const gateReady = Boolean(entryPhone) && nameOk && entrySmsConsent;
   // Debounced commit of the typed name so the flow (keyed on identity)
@@ -438,7 +436,7 @@ export function BookingTypeSwitcher({
 
       {/* Name input: shown for new customers and returning ones before OTP.
           After OTP verify the profile supplies the name → input hidden. */}
-      {entryPhone && !entryLoading && !entryCustomer?.name ? (
+      {entryPhone && !entryLoading && !entryCustomer ? (
         <div className="mt-3">
           <label
             htmlFor="booking-entry-name"
