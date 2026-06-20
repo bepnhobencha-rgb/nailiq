@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef, useEffect } from "react";
 import { Palette, Check, RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import {
@@ -22,9 +22,23 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
   const [pending, startTransition] = useTransition();
   const [customHex, setCustomHex] = useState(currentAccent);
   const [saved, setSaved] = useState(false);
+  const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  // Recalculate position whenever the picker opens so it anchors correctly even
+  // after scroll or resize. Fixed positioning escapes backdrop-filter stacking
+  // contexts on the header that clip absolute children.
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    const popoverWidth = 240; // w-60
+    const gap = 8;
+    const left = Math.max(8, rect.right - popoverWidth);
+    const top = rect.bottom + gap;
+    setPopoverStyle({ position: "fixed", top, left, width: popoverWidth });
+  }, [open]);
 
   function pick(hex: string) {
-    // Optimistic: apply immediately to the DRC shell
     onAccentChange(hex);
     setCustomHex(hex);
     setSaved(false);
@@ -44,6 +58,7 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
   return (
     <div className="relative">
       <button
+        ref={btnRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="Đổi màu DRC"
@@ -62,14 +77,21 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
 
       {open && (
         <>
-          {/* Backdrop */}
+          {/* Backdrop — fixed so it covers the whole viewport */}
           <div
             className="fixed inset-0 z-40"
             onClick={() => setOpen(false)}
           />
 
-          {/* Popover */}
-          <div className="absolute right-0 top-10 z-50 w-60 rounded-xl border border-[#2a2a2a] bg-[#111] p-4 shadow-2xl">
+          {/* Popover — fixed to escape backdrop-filter stacking context on header */}
+          <div
+            className="z-50 rounded-xl border border-[#2a2a2a] bg-[#111] p-4 shadow-2xl"
+            style={{
+              ...popoverStyle,
+              maxHeight: "calc(100vh - 80px)",
+              overflowY: "auto",
+            }}
+          >
             {/* Header */}
             <div className="mb-3 flex items-center justify-between">
               <p className="text-[11px] uppercase tracking-[2px] text-[#888]">
@@ -146,7 +168,10 @@ export function DrcThemePicker({ slug, currentAccent, onAccentChange }: Props) {
               />
               <div
                 className="h-8 flex-1 rounded-lg border border-[#2a2a2a] px-2 text-[12px] flex items-center"
-                style={{ backgroundColor: sanitizeHex(customHex) ?? "#1a1a1a", color: sanitizeHex(customHex) ? contrastFg(customHex) : "#666" }}
+                style={{
+                  backgroundColor: sanitizeHex(customHex) ?? "#1a1a1a",
+                  color: sanitizeHex(customHex) ? contrastFg(customHex) : "#666",
+                }}
               >
                 {sanitizeHex(customHex) ?? "—"}
               </div>
