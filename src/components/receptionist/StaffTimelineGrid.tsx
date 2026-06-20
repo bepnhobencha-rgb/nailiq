@@ -765,7 +765,7 @@ function StaffTimelineGridImpl({
   }, [isViewingToday, nowIso, timezone, hourStart, hourEnd]);
 
   const nowLineLabel = useMemo(
-    () => labels.formatTimeLabel(nowIso),
+    () => (nowIso ? labels.formatTimeLabel(nowIso) : ""),
     [labels, nowIso],
   );
 
