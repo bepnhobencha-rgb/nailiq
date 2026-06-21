@@ -167,6 +167,24 @@ These modules are load-bearing and easy to break — read before editing:
    - Viết nhiều file không liên quan → multi Write/Edit trong 1 message
    - `typecheck` + `build` không phụ thuộc nhau → parallel Bash calls
    - Sequential chỉ khi có dependency rõ ràng (migration chưa xong, schema chưa có)
+7. **Blast-radius check — BẮT BUỘC TRƯỚC khi sửa code dùng chung / load-bearing**
+   (vd `src/shared/lib/*` như `salonTime.ts`, `phoneFormat.ts`, `conflictCheck.ts`;
+   bất kỳ helper / type / server-action được import nhiều nơi):
+   - `grep -rn` TẤT CẢ call-site TRƯỚC khi sửa → liệt kê tính năng nào sẽ bị ảnh hưởng
+     (đặt hẹn công khai? dashboard? AI agents? cron? voice?). Hệ thống đang chạy
+     online — một thay đổi ở `shared/` có thể làm sập nhiều surface cùng lúc.
+   - Tự hỏi: "thay đổi này có đổi hành vi cho input HỢP LỆ không, hay chỉ edge-case?"
+     Ưu tiên thay đổi **additive / siêu-tập an toàn** (chỉ đổi hành vi cho input
+     lỗi/rỗng, GIỮ NGUYÊN cho input hợp lệ) thay vì đổi contract.
+   - Đụng revenue path (booking) → theo rule "Preview-first" ở mục PM Workflow.
+8. **Verify trên LIVE rồi mới nói "xong" — KHÔNG tuyên bố dựa trên suy luận:**
+   - Sau khi deploy production → đợi deploy READY → soi `error_logs` (Supabase MCP):
+     **0 lỗi mới** trên route vừa sửa **VÀ** các route khác kể từ mốc go-live, mới
+     được báo "đã fix". (Bài học #665: tuyên bố hết lỗi khi fix mới chặn được
+     throw đầu, throw thứ hai vẫn crash → khách vẫn dính lỗi.)
+   - Lỗi deterministic (crash mọi lần) → chỉ cần vài lượt traffic là kết luận;
+     đừng vội chốt khi mới <1 phút hoặc chưa có traffic thật.
+   - Chưa verify được → nói rõ "đã deploy, đang chờ xác nhận", KHÔNG nói "xong".
 
 ## 🔬 Deep Analysis — BẮT BUỘC trước khi implement feature mới
 
