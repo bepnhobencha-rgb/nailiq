@@ -58,6 +58,10 @@ export const bookingEn = {
   noShowCardSaving: "Saving…",
   noShowCardSaved: "Card saved — you're only charged {fee} if you no-show.",
   noShowCardError: "Could not save the card. Please check your details.",
+  cardWebviewHint:
+    "Can't load the card form in this app's browser. Open this page in Safari or Chrome to finish — tap the ••• menu and choose \"Open in browser\", or copy the link below.",
+  cardWebviewCopy: "Copy booking link",
+  cardWebviewCopied: "Link copied",
   noShowConsent:
     "I agree to the no-show policy and authorize this salon to charge {fee} to this card only if I don't show up.",
   noShowSavedCardOnFile: "On file",
