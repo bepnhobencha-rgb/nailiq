@@ -112,7 +112,10 @@ export function SocialAuthButtons({
     setInfo(null);
     const normalized = validEmail(email);
     if (!normalized) {
-      setError(t.emailInvalid);
+      // Switch to magic-link mode so password field disappears and the
+      // user sees a clean "enter email → send link" form.
+      if (passwordSupported && showPassword) setShowPassword(false);
+      setError(email.trim() ? t.emailInvalid : t.emailRequired);
       return;
     }
     setPendingAction("magic");
@@ -332,8 +335,8 @@ export function SocialAuthButtons({
             autoFocus={layout === "compact"}
           />
 
-          {/* Password section — default open in open+password layout */}
-          {passwordSupported ? (
+          {/* Password section — visible while showPassword is true */}
+          {passwordSupported && showPassword ? (
             <div id={passwordSectionId} className="flex flex-col gap-3">
               <Input
                 id="password-input"
@@ -418,19 +421,35 @@ export function SocialAuthButtons({
               </form>
             </div>
           ) : (
-            /* Compact / magic-link only mode */
-            <form onSubmit={onMagicLink} method="post">
-              <Button
-                type="submit"
-                variant={layout === "open" ? "secondary" : "ghost"}
-                size="md"
-                className="w-full min-h-[48px]"
-                loading={pending && pendingAction === "magic"}
-                disabled={pending}
-              >
-                {magicLinkButtonLabel}
-              </Button>
-            </form>
+            /* Magic-link mode: either compact layout, or password form was dismissed */
+            <>
+              <form onSubmit={onMagicLink} method="post">
+                <Button
+                  type="submit"
+                  variant={layout === "open" ? "secondary" : "ghost"}
+                  size="md"
+                  className="w-full min-h-[48px]"
+                  loading={pending && pendingAction === "magic"}
+                  disabled={pending}
+                >
+                  {magicLinkButtonLabel}
+                </Button>
+              </form>
+              {/* When user switched from password mode, offer a way back */}
+              {passwordSupported ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPassword(true);
+                    setError(null);
+                    setPassword("");
+                  }}
+                  className="self-center text-sm text-nq-muted underline-offset-4 transition hover:text-nq-foreground hover:underline"
+                >
+                  {t.showPasswordToggle}
+                </button>
+              ) : null}
+            </>
           )}
         </div>
       ) : null}
