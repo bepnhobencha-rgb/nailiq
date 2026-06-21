@@ -553,6 +553,47 @@ export type UserMessages = {
       qrButton: string;
       qrModalTitle: string;
     };
+    /** WOW home dashboard — kpis, sparkline, leaderboards. */
+    home: {
+      today: string;
+      todaySubtitle: string;
+      totalBookings: string;
+      confirmed: string;
+      completed: string;
+      revenue: string;
+      noShows: string;
+      vsLastWeek: string;
+      monthTitle: string;
+      last30Days: string;
+      /** `{n}` = booking count. */
+      monthBookings: string;
+      topServicesTitle: string;
+      topServicesEmpty: string;
+      /** `{n}` = count. */
+      bookingsCount: string;
+      staffTitle: string;
+      staffEmpty: string;
+      /** `{n}` = count. */
+      appointments: string;
+      healthTitle: string;
+      newClients: string;
+      clientsServed: string;
+      noShowRate: string;
+      thisMonth: string;
+      thisWeek: string;
+      tomorrowTitle: string;
+      /** `{n}` = count. */
+      tomorrowAppointments: string;
+      tomorrowRevenue: string;
+      tomorrowEmpty: string;
+      minhTitle: string;
+      /** `{n}` = count. */
+      minhPendingApprovals: string;
+      minhViewAll: string;
+      bookingLink: string;
+      refresh: string;
+      openReceptionistCenter: string;
+    };
   };
   salonDashboard: {
     title: string;
@@ -2788,6 +2829,41 @@ export const userEn: UserMessages = {
       openButton: "Open page",
       qrButton: "QR Code",
       qrModalTitle: "Booking QR Code",
+    },
+    home: {
+      today: "Today",
+      todaySubtitle: "At a glance",
+      totalBookings: "Total Bookings",
+      confirmed: "Confirmed",
+      completed: "Completed",
+      revenue: "Revenue",
+      noShows: "No-shows",
+      vsLastWeek: "vs last week",
+      monthTitle: "This Month",
+      last30Days: "Last 30 days",
+      monthBookings: "{n} bookings",
+      topServicesTitle: "Top Services",
+      topServicesEmpty: "No service data yet",
+      bookingsCount: "{n} bookings",
+      staffTitle: "Staff Performance",
+      staffEmpty: "No staff data yet",
+      appointments: "{n} appts",
+      healthTitle: "Customer Health",
+      newClients: "New",
+      clientsServed: "Served",
+      noShowRate: "No-show",
+      thisMonth: "This month",
+      thisWeek: "This week",
+      tomorrowTitle: "Tomorrow",
+      tomorrowAppointments: "{n} appointments",
+      tomorrowRevenue: "Est. revenue",
+      tomorrowEmpty: "No appointments tomorrow",
+      minhTitle: "AI Manager Minh",
+      minhPendingApprovals: "{n} items need your review",
+      minhViewAll: "Review",
+      bookingLink: "Booking page",
+      refresh: "Refresh",
+      openReceptionistCenter: "Open Receptionist Center",
     },
   },
   salonDashboard: {

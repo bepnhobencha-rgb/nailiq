@@ -32,15 +32,18 @@ import { bookingIdsEqual } from "@/shared/lib/bookingIdsEqual";
 import { REG_FLOW_OWNER_RETURNING } from "@/shared/lib/registerSessionKeys";
 import { getSiteUrlForClient } from "@/shared/lib/siteUrlClient";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import type { OwnerHomeData } from "@/shared/dashboard/loadOwnerHomeDashboardAction";
 
 type InitialPayload = Extract<LoadSalonDashboardResult, { ok: true }>;
 
 export function SalonOwnerDashboard({
   slug,
   initialResult,
+  homeData,
 }: {
   slug: string;
   initialResult: LoadSalonDashboardResult;
+  homeData: OwnerHomeData | null;
 }) {
   const router = useRouter();
   const { language, setLanguage } = useUserLanguage();
@@ -424,6 +427,7 @@ export function SalonOwnerDashboard({
         onDismiss={() => setNewBookingToast(null)}
       />
       <SalonOwnerDashboardMain
+        homeData={homeData}
         topSlot={
           showRecoveryEmailBanner ? (
             <AddEmailBanner
@@ -454,16 +458,6 @@ export function SalonOwnerDashboard({
         language={language}
         onLanguageChange={setLanguage}
         bookingAbsoluteUrl={bookingAbsoluteUrl}
-        copied={copied}
-        onCopy={onCopy}
-        onOpenBooking={() => {
-          if (typeof window !== "undefined") {
-            window.open(bookingAbsoluteUrl, "_blank", "noopener,noreferrer");
-          }
-        }}
-        isSaving={isSaving}
-        onAdvanceStatus={onAdvanceStatus}
-        upcomingByDay={upcomingByDay}
         isLoading={isLoading}
         lastUpdatedAt={lastUpdatedAt}
         onManualRefresh={() => {
@@ -472,7 +466,6 @@ export function SalonOwnerDashboard({
         }}
         manualRefreshing={manualRefreshing}
         showDataSkeleton={isLoading || manualRefreshing}
-        highlightBookingId={highlightBookingId}
       />
     </ResponsiveShell>
   );
