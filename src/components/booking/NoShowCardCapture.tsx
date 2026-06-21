@@ -5,6 +5,7 @@ import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { NoShowCardCaptureStripe } from "./NoShowCardCaptureStripe";
 import type { SavedNoShowCard } from "@/shared/noshow/resolveSavedNoShowCard";
 import { reuseNoShowCardAction } from "@/shared/noshow/saveNoShowCardAction";
+import { CardWebviewFallback } from "./CardWebviewFallback";
 
 type CaptureProps = {
   bookingId: string;
@@ -388,6 +389,13 @@ function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSession
         <p className="mt-2 text-xs text-nq-error" role="alert">
           {errorMsg}
         </p>
+      ) : null}
+      {errorMsg ? (
+        <CardWebviewFallback
+          hint={t.cardWebviewHint ?? "Can't load the card form in this app's browser. Open this page in Safari or Chrome to finish, or copy the link below."}
+          copyLabel={t.cardWebviewCopy ?? "Copy booking link"}
+          copiedLabel={t.cardWebviewCopied ?? "Link copied"}
+        />
       ) : null}
       <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs leading-relaxed text-[var(--booking-text-muted)]">
         <input

@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
+import { CardWebviewFallback } from "@/components/booking/CardWebviewFallback";
 
 type SquareCard = {
   attach: (sel: string) => Promise<void>;
@@ -188,6 +189,13 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
           <p className="mt-2 text-xs text-nq-error" role="alert" data-testid="confirm-step-card-error">
             {error}
           </p>
+        ) : null}
+        {error ? (
+          <CardWebviewFallback
+            hint={t.cardWebviewHint ?? "Can't load the card form in this app's browser. Open this page in Safari or Chrome to finish, or copy the link below."}
+            copyLabel={t.cardWebviewCopy ?? "Copy booking link"}
+            copiedLabel={t.cardWebviewCopied ?? "Link copied"}
+          />
         ) : null}
       </div>
     );
