@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { SalonOwnerDashboard } from "@/components/dashboard/SalonOwnerDashboard";
 import { createClient } from "@/shared/lib/supabase/server";
 import { loadSalonOwnerDashboard } from "@/shared/dashboard/salonOwnerActions";
+import { loadOwnerHomeDashboard } from "@/shared/dashboard/loadOwnerHomeDashboardAction";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -19,16 +20,28 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const title = name ? `${name} · Dashboard` : "Salon dashboard";
   return {
     title,
-    description: "Today’s bookings, revenue snapshot, and upcoming appointments.",
+    description: "Today's bookings, revenue snapshot, and upcoming appointments.",
   };
 }
 
 export default async function SalonDashboardPage({ params }: Props) {
   const { slug } = await params;
-  /** Loads stats, `setup` (counts, hours) and `profile_complete` for checklist + badge. */
-  const initialResult = await loadSalonOwnerDashboard(slug);
+
+  // Fetch both in parallel — home analytics doesn't block the main dashboard
+  const [initialResult, homeResult] = await Promise.all([
+    loadSalonOwnerDashboard(slug),
+    loadOwnerHomeDashboard(slug),
+  ]);
+
   if (!initialResult.ok && initialResult.error === "unauthorized") {
     redirect("/register");
   }
-  return <SalonOwnerDashboard slug={slug} initialResult={initialResult} />;
+
+  return (
+    <SalonOwnerDashboard
+      slug={slug}
+      initialResult={initialResult}
+      homeData={homeResult.ok ? homeResult.data : null}
+    />
+  );
 }
