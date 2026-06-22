@@ -235,6 +235,18 @@ export async function GET(req: Request): Promise<NextResponse> {
       }
     }
 
+    // Google Business Post — 1st and 15th at 10:00 salon local time; self-dedupes
+    if (salonHour === 10 && flags.ai_gbp_post) {
+      try {
+        const { runGbpPost } = await import("@/shared/ai/agentGoogleBusinessPost");
+        await runGbpPost(salon.id);
+        entry.gbp_post = "ok";
+      } catch (e) {
+        console.error("[manager] gbp_post", salon.slug, e);
+        entry.gbp_post = String(e);
+      }
+    }
+
     // First-visit nurture — runs daily at 20:00 salon time (30 min after Hi-Lite close)
     // Detects same-day first visits so warmth message arrives the same evening
     if (salonHour === 20 && flags.ai_first_visit_nurture) {

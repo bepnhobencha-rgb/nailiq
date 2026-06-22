@@ -114,6 +114,16 @@ const AGENTS: AgentDef[] = [
     descVi:
       "Gộp tất cả email riêng lẻ từ các agent thành 1 bản tổng kết duy nhất lúc 21:00, viết bằng giọng Minh: hôm nay thế nào, AI đã làm gì, ngày mai cần chú ý gì.",
   },
+  {
+    key: "ai_gbp_post",
+    icon: "📍",
+    nameEn: "Google Business Posts — GBP drafts",
+    nameVi: "Google Business — Bài đăng tự động",
+    descEn:
+      "On the 1st and 15th of each month, Minh drafts a ready-to-post Google Business Profile update — tailored to your services, season, and brand voice. Copy-paste in 30 seconds.",
+    descVi:
+      "Ngày 1 và 15 hàng tháng, Minh soạn sẵn bài đăng Google Business Profile — theo dịch vụ, mùa vụ, và giọng thương hiệu của bạn. Copy-paste trong 30 giây.",
+  },
 ];
 
 function AgentToggle({
