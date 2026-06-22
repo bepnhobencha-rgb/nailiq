@@ -260,6 +260,9 @@ export function useBookingFlowState(
   // Option A no-show card gate — resolved when the customer reaches the confirm
   // step (before any booking exists) so the card form can render in-step.
   const [cardRequirement, setCardRequirement] = useState<NoShowCardRequirement | null>(null);
+  // True while resolveNoShowCardRequirement is in-flight. Gates the confirm
+  // button so the user can't race past the card check before it resolves.
+  const [cardRequirementLoading, setCardRequirementLoading] = useState(false);
   // Đợt 2 — returning OTP-verified customer's saved card (one-tap reuse). Null =
   // not looked up / none; only populated when a card is required AND OTP-verified.
   const [savedCard, setSavedCard] = useState<SavedNoShowCard | null>(null);
@@ -1274,16 +1277,26 @@ export function useBookingFlowState(
     const v = validateGuestPhone(clientPhone.trim());
     if (!v.ok) {
       setCardRequirement(null);
+      setCardRequirementLoading(false);
       return;
     }
     let alive = true;
+    setCardRequirementLoading(true);
     void resolveNoShowCardRequirement({
       salonId: salon.id,
       serviceId,
       clientPhone: v.digits,
     })
-      .then((r) => alive && setCardRequirement(r))
-      .catch(() => alive && setCardRequirement(null));
+      .then((r) => {
+        if (!alive) return;
+        setCardRequirement(r);
+        setCardRequirementLoading(false);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setCardRequirement(null);
+        setCardRequirementLoading(false);
+      });
     return () => {
       alive = false;
     };
@@ -1811,6 +1824,7 @@ export function useBookingFlowState(
     handleAddToCalendar,
     onConfirm,
     cardRequirement,
+    cardRequirementLoading,
     savedCard,
     smsConsent,
     setSmsConsent,

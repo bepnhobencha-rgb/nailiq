@@ -333,6 +333,7 @@ export function BookingGroupFlow({
   // after success. cardRequirement is resolved pre-booking by organizer phone.
   const [cardRequirement, setCardRequirement] =
     useState<NoShowCardRequirement | null>(null);
+  const [cardRequirementLoading, setCardRequirementLoading] = useState(false);
   const [noShowConsent, setNoShowConsent] = useState(false);
   const cardRef = useRef<ConfirmStepCardHandle>(null);
   // Holds the tokenized card across a possible OTP round-trip (the card iframe
@@ -613,9 +614,12 @@ export function BookingGroupFlow({
       // Deliberate reset when inputs go invalid — not a render-loop.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setCardRequirement(null);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCardRequirementLoading(false);
       return;
     }
     let alive = true;
+    setCardRequirementLoading(true);
     void resolveNoShowCardRequirement({
       salonId: salon.id,
       serviceId: svcId,
@@ -627,10 +631,14 @@ export function BookingGroupFlow({
         .filter((id): id is string => Boolean(id)),
     })
       .then((r) => {
-        if (alive) setCardRequirement(r);
+        if (!alive) return;
+        setCardRequirement(r);
+        setCardRequirementLoading(false);
       })
       .catch(() => {
-        if (alive) setCardRequirement(null);
+        if (!alive) return;
+        setCardRequirement(null);
+        setCardRequirementLoading(false);
       });
     return () => {
       alive = false;
@@ -1754,6 +1762,7 @@ export function BookingGroupFlow({
           onSubmit={() => void onSubmit()}
           initialSmsConsent={initialSmsConsent}
           cardRequirement={cardRequirement}
+          cardRequirementLoading={cardRequirementLoading}
           cardRef={cardRef}
           noShowConsent={noShowConsent}
           onNoShowConsentChange={setNoShowConsent}
@@ -3529,6 +3538,7 @@ function ConfirmStep({
   onSubmit,
   initialSmsConsent,
   cardRequirement,
+  cardRequirementLoading,
   cardRef,
   noShowConsent,
   onNoShowConsentChange,
@@ -3576,6 +3586,8 @@ function ConfirmStep({
   /** No-show card requirement for the organizer (Option A — captured here,
    *  before the group is created). Null while loading / not required. */
   cardRequirement: NoShowCardRequirement | null;
+  /** True while resolveNoShowCardRequirement is in-flight. */
+  cardRequirementLoading: boolean;
   /** Imperative handle to tokenize the entered card at submit time. */
   cardRef: React.RefObject<ConfirmStepCardHandle | null>;
   /** No-show policy consent (separate from SMS consent). */
@@ -3972,6 +3984,7 @@ function ConfirmStep({
           onClick={onSubmit}
           disabled={
             submitting ||
+            cardRequirementLoading ||
             !contactReady ||
             !smsConsent ||
             (cardRequirement?.required === true && !noShowConsent)

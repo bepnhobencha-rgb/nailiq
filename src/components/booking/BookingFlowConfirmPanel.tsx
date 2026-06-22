@@ -62,6 +62,7 @@ export function BookingFlowConfirmPanel({
   onApplyVoucher,
   onRemoveVoucher,
   cardRequirement,
+  cardRequirementLoading,
   savedCard,
   smsConsent,
   setSmsConsent,
@@ -104,6 +105,9 @@ export function BookingFlowConfirmPanel({
   /** Option A no-show card gate, resolved BEFORE booking. When required, the card
    *  is captured here and must be entered before the booking can be confirmed. */
   cardRequirement?: NoShowCardRequirement | null;
+  /** True while resolveNoShowCardRequirement is in-flight. Disables the confirm
+   *  button to prevent racing past the card check before it resolves. */
+  cardRequirementLoading?: boolean;
   /** Đợt 2 — returning OTP-verified customer's saved card (one-tap reuse). */
   savedCard?: SavedNoShowCard | null;
   /** SMS consent (collected at the phone gate). Confirm hides its own checkbox
@@ -535,7 +539,7 @@ export function BookingFlowConfirmPanel({
           <LuxuryBookingCta
             className="lg:min-w-[14rem]"
             data-testid="confirm-booking-btn"
-            disabled={submitting || !smsConsent || (cardRequired && !noShowConsent) || (healthAckOn && !healthAck)}
+            disabled={submitting || cardRequirementLoading || !smsConsent || (cardRequired && !noShowConsent) || (healthAckOn && !healthAck)}
             onClick={handleConfirm}
           >
             <span>{submitting ? t.submitting : t.confirmBooking}</span>
