@@ -235,6 +235,18 @@ export async function GET(req: Request): Promise<NextResponse> {
       }
     }
 
+    // Yelp Review Responder — every 4 hours (same cadence as Google Review Responder)
+    if ([8, 12, 16, 20].includes(salonHour) && flags.ai_yelp_reply) {
+      try {
+        const { runYelpResponder } = await import("@/shared/ai/agentYelpResponder");
+        await runYelpResponder(salon.id);
+        entry.yelp_responder = "ok";
+      } catch (e) {
+        console.error("[manager] yelp_responder", salon.slug, e);
+        entry.yelp_responder = String(e);
+      }
+    }
+
     // Google Business Post — 1st and 15th at 10:00 salon local time; self-dedupes
     if (salonHour === 10 && flags.ai_gbp_post) {
       try {

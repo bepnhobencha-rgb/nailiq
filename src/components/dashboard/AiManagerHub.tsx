@@ -124,6 +124,16 @@ const AGENTS: AgentDef[] = [
     descVi:
       "Ngày 1 và 15 hàng tháng, Minh soạn sẵn bài đăng Google Business Profile — theo dịch vụ, mùa vụ, và giọng thương hiệu của bạn. Copy-paste trong 30 giây.",
   },
+  {
+    key: "ai_yelp_reply",
+    icon: "⭐",
+    nameEn: "Yelp Review Responder",
+    nameVi: "Reply Yelp tự động",
+    descEn:
+      "Minh monitors Yelp every 4 hours and drafts personalised replies for new reviews — 4–5★ sent as copy-paste drafts, 1–3★ flagged with a suggested de-escalation response.",
+    descVi:
+      "Minh theo dõi Yelp mỗi 4 tiếng, soạn reply cá nhân hoá cho review mới — 4–5★ gửi nháp copy-paste, 1–3★ cảnh báo kèm reply xử lý tinh tế.",
+  },
 ];
 
 function AgentToggle({

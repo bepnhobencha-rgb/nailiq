@@ -53,6 +53,7 @@ import { StaffNotificationCard } from "@/components/dashboard/StaffNotificationC
 import { CustomerChannelCard } from "@/components/dashboard/CustomerChannelCard";
 import { AIReportCard } from "@/components/dashboard/AIReportCard";
 import { GooglePlaceIdCard } from "@/components/dashboard/GooglePlaceIdCard";
+import { YelpBusinessIdCard } from "@/components/dashboard/YelpBusinessIdCard";
 import { cn } from "@/shared/lib/cn";
 import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -81,6 +82,7 @@ export function SalonSettingsHub({
   smsRemindersEnabled,
   googleReviewUrl,
   googlePlaceId,
+  yelpBusinessId,
   voiceAiEnabled,
   voiceAiPersonaName,
   vertical,
@@ -129,6 +131,7 @@ export function SalonSettingsHub({
   bookingVerificationMode?: string;
   googleReviewUrl: string | null;
   googlePlaceId: string | null;
+  yelpBusinessId: string | null;
   voiceAiEnabled: boolean;
   voiceAiPersonaName: string;
   vertical: string;
@@ -629,6 +632,14 @@ export function SalonSettingsHub({
           <GooglePlaceIdCard
             slug={slug}
             initialPlaceId={googlePlaceId}
+          />
+        ) : null}
+
+        {/* ── AI Yelp Review Responder — Yelp Business ID ─────── */}
+        {canManageSalonSettings ? (
+          <YelpBusinessIdCard
+            slug={slug}
+            initialYelpId={yelpBusinessId}
           />
         ) : null}
 
