@@ -88,6 +88,10 @@ export type BookingSalonMeta = {
   emailLinksEnabled: boolean | null;
   /** True when `salons.resources_enabled` is on — beds/chairs must be assigned. */
   resourcesEnabled: boolean;
+  /** Tax lines configured for this salon. Shown as a breakdown in the confirm
+   *  step. Empty array = no tax. Computed client-side for display; re-computed
+   *  server-side on submit and stamped on the booking row. */
+  taxLines: import("@/shared/tax/taxTypes").TaxLine[];
 };
 
 export type BookingLoadData = {
@@ -561,6 +565,21 @@ export async function loadBookingServicesForSalonSlug(
         return typeof v === "boolean" ? v : null;
       })(),
       resourcesEnabled: salonResourcesEnabled,
+      taxLines: (() => {
+        const raw = (salon as { tax_lines?: unknown }).tax_lines;
+        if (!Array.isArray(raw)) return [];
+        return raw
+          .filter(
+            (item): item is Record<string, unknown> =>
+              item !== null && typeof item === "object",
+          )
+          .map((item) => ({
+            name: typeof item.name === "string" ? item.name : "",
+            rate: typeof item.rate === "number" ? item.rate : 0,
+            enabled: item.enabled !== false,
+          }))
+          .filter((l) => l.name.length > 0);
+      })(),
     },
   };
 }

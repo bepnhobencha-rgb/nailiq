@@ -532,6 +532,7 @@ export function BookingFlow({
             stepTransition={stepTransition}
             currency={salon.currencyCode}
             salonId={salon.id}
+            taxLines={salon.taxLines}
             appliedVoucher={flow.appliedVoucher}
             onToggleAddon={flow.toggleAddon}
             onAddonRepickTime={flow.addAddonAndRepickTime}

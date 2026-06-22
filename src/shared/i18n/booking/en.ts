@@ -116,6 +116,7 @@ export const bookingEn = {
   summaryServicePrice: "Service price",
   summaryAddonPrice: "Add-on price",
   summaryDiscount: "Discount",
+  summarySubtotal: "Subtotal",
   summaryTotal: "Total",
   voucherLabel: "Promo code",
   voucherPlaceholder: "Enter code",

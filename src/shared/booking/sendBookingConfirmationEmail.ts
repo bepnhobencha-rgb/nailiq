@@ -28,8 +28,12 @@ type BookingConfirmationInput = {
   addonServiceName?: string | null;
   staffName: string;
   startTimeUtc: string;
-  /** Price in cents (main + addon). Null means price not set. */
+  /** Price in cents (main + addon), null means price not set. */
   totalPriceCents: number | null;
+  /** Pre-tax subtotal (when tax applies). Null when no tax or no price. */
+  subtotalCents?: number | null;
+  /** Itemized tax breakdown for receipt display. */
+  taxBreakdown?: { name: string; rate: number; amountCents: number }[];
 };
 
 function escapeHtml(s: string): string {
@@ -121,10 +125,22 @@ export function buildHtml(
             </div>`
     : "";
 
-  const priceStr =
-    input.totalPriceCents != null && input.totalPriceCents > 0
-      ? (formatCurrency(input.totalPriceCents, currencyCode) ?? null)
-      : null;
+  const hasTaxBreakdown =
+    Array.isArray(input.taxBreakdown) &&
+    input.taxBreakdown.length > 0 &&
+    input.subtotalCents != null &&
+    input.subtotalCents > 0;
+
+  // When tax applies, show subtotal row; otherwise show the total directly.
+  const displaySubtotalCents = hasTaxBreakdown ? input.subtotalCents! : null;
+  const displayTotalCents = input.totalPriceCents;
+
+  const subtotalStr = displaySubtotalCents
+    ? (formatCurrency(displaySubtotalCents, currencyCode) ?? null)
+    : null;
+  const priceStr = displayTotalCents != null && displayTotalCents > 0
+    ? (formatCurrency(displayTotalCents, currencyCode) ?? null)
+    : null;
 
   const addonRow = eAddon
     ? `<tr>
@@ -133,9 +149,29 @@ export function buildHtml(
        </tr>`
     : "";
 
-  const priceRow = priceStr
+  const subtotalRow = subtotalStr
     ? `<tr>
-        <td style="padding:6px 0;color:#666;font-size:14px;width:120px;">Total</td>
+        <td style="padding:6px 0;color:#666;font-size:14px;width:120px;">Subtotal</td>
+        <td style="padding:6px 0;font-size:14px;">${escapeHtml(subtotalStr)}</td>
+       </tr>`
+    : "";
+
+  const taxRows = hasTaxBreakdown
+    ? input.taxBreakdown!
+        .map((b) => {
+          const taxStr = formatCurrency(b.amountCents, currencyCode) ?? "";
+          const pct = (b.rate * 100).toFixed(b.rate * 100 === Math.round(b.rate * 100) ? 0 : 3).replace(/\.?0+$/, "");
+          return `<tr>
+        <td style="padding:6px 0;color:#666;font-size:14px;width:120px;">${escapeHtml(b.name)} (${pct}%)</td>
+        <td style="padding:6px 0;font-size:14px;">+${escapeHtml(taxStr)}</td>
+       </tr>`;
+        })
+        .join("")
+    : "";
+
+  const priceRow = priceStr
+    ? `${subtotalRow}${taxRows}<tr>
+        <td style="padding:6px 0;color:#666;font-size:14px;width:120px;">${hasTaxBreakdown ? "Total (incl. tax)" : "Total"}</td>
         <td style="padding:6px 0;font-size:14px;font-weight:600;">${escapeHtml(priceStr)}</td>
        </tr>`
     : "";

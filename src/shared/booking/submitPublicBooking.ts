@@ -21,6 +21,8 @@ import { createClient } from "@/shared/lib/supabase/client";
 import { runPublicBookingSideEffects } from "@/shared/booking/publicBookingSideEffects";
 import { saveNoShowCardAction, reuseNoShowCardAction } from "@/shared/noshow/saveNoShowCardAction";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
+import { computeTax } from "@/shared/tax/computeTax";
+import type { TaxLine } from "@/shared/tax/taxTypes";
 
 export type BookingParams = {
   shopSlug: string;
@@ -269,7 +271,7 @@ export async function submitPublicBooking(
   const { data: salon, error: salonErr } = await supabase
     .from("salons")
     .select(
-      "id, profile_complete, opening_hours, subscription_plan, plan_override, feature_flags, phone_otp_enabled, booking_lead_minutes, timezone",
+      "id, profile_complete, opening_hours, subscription_plan, plan_override, feature_flags, phone_otp_enabled, booking_lead_minutes, timezone, tax_lines",
     )
     .eq("slug", shopSlug)
     .single();
@@ -830,6 +832,20 @@ export async function submitPublicBooking(
   const totalPriceCents =
     (priceSnapshot ?? 0) + (addonPriceSnapshot ?? 0);
 
+  const salonTaxLines: TaxLine[] = (() => {
+    const raw = (salon as { tax_lines?: unknown }).tax_lines;
+    if (!Array.isArray(raw)) return [];
+    return (raw as unknown[])
+      .filter((item): item is Record<string, unknown> => item !== null && typeof item === "object")
+      .map((item) => ({
+        name: typeof item.name === "string" ? item.name : "",
+        rate: typeof item.rate === "number" ? item.rate : 0,
+        enabled: item.enabled !== false,
+      }))
+      .filter((l) => l.name.length > 0);
+  })();
+  const taxResult = computeTax(totalPriceCents, salonTaxLines);
+
   // Persist the itemized add-on list (the booking row already holds the summed
   // price + extended end time). Best-effort: a failure here only loses the
   // itemized breakdown, not the booking or its total. Prices are re-derived
@@ -936,7 +952,9 @@ export async function submitPublicBooking(
               addonServiceName: addonRow?.name ?? null,
               staffName: resolvedStaffName,
               startTimeUtc: startLocal.toISOString(),
-              totalPriceCents: totalPriceCents > 0 ? totalPriceCents : null,
+              totalPriceCents: taxResult.totalCents > 0 ? taxResult.totalCents : null,
+              subtotalCents: totalPriceCents > 0 ? totalPriceCents : null,
+              taxBreakdown: taxResult.breakdown.length > 0 ? taxResult.breakdown : undefined,
             }
           : undefined,
         stamp: {
@@ -947,6 +965,8 @@ export async function submitPublicBooking(
           verificationMethod: params.verificationMethod || undefined,
           otpSessionId: params.otpSessionId ?? undefined,
           healthAck: params.healthAck === true,
+          subtotalCents: totalPriceCents > 0 ? totalPriceCents : undefined,
+          taxAmountCents: taxResult.taxAmountCents > 0 ? taxResult.taxAmountCents : undefined,
         },
       });
     } catch (e) {

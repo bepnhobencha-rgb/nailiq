@@ -109,6 +109,7 @@ export const bookingVi: BookingMessages = {
   summaryServicePrice: "Giá dịch vụ",
   summaryAddonPrice: "Giá dịch vụ thêm",
   summaryDiscount: "Giảm giá",
+  summarySubtotal: "Tạm tính",
   summaryTotal: "Tổng",
   voucherLabel: "Mã ưu đãi",
   voucherPlaceholder: "Nhập mã",

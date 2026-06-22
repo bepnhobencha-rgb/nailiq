@@ -714,12 +714,22 @@ export type UserMessages = {
     /** Recovery-email verification status block (Settings hub). */
     emailVerification: {
       sectionTitle: string;
+      description: string;
       noEmailHint: string;
       verifiedBadge: string;
       pendingBadge: string;
       pendingHint: string;
       verifiedToast: string;
       verifyErrorPrefix: string;
+      changeButton: string;
+      cancelButton: string;
+      saveButton: string;
+      saving: string;
+      resendButton: string;
+      resendSent: string;
+      saveSuccess: string;
+      saveError: string;
+      invalidEmail: string;
     };
     dashboardModules: {
       sectionTitle: string;
@@ -2994,18 +3004,27 @@ export const userEn: UserMessages = {
       saved: "Saved.",
       saveError: "Could not save. Please try again.",
     },
-    hintRecoveryEmail:
-      "To add or change recovery email for your account, use the banner on your dashboard.",
+    hintRecoveryEmail: "",
     emailVerification: {
-      sectionTitle: "Recovery email",
-      noEmailHint:
-        "No recovery email on file. Add one from your dashboard.",
+      sectionTitle: "Notification email",
+      description:
+        "Receives booking confirmations, owner alerts and daily AI digest.",
+      noEmailHint: "No email on file.",
       verifiedBadge: "Verified",
       pendingBadge: "Pending",
       pendingHint:
-        "We sent a verification link to your inbox. Open it to confirm.",
+        "Verification link sent — check your inbox (and spam).",
       verifiedToast: "Email verified.",
       verifyErrorPrefix: "Verification failed: ",
+      changeButton: "Change email",
+      cancelButton: "Cancel",
+      saveButton: "Save",
+      saving: "Saving…",
+      resendButton: "Resend link",
+      resendSent: "Verification email sent",
+      saveSuccess: "Saved — check your inbox to verify",
+      saveError: "Could not save. Please try again.",
+      invalidEmail: "Enter a valid email address.",
     },
     dashboardModules: {
       sectionTitle: "Dashboard modules",

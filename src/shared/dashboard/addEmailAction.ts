@@ -86,3 +86,25 @@ export async function addSalonEmail(
 
   return { ok: true };
 }
+
+/**
+ * Resend the verification email for the salon's current email address.
+ * No-op if no email is set. Owner/admin only.
+ */
+export async function resendVerification(
+  slug: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const resolved = await resolveSalonForDashboard(slug);
+  if (!resolved || !isOwnerOrAdmin(resolved.role)) {
+    return { ok: false, error: "unauthorized" };
+  }
+  const { salon } = resolved;
+  if (!salon.email) return { ok: false, error: "no_email" };
+
+  await sendEmailVerification({
+    salonId: salon.id,
+    salonName: String(salon.name ?? slug),
+    email: salon.email,
+  });
+  return { ok: true };
+}

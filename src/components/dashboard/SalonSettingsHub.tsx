@@ -8,6 +8,7 @@ import {
   updateRemindersEnabled,
   updateReminderSettings,
 } from "@/shared/noshow/noShowDashboardActions";
+import { addSalonEmail, resendVerification } from "@/shared/dashboard/addEmailAction";
 import { AuditLogViewer } from "@/components/dashboard/AuditLogViewer";
 import { DashboardModulesSettings } from "@/components/dashboard/DashboardModulesSettings";
 import { DashboardPresetSettings } from "@/components/dashboard/DashboardPresetSettings";
@@ -34,6 +35,7 @@ import { ReferenceImageSettings } from "@/components/dashboard/ReferenceImageSet
 import { AutoNoShowSettings } from "@/components/dashboard/AutoNoShowSettings";
 import { ClientSegmentSettings } from "@/components/dashboard/ClientSegmentSettings";
 import { WinBackSettings } from "@/components/dashboard/WinBackSettings";
+import { TaxSettingsHub } from "@/components/dashboard/TaxSettingsHub";
 import { AiManagerHub } from "@/components/dashboard/AiManagerHub";
 import type { AiAgentFlags } from "@/shared/dashboard/aiAgentTypes";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
@@ -170,6 +172,15 @@ export function SalonSettingsHub({
   const advancedMode = searchParams?.get("advanced") === "true";
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  // Notification email card state
+  const [emailEditOpen, setEmailEditOpen] = useState(false);
+  const [newEmailInput, setNewEmailInput] = useState(salonEmail ?? "");
+  const [emailEditPending, startEmailEditTransition] = useTransition();
+  const [emailEditError, setEmailEditError] = useState<string | null>(null);
+  const [emailEditSuccess, setEmailEditSuccess] = useState(false);
+  const [resendPending, startResendTransition] = useTransition();
+  const [resendSent, setResendSent] = useState(false);
 
   // Reminder toggle state
   const [reminderOn, setReminderOn] = useState(remindersEnabled);
@@ -328,73 +339,215 @@ export function SalonSettingsHub({
           title={t.categories.notifications.title}
           subtitle={t.categories.notifications.subtitle}
         >
-        {/* ── Email verification ──────────────────────────────── */}
+        {/* ── Notification email card ──────────────────────────── */}
         <section
           data-testid="settings-email-verification"
-          className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-3"
-        >
-          <p className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
-            {t.emailVerification.sectionTitle}
-          </p>
-          {verified ? (
-            <p
-              role="status"
-              data-testid="settings-email-verified-toast"
-              className="mt-2 rounded-md border border-nq-success/40 bg-nq-success/10 px-3 py-2 text-sm text-nq-success"
-            >
-              {t.emailVerification.verifiedToast}
-            </p>
-          ) : null}
-          {verifyError ? (
-            <p
-              role="alert"
-              data-testid="settings-email-verify-error"
-              className="mt-2 rounded-md border border-nq-error/40 bg-nq-error/10 px-3 py-2 text-sm text-nq-error"
-            >
-              {t.emailVerification.verifyErrorPrefix}
-              {verifyError}
-            </p>
-          ) : null}
-          {salonEmail ? (
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="break-all text-sm text-nq-foreground">
-                {salonEmail}
-              </span>
-              {emailVerified ? (
-                <Badge
-                  data-testid="settings-email-verified-badge"
-                  variant="success"
-                  state="default"
-                  size="sm"
-                >
-                  {t.emailVerification.verifiedBadge}
-                </Badge>
-              ) : (
-                <Badge
-                  data-testid="settings-email-pending-badge"
-                  variant="warning"
-                  state="default"
-                  size="sm"
-                >
-                  {t.emailVerification.pendingBadge}
-                </Badge>
-              )}
-            </div>
-          ) : (
-            <p className="mt-2 text-sm text-nq-muted">
-              {t.emailVerification.noEmailHint}
-            </p>
+          className={cn(
+            "mt-6 overflow-hidden rounded-2xl border bg-nq-surface/35",
+            emailVerified && salonEmail
+              ? "border-nq-primary/30"
+              : salonEmail
+                ? "border-amber-500/30"
+                : "border-nq-border/30",
           )}
-          {salonEmail && !emailVerified ? (
-            <p className="mt-1 text-xs text-nq-muted">
-              {t.emailVerification.pendingHint}
-            </p>
-          ) : null}
-        </section>
+        >
+          {/* Top accent stripe */}
+          <div
+            className={cn(
+              "h-0.5 w-full",
+              emailVerified && salonEmail
+                ? "bg-gradient-to-r from-nq-primary/60 to-transparent"
+                : salonEmail
+                  ? "bg-gradient-to-r from-amber-500/60 to-transparent"
+                  : "bg-nq-border/40",
+            )}
+          />
 
-        <p className="mt-3 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-3 text-sm leading-relaxed text-nq-muted">
-          {t.hintRecoveryEmail}
-        </p>
+          <div className="px-4 py-4 space-y-3">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-nq-foreground">
+                  {t.emailVerification.sectionTitle}
+                </p>
+                <p className="mt-0.5 text-xs text-nq-muted">
+                  {t.emailVerification.description}
+                </p>
+              </div>
+              {salonEmail ? (
+                emailVerified ? (
+                  <Badge
+                    data-testid="settings-email-verified-badge"
+                    variant="success"
+                    state="default"
+                    size="sm"
+                  >
+                    {t.emailVerification.verifiedBadge}
+                  </Badge>
+                ) : (
+                  <Badge
+                    data-testid="settings-email-pending-badge"
+                    variant="warning"
+                    state="default"
+                    size="sm"
+                  >
+                    {t.emailVerification.pendingBadge}
+                  </Badge>
+                )
+              ) : null}
+            </div>
+
+            {/* Verified / error flash from URL params */}
+            {verified ? (
+              <p
+                role="status"
+                data-testid="settings-email-verified-toast"
+                className="rounded-lg border border-nq-success/40 bg-nq-success/10 px-3 py-2 text-xs text-nq-success"
+              >
+                {t.emailVerification.verifiedToast}
+              </p>
+            ) : null}
+            {verifyError ? (
+              <p
+                role="alert"
+                data-testid="settings-email-verify-error"
+                className="rounded-lg border border-nq-error/40 bg-nq-error/10 px-3 py-2 text-xs text-nq-error"
+              >
+                {t.emailVerification.verifyErrorPrefix}
+                {verifyError}
+              </p>
+            ) : null}
+
+            {/* Current email display */}
+            {salonEmail ? (
+              <p className="break-all font-mono text-sm text-nq-foreground">
+                {salonEmail}
+              </p>
+            ) : (
+              <p className="text-sm text-nq-muted/70">
+                {t.emailVerification.noEmailHint}
+              </p>
+            )}
+
+            {/* Pending hint */}
+            {salonEmail && !emailVerified ? (
+              <p className="text-xs text-nq-muted">
+                {t.emailVerification.pendingHint}
+              </p>
+            ) : null}
+
+            {/* Success / error from inline save */}
+            {emailEditSuccess ? (
+              <p className="rounded-lg border border-nq-success/40 bg-nq-success/10 px-3 py-2 text-xs text-nq-success">
+                {t.emailVerification.saveSuccess}
+              </p>
+            ) : null}
+            {resendSent ? (
+              <p className="rounded-lg border border-nq-success/40 bg-nq-success/10 px-3 py-2 text-xs text-nq-success">
+                {t.emailVerification.resendSent}
+              </p>
+            ) : null}
+            {emailEditError ? (
+              <p className="rounded-lg border border-nq-error/40 bg-nq-error/10 px-3 py-2 text-xs text-nq-error">
+                {emailEditError}
+              </p>
+            ) : null}
+
+            {/* Action buttons (owner/admin only) */}
+            {canManageSalonSettings ? (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {/* Resend verification — only when pending */}
+                {salonEmail && !emailVerified ? (
+                  <button
+                    type="button"
+                    disabled={resendPending}
+                    onClick={() => {
+                      setResendSent(false);
+                      startResendTransition(async () => {
+                        await resendVerification(slug);
+                        setResendSent(true);
+                        setTimeout(() => setResendSent(false), 4000);
+                      });
+                    }}
+                    className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-400 transition hover:bg-amber-500/15 disabled:opacity-50"
+                  >
+                    {resendPending ? "…" : t.emailVerification.resendButton}
+                  </button>
+                ) : null}
+
+                {/* Change email toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmailEditOpen((v) => !v);
+                    setEmailEditError(null);
+                    setEmailEditSuccess(false);
+                    setNewEmailInput(salonEmail ?? "");
+                  }}
+                  className={cn(
+                    "rounded-lg border px-3 py-1.5 text-xs font-medium transition",
+                    emailEditOpen
+                      ? "border-nq-border bg-nq-border/20 text-nq-muted"
+                      : "border-nq-border bg-nq-surface text-nq-foreground hover:border-nq-primary/40 hover:text-nq-primary",
+                  )}
+                >
+                  {emailEditOpen
+                    ? t.emailVerification.cancelButton
+                    : t.emailVerification.changeButton}
+                </button>
+              </div>
+            ) : null}
+
+            {/* Inline edit form */}
+            {emailEditOpen && canManageSalonSettings ? (
+              <form
+                className="flex flex-wrap items-center gap-2 border-t border-nq-border/20 pt-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setEmailEditError(null);
+                  setEmailEditSuccess(false);
+                  const val = newEmailInput.trim();
+                  if (!val || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
+                    setEmailEditError(t.emailVerification.invalidEmail);
+                    return;
+                  }
+                  startEmailEditTransition(async () => {
+                    const res = await addSalonEmail(slug, val);
+                    if (!res.ok) {
+                      setEmailEditError(
+                        res.error === "invalid_email"
+                          ? t.emailVerification.invalidEmail
+                          : t.emailVerification.saveError,
+                      );
+                      return;
+                    }
+                    setEmailEditSuccess(true);
+                    setEmailEditOpen(false);
+                    setTimeout(() => setEmailEditSuccess(false), 5000);
+                  });
+                }}
+              >
+                <input
+                  type="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  value={newEmailInput}
+                  onChange={(e) => setNewEmailInput(e.target.value)}
+                  className="h-9 flex-1 min-w-0 rounded-lg border border-nq-border bg-nq-bg px-3 text-sm text-nq-foreground placeholder:text-nq-muted/60 focus:outline-none focus:ring-2 focus:ring-nq-primary/40"
+                />
+                <button
+                  type="submit"
+                  disabled={emailEditPending}
+                  className="h-9 rounded-lg border border-nq-primary/40 bg-nq-primary/10 px-4 text-xs font-semibold text-nq-primary transition hover:bg-nq-primary/15 disabled:opacity-50"
+                >
+                  {emailEditPending
+                    ? t.emailVerification.saving
+                    : t.emailVerification.saveButton}
+                </button>
+              </form>
+            ) : null}
+          </div>
+        </section>
 
         {/* ── Reminder toggle ─────────────────────────────────── */}
         {canManageSalonSettings ? (
@@ -591,6 +744,14 @@ export function SalonSettingsHub({
         {/* ── Win-back email after no-show ────────────────────── */}
         {canManageSalonSettings ? (
           <WinBackSettings slug={slug} initialEnabled={winBackEnabled} />
+        ) : null}
+
+        {/* ── Tax on services ─────────────────────────────────── */}
+        {canManageSalonSettings ? (
+          <section className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-nq-muted">Tax</p>
+            <TaxSettingsHub slug={slug} />
+          </section>
         ) : null}
         </SettingsCategory>
         ) : null}

@@ -16,6 +16,8 @@ import {
 } from "@/shared/booking/formatBookingPrice";
 import type { Currency } from "@/shared/lib/currencyFormat";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
+import { computeTax } from "@/shared/tax/computeTax";
+import type { TaxLine } from "@/shared/tax/taxTypes";
 import { BookingSummaryGlass } from "@/components/booking/BookingSummaryGlass";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 import {
@@ -66,6 +68,7 @@ export function BookingFlowConfirmPanel({
   savedCard,
   smsConsent,
   setSmsConsent,
+  taxLines,
 }: {
   t: BookingMessages;
   shopLabel: string;
@@ -114,6 +117,8 @@ export function BookingFlowConfirmPanel({
    *  when already given; still gates the button on it as a safety net. */
   smsConsent: boolean;
   setSmsConsent: (v: boolean) => void;
+  /** Tax lines from the salon's settings. Used to show a breakdown in the confirm step. */
+  taxLines?: TaxLine[];
 }) {
   const [voucherInput, setVoucherInput] = useState("");
   const [voucherError, setVoucherError] = useState<string | null>(null);
@@ -187,9 +192,12 @@ export function BookingFlowConfirmPanel({
 
   const baseTotalCents = serviceEffectiveCents + addonsTotalCents;
 
-  const totalCents = appliedVoucher
+  const subtotalCents = appliedVoucher
     ? appliedVoucher.final_price_cents
     : baseTotalCents;
+
+  const tax = computeTax(subtotalCents, taxLines ?? []);
+  const totalCents = tax.totalCents;
 
   // Display the actual service time only (no inter-service rest buffer). The
   // buffer still drives scheduling via `selectedAddonsTotalMin`/totalMinutes,
@@ -256,6 +264,19 @@ export function BookingFlowConfirmPanel({
             label: `${t.summaryDiscount} (${appliedVoucher.code})`,
             value: `–${formatBookingPriceReceipt(appliedVoucher.discount_cents, currency)}`,
           },
+        ]
+      : []),
+    // Show subtotal + tax breakdown only when tax is non-zero
+    ...(tax.taxAmountCents > 0
+      ? [
+          {
+            label: t.summarySubtotal ?? "Subtotal",
+            value: formatBookingPriceReceipt(subtotalCents, currency),
+          },
+          ...tax.breakdown.map((b) => ({
+            label: `${b.name} (${(b.rate * 100).toFixed(b.rate * 100 === Math.round(b.rate * 100) ? 0 : 3).replace(/\.?0+$/, "")}%)`,
+            value: `+${formatBookingPriceReceipt(b.amountCents, currency)}`,
+          })),
         ]
       : []),
     {

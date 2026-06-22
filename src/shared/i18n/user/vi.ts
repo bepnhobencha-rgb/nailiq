@@ -810,18 +810,27 @@ export const userVi: UserMessages = {
       saved: "Đã lưu.",
       saveError: "Không lưu được. Vui lòng thử lại.",
     },
-    hintRecoveryEmail:
-      "Để thêm hoặc đổi email khôi phục cho tài khoản, dùng thanh nhắc trên bảng điều khiển.",
+    hintRecoveryEmail: "",
     emailVerification: {
-      sectionTitle: "Email khôi phục",
-      noEmailHint:
-        "Chưa có email khôi phục. Thêm từ bảng điều khiển.",
+      sectionTitle: "Email thông báo",
+      description:
+        "Nhận xác nhận đặt hẹn, cảnh báo chủ tiệm và báo cáo AI hàng ngày.",
+      noEmailHint: "Chưa có email.",
       verifiedBadge: "Đã xác thực",
       pendingBadge: "Chờ xác thực",
       pendingHint:
-        "Đã gửi link xác thực vào hộp thư. Mở link để xác nhận.",
+        "Đã gửi link xác thực — kiểm tra hộp thư (cả thư rác).",
       verifiedToast: "Đã xác thực email.",
       verifyErrorPrefix: "Lỗi xác thực: ",
+      changeButton: "Đổi email",
+      cancelButton: "Huỷ",
+      saveButton: "Lưu",
+      saving: "Đang lưu…",
+      resendButton: "Gửi lại link",
+      resendSent: "Đã gửi email xác thực",
+      saveSuccess: "Đã lưu — kiểm tra hộp thư để xác thực",
+      saveError: "Không lưu được. Vui lòng thử lại.",
+      invalidEmail: "Email không hợp lệ.",
     },
     dashboardModules: {
       sectionTitle: "Module bảng lễ tân",

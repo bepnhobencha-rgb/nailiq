@@ -29,6 +29,10 @@ type StampInput = {
   otpSessionId?: string | null;
   /** Customer ticked the mandatory health acknowledgment → stamp health_ack_at. */
   healthAck?: boolean;
+  /** Pre-tax subtotal and tax amount — stamped server-side since anon UPDATE
+   *  on bookings is blocked by RLS. */
+  subtotalCents?: number;
+  taxAmountCents?: number;
 };
 
 /**
@@ -84,6 +88,8 @@ export async function runPublicBookingSideEffects(args: {
         if (s.otpSessionId) upd.otp_session_id = s.otpSessionId;
       }
       if (s.healthAck) upd.health_ack_at = new Date().toISOString();
+      if (s.subtotalCents != null) upd.subtotal_cents = s.subtotalCents;
+      if (s.taxAmountCents != null && s.taxAmountCents > 0) upd.tax_amount_cents = s.taxAmountCents;
       if (Object.keys(upd).length > 0) {
         jobs.push(
           (async () => {
