@@ -464,6 +464,11 @@ function ReceptionistCenterInner({
     setViewMode(next);
     if (typeof window !== "undefined") {
       window.localStorage.setItem("nailiq-view-mode", next);
+      // Reset page scroll so the new view's content is visible from the top.
+      // Month/week calendars can be taller than the viewport on mobile;
+      // without this, switching to Day view leaves the user looking at
+      // empty space below the grid.
+      window.scrollTo({ top: 0, behavior: "instant" });
     }
   }, []);
 
