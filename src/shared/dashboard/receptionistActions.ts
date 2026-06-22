@@ -2608,9 +2608,10 @@ export async function addDeskAppointment(
     code?: string;
   } | null;
   if (!result?.success || !result.booking_id) {
-    return fail(
-      result?.code === "slot_conflict" ? "time_slot_taken" : "server_error",
-    );
+    const rCode = result?.code;
+    if (rCode === "slot_conflict") return fail("time_slot_taken");
+    if (rCode === "outside_hours") return fail("outside_hours");
+    return fail("server_error");
   }
   const bookingId = result.booking_id;
 

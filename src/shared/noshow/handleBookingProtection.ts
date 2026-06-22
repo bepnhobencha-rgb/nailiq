@@ -35,7 +35,7 @@ export async function handleBookingProtection(
     const db = looseServiceClient();
     const { data: salonRow } = await db
       .from("salons")
-      .select("id, language, ai_profile, feature_flags")
+      .select("id, ai_profile, feature_flags")
       .eq("id", sid)
       .maybeSingle();
     const salon = (salonRow as Row | null) ?? {};
@@ -50,7 +50,6 @@ export async function handleBookingProtection(
       // passed here so the channel context is available for P1 strictness tuning.
       const sip = defaultSip({
         ai_profile: salon.ai_profile as SalonIntelligenceProfile | null,
-        language: salon.language as string | null,
       });
 
       // Desk bookings have a staff member present → slightly lower default risk
