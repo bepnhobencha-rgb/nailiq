@@ -1249,8 +1249,17 @@ function ReceptionistCenterInner({
       if (cancelled) return undefined;
 
       if (!session) {
+        // No session = JWT expired/missing. Fall back to 8-second polling so the
+        // board stays fresh if the server can still validate (rare SSR cookie timing).
+        // Catch any "unexpected response" rejections (middleware redirect when JWT
+        // truly expired) and hard-redirect to /login so they don't bubble as unhandled
+        // rejections into error_logs or crash the error boundary.
         const pollInterval = window.setInterval(() => {
-          if (!cancelled) void reloadCurrentDay();
+          if (!cancelled) {
+            void reloadCurrentDay().catch(() => {
+              if (!cancelled) window.location.href = "/login";
+            });
+          }
         }, 8000);
         return () => {
           window.clearInterval(pollInterval);
