@@ -733,6 +733,7 @@ export const userVi: UserMessages = {
     sectionHours: "Giờ mở cửa",
     sectionAddress: "Địa chỉ tiệm",
     sectionAiManager: "Cấu hình AI Manager",
+    sectionPromotions: "Khuyến mãi & giảm giá",
     categories: {
       brand: {
         title: "Thương hiệu & trang đặt lịch",

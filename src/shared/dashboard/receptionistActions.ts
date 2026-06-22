@@ -2381,6 +2381,61 @@ export async function addDeskAppointment(
   if (!svc || svc.salon_id !== ctx.salon.id || svc.deleted_at)
     return fail("invalid_service");
 
+  // Resolve active promotion discount for this service (server-side, no client trust)
+  const basePriceCents = svc.price_cents != null ? Math.round(Number(svc.price_cents)) : null;
+  let deskPriceCents = basePriceCents;
+  let deskPromoId: string | null = null;
+
+  if (basePriceCents) {
+    const nowIso = new Date().toISOString();
+    const { data: activePromos } = await db
+      .from("promotions" as never)
+      .select("id, name, discount_type, discount_value, applies_to")
+      .eq("salon_id" as never, ctx.salon.id)
+      .eq("active" as never, true)
+      .lte("starts_at" as never, nowIso)
+      .gte("ends_at" as never, nowIso);
+
+    const promoList = (activePromos ?? []) as {
+      id: string; name: string; discount_type: string; discount_value: number; applies_to: string;
+    }[];
+
+    if (promoList.length > 0) {
+      const promoIds = promoList.map((p) => p.id);
+      const { data: svcRules } = await db
+        .from("promotion_services" as never)
+        .select("promotion_id, discount_type, discount_value")
+        .in("promotion_id" as never, promoIds)
+        .eq("service_id" as never, serviceId);
+
+      const ruleMap = new Map<string, { discount_type: string; discount_value: number }>();
+      for (const r of (svcRules ?? []) as { promotion_id: string; discount_type: string | null; discount_value: number | null }[]) {
+        if (r.discount_type && r.discount_value != null) ruleMap.set(r.promotion_id, { discount_type: r.discount_type, discount_value: r.discount_value });
+      }
+
+      let bestDiscount = 0;
+      for (const p of promoList) {
+        const rule = ruleMap.get(p.id);
+        let dtype: string;
+        let dvalue: number;
+        if (rule) { dtype = rule.discount_type; dvalue = rule.discount_value; }
+        else if (p.applies_to === "all") { dtype = p.discount_type; dvalue = p.discount_value; }
+        else continue;
+
+        let disc = 0;
+        if (dtype === "fixed_price") disc = Math.max(0, basePriceCents - dvalue);
+        else if (dtype === "amount") disc = Math.min(dvalue, basePriceCents);
+        else if (dtype === "percent") disc = Math.round((basePriceCents * dvalue) / 10000);
+
+        if (disc > bestDiscount) {
+          bestDiscount = disc;
+          deskPromoId = p.id;
+          deskPriceCents = Math.max(0, basePriceCents - disc);
+        }
+      }
+    }
+  }
+
   // Add-on durations extend the block (concurrent ones add $0 time); prices sum
   // into the email total. Validated server-side: must be this salon's live,
   // is_addon services — never trust client durations/prices.
@@ -2591,7 +2646,7 @@ export async function addDeskAppointment(
       p_start_time_utc: startUtcIso,
       p_end_time_utc: endUtcIso,
       p_status: "confirmed",
-      p_price_cents: svc.price_cents ?? null,
+      p_price_cents: deskPriceCents ?? svc.price_cents ?? null,
       p_client_notes: clientNotes,
       p_client_email: clientEmail,
     } as never,
@@ -2614,6 +2669,18 @@ export async function addDeskAppointment(
     return fail("server_error");
   }
   const bookingId = result.booking_id;
+
+  // Stamp promo discount when an active campaign applies (server-authoritative)
+  if (deskPromoId && basePriceCents && deskPriceCents != null && deskPriceCents < basePriceCents) {
+    try {
+      await db.from("bookings").update({
+        promo_id: deskPromoId,
+        original_price_cents: basePriceCents,
+      } as never).eq("id", bookingId);
+    } catch {
+      /* best-effort — booking exists with correct price, promo stamp is cosmetic */
+    }
+  }
 
   // Stamp the assigned resource (bed/chair) when resource-mode is on.
   // create_public_booking doesn't accept p_resource_id, so we write it here.
@@ -2697,7 +2764,7 @@ export async function addDeskAppointment(
   const base =
     (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
   const serviceName = svc.name ?? "";
-  const totalPriceCents = (svc.price_cents ?? 0) + addonPriceCents;
+  const totalPriceCents = (deskPriceCents ?? svc.price_cents ?? 0) + addonPriceCents;
   after(async () => {
     if (notifyCreateSms) {
       try {
@@ -2773,7 +2840,7 @@ export async function addDeskAppointment(
     service_id: serviceId,
     service_name: mainServiceName,
     service_duration_minutes: Number(svc.duration_minutes ?? 0),
-    price_cents: svc.price_cents ?? null,
+    price_cents: deskPriceCents ?? svc.price_cents ?? null,
     service_buffer_minutes: Math.max(
       0,
       Math.round(Number(svc.buffer_minutes ?? 0)),

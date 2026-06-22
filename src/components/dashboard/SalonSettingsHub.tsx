@@ -224,6 +224,7 @@ export function SalonSettingsHub({
     { href: `${base}/staff`, label: t.sectionStaff },
     { href: `${base}/hours`, label: t.sectionHours },
     { href: `${base}/address`, label: t.sectionAddress },
+    { href: `${base}/promotions`, label: t.sectionPromotions },
     { href: `${base}/manager-briefing`, label: t.sectionAiManager },
   ];
 

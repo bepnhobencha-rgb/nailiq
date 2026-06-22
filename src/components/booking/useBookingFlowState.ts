@@ -1388,6 +1388,10 @@ export function useBookingFlowState(
         voucherRedemption: appliedVoucher
           ? { voucher_id: appliedVoucher.voucher_id, discount_cents: appliedVoucher.discount_cents }
           : undefined,
+        promoRedemption: baseService?.promoId && baseService?.promoPriceCents != null && baseService?.priceCents
+          ? { promoId: baseService.promoId, discountCents: baseService.priceCents - baseService.promoPriceCents }
+          : undefined,
+        emailCaptureDiscount: email.length > 0 ? true : undefined,
         referenceImagePath: referenceImagePath ?? undefined,
         comboOverride: selectedCombo
           ? { comboId: selectedCombo.id, durationMinutes: selectedCombo.durationMinutes, priceCents: selectedCombo.priceCents }

@@ -178,7 +178,14 @@ export function BookingFlowConfirmPanel({
     0,
   );
 
-  const baseTotalCents = (service.priceCents ?? 0) + addonsTotalCents;
+  // Use promo price when active; voucher applies on top
+  const serviceEffectiveCents = service.promoPriceCents ?? service.priceCents ?? 0;
+  const promoDiscountCents =
+    service.promoPriceCents != null && service.priceCents
+      ? service.priceCents - service.promoPriceCents
+      : 0;
+
+  const baseTotalCents = serviceEffectiveCents + addonsTotalCents;
 
   const totalCents = appliedVoucher
     ? appliedVoucher.final_price_cents
@@ -228,11 +235,21 @@ export function BookingFlowConfirmPanel({
     {
       label: t.summaryServicePrice,
       value:
+        service.promoPriceDisplay ??
         service.priceDisplay ??
         formatBookingPrice(service.priceCents, currency) ??
         "—",
     },
     ...addonRows,
+    // Promo campaign discount line
+    ...(promoDiscountCents > 0 && service.promoName
+      ? [
+          {
+            label: `🏷️ ${service.promoName}`,
+            value: `–${formatBookingPriceReceipt(promoDiscountCents, currency)}`,
+          },
+        ]
+      : []),
     ...(appliedVoucher
       ? [
           {

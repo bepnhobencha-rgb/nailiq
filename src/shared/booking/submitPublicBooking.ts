@@ -89,6 +89,10 @@ export type BookingParams = {
    *  first-visit nurture). Stamps client_profiles.marketing_consent_at so Minh
    *  agents can contact them. NULL / false = no consent → agents skip. */
   marketingConsent?: boolean;
+  /** Active promotion to apply after booking is confirmed (fire-and-forget server action). */
+  promoRedemption?: { promoId: string; discountCents: number } | null;
+  /** Email capture: $2 off incentive for first-time email submission. */
+  emailCaptureDiscount?: boolean;
 };
 
 export type BookingResult = {
@@ -949,6 +953,36 @@ export async function submitPublicBooking(
       console.error("[submitPublicBooking] side-effects dispatch failed", e);
     }
   })();
+
+  // Fire-and-forget: apply promotion price discount
+  if (params.promoRedemption?.promoId && bookingId && params.promoRedemption.discountCents > 0) {
+    void (async () => {
+      try {
+        const { applyPromoToBooking } = await import("@/shared/promotions/applyPromoToBooking");
+        await applyPromoToBooking(
+          bookingId,
+          String(salon.id),
+          params.serviceId,
+          params.promoRedemption!.promoId,
+          params.promoRedemption!.discountCents,
+        );
+      } catch (e) {
+        console.error("[submitPublicBooking] promo apply failed", e);
+      }
+    })();
+  }
+
+  // Fire-and-forget: $2 email capture discount
+  if (params.emailCaptureDiscount && params.clientEmail && bookingId) {
+    void (async () => {
+      try {
+        const { applyEmailCaptureDiscount } = await import("@/shared/promotions/applyEmailCaptureDiscount");
+        await applyEmailCaptureDiscount(bookingId, String(salon.id), params.clientPhone);
+      } catch (e) {
+        console.error("[submitPublicBooking] email capture discount failed", e);
+      }
+    })();
+  }
 
   // Fire-and-forget: redeem voucher
   if (params.voucherRedemption?.voucher_id && bookingId) {

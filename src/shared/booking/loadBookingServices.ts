@@ -227,6 +227,11 @@ export async function loadBookingServicesForSalonSlug(
         ? descRaw.trim()
         : null;
 
+    const promoData = resolveServicePromo(row.id, priceCents);
+    const promoPriceDisplay = promoData.promoPriceCents != null
+      ? formatServicePrice(promoData.promoPriceCents, salonCurrency, { priceType: "fixed", priceMaxCents: null })
+      : null;
+
     return {
       id: row.id,
       name: row.name,
@@ -245,6 +250,10 @@ export async function loadBookingServicesForSalonSlug(
       isPopular: row.is_popular === true,
       isFeatured: row.is_featured === true,
       addonConcurrent: row.addon_timing === "concurrent",
+      promoPriceCents: promoData.promoPriceCents,
+      promoPriceDisplay,
+      promoId: promoData.promoId,
+      promoName: promoData.promoName,
     };
   };
 
@@ -283,6 +292,84 @@ export async function loadBookingServicesForSalonSlug(
         service_id: String(r.service_id),
       }));
     }
+  }
+
+  // Load active promotions + per-service rules for this salon in one pass.
+  // Uses the public RLS policy (active = true AND now() BETWEEN starts_at AND ends_at).
+  const now = new Date().toISOString();
+  const { data: activePromos } = await client
+    .from("promotions" as never)
+    .select("id, name, discount_type, discount_value, applies_to, days_of_week, time_start, time_end")
+    .eq("salon_id" as never, salonId)
+    .eq("active" as never, true)
+    .lte("starts_at" as never, now)
+    .gte("ends_at" as never, now);
+
+  const promoList = (activePromos ?? []) as {
+    id: string;
+    name: string;
+    discount_type: string;
+    discount_value: number;
+    applies_to: string;
+    days_of_week: number[] | null;
+    time_start: string | null;
+    time_end: string | null;
+  }[];
+
+  let promoSvcRules: { promotion_id: string; service_id: string; discount_type: string | null; discount_value: number | null }[] = [];
+  if (promoList.length > 0) {
+    const { data: rules } = await client
+      .from("promotion_services" as never)
+      .select("promotion_id, service_id, discount_type, discount_value")
+      .in("promotion_id" as never, promoList.map((p) => p.id));
+    promoSvcRules = (rules ?? []) as typeof promoSvcRules;
+  }
+
+  // Build quick lookup: service_id → best discount
+  function calcDiscount(baseCents: number, dtype: string, value: number): number {
+    if (dtype === "fixed_price") return Math.max(0, baseCents - value);
+    if (dtype === "amount") return Math.min(value, baseCents);
+    if (dtype === "percent") return Math.round((baseCents * value) / 10000);
+    return 0;
+  }
+
+  function resolveServicePromo(serviceId: string, baseCents: number | null): {
+    promoId: string | null;
+    promoName: string | null;
+    promoPriceCents: number | null;
+  } {
+    if (!baseCents || !promoList.length) return { promoId: null, promoName: null, promoPriceCents: null };
+    const svcRuleMap = new Map<string, { discount_type: string; discount_value: number }>();
+    for (const r of promoSvcRules) {
+      if (r.service_id === serviceId && r.discount_type && r.discount_value != null) {
+        svcRuleMap.set(r.promotion_id, { discount_type: r.discount_type, discount_value: r.discount_value });
+      }
+    }
+    let bestId: string | null = null;
+    let bestName: string | null = null;
+    let bestDiscount = 0;
+    for (const p of promoList) {
+      const svcRule = svcRuleMap.get(p.id);
+      let dtype: string;
+      let dvalue: number;
+      if (svcRule) {
+        dtype = svcRule.discount_type;
+        dvalue = svcRule.discount_value;
+      } else if (p.applies_to === "all") {
+        dtype = p.discount_type;
+        dvalue = p.discount_value;
+      } else {
+        continue;
+      }
+      const disc = calcDiscount(baseCents, dtype, dvalue);
+      if (disc > bestDiscount) {
+        bestDiscount = disc;
+        bestId = p.id;
+        bestName = p.name;
+      }
+    }
+    if (!bestId || bestDiscount <= 0) return { promoId: null, promoName: null, promoPriceCents: null };
+    return { promoId: bestId, promoName: bestName, promoPriceCents: Math.max(0, baseCents - bestDiscount) };
   }
 
   const { data: comboRows } = await client

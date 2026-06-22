@@ -33,6 +33,14 @@ export type BookingServiceItem = {
   /** Add-on only: `services.addon_timing === 'concurrent'` — runs alongside the
    *  main service so it adds price but NO time to the appointment. */
   addonConcurrent: boolean;
+  /** Active promotion price (null when no promo applies). Lower than priceCents. */
+  promoPriceCents: number | null;
+  /** Formatted promo price for display (e.g. "$90.00"). */
+  promoPriceDisplay: string | null;
+  /** Promotion ID driving the promo price. */
+  promoId: string | null;
+  /** Human-readable campaign name shown as badge on the booking page. */
+  promoName: string | null;
 };
 
 export type BookingComboItem = {

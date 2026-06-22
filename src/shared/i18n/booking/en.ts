@@ -192,7 +192,7 @@ export const bookingEn = {
   /** Placeholder for contact step — NANP Canadian example; guests may enter any valid E.164. */
   clientPhonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
   clientEmailLabel: "Email",
-  clientEmailHint: "Add your email to receive the verification code if SMS doesn't arrive, plus appointment reminders and easy reschedule links.",
+  clientEmailHint: "Add your email for $2 off this booking + appointment reminders and easy reschedule links.",
   clientNotesLabel: "Special notes",
   clientNotesOptionalHint: "Optional — allergies, design ideas, parking, etc.",
   waitlistNotifyCta: "Notify me if a slot opens",

@@ -258,12 +258,30 @@ export function BookingFlowServicePanel({
               <span className="text-sm font-medium tabular-nums tracking-tight sm:text-[15px]">
                 {durationText}
               </span>
-              {s.priceDisplay ? (
-                <span className="text-sm font-semibold tabular-nums text-[var(--salon-primary)] sm:text-[15px]">
-                  {s.priceDisplay}
-                </span>
-              ) : null}
+              <div className="flex items-baseline gap-1.5">
+                {s.promoPriceCents != null && s.promoPriceDisplay ? (
+                  <>
+                    <span className="text-xs tabular-nums line-through opacity-50 sm:text-sm">
+                      {s.priceDisplay}
+                    </span>
+                    <span className="text-sm font-semibold tabular-nums text-[var(--salon-primary)] sm:text-[15px]">
+                      {s.promoPriceDisplay}
+                    </span>
+                  </>
+                ) : s.priceDisplay ? (
+                  <span className="text-sm font-semibold tabular-nums text-[var(--salon-primary)] sm:text-[15px]">
+                    {s.priceDisplay}
+                  </span>
+                ) : null}
+              </div>
             </div>
+            {s.promoName && s.promoPriceCents != null ? (
+              <div className="mt-1 flex items-center gap-1">
+                <span className="rounded-full bg-[var(--salon-primary)]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--salon-primary)]">
+                  🏷️ {s.promoName}
+                </span>
+              </div>
+            ) : null}
           </button>
           {hasDescription ? (
             <button
