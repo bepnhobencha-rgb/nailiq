@@ -115,8 +115,7 @@ export function DashboardViewControls() {
   const toggleFs = useCallback(() => {
     if (document.fullscreenElement) {
       void document.exitFullscreen().catch(() => {});
-    } else if (document.documentElement.requestFullscreen) {
-      // requestFullscreen is undefined on iOS Safari — guard before calling.
+    } else if (typeof document.documentElement.requestFullscreen === "function") {
       void document.documentElement.requestFullscreen().catch(() => {});
     }
   }, []);
