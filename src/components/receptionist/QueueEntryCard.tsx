@@ -158,7 +158,7 @@ export function QueueEntryCard({
     low: labels.priorityLow,
   };
   const requestedStaffReadyClock = requestedStaffReadyAtIso
-    ? new Date(requestedStaffReadyAtIso).toLocaleTimeString([], {
+    ? new Date(requestedStaffReadyAtIso).toLocaleTimeString("en-US", {
         hour: "numeric",
         minute: "2-digit",
       })

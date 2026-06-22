@@ -114,7 +114,7 @@ const COPY = {
 
 function money(cents: number): string {
   const dollars = (cents || 0) / 100;
-  return `$${dollars.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  return `$${dollars.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
 function salonHour(tz: string): number {

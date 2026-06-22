@@ -139,7 +139,7 @@ function WaitingScreen({
   messages: ReturnType<typeof getCustomerWaitMessages>;
 }) {
   const readyClock = state.readyAroundIso
-    ? new Date(state.readyAroundIso).toLocaleTimeString([], {
+    ? new Date(state.readyAroundIso).toLocaleTimeString("en-US", {
         hour: "numeric",
         minute: "2-digit",
       })

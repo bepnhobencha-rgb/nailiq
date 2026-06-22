@@ -611,7 +611,7 @@ export function WalkinAddForm({
     const nowFallback = Date.now();
     const nowMs = availability.kind === "ready" ? Date.parse(availability.nowIso) : nowFallback;
     if (ngMs - nowMs > WALKIN_GROUP_BUFFER_MS) return null;
-    return new Date(ngMs).toLocaleTimeString([], {
+    return new Date(ngMs).toLocaleTimeString("en-US", {
       hour: "numeric",
       minute: "2-digit",
     });
@@ -1582,7 +1582,7 @@ function AvailabilityCard({
   if (state.kind === "error" || !recommended) return null;
 
   const readyAtClock = recommended.estimatedReadyAt
-    ? new Date(recommended.estimatedReadyAt).toLocaleTimeString([], {
+    ? new Date(recommended.estimatedReadyAt).toLocaleTimeString("en-US", {
         hour: "numeric",
         minute: "2-digit",
       })
