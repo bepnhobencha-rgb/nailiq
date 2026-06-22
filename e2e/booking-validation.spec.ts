@@ -107,7 +107,8 @@ test.describe("Booking validation — info step", () => {
     // on the name.
     await navigateToBookingInfo(page, testSlug);
 
-    await page.getByTestId("booking-info-name").focus();
+    // Gate pre-fills name ("Test Guest"); clear it so blur validates an empty field.
+    await page.getByTestId("booking-info-name").fill("");
     await page.getByTestId("booking-info-name").blur();
     await expect(page.getByTestId("booking-info-name-error")).toBeVisible();
 

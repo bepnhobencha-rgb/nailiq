@@ -74,7 +74,12 @@ test.describe("Group booking — happy path", () => {
       .getByTestId("group-step-confirm-panel")
       .waitFor({ state: "visible" });
     await page.getByTestId("group-primary-phone").fill("+16045551234");
-    await page.getByTestId("group-sms-consent").check();
+    // group-sms-consent only renders when consent was NOT already given at the
+    // phone gate. gotoGroupFlow now checks the gate consent, so it may be absent.
+    const groupSmsConsent = page.getByTestId("group-sms-consent");
+    if (await groupSmsConsent.isVisible()) {
+      await groupSmsConsent.check();
+    }
     await page.getByTestId("group-confirm").click();
 
     // ── SUCCESS ─────────────────────────────────────────────

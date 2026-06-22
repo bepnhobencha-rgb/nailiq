@@ -257,19 +257,9 @@ export async function loadBookingServicesForSalonSlug(
     };
   };
 
-  // Split add-ons out of the main service list: add-ons are offered only as
-  // upsells on the review step, never as a primary bookable service.
   const allRows = rows ?? [];
   const isAddonRow = (r: unknown) =>
     (r as { is_addon?: unknown }).is_addon === true;
-  const services: BookingServiceItem[] = allRows
-    .filter((r) => !isAddonRow(r))
-    .map(mapServiceRow);
-  const addOns: BookingServiceItem[] = allRows
-    .filter(isAddonRow)
-    .map(mapServiceRow)
-    // Highest-value first so the most profitable upsells lead.
-    .sort((a, b) => (b.priceCents ?? 0) - (a.priceCents ?? 0));
 
   const staff: BookingStaffItem[] = (staffList ?? []).map((s) => ({
     id: String(s.id),
@@ -324,6 +314,19 @@ export async function loadBookingServicesForSalonSlug(
       .in("promotion_id" as never, promoList.map((p) => p.id));
     promoSvcRules = (rules ?? []) as typeof promoSvcRules;
   }
+
+  // Split add-ons out of the main service list: add-ons are offered only as
+  // upsells on the review step, never as a primary bookable service.
+  // NOTE: mapServiceRow calls resolveServicePromo which closes over promoList +
+  // promoSvcRules — these must be initialized first (TDZ risk with const/let).
+  const services: BookingServiceItem[] = allRows
+    .filter((r) => !isAddonRow(r))
+    .map(mapServiceRow);
+  const addOns: BookingServiceItem[] = allRows
+    .filter(isAddonRow)
+    .map(mapServiceRow)
+    // Highest-value first so the most profitable upsells lead.
+    .sort((a, b) => (b.priceCents ?? 0) - (a.priceCents ?? 0));
 
   // Build quick lookup: service_id → best discount
   function calcDiscount(baseCents: number, dtype: string, value: number): number {

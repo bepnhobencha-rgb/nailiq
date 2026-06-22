@@ -626,7 +626,8 @@ test.describe("Booking error scenarios — /[slug]", () => {
     page,
   }) => {
     await navigateToInfoStep(page, PRIMARY_SLUG);
-    await page.getByTestId("booking-info-name").focus();
+    // Gate pre-fills the name; clear it so the blur validates an empty field.
+    await page.getByTestId("booking-info-name").fill("");
     await page.getByTestId("booking-info-name").blur();
     await expect(page.getByTestId("booking-info-name-error")).toBeVisible();
   });
