@@ -198,10 +198,9 @@ export async function runManagerBriefing(input: {
     const sipDraft = parseSipDraft(reply);
     const isComplete = sipDraft !== null;
 
-    // Strip the [SIP_DRAFT] tag from the displayed reply — the UI shows SipReviewCard instead
-    const displayReply = isComplete
-      ? reply.slice(0, reply.indexOf("[SIP_DRAFT]:")).trim()
-      : reply;
+    // Always strip [SIP_DRAFT] block — even if JSON parse failed, raw JSON must not show in UI
+    const sipIdx = reply.indexOf("[SIP_DRAFT]:");
+    const displayReply = sipIdx !== -1 ? reply.slice(0, sipIdx).trim() : reply;
 
     return { ok: true, reply: displayReply, sipDraft: sipDraft ?? undefined, isComplete };
   } catch (e) {
