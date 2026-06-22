@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>You've been invited to NailIQ</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+
+  <!-- Outer wrapper -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f5;padding:40px 16px;">
+    <tr>
+      <td align="center">
+
+        <!-- Card -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.12);">
+
+          <!-- ── Header (dark + gold) ── -->
+          <tr>
+            <td style="background-color:#0b0c10;padding:36px 40px 28px;text-align:center;">
+              <!-- Logo wordmark -->
+              <table cellpadding="0" cellspacing="0" border="0" style="display:inline-table;margin:0 auto;">
+                <tr>
+                  <td style="padding-right:8px;vertical-align:middle;">
+                    <!-- Nail icon (SVG inline) -->
+                    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <rect width="28" height="28" rx="8" fill="#d4af37"/>
+                      <path d="M14 6C10.686 6 8 8.686 8 12C8 14.8 9.8 17.2 12.4 18.2V20C12.4 20.88 13.12 21.6 14 21.6C14.88 21.6 15.6 20.88 15.6 20V18.2C18.2 17.2 20 14.8 20 12C20 8.686 17.314 6 14 6Z" fill="#0b0c10"/>
+                    </svg>
+                  </td>
+                  <td style="vertical-align:middle;">
+                    <span style="font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">NailIQ</span>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:16px 0 0;font-size:13px;color:#a1a1aa;letter-spacing:0.08em;text-transform:uppercase;">
+                Staff Dashboard Access
+              </p>
+            </td>
+          </tr>
+
+          <!-- ── Body ── -->
+          <tr>
+            <td style="background-color:#ffffff;padding:36px 40px;">
+
+              <h1 style="margin:0 0 12px;font-size:22px;font-weight:700;color:#111112;line-height:1.3;">
+                You've been invited!
+              </h1>
+              <p style="margin:0 0 8px;font-size:15px;color:#3f3f46;line-height:1.6;">
+                Bạn được mời tham gia NailIQ Dashboard với tư cách nhân viên.
+              </p>
+              <p style="margin:0 0 28px;font-size:14px;color:#71717a;line-height:1.6;">
+                Click the button below to accept the invitation and set up your account. The link expires in <strong>24 hours</strong>.
+              </p>
+
+              <!-- CTA Button -->
+              <table cellpadding="0" cellspacing="0" border="0" style="margin:0 0 28px;">
+                <tr>
+                  <td style="border-radius:10px;background:linear-gradient(135deg,#d4af37,#b8952e);box-shadow:0 2px 8px rgba(212,175,55,0.35);">
+                    <a href="{{ .ConfirmationURL }}"
+                       style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#0b0c10;text-decoration:none;border-radius:10px;letter-spacing:0.01em;">
+                      Accept Invitation →
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Divider -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+                <tr>
+                  <td style="border-top:1px solid #e4e4e7;"></td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 8px;font-size:13px;color:#71717a;line-height:1.5;">
+                Sau khi chấp nhận, bạn có thể đăng nhập bằng:
+              </p>
+              <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+                <tr>
+                  <td style="padding:4px 0;font-size:13px;color:#3f3f46;">
+                    ✅&nbsp; Google (<strong>{{ .Email }}</strong>)
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:4px 0;font-size:13px;color:#3f3f46;">
+                    ✅&nbsp; Email magic link
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:4px 0;font-size:13px;color:#3f3f46;">
+                    ✅&nbsp; Email + password
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0;font-size:12px;color:#a1a1aa;line-height:1.5;">
+                Nếu nút không hoạt động, copy link dưới đây vào trình duyệt:<br/>
+                <span style="color:#71717a;word-break:break-all;">{{ .ConfirmationURL }}</span>
+              </p>
+            </td>
+          </tr>
+
+          <!-- ── Footer ── -->
+          <tr>
+            <td style="background-color:#f4f4f5;padding:20px 40px;text-align:center;border-top:1px solid #e4e4e7;">
+              <p style="margin:0 0 4px;font-size:12px;color:#a1a1aa;">
+                Email này được gửi bởi <strong style="color:#71717a;">NailIQ</strong> · nailiq.ca
+              </p>
+              <p style="margin:0;font-size:11px;color:#a1a1aa;">
+                Nếu bạn không mong đợi email này, hãy bỏ qua.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+        <!-- /Card -->
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>

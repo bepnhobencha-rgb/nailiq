@@ -8,6 +8,7 @@ import {
   addTeamMember,
   type StaffAccessRole,
 } from "@/shared/dashboard/staffAccess";
+import { InviteQRModal } from "@/components/dashboard/InviteQRModal";
 
 const COPY = {
   en: {
@@ -20,20 +21,19 @@ const COPY = {
     senior: "Senior tech",
     nailTech: "Nail tech",
     canLogin: "Can log into the app?",
-    canLoginHint: "Sends an email invite to set a password",
+    canLoginHint: "Get a QR code to share — staff scans and signs in instantly",
     permission: "Permission",
     admin: "Admin — manage staff & settings",
     receptionist: "Front-desk — bookings only",
-    email: "Email",
+    email: "Email (optional — for email invite instead of QR)",
     emailPlaceholder: "staff@example.com",
     create: "Create",
-    createInvite: "Create & invite",
+    createInvite: "Create & get QR",
     cancel: "Cancel",
     nameRequired: "Enter a name",
-    emailRequired: "Enter an email to send the invite",
-    createdInvited: "Member added — invite email sent",
+    createdInvited: "Member added — QR is ready!",
     created: "Member added",
-    partialInvite: "Member added, but the invite didn't send",
+    partialInvite: "Member added, but QR couldn't be created",
     error: "Something went wrong",
   },
   vi: {
@@ -46,20 +46,19 @@ const COPY = {
     senior: "Thợ chính",
     nailTech: "Thợ phụ",
     canLogin: "Cho đăng nhập app?",
-    canLoginHint: "Gửi email mời để đặt mật khẩu",
+    canLoginHint: "Lấy QR để nhân viên quét → đăng nhập ngay, không cần email",
     permission: "Quyền",
     admin: "Quản trị — quản lý nhân viên & cài đặt",
     receptionist: "Tiếp tân — chỉ lịch hẹn",
-    email: "Email",
+    email: "Email (tuỳ chọn — nếu muốn gửi link qua email)",
     emailPlaceholder: "nhanvien@example.com",
     create: "Tạo",
-    createInvite: "Tạo & mời",
+    createInvite: "Tạo & lấy QR",
     cancel: "Huỷ",
     nameRequired: "Nhập tên",
-    emailRequired: "Nhập email để gửi lời mời",
-    createdInvited: "Đã thêm nhân viên — đã gửi email mời",
+    createdInvited: "Đã thêm nhân viên — QR sẵn sàng!",
     created: "Đã thêm nhân viên",
-    partialInvite: "Đã thêm nhân viên, nhưng lời mời chưa gửi được",
+    partialInvite: "Đã thêm nhân viên, nhưng QR chưa tạo được",
     error: "Có lỗi xảy ra",
   },
 } as const;
@@ -120,9 +119,16 @@ export function AddTeamMemberSheet({
   const [accessRole, setAccessRole] = useState<StaffAccessRole>("receptionist");
   const [email, setEmail] = useState("");
 
+  // QR modal state — shown after staff is created with grantAccess=true
+  const [qrState, setQrState] = useState<{
+    staffId: string;
+    staffName: string;
+    role: StaffAccessRole;
+  } | null>(null);
+
   const canGrantAdmin = currentUserRole === "owner";
 
-  if (!isOpen) return null;
+  if (!isOpen && !qrState) return null;
 
   const reset = () => {
     setName("");
@@ -143,35 +149,52 @@ export function AddTeamMemberSheet({
       onToast(t.nameRequired, "error");
       return;
     }
-    if (grantAccess && !email.trim()) {
-      onToast(t.emailRequired, "error");
-      return;
-    }
     startTransition(async () => {
       const res = await addTeamMember(slug, {
         name: name.trim(),
         takesBookings,
         jobRole,
-        grantAccess,
+        // We always create the staff row; if grantAccess, we'll show QR next.
+        // Skip the email invite path — QR handles onboarding instead.
+        grantAccess: false,
         accessRole,
-        email: email.trim(),
+        email: "",
       });
-      if (res.ok) {
-        onToast(res.invited ? t.createdInvited : t.created, "success");
-        router.refresh();
-        close();
-      } else if (res.staffCreated) {
-        // Member exists but invite failed — close + refresh, warn precisely.
-        onToast(`${t.partialInvite}: ${res.error}`, "error");
-        router.refresh();
-        close();
-      } else {
+      if (!res.ok && !res.staffCreated) {
         onToast(res.error || t.error, "error");
+        return;
+      }
+
+      router.refresh();
+
+      if (grantAccess && res.staffId) {
+        // Close the sheet and immediately open QR modal for the new member.
+        reset();
+        onClose();
+        setQrState({ staffId: res.staffId, staffName: name.trim(), role: accessRole });
+        onToast(t.createdInvited, "success");
+      } else {
+        onToast(t.created, "success");
+        close();
       }
     });
   };
 
   return (
+    <>
+    {/* QR modal — shown after staff creation when grantAccess is true */}
+    {qrState && (
+      <InviteQRModal
+        slug={slug}
+        staffId={qrState.staffId}
+        staffName={qrState.staffName}
+        role={qrState.role}
+        isOpen={Boolean(qrState)}
+        onClose={() => setQrState(null)}
+      />
+    )}
+
+    {isOpen && (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
       onClick={close}
@@ -243,14 +266,12 @@ export function AddTeamMemberSheet({
               <option value="receptionist">{t.receptionist}</option>
               {canGrantAdmin && <option value="admin">{t.admin}</option>}
             </select>
-            <input
-              type="email"
-              value={email}
-              placeholder={t.emailPlaceholder}
-              disabled={pending}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-xl border border-nq-border/50 bg-nq-bg px-3 py-2 text-sm text-nq-foreground"
-            />
+            {/* QR is the primary path; email is optional for remote invites */}
+            <div className="rounded-xl border border-nq-border/20 bg-nq-bg/30 px-3 py-2.5 text-center">
+              <p className="text-xs text-nq-muted">
+                📱 Sau khi tạo, QR + link sẽ hiện ngay để nhân viên quét
+              </p>
+            </div>
           </div>
         )}
 
@@ -275,5 +296,7 @@ export function AddTeamMemberSheet({
         </div>
       </div>
     </div>
+    )}
+    </>
   );
 }

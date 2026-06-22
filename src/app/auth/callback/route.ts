@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { dashboardPathForRole } from "@/shared/lib/salonMemberRole";
 import { resolveRoleAndSlugForUser } from "@/shared/lib/salonMembership";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { claimInviteToken } from "@/shared/dashboard/inviteTokenActions";
 
 export const dynamic = "force-dynamic";
 // Supabase ssr server client + cookie writes are exercised against the Node
@@ -25,6 +26,8 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
+  // QR invite token passed via redirectTo → /auth/callback?invite=TOKEN
+  const inviteToken = url.searchParams.get("invite");
   const errorDescription =
     url.searchParams.get("error_description") ??
     url.searchParams.get("error");
@@ -84,6 +87,23 @@ export async function GET(request: NextRequest) {
   }
 
   let resolved = await resolveRoleAndSlugForUser(supabase, user.id);
+
+  // QR / link invite: claim the invite token and create the membership row.
+  // Runs before the email-reconcile path so a staff member who just signed up
+  // via a QR link gets their membership instantly without needing a prior
+  // Supabase invite email.
+  if (inviteToken) {
+    try {
+      const claimed = await claimInviteToken(inviteToken, user.id);
+      if (claimed.ok) {
+        resolved = await resolveRoleAndSlugForUser(supabase, user.id);
+      } else {
+        console.warn("[auth/callback] invite claim failed:", claimed.error);
+      }
+    } catch (e) {
+      console.error("[auth/callback] invite claim error:", e);
+    }
+  }
 
   // Staff invited by email often sign in with a DIFFERENT identity (e.g.
   // Google), which Supabase may register as a fresh auth user that has no

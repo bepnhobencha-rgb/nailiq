@@ -304,8 +304,8 @@ export async function inviteStaffAccess(
 }
 
 export type AddTeamMemberResult =
-  | { ok: true; invited?: boolean; staffCreated: boolean }
-  | { ok: false; error: string; staffCreated: boolean };
+  | { ok: true; invited?: boolean; staffCreated: boolean; staffId?: string }
+  | { ok: false; error: string; staffCreated: boolean; staffId?: string };
 
 /**
  * All-in-one "Add team member": create the staff row and (optionally) grant a
@@ -350,7 +350,7 @@ export async function addTeamMember(
 
   if (!input.grantAccess) {
     revalidatePath(`/dashboard/${slug}/setup/staff`);
-    return { ok: true, staffCreated: true };
+    return { ok: true, staffCreated: true, staffId: created.id };
   }
 
   const res = await inviteStaffAccess(slug, created.id ?? "", {
@@ -360,9 +360,9 @@ export async function addTeamMember(
   if (!res.ok) {
     // The staff row exists; only the login step failed — surface both facts so
     // the UI can say "member added, but the invite didn't send".
-    return { ok: false, error: res.error, staffCreated: true };
+    return { ok: false, error: res.error, staffCreated: true, staffId: created.id };
   }
-  return { ok: true, invited: res.invited, staffCreated: true };
+  return { ok: true, invited: res.invited, staffCreated: true, staffId: created.id };
 }
 
 /** Change an existing access role (admin ↔ receptionist). Owner role is immutable here. */
