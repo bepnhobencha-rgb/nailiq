@@ -359,6 +359,14 @@ export async function setReactInputValue(
  * gate so the individual booking flow mounts and the service step renders.
  * Mirrors `gotoGroupFlow` for the non-group (individual) flow: the service
  * tiles only exist once a valid phone is entered at the gate.
+ *
+ * Gate requirements (as of PR #487 + CountryPhoneField):
+ *  1. Phone — CountryPhoneField's inner input expects the 10-digit national
+ *     number (no country code). GATE_PHONE_DIGITS = "16045550000"; national = "6045550000".
+ *  2. Name — for a new customer (no profile) the name input appears after the
+ *     400ms customer-lookup debounce; fill ≥2 chars so nameOk = true.
+ *  3. SMS consent — gateReady = validPhone && nameOk && smsConsent; the flow
+ *     only renders (service tiles mount) once all three are satisfied.
  */
 export async function gotoBookingServiceStep(
   page: Page,
@@ -369,7 +377,19 @@ export async function gotoBookingServiceStep(
   await page.goto(`/${slug}`);
   const phoneInput = page.getByTestId("booking-entry-phone");
   await phoneInput.waitFor({ state: "visible", timeout: 15_000 });
-  await setReactInputValue(phoneInput, GATE_PHONE);
+  // National number only — CountryPhoneField's inner input, not the full E164.
+  await setReactInputValue(phoneInput, GATE_PHONE_DIGITS.slice(1));
+
+  // Wait for the SMS consent checkbox; it appears once the customer lookup
+  // finishes (~400ms debounce). For a new customer the name input appears too.
+  const smsConsent = page.getByTestId("sms-consent");
+  await smsConsent.waitFor({ state: "visible", timeout: 8_000 });
+  const nameInput = page.getByTestId("booking-entry-name");
+  if (await nameInput.isVisible()) {
+    await nameInput.fill("Test Guest");
+  }
+  await smsConsent.check();
+
   await page
     .locator('[data-testid="service-tile-select"]')
     .first()

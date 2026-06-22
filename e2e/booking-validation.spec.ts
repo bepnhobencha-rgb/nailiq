@@ -72,9 +72,30 @@ test.describe("Booking validation — info step", () => {
     await page.goto(`/${testSlug}`);
     await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
 
-    for (const fmt of ["6045551234", "+1 778 868 0738", "+84901234567"]) {
-      await setReactInputValue(page.getByTestId("booking-entry-phone"), "");
-      await setReactInputValue(page.getByTestId("booking-entry-phone"), fmt);
+    const phoneInput = page.getByTestId("booking-entry-phone");
+    const smsConsent = page.getByTestId("sms-consent");
+    const nameInput = page.getByTestId("booking-entry-name");
+
+    // CountryPhoneField accepts the national number (no country code prefix).
+    // Three NANP formats to verify the validator handles different notations.
+    const formats = ["6045551234", "7788680738", "(604) 555-9999"];
+    let gateUnlocked = false;
+
+    for (const fmt of formats) {
+      await setReactInputValue(phoneInput, "");
+      await setReactInputValue(phoneInput, fmt);
+
+      if (!gateUnlocked) {
+        // First valid phone: satisfy gate prerequisites so the flow can mount.
+        // SMS consent + name persist in BookingTypeSwitcher state across phone changes.
+        await smsConsent.waitFor({ state: "visible", timeout: 8_000 });
+        if (await nameInput.isVisible()) {
+          await nameInput.fill("Test Guest");
+        }
+        await smsConsent.check();
+        gateUnlocked = true;
+      }
+
       await expect(
         page.locator('[data-testid="service-tile-select"]').first(),
       ).toBeVisible({ timeout: 10_000 });

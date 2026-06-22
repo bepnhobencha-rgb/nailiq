@@ -195,11 +195,23 @@ export async function gotoGroupFlow(page: Page, slug: string): Promise<void> {
   // Keep the gate phone a NEW customer so Guest names stay default.
   await supabase.from("client_profiles").delete().eq("phone", GATE_PHONE_DIGITS);
   await page.goto(`/${slug}`);
-  // Phone-first gate: a phone must be entered before the choice appears.
+  // Phone-first gate: phone must be entered before the group toggle appears.
   await page
     .getByTestId("booking-entry-phone")
     .waitFor({ state: "visible", timeout: 15_000 });
-  await page.getByTestId("booking-entry-phone").fill(`+${GATE_PHONE_DIGITS}`);
+  // CountryPhoneField's inner input expects the national number (no country code).
+  // GATE_PHONE_DIGITS = "16045550000" (E164 digits); national = last 10 digits.
+  await page.getByTestId("booking-entry-phone").fill(GATE_PHONE_DIGITS.slice(1));
+
+  // Gate requires name + SMS consent before flowReady = true (PR #487).
+  const smsConsent = page.getByTestId("sms-consent");
+  await smsConsent.waitFor({ state: "visible", timeout: 8_000 });
+  const nameInput = page.getByTestId("booking-entry-name");
+  if (await nameInput.isVisible()) {
+    await nameInput.fill("Test Guest");
+  }
+  await smsConsent.check();
+
   await page
     .getByTestId("booking-type-group")
     .waitFor({ state: "visible", timeout: 15_000 });
