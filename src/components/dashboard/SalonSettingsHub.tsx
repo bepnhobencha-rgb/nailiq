@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Toggle } from "@/components/ui/Toggle";
 import {
   updateRemindersEnabled,
@@ -164,6 +164,7 @@ export function SalonSettingsHub({
   /** Whether A2P 10DLC registration is complete (superadmin-set; read-only here). */
   smsA2pRegistered: boolean;
 }) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const verified = searchParams?.get("verified") === "1";
   const verifyError = searchParams?.get("verify_error");
@@ -523,6 +524,7 @@ export function SalonSettingsHub({
                     }
                     setEmailEditSuccess(true);
                     setEmailEditOpen(false);
+                    router.refresh();
                     setTimeout(() => setEmailEditSuccess(false), 5000);
                   });
                 }}
