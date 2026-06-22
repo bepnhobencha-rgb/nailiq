@@ -40,7 +40,7 @@ function daysUntil(iso: string): number {
 
 function fmtDatetime(iso: string | null | undefined): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString(undefined, {
+  return new Date(iso).toLocaleString("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
   });
@@ -48,7 +48,7 @@ function fmtDatetime(iso: string | null | undefined): string {
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString(undefined, { dateStyle: "medium" });
+  return new Date(iso).toLocaleDateString("en-US", { dateStyle: "medium" });
 }
 
 function fmtMoney(cents: number | null | undefined, currency: string | null | undefined): string {

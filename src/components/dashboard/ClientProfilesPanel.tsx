@@ -107,7 +107,7 @@ function formatLastVisit(iso: string | null, language: UserLanguage): string {
   if (language === "vi") {
     return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
   }
-  return d.toLocaleDateString();
+  return d.toLocaleDateString("en-US");
 }
 
 function formatDollars(cents: number): string {

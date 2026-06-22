@@ -50,7 +50,7 @@ function formatTimestamp(iso: string): string {
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return iso;
   const d = new Date(ms);
-  return d.toLocaleString();
+  return d.toLocaleString("en-US");
 }
 
 function eventSummary(
