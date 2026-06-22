@@ -7,10 +7,11 @@ import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { logNotification } from "@/shared/lib/notificationLog";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendBookingConfirmationEmail } from "@/shared/booking/sendBookingConfirmationEmail";
+import { generateReminderToken } from "@/shared/noshow/generateReminderToken";
 
 export const dynamic = "force-dynamic";
 
-function formatConfirmDate(isoUtc: string): string {
+function formatConfirmDate(isoUtc: string, timezone = "America/Vancouver"): string {
   try {
     return new Date(isoUtc).toLocaleString("en-CA", {
       weekday: "short",
@@ -18,7 +19,8 @@ function formatConfirmDate(isoUtc: string): string {
       day: "numeric",
       hour: "numeric",
       minute: "2-digit",
-      timeZone: "America/Vancouver",
+      timeZone: timezone,
+      timeZoneName: "short",
     });
   } catch {
     return isoUtc;
@@ -72,7 +74,7 @@ export async function POST(req: Request) {
   // Check if SMS is enabled for this salon
   const { data: salon } = await db
     .from("salons")
-    .select("name, slug, subscription_plan, plan_override, address, email_outbound_enabled")
+    .select("name, slug, subscription_plan, plan_override, address, email_outbound_enabled, timezone")
     .eq("id", salonId)
     .maybeSingle();
 
@@ -121,7 +123,8 @@ export async function POST(req: Request) {
     }
   }
 
-  const dateStr = formatConfirmDate(startTimeUtc);
+  const salonTimezone = (salon as { timezone?: string | null }).timezone ?? "America/Vancouver";
+  const dateStr = formatConfirmDate(startTimeUtc, salonTimezone);
   const name = clientName ?? "bạn";
   const salonName = salon.name ?? "";
   const staff = staffName ? ` with ${staffName}` : "";
@@ -209,5 +212,84 @@ export async function POST(req: Request) {
     })();
   }
 
+  // ── Per-member SMS for group bookings ─────────────────────────────────────
+  // Each non-organizer member gets a personal SMS with their slot details and
+  // a unique RSVP link so they can confirm or decline attendance without
+  // needing to contact the organizer.
+  if (isGroup && groupId) {
+    void sendGroupMemberSms({
+      db,
+      groupId,
+      organizerBookingId: bookingId,
+      organizerName: clientName ?? "",
+      salonName: salonName,
+      salonSlug,
+      salonTimezone,
+      salonIsTest,
+      salonId,
+    });
+  }
+
   return NextResponse.json({ ok: result.ok, error: result.error });
+}
+
+async function sendGroupMemberSms(opts: {
+  db: ReturnType<typeof createServiceRoleClient>;
+  groupId: string;
+  organizerBookingId: string;
+  organizerName: string;
+  salonName: string;
+  salonSlug: string;
+  salonTimezone: string;
+  salonIsTest: boolean;
+  salonId: string;
+}) {
+  const { db, groupId, organizerBookingId, organizerName, salonName, salonSlug, salonTimezone, salonIsTest, salonId } = opts;
+
+  try {
+    // Fetch all non-organizer bookings in the group
+    const { data: members } = await db
+      .from("bookings" as never)
+      .select("id, client_name, client_phone, service_name, staff_name, start_at")
+      .eq("group_id", groupId)
+      .neq("id", organizerBookingId);
+
+    if (!members?.length) return;
+
+    const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "https://nailiq.ca").trim();
+
+    for (const raw of members) {
+      const m = raw as {
+        id: string;
+        client_name: string | null;
+        client_phone: string | null;
+        service_name: string | null;
+        staff_name: string | null;
+        start_at: string;
+      };
+      if (!m.client_phone) continue;
+
+      // Token expires at appointment time so RSVP is irrelevant after
+      const tokenResult = await generateReminderToken(m.id, salonId, {
+        expiresAt: m.start_at,
+      });
+      if (!tokenResult) continue;
+
+      const dateStr = formatConfirmDate(m.start_at, salonTimezone);
+      const staffPart = m.staff_name ? ` · ${m.staff_name}` : "";
+      const rsvpUrl = `${SITE_URL}/booking/group-rsvp?token=${tokenResult.id}&lang=vi`;
+
+      const msg = [
+        `${organizerName || "Nhóm"} đã đặt lịch cho bạn tại ${salonName} · ${dateStr}.`,
+        m.service_name ? `Dịch vụ: ${m.service_name}${staffPart}.` : null,
+        `Xác nhận tham dự: ${rsvpUrl}`,
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      void sendSmsReminder(m.client_phone, msg, { salonIsTest, lang: "vi" });
+    }
+  } catch {
+    // Best-effort — don't fail the organizer SMS flow
+  }
 }
