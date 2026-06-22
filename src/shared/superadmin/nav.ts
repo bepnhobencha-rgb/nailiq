@@ -54,6 +54,12 @@ export const SUPERADMIN_NAV: readonly SuperadminNavItem[] = [
     allowedRoles: ["founder", "ops_admin", "support_admin", "billing_admin"],
   },
   {
+    key: "users",
+    label: "Users",
+    href: "/superadmin/users",
+    allowedRoles: ["founder", "ops_admin", "support_admin"],
+  },
+  {
     key: "operations",
     label: "Operations",
     href: "/superadmin/operations",

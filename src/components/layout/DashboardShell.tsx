@@ -10,6 +10,7 @@ import { DashboardTopBar } from "@/components/layout/DashboardTopBar";
 import { PwaRegister } from "@/components/layout/PwaRegister";
 import { DashboardViewControls } from "@/components/layout/DashboardViewControls";
 import { AdminCopilot } from "@/components/dashboard/AdminCopilot";
+import { PresenceHeartbeat } from "@/components/layout/PresenceHeartbeat";
 import { useSidebarCollapsed } from "@/shared/lib/useSidebarCollapsed";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
 import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
@@ -38,6 +39,8 @@ type Props = {
   releaseFeatures?: ReleaseFeatureMap;
   /** Authenticated user's email address for the user profile card in sidebar footer. */
   userEmail?: string | null;
+  /** Salon DB id — passed to PresenceHeartbeat to tag the presence row. */
+  salonId?: string | null;
 };
 
 /**
@@ -66,6 +69,7 @@ export function DashboardShell({
   subscriptionPlan,
   releaseFeatures,
   userEmail,
+  salonId,
 }: Props) {
   // Single hook instance owns the collapse state. We pass both the
   // value AND the toggle to DashboardSidebar so its toggle button
@@ -82,6 +86,7 @@ export function DashboardShell({
       style={{ ["--nq-sidebar-w" as string]: sidebarWidth }}
     >
       <PwaRegister />
+      {salonId && <PresenceHeartbeat salonId={salonId} />}
       <DashboardSidebar
         slug={slug}
         role={role}

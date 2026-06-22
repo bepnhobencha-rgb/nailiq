@@ -314,6 +314,25 @@ export type LoadAllSalonsResult =
       error: "unauthorized" | "server_error";
     };
 
+export type SuperAdminUserMembership = {
+  salonId: string;
+  salonName: string;
+  salonSlug: string;
+  role: string;
+};
+
+export type SuperAdminUserRow = {
+  id: string;
+  email: string;
+  createdAt: string | null;
+  lastSignInAt: string | null;
+  memberships: SuperAdminUserMembership[];
+};
+
+export type LoadAllUsersResult =
+  | { ok: true; users: SuperAdminUserRow[] }
+  | { ok: false; error: "unauthorized" | "server_error" };
+
 /**
  * Per-salon detail surface for `/superadmin/salons/[salonId]`.
  *

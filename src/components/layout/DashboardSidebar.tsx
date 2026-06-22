@@ -18,6 +18,7 @@ import {
   Clock,
   LayoutGrid,
   MessageSquare,
+  Monitor,
   Plus,
   Scissors,
   Settings as SettingsIcon,
@@ -419,6 +420,14 @@ export function DashboardSidebar({
       {
         key: "config",
         items: [
+          {
+            key: "sessions",
+            label: "Sessions",
+            href: `${dashRoot}/sessions`,
+            icon: Monitor,
+            match: (p) => p.startsWith(`${dashRoot}/sessions`),
+            hidden: !["owner", "admin", "manager"].includes(role),
+          },
           {
             key: "settings",
             label: t.settings,

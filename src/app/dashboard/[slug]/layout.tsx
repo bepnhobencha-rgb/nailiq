@@ -186,6 +186,7 @@ export default async function DashboardSlugLayout({
         subscriptionPlan={subscriptionPlan}
         releaseFeatures={releaseFeatures}
         userEmail={userEmail}
+        salonId={ctx.salon.id}
       >
         {children}
       </DashboardShell>

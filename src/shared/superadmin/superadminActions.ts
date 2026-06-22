@@ -25,6 +25,8 @@ import {
   type DeletedRecord,
   type LoadAllCategoriesResult,
   type LoadAllSalonsResult,
+  type LoadAllUsersResult,
+  type SuperAdminUserRow,
   type LoadDeletedRecordsResult,
   type LoadPlatformFlagsResult,
   type LoadSalonDetailResult,
@@ -179,6 +181,82 @@ function startOfCurrentUtcMonth(): Date {
 function startOfLast7DaysUtc(): Date {
   const ms = Date.now() - 7 * 24 * 60 * 60 * 1000;
   return new Date(ms);
+}
+
+/**
+ * Load all Supabase auth users + their salon memberships for the
+ * `/superadmin/users` page. Uses the admin API to list users (service
+ * role only) then joins against `salon_members` + `salons` in one query.
+ */
+export async function loadAllUsers(): Promise<LoadAllUsersResult> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+
+  let admin;
+  try {
+    admin = createServiceRoleClient();
+  } catch (e) {
+    console.error("[superadmin/loadAllUsers] service role", e);
+    return { ok: false, error: "server_error" };
+  }
+
+  // Fetch up to 1000 auth users (Supabase admin API limit per page).
+  const { data: authData, error: authErr } =
+    await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (authErr) {
+    console.error("[superadmin/loadAllUsers] listUsers", authErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  // Fetch all salon memberships + salon names in one query.
+  const { data: memberRows, error: memberErr } = (await admin
+    .from("salon_members")
+    .select("user_id, role, salon_id, salons!inner(id, name, slug)" as never)) as {
+    data: Array<{
+      user_id: string;
+      role: string;
+      salon_id: string;
+      salons: { id: string; name: string | null; slug: string | null } | null;
+    }> | null;
+    error: unknown;
+  };
+
+  if (memberErr) {
+    console.error("[superadmin/loadAllUsers] salon_members", memberErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  // Build user_id → memberships map.
+  const membershipMap = new Map<string, SuperAdminUserRow["memberships"]>();
+  for (const row of memberRows ?? []) {
+    const salon = row.salons;
+    if (!salon) continue;
+    const list = membershipMap.get(row.user_id) ?? [];
+    list.push({
+      salonId: String(salon.id),
+      salonName: String(salon.name ?? ""),
+      salonSlug: String(salon.slug ?? ""),
+      role: String(row.role ?? ""),
+    });
+    membershipMap.set(row.user_id, list);
+  }
+
+  const users: SuperAdminUserRow[] = (authData.users ?? []).map((u) => ({
+    id: u.id,
+    email: typeof u.email === "string" ? u.email : "(no email)",
+    createdAt: u.created_at ?? null,
+    lastSignInAt: u.last_sign_in_at ?? null,
+    memberships: membershipMap.get(u.id) ?? [],
+  }));
+
+  // Sort: most recently active first.
+  users.sort((a, b) => {
+    const ta = a.lastSignInAt ?? a.createdAt ?? "";
+    const tb = b.lastSignInAt ?? b.createdAt ?? "";
+    return tb.localeCompare(ta);
+  });
+
+  return { ok: true, users };
 }
 
 /**
