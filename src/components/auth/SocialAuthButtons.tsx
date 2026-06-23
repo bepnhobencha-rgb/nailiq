@@ -1,11 +1,36 @@
 "use client";
 
-import { useId, useMemo, useState, useTransition } from "react";
+import { useEffect, useId, useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { createClient } from "@/shared/lib/supabase/client";
+
+// Google OAuth is blocked by Error 403 disallowed_useragent when the auth flow
+// is triggered inside in-app browsers (Facebook Messenger, Instagram, Twitter, etc.)
+// because they use WebViews that don't meet Google's "secure browser" policy.
+// Detecting them client-side lets us show a friendly banner instead of letting
+// the user click through and hit Google's opaque error page.
+function detectInAppBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  // Facebook / Messenger
+  if (/FBAN|FBAV|FB_IAB|FB4A|FBIOS/.test(ua)) return true;
+  // Instagram
+  if (/Instagram/.test(ua)) return true;
+  // Twitter / X
+  if (/Twitter/.test(ua)) return true;
+  // Line
+  if (/Line\//.test(ua)) return true;
+  // Snapchat
+  if (/Snapchat/.test(ua)) return true;
+  // TikTok
+  if (/musical_ly|TikTok/.test(ua)) return true;
+  // Generic Android WebView ("wv" token in UA)
+  if (/Android/.test(ua) && /wv/.test(ua)) return true;
+  return false;
+}
 
 type Mode = "login" | "register";
 
@@ -64,6 +89,11 @@ export function SocialAuthButtons({
   const [pending, startTransition] = useTransition();
   const emailSectionId = useId();
   const passwordSectionId = useId();
+  // Resolved after mount so SSR and initial client render stay in sync.
+  const [isInAppBrowser, setIsInAppBrowser] = useState(false);
+  useEffect(() => {
+    setIsInAppBrowser(detectInAppBrowser());
+  }, []);
 
   const passwordSupported = layout === "open" && enablePassword;
 
@@ -262,6 +292,25 @@ export function SocialAuthButtons({
 
   return (
     <div className="mt-6 flex flex-col gap-3">
+      {/* In-app browser guard — Google blocks OAuth in WebViews (Error 403 disallowed_useragent) */}
+      {isInAppBrowser ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800/40 dark:bg-amber-950/30">
+          <p className="text-sm text-amber-800 dark:text-amber-300">
+            {t.inAppBrowserWarning}
+          </p>
+          <button
+            type="button"
+            className="mt-2 text-sm font-medium text-amber-900 underline underline-offset-4 dark:text-amber-200"
+            onClick={() => {
+              // window.open with _blank is the most reliable way to escape an in-app
+              // browser on both iOS (Safari handoff) and Android (intent chooser).
+              window.open(window.location.href, "_blank", "noopener,noreferrer");
+            }}
+          >
+            {t.openInBrowser}
+          </button>
+        </div>
+      ) : null}
       {/* Google — primary action, large touch target */}
       <Button
         type="button"
@@ -269,7 +318,7 @@ export function SocialAuthButtons({
         size="lg"
         className="w-full min-h-[52px] gap-3 text-base"
         loading={pending && pendingAction === "google"}
-        disabled={pending}
+        disabled={pending || isInAppBrowser}
         onClick={onGoogle}
       >
         {/* Google "G" logo */}

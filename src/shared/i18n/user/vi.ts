@@ -590,6 +590,9 @@ export const userVi: UserMessages = {
     brandBullet1: "Miễn phí 14 ngày · Không cần thẻ tín dụng",
     brandBullet2: "Cài xong và chạy được trong 2 phút",
     brandBullet3: "Được xây dựng riêng cho salon người Việt ở Bắc Mỹ",
+    inAppBrowserWarning:
+      "Google không cho phép đăng nhập từ Messenger hoặc trình duyệt trong ứng dụng. Vui lòng mở trang này bằng Safari hoặc Chrome.",
+    openInBrowser: "Mở trong trình duyệt",
   },
   chooseSalon: {
     title: "Chọn tiệm của bạn",
