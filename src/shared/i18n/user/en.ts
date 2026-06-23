@@ -486,6 +486,11 @@ export type UserMessages = {
     brandBullet1: string;
     brandBullet2: string;
     brandBullet3: string;
+    /** Shown in place of the Google button when the page is opened inside an
+     *  in-app browser (Messenger, Instagram, etc.) where Google OAuth is blocked. */
+    inAppBrowserWarning: string;
+    /** CTA button label inside the in-app browser banner. */
+    openInBrowser: string;
   };
   /** Multi-salon picker (`/choose-salon`). Shown when an authenticated user
    * has more than one `salon_members` row. Single-salon users skip it. */
@@ -2783,6 +2788,9 @@ export const userEn: UserMessages = {
     brandBullet1: "Free 14 days · No credit card needed",
     brandBullet2: "Up and running in under 2 minutes",
     brandBullet3: "Made for Vietnamese-owned salons in North America",
+    inAppBrowserWarning:
+      "Google sign-in is blocked inside Messenger and other in-app browsers. Open this page in Safari or Chrome to continue.",
+    openInBrowser: "Open in browser",
   },
   chooseSalon: {
     title: "Choose your salon",
