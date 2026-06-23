@@ -68,6 +68,7 @@ import { WalkinQueueSidebar, type QueueItem } from "./WalkinQueueSidebar";
 import { OnlineWaitlistPanel } from "./OnlineWaitlistPanel";
 import { WeekView, mondayYmdOf, shiftWeek } from "./WeekView";
 import { MonthView, firstOfMonth, shiftMonth } from "./MonthView";
+import VerticalDayView from "./VerticalDayView";
 import type { BookingsRangeHint } from "@/shared/dashboard/getBookingsForRangeAction";
 import type {
   LoadReceptionistCenterError,
@@ -425,6 +426,17 @@ function ReceptionistCenterInner({
   }, [initialOk]);
 
   const [dateOffset, setDateOffset] = useState<-1 | 0 | 1>(0);
+
+  // Detect mobile viewport for the VerticalDayView swap (< 640 px).
+  // Defaults false (server + first render → desktop grid); effect flips it
+  // after hydration so there's no SSR/client mismatch.
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 640);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   // View mode (Day | Week | Month). Resolution order on mount:
   //   1. `?view=week` / `?view=day` / `?view=month` URL param wins (sidebar
@@ -2002,6 +2014,37 @@ function ReceptionistCenterInner({
 
   const rcMessages = messages.receptionist;
 
+  // Navigate to an arbitrary YYYY-MM-DD (used by VerticalDayView swipe gesture).
+  // Slots into the existing ±1 date-offset machinery for yesterday/today/tomorrow;
+  // falls back to a direct loader call for other dates (same pattern as week/month
+  // onDayClick handlers).
+  const navigateToYmd = useCallback(
+    async (ymd: string) => {
+      const tz = timezone;
+      const today = salonToday(tz, nowIso || undefined);
+      const yesterday = salonDateOffset(tz, -1, nowIso || undefined);
+      const tomorrow = salonDateOffset(tz, 1, nowIso || undefined);
+      if (ymd === today) {
+        await onDateSwitchChange(0);
+      } else if (ymd === yesterday) {
+        await onDateSwitchChange(-1);
+      } else if (ymd === tomorrow) {
+        await onDateSwitchChange(1);
+      } else {
+        setDayLoading(true);
+        const res = await loadReceptionistCenterDataAction(slug, ymd);
+        setDayLoading(false);
+        if (res.ok) {
+          setData(res.data);
+          markSynced();
+        } else {
+          setShakeMessage(loadErrorCopy(rcMessages, res.error));
+        }
+      }
+    },
+    [timezone, nowIso, onDateSwitchChange, slug, markSynced, rcMessages],
+  );
+
   // TV Mode preset → full-screen read-only display per
   // `DASHBOARD_LAYOUT_RULES.md` §3. Bypasses the three-zone shell
   // entirely; receptionists exit via the corner button which writes
@@ -3356,6 +3399,26 @@ function ReceptionistCenterInner({
                 onUndoNoShow={(id) => void handleUndoNoShow(id)}
               />
 
+              {isMobile ? (
+                <VerticalDayView
+                  staff={gridStaff}
+                  bookings={gridBookings}
+                  selectedDate={data.selectedDate}
+                  timezone={timezone}
+                  nowIso={nowIso}
+                  isViewingToday={isViewingToday}
+                  openMinutes={data.salon.openMinutes}
+                  closeMinutes={data.salon.closeMinutes}
+                  onBookingClick={(id) => setDrawerBookingId(id)}
+                  onEmptySlotClick={(staffId, ymd, slotLabel) => {
+                    setDeskPrefill({ staffId, ymd, slotLabel, anchor: undefined });
+                    setDeskBookingOpen(true);
+                  }}
+                  onNavigateDate={(ymd) => void navigateToYmd(ymd)}
+                  onAddBooking={() => setDeskBookingOpen(true)}
+                  language={language === "vi" ? "vi" : "en"}
+                />
+              ) : (
               <StaffTimelineGrid
                 compactBookingIcons={basicModeActive}
                 staff={gridStaff}
@@ -3484,6 +3547,7 @@ function ReceptionistCenterInner({
                 onTombstoneCharge={(id) => void handleTombstoneCharge(id)}
                 onTombstoneWaive={(id) => void handleTombstoneWaive(id)}
               />
+              )}
             </section>
           </div>
         )}
