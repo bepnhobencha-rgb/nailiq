@@ -13,7 +13,7 @@
 
 import { useCallback, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
-import { Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { formatInSalonTz } from "@/shared/lib/salonTime";
 import type { GridBooking, GridStaff } from "./StaffTimelineGrid";
@@ -179,12 +179,48 @@ export default function VerticalDayView({
 
   const addLabel = language === "vi" ? "Thêm hẹn" : "New appt";
 
+  const prevLabel = language === "vi" ? "Hôm qua" : "Prev day";
+  const nextLabel = language === "vi" ? "Ngày mai" : "Next day";
+
   return (
     <div
       className="relative select-none pb-28"
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
+      {/* Swipe affordance hint — fades in after 400 ms so it doesn't fight
+          the page load, then settles at low opacity as a persistent cue. */}
+      <motion.div
+        className="flex items-center justify-between px-3 pb-2 pt-1"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.4, duration: 0.5 }}
+      >
+        <motion.button
+          className="flex items-center gap-0.5 text-white/25 active:text-white/50"
+          whileTap={{ x: -4 }}
+          onClick={() => onNavigateDate(addDaysToYmd(selectedDate, -1))}
+          aria-label={prevLabel}
+        >
+          <ChevronLeft size={14} strokeWidth={2} />
+          <span className="text-[10px] tracking-wide">{prevLabel}</span>
+        </motion.button>
+
+        <span className="text-[9px] tracking-widest text-white/15 uppercase">
+          {language === "vi" ? "vuốt để đổi ngày" : "swipe to change day"}
+        </span>
+
+        <motion.button
+          className="flex items-center gap-0.5 text-white/25 active:text-white/50"
+          whileTap={{ x: 4 }}
+          onClick={() => onNavigateDate(addDaysToYmd(selectedDate, 1))}
+          aria-label={nextLabel}
+        >
+          <span className="text-[10px] tracking-wide">{nextLabel}</span>
+          <ChevronRight size={14} strokeWidth={2} />
+        </motion.button>
+      </motion.div>
+
       {slots.map((slot) => {
         const slotBookings = bookingsBySlot.get(slot) ?? [];
         const isHour = slot % 60 === 0;
