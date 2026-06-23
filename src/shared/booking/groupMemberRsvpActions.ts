@@ -2,6 +2,7 @@
 
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
+import { handleLateDecline } from "@/shared/groupbooking/agentLateDecline";
 
 export type RsvpPageData =
   | {
@@ -202,6 +203,17 @@ export async function reportLateDecline(
 
   // Immediate organizer SMS — no delay, no cron wait
   void notifyOrganizerLateDeclne(b, bookingId, db, suggestedName, suggestedPhone);
+
+  // Minh: check waitlist + SMS suggested replacement fire-and-forget
+  void handleLateDecline(b.salon_id, {
+    booking_id: bookingId,
+    group_id: b.group_id,
+    member_name: b.client_name,
+    service_name: b.service_name,
+    start_at: b.start_at,
+    suggested_name: suggestedName ?? null,
+    suggested_phone: suggestedPhone ?? null,
+  });
 
   return { ok: true };
 }
