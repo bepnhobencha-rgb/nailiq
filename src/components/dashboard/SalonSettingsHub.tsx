@@ -36,6 +36,7 @@ import { AutoNoShowSettings } from "@/components/dashboard/AutoNoShowSettings";
 import { ClientSegmentSettings } from "@/components/dashboard/ClientSegmentSettings";
 import { WinBackSettings } from "@/components/dashboard/WinBackSettings";
 import { TaxSettingsHub } from "@/components/dashboard/TaxSettingsHub";
+import { GroupBookingHub } from "@/components/dashboard/GroupBookingHub";
 import { AiManagerHub } from "@/components/dashboard/AiManagerHub";
 import type { AiAgentFlags } from "@/shared/dashboard/aiAgentTypes";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
@@ -753,6 +754,16 @@ export function SalonSettingsHub({
           <section className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-4">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-nq-muted">Tax</p>
             <TaxSettingsHub slug={slug} />
+          </section>
+        ) : null}
+
+        {/* ── Group booking cutoff ─────────────────────────────── */}
+        {canManageSalonSettings ? (
+          <section className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-nq-muted">
+              Đặt lịch nhóm
+            </p>
+            <GroupBookingHub slug={slug} />
           </section>
         ) : null}
         </SettingsCategory>

@@ -6,6 +6,7 @@ import {
   loadRsvpPageData,
   confirmMemberAttendance,
   declineMemberAttendance,
+  reportLateDecline,
   type RsvpPageData,
 } from "@/shared/booking/groupMemberRsvpActions";
 
@@ -25,7 +26,16 @@ function formatSlotTime(isoUtc: string, timezone: string): string {
   }
 }
 
-type UIState = "loading" | "error" | "idle" | "declining" | "done_confirm" | "done_decline";
+type UIState =
+  | "loading"
+  | "error"
+  | "idle"
+  | "declining"
+  | "too_late"          // past cutoff → Minh handles
+  | "late_suggest"      // same as declining but for late path
+  | "done_confirm"
+  | "done_decline"
+  | "done_late";        // late decline submitted to Minh
 
 export default function GroupRsvpPage() {
   const searchParams = useSearchParams();
@@ -37,6 +47,7 @@ export default function GroupRsvpPage() {
   const [sugName, setSugName] = useState("");
   const [sugPhone, setSugPhone] = useState("");
   const [errorCode, setErrorCode] = useState("");
+  const [cutoffHours, setCutoffHours] = useState(2);
   const [isPending, startTransition] = useTransition();
 
   const t = lang === "en" ? EN : VI;
@@ -71,8 +82,29 @@ export default function GroupRsvpPage() {
         sugName.trim() || undefined,
         sugPhone.trim() || undefined,
       );
-      if (res.ok) { setUiState("done_decline"); }
-      else { setUiState("error"); setErrorCode(res.code ?? "unknown"); }
+      if (res.ok) {
+        setUiState("done_decline");
+      } else if (res.code === "too_late") {
+        // Past cutoff — switch to Minh-handled flow
+        setCutoffHours(res.cutoffHours ?? 2);
+        setUiState("too_late");
+      } else {
+        setUiState("error");
+        setErrorCode(res.code ?? "unknown");
+      }
+    });
+  }
+
+  function handleLateDeclineSubmit() {
+    if (!data?.ok) return;
+    startTransition(async () => {
+      await reportLateDecline(
+        data.bookingId,
+        token,
+        sugName.trim() || undefined,
+        sugPhone.trim() || undefined,
+      );
+      setUiState("done_late");
     });
   }
 
@@ -134,6 +166,83 @@ export default function GroupRsvpPage() {
           <p className="mt-2 text-sm text-nq-muted">
             {t.declinedBody(info.organizerName || t.theOrganizer)}
           </p>
+        </div>
+      </Shell>
+    );
+  }
+
+  // ── Too late → Minh takes over ───────────────────────────────────────────
+  if (uiState === "too_late") {
+    return (
+      <Shell>
+        <div className="text-center">
+          <p className="text-4xl">⏰</p>
+          <h1 className="mt-4 text-lg font-semibold text-white">{t.tooLateTitle(cutoffHours)}</h1>
+          <p className="mt-2 text-sm text-nq-muted">{t.tooLateBody}</p>
+          <div className="mt-6 space-y-3">
+            <button
+              onClick={() => setUiState("late_suggest")}
+              disabled={isPending}
+              className="w-full rounded-xl bg-nq-primary py-3 text-sm font-semibold text-black transition hover:opacity-90"
+            >
+              {t.tooLateCta}
+            </button>
+          </div>
+        </div>
+      </Shell>
+    );
+  }
+
+  // ── Late decline suggestion form ──────────────────────────────────────────
+  if (uiState === "late_suggest") {
+    return (
+      <Shell>
+        <div>
+          <button
+            onClick={() => setUiState("too_late")}
+            className="mb-4 flex items-center gap-1 text-xs text-nq-muted transition hover:text-white"
+          >
+            ← {t.back}
+          </button>
+          <h2 className="text-base font-semibold text-white">{t.suggestTitle}</h2>
+          <p className="mt-1 text-xs text-nq-muted">{t.lateSuggestSubtitle}</p>
+          <div className="mt-5 space-y-3">
+            <input
+              type="text"
+              placeholder={t.suggestNamePlaceholder}
+              value={sugName}
+              onChange={(e) => setSugName(e.target.value)}
+              className="w-full rounded-xl border border-nq-border/40 bg-nq-bg px-4 py-2.5 text-sm text-white placeholder:text-nq-muted focus:outline-none focus:ring-1 focus:ring-nq-primary/40"
+            />
+            <input
+              type="tel"
+              placeholder={t.suggestPhonePlaceholder}
+              value={sugPhone}
+              onChange={(e) => setSugPhone(e.target.value)}
+              className="w-full rounded-xl border border-nq-border/40 bg-nq-bg px-4 py-2.5 text-sm text-white placeholder:text-nq-muted focus:outline-none focus:ring-1 focus:ring-nq-primary/40"
+            />
+          </div>
+          <button
+            onClick={handleLateDeclineSubmit}
+            disabled={isPending}
+            className="mt-5 w-full rounded-xl bg-nq-primary py-3 text-sm font-semibold text-black transition hover:opacity-90 disabled:opacity-50"
+          >
+            {isPending ? t.sending : t.lateConfirmCta}
+          </button>
+        </div>
+      </Shell>
+    );
+  }
+
+  // ── Minh confirmed taking over ────────────────────────────────────────────
+  if (uiState === "done_late") {
+    const org = data?.ok ? data.organizerName : "";
+    return (
+      <Shell>
+        <div className="text-center">
+          <p className="text-4xl">🤖</p>
+          <h1 className="mt-4 text-lg font-semibold text-white">{t.doneLateTitle}</h1>
+          <p className="mt-2 text-sm text-nq-muted">{t.doneLateBody(org || t.theOrganizer)}</p>
         </div>
       </Shell>
     );
@@ -272,9 +381,19 @@ const VI = {
   suggestTitle: "Gợi ý người thay (không bắt buộc)",
   suggestSubtitle:
     "Nếu bạn biết ai có thể thay thế, hãy để lại thông tin để tổ chức thông báo cho họ.",
+  lateSuggestSubtitle:
+    "Không bắt buộc — nếu có người muốn lấy slot của bạn, Minh sẽ liên hệ họ ngay.",
   suggestNamePlaceholder: "Tên người thay",
   suggestPhonePlaceholder: "Số điện thoại",
   confirmDecline: "Xác nhận không tham dự",
+  lateConfirmCta: "Báo Minh xử lý",
+  tooLateTitle: (h: number) => `Còn dưới ${h} tiếng — quá thời hạn tự huỷ`,
+  tooLateBody:
+    "Không sao! Minh sẽ thông báo cho người tổ chức ngay và kiểm tra xem có ai trên danh sách chờ có thể lấp slot của bạn không.",
+  tooLateCta: "Nhờ Minh xử lý giúp tôi →",
+  doneLateTitle: "Minh đã nhận được!",
+  doneLateBody: (organizer: string) =>
+    `${organizer} vừa được thông báo. Minh đang kiểm tra danh sách chờ và sẽ sắp xếp nếu có người thay.`,
   confirmedTitle: "Đã xác nhận!",
   confirmedBody: (salon: string, date: string) =>
     `Bạn đã xác nhận tham dự tại ${salon} · ${date}. Hẹn gặp bạn sớm!`,
@@ -303,9 +422,19 @@ const EN = {
   suggestTitle: "Suggest a replacement (optional)",
   suggestSubtitle:
     "If you know someone who can take your slot, leave their info and the organizer will be notified.",
+  lateSuggestSubtitle:
+    "Optional — if you have someone in mind, Minh will reach out to them right away.",
   suggestNamePlaceholder: "Their name",
   suggestPhonePlaceholder: "Phone number",
   confirmDecline: "Confirm I won't attend",
+  lateConfirmCta: "Ask Minh to handle this →",
+  tooLateTitle: (h: number) => `Under ${h}h to go — past the self-serve window`,
+  tooLateBody:
+    "No worries! Minh will notify the organizer immediately and check if anyone on the waitlist can fill your slot.",
+  tooLateCta: "Let Minh handle it →",
+  doneLateTitle: "Minh is on it!",
+  doneLateBody: (organizer: string) =>
+    `${organizer} has been notified. Minh is checking the waitlist and will arrange a replacement if available.`,
   confirmedTitle: "You're confirmed!",
   confirmedBody: (salon: string, date: string) =>
     `We have you down for ${salon} · ${date}. See you soon!`,
