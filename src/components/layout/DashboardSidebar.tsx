@@ -503,16 +503,19 @@ export function DashboardSidebar({
     <aside
       // Hidden on mobile (bottom-bar takes over per §9.2).
       className={cn(
-        "hidden md:flex fixed inset-y-0 left-0 z-40 flex-col border-r border-nq-border/40 text-nq-foreground",
-        "transition-[width] duration-200 ease-out overflow-hidden",
+        "hidden md:flex fixed inset-y-0 left-0 z-40 flex-col border-r text-nq-foreground",
+        "transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] overflow-hidden",
       )}
       style={{
         width: showExpanded ? "15rem" : "4rem",
-        // Elevate the hover-expanded overlay so it clearly floats above content.
-        boxShadow: hoverOpen && collapsed ? "4px 0 24px rgba(0,0,0,0.5)" : undefined,
-        // When DRC is active it hoists --drc-page-bg onto <html>.
-        // 55% mix → sidebar is visibly tinted but clearly darker than DRC content.
-        background: "color-mix(in srgb, var(--drc-page-bg, #111214) 55%, #000000 45%)",
+        // Glass morphism: 88% of page bg (or DRC tint) + 12% transparent → semi-opaque
+        // with backdrop-blur creates depth without hiding the brand color.
+        background: "color-mix(in srgb, var(--drc-page-bg, #0d0e12) 88%, transparent 12%)",
+        backdropFilter: "blur(16px) saturate(1.3)",
+        borderColor: "rgba(255,255,255,0.06)",
+        boxShadow: hoverOpen && collapsed
+          ? "4px 0 40px rgba(0,0,0,0.55), inset -1px 0 0 rgba(255,255,255,0.05)"
+          : "inset -1px 0 0 rgba(255,255,255,0.03)",
       }}
       onMouseEnter={() => setHoverOpen(true)}
       onMouseLeave={() => setHoverOpen(false)}
@@ -561,7 +564,7 @@ export function DashboardSidebar({
       )}
 
       <nav
-        className="flex-1 overflow-y-auto px-2 py-3"
+        className="flex-1 overflow-y-auto px-2 py-3 nq-scrollbar-hide"
         aria-label={t.primaryNav}
       >
         {visibleSections.map((section, sectionIdx) => (

@@ -73,6 +73,15 @@
   --duration-nq-slow: var(--duration-nq-slow);
 }
 
+/* Hide scrollbar but keep scroll functional */
+.nq-scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.nq-scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* Liquid glass + hero motion (Tailwind + CSS only; no animation libs) */
 @keyframes shimmer {
   to {
