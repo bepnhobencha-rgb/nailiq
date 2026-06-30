@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
 import { logBookingEvent } from "@/shared/dashboard/auditLog";
+import { deliverStaffActionNotification } from "@/shared/notifications/deliverStaffActionNotification";
 
 export async function POST(req: Request) {
   let body: { token?: string };
@@ -19,7 +20,7 @@ export async function POST(req: Request) {
 
   const supabase = createServiceRoleClient();
 
-  // Pre-fetch booking details needed for waitlist notification
+  // Pre-fetch booking details needed for waitlist notification and cancel email
   const { data: tokenRow } = await supabase
     .from("booking_reminder_tokens" as never)
     .select("booking_id")
@@ -27,13 +28,19 @@ export async function POST(req: Request) {
     .maybeSingle();
   const tr = tokenRow as { booking_id: string } | null;
 
-  type BookingMeta = { salon_id: string; service_id: string; start_time_utc: string };
+  type BookingMeta = {
+    salon_id: string;
+    service_id: string;
+    start_time_utc: string;
+    client_email: string | null;
+    client_locale: string | null;
+  };
   let bookingMeta: BookingMeta | null = null;
   let salonSlug: string | null = null;
   if (tr) {
     const { data: bRow } = await supabase
       .from("bookings" as never)
-      .select("salon_id, service_id, start_time_utc")
+      .select("salon_id, service_id, start_time_utc, client_email, client_locale")
       .eq("id", tr.booking_id)
       .maybeSingle();
     bookingMeta = bRow as BookingMeta | null;
@@ -75,10 +82,11 @@ export async function POST(req: Request) {
     });
   }
 
-  // Fire waitlist notification email after response is sent
-  if (bookingMeta) {
-    const { salon_id, service_id, start_time_utc } = bookingMeta;
+  // Fire waitlist notification + cancel email after response is sent
+  if (bookingMeta && tr) {
+    const { salon_id, service_id, start_time_utc, client_email } = bookingMeta;
     const bookingDateYmd = start_time_utc.split("T")[0];
+    const bookingId = tr.booking_id;
     after(async () => {
       const sb = createServiceRoleClient();
       const [{ data: salonData }, { data: svcData }] = await Promise.all([
@@ -87,6 +95,21 @@ export async function POST(req: Request) {
       ]);
       const salonName = (salonData as { name: string } | null)?.name ?? "";
       const serviceName = (svcData as { name: string } | null)?.name ?? "";
+
+      // Send cancellation confirmation email to the customer
+      if (client_email) {
+        try {
+          await deliverStaffActionNotification(sb, {
+            salonId: salon_id,
+            bookingId,
+            event: "cancel",
+            channels: { email: true, sms: false },
+          });
+        } catch {
+          /* best-effort */
+        }
+      }
+
       await notifyWaitlistForSlot({ salonId: salon_id, salonName, serviceId: service_id, serviceName, bookingDateYmd });
     });
   }
