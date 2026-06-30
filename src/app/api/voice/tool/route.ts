@@ -396,6 +396,14 @@ async function handleConfirmBooking(
       bookingId,
       event: "new",
     });
+    void logBookingEvent({
+      bookingId,
+      salonId: String(salon.id),
+      actorUserId: null,
+      actorRole: "system",
+      eventType: "booking_created",
+      payload: { source: "voice" },
+    });
     // Unified no-show protection gate — runs AI agent when opted-in, falls
     // back to hard rules otherwise.  Voice has no in-session card capture.
     try {
@@ -1637,6 +1645,16 @@ async function handleConfirmGroupBooking(
         .update({ source: "voice", booking_channel: "voice" } as never)
         .in("id", bookingIds);
     } catch { /* best-effort */ }
+    bookingIds.forEach((id) =>
+      void logBookingEvent({
+        bookingId: id,
+        salonId: ctx.salonId,
+        actorUserId: null,
+        actorRole: "system",
+        eventType: "booking_created",
+        payload: { source: "voice_group", memberCount: bookingIds.length },
+      }),
+    );
     // Unified no-show protection gate — runs AI agent when opted-in, falls
     // back to hard rules otherwise.  Flag the lead (only it carries a phone).
     try {

@@ -1165,6 +1165,19 @@ export async function createDeskGroup(
     result.ok && Array.isArray(result.bookingIds) ? result.bookingIds[0] : null;
   if (leadId) await handleBookingProtection(leadId, ctx.salon.id, "group");
 
+  if (result.ok && Array.isArray(result.bookingIds)) {
+    result.bookingIds.forEach((id) =>
+      void logBookingEvent({
+        bookingId: id,
+        salonId: ctx.salon.id,
+        actorUserId: ctxActorUserId(ctx),
+        actorRole: ctxActorRole(ctx),
+        eventType: "booking_created",
+        payload: { source: "desk_group", memberCount: result.bookingIds!.length },
+      }),
+    );
+  }
+
   return result;
 }
 
