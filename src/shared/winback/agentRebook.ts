@@ -4,6 +4,7 @@ import { looseServiceClient, type Row } from "@/shared/integrations/square/loose
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
+import { listUnsubscribeHeaders, complianceFooterHtml, isEmailSuppressed } from "@/shared/lib/emailCompliance";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 
@@ -183,10 +184,28 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
       }
       if (ch.email && c.email) {
         const resend = getResendClient();
-        if (resend) {
+        const suppressed = await isEmailSuppressed(c.email).catch(() => false);
+        if (resend && !suppressed) {
           const esc = (x: string) => x.replace(/[<>&"]/g, (c2) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c2] ?? c2));
-          const html = `<div style="max-width:480px;margin:0 auto;font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a"><p style="font-size:15px;line-height:1.7;margin:0 0 16px">${esc(message)}</p><a href="${bookingUrl}" style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:14px">Book now</a><p style="font-size:12px;color:#999;margin-top:20px">${esc(salonName)}</p></div>`;
-          const { error } = await resend.emails.send({ from: getResendFrom(), to: c.email, subject: `Time for your next visit at ${salonName}`, html, text: `${message}\n\n${bookingUrl}`, ...(salonReplyEmail ? { replyTo: salonReplyEmail } : {}) });
+          const bodyHtml = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#faf9f7;">
+  <div style="max-width:480px;margin:0 auto;padding:28px 22px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#2a2a2a;">
+    <p style="margin:0 0 8px;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#888;">${esc(salonName)}</p>
+    <p style="margin:0 0 20px;font-size:15px;line-height:1.6;">${esc(message)}</p>
+    <p style="margin:0 0 22px;">
+      <a href="${bookingUrl}" style="display:inline-block;padding:13px 26px;background:#0a0a0a;color:#fff;text-decoration:none;border-radius:10px;font-weight:600;font-size:15px;">Book now</a>
+    </p>
+  </div>
+${complianceFooterHtml({ email: c.email, salonName, lang })}
+</body></html>`;
+          const { error } = await resend.emails.send({
+            from: getResendFrom(),
+            to: c.email,
+            subject: `Time for your next visit at ${salonName}`,
+            html: bodyHtml,
+            text: `${message}\n\n${bookingUrl}`,
+            headers: listUnsubscribeHeaders(c.email),
+            ...(salonReplyEmail ? { replyTo: salonReplyEmail } : {}),
+          });
           ok = ok || !error;
         }
       }

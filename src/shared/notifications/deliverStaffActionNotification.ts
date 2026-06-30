@@ -3,7 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
-import { unsubscribeUrl, listUnsubscribeHeaders } from "@/shared/lib/emailCompliance";
+import { listUnsubscribeHeaders, complianceFooterHtml, isEmailSuppressed } from "@/shared/lib/emailCompliance";
 import { logNotification } from "@/shared/lib/notificationLog";
 import {
   resolveCustomerLocale,
@@ -141,32 +141,44 @@ export async function deliverStaffActionNotification(
     const client = getResendClient();
     if (subject && body && client) {
       const to = row.client_email;
-      const footer =
-        locale === "en"
-          ? `\n\n— ${vars.salonName}\nUnsubscribe: ${unsubscribeUrl(to)}`
-          : `\n\n— ${vars.salonName}\nNgừng nhận email: ${unsubscribeUrl(to)}`;
-      try {
-        const res = await client.emails.send({
-          from: getResendFrom(),
-          to,
-          subject,
-          text: body + footer,
-          headers: listUnsubscribeHeaders(to),
-        });
-        emailSent = !res.error;
-        void logNotification({
-          bookingId: input.bookingId,
-          salonId: input.salonId,
-          notificationType: "booking_confirmation",
-          channel: "email",
-          clientPhone: to,
-          messageSid: res.data?.id,
-          bodyPreview: subject,
-          ok: emailSent,
-          errorMessage: res.error ? String(res.error) : null,
-        });
-      } catch (e) {
-        console.error("[deliverStaffActionNotification] email", e);
+      // Booking change notifications are transactional — no opt-out gate — but
+      // do skip suppressed addresses (hard bounces / spam complaints).
+      const suppressed = await isEmailSuppressed(to).catch(() => false);
+      if (!suppressed) {
+        const esc = (s: string) =>
+          s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#faf9f7;">
+  <div style="max-width:480px;margin:0 auto;padding:28px 22px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#2a2a2a;">
+    <p style="margin:0 0 8px;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#888;">${esc(vars.salonName)}</p>
+    <h1 style="margin:0 0 18px;font-size:18px;font-weight:600;color:#1a1a1a;">${esc(subject)}</h1>
+    <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#333;">${esc(body)}</p>
+  </div>
+${complianceFooterHtml({ email: to, salonName: vars.salonName, lang: locale })}
+</body></html>`;
+        try {
+          const res = await client.emails.send({
+            from: getResendFrom(),
+            to,
+            subject,
+            html,
+            text: body,
+            headers: listUnsubscribeHeaders(to),
+          });
+          emailSent = !res.error;
+          void logNotification({
+            bookingId: input.bookingId,
+            salonId: input.salonId,
+            notificationType: "booking_confirmation",
+            channel: "email",
+            clientPhone: to,
+            messageSid: res.data?.id,
+            bodyPreview: subject,
+            ok: emailSent,
+            errorMessage: res.error ? String(res.error) : null,
+          });
+        } catch (e) {
+          console.error("[deliverStaffActionNotification] email", e);
+        }
       }
     }
   }

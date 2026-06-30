@@ -34,7 +34,7 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
       .from("bookings")
       .select(
         `
-        id, salon_id, staff_id, service_id, client_email, client_phone,
+        id, salon_id, staff_id, service_id, client_email, client_phone, client_locale,
         start_time_utc,
         salons!inner ( id, name, slug, subscription_plan, plan_override, feature_flags, timezone, google_review_url, sms_reminders_enabled, sms_a2p_registered ),
         services ( name ),
@@ -83,6 +83,12 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
         ? String((row as { client_email: string }).client_email).trim()
         : "";
     if (!email) return;
+
+    const rawLocale =
+      typeof (row as { client_locale?: string | null }).client_locale === "string"
+        ? String((row as { client_locale: string }).client_locale)
+        : "";
+    const lang: "en" | "vi" = rawLocale.toLowerCase().startsWith("vi") ? "vi" : "en";
 
     // 2. Idempotency — bail if a review row exists for this booking.
     const { data: existing } = await supabase
@@ -160,11 +166,14 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
         staffName,
         reviewUrl,
         googleReviewUrl,
-      }).replace("</body>", `${complianceFooterHtml({ email, salonName, lang: "vi" })}</body>`);
+        lang,
+      }).replace("</body>", `${complianceFooterHtml({ email, salonName, lang })}</body>`);
       const res = await resend.emails.send({
         from: getResendFrom(),
         to: email,
-        subject: `Cảm ơn bạn — đánh giá dịch vụ tại ${salonName}`,
+        subject: lang === "vi"
+          ? `Cảm ơn bạn — đánh giá dịch vụ tại ${salonName}`
+          : `How was your visit at ${salonName}?`,
         html: reviewHtml,
         headers: listUnsubscribeHeaders(email),
       });
@@ -201,7 +210,9 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
       const toE164 = clientPhone.startsWith("+")
         ? clientPhone
         : `+${clientPhone}`;
-      const smsBody = `Cảm ơn bạn đã ghé ${salonName}! Đánh giá dịch vụ (30 giây): ${reviewUrl} · Reply STOP to opt out.`;
+      const smsBody = lang === "vi"
+        ? `Cảm ơn bạn đã ghé ${salonName}! Đánh giá dịch vụ (30 giây): ${reviewUrl} · Reply STOP to opt out.`
+        : `Thanks for visiting ${salonName}! Share your feedback (30 sec): ${reviewUrl} · Reply STOP to opt out.`;
       const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
       const { sendSmsReminder } = await import("@/shared/lib/twilioSms");
       const { logNotification } = await import("@/shared/lib/notificationLog");
@@ -232,39 +243,50 @@ function buildEmailHtml(input: {
   staffName: string;
   reviewUrl: string;
   googleReviewUrl?: string;
+  lang?: "en" | "vi";
 }): string {
   const { salonName, serviceName, staffName, reviewUrl, googleReviewUrl } = input;
+  const vi = input.lang === "vi";
+
   const serviceLine = serviceName
-    ? `<p style="margin: 0 0 8px 0;">Dịch vụ: <strong>${escapeHtml(serviceName)}</strong></p>`
+    ? `<p style="margin: 0 0 8px 0;">${vi ? "Dịch vụ" : "Service"}: <strong>${escapeHtml(serviceName)}</strong></p>`
     : "";
   const staffLine = staffName
-    ? `<p style="margin: 0 0 8px 0;">Thợ: <strong>${escapeHtml(staffName)}</strong></p>`
+    ? `<p style="margin: 0 0 8px 0;">${vi ? "Thợ" : "Technician"}: <strong>${escapeHtml(staffName)}</strong></p>`
     : "";
 
   const ctaBlock = googleReviewUrl
     ? `
       <p style="margin: 24px 0 12px 0;">
-        <a href="${googleReviewUrl}" style="display: inline-block; background: #d4af37; color: #111; padding: 12px 24px; border-radius: 999px; text-decoration: none; font-weight: 600;">⭐ Đánh giá 5 sao trên Google</a>
+        <a href="${googleReviewUrl}" style="display: inline-block; background: #d4af37; color: #111; padding: 12px 24px; border-radius: 999px; text-decoration: none; font-weight: 600;">⭐ ${vi ? "Đánh giá 5 sao trên Google" : "Leave a Google Review"}</a>
       </p>
       <p style="margin: 0 0 0 0;">
-        <a href="${reviewUrl}" style="display: inline-block; background: transparent; color: #555; border: 1px solid #ccc; padding: 10px 20px; border-radius: 999px; text-decoration: none; font-size: 13px;">Đánh giá trên NailIQ</a>
+        <a href="${reviewUrl}" style="display: inline-block; background: transparent; color: #555; border: 1px solid #ccc; padding: 10px 20px; border-radius: 999px; text-decoration: none; font-size: 13px;">${vi ? "Đánh giá trên NailIQ" : "Rate on NailIQ"}</a>
       </p>
     `
     : `
       <p style="margin: 24px 0;">
-        <a href="${reviewUrl}" style="display: inline-block; background: #d4af37; color: #111; padding: 12px 24px; border-radius: 999px; text-decoration: none; font-weight: 600;">Đánh giá dịch vụ</a>
+        <a href="${reviewUrl}" style="display: inline-block; background: #d4af37; color: #111; padding: 12px 24px; border-radius: 999px; text-decoration: none; font-weight: 600;">${vi ? "Đánh giá dịch vụ" : "Leave a Review"}</a>
       </p>
     `;
+
+  const headline = vi ? `Cảm ơn bạn đã ghé ${escapeHtml(salonName)}!` : `Thank you for visiting ${escapeHtml(salonName)}!`;
+  const body = vi
+    ? "Chúng tôi rất vui được phục vụ bạn. Nếu bạn có vài phút, vui lòng chia sẻ trải nghiệm."
+    : "We loved having you! If you have a minute, we'd love to hear how it went.";
+  const linkNote = vi
+    ? "Link NailIQ chỉ dành cho bạn — vui lòng không chia sẻ. Hết hạn sau 30 ngày."
+    : "This link is just for you — please don't share. Expires in 30 days.";
 
   return `
     <!doctype html>
     <html><body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #111;">
-      <h1 style="font-size: 20px; margin: 0 0 16px 0;">Cảm ơn bạn đã ghé ${escapeHtml(salonName)}!</h1>
-      <p style="margin: 0 0 16px 0;">Chúng tôi rất vui được phục vụ bạn hôm nay. Nếu bạn có vài phút, vui lòng chia sẻ trải nghiệm.</p>
+      <h1 style="font-size: 20px; margin: 0 0 16px 0;">${headline}</h1>
+      <p style="margin: 0 0 16px 0;">${body}</p>
       ${serviceLine}
       ${staffLine}
       ${ctaBlock}
-      <p style="font-size: 12px; color: #666; margin: 24px 0 0 0;">Link NailIQ chỉ dành cho bạn — vui lòng không chia sẻ. Hết hạn sau 30 ngày.</p>
+      <p style="font-size: 12px; color: #666; margin: 24px 0 0 0;">${linkNote}</p>
     </body></html>
   `.trim();
 }

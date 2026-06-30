@@ -1,5 +1,5 @@
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { getResendClient } from "@/shared/lib/resend";
+import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { complianceFooterHtml, listUnsubscribeHeaders, isEmailSuppressed } from "@/shared/lib/emailCompliance";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { logNotification } from "@/shared/lib/notificationLog";
@@ -212,8 +212,7 @@ async function sendWaitlistEmail(input: {
 
   const claimUrl = `${SITE_URL}/booking/waitlist-claim?token=${input.claimToken}`;
   const from =
-    (process.env.RESEND_FROM ?? "").trim() ||
-    `${input.salonName} <noreply@nailiq.ca>`;
+    getResendFrom();
 
   const html = `<!DOCTYPE html>
 <html lang="en">

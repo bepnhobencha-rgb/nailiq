@@ -4,6 +4,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
+import { listUnsubscribeHeaders, complianceFooterHtml, isEmailSuppressed } from "@/shared/lib/emailCompliance";
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
 
@@ -134,22 +135,29 @@ async function sendEmail(
 ): Promise<boolean> {
   const resend = getResendClient();
   if (!resend) return false;
+  // First-visit nurture is a marketing sequence — honour suppression list.
+  const suppressed = await isEmailSuppressed(to).catch(() => false);
+  if (suppressed) return false;
   const esc = (s: string) =>
     s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] ?? c));
   const bookingBtn = bookingUrl
-    ? `<a href="${bookingUrl}" style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:14px;margin-top:16px">Book again</a>`
+    ? `<p style="margin:0 0 22px;"><a href="${bookingUrl}" style="display:inline-block;padding:13px 26px;background:#0a0a0a;color:#fff;text-decoration:none;border-radius:10px;font-weight:600;font-size:15px;">Book again</a></p>`
     : "";
-  const html = `<div style="max-width:480px;margin:0 auto;font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a">
-  <p style="font-size:15px;line-height:1.7;margin:0 0 8px">${esc(text)}</p>
-  ${bookingBtn}
-  <p style="font-size:12px;color:#999;margin-top:20px">${esc(salonName)}</p>
-</div>`;
+  const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#faf9f7;">
+  <div style="max-width:480px;margin:0 auto;padding:28px 22px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#2a2a2a;">
+    <p style="margin:0 0 8px;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#888;">${esc(salonName)}</p>
+    <p style="margin:0 0 20px;font-size:15px;line-height:1.6;">${esc(text)}</p>
+    ${bookingBtn}
+  </div>
+${complianceFooterHtml({ email: to, salonName, lang: "en" })}
+</body></html>`;
   const { error } = await resend.emails.send({
     from: getResendFrom(),
     to,
     subject: `${salonName} — thank you for visiting`,
     html,
     text: bookingUrl ? `${text}\n\n${bookingUrl}` : text,
+    headers: listUnsubscribeHeaders(to),
     ...(replyTo ? { replyTo } : {}),
   });
   return !error;

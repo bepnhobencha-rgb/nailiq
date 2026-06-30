@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { getResendClient } from "@/shared/lib/resend";
+import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { complianceFooterHtml, listUnsubscribeHeaders, isEmailSuppressed } from "@/shared/lib/emailCompliance";
 
 export type ReminderEmailInput = {
@@ -282,8 +282,7 @@ export async function sendGroupReminderEmail(
   );
 
   const from =
-    (process.env.RESEND_FROM ?? "").trim() ||
-    `${input.salonName} <noreply@nailiq.ca>`;
+    getResendFrom();
 
   try {
     const { error } = await resend.emails.send({
@@ -331,8 +330,7 @@ export async function sendReminderEmail(
     `${complianceFooterHtml({ email: input.clientEmail, salonName: input.salonName })}</body>`,
   );
   const from =
-    (process.env.RESEND_FROM ?? "").trim() ||
-    `${input.salonName} <noreply@nailiq.ca>`;
+    getResendFrom();
 
   try {
     const { error } = await resend.emails.send({
