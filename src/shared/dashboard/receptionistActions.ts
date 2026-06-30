@@ -1176,6 +1176,42 @@ export async function createDeskGroup(
         payload: { source: "desk_group", memberCount: result.bookingIds!.length },
       }),
     );
+
+    // Confirmation email to organizer (only they carry an email address).
+    const organizer = input.members[0];
+    const organizerEmail = organizer?.email?.trim() || null;
+    if (leadId && organizerEmail) {
+      void (async () => {
+        try {
+          const { data: leadRow } = await db
+            .from("bookings")
+            .select("start_time_utc, price_cents, services!bookings_service_id_fkey(name), staff!bookings_staff_id_fkey(name)")
+            .eq("id", leadId)
+            .maybeSingle();
+          if (!leadRow) return;
+          const base = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+          await fetch(`${base}/api/booking-email`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-internal-secret": (process.env.INTERNAL_API_SECRET ?? "").trim(),
+            },
+            body: JSON.stringify({
+              bookingId: leadId,
+              shopSlug: slug,
+              clientName: organizer.name,
+              clientEmail: organizerEmail,
+              serviceName: (leadRow.services as { name?: string } | null)?.name ?? "",
+              staffName: (leadRow.staff as { name?: string } | null)?.name ?? "",
+              startTimeUtc: leadRow.start_time_utc,
+              totalPriceCents: leadRow.price_cents ?? null,
+            }),
+          });
+        } catch {
+          /* best-effort — email failure must not affect the booking */
+        }
+      })();
+    }
   }
 
   return result;
