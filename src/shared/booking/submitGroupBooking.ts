@@ -197,6 +197,14 @@ function fail(
   >,
   memberNumber: number | null = null,
 ): GroupBookingResult {
+  // Structured failures never throw, so without this they're invisible to
+  // error_logs/Sentry — inherits the booking.flow/salon.slug tags set on the
+  // scope at the top of submitGroupBooking.
+  Sentry.captureMessage(`group booking rejected: ${reason}`, {
+    level: "warning",
+    tags: { "booking.fail_reason": reason },
+    extra: { memberNumber },
+  });
   return { ok: false, reason, memberNumber };
 }
 
@@ -835,8 +843,14 @@ export async function submitGroupBooking(
   // (online group wizard) so it must NOT import the server-only gate here.
 
   // Group committed — now single-use-consume the OTP session (fire-and-forget).
+  // Relative URL only resolves in the browser; server callers (desk flow)
+  // need an absolute URL or this silently no-ops (session stays unconsumed).
   if (otpToConsume) {
-    void fetch("/api/booking-otp/consume-session", {
+    const consumeAppUrl =
+      typeof window !== "undefined"
+        ? ""
+        : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+    void fetch(`${consumeAppUrl}/api/booking-otp/consume-session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessionId: otpToConsume }),
