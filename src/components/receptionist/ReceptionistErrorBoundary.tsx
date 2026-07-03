@@ -34,10 +34,24 @@ export interface ReceptionistErrorBoundaryProps {
   salonSlug?: string;
 }
 
+/**
+ * Next.js throws this when a Server Action ID in the (stale) client bundle no
+ * longer exists on the freshly-deployed server — a new deployment landed while
+ * this tab was open (deploy skew). The cure is to reload and pull the matching
+ * bundle. https://nextjs.org/docs/messages/failed-to-find-server-action
+ */
+const STALE_DEPLOY_RE =
+  /was not found on the server|Failed to find Server Action|failed-to-find-server-action/i;
+
 interface State {
   hasError: boolean;
   /** True when the error was caused by a session expiry redirect (non-JSON server response). */
   isSessionExpired: boolean;
+  /**
+   * True when the error is a deploy-skew "Server Action not found" — this tab
+   * holds a stale bundle. We reload once to recover instead of dead-ending.
+   */
+  isStaleDeploy: boolean;
   /** Increments on retry to remount children. */
   retryNonce: number;
 }
@@ -46,7 +60,12 @@ export class ReceptionistErrorBoundary extends Component<
   ReceptionistErrorBoundaryProps,
   State
 > {
-  state: State = { hasError: false, isSessionExpired: false, retryNonce: 0 };
+  state: State = {
+    hasError: false,
+    isSessionExpired: false,
+    isStaleDeploy: false,
+    retryNonce: 0,
+  };
 
   static getDerivedStateFromError(error: Error): Partial<State> {
     // "An unexpected response was received from the server." is the Next.js
@@ -60,7 +79,10 @@ export class ReceptionistErrorBoundary extends Component<
     if (isSessionExpired && typeof window !== "undefined") {
       window.location.href = "/login";
     }
-    return { hasError: true, isSessionExpired };
+    // Deploy skew (stale Server Action). Render a neutral "updating" view while
+    // componentDidCatch reloads the tab — NOT the alarming retry card.
+    const isStaleDeploy = STALE_DEPLOY_RE.test(error.message ?? "");
+    return { hasError: true, isSessionExpired, isStaleDeploy };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
@@ -70,6 +92,27 @@ export class ReceptionistErrorBoundary extends Component<
       error.message?.includes("unexpected response") ||
       error.message?.includes("NEXT_REDIRECT")
     ) {
+      return;
+    }
+    // Deploy skew: a newer deployment changed Server Action IDs and this tab
+    // still runs the old bundle, so its action calls 404 on the server. Reload
+    // ONCE to fetch the matching bundle — turns a dead-end into a blink. Guard
+    // against reload loops: if a reload didn't fix it, fall back to the card.
+    if (STALE_DEPLOY_RE.test(error.message ?? "") && typeof window !== "undefined") {
+      const KEY = "nq-skew-reload-at";
+      const last = Number(window.sessionStorage.getItem(KEY) ?? "0");
+      if (Number.isNaN(last) || Date.now() - last > 15_000) {
+        try {
+          window.sessionStorage.setItem(KEY, String(Date.now()));
+        } catch {
+          /* storage blocked in some webviews — reload anyway */
+        }
+        window.location.reload();
+        return; // expected deploy skew, not a bug — don't report to Sentry
+      }
+      // Already reloaded moments ago and STILL failing → stop looping and show
+      // the manual retry card so staff aren't stuck in a reload cycle.
+      this.setState({ isStaleDeploy: false });
       return;
     }
     Sentry.captureException(error, {
@@ -100,6 +143,18 @@ export class ReceptionistErrorBoundary extends Component<
       // completes so staff don't see the error UI flash.
       if (this.state.isSessionExpired) {
         return null;
+      }
+      // Deploy-skew recovery: componentDidCatch is reloading the tab to pull
+      // the fresh bundle. Show a calm placeholder for the blink before reload
+      // (and the rare suppressed-reload-loop case) instead of an error card.
+      if (this.state.isStaleDeploy) {
+        return (
+          <div className="mx-auto flex min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] items-center justify-center px-4 py-10">
+            <p className="text-sm text-nq-muted" role="status">
+              Đang cập nhật phiên bản mới… · Updating to the latest version…
+            </p>
+          </div>
+        );
       }
       const { labels } = this.props;
       return (
