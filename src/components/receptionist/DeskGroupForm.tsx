@@ -38,6 +38,10 @@ import {
   type GroupArrivalPreference,
   type GroupSmartScheduleResult,
 } from "@/shared/booking/loadGroupSmartSchedule";
+import {
+  loadGroupDayTimeline,
+  type GroupDayTimelineResult,
+} from "@/shared/booking/loadGroupDayTimeline";
 import type { GroupBookingMember } from "@/shared/booking/submitGroupBooking";
 import { addonLabel } from "@/shared/booking/serviceLabels";
 import {
@@ -46,6 +50,7 @@ import {
 } from "@/shared/booking/staffCapability";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { salonToday } from "@/shared/lib/salonTime";
+import { hmToMinutes } from "@/shared/booking/hmToMinutes";
 import { GROUP_MAX_SIZE } from "@/shared/config/constants";
 import { MAX_WAVES } from "@/shared/booking/groupSchedulerCore";
 
@@ -129,6 +134,8 @@ const COPY = {
     evening: "Evening",
     specific: "Specific time",
     specificTime: "Pick a time",
+    checkingAvailability: "Checking availability…",
+    timelineBusy: "Booked",
     seatTogether: "Seat next to each other",
     findTimes: "Find times",
     finding: "Finding open times…",
@@ -201,6 +208,8 @@ const COPY = {
     evening: "Tối",
     specific: "Giờ cụ thể",
     specificTime: "Chọn giờ",
+    checkingAvailability: "Đang kiểm tra giờ trống…",
+    timelineBusy: "Đã có khách",
     seatTogether: "Ngồi cạnh nhau",
     findTimes: "Tìm giờ",
     finding: "Đang tìm giờ trống…",
@@ -273,6 +282,11 @@ export default function DeskGroupForm({
   );
   const [arrivalKind, setArrivalKind] = useState<ArrivalKind>("morning");
   const [specificTime, setSpecificTime] = useState("");
+  // Visual busy/free preview shown alongside the "Specific time" picker —
+  // purely additive: a fetch failure just leaves this null and the native
+  // time input above keeps working exactly as before.
+  const [dayTimeline, setDayTimeline] = useState<GroupDayTimelineResult | null>(null);
+  const [timelineLoading, setTimelineLoading] = useState(false);
   const [seatTogether, setSeatTogether] = useState(true);
 
   const [scheduling, setScheduling] = useState(false);
@@ -523,6 +537,45 @@ export default function DeskGroupForm({
     }
   }, [allServicesPicked, ymd, arrivalOk, arrivalPref, members, slug, tx]);
 
+  // ── Visual busy/free preview for "Specific time" ──────────────────
+  // Purely additive: on any failure this just leaves dayTimeline null and
+  // the native time input above (unaffected by this effect) keeps working.
+  const memberServicesKey = useMemo(
+    () => JSON.stringify(members.map((m) => [m.serviceId, m.addonServiceIds])),
+    [members],
+  );
+
+  useEffect(() => {
+    if (arrivalKind !== "specific" || !allServicesPicked || !ymd) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset preview when leaving specific-time mode
+      setDayTimeline(null);
+      return;
+    }
+    let cancelled = false;
+    setTimelineLoading(true);
+    loadGroupDayTimeline({
+      shopSlug: slug,
+      date: ymd,
+      members: members.map((m) => ({
+        serviceId: m.serviceId,
+        addonServiceIds: m.addonServiceIds,
+      })),
+    })
+      .then((res) => {
+        if (!cancelled) setDayTimeline(res);
+      })
+      .catch(() => {
+        if (!cancelled) setDayTimeline(null);
+      })
+      .finally(() => {
+        if (!cancelled) setTimelineLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- memberServicesKey is the stable proxy for members
+  }, [arrivalKind, allServicesPicked, ymd, memberServicesKey, slug]);
+
   // ── Create group ───────────────────────────────────────────────
   const createGroup = useCallback(async () => {
     if (submitting) return;
@@ -630,6 +683,12 @@ export default function DeskGroupForm({
         ? "bg-nq-primary text-white"
         : "bg-nq-surface text-nq-foreground hover:bg-nq-primary/15 border border-nq-muted/25"
     }`;
+  const tickCls = (active: boolean, feasible: boolean) => {
+    if (active) return "min-h-11 rounded-md bg-nq-primary px-1.5 py-1.5 text-xs font-medium text-white transition";
+    if (!feasible)
+      return "min-h-11 cursor-not-allowed rounded-md border border-nq-muted/15 bg-nq-surface/40 px-1.5 py-1.5 text-xs text-nq-muted/50 line-through transition";
+    return "min-h-11 rounded-md border border-nq-muted/25 bg-nq-surface px-1.5 py-1.5 text-xs text-nq-foreground transition hover:bg-nq-primary/15";
+  };
 
   if (!mounted) return null;
 
@@ -875,16 +934,70 @@ export default function DeskGroupForm({
                   ))}
                 </div>
                 {arrivalKind === "specific" ? (
-                  <input
-                    type="time"
-                    className={`${inputCls} mt-2 [color-scheme:dark]`}
-                    aria-label={tx.specificTime}
-                    value={specificTime}
-                    onChange={(e) => {
-                      setSpecificTime(e.target.value);
-                      setScheduleResult(null);
-                    }}
-                  />
+                  <>
+                    <input
+                      type="time"
+                      className={`${inputCls} mt-2 [color-scheme:dark]`}
+                      aria-label={tx.specificTime}
+                      value={specificTime}
+                      onChange={(e) => {
+                        setSpecificTime(e.target.value);
+                        setScheduleResult(null);
+                      }}
+                    />
+                    {timelineLoading ? (
+                      <div className="mt-2 grid grid-cols-4 gap-1.5 sm:grid-cols-6">
+                        {Array.from({ length: 12 }).map((_, i) => (
+                          <div
+                            key={i}
+                            className="h-11 animate-pulse rounded-md bg-nq-surface/60"
+                          />
+                        ))}
+                      </div>
+                    ) : dayTimeline && dayTimeline.ok ? (
+                      <div className="mt-2 space-y-2">
+                        {(["morning", "afternoon", "evening"] as const).map(
+                          (section) => {
+                            const sectionTicks = dayTimeline.ticks.filter((t) => {
+                              const mins = hmToMinutes(t.time);
+                              if (section === "morning") return mins < 720;
+                              if (section === "afternoon")
+                                return mins >= 720 && mins < 1020;
+                              return mins >= 1020;
+                            });
+                            if (sectionTicks.length === 0) return null;
+                            return (
+                              <div key={section}>
+                                <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-nq-muted">
+                                  {tx[section]}
+                                </div>
+                                <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">
+                                  {sectionTicks.map((t) => (
+                                    <button
+                                      key={t.time}
+                                      type="button"
+                                      disabled={!t.feasible}
+                                      title={!t.feasible ? tx.timelineBusy : undefined}
+                                      onClick={() => {
+                                        setSpecificTime(t.time);
+                                        setScheduleResult(null);
+                                      }}
+                                      className={tickCls(
+                                        specificTime === t.time,
+                                        t.feasible,
+                                      )}
+                                    >
+                                      {t.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          },
+                        )}
+                      </div>
+                    ) : null}
+                  </>
                 ) : null}
               </div>
               <label className="flex cursor-pointer items-center gap-2 text-sm text-nq-foreground">
