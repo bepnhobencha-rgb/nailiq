@@ -813,7 +813,6 @@ export const userVi: UserMessages = {
       saved: "Đã lưu.",
       saveError: "Không lưu được. Vui lòng thử lại.",
     },
-    hintRecoveryEmail: "",
     emailVerification: {
       sectionTitle: "Email thông báo",
       description:

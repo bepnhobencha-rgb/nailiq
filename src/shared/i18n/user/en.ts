@@ -715,7 +715,6 @@ export type UserMessages = {
       saved: string;
       saveError: string;
     };
-    hintRecoveryEmail: string;
     /** Recovery-email verification status block (Settings hub). */
     emailVerification: {
       sectionTitle: string;
@@ -3012,7 +3011,6 @@ export const userEn: UserMessages = {
       saved: "Saved.",
       saveError: "Could not save. Please try again.",
     },
-    hintRecoveryEmail: "",
     emailVerification: {
       sectionTitle: "Notification email",
       description:
