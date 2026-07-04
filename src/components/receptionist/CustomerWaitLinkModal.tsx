@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { QRCodeSVG } from "qrcode.react";
+
 import { cn } from "@/shared/lib/cn";
 
 /**
@@ -10,13 +12,15 @@ import { cn } from "@/shared/lib/cn";
  * because the Foundation Freeze list doesn't include a Modal yet —
  * this is a one-screen receptionist affordance, kept compact.
  *
- * QR is generated via the public `qrserver.com` endpoint so we
- * don't add a runtime dependency for a single use case. The URL
- * itself is harmless to share — guessing a 16-byte UUID is the
+ * QR is rendered LOCALLY via `qrcode.react` (same as DepositLinkModal /
+ * InviteQRModal / the booking-done panel). Previously this was the only
+ * QR in the app fetched from the external `api.qrserver.com` <img>
+ * endpoint — when that service was slow/blocked the image failed to load
+ * and left a blank white box the receptionist couldn't dismiss. Local
+ * generation removes that external dependency so the QR always renders.
+ * The URL itself is harmless to share — guessing a 16-byte UUID is the
  * effective bearer token.
  */
-
-const QR_API = "https://api.qrserver.com/v1/create-qr-code/";
 
 export type CustomerWaitLinkModalProps = {
   open: boolean;
@@ -66,8 +70,6 @@ export function CustomerWaitLinkModal({
 
   if (!open) return null;
 
-  const qrSrc = `${QR_API}?size=240x240&data=${encodeURIComponent(url)}`;
-
   const handleCopy = () => {
     navigator.clipboard
       .writeText(url)
@@ -113,13 +115,13 @@ export function CustomerWaitLinkModal({
         </p>
 
         <div className="mt-4 inline-flex items-center justify-center rounded-xl bg-white p-3">
-          {/* eslint-disable-next-line @next/next/no-img-element -- external QR endpoint, no Next/Image optimization needed */}
-          <img
-            alt={labels.title}
-            src={qrSrc}
-            width={240}
-            height={240}
-            className="h-60 w-60"
+          <QRCodeSVG
+            value={url}
+            size={240}
+            bgColor="#ffffff"
+            fgColor="#0b0c10"
+            level="M"
+            aria-label={labels.title}
           />
         </div>
 
