@@ -906,16 +906,33 @@ function findArrangementsInWindow(
   if (anchors.length === 0) return [];
 
   // ── PASS 1 — distinct START-TIME options (customer picks a time) ──────────
-  // Walk the window and offer up to MAX_TIME_OPTIONS aligned arrangements at
-  // times spaced ≥ MIN_TIME_GAP_MIN apart (e.g. 2:00 · 2:30 · 3:00), each
-  // keeping everyone's preferred staff. This is what a group customer actually
-  // wants: real time choices, not three staffing variants around one anchor.
+  // Walk the window and offer up to MAX_TIME_OPTIONS aligned arrangements,
+  // each keeping everyone's preferred staff. This is what a group customer
+  // actually wants: real time choices, not three staffing variants around
+  // one anchor.
+  //
+  // Gap between accepted options scales with how much of the window is
+  // actually reachable: MIN_TIME_GAP_MIN is a floor, not the target. With a
+  // fixed 30-min floor, a wide pill (e.g. "Afternoon" = 12–5pm) on a
+  // wide-open day greedily fills all 5 slots from the very start of the
+  // window (12:00/12:30/1:00/1:30/2:00) and never reaches later times the
+  // staff/customer actually wanted — the window's back half is simply
+  // unreachable. Spacing options across the full reachable span instead
+  // makes the 5 shown options representative of the whole pill, not just
+  // its opening minutes. "Specific time" mode keeps its existing behavior
+  // (90-min span / 5 options ≈ 30-min floor already, so this is a no-op there).
+  const reachableSpanMin =
+    anchors.length > 1 ? (anchors[anchors.length - 1] - anchors[0]) / 60_000 : 0;
+  const spreadGapMin = Math.max(
+    MIN_TIME_GAP_MIN,
+    Math.floor(reachableSpanMin / MAX_TIME_OPTIONS),
+  );
   const timeOptions: GroupArrangement[] = [];
   let lastAcceptedStartMs = -Infinity;
   for (const anchorMs of anchors) {
     if (timeOptions.length >= MAX_TIME_OPTIONS) break;
     // Space options out so we don't show 2:00 / 2:15 / 2:30 (no real choice).
-    if (anchorMs - lastAcceptedStartMs < MIN_TIME_GAP_MIN * 60_000) continue;
+    if (anchorMs - lastAcceptedStartMs < spreadGapMin * 60_000) continue;
     const aligned = tryAlignedArrangement(
       anchorMs,
       ctx.resolvedMembers,
