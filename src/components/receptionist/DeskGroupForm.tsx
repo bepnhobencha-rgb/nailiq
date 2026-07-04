@@ -541,7 +541,10 @@ export default function DeskGroupForm({
   // Purely additive: on any failure this just leaves dayTimeline null and
   // the native time input above (unaffected by this effect) keeps working.
   const memberServicesKey = useMemo(
-    () => JSON.stringify(members.map((m) => [m.serviceId, m.addonServiceIds])),
+    () =>
+      JSON.stringify(
+        members.map((m) => [m.serviceId, m.addonServiceIds, m.preferredStaffId]),
+      ),
     [members],
   );
 
@@ -559,6 +562,7 @@ export default function DeskGroupForm({
       members: members.map((m) => ({
         serviceId: m.serviceId,
         addonServiceIds: m.addonServiceIds,
+        preferredStaffId: m.preferredStaffId,
       })),
     })
       .then((res) => {
