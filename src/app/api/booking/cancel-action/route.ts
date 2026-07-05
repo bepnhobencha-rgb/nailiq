@@ -5,6 +5,148 @@ import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
 import { logBookingEvent } from "@/shared/dashboard/auditLog";
 import { deliverStaffActionNotification } from "@/shared/notifications/deliverStaffActionNotification";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
+import { chargeNoShowFee } from "@/shared/integrations/square/noshow";
+
+type BookingRow = {
+  salon_id: string;
+  service_id: string;
+  start_time_utc: string;
+  status: string | null;
+  client_email: string | null;
+  client_locale: string | null;
+  noshow_card_id: string | null;
+  noshow_consent_at: string | null;
+  noshow_fee_cents: number | null;
+  noshow_charge_status: string | null;
+  noshow_card_last4: string | null;
+  noshow_card_brand: string | null;
+};
+
+type SalonRow = {
+  slug: string | null;
+  currency_code: string | null;
+  self_cancel_fee_enabled: boolean | null;
+  self_cancel_window_hours: number | null;
+};
+
+/**
+ * Resolve a reminder token to its booking + salon and decide what a self-cancel
+ * would do RIGHT NOW: is the appointment already past (block), is it inside the
+ * salon's cancellation window (late), and would a fee be charged (late + saved
+ * card + consent + salon opted in). Shared by the GET preview (so the customer
+ * sees the fee BEFORE confirming) and the POST that performs the cancel.
+ */
+async function evaluateSelfCancel(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  token: string,
+): Promise<
+  | { ok: false; code: string }
+  | {
+      ok: true;
+      bookingId: string;
+      booking: BookingRow;
+      salon: SalonRow;
+      startPast: boolean;
+      withinWindow: boolean;
+      willCharge: boolean;
+      feeCents: number;
+    }
+> {
+  const { data: tokenRow } = await supabase
+    .from("booking_reminder_tokens" as never)
+    .select("booking_id, used_at, expires_at")
+    .eq("id", token)
+    .maybeSingle();
+  const tr = tokenRow as
+    | { booking_id: string; used_at: string | null; expires_at: string }
+    | null;
+  if (!tr) return { ok: false, code: "token_invalid" };
+  if (tr.used_at !== null || new Date(tr.expires_at) < new Date())
+    return { ok: false, code: "token_invalid" };
+
+  const { data: bRow } = await supabase
+    .from("bookings" as never)
+    .select(
+      "salon_id, service_id, start_time_utc, status, client_email, client_locale, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, noshow_card_last4, noshow_card_brand",
+    )
+    .eq("id", tr.booking_id)
+    .maybeSingle();
+  const booking = bRow as BookingRow | null;
+  if (!booking) return { ok: false, code: "booking_not_cancellable" };
+  if (booking.status !== "pending" && booking.status !== "confirmed")
+    return { ok: false, code: "booking_not_cancellable" };
+
+  const { data: salonRow } = await supabase
+    .from("salons" as never)
+    .select(
+      "slug, currency_code, self_cancel_fee_enabled, self_cancel_window_hours",
+    )
+    .eq("id", booking.salon_id)
+    .maybeSingle();
+  const salon = (salonRow as SalonRow | null) ?? {
+    slug: null,
+    currency_code: null,
+    self_cancel_fee_enabled: false,
+    self_cancel_window_hours: 24,
+  };
+
+  const now = Date.now();
+  const start = new Date(booking.start_time_utc).getTime();
+  const startPast = !Number.isFinite(start) || start <= now;
+  const windowHours =
+    salon.self_cancel_window_hours != null && salon.self_cancel_window_hours > 0
+      ? salon.self_cancel_window_hours
+      : 24;
+  const hoursUntil = (start - now) / 3_600_000;
+  const withinWindow = !startPast && hoursUntil < windowHours;
+
+  const feeCents = booking.noshow_fee_cents ?? 0;
+  const hasChargeableCard =
+    !!booking.noshow_card_id &&
+    !!booking.noshow_consent_at &&
+    feeCents > 0 &&
+    booking.noshow_charge_status !== "charged";
+  const willCharge =
+    salon.self_cancel_fee_enabled === true && withinWindow && hasChargeableCard;
+
+  return {
+    ok: true,
+    bookingId: tr.booking_id,
+    booking,
+    salon,
+    startPast,
+    withinWindow,
+    willCharge,
+    feeCents,
+  };
+}
+
+/**
+ * Preview endpoint — the cancel page fetches this on load so it can show the
+ * late-cancel fee warning (or "call the salon" for a past appointment) BEFORE
+ * the customer confirms. Read-only; never cancels or charges.
+ */
+export async function GET(req: Request) {
+  const token = (new URL(req.url).searchParams.get("token") ?? "").trim();
+  if (!token)
+    return NextResponse.json({ ok: false, code: "missing_token" }, { status: 400 });
+
+  const supabase = createServiceRoleClient();
+  const ev = await evaluateSelfCancel(supabase, token);
+  if (!ev.ok) return NextResponse.json({ ok: false, code: ev.code });
+
+  return NextResponse.json({
+    ok: true,
+    startPast: ev.startPast,
+    withinWindow: ev.withinWindow,
+    willCharge: ev.willCharge,
+    feeCents: ev.willCharge ? ev.feeCents : 0,
+    last4: ev.willCharge ? ev.booking.noshow_card_last4 : null,
+    brand: ev.willCharge ? ev.booking.noshow_card_brand : null,
+    currency: ev.salon.currency_code ?? "USD",
+    salonSlug: ev.salon.slug ?? null,
+  });
+}
 
 export async function POST(req: Request) {
   let body: { token?: string };
@@ -21,39 +163,21 @@ export async function POST(req: Request) {
 
   const supabase = createServiceRoleClient();
 
-  // Pre-fetch booking details needed for waitlist notification and cancel email
-  const { data: tokenRow } = await supabase
-    .from("booking_reminder_tokens" as never)
-    .select("booking_id")
-    .eq("id", token)
-    .maybeSingle();
-  const tr = tokenRow as { booking_id: string } | null;
-
-  type BookingMeta = {
-    salon_id: string;
-    service_id: string;
-    start_time_utc: string;
-    client_email: string | null;
-    client_locale: string | null;
-  };
-  let bookingMeta: BookingMeta | null = null;
-  let salonSlug: string | null = null;
-  if (tr) {
-    const { data: bRow } = await supabase
-      .from("bookings" as never)
-      .select("salon_id, service_id, start_time_utc, client_email, client_locale")
-      .eq("id", tr.booking_id)
-      .maybeSingle();
-    bookingMeta = bRow as BookingMeta | null;
-    if (bookingMeta?.salon_id) {
-      const { data: salonRow } = await supabase
-        .from("salons" as never)
-        .select("slug")
-        .eq("id", bookingMeta.salon_id)
-        .maybeSingle();
-      salonSlug = (salonRow as { slug?: string | null } | null)?.slug?.trim() ?? null;
-    }
+  const ev = await evaluateSelfCancel(supabase, token);
+  if (!ev.ok) {
+    return NextResponse.json({ ok: false, code: ev.code }, { status: 400 });
   }
+
+  // Bug fix: never let the self-serve link cancel an appointment that has
+  // already started (the token stays valid up to 2h past start). Past-start
+  // means the salon should decide (attended / no-show), not the customer.
+  if (ev.startPast) {
+    return NextResponse.json({ ok: false, code: "too_late" }, { status: 400 });
+  }
+
+  const { salon_id, service_id, start_time_utc, client_email } = ev.booking;
+  const bookingId = ev.bookingId;
+  const salonSlug = ev.salon.slug ?? null;
 
   const { data, error } = await supabase.rpc("cancel_booking_as_customer" as never, {
     p_token_id: token,
@@ -72,57 +196,73 @@ export async function POST(req: Request) {
   }
 
   // Audit log — customer cancelled via email link
-  if (tr && bookingMeta) {
-    void logBookingEvent({
-      bookingId: tr.booking_id,
-      salonId: bookingMeta.salon_id,
-      actorUserId: null,
-      actorRole: "public_guest",
-      eventType: "booking_cancelled",
-      payload: { reason: "customer_email_link" },
-    });
-  }
+  void logBookingEvent({
+    bookingId,
+    salonId: salon_id,
+    actorUserId: null,
+    actorRole: "public_guest",
+    eventType: "booking_cancelled",
+    payload: { reason: "customer_email_link", late: ev.withinWindow },
+  });
 
-  // Fire waitlist notification + cancel email after response is sent
-  if (bookingMeta && tr) {
-    const { salon_id, service_id, start_time_utc, client_email } = bookingMeta;
-    const bookingDateYmd = start_time_utc.split("T")[0];
-    const bookingId = tr.booking_id;
-    after(async () => {
-      // Owner/manager alert — customer self-cancelled via email link. This path
-      // previously left the owner silent; they most want to know here (freed
-      // slot / lost revenue). Best-effort, fire-and-forget.
-      void sendOwnerBookingNotification({
-        salonId: salon_id,
-        bookingId,
-        event: "cancel",
+  // Late-cancel fee — charge synchronously so the response can tell the customer
+  // exactly what happened. chargeNoShowFee is idempotent, re-guards card +
+  // consent + fee, and records saved→charged|failed. The booking is already
+  // cancelled above; a charge failure does not un-cancel it (mirrors no-show).
+  let feeCharged = false;
+  let feeCents = 0;
+  if (ev.willCharge) {
+    try {
+      const res = await chargeNoShowFee(bookingId, {
+        note: "Late cancellation fee",
       });
-
-      const sb = createServiceRoleClient();
-      const [{ data: salonData }, { data: svcData }] = await Promise.all([
-        sb.from("salons" as never).select("name").eq("id", salon_id).maybeSingle(),
-        sb.from("services" as never).select("name").eq("id", service_id).maybeSingle(),
-      ]);
-      const salonName = (salonData as { name: string } | null)?.name ?? "";
-      const serviceName = (svcData as { name: string } | null)?.name ?? "";
-
-      // Send cancellation confirmation email to the customer
-      if (client_email) {
-        try {
-          await deliverStaffActionNotification(sb, {
-            salonId: salon_id,
-            bookingId,
-            event: "cancel",
-            channels: { email: true, sms: false },
-          });
-        } catch {
-          /* best-effort */
-        }
-      }
-
-      await notifyWaitlistForSlot({ salonId: salon_id, salonName, serviceId: service_id, serviceName, bookingDateYmd });
-    });
+      feeCharged = res.charged;
+      if (res.charged) feeCents = ev.feeCents;
+    } catch (e) {
+      console.error("[cancel-action] late-cancel charge failed", e);
+    }
   }
 
-  return NextResponse.json({ ok: true, salonSlug });
+  // Owner alert + customer email + waitlist after the response is flushed.
+  const bookingDateYmd = start_time_utc.split("T")[0];
+  after(async () => {
+    // Owner/manager alert — customer self-cancelled via email link.
+    void sendOwnerBookingNotification({
+      salonId: salon_id,
+      bookingId,
+      event: "cancel",
+    });
+
+    const sb = createServiceRoleClient();
+    const [{ data: salonData }, { data: svcData }] = await Promise.all([
+      sb.from("salons" as never).select("name").eq("id", salon_id).maybeSingle(),
+      sb.from("services" as never).select("name").eq("id", service_id).maybeSingle(),
+    ]);
+    const salonName = (salonData as { name: string } | null)?.name ?? "";
+    const serviceName = (svcData as { name: string } | null)?.name ?? "";
+
+    // Send cancellation confirmation email to the customer
+    if (client_email) {
+      try {
+        await deliverStaffActionNotification(sb, {
+          salonId: salon_id,
+          bookingId,
+          event: "cancel",
+          channels: { email: true, sms: false },
+        });
+      } catch {
+        /* best-effort */
+      }
+    }
+
+    await notifyWaitlistForSlot({ salonId: salon_id, salonName, serviceId: service_id, serviceName, bookingDateYmd });
+  });
+
+  return NextResponse.json({
+    ok: true,
+    salonSlug,
+    feeCharged,
+    feeCents,
+    currency: ev.salon.currency_code ?? "USD",
+  });
 }

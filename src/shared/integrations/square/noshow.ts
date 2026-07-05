@@ -506,6 +506,9 @@ export async function chargeNoShowFee(
      *  charge must pass a fresh suffix, else Square dedups the key and just
      *  replays the original decline instead of re-attempting. */
     idempotencySuffix?: string;
+    /** Payment note/descriptor. Defaults to "No-show fee"; the late-cancel path
+     *  passes "Late cancellation fee" so the customer's statement is accurate. */
+    note?: string;
   },
 ): Promise<{ charged: boolean; reason: string; paymentId?: string }> {
   const db = looseServiceClient();
@@ -535,7 +538,7 @@ export async function chargeNoShowFee(
       customerId: str(b.noshow_customer_id),
       amountCents: feeCents,
       idempotencyKey: `noshow:${bookingId}${opts?.idempotencySuffix ? `:${opts.idempotencySuffix}` : ""}`,
-      note: "No-show fee",
+      note: opts?.note ?? "No-show fee",
       referenceId: `booking:${bookingId}`,
     });
     const charged = pay.status === "COMPLETED" || pay.status === "APPROVED";
