@@ -793,6 +793,7 @@ export async function submitGroupBooking(
         salonId: String(salonRow.id),
         bookingId: firstId,
         event: "new",
+        groupSize: result.booking_ids.length,
       });
     }
   }

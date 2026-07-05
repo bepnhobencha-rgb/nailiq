@@ -4,6 +4,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { parseTimeSlotOnDate } from "@/shared/booking/parseBookingTimeSlot";
 import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
+import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 
 type RescheduleBody = {
   token: string;
@@ -87,8 +88,20 @@ export async function POST(req: Request) {
 
   // Notify the first waitlist entry for the freed original slot
   const originalDateYmd = b.start_time_utc.split("T")[0];
+  const originalStartUtc = b.start_time_utc;
+  const bookingId = tr.booking_id;
   const { salon_id, service_id } = b;
   after(async () => {
+    // Owner/manager alert — customer self-rescheduled via email link. Booking
+    // now holds the NEW start; pass the original as previousStartUtc so the
+    // email shows old → new. Best-effort, fire-and-forget.
+    void sendOwnerBookingNotification({
+      salonId: salon_id,
+      bookingId,
+      event: "reschedule",
+      previousStartUtc: originalStartUtc,
+    });
+
     const sb = createServiceRoleClient();
     const [{ data: salonData }, { data: svcData }] = await Promise.all([
       sb.from("salons" as never).select("name").eq("id", salon_id).maybeSingle(),

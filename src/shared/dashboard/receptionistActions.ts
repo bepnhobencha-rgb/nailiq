@@ -1282,6 +1282,16 @@ export async function cancelDeskGroup(
     });
   }
 
+  // Owner/manager alert — group cancellation (best-effort, fire-and-forget,
+  // independent of the customer notify flags below). One email for the whole
+  // party, using the lead booking id.
+  void sendOwnerBookingNotification({
+    salonId: ctx.salon.id,
+    bookingId: ids[0],
+    event: "cancel",
+    groupSize: ids.length,
+  });
+
   // Notify the organizer (best-effort). Only member 0 carries a phone/email, so
   // enqueue ONE cancel notification for that lead row — same durable-queue +
   // 20s grace pattern as cancelDeskBooking. The cron only sends on channels the

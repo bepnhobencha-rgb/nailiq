@@ -4,6 +4,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
 import { logBookingEvent } from "@/shared/dashboard/auditLog";
 import { deliverStaffActionNotification } from "@/shared/notifications/deliverStaffActionNotification";
+import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 
 export async function POST(req: Request) {
   let body: { token?: string };
@@ -88,6 +89,15 @@ export async function POST(req: Request) {
     const bookingDateYmd = start_time_utc.split("T")[0];
     const bookingId = tr.booking_id;
     after(async () => {
+      // Owner/manager alert — customer self-cancelled via email link. This path
+      // previously left the owner silent; they most want to know here (freed
+      // slot / lost revenue). Best-effort, fire-and-forget.
+      void sendOwnerBookingNotification({
+        salonId: salon_id,
+        bookingId,
+        event: "cancel",
+      });
+
       const sb = createServiceRoleClient();
       const [{ data: salonData }, { data: svcData }] = await Promise.all([
         sb.from("salons" as never).select("name").eq("id", salon_id).maybeSingle(),
