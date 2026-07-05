@@ -231,9 +231,19 @@ Rules:
   try {
     const resp = await ai.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 400,
+      // Was 400 — too tight for "3-4 short paragraphs" of Vietnamese prose on
+      // an eventful day (many agent actions/alerts), which silently sent a
+      // mid-sentence cut-off email once observed in prod (Hi-Lite Studio,
+      // 2026-07-04: body ended "...tiệm đã có 1 lị"). Raised with headroom;
+      // the stop_reason guard below is the real backstop against this class
+      // of bug recurring for any reason.
+      max_tokens: 1024,
       messages: [{ role: "user", content: prompt }],
     });
+    // A response cut off mid-generation is worse than no digest at all — skip
+    // sending (caller treats null as "don't send today") rather than mail a
+    // broken half-sentence to the owner.
+    if (resp.stop_reason === "max_tokens") return null;
     const text = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
     return text.length > 50 ? text : null;
   } catch {
