@@ -25,6 +25,7 @@ import { createClient } from "@/shared/lib/supabase/server";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import {
   buildCapabilityMap,
+  isStaffCapableForService,
   type StaffCapabilityMap,
 } from "@/shared/booking/staffCapability";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
@@ -44,6 +45,13 @@ import {
 export type GroupDayTimelineMemberInput = {
   serviceId: string;
   addonServiceIds?: string[];
+  /** Customer's preferred staff. `null`/omitted = "Any" (checked against
+   *  every capable staff). When set, the sweep reports a tick as feasible
+   *  only if THIS staff is free — matching the real scheduler's strict
+   *  respect-preferred pass, so the timeline never shows "available" for a
+   *  time where the requested staff is actually busy (which would silently
+   *  reassign to someone else on submit). */
+  preferredStaffId?: string | null;
 };
 
 export type GroupDayTimelineParams = {
@@ -197,7 +205,7 @@ export async function loadGroupDayTimeline(
       serviceName: "",
       totalMinutes: svc.totalMin + addedMin,
       priceCents: null,
-      preferredStaffId: null,
+      preferredStaffId: m.preferredStaffId ?? null,
     });
   }
 
@@ -229,6 +237,17 @@ export async function loadGroupDayTimeline(
   }));
   const capability: StaffCapabilityMap =
     capabilityRows.length > 0 ? buildCapabilityMap(capabilityRows) : null;
+
+  // A member can reference a preferred staff that doesn't exist / isn't
+  // capable for their service (stale selection). Drop it silently so the
+  // sweep falls back to "any capable staff" for that member instead of
+  // reporting every tick infeasible — mirrors loadGroupSmartSchedule.ts.
+  for (const m of resolvedMembers) {
+    if (m.preferredStaffId === null) continue;
+    if (!staffById.has(m.preferredStaffId)) m.preferredStaffId = null;
+    else if (!isStaffCapableForService(capability, m.preferredStaffId, m.serviceId))
+      m.preferredStaffId = null;
+  }
 
   // 5. Existing occupancy for the date ---------------------------------
   const { startUtc, endUtc } = salonDayRangeUtc(params.date, timezone);
@@ -274,6 +293,9 @@ export async function loadGroupDayTimeline(
       continue;
     }
 
+    // respectPreferred=true: a member with an explicit preferred staff must
+    // have THAT staff free — members left on "Any" (null) still check
+    // every capable staff regardless of this flag (see tryAlignedArrangement).
     const aligned = tryAlignedArrangement(
       ms,
       resolvedMembers,
@@ -281,7 +303,7 @@ export async function loadGroupDayTimeline(
       staffById,
       capability,
       existing,
-      false,
+      true,
     );
     ticks.push({ time, label, feasible: aligned !== null });
   }
