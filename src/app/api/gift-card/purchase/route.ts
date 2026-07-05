@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
+import { GIFT_CARD_PURCHASE_ENABLED } from "@/shared/loyalty/giftCardConfig";
 
 function generateGiftCode(): string {
   const hex = crypto.randomUUID().replace(/-/g, "").toUpperCase();
@@ -8,6 +9,11 @@ function generateGiftCode(): string {
 }
 
 export async function POST(req: NextRequest) {
+  // Disabled until payment collection is wired — this endpoint used to mint a
+  // fully-redeemable voucher for free (public + unauthenticated). See giftCardConfig.
+  if (!GIFT_CARD_PURCHASE_ENABLED) {
+    return NextResponse.json({ error: "gift_cards_unavailable" }, { status: 503 });
+  }
   try {
     const body = await req.json();
     const { slug, valueCents, fromName, message, recipientPhone } = body as {
