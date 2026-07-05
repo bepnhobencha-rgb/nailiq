@@ -35,6 +35,10 @@
     {
       "path": "/api/cron/minh-learn",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/spend-sync",
+      "schedule": "0 8 * * *"
     }
   ]
 }
