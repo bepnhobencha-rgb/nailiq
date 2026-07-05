@@ -23,6 +23,9 @@ export type OwnerNotifyInput = {
   event: OwnerNotificationEvent;
   /** Previous start time (UTC ISO) for reschedule emails. */
   previousStartUtc?: string | null;
+  /** Party size for group bookings (>1). Renders a "Group · Nhóm · N" badge so
+   *  the owner knows the email represents a whole party, not one guest. */
+  groupSize?: number | null;
 };
 
 const EVENT_LABEL: Record<OwnerNotificationEvent, { en: string; vi: string }> = {
@@ -360,6 +363,15 @@ export async function sendOwnerBookingNotification(
       };
     }
 
+    // Group badge — email represents a whole party, not one guest.
+    const groupSize =
+      input.groupSize && input.groupSize > 1
+        ? Math.floor(input.groupSize)
+        : null;
+    const groupBadgeHtml = groupSize
+      ? ` <span style="display:inline-block;background:#ede9fe;color:#5b21b6;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px">👥 Group · Nhóm · ${groupSize}</span>`
+      : "";
+
     // ── Detail rows (only render what we actually have) ──
     const detail: Array<[string, string]> = [
       ["Service · Dịch vụ", durationMin ? `${serviceName} · ${durationMin} min` : serviceName],
@@ -395,7 +407,9 @@ export async function sendOwnerBookingNotification(
         )}</a>`
       : "";
 
-    const subject = `[${salonName}] ${label.en} / ${label.vi} — ${customer}`;
+    const subject = `[${salonName}] ${label.en} / ${label.vi} — ${customer}${
+      groupSize ? ` (Nhóm ${groupSize})` : ""
+    }`;
     const html = `<div style="margin:0;padding:24px 12px;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto"><tr><td>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0B0C10;border-radius:14px 14px 0 0"><tr>
@@ -407,7 +421,7 @@ export async function sendOwnerBookingNotification(
         <span style="display:inline-block;background:${style.badgeBg};color:${style.badgeText};font-size:13px;font-weight:700;padding:6px 13px;border-radius:999px">${style.emoji} ${esc(label.en)} · ${esc(label.vi)}</span>
         <p style="color:#6b7280;font-size:13px;margin:12px 0 0">${esc(salonName)}</p>
         <h1 style="font-size:22px;font-weight:800;color:#111827;margin:14px 0 8px">${esc(customer)}</h1>
-        <div><span style="display:inline-block;background:${custBadge.bg};color:${custBadge.fg};font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px">${esc(custBadge.text)}</span></div>
+        <div><span style="display:inline-block;background:${custBadge.bg};color:${custBadge.fg};font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px">${esc(custBadge.text)}</span>${groupBadgeHtml}</div>
         ${phoneHtml}
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;border:1px solid #eef0f2;border-radius:10px;margin:18px 0"><tr>
           <td style="padding:14px 16px">
@@ -436,6 +450,7 @@ export async function sendOwnerBookingNotification(
       `${label.en} / ${label.vi} — ${salonName}`,
       "",
       `Customer / Khách: ${customer} (${custBadge.text})`,
+      ...(groupSize ? [`Group / Nhóm: ${groupSize} người`] : []),
       ...(phone ? [`Phone / SĐT: ${phone}`] : []),
       `Service / Dịch vụ: ${serviceName}${durationMin ? ` · ${durationMin} min` : ""}`,
       ...(priceStr ? [`Price / Giá: ${priceStr}`] : []),
