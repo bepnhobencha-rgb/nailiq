@@ -440,6 +440,10 @@ export async function updateNoShowCardSettings(
     noshow_require_prior_noshow?: boolean;
     noshow_min_noshow_count?: number;
     noshow_require_high_risk?: boolean;
+    /** Charge the no-show fee % when a customer self-cancels late (opt-in). */
+    self_cancel_fee_enabled?: boolean;
+    /** Hours before start that a self-cancel counts as "late" (fee-eligible). */
+    self_cancel_window_hours?: number;
   },
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
@@ -480,6 +484,16 @@ export async function updateNoShowCardSettings(
       settings.noshow_deposit_escalation_threshold == null
         ? null
         : Math.min(10, Math.max(1, Math.round(settings.noshow_deposit_escalation_threshold)));
+  }
+  if (typeof settings.self_cancel_fee_enabled === "boolean") {
+    patch.self_cancel_fee_enabled = settings.self_cancel_fee_enabled;
+  }
+  if (settings.self_cancel_window_hours != null) {
+    // Clamp to a sane 1..168h (1 week) range.
+    patch.self_cancel_window_hours = Math.min(
+      168,
+      Math.max(1, Math.round(settings.self_cancel_window_hours)),
+    );
   }
   if (Object.keys(patch).length === 0) return { ok: true };
 

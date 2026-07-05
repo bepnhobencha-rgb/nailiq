@@ -69,6 +69,10 @@ type Props = {
   noshowDepositEscalationThreshold: number | null;
   noshowFeePercent: number;
   noshowRiskThreshold: number;
+  /** Charge the no-show fee % when a customer self-cancels late (opt-in). */
+  selfCancelFeeEnabled: boolean;
+  /** Hours before start that a self-cancel counts as "late" (fee-eligible). */
+  selfCancelWindowHours: number;
   summary: NoShowSummary;
   unconfirmed: UnconfirmedBooking[];
   waitlist: WaitlistOpportunity[];
@@ -588,6 +592,8 @@ export function NoShowProtectionHub({
   noshowDepositEscalationThreshold: initialEscalation,
   noshowFeePercent: initialNoshowPct,
   noshowRiskThreshold: initialNoshowThreshold,
+  selfCancelFeeEnabled: initialSelfCancelFee,
+  selfCancelWindowHours: initialSelfCancelWindow,
   summary,
   unconfirmed,
   waitlist,
@@ -633,6 +639,8 @@ export function NoShowProtectionHub({
   );
   const [noshowPct, setNoshowPct] = useState(String(initialNoshowPct));
   const [noshowThreshold, setNoshowThreshold] = useState(String(initialNoshowThreshold));
+  const [selfCancelFee, setSelfCancelFee] = useState(initialSelfCancelFee);
+  const [selfCancelWindow, setSelfCancelWindow] = useState(String(initialSelfCancelWindow));
   const [cardSaveMsg, setCardSaveMsg] = useState<string | null>(null);
 
   function saveCardSettings() {
@@ -650,6 +658,8 @@ export function NoShowProtectionHub({
         noshow_deposit_escalation_threshold: escalationOn
           ? parseInt(escalationThreshold, 10) || 2
           : null,
+        self_cancel_fee_enabled: selfCancelFee,
+        self_cancel_window_hours: parseInt(selfCancelWindow, 10) || 24,
       });
       setCardSaveMsg(r.ok ? "Đã lưu" : (r.error ?? "Lỗi"));
       setTimeout(() => setCardSaveMsg(null), 3000);
@@ -964,6 +974,55 @@ export function NoShowProtectionHub({
                   className="mt-1 w-24 rounded-lg border border-nq-border/50 bg-nq-bg px-2 py-1 text-sm text-nq-text"
                 />
               </div>
+            </div>
+
+            {/* Late self-cancel fee — charge the same % when a customer cancels
+                close to the appointment via the self-serve link. */}
+            <div className="mt-4 rounded-xl border border-nq-border/40 bg-nq-bg/40 p-3">
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={selfCancelFee}
+                  onChange={(e) => setSelfCancelFee(e.target.checked)}
+                  data-testid="self-cancel-fee-toggle"
+                  className="mt-0.5 h-4 w-4 accent-nq-primary"
+                />
+                <span className="text-sm text-nq-text">
+                  Tính phí khi khách tự huỷ trễ
+                  <span className="block text-xs text-nq-muted">
+                    Charge the no-show fee on a late self-cancellation
+                  </span>
+                </span>
+              </label>
+              {selfCancelFee ? (
+                <div className="ml-6 mt-2 flex items-center gap-2">
+                  <span className="text-xs text-nq-muted">Cửa sổ huỷ — huỷ trong vòng</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={168}
+                    value={selfCancelWindow}
+                    onChange={(e) => setSelfCancelWindow(e.target.value)}
+                    data-testid="self-cancel-window-hours"
+                    className="w-16 rounded-lg border border-nq-border/50 bg-nq-bg px-2 py-1 text-sm text-nq-text"
+                  />
+                  <span className="text-xs text-nq-muted">giờ trước hẹn → tính phí</span>
+                </div>
+              ) : null}
+              <p className="ml-6 mt-1 text-xs text-nq-muted">
+                {selfCancelFee ? (
+                  <>
+                    <span className="font-medium text-nq-text">Đang BẬT:</span> khách huỷ qua
+                    link trong cửa sổ này, nếu đã lưu thẻ + đồng ý, sẽ bị tính phí{" "}
+                    {noshowPct}% như no-show. Huỷ sớm hơn thì miễn phí.
+                  </>
+                ) : (
+                  <>
+                    <span className="font-medium text-nq-text">Đang TẮT:</span> khách tự huỷ
+                    lúc nào cũng miễn phí (có thể né phí no-show bằng cách huỷ sát giờ).
+                  </>
+                )}
+              </p>
             </div>
 
             <button
