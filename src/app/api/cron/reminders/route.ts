@@ -236,7 +236,7 @@ export async function GET(req: Request) {
     }
 
     const wantsEmail = !!booking.client_email;
-    const smsA2pRegistered = salon.sms_a2p_registered !== false; // default true — only explicit false blocks
+    const smsA2pRegistered = salon.sms_a2p_registered === true; // fail-safe: only an explicit true (A2P approved) permits US link-SMS; NULL/false → email-links mitigation
     let wantsSms   = salon.sms_reminders_enabled && !!booking.client_phone;
     // A2P 10DLC guardrail: US numbers require A2P registration; skip SMS if not registered.
     if (wantsSms && isUsPhone(booking.client_phone) && !smsA2pRegistered) {
