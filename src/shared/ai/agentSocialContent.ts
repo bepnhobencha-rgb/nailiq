@@ -103,22 +103,22 @@ async function gatherWeekStats(salonId: string, tz: string): Promise<WeekStats> 
       .select("id" as never)
       .eq("salon_id" as never, salonId)
       .in("status" as never, ["confirmed", "completed", "in_progress"])
-      .gte("start_time" as never, wkStart)
-      .lt("start_time" as never, wkEnd),
+      .gte("start_time_utc" as never, wkStart)
+      .lt("start_time_utc" as never, wkEnd),
     db
       .from("bookings" as never)
       .select("id" as never)
       .eq("salon_id" as never, salonId)
       .in("status" as never, ["confirmed", "completed", "in_progress"])
-      .gte("start_time" as never, lwStart)
-      .lt("start_time" as never, lwEnd),
+      .gte("start_time_utc" as never, lwStart)
+      .lt("start_time_utc" as never, lwEnd),
     db
       .from("bookings" as never)
       .select("service:service_id(name)" as never)
       .eq("salon_id" as never, salonId)
       .in("status" as never, ["confirmed", "completed", "in_progress"])
-      .gte("start_time" as never, wkStart)
-      .lt("start_time" as never, wkEnd),
+      .gte("start_time_utc" as never, wkStart)
+      .lt("start_time_utc" as never, wkEnd),
   ]);
 
   // Tally service popularity

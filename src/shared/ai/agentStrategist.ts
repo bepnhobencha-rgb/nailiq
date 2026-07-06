@@ -94,16 +94,16 @@ async function gatherAnalysis(salonId: string, tz: string): Promise<Analysis> {
   const [bookingsRes, clientsRes] = await Promise.all([
     db
       .from("bookings" as never)
-      .select("start_time, price_cents, status, client_profile_id, service:service_id(name)" as never)
+      .select("start_time_utc, price_cents, status, client_profile_id, service:service_id(name)" as never)
       .eq("salon_id" as never, salonId)
       .in("status" as never, ["completed", "confirmed", "in_progress", "cancelled", "no_show"])
-      .gte("start_time" as never, since28),
+      .gte("start_time_utc" as never, since28),
     db
       .from("bookings" as never)
       .select("client_profile_id" as never)
       .eq("salon_id" as never, salonId)
       .in("status" as never, ["completed", "confirmed", "in_progress"])
-      .gte("start_time" as never, since28),
+      .gte("start_time_utc" as never, since28),
   ]);
 
   const allBookings = (bookingsRes.data ?? []) as Row[];
@@ -119,7 +119,7 @@ async function gatherAnalysis(salonId: string, tz: string): Promise<Analysis> {
     const wkStart = new Date(wkEnd.getTime() - 7 * 864e5);
     const label = `Week of ${wkStart.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}`;
     const wkBookings = allBookings.filter((b) => {
-      const t = Date.parse(str(b.start_time));
+      const t = Date.parse(str(b.start_time_utc));
       return t >= wkStart.getTime() && t < wkEnd.getTime();
     });
     buckets.push({
@@ -131,8 +131,8 @@ async function gatherAnalysis(salonId: string, tz: string): Promise<Analysis> {
   }
 
   // ── Service trends ─────────────────────────────────────────────────────────
-  const recentBk = allBookings.filter((b) => Date.parse(str(b.start_time)) >= Date.parse(since14));
-  const priorBk = allBookings.filter((b) => Date.parse(str(b.start_time)) < Date.parse(since14));
+  const recentBk = allBookings.filter((b) => Date.parse(str(b.start_time_utc)) >= Date.parse(since14));
+  const priorBk = allBookings.filter((b) => Date.parse(str(b.start_time_utc)) < Date.parse(since14));
 
   const countBySvc = (arr: Row[]) => {
     const m = new Map<string, number>();
@@ -162,7 +162,7 @@ async function gatherAnalysis(salonId: string, tz: string): Promise<Analysis> {
   const slotMap = new Map<string, number>();
   for (const b of allBookings) {
     if (str(b.status) === "cancelled" || str(b.status) === "no_show") continue;
-    const t = str(b.start_time);
+    const t = str(b.start_time_utc);
     if (!t) continue;
     const dow = dowInTz(t, tz);
     const hour = hourInTz(t, tz);
