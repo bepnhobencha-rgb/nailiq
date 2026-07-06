@@ -165,7 +165,7 @@ test.describe("Waitlist advance cron", () => {
       .order("notified_at", { ascending: true })
       .limit(1)
       .maybeSingle();
-    expect((buggy as { id: string }).id).toBe(d1EntryId);
+    expect((buggy as unknown as { id: string }).id).toBe(d1EntryId);
 
     // FIXED — scoped to D2 + newest-first → the just-promoted C.
     const { data: fixed } = await pickerBase()
@@ -173,7 +173,8 @@ test.describe("Waitlist advance cron", () => {
       .order("notified_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    expect((fixed as { id: string; client_phone: string }).id).toBe(d2PromotedEntryId);
-    expect((fixed as { client_phone: string }).client_phone).toBe(PHONE_D2_PROMOTED);
+    const fixedRow = fixed as unknown as { id: string; client_phone: string };
+    expect(fixedRow.id).toBe(d2PromotedEntryId);
+    expect(fixedRow.client_phone).toBe(PHONE_D2_PROMOTED);
   });
 });
