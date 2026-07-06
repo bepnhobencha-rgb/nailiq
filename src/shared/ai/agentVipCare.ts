@@ -186,17 +186,17 @@ async function draftMessage(
 ): Promise<string> {
   const ai = getAI();
   if (!ai) {
-    // Fallback plain text — bilingual (Vietnamese first, then English).
+    // Fallback plain text — bilingual (English first, then Vietnamese).
     if (type === "birthday")
-      return `Chào ${client.name}, sinh nhật bạn sắp tới rồi — ${salonName} rất mong được cùng bạn ăn mừng! Đặt một buổi đặc biệt nhé:\n\nHi ${client.name}, your birthday is coming up — we'd love to celebrate with you at ${salonName}! Book a special visit:`;
+      return `Hi ${client.name}, your birthday is coming up — we'd love to celebrate with you at ${salonName}! Book a special visit:\n\nChào ${client.name}, sinh nhật bạn sắp tới rồi — ${salonName} rất mong được cùng bạn ăn mừng! Đặt một buổi đặc biệt nhé:`;
     if (type === "milestone")
-      return `Chào ${client.name}, bạn đã ghé ${salonName} lần thứ ${visitCount} — cảm ơn bạn rất nhiều! Một chút tri ân từ tiệm:\n\nHi ${client.name}, you've hit visit #${visitCount} at ${salonName} — thank you so much! As a token of our appreciation:`;
-    return `Chào ${client.name}, tiệm nhớ bạn lắm! Đã lâu chưa gặp — ${salonName} mong được đón bạn trở lại:\n\nHi ${client.name}, we've been thinking of you! It's been a little while — we'd love to see you again at ${salonName}:`;
+      return `Hi ${client.name}, you've hit visit #${visitCount} at ${salonName} — thank you so much! As a token of our appreciation:\n\nChào ${client.name}, bạn đã ghé ${salonName} lần thứ ${visitCount} — cảm ơn bạn rất nhiều! Một chút tri ân từ tiệm:`;
+    return `Hi ${client.name}, we've been thinking of you! It's been a little while — we'd love to see you again at ${salonName}:\n\nChào ${client.name}, tiệm nhớ bạn lắm! Đã lâu chưa gặp — ${salonName} mong được đón bạn trở lại:`;
   }
 
   // Bilingual output: Vietnamese first, then a blank line, then English.
   const bilingual =
-    "Write it in Vietnamese FIRST, then a blank line, then the English version. No emojis, no links (added separately). Return ONLY the two-language message text.";
+    "Write it in English FIRST, then a blank line, then the Vietnamese version. No emojis, no links (added separately). Return ONLY the two-language message text.";
   let prompt: string;
   if (type === "birthday") {
     prompt = `Write a warm, brief birthday message (1-2 sentences) for a VIP salon customer whose birthday is coming up in about a week. Customer name: ${client.name}. Salon: ${salonName}. Be personal and caring — invite them to celebrate with a visit. ${bilingual}`;
@@ -216,7 +216,7 @@ async function draftMessage(
     const clean = text.replace(/^["']|["']$/g, "").trim();
     return clean.length > 10 && clean.length <= 900
       ? clean
-      : `Chào ${client.name}, tiệm luôn nhớ bạn tại ${salonName}!\n\nHi ${client.name}, thinking of you at ${salonName}!`;
+      : `Hi ${client.name}, thinking of you at ${salonName}!\n\nChào ${client.name}, tiệm luôn nhớ bạn tại ${salonName}!`;
   } catch {
     return `Chào ${client.name}, tiệm luôn nhớ bạn tại ${salonName}!\n\nHi ${client.name}, thinking of you at ${salonName}!`;
   }
@@ -320,8 +320,8 @@ async function issueCareVoucher(
     : `$${Math.round(cfg.amountCents / 100)} off`;
   return {
     rewardLine:
-      `🎁 ${opts.giftPhraseVi}: ${labelVi} cho lần ghé tới — mã ${opts.code} (dùng trong ${cfg.validDays} ngày).\n` +
-      `${opts.giftPhraseEn}: ${labelEn} your next visit — code ${opts.code} (valid ${cfg.validDays} days).`,
+      `🎁 ${opts.giftPhraseEn}: ${labelEn} your next visit — code ${opts.code} (valid ${cfg.validDays} days).\n` +
+      `${opts.giftPhraseVi}: ${labelVi} cho lần ghé tới — mã ${opts.code} (dùng trong ${cfg.validDays} ngày).`,
   };
 }
 
