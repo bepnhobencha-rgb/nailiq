@@ -763,8 +763,12 @@ export async function reconcileNoShowFeeLinks(
           .eq("id", str(r.id));
         paid++;
       }
-    } catch {
-      // transient Square error — retry next run
+    } catch (e) {
+      // Best-effort — retry next run (behaviour unchanged). Log so a PERSISTENT
+      // failure — a customer who PAID the fee link but whose noshow_charge_status
+      // is stuck unresolved because its order never resolves — is diagnosable
+      // instead of silently swallowed.
+      console.error("[reconcileNoShowFeeLinks] order lookup/flip failed", { bookingId: str(r.id), orderId }, e);
     }
   }
   return { checked: rows.length, paid };

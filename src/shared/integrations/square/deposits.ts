@@ -258,8 +258,12 @@ export async function reconcileDeposits(salonId: string): Promise<{ checked: num
         await db.from("bookings").update(upd as never).eq("id", str(r.id));
         paid++;
       }
-    } catch {
-      // transient Square error — try again next run
+    } catch (e) {
+      // Best-effort — retry next run (behaviour unchanged). Log so a PERSISTENT
+      // failure — a customer who PAID but whose deposit is stuck at 'required'
+      // because its order never resolves — is diagnosable instead of silently
+      // swallowed.
+      console.error("[reconcileDeposits] order lookup/flip failed", { bookingId: str(r.id), orderId }, e);
     }
   }
   return { checked: rows.length, paid };
