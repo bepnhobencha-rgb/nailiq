@@ -29,6 +29,10 @@
       "schedule": "0 17 * * *"
     },
     {
+      "path": "/api/cron/noshow-card-nudge",
+      "schedule": "0 18,22 * * *"
+    },
+    {
       "path": "/api/cron/manager",
       "schedule": "0 * * * *"
     },
