@@ -203,6 +203,9 @@ export const bookingEn = {
   waitlistError: "Couldn't save your request. Try again.",
   waitlistPreferredTimeLabel: "Preferred time (optional)",
   waitlistAnyTime: "Any time",
+  waitlistInlineTitle: "Don't see the time you want?",
+  waitlistInlineSub: "Get notified the moment a matching spot opens up.",
+  waitlistInlineOpenCta: "Join the waitlist",
   /** Legacy banner copy when both fields are empty on Continue (prefer field-level bookingErrors.*). */
   contactRequiredError: "Please enter your name and phone.",
   pastTimeError:

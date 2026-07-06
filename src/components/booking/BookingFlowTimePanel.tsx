@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "@/shared/lib/motionClient";
 import { Button } from "@/components/ui/Button";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
@@ -70,6 +71,118 @@ export function BookingFlowTimePanel({
   onBack: () => void;
   onNext: () => void;
 }) {
+  // Inline waitlist join is offered even when slots exist (customer's preferred
+  // time is taken) — expanded on demand so it never distracts a normal booking.
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
+
+  const waitlistJoinedMsg = (
+    <p className="rounded-2xl border border-nq-success/35 bg-nq-success/12 px-4 py-3 text-center text-sm font-medium text-nq-success">
+      {t.waitlistJoined}
+    </p>
+  );
+
+  const waitlistFields = (
+    <>
+      <div className="space-y-4">
+        <div>
+          <label
+            htmlFor="booking-waitlist-name"
+            className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
+          >
+            {t.clientNameLabel}
+          </label>
+          <input
+            id="booking-waitlist-name"
+            type="text"
+            name="waitlistClientName"
+            autoComplete="name"
+            value={clientName}
+            inputMode="text"
+            autoCorrect="off"
+            maxLength={BOOKING_GUEST_NAME_MAX}
+            onChange={(e) => onClientNameChange(e.target.value)}
+            className="nq-booking-field"
+          />
+        </div>
+        <div>
+          <label
+            htmlFor="booking-waitlist-phone"
+            className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
+          >
+            {t.clientPhoneLabel}
+          </label>
+          <input
+            id="booking-waitlist-phone"
+            type="tel"
+            name="waitlistClientPhone"
+            autoComplete="tel"
+            inputMode="tel"
+            value={clientPhone}
+            onChange={(e) => onClientPhoneChange(e.target.value)}
+            className="nq-booking-field"
+          />
+        </div>
+        <div>
+          <label
+            htmlFor="booking-waitlist-email"
+            className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
+          >
+            {t.clientEmailLabel}
+          </label>
+          <input
+            id="booking-waitlist-email"
+            type="email"
+            name="waitlistClientEmail"
+            autoComplete="email"
+            inputMode="email"
+            value={clientEmail}
+            onChange={(e) => onClientEmailChange(e.target.value)}
+            className="nq-booking-field"
+            placeholder={t.clientEmailHint ?? ""}
+          />
+        </div>
+        {waitlistTimeOptions.length > 0 ? (
+          <div>
+            <label
+              htmlFor="booking-waitlist-time"
+              className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
+            >
+              {t.waitlistPreferredTimeLabel}
+            </label>
+            <select
+              id="booking-waitlist-time"
+              name="waitlistPreferredTime"
+              value={waitlistPreferredTime}
+              onChange={(e) => onWaitlistPreferredTimeChange(e.target.value)}
+              className="nq-booking-field"
+            >
+              <option value="">{t.waitlistAnyTime}</option>
+              {waitlistTimeOptions.map((label) => (
+                <option key={label} value={label}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+      </div>
+      {error ? (
+        <p className="text-sm text-nq-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <Button
+        type="button"
+        variant="secondary"
+        className="nq-booking-glass h-12 min-h-11 w-full border border-[var(--booking-border)] bg-transparent text-[var(--booking-text-muted)] shadow-none hover:bg-[var(--booking-bg-input)] disabled:cursor-not-allowed disabled:opacity-40"
+        disabled={waitlistSubmitting || waitlistContactInvalid}
+        onClick={onWaitlistSubmit}
+      >
+        {waitlistSubmitting ? t.waitlistSubmitting : t.waitlistNotifyCta}
+      </Button>
+    </>
+  );
+
   return (
     <motion.section
       key="time"
@@ -237,6 +350,7 @@ export function BookingFlowTimePanel({
             )}
           </div>
         ) : (
+          <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-3 lg:gap-5">
             {timeSlots.map((slot) => {
               const selected = timeSlot === slot.label;
@@ -304,6 +418,43 @@ export function BookingFlowTimePanel({
               );
             })}
           </div>
+          {/* Even when slots exist, invite the customer to the waitlist for a
+              time they can't find — this is what actually fills the queue. */}
+          <div className="mt-5">
+            {waitlistSlotJoined ? (
+              waitlistJoinedMsg
+            ) : waitlistOpen ? (
+              <div className="space-y-5" data-testid="waitlist-inline-form">
+                {waitlistFields}
+              </div>
+            ) : (
+              <button
+                type="button"
+                data-testid="waitlist-inline-open"
+                onClick={() => setWaitlistOpen(true)}
+                className="nq-booking-glass flex w-full items-center gap-3 rounded-2xl border border-dashed border-[var(--booking-border)] bg-transparent px-4 py-3 text-left transition-colors hover:bg-[var(--booking-bg-input)]"
+              >
+                <span
+                  aria-hidden
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--salon-primary)_16%,transparent)] text-[var(--salon-primary)]"
+                >
+                  🔔
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-[var(--booking-text)]">
+                    {t.waitlistInlineTitle}
+                  </span>
+                  <span className="block text-xs text-[var(--booking-text-muted)]">
+                    {t.waitlistInlineSub}
+                  </span>
+                </span>
+                <span className="shrink-0 whitespace-nowrap text-sm font-semibold text-[var(--salon-primary)]">
+                  {t.waitlistInlineOpenCta} →
+                </span>
+              </button>
+            )}
+          </div>
+          </>
         )}
       </div>
 
