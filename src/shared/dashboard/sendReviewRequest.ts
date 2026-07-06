@@ -204,7 +204,7 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
       typeof (row as { client_phone?: string | null }).client_phone === "string"
         ? String((row as { client_phone: string }).client_phone).trim()
         : "";
-    const smsA2pRegistered = salon.sms_a2p_registered !== false; // default true
+    const smsA2pRegistered = salon.sms_a2p_registered === true; // fail-safe: only an explicit true (A2P approved) permits US link-SMS
 
     if (smsEnabled && clientPhone && !(isUsPhone(clientPhone) && !smsA2pRegistered)) {
       const toE164 = clientPhone.startsWith("+")
