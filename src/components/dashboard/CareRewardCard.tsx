@@ -1,17 +1,24 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { updateBirthdayReward, type BirthdayReward } from "@/shared/loyalty/birthdayRewardActions";
+import {
+  updateCareReward,
+  type CareReward,
+  type CareRewardKind,
+} from "@/shared/loyalty/careRewardActions";
 
 type Props = {
   slug: string;
-  initial: BirthdayReward;
+  kind: CareRewardKind;
+  title: string;
+  description: string;
+  initial: CareReward;
 };
 
-/** Owner sets the AI VIP Care birthday gift. When set, the birthday email
- *  attaches a real voucher code. */
-export function BirthdayRewardCard({ slug, initial }: Props) {
-  const [type, setType] = useState<BirthdayReward["type"]>(initial.type);
+/** Owner sets an AI VIP Care reward (birthday or milestone gift). When set, that
+ *  email attaches a real voucher code. */
+export function CareRewardCard({ slug, kind, title, description, initial }: Props) {
+  const [type, setType] = useState<CareReward["type"]>(initial.type);
   const [percent, setPercent] = useState<string>(initial.percent ? String(initial.percent) : "15");
   const [amount, setAmount] = useState<string>(
     initial.amountCents ? String(Math.round(initial.amountCents / 100)) : "10",
@@ -23,7 +30,7 @@ export function BirthdayRewardCard({ slug, initial }: Props) {
   function save() {
     setMsg(null);
     start(async () => {
-      const res = await updateBirthdayReward(slug, {
+      const res = await updateCareReward(slug, kind, {
         type,
         percent: type === "percent" ? Number(percent) : null,
         amountCents: type === "amount" ? Math.round(Number(amount) * 100) : null,
@@ -35,17 +42,15 @@ export function BirthdayRewardCard({ slug, initial }: Props) {
 
   return (
     <div className="rounded-xl border border-[var(--color-nq-border,#e5e5e5)] p-5">
-      <h3 className="text-base font-semibold">🎂 Quà sinh nhật (AI VIP Care)</h3>
-      <p className="mt-1 text-sm text-[var(--color-nq-muted,#666)]">
-        Khi bật, email chúc mừng sinh nhật sẽ kèm một mã giảm giá thật cho khách.
-      </p>
+      <h3 className="text-base font-semibold">{title}</h3>
+      <p className="mt-1 text-sm text-[var(--color-nq-muted,#666)]">{description}</p>
 
       <div className="mt-4 flex flex-wrap items-end gap-4">
         <label className="flex flex-col text-sm">
           <span className="mb-1 font-medium">Loại quà</span>
           <select
             value={type}
-            onChange={(e) => setType(e.target.value as BirthdayReward["type"])}
+            onChange={(e) => setType(e.target.value as CareReward["type"])}
             className="rounded-lg border border-[var(--color-nq-border,#e5e5e5)] px-3 py-2"
           >
             <option value="none">Không tặng</option>
