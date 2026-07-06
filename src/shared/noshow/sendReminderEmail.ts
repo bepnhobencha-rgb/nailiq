@@ -150,6 +150,9 @@ export type GroupMember = {
   status: "pending" | "confirmed" | string;
   /** Own email distinct from organizer → gets their own individual reminder too */
   email?: string | null;
+  /** This member's OWN booking id — the individual reminder's confirm/reschedule/
+   *  cancel links must act on this, not the organizer's booking. */
+  bookingId?: string;
 };
 
 export type GroupReminderEmailInput = {
