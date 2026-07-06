@@ -93,15 +93,15 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
   // Latest booking per client
   const { data: latestRows } = await (db as ReturnType<typeof looseServiceClient>)
     .from("bookings" as never)
-    .select("client_profile_id, start_time" as never)
+    .select("client_profile_id, start_time_utc" as never)
     .eq("salon_id" as never, salonId)
     .in("client_profile_id" as never, ids)
-    .order("start_time" as never, { ascending: false });
+    .order("start_time_utc" as never, { ascending: false });
 
   const lastVisitMap = new Map<string, string>();
   for (const b of (latestRows ?? []) as Row[]) {
     const cid = str(b.client_profile_id);
-    if (!lastVisitMap.has(cid)) lastVisitMap.set(cid, str(b.start_time));
+    if (!lastVisitMap.has(cid)) lastVisitMap.set(cid, str(b.start_time_utc));
   }
 
   const out: VipClient[] = [];
@@ -297,9 +297,18 @@ export async function runVipCare(salonId: string): Promise<void> {
 
     const svc = createServiceRoleClient();
     const MILESTONES = [10, 25, 50];
+    // Anti-blast cap. This agent had never actually run (it queried a
+    // non-existent `start_time` column and silently no-op'd), so its dedupe log
+    // is empty — the first successful run would otherwise message EVERY
+    // currently-qualifying VIP at once (e.g. all VIPs inactive 30–60 days).
+    // Cap sends per salon per run so the backlog drains over several daily runs
+    // instead of blasting real customers in one pass; steady-state daily volume
+    // is well under this.
+    const MAX_SENDS_PER_RUN = 15;
     let sentCount = 0;
 
     for (const client of clients) {
+      if (sentCount >= MAX_SENDS_PER_RUN) break;
       // Skip customers who haven't opted into marketing communications.
       if (!client.marketingConsentAt) continue;
 

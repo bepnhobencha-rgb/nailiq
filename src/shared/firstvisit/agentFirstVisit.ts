@@ -7,6 +7,7 @@ import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { listUnsubscribeHeaders, complianceFooterHtml, isEmailSuppressed } from "@/shared/lib/emailCompliance";
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
+import { salonToday, salonDayRangeUtc } from "@/shared/lib/salonTime";
 
 /**
  * "Lần ghé đầu → chắc chắn có lần 2"
@@ -165,7 +166,7 @@ ${complianceFooterHtml({ email: to, salonName, lang: "en" })}
 
 // ─── Detection: find yesterday's completed first-time bookings ─────────────────
 
-async function detectFirstVisits(salonId: string): Promise<
+async function detectFirstVisits(salonId: string, tz: string): Promise<
   {
     bookingId: string;
     phone: string;
@@ -176,19 +177,24 @@ async function detectFirstVisits(salonId: string): Promise<
   }[]
 > {
   const db = looseServiceClient();
-  // Same-day window — cron runs at 20:00 salon time, 30 min after close.
-  // Detecting today's visits means warmth message arrives the same evening.
-  const today = new Date().toISOString().slice(0, 10);
-  const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+  // Same-day window in the SALON timezone — cron runs at 20:00 salon time,
+  // 30 min after close. bookings store start_time_utc; the day must be computed
+  // salon-local (using the UTC calendar day shifted the window a day forward for
+  // North-American salons — 20:00 PT = next-day UTC — and missed the business
+  // day that just closed).
+  const todayLocal = salonToday(tz);
+  const { startUtc, endUtc } = salonDayRangeUtc(todayLocal, tz);
 
-  // Completed bookings from today
+  // Completed bookings from today (salon-local). Columns are client_* /
+  // start_time_utc / service via FK — the table never had guest_* / service_name
+  // / start_time, so the old query 400'd and silently detected nobody.
   const { data: recent } = await db
     .from("bookings")
-    .select("id, guest_phone, guest_name, guest_email, service_name, start_time")
+    .select("id, client_phone, client_name, client_email, service:service_id(name), start_time_utc")
     .eq("salon_id", salonId)
     .eq("status", "completed")
-    .gte("start_time", `${today}T00:00:00`)
-    .lt("start_time", `${tomorrow}T00:00:00`);
+    .gte("start_time_utc", startUtc)
+    .lt("start_time_utc", endUtc);
 
   const rows = (recent ?? []) as Row[];
   if (rows.length === 0) return [];
@@ -197,7 +203,7 @@ async function detectFirstVisits(salonId: string): Promise<
   const svc = createServiceRoleClient();
   const results = [];
   for (const r of rows) {
-    const phone = str(r.guest_phone);
+    const phone = str(r.client_phone);
     if (!phone) continue;
     const bookingId = str(r.id);
 
@@ -206,7 +212,7 @@ async function detectFirstVisits(salonId: string): Promise<
       .from("bookings" as never)
       .select("id")
       .eq("salon_id", salonId)
-      .eq("guest_phone", phone)
+      .eq("client_phone", phone)
       .eq("status", "completed")
       .neq("id", bookingId)
       .limit(1);
@@ -215,10 +221,10 @@ async function detectFirstVisits(salonId: string): Promise<
       results.push({
         bookingId,
         phone,
-        name: str(r.guest_name) || "there",
-        email: str(r.guest_email) || null,
-        service: str(r.service_name) || null,
-        visitDate: str(r.start_time).slice(0, 10),
+        name: str(r.client_name) || "there",
+        email: str(r.client_email) || null,
+        service: str((r.service as Record<string, unknown> | null)?.name) || null,
+        visitDate: todayLocal,
       });
     }
   }
@@ -227,13 +233,22 @@ async function detectFirstVisits(salonId: string): Promise<
 
 // ─── Check conversion: has the client booked again? ───────────────────────────
 
-async function hasConverted(salonId: string, phone: string, afterDate: string): Promise<string | null> {
+async function hasConverted(
+  salonId: string,
+  phone: string,
+  afterDate: string,
+  excludeBookingId: string,
+): Promise<string | null> {
   const svc = createServiceRoleClient();
   const { data } = await svc
     .from("bookings" as never)
     .select("id")
     .eq("salon_id", salonId)
-    .eq("guest_phone", phone)
+    .eq("client_phone", phone)
+    // Exclude the first visit's OWN booking: afterDate is a date-only value
+    // (midnight), so a same-day walk-in's own booking (created that afternoon)
+    // would otherwise count as a "conversion" and kill its day-7/day-14 nudges.
+    .neq("id", excludeBookingId)
     .neq("status", "cancelled")
     .gt("created_at", afterDate)
     .limit(1)
@@ -266,10 +281,14 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
     const smsA2pRegistered = s.sms_a2p_registered === true; // US A2P 10DLC status
     const channelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
     const lang: "en" | "vi" = "en";
-    const todayYmd = new Date().toISOString().slice(0, 10);
+    const tz = str(s.timezone) || "America/Los_Angeles";
+    // Salon-local "today" — drives the `next_action_date <= today` due filter
+    // below. Using the UTC day fired scheduled steps a day early for salons
+    // behind UTC.
+    const todayYmd = salonToday(tz);
 
     // ── 1. Detect new first-time visitors and enroll them ──────────────────
-    const firstVisitors = await detectFirstVisits(salonId);
+    const firstVisitors = await detectFirstVisits(salonId, tz);
 
     // Build a set of phones that have opted into marketing communications.
     // First-visit nurture is marketing — only contact consented customers.
@@ -380,7 +399,7 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
       }
 
       // Check conversion first — stop the sequence if they booked again
-      const convertedId = await hasConverted(salonId, phone, firstVisitDate);
+      const convertedId = await hasConverted(salonId, phone, firstVisitDate, str(seq.first_booking_id));
       if (convertedId) {
         await svc
           .from("first_visit_sequences" as never)
