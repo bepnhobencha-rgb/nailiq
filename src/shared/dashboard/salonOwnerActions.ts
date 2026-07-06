@@ -7,6 +7,7 @@ import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { sendReviewRequest } from "@/shared/dashboard/sendReviewRequest";
+import { completeReferral } from "@/shared/referrals/completeReferral";
 import {
   NAILQ_DEMO_SLUG_COOKIE,
 } from "@/shared/lib/demoDashboardCookie";
@@ -544,6 +545,10 @@ export async function updateBookingStatus(
   if (nextStatus === "completed") {
     // Auto review request (Pro+) — fire-and-forget.
     void sendReviewRequest(bookingId);
+
+    // Referral reward — if this booking was booked via a referral code, issue
+    // both vouchers + email them now (fire-and-forget, idempotent no-op otherwise).
+    void completeReferral(bookingId);
 
     // Auto loyalty voucher — if trigger set rewards_earned > rewards_redeemed,
     // issue the voucher from app layer (fire-and-forget).

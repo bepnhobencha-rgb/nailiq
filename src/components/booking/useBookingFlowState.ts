@@ -1396,6 +1396,12 @@ export function useBookingFlowState(
         comboOverride: selectedCombo
           ? { comboId: selectedCombo.id, durationMinutes: selectedCombo.durationMinutes, priceCents: selectedCombo.priceCents }
           : undefined,
+        // Referral code from the landing URL (/<slug>?ref=CODE) — the wizard never
+        // changes the route, so it's still on window.location at submit time.
+        referralCode:
+          typeof window !== "undefined"
+            ? new URLSearchParams(window.location.search).get("ref")?.trim() || undefined
+            : undefined,
         verificationMethod:
           verificationAction === "none" ? "none"
           : otpSessionId ? "otp"

@@ -8,6 +8,7 @@ import {
 import { sendOnlineSaveCardLink } from "@/shared/booking/sendOnlineSaveCardLink";
 import { sendBookingConfirmationEmail } from "@/shared/booking/sendBookingConfirmationEmail";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { claimReferral } from "@/shared/referrals/claimReferral";
 
 type EmailInput = Parameters<typeof sendBookingConfirmationEmail>[0];
 
@@ -53,6 +54,9 @@ export async function runPublicBookingSideEffects(args: {
   risk?: EvaluateBookingNoShowInput;
   email?: EmailInput;
   stamp?: StampInput;
+  /** Present when the customer arrived via `/<slug>?ref=CODE` — links the
+   *  referral to this booking (rewards issue when the booking completes). */
+  referral?: { salonId: string; code: string; refereePhone: string; refereeBookingId: string };
 }): Promise<void> {
   after(async () => {
     const jobs: Promise<unknown>[] = [];
@@ -101,6 +105,13 @@ export async function runPublicBookingSideEffects(args: {
           })(),
         );
       }
+    }
+    if (args.referral) {
+      jobs.push(
+        claimReferral(args.referral).catch((e) =>
+          console.error("[publicBookingSideEffects] referral claim threw", e),
+        ),
+      );
     }
     await Promise.allSettled(jobs);
   });

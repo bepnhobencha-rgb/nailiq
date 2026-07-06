@@ -66,6 +66,9 @@ export type BookingParams = {
     durationMinutes: number;
     priceCents: number;
   } | null;
+  /** Referral code from `/<slug>?ref=CODE` — links this booking to a referral so
+   *  both parties get a reward voucher when the booking completes. Best-effort. */
+  referralCode?: string | null;
   /** Booking-surface language. Forwarded to the confirmation SMS so it's
    *  sent in the language the customer chose (defaults to vi server-side). */
   language?: "en" | "vi";
@@ -1004,6 +1007,14 @@ export async function submitPublicBooking(
           subtotalCents: totalPriceCents > 0 ? totalPriceCents : undefined,
           taxAmountCents: taxResult.taxAmountCents > 0 ? taxResult.taxAmountCents : undefined,
         },
+        referral: params.referralCode
+          ? {
+              salonId: String(salon.id),
+              code: params.referralCode,
+              refereePhone: phoneOk.digits,
+              refereeBookingId: bookingId,
+            }
+          : undefined,
       });
     } catch (e) {
       console.error("[submitPublicBooking] side-effects dispatch failed", e);
