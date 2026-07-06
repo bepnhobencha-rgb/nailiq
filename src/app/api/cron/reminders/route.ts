@@ -126,11 +126,12 @@ export async function GET(req: Request) {
   async function fetchGroupMembers(groupId: string): Promise<GroupMember[]> {
     const { data } = await supabase
       .from("bookings" as never)
-      .select("client_name, client_email, status, start_time_utc, services!bookings_service_id_fkey(name), staff(name)")
+      .select("id, client_name, client_email, status, start_time_utc, services!bookings_service_id_fkey(name), staff(name)")
       .eq("group_id", groupId)
       .in("status", ["pending", "confirmed"])
       .order("start_time_utc");
     return ((data ?? []) as {
+      id: string;
       client_name: string;
       client_email: string | null;
       status: string;
@@ -144,6 +145,7 @@ export async function GET(req: Request) {
       startTimeUtc: m.start_time_utc,
       status: m.status,
       email: m.client_email,
+      bookingId: m.id,
     }));
   }
 
@@ -199,9 +201,13 @@ export async function GET(req: Request) {
     // Send individual reminder to members with their own distinct email
     for (const m of members) {
       if (!m.email || m.email === booking.client_email) continue;
+      // The token MUST be bound to the member's OWN booking — the reminder email
+      // renders confirm/reschedule/cancel buttons from it, so an organizer-bound
+      // token let a member cancel/reschedule the ORGANIZER's appointment.
+      if (!m.bookingId) continue;
       if (await import("@/shared/lib/emailCompliance").then((mod) => mod.isEmailSuppressed(m.email!))) continue;
       const { sendReminderEmail } = await import("@/shared/noshow/sendReminderEmail");
-      const memberToken = await generateReminderToken(booking.id, booking.salon_id);
+      const memberToken = await generateReminderToken(m.bookingId, booking.salon_id);
       if (!memberToken) continue;
       await sendReminderEmail({
         tokenId: memberToken.id,
