@@ -73,6 +73,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "service_unavailable" }, { status: 503 });
   }
 
+  // Gate the whole transactional tool surface on the salon actually having voice
+  // AI enabled. The session-mint route already checks this, but this route was
+  // directly POST-able with a known slug and no auth — letting a caller
+  // create / cancel / reschedule bookings by phone even for salons with voice
+  // AI off. Re-check here so the enable flag is enforced at the mutation point.
+  {
+    const { data: salonRow } = await supabase
+      .from("salons")
+      .select("voice_ai_enabled")
+      .eq("slug", salonSlug)
+      .maybeSingle();
+    if (!salonRow) {
+      return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+    }
+    if ((salonRow as { voice_ai_enabled?: boolean | null }).voice_ai_enabled !== true) {
+      return NextResponse.json({ error: "voice_not_enabled" }, { status: 403 });
+    }
+  }
+
   try {
     if (toolName === "get_available_slots") {
       return handleGetAvailableSlots(supabase, salonSlug, toolArgs);

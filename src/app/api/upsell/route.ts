@@ -46,7 +46,7 @@ export async function GET(req: Request) {
   // Get last 10 bookings for this customer+salon
   const { data: bookings } = await db
     .from("bookings")
-    .select("service_id, addon_service_id")
+    .select("service_id, addon_service_id, client_locale")
     .eq("salon_id", salonId)
     .eq("client_phone", phone)
     .eq("status", "completed")
@@ -86,10 +86,18 @@ export async function GET(req: Request) {
 
   // Log the suggestion
   const frequency = Math.round((topAddon[1] / bookings.length) * 100);
-  const reason =
-    plan === "vi"
-      ? `Bạn thường thêm dịch vụ này (${frequency}% lần ghé thăm)`
-      : `You usually add this (${frequency}% of your visits)`;
+  // Language for the copy — NOT the plan tier (the old `plan === "vi"` compared
+  // the subscription plan against a locale code, so it was always false and VN
+  // customers always got English). Prefer an explicit ?lang, else the customer's
+  // stored locale from their most recent booking, else English.
+  const langParam = (searchParams.get("lang") ?? "").toLowerCase();
+  const storedLocale = String(
+    (bookings[0] as { client_locale?: string | null } | undefined)?.client_locale ?? "",
+  ).toLowerCase();
+  const isVi = langParam.startsWith("vi") || storedLocale.startsWith("vi");
+  const reason = isVi
+    ? `Bạn thường thêm dịch vụ này (${frequency}% lần ghé thăm)`
+    : `You usually add this (${frequency}% of your visits)`;
 
   await db.from("ai_upsell_log").insert({
     salon_id: salonId,

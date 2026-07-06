@@ -23,6 +23,7 @@ import { saveNoShowCardAction, reuseNoShowCardAction } from "@/shared/noshow/sav
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { computeTax } from "@/shared/tax/computeTax";
 import type { TaxLine } from "@/shared/tax/taxTypes";
+import { healthAckRequired } from "@/shared/lib/healthAck";
 
 export type BookingParams = {
   shopSlug: string;
@@ -271,7 +272,7 @@ export async function submitPublicBooking(
   const { data: salon, error: salonErr } = await supabase
     .from("salons")
     .select(
-      "id, profile_complete, opening_hours, subscription_plan, plan_override, feature_flags, phone_otp_enabled, booking_lead_minutes, timezone, tax_lines",
+      "id, profile_complete, opening_hours, subscription_plan, plan_override, feature_flags, phone_otp_enabled, booking_lead_minutes, timezone, tax_lines, vertical, health_ack_required",
     )
     .eq("slug", shopSlug)
     .single();
@@ -285,6 +286,20 @@ export async function submitPublicBooking(
   });
 
   if (!salon.profile_complete) throw new Error("salon_not_live");
+
+  // Server-side enforce the health acknowledgment for verticals/salons that
+  // require it. The booking panel already gates the tick client-side, but this
+  // runs with the anon key, so a hand-crafted request must not slip through
+  // required-but-unticked (the tick is legal evidence, not just UX).
+  if (
+    healthAckRequired(
+      (salon as { health_ack_required?: boolean | null }).health_ack_required,
+      (salon as { vertical?: string | null }).vertical,
+    ) &&
+    params.healthAck !== true
+  ) {
+    throw new Error("health_ack_required");
+  }
 
   // Validate OTP session when the salon requires phone verification.
   // Note: submitPublicBooking runs in the browser (no "use server") so we use
@@ -419,8 +434,29 @@ export async function submitPublicBooking(
     throw new Error("cannot_book_past");
   }
 
-  const mainBlockMin = comboOverride
-    ? comboOverride.durationMinutes
+  // Combo price + duration are SERVER-authoritative: never trust the client's
+  // comboOverride. Re-derive both from service_combos (mirrors the add-on
+  // pattern) so a tampered client can't book a combo at an arbitrary price.
+  let combo: { comboId: string; priceCents: number; durationMinutes: number } | null = null;
+  if (comboOverride) {
+    const { data: comboRow } = await supabase
+      .from("service_combos" as never)
+      .select("id, price_cents, duration_minutes")
+      .eq("id" as never, comboOverride.comboId)
+      .eq("salon_id" as never, salon.id)
+      .eq("is_active" as never, true)
+      .maybeSingle();
+    if (!comboRow) throw new Error("combo_not_found");
+    const c = comboRow as { price_cents?: unknown; duration_minutes?: unknown };
+    combo = {
+      comboId: comboOverride.comboId,
+      priceCents: Number(c.price_cents) || 0,
+      durationMinutes: Number(c.duration_minutes) || 60,
+    };
+  }
+
+  const mainBlockMin = combo
+    ? combo.durationMinutes
     : serviceBlockMinutes(service.duration_minutes, service.buffer_minutes);
 
   let addonBlockMin = 0;
@@ -499,8 +535,8 @@ export async function submitPublicBooking(
     }
   }
 
-  const priceSnapshot = comboOverride
-    ? comboOverride.priceCents
+  const priceSnapshot = combo
+    ? combo.priceCents
     : service.price_cents != null
       ? Number(service.price_cents)
       : null;
