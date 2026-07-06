@@ -37,6 +37,42 @@ function isSessionExpiryError(msg: string): boolean {
   return msg.includes("unexpected response") || msg.includes("NEXT_REDIRECT");
 }
 
+const STALE_DEPLOY_RE =
+  /was not found on the server|Failed to find Server Action|failed-to-find-server-action/i;
+
+/**
+ * Deploy skew: a new deployment changed Server Action IDs while this tab still
+ * runs the old bundle, so its action calls 404 with "Server Action <hash> was
+ * not found on the server". Reload ONCE to pull the matching bundle — recovers
+ * the user (e.g. a receptionist mid-action) instead of a dead-end. A 15s
+ * sessionStorage guard (shared with ReceptionistErrorBoundary) prevents a
+ * reload loop if a reload doesn't help.
+ *
+ * This is the app-wide safety net: the error boundary only catches errors
+ * thrown during React RENDER, but server actions invoked from event handlers /
+ * transitions reject here (window error / unhandledrejection) and would
+ * otherwise never auto-recover. The real root-cause fix is enabling Vercel
+ * Skew Protection (pins clients to their deployment); this mitigates until then
+ * and covers tabs left open past the skew-protection window.
+ *
+ * Returns true when handled — the caller then skips reporting (expected skew,
+ * not a bug worth alerting on).
+ */
+function maybeRecoverFromStaleDeploy(msg: string): boolean {
+  if (!STALE_DEPLOY_RE.test(msg)) return false;
+  try {
+    const KEY = "nq-skew-reload-at";
+    const last = Number(window.sessionStorage.getItem(KEY) ?? "0");
+    if (Number.isNaN(last) || Date.now() - last > 15_000) {
+      window.sessionStorage.setItem(KEY, String(Date.now()));
+      window.location.reload();
+    }
+  } catch {
+    /* storage blocked in some webviews — nothing to report either way */
+  }
+  return true;
+}
+
 function isUnactionableNoise(msg: string): boolean {
   // "Script error." is the browser's cross-origin security mask: when a script loaded from
   // a different origin (e.g. Supabase Realtime, or any CDN asset) throws, the browser strips
@@ -51,6 +87,7 @@ if (typeof window !== "undefined") {
   window.addEventListener("error", (e) => {
     const msg = e.message || (e.error instanceof Error ? e.error.message : "Unknown error");
     if (isSessionExpiryError(String(msg))) return;
+    if (maybeRecoverFromStaleDeploy(String(msg))) return;
     if (isUnactionableNoise(String(msg))) return;
     reportClientError(String(msg), e.error instanceof Error ? (e.error.stack ?? null) : null, "error");
   });
@@ -58,6 +95,7 @@ if (typeof window !== "undefined") {
     const r = e.reason;
     const msg = r instanceof Error ? r.message : typeof r === "string" ? r : "Unhandled promise rejection";
     if (isSessionExpiryError(String(msg))) return;
+    if (maybeRecoverFromStaleDeploy(String(msg))) return;
     if (isUnactionableNoise(String(msg))) return;
     reportClientError(String(msg), r instanceof Error ? (r.stack ?? null) : null, "error");
   });
