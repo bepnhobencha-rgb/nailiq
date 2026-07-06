@@ -6,6 +6,8 @@ import { listGiftCards } from "@/shared/loyalty/giftCardActions";
 import { getEffectivePlan } from "@/shared/lib/subscriptionPlans";
 import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { LoyaltySetupClient } from "@/components/dashboard/LoyaltySetupClient";
+import { BirthdayRewardCard } from "@/components/dashboard/BirthdayRewardCard";
+import type { BirthdayReward } from "@/shared/loyalty/birthdayRewardActions";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +30,7 @@ export default async function LoyaltySetupPage({ params }: Props) {
 
   const { data: salonRow } = await supabase
     .from("salons" as never)
-    .select("subscription_plan, plan_override, feature_flags")
+    .select("subscription_plan, plan_override, feature_flags, birthday_reward_type, birthday_reward_percent, birthday_reward_amount_cents, birthday_reward_valid_days")
     .eq("id", salon.id)
     .maybeSingle();
 
@@ -36,6 +38,16 @@ export default async function LoyaltySetupPage({ params }: Props) {
     subscription_plan?: string | null;
     plan_override?: string | null;
     feature_flags?: Record<string, unknown> | null;
+    birthday_reward_type?: string | null;
+    birthday_reward_percent?: number | null;
+    birthday_reward_amount_cents?: number | null;
+    birthday_reward_valid_days?: number | null;
+  };
+  const birthdayInitial: BirthdayReward = {
+    type: (planFields.birthday_reward_type as BirthdayReward["type"]) ?? "none",
+    percent: planFields.birthday_reward_percent ?? null,
+    amountCents: planFields.birthday_reward_amount_cents ?? null,
+    validDays: planFields.birthday_reward_valid_days ?? 30,
   };
 
   // Release flag `loyalty` (per-salon) AND platform kill-switch gate the page.
@@ -65,13 +77,18 @@ export default async function LoyaltySetupPage({ params }: Props) {
   ]);
 
   return (
-    <LoyaltySetupClient
-      slug={slug}
-      salonId={salon.id}
-      isPremium={isPremium}
-      program={program}
-      giftCards={giftCards}
-      services={(services ?? []) as { id: string; name: string }[]}
-    />
+    <>
+      <LoyaltySetupClient
+        slug={slug}
+        salonId={salon.id}
+        isPremium={isPremium}
+        program={program}
+        giftCards={giftCards}
+        services={(services ?? []) as { id: string; name: string }[]}
+      />
+      <div className="mx-auto mt-6 w-full max-w-3xl px-4">
+        <BirthdayRewardCard slug={slug} initial={birthdayInitial} />
+      </div>
+    </>
   );
 }
