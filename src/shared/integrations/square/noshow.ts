@@ -19,6 +19,7 @@ import {
   createPaymentLink,
   getOrder,
   getSquareConfig,
+  findSuccessfulPaymentByReference,
 } from "@/shared/integrations/square/client";
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
@@ -540,6 +541,47 @@ export async function chargeNoShowFee(
 
   const provider = await resolvePaymentProvider(str(b.salon_id));
   if (!provider) return { charged: false, reason: "payment provider not configured" };
+
+  // ── Double-charge guard (opt-in; Square only) ────────────────────────────
+  // The daily retry cron rotates the Square idempotency key per attempt (so a
+  // decline can be re-attempted), which means Square's own dedupe can't stop a
+  // re-charge. If a prior attempt CHARGED but its DB write failed (status stuck
+  // 'failed'), the retry would charge again. When enabled, reconcile against
+  // Square first: adopt an existing successful payment for this booking instead
+  // of charging. Fail-safe — any lookup error (or no match) falls through to the
+  // charge, so this can only PREVENT a duplicate, never cause one. Gated OFF by
+  // default: merging is a no-op until verified against a Square sandbox and the
+  // env flag is set.
+  if (process.env.NOSHOW_RECONCILE_BEFORE_CHARGE === "1" && provider.kind === "square") {
+    try {
+      const cfg = await getSquareConfig(db, str(b.salon_id));
+      // Fee is charged within ~7 days of the appointment (+ up to 3 daily
+      // retries); 14 days comfortably covers any prior successful charge.
+      const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+      const existing = await findSuccessfulPaymentByReference(cfg, `booking:${bookingId}`, since);
+      if (existing) {
+        await db
+          .from("bookings")
+          .update({
+            noshow_charge_status: "charged",
+            noshow_payment_id: existing.id,
+            noshow_charge_attempts: num(b.noshow_charge_attempts) + 1,
+            noshow_charge_error: null,
+            noshow_fee_cents: feeCents,
+          } as never)
+          .eq("id", bookingId);
+        console.warn("[chargeNoShowFee] reconciled existing Square payment — skipped re-charge", {
+          bookingId,
+          paymentId: existing.id,
+        });
+        return { charged: false, reason: "already_charged_reconciled", paymentId: existing.id };
+      }
+    } catch (e) {
+      // Reconcile is best-effort; never let it block a legitimate charge.
+      console.error("[chargeNoShowFee] reconcile guard failed — proceeding to charge", { bookingId }, e);
+    }
+  }
+
   try {
     const pay = await provider.chargeSavedCard({
       cardId: str(b.noshow_card_id),
