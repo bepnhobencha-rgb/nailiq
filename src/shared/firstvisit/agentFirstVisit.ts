@@ -233,13 +233,22 @@ async function detectFirstVisits(salonId: string, tz: string): Promise<
 
 // ─── Check conversion: has the client booked again? ───────────────────────────
 
-async function hasConverted(salonId: string, phone: string, afterDate: string): Promise<string | null> {
+async function hasConverted(
+  salonId: string,
+  phone: string,
+  afterDate: string,
+  excludeBookingId: string,
+): Promise<string | null> {
   const svc = createServiceRoleClient();
   const { data } = await svc
     .from("bookings" as never)
     .select("id")
     .eq("salon_id", salonId)
     .eq("client_phone", phone)
+    // Exclude the first visit's OWN booking: afterDate is a date-only value
+    // (midnight), so a same-day walk-in's own booking (created that afternoon)
+    // would otherwise count as a "conversion" and kill its day-7/day-14 nudges.
+    .neq("id", excludeBookingId)
     .neq("status", "cancelled")
     .gt("created_at", afterDate)
     .limit(1)
@@ -390,7 +399,7 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
       }
 
       // Check conversion first — stop the sequence if they booked again
-      const convertedId = await hasConverted(salonId, phone, firstVisitDate);
+      const convertedId = await hasConverted(salonId, phone, firstVisitDate, str(seq.first_booking_id));
       if (convertedId) {
         await svc
           .from("first_visit_sequences" as never)
