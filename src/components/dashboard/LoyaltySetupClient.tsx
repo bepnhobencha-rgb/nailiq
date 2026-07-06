@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { StampCard } from "@/components/loyalty/StampCard";
 import { createOrUpdateLoyaltyProgram } from "@/shared/loyalty/loyaltyActions";
 import { createGiftCard } from "@/shared/loyalty/giftCardActions";
+import { GIFT_CARD_PURCHASE_ENABLED } from "@/shared/loyalty/giftCardConfig";
 import type { LoyaltyProgram, GiftCard } from "@/shared/loyalty/types";
 
 const inputClass = "w-full rounded-lg bg-[#1c1c1e] border border-white/10 px-3 py-2 text-sm text-white placeholder-[#a1a1aa]/40 focus:outline-none focus:border-[#d4af37]/40";
@@ -308,6 +309,7 @@ function GiftCardTab({
 
   return (
     <div className="space-y-6">
+      {GIFT_CARD_PURCHASE_ENABLED && (
       <div className="p-4 rounded-xl bg-[#1c1c1e] border border-white/10">
         <p className="text-sm text-white font-medium mb-1">Public gift card page</p>
         <p className="text-xs text-[#a1a1aa] mb-3">Share this link so customers can purchase gift cards online.</p>
@@ -323,6 +325,7 @@ function GiftCardTab({
           </button>
         </div>
       </div>
+      )}
 
       <div className="p-5 rounded-xl bg-[#1c1c1e] border border-white/10 space-y-4">
         <p className="text-sm font-semibold text-white">Issue gift card manually</p>

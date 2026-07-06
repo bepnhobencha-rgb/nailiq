@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/server";
 import { GiftCardPurchasePanel } from "@/components/booking/GiftCardPurchasePanel";
 import { getSiteUrl } from "@/shared/seo/site";
+import { GIFT_CARD_PURCHASE_ENABLED } from "@/shared/loyalty/giftCardConfig";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function GiftCardPage({ params }: Props) {
+  // Gift-card purchase is disabled until payment collection is wired (was a
+  // free-mint hole). The page 404s so the public URL exposes nothing.
+  if (!GIFT_CARD_PURCHASE_ENABLED) notFound();
+
   const { slug } = await params;
   const supabase = await createClient();
 
