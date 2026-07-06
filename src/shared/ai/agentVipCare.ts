@@ -267,12 +267,58 @@ async function sendMessage(
   return { ok, channel, reason: ch.reason };
 }
 
+/** Issue the admin-configured birthday voucher for this client and return the
+ *  line to append to the birthday message. Returns null when no reward is
+ *  configured (or it couldn't be created — never promise a gift we didn't make).
+ *  Deterministic code (BDAY-<last4>-<year>) so a re-issue in the same year is a
+ *  harmless duplicate. */
+async function issueBirthdayVoucher(
+  svc: ReturnType<typeof createServiceRoleClient>,
+  salonId: string,
+  client: VipClient,
+  cfg: { type: string; percent: number; amountCents: number; validDays: number },
+): Promise<{ rewardLine: string } | null> {
+  if (cfg.type === "percent" ? !(cfg.percent > 0) : cfg.type === "amount" ? !(cfg.amountCents > 0) : true) {
+    return null;
+  }
+  const year = new Date().getUTCFullYear();
+  const last4 = client.phone.replace(/\D/g, "").slice(-4) || client.id.slice(0, 4);
+  const code = `BDAY-${last4}-${year}`;
+  const now = new Date();
+  const expires = new Date(now.getTime() + cfg.validDays * 864e5);
+  const row: Record<string, unknown> = {
+    salon_id: salonId,
+    code,
+    kind: "birthday",
+    max_uses: 1,
+    valid_from: now.toISOString(),
+    expires_at: expires.toISOString(),
+    client_phone: client.phone,
+    client_profile_id: client.id,
+  };
+  if (cfg.type === "percent") row.percent_off = cfg.percent;
+  else row.amount_off_cents = cfg.amountCents;
+
+  const { error } = await svc.from("vouchers" as never).insert(row as never);
+  const isDup = error && /duplicate|unique/i.test(String(error.message ?? error));
+  if (error && !isDup) {
+    console.error("[runVipCare] birthday voucher insert failed", error);
+    return null;
+  }
+  const label = cfg.type === "percent"
+    ? `${cfg.percent}% off`
+    : `$${Math.round(cfg.amountCents / 100)} off`;
+  return {
+    rewardLine: `Your birthday gift: ${label} your next visit — code ${code} (valid ${cfg.validDays} days).`,
+  };
+}
+
 export async function runVipCare(salonId: string): Promise<void> {
   try {
     const db = looseServiceClient();
     const { data: salon } = await db
       .from("salons" as never)
-      .select("name, email, slug, feature_flags, sms_outbound_enabled, sms_a2p_registered, email_outbound_enabled, customer_channel" as never)
+      .select("name, email, slug, feature_flags, sms_outbound_enabled, sms_a2p_registered, email_outbound_enabled, customer_channel, birthday_reward_type, birthday_reward_percent, birthday_reward_amount_cents, birthday_reward_valid_days" as never)
       .eq("id" as never, salonId)
       .maybeSingle();
 
@@ -289,6 +335,13 @@ export async function runVipCare(salonId: string): Promise<void> {
     const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
     const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
     const bookingUrl = `${SITE_URL}/${salonSlug}?ref=vip`;
+    // Admin-configured birthday gift (default 'none' → no reward attached).
+    const birthdayReward = {
+      type: str(s.birthday_reward_type) || "none",
+      percent: num(s.birthday_reward_percent),
+      amountCents: num(s.birthday_reward_amount_cents),
+      validDays: num(s.birthday_reward_valid_days) || 30,
+    };
 
     const [clients, existing] = await Promise.all([
       loadVipClients(salonId),
@@ -326,7 +379,10 @@ export async function runVipCare(salonId: string): Promise<void> {
       if (client.dateOfBirth && !existing.has(`birthday:${client.id}`)) {
         const days = daysUntilBirthday(client.dateOfBirth);
         if (days === 7) {
-          const msg = await draftMessage("birthday", client, salonName);
+          const baseMsg = await draftMessage("birthday", client, salonName);
+          // Attach the admin-configured birthday gift (a real voucher code), if any.
+          const gift = await issueBirthdayVoucher(svc, salonId, client, birthdayReward);
+          const msg = gift ? `${baseMsg}\n\n${gift.rewardLine}` : baseMsg;
           const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, clientSmsEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
           if (!ok && reason.startsWith("no_channel")) {
             console.warn(`[runVipCare] no channel for ${client.name} — ${reason}`);
