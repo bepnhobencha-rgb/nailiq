@@ -465,6 +465,10 @@ export interface SquarePayment {
   tip_money?: { amount?: number };
   refunded_money?: { amount?: number };
   source_type?: string;
+  /** Stable caller reference set at charge time, e.g. "booking:<id>". Square
+   *  returns it on the payment object; used to reconcile a charge whose local
+   *  DB write failed, before a retry would re-charge. */
+  reference_id?: string;
 }
 
 /** Pull completed payments for the location in [begin, end) (paginated). */
@@ -489,6 +493,28 @@ export async function listPayments(
     cursor = json.cursor as string | undefined;
   } while (cursor);
   return out;
+}
+
+/**
+ * Find the most recent SUCCESSFUL payment whose reference_id matches `referenceId`
+ * (e.g. "booking:<id>") within [since, now]. Used to reconcile a charge that
+ * went through Square but whose local DB write failed — so a retry doesn't
+ * re-charge. Returns null when none. Read-only.
+ */
+export async function findSuccessfulPaymentByReference(
+  cfg: SquareConfig,
+  referenceId: string,
+  since: Date,
+): Promise<SquarePayment | null> {
+  const payments = await listPayments(cfg, since, new Date());
+  const match = payments
+    .filter(
+      (p) =>
+        p.reference_id === referenceId &&
+        (p.status === "COMPLETED" || p.status === "APPROVED"),
+    )
+    .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+  return match[0] ?? null;
 }
 
 /**
