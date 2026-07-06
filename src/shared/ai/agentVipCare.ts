@@ -39,7 +39,8 @@ type VipClient = {
   isVip: boolean;
   visitCount: number; // completed bookings at THIS salon
   lastVisitAt: string | null; // ISO timestamp
-  marketingConsentAt: string | null;
+  marketingConsentAt: string | null; // full opt-in (SMS + email)
+  marketingEmailConsentAt: string | null; // email-only (e.g. Square subscriber)
 };
 
 async function loadVipClients(salonId: string): Promise<VipClient[]> {
@@ -71,7 +72,7 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
   // Load profile details
   const { data: profiles } = await (db as ReturnType<typeof looseServiceClient>)
     .from("client_profiles" as never)
-    .select("id, phone, name, email, date_of_birth, is_vip, marketing_consent_at" as never)
+    .select("id, phone, name, email, date_of_birth, is_vip, marketing_consent_at, marketing_email_consent_at" as never)
     .in("id" as never, ids);
 
   if (!profiles?.length) return [];
@@ -125,6 +126,7 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
       visitCount: visits,
       lastVisitAt: lastVisitMap.get(id) ?? null,
       marketingConsentAt: p.marketing_consent_at ? str(p.marketing_consent_at) : null,
+      marketingEmailConsentAt: p.marketing_email_consent_at ? str(p.marketing_email_consent_at) : null,
     });
   }
   return out;
@@ -305,19 +307,27 @@ export async function runVipCare(salonId: string): Promise<void> {
     // instead of blasting real customers in one pass; steady-state daily volume
     // is well under this.
     const MAX_SENDS_PER_RUN = 15;
+    // Channel-scoped consent: Square email-subscription (marketing_email_consent_at)
+    // unlocks EMAIL only, never SMS. Gated OFF by default until deliberately enabled.
+    const emailConsentEnabled = process.env.SQUARE_EMAIL_CONSENT_ENABLED === "1";
     let sentCount = 0;
 
     for (const client of clients) {
       if (sentCount >= MAX_SENDS_PER_RUN) break;
-      // Skip customers who haven't opted into marketing communications.
-      if (!client.marketingConsentAt) continue;
+      // Full opt-in → SMS or email. Email-only consent (Square) → EMAIL ONLY.
+      const hasFullConsent = !!client.marketingConsentAt;
+      const hasEmailConsent =
+        hasFullConsent || (emailConsentEnabled && !!client.marketingEmailConsentAt);
+      if (!hasEmailConsent) continue;
+      // Only a full opt-in permits a text; email-only consent forces email.
+      const clientSmsEnabled = smsOutboundEnabled && hasFullConsent;
 
       // ── Birthday (7 days out) ─────────────────────────────────
       if (client.dateOfBirth && !existing.has(`birthday:${client.id}`)) {
         const days = daysUntilBirthday(client.dateOfBirth);
         if (days === 7) {
           const msg = await draftMessage("birthday", client, salonName);
-          const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, smsOutboundEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
+          const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, clientSmsEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
           if (!ok && reason.startsWith("no_channel")) {
             console.warn(`[runVipCare] no channel for ${client.name} — ${reason}`);
             await svc.from("ai_actions_log" as never).insert({
@@ -350,7 +360,7 @@ export async function runVipCare(salonId: string): Promise<void> {
         if (client.visitCount < milestone || client.visitCount > milestone + 1) continue;
         // Fire when visits == milestone (allow +1 buffer so cron doesn't miss by 1)
         const msg = await draftMessage("milestone", client, salonName, milestone);
-        const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, smsOutboundEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
+        const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, clientSmsEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
         if (!ok && reason.startsWith("no_channel")) {
           console.warn(`[runVipCare] no channel for ${client.name} (milestone ${milestone}) — ${reason}`);
           await svc.from("ai_actions_log" as never).insert({
@@ -381,7 +391,7 @@ export async function runVipCare(salonId: string): Promise<void> {
         const daysSince = Math.floor((Date.now() - Date.parse(client.lastVisitAt)) / 864e5);
         if (daysSince >= 30 && daysSince < 60) {
           const msg = await draftMessage("vip_inactive", client, salonName);
-          const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, smsOutboundEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
+          const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, clientSmsEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
           if (!ok && reason.startsWith("no_channel")) {
             console.warn(`[runVipCare] no channel for ${client.name} — ${reason}`);
             await svc.from("ai_actions_log" as never).insert({
