@@ -8,6 +8,7 @@ import { runSquareForwardSync } from "@/shared/integrations/square/sync";
 import { reconcileDeposits } from "@/shared/integrations/square/deposits";
 import { reconcileNoShowFeeLinks } from "@/shared/integrations/square/noshow";
 import { syncSquareVisitHistory } from "@/shared/integrations/square/visitSync";
+import { syncSquareEmailConsent } from "@/shared/integrations/square/emailConsentSync";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -38,7 +39,14 @@ export async function GET(req: NextRequest) {
       const deposits = await reconcileDeposits(salonId);
       const noShowFees = await reconcileNoShowFeeLinks(salonId);
       const visits = await syncSquareVisitHistory(salonId);
-      results[salonId] = { ...sync, deposits, noShowFees, visits };
+      // Email-marketing consent from Square (EMAIL-only; never unlocks SMS).
+      // Whole feature is gated OFF by default so nothing is written until it's
+      // deliberately enabled and verified.
+      const emailConsent =
+        process.env.SQUARE_EMAIL_CONSENT_SYNC === "1"
+          ? await syncSquareEmailConsent(salonId)
+          : { skipped: "disabled" };
+      results[salonId] = { ...sync, deposits, noShowFees, visits, emailConsent };
     } catch (e) {
       const msg = (e as Error).message;
       console.error("[square-sync] salon", salonId, msg);

@@ -50,6 +50,10 @@ export interface SquareCustomer {
   email_address?: string;
   created_at?: string;
   creation_source?: string;
+  /** Square marketing preferences. `email_unsubscribed=false` (the default for a
+   *  subscriber) means the customer still consents to EMAIL marketing. Returned
+   *  by /customers/search on the Customer object. */
+  preferences?: { email_unsubscribed?: boolean };
 }
 
 export interface SquareCatalogItem {

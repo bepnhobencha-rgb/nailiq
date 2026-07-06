@@ -290,18 +290,27 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
     // ── 1. Detect new first-time visitors and enroll them ──────────────────
     const firstVisitors = await detectFirstVisits(salonId, tz);
 
-    // Build a set of phones that have opted into marketing communications.
-    // First-visit nurture is marketing — only contact consented customers.
+    // Channel-scoped consent. Square email-subscription (marketing_email_consent_at)
+    // unlocks EMAIL only, never SMS. Gated OFF by default.
+    const emailConsentEnabled = process.env.SQUARE_EMAIL_CONSENT_SEND === "1";
+    // consentedPhones = reachable at all (email at least); smsConsentPhones = may
+    // be TEXTED (full opt-in only). First-visit nurture is marketing — only
+    // contact consented customers.
     const allPhones = firstVisitors.map((fv) => fv.phone).filter(Boolean);
     const consentedPhones = new Set<string>();
+    const smsConsentPhones = new Set<string>();
     if (allPhones.length > 0) {
       const { data: consentRows } = await svc
         .from("client_profiles" as never)
-        .select("phone" as never)
-        .in("phone" as never, allPhones)
-        .not("marketing_consent_at" as never, "is", null);
+        .select("phone, marketing_consent_at, marketing_email_consent_at" as never)
+        .in("phone" as never, allPhones);
       for (const r of (consentRows ?? []) as unknown as Row[]) {
-        if (r.phone) consentedPhones.add(str(r.phone));
+        const ph = str(r.phone);
+        if (!ph) continue;
+        const full = !!r.marketing_consent_at;
+        const emailOnly = emailConsentEnabled && !!r.marketing_email_consent_at;
+        if (full) smsConsentPhones.add(ph);
+        if (full || emailOnly) consentedPhones.add(ph);
       }
     }
 
@@ -311,7 +320,8 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
 
       const ch = resolveCustomerChannel({
         mode: channelMode,
-        smsOutboundEnabled: smsEnabled,
+        // SMS only for a full opt-in; email-only-consent → forced to email.
+        smsOutboundEnabled: smsEnabled && smsConsentPhones.has(fv.phone),
         emailOutboundEnabled: emailEnabled,
         customerEmail: fv.email,
         smsA2pRegistered,
@@ -386,16 +396,20 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
       const firstVisitDate = str(seq.first_visit_date);
 
       // Skip if customer revoked consent or never consented (existing sequences
-      // pre-date the consent column — check before each send).
+      // pre-date the consent column — check before each send). Channel-scoped:
+      // full opt-in → may text; email-only (Square) → email only.
       if (!consentedPhones.has(phone)) {
         const { data: cp } = await svc
           .from("client_profiles" as never)
-          .select("marketing_consent_at" as never)
+          .select("marketing_consent_at, marketing_email_consent_at" as never)
           .eq("phone" as never, phone)
           .maybeSingle();
-        if (!(cp as Row | null)?.marketing_consent_at) continue;
-        // Cache for this run
-        consentedPhones.add(phone);
+        const cpr = cp as Row | null;
+        const full = !!cpr?.marketing_consent_at;
+        const emailOnly = emailConsentEnabled && !!cpr?.marketing_email_consent_at;
+        if (!full && !emailOnly) continue;
+        if (full) smsConsentPhones.add(phone);
+        consentedPhones.add(phone); // cache for this run
       }
 
       // Check conversion first — stop the sequence if they booked again
@@ -423,7 +437,8 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
 
       const ch = resolveCustomerChannel({
         mode: channelMode,
-        smsOutboundEnabled: smsEnabled,
+        // SMS only for a full opt-in; email-only-consent → forced to email.
+        smsOutboundEnabled: smsEnabled && smsConsentPhones.has(phone),
         emailOutboundEnabled: emailEnabled,
         customerEmail: email,
         smsA2pRegistered,
