@@ -267,29 +267,29 @@ async function sendMessage(
   return { ok, channel, reason: ch.reason };
 }
 
-/** Issue the admin-configured birthday voucher for this client and return the
- *  line to append to the birthday message. Returns null when no reward is
- *  configured (or it couldn't be created — never promise a gift we didn't make).
- *  Deterministic code (BDAY-<last4>-<year>) so a re-issue in the same year is a
- *  harmless duplicate. */
-async function issueBirthdayVoucher(
+type RewardCfg = { type: string; percent: number; amountCents: number; validDays: number };
+
+/** Issue an admin-configured care voucher (birthday or milestone) for this
+ *  client and return the line to append to the message. Returns null when no
+ *  reward is configured OR it couldn't be created — never promise a gift we
+ *  didn't make. `code` must be deterministic (once-per-occasion) so a re-issue
+ *  is a harmless duplicate. */
+async function issueCareVoucher(
   svc: ReturnType<typeof createServiceRoleClient>,
   salonId: string,
   client: VipClient,
-  cfg: { type: string; percent: number; amountCents: number; validDays: number },
+  cfg: RewardCfg,
+  opts: { voucherKind: "birthday" | "milestone"; code: string; giftPhrase: string },
 ): Promise<{ rewardLine: string } | null> {
   if (cfg.type === "percent" ? !(cfg.percent > 0) : cfg.type === "amount" ? !(cfg.amountCents > 0) : true) {
     return null;
   }
-  const year = new Date().getUTCFullYear();
-  const last4 = client.phone.replace(/\D/g, "").slice(-4) || client.id.slice(0, 4);
-  const code = `BDAY-${last4}-${year}`;
   const now = new Date();
   const expires = new Date(now.getTime() + cfg.validDays * 864e5);
   const row: Record<string, unknown> = {
     salon_id: salonId,
-    code,
-    kind: "birthday",
+    code: opts.code,
+    kind: opts.voucherKind,
     max_uses: 1,
     valid_from: now.toISOString(),
     expires_at: expires.toISOString(),
@@ -302,15 +302,20 @@ async function issueBirthdayVoucher(
   const { error } = await svc.from("vouchers" as never).insert(row as never);
   const isDup = error && /duplicate|unique/i.test(String(error.message ?? error));
   if (error && !isDup) {
-    console.error("[runVipCare] birthday voucher insert failed", error);
+    console.error("[runVipCare] care voucher insert failed", opts.voucherKind, error);
     return null;
   }
   const label = cfg.type === "percent"
     ? `${cfg.percent}% off`
     : `$${Math.round(cfg.amountCents / 100)} off`;
   return {
-    rewardLine: `Your birthday gift: ${label} your next visit — code ${code} (valid ${cfg.validDays} days).`,
+    rewardLine: `${opts.giftPhrase}: ${label} your next visit — code ${opts.code} (valid ${cfg.validDays} days).`,
   };
+}
+
+/** last-4 of phone (fallback to profile id) for a deterministic voucher code. */
+function clientCodeToken(client: VipClient): string {
+  return client.phone.replace(/\D/g, "").slice(-4) || client.id.slice(0, 4);
 }
 
 export async function runVipCare(salonId: string): Promise<void> {
@@ -318,7 +323,7 @@ export async function runVipCare(salonId: string): Promise<void> {
     const db = looseServiceClient();
     const { data: salon } = await db
       .from("salons" as never)
-      .select("name, email, slug, feature_flags, sms_outbound_enabled, sms_a2p_registered, email_outbound_enabled, customer_channel, birthday_reward_type, birthday_reward_percent, birthday_reward_amount_cents, birthday_reward_valid_days" as never)
+      .select("name, email, slug, feature_flags, sms_outbound_enabled, sms_a2p_registered, email_outbound_enabled, customer_channel, birthday_reward_type, birthday_reward_percent, birthday_reward_amount_cents, birthday_reward_valid_days, milestone_reward_type, milestone_reward_percent, milestone_reward_amount_cents, milestone_reward_valid_days" as never)
       .eq("id" as never, salonId)
       .maybeSingle();
 
@@ -335,12 +340,18 @@ export async function runVipCare(salonId: string): Promise<void> {
     const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
     const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
     const bookingUrl = `${SITE_URL}/${salonSlug}?ref=vip`;
-    // Admin-configured birthday gift (default 'none' → no reward attached).
-    const birthdayReward = {
+    // Admin-configured care gifts (default 'none' → no reward attached).
+    const birthdayReward: RewardCfg = {
       type: str(s.birthday_reward_type) || "none",
       percent: num(s.birthday_reward_percent),
       amountCents: num(s.birthday_reward_amount_cents),
       validDays: num(s.birthday_reward_valid_days) || 30,
+    };
+    const milestoneReward: RewardCfg = {
+      type: str(s.milestone_reward_type) || "none",
+      percent: num(s.milestone_reward_percent),
+      amountCents: num(s.milestone_reward_amount_cents),
+      validDays: num(s.milestone_reward_valid_days) || 30,
     };
 
     const [clients, existing] = await Promise.all([
@@ -381,7 +392,11 @@ export async function runVipCare(salonId: string): Promise<void> {
         if (days === 7) {
           const baseMsg = await draftMessage("birthday", client, salonName);
           // Attach the admin-configured birthday gift (a real voucher code), if any.
-          const gift = await issueBirthdayVoucher(svc, salonId, client, birthdayReward);
+          const gift = await issueCareVoucher(svc, salonId, client, birthdayReward, {
+            voucherKind: "birthday",
+            code: `BDAY-${clientCodeToken(client)}-${new Date().getUTCFullYear()}`,
+            giftPhrase: "Your birthday gift",
+          });
           const msg = gift ? `${baseMsg}\n\n${gift.rewardLine}` : baseMsg;
           const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, clientSmsEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
           if (!ok && reason.startsWith("no_channel")) {
@@ -415,7 +430,14 @@ export async function runVipCare(salonId: string): Promise<void> {
         if (existing.has(key)) continue;
         if (client.visitCount < milestone || client.visitCount > milestone + 1) continue;
         // Fire when visits == milestone (allow +1 buffer so cron doesn't miss by 1)
-        const msg = await draftMessage("milestone", client, salonName, milestone);
+        const baseMsg = await draftMessage("milestone", client, salonName, milestone);
+        // Attach the admin-configured milestone gift (a real voucher code), if any.
+        const gift = await issueCareVoucher(svc, salonId, client, milestoneReward, {
+          voucherKind: "milestone",
+          code: `MILE-${clientCodeToken(client)}-${milestone}`,
+          giftPhrase: `Your visit #${milestone} gift`,
+        });
+        const msg = gift ? `${baseMsg}\n\n${gift.rewardLine}` : baseMsg;
         const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, clientSmsEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
         if (!ok && reason.startsWith("no_channel")) {
           console.warn(`[runVipCare] no channel for ${client.name} (milestone ${milestone}) — ${reason}`);
