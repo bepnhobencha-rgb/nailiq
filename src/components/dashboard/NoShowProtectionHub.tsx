@@ -73,6 +73,8 @@ type Props = {
   selfCancelFeeEnabled: boolean;
   /** Hours before start that a self-cancel counts as "late" (fee-eligible). */
   selfCancelWindowHours: number;
+  /** Separate late-cancel fee %; null = same as the no-show %. */
+  selfCancelFeePercent: number | null;
   summary: NoShowSummary;
   unconfirmed: UnconfirmedBooking[];
   waitlist: WaitlistOpportunity[];
@@ -594,6 +596,7 @@ export function NoShowProtectionHub({
   noshowRiskThreshold: initialNoshowThreshold,
   selfCancelFeeEnabled: initialSelfCancelFee,
   selfCancelWindowHours: initialSelfCancelWindow,
+  selfCancelFeePercent: initialSelfCancelPct,
   summary,
   unconfirmed,
   waitlist,
@@ -641,6 +644,9 @@ export function NoShowProtectionHub({
   const [noshowThreshold, setNoshowThreshold] = useState(String(initialNoshowThreshold));
   const [selfCancelFee, setSelfCancelFee] = useState(initialSelfCancelFee);
   const [selfCancelWindow, setSelfCancelWindow] = useState(String(initialSelfCancelWindow));
+  const [selfCancelPct, setSelfCancelPct] = useState(
+    initialSelfCancelPct == null ? "" : String(initialSelfCancelPct),
+  );
   const [cardSaveMsg, setCardSaveMsg] = useState<string | null>(null);
 
   function saveCardSettings() {
@@ -660,6 +666,8 @@ export function NoShowProtectionHub({
           : null,
         self_cancel_fee_enabled: selfCancelFee,
         self_cancel_window_hours: parseInt(selfCancelWindow, 10) || 24,
+        self_cancel_fee_percent:
+          selfCancelPct.trim() === "" ? null : parseInt(selfCancelPct, 10) || 0,
       });
       setCardSaveMsg(r.ok ? "Đã lưu" : (r.error ?? "Lỗi"));
       setTimeout(() => setCardSaveMsg(null), 3000);
@@ -995,26 +1003,50 @@ export function NoShowProtectionHub({
                 </span>
               </label>
               {selfCancelFee ? (
-                <div className="ml-6 mt-2 flex items-center gap-2">
-                  <span className="text-xs text-nq-muted">Cửa sổ huỷ — huỷ trong vòng</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={168}
-                    value={selfCancelWindow}
-                    onChange={(e) => setSelfCancelWindow(e.target.value)}
-                    data-testid="self-cancel-window-hours"
-                    className="w-16 rounded-lg border border-nq-border/50 bg-nq-bg px-2 py-1 text-sm text-nq-text"
-                  />
-                  <span className="text-xs text-nq-muted">giờ trước hẹn → tính phí</span>
+                <div className="ml-6 mt-2 flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-nq-muted">Cửa sổ huỷ — huỷ trong vòng</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={168}
+                      value={selfCancelWindow}
+                      onChange={(e) => setSelfCancelWindow(e.target.value)}
+                      data-testid="self-cancel-window-hours"
+                      className="w-16 rounded-lg border border-nq-border/50 bg-nq-bg px-2 py-1 text-sm text-nq-text"
+                    />
+                    <span className="text-xs text-nq-muted">giờ trước hẹn → tính phí</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-nq-muted">Phí huỷ trễ (%)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={selfCancelPct}
+                      placeholder={`= ${noshowPct}`}
+                      onChange={(e) => setSelfCancelPct(e.target.value)}
+                      data-testid="self-cancel-fee-percent"
+                      className="w-20 rounded-lg border border-nq-border/50 bg-nq-bg px-2 py-1 text-sm text-nq-text"
+                    />
+                    <span className="text-xs text-nq-muted">
+                      để trống = giống phí no-show ({noshowPct}%)
+                    </span>
+                  </div>
                 </div>
               ) : null}
-              <p className="ml-6 mt-1 text-xs text-nq-muted">
+              <p className="ml-6 mt-2 text-xs text-nq-muted">
                 {selfCancelFee ? (
                   <>
                     <span className="font-medium text-nq-text">Đang BẬT:</span> khách huỷ qua
                     link trong cửa sổ này, nếu đã lưu thẻ + đồng ý, sẽ bị tính phí{" "}
-                    {noshowPct}% như no-show. Huỷ sớm hơn thì miễn phí.
+                    {selfCancelPct.trim() === "" ? noshowPct : selfCancelPct}%. Huỷ sớm hơn
+                    thì miễn phí.{" "}
+                    <span className="text-emerald-400">
+                      💚 Fair Cancel: nếu waitlist/khách khác lấp được đúng chỗ trống trước
+                      giờ hẹn, phí sẽ được <span className="font-medium">tự động hoàn</span>{" "}
+                      — tiệm không mất chỗ thì khách không mất tiền.
+                    </span>
                   </>
                 ) : (
                   <>

@@ -444,6 +444,8 @@ export async function updateNoShowCardSettings(
     self_cancel_fee_enabled?: boolean;
     /** Hours before start that a self-cancel counts as "late" (fee-eligible). */
     self_cancel_window_hours?: number;
+    /** Separate late-cancel fee %. null = same as no-show; else 0..100. */
+    self_cancel_fee_percent?: number | null;
   },
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
@@ -494,6 +496,13 @@ export async function updateNoShowCardSettings(
       168,
       Math.max(1, Math.round(settings.self_cancel_window_hours)),
     );
+  }
+  if (settings.self_cancel_fee_percent !== undefined) {
+    // null → clear (fall back to noshow_fee_percent); else clamp 0..100.
+    patch.self_cancel_fee_percent =
+      settings.self_cancel_fee_percent == null
+        ? null
+        : clampPct(settings.self_cancel_fee_percent);
   }
   if (Object.keys(patch).length === 0) return { ok: true };
 

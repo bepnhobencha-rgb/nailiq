@@ -143,6 +143,11 @@ export default function CancelBookingPage() {
                 Đã tính phí huỷ trễ {fmtMoney(feeCharged.cents, feeCharged.currency)}{" "}
                 vào thẻ đã lưu.
               </span>
+              <br />
+              <span className="mt-1 block text-emerald-300/90">
+                💚 If we rebook your spot, we&apos;ll refund this automatically. ·
+                Nếu chúng tôi lấp được chỗ, phí sẽ được hoàn lại tự động.
+              </span>
             </p>
           )}
           {salonSlug && (
@@ -233,6 +238,11 @@ export default function CancelBookingPage() {
             </p>
             <p className="mt-1 text-sm text-amber-200/70">
               Vì huỷ sát giờ hẹn, phí <b>{feeStr}</b> sẽ được tính vào thẻ đã lưu.
+            </p>
+            <p className="mt-2 border-t border-amber-500/20 pt-2 text-xs text-emerald-300/90">
+              💚 If we rebook your spot from the waitlist, this fee is refunded
+              automatically. · Nếu chúng tôi lấp được chỗ của bạn, phí sẽ được
+              hoàn lại tự động.
             </p>
           </div>
         )}

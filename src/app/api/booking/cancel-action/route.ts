@@ -27,6 +27,8 @@ type SalonRow = {
   currency_code: string | null;
   self_cancel_fee_enabled: boolean | null;
   self_cancel_window_hours: number | null;
+  self_cancel_fee_percent: number | null;
+  noshow_fee_percent: number | null;
 };
 
 /**
@@ -79,7 +81,7 @@ async function evaluateSelfCancel(
   const { data: salonRow } = await supabase
     .from("salons" as never)
     .select(
-      "slug, currency_code, self_cancel_fee_enabled, self_cancel_window_hours",
+      "slug, currency_code, self_cancel_fee_enabled, self_cancel_window_hours, self_cancel_fee_percent, noshow_fee_percent",
     )
     .eq("id", booking.salon_id)
     .maybeSingle();
@@ -88,6 +90,8 @@ async function evaluateSelfCancel(
     currency_code: null,
     self_cancel_fee_enabled: false,
     self_cancel_window_hours: 24,
+    self_cancel_fee_percent: null,
+    noshow_fee_percent: null,
   };
 
   const now = Date.now();
@@ -100,7 +104,17 @@ async function evaluateSelfCancel(
   const hoursUntil = (start - now) / 3_600_000;
   const withinWindow = !startPast && hoursUntil < windowHours;
 
-  const feeCents = booking.noshow_fee_cents ?? 0;
+  // The frozen no-show snapshot (noshow_fee_cents) is noshow_fee_percent% of the
+  // booking base. If the salon set a gentler late-cancel percent, scale it:
+  //   lateFee = snapshot * selfCancelPct / noshowPct
+  const snapshotCents = booking.noshow_fee_cents ?? 0;
+  const noshowPct = salon.noshow_fee_percent ?? 0;
+  const selfPct = salon.self_cancel_fee_percent;
+  const feeCents =
+    selfPct != null && noshowPct > 0
+      ? Math.round((snapshotCents * selfPct) / noshowPct)
+      : snapshotCents;
+
   const hasChargeableCard =
     !!booking.noshow_card_id &&
     !!booking.noshow_consent_at &&
@@ -215,6 +229,7 @@ export async function POST(req: Request) {
     try {
       const res = await chargeNoShowFee(bookingId, {
         note: "Late cancellation fee",
+        amountCentsOverride: ev.feeCents,
       });
       feeCharged = res.charged;
       if (res.charged) feeCents = ev.feeCents;
