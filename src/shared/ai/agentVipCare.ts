@@ -186,32 +186,39 @@ async function draftMessage(
 ): Promise<string> {
   const ai = getAI();
   if (!ai) {
-    // Fallback plain text
-    if (type === "birthday") return `Hi ${client.name}, your birthday is coming up — we'd love to celebrate with you at ${salonName}! Book a special visit: `;
-    if (type === "milestone") return `Hi ${client.name}, you've hit visit #${visitCount} at ${salonName} — thank you so much! As a token of our appreciation: `;
-    return `Hi ${client.name}, we've been thinking of you! It's been a little while — we'd love to see you again at ${salonName}: `;
+    // Fallback plain text — bilingual (Vietnamese first, then English).
+    if (type === "birthday")
+      return `Chào ${client.name}, sinh nhật bạn sắp tới rồi — ${salonName} rất mong được cùng bạn ăn mừng! Đặt một buổi đặc biệt nhé:\n\nHi ${client.name}, your birthday is coming up — we'd love to celebrate with you at ${salonName}! Book a special visit:`;
+    if (type === "milestone")
+      return `Chào ${client.name}, bạn đã ghé ${salonName} lần thứ ${visitCount} — cảm ơn bạn rất nhiều! Một chút tri ân từ tiệm:\n\nHi ${client.name}, you've hit visit #${visitCount} at ${salonName} — thank you so much! As a token of our appreciation:`;
+    return `Chào ${client.name}, tiệm nhớ bạn lắm! Đã lâu chưa gặp — ${salonName} mong được đón bạn trở lại:\n\nHi ${client.name}, we've been thinking of you! It's been a little while — we'd love to see you again at ${salonName}:`;
   }
 
+  // Bilingual output: Vietnamese first, then a blank line, then English.
+  const bilingual =
+    "Write it in Vietnamese FIRST, then a blank line, then the English version. No emojis, no links (added separately). Return ONLY the two-language message text.";
   let prompt: string;
   if (type === "birthday") {
-    prompt = `Write a warm, brief birthday message (1-2 sentences) in English for a VIP salon customer whose birthday is coming up in about a week. Customer name: ${client.name}. Salon: ${salonName}. Be personal and caring — invite them to celebrate with a visit. No emojis, no links (added separately). Return ONLY the message text.`;
+    prompt = `Write a warm, brief birthday message (1-2 sentences) for a VIP salon customer whose birthday is coming up in about a week. Customer name: ${client.name}. Salon: ${salonName}. Be personal and caring — invite them to celebrate with a visit. ${bilingual}`;
   } else if (type === "milestone") {
-    prompt = `Write a short, genuine thank-you message (1-2 sentences) for a loyal VIP salon customer celebrating their ${visitCount}th visit. Customer name: ${client.name}. Salon: ${salonName}. Express authentic gratitude and make them feel valued. No emojis, no links. Return ONLY the message text.`;
+    prompt = `Write a short, genuine thank-you message (1-2 sentences) for a loyal VIP salon customer celebrating their ${visitCount}th visit. Customer name: ${client.name}. Salon: ${salonName}. Express authentic gratitude and make them feel valued. ${bilingual}`;
   } else {
-    prompt = `Write a warm, brief "we miss you" message (1-2 sentences) for a VIP salon customer who hasn't visited in about a month. Customer name: ${client.name}. Salon: ${salonName}. Make it feel caring, not pushy — gently invite them back. No emojis, no links. Return ONLY the message text.`;
+    prompt = `Write a warm, brief "we miss you" message (1-2 sentences) for a VIP salon customer who hasn't visited in about a month. Customer name: ${client.name}. Salon: ${salonName}. Make it feel caring, not pushy — gently invite them back. ${bilingual}`;
   }
 
   try {
     const resp = await ai.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 200,
+      max_tokens: 400, // bilingual output is ~2x
       messages: [{ role: "user", content: prompt }],
     });
     const text = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
     const clean = text.replace(/^["']|["']$/g, "").trim();
-    return clean.length > 10 && clean.length <= 480 ? clean : `Hi ${client.name}, thinking of you at ${salonName}!`;
+    return clean.length > 10 && clean.length <= 900
+      ? clean
+      : `Chào ${client.name}, tiệm luôn nhớ bạn tại ${salonName}!\n\nHi ${client.name}, thinking of you at ${salonName}!`;
   } catch {
-    return `Hi ${client.name}, thinking of you at ${salonName}!`;
+    return `Chào ${client.name}, tiệm luôn nhớ bạn tại ${salonName}!\n\nHi ${client.name}, thinking of you at ${salonName}!`;
   }
 }
 
@@ -279,7 +286,7 @@ async function issueCareVoucher(
   salonId: string,
   client: VipClient,
   cfg: RewardCfg,
-  opts: { voucherKind: "birthday" | "milestone"; code: string; giftPhrase: string },
+  opts: { voucherKind: "birthday" | "milestone"; code: string; giftPhraseVi: string; giftPhraseEn: string },
 ): Promise<{ rewardLine: string } | null> {
   if (cfg.type === "percent" ? !(cfg.percent > 0) : cfg.type === "amount" ? !(cfg.amountCents > 0) : true) {
     return null;
@@ -305,11 +312,16 @@ async function issueCareVoucher(
     console.error("[runVipCare] care voucher insert failed", opts.voucherKind, error);
     return null;
   }
-  const label = cfg.type === "percent"
+  const labelVi = cfg.type === "percent"
+    ? `giảm ${cfg.percent}%`
+    : `giảm $${Math.round(cfg.amountCents / 100)}`;
+  const labelEn = cfg.type === "percent"
     ? `${cfg.percent}% off`
     : `$${Math.round(cfg.amountCents / 100)} off`;
   return {
-    rewardLine: `${opts.giftPhrase}: ${label} your next visit — code ${opts.code} (valid ${cfg.validDays} days).`,
+    rewardLine:
+      `🎁 ${opts.giftPhraseVi}: ${labelVi} cho lần ghé tới — mã ${opts.code} (dùng trong ${cfg.validDays} ngày).\n` +
+      `${opts.giftPhraseEn}: ${labelEn} your next visit — code ${opts.code} (valid ${cfg.validDays} days).`,
   };
 }
 
@@ -395,7 +407,8 @@ export async function runVipCare(salonId: string): Promise<void> {
           const gift = await issueCareVoucher(svc, salonId, client, birthdayReward, {
             voucherKind: "birthday",
             code: `BDAY-${clientCodeToken(client)}-${new Date().getUTCFullYear()}`,
-            giftPhrase: "Your birthday gift",
+            giftPhraseVi: "Quà sinh nhật",
+            giftPhraseEn: "Your birthday gift",
           });
           const msg = gift ? `${baseMsg}\n\n${gift.rewardLine}` : baseMsg;
           const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, clientSmsEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
@@ -435,7 +448,8 @@ export async function runVipCare(salonId: string): Promise<void> {
         const gift = await issueCareVoucher(svc, salonId, client, milestoneReward, {
           voucherKind: "milestone",
           code: `MILE-${clientCodeToken(client)}-${milestone}`,
-          giftPhrase: `Your visit #${milestone} gift`,
+          giftPhraseVi: `Quà mốc lần thứ ${milestone}`,
+          giftPhraseEn: `Your visit #${milestone} gift`,
         });
         const msg = gift ? `${baseMsg}\n\n${gift.rewardLine}` : baseMsg;
         const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, clientSmsEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
