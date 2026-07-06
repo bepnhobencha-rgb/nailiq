@@ -30,7 +30,7 @@
     },
     {
       "path": "/api/cron/noshow-card-nudge",
-      "schedule": "0 18,22 * * *"
+      "schedule": "0 16,18 * * *"
     },
     {
       "path": "/api/cron/manager",

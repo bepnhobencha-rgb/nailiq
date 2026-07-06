@@ -44,6 +44,27 @@ export async function GET(req: NextRequest) {
   const nowIso = new Date().toISOString();
   const graceIso = new Date(Date.now() - GRACE_HOURS * 60 * 60 * 1000).toISOString();
 
+  // sendOnlineSaveCardLink only actually sends for salons with no-show
+  // protection AND the AI no-show policy opted in. Restrict the claim to those
+  // salons so we don't burn a booking's one-shot nudge (stamp it 'sent') at a
+  // salon that would silently send nothing — and could still opt in later.
+  const { data: salonRows } = await supabase
+    .from("salons" as never)
+    .select("id, feature_flags")
+    .eq("noshow_protection_enabled", true);
+  const eligibleSalonIds = (
+    (salonRows ?? []) as Array<{ id: string; feature_flags: Record<string, unknown> | null }>
+  )
+    .filter(
+      (s) =>
+        s.feature_flags?.ai_noshow_policy_live === true ||
+        s.feature_flags?.ai_noshow_policy_shadow === true,
+    )
+    .map((s) => s.id);
+  if (eligibleSalonIds.length === 0) {
+    return NextResponse.json({ ok: true, nudged: 0, note: "no eligible salons" });
+  }
+
   // Eligible: still needs a card, still a FUTURE appointment, booked long enough
   // ago that the first-touch text had its chance, and not yet nudged. The
   // `reminder_sent_at is null` filter + the grandfather backfill mean the
@@ -51,6 +72,7 @@ export async function GET(req: NextRequest) {
   const { data: rows, error } = await supabase
     .from("bookings" as never)
     .select("id")
+    .in("salon_id", eligibleSalonIds)
     .eq("noshow_card_required", true)
     .is("noshow_card_id", null)
     .in("status", ["confirmed", "pending"])
