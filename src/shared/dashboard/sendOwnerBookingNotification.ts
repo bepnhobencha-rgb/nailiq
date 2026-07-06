@@ -184,6 +184,110 @@ export async function sendOwnerNotificationTest(
   return { ok: true, recipientCount: recipients.length };
 }
 
+/**
+ * Notify owner/admins that a customer joined the online waitlist (their preferred
+ * slot was full). Best-effort — never throws, never blocks the join. Honours the
+ * same owner_notification_settings.enabled toggle + recipient resolution as
+ * booking alerts.
+ */
+export async function sendOwnerWaitlistNotification(
+  salonId: string,
+  waitlistId: string,
+): Promise<void> {
+  try {
+    if (!salonId || !waitlistId) return;
+    let admin: ReturnType<typeof createServiceRoleClient>;
+    try {
+      admin = createServiceRoleClient();
+    } catch {
+      return;
+    }
+
+    const { data: salonRow } = await admin
+      .from("salons")
+      .select("name, timezone, owner_notification_settings" as never)
+      .eq("id", salonId)
+      .maybeSingle();
+    const salon = salonRow as {
+      name?: string | null;
+      timezone?: string | null;
+      owner_notification_settings?: unknown;
+    } | null;
+    if (!salon) return;
+
+    const settings = parseOwnerNotificationSettings(salon.owner_notification_settings);
+    if (!settings.enabled) return;
+
+    const { data: entryRow } = await admin
+      .from("booking_waitlist_entries" as never)
+      .select(
+        "service_id, booking_date, preferred_slot_label, client_name, service:service_id(name), staff:staff_id(name)",
+      )
+      .eq("id", waitlistId)
+      .maybeSingle();
+    const entry = entryRow as {
+      service_id?: string | null;
+      booking_date?: string | null;
+      preferred_slot_label?: string | null;
+      client_name?: string | null;
+      service?: { name?: string | null } | null;
+      staff?: { name?: string | null } | null;
+    } | null;
+    if (!entry) return;
+
+    // How many are now waiting for this exact slot (salon + service + date).
+    let waitingCount = 1;
+    if (entry.service_id && entry.booking_date) {
+      const { count } = await admin
+        .from("booking_waitlist_entries" as never)
+        .select("id", { count: "exact", head: true })
+        .eq("salon_id", salonId)
+        .eq("service_id", entry.service_id)
+        .eq("booking_date", entry.booking_date)
+        .eq("status", "waiting");
+      if (typeof count === "number" && count > 0) waitingCount = count;
+    }
+
+    const recipients = await resolveRecipients(
+      admin,
+      salonId,
+      settings.notifyMembers,
+      settings.customEmails,
+    );
+    if (recipients.length === 0) return;
+
+    const resend = getResendClient();
+    if (!resend) return;
+
+    const salonName = salon.name?.trim() || "NailIQ";
+    const serviceName = entry.service?.name?.trim() || "a service";
+    const staffName = entry.staff?.name?.trim() || null;
+    const dateStr = entry.booking_date ?? "";
+    const slot = entry.preferred_slot_label?.trim();
+    const timeEn = slot ? `at ${slot}` : "(any time that day)";
+    const timeVi = slot ? `lúc ${slot}` : "(cả ngày)";
+    const staffEn = staffName ? ` with ${staffName}` : "";
+    const staffVi = staffName ? ` với ${staffName}` : "";
+    const client = entry.client_name?.trim() || "A customer";
+
+    const res = await resend.emails.send({
+      from: getResendFrom(),
+      to: recipients,
+      subject: `[${salonName}] New waitlist request / Khách vào danh sách chờ`,
+      html: `<div style="font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a;max-width:520px">
+  <h2 style="font-size:18px;margin:0 0 10px">🕒 New waitlist request</h2>
+  <p style="margin:0 0 6px">${esc(client)} joined the waitlist for <strong>${esc(serviceName)}</strong> on <strong>${esc(dateStr)}</strong> ${esc(timeEn)}${esc(staffEn)}. That slot is currently full — ${waitingCount} now waiting. Consider opening a spot.</p>
+  <p style="margin:12px 0 6px;color:#333">${esc(client)} vừa vào danh sách chờ cho <strong>${esc(serviceName)}</strong> ngày <strong>${esc(dateStr)}</strong> ${esc(timeVi)}${esc(staffVi)}. Slot này đang kín — hiện ${waitingCount} khách chờ. Cân nhắc mở thêm chỗ.</p>
+  <p style="color:#666;margin:10px 0 0">${esc(salonName)}</p>
+</div>`,
+      text: `New waitlist request / Khách vào danh sách chờ — ${client}: ${serviceName} ${dateStr} ${timeEn}${staffEn} (${waitingCount} waiting) — ${salonName}`,
+    });
+    if (res.error) console.error("[ownerNotify/waitlist] resend error", res.error);
+  } catch (e) {
+    console.error("[sendOwnerWaitlistNotification]", e);
+  }
+}
+
 export async function sendOwnerBookingNotification(
   input: OwnerNotifyInput,
 ): Promise<void> {
