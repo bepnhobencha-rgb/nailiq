@@ -17,6 +17,10 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/cron/square-email-consent",
+      "schedule": "0 9 * * *"
+    },
+    {
       "path": "/api/cron/error-triage",
       "schedule": "*/10 * * * *"
     },
