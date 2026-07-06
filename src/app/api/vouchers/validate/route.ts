@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 
 export const dynamic = "force-dynamic";
 
@@ -43,8 +44,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "voucher_exhausted" }, { status: 422 });
   }
 
-  // For personal vouchers (birthday, welcome_back, referral), verify the phone
-  if (voucher.client_phone && voucher.client_phone !== client_phone) {
+  // For personal vouchers (birthday, milestone, welcome_back, referral), verify
+  // the phone. Canonicalise BOTH sides — the voucher stores a canonical digits
+  // phone (e.g. "16045551234") but the customer may type any format at checkout
+  // ("604-555-1234", "(604) 555-1234"); a raw compare wrongly rejected them.
+  if (
+    voucher.client_phone &&
+    toCanonicalPhone(voucher.client_phone) !== toCanonicalPhone(client_phone)
+  ) {
     return NextResponse.json({ ok: false, error: "voucher_not_yours" }, { status: 422 });
   }
 
