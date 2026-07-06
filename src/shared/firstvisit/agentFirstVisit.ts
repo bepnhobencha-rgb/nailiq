@@ -292,7 +292,7 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
 
     // Channel-scoped consent. Square email-subscription (marketing_email_consent_at)
     // unlocks EMAIL only, never SMS. Gated OFF by default.
-    const emailConsentEnabled = process.env.SQUARE_EMAIL_CONSENT_ENABLED === "1";
+    const emailConsentEnabled = process.env.SQUARE_EMAIL_CONSENT_SEND === "1";
     // consentedPhones = reachable at all (email at least); smsConsentPhones = may
     // be TEXTED (full opt-in only). First-visit nurture is marketing — only
     // contact consented customers.

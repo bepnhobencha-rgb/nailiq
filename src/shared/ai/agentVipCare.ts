@@ -309,7 +309,7 @@ export async function runVipCare(salonId: string): Promise<void> {
     const MAX_SENDS_PER_RUN = 15;
     // Channel-scoped consent: Square email-subscription (marketing_email_consent_at)
     // unlocks EMAIL only, never SMS. Gated OFF by default until deliberately enabled.
-    const emailConsentEnabled = process.env.SQUARE_EMAIL_CONSENT_ENABLED === "1";
+    const emailConsentEnabled = process.env.SQUARE_EMAIL_CONSENT_SEND === "1";
     let sentCount = 0;
 
     for (const client of clients) {

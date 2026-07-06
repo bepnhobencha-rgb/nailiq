@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
       // Whole feature is gated OFF by default so nothing is written until it's
       // deliberately enabled and verified.
       const emailConsent =
-        process.env.SQUARE_EMAIL_CONSENT_ENABLED === "1"
+        process.env.SQUARE_EMAIL_CONSENT_SYNC === "1"
           ? await syncSquareEmailConsent(salonId)
           : { skipped: "disabled" };
       results[salonId] = { ...sync, deposits, noShowFees, visits, emailConsent };
