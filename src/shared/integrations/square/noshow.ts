@@ -509,6 +509,11 @@ export async function chargeNoShowFee(
     /** Payment note/descriptor. Defaults to "No-show fee"; the late-cancel path
      *  passes "Late cancellation fee" so the customer's statement is accurate. */
     note?: string;
+    /** Override the charged amount (cents). The late-cancel path uses this when
+     *  the salon set a separate self_cancel_fee_percent. The charged amount is
+     *  persisted back onto noshow_fee_cents so a later refund returns exactly
+     *  what was taken. */
+    amountCentsOverride?: number;
   },
 ): Promise<{ charged: boolean; reason: string; paymentId?: string }> {
   const db = looseServiceClient();
@@ -527,7 +532,10 @@ export async function chargeNoShowFee(
   if (!b.noshow_consent_at) {
     return { charged: false, reason: "no consent on file" };
   }
-  const feeCents = num(b.noshow_fee_cents);
+  const feeCents =
+    opts?.amountCentsOverride != null && opts.amountCentsOverride > 0
+      ? Math.round(opts.amountCentsOverride)
+      : num(b.noshow_fee_cents);
   if (feeCents <= 0) return { charged: false, reason: "fee is zero" };
 
   const provider = await resolvePaymentProvider(str(b.salon_id));
@@ -549,6 +557,8 @@ export async function chargeNoShowFee(
         noshow_payment_id: pay.paymentId,
         noshow_charge_attempts: num(b.noshow_charge_attempts) + 1,
         noshow_charge_error: charged ? null : pay.status,
+        // Persist the actual amount taken so a later refund returns exactly it.
+        ...(charged ? { noshow_fee_cents: feeCents } : {}),
       } as never)
       .eq("id", bookingId);
     return { charged, reason: pay.status, paymentId: pay.paymentId };
@@ -564,6 +574,108 @@ export async function chargeNoShowFee(
       .eq("id", bookingId);
     return { charged: false, reason: errMsg };
   }
+}
+
+/**
+ * Refund a charged no-show / late-cancel fee. Provider-agnostic (Square/Stripe).
+ * Idempotent via a stable key + a status guard: only refunds when currently
+ * 'charged', then stamps 'refunded'. Safe to call repeatedly.
+ */
+export async function refundNoShowFee(
+  bookingId: string,
+  opts?: { reason?: string },
+): Promise<{ refunded: boolean; reason: string }> {
+  const db = looseServiceClient();
+  const { data } = await db
+    .from("bookings")
+    .select("id, salon_id, noshow_payment_id, noshow_fee_cents, noshow_charge_status")
+    .eq("id", bookingId)
+    .maybeSingle();
+  const b = data as Row | null;
+  if (!b) return { refunded: false, reason: "booking not found" };
+  if (b.noshow_charge_status !== "charged")
+    return { refunded: false, reason: "not in charged state" }; // idempotent
+  const paymentId = str(b.noshow_payment_id);
+  const amount = num(b.noshow_fee_cents);
+  if (!paymentId || amount <= 0)
+    return { refunded: false, reason: "missing payment id / amount" };
+
+  const provider = await resolvePaymentProvider(str(b.salon_id));
+  if (!provider) return { refunded: false, reason: "payment provider not configured" };
+  try {
+    await provider.refund({
+      paymentId,
+      amountCents: amount,
+      reason: opts?.reason ?? "Late cancellation fee refunded",
+      idempotencyKey: `refund:${bookingId}`,
+    });
+    await db
+      .from("bookings")
+      .update({ noshow_charge_status: "refunded" } as never)
+      .eq("id", bookingId);
+    return { refunded: true, reason: "refunded" };
+  } catch (e) {
+    const errMsg = e instanceof Error ? e.message : "refund failed";
+    return { refunded: false, reason: errMsg };
+  }
+}
+
+/**
+ * Fair Cancel: auto-refund late-cancellation fees whose freed slot has since
+ * been re-booked (by the waitlist auto-book OR any organic booking that grabbed
+ * the same slot) before the original appointment time — the salon lost nothing,
+ * so the customer shouldn't pay. Runs from the waitlist-advance cron (~5 min).
+ *
+ * Refill detection is slot-shaped (salon_id + staff_id + start_time_utc), which
+ * catches every re-book path without touching the booking-create RPCs. Only
+ * considers future-start slots: once the appointment time passes, the fee is
+ * final whether or not the slot was ever filled.
+ */
+export async function refundRefilledLateCancels(): Promise<{
+  checked: number;
+  refunded: number;
+}> {
+  const db = looseServiceClient();
+  const nowIso = new Date().toISOString();
+  const { data } = await db
+    .from("bookings")
+    .select("id, salon_id, staff_id, start_time_utc, end_time_utc")
+    .eq("status", "cancelled")
+    .eq("noshow_charge_status", "charged")
+    .not("noshow_payment_id", "is", null)
+    .not("staff_id", "is", null)
+    .gt("start_time_utc", nowIso)
+    .limit(200);
+
+  const candidates = (data ?? []) as Array<{
+    id: string;
+    salon_id: string;
+    staff_id: string | null;
+    start_time_utc: string | null;
+  }>;
+
+  let refunded = 0;
+  for (const c of candidates) {
+    if (!c.staff_id || !c.start_time_utc) continue;
+    // Is the exact freed slot now held by another active booking?
+    const { data: refill } = await db
+      .from("bookings")
+      .select("id")
+      .eq("salon_id", c.salon_id)
+      .eq("staff_id", c.staff_id)
+      .eq("start_time_utc", c.start_time_utc)
+      .in("status", ["pending", "confirmed"])
+      .limit(3);
+    const refillRows = (refill as Array<{ id: string }> | null) ?? [];
+    const isRefilled = refillRows.some((r) => r.id !== c.id);
+    if (isRefilled) {
+      const res = await refundNoShowFee(c.id, {
+        reason: "Late cancellation fee refunded — slot rebooked",
+      });
+      if (res.refunded) refunded += 1;
+    }
+  }
+  return { checked: candidates.length, refunded };
 }
 
 /**

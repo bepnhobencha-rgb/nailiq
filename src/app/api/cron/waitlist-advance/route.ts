@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
+import { refundRefilledLateCancels } from "@/shared/integrations/square/noshow";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,5 +64,15 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, advanced });
+  // Fair Cancel: refund late-cancel fees whose freed slot has since been
+  // rebooked (best-effort; never fails the waitlist advance).
+  let refunded = 0;
+  try {
+    const r = await refundRefilledLateCancels();
+    refunded = r.refunded;
+  } catch (e) {
+    console.error("[waitlist-advance] late-cancel refund pass failed", e);
+  }
+
+  return NextResponse.json({ ok: true, advanced, refunded });
 }

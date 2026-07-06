@@ -21,7 +21,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
   const sb = (await import("@/shared/lib/supabase/serviceRole")).createServiceRoleClient();
   const { data: salonRow } = await sb
     .from("salons" as never)
-    .select("name, vertical, health_ack_required, email_links_enabled, feature_flags, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, deposit_hold_grace_minutes, cancellation_policy, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_details_submitted, payment_provider, noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold, noshow_group_whole_party, noshow_deposit_escalation_threshold, noshow_require_new_customer, noshow_require_prior_noshow, noshow_min_noshow_count, noshow_require_high_risk, self_cancel_fee_enabled, self_cancel_window_hours")
+    .select("name, vertical, health_ack_required, email_links_enabled, feature_flags, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, deposit_high_value_cents, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, deposit_hold_grace_minutes, cancellation_policy, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_details_submitted, payment_provider, noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold, noshow_group_whole_party, noshow_deposit_escalation_threshold, noshow_require_new_customer, noshow_require_prior_noshow, noshow_min_noshow_count, noshow_require_high_risk, self_cancel_fee_enabled, self_cancel_window_hours, self_cancel_fee_percent")
     .eq("id", ctx.salon.id)
     .maybeSingle();
   // deposit_enabled lives on square_integrations (a salon only has a row once
@@ -77,6 +77,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
     noshow_require_high_risk?: boolean;
     self_cancel_fee_enabled?: boolean;
     self_cancel_window_hours?: number;
+    self_cancel_fee_percent?: number | null;
   } | null;
 
   // Effective policy text (custom or built-in default) for the editor.
@@ -128,6 +129,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
       noshowRiskThreshold={row?.noshow_risk_threshold ?? 60}
       selfCancelFeeEnabled={row?.self_cancel_fee_enabled === true}
       selfCancelWindowHours={row?.self_cancel_window_hours ?? 24}
+      selfCancelFeePercent={row?.self_cancel_fee_percent ?? null}
       summary={result.summary!}
       unconfirmed={result.unconfirmed!}
       waitlist={result.waitlist!}
