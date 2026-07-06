@@ -13,7 +13,12 @@
  *
  * Run: npx tsx src/shared/lib/__tests__/twilioSms.test.ts
  */
-import { normaliseToE164, isFictionalTestNumber, smsSuppressReason } from "../twilioSms";
+import {
+  normaliseToE164,
+  isFictionalTestNumber,
+  smsSuppressReason,
+  sendSmsReminder,
+} from "../twilioSms";
 
 let pass = 0,
   fail = 0;
@@ -136,5 +141,38 @@ test("in production: real number sends, 555/test-salon suppressed", () => {
   if (prevFlag !== undefined) process.env.DISABLE_OUTBOUND_SMS = prevFlag;
 });
 
-console.log(`\n${pass} passed, ${fail} failed`);
-if (fail > 0) process.exit(1);
+// ── Suppressed sends must return a UNIQUE fake SID ──────────────────
+// Callers persist messageSid into booking_notifications, whose
+// twilio_message_sid column is UNIQUE. A constant SUPPRESSED_<reason> collided
+// on the 2nd suppressed send, silently dropping every notification log after
+// the first (E2E/dev, and 555 seed numbers in prod). Guard uniqueness.
+async function testSuppressedSidUnique() {
+  const prev = process.env.DISABLE_OUTBOUND_SMS;
+  process.env.DISABLE_OUTBOUND_SMS = "1";
+  try {
+    const a = await sendSmsReminder("+16045551234", "hi");
+    const b = await sendSmsReminder("+16045551234", "hi");
+    test("suppressed send is reported ok + suppressed", () => {
+      assertEqual(a.ok, true);
+      assertEqual(a.suppressed, true);
+    });
+    test("suppressed fake SID keeps the SUPPRESSED_<reason> prefix", () => {
+      if (!a.messageSid?.startsWith("SUPPRESSED_disabled_by_env")) {
+        throw new Error(`unexpected sid: ${a.messageSid}`);
+      }
+    });
+    test("two suppressed sends return DISTINCT SIDs (no unique-index collision)", () => {
+      if (a.messageSid === b.messageSid) {
+        throw new Error(`SIDs collided: ${a.messageSid}`);
+      }
+    });
+  } finally {
+    if (prev === undefined) delete process.env.DISABLE_OUTBOUND_SMS;
+    else process.env.DISABLE_OUTBOUND_SMS = prev;
+  }
+}
+
+void testSuppressedSidUnique().finally(() => {
+  console.log(`\n${pass} passed, ${fail} failed`);
+  if (fail > 0) process.exit(1);
+});

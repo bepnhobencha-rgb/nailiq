@@ -183,7 +183,14 @@ export async function sendSmsReminder(
   // numbers, while real customers are never affected. See smsSuppressReason.
   const suppressReason = smsSuppressReason(recipient, { salonIsTest: opts?.salonIsTest });
   if (suppressReason) {
-    const fakeSid = `SUPPRESSED_${suppressReason}`;
+    // Unique suffix: callers persist this SID into booking_notifications, whose
+    // `twilio_message_sid` column is UNIQUE. A constant `SUPPRESSED_<reason>`
+    // collided on the SECOND suppressed send, so every notification log after
+    // the first silently failed its insert (in E2E/dev, and for 555 seed
+    // numbers even in prod). The random suffix keeps the SID greppable while
+    // guaranteeing uniqueness. A suppressed send has no real Twilio SID and
+    // never receives a status webhook, so the value is otherwise opaque.
+    const fakeSid = `SUPPRESSED_${suppressReason}_${crypto.randomUUID()}`;
     console.warn(`[sendSmsReminder] SUPPRESSED outbound SMS (${suppressReason}) — no real Twilio call`);
     return { ok: true, messageSid: fakeSid, suppressed: true };
   }
