@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import crypto from "node:crypto";
+import { salonYmdOfUtc } from "@/shared/lib/salonTime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -148,10 +149,13 @@ export async function POST(req: NextRequest) {
 
   const { data: salonRow } = await db
     .from("salons")
-    .select("name")
+    .select("name, timezone")
     .eq("id", booking.salon_id)
     .maybeSingle();
   const salonName = (salonRow as { name?: string } | null)?.name ?? "the salon";
+  const salonTz =
+    (salonRow as { timezone?: string | null } | null)?.timezone?.trim() ||
+    "America/Los_Angeles";
 
   const { logNotification } = await import("@/shared/lib/notificationLog");
 
@@ -200,7 +204,10 @@ export async function POST(req: NextRequest) {
       eventType: "booking_cancelled",
       payload: { reason: "sms_cancel" },
     });
-    const bookingDateYmd = booking.start_time_utc.split("T")[0];
+    // Salon-LOCAL day (not UTC) — the flip RPC + notifyWaitlistForSlot match
+    // booking_date in the salon tz; the UTC day missed the promoted waitlister
+    // for evening NA SMS-cancellations.
+    const bookingDateYmd = salonYmdOfUtc(booking.start_time_utc, salonTz);
     after(async () => {
       const { notifyWaitlistForSlot } = await import("@/shared/noshow/waitlistAutoFill");
       const { data: svc } = await db

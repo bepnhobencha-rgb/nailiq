@@ -110,6 +110,13 @@ export async function notifyWaitlistForSlot(params: {
   const supabase = createServiceRoleClient();
 
   // Find the entry that was just marked 'notified' (claim_token IS NOT NULL).
+  // Scope by booking_date too: a busy salon can hold several concurrently
+  // 'notified' entries for the same service across different dates (freed slots
+  // from cancel / reschedule / no-show / group late-decline paths all flip an
+  // entry to 'notified'). Without the date filter this fetched the OLDEST such
+  // entry — re-SMSing an already-notified customer with the WRONG date while the
+  // person the caller actually just promoted got nothing. Order newest-first so
+  // we grab the entry the DB just flipped, not a stale one still in its window.
   const { data: entry } = await supabase
     .from("booking_waitlist_entries" as never)
     .select(
@@ -117,9 +124,10 @@ export async function notifyWaitlistForSlot(params: {
     )
     .eq("salon_id", params.salonId)
     .eq("service_id", params.serviceId)
+    .eq("booking_date", params.bookingDateYmd)
     .eq("status", "notified")
     .not("claim_token", "is", null)
-    .order("notified_at", { ascending: true })
+    .order("notified_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 

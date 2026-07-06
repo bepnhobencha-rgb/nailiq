@@ -6,6 +6,7 @@ import { logBookingEvent } from "@/shared/dashboard/auditLog";
 import { deliverStaffActionNotification } from "@/shared/notifications/deliverStaffActionNotification";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { chargeNoShowFee } from "@/shared/integrations/square/noshow";
+import { salonYmdOfUtc } from "@/shared/lib/salonTime";
 
 type BookingRow = {
   salon_id: string;
@@ -239,7 +240,6 @@ export async function POST(req: Request) {
   }
 
   // Owner alert + customer email + waitlist after the response is flushed.
-  const bookingDateYmd = start_time_utc.split("T")[0];
   after(async () => {
     // Owner/manager alert — customer self-cancelled via email link.
     void sendOwnerBookingNotification({
@@ -250,11 +250,19 @@ export async function POST(req: Request) {
 
     const sb = createServiceRoleClient();
     const [{ data: salonData }, { data: svcData }] = await Promise.all([
-      sb.from("salons" as never).select("name").eq("id", salon_id).maybeSingle(),
+      sb.from("salons" as never).select("name, timezone").eq("id", salon_id).maybeSingle(),
       sb.from("services" as never).select("name").eq("id", service_id).maybeSingle(),
     ]);
     const salonName = (salonData as { name: string } | null)?.name ?? "";
     const serviceName = (svcData as { name: string } | null)?.name ?? "";
+    // Freed slot's date must be the SALON-LOCAL day: booking_waitlist_entries
+    // stores booking_date salon-local and the flip RPC matches it in the salon
+    // tz, and notifyWaitlistForSlot now filters on it. The UTC day missed the
+    // just-promoted waitlister for evening NA cancellations. Mirror reschedule.
+    const timezone =
+      (salonData as { timezone?: string | null } | null)?.timezone?.trim() ||
+      "America/Los_Angeles";
+    const bookingDateYmd = salonYmdOfUtc(start_time_utc, timezone);
 
     // Send cancellation confirmation email to the customer
     if (client_email) {
