@@ -6,8 +6,8 @@ import { listGiftCards } from "@/shared/loyalty/giftCardActions";
 import { getEffectivePlan } from "@/shared/lib/subscriptionPlans";
 import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { LoyaltySetupClient } from "@/components/dashboard/LoyaltySetupClient";
-import { BirthdayRewardCard } from "@/components/dashboard/BirthdayRewardCard";
-import type { BirthdayReward } from "@/shared/loyalty/birthdayRewardActions";
+import { CareRewardCard } from "@/components/dashboard/CareRewardCard";
+import type { CareReward } from "@/shared/loyalty/careRewardActions";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +30,7 @@ export default async function LoyaltySetupPage({ params }: Props) {
 
   const { data: salonRow } = await supabase
     .from("salons" as never)
-    .select("subscription_plan, plan_override, feature_flags, birthday_reward_type, birthday_reward_percent, birthday_reward_amount_cents, birthday_reward_valid_days")
+    .select("subscription_plan, plan_override, feature_flags, birthday_reward_type, birthday_reward_percent, birthday_reward_amount_cents, birthday_reward_valid_days, milestone_reward_type, milestone_reward_percent, milestone_reward_amount_cents, milestone_reward_valid_days")
     .eq("id", salon.id)
     .maybeSingle();
 
@@ -42,12 +42,22 @@ export default async function LoyaltySetupPage({ params }: Props) {
     birthday_reward_percent?: number | null;
     birthday_reward_amount_cents?: number | null;
     birthday_reward_valid_days?: number | null;
+    milestone_reward_type?: string | null;
+    milestone_reward_percent?: number | null;
+    milestone_reward_amount_cents?: number | null;
+    milestone_reward_valid_days?: number | null;
   };
-  const birthdayInitial: BirthdayReward = {
-    type: (planFields.birthday_reward_type as BirthdayReward["type"]) ?? "none",
+  const birthdayInitial: CareReward = {
+    type: (planFields.birthday_reward_type as CareReward["type"]) ?? "none",
     percent: planFields.birthday_reward_percent ?? null,
     amountCents: planFields.birthday_reward_amount_cents ?? null,
     validDays: planFields.birthday_reward_valid_days ?? 30,
+  };
+  const milestoneInitial: CareReward = {
+    type: (planFields.milestone_reward_type as CareReward["type"]) ?? "none",
+    percent: planFields.milestone_reward_percent ?? null,
+    amountCents: planFields.milestone_reward_amount_cents ?? null,
+    validDays: planFields.milestone_reward_valid_days ?? 30,
   };
 
   // Release flag `loyalty` (per-salon) AND platform kill-switch gate the page.
@@ -86,8 +96,21 @@ export default async function LoyaltySetupPage({ params }: Props) {
         giftCards={giftCards}
         services={(services ?? []) as { id: string; name: string }[]}
       />
-      <div className="mx-auto mt-6 w-full max-w-3xl px-4">
-        <BirthdayRewardCard slug={slug} initial={birthdayInitial} />
+      <div className="mx-auto mt-6 w-full max-w-3xl space-y-4 px-4">
+        <CareRewardCard
+          slug={slug}
+          kind="birthday"
+          title="🎂 Quà sinh nhật (AI VIP Care)"
+          description="Khi bật, email chúc mừng sinh nhật sẽ kèm một mã giảm giá thật cho khách."
+          initial={birthdayInitial}
+        />
+        <CareRewardCard
+          slug={slug}
+          kind="milestone"
+          title="🏆 Quà theo mốc (10 / 25 / 50 lần ghé)"
+          description="Khi khách VIP đạt mốc, email cảm ơn sẽ kèm một mã giảm giá thật."
+          initial={milestoneInitial}
+        />
       </div>
     </>
   );
