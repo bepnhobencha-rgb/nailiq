@@ -6,6 +6,7 @@ import {
   type TopSpender,
 } from "@/shared/dashboard/topSpendersActions";
 import { setHostVip } from "@/shared/dashboard/topHostsActions";
+import { syncSquareSpendAction } from "@/shared/dashboard/syncSquareSpendAction";
 import { vipTierLabel } from "@/shared/dashboard/vipSpendTier";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { ClientProfile360Drawer } from "@/components/dashboard/ClientProfile360Drawer";
@@ -20,6 +21,10 @@ const COPY = {
     giveVip: "Make VIP",
     isVip: "★ VIP",
     saving: "…",
+    syncNow: "Sync from Square",
+    syncing: "Syncing…",
+    syncDone: (n: number) => `Updated ${n} customers`,
+    syncErr: "Sync failed — try again",
   },
   vi: {
     title: "Top khách chi tiêu",
@@ -30,6 +35,10 @@ const COPY = {
     giveVip: "Tặng VIP",
     isVip: "★ VIP",
     saving: "…",
+    syncNow: "Đồng bộ từ Square",
+    syncing: "Đang đồng bộ…",
+    syncDone: (n: number) => `Đã cập nhật ${n} khách`,
+    syncErr: "Đồng bộ lỗi — thử lại",
   },
 };
 
@@ -59,6 +68,16 @@ export function TopSpendersPanel({
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<Row[]>([]);
   const [open360, setOpen360] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
+  const refresh = useCallback(
+    () =>
+      loadTopSpenders(slug).then((res) => {
+        if (res.ok) setRows(res.spenders.map((s) => ({ ...s, pending: false })));
+      }),
+    [slug],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -71,6 +90,21 @@ export function TopSpendersPanel({
       cancelled = true;
     };
   }, [slug]);
+
+  const handleSync = useCallback(() => {
+    if (syncing) return;
+    setSyncing(true);
+    setSyncMsg(null);
+    void syncSquareSpendAction(slug).then(async (res) => {
+      if (res.ok) {
+        await refresh();
+        setSyncMsg(tx.syncDone(res.matchedProfiles ?? 0));
+      } else {
+        setSyncMsg(tx.syncErr);
+      }
+      setSyncing(false);
+    });
+  }, [syncing, slug, refresh, tx]);
 
   const toggleVip = useCallback(
     (idx: number) => {
@@ -96,8 +130,23 @@ export function TopSpendersPanel({
 
   return (
     <section className="mb-6 rounded-2xl border border-nq-border bg-nq-surface p-4 md:p-5">
-      <h2 className="text-base font-semibold text-nq-text">💎 {tx.title}</h2>
-      <p className="mt-1 max-w-2xl text-xs text-nq-muted">{tx.subtitle}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-nq-text">💎 {tx.title}</h2>
+          <p className="mt-1 max-w-2xl text-xs text-nq-muted">{tx.subtitle}</p>
+        </div>
+        {viewerRole === "owner" ? (
+          <button
+            type="button"
+            onClick={handleSync}
+            disabled={syncing}
+            className="shrink-0 rounded-full border border-nq-border px-3 py-1.5 text-xs font-medium text-nq-muted transition-colors hover:border-nq-primary/40 hover:text-nq-text disabled:opacity-50"
+          >
+            {syncing ? tx.syncing : `🔄 ${tx.syncNow}`}
+          </button>
+        ) : null}
+      </div>
+      {syncMsg ? <p className="mt-2 text-xs text-nq-primary">{syncMsg}</p> : null}
 
       <ul className="mt-4 space-y-2">
         {rows.map((s, idx) => (
