@@ -5,6 +5,7 @@ import { parseTimeSlotOnDate } from "@/shared/booking/parseBookingTimeSlot";
 import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
+import { salonYmdOfUtc } from "@/shared/lib/salonTime";
 
 type RescheduleBody = {
   token: string;
@@ -87,7 +88,6 @@ export async function POST(req: Request) {
   }
 
   // Notify the first waitlist entry for the freed original slot
-  const originalDateYmd = b.start_time_utc.split("T")[0];
   const originalStartUtc = b.start_time_utc;
   const bookingId = tr.booking_id;
   const { salon_id, service_id } = b;
@@ -104,12 +104,20 @@ export async function POST(req: Request) {
 
     const sb = createServiceRoleClient();
     const [{ data: salonData }, { data: svcData }] = await Promise.all([
-      sb.from("salons" as never).select("name").eq("id", salon_id).maybeSingle(),
+      sb.from("salons" as never).select("name, timezone").eq("id", salon_id).maybeSingle(),
       sb.from("services" as never).select("name").eq("id", service_id).maybeSingle(),
     ]);
     const salonName = (salonData as { name: string } | null)?.name ?? "";
     const serviceName = (svcData as { name: string } | null)?.name ?? "";
-    await notifyWaitlistForSlot({ salonId: salon_id, salonName, serviceId: service_id, serviceName, bookingDateYmd: originalDateYmd });
+    // Freed slot's date must be the salon-LOCAL day (booking_waitlist_entries
+    // stores booking_date in salon-local time). Using the UTC date shifted
+    // evening NA bookings one day forward → the picker/SMS targeted the wrong
+    // day. Mirror the RPC's salon-tz match.
+    const timezone =
+      (salonData as { timezone: string | null } | null)?.timezone?.trim() ||
+      "America/Los_Angeles";
+    const bookingDateYmd = salonYmdOfUtc(originalStartUtc, timezone);
+    await notifyWaitlistForSlot({ salonId: salon_id, salonName, serviceId: service_id, serviceName, bookingDateYmd });
   });
 
   return NextResponse.json({
