@@ -33,6 +33,7 @@ type DailyStats = {
   revenueCents: number;
   newClients: number;
   tomorrowCount: number;
+  careEmails: number; // VIP Care + First-Visit care messages sent today
 };
 
 async function collectStats(
@@ -46,7 +47,7 @@ async function collectStats(
   const tomorrowEnd = new Date(todayEnd);
   tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
 
-  const [todayRes, tomorrowRes] = await Promise.all([
+  const [todayRes, tomorrowRes, careRes] = await Promise.all([
     db
       .from("bookings")
       .select("status, price_cents, created_at, client_profile_id")
@@ -61,6 +62,16 @@ async function collectStats(
       .gte("start_time_utc", todayEnd)
       .lt("start_time_utc", tomorrowEnd.toISOString())
       .not("status", "in", '("cancelled","no_show","cancelled_before_window")'),
+    // Customer-care messages actually sent today (VIP Care + First-Visit),
+    // excluding no-channel skips.
+    db
+      .from("ai_actions_log")
+      .select("id", { count: "exact", head: true })
+      .eq("salon_id", salonId)
+      .in("agent", ["vip_care", "first_visit"])
+      .not("action_type", "in", '("skipped_no_channel")')
+      .gte("created_at", todayStart)
+      .lt("created_at", todayEnd),
   ]);
 
   const rows = (todayRes.data ?? []) as {
@@ -97,6 +108,7 @@ async function collectStats(
     revenueCents,
     newClients,
     tomorrowCount: tomorrowRes.count ?? 0,
+    careEmails: careRes.count ?? 0,
   };
 }
 
@@ -146,7 +158,7 @@ TODAY'S ACTIVITY:
 - No-shows: ${stats.noShow}
 - Cancelled: ${stats.cancelled}
 - Estimated revenue: $${revenue} (catalog prices)
-- New clients seen today: ${stats.newClients}
+- New clients seen today: ${stats.newClients}${stats.careEmails > 0 ? `\n- Automated customer-care emails sent (VIP Care + first-visit follow-ups): ${stats.careEmails}` : ""}
 
 TOMORROW:
 - Bookings already scheduled: ${stats.tomorrowCount}
@@ -200,9 +212,11 @@ export async function runDailyReport(
         sip.language_primary === "vi"
           ? `Báo cáo ngày ${todayYmd} — ${salonName}\n` +
             `Hôm nay: ${stats.total} lịch hẹn, ${stats.completed} hoàn thành, ${stats.noShow} no-show.\n` +
+            (stats.careEmails > 0 ? `Chăm sóc khách: ${stats.careEmails} email đã gửi (VIP Care + khách lần đầu).\n` : "") +
             `Doanh thu ước tính: $${rev}. Ngày mai: ${stats.tomorrowCount} lịch đã đặt.`
           : `Daily summary ${todayYmd} — ${salonName}\n` +
             `Today: ${stats.total} bookings, ${stats.completed} completed, ${stats.noShow} no-shows.\n` +
+            (stats.careEmails > 0 ? `Customer care: ${stats.careEmails} emails sent (VIP Care + first-visit).\n` : "") +
             `Est. revenue: $${rev}. Tomorrow: ${stats.tomorrowCount} bookings scheduled.`;
     } else {
       const msg = await ai.messages.create({
