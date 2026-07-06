@@ -76,19 +76,19 @@ async function draftMessage(ctx: DraftContext): Promise<string | null> {
   const svc = ctx.service ? `"${ctx.service}"` : "their first service";
 
   const prompts: Record<0 | 1 | 2, string> = {
-    0: `Write a single warm, genuine "thank you for visiting" message in ${ctx.lang === "vi" ? "tiếng Việt" : "English"} for a brand-new first-time salon client.
+    0: `Write a single warm, genuine "thank you for visiting" message in Vietnamese first, then a blank line, then English for a brand-new first-time salon client.
 
 Client: ${ctx.clientName}, just had ${svc} at ${ctx.salonName}.
 
 Rules: 1 sentence only. Pure warmth — make them feel welcome and seen. Do NOT mention rebooking, links, or promotions. NO emojis. Return ONLY the message text.`,
 
-    1: `Write a short, natural follow-up message in ${ctx.lang === "vi" ? "tiếng Việt" : "English"} for a first-time salon client, sent about a week after their first visit.
+    1: `Write a short, natural follow-up message in Vietnamese first, then a blank line, then English for a first-time salon client, sent about a week after their first visit.
 
 Client: ${ctx.clientName}, had ${svc} at ${ctx.salonName} last week.
 
 Rules: 1-2 sentences. Check in warmly on how the service is holding up. Gently mention booking their next visit is easy — do NOT paste a URL (that's added automatically). Friendly tone, like a caring person, not a marketing bot. NO emojis. Return ONLY the message text.`,
 
-    2: `Write a final gentle nudge in ${ctx.lang === "vi" ? "tiếng Việt" : "English"} for a first-time salon client who hasn't rebooked yet.
+    2: `Write a final gentle nudge in Vietnamese first, then a blank line, then English for a first-time salon client who hasn't rebooked yet.
 
 Client: ${ctx.clientName}, had ${svc} at ${ctx.salonName} about two weeks ago.
 
@@ -96,11 +96,12 @@ Rules: 1-2 sentences. Warm, zero pressure. Say you'd love to see them again and 
   };
 
   if (!ai) {
-    // Fallback text when no AI key
+    // Fallback text when no AI key — bilingual (Vietnamese first, then English).
+    const svcName = ctx.service ?? "dịch vụ";
     const fallbacks: Record<0 | 1 | 2, string> = {
-      0: `Thank you for visiting ${ctx.salonName} today, ${ctx.clientName} — we loved having you!`,
-      1: `Hi ${ctx.clientName}, hope you're still loving your ${ctx.service ?? "visit"} from last week! We'd love to have you back at ${ctx.salonName} anytime.`,
-      2: `Hi ${ctx.clientName}, it was wonderful having you at ${ctx.salonName}! We'd love to see you again whenever you're ready.`,
+      0: `Cảm ơn ${ctx.clientName} đã ghé ${ctx.salonName} hôm nay — tiệm rất vui được đón bạn!\n\nThank you for visiting ${ctx.salonName} today, ${ctx.clientName} — we loved having you!`,
+      1: `Chào ${ctx.clientName}, mong bạn vẫn hài lòng với ${svcName} tuần trước! ${ctx.salonName} luôn mong được đón bạn trở lại.\n\nHi ${ctx.clientName}, hope you're still loving your ${ctx.service ?? "visit"} from last week! We'd love to have you back at ${ctx.salonName} anytime.`,
+      2: `Chào ${ctx.clientName}, thật tuyệt khi được đón bạn tại ${ctx.salonName}! Mong gặp lại bạn bất cứ khi nào bạn sẵn sàng.\n\nHi ${ctx.clientName}, it was wonderful having you at ${ctx.salonName}! We'd love to see you again whenever you're ready.`,
     };
     return fallbacks[ctx.step];
   }
@@ -108,12 +109,12 @@ Rules: 1-2 sentences. Warm, zero pressure. Say you'd love to see them again and 
   try {
     const resp = await ai.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 160,
+      max_tokens: 320, // bilingual output is ~2x
       messages: [{ role: "user", content: prompts[ctx.step] }],
     });
     const raw = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
     const clean = raw.replace(/^["']|["']$/g, "").trim();
-    return clean.length > 0 && clean.length <= 320 ? clean : null;
+    return clean.length > 0 && clean.length <= 700 ? clean : null;
   } catch {
     return null;
   }
