@@ -102,7 +102,7 @@ export async function GET(req: Request) {
     salons(name, slug, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, sms_a2p_registered, feature_flags)`;
 
   // Fetch both email-eligible AND SMS-eligible bookings (no email filter here).
-  const { data: need24h } = await supabase
+  const { data: need24h, error: err24h } = await supabase
     .from("bookings" as never)
     .select(baseSelect)
     .in("status", ["pending", "confirmed"])
@@ -110,13 +110,22 @@ export async function GET(req: Request) {
     .lte("start_time_utc", window24hEnd)
     .is("reminder_24h_sent_at", null);
 
-  const { data: need3h } = await supabase
+  const { data: need3h, error: err3h } = await supabase
     .from("bookings" as never)
     .select(baseSelect)
     .in("status", ["pending", "confirmed"])
     .gte("start_time_utc", window3hStart)
     .lte("start_time_utc", window3hEnd)
     .is("reminder_3h_sent_at", null);
+
+  // Surface a query failure instead of silently reporting a healthy run. A
+  // dropped/renamed column in baseSelect (or any transient DB error) makes
+  // `data` null; without this a totally broken reminder run returned
+  // {ok:true, sent24h:0, sent3h:0} — indistinguishable from "nothing was due".
+  if (err24h || err3h) {
+    console.error("[reminders] query failed", err24h ?? err3h);
+    return NextResponse.json({ ok: false, error: "query_failed" }, { status: 500 });
+  }
 
   let sent24h = 0;
   let sent3h = 0;
