@@ -35,7 +35,13 @@ export async function runOutcomeTracker(salonId: string): Promise<void> {
     .select("id, agent, created_at, payload")
     .eq("salon_id", salonId)
     .in("agent", TRACKABLE_AGENTS)
-    .eq("action_type", "sent")
+    // A row = a message that actually went out. No agent ever writes the literal
+    // "sent"; each logs a real send type (sent_sms/sent_email, warmth_sent,
+    // step{N}_sent, birthday, milestone_{N}, vip_inactive). The only non-send
+    // marker across the trackable agents is skipped_no_channel, so exclude that
+    // instead of matching a type that never exists (which resolved zero rows and
+    // silently kept conversion at 0 forever).
+    .neq("action_type", "skipped_no_channel")
     .is("outcome", null)
     .gte("created_at", cutoffOld)
     .lte("created_at", cutoffNew);
@@ -115,7 +121,10 @@ export async function getOutcomeStats(salonId: string): Promise<OutcomeStats[]> 
     .select("agent, outcome")
     .eq("salon_id", salonId)
     .in("agent", TRACKABLE_AGENTS)
-    .eq("action_type", "sent")
+    // See runOutcomeTracker: real send types vary; only skipped_no_channel is a
+    // non-send, so exclude that rather than an "action_type = sent" that matches
+    // nothing.
+    .neq("action_type", "skipped_no_channel")
     .not("outcome", "is", null)
     .gte("created_at", since);
 

@@ -40,7 +40,11 @@ export async function analyzeAgentOutcomes(
     .from("ai_actions_log" as never)
     .select("agent, outcome")
     .eq("salon_id" as never, salonId)
-    .eq("action_type" as never, "sent")
+    // Real send types vary per agent (sent_sms, warmth_sent, step{N}_sent,
+    // birthday, milestone_{N}, vip_inactive); the only non-send marker is
+    // skipped_no_channel. Excluding it — instead of matching a literal "sent"
+    // that no agent writes — is what makes the self-learning loop see data.
+    .neq("action_type" as never, "skipped_no_channel")
     .not("outcome" as never, "is", null)
     .gte("created_at" as never, since);
 
