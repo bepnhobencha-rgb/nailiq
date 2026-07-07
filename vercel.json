@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/campaign-scheduler",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/cron/reminders",
       "schedule": "*/15 * * * *"
     },
