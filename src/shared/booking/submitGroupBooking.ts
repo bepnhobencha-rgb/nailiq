@@ -98,6 +98,10 @@ export type GroupBookingParams = {
    *  Required when the salon has phone_otp_enabled — the same artifact the
    *  individual flow uses. Blocks fake-number group bookings (sabotage). */
   otpSessionId?: string | null;
+  /** Voucher applied to the WHOLE party total, tied to the organizer's phone
+   *  (mirrors submitPublicBooking). Redeemed against the lead booking after the
+   *  group is created. Absent → no discount. */
+  voucherRedemption?: { voucher_id: string; discount_cents: number } | null;
 };
 
 export type GroupBookingResult =
@@ -909,6 +913,42 @@ export async function submitGroupBooking(
     }
   } catch (e) {
     console.error("[submitGroupBooking] group sms-confirm dispatch failed", e);
+  }
+
+  // Fire-and-forget: redeem the party voucher against the lead booking. The
+  // voucher is tied to the organizer's phone (only member 0 has a real number)
+  // and applies to the whole-party total, so it redeems once against the lead
+  // row — mirrors submitPublicBooking's redeem side-effect.
+  if (params.voucherRedemption?.voucher_id && bookingIdList[0]) {
+    const organizerPhoneOk = validateGuestPhone(params.members[0]?.phone ?? "");
+    if (organizerPhoneOk.ok) {
+      const groupTotalCents = resolved.reduce(
+        (sum, r) => sum + (r.priceCents ?? 0) + (r.addonPriceCents ?? 0),
+        0,
+      );
+      void (async () => {
+        try {
+          const appUrl =
+            typeof window !== "undefined"
+              ? ""
+              : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+          await fetch(`${appUrl}/api/vouchers/redeem`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              voucher_id: params.voucherRedemption!.voucher_id,
+              salon_id: String(salonRow.id),
+              client_phone: organizerPhoneOk.digits,
+              booking_id: bookingIdList[0],
+              original_price_cents: groupTotalCents,
+              discount_cents: params.voucherRedemption!.discount_cents,
+            }),
+          });
+        } catch (e) {
+          console.error("[submitGroupBooking] voucher redeem dispatch failed", e);
+        }
+      })();
+    }
   }
 
   return {
