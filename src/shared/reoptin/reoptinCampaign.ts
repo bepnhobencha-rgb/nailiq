@@ -54,6 +54,20 @@ function genToken(): string {
   return randomBytes(18).toString("base64url");
 }
 
+/**
+ * Sender that reads as the salon, kept on the verified platform address so it
+ * still lands in the inbox: "NailIQ <hello@nailiq.ca>" -> "Hi-Lite Head Spa
+ * <hello@nailiq.ca>". Replies still go to the salon (replyTo). Falls back to the
+ * raw env value if it carries no <address>.
+ */
+function brandedFrom(salonName: string): string {
+  const raw = getResendFrom();
+  const m = raw.match(/<([^>]+)>/);
+  const addr = m ? m[1] : raw;
+  const name = salonName.replace(/[<>"]/g, "").trim();
+  return name ? `${name} <${addr}>` : raw;
+}
+
 function esc(s: string): string {
   return s.replace(/[<>&"]/g, (c) =>
     ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] ?? c),
@@ -209,7 +223,7 @@ export async function ensureVoucher(
   return null;
 }
 
-function renderEmail(opts: {
+export function renderEmail(opts: {
   client: ReoptinClient;
   salon: SalonRow;
   bookUrl: string;
@@ -326,7 +340,7 @@ async function sendOne(
   if (!resend) return { status: "failed", email: client.email, reason: "no_resend" };
 
   const { error } = await resend.emails.send({
-    from: getResendFrom(),
+    from: brandedFrom(salon.name),
     to: client.email,
     subject,
     html,
@@ -391,7 +405,7 @@ export async function runReoptinBatch(
       return { salon: salon.slug, targeted: 1, sent: 0, skipped: 0, failed: 1, dryRun: false, results: [{ status: "failed", email: opts.testTo, reason: "no_resend" }] };
     }
     const { error } = await resend.emails.send({
-      from: getResendFrom(),
+      from: brandedFrom(salon.name),
       to: opts.testTo,
       subject: `[TEST] ${subject}`,
       html,
