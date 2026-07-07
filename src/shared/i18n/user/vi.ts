@@ -475,7 +475,7 @@ export const userVi: UserMessages = {
     reviews: "Đánh giá",
     messages: "Tin nhắn",
     reports: "Báo cáo",
-    marketing: "Giữ khách",
+    marketing: "Marketing",
     settings: "Cài đặt",
     quickAddWalkin: "+ Thêm khách",
     messagesSoonBadge: "Sắp ra",

@@ -260,9 +260,9 @@ export const RELEASE_FEATURES: Record<ReleaseFeatureKey, ReleaseFeatureDescripto
     label: "Marketing",
     group: "customers",
     phase: "beta",
-    defaultOn: false,
+    defaultOn: true,
     source: { kind: "registry" },
-    description: "Marketing / SMS campaigns.",
+    description: "Marketing campaigns (re-opt-in, offers). Owner/admin only.",
   },
   combos: {
     key: "combos",
