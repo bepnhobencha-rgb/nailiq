@@ -280,6 +280,25 @@ export function SalonOwnerDashboard({
   const upcomingByDay = useMemo(() => {
     if (!viewData || !viewData.upcoming.length) return [];
     const locale = language === "vi" ? "vi-VN" : "en-US";
+    // Group + label in the SALON timezone, not the runtime's. `new Date().get*`
+    // / `toLocaleDateString()` without a `timeZone` use the runtime zone, so the
+    // server (Vercel = UTC) and the browser (salon-local, e.g. LA) render
+    // different day headers for any booking near a UTC day boundary → React
+    // #418 hydration mismatch. An explicit `timeZone` makes both passes agree.
+    // Fallback to UTC keeps both sides consistent if a row lacks a tz.
+    const tz = viewData.salon.timezone || "UTC";
+    const keyFmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const labelFmt = new Intl.DateTimeFormat(locale, {
+      timeZone: tz,
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
     const map = new Map<
       string,
       { label: string; items: SalonDashboardBooking[] }
@@ -287,12 +306,8 @@ export function SalonOwnerDashboard({
     for (const b of viewData.upcoming) {
       if (b.start_time_utc == null) continue;
       const d = new Date(b.start_time_utc);
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      const label = d.toLocaleDateString(locale, {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-      });
+      const key = keyFmt.format(d);
+      const label = labelFmt.format(d);
       const group = map.get(key);
       if (group) {
         group.items.push(b);

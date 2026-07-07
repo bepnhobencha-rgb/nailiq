@@ -329,6 +329,12 @@ export type LoadSalonDashboardResult =
         opening_hours: unknown | null;
         profile_complete: boolean;
         vertical: string | null;
+        /** IANA timezone (e.g. "America/Los_Angeles"). Threaded to the client
+         *  so date grouping/labels format with an explicit `timeZone` instead
+         *  of the runtime's — server (UTC) and browser (salon-local) otherwise
+         *  render different day headers and trip a React #418 hydration
+         *  mismatch. Empty string only if the row somehow lacks one. */
+        timezone: string;
       };
       setup: {
         services_count: number;
@@ -436,6 +442,7 @@ export async function loadSalonOwnerDashboard(
       opening_hours: salon.opening_hours ?? null,
       profile_complete: !!salon.profile_complete,
       vertical: typeof salon.vertical === "string" ? salon.vertical : null,
+      timezone: typeof salon.timezone === "string" ? salon.timezone.trim() : "",
     },
     setup: {
       services_count: servicesCount ?? 0,
