@@ -133,8 +133,12 @@ export function BookingFlowPhonePanel({
                 "nq-booking-field",
                 returningCustomer !== null &&
                   "border-nq-primary/40 pr-8 text-[var(--booking-text)]",
+                phoneLocallyInvalid && "border-nq-error/50",
               )}
               aria-invalid={phoneLocallyInvalid}
+              aria-describedby={
+                phoneLocallyInvalid ? "booking-phone-step-error" : undefined
+              }
               data-testid="booking-phone-step-phone"
             />
             {/* Tick icon when a returning customer is recognised */}
@@ -144,6 +148,20 @@ export function BookingFlowPhonePanel({
               </span>
             )}
           </div>
+
+          {/* Invalid-number hint — the CTA is disabled while the number is
+              locally invalid, so without this the user just sees a greyed-out
+              button and no reason why. Shows an example format instead. */}
+          {phoneLocallyInvalid && (
+            <p
+              id="booking-phone-step-error"
+              className="mt-1.5 text-xs text-nq-error"
+              role="alert"
+              data-testid="booking-phone-step-error"
+            >
+              {t.bookingErrors.invalidPhone}
+            </p>
+          )}
 
           {/* Lookup-in-flight dots — visible only while loading and no result yet */}
           {lookupLoading && returningCustomer === null && (
