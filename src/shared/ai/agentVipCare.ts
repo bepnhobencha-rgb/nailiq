@@ -77,18 +77,56 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
 
   if (!profiles?.length) return [];
 
-  // Count completed bookings per client at this salon
+  // Count completed bookings per client at this salon. Track each visit day
+  // too, so Square-imported visits below can be merged without double-counting
+  // a NailIQ booking that was also paid through Square (same-day overlap).
   const { data: bookingCounts } = await (db as ReturnType<typeof looseServiceClient>)
     .from("bookings" as never)
-    .select("client_profile_id, id" as never)
+    .select("client_profile_id, start_time_utc" as never)
     .eq("salon_id" as never, salonId)
     .eq("status" as never, "completed")
     .in("client_profile_id" as never, ids);
 
   const visitCountMap = new Map<string, number>();
+  const bookingDayMap = new Map<string, Set<string>>();
   for (const b of (bookingCounts ?? []) as Row[]) {
     const cid = str(b.client_profile_id);
     visitCountMap.set(cid, (visitCountMap.get(cid) ?? 0) + 1);
+    const day = str(b.start_time_utc).slice(0, 10);
+    if (day) {
+      if (!bookingDayMap.has(cid)) bookingDayMap.set(cid, new Set());
+      bookingDayMap.get(cid)!.add(day);
+    }
+  }
+
+  // Merge Square-imported paid visits. For salons migrated from Square the
+  // historical (and ongoing POS) visit ledger lives in square_visit_history,
+  // NOT in bookings — so imported clients otherwise look like 0-visit / never-
+  // seen and the milestone / win-back triggers never fire. Count only Square
+  // visit-days with no matching completed booking that day (avoids double count
+  // for the overlap set). Salons without any Square rows are unaffected.
+  const { data: squareVisits } = await (db as ReturnType<typeof looseServiceClient>)
+    .from("square_visit_history" as never)
+    .select("client_profile_id, visit_date" as never)
+    .eq("salon_id" as never, salonId)
+    .in("client_profile_id" as never, ids);
+
+  const squareDayMap = new Map<string, Set<string>>();
+  const squareLastMap = new Map<string, string>();
+  for (const v of (squareVisits ?? []) as Row[]) {
+    const cid = str(v.client_profile_id);
+    const day = str(v.visit_date).slice(0, 10);
+    if (!cid || !day) continue;
+    if (!squareDayMap.has(cid)) squareDayMap.set(cid, new Set());
+    squareDayMap.get(cid)!.add(day);
+    const prev = squareLastMap.get(cid);
+    if (!prev || day > prev) squareLastMap.set(cid, day);
+  }
+  for (const [cid, days] of squareDayMap) {
+    const bookingDays = bookingDayMap.get(cid);
+    let extra = 0;
+    for (const d of days) if (!bookingDays || !bookingDays.has(d)) extra += 1;
+    if (extra > 0) visitCountMap.set(cid, (visitCountMap.get(cid) ?? 0) + extra);
   }
 
   // Latest booking per client
@@ -103,6 +141,12 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
   for (const b of (latestRows ?? []) as Row[]) {
     const cid = str(b.client_profile_id);
     if (!lastVisitMap.has(cid)) lastVisitMap.set(cid, str(b.start_time_utc));
+  }
+  // Fold in Square last-visit dates — imported clients have no booking rows,
+  // and even booked clients may have a more recent Square-only payment.
+  for (const [cid, day] of squareLastMap) {
+    const existing = lastVisitMap.get(cid);
+    if (!existing || day > existing.slice(0, 10)) lastVisitMap.set(cid, day);
   }
 
   const out: VipClient[] = [];
