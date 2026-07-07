@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { OwnerHomeData } from "@/shared/dashboard/loadOwnerHomeDashboardAction";
 import { getUserMessages } from "@/shared/i18n/user";
 import { formatCurrency, formatCurrencyOrZero } from "@/shared/lib/currencyFormat";
@@ -19,6 +20,9 @@ function TrendBadge({
   label: string;
 }) {
   if (previous === 0) return null;
+  // Don't shout a red "↓100%" when this period simply hasn't started yet
+  // (e.g. Monday morning: 0 so far vs a full prior week) — it reads as a crash.
+  if (current === 0) return null;
   const pct = Math.round(((current - previous) / previous) * 100);
   if (pct === 0) return null;
   const up = pct > 0;
@@ -169,9 +173,33 @@ export function OwnerHomeDashboard({
   onManualRefresh: () => void;
   manualRefreshing: boolean;
 }) {
+  const router = useRouter();
   const messages = getUserMessages(language);
   const th = messages.ownerDashboard.home;
   const cc = data.currencyCode;
+  const L = (en: string, viStr: string) => (language === "vi" ? viStr : en);
+
+  // "{n} bookings" → singular in English; Vietnamese ("lịch") is unaffected.
+  const bkLabel = (tmpl: string, n: number) => {
+    const s = tmpl.replace("{n}", String(n));
+    return language === "en" && n === 1 ? s.replace(/\bbookings\b/, "booking") : s;
+  };
+
+  // Short salon-timezone abbreviation (e.g. PDT) to label "today" as salon time.
+  const tzAbbr = useMemo(() => {
+    try {
+      return (
+        new Intl.DateTimeFormat("en-US", {
+          timeZone: data.timezone,
+          timeZoneName: "short",
+        })
+          .formatToParts(new Date())
+          .find((p) => p.type === "timeZoneName")?.value ?? ""
+      );
+    } catch {
+      return "";
+    }
+  }, [data.timezone]);
 
   const fmt = useMemo(
     () => (cents: number) => formatCurrencyOrZero(cents, cc),
@@ -202,9 +230,11 @@ export function OwnerHomeDashboard({
   // Date display
   const todayFormatted = useMemo(() => {
     const [y, m, d] = data.todayYmd.split("-").map(Number);
+    // todayYmd is already the salon-local date; format the UTC-midnight instant
+    // in UTC so a device in any timezone renders that exact salon day.
     return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(
       language === "vi" ? "vi-VN" : "en-US",
-      { weekday: "long", month: "long", day: "numeric" },
+      { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" },
     );
   }, [data.todayYmd, language]);
 
@@ -220,6 +250,7 @@ export function OwnerHomeDashboard({
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted/70">
             {todayFormatted}
+            {tzAbbr ? ` · ${tzAbbr}` : ""}
           </p>
           <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-nq-foreground lg:text-3xl">
             {salonName}
@@ -254,6 +285,39 @@ export function OwnerHomeDashboard({
             {th.refresh}
           </button>
         </div>
+      </div>
+
+      {/* ── Quick actions (the 3 daily jobs) ─────────────────────────── */}
+      <div className="flex flex-wrap gap-2">
+        <Link
+          href={`/dashboard/${slug}/center?view=day`}
+          className="inline-flex min-h-10 touch-manipulation items-center gap-1.5 rounded-lg border border-nq-primary/40 bg-nq-primary/10 px-3.5 py-2 text-sm font-semibold text-nq-primary transition-colors hover:bg-nq-primary/15"
+        >
+          <span aria-hidden>➕</span>
+          {L("New booking", "Tạo lịch hẹn")}
+        </Link>
+        <button
+          type="button"
+          onClick={() => {
+            try {
+              window.localStorage.setItem("nailiq-queue-panel-open", "1");
+            } catch {
+              /* ignore */
+            }
+            router.push(`/dashboard/${slug}/center#queue`);
+          }}
+          className="inline-flex min-h-10 touch-manipulation items-center gap-1.5 rounded-lg border border-nq-border/45 bg-nq-surface/45 px-3.5 py-2 text-sm font-semibold text-nq-foreground transition-colors hover:bg-nq-surface/65"
+        >
+          <span aria-hidden>🚶</span>
+          {L("Walk-in", "Khách vãng lai")}
+        </button>
+        <Link
+          href={`/dashboard/${slug}/clients`}
+          className="inline-flex min-h-10 touch-manipulation items-center gap-1.5 rounded-lg border border-nq-border/45 bg-nq-surface/45 px-3.5 py-2 text-sm font-semibold text-nq-foreground transition-colors hover:bg-nq-surface/65"
+        >
+          <span aria-hidden>👤</span>
+          {L("Add customer", "Thêm khách")}
+        </Link>
       </div>
 
       {/* ── Minh pending approvals ───────────────────────────────────── */}
@@ -318,7 +382,7 @@ export function OwnerHomeDashboard({
                 {fmt(data.monthRevenueCents)}
               </p>
               <p className="mt-0.5 text-xs text-nq-muted">
-                {th.monthBookings.replace("{n}", String(data.monthBookings))}
+                {bkLabel(th.monthBookings, data.monthBookings)}
               </p>
             </div>
             <TrendBadge
@@ -372,7 +436,7 @@ export function OwnerHomeDashboard({
                     </div>
                     <div className="shrink-0 text-right">
                       <p className="text-xs font-semibold tabular-nums text-nq-foreground">
-                        {th.bookingsCount.replace("{n}", String(svc.count))}
+                        {bkLabel(th.bookingsCount, svc.count)}
                       </p>
                       <p className="text-[11px] tabular-nums text-nq-muted">
                         {fmtMaybe(svc.revenueCents)}
