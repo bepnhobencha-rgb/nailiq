@@ -405,14 +405,13 @@ export function DashboardSidebar({
           {
             key: "marketing",
             label: t.marketing,
-            href: null,
+            href: `${dashRoot}/marketing`,
             icon: Sparkles,
-            match: () => false,
-            // Release flag: Marketing is Beta, default OFF. Hidden unless
-            // enabled; when enabled it still renders as a "Soon" placeholder
-            // (no href) until the surface ships.
-            disabled: true,
-            hidden: featureOff("marketing"),
+            match: (p) => p.startsWith(`${dashRoot}/marketing`),
+            // Owner/admin only, and behind the Marketing release flag.
+            hidden:
+              featureOff("marketing") ||
+              (role !== "owner" && role !== "admin"),
           },
         ],
       },

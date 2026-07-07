@@ -165,6 +165,38 @@ export async function loadTargets(
   return out.slice(0, Math.max(0, limit));
 }
 
+export type CampaignStats = {
+  eligible: number; // customers who could still be sent
+  sent: number; // ledger rows that reached the customer
+  confirmed: number; // opted in (clicked the CTA)
+  booked: number; // opted in AND booked
+};
+
+/**
+ * Dashboard summary for the re-opt-in campaign: how many customers remain
+ * eligible, and how the already-sent ledger has progressed (sent → confirmed →
+ * booked). Uses the service-role client (the ledger has no anon/auth RLS).
+ */
+export async function loadCampaignStats(salonId: string): Promise<CampaignStats> {
+  const db = createServiceRoleClient();
+  const { data } = await db
+    .from("reoptin_sends" as never)
+    .select("status, confirmed_at, booked_at")
+    .eq("salon_id" as never, salonId);
+  const rows = (data ?? []) as {
+    status: string;
+    confirmed_at: string | null;
+    booked_at: string | null;
+  }[];
+  const sent = rows.filter((r) =>
+    ["sent", "confirmed", "booked"].includes(r.status),
+  ).length;
+  const confirmed = rows.filter((r) => !!r.confirmed_at).length;
+  const booked = rows.filter((r) => !!r.booked_at).length;
+  const eligible = (await loadTargets(salonId, 1_000_000)).length;
+  return { eligible, sent, confirmed, booked };
+}
+
 /**
  * Get-or-create this client's re-opt-in voucher. Idempotent: a re-run reuses the
  * existing row (and its code) rather than minting a second one.
@@ -241,9 +273,8 @@ export function renderEmail(opts: {
   const html = `<div style="background:#f4efe6;padding:28px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
   <div style="max-width:560px;margin:0 auto;background:#fffdf8;border:1px solid #e7dfcd;border-radius:4px;overflow:hidden;">
     <div style="padding:32px 36px 20px;text-align:center;">
-      <div style="font-family:Georgia,'Times New Roman',serif;letter-spacing:.3em;font-size:21px;color:#1f3d38;text-indent:.3em;">HI-LITE</div>
-      <div style="margin-top:6px;font-size:10px;letter-spacing:.42em;text-indent:.42em;text-transform:uppercase;color:#7c9a8d;font-weight:600;">Head Spa</div>
-      <div style="width:44px;height:2px;background:#b8935a;margin:16px auto 0;border-radius:2px;"></div>
+      <div style="font-family:Georgia,'Times New Roman',serif;letter-spacing:.14em;text-indent:.14em;text-transform:uppercase;font-size:22px;line-height:1.25;color:#1f3d38;">${salonName}</div>
+      <div style="width:44px;height:2px;background:#b8935a;margin:14px auto 0;border-radius:2px;"></div>
     </div>
     <div style="padding:4px 36px 8px;color:#3d3a33;">
       <h1 style="font-family:Georgia,'Times New Roman',serif;font-size:25px;line-height:1.25;font-weight:500;color:#1f3d38;text-align:center;margin:10px 0 20px;">Let's stay in touch.</h1>

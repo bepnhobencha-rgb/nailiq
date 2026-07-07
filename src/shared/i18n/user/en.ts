@@ -2672,7 +2672,7 @@ export const userEn: UserMessages = {
     reviews: "Reviews",
     messages: "Messages",
     reports: "Reports",
-    marketing: "Retention",
+    marketing: "Marketing",
     settings: "Settings",
     quickAddWalkin: "+ Walk-in",
     messagesSoonBadge: "Soon",
