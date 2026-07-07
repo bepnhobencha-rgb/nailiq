@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "@/shared/lib/motionClient";
 import {
   ConfirmStepCardCapture,
@@ -191,6 +191,33 @@ export function BookingFlowConfirmPanel({
       : 0;
 
   const baseTotalCents = serviceEffectiveCents + addonsTotalCents;
+
+  // Auto-apply a voucher code carried on the landing URL (/<slug>?code=CODE),
+  // e.g. from a re-opt-in email. Fires once, only when a code is present and the
+  // customer hasn't already applied one; a mismatch (wrong phone, expired) is
+  // silent — they can still book at full price.
+  const autoVoucherTried = useRef(false);
+  useEffect(() => {
+    if (autoVoucherTried.current || appliedVoucher || baseTotalCents <= 0) return;
+    const code =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("code")?.trim().toUpperCase()
+        : null;
+    if (!code) return;
+    autoVoucherTried.current = true;
+    let cancelled = false;
+    void (async () => {
+      setVoucherInput(code);
+      setVoucherLoading(true);
+      const res = await onApplyVoucher(code, baseTotalCents);
+      if (cancelled) return;
+      setVoucherLoading(false);
+      if (res.error) setVoucherError(null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [appliedVoucher, baseTotalCents, onApplyVoucher]);
 
   const subtotalCents = appliedVoucher
     ? appliedVoucher.final_price_cents
