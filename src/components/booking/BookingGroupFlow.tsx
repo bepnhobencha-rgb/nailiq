@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
 import { addonLabel } from "@/shared/booking/serviceLabels";
@@ -288,6 +288,15 @@ export function BookingGroupFlow({
     initialOrganizer?.email ?? "",
   );
 
+  // Voucher applied to the whole-party total (tied to the organizer phone).
+  // Mirrors the individual flow's appliedVoucher; feeds submitGroupBooking.
+  const [appliedVoucher, setAppliedVoucher] = useState<{
+    voucher_id: string;
+    code: string;
+    discount_cents: number;
+    final_price_cents: number;
+  } | null>(null);
+
   // Organizer recognition — when the primary-contact phone is valid we
   // look the customer up (same `/api/customer/[phone]` endpoint the
   // individual flow uses) and greet returning guests by name + VIP +
@@ -517,8 +526,70 @@ export function BookingGroupFlow({
 
   const totalDisplay = useMemo(() => {
     if (totals.totalCents == null) return null;
-    return formatCurrency(totals.totalCents, salon.currencyCode) ?? null;
-  }, [totals.totalCents, salon.currencyCode]);
+    // Show the discounted party total once a voucher is applied.
+    const cents = appliedVoucher ? appliedVoucher.final_price_cents : totals.totalCents;
+    return formatCurrency(cents, salon.currencyCode) ?? null;
+  }, [totals.totalCents, salon.currencyCode, appliedVoucher]);
+
+  // Apply a voucher to the whole-party total, validated against the organizer
+  // phone. Mirrors useBookingFlowState.handleApplyVoucher.
+  const handleApplyVoucher = useCallback(
+    async (code: string, totalCents: number): Promise<{ error?: string }> => {
+      try {
+        const res = await fetch("/api/vouchers/validate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            salon_id: salon.id,
+            code,
+            client_phone: primaryPhone,
+            price_cents: totalCents,
+          }),
+        });
+        const data = (await res.json()) as {
+          ok: boolean;
+          error?: string;
+          voucher_id?: string;
+          code?: string;
+          discount_cents?: number;
+          final_price_cents?: number;
+        };
+        if (!data.ok || !data.voucher_id) return { error: data.error ?? "generic" };
+        setAppliedVoucher({
+          voucher_id: data.voucher_id,
+          code: data.code ?? code,
+          discount_cents: data.discount_cents ?? 0,
+          final_price_cents: data.final_price_cents ?? totalCents,
+        });
+        return {};
+      } catch {
+        return { error: "generic" };
+      }
+    },
+    [salon.id, primaryPhone],
+  );
+
+  const handleRemoveVoucher = useCallback(() => setAppliedVoucher(null), []);
+
+  // Auto-apply a code carried on the landing URL (/<slug>?code=CODE), e.g. from
+  // a re-opt-in email. Fires once, on the confirm step, after the organizer
+  // phone is valid and the total is known. A mismatch is silent — the party can
+  // still book at full price.
+  const autoVoucherTried = useRef(false);
+  useEffect(() => {
+    if (autoVoucherTried.current || appliedVoucher) return;
+    if (step !== 5) return;
+    if (totals.totalCents == null || totals.totalCents <= 0) return;
+    if (!validateGuestPhone(primaryPhone).ok) return;
+    const code =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("code")?.trim().toUpperCase()
+        : null;
+    if (!code) return;
+    autoVoucherTried.current = true;
+    const total = totals.totalCents;
+    void Promise.resolve().then(() => handleApplyVoucher(code, total));
+  }, [step, primaryPhone, totals.totalCents, appliedVoucher, handleApplyVoucher]);
 
   // Same staff twice → soft warning only (scheduler will stagger).
   const duplicateStaffIdx = useMemo(() => {
@@ -1019,6 +1090,11 @@ export function BookingGroupFlow({
         // `duplicate_submission` instead of creating a second
         // group.
         idempotencyKey: idempotencyKeyRef.current,
+        // Whole-party voucher (re-opt-in 10% etc.), redeemed against the lead
+        // booking server-side.
+        voucherRedemption: appliedVoucher
+          ? { voucher_id: appliedVoucher.voucher_id, discount_cents: appliedVoucher.discount_cents }
+          : undefined,
       });
       if (res.ok) {
         setSuccessResult({ groupId: res.groupId, bookingIds: res.bookingIds });
@@ -1767,6 +1843,10 @@ export function BookingGroupFlow({
           noShowConsent={noShowConsent}
           onNoShowConsentChange={setNoShowConsent}
           currencyCode={salon.currencyCode}
+          baseTotalCents={totals.totalCents}
+          appliedVoucher={appliedVoucher}
+          onApplyVoucher={handleApplyVoucher}
+          onRemoveVoucher={handleRemoveVoucher}
         />
       ) : null}
     </section>
@@ -3543,6 +3623,10 @@ function ConfirmStep({
   noShowConsent,
   onNoShowConsentChange,
   currencyCode,
+  baseTotalCents,
+  appliedVoucher,
+  onApplyVoucher,
+  onRemoveVoucher,
 }: {
   t: BookingMessages;
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
@@ -3595,6 +3679,17 @@ function ConfirmStep({
   onNoShowConsentChange: (v: boolean) => void;
   /** Salon currency — for the no-show card fee label. */
   currencyCode: BookingSalonMeta["currencyCode"];
+  /** Whole-party base total (pre-voucher), for voucher validation. */
+  baseTotalCents: number | null;
+  /** Applied whole-party voucher, or null. */
+  appliedVoucher: {
+    voucher_id: string;
+    code: string;
+    discount_cents: number;
+    final_price_cents: number;
+  } | null;
+  onApplyVoucher: (code: string, totalCents: number) => Promise<{ error?: string }>;
+  onRemoveVoucher: () => void;
 }) {
   const dateDisplay = useMemo(() => {
     // Display the chosen date in salon-tz long form. The
@@ -3609,6 +3704,25 @@ function ConfirmStep({
   // Pre-satisfied from the phone gate (initialSmsConsent) so the customer
   // doesn't tick the same consent twice (gate + group confirm).
   const [smsConsent, setSmsConsent] = useState(initialSmsConsent);
+
+  // Whole-party voucher input (mirrors the individual confirm panel).
+  const [voucherInput, setVoucherInput] = useState("");
+  const [voucherError, setVoucherError] = useState<string | null>(null);
+  const [voucherLoading, setVoucherLoading] = useState(false);
+  async function handleApplyVoucherLocal() {
+    const code = voucherInput.trim().toUpperCase();
+    if (!code || baseTotalCents == null || baseTotalCents <= 0) return;
+    setVoucherError(null);
+    setVoucherLoading(true);
+    const result = await onApplyVoucher(code, baseTotalCents);
+    setVoucherLoading(false);
+    if (result.error) {
+      const errors = t.voucherErrors as Record<string, string>;
+      setVoucherError(errors[result.error] ?? errors.generic ?? result.error);
+    } else {
+      setVoucherInput("");
+    }
+  }
 
   if (!arrangement) {
     return (
@@ -3935,6 +4049,54 @@ function ConfirmStep({
               )}
             </span>
           </label>
+        </div>
+      ) : null}
+
+      {/* Whole-party voucher / discount code (mirrors the individual confirm
+          panel). Auto-filled when the party arrives via a /?code= link. */}
+      {baseTotalCents != null && baseTotalCents > 0 ? (
+        <div className="mb-3">
+          {appliedVoucher ? (
+            <div className="flex items-center justify-between rounded-xl border border-[var(--salon-primary)]/40 bg-[color-mix(in_srgb,var(--salon-primary)_10%,transparent)] px-4 py-3">
+              <p className="text-sm font-medium text-[var(--booking-text)]">
+                {(t.voucherApplied as string).replace("{code}", appliedVoucher.code)}
+                {appliedVoucher.discount_cents > 0
+                  ? ` · –${formatCurrency(appliedVoucher.discount_cents, currencyCode) ?? ""}`
+                  : ""}
+              </p>
+              <button
+                type="button"
+                onClick={() => { onRemoveVoucher(); setVoucherError(null); }}
+                className="ml-3 shrink-0 text-xs text-[var(--booking-text-muted)] underline underline-offset-2"
+              >
+                {t.voucherRemove}
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={voucherInput}
+                onChange={(e) => { setVoucherInput(e.target.value.toUpperCase()); setVoucherError(null); }}
+                onKeyDown={(e) => { if (e.nativeEvent.isComposing || e.keyCode === 229) return; if (e.key === "Enter") { e.preventDefault(); void handleApplyVoucherLocal(); } }}
+                placeholder={t.voucherPlaceholder}
+                maxLength={32}
+                className="nq-booking-glass h-12 min-w-0 flex-1 rounded-xl border border-[var(--booking-border)] bg-[var(--booking-bg-input)] px-3 text-sm text-[var(--booking-text)] placeholder:text-[var(--booking-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--salon-primary)]/40"
+                aria-label={t.voucherLabel}
+              />
+              <button
+                type="button"
+                disabled={!voucherInput.trim() || voucherLoading}
+                onClick={() => void handleApplyVoucherLocal()}
+                className="h-12 shrink-0 rounded-xl border border-[var(--booking-border)] bg-[var(--booking-bg-input)] px-4 text-sm font-medium text-[var(--booking-text)] transition-colors hover:bg-[var(--booking-bg-input)] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {voucherLoading ? "…" : t.voucherApply}
+              </button>
+            </div>
+          )}
+          {voucherError && (
+            <p className="mt-1.5 text-xs text-nq-error" role="alert">{voucherError}</p>
+          )}
         </div>
       ) : null}
 
