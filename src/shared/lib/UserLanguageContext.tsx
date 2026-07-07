@@ -52,6 +52,18 @@ function persistLanguage(next: UserLanguage) {
   // Mirror to a cookie so the SSR resolver can render the saved language
   // on the next request without a hydration flash.
   document.cookie = `${USER_LANGUAGE_COOKIE}=${next}; Path=/; Max-Age=${COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`;
+  // Best-effort: persist to the logged-in user's account so the choice follows
+  // them across devices. 401 for anonymous visitors — harmless, ignored.
+  try {
+    void fetch("/api/user/language", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ language: next }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* ignore */
+  }
 }
 
 /**

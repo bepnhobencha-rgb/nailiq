@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { createClient } from "@/shared/lib/supabase/server";
 import {
   USER_LANGUAGE_COOKIE,
   USER_LANGUAGES,
@@ -23,10 +24,28 @@ import {
  * salon-owner UI and customer-facing UI can diverge per surface.
  */
 export async function resolveUserLanguage(): Promise<UserLanguage> {
+  // 1. A logged-in user's saved account language wins — it follows them across
+  //    devices (set via /api/user/language). Anonymous visitors skip this.
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    const acct = user?.user_metadata?.user_language;
+    if (typeof acct === "string" && USER_LANGUAGES.includes(acct as UserLanguage)) {
+      return acct as UserLanguage;
+    }
+  } catch {
+    /* anonymous / auth unavailable → fall through to cookie */
+  }
+
+  // 2. The explicit per-device toggle choice.
   const cookieStore = await cookies();
   const cookieVal = cookieStore.get(USER_LANGUAGE_COOKIE)?.value;
   if (cookieVal && USER_LANGUAGES.includes(cookieVal as UserLanguage)) {
     return cookieVal as UserLanguage;
   }
+
+  // 3. Product default.
   return "en";
 }
