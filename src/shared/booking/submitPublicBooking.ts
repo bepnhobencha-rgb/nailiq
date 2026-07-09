@@ -1109,12 +1109,18 @@ export async function submitPublicBooking(
   // silently no-op'd under RLS, so it never persisted — front desk saw online
   // OTP-verified bookings as "unverified").
 
-  // Fire-and-forget: tag booking with combo ID for analytics
+  // Fire-and-forget: tag booking with combo ID for analytics.
+  // `.then()` is what makes a PostgrestBuilder issue its request — a bare
+  // `void supabase.from(...)` builds the query and drops it (service_combo_id
+  // was never written). This runs in the browser, so it stays non-blocking.
   if (comboOverride?.comboId && bookingId) {
     void supabase
       .from("bookings")
       .update({ service_combo_id: comboOverride.comboId } as never)
-      .eq("id", bookingId);
+      .eq("id", bookingId)
+      .then(({ error }) => {
+        if (error) console.error("[submitPublicBooking] service_combo_id write failed", error);
+      });
   }
 
   // Fire-and-forget: store reference image path on booking

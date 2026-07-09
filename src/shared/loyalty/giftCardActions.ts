@@ -103,7 +103,10 @@ export async function redeemGiftCard(
     .update({ used_count: v.used_count + 1, updated_at: new Date().toISOString() })
     .eq("id", v.id);
 
-  void supabase
+  // Awaited: `void` never issued the insert, so no redemption was ever recorded.
+  // (`vouchers.used_count` above IS awaited, so reuse was still blocked — this
+  // was a missing audit trail, not a double-spend.)
+  const { error: redemptionError } = await supabase
     .from("voucher_redemptions" as never)
     .insert({
       voucher_id: v.id,
@@ -111,6 +114,7 @@ export async function redeemGiftCard(
       booking_id: bookingId ?? null,
       discount_applied_cents: discountCents,
     });
+  if (redemptionError) console.error("[giftCard] voucher_redemptions insert failed", redemptionError.message);
 
   return { ok: true, discountCents };
 }
