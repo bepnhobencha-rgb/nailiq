@@ -160,7 +160,9 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
 
       if (ch.noChannel) {
         console.warn(`[runRebook] no channel for ${c.name} — reason: ${ch.reason}`);
-        void svc.from("ai_actions_log" as never).insert({
+        // Awaited — `void` on a PostgrestBuilder never issued the insert, so
+        // Minh's audit trail had no record of skipped customers.
+        await svc.from("ai_actions_log" as never).insert({
           salon_id: salonId,
           agent: "rebook",
           action_type: "skipped_no_channel",

@@ -216,7 +216,9 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
         console.warn(
           `[runWinback] no channel for ${c.name} (${c.phone}) — reason: ${ch.reason}. Add email or complete A2P.`,
         );
-        void svc.from("ai_actions_log" as never).insert({
+        // Awaited — `void` on a PostgrestBuilder never issued the insert, so
+        // Minh's audit trail had no record of skipped customers.
+        await svc.from("ai_actions_log" as never).insert({
           salon_id: salonId,
           agent: "winback",
           action_type: "skipped_no_channel",

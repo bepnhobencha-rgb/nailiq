@@ -178,14 +178,17 @@ export async function reportLateDecline(
     start_at: string;
   };
 
-  // Mark attendance_status = 'declined' even though it's late (record the intent)
-  void db
+  // Mark attendance_status = 'declined' even though it's late (record the intent).
+  // Awaited: `void` on a PostgrestBuilder never issues the request, so the seat
+  // stayed marked as attending after a late decline.
+  const { error: declineError } = await db
     .from("bookings" as never)
     .update({ attendance_status: "declined" } as never)
     .eq("id", bookingId);
+  if (declineError) console.error("[lateDecline] attendance_status write failed", declineError.message);
 
   // Log to ai_actions_log → Minh picks this up on next cron cycle
-  void db.from("ai_actions_log" as never).insert({
+  await db.from("ai_actions_log" as never).insert({
     salon_id: b.salon_id,
     agent: "minh_late_decline",
     action_type: "late_group_decline",
@@ -262,8 +265,9 @@ async function notifyOrganizerLateDeclne(
 
     await sendSmsReminder(partyLink.organizer_phone, msg, { salonIsTest, lang: "vi" });
 
-    // Mark notified on the claim row
-    void db
+    // Mark notified on the claim row (awaited — `void` never issued the request,
+    // so the organizer could be re-notified on every pass)
+    await db
       .from("party_link_claims" as never)
       .update({ organizer_notified_at: new Date().toISOString() } as never)
       .eq("booking_id", bookingId);

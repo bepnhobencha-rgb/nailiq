@@ -156,8 +156,10 @@ export async function POST(req: Request) {
   const statusCallbackUrl = `${SITE_URL}/api/twilio/status`;
   const result = await sendSmsReminder(clientPhone, message, { statusCallbackUrl, salonIsTest, lang: lang === "en" ? "en" : "vi" });
 
-  // Track on bookings row (legacy columns kept for now)
-  void db
+  // Track on bookings row (legacy columns kept for now).
+  // Awaited: a PostgrestBuilder only issues its request from `then()`, so the
+  // `void`-ed form here never wrote — every one of these columns was NULL.
+  const { error: trackError } = await db
     .from("bookings")
     .update(
       result.ok
@@ -168,6 +170,7 @@ export async function POST(req: Request) {
           },
     )
     .eq("id", bookingId);
+  if (trackError) console.error("[sms-confirm] sms_confirmation tracking write failed", trackError.message);
 
   // Log to central notifications table
   void logNotification({
