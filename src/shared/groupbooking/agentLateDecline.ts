@@ -120,7 +120,9 @@ async function notifyTopWaitlist(
 
   // Mark as notified so the next dedup pass skips this entry
   if (res.ok) {
-    void db
+    // Awaited — `void` on a PostgrestBuilder never issued the request, so the
+    // dedup pass never saw "notified" and could re-notify the same entry.
+    await db
       .from("booking_waitlist_entries" as never)
       .update({ status: "notified", notified_at: new Date().toISOString() } as never)
       .eq("id", top.id);
