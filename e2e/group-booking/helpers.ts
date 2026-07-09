@@ -204,13 +204,13 @@ export async function gotoGroupFlow(page: Page, slug: string): Promise<void> {
   await page.getByTestId("booking-entry-phone").fill(GATE_PHONE_DIGITS.slice(1));
 
   // Gate requires name + SMS consent before flowReady = true (PR #487).
-  const smsConsent = page.getByTestId("sms-consent");
-  await smsConsent.waitFor({ state: "visible", timeout: 8_000 });
+  // Wait on the name input: the consent checkbox now renders on load, so it no
+  // longer gates on the customer lookup and cannot be used to await it. The
+  // profile was deleted above, so the name input is guaranteed to appear.
   const nameInput = page.getByTestId("booking-entry-name");
-  if (await nameInput.isVisible()) {
-    await nameInput.fill("Test Guest");
-  }
-  await smsConsent.check();
+  await nameInput.waitFor({ state: "visible", timeout: 8_000 });
+  await nameInput.fill("Test Guest");
+  await page.getByTestId("sms-consent").check();
 
   await page
     .getByTestId("booking-type-group")

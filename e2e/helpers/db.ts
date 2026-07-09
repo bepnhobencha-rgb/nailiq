@@ -380,15 +380,16 @@ export async function gotoBookingServiceStep(
   // National number only — CountryPhoneField's inner input, not the full E164.
   await setReactInputValue(phoneInput, GATE_PHONE_DIGITS.slice(1));
 
-  // Wait for the SMS consent checkbox; it appears once the customer lookup
-  // finishes (~400ms debounce). For a new customer the name input appears too.
-  const smsConsent = page.getByTestId("sms-consent");
-  await smsConsent.waitFor({ state: "visible", timeout: 8_000 });
+  // Wait on the NAME input, not the consent checkbox. The checkbox is rendered
+  // immediately (Twilio requires the disclosure to be visible on load), so it
+  // is no longer a synchronisation point for the ~400ms customer lookup —
+  // waiting on it returned instantly and the name was filled before the input
+  // existed, leaving the gate closed. The profile was deleted above, so this
+  // phone is a new customer and the name input is guaranteed to appear.
   const nameInput = page.getByTestId("booking-entry-name");
-  if (await nameInput.isVisible()) {
-    await nameInput.fill("Test Guest");
-  }
-  await smsConsent.check();
+  await nameInput.waitFor({ state: "visible", timeout: 8_000 });
+  await nameInput.fill("Test Guest");
+  await page.getByTestId("sms-consent").check();
 
   await page
     .locator('[data-testid="service-tile-select"]')
