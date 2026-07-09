@@ -2,7 +2,10 @@
 // Sends bilingual confirmation SMS and tracks delivery status on the booking row.
 // Checks customer_preferences for preferred language; defaults to Vietnamese.
 
+import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { buildSmsConsentMeta } from "@/shared/booking/smsConsentRecord";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { logNotification } from "@/shared/lib/notificationLog";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -27,47 +30,107 @@ function formatConfirmDate(isoUtc: string, timezone = "America/Vancouver"): stri
   }
 }
 
-export async function POST(req: Request) {
-  const body = await req.json().catch(() => null);
-  if (!body) return NextResponse.json({ ok: false }, { status: 400 });
+const BodySchema = z.object({
+  bookingId: z.string().uuid(),
+  salonId: z.string().uuid(),
+  clientPhone: z.string().min(1),
+  clientName: z.string().nullish(),
+  serviceName: z.string().nullish(),
+  staffName: z.string().nullish(),
+  startTimeUtc: z.string().min(1),
+  /** Language the customer chose at booking — wins over any stored pref. */
+  language: z.enum(["en", "vi"]).nullish(),
+  /** Set (>1) for a GROUP booking → one party-summary message instead of a
+   *  per-service line. serviceName is then not required. */
+  partySize: z.number().int().positive().optional(),
+  /** The customer ticked the required SMS-consent box in their browser. Callers
+   *  that never showed a checkbox (desk, voice) must omit this — see
+   *  smsConsentRecord.ts on why a fabricated record is worse than none. */
+  smsConsent: z.boolean().optional(),
+  /** Group id — used to label the consent record, never to widen the write. */
+  groupId: z.string().uuid().optional(),
+});
 
-  const { bookingId, salonId, clientPhone, clientName, serviceName, staffName, startTimeUtc, language, partySize, smsConsent, groupId } =
-    body as {
-      bookingId?: string;
-      salonId?: string;
-      clientPhone?: string;
-      clientName?: string;
-      serviceName?: string;
-      staffName?: string;
-      startTimeUtc?: string;
-      /** Language the customer chose at booking — wins over any stored pref. */
-      language?: string | null;
-      /** Set (>1) for a GROUP booking → one party-summary message instead of a
-       *  per-service line. serviceName is then not required. */
-      partySize?: number;
-      /** QA BUG-03 — the customer ticked the required SMS-consent box. Stamp
-       *  sms_consent_at so we have a CASL/TCPA record. */
-      smsConsent?: boolean;
-      /** Group id — stamp consent across all the party's bookings. */
-      groupId?: string;
-    };
+export async function POST(req: Request) {
+  const raw = await req.json().catch(() => null);
+  const parsed = BodySchema.safeParse(raw);
+  if (!parsed.success) {
+    return NextResponse.json({ ok: false, error: "invalid_body" }, { status: 400 });
+  }
+  const { bookingId, salonId, clientName, serviceName, staffName, startTimeUtc, language, partySize, smsConsent, groupId } =
+    parsed.data;
 
   const isGroup = typeof partySize === "number" && partySize > 1;
 
-  if (!bookingId || !salonId || !clientPhone || !startTimeUtc || (!isGroup && !serviceName)) {
+  if (!isGroup && !serviceName) {
     return NextResponse.json({ ok: false, error: "missing_fields" }, { status: 400 });
   }
 
   const db = createServiceRoleClient();
 
-  // QA BUG-03 — record express SMS consent first, independent of whether the
-  // Twilio send below succeeds (the consent record must persist regardless).
+  // This route is public and uses the service-role client, so the booking must
+  // be proven to belong to `salonId` before anything is written or texted.
+  // Without it, a caller could stamp consent on another tenant's booking, and
+  // `clientPhone` from the body turned this into an open SMS relay.
+  const { data: bookingRow } = await db
+    .from("bookings")
+    .select("id, salon_id, group_id, client_phone")
+    .eq("id", bookingId)
+    .maybeSingle();
+
+  const booking = bookingRow as
+    | { id: string; salon_id: string; group_id: string | null; client_phone: string | null }
+    | null;
+
+  if (!booking) return NextResponse.json({ ok: false, error: "booking_not_found" }, { status: 404 });
+  if (booking.salon_id !== salonId) {
+    return NextResponse.json({ ok: false, error: "salon_mismatch" }, { status: 403 });
+  }
+  if (groupId && booking.group_id !== groupId) {
+    return NextResponse.json({ ok: false, error: "group_mismatch" }, { status: 403 });
+  }
+
+  // Destination comes from the booking row, never from the body.
+  const clientPhone = booking.client_phone?.trim();
+  if (!clientPhone) return NextResponse.json({ ok: false, error: "no_phone" }, { status: 400 });
+
+  // Express SMS consent, recorded before the Twilio send so the record persists
+  // whether or not the message goes out.
+  //
+  // Must be awaited: a PostgrestBuilder only issues its HTTP request from
+  // `then()`, so the previous `void db.from(...).update(...)` built the query
+  // and dropped it — no booking ever got a consent stamp.
+  //
+  // Stamped on THIS booking only. The group path used to fan out across
+  // `group_id`, writing the organizer's IP and user agent onto every party
+  // member's row as if each had consented personally. Only the organizer ticks
+  // the box, and the party shares their phone, so the organizer's booking is
+  // the one row the evidence belongs to.
+  //
+  // `.is("sms_consent_at", null)` keeps it first-write-wins: a retry must not
+  // move the timestamp off the moment consent was actually given.
   if (smsConsent === true) {
-    const nowIso = new Date().toISOString();
-    if (groupId) {
-      void db.from("bookings").update({ sms_consent_at: nowIso } as never).eq("group_id", groupId);
-    } else {
-      void db.from("bookings").update({ sms_consent_at: nowIso } as never).eq("id", bookingId);
+    const meta = buildSmsConsentMeta(req, language, groupId ? "group_booking" : "public_booking", groupId);
+    const patch = { sms_consent_at: new Date().toISOString(), sms_consent_meta: meta } as never;
+
+    const { error: consentError } = await db
+      .from("bookings")
+      .update(patch)
+      .eq("id", bookingId)
+      .eq("salon_id", salonId)
+      .is("sms_consent_at", null);
+
+    if (consentError) {
+      // Consent evidence is a compliance artifact — never let it fail silently.
+      console.error("[sms-confirm] consent record write failed", {
+        bookingId,
+        groupId,
+        error: consentError.message,
+      });
+      Sentry.captureException(new Error(`sms_consent write failed: ${consentError.message}`), {
+        tags: { area: "sms_consent" },
+        extra: { bookingId, groupId, salonId },
+      });
     }
   }
 

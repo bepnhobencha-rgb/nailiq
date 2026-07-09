@@ -1018,6 +1018,7 @@ export function useBookingFlowState(
         verificationMethod: "none",
         language,
         marketingConsent: marketingConsent || undefined,
+        smsConsent: smsConsent || undefined,
       });
       setBookingResult({
         bookingId: result.bookingId,
@@ -1412,6 +1413,7 @@ export function useBookingFlowState(
         noShowConsent: extra?.noShowConsent,
         healthAck: extra?.healthAck,
         marketingConsent: marketingConsent || undefined,
+        smsConsent: smsConsent || undefined,
       });
       // Link a paid deposit to the freshly-created booking (server re-verifies
       // the PaymentIntent with Stripe). Best-effort: the webhook is the backstop.

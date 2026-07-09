@@ -344,6 +344,9 @@ export function BookingGroupFlow({
     useState<NoShowCardRequirement | null>(null);
   const [cardRequirementLoading, setCardRequirementLoading] = useState(false);
   const [noShowConsent, setNoShowConsent] = useState(false);
+  // Mirrors ConfirmStep's own consent checkbox so the submit payload carries the
+  // box the organizer actually ticked, rather than a hardcoded `true`.
+  const [smsConsentGiven, setSmsConsentGiven] = useState(initialSmsConsent);
   const cardRef = useRef<ConfirmStepCardHandle>(null);
   // Holds the tokenized card across a possible OTP round-trip (the card iframe
   // unmounts when the OTP panel replaces the confirm step).
@@ -1076,6 +1079,9 @@ export function BookingGroupFlow({
       const res: GroupBookingResult = await submitGroupBooking({
         shopSlug,
         members: payload,
+        // The organizer's actual checkbox state — the confirm button is disabled
+        // until it is ticked, but the payload must say so rather than assume it.
+        smsConsent: smsConsentGiven || undefined,
         // Couple/group seating preference → 💕 badge for reception.
         seatTogether,
         // Language the organizer is booking in → confirmation SMS matches it.
@@ -1837,6 +1843,7 @@ export function BookingGroupFlow({
           onBack={() => goToStep(4)}
           onSubmit={() => void onSubmit()}
           initialSmsConsent={initialSmsConsent}
+          onSmsConsentChange={setSmsConsentGiven}
           cardRequirement={cardRequirement}
           cardRequirementLoading={cardRequirementLoading}
           cardRef={cardRef}
@@ -3617,6 +3624,7 @@ function ConfirmStep({
   onBack,
   onSubmit,
   initialSmsConsent,
+  onSmsConsentChange,
   cardRequirement,
   cardRequirementLoading,
   cardRef,
@@ -3667,6 +3675,8 @@ function ConfirmStep({
   onSubmit: () => void;
   /** SMS consent already given at the phone gate → pre-satisfies confirm. */
   initialSmsConsent: boolean;
+  /** Lifts the ticked state so the submit payload reports real consent. */
+  onSmsConsentChange: (v: boolean) => void;
   /** No-show card requirement for the organizer (Option A — captured here,
    *  before the group is created). Null while loading / not required. */
   cardRequirement: NoShowCardRequirement | null;
@@ -4109,7 +4119,10 @@ function ConfirmStep({
             type="checkbox"
             data-testid="group-sms-consent"
             checked={smsConsent}
-            onChange={(e) => setSmsConsent(e.target.checked)}
+            onChange={(e) => {
+              setSmsConsent(e.target.checked);
+              onSmsConsentChange(e.target.checked);
+            }}
             className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
           />
           <span>{t.smsConsent}</span>

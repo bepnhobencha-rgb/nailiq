@@ -95,6 +95,10 @@ export type BookingParams = {
    *  first-visit nurture). Stamps client_profiles.marketing_consent_at so Minh
    *  agents can contact them. NULL / false = no consent → agents skip. */
   marketingConsent?: boolean;
+  /** The customer ticked the required SMS-consent box. Only the browser flow can
+   *  assert this; server-side callers (desk, voice) leave it unset so no consent
+   *  record is fabricated for a customer who never saw a checkbox. */
+  smsConsent?: boolean;
   /** Active promotion to apply after booking is confirmed (fire-and-forget server action). */
   promoRedemption?: { promoId: string; discountCents: number } | null;
   /** Email capture: $2 off incentive for first-time email submission. */
@@ -1089,8 +1093,9 @@ export async function submitPublicBooking(
         staffName: resolvedStaffName,
         startTimeUtc: startLocal.toISOString(),
         language: params.language ?? null,
-        // Consent is required by the UI before this point (QA BUG-03).
-        smsConsent: true,
+        // Only what the customer actually ticked. Never hardcode true: this same
+        // module is reachable from server-side callers with no checkbox.
+        smsConsent: params.smsConsent === true,
       }),
     });
   } catch (e) {
