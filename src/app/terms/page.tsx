@@ -115,6 +115,22 @@ export default function TermsPage() {
           </section>
 
           <section>
+            <h2 className="text-xl font-semibold text-nq-foreground">SMS Terms</h2>
+            <p className="mt-3">
+              By providing your phone number and checking the consent box on a
+              salon&apos;s booking page, you agree to receive appointment
+              confirmation and reminder text messages from that salon at the
+              number provided.
+            </p>
+            <p className="mt-3">
+              Message frequency varies. Message and data rates may apply. Reply
+              STOP to unsubscribe. Reply HELP for help. Consent is not required
+              to purchase services. Carriers are not liable for delayed or
+              undelivered messages.
+            </p>
+          </section>
+
+          <section>
             <h2 className="text-xl font-semibold text-nq-foreground">
               Disclaimer &amp; limitation of liability
             </h2>

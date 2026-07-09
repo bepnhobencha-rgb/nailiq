@@ -158,6 +158,28 @@ export default function PrivacyPage() {
           </section>
 
           <section>
+            <h2 className="text-xl font-semibold text-nq-foreground">SMS Privacy</h2>
+            <p className="mt-3">
+              When you opt in on a salon&apos;s booking page to receive SMS
+              appointment confirmations and reminders, the phone number you
+              provide is collected solely for appointment-related
+              communications with that salon.
+            </p>
+            <p className="mt-3">
+              SMS consent is never shared with third parties or affiliates for
+              marketing purposes, and we do not sell phone numbers. Twilio
+              delivers the messages on the salon&apos;s behalf and may not use
+              them for any other purpose.
+            </p>
+            <p className="mt-3">
+              You may opt out at any time by replying STOP to any message.
+              Reply HELP for assistance. Message frequency varies, message and
+              data rates may apply, and consent to receive text messages is
+              never a condition of purchasing any service.
+            </p>
+          </section>
+
+          <section>
             <h2 className="text-xl font-semibold text-nq-foreground">
               Commercial electronic messages (CASL)
             </h2>

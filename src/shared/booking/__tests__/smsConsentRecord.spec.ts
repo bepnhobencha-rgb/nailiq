@@ -50,7 +50,7 @@ describe("buildSmsConsentMeta", () => {
     );
     expect(meta.ip).toBe("203.0.113.42");
     expect(meta.userAgent).toBe("iPhone");
-    expect(meta.text).toBe(bookingEn.smsConsent);
+    expect(meta.text).toBe(bookingEn.smsConsent.replace("{salon}", ""));
     expect(meta.source).toBe("public_booking");
     expect(meta.groupId).toBeUndefined();
   });
@@ -65,7 +65,7 @@ describe("buildSmsConsentMeta", () => {
   });
 
   it("labels a group consent and carries the group id", () => {
-    const meta = buildSmsConsentMeta(reqWith({}), "vi", "group_booking", "g-1");
+    const meta = buildSmsConsentMeta(reqWith({}), "vi", "group_booking", { groupId: "g-1" });
     expect(meta.source).toBe("group_booking");
     expect(meta.groupId).toBe("g-1");
     expect(meta.lang).toBe("vi");

@@ -510,33 +510,59 @@ export function BookingTypeSwitcher({
         </div>
       ) : null}
 
-      {/* SMS consent (CASL/TCPA) — right after the phone, before the flow opens.
-          Required to proceed (the OTP SMS is sent next). */}
-      {entryPhone && !entryLoading ? (
-        <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-sm leading-relaxed text-[var(--booking-text,var(--color-nq-foreground))] opacity-80">
-          <input
-            type="checkbox"
-            data-testid="sms-consent"
-            checked={entrySmsConsent}
-            onChange={(e) => setEntrySmsConsent(e.target.checked)}
-            className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
-          />
-          <span>{t.smsConsent}</span>
-        </label>
-      ) : null}
+      {/* SMS consent (Twilio A2P 10DLC / TCPA / CASL) — sits under the phone
+          field and is required to proceed (the OTP SMS is sent next).
+          Rendered unconditionally: a Toll-Free reviewer opens this page and
+          screenshots it without typing a number, so hiding the disclosure
+          behind `entryPhone` reads as "no opt-in disclosure" (error 30513). */}
+      <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-sm leading-relaxed text-[var(--booking-text,var(--color-nq-foreground))] opacity-80">
+        <input
+          type="checkbox"
+          data-testid="sms-consent"
+          checked={entrySmsConsent}
+          onChange={(e) => setEntrySmsConsent(e.target.checked)}
+          className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+        />
+        <span>{t.smsConsent.replace("{salon}", salon.name)}</span>
+      </label>
+
+      {/* Twilio wants the policies reachable from the opt-in itself. Prefer the
+          salon's own pages; fall back to NailIQ's when they have none. */}
+      <p className="mt-1.5 pl-[1.625rem] text-xs text-[var(--booking-text-muted,var(--color-nq-foreground))] opacity-70">
+        <a
+          href={salon.privacyUrl ?? "/privacy"}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="sms-consent-privacy"
+          className="underline underline-offset-2 hover:no-underline"
+        >
+          {t.smsConsentPrivacyLink}
+        </a>
+        <span className="px-1.5" aria-hidden="true">
+          ·
+        </span>
+        <a
+          href={salon.termsUrl ?? "/terms"}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="sms-consent-terms"
+          className="underline underline-offset-2 hover:no-underline"
+        >
+          {t.smsConsentTermsLink}
+        </a>
+      </p>
+
       {/* Optional marketing consent — must be separate from transactional SMS consent. */}
-      {entryPhone && !entryLoading ? (
-        <label className="mt-1 flex cursor-pointer items-start gap-2.5 text-sm leading-relaxed text-[var(--booking-text,var(--color-nq-foreground))] opacity-70">
-          <input
-            type="checkbox"
-            data-testid="marketing-consent"
-            checked={entryMarketingConsent}
-            onChange={(e) => setEntryMarketingConsent(e.target.checked)}
-            className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
-          />
-          <span>{t.marketingConsent}</span>
-        </label>
-      ) : null}
+      <label className="mt-2 flex cursor-pointer items-start gap-2.5 text-sm leading-relaxed text-[var(--booking-text,var(--color-nq-foreground))] opacity-70">
+        <input
+          type="checkbox"
+          data-testid="marketing-consent"
+          checked={entryMarketingConsent}
+          onChange={(e) => setEntryMarketingConsent(e.target.checked)}
+          className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+        />
+        <span>{t.marketingConsent}</span>
+      </label>
 
       {/* OTP inline — appears INSIDE the card so the "Send code" button is
           always visible without scrolling. Only when salon has OTP enabled. */}

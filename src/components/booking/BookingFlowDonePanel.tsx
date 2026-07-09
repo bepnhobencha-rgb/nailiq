@@ -25,6 +25,7 @@ import {
 export function BookingFlowDonePanel({
   t,
   shopLabel,
+  smsConsent = false,
   service,
   staffName,
   addons = [],
@@ -44,6 +45,8 @@ export function BookingFlowDonePanel({
 }: {
   t: BookingMessages;
   shopLabel: string;
+  /** True when the customer ticked the SMS-consent box for this booking. */
+  smsConsent?: boolean;
   service: BookingServiceItem | undefined;
   staffName: string;
   /** Itemized add-ons (preferred). Falls back to the single legacy fields. */
@@ -215,6 +218,16 @@ export function BookingFlowDonePanel({
           {t.successSeeYouSoonBefore}
           <span className="font-medium text-[var(--booking-text)]">{shopLabel}</span>
         </p>
+        {/* Twilio expects the opt-in to be confirmed back to the customer once
+            the booking completes. Only shown when they actually consented. */}
+        {smsConsent ? (
+          <p
+            data-testid="sms-subscribed-notice"
+            className="mt-4 max-w-md text-sm leading-relaxed text-[var(--booking-text-muted)] opacity-80"
+          >
+            {t.successSmsSubscribed.replace("{salon}", shopLabel)}
+          </p>
+        ) : null}
       </div>
 
       <div

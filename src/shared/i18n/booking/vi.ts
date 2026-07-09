@@ -80,9 +80,13 @@ export const bookingVi: BookingMessages = {
   confirmTermsLink: "Điều khoản đặt lịch & Chính sách huỷ",
   submitting: "Đang gửi…",
   smsConsent:
-    "Tôi đồng ý nhận SMS xác nhận & nhắc lịch hẹn. Có thể tính phí tin nhắn; nhắn STOP để huỷ.",
+    "Tôi đồng ý nhận tin nhắn SMS xác nhận và nhắc lịch hẹn từ {salon} tới số điện thoại đã cung cấp. Có thể phát sinh cước tin nhắn và dữ liệu. Nhắn STOP để ngừng nhận. Nhắn HELP để được hỗ trợ. Việc đồng ý không phải là điều kiện để sử dụng dịch vụ.",
+  smsConsentPrivacyLink: "Chính sách bảo mật",
+  smsConsentTermsLink: "Điều khoản & Điều kiện",
   marketingConsent: "Gửi cho tôi ưu đãi & tin tức qua SMS / email (tuỳ chọn)",
   successHeading: "Đã đặt lịch thành công!",
+  successSmsSubscribed:
+    "Bạn đã đăng ký nhận tin nhắn xác nhận và nhắc lịch hẹn từ {salon}. Nhắn STOP để ngừng nhận. Nhắn HELP để được hỗ trợ.",
   successStaffLine: "với {name}",
   successSeeYouSoonBefore: "Hẹn gặp bạn tại ",
   bookingReferenceLabel: "Mã đặt lịch",

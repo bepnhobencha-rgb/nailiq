@@ -94,8 +94,18 @@ export async function POST(req: Request) {
   const clientPhone = booking.client_phone?.trim();
   if (!clientPhone) return NextResponse.json({ ok: false, error: "no_phone" }, { status: 400 });
 
+  // Check if SMS is enabled for this salon
+  const { data: salon } = await db
+    .from("salons")
+    .select("name, slug, subscription_plan, plan_override, address, email_outbound_enabled, timezone")
+    .eq("id", salonId)
+    .maybeSingle();
+
+  if (!salon) return NextResponse.json({ ok: false, error: "salon_not_found" }, { status: 404 });
+
   // Express SMS consent, recorded before the Twilio send so the record persists
-  // whether or not the message goes out.
+  // whether or not the message goes out. It runs after the salon lookup because
+  // the stored disclosure has to name the salon the customer actually read.
   //
   // Must be awaited: a PostgrestBuilder only issues its HTTP request from
   // `then()`, so the previous `void db.from(...).update(...)` built the query
@@ -110,7 +120,10 @@ export async function POST(req: Request) {
   // `.is("sms_consent_at", null)` keeps it first-write-wins: a retry must not
   // move the timestamp off the moment consent was actually given.
   if (smsConsent === true) {
-    const meta = buildSmsConsentMeta(req, language, groupId ? "group_booking" : "public_booking", groupId);
+    const meta = buildSmsConsentMeta(req, language, groupId ? "group_booking" : "public_booking", {
+      groupId,
+      salonName: salon.name ?? "",
+    });
     const patch = { sms_consent_at: new Date().toISOString(), sms_consent_meta: meta } as never;
 
     const { error: consentError } = await db
@@ -133,15 +146,6 @@ export async function POST(req: Request) {
       });
     }
   }
-
-  // Check if SMS is enabled for this salon
-  const { data: salon } = await db
-    .from("salons")
-    .select("name, slug, subscription_plan, plan_override, address, email_outbound_enabled, timezone")
-    .eq("id", salonId)
-    .maybeSingle();
-
-  if (!salon) return NextResponse.json({ ok: false, error: "salon_not_found" }, { status: 404 });
 
   // Defense-in-depth for the Twilio kill-switch: flag E2E/test salons so
   // sendSmsReminder suppresses real SMS even if a seed number ever slips past
