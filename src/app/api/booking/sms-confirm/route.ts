@@ -2,7 +2,9 @@
 // Sends bilingual confirmation SMS and tracks delivery status on the booking row.
 // Checks customer_preferences for preferred language; defaults to Vietnamese.
 
+import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
+import { buildSmsConsentMeta } from "@/shared/booking/smsConsentRecord";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { logNotification } from "@/shared/lib/notificationLog";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -62,12 +64,33 @@ export async function POST(req: Request) {
 
   // QA BUG-03 — record express SMS consent first, independent of whether the
   // Twilio send below succeeds (the consent record must persist regardless).
+  //
+  // Must be awaited: a PostgrestBuilder only issues its HTTP request from
+  // `then()`, so the previous `void db.from(...).update(...)` built the query
+  // and dropped it — no booking ever got a consent stamp.
+  //
+  // `.is("sms_consent_at", null)` makes this first-write-wins: a retry of this
+  // route must not move the timestamp off the moment consent was actually given.
   if (smsConsent === true) {
     const nowIso = new Date().toISOString();
-    if (groupId) {
-      void db.from("bookings").update({ sms_consent_at: nowIso } as never).eq("group_id", groupId);
-    } else {
-      void db.from("bookings").update({ sms_consent_at: nowIso } as never).eq("id", bookingId);
+    const meta = buildSmsConsentMeta(req, language, isGroup ? "group_booking" : "public_booking");
+    const patch = { sms_consent_at: nowIso, sms_consent_meta: meta } as never;
+    const consentWrite = groupId
+      ? db.from("bookings").update(patch).eq("group_id", groupId).is("sms_consent_at", null)
+      : db.from("bookings").update(patch).eq("id", bookingId).is("sms_consent_at", null);
+
+    const { error: consentError } = await consentWrite;
+    if (consentError) {
+      // Consent evidence is a compliance artifact — never let it fail silently.
+      console.error("[sms-confirm] consent record write failed", {
+        bookingId,
+        groupId,
+        error: consentError.message,
+      });
+      Sentry.captureException(new Error(`sms_consent write failed: ${consentError.message}`), {
+        tags: { area: "sms_consent" },
+        extra: { bookingId, groupId, salonId },
+      });
     }
   }
 
