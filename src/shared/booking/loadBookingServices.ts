@@ -35,6 +35,8 @@ export type BookingSalonMeta = {
    *  NULL → the booking page falls back to NailIQ's /privacy and /terms. */
   privacyUrl: string | null;
   termsUrl: string | null;
+  /** `salons.default_language` — last-resort booking locale. NULL → "vi". */
+  defaultLanguage: "en" | "vi" | null;
   /** IANA TZ for slot-grid label and confirmation copy (B-16). DB column is NOT NULL DEFAULT 'America/Los_Angeles'; "UTC" is a paranoid fallback. */
   timezone: string;
   /** Per-salon primary color for the booking page (PR #109). Always
@@ -463,6 +465,10 @@ export async function loadBookingServicesForSalonSlug(
         const v = (salon as { terms_url?: unknown }).terms_url;
         const s = typeof v === "string" ? v.trim() : "";
         return s.length > 0 ? s : null;
+      })(),
+      defaultLanguage: (() => {
+        const v = (salon as { default_language?: unknown }).default_language;
+        return v === "en" || v === "vi" ? v : null;
       })(),
       // Task #04-C — `salons.timezone` is NOT NULL after migration
       // 20260512600000_timezone_required. The legacy "UTC" fallback

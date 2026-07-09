@@ -73,11 +73,6 @@ async function PublicBookingRouteBody({
   langOverride?: "en" | "vi";
 }) {
   const { slug } = await paramsPromise;
-  // P0.1 — resolve booking locale. An explicit `?lang=en|vi` wins (so links from
-  // Google / a salon's own site can pin the language); otherwise fall back to
-  // cookie / Accept-Language (VI is the primary market when no signal is set).
-  const lang = langOverride ?? (await resolveBookingLanguage());
-  const t = getBookingMessages(lang);
 
   const resolved = await resolvePublicBookingPage(slug);
   if (resolved.status === "reserved") {
@@ -96,6 +91,15 @@ async function PublicBookingRouteBody({
   }
 
   const { load, normalizedSlug } = resolved;
+
+  // P0.1 — resolve booking locale. An explicit `?lang=en|vi` wins (so links from
+  // Google / a salon's own site can pin the language); then the cookie, then
+  // Accept-Language. Only when the visitor gives no signal at all does the
+  // salon's own default apply — so a US salon isn't read in Vietnamese by a
+  // reviewer or crawler, while a Vietnamese-speaking guest still gets Vietnamese.
+  // Resolved after the salon loads because it now depends on the salon.
+  const lang = langOverride ?? (await resolveBookingLanguage(load.salon.defaultLanguage));
+  const t = getBookingMessages(lang);
 
   const shopLabel = formatSalonDisplayName({
     name: load.salon.name,
