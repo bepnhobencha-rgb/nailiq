@@ -791,6 +791,22 @@ export type UserMessages = {
         tv: string;
       };
     };
+    /** Salon logo shown on the public booking header. */
+    salonLogo: {
+      sectionTitle: string;
+      intro: string;
+      uploadCta: string;
+      replaceCta: string;
+      uploading: string;
+      remove: string;
+      removing: string;
+      previewAlt: string;
+      empty: string;
+      hint: string;
+      errorTooLarge: string;
+      errorInvalidType: string;
+      errorGeneric: string;
+    };
     /** Brand color picker (PR #109). */
     brandColor: {
       sectionTitle: string;
@@ -3088,6 +3104,22 @@ export const userEn: UserMessages = {
         training: "Stripped-down view for new staff: queue and quick add.",
         tv: "Read-only wall display: queue at a glance, no input chrome.",
       },
+    },
+    salonLogo: {
+      sectionTitle: "Salon logo",
+      intro:
+        "Shown at the top of your public booking page, so a guest arriving from your website knows they are still booking with you.",
+      uploadCta: "Upload logo",
+      replaceCta: "Replace logo",
+      uploading: "Uploading…",
+      remove: "Remove",
+      removing: "Removing…",
+      previewAlt: "Salon logo preview",
+      empty: "No logo yet — the booking page shows your salon name only.",
+      hint: "PNG, JPG, WebP or SVG. Up to 2 MB. A transparent background looks best.",
+      errorTooLarge: "That file is over 2 MB. Please upload a smaller image.",
+      errorInvalidType: "Use a PNG, JPG, WebP or SVG image.",
+      errorGeneric: "Couldn't save the logo. Please try again.",
     },
     brandColor: {
       sectionTitle: "Brand color",

@@ -895,6 +895,22 @@ export const userVi: UserMessages = {
           "Hiển thị tường, chỉ đọc: nhìn nhanh hàng chờ, ẩn thao tác nhập.",
       },
     },
+    salonLogo: {
+      sectionTitle: "Logo tiệm",
+      intro:
+        "Hiển thị ở đầu trang đặt lịch công khai, để khách từ website của bạn biết mình vẫn đang đặt lịch đúng tiệm.",
+      uploadCta: "Tải logo lên",
+      replaceCta: "Đổi logo",
+      uploading: "Đang tải lên…",
+      remove: "Xoá",
+      removing: "Đang xoá…",
+      previewAlt: "Xem trước logo tiệm",
+      empty: "Chưa có logo — trang đặt lịch chỉ hiện tên tiệm.",
+      hint: "PNG, JPG, WebP hoặc SVG. Tối đa 2 MB. Nền trong suốt sẽ đẹp nhất.",
+      errorTooLarge: "Tệp lớn hơn 2 MB. Vui lòng chọn ảnh nhỏ hơn.",
+      errorInvalidType: "Chỉ nhận ảnh PNG, JPG, WebP hoặc SVG.",
+      errorGeneric: "Không lưu được logo. Vui lòng thử lại.",
+    },
     brandColor: {
       sectionTitle: "Màu thương hiệu",
       intro: "Màu chính của tiệm bạn. Hiển thị trên trang đặt lịch công khai.",

@@ -253,6 +253,7 @@ async function PublicBookingRouteBody({
         <main id="book" className="relative z-10 mx-auto w-full max-w-[1200px] px-4 py-10 pb-safe sm:px-6 lg:flex lg:items-start lg:gap-10 lg:px-8 lg:py-14">
           <BookingSalonHero
             shopLabel={shopLabel}
+            logoUrl={load.salon.logoUrl}
             t={t}
             themeMode={load.salon.themeMode}
             address={load.salon.address}
@@ -268,6 +269,7 @@ async function PublicBookingRouteBody({
           <div className="min-w-0 flex-1 lg:max-w-[min(100%,740px)] lg:pt-1">
             <BookingMobileHero
               shopLabel={shopLabel}
+              logoUrl={load.salon.logoUrl}
               t={t}
               themeMode={load.salon.themeMode}
               address={load.salon.address}

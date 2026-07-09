@@ -37,6 +37,9 @@ export type BookingSalonMeta = {
   termsUrl: string | null;
   /** `salons.default_language` — last-resort booking locale. NULL → "vi". */
   defaultLanguage: "en" | "vi" | null;
+  /** `salons.logo_url` — shown on the booking header so a guest arriving from
+   *  the salon's own site sees the same brand. NULL → name only. */
+  logoUrl: string | null;
   /** IANA TZ for slot-grid label and confirmation copy (B-16). DB column is NOT NULL DEFAULT 'America/Los_Angeles'; "UTC" is a paranoid fallback. */
   timezone: string;
   /** Per-salon primary color for the booking page (PR #109). Always
@@ -469,6 +472,11 @@ export async function loadBookingServicesForSalonSlug(
       defaultLanguage: (() => {
         const v = (salon as { default_language?: unknown }).default_language;
         return v === "en" || v === "vi" ? v : null;
+      })(),
+      logoUrl: (() => {
+        const v = (salon as { logo_url?: unknown }).logo_url;
+        const s = typeof v === "string" ? v.trim() : "";
+        return s.length > 0 ? s : null;
       })(),
       // Task #04-C — `salons.timezone` is NOT NULL after migration
       // 20260512600000_timezone_required. The legacy "UTC" fallback

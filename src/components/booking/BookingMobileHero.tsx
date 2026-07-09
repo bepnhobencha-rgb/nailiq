@@ -14,6 +14,7 @@ import { BookingSalonInfoLine } from "./BookingSalonInfoLine";
  */
 export function BookingMobileHero({
   shopLabel,
+  logoUrl,
   t,
   themeMode = "dark",
   address,
@@ -24,6 +25,8 @@ export function BookingMobileHero({
   lang = "vi",
 }: {
   shopLabel: string;
+  /** `salons.logo_url`. Absent → the name alone identifies the salon. */
+  logoUrl?: string | null;
   t: BookingMessages;
   themeMode?: "dark" | "light";
   address?: string | null;
@@ -50,6 +53,15 @@ export function BookingMobileHero({
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 bg-black/40"
+        />
+      ) : null}
+      {logoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={logoUrl}
+          alt={shopLabel}
+          data-testid="salon-logo-mobile"
+          className="relative mb-3 h-10 w-auto max-w-[150px] object-contain"
         />
       ) : null}
       <p className="relative text-[10px] font-medium uppercase tracking-[0.28em] text-white/70">

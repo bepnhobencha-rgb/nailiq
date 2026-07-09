@@ -39,7 +39,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const { data: modRow, error: modErr } = await ctx.supabase
     .from("salons")
     .select(
-      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, google_place_id, yelp_business_id, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, group_together_threshold_minutes, reference_image_enabled, auto_no_show_minutes, winback_enabled, client_segment_settings, feature_flags, resources_enabled, primary_grid_axis, ai_manager_instructions, sms_outbound_enabled, email_outbound_enabled, sms_a2p_registered, owner_notification_channel, owner_phone",
+      "dashboard_modules, dashboard_preset, email, email_verified, subscription_plan, brand_color, logo_url, theme_mode, walkin_auto_assign, queue_display_mode, phone_otp_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, booking_verification_mode, google_review_url, google_place_id, yelp_business_id, voice_ai_enabled, voice_ai_persona_name, vertical, staff_selection_enabled, booking_lead_minutes, group_together_threshold_minutes, reference_image_enabled, auto_no_show_minutes, winback_enabled, client_segment_settings, feature_flags, resources_enabled, primary_grid_axis, ai_manager_instructions, sms_outbound_enabled, email_outbound_enabled, sms_a2p_registered, owner_notification_channel, owner_phone",
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
@@ -59,6 +59,7 @@ export default async function SalonSettingsPage({ params }: Props) {
         email_verified?: unknown;
         subscription_plan?: unknown;
         brand_color?: unknown;
+        logo_url?: unknown;
         theme_mode?: unknown;
         walkin_auto_assign?: unknown;
         queue_display_mode?: unknown;
@@ -107,6 +108,7 @@ export default async function SalonSettingsPage({ params }: Props) {
   const emailVerified = row?.email_verified === true;
   const subscriptionPlan = parseSubscriptionPlan(row?.subscription_plan);
   const brandColor = normalizeBrandColor(row?.brand_color);
+  const logoUrl = typeof row?.logo_url === "string" && row.logo_url.trim() ? row.logo_url.trim() : null;
   const themeMode: "dark" | "light" =
     row?.theme_mode === "light" ? "light" : "dark";
   // Default true when the column comes back null/missing (pre-migration
@@ -212,6 +214,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       emailVerified={emailVerified}
       subscriptionPlan={subscriptionPlan}
       brandColor={brandColor}
+      logoUrl={logoUrl}
       themeMode={themeMode}
       walkinAutoAssign={walkinAutoAssign}
       queueDisplayMode={queueDisplayMode}
