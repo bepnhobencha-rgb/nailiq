@@ -16,7 +16,8 @@
     "db:push": "node scripts/db-push-guard.js",
     "auto-push": "node scripts/auto-push.js",
     "check:i18n": "tsx scripts/check-i18n.ts",
-    "gen:service-descriptions": "tsx scripts/generate-service-descriptions.ts"
+    "gen:service-descriptions": "tsx scripts/generate-service-descriptions.ts",
+    "test:unit": "vitest run"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.97.1",
@@ -43,7 +44,8 @@
     "react-dom": "19.2.4",
     "resend": "^6.12.3",
     "stripe": "^22.1.1",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",

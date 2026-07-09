@@ -102,6 +102,11 @@ export type GroupBookingParams = {
    *  (mirrors submitPublicBooking). Redeemed against the lead booking after the
    *  group is created. Absent → no discount. */
   voucherRedemption?: { voucher_id: string; discount_cents: number } | null;
+  /** The organizer ticked the required SMS-consent box in their browser. The
+   *  desk path (`receptionistActions.createDeskGroup`) calls this server-side
+   *  with no checkbox on screen, so it leaves this unset — otherwise we would
+   *  write a consent record stamped with the server's own IP. */
+  smsConsent?: boolean;
 };
 
 export type GroupBookingResult =
@@ -905,8 +910,9 @@ export async function submitGroupBooking(
           partySize: params.members.length,
           startTimeUtc: earliest.startUtcIso,
           language: params.language ?? null,
-          // Consent required by the UI (QA BUG-03); stamp the whole party.
-          smsConsent: true,
+          // Only what the organizer actually ticked; stamped on the organizer's
+          // booking alone, not fanned out across the party.
+          smsConsent: params.smsConsent === true,
           groupId: result.group_id,
         }),
       });
