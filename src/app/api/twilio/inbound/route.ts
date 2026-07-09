@@ -131,10 +131,19 @@ export async function POST(req: NextRequest) {
     reminder_24h_sent_at: string | null; reminder_3h_sent_at: string | null; sms_confirmation_sent_at: string | null;
   }>;
 
-  // Prefer the booking that actually received an SMS (reminder or confirmation).
-  const bkWithSms = rows.find(
-    (r) => r.reminder_24h_sent_at || r.reminder_3h_sent_at || r.sms_confirmation_sent_at,
-  );
+  // Prefer the booking that received a REMINDER; else the soonest.
+  //
+  // `sms_confirmation_sent_at` is deliberately not part of this test. It was
+  // written by a `void`-ed query that never ran, so it has been NULL on every
+  // booking and this predicate has only ever matched on the two reminder
+  // columns. That write is fixed in this commit, and folding the confirmation
+  // timestamp back in would silently retarget replies: a same-day booking made
+  // too late for a reminder would start out-ranking the reminded booking the
+  // customer is actually answering, so "CANCEL" could cancel the wrong one.
+  //
+  // Keeping the live behavior. Whether a reply should prefer the most recently
+  // texted booking is a product question, not a side effect of a write fix.
+  const bkWithSms = rows.find((r) => r.reminder_24h_sent_at || r.reminder_3h_sent_at);
   const bkRow = bkWithSms ?? rows[0] ?? null;
 
   if (!bkRow) {
