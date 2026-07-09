@@ -493,7 +493,7 @@ export function BookingFlowConfirmPanel({
               onChange={(e) => setSmsConsent(e.target.checked)}
               className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
             />
-            <span>{t.smsConsent}</span>
+            <span>{t.smsConsent.replace("{salon}", shopLabel)}</span>
           </label>
         ) : null}
 

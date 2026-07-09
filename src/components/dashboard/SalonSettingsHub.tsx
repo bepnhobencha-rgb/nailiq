@@ -13,6 +13,7 @@ import { AuditLogViewer } from "@/components/dashboard/AuditLogViewer";
 import { DashboardModulesSettings } from "@/components/dashboard/DashboardModulesSettings";
 import { DashboardPresetSettings } from "@/components/dashboard/DashboardPresetSettings";
 import { BrandColorSettings } from "@/components/dashboard/BrandColorSettings";
+import { SalonLogoSettings } from "@/components/dashboard/SalonLogoSettings";
 import { WalkinAutoAssignSettings } from "@/components/dashboard/WalkinAutoAssignSettings";
 import { QueueDisplayModeSettings } from "@/components/dashboard/QueueDisplayModeSettings";
 import { PhoneOtpSettings } from "@/components/dashboard/PhoneOtpSettings";
@@ -74,6 +75,7 @@ export function SalonSettingsHub({
   emailVerified,
   subscriptionPlan,
   brandColor,
+  logoUrl,
   themeMode,
   walkinAutoAssign,
   queueDisplayMode,
@@ -123,6 +125,7 @@ export function SalonSettingsHub({
   emailVerified: boolean;
   subscriptionPlan: SubscriptionPlan;
   brandColor: string;
+  logoUrl: string | null;
   themeMode: "dark" | "light";
   walkinAutoAssign: boolean;
   queueDisplayMode: "simple" | "full";
@@ -882,6 +885,7 @@ export function SalonSettingsHub({
 
             {advancedOpen && (
               <div className="mt-3 flex flex-col gap-3">
+                <SalonLogoSettings slug={slug} initialLogoUrl={logoUrl} />
                 <BrandColorSettings
                   slug={slug}
                   initialValue={brandColor}

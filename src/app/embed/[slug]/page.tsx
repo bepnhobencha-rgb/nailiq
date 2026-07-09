@@ -39,11 +39,6 @@ export default async function EmbedBookingPage({
   // marketing page never shows a Vietnamese booking flow); fall back to the
   // cookie / Accept-Language resolution when it's absent.
   const sp = (await searchParams) ?? {};
-  const lang =
-    sp.lang === "en" || sp.lang === "vi"
-      ? sp.lang
-      : await resolveBookingLanguage();
-  const t = getBookingMessages(lang);
 
   const resolved = await resolvePublicBookingPage(slug);
   if (resolved.status === "redirect") {
@@ -54,6 +49,14 @@ export default async function EmbedBookingPage({
   }
 
   const { load, normalizedSlug } = resolved;
+
+  // Resolved after the salon loads: the last-resort fallback is the salon's own
+  // default_language, not a hardcoded "vi".
+  const lang =
+    sp.lang === "en" || sp.lang === "vi"
+      ? sp.lang
+      : await resolveBookingLanguage(load.salon.defaultLanguage);
+  const t = getBookingMessages(lang);
 
   const themeVars = buildBookingThemeVars(
     load.salon.brandColor,

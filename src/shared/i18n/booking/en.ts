@@ -79,11 +79,19 @@ export const bookingEn = {
   confirmTermsAgree: "By confirming, you agree to the",
   confirmTermsLink: "Booking Terms & Cancellation Policy",
   submitting: "Submitting…",
+  /** Twilio A2P 10DLC / TFV require the brand name, the rate disclosure, STOP,
+   *  HELP, and that consent is not a purchase condition — all at the point of
+   *  opt-in. `{salon}` is replaced with the salon's name. */
   smsConsent:
-    "I agree to receive SMS appointment confirmations & reminders. Msg & data rates may apply; reply STOP to opt out.",
+    "I agree to receive appointment confirmation and reminder SMS messages from {salon} at the phone number provided. Message & data rates may apply. Reply STOP to opt out. Reply HELP for help. Consent is not a condition of purchase.",
+  smsConsentPrivacyLink: "Privacy Policy",
+  smsConsentTermsLink: "Terms & Conditions",
   marketingConsent:
     "Send me occasional offers & updates via SMS / email (optional)",
   successHeading: "You're all set!",
+  /** Post-opt-in confirmation Twilio expects after the booking completes. */
+  successSmsSubscribed:
+    "You are subscribed to receive appointment confirmations and reminder text messages from {salon}. Reply STOP to unsubscribe. Reply HELP for help.",
   /** Shown under the heading when a staff member is assigned, e.g. "with Jenny". */
   successStaffLine: "with {name}",
   successSeeYouSoonBefore: "See you soon at ",

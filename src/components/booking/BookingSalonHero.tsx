@@ -14,6 +14,8 @@ const sized = (base: string, w: number) =>
 
 type BookingSalonHeroProps = {
   shopLabel: string;
+  /** `salons.logo_url`. Absent → the name alone identifies the salon. */
+  logoUrl?: string | null;
   t: BookingMessages;
   className?: string;
   themeMode?: "dark" | "light";
@@ -43,6 +45,7 @@ type BookingSalonHeroProps = {
  */
 export function BookingSalonHero({
   shopLabel,
+  logoUrl,
   t,
   className,
   themeMode = "dark",
@@ -109,6 +112,15 @@ export function BookingSalonHero({
           className="nq-booking-glass-strong-panel rounded-[1.35rem] px-6 py-6"
           style={nameCardStyle}
         >
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={logoUrl}
+              alt={shopLabel}
+              data-testid="salon-logo"
+              className="mb-4 h-12 w-auto max-w-[180px] object-contain"
+            />
+          ) : null}
           <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-white/70">
             {t.salonHeroEyebrow}
           </p>

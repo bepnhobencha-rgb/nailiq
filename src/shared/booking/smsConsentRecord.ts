@@ -62,16 +62,18 @@ export function buildSmsConsentMeta(
   req: Request,
   language: string | null | undefined,
   source: SmsConsentSource,
-  groupId?: string,
+  opts?: { groupId?: string; salonName?: string },
 ): SmsConsentMeta {
   const { lang, text } = smsConsentDisclosure(language);
   return {
     ip: clientIpFrom(req),
     userAgent: req.headers.get("user-agent") ?? "unknown",
     version: SMS_CONSENT_VERSION,
-    text,
+    // Store the sentence as the customer read it, salon name substituted. The
+    // version still identifies the wording, since the name is not the wording.
+    text: text.replace("{salon}", opts?.salonName ?? ""),
     lang,
     source,
-    ...(groupId ? { groupId } : {}),
+    ...(opts?.groupId ? { groupId: opts.groupId } : {}),
   };
 }

@@ -1844,6 +1844,7 @@ export function BookingGroupFlow({
           onSubmit={() => void onSubmit()}
           initialSmsConsent={initialSmsConsent}
           onSmsConsentChange={setSmsConsentGiven}
+          salonName={salon.name}
           cardRequirement={cardRequirement}
           cardRequirementLoading={cardRequirementLoading}
           cardRef={cardRef}
@@ -3625,6 +3626,7 @@ function ConfirmStep({
   onSubmit,
   initialSmsConsent,
   onSmsConsentChange,
+  salonName,
   cardRequirement,
   cardRequirementLoading,
   cardRef,
@@ -3677,6 +3679,8 @@ function ConfirmStep({
   initialSmsConsent: boolean;
   /** Lifts the ticked state so the submit payload reports real consent. */
   onSmsConsentChange: (v: boolean) => void;
+  /** Interpolated into the consent disclosure — Twilio requires the brand name. */
+  salonName: string;
   /** No-show card requirement for the organizer (Option A — captured here,
    *  before the group is created). Null while loading / not required. */
   cardRequirement: NoShowCardRequirement | null;
@@ -4125,7 +4129,7 @@ function ConfirmStep({
             }}
             className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
           />
-          <span>{t.smsConsent}</span>
+          <span>{t.smsConsent.replace("{salon}", salonName)}</span>
         </label>
       ) : null}
 

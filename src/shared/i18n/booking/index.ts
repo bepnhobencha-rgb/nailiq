@@ -21,17 +21,27 @@ export function parseBookingLanguage(raw: unknown): BookingLanguage {
 /** Server helper: pick booking locale from cookie → Accept-Language →
  * default. Primary market is Vietnam, so VI is the default when no
  * signal is present. */
-export async function resolveBookingLanguage(): Promise<BookingLanguage> {
+/**
+ * @param salonDefault Last-resort language for this salon (`salons.default_language`).
+ *   Only consulted when the visitor gives no signal at all — no cookie and no
+ *   usable Accept-Language. Omitted → "vi", the previous behavior.
+ */
+export async function resolveBookingLanguage(
+  salonDefault?: BookingLanguage | null,
+): Promise<BookingLanguage> {
   const cookieStore = await cookies();
   const cookieVal = cookieStore.get(BOOKING_LANG_COOKIE)?.value;
   if (cookieVal === "en" || cookieVal === "vi") return cookieVal;
 
   const headerStore = await headers();
   const al = headerStore.get("accept-language") ?? "";
-  // English explicitly preferred ahead of Vietnamese? Honor it.
-  // Otherwise default to VI (primary market).
+  // English explicitly preferred ahead of Vietnamese? Honor it. A Vietnamese
+  // speaker booking with a US salon still gets Vietnamese — this only fires
+  // when they said nothing.
   if (/\ben\b/i.test(al) && !/\bvi\b/i.test(al)) return "en";
-  return "vi";
+  if (/\bvi\b/i.test(al)) return "vi";
+
+  return salonDefault ?? "vi";
 }
 
 export function getBookingMessages(lang: BookingLanguage): BookingMessages {

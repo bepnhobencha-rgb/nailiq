@@ -293,6 +293,7 @@ export function BookingFlow({
       <BookingFlowDonePanel
         t={t}
         shopLabel={flow.shopLabel}
+        smsConsent={flow.smsConsent}
         service={flow.service}
         staffName={flow.bookingResult.staffName}
         addons={flow.bookingResult.addons}

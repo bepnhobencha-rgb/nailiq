@@ -30,6 +30,16 @@ export type BookingSalonMeta = {
   acceptingBookings: boolean;
   /** Public contact for “manage booking” (call to reschedule). DB: `salons.salon_phone` only — never `salons.phone` (owner). */
   salonPhone: string | null;
+  /** The salon's OWN policy pages, linked next to the SMS-consent checkbox.
+   *  Twilio wants the registered business's policies, not the platform's.
+   *  NULL → the booking page falls back to NailIQ's /privacy and /terms. */
+  privacyUrl: string | null;
+  termsUrl: string | null;
+  /** `salons.default_language` — last-resort booking locale. NULL → "vi". */
+  defaultLanguage: "en" | "vi" | null;
+  /** `salons.logo_url` — shown on the booking header so a guest arriving from
+   *  the salon's own site sees the same brand. NULL → name only. */
+  logoUrl: string | null;
   /** IANA TZ for slot-grid label and confirmation copy (B-16). DB column is NOT NULL DEFAULT 'America/Los_Angeles'; "UTC" is a paranoid fallback. */
   timezone: string;
   /** Per-salon primary color for the booking page (PR #109). Always
@@ -447,6 +457,25 @@ export async function loadBookingServicesForSalonSlug(
       salonPhone: (() => {
         const p = (salon as { salon_phone?: unknown }).salon_phone;
         const s = typeof p === "string" ? p.trim() : "";
+        return s.length > 0 ? s : null;
+      })(),
+      privacyUrl: (() => {
+        const v = (salon as { privacy_url?: unknown }).privacy_url;
+        const s = typeof v === "string" ? v.trim() : "";
+        return s.length > 0 ? s : null;
+      })(),
+      termsUrl: (() => {
+        const v = (salon as { terms_url?: unknown }).terms_url;
+        const s = typeof v === "string" ? v.trim() : "";
+        return s.length > 0 ? s : null;
+      })(),
+      defaultLanguage: (() => {
+        const v = (salon as { default_language?: unknown }).default_language;
+        return v === "en" || v === "vi" ? v : null;
+      })(),
+      logoUrl: (() => {
+        const v = (salon as { logo_url?: unknown }).logo_url;
+        const s = typeof v === "string" ? v.trim() : "";
         return s.length > 0 ? s : null;
       })(),
       // Task #04-C — `salons.timezone` is NOT NULL after migration

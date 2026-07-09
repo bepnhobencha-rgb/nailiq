@@ -1543,3 +1543,93 @@ export async function updateOwnerNotificationSettings(
   }
   return { ok: true };
 }
+
+/* ───────────────── Salon logo (public booking header) ───────────────── */
+
+export type SalonLogoResult =
+  | { ok: true; logoUrl: string | null }
+  | {
+      ok: false;
+      error:
+        | "unauthorized"
+        | "forbidden"
+        | "no_file"
+        | "file_too_large"
+        | "invalid_type"
+        | "server_error";
+    };
+
+/** 2 MB — a logo has no business being larger, and the booking header renders it small. */
+const SALON_LOGO_MAX_BYTES = 2 * 1024 * 1024;
+const SALON_LOGO_MIME = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
+
+/**
+ * Member-gated upload of `salons.logo_url`. Mirrors `uploadSectionImage`:
+ * auth through `getDashboardWriteClient`, bytes through the service-role client
+ * into the public `salon-imports` bucket.
+ *
+ * The path is timestamped rather than overwritten so a cached CDN copy of the
+ * old logo can't outlive the change.
+ */
+export async function uploadSalonLogo(
+  slug: string,
+  formData: FormData,
+): Promise<SalonLogoResult> {
+  const { getDashboardWriteClient } = await import("@/shared/dashboard/setupActions");
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
+
+  const file = formData.get("file") as File | null;
+  if (!file || file.size === 0) return { ok: false, error: "no_file" };
+  if (file.size > SALON_LOGO_MAX_BYTES) return { ok: false, error: "file_too_large" };
+  if (!SALON_LOGO_MIME.includes(file.type)) return { ok: false, error: "invalid_type" };
+
+  const ext = file.type === "image/svg+xml" ? "svg" : (file.name.split(".").pop()?.toLowerCase() ?? "png");
+  const path = `${ctx.salon.id}/logo/logo-${Date.now()}.${ext}`;
+
+  const db = createServiceRoleClient();
+  const { error: uploadErr } = await db.storage
+    .from("salon-imports")
+    .upload(path, file, { contentType: file.type, upsert: true });
+
+  if (uploadErr) {
+    console.error("[uploadSalonLogo] storage", uploadErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  const { data } = db.storage.from("salon-imports").getPublicUrl(path);
+  const logoUrl = data.publicUrl;
+
+  const { error: upErr } = await ctx.supabase
+    .from("salons")
+    .update({ logo_url: logoUrl } as never)
+    .eq("id", ctx.salon.id);
+
+  if (upErr) {
+    console.error("[uploadSalonLogo] update", upErr);
+    return { ok: false, error: "server_error" };
+  }
+
+  return { ok: true, logoUrl };
+}
+
+/** Clears `salons.logo_url`. The stored object is left in place — it is small,
+ *  and deleting it would break any page still holding the old URL. */
+export async function removeSalonLogo(slug: string): Promise<SalonLogoResult> {
+  const { getDashboardWriteClient } = await import("@/shared/dashboard/setupActions");
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
+
+  const { error } = await ctx.supabase
+    .from("salons")
+    .update({ logo_url: null } as never)
+    .eq("id", ctx.salon.id);
+
+  if (error) {
+    console.error("[removeSalonLogo]", error);
+    return { ok: false, error: "server_error" };
+  }
+  return { ok: true, logoUrl: null };
+}
