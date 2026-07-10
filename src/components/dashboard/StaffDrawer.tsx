@@ -263,7 +263,15 @@ export function StaffDrawer({
       }
       if (!res.ok) {
         setSaveStatus("error");
-        setToast({ variant: "error", message: TOAST_ERR });
+        // Deactivation blocked because the staff still has open/upcoming
+        // appointments — tell the user to reassign them first, and surface it
+        // as a field error so it stays visible next to the status control.
+        if (res.error === "staff_has_upcoming") {
+          setFieldError(setupErrors.staffHasUpcoming);
+          setToast({ variant: "error", message: setupErrors.staffHasUpcoming });
+        } else {
+          setToast({ variant: "error", message: TOAST_ERR });
+        }
         statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 3000);
         return;
       }
@@ -318,6 +326,7 @@ export function StaffDrawer({
     onSaved,
     patch,
     role,
+    setupErrors.staffHasUpcoming,
     setupErrors.staffLimitReached,
     slug,
     staff,

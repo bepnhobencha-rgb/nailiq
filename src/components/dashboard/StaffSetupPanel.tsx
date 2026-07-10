@@ -373,8 +373,18 @@ export function StaffSetupPanel({
       }
       setPendingId(null);
       if (!res.ok) {
-        setFormError(tLabels.saveFailed);
-        setToast({ variant: "error", message: tLabels.saveConnectionFailed });
+        // Deactivating a staff who still has open/upcoming appointments is
+        // blocked server-side — surface the reassign-first guidance instead
+        // of a generic save error.
+        const blocked = res.error === "staff_has_upcoming";
+        const message = blocked
+          ? setupErrors.staffHasUpcoming
+          : tLabels.saveFailed;
+        setFormError(message);
+        setToast({
+          variant: "error",
+          message: blocked ? message : tLabels.saveConnectionFailed,
+        });
         return;
       }
       setRows((prev) =>
