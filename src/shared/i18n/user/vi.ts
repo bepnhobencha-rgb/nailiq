@@ -1287,6 +1287,8 @@ export const userVi: UserMessages = {
       "Dịch vụ đang được dùng trong booking. Hủy/hoàn thành các booking trước khi xóa.",
     staffHasBookings:
       "Nhân viên đang có booking sắp tới. Reassign hoặc hủy trước khi xóa.",
+    staffHasUpcoming:
+      "Nhân viên này đang có lịch hẹn sắp tới. Vui lòng chuyển lịch cho nhân viên khác trước khi tạm ngưng.",
     staffCannotPerformService:
       "Nhân viên này chưa được gán để làm dịch vụ đó.",
     staffLimitReached:

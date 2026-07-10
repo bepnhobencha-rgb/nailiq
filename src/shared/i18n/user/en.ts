@@ -1059,6 +1059,8 @@ export type UserMessages = {
   setupErrors: {
     serviceInUse: string;
     staffHasBookings: string;
+    /** Shown when deactivating a staff who still has open/upcoming appointments. */
+    staffHasUpcoming: string;
     staffCannotPerformService: string;
     /** Hit when free-plan owner tries to add another staff past the limit. */
     staffLimitReached: string;
@@ -3613,6 +3615,8 @@ export const userEn: UserMessages = {
       "Service is used in active bookings. Cancel or complete those bookings before deleting.",
     staffHasBookings:
       "Staff has upcoming bookings. Reassign or cancel before deleting.",
+    staffHasUpcoming:
+      "This staff has upcoming appointments. Reassign them to another staff member before deactivating.",
     staffCannotPerformService:
       "This staff member is not set up to perform that service.",
     staffLimitReached: "Free plan allows 3 staff. Upgrade to Pro for 10.",
