@@ -37,6 +37,15 @@ const isCI = !!process.env.CI;
 
 export default defineConfig({
   testDir: "./e2e",
+  // `*.unit.spec.ts` under e2e/ belongs to vitest (the production-guard unit
+  // tests). Playwright must not try to run them as browser specs.
+  testIgnore: ["**/*.unit.spec.ts"],
+  // Refuses to run at all when the target looks like production, so no worker
+  // can create a user, salon, staff row, booking or role grant there.
+  globalSetup: "./e2e/helpers/globalSetup.ts",
+  // Best-effort in-process sweep; the workflow's `if: always()` step is the
+  // real backstop for a cancelled job.
+  globalTeardown: "./e2e/helpers/globalTeardown.ts",
   fullyParallel: false,
   forbidOnly: isCI,
   retries: isCI ? 1 : 0,

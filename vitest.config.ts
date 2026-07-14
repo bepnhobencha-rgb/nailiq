@@ -12,7 +12,10 @@ import { defineConfig } from "vitest/config";
 // itself imports via `@/…`.
 export default defineConfig({
   test: {
-    include: ["src/**/*.spec.ts"],
+    // `e2e/**/*.unit.spec.ts` = pure unit tests for E2E infrastructure (the
+    // production guard). Playwright ignores that suffix (see testIgnore in
+    // playwright.config.ts), so the two runners never collide.
+    include: ["src/**/*.spec.ts", "e2e/**/*.unit.spec.ts"],
     environment: "node",
   },
   resolve: {
