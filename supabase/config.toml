@@ -1,0 +1,79 @@
+# Supabase LOCAL — used only to stand up a throwaway database for E2E.
+#
+# This file does not touch, describe, or configure the production project. It
+# exists so `supabase start` can boot Postgres + GoTrue + PostgREST in Docker,
+# on the CI runner and on a laptop, and so every E2E run gets a database that
+# was created seconds ago and is destroyed seconds later.
+#
+# That last property is the point. The incident (docs/audit/E2E-PRODUCTION-
+# CONTAINMENT.md) happened because E2E wrote into a database that OUTLIVED the
+# run: cleanup lived in test.afterAll(), the workflow cancels in-progress jobs,
+# afterAll never fired, and five superadmin accounts stayed behind for a month.
+# A container that is deleted when the job ends cannot accumulate leftovers,
+# whether the job passed, failed, or was cancelled mid-flight.
+
+project_id = "nailiq-e2e-local"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+# Must match production (17.6.x) — a schema dumped from PG17 can use syntax an
+# older server will not parse, and the failure would look like a bad dump.
+major_version = 17
+
+[db.pooler]
+enabled = false
+
+[realtime]
+enabled = true
+
+[studio]
+enabled = false  # nothing to look at in CI
+
+[inbucket]
+# Local mail catcher. Enabled so that if anything DOES try to send mail during
+# E2E it lands in a local box instead of a real inbox. Belt and braces: the app
+# is also run with the outbound kill-switches on (see .github/workflows/e2e.yml).
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = false
+# E2E seeds users with email_confirm: true via the admin API; requiring a real
+# confirmation click would make every seeded account unusable.
+enable_confirmations = false
+
+[auth.sms]
+# No SMS provider is configured, on purpose. A test database must not be able to
+# reach Twilio even by accident — the suite once billed 555 real sends.
+enable_signup = false
+enable_confirmations = false
+
+[analytics]
+enabled = false
+
+[edge_runtime]
+# The Edge Functions in supabase/functions are not exercised by the E2E suite and
+# booting them costs ~30s of CI. Enable this if a spec ever needs one.
+enabled = false
