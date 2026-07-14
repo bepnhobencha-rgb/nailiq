@@ -1,10 +1,25 @@
 import { test, expect } from "@playwright/test";
+import { createClient } from "@supabase/supabase-js";
 
+import { navigateToConfirmStep } from "../helpers/bookingFlow";
 import {
   cleanupTestSalon,
   gotoBookingServiceStep,
   seedTestSalon,
 } from "../helpers/db";
+
+/**
+ * A service-role client, so the booking test can read the row back out of
+ * Postgres instead of trusting the screen. guardProduction has already run in
+ * globalSetup — this cannot be pointed at production.
+ */
+const db = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+);
+
+/** Unique per run, so the DB lookup can name exactly the row this test made. */
+const GUEST_NAME = `Smoke Guest ${process.env.GITHUB_RUN_ID ?? "local"}`;
 
 /**
  * The gate. Small, fast, and every assertion here is one that must NEVER be red.
@@ -95,6 +110,93 @@ test.describe("@smoke — the flows that must never break", () => {
     const res = await page.goto("/dashboard-not-a-real-salon");
     expect(res?.status()).toBe(404); // reaches the salon resolver, which says no
     await expect(page).not.toHaveURL(/\/login/);
+  });
+
+  test("a guest can actually BOOK — verified in the database, not on the screen", async ({
+    page,
+  }) => {
+    /**
+     * The one that matters, and the one easiest to fake.
+     *
+     * A booking smoke that asserts "the success screen appeared" is worthless: a
+     * screen is a screen. This one refuses to believe the UI. It watches the
+     * network for a booking request that 4xx/5xx'd, refuses the presence of the
+     * failure alert, and then goes and READS THE ROW out of Postgres — right
+     * salon, right service, right staff, right guest, right time. If no row
+     * exists, no amount of green pixels will save it.
+     *
+     * Nothing is mocked here. SMS and email are switched off at the process level
+     * (DISABLE_OUTBOUND_SMS, empty provider keys) because a test must never text a
+     * stranger — but the booking itself goes all the way through the real server
+     * action and the real create_public_booking RPC into the real local database.
+     * Mocking the RPC would turn this test into a mirror.
+     */
+    const failedBookingCalls: string[] = [];
+    page.on("response", (res) => {
+      const u = res.url();
+      const isBooking =
+        u.includes("/rest/v1/rpc/create_public_booking") ||
+        u.includes("/api/booking");
+      if (isBooking && res.status() >= 400) {
+        failedBookingCalls.push(`${res.status()} ${u}`);
+      }
+    });
+
+    await navigateToConfirmStep(page, SLUG, { name: GUEST_NAME });
+
+    await page.getByTestId("sms-consent").check();
+    await page.getByRole("button", { name: "Confirm booking" }).click();
+
+    // The exact words the product shows when the server action fails. Asserting
+    // its ABSENCE is what stops this test passing while booking is broken.
+    await expect(
+      page.getByText(/Could not complete booking/i),
+    ).toHaveCount(0);
+
+    await expect(page.getByTestId("booking-success")).toBeVisible({
+      timeout: 20_000,
+    });
+
+    expect(failedBookingCalls, "a booking request returned 4xx/5xx").toEqual([]);
+
+    // ── The assertion the screen cannot fake ──────────────────────────────────
+    const { data: salon } = await db
+      .from("salons")
+      .select("id")
+      .eq("slug", SLUG)
+      .single();
+    expect(salon?.id, "the smoke salon should exist").toBeTruthy();
+
+    const { data: bookings, error } = await db
+      .from("bookings")
+      .select("id, salon_id, service_id, staff_id, client_name, start_time_utc, status")
+      .eq("salon_id", salon!.id)
+      .eq("client_name", GUEST_NAME);
+
+    expect(error, "reading bookings back").toBeNull();
+    expect(
+      bookings?.length,
+      "exactly one booking row should exist for this guest — the UI said it booked",
+    ).toBe(1);
+
+    const booking = bookings![0];
+    expect(booking.id, "booking_id").toBeTruthy();
+    expect(booking.service_id, "booking must carry the chosen service").toBeTruthy();
+    expect(booking.staff_id, "booking must carry the chosen staff").toBeTruthy();
+    expect(booking.start_time_utc, "booking must carry a start time").toBeTruthy();
+    expect(
+      new Date(booking.start_time_utc as string).getTime(),
+      "the booking must be in the future",
+    ).toBeGreaterThan(Date.now());
+    expect(["pending", "confirmed"]).toContain(booking.status);
+
+    // Cleanup: this exact row. cleanupTestSalon in afterAll removes the salon and
+    // cascades anyway, but a test that creates a row should be able to name it.
+    const { error: delErr } = await db
+      .from("bookings")
+      .delete()
+      .eq("id", booking.id);
+    expect(delErr, "cleaning up the booking this test created").toBeNull();
   });
 
   test("the public booking flow clears the phone gate and reaches service + staff", async ({
