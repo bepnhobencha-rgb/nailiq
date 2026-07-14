@@ -8,6 +8,42 @@ import { withSentryConfig } from "@sentry/nextjs";
 // Omit the directive when the site URL is HTTP (local dev / CI test server).
 const isHttpsOrigin = (process.env.NEXT_PUBLIC_SITE_URL ?? "").startsWith("https://");
 
+/**
+ * The Supabase origin this build actually talks to, added to `connect-src`.
+ *
+ * The CSP allowed `https://*.supabase.co` and nothing else, which is fine for as
+ * long as Supabase is only ever the hosted product. Point the app at a local
+ * stack — `http://127.0.0.1:54321` — and the browser silently refuses every
+ * request to it:
+ *
+ *   Fetch API cannot load http://127.0.0.1:54321/rest/v1/rpc/… Refused to
+ *   connect because it violates the document's Content Security Policy.
+ *
+ * Nothing throws on the server, so the app shows its catch-all — "Could not
+ * complete booking. Please try again." — and the cause is invisible unless you
+ * open the browser console. It cost this audit an entire wrong conclusion: the
+ * public booking was reported as a product bug when the product was fine and the
+ * page simply could not reach its database.
+ *
+ * Deriving the origin from the configured URL is the correct rule for ANY
+ * deployment, not a test-only escape hatch: whatever Supabase this build is
+ * pointed at is exactly the Supabase the browser must be allowed to call. In
+ * production it re-adds the host that `*.supabase.co` already covered, so the
+ * policy is unchanged there.
+ */
+function supabaseConnectSrc(): string[] {
+  const raw = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
+  if (!raw) return [];
+  let origin: string;
+  try {
+    origin = new URL(raw).origin;
+  } catch {
+    return [];
+  }
+  const ws = origin.replace(/^http/, "ws"); // Realtime rides the same origin.
+  return [origin, ws];
+}
+
 const nextConfig: NextConfig = {
   async headers() {
     const cspDirectives = [
@@ -24,7 +60,13 @@ const nextConfig: NextConfig = {
       "style-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data: https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://api.stripe.com https://api.openai.com wss://api.openai.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com",
+      [
+        "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://api.stripe.com https://api.openai.com wss://api.openai.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com",
+        // Whatever Supabase THIS build is configured against — see the note above.
+        // A no-op in production; the difference between working and silently
+        // broken when the stack is local.
+        ...supabaseConnectSrc(),
+      ].join(" "),
       "frame-src https://js.stripe.com https://hooks.stripe.com https://web.squarecdn.com https://sandbox.web.squarecdn.com",
       // Square's Web Payments SDK spins up a Web Worker from a blob: URL; without
       // worker-src it falls back to script-src and is blocked (console error).
