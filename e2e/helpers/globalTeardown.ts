@@ -1,4 +1,5 @@
 import { assertNotProductionFromEnv } from "./guardProduction";
+import { sweep } from "./sweep";
 
 /**
  * Playwright globalTeardown — best-effort in-process sweep.
@@ -9,6 +10,17 @@ import { assertNotProductionFromEnv } from "./guardProduction";
  * the workflow also runs `scripts/e2e-sweep.ts` in a step marked
  * `if: always()` — that step is the real backstop. Keeping both means a local
  * run cleans up after itself without anyone remembering to invoke the script.
+ *
+ * `sweep` is imported STATICALLY. It used to be `await import("./sweep")`, on the
+ * theory that the guard should speak before the module loaded — and that threw
+ * `SyntaxError: Cannot use import statement outside a module` on every single
+ * run, turning a fully green suite red with "1 error was not a part of any test".
+ * The theory was wrong anyway: sweep.ts calls assertNotProductionFromEnv() inside
+ * sweep(), not at module load, so the static import guards nothing less.
+ *
+ * Note what that bug quietly proved: this teardown had been failing on every run
+ * so far, and nothing leaked — because the workflow's always-run sweep step did
+ * the work. The belt-and-braces was not paranoia.
  */
 export default async function globalTeardown(): Promise<void> {
   try {
@@ -23,6 +35,5 @@ export default async function globalTeardown(): Promise<void> {
   ) {
     return; // db-free run
   }
-  const { sweep } = await import("./sweep");
   await sweep();
 }
