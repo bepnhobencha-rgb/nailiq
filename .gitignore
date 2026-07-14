@@ -60,3 +60,9 @@ supabase/.temp/
 
 # Wix backfill scratch
 tmp/
+
+# Schema dump for the E2E test database. Uncomment the negation once the dump
+# has been verified data-free (see supabase/bootstrap/README.md) — until then,
+# an accidental `git add` of a dump that slipped in real rows would publish
+# customer data to a PUBLIC repo.
+supabase/bootstrap/*.sql
