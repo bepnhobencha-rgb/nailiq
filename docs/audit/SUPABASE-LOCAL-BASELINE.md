@@ -128,3 +128,35 @@ CI sẽ tự bắt nếu baseline thiếu: `check-schema-parity.ts` so số bả
 6. Gỡ `scripts/db-push-guard.js` khi `db push` an toàn trở lại.
 
 **Không** rewrite Git history. **Không** sửa `schema_migrations` của production trong bước 1–4.
+
+---
+
+## ✅ ĐÃ CHỨNG MINH (2026-07-14)
+
+Baseline này **đã dựng lại được database từ số 0** — cả trên Postgres 17 trắng lẫn trên Supabase Local trong CI.
+
+| Đo trên chính CI | Kết quả |
+|---|---|
+| Bảng | **81 / 81** |
+| Cột | **1.064 / 1.064** |
+| RLS policy | **101 / 101** |
+| Function (app, không tính extension) | **65 / 65** |
+| Trigger | **24 / 24** |
+| Index | **265 / 265** |
+| GRANT: `anon` | **75 / 75 bảng** |
+| GRANT: `authenticated` | **75 / 75 bảng** |
+| GRANT: `service_role` | **81 / 81 bảng** |
+| RLS bật trên mọi bảng lõi | ✅ |
+
+**6 bảng `anon` KHÔNG được đọc** — `client_ai_summaries`, `otp_send_log`, `payment_disputes`, `rate_limits`, `salon_clients`, `scheduled_notifications` — được tái tạo **chính xác**. Khoảng trống đó **chính là lớp bảo vệ PII**, và nó sống sót nguyên vẹn sang database test.
+
+### File trong `supabase/bootstrap/`
+| File | Vai trò |
+|---|---|
+| `schema.sql` | `pg_dump --schema-only` của `public`. **KHÔNG BAO GIỜ sửa tay** — sửa là nó thôi khớp production, trong im lặng |
+| `prelude.sql` | Tạo thứ dump **giả định đã có**: role, extension, và (chỉ khi vắng) `auth.uid()` + `auth.users` stub |
+| `reference-data.sql` | 13 danh mục dịch vụ + 5 platform flag. **Không PII.** `services.category` có FK vào đây |
+
+Apply bằng **một script duy nhất** dùng chung cho CI và máy: `scripts/apply-baseline.sh` — nên hai bên **không thể lệch nhau**.
+
+Kết quả chạy đầy đủ: [`E2E-FIRST-FULL-RUN.md`](./E2E-FIRST-FULL-RUN.md)

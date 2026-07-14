@@ -127,7 +127,28 @@ Bài học: khi vá một lớp lỗ hổng, **phải quét hết cả lớp**, 
 
 ---
 
-## 9. 🚧 ĐANG BỊ CHẶN — cần đúng 1 lệnh của Huy
+## 9. ✅ ĐÃ CHẠY THẬT — kết quả lần đầu
+
+**Baseline đã có** (Huy chạy `pg_dump`, 2026-07-14). Toàn bộ đường ống hoạt động trên CI.
+
+| | |
+|---|---|
+| **Tổng test** | **200** — pass **146**, fail **50**, skip **4** |
+| non-RC | 88 pass / 43 fail / 3 skip (46,9 phút) |
+| receptionist-center | 58 pass / 7 fail / 1 skip (9,7 phút) |
+| **Lỗi hạ tầng** | **0** — mọi bước xanh trên **cả hai** shard |
+| **Secret production trong CI** | **0** |
+| **Dữ liệu production mới** | **KHÔNG** |
+| **Test flaky** | **0** — cả 50 lỗi fail ở cả lần gốc lẫn retry |
+
+50 lỗi đều là **lỗi sản phẩm/test có sẵn**, lộ ra vì E2E cuối cùng đã chạy được. PR #745 **không đụng một dòng code sản phẩm nào** (0 file `src/` ngoài một unit test), nên nó **không thể** gây ra chúng.
+
+Chi tiết + phân loại + khuyến nghị merge: **[`E2E-FIRST-FULL-RUN.md`](./E2E-FIRST-FULL-RUN.md)**
+Issue: [#746](https://github.com/bepnhobencha-rgb/nailiq/issues/746) · [#747](https://github.com/bepnhobencha-rgb/nailiq/issues/747) · [#748](https://github.com/bepnhobencha-rgb/nailiq/issues/748) · [#749](https://github.com/bepnhobencha-rgb/nailiq/issues/749)
+
+---
+
+## 9b. (Lịch sử) Khi baseline chưa có — cần 1 lệnh của Huy
 
 **CI chưa chạy được full E2E**, và em **không báo pass giả**.
 
