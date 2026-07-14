@@ -121,6 +121,14 @@ test.describe("@smoke — the flows that must never break", () => {
     await page.locator('[data-testid="any-staff-option"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
+    // Staff → DATE → time. The date step is not optional; my first draft jumped
+    // straight to the slots and went red for a reason that had nothing to do
+    // with the product. The order here is copied from the specs that pass, not
+    // reasoned about.
+    const day = page.locator('[data-testid="date-day"]:not([disabled])').first();
+    await expect(day).toBeVisible({ timeout: 15_000 });
+    await day.click();
+
     await expect(page.locator('[data-testid="time-slot"]').first()).toBeVisible({
       timeout: 15_000,
     });
