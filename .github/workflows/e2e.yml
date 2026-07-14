@@ -223,6 +223,10 @@ jobs:
             echo "NEXT_PUBLIC_SUPABASE_URL=${API_URL}"
             echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${ANON_KEY}"
             echo "SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}"
+            # The parity check runs in a LATER step and talks to Postgres
+            # directly, so it needs this too. Forgetting it is what failed the
+            # third CI attempt — the schema built fine and the check never ran.
+            echo "DB_URL=${DB_URL}"
           } >> "$GITHUB_ENV"
           echo "::add-mask::${SERVICE_ROLE_KEY}"
           echo "::add-mask::${ANON_KEY}"
