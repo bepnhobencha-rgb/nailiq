@@ -27,7 +27,9 @@
 >
 > Thứ vạch trần nó là **trace trình duyệt**, chỉ được bật vì bản nháp đầu của booking smoke bị đỏ và em muốn biết tại sao. **Cổng smoke lập công trước cả khi kịp xanh.**
 >
-> ### 40 lỗi còn lại (thật, không phải CSP)
+> ### 40 lỗi còn lại — CHƯA phân loại xong
+>
+> Điều duy nhất đã chứng minh về chúng: **chúng không do CSP** (vẫn đỏ sau bản vá). **Chưa** chứng minh chúng là bug sản phẩm. Có thể là test lỗi thời, có thể là bug thật, có thể là thiếu sót hạ tầng khác mà em chưa tìm ra — **đúng như CSP đã từng là**. Gọi cả 40 cái là *"pre-existing product bug"* bây giờ sẽ lặp lại đúng sai lầm vừa rồi.
 >
 > | Nhóm | Số |
 > |---|---|
