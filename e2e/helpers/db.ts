@@ -1,6 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Locator, Page } from "@playwright/test";
 
+import { assertNotProductionFromEnv } from "./guardProduction";
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -9,6 +11,15 @@ if (!supabaseUrl?.trim() || !serviceKey?.trim()) {
     "e2e/helpers/db requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (see .env.test.local)",
   );
 }
+
+// This is the module nearly every spec seeds through — salons, staff, services,
+// bookings, OTPs — and it holds a service-role client that bypasses RLS.
+// globalSetup already guards the Playwright run, but this check is what protects
+// the module when it is imported outside the runner (a one-off `tsx` script, a
+// helper reused elsewhere). The same reasoning applies here as in
+// helpers/superadmin.ts; leaving the busiest write path unguarded would have
+// been the obvious hole.
+assertNotProductionFromEnv();
 
 const supabase = createClient(supabaseUrl, serviceKey);
 
