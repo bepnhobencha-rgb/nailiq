@@ -108,7 +108,14 @@ Trong lúc xử lý, salon **`e2e-a11y-salon` xuất hiện lúc 01:58:59 UTC** 
 | `e2e/helpers/guardProduction.unit.spec.ts` | **MỚI** — 20 unit test cho guard |
 | `playwright.config.ts` | Thêm `globalSetup` + `globalTeardown` + `testIgnore` cho `*.unit.spec.ts` |
 | `vitest.config.ts` | Include `e2e/**/*.unit.spec.ts` |
-| `.github/workflows/e2e.yml` | **Gỡ `SUPABASE_SERVICE_ROLE_KEY` production** khỏi cả job `e2e` lẫn `visual-tests` → đổi sang `TEST_SUPABASE_*`; thêm `E2E_EXPECTED_PROJECT_REF`; thiếu project test → **skip rõ ràng** (db-free) chứ không âm thầm về prod; có key mà không pin ref → **fail rõ ràng**; thêm step sweep **`if: always()`** |
+| `.github/workflows/e2e.yml` | **Gỡ `SUPABASE_SERVICE_ROLE_KEY` production** khỏi cả job `e2e` lẫn `visual-tests` → đổi sang `TEST_SUPABASE_*`; thêm `E2E_EXPECTED_PROJECT_REF`; **pre-flight step gác toàn bộ job** — thiếu project test → **skip rõ ràng** (kèm `::warning::` + job summary giải thích), có key mà **không pin ref** → **fail cứng**; thêm step sweep **`if: always()`** |
+
+### Một lần sửa lại — và vì sao đáng nói
+Bản đầu của em cho workflow **rơi về chế độ "db-free"** khi thiếu project test. Nghe thì cẩn thận, nhưng **sai**: app **không boot nổi** nếu thiếu env Supabase, nên job chết ở `wait-on` với thông báo *"Server did not respond within 30s"* — một triệu chứng **không nói gì về nguyên nhân thật**, và là đúng loại lỗi khiến người mệt mỏi sẽ "sửa" bằng cách **nhét lại key production vào**.
+
+Đã thay bằng **pre-flight gác cả job**: không có project test → skip toàn bộ, kèm cảnh báo nêu đích danh secret còn thiếu và nói rõ vì sao production không phải lựa chọn.
+
+**Đã kiểm chứng trên chính CI của PR này:** 2 job E2E **pass trong 4–6 giây** (tức skip sạch), sweep báo `removed 0 auth user(s), 0 salon(s)`, và **không một hàng `e2e-*` nào được tạo thêm trên production**.
 
 ### Mật khẩu cũ = credential công khai
 Giá trị cũ nằm trong repo **PUBLIC** từ commit `316a61f`. Không thể "xoá khỏi lịch sử" một cách đáng tin. Đã coi là **lộ vĩnh viễn** → mọi tài khoản từng dùng nó đã bị disable ở §4.
