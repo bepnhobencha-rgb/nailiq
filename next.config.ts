@@ -8,6 +8,58 @@ import { withSentryConfig } from "@sentry/nextjs";
 // Omit the directive when the site URL is HTTP (local dev / CI test server).
 const isHttpsOrigin = (process.env.NEXT_PUBLIC_SITE_URL ?? "").startsWith("https://");
 
+/**
+ * The Supabase origin this build actually talks to, added to `connect-src`.
+ *
+ * The CSP allowed `https://*.supabase.co` and nothing else, which is fine for as
+ * long as Supabase is only ever the hosted product. Point the app at a local
+ * stack — `http://127.0.0.1:54321` — and the browser silently refuses every
+ * request to it:
+ *
+ *   Fetch API cannot load http://127.0.0.1:54321/rest/v1/rpc/… Refused to
+ *   connect because it violates the document's Content Security Policy.
+ *
+ * Nothing throws on the server, so the app shows its catch-all — "Could not
+ * complete booking. Please try again." — and the cause is invisible unless you
+ * open the browser console. It cost this audit an entire wrong conclusion: the
+ * public booking was reported as a product bug when the product was fine and the
+ * page simply could not reach its database.
+ *
+ * Deriving the origin from the configured URL is the correct rule for ANY
+ * deployment, not a test-only escape hatch: whatever Supabase this build is
+ * pointed at is exactly the Supabase the browser must be allowed to call. In
+ * production it re-adds the host that `*.supabase.co` already covered, so the
+ * policy is unchanged there.
+ */
+export function supabaseConnectSrc(
+  raw: string | undefined = process.env.NEXT_PUBLIC_SUPABASE_URL,
+): string[] {
+  const value = (raw ?? "").trim();
+  if (!value) return [];
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return []; // Garbage in, nothing out — never a malformed CSP.
+  }
+
+  // Only http(s). A `data:` or `javascript:` URL yields origin "null", and
+  // pushing the literal string `null` into connect-src is the kind of sloppiness
+  // that becomes a finding later. Anything that is not a real network origin is
+  // simply not an origin we need to allow.
+  if (url.protocol !== "http:" && url.protocol !== "https:") return [];
+
+  const { origin } = url;
+  // `origin` is scheme://host[:port] and by construction cannot contain a space
+  // or a semicolon, so it cannot break out of the directive and inject another
+  // one. That is the property that makes this safe to build from an env var.
+  if (/[\s;,']/.test(origin)) return [];
+
+  // Realtime rides the same origin: http→ws, https→wss.
+  return [origin, origin.replace(/^http/, "ws")];
+}
+
 const nextConfig: NextConfig = {
   async headers() {
     const cspDirectives = [
@@ -24,7 +76,13 @@ const nextConfig: NextConfig = {
       "style-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data: https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://api.stripe.com https://api.openai.com wss://api.openai.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com",
+      [
+        "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://api.stripe.com https://api.openai.com wss://api.openai.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com",
+        // Whatever Supabase THIS build is configured against — see the note above.
+        // A no-op in production; the difference between working and silently
+        // broken when the stack is local.
+        ...supabaseConnectSrc(),
+      ].join(" "),
       "frame-src https://js.stripe.com https://hooks.stripe.com https://web.squarecdn.com https://sandbox.web.squarecdn.com",
       // Square's Web Payments SDK spins up a Web Worker from a blob: URL; without
       // worker-src it falls back to script-src and is blocked (console error).
