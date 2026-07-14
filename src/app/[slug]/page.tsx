@@ -8,7 +8,10 @@ import { BookingSalonHero } from "@/components/booking/BookingSalonHero";
 import { SalonBookingSkeleton } from "@/components/booking/SalonBookingSkeleton";
 import { BookingFlowErrorBoundary } from "@/components/booking/BookingFlowErrorBoundary";
 import { loadServiceCategories } from "@/shared/booking/loadServiceCategories";
-import { resolvePublicBookingPage } from "@/shared/booking/resolvePublicBookingPage";
+import {
+  resolvePublicBookingPage,
+  type ResolvedPublicBookingPage,
+} from "@/shared/booking/resolvePublicBookingPage";
 import { loadSalonPageSections } from "@/shared/booking/loadSalonPageSections";
 import { SalonPageSections } from "@/components/booking/SalonPageSections";
 import { buildBookingThemeVars } from "@/shared/booking/bookingThemeVars";
@@ -66,30 +69,12 @@ export async function generateMetadata({
 }
 
 async function PublicBookingRouteBody({
-  paramsPromise,
+  resolved,
   langOverride,
 }: {
-  paramsPromise: Promise<{ slug: string }>;
+  resolved: Extract<ResolvedPublicBookingPage, { status: "ok" }>;
   langOverride?: "en" | "vi";
 }) {
-  const { slug } = await paramsPromise;
-
-  const resolved = await resolvePublicBookingPage(slug);
-  if (resolved.status === "reserved") {
-    notFound();
-  }
-
-  if (resolved.status === "redirect") {
-    redirect(resolved.to);
-  }
-
-  if (resolved.status === "not_found") {
-    // BUG-07 (QA 2026-05-09): unknown slugs were returning HTTP 200 with a
-    // salon-claim CTA, which Google indexed as thin/duplicate content.
-    // notFound() makes Next render src/app/not-found.tsx with a 404 status.
-    notFound();
-  }
-
   const { load, normalizedSlug } = resolved;
 
   // P0.1 — resolve booking locale. An explicit `?lang=en|vi` wins (so links from
@@ -335,6 +320,39 @@ export default async function PublicBookingPage({ params, searchParams }: Public
   const langOverride =
     sp?.lang === "en" || sp?.lang === "vi" ? sp.lang : undefined;
 
+  // Resolve the slug HERE, in the page shell — deliberately outside the
+  // <Suspense> below.
+  //
+  // notFound() and redirect() work by throwing, and Next can only turn that
+  // throw into a real HTTP status while the response headers are still
+  // unsent. Inside a Suspense boundary the shell has already been streamed
+  // with `200 OK` by the time the child resolves, so the throw arrives too
+  // late: Next swaps in the not-found UI but the status stays 200. That is
+  // exactly what happened here — the fix for BUG-07 (QA 2026-05-09) called
+  // notFound() correctly, and the Suspense boundary silently defeated it, so
+  // Google kept indexing 404 pages as live ones.
+  //
+  // Proof it is the boundary and not the resolver: /embed/[slug] runs the very
+  // same resolvePublicBookingPage() and the very same notFound(), has no
+  // Suspense, and returns a real 404.
+  //
+  // This costs no extra query: resolvePublicBookingPage is wrapped in React
+  // cache(), and generateMetadata already awaits it for this request, so the
+  // promise is shared. The Suspense boundary still earns its keep — the body
+  // continues to await the language, page sections and service categories.
+  const { slug } = await params;
+  const resolved = await resolvePublicBookingPage(slug);
+
+  if (resolved.status === "reserved") {
+    notFound();
+  }
+  if (resolved.status === "redirect") {
+    redirect(resolved.to);
+  }
+  if (resolved.status === "not_found") {
+    notFound();
+  }
+
   return (
     <>
       {isPreview && (
@@ -358,7 +376,7 @@ export default async function PublicBookingPage({ params, searchParams }: Public
           }
         >
           <PublicBookingRouteBody
-            paramsPromise={params}
+            resolved={resolved}
             langOverride={langOverride}
           />
         </Suspense>
