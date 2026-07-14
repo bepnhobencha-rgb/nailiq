@@ -36,4 +36,11 @@ echo "→ schema baseline"
 grep -v '^ALTER DEFAULT PRIVILEGES ' "$ROOT/supabase/bootstrap/schema.sql" \
   | psql "$DB_URL" -v ON_ERROR_STOP=1 -q
 
+echo "→ reference data (lookup tables the schema cannot work without)"
+# service_categories and platform_flags are global lookup tables, not anyone's
+# data. services.category has a FK into service_categories, so an empty one means
+# the seed cannot create a single service — CI failed on exactly that.
+# No customers, no bookings, no salons, no auth users. See the file.
+psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$ROOT/supabase/bootstrap/reference-data.sql"
+
 echo "✓ baseline applied"
