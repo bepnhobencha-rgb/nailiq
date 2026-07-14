@@ -1,5 +1,9 @@
+import { randomBytes, randomUUID } from "node:crypto";
+
 import { createClient } from "@supabase/supabase-js";
 import { expect, type Page } from "@playwright/test";
+
+import { assertNotProductionFromEnv } from "./guardProduction";
 
 /**
  * SuperAdmin E2E helpers.
@@ -25,7 +29,28 @@ if (!supabaseUrl?.trim() || !serviceKey?.trim()) {
   );
 }
 
+// Second line of defence. globalSetup already ran this, but this module holds a
+// service-role client that creates privileged accounts — it must refuse to load
+// against production even if someone imports it outside the Playwright runner.
+assertNotProductionFromEnv();
+
 const supabase = createClient(supabaseUrl, serviceKey);
+
+/**
+ * A fresh, strong, single-use password. Never a constant: the previous
+ * hardcoded default sat in a PUBLIC repo (and in git history from commit
+ * 316a61f onward), which meant every superadmin the suite created shared one
+ * publicly-readable password. Treat that old value as permanently compromised.
+ *
+ * The password lives only in memory for the life of the run and is returned to
+ * the caller so it can drive the login form. It is never logged, never written
+ * to an artifact, and never interpolated into an error message.
+ */
+function freshPassword(): string {
+  // 32 random bytes, base64url → ~43 chars, plus a fixed suffix so the value
+  // always satisfies any upper/lower/digit/symbol policy.
+  return `${randomBytes(32).toString("base64url")}#Aa1`;
+}
 
 /** Platform-scoped roles, mirrors `SuperAdminRole` in src/shared/lib/superadmin.ts. */
 export type SuperAdminRole =
@@ -46,9 +71,17 @@ export type SeededSuperAdmin = {
 /**
  * Create an auth user with a password AND an active `superadmins` row.
  *
- * `email_confirm: true` so the password sign-in works without a real
- * mailbox. Role defaults to `founder` (full access — including the
- * audit-log viewer's role gate).
+ * `email_confirm: true` so the password sign-in works without a real mailbox.
+ *
+ * Role defaults to the LEAST-privileged role. It used to default to `founder`,
+ * so any spec that forgot to think about privilege silently minted a
+ * full-access platform operator. Specs that genuinely need `founder` pass it
+ * explicitly (all three current call sites already do).
+ *
+ * The email always carries the `e2e-` prefix and the `.test.invalid` domain
+ * (a reserved TLD per RFC 2606 — no human can ever own one). That marker is
+ * what `sweep()` keys on, and it is the only condition under which cleanup is
+ * allowed to delete an account.
  */
 export async function seedTestSuperadmin(opts?: {
   email?: string;
@@ -56,9 +89,9 @@ export async function seedTestSuperadmin(opts?: {
   role?: SuperAdminRole;
 }): Promise<SeededSuperAdmin> {
   const email =
-    opts?.email ?? `e2e-superadmin-${Date.now()}@nailiq.test.invalid`;
-  const password = opts?.password ?? "E2E_superadmin_2026!";
-  const role: SuperAdminRole = opts?.role ?? "founder";
+    opts?.email ?? `e2e-superadmin-${randomUUID()}@nailiq.test.invalid`;
+  const password = opts?.password ?? freshPassword();
+  const role: SuperAdminRole = opts?.role ?? "readonly_analyst";
 
   const { data, error } = await supabase.auth.admin.createUser({
     email,
