@@ -109,25 +109,63 @@ jobs:
       TZ: America/Los_Angeles
     steps:
       - uses: actions/checkout@v4
+      - name: Pre-flight — is a TEST Supabase project configured?
+        id: preflight
+        # E2E needs a database. The only database this repo has ever had is
+        # production, and pointing tests at it is what put five test
+        # superadmins and a pile of fixture salons in there. So: no test
+        # project → no E2E. We skip loudly and explicitly rather than either
+        # (a) silently falling back to production, or (b) failing on some
+        # unrelated symptom further down — the app cannot even boot without
+        # Supabase env, so an unguarded run dies at "server did not respond",
+        # which tells the reader nothing about the real cause.
+        run: |
+          if [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] && [ -n "${E2E_EXPECTED_PROJECT_REF:-}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Test Supabase project configured (ref ${E2E_EXPECTED_PROJECT_REF}) — running E2E"
+          elif [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::error::A service-role key is set but TEST_SUPABASE_PROJECT_REF is not. Refusing to run DB tests against an unpinned project."
+            exit 1
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::E2E SKIPPED — no TEST Supabase project is configured. Set secrets TEST_SUPABASE_URL / TEST_SUPABASE_ANON_KEY / TEST_SUPABASE_SERVICE_ROLE_KEY and variable TEST_SUPABASE_PROJECT_REF to restore coverage. The production project must NEVER be used here (see docs/audit/E2E-PRODUCTION-CONTAINMENT.md)."
+            {
+              echo "## ⏭️ E2E skipped — no test database"
+              echo ""
+              echo "E2E is **not running** because no dedicated test Supabase project is configured."
+              echo ""
+              echo "This is deliberate. E2E used to run against the **production** database, which is how"
+              echo "five \`*.test.invalid\` accounts (two active \`founder\` superadmins) and several \`e2e-*\`"
+              echo "fixture salons ended up living next to real customer data."
+              echo ""
+              echo "**To restore coverage:** create a test Supabase project, then set repo secrets"
+              echo "\`TEST_SUPABASE_URL\`, \`TEST_SUPABASE_ANON_KEY\`, \`TEST_SUPABASE_SERVICE_ROLE_KEY\`"
+              echo "and repo variable \`TEST_SUPABASE_PROJECT_REF\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
       - uses: actions/setup-node@v4
+        if: steps.preflight.outputs.configured == 'true'
         with:
           node-version: 20
           cache: npm
       - run: npm ci
+        if: steps.preflight.outputs.configured == 'true'
       - name: Install Playwright browsers
+        if: steps.preflight.outputs.configured == 'true'
         run: npx playwright install --with-deps chromium webkit
       - name: Build app
+        if: steps.preflight.outputs.configured == 'true'
         run: npm run build
       - name: Start production server (background) & verify it boots within 30s
+        if: steps.preflight.outputs.configured == 'true'
         # Use `next start` against the artifact built in the previous
         # step. `next dev` JIT-compiles every route on first navigation
         # (~5-15s per page) which dominated E2E runtime — production
         # server serves pre-compiled pages so page loads drop to <1s.
-        # Pre-flight: fail fast if the server doesn't respond in 30s
-        # rather than burning the full 15-min budget on Playwright's
-        # silent webServer wait. Playwright is configured with
-        # reuseExistingServer: true so the test step picks up this
-        # same process.
+        # Fail fast if the server doesn't respond in 30s rather than burning
+        # the full budget on Playwright's silent webServer wait. Playwright is
+        # configured with reuseExistingServer: true so the test step picks up
+        # this same process.
         run: |
           mkdir -p tmp
           nohup npx next start > tmp/next-server.log 2>&1 &
@@ -139,27 +177,8 @@ jobs:
             exit 1
           }
           echo "::notice::Production server up after pre-flight check"
-      - name: Decide which specs to run
-        id: scope
-        # Full (DB-writing) E2E requires a DEDICATED test Supabase project.
-        # When one is not configured we run only the specs that never touch a
-        # database, and we say so loudly. What we must never do is quietly fall
-        # back to the production project — that was the old behaviour and it
-        # seeded live data on every run.
-        run: |
-          if [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] && [ -n "${E2E_EXPECTED_PROJECT_REF:-}" ]; then
-            echo "specs=" >> "$GITHUB_OUTPUT"
-            echo "mode=full" >> "$GITHUB_OUTPUT"
-            echo "::notice::Test Supabase project configured (ref ${E2E_EXPECTED_PROJECT_REF}) — running full E2E suite"
-          elif [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] && [ -z "${E2E_EXPECTED_PROJECT_REF:-}" ]; then
-            echo "::error::A service-role key is set but TEST_SUPABASE_PROJECT_REF is not. Refusing to run DB tests against an unpinned project."
-            exit 1
-          else
-            echo "specs=e2e/content e2e/accessibility" >> "$GITHUB_OUTPUT"
-            echo "mode=db-free" >> "$GITHUB_OUTPUT"
-            echo "::warning::No TEST Supabase project configured — DB-dependent E2E specs are SKIPPED (running content + a11y only). Configure TEST_SUPABASE_URL / TEST_SUPABASE_ANON_KEY / TEST_SUPABASE_SERVICE_ROLE_KEY + vars.TEST_SUPABASE_PROJECT_REF to restore full coverage. The production project must never be used here."
-          fi
       - name: Decide which project(s) to run
+        if: steps.preflight.outputs.configured == 'true'
         id: projects
         # PR runs are gated by E2E, so a slow/flaky project blocks merges.
         # Mobile specs (especially receptionist-center) have pre-existing
@@ -175,16 +194,17 @@ jobs:
             echo "::notice::Non-PR run — chromium + mobile"
           fi
       - name: Run E2E tests
-        # Full mode: each shard runs its dedicated spec paths (matrix.testpath).
-        # Explicit path-based splitting replaces numeric --shard=X/N sharding so
+        if: steps.preflight.outputs.configured == 'true'
+        # Each shard runs its dedicated spec paths (matrix.testpath). Explicit
+        # path-based splitting replaces numeric --shard=X/N sharding so
         # receptionist-center specs all land in one shard and avoid fixture races.
-        # DB-free mode (no service role key): fall back to content + a11y only.
-        run: |
-          if [ "${{ steps.scope.outputs.mode }}" = "full" ]; then
-            npx playwright test ${{ matrix.testpath }} ${{ steps.projects.outputs.flag }} --reporter=list,html,json
-          else
-            npx playwright test ${{ steps.scope.outputs.specs }} ${{ steps.projects.outputs.flag }} --reporter=list,html,json
-          fi
+        #
+        # There is no "db-free fallback" mode any more. It sounded prudent but it
+        # was a trap: the app cannot boot without Supabase env, so a keyless run
+        # died at "server did not respond" — a symptom that says nothing about the
+        # real cause. The pre-flight step above skips the whole job instead, with
+        # an explanation.
+        run: npx playwright test ${{ matrix.testpath }} ${{ steps.projects.outputs.flag }} --reporter=list,html,json
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
       - name: Sweep E2E fixtures (runs even when the job is cancelled)
@@ -197,13 +217,17 @@ jobs:
         # The script refuses to run against production, deletes only rows that
         # carry an explicit E2E marker (`e2e-*@nailiq.test.invalid` users,
         # `e2e-*` salon slugs), and is idempotent.
-        if: always()
+        #
+        # `always()` is what makes it survive a cancelled job; the preflight
+        # condition is because a skipped job never ran `npm ci`, so there is no
+        # tsx to invoke and nothing was seeded anyway.
+        if: always() && steps.preflight.outputs.configured == 'true'
         run: npx tsx scripts/e2e-sweep.ts
       - name: Summarize results
-        if: always()
+        if: always() && steps.preflight.outputs.configured == 'true'
         run: node scripts/playwright-summary.js >> "$GITHUB_STEP_SUMMARY" || true
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.preflight.outputs.configured == 'true'
         with:
           name: playwright-report-shard-${{ matrix.shard }}
           path: playwright-report/
@@ -242,14 +266,31 @@ jobs:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pre-flight — is a TEST Supabase project configured?
+        id: preflight
+        # Same rule as the `e2e` job: the visual suite also boots the app and
+        # drives seeded pages, so it needs a database — and it must never be
+        # the production one.
+        run: |
+          if [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] && [ -n "${E2E_EXPECTED_PROJECT_REF:-}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Visual regression SKIPPED — no TEST Supabase project configured. The production project must NEVER be used here."
+          fi
       - uses: actions/setup-node@v4
+        if: steps.preflight.outputs.configured == 'true'
         with:
           node-version: 20
           cache: npm
       - run: npm ci
+        if: steps.preflight.outputs.configured == 'true'
       - run: npx playwright install --with-deps chromium webkit
+        if: steps.preflight.outputs.configured == 'true'
       - run: npm run build
+        if: steps.preflight.outputs.configured == 'true'
       - name: Start production server & verify it boots within 30s
+        if: steps.preflight.outputs.configured == 'true'
         run: |
           mkdir -p tmp
           nohup npx next start > tmp/next-server.log 2>&1 &
@@ -261,6 +302,7 @@ jobs:
           }
           echo "::notice::Production server up for visual tests"
       - name: Detect snapshot-update intent
+        if: steps.preflight.outputs.configured == 'true'
         id: snap
         env:
           COMMIT_MSG: ${{ github.event.head_commit.message }}
@@ -272,9 +314,13 @@ jobs:
             echo "flag=" >> "$GITHUB_OUTPUT"
           fi
       - name: Run visual tests
+        if: steps.preflight.outputs.configured == 'true'
         run: npx playwright test e2e/visual ${{ steps.snap.outputs.flag }} --reporter=list,html
+      - name: Sweep E2E fixtures (runs even when the job is cancelled)
+        if: always() && steps.preflight.outputs.configured == 'true'
+        run: npx tsx scripts/e2e-sweep.ts
       - name: Commit updated Linux snapshots back to main
-        if: steps.snap.outputs.flag != ''
+        if: steps.preflight.outputs.configured == 'true' && steps.snap.outputs.flag != ''
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
