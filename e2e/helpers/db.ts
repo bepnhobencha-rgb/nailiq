@@ -1,3 +1,5 @@
+import { randomBytes, randomUUID } from "node:crypto";
+
 import { createClient } from "@supabase/supabase-js";
 import type { Locator, Page } from "@playwright/test";
 
@@ -296,8 +298,13 @@ export async function seedEmptyTestSalon(opts?: {
  * Returns { userId, email, password }.
  */
 export async function seedTestUser(opts?: { email?: string; password?: string }) {
-  const email = opts?.email ?? `e2e-user-${Date.now()}@nailiq.test.invalid`;
-  const password = opts?.password ?? "E2E_testpass_2026!";
+  // Second instance of the hardcoded-credential bug, missed when
+  // helpers/superadmin.ts was fixed: this default password sat in a PUBLIC repo
+  // too, and this helper also mints real auth users. Same rule — a fresh random
+  // password per run, held only in memory, never logged and never in an artifact.
+  // Treat the old constant as permanently compromised.
+  const email = opts?.email ?? `e2e-user-${randomUUID()}@nailiq.test.invalid`;
+  const password = opts?.password ?? `E2E-${randomBytes(24).toString("base64url")}#Aa1`;
 
   const { data, error } = await supabase.auth.admin.createUser({
     email,

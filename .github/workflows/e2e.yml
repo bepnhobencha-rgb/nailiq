@@ -64,25 +64,23 @@ jobs:
             name: "receptionist-center"
             testpath: "e2e/receptionist-center"
     env:
-      # ⚠️ TEST/STAGING Supabase ONLY.
+      # ── NO PRODUCTION SECRETS. NONE. ────────────────────────────────────────
       #
-      # These used to be the PRODUCTION project's secrets, which meant every CI
-      # run wrote rows into the live database — that is how five
-      # `*.test.invalid` auth users (two active `founder` superadmins) and three
-      # `e2e-*` salons ended up in production next to real salons. See
-      # docs/audit/E2E-PRODUCTION-CONTAINMENT.md.
+      # There is no `secrets.*` Supabase value anywhere in this job any more.
+      # The database is a Supabase stack booted by the CLI inside this runner:
+      # its URL and keys are generated at `supabase start` and exported below,
+      # and the whole thing is deleted when the job ends.
       #
-      # `TEST_SUPABASE_*` are intentionally NOT configured yet. Until a
-      # dedicated test project exists they resolve to empty, and the "Decide
-      # which specs to run" step below drops the suite to db-free mode instead
-      # of silently reaching for production. e2e/helpers/guardProduction.ts is
-      # the second lock: it aborts the run outright if these ever point at the
-      # production project ref.
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.TEST_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.TEST_SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.TEST_SUPABASE_SERVICE_ROLE_KEY }}
-      # Pins the run to one project ref. Any mismatch aborts the suite.
-      E2E_EXPECTED_PROJECT_REF: ${{ vars.TEST_SUPABASE_PROJECT_REF }}
+      # Why local rather than a hosted test project: the incident happened
+      # because E2E wrote into a database that OUTLIVED the run. Cleanup lived in
+      # test.afterAll(); this workflow cancels in-progress jobs; afterAll never
+      # fired; five superadmin accounts and a pile of fixture salons stayed in
+      # PRODUCTION for a month. A container that is destroyed with the job cannot
+      # accumulate leftovers — not when the job fails, not when it is cancelled.
+      # See docs/audit/E2E-PRODUCTION-CONTAINMENT.md.
+      #
+      # e2e/helpers/guardProduction.ts is still the second lock: it aborts the run
+      # if the Supabase URL ever resolves to the production project ref.
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
       BASE_URL: http://localhost:3000
       PLAYWRIGHT_BASE_URL: http://localhost:3000
@@ -93,14 +91,39 @@ jobs:
       # Allows demo cookie with non-"demo-salon" slugs so E2E fixtures can
       # use arbitrary test slugs. NEVER set on Vercel production.
       NAILIQ_TEST_BYPASS_SLUG_PIN: "1"
-      # HARD kill-switch: E2E must NEVER bill real Twilio SMS/Verify. The app
-      # runs `next start` here (NODE_ENV=production), so this flag is what stops
-      # outbound SMS — the 555-exchange recipient guard is the secondary net.
-      # NEVER set on Vercel production.
+      # ── External integrations: all off, all of them ─────────────────────────
+      # A test database must not be able to reach a real provider even by
+      # accident. The suite once billed 555 real Twilio sends.
+      #
+      # HARD kill-switch for SMS. The app runs `next start` (NODE_ENV=production),
+      # so this flag is what stops outbound SMS; the 555-exchange recipient guard
+      # is the secondary net. NEVER set on Vercel production.
       DISABLE_OUTBOUND_SMS: "1"
       # Short-circuits the Anthropic Vision call in aiPrefillServicesAction
       # so setup-ai-prefill E2E specs work without an API key.
       AI_PREFILL_E2E_MOCK: "services"
+      # Every provider credential is empty on purpose. Empty is not a gap here —
+      # each client factory reads its key and no-ops (or throws) without one, so
+      # there is no key to reach production with. Specs that need a provider must
+      # mock it or skip loudly; none may fall back to a live account.
+      TWILIO_ACCOUNT_SID: ""
+      TWILIO_AUTH_TOKEN: ""
+      TWILIO_VERIFY_SERVICE_SID: ""
+      TWILIO_PHONE_NUMBER: ""
+      RESEND_API_KEY: ""
+      STRIPE_SECRET_KEY: ""
+      STRIPE_WEBHOOK_SECRET: ""
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ""
+      ANTHROPIC_API_KEY: ""
+      OPENAI_API_KEY: ""
+      WIX_API_KEY: ""
+      WIX_WEBHOOK_PUBLIC_KEY: ""
+      CRON_SECRET: ""
+      # INTERNAL_API_SECRET is generated per run in the "Start Supabase" step
+      # below. The app needs *a* value for /api/booking-email to accept a
+      # server-to-server call, and a literal here would be a credential-shaped
+      # string committed to a public repo — which is the pattern this whole audit
+      # exists to stamp out. Random per run, never printed.
       # Align Node.js process timezone with the Playwright browser
       # (timezoneId: "America/Los_Angeles" in playwright.config.ts).
       # Without this, new Date(y, mo, d, h, m) in test helpers creates
@@ -109,38 +132,40 @@ jobs:
       TZ: America/Los_Angeles
     steps:
       - uses: actions/checkout@v4
-      - name: Pre-flight — is a TEST Supabase project configured?
+      - name: Pre-flight — is the schema baseline present?
         id: preflight
-        # E2E needs a database. The only database this repo has ever had is
-        # production, and pointing tests at it is what put five test
-        # superadmins and a pile of fixture salons in there. So: no test
-        # project → no E2E. We skip loudly and explicitly rather than either
-        # (a) silently falling back to production, or (b) failing on some
-        # unrelated symptom further down — the app cannot even boot without
-        # Supabase env, so an unguarded run dies at "server did not respond",
-        # which tells the reader nothing about the real cause.
+        # E2E needs a database, and the database is built from
+        # supabase/bootstrap/schema.sql. That file cannot be generated from the
+        # 262 migrations in this repo: the core tables (salons, bookings, staff,
+        # services) have no CREATE TABLE anywhere — the migrations only ALTER
+        # tables that were created by hand on the live project. `db push` against
+        # an empty database dies on the first file, which is why
+        # scripts/db-push-guard.js already blocks it.
+        #
+        # So until the baseline is committed, the DB suite is SKIPPED — loudly,
+        # and explaining exactly what is missing. What it must never do is fall
+        # back to production. That is what this whole exercise was about.
         run: |
-          if [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] && [ -n "${E2E_EXPECTED_PROJECT_REF:-}" ]; then
+          if [ -f supabase/bootstrap/schema.sql ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Test Supabase project configured (ref ${E2E_EXPECTED_PROJECT_REF}) — running E2E"
-          elif [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
-            echo "::error::A service-role key is set but TEST_SUPABASE_PROJECT_REF is not. Refusing to run DB tests against an unpinned project."
-            exit 1
+            echo "::notice::Schema baseline found — booting a local Supabase for this run"
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::E2E SKIPPED — no TEST Supabase project is configured. Set secrets TEST_SUPABASE_URL / TEST_SUPABASE_ANON_KEY / TEST_SUPABASE_SERVICE_ROLE_KEY and variable TEST_SUPABASE_PROJECT_REF to restore coverage. The production project must NEVER be used here (see docs/audit/E2E-PRODUCTION-CONTAINMENT.md)."
+            echo "::warning::E2E SKIPPED — supabase/bootstrap/schema.sql is missing. It is produced by ONE command (see docs/E2E-TEST-DATABASE.md) and needs the Postgres password, which CI does not and should not have. No production fallback exists, by design."
             {
-              echo "## ⏭️ E2E skipped — no test database"
+              echo "## ⏭️ E2E skipped — no schema baseline"
               echo ""
-              echo "E2E is **not running** because no dedicated test Supabase project is configured."
+              echo "\`supabase/bootstrap/schema.sql\` is not committed, so there is nothing to build the"
+              echo "test database from."
               echo ""
-              echo "This is deliberate. E2E used to run against the **production** database, which is how"
-              echo "five \`*.test.invalid\` accounts (two active \`founder\` superadmins) and several \`e2e-*\`"
-              echo "fixture salons ended up living next to real customer data."
+              echo "It cannot be generated from \`supabase/migrations/\`: the core tables (\`salons\`,"
+              echo "\`bookings\`, \`staff\`, \`services\`) have **no \`CREATE TABLE\`** anywhere in the repo."
               echo ""
-              echo "**To restore coverage:** create a test Supabase project, then set repo secrets"
-              echo "\`TEST_SUPABASE_URL\`, \`TEST_SUPABASE_ANON_KEY\`, \`TEST_SUPABASE_SERVICE_ROLE_KEY\`"
-              echo "and repo variable \`TEST_SUPABASE_PROJECT_REF\`."
+              echo "**One command produces it** — see \`docs/E2E-TEST-DATABASE.md\`. It needs the Postgres"
+              echo "password, which CI does not have and must not have."
+              echo ""
+              echo "E2E does **not** fall back to the production database. That fallback is what put five"
+              echo "\`founder\` superadmin accounts and a pile of fixture salons next to real customer data."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
       - uses: actions/setup-node@v4
@@ -150,6 +175,68 @@ jobs:
           cache: npm
       - run: npm ci
         if: steps.preflight.outputs.configured == 'true'
+      - name: Set up Supabase CLI (pinned)
+        if: steps.preflight.outputs.configured == 'true'
+        # Pinned, not `latest`. A CLI that silently moves under us can change how
+        # the stack boots or what `supabase status` prints, and the failure would
+        # land on whoever opened the next unrelated PR.
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+      - name: Start Supabase (local, throwaway)
+        if: steps.preflight.outputs.configured == 'true'
+        # Docker is preinstalled on ubuntu-latest. This boots Postgres 17 + GoTrue
+        # + PostgREST in containers that belong to this job and die with it.
+        run: supabase start --exclude studio,edge-runtime,logflare,vector
+      - name: Verify the target is NOT production, then build the schema
+        if: steps.preflight.outputs.configured == 'true'
+        # Order matters. The guard speaks BEFORE psql is pointed at anything:
+        # `supabase status` hands us a service-role key, and a service-role key
+        # aimed at the wrong database is precisely the loaded gun this whole
+        # audit was about.
+        run: |
+          set -euo pipefail
+          # Export the LOCAL stack's generated credentials. These are throwaway
+          # values printed by the CLI — not secrets, and not from `secrets.*`.
+          supabase status -o env | sed 's/^/export /' > /tmp/supabase.env
+          # shellcheck disable=SC1091
+          set -a; . /tmp/supabase.env; set +a
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=${API_URL}"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${ANON_KEY}"
+            echo "SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}"
+          } >> "$GITHUB_ENV"
+          echo "::add-mask::${SERVICE_ROLE_KEY}"
+          echo "::add-mask::${ANON_KEY}"
+
+          # A throwaway shared secret for the app's server-to-server routes.
+          # Generated, not committed: a literal would be a credential-shaped
+          # string in a public repo.
+          INTERNAL_SECRET="$(openssl rand -hex 24)"
+          echo "::add-mask::${INTERNAL_SECRET}"
+          echo "INTERNAL_API_SECRET=${INTERNAL_SECRET}" >> "$GITHUB_ENV"
+
+          echo "→ target: ${API_URL}"
+          NEXT_PUBLIC_SUPABASE_URL="${API_URL}" \
+          SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}" \
+            npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { g.assertNotProductionFromEnv(); console.log('✓ guard: not production'); })"
+
+          echo "→ applying supabase/bootstrap/schema.sql to the empty local database"
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -f supabase/bootstrap/schema.sql
+      - name: Schema parity check
+        if: steps.preflight.outputs.configured == 'true'
+        # A baseline that applied without error can still be missing half the
+        # policies. Count what landed and compare against production's shape;
+        # a silently thin schema makes tests pass for the wrong reason.
+        run: npx tsx scripts/check-schema-parity.ts
+      - name: Seed E2E fixtures
+        if: steps.preflight.outputs.configured == 'true'
+        run: npx tsx scripts/seed-e2e.ts
+      - name: Seed again — must be idempotent
+        if: steps.preflight.outputs.configured == 'true'
+        # Re-running the seed must replace the fixture, not duplicate it. If this
+        # step fails, a re-run of a flaky job would corrupt its own database.
+        run: npx tsx scripts/seed-e2e.ts
       - name: Install Playwright browsers
         if: steps.preflight.outputs.configured == 'true'
         run: npx playwright install --with-deps chromium webkit
@@ -208,21 +295,23 @@ jobs:
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
       - name: Sweep E2E fixtures (runs even when the job is cancelled)
-        # THE backstop. Cleanup used to live only in `test.afterAll()`, and this
-        # workflow sets `concurrency: cancel-in-progress: true` — so a newer push
-        # killed the Playwright process, `afterAll` never fired, and the fixtures
-        # leaked permanently. A workflow step survives what an in-process hook
-        # cannot.
+        # Kept, though the local database makes it close to redundant now: the
+        # container is destroyed with the job, so nothing can survive anyway.
+        # It stays because it is the thing that would have prevented the incident,
+        # and because a laptop running the suite against a local stack it keeps
+        # between runs still benefits.
         #
-        # The script refuses to run against production, deletes only rows that
-        # carry an explicit E2E marker (`e2e-*@nailiq.test.invalid` users,
-        # `e2e-*` salon slugs), and is idempotent.
-        #
-        # `always()` is what makes it survive a cancelled job; the preflight
-        # condition is because a skipped job never ran `npm ci`, so there is no
-        # tsx to invoke and nothing was seeded anyway.
+        # Deletes only rows carrying an explicit E2E marker
+        # (`e2e-*@nailiq.test.invalid` users, `e2e-*` salon slugs). Idempotent.
         if: always() && steps.preflight.outputs.configured == 'true'
         run: npx tsx scripts/e2e-sweep.ts
+      - name: Stop Supabase and destroy the database
+        # THE property that makes this design safe, so it runs unconditionally.
+        # `--no-backup` means the volumes go too: nothing is carried into the next
+        # run, and there is no long-lived database for a fixture to be forgotten
+        # in. `always()` covers the case that actually bit us — a cancelled job.
+        if: always() && steps.preflight.outputs.configured == 'true'
+        run: supabase stop --no-backup
       - name: Summarize results
         if: always() && steps.preflight.outputs.configured == 'true'
         run: node scripts/playwright-summary.js >> "$GITHUB_STEP_SUMMARY" || true
@@ -244,14 +333,10 @@ jobs:
     permissions:
       contents: write
     env:
-      # TEST/STAGING Supabase ONLY — same rule as the `e2e` job above. The
-      # visual suite also held the production service-role key, so it too could
-      # write to the live database. guardProduction.ts aborts the run if these
-      # ever resolve to the production project ref.
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.TEST_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.TEST_SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.TEST_SUPABASE_SERVICE_ROLE_KEY }}
-      E2E_EXPECTED_PROJECT_REF: ${{ vars.TEST_SUPABASE_PROJECT_REF }}
+      # No Supabase secrets here either. The visual suite boots the app and drives
+      # seeded pages, so it needs a database — and it used to be handed the
+      # PRODUCTION service-role key to get one. It now boots the same throwaway
+      # local stack as the `e2e` job.
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
       BASE_URL: http://localhost:3000
       PLAYWRIGHT_BASE_URL: http://localhost:3000
@@ -262,21 +347,27 @@ jobs:
       NAILIQ_TEST_BYPASS_SLUG_PIN: "1"
       # HARD kill-switch — visual specs must never bill real Twilio either.
       DISABLE_OUTBOUND_SMS: "1"
+      TWILIO_ACCOUNT_SID: ""
+      TWILIO_AUTH_TOKEN: ""
+      RESEND_API_KEY: ""
+      STRIPE_SECRET_KEY: ""
+      ANTHROPIC_API_KEY: ""
+      OPENAI_API_KEY: ""
+      WIX_API_KEY: ""
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Pre-flight — is a TEST Supabase project configured?
+      - name: Pre-flight — is the schema baseline present?
         id: preflight
-        # Same rule as the `e2e` job: the visual suite also boots the app and
-        # drives seeded pages, so it needs a database — and it must never be
-        # the production one.
+        # Same rule as the `e2e` job: no baseline → no database → skip loudly.
+        # Never a production fallback.
         run: |
-          if [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] && [ -n "${E2E_EXPECTED_PROJECT_REF:-}" ]; then
+          if [ -f supabase/bootstrap/schema.sql ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Visual regression SKIPPED — no TEST Supabase project configured. The production project must NEVER be used here."
+            echo "::warning::Visual regression SKIPPED — supabase/bootstrap/schema.sql is missing. No production fallback exists, by design."
           fi
       - uses: actions/setup-node@v4
         if: steps.preflight.outputs.configured == 'true'
@@ -285,6 +376,31 @@ jobs:
           cache: npm
       - run: npm ci
         if: steps.preflight.outputs.configured == 'true'
+      - name: Set up Supabase CLI (pinned)
+        if: steps.preflight.outputs.configured == 'true'
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+      - name: Start Supabase (local, throwaway) and build the schema
+        if: steps.preflight.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          supabase start --exclude studio,edge-runtime,logflare,vector
+          supabase status -o env > /tmp/sb.env
+          set -a; . /tmp/sb.env; set +a
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=${API_URL}"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${ANON_KEY}"
+            echo "SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}"
+          } >> "$GITHUB_ENV"
+          echo "::add-mask::${SERVICE_ROLE_KEY}"
+          echo "::add-mask::${ANON_KEY}"
+          NEXT_PUBLIC_SUPABASE_URL="${API_URL}" SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}" \
+            npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { g.assertNotProductionFromEnv(); console.log('✓ guard: not production'); })"
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -f supabase/bootstrap/schema.sql
+      - name: Seed E2E fixtures
+        if: steps.preflight.outputs.configured == 'true'
+        run: npx tsx scripts/seed-e2e.ts
       - run: npx playwright install --with-deps chromium webkit
         if: steps.preflight.outputs.configured == 'true'
       - run: npm run build
@@ -319,6 +435,9 @@ jobs:
       - name: Sweep E2E fixtures (runs even when the job is cancelled)
         if: always() && steps.preflight.outputs.configured == 'true'
         run: npx tsx scripts/e2e-sweep.ts
+      - name: Stop Supabase and destroy the database
+        if: always() && steps.preflight.outputs.configured == 'true'
+        run: supabase stop --no-backup
       - name: Commit updated Linux snapshots back to main
         if: steps.preflight.outputs.configured == 'true' && steps.snap.outputs.flag != ''
         run: |
