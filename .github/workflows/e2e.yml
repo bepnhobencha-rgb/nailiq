@@ -103,10 +103,16 @@ jobs:
           echo "::add-mask::${INTERNAL_SECRET}"
           echo "INTERNAL_API_SECRET=${INTERNAL_SECRET}" >> "$GITHUB_ENV"
 
-          NEXT_PUBLIC_SUPABASE_URL="${API_URL}" SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}" \
-            npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { g.assertNotProductionFromEnv(); console.log('✓ guard: not production'); })"
+          # GITHUB_ENV only reaches LATER steps, so everything invoked from THIS
+          # step gets the values explicitly. The seed failed on exactly that:
+          # "e2e/helpers/db requires NEXT_PUBLIC_SUPABASE_URL".
+          export NEXT_PUBLIC_SUPABASE_URL="${API_URL}"
+          export NEXT_PUBLIC_SUPABASE_ANON_KEY="${ANON_KEY}"
+          export SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}"
+
+          npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { g.assertNotProductionFromEnv(); console.log('✓ guard: not production'); })"
           bash scripts/apply-baseline.sh "${DB_URL}"
-          DB_URL="${DB_URL}" npx tsx scripts/check-schema-parity.ts
+          npx tsx scripts/check-schema-parity.ts
           npx tsx scripts/seed-e2e.ts
       - run: npx playwright install --with-deps chromium
       - run: npm run build
