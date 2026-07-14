@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cache } from "react";
-import { fetchSimilarSalonSlugs } from "@/shared/booking/getSalonBySlug";
+import {
+  fetchSimilarSalonSlugs,
+  getSalonBySlug,
+} from "@/shared/booking/getSalonBySlug";
 import {
   loadBookingServicesForSalonSlug,
   type BookingLoadData,
@@ -52,6 +55,18 @@ export type ResolvedPublicBookingPage =
       normalizedSlug: string;
       suggestedSlugs?: string[];
     }
+  /**
+   * The lookup FAILED — we do not know whether this salon exists.
+   *
+   * Distinct from `not_found`, and the distinction is load-bearing now that an
+   * unknown slug answers with a real 404. `loadBookingServicesForSalonSlug`
+   * returns `null` both when a salon is genuinely absent AND when the query
+   * errors (it logs to Sentry and returns null). Collapsing those two into
+   * `not_found` meant a Supabase outage would serve 404 for every real,
+   * paying salon — and Google de-indexes a 404. A failed lookup must surface
+   * as a 5xx: "come back later", not "this never existed".
+   */
+  | { status: "error"; normalizedSlug: string; reason: string }
   | { status: "redirect"; to: string }
   | { status: "ok"; normalizedSlug: string; load: BookingLoadData };
 
@@ -79,12 +94,33 @@ export const resolvePublicBookingPage = cache(
       return { status: "reserved" };
     }
 
-    // 4. load booking data
-    const load = await loadBookingServicesForSalonSlug(normalizedSlug, supabase);
+    // 4. Does this salon exist at all?
+    //
+    // Asked separately, and on purpose. loadBookingServicesForSalonSlug()
+    // returns null for "no such salon" AND for "the query blew up" — it logs
+    // the error to Sentry and returns null either way. That conflation was
+    // survivable while an unknown slug rendered a 200; it is not survivable now
+    // that it renders a hard 404, because a Supabase blip would then hand
+    // Google a 404 for tech-nails and hilite-anaheim and get them de-indexed.
+    //
+    // Costs one indexed single-row lookup. Cheap insurance against silently
+    // de-listing the salons that pay for this.
+    const client = supabase ?? (await createClient());
+    const { salon: exists, error: lookupErr } = await getSalonBySlug(
+      client,
+      normalizedSlug,
+    );
 
-    // 5. if NOT FOUND → fetch suggestions → return not_found
-    if (!load) {
-      const client = supabase ?? (await createClient());
+    if (lookupErr) {
+      return {
+        status: "error",
+        normalizedSlug,
+        reason: lookupErr.message,
+      };
+    }
+
+    // 5. Genuinely absent → suggestions → not_found (a real 404).
+    if (!exists) {
       const rawSuggestions = await fetchSimilarSalonSlugs(
         client,
         normalizedSlug,
@@ -98,6 +134,20 @@ export const resolvePublicBookingPage = cache(
         normalizedSlug,
         suggestedSlugs:
           suggestedSlugs.length > 0 ? suggestedSlugs : undefined,
+      };
+    }
+
+    // 6. It exists → load the full booking payload.
+    //
+    // A null now cannot mean "no such salon" — we just proved otherwise one
+    // query ago. It means the load failed. Serving a 404 here would tell Google
+    // a live salon is gone; a 5xx says "try again", which is the truth.
+    const load = await loadBookingServicesForSalonSlug(normalizedSlug, client);
+    if (!load) {
+      return {
+        status: "error",
+        normalizedSlug,
+        reason: "salon exists but its booking payload failed to load",
       };
     }
 
