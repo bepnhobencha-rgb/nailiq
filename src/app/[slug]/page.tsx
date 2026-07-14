@@ -53,6 +53,13 @@ export async function generateMetadata({
       robots: { index: false, follow: false },
     };
   }
+  if (resolved.status === "error") {
+    // A failed lookup is not a missing page. Emit neutral metadata and, above
+    // all, do NOT set `robots: noindex` — the page component throws for this
+    // status, so the request ends as a 5xx. Telling a crawler "do not index"
+    // during a database blip is how a live salon quietly leaves the index.
+    return { title: { absolute: "NailIQ" } };
+  }
   const name = resolved.load.salon.name || resolved.normalizedSlug;
   const canonicalUrl = `https://nailiq.ca/${slug}`;
   return {
@@ -351,6 +358,15 @@ export default async function PublicBookingPage({ params, searchParams }: Public
   }
   if (resolved.status === "not_found") {
     notFound();
+  }
+  if (resolved.status === "error") {
+    // The lookup failed — we do NOT know that this salon is gone. Throwing
+    // gives a 5xx ("try again later"); answering 404 would tell Google a real,
+    // paying salon no longer exists, and a 404 is how pages get de-indexed.
+    // A database blip must never cost a salon its search ranking.
+    throw new Error(
+      `Public booking lookup failed for "${resolved.normalizedSlug}": ${resolved.reason}`,
+    );
   }
 
   return (

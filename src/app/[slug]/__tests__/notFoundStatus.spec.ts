@@ -101,6 +101,27 @@ describe("public salon page — HTTP status for unknown slugs", () => {
     ).not.toContain("redirect(");
   });
 
+  it("does not turn a failed lookup into a 404", () => {
+    // The dangerous half of this change. loadBookingServicesForSalonSlug()
+    // returns null both for "no such salon" and for "the query errored" — it
+    // logs to Sentry and returns null either way. Collapsing those into a 404
+    // was harmless while unknown slugs answered 200; once they answer a real
+    // 404, a Supabase blip would hand Google a 404 for tech-nails and
+    // hilite-anaheim, and a 404 is how a page leaves the index.
+    //
+    // So the resolver reports `status: "error"` for a failed lookup, and the
+    // shell throws on it — a 5xx says "try again", which is the truth. Verified
+    // against a production build pointed at an unreachable Supabase: a real
+    // salon answers 500, not 404.
+    const shell = functionBody("PublicBookingPage");
+    expect(
+      shell,
+      'the page must handle status "error" — otherwise a database outage ' +
+        "silently de-indexes every live salon",
+    ).toContain('resolved.status === "error"');
+    expect(shell).toContain("throw new Error(");
+  });
+
   it("keeps the Suspense boundary (the fix must not cost the streaming skeleton)", () => {
     // resolvePublicBookingPage is React cache()d and generateMetadata already
     // awaits it, so hoisting the await costs no extra query — and the body

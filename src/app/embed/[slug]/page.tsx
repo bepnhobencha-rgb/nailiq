@@ -47,6 +47,14 @@ export default async function EmbedBookingPage({
   if (resolved.status === "reserved" || resolved.status === "not_found") {
     notFound();
   }
+  if (resolved.status === "error") {
+    // Same rule as /[slug]: a failed lookup is a 5xx, never a 404. The embed is
+    // iframed into a salon's own website, so answering 404 during a database
+    // blip would tell their visitors the salon does not exist.
+    throw new Error(
+      `Embed booking lookup failed for "${resolved.normalizedSlug}": ${resolved.reason}`,
+    );
+  }
 
   const { load, normalizedSlug } = resolved;
 
