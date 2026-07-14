@@ -187,7 +187,25 @@ jobs:
         if: steps.preflight.outputs.configured == 'true'
         # Docker is preinstalled on ubuntu-latest. This boots Postgres 17 + GoTrue
         # + PostgREST in containers that belong to this job and die with it.
-        run: supabase start --exclude studio,edge-runtime,logflare,vector
+        #
+        # The migrations are moved aside first, and that is not a workaround — it
+        # is the whole finding. `supabase start` applies supabase/migrations/*.sql
+        # automatically, and those 262 files CANNOT build a database: the first one
+        # runs `alter table public.salons enable row level security` against a
+        # table that has no CREATE anywhere in the repo. The first CI run died
+        # exactly there: `relation "public.salons" does not exist`.
+        #
+        # supabase/bootstrap/schema.sql is the source of truth for a fresh
+        # database. The migrations stay untouched on disk and in git — they are
+        # production's (drifted) history, and consolidating them is a separate
+        # job with its own blast radius. See docs/audit/SUPABASE-LOCAL-BASELINE.md.
+        run: |
+          set -euo pipefail
+          mv supabase/migrations /tmp/migrations-parked
+          mkdir -p supabase/migrations
+          supabase start --exclude studio,edge-runtime,logflare,vector
+          rm -rf supabase/migrations
+          mv /tmp/migrations-parked supabase/migrations
       - name: Verify the target is NOT production, then build the schema
         if: steps.preflight.outputs.configured == 'true'
         # Order matters. The guard speaks BEFORE psql is pointed at anything:
