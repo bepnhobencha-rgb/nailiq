@@ -24,6 +24,10 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { NAILQ_DEMO_SLUG_COOKIE } from "@/shared/lib/demoDashboardCookie";
 import {
+  isRouteOrUnder,
+  isRouteOrUnderAny,
+} from "@/shared/lib/routeBoundary";
+import {
   DEMO_SALON_SLUG,
   isDemoOtpRuntime,
   isDemoSlugPinBypassed,
@@ -287,9 +291,7 @@ export async function proxy(request: NextRequest) {
     !user.phone_confirmed_at
   ) {
     const exempt =
-      pathname.startsWith("/auth") ||
-      pathname.startsWith("/api") ||
-      pathname === "/login";
+      isRouteOrUnderAny(pathname, ["/auth", "/api"]) || pathname === "/login";
     if (!exempt) {
       const url = new URL("/login", request.url);
       url.searchParams.set("notice", "confirm-email");
@@ -333,14 +335,19 @@ export async function proxy(request: NextRequest) {
     }
 
     // Rule 2: Logged-in WITHOUT salon cannot access /register, /login, or /dashboard
-    if (!hasSalon && (pathname === "/register" || pathname === "/login" || pathname.startsWith("/dashboard"))) {
+    if (
+      !hasSalon &&
+      (pathname === "/register" ||
+        pathname === "/login" ||
+        isRouteOrUnder(pathname, "/dashboard"))
+    ) {
       const redirect = NextResponse.redirect(new URL("/register/setup", request.url));
       return applyCookiesFrom(redirect, supabaseResponse);
     }
   }
 
   // Unauthenticated guards
-  if (!user && pathname.startsWith("/dashboard")) {
+  if (!user && isRouteOrUnder(pathname, "/dashboard")) {
     const redirect = NextResponse.redirect(new URL("/login", request.url));
     return applyCookiesFrom(redirect, supabaseResponse);
   }
@@ -353,7 +360,7 @@ export async function proxy(request: NextRequest) {
   // components so we keep the authoritative gate in one place.
   if (
     !user &&
-    pathname.startsWith("/superadmin") &&
+    isRouteOrUnder(pathname, "/superadmin") &&
     pathname !== "/superadmin/login" &&
     pathname !== "/superadmin/forgot-password" &&
     pathname !== "/superadmin/reset-password"
